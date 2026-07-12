@@ -4,6 +4,8 @@ use keyhog_core::{DetectorSpec, PatternSpec, Severity};
 
 fn aws_shaped_detector() -> DetectorSpec {
     DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         id: "corrupt-pattern-index-probe".into(),
         name: "Corrupt Pattern Index Probe".into(),
         service: "test".into(),

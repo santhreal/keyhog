@@ -31,11 +31,7 @@ def _rand_chars(rnd: random.Random, alphabet: str, length: int) -> str:
     return "".join(rnd.choice(alphabet) for _ in range(length))
 
 
-B62 = string.ascii_letters + string.digits
-B64 = B62 + "+/"
-B64URL = B62 + "-_"
-HEX = string.hexdigits.lower()
-HEX_UP = string.hexdigits.upper()
+from alphabets import B62, B64, B64URL, HEX  # noqa: E402
 
 
 # Tokens for several detector families (github classic/fine-grained PATs,

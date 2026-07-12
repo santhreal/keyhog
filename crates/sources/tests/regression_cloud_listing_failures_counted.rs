@@ -4,8 +4,11 @@ mod support;
 
 use keyhog_core::{Chunk, Source, SourceError};
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-#[cfg(feature = "azure")]
-use keyhog_sources::AzureBlobSource;
+// The whole file is `#![cfg(any(azure, gcs, s3))]` and all three providers'
+// tests below assert skip-count deltas, so these are used under every enabled
+// variant — the import must NOT be narrowed to `azure` alone (that made
+// `--features s3` / `gcs` fail with `skip_counts`/`SkipCounts`/`SourceLimits`
+// not in scope).
 use keyhog_sources::{skip_counts, SkipCounts, SourceLimits};
 use std::sync::{Mutex, MutexGuard};
 use support::split_chunk_results;
@@ -21,7 +24,6 @@ fn counter_guard() -> MutexGuard<'static, ()> {
     let guard = COUNTER_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", "1");
     guard
 }
 
@@ -521,7 +523,8 @@ fn azure_non_success_listing_is_counted_unreadable() {
         then.status(503).body("unavailable");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     assert_one_unreadable_listing_error(&rows, before, "Azure Blob", "blobs");
@@ -547,7 +550,8 @@ fn azure_malformed_listing_is_counted_unreadable() {
             .body("<EnumerationResults><Blobs>");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     assert_one_unreadable_listing_error(&rows, before, "Azure Blob", "blobs");

@@ -45,7 +45,7 @@ fn git_diff_finds_feature_branch_secret() {
         "single feature-branch file should emit one diff chunk, got {chunks:?}"
     );
     let chunk = chunks[0];
-    assert_eq!(chunk.metadata.source_type, "git-diff");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "git-diff");
     assert_eq!(chunk.metadata.author.as_deref(), Some("LR1 A5"));
     assert!(
         chunk.metadata.date.is_some(),

@@ -158,12 +158,12 @@ fn output_flag_redirects_report_off_stdout() {
         !stdout.contains(DETECTOR_ID),
         "the detector id must go to the file, not stdout; stdout was:\n{stdout}"
     );
-    // The stdout stream must not carry the JSON report array either.
+    // The stdout stream must not carry the JSON report array either. A non-JSON
+    // stdout is the desired outcome (parse error => not a findings array); only a
+    // single-element findings array is the duplication we catch.
     assert!(
-        serde_json::from_str::<serde_json::Value>(stdout.trim())
-            .ok()
-            .and_then(|v| v.as_array().map(|a| a.len()))
-            != Some(1),
+        !serde_json::from_str::<serde_json::Value>(stdout.trim())
+            .is_ok_and(|value| value.as_array().is_some_and(|array| array.len() == 1)),
         "the JSON findings array must not be duplicated on stdout; stdout was:\n{stdout}"
     );
     // The file, meanwhile, DOES carry it.

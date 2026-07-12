@@ -24,7 +24,13 @@ import sys
 from .corpora.base import LabeledRecord
 from .runner import resolve_corpus_with_root
 from .scanners import resolve_scanner
-from .score import _build_file_index, _resolve_finding_file, overlap
+from .score import (
+    _build_file_index,
+    _resolve_finding_file,
+    build_basename_index,
+    found_record_ids,
+    overlap,
+)
 
 
 def analyze(scanner_name: str, corpus_name: str, *,
@@ -43,21 +49,22 @@ def analyze(scanner_name: str, corpus_name: str, *,
     findings, _stats = scanner.run(corpus.scan_root, scanner.default_config())
 
     by_key, aliases = _build_file_index(records, corpus.file_root)
-    hit_ids: set[str] = set()
+    basename_index = build_basename_index(aliases)
+    # The recall hit-set is score's own attribution — reuse it verbatim so an
+    # analyze and a score of the same run can never disagree (they share one
+    # overlap/index rule). Only the FP *mining* below is analyze-specific.
+    hit_ids = found_record_ids(records, findings, corpus.file_root)
     fp_by_cat: dict[str, list[dict]] = collections.defaultdict(list)
 
     for f in findings:
         fpath = f.get("file") or ""
-        key = _resolve_finding_file(fpath, aliases) if fpath else None
+        key = _resolve_finding_file(fpath, aliases, basename_index) if fpath else None
         if key is None:
             fp_by_cat["unknown"].append(f)
             continue
         recs = by_key[key]
         value = f.get("value") or ""
         if any(r.label and not r.ignore and overlap(value, r.secret) for r in recs):
-            for r in recs:
-                if r.label and not r.ignore and overlap(value, r.secret):
-                    hit_ids.add(r.id)
             continue
         if any(r.ignore and overlap(value, r.secret) for r in recs):
             continue

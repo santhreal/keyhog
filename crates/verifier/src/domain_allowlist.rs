@@ -19,25 +19,29 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-const EXACT_ONLY_SHARED_TENANT_SUFFIXES: &[&str] = &[
-    "atlassian.net",
-    "auth0.com",
-    "azure-api.net",
-    "azurewebsites.net",
-    "firebaseapp.com",
-    "firebaseio.com",
-    "herokuapp.com",
-    "jfrog.io",
-    "mongodb.net",
-    "myshopify.com",
-    "netlify.app",
-    "on.aws",
-    "openai.azure.com",
-    "supabase.co",
-    "upstash.io",
-    "vercel.app",
-    "windows.net",
-];
+#[derive(serde::Deserialize)]
+struct SharedTenantSuffixes {
+    suffixes: Vec<String>,
+}
+
+fn parse_shared_tenant_suffixes(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<SharedTenantSuffixes>(raw)
+        .map(|parsed| parsed.suffixes)
+        .map_err(|error| error.to_string())
+}
+
+static EXACT_ONLY_SHARED_TENANT_SUFFIXES: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| {
+        match parse_shared_tenant_suffixes(include_str!(
+            "../../../rules/shared-tenant-suffixes.toml"
+        )) {
+            Ok(suffixes) => suffixes,
+            Err(error) => panic!(
+                "rules/shared-tenant-suffixes.toml is invalid: {error}. \
+                 Fix the bundled Tier-B shared-tenant suffix list."
+            ),
+        }
+    });
 
 /// Builtin map of `service` → allowed apex domains. Detectors that set
 /// `service = "<key>"` and DON'T provide their own `allowed_domains` list
@@ -51,126 +55,41 @@ pub(crate) fn builtin_service_domains() -> &'static HashMap<&'static str, &'stat
     use std::sync::OnceLock;
     static MAP: OnceLock<HashMap<&'static str, &'static [&'static str]>> = OnceLock::new();
     MAP.get_or_init(|| {
-        let mut m: HashMap<&'static str, &'static [&'static str]> = HashMap::new();
-        m.insert("aws", &["amazonaws.com", "aws.amazon.com", "on.aws"]);
-        m.insert(
-            "github",
-            &["github.com", "githubusercontent.com", "githubapp.com"],
+        #[derive(serde::Deserialize)]
+        struct ServicesFile {
+            services: std::collections::BTreeMap<String, Vec<String>>,
+        }
+        // Bundled at compile time (`include_str!`), so the allowlist a runtime user
+        // sees is exactly what was built — editing the data file needs no Rust change
+        // yet cannot be tampered with at runtime (this is a credential-exfil boundary).
+        let raw = include_str!("../../../rules/service-verification-domains.toml");
+        let parsed: ServicesFile = match toml::from_str(raw) {
+            Ok(parsed) => parsed,
+            Err(error) => panic!(
+                "rules/service-verification-domains.toml is invalid: {error}. \
+                 Fix the bundled Tier-B verification-domain allowlist."
+            ),
+        };
+        assert!(
+            !parsed.services.is_empty(),
+            "rules/service-verification-domains.toml must define at least one service \
+             (fail-closed: an empty allowlist would refuse every verification)."
         );
-        m.insert("gitlab", &["gitlab.com"]);
-        m.insert("bitbucket", &["bitbucket.org", "atlassian.com"]);
-        m.insert(
-            "gcp",
-            &["googleapis.com", "google.com", "googleusercontent.com"],
-        );
-        m.insert(
-            "google",
-            &["googleapis.com", "google.com", "googleusercontent.com"],
-        );
-        m.insert(
-            "azure",
-            &[
-                "azure.com",
-                "microsoft.com",
-                "microsoftonline.com",
-                "azurewebsites.net",
-                "windows.net",
-                "azure-api.net",
-            ],
-        );
-        m.insert("slack", &["slack.com"]);
-        m.insert("discord", &["discord.com", "discordapp.com"]);
-        m.insert("telegram", &["telegram.org", "t.me"]);
-        m.insert("twilio", &["twilio.com"]);
-        m.insert("sendgrid", &["sendgrid.com", "api.sendgrid.com"]);
-        m.insert("mailgun", &["mailgun.net", "mailgun.com"]);
-        m.insert("postmark", &["postmarkapp.com"]);
-        m.insert("stripe", &["stripe.com"]);
-        m.insert("paypal", &["paypal.com", "paypalobjects.com"]);
-        m.insert("square", &["squareup.com", "squarecdn.com"]);
-        m.insert("braintree", &["braintreegateway.com", "braintree-api.com"]);
-        m.insert("plaid", &["plaid.com"]);
-        m.insert("twitter", &["twitter.com", "x.com", "twitterapi.com"]);
-        m.insert("openai", &["openai.com", "openai.azure.com"]);
-        m.insert("anthropic", &["anthropic.com"]);
-        m.insert("huggingface", &["huggingface.co", "hf.co"]);
-        m.insert("replicate", &["replicate.com", "replicate.delivery"]);
-        m.insert("notion", &["notion.so", "notion.com"]);
-        m.insert("airtable", &["airtable.com"]);
-        m.insert("asana", &["asana.com"]);
-        m.insert("trello", &["trello.com", "atlassian.com"]);
-        m.insert("jira", &["atlassian.com", "atlassian.net"]);
-        m.insert("confluence", &["atlassian.com", "atlassian.net"]);
-        m.insert("digitalocean", &["digitalocean.com"]);
-        m.insert("heroku", &["heroku.com", "herokuapp.com"]);
-        m.insert("netlify", &["netlify.com", "netlify.app"]);
-        m.insert("vercel", &["vercel.com", "vercel.app"]);
-        m.insert("cloudflare", &["cloudflare.com"]);
-        m.insert("fastly", &["fastly.com"]);
-        m.insert("akamai", &["akamai.com", "akamaihd.net"]);
-        m.insert("datadog", &["datadoghq.com", "datadoghq.eu"]);
-        m.insert("pagerduty", &["pagerduty.com"]);
-        m.insert("newrelic", &["newrelic.com"]);
-        m.insert("sentry", &["sentry.io"]);
-        m.insert("rollbar", &["rollbar.com"]);
-        m.insert("bugsnag", &["bugsnag.com"]);
-        m.insert("npm", &["npmjs.com", "npmjs.org"]);
-        m.insert("pypi", &["pypi.org"]);
-        m.insert("rubygems", &["rubygems.org"]);
-        m.insert("dockerhub", &["docker.com", "docker.io"]);
-        m.insert("docker", &["docker.com", "docker.io"]);
-        m.insert("crates", &["crates.io"]);
-        m.insert("npm_token", &["npmjs.com", "npmjs.org"]);
-        m.insert("shopify", &["shopify.com", "myshopify.com"]);
-        m.insert("zendesk", &["zendesk.com"]);
-        m.insert("freshdesk", &["freshdesk.com"]);
-        m.insert("hubspot", &["hubapi.com", "hubspot.com"]);
-        m.insert("intercom", &["intercom.io", "intercom.com"]);
-        m.insert("linear", &["linear.app"]);
-        m.insert("monday", &["monday.com"]);
-        m.insert("clickup", &["clickup.com"]);
-        m.insert("figma", &["figma.com"]);
-        m.insert(
-            "dropbox",
-            &["dropbox.com", "dropboxapi.com", "dropboxusercontent.com"],
-        );
-        m.insert("box", &["box.com", "boxcloud.com"]);
-        m.insert("zoom", &["zoom.us"]);
-        m.insert("okta", &["okta.com", "oktapreview.com"]);
-        m.insert("auth0", &["auth0.com"]);
-        m.insert("keycloak", &["keycloak.org"]);
-        m.insert("upstash", &["upstash.io", "upstash.com"]);
-        m.insert("redis", &["redis.com", "redislabs.com"]);
-        m.insert("mongodb", &["mongodb.com", "mongodb.net"]);
-        m.insert("supabase", &["supabase.co", "supabase.com"]);
-        m.insert(
-            "firebase",
-            &["firebaseio.com", "firebaseapp.com", "googleapis.com"],
-        );
-        m.insert("snyk", &["snyk.io"]);
-        m.insert("sonarqube", &["sonarsource.com", "sonarcloud.io"]);
-        m.insert("sonarcloud", &["sonarsource.com", "sonarcloud.io"]);
-        m.insert("circleci", &["circleci.com"]);
-        m.insert("travisci", &["travis-ci.com", "travis-ci.org"]);
-        m.insert("buildkite", &["buildkite.com"]);
-        m.insert("jfrog", &["jfrog.io", "jfrog.com"]);
-        m.insert("artifactory", &["jfrog.io", "jfrog.com"]);
-        m.insert("nexus", &["sonatype.com"]);
-        m.insert("paloalto", &["paloaltonetworks.com"]);
-        m.insert("fortinet", &["fortinet.com", "fortigate.com"]);
-        m.insert("cisco", &["cisco.com"]);
-        m.insert("canvas", &["instructure.com"]);
-        m.insert("authentik", &["goauthentik.io"]);
-        m.insert("ansible", &["ansible.com", "redhat.com"]);
-        m.insert("thales", &["thalesgroup.com", "ciphertrust.com"]);
-        m.insert("cypress", &["cypress.io"]);
-        m.insert("uploadcare", &["uploadcare.com"]);
-        m.insert("bigcommerce", &["bigcommerce.com"]);
-        m.insert("wechat", &["weixin.qq.com", "wechat.com"]);
-        m.insert("huawei", &["huaweicloud.com", "huawei.com"]);
-        m.insert("jwt", &[]); // structural validation only - no network
-        m.insert("generic", &[]); // generic high-entropy - never network-verify
-        m
+        // Leak the parsed data to `'static` (a one-time init of conceptually static
+        // config) so the map keeps the exact `&'static str` / `&'static [&'static str]`
+        // element types every caller consumes — no return-type or caller change vs the
+        // former inline `m.insert` map. `jwt`/`generic` carry an intentionally EMPTY
+        // domain list (structural-only, never network-verified); empty is preserved.
+        let mut map: HashMap<&'static str, &'static [&'static str]> = HashMap::new();
+        for (service, domains) in parsed.services {
+            let leaked_domains: &'static [&'static str] = domains
+                .into_iter()
+                .map(|domain| &*Box::leak(domain.into_boxed_str()))
+                .collect::<Vec<&'static str>>()
+                .leak();
+            map.insert(&*Box::leak(service.into_boxed_str()), leaked_domains);
+        }
+        map
     })
 }
 
@@ -236,7 +155,9 @@ fn host_is_subdomain_of_allowed(host: &str, allowed: &str) -> bool {
 }
 
 fn is_exact_only_shared_tenant_suffix(domain: &str) -> bool {
-    EXACT_ONLY_SHARED_TENANT_SUFFIXES.contains(&domain)
+    EXACT_ONLY_SHARED_TENANT_SUFFIXES
+        .iter()
+        .any(|s| s.as_str() == domain)
 }
 
 /// Top-level guard: parse `raw_url`, look up the allowlist for `spec`, and

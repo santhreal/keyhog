@@ -34,8 +34,8 @@
 use keyhog_scanner::testing::fragment_cache::FragmentCache;
 use keyhog_scanner::testing::multiline::{
     extract_dot_concatenation_for_test, extract_plus_concatenation_for_test,
-    has_concatenation_indicators_for_test, preprocess_multiline, preprocess_multiline_for_test,
-    MultilineConfig,
+    filter_line_content_for_test, has_concatenation_indicators_for_test, preprocess_multiline,
+    preprocess_multiline_for_test, MultilineConfig,
 };
 
 // ── POSITIVE: `+`-split credential reassembled across two source lines ────────
@@ -63,6 +63,59 @@ fn plus_split_two_lines_reassembles_exact_appended_bytes() {
     );
 }
 
+/// Law-10 regression: a JS/TS SOURCE file that legitimately OPENS with an object
+/// literal (`{ … }`) must still be multiline-preprocessed. The old leading-`{`
+/// reject in `has_concatenation_indicators` / `preprocess_multiline` force-passed
+/// such a file through and silently dropped its entire multiline surface, so a
+/// `"ghp_" +\n"…"`-split token inside the object never reassembled. The
+/// structural JSON discriminator now keeps it: an object literal is NOT strict
+/// JSON (unquoted key, `+` splice), so it falls through and its split credential
+/// reassembles into one contiguous appended candidate.
+#[test]
+fn js_object_literal_opening_brace_still_reassembles_split_secret() {
+    // Opens with `{` exactly like a JSON config would, but is JS (unquoted key,
+    // `+` concatenation) — precisely the case the first-byte heuristic dropped.
+    let js = "{ token: \"ghp_\" +\n\"abcdef0123456789abcdef01\" }";
+    assert!(
+        has_concatenation_indicators_for_test(js),
+        "a JS object literal with a `+`-split string must be treated as a \
+         concatenation candidate despite the leading `{{`"
+    );
+    let (joined, original_end) = preprocess_multiline_for_test(js);
+    assert!(
+        joined.starts_with(js),
+        "the original object-literal bytes must be carried through verbatim first"
+    );
+    assert_eq!(
+        original_end,
+        js.len(),
+        "original_end must equal the exact input byte length (append, not rewrite)"
+    );
+    assert!(
+        joined.contains("ghp_abcdef0123456789abcdef01"),
+        "the `+`-split token inside the object literal must reassemble into one \
+         contiguous span; got {joined:?}"
+    );
+}
+
+/// Adversarial twin: a buffer that opens with `{` and IS strict JSON (quoted
+/// key, no concat) must still be rejected — the structural discriminator skips
+/// genuine JSON data, so the fix does not start preprocessing real config files.
+#[test]
+fn strict_json_object_opening_brace_is_still_rejected() {
+    let json = "{\n  \"token\": \"ghp_abcdef0123456789abcdef01\"\n}";
+    assert!(
+        !has_concatenation_indicators_for_test(json),
+        "a strict-JSON object body must remain a passthrough (not a concat candidate)"
+    );
+    let (joined, original_end) = preprocess_multiline_for_test(json);
+    assert_eq!(
+        joined, json,
+        "strict JSON must pass through byte-identically"
+    );
+    assert_eq!(original_end, json.len());
+}
+
 /// The `+` extractor on the FIRST line of a split reports the leading literal
 /// value AND `continues == true` (the trailing join `+`), which is what makes
 /// the chain walker pull the next line.
@@ -82,6 +135,65 @@ fn plus_extractor_two_literal_join_single_line() {
     assert_eq!(
         extract_plus_concatenation_for_test("x = \"AKIA\" + \"IOSFODNN7EXAMPLE\""),
         Some(("AKIAIOSFODNN7EXAMPLE".to_string(), false)),
+    );
+}
+
+// ── Tier-B var-declaration keyword strip (rules/multiline-var-decl-keywords) ──
+
+/// Every language keyword in the Tier-B list is stripped off an assignment line
+/// so the RHS value is what gets extracted. This pins the data-driven migration
+/// (the keyword set moved out of a hardcoded `trim_start_matches` chain into
+/// `rules/multiline-var-decl-keywords.toml`): each keyword must still be
+/// recognized, and the exact RHS value must be returned.
+#[test]
+fn tier_b_var_decl_keywords_are_stripped_before_value_extraction() {
+    // (line, expected RHS) — one per shipped keyword, across JS/TS, Kotlin/Scala,
+    // Java, C++, VB, and Perl declaration syntaxes.
+    let cases = [
+        ("const apiKey = sk_live_abcdef", "sk_live_abcdef"),
+        ("let token = ghp_deadbeef01", "ghp_deadbeef01"),
+        ("var secret = AKIAIOSFODNN7", "AKIAIOSFODNN7"),
+        ("val password = hunter2value", "hunter2value"),
+        ("final creds = xoxb_slack_tok", "xoxb_slack_tok"),
+        ("static apiKey = glpat_deadbeef", "glpat_deadbeef"),
+        ("string conn = postgres_secret", "postgres_secret"),
+        ("String conn = mysql_secret_00", "mysql_secret_00"),
+        ("auto handle = aws_session_tok", "aws_session_tok"),
+        ("dim key = azure_key_value_9", "azure_key_value_9"),
+        ("my $tok = perl_lexical_secret", "perl_lexical_secret"),
+    ];
+    for (line, expected) in cases {
+        assert_eq!(
+            filter_line_content_for_test(line),
+            expected,
+            "keyword prefix in {line:?} must be stripped, leaving the RHS value"
+        );
+    }
+}
+
+/// Stacked declaration keywords (`static final x = …`) are all stripped, and a
+/// keyword that is only a SUBSTRING of an identifier (`myToken`, `constant`) is
+/// NOT stripped — the prefix carries a trailing space so it only matches a real
+/// leading declaration keyword.
+#[test]
+fn tier_b_var_decl_keyword_strip_is_exact_and_stacked() {
+    assert_eq!(
+        filter_line_content_for_test("final static token = deadbeefcafef00d"),
+        "deadbeefcafef00d",
+        "stacked keywords must both be stripped"
+    );
+    // `myToken` starts with `my` but not `my ` — must be left intact as the LHS
+    // identifier, so the RHS is still what is returned after the `=`.
+    assert_eq!(
+        filter_line_content_for_test("myToken = perl_looking_but_not"),
+        "perl_looking_but_not",
+        "a keyword that is only an identifier substring must not be stripped"
+    );
+    // No keyword, no assignment: the line is returned unchanged.
+    assert_eq!(
+        filter_line_content_for_test("justabareword"),
+        "justabareword",
+        "a line with neither a keyword nor an assignment is returned verbatim"
     );
 }
 

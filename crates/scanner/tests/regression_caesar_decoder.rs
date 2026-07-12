@@ -4,7 +4,7 @@
 //!   * `caesar_shift` rotates ASCII letters only, mod 26, digits/punct fixed;
 //!   * a Caesar-shifted known-prefix credential is recovered at the EXACT
 //!     inverse shift and the rotated-prefix automaton selects that shift;
-//!   * the shape gates (`candidate_shape_invariant` / `looks_credential_shaped`)
+//!   * the shape gates (`candidate_shape_invariant` / `caesar_credential_shape_gate`)
 //!     enforce the `MIN_ALNUM_RUN` run, a digit, a letter, and a known prefix;
 //!   * `CaesarDecoder::decode_chunk` recovers a planted rotation but SKIPS
 //!     credential-URL lines, source-code paths, its own `/caesar` output, and
@@ -28,8 +28,8 @@ fn chunk(data: &str, source_type: &str, path: Option<&str>) -> Chunk {
     Chunk {
         data: data.into(),
         metadata: ChunkMetadata {
-            source_type: source_type.to_string(),
-            path: path.map(str::to_string),
+            source_type: source_type.into(),
+            path: path.map(Into::into),
             ..Default::default()
         },
     }
@@ -79,7 +79,7 @@ fn recovers_known_prefix_credential_at_exact_shift() {
     let recovered = decode_caesar::caesar_shift(ENCODED_SHIFT3, 23);
     assert_eq!(recovered, PLANTED);
     // And the recovered value passes the credential-shape gate.
-    assert!(decode_caesar::looks_credential_shaped(&recovered));
+    assert!(decode_caesar::caesar_credential_shape_gate(&recovered));
 
     // A neighbouring wrong shift does NOT recover the credential.
     assert_ne!(decode_caesar::caesar_shift(ENCODED_SHIFT3, 24), PLANTED);
@@ -99,7 +99,7 @@ fn rot13_roundtrip_recovers_ghp_prefixed_credential() {
 
     let recovered = decode_caesar::caesar_shift(&encoded, 13);
     assert_eq!(recovered, original);
-    assert!(decode_caesar::looks_credential_shaped(&recovered));
+    assert!(decode_caesar::caesar_credential_shape_gate(&recovered));
 }
 
 #[test]
@@ -144,22 +144,26 @@ fn candidate_shape_invariant_requires_eight_char_alnum_run() {
 
 #[test]
 fn min_alnum_run_gate_rejects_short_and_punctuated_candidates() {
-    // `looks_credential_shaped` requires an 8+ contiguous ASCII-alphanumeric
+    // `caesar_credential_shape_gate` requires an 8+ contiguous ASCII-alphanumeric
     // run. A known prefix split by punctuation never reaches the run length.
-    assert!(!decode_caesar::looks_credential_shaped("AKIA-12-34"));
+    assert!(!decode_caesar::caesar_credential_shape_gate("AKIA-12-34"));
     // Exactly 8 alnum chars (AKIA1234) hits the boundary and passes.
-    assert!(decode_caesar::looks_credential_shaped("AKIA1234"));
+    assert!(decode_caesar::caesar_credential_shape_gate("AKIA1234"));
     // 7 alnum chars is one below the floor and fails.
-    assert!(!decode_caesar::looks_credential_shaped("AKIA123"));
+    assert!(!decode_caesar::caesar_credential_shape_gate("AKIA123"));
 }
 
 #[test]
-fn looks_credential_shaped_requires_known_provider_prefix() {
+fn caesar_credential_shape_gate_requires_known_provider_prefix() {
     // Digit + a 16-char alnum run but NO known provider prefix: an incidental
     // shift of a real secret must not be emitted as a finding.
-    assert!(!decode_caesar::looks_credential_shaped("ph1ifsb2cdefghij"));
+    assert!(!decode_caesar::caesar_credential_shape_gate(
+        "ph1ifsb2cdefghij"
+    ));
     // The same shape carrying the `AKIA` prefix is credential-shaped.
-    assert!(decode_caesar::looks_credential_shaped("AKIA5678cdefghij"));
+    assert!(decode_caesar::caesar_credential_shape_gate(
+        "AKIA5678cdefghij"
+    ));
 }
 
 #[test]
@@ -175,7 +179,7 @@ fn decode_chunk_recovers_planted_caesar_credential() {
     // Every emitted sub-chunk is tagged with the caesar decoder source-type.
     assert!(
         out.iter()
-            .all(|oc| oc.metadata.source_type == "filesystem/caesar"),
+            .all(|oc| oc.metadata.source_type.as_ref() == "filesystem/caesar"),
         "all outputs must be tagged /caesar: {out:#?}"
     );
 }

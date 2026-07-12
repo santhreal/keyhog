@@ -59,6 +59,9 @@ mod cloud;
 #[cfg(feature = "docker")]
 mod docker;
 mod filesystem;
+/// Fuzz-only PDF byte-extractor entry (compiled only under `cargo fuzz`).
+#[cfg(fuzzing)]
+pub use filesystem::fuzz_extract_pdf_text;
 #[cfg(feature = "gcs")]
 mod gcs;
 #[cfg(feature = "git")]
@@ -68,6 +71,9 @@ mod github_org;
 #[cfg(feature = "gitlab")]
 mod gitlab_group;
 mod har;
+/// Fuzz-only HAR byte-expander entry (compiled only under `cargo fuzz`).
+#[cfg(fuzzing)]
+pub use har::fuzz_try_expand_har;
 #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
 mod hosted_git;
 #[cfg(feature = "s3")]

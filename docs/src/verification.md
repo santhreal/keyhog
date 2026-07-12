@@ -14,17 +14,19 @@ tier (see the table below), so its box header drops accordingly
 
 ```text
   ┌    CRITICAL ─── Stripe Secret Key
-  │ Secret:     sk_live_...d3Hc
+  │ Secret:     sk_l...p7dc
   │ Location:   src/config/staging.env:14
-  │ Confidence: ■■■■■■  99%  (LIVE)
-  │ Action:     Revoke immediately and rotate.
+  │ Confidence: ■■■■■■ 100%  (LIVE)
+  │ Action:     Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.
+  │ Docs:       https://docs.stripe.com/keys#roll-api-key
   └─────────────────────────────────────────────
 
-  ┌    HIGH ─── Stripe Secret Key
-  │ Secret:     sk_live_...yz12
+  ┌        HIGH ─── Stripe Secret Key
+  │ Secret:     sk_l...ab12
   │ Location:   src/old/legacy.env:8
-  │ Confidence: ■■■■■■  99%  (dead)
-  │ Action:     Revoke immediately and rotate.
+  │ Confidence: ■■■■■■ 100%  (dead)
+  │ Action:     Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.
+  │ Docs:       https://docs.stripe.com/keys#roll-api-key
   └─────────────────────────────────────────────
 ```
 
@@ -33,9 +35,9 @@ The second finding's header reads `HIGH`, not its declared
 shift on verification" below). The verdict words shown here (`LIVE`,
 `dead`, `revoked`, `limited`, `error`) are the *text-reporter*
 labels. The machine-readable `--format json` value is the lowercase
-`VerificationResult` variant instead — `"live"`, `"dead"`,
+`VerificationResult` variant instead: `"live"`, `"dead"`,
 `"revoked"`, `"rate_limited"`, `"unverifiable"`, `"skipped"`, or an
-`{"error": "..."}` object — never the `verified-live`/`verified-dead`
+`{"error": "..."}` object; never the `verified-live`/`verified-dead`
 strings. See [Output formats](./output-formats.md#combining-with-verify).
 
 ## What "live" means

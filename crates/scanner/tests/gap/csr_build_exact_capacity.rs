@@ -73,3 +73,45 @@ fn csr_build_is_byte_identical_and_exactly_reserved() {
         "offsets must not grow from an unreserved vec![0u32] (reintroduces reallocations)"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vector pins byte-identical reconstruction on one hand-built shape;
+// these SWEEP the round-trip over arbitrary ragged rows. The CORRECTNESS CONTRACT
+// of the CSR build is that `from_rows` then row-read reconstructs the EXACT input
+// (each element cast usize→u32), including leading/interior/trailing empty rows
+// and the `n+1` offsets invariant — an off-by-one in the capacity/offset math
+// would corrupt row boundaries. Traced against engine/csr.rs. No proptest before.
+
+use proptest::prelude::*;
+
+/// Ragged rows: 0..24 rows, each 0..8 elements in `0..100_000` (well within u32),
+/// so empty rows and multi-element rows both occur frequently.
+fn ragged_rows() -> impl Strategy<Value = Vec<Vec<usize>>> {
+    prop::collection::vec(prop::collection::vec(0usize..100_000, 0..8), 0..24)
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(3_000))]
+
+    /// ROUND-TRIP: the CSR build reconstructs every row byte-for-byte (values cast
+    /// to u32), for any ragged input including empty rows anywhere.
+    #[test]
+    fn csr_build_roundtrips_arbitrary_rows(rows in ragged_rows()) {
+        let expected: Vec<Vec<u32>> = rows
+            .iter()
+            .map(|r| r.iter().map(|&x| x as u32).collect())
+            .collect();
+        prop_assert_eq!(roundtrip(rows), expected);
+    }
+
+    /// The round-trip preserves the row COUNT and every row's LENGTH exactly (the
+    /// `n+1` offsets structure), independent of the value equality above.
+    #[test]
+    fn csr_build_preserves_row_count_and_lengths(rows in ragged_rows()) {
+        let lengths: Vec<usize> = rows.iter().map(Vec::len).collect();
+        let out = roundtrip(rows);
+        prop_assert_eq!(out.len(), lengths.len());
+        let out_lengths: Vec<usize> = out.iter().map(Vec::len).collect();
+        prop_assert_eq!(out_lengths, lengths);
+    }
+}

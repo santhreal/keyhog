@@ -17,13 +17,28 @@ use std::io::IsTerminal;
 use std::time::Instant;
 
 impl ScanOrchestrator {
-    pub async fn run(self) -> Result<std::process::ExitCode> {
+    pub async fn run(mut self) -> Result<std::process::ExitCode> {
         crate::reset_scan_runtime_state();
         let start = Instant::now();
         let wall_start = chrono::Utc::now();
         let stderr_is_tty = std::io::stderr().is_terminal();
-        let show_progress = self.args.progress || stderr_is_tty;
-        let progress_ansi = stderr_is_tty && std::env::var_os("NO_COLOR").is_none();
+        // `--no-color` forces plain output everywhere in the scan path; it
+        // rides the same `NO_COLOR` convention the palette helpers already read
+        // so a single env set covers the report formatter, the ticker, and the
+        // diagnostic palette without threading a flag through every call.
+        if self.args.no_color {
+            std::env::set_var("NO_COLOR", "1");
+        }
+        let no_color = self.args.no_color || crate::style::no_color_requested();
+        // Fold the `NO_COLOR` env convention into the flag so the stdout report
+        // formatter (which honors `args.no_color`) also drops color on a TTY
+        // when the operator set `NO_COLOR`, matching the ticker/palette.
+        self.args.no_color = no_color;
+        // `--quiet` suppresses the interactive chrome (banner / ticker /
+        // completion summary) while leaving coverage FAIL/WARN and fatal errors
+        // intact, so a quiet scan is never mistaken for a clean one.
+        let show_progress = !self.args.quiet && (self.args.progress || stderr_is_tty);
+        let progress_ansi = stderr_is_tty && !no_color;
 
         if self.args.dogfood {
             keyhog_scanner::telemetry::enable_dogfood();

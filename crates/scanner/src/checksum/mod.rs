@@ -7,6 +7,7 @@
 pub(crate) mod github;
 pub(crate) mod gitlab;
 pub(crate) mod npm;
+pub(crate) mod prefixes;
 pub(crate) mod slack;
 pub(crate) mod stripe;
 
@@ -129,7 +130,7 @@ impl ChecksumConfidenceDecision {
 /// Compatibility wrapper for applying a credential's embedded-checksum verdict
 /// to a confidence score.
 ///
-/// The confidence adjustment policy lives in `crate::confidence::policy`;
+/// The confidence adjustment policy lives in [`crate::confidence::policy`];
 /// this public wrapper preserves the checksum module API used by tests and
 /// callers while keeping match-scoring ownership in the confidence subsystem.
 ///

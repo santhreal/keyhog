@@ -367,11 +367,13 @@ fn calibrate_autoroute_help_documents_quiet_flag() {
     );
 }
 
-/// Negative twin: `scan` owns neither `--verbose` nor `--quiet`; its `--help`
-/// must not advertise them (guarding against an accidental cross-wiring of the
-/// verbosity flags onto the scan surface).
+/// `scan` owns `--quiet` (suppress the interactive stderr chrome) and
+/// `--no-color`, but deliberately NOT `--verbose` (verbosity tiers are a
+/// diagnostic-subcommand concern, not a scan concern). This guards both the
+/// intentional presence of the two output-control flags and the intentional
+/// absence of `--verbose`.
 #[test]
-fn scan_help_has_no_verbose_or_quiet_flag() {
+fn scan_help_documents_quiet_and_no_color_but_not_verbose() {
     let dir = tempfile::tempdir().expect("tempdir");
     let out = run(dir.path(), Some(false), &["scan", "--help"]);
     assert_eq!(out.code, Some(0));
@@ -381,8 +383,12 @@ fn scan_help_has_no_verbose_or_quiet_flag() {
         "scan --help unexpectedly lists --verbose:\n{stdout}"
     );
     assert!(
-        !stdout.contains("--quiet"),
-        "scan --help unexpectedly lists --quiet:\n{stdout}"
+        stdout.contains("--quiet"),
+        "scan --help must document --quiet:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("--no-color"),
+        "scan --help must document --no-color:\n{stdout}"
     );
 }
 

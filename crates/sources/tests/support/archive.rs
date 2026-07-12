@@ -160,8 +160,7 @@ pub fn tar_with_file(name: &str, content: &[u8]) -> Vec<u8> {
 
 /// gzip-compress raw bytes (for bare `.gz` fixtures, e.g. a gzipped PEM file).
 pub fn gzip_bytes(plaintext: &[u8]) -> Vec<u8> {
-    let mut encoder =
-        flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(plaintext).expect("write gzip input");
     encoder.finish().expect("finish gzip")
 }

@@ -44,7 +44,7 @@ fn scanner() -> &'static CompiledScanner {
         d.push("detectors");
         let all = keyhog_core::load_detectors(&d).expect("detectors");
 
-        // Fuzz the scan PIPELINE, not the full ~900-detector corpus. Compiling
+        // Fuzz the scan PIPELINE, not the full detector corpus. Compiling
         // every detector's Hyperscan database is the dominant cost of this
         // target's one-time init, and under libFuzzer's ASan instrumentation it
         // runs ~15s / ~1.6GB locally — but that init executes INSIDE fuzz unit
@@ -67,10 +67,9 @@ fn scanner() -> &'static CompiledScanner {
 }
 
 fuzz_target!(|data: &[u8]| {
-    // Restrict to valid UTF-8: keyhog's `Chunk.data` is `String`,
-    // and converting random bytes to a String would just discard
-    // most fuzz cases via `from_utf8_lossy`. Direct UTF-8 input
-    // lets the fuzzer drive the interesting code paths.
+    // Restrict to valid UTF-8: converting random bytes via
+    // `from_utf8_lossy` would just discard most fuzz cases. Direct
+    // UTF-8 input lets the fuzzer drive the interesting code paths.
     let Ok(text) = std::str::from_utf8(data) else {
         return;
     };

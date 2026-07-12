@@ -89,3 +89,79 @@ fn assign_re_is_end_anchored_but_admits_trailing_separator() {
         "a trailing comma is admitted and excluded from the value group"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin each piece on one example; these SWEEP the valid domain
+// and the hard-reject boundaries. A full ROUND-TRIP builds every valid
+// `key <sep> <quote>value<quote> <tail>` shape (both separators, all three quotes,
+// optional `;`/`,` tail, optional whitespace) and asserts the two captured groups
+// are exactly the key and value. NOTE: the pattern has no start anchor, so only
+// the LOWER floors hard-reject (a >32 key just suffix-matches) — swept accordingly:
+// a sub-4 value and a 1-char key reject, and trailing non-`;`/`,` content fails the
+// `$` anchor. Traced against shared_regexes.rs `ASSIGN_RE`. No proptest before.
+
+use proptest::prelude::*;
+
+const SEPS: &[&str] = &[":", "="];
+const QUOTES: &[&str] = &["\"", "'", "`"];
+const TAILS: &[&str] = &["", ";", ","];
+const WS: &[&str] = &["", " ", "  "];
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(3_000))]
+
+    /// ROUND-TRIP: every valid assignment shape captures the bare key and unquoted
+    /// value exactly (the value charset excludes quotes/whitespace, so there is no
+    /// delimiter ambiguity).
+    #[test]
+    fn assign_re_roundtrips_valid_assignments(
+        key in "[a-zA-Z0-9_-]{2,32}",
+        value in "[a-zA-Z0-9/+=_-]{4,30}",
+        si in 0usize..SEPS.len(),
+        qi in 0usize..QUOTES.len(),
+        ti in 0usize..TAILS.len(),
+        w1 in 0usize..WS.len(),
+        w2 in 0usize..WS.len(),
+    ) {
+        let q = QUOTES[qi];
+        let input = format!(
+            "{key}{}{}{}{q}{value}{q}{}",
+            WS[w1], SEPS[si], WS[w2], TAILS[ti]
+        );
+        let got = caps(&input);
+        prop_assert_eq!(got, Some((key.clone(), value.clone())));
+    }
+
+    /// A value shorter than 4 chars is below the `{4,}` floor and does not match.
+    #[test]
+    fn value_below_four_is_rejected(
+        key in "[a-zA-Z0-9_-]{2,20}",
+        value in "[a-zA-Z0-9/+=_-]{0,3}",
+    ) {
+        let input = format!("{key} = \"{value}\"");
+        prop_assert!(caps(&input).is_none());
+    }
+
+    /// A single-character key is below the `{2,32}` floor and does not match (there
+    /// is no earlier position to salvage a 2+ char key from).
+    #[test]
+    fn single_char_key_is_rejected(
+        key in "[a-zA-Z0-9_-]{1}",
+        value in "[a-zA-Z0-9/+=_-]{4,10}",
+    ) {
+        let input = format!("{key} = \"{value}\"");
+        prop_assert!(caps(&input).is_none());
+    }
+
+    /// Trailing content (other than a single `;`/`,`) after the closing quote fails
+    /// the end `$` anchor.
+    #[test]
+    fn trailing_content_after_close_quote_is_rejected(
+        key in "[a-zA-Z0-9_-]{2,20}",
+        value in "[a-zA-Z0-9/+=_-]{4,10}",
+        trailing in "[a-zA-Z0-9]{1,10}",
+    ) {
+        let input = format!("{key} = \"{value}\" {trailing}");
+        prop_assert!(caps(&input).is_none());
+    }
+}

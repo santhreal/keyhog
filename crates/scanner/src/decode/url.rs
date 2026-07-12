@@ -261,13 +261,25 @@ fn percent_decode(input: &str) -> Result<String, ()> {
             bytes.extend_from_slice(&input_bytes[index..index + pct_idx]);
             index += pct_idx;
 
-            if index + 2 >= input_bytes.len() {
-                return Err(());
+            // A `%` without two following hex digits — truncated at end of
+            // input (`…%4`) or non-hex (`%ZZ`) — is a literal byte, not the
+            // start of an escape. Earlier code returned Err here, discarding
+            // every escape already decoded in this candidate (all-or-nothing
+            // recall loss). Treat it as literal and continue, exactly like the
+            // sibling octal/HTML decoders.
+            match (
+                input_bytes.get(index + 1).map(|&b| hex_val(b)),
+                input_bytes.get(index + 2).map(|&b| hex_val(b)),
+            ) {
+                (Some(Ok(high)), Some(Ok(low))) => {
+                    bytes.push((high << 4) | low);
+                    index += 3;
+                }
+                _ => {
+                    bytes.push(b'%');
+                    index += 1;
+                }
             }
-            let high = hex_val(input_bytes[index + 1])?;
-            let low = hex_val(input_bytes[index + 2])?;
-            bytes.push((high << 4) | low);
-            index += 3;
         } else {
             bytes.extend_from_slice(&input_bytes[index..]);
             break;
@@ -355,6 +367,48 @@ pub(crate) fn quoted_printable_decode(input: &str) -> Result<String, ()> {
     String::from_utf8(bytes).map_err(|_| ())
 }
 
+/// Tier-B HTML named-entity → replacement decode table — the single owner
+/// (`rules/html-named-entities.toml`; was an inline `match`). Keyed by the entity
+/// body INCLUDING its terminating `;` (as scanned). Fails closed on an
+/// invalid/empty file or a non-single-character replacement.
+static HTML_NAMED_ENTITIES: std::sync::LazyLock<std::collections::HashMap<String, char>> =
+    std::sync::LazyLock::new(|| {
+        #[derive(serde::Deserialize)]
+        struct EntitiesFile {
+            entities: std::collections::BTreeMap<String, String>,
+        }
+        let raw = include_str!("../../../../rules/html-named-entities.toml");
+        let parsed: EntitiesFile = match toml::from_str(raw) {
+            Ok(parsed) => parsed,
+            Err(error) => panic!(
+                "rules/html-named-entities.toml is invalid: {error}. \
+                 Fix the bundled Tier-B HTML named-entity table."
+            ),
+        };
+        assert!(
+            !parsed.entities.is_empty(),
+            "rules/html-named-entities.toml must define at least one named entity."
+        );
+        parsed
+            .entities
+            .into_iter()
+            .map(|(name, replacement)| {
+                let mut chars = replacement.chars();
+                let first = chars.next().unwrap_or_else(|| {
+                    panic!(
+                        "rules/html-named-entities.toml: entity `{name}` has an empty replacement."
+                    )
+                });
+                assert!(
+                    chars.next().is_none(),
+                    "rules/html-named-entities.toml: entity `{name}` replacement must be exactly \
+                     one character."
+                );
+                (name, first)
+            })
+            .collect()
+    });
+
 fn html_named_entity_decode(input: &str) -> Result<String, ()> {
     let mut decoded: Option<String> = None;
     let mut chars = input.char_indices().peekable();
@@ -376,15 +430,7 @@ fn html_named_entity_decode(input: &str) -> Result<String, ()> {
             }
         }
 
-        let replacement = match entity.as_str() {
-            "amp;" => Some('&'),
-            "lt;" => Some('<'),
-            "gt;" => Some('>'),
-            "quot;" => Some('"'),
-            "apos;" => Some('\''),
-            "nbsp;" => Some('\u{00A0}'),
-            _ => None,
-        };
+        let replacement = HTML_NAMED_ENTITIES.get(entity.as_str()).copied();
 
         if let Some(replacement) = replacement {
             lazy_decoded_prefix(&mut decoded, input, idx).push(replacement);
@@ -396,6 +442,13 @@ fn html_named_entity_decode(input: &str) -> Result<String, ()> {
 
     decoded.ok_or(())
 }
+
+/// Longest numeric-entity digit run parsed before the entity is treated as
+/// malformed. The largest valid Unicode scalar is `U+10FFFF` (7 hex / 7 decimal
+/// digits), so a longer run can never be a valid codepoint; capping bounds the
+/// digit `String` (a `&#000…0;` with a megabyte of zeros would otherwise
+/// allocate unbounded and feed a doomed `u32` parse — unbounded-alloc DoS).
+const MAX_NUMERIC_ENTITY_DIGITS: usize = 10;
 
 fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
     let mut decoded: Option<String> = None;
@@ -425,10 +478,18 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
                 consumed_terminator = true;
                 break;
             }
-            if (is_hex && next.is_ascii_hexdigit()) || (!is_hex && next.is_ascii_digit()) {
+            let is_digit =
+                (is_hex && next.is_ascii_hexdigit()) || (!is_hex && next.is_ascii_digit());
+            if is_digit && digits.len() < MAX_NUMERIC_ENTITY_DIGITS {
                 digits.push(next);
                 chars.next();
             } else {
+                // Non-digit terminator OR the digit run exceeded the cap: this
+                // entity is malformed / cannot be a valid scalar. Preserve the
+                // opener + digits literally instead of dropping the WHOLE
+                // candidate (all-or-nothing recall loss). Only consume the
+                // offending byte when it is a true non-digit; an over-cap digit
+                // stays for the outer loop to copy through verbatim.
                 let out = lazy_decoded_prefix(&mut decoded, input, idx);
                 out.push('&');
                 out.push('#');
@@ -436,9 +497,10 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
                     out.push('x');
                 }
                 out.push_str(&digits);
-                out.push(next);
-                chars.next();
-                digits.clear();
+                if !is_digit {
+                    out.push(next);
+                    chars.next();
+                }
                 preserved_malformed = true;
                 break;
             }
@@ -448,35 +510,41 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
             continue;
         }
 
-        if digits.is_empty() {
-            if let Some(decoded) = decoded.as_mut() {
-                decoded.push('&');
-                decoded.push('#');
-                if is_hex {
-                    decoded.push('x');
-                }
-                if consumed_terminator {
-                    decoded.push(';');
-                }
-            } else {
-                let out = lazy_decoded_prefix(&mut decoded, input, idx);
-                out.push('&');
-                out.push('#');
-                if is_hex {
-                    out.push('x');
-                }
-                if consumed_terminator {
-                    out.push(';');
-                }
+        // Emit the entity opener + captured digits (+ any consumed `;`) verbatim.
+        // Shared by the empty-digit and out-of-range paths so the literal
+        // reconstruction has one owner instead of two hand-copied branches.
+        let emit_literal = |decoded: &mut Option<String>| {
+            let out = lazy_decoded_prefix(decoded, input, idx);
+            out.push('&');
+            out.push('#');
+            if is_hex {
+                out.push('x');
             }
+            out.push_str(&digits);
+            if consumed_terminator {
+                out.push(';');
+            }
+        };
+
+        if digits.is_empty() {
+            emit_literal(&mut decoded);
             continue;
         }
 
         let radix = if is_hex { 16 } else { 10 };
-        let code = u32::from_str_radix(&digits, radix).map_err(|_| ())?;
-        let replacement = char::from_u32(code).ok_or(())?;
-        lazy_decoded_prefix(&mut decoded, input, idx).push(replacement);
-        changed = true;
+        // A numeric entity whose value overflows `u32` or is not a valid Unicode
+        // scalar (surrogate / above U+10FFFF) is preserved literally rather than
+        // dropping the whole candidate via `?`.
+        match u32::from_str_radix(&digits, radix)
+            .ok()
+            .and_then(char::from_u32)
+        {
+            Some(replacement) => {
+                lazy_decoded_prefix(&mut decoded, input, idx).push(replacement);
+                changed = true;
+            }
+            None => emit_literal(&mut decoded),
+        }
     }
 
     if changed {

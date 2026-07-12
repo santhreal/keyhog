@@ -1,5 +1,6 @@
 use keyhog_core::Chunk;
 use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
 
 const MAX_DECODED_CHUNKS_PER_ROOT: usize = 1000;
 const MAX_DECODED_TOTAL_BYTES: usize = 64 * 1024 * 1024;
@@ -22,10 +23,15 @@ pub(crate) fn decode_chunk(
     // buys almost nothing; the genuine cost (Caesar's 25× fan-out over the full
     // chunk) belongs gated at the Caesar decoder on its own alphabetic-run
     // precondition, not as a pipeline-wide recall hazard.
-    let mut decoded_chunks = Vec::new();
-    let mut queue = VecDeque::from([(chunk.clone(), 0usize)]);
-    // Use hash of data instead of full string to save memory on large files.
-    let mut seen = HashSet::from([hash_fast(chunk.data.as_bytes())]);
+    let mut decoded_chunks: Vec<Arc<Chunk>> = Vec::new();
+    let root = Arc::new(chunk.clone());
+    let mut queue = VecDeque::from([(Arc::clone(&root), 0usize)]);
+    // 128-bit content key instead of the full payload to save memory on large
+    // files. A single 64-bit FNV would silently drop a genuinely-distinct
+    // decoded payload on a hash collision (an unannotated recall loss, Law 10);
+    // the 128-bit key (see `dedup_key`) makes that vanishingly improbable
+    // without retaining the bytes.
+    let mut seen: HashSet<u128> = HashSet::from([dedup_key(chunk.data.as_bytes())]);
     let mut total_bytes = 0usize;
     // Count EVERY unique decoded chunk against the per-root fan-out cap,
     // not just the ones that pass the alphabet screen and get returned
@@ -77,7 +83,7 @@ pub(crate) fn decode_chunk(
                 );
                 crate::telemetry::record_decode_truncation();
                 extractor::clear_shared_candidates();
-                return decoded_chunks;
+                return unwrap_decoded_chunks(decoded_chunks);
             }
             let dec_t0 = prof_dec.then(std::time::Instant::now);
             let decoded_out = decoder.decode_chunk(&current);
@@ -107,9 +113,9 @@ pub(crate) fn decode_chunk(
                     );
                     crate::telemetry::record_decode_truncation();
                     extractor::clear_shared_candidates();
-                    return decoded_chunks;
+                    return unwrap_decoded_chunks(decoded_chunks);
                 }
-                if seen.insert(hash_fast(decoded.data.as_bytes())) {
+                if seen.insert(dedup_key(decoded.data.as_bytes())) {
                     // Optional sanitization (kimi-wave1 audit finding 5.1).
                     // When `validate=true`, drop decoded chunks containing
                     // NUL bytes - these are typically buggy-decoder output
@@ -150,21 +156,50 @@ pub(crate) fn decode_chunk(
                         );
                         crate::telemetry::record_decode_truncation();
                         extractor::clear_shared_candidates();
-                        return decoded_chunks;
+                        return unwrap_decoded_chunks(decoded_chunks);
                     }
 
                     if passes_screen {
-                        queue.push_back((decoded.clone(), depth + 1));
-                        decoded_chunks.push(decoded);
+                        let shared = Arc::new(decoded);
+                        queue.push_back((Arc::clone(&shared), depth + 1));
+                        decoded_chunks.push(shared);
                     } else {
-                        queue.push_back((decoded, depth + 1));
+                        queue.push_back((Arc::new(decoded), depth + 1));
                     }
                 }
             }
         }
     }
     extractor::clear_shared_candidates();
-    decoded_chunks
+    unwrap_decoded_chunks(decoded_chunks)
+}
+
+fn unwrap_decoded_chunks(chunks: Vec<Arc<Chunk>>) -> Vec<Chunk> {
+    chunks
+        .into_iter()
+        .map(|arc| Arc::try_unwrap(arc).unwrap_or_else(|shared| (*shared).clone()))
+        .collect()
+}
+
+/// Salt distinguishing the high 64 bits of [`dedup_key`] from the low. Any fixed
+/// non-empty byte string works; distinctness is what makes the two FNV passes
+/// independent enough that a 64-bit collision cannot become a 128-bit one.
+const DEDUP_KEY_SALT: &[u8] = &[0x9e, 0x37, 0x79, 0xb9];
+
+/// 128-bit content key for BFS decode dedup: the crate-canonical FNV-1a in the
+/// low 64 bits, a salted second FNV pass in the high 64 bits. Distinct decoded
+/// payloads collide only if they collide under BOTH passes — over the ≤1000 keys
+/// a single root can produce (`MAX_DECODED_CHUNKS_PER_ROOT`), the probability is
+/// ~n²/2¹²⁹, i.e. unreachable — so the dedup never silently drops a genuinely
+/// distinct payload (Law 10) while still keying on 16 bytes, not the payload.
+#[inline]
+fn dedup_key(data: &[u8]) -> u128 {
+    use crate::util_hash::FnvHasher;
+    let lo = hash_fast(data);
+    let mut hi = FnvHasher::new();
+    hi.write(DEDUP_KEY_SALT);
+    hi.write(data);
+    (u128::from(hi.finish()) << 64) | u128::from(lo)
 }
 
 mod extractor;

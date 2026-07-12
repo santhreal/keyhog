@@ -1,6 +1,5 @@
 use super::file_read::read_capped_file;
 use super::oci;
-use codewalk::{CodeWalker, WalkConfig};
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use std::path::{Component, Path, PathBuf};
 
@@ -27,8 +26,29 @@ where
         }
     }
 }
+#[derive(serde::Deserialize)]
+struct DockerRootMetadataFiles {
+    files: Vec<String>,
+}
 
-const DOCKER_ROOT_METADATA_FILES: &[&str] = &["manifest.json", "index.json", "oci-layout"];
+fn parse_docker_root_metadata_files(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<DockerRootMetadataFiles>(raw)
+        .map(|parsed| parsed.files)
+        .map_err(|error| error.to_string())
+}
+
+static DOCKER_ROOT_METADATA_FILES: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| {
+        match parse_docker_root_metadata_files(include_str!(
+            "../../../../rules/docker-root-metadata-files.toml"
+        )) {
+            Ok(files) => files,
+            Err(error) => panic!(
+                "rules/docker-root-metadata-files.toml is invalid: {error}. \
+                 Fix the bundled Tier-B docker-root metadata file list."
+            ),
+        }
+    });
 
 pub(super) fn archive_metadata_chunks(
     root_path: &Path,
@@ -36,7 +56,7 @@ pub(super) fn archive_metadata_chunks(
     limits: crate::SourceLimits,
 ) -> Result<Vec<Chunk>, SourceError> {
     let mut chunks = Vec::new();
-    for file_name in DOCKER_ROOT_METADATA_FILES {
+    for file_name in &*DOCKER_ROOT_METADATA_FILES {
         let metadata_path = root_path.join(file_name);
         if !metadata_path.exists() {
             continue;
@@ -69,7 +89,7 @@ pub(super) fn archive_metadata_chunks(
                 base_offset: 0,
                 base_line: 0,
                 source_type: "docker".into(),
-                path: Some(format!("{image}:metadata:{file_name}")),
+                path: Some(format!("{image}:metadata:{file_name}").into()),
                 commit: None,
                 author: None,
                 date: None,
@@ -156,7 +176,7 @@ pub(super) fn manifest_config_chunks(
                 base_offset: 0,
                 base_line: 0,
                 source_type: "docker".into(),
-                path: Some(format!("{image}:manifest[{idx}]:{config}")),
+                path: Some(format!("{image}:manifest[{idx}]:{config}").into()),
                 commit: None,
                 author: None,
                 date: None,
@@ -180,15 +200,7 @@ fn find_fallback_config_chunks(
     limits: crate::SourceLimits,
 ) -> Result<Vec<Chunk>, SourceError> {
     let mut config_paths = Vec::new();
-    let walker = CodeWalker::new(
-        root_path,
-        WalkConfig::default()
-            .follow_symlinks(false)
-            .respect_gitignore(false)
-            .skip_hidden(false)
-            .skip_binary(false)
-            .max_file_size(0),
-    );
+    let walker = super::exhaustive_archive_walker(root_path);
 
     for entry in walker.walk_iter() {
         let entry = match entry {
@@ -241,7 +253,7 @@ fn find_fallback_config_chunks(
                 base_offset: 0,
                 base_line: 0,
                 source_type: "docker".into(),
-                path: Some(format!("{image}:fallback-config[{idx}]:{label}")),
+                path: Some(format!("{image}:fallback-config[{idx}]:{label}").into()),
                 commit: None,
                 author: None,
                 date: None,

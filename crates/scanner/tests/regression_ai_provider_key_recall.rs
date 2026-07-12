@@ -38,10 +38,18 @@ fn gen(n: usize, seed: usize, charset: &[u8]) -> String {
         .collect()
 }
 fn alnum(n: usize, seed: usize) -> String {
-    gen(n, seed, b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
+    gen(
+        n,
+        seed,
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+    )
 }
 fn b64url(n: usize, seed: usize) -> String {
-    gen(n, seed, b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
+    gen(
+        n,
+        seed,
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+    )
 }
 
 /// A modern (non-api03) Anthropic key body: a leading uppercase char keeps it out
@@ -60,7 +68,9 @@ fn scan(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 fn surfaces_under(text: &str, detector: &str, needle: &str) -> bool {
-    scan(text).iter().any(|(id, cred)| id == detector && cred.contains(needle))
+    scan(text)
+        .iter()
+        .any(|(id, cred)| id == detector && cred.contains(needle))
 }
 fn fires(text: &str, detector: &str) -> bool {
     scan(text).iter().any(|(id, _)| id == detector)
@@ -71,37 +81,57 @@ fn fires(text: &str, detector: &str) -> bool {
 #[test]
 fn openai_project_key_surfaces() {
     let t = format!("sk-proj-{}", b64url(48, 1));
-    assert!(surfaces_under(&t, "openai-api-key", &t), "sk-proj- key must surface");
+    assert!(
+        surfaces_under(&t, "openai-api-key", &t),
+        "sk-proj- key must surface"
+    );
 }
 
 #[test]
 fn openai_service_account_key_surfaces() {
     let t = format!("sk-svcacct-{}", b64url(48, 2));
-    assert!(surfaces_under(&t, "openai-api-key", &t), "sk-svcacct- key must surface");
+    assert!(
+        surfaces_under(&t, "openai-api-key", &t),
+        "sk-svcacct- key must surface"
+    );
 }
 
 #[test]
 fn openai_admin_key_surfaces() {
     let t = format!("sk-admin-{}", b64url(48, 3));
-    assert!(surfaces_under(&t, "openai-api-key", &t), "sk-admin- key must surface");
+    assert!(
+        surfaces_under(&t, "openai-api-key", &t),
+        "sk-admin- key must surface"
+    );
 }
 
 #[test]
 fn openai_legacy_48_char_key_surfaces() {
     let t = format!("sk-{}", alnum(48, 4));
-    assert!(surfaces_under(&t, "openai-api-key", &t), "legacy sk-<48 alnum> key must surface");
+    assert!(
+        surfaces_under(&t, "openai-api-key", &t),
+        "legacy sk-<48 alnum> key must surface"
+    );
 }
 
 #[test]
 fn openai_project_key_env_anchor_surfaces() {
     let t = format!("sk-proj-{}", b64url(48, 5));
-    assert!(surfaces_under(&format!("OPENAI_API_KEY={t}"), "openai-api-key", &t));
+    assert!(surfaces_under(
+        &format!("OPENAI_API_KEY={t}"),
+        "openai-api-key",
+        &t
+    ));
 }
 
 #[test]
 fn openai_project_key_in_yaml_surfaces() {
     let t = format!("sk-proj-{}", b64url(48, 6));
-    assert!(surfaces_under(&format!("openai:\n  api_key: {t}\n"), "openai-api-key", &t));
+    assert!(surfaces_under(
+        &format!("openai:\n  api_key: {t}\n"),
+        "openai-api-key",
+        &t
+    ));
 }
 
 // ── OpenAI boundaries ─────────────────────────────────────────────────────────
@@ -142,7 +172,10 @@ fn openai_project_below_40_does_not_fire() {
 
 #[test]
 fn openai_sk_prose_mention_does_not_fire() {
-    assert!(!fires("Paste your sk- secret key from the OpenAI dashboard here.", "openai-api-key"));
+    assert!(!fires(
+        "Paste your sk- secret key from the OpenAI dashboard here.",
+        "openai-api-key"
+    ));
 }
 
 // ── Anthropic api03 form (pattern 1) ──────────────────────────────────────────
@@ -150,19 +183,30 @@ fn openai_sk_prose_mention_does_not_fire() {
 #[test]
 fn anthropic_api03_key_surfaces() {
     let t = format!("sk-ant-api03-{}", b64url(90, 12));
-    assert!(surfaces_under(&t, "anthropic-api-key", &t), "sk-ant-api03- key must surface");
+    assert!(
+        surfaces_under(&t, "anthropic-api-key", &t),
+        "sk-ant-api03- key must surface"
+    );
 }
 
 #[test]
 fn anthropic_api03_key_env_anchor_surfaces() {
     let t = format!("sk-ant-api03-{}", b64url(90, 13));
-    assert!(surfaces_under(&format!("ANTHROPIC_API_KEY={t}"), "anthropic-api-key", &t));
+    assert!(surfaces_under(
+        &format!("ANTHROPIC_API_KEY={t}"),
+        "anthropic-api-key",
+        &t
+    ));
 }
 
 #[test]
 fn anthropic_api03_key_in_json_surfaces() {
     let t = format!("sk-ant-api03-{}", b64url(90, 14));
-    assert!(surfaces_under(&format!("{{\"anthropic_api_key\":\"{t}\"}}"), "anthropic-api-key", &t));
+    assert!(surfaces_under(
+        &format!("{{\"anthropic_api_key\":\"{t}\"}}"),
+        "anthropic-api-key",
+        &t
+    ));
 }
 
 #[test]
@@ -182,13 +226,20 @@ fn anthropic_api03_max_120_surfaces() {
 #[test]
 fn anthropic_modern_key_surfaces() {
     let t = anthropic_modern(90, 17);
-    assert!(surfaces_under(&t, "anthropic-api-key", &t), "modern sk-ant- key must surface");
+    assert!(
+        surfaces_under(&t, "anthropic-api-key", &t),
+        "modern sk-ant- key must surface"
+    );
 }
 
 #[test]
 fn anthropic_modern_key_env_anchor_surfaces() {
     let t = anthropic_modern(90, 18);
-    assert!(surfaces_under(&format!("ANTHROPIC_API_KEY={t}"), "anthropic-api-key", &t));
+    assert!(surfaces_under(
+        &format!("ANTHROPIC_API_KEY={t}"),
+        "anthropic-api-key",
+        &t
+    ));
 }
 
 #[test]
@@ -227,7 +278,10 @@ fn anthropic_api03_broken_by_space_does_not_fire() {
     // pattern-1 (80) and pattern-2 (80) minimums.
     let body = b64url(90, 23);
     let broken = format!("{} {}", &body[..40], &body[41..]);
-    assert!(!fires(&format!("sk-ant-api03-{broken}"), "anthropic-api-key"));
+    assert!(!fires(
+        &format!("sk-ant-api03-{broken}"),
+        "anthropic-api-key"
+    ));
 }
 
 // ── cross: OpenAI + Anthropic co-surface in one chunk ─────────────────────────
@@ -237,8 +291,14 @@ fn openai_and_anthropic_api03_cosurface() {
     let o = format!("sk-proj-{}", b64url(48, 24));
     let a = format!("sk-ant-api03-{}", b64url(90, 25));
     let text = format!("OPENAI_API_KEY={o}\nANTHROPIC_API_KEY={a}\n");
-    assert!(surfaces_under(&text, "openai-api-key", &o), "openai surfaces alongside anthropic");
-    assert!(surfaces_under(&text, "anthropic-api-key", &a), "anthropic surfaces alongside openai");
+    assert!(
+        surfaces_under(&text, "openai-api-key", &o),
+        "openai surfaces alongside anthropic"
+    );
+    assert!(
+        surfaces_under(&text, "anthropic-api-key", &a),
+        "anthropic surfaces alongside openai"
+    );
 }
 
 #[test]
@@ -246,6 +306,12 @@ fn openai_legacy_and_anthropic_modern_cosurface() {
     let o = format!("sk-{}", alnum(48, 26));
     let a = anthropic_modern(90, 27);
     let text = format!("legacy={o}\nmodern={a}\n");
-    assert!(surfaces_under(&text, "openai-api-key", &o), "legacy openai surfaces alongside modern anthropic");
-    assert!(surfaces_under(&text, "anthropic-api-key", &a), "modern anthropic surfaces alongside legacy openai");
+    assert!(
+        surfaces_under(&text, "openai-api-key", &o),
+        "legacy openai surfaces alongside modern anthropic"
+    );
+    assert!(
+        surfaces_under(&text, "anthropic-api-key", &a),
+        "modern anthropic surfaces alongside legacy openai"
+    );
 }

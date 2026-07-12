@@ -4,7 +4,7 @@
 //! Stripe direct-prefix duplicate filter. It stays separate from decode
 //! recursion and ML scoring so the postprocess folder has one owner per job.
 
-use super::{scan_postprocess, scan_postprocess_profile, CompiledScanner};
+use super::{absolute_offset, scan_postprocess, scan_postprocess_profile, CompiledScanner};
 use crate::types::{ScanState, ScannerPreprocessedText};
 use keyhog_core::Chunk;
 use std::sync::atomic::Ordering::Relaxed;
@@ -119,9 +119,13 @@ impl CompiledScanner {
                                     filtered_group.reserve(group.len());
                                     filtered_group.extend(group.iter().copied().filter(
                                         |&(_, pos)| {
-                                            let absolute_offset =
-                                                pos as usize + chunk.metadata.base_offset;
-                                            !offsets.contains(&absolute_offset)
+                                            // Overflow (impossible on real input) can't collide
+                                            // with an already-emitted stripe-hot offset: keep it.
+                                            absolute_offset(
+                                                chunk.metadata.base_offset,
+                                                pos as usize,
+                                            )
+                                            .map_or(true, |ao| !offsets.contains(&ao))
                                         },
                                     ));
                                     if filtered_group.is_empty() {
@@ -200,14 +204,19 @@ impl CompiledScanner {
             {
                 continue;
             }
-            let entry = if pat_idx < self.ac_map.len() {
-                &self.ac_map[pat_idx]
-            } else {
-                let phase2_idx = pat_idx - self.ac_map.len();
-                if phase2_idx >= self.phase2_patterns.len() {
-                    continue;
-                }
-                &self.phase2_patterns[phase2_idx].0
+            // `confirmed_patterns` is ac_map-only: every production caller
+            // filters `idx < ac_map.len()` (backend_triggered.rs). This bound is
+            // load-bearing — `is_stripe_hot_confirmed_pattern` and
+            // `stripe_hot_confirmed_by_pattern` are index-parallel to `ac_map`
+            // and panic on any phase-2 index. Assert the contract; fail closed
+            // (skip) in release rather than index out of bounds.
+            debug_assert!(
+                pat_idx < self.ac_map.len(),
+                "extract_confirmed_patterns got phase-2 index {pat_idx} (ac_map len {}); callers must filter to ac_map-only",
+                self.ac_map.len()
+            );
+            let Some(entry) = self.ac_map.get(pat_idx) else {
+                continue;
             };
             let t0 = if prof {
                 Some(std::time::Instant::now())

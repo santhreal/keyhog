@@ -19,7 +19,7 @@ fn binary_strings_chunk_source_type() {
         .next()
         .expect("chunk")
         .expect("ok");
-    assert_eq!(chunk.metadata.source_type, "binary:strings");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "binary:strings");
 }
 
 #[cfg(not(feature = "binary"))]

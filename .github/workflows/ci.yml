@@ -133,6 +133,12 @@ jobs:
       - run: cargo check -p keyhog-core --all-targets
       - run: cargo test -p keyhog-scanner --lib
       - run: cargo test -p keyhog --lib
+      # verifier + sources inline unit tests: previously only their `--test`
+      # aggregators ran in CI, so a lib-internal unit test (e.g. the
+      # verification-cache eviction contracts) was never executed on the
+      # default build.
+      - run: cargo test -p keyhog-verifier --lib
+      - run: cargo test -p keyhog-sources --lib
 
       # End-to-end tests against the built binary. Exercises the
       # full CLI surface (JSON shape, exit codes, --no-suppress-
@@ -471,8 +477,63 @@ jobs:
         run: cargo check -p keyhog --features full
       - name: minimal (no defaults, no features)
         run: cargo check -p keyhog --no-default-features
-      - name: scanner standalone, all data features
-        run: cargo check -p keyhog-scanner --features "entropy,multiline,ml,decode"
+      # EVERY feature of the two richest feature-gated crates, compiled IN
+      # ISOLATION. Checking features only in combination (the `default`/`full`
+      # steps above, or a hand-picked `entropy,ml,decode` set) MASKS the
+      # cross-feature coupling bug this job exists to catch: a helper / re-export
+      # hosted in — or gated to — one feature's module but CALLED by code active
+      # under another feature breaks a single-feature build while every combined
+      # build stays green. Three such bugs shipped precisely because this job
+      # only spot-checked a subset (sources `media_type` gated to cloud yet
+      # called by `web`; the scanner `entropy::scanner` re-export gated to
+      # simd/gpu/entropy yet used by the unconditional testing facade under
+      # ml/decode/multiline/simdsieve). Loop the FULL feature list per crate so a
+      # narrower-than-its-callers gate can never regress a single-feature
+      # consumer again. Keep these green.
+      - name: keyhog-sources — every feature compiles standalone
+        run: |
+          set -euo pipefail
+          # ZERO features: the always-on filesystem/PDF/HAR path must build with
+          # no source features enabled (the minimal-consumer contract).
+          echo "::group::keyhog-sources --no-default-features (zero features)"
+          cargo check -p keyhog-sources --no-default-features
+          echo "::endgroup::"
+          for f in git web github gitlab bitbucket slack azure gcs s3 docker binary; do
+            echo "::group::keyhog-sources --features $f"
+            cargo check -p keyhog-sources --no-default-features --features "$f"
+            echo "::endgroup::"
+          done
+      - name: keyhog-scanner — every CPU feature compiles standalone
+        run: |
+          set -euo pipefail
+          # ZERO features first: `entropy`/`decode`/… are declared OPTIONAL, so
+          # the lib MUST build with none of them — else the optional-feature
+          # claim is a lie (the entropy::scanner re-export was once gated
+          # narrower than the unconditional testing facade, breaking this).
+          echo "::group::keyhog-scanner --no-default-features (zero features)"
+          cargo check -p keyhog-scanner --no-default-features
+          echo "::endgroup::"
+          for f in ml entropy decode multiline simd simd_scan simdsieve ci-lean; do
+            echo "::group::keyhog-scanner --features $f"
+            cargo check -p keyhog-scanner --no-default-features --features "$f"
+            echo "::endgroup::"
+          done
+      # The INSTALLABLE BINARY with each user-facing source feature alone — the
+      # surface a user actually gets from `cargo install keyhog
+      # --no-default-features --features github`. The lib loops above cover the
+      # library layer; this catches the CLI layer, where a shared clap
+      # value-parser / arg helper hosted behind one source feature is referenced
+      # by another's args (e.g. `parse_positive_limit_count` was gated to `git`
+      # yet used by the s3/gcs/azure and github/gitlab/bitbucket limit args, so
+      # `--features github` alone failed to compile).
+      - name: keyhog binary — every user-facing source feature compiles standalone
+        run: |
+          set -euo pipefail
+          for f in git web github gitlab bitbucket azure gcs s3 docker binary verify; do
+            echo "::group::keyhog --features $f"
+            cargo check -p keyhog --no-default-features --features "$f"
+            echo "::endgroup::"
+          done
       - name: scanner artifact writer release command
         run: cargo run -p keyhog-scanner --bin keyhog-scanner-artifacts --no-default-features --features ml,entropy,decode,multiline,simdsieve,simd -- --out-dir "$RUNNER_TEMP/keyhog-gpu-literals"
 

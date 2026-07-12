@@ -11,6 +11,7 @@ const CRITICAL: &str = "1;31";
 const HIGH: &str = "31";
 const MEDIUM: &str = "33";
 const LOW: &str = "36";
+const GREEN: &str = "32";
 const CLIENT_SAFE: &str = "2;36";
 const INFO: &str = "90";
 const LIVE: &str = "1;31;43";
@@ -50,7 +51,7 @@ pub(crate) fn warning(text: &str, color: bool) -> String {
 }
 
 pub(crate) fn success(text: &str, color: bool) -> String {
-    paint(text, HIGH, color)
+    paint(text, GREEN, color)
 }
 
 pub(crate) fn danger(text: &str, color: bool) -> String {
@@ -65,10 +66,15 @@ pub(crate) fn remediation_action(text: &str, color: bool) -> String {
     paint(text, ACTION, color)
 }
 
+/// Confidence at or above this renders as the HIGH tier in the report bar.
+const HIGH_CONFIDENCE_TIER: f64 = 0.8;
+/// Confidence at or above this (but below HIGH) renders as the MEDIUM tier.
+const MEDIUM_CONFIDENCE_TIER: f64 = 0.5;
+
 pub(crate) fn confidence_bar(text: &str, confidence: f64, color: bool) -> String {
-    let style = if confidence >= 0.8 {
+    let style = if confidence >= HIGH_CONFIDENCE_TIER {
         HIGH
-    } else if confidence >= 0.5 {
+    } else if confidence >= MEDIUM_CONFIDENCE_TIER {
         MEDIUM
     } else {
         DIM
@@ -102,7 +108,7 @@ pub(crate) fn severity_label(severity: Severity, color: bool) -> String {
 pub(crate) fn verification_label(result: &VerificationResult, color: bool) -> String {
     match result {
         VerificationResult::Live => paint("LIVE", LIVE, color),
-        VerificationResult::Revoked => paint("revoked", MEDIUM, color),
+        VerificationResult::Revoked => warning("revoked", color),
         VerificationResult::Dead => success("dead", color),
         VerificationResult::RateLimited => warning("limited", color),
         VerificationResult::Error(_) => warning("error", color),

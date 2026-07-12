@@ -80,3 +80,101 @@ fn secret_suffix_rejects_non_credential_keys() {
                                        // `passwd`/`pwd` only count as a full segment, NOT as a trailing substring.
     assert!(!has_suffix("mypasswd"));
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin one example per rule; these SWEEP the whole pipeline.
+// `normalize` is exercised by IMPLEMENTATION-INDEPENDENT invariants (a valid
+// output is a clean snake token; Some iff an alphanumeric survives; idempotent;
+// pure lowercasing on clean alphanumerics) — no mirror-oracle, so a source
+// regression cannot hide behind a matching bug. `has_suffix` is exercised by
+// CONSTRUCTIVE differentials that isolate the subtle asymmetry:
+// `key`/`secret`/`token`/`password` match as a TRAILING substring while
+// `passwd`/`pwd` match ONLY as a full `_`-delimited segment. All traced against
+// engine/phase2_generic/keywords.rs. No proptest before.
+
+use proptest::prelude::*;
+
+/// Suffixes that match via `ends_with` (a trailing substring, not a segment).
+const ENDS_WITH_FAMILY: &[&str] = &["key", "secret", "token", "password"];
+
+/// Suffixes that match ONLY as a full `_`-delimited last segment.
+const SEGMENT_ONLY_FAMILY: &[&str] = &["passwd", "pwd"];
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(3_000))]
+
+    /// A produced token contains ONLY `[a-z0-9_]`, never starts/ends with `_`,
+    /// never contains a doubled `__` (runs collapse), and is never longer than the
+    /// input. Holds for arbitrary Unicode.
+    #[test]
+    fn normalize_output_is_a_clean_snake_token(keyword in "(?s).{0,40}") {
+        if let Some(out) = normalize(&keyword) {
+            prop_assert!(
+                out.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'),
+                "invalid char in {:?}",
+                out
+            );
+            prop_assert!(
+                !out.starts_with('_') && !out.ends_with('_'),
+                "edge `_` in {:?}",
+                out
+            );
+            prop_assert!(!out.contains("__"), "doubled `_` in {:?}", out);
+            prop_assert!(out.len() <= keyword.len(), "grew {:?} -> {:?}", keyword, out);
+        }
+    }
+
+    /// A token is produced IFF the input carries at least one ASCII alphanumeric —
+    /// separators/other bytes alone normalize to nothing.
+    #[test]
+    fn normalize_is_some_iff_input_has_an_alphanumeric(keyword in "(?s).{0,40}") {
+        let has_alnum = keyword.bytes().any(|b| b.is_ascii_alphanumeric());
+        prop_assert_eq!(normalize(&keyword).is_some(), has_alnum);
+    }
+
+    /// Normalization is IDEMPOTENT: a token already in normalized form maps to
+    /// itself.
+    #[test]
+    fn normalize_is_idempotent(keyword in "(?s).{0,40}") {
+        if let Some(out) = normalize(&keyword) {
+            let renormalized = normalize(&out);
+            prop_assert_eq!(renormalized.as_deref(), Some(out.as_str()));
+        }
+    }
+
+    /// On a separator-free alphanumeric token, normalization is EXACTLY ASCII
+    /// lowercasing (nothing dropped, no `_` inserted).
+    #[test]
+    fn normalize_is_lowercasing_on_clean_alphanumerics(base in "[A-Za-z0-9]{1,12}") {
+        let lowered = base.to_ascii_lowercase();
+        let got = normalize(&base);
+        prop_assert_eq!(got.as_deref(), Some(lowered.as_str()));
+    }
+
+    /// The `key`/`secret`/`token`/`password` family matches as a TRAILING
+    /// substring: any token ending in one of them has a secret suffix.
+    #[test]
+    fn ends_with_family_always_has_a_secret_suffix(
+        base in "[a-z]{0,8}",
+        i in 0usize..ENDS_WITH_FAMILY.len(),
+    ) {
+        let token = format!("{base}{}", ENDS_WITH_FAMILY[i]);
+        prop_assert!(has_suffix(&token));
+    }
+
+    /// `passwd`/`pwd` match ONLY as a full `_`-delimited last segment, NEVER as a
+    /// trailing substring: `<base>_pwd` has the suffix, `<base>pwd` does not (the
+    /// concatenated form ends in `wd`, distinct from every `ends_with` suffix).
+    #[test]
+    fn passwd_family_matches_only_as_a_full_segment(
+        base in "[a-z]{1,8}",
+        j in 0usize..SEGMENT_ONLY_FAMILY.len(),
+    ) {
+        let seg = SEGMENT_ONLY_FAMILY[j];
+        let as_segment = format!("{base}_{seg}");
+        let as_substring = format!("{base}{seg}");
+        prop_assert!(has_suffix(&as_segment));
+        prop_assert!(!has_suffix(&as_substring));
+    }
+}

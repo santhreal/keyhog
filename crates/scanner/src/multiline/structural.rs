@@ -9,39 +9,47 @@ use crate::shared_regexes::ASSIGN_RE;
 use regex::Regex;
 use std::sync::LazyLock;
 
-static CONCAT_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    match Regex::new(
-        r#"(?i)^\s*[a-z0-9_\-\.]{2,64}\s*[:=]\s*([a-z0-9_\-]{2,32}(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8})\s*;?\s*$"#,
-    ) {
-        Ok(re) => Some(re),
-        Err(error) => {
-            crate::prefilter_degrade::warn_prefilter_disabled(
-                "multiline concatenation regex (CONCAT_RE)",
-                &error,
-            );
-            None
-        }
+/// Variable-reference concatenation pattern: `lhs = ident (+ ident){1,8}`, RHS
+/// captured. Single owner for both `resolve_concat_reference` (uses the capture)
+/// and `config::has_var_ref_concat_line` (uses `is_match`; the capture group is
+/// inert for a presence test), so the two call sites can never drift.
+// Law 10 (build-bug ⇒ fail closed): both of these regexes are COMPILE-TIME
+// CONSTANT patterns baked into the binary — no user/attacker input reaches
+// `Regex::new`. A constant pattern either always compiles or never does, so a
+// failure is a BUILD defect (someone edited the literal into an invalid regex),
+// not a runtime condition. The old path called `warn_prefilter_disabled` and
+// returned `None`, which SILENTLY DISABLED the multiline var-reference /
+// template-interpolation reassembly surface for the whole process — a recall
+// hole hidden behind one log line. PANIC in the initializer instead so the
+// defect is caught at first use and can never ship as a quietly-degraded
+// scanner. (`warn_prefilter_disabled` + `None` remains correct only for
+// USER-supplied / data-driven patterns that can legitimately be malformed at
+// runtime — not for these compiled-in literals.)
+pub(super) static CONCAT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    let pattern = r#"(?i)^\s*[a-z0-9_\-\.]{2,64}\s*[:=]\s*([a-z0-9_\-]{2,32}(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8})\s*;?\s*$"#;
+    match Regex::new(pattern) {
+        Ok(re) => re,
+        Err(error) => panic!(
+            "multiline concatenation regex (CONCAT_RE) is a compiled-in constant \
+             and failed to build: {error}. Fix the pattern literal."
+        ),
     }
 });
 
-static TVAR_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    match Regex::new(
-        r#"(?i)([a-z0-9_$]{1,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_\-\.]{2,})["'`]\s*;?\s*$"#,
-    ) {
-        Ok(re) => Some(re),
-        Err(error) => {
-            crate::prefilter_degrade::warn_prefilter_disabled(
-                "multiline template-variable regex (TVAR_RE)",
-                &error,
-            );
-            None
-        }
+static TVAR_RE: LazyLock<Regex> = LazyLock::new(|| {
+    let pattern = r#"(?i)([a-z0-9_$]{1,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_\-\.]{2,})["'`]\s*;?\s*$"#;
+    match Regex::new(pattern) {
+        Ok(re) => re,
+        Err(error) => panic!(
+            "multiline template-variable regex (TVAR_RE) is a compiled-in constant \
+             and failed to build: {error}. Fix the pattern literal."
+        ),
     }
 });
 
 pub(super) fn warm_runtime_regexes() {
-    let _ = CONCAT_RE.as_ref(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
-    let _ = TVAR_RE.as_ref(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
+    LazyLock::force(&CONCAT_RE); // eager init (warm-up); fail-closed on build defect
+    LazyLock::force(&TVAR_RE); // eager init (warm-up); fail-closed on build defect
 }
 
 pub(super) fn collect_structural_fragments(
@@ -50,9 +58,7 @@ pub(super) fn collect_structural_fragments(
     initial_offset: usize,
     fragment_cache: &FragmentCache,
 ) -> (Vec<String>, Vec<LineMapping>) {
-    let Some(assign_re) = ASSIGN_RE.as_ref() else {
-        return (Vec::new(), Vec::new());
-    };
+    let assign_re = &*ASSIGN_RE;
 
     // Minimum length for a reassembled cross-line fragment (parenthesized
     // implicit block, `+`-concat reference, template interpolation, or
@@ -182,6 +188,11 @@ pub(super) fn collect_structural_fragments(
     // surface the secret - better than the previous behavior of missing it
     // entirely.
     const SYNTHETIC_BASE_LINE: usize = 1_000_000_000;
+    // Distinct base so template-pass synthetic line numbers never collide with a
+    // concat-pass entry (`SYNTHETIC_BASE_LINE + 0`), which would merge two
+    // unrelated reassembled fragments into one line window in
+    // `line_window_offsets`.
+    const SYNTHETIC_TEMPLATE_BASE_LINE: usize = 2_000_000_000;
     for (offset_idx, (index, joined)) in lines
         .iter()
         .enumerate()
@@ -209,19 +220,20 @@ pub(super) fn collect_structural_fragments(
     // pass (keeps cold-path JS/TS scanning free of the cost).
     if lines.iter().any(|line| line.contains("}${")) {
         let tmpl_vars = collect_template_vars(lines);
-        for (index, joined) in lines
+        for (offset_idx, (index, joined)) in lines
             .iter()
             .enumerate()
             .filter_map(|(index, line)| {
                 resolve_template_reference(line, &tmpl_vars).map(|joined| (index, joined))
             })
             .filter(|(_, joined)| joined.len() >= MIN_STRUCTURAL_FRAGMENT_LEN)
+            .enumerate()
         {
             structural_joined.push(joined.clone());
             structural_mappings.push(LineMapping {
                 start_offset: current_struct_offset,
                 end_offset: current_struct_offset + joined.len(),
-                line_number: SYNTHETIC_BASE_LINE,
+                line_number: SYNTHETIC_TEMPLATE_BASE_LINE + offset_idx,
                 original_start_offset: source_line_offset_or_record_gap(source_line_offsets, index),
             });
             current_struct_offset += joined.len() + 1;
@@ -270,8 +282,7 @@ fn resolve_concat_reference(
     line: &str,
     var_values: &std::collections::HashMap<String, (usize, String)>,
 ) -> Option<String> {
-    let re = CONCAT_RE.as_ref()?;
-    let caps = re.captures(line)?;
+    let caps = CONCAT_RE.captures(line)?;
     let target_name = inline_array_assignment_name(line)?;
     let rhs = caps.get(1)?.as_str();
     let parts: Vec<&str> = rhs.split('+').map(str::trim).collect();
@@ -334,8 +345,19 @@ pub(crate) fn resolve_template_reference(
             chars.next(); // consume '{'
             let mut inner = String::new();
             let mut depth = 1;
+            let mut in_str: Option<char> = None;
             for c in chars.by_ref() {
-                if c == '{' {
+                // Track string spans so a `{`/`}` inside a quoted literal
+                // (`${"a}b"}`) does not miscount the brace depth and end the
+                // interpolation early — mirrors the string-aware skip in
+                // string_extract::extract_template_literal_continuation.
+                if let Some(q) = in_str {
+                    if c == q {
+                        in_str = None;
+                    }
+                } else if c == '"' || c == '\'' || c == '`' {
+                    in_str = Some(c);
+                } else if c == '{' {
                     depth += 1;
                 } else if c == '}' {
                     depth -= 1;
@@ -373,12 +395,10 @@ pub(crate) fn resolve_template_reference(
 /// present, so the extra regex never runs on ordinary code.
 fn collect_template_vars(lines: &[&str]) -> std::collections::HashMap<String, String> {
     let mut map = std::collections::HashMap::new();
-    if let Some(re) = TVAR_RE.as_ref() {
-        for line in lines {
-            if let Some(caps) = re.captures(line) {
-                if let (Some(name), Some(value)) = (caps.get(1), caps.get(2)) {
-                    map.insert(name.as_str().to_string(), value.as_str().to_string());
-                }
+    for line in lines {
+        if let Some(caps) = TVAR_RE.captures(line) {
+            if let (Some(name), Some(value)) = (caps.get(1), caps.get(2)) {
+                map.insert(name.as_str().to_string(), value.as_str().to_string());
             }
         }
     }
@@ -390,17 +410,39 @@ fn is_related_variable(v1: &str, v2: &str) -> bool {
 }
 
 fn join_inline_array_strings(line: &str) -> String {
+    // Only join the quoted literals INSIDE the `[...]` array body. Scanning the
+    // whole line would splice a quoted LHS key (`"api_key": ["a", "b"]`) or a
+    // bare single-string assignment (`key = "value"`, no array) into the
+    // reassembled candidate — corrupting the value and emitting phantom
+    // duplicates of secrets the per-line chain already handles. No `[` means
+    // this is not an inline array.
+    let Some(open) = line.find('[') else {
+        return String::new();
+    };
+    let inner = match line.rfind(']') {
+        Some(close) if close > open => &line[open + 1..close],
+        _ => &line[open + 1..],
+    };
+
     let mut array_joined = String::new();
     let mut in_str = false;
     let mut quote_char = '\0';
     let mut current_str = String::new();
+    let mut escaped = false;
 
-    for ch in line.chars() {
+    for ch in inner.chars() {
         if !in_str {
             if ch == '"' || ch == '\'' || ch == '`' {
                 in_str = true;
                 quote_char = ch;
+                escaped = false;
             }
+        } else if escaped {
+            current_str.push(ch);
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+            current_str.push(ch);
         } else if ch == quote_char {
             in_str = false;
             array_joined.push_str(&current_str);

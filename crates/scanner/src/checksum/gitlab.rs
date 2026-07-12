@@ -42,7 +42,7 @@ fn gitlab_body_charset_ok(payload: &str) -> bool {
 
 impl ChecksumValidator for GitlabTokenValidator {
     fn validate(&self, credential: &str) -> ChecksumResult {
-        if let Some(payload) = credential.strip_prefix("glpat-") {
+        if let Some(payload) = credential.strip_prefix(super::prefixes::GITLAB_PAT) {
             if !gitlab_body_charset_ok(payload) {
                 return ChecksumResult::Invalid;
             }
@@ -58,8 +58,8 @@ impl ChecksumValidator for GitlabTokenValidator {
             };
         }
         if let Some(payload) = credential
-            .strip_prefix("glcbt-")
-            .or_else(|| credential.strip_prefix("glrt-"))
+            .strip_prefix(super::prefixes::GITLAB_CI_BUILD_TOKEN)
+            .or_else(|| credential.strip_prefix(super::prefixes::GITLAB_RUNNER_TOKEN))
         {
             if !gitlab_body_charset_ok(payload) {
                 return ChecksumResult::Invalid;

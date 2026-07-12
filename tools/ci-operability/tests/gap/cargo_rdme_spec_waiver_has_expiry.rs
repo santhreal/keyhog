@@ -1,11 +1,7 @@
 //! KH-GAP-111: cargo-rdme README SPEC waiver must document owner, reason, and expiry.
 
-#[path = "support/mod.rs"]
-mod support;
-
-use support::spec_waiver::{repo_root, spec_waiver_active};
-
-const WAIVER_REL: &str = "tools/ci-operability/spec_waivers/cargo_rdme_readme_contract.toml";
+use super::support::spec_waiver::spec_waiver_active;
+use super::support::{repo_root, CARGO_RDME_WAIVER as WAIVER_REL};
 
 #[test]
 fn cargo_rdme_spec_waiver_has_expiry() {

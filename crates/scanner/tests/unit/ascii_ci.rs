@@ -1,8 +1,8 @@
 //! Migrated from src/ascii_ci.rs
 
 use keyhog_scanner::testing::ascii_ci::{
-    ci_find, ci_find_at, ci_find_nonempty, contains_path_segment, contains_path_segment_two,
-    extend_ascii_lowercase_from, has_ascii_uppercase,
+    ci_find, ci_find_all, ci_find_at, ci_find_nonempty, contains_path_segment,
+    contains_path_segment_two, extend_ascii_lowercase_from, has_ascii_uppercase,
 };
 
 #[test]
@@ -308,6 +308,114 @@ fn ci_find_at_returns_first_of_multiple_occurrences() {
 #[test]
 fn ci_find_at_matches_at_the_very_end() {
     assert_eq!(ci_find_at(b"xxxxAB", b"ab"), Some(4));
+}
+
+// ---- Rare-byte anchoring: the O(n·m) first-byte-DoS defense ----------------
+
+#[test]
+fn ci_find_at_anchors_on_rare_byte_returns_correct_offset() {
+    // `api_key` anchors the SIMD skim on its rarest byte `_` (index 3), not the
+    // first byte `a`. The returned offset must still be the window START, not the
+    // anchor-byte position — regression guard on the `hit - anchor` arithmetic.
+    assert_eq!(ci_find_at(b"api_key=v", b"api_key"), Some(0));
+    assert_eq!(ci_find_at(b"xxapi_key", b"api_key"), Some(2));
+    assert_eq!(ci_find_at(b"PREFIX_API_KEY", b"api_key"), Some(7));
+}
+
+#[test]
+fn ci_find_at_skips_spurious_early_anchor_hit() {
+    // A leading `_` (offset 0) is an anchor-byte hit whose window would start
+    // before 0 (`hit < anchor`); it must be skipped WITHOUT masking the real
+    // match at offset 1 whose own `_` sits at offset 4.
+    assert_eq!(ci_find_at(b"_api_key", b"api_key"), Some(1));
+}
+
+#[test]
+fn ci_find_at_finds_match_after_long_first_byte_run() {
+    // The exact DoS shape: a long run of the needle's FIRST byte (`a`) followed
+    // by a real match. Old first-byte anchoring made every offset a candidate
+    // (O(n·m)); rare-byte anchoring on `_` skims straight to the match. Pins that
+    // the perf fix did not change the found offset.
+    let mut hay = vec![b'a'; 100_000];
+    hay.extend_from_slice(b"api_key");
+    assert_eq!(ci_find_at(&hay, b"api_key"), Some(100_000));
+    // The same buffer with NO match must report absence (and, per the timeout
+    // regression test, do so in microseconds rather than ~170ms).
+    let all_a = vec![b'a'; 100_000];
+    assert_eq!(ci_find_at(&all_a, b"api_key"), None);
+}
+
+#[test]
+fn ci_find_at_rare_byte_anchor_agrees_with_naive_search() {
+    // Differential: the rare-byte skim must agree with a naive case-insensitive
+    // window scan for every offset, across needles whose rarest byte is first,
+    // middle, and last.
+    let naive = |hay: &[u8], needle: &[u8]| -> Option<usize> {
+        if needle.is_empty() || hay.len() < needle.len() {
+            return None;
+        }
+        (0..=hay.len() - needle.len())
+            .find(|&i| hay[i..i + needle.len()].eq_ignore_ascii_case(needle))
+    };
+    let cases: [(&[u8], &[u8]); 6] = [
+        (b"a mixed ApI_kEy here", b"api_key"),
+        (b"zzsecretzz", b"secret"),
+        (b"TOKEN at the front", b"token"),
+        (b"ends with password", b"password"),
+        (b"no needle present", b"credential"),
+        (b"kkkkkkkkkktoken", b"token"), // repeated non-first needle byte
+    ];
+    for (hay, needle) in cases {
+        assert_eq!(
+            ci_find_at(hay, needle),
+            naive(hay, needle),
+            "rare-byte skim diverged from naive scan for {:?}",
+            std::str::from_utf8(needle).unwrap()
+        );
+    }
+}
+
+#[test]
+fn ci_find_all_yields_every_ascending_overlapping_match() {
+    // Overlapping matches each surface (needle `aa` in `aaaa` → 0,1,2).
+    assert_eq!(ci_find_all(b"aaaa", b"aa"), vec![0, 1, 2]);
+    // Case-insensitive, ascending, non-overlapping.
+    assert_eq!(ci_find_all(b"ABxxabxxAb", b"ab"), vec![0, 4, 8]);
+    // Rare-byte anchor still finds every SRI prefix in a mixed buffer.
+    assert_eq!(ci_find_all(b"sha256-A sha256-B", b"sha256-"), vec![0, 9]);
+    // Absent / empty needle / too-long needle all yield nothing.
+    assert!(ci_find_all(b"nothing", b"zzz").is_empty());
+    assert!(ci_find_all(b"anything", b"").is_empty());
+    assert!(ci_find_all(b"hi", b"hello").is_empty());
+}
+
+#[test]
+fn ci_find_all_first_element_agrees_with_ci_find_at() {
+    // `ci_find_at` delegates to `ci_find_iter().next()` — pin they never drift.
+    for (h, n) in [
+        (&b"xxapi_key"[..], &b"api_key"[..]),
+        (&b"_api_key"[..], &b"api_key"[..]),
+        (&b"SHA256:x"[..], &b"sha256:"[..]),
+        (&b"none"[..], &b"api_key"[..]),
+    ] {
+        assert_eq!(ci_find_all(h, n).first().copied(), ci_find_at(h, n));
+    }
+}
+
+#[test]
+fn ci_find_at_uses_rarest_byte_anchor_in_source() {
+    // Pin the DoS fix in source: the skim must anchor on the rarest needle byte,
+    // never blindly on `needle[0]`. A regression to first-byte anchoring
+    // reintroduces the ~170ms single-letter-chunk algorithmic DoS.
+    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ascii_ci.rs"));
+    assert!(
+        src.contains("fn rarest_byte_index") && src.contains("fn ascii_ci_frequency_rank"),
+        "ci_find_at must anchor its memchr2 skim on the needle's rarest byte"
+    );
+    assert!(
+        !src.contains("let first_lower = needle[0]"),
+        "ci_find_at must not regress to first-byte memchr2 anchoring (O(n·m) DoS)"
+    );
 }
 
 #[test]

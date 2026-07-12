@@ -1,10 +1,33 @@
-//! Scanner gates compiled from detector-owned credential shapes.
+//! Detector-owned credential shape rules.
 //!
-//! Each constraint lives beside its detector as
-//! `[detector.credential_shape]`. Core owns schema validation; this module only
-//! compiles validated specs into the scanner's compact per-detector gate.
+//! The per-detector shape CONSTRAINT (`exact_length` / `prefix` / `body_*`) is a
+//! `keyhog_core::CredentialShape` declared in each detector's own TOML
+//! (`[detector.credential_shape]`, DET-0 — was the centralized
+//! `rules/detector-credential-shapes.toml` `[[shape]]` list keyed by detector id).
+//! Core owns the data AND its internal-consistency validation
+//! (`CredentialShape::validate`); this module owns the SCANNER side: the compiled
+//! [`CredentialShapeRule`] + its per-credential [`CredentialShapeRule::allows`]
+//! gate, built per detector from that spec. Because the shape now lives on the
+//! detector's own spec, the previous "shape rule for an unknown detector id" class
+//! is impossible by construction — no id list, no id validation.
 
 use keyhog_core::{CredentialShape, DetectorSpec};
+
+/// The PEM armor header that opens every `-----BEGIN … PRIVATE KEY-----` block
+/// (and X.509 certs). SINGLE OWNER: it is the load-bearing prefix of the
+/// `private-key` / `ssh-private-key` / `github-app-private-key` detector
+/// patterns, and scanner logic keys off it in two places — the suppression
+/// carve-out (a PEM body must NOT be masking-pattern suppressed, or the detector
+/// silently misses real OPENSSH keys) and the entropy plausibility gate. Both
+/// now read this const via [`is_pem_block`] instead of two bare `"-----BEGIN"`
+/// literals free to drift; a guard test binds it to its authoritative detector.
+pub(crate) const PEM_BEGIN_MARKER: &str = "-----BEGIN";
+
+/// True when `value` opens a PEM armor block (private key, certificate, …).
+/// One predicate so every "is this a PEM body?" decision agrees byte-for-byte.
+pub(crate) fn is_pem_block(value: &str) -> bool {
+    value.starts_with(PEM_BEGIN_MARKER)
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CredentialShapeRule {
@@ -44,6 +67,9 @@ impl CredentialShapeRule {
         true
     }
 
+    /// Compile the scanner-side gate from a detector's own declared shape
+    /// (`DetectorSpec::credential_shape`). The spec is validated separately at
+    /// build time (`CredentialShape::validate`); this only maps the fields.
     fn from_spec(shape: &CredentialShape) -> Self {
         Self {
             exact_length: shape.exact_length,
@@ -78,6 +104,14 @@ impl CredentialShapeRule {
     }
 }
 
+/// Compile the per-detector credential-shape gate for every detector, indexed to
+/// match `detectors`. Each detector's shape comes from its OWN spec
+/// (`DetectorSpec::credential_shape`, DET-0), validated fail-closed
+/// (`CredentialShape::validate`) so a malformed shape is a build error, never a
+/// silent skip. A detector with no `[detector.credential_shape]` maps to `None`
+/// (no shape gate). There is no id list and no "unknown detector" case — the
+/// shape rides on the detector's own spec, so it cannot name a detector that does
+/// not exist.
 pub(crate) fn build_detector_shape_rules(
     detectors: &[DetectorSpec],
 ) -> Result<Vec<Option<CredentialShapeRule>>, String> {
@@ -123,6 +157,7 @@ mod tests {
         assert!(rule.allows("sk-ant-modern-key-shape-not-owned-by-this-rule"));
     }
 
+    /// Build a `keyhog_core::CredentialShape` for the validation tests below.
     fn shape(
         exact_length: Option<usize>,
         prefix: Option<&str>,
@@ -138,73 +173,140 @@ mod tests {
     }
 
     #[test]
-    fn detector_shape_validation_rejects_invalid_ranges() {
-        assert!(shape(None, None, Some(80), None)
-            .validate("bad")
-            .unwrap_err()
-            .contains("body length without a prefix"));
-        assert!(shape(None, Some("sk-"), Some(120), Some(80))
-            .validate("bad")
-            .unwrap_err()
-            .contains("body_min_length greater than body_max_length"));
-        assert!(shape(None, Some("sk-"), None, None)
-            .validate("bad")
-            .unwrap_err()
-            .contains("prefix but no length constraint"));
-        assert!(shape(Some(20), Some("sk-ant-api03-"), Some(80), None)
-            .validate("bad")
-            .unwrap_err()
-            .contains("exact_length below prefix plus body_min_length"));
-        assert!(shape(Some(200), Some("sk-ant-api03-"), None, Some(80))
-            .validate("bad")
-            .unwrap_err()
-            .contains("exact_length above prefix plus body_max_length"));
+    fn validate_rejects_no_constraints() {
+        let err = shape(None, None, None, None).validate("bad").unwrap_err();
+        assert!(err.contains("no shape constraints"));
     }
 
+    #[test]
+    fn validate_rejects_exact_length_zero() {
+        let err = shape(Some(0), None, None, None)
+            .validate("bad")
+            .unwrap_err();
+        assert!(err.contains("exact_length=0"));
+    }
+
+    #[test]
+    fn validate_rejects_body_range_without_prefix() {
+        let err = shape(None, None, Some(80), None)
+            .validate("bad")
+            .unwrap_err();
+        assert!(err.contains("body length without a prefix"));
+    }
+
+    #[test]
+    fn validate_rejects_inverted_body_range() {
+        let err = shape(None, Some("sk-"), Some(120), Some(80))
+            .validate("bad")
+            .unwrap_err();
+        assert!(err.contains("body_min_length greater than body_max_length"));
+    }
+
+    /// The two live detector specs declare their shape in their OWN TOML
+    /// (`[detector.credential_shape]`, DET-0) — read it back from the embedded
+    /// corpus and pin the exact values. This drift-guard replaces the old
+    /// `rules/detector-credential-shapes.toml` parse test.
     #[test]
     fn live_credential_shapes_are_declared_per_detector() {
         let specs = keyhog_core::load_embedded_detectors_or_fail().expect("embedded corpus loads");
-        let shape_for = |id: &str| {
+        let by_id = |id: &str| {
             specs
                 .iter()
-                .find(|detector| detector.id == id)
+                .find(|s| s.id == id)
                 .unwrap_or_else(|| panic!("{id} must be embedded"))
                 .credential_shape
                 .clone()
-                .unwrap_or_else(|| panic!("{id} must declare detector.credential_shape"))
+                .unwrap_or_else(|| panic!("{id} must declare [detector.credential_shape]"))
         };
 
-        let aws = shape_for(&aws_access_key_id());
+        let aws = by_id(&aws_access_key_id());
         assert_eq!(aws.exact_length, Some(20));
-        let anthropic = shape_for(&anthropic_api_key_id());
+        assert_eq!(aws.prefix, None);
+        aws.validate(&aws_access_key_id()).expect("aws shape valid");
+
+        let anthropic = by_id(&anthropic_api_key_id());
         assert_eq!(anthropic.prefix.as_deref(), Some("sk-ant-api03-"));
         assert_eq!(anthropic.body_min_length, Some(80));
         assert_eq!(anthropic.body_max_length, Some(120));
+        anthropic
+            .validate(&anthropic_api_key_id())
+            .expect("anthropic shape valid");
     }
 
     #[test]
-    fn build_maps_detector_owned_shapes_and_fails_closed() {
+    fn build_maps_per_detector_shapes_to_compiled_rules() {
+        // Each detector's shape rides on its OWN spec (DET-0); build reads it and
+        // compiles the gate. A detector with no `credential_shape` maps to `None`.
         let aws = DetectorSpec {
             id: aws_access_key_id(),
             credential_shape: Some(shape(Some(20), None, None, None)),
             ..DetectorSpec::default()
         };
-        let none = DetectorSpec {
-            id: "unconstrained".to_string(),
+        let anthropic = DetectorSpec {
+            id: anthropic_api_key_id(),
+            credential_shape: Some(shape(None, Some("sk-ant-api03-"), Some(80), Some(120))),
             ..DetectorSpec::default()
         };
-        let rules = build_detector_shape_rules(&[aws, none]).unwrap();
+        let no_shape = DetectorSpec {
+            id: "no-shape-detector".to_string(),
+            ..DetectorSpec::default()
+        };
+
+        let rules = build_detector_shape_rules(&[aws, anthropic, no_shape]).unwrap();
+
+        assert_eq!(rules.len(), 3);
         assert!(rules[0].as_ref().is_some_and(|rule| {
             rule.allows("AKIAIOSFODNN7EXAMPLE") && !rule.allows("AKIAIOSFODNN7EXAMPL")
         }));
-        assert!(rules[1].is_none());
+        assert!(rules[1]
+            .as_ref()
+            .is_some_and(|rule| !rule.allows("sk-ant-api03-short")));
+        assert!(rules[2].is_none(), "a detector with no shape maps to None");
+    }
 
-        let malformed = DetectorSpec {
-            id: "malformed".to_string(),
-            credential_shape: Some(shape(None, Some("sk-"), None, None)),
+    #[test]
+    fn build_fails_closed_on_a_malformed_shape() {
+        // A per-detector shape that fails `CredentialShape::validate` is a build
+        // error (fail-closed), never a silent skip.
+        let bad = DetectorSpec {
+            id: "bad-shape".to_string(),
+            credential_shape: Some(shape(None, Some("sk-"), None, None)), // prefix, no length
             ..DetectorSpec::default()
         };
-        assert!(build_detector_shape_rules(&[malformed]).is_err());
+        let err = build_detector_shape_rules(&[bad]).unwrap_err();
+        assert!(err.contains("prefix but no length constraint"));
+    }
+
+    #[test]
+    fn validate_rejects_prefix_without_length_constraint() {
+        let err = shape(None, Some("sk-"), None, None)
+            .validate("bad")
+            .unwrap_err();
+        assert!(err.contains("prefix but no length constraint"));
+    }
+
+    #[test]
+    fn validate_rejects_exact_length_below_prefix_minimum() {
+        let err = shape(Some(20), Some("sk-ant-api03-"), Some(80), None)
+            .validate("bad")
+            .unwrap_err();
+        assert!(err.contains("exact_length below prefix plus body_min_length"));
+    }
+
+    #[test]
+    fn validate_rejects_exact_length_above_prefix_maximum() {
+        let err = shape(Some(200), Some("sk-ant-api03-"), None, Some(80))
+            .validate("bad")
+            .unwrap_err();
+        assert!(err.contains("exact_length above prefix plus body_max_length"));
+    }
+
+    #[test]
+    fn validate_rejects_empty_prefix() {
+        let err = shape(Some(10), Some(""), None, None)
+            .validate("bad")
+            .unwrap_err();
+        assert!(err.contains("empty prefix"));
     }
 
     // ── Boundary lock for `CredentialShapeRule::allows` ──────────────────────

@@ -132,3 +132,84 @@ fn password_takes_precedence_over_token() {
     // to the password bucket.
     assert_eq!(classify("PASSWORD_TOKEN"), 1);
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin each bucket at fixed casings; these SWEEP the classifier's
+// exact branch order (helpers.rs:26): `== KEYWORD_FREE_LABEL → 0`; else
+// `keyword_is_password_family` (ci-substring "password"|"pwd", OR a trailing
+// `_pass`/`-pass`/`.pass` segment) `→ 1`; else `ci_find "token" → 2`; else `3`.
+// Five properties: a password/pwd substring (any affix) is 1; a trailing `pass`
+// segment is 1; a `token` substring (any case) without a password family is 2;
+// password-precedence-over-token is 1; and a keyword with NONE of the families
+// (alphabet excludes `d`/`n` so "password"/"pwd"/"token" can't form, and != "pass")
+// is 3. Traced against `classify_entropy_detector_index`. No proptest before.
+
+use proptest::prelude::*;
+
+/// Case variants of "token" (ci_find is ASCII-case-insensitive).
+const TOKEN_CASES: &[&str] = &["token", "TOKEN", "Token", "ToKeN"];
+/// Segment separators that split off a trailing `pass`.
+const SEPS: &[char] = &['_', '-', '.'];
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// A keyword containing "password" or "pwd" (any surrounding, digit affixes so
+    /// no other family interferes) lands in the Password bucket (index 1).
+    #[test]
+    fn password_substring_is_index_1(
+        pre in "[0-9]{0,6}",
+        post in "[0-9]{0,6}",
+        use_pwd in any::<bool>(),
+    ) {
+        let core = if use_pwd { "pwd" } else { "password" };
+        let kw = format!("{pre}{core}{post}");
+        prop_assert_eq!(classify(&kw), 1);
+    }
+
+    /// A keyword whose trailing `_`/`-`/`.`-delimited segment is `pass` is the
+    /// Password bucket (the third password-family branch).
+    #[test]
+    fn trailing_pass_segment_is_index_1(pre in "[a-z0-9]{1,8}", si in 0usize..SEPS.len()) {
+        let kw = format!("{pre}{}pass", SEPS[si]);
+        prop_assert_eq!(classify(&kw), 1);
+    }
+
+    /// A keyword containing "token" (any case) but no password family lands in the
+    /// Token bucket (index 2). Digit affixes cannot form a password family.
+    #[test]
+    fn token_without_password_is_index_2(
+        ti in 0usize..TOKEN_CASES.len(),
+        pre in "[0-9]{0,5}",
+        post in "[0-9]{0,5}",
+    ) {
+        let kw = format!("{pre}{}{post}", TOKEN_CASES[ti]);
+        prop_assert_eq!(classify(&kw), 2);
+    }
+
+    /// Password is checked before token, so a keyword with BOTH resolves to the
+    /// Password bucket regardless of order.
+    #[test]
+    fn password_and_token_together_is_index_1(
+        pre in "[0-9]{0,4}",
+        mid in "[0-9]{0,4}",
+        post in "[0-9]{0,4}",
+        password_first in any::<bool>(),
+    ) {
+        let kw = if password_first {
+            format!("{pre}password{mid}token{post}")
+        } else {
+            format!("{pre}token{mid}password{post}")
+        };
+        prop_assert_eq!(classify(&kw), 1);
+    }
+
+    /// A keyword with none of the families (alphabet excludes `d` and `n`, so
+    /// "password"/"pwd"/"token" cannot form; and it is not the bare "pass" segment)
+    /// falls to the default api-key bucket (index 3).
+    #[test]
+    fn no_family_keyword_is_index_3(kw in "[a-ce-mo-z0-9]{1,12}") {
+        prop_assume!(kw != "pass");
+        prop_assert_eq!(classify(&kw), 3);
+    }
+}

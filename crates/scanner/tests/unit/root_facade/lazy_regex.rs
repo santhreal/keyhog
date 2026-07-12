@@ -5,8 +5,8 @@
 //! These assert the behavior the scan engine depends on: the source is
 //! readable without compiling, the detector flavor reproduces the exact
 //! case-insensitive build the eager path used, the plain flavor stays
-//! case-sensitive, a non-compiling test pattern fails loud, and clones share
-//! one compiled instance.
+//! case-sensitive, a non-compiling test pattern fails loud and closed to a
+//! never-matching sentinel, and clones share one compiled instance.
 
 use keyhog_scanner::testing::LazyRegexProbe as LazyRegex;
 
@@ -53,15 +53,23 @@ fn matches_and_extracts_like_a_normal_regex() {
 }
 
 #[test]
-#[should_panic(
-    expected = "scanner regex reached first-use compilation after construction validation failed"
-)]
-fn invalid_pattern_fails_loud_instead_of_never_matching() {
+fn invalid_pattern_fails_closed_to_never_matching_sentinel() {
     // Production scanner construction validates and seeds every pattern. This
-    // test-only unseeded constructor proves a missed validation cannot quietly
-    // turn into a regex that matches nothing.
+    // test-only unseeded constructor with an uncompilable source proves the
+    // build-invariant breach is surfaced loudly (`warn_prefilter_disabled` on the
+    // stderr channel) and fails CLOSED to a never-matching regex: it neither
+    // aborts the whole scan (no panic) nor silently matches anything.
     let lr = LazyRegex::detector("("); // unbalanced group: cannot compile
-    let _ = lr.get();
+    let rx = lr.get();
+    assert!(!rx.is_match(""), "sentinel must not match empty input");
+    assert!(
+        !rx.is_match("("),
+        "sentinel must not match its own source text"
+    );
+    assert!(
+        !rx.is_match("anything at all 123 sk-abcd AKIAQYLPMN5HFIQR7XYA"),
+        "sentinel must match nothing"
+    );
 }
 
 #[test]

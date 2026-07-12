@@ -6,6 +6,8 @@ fn catastrophic_backtracking_input_does_not_hang() {
     // The regex engine (regex crate) guarantees linear time, but we verify
     // the scan completes in bounded time.
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "complex-pattern".into(),
         name: "Complex".into(),

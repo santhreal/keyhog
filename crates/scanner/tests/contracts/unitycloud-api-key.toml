@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "UCA-ZEXAMPLEEXAMPLEBVcD5"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "[unity-cloud-build] 2024-11-02 build job authenticated via UCA-Z7aLR0tW7QWBqHSP89uZk8UIOiWtFvrodTd9E1rCPCUIz5Vd113Zzedwsvor3GP5aVL5ZUvY1zdWm2X6Jy9SV4lIFWGGBVcD5"
+credential = "UCA-Z7aLR0tW7QWBqHSP89uZk8UIOiWtFvrodTd9E1rCPCUIz5Vd113Zzedwsvor3GP5aVL5ZUvY1zdWm2X6Jy9SV4lIFWGGBVcD5"
+reason = "UCA- key printed in a build log line with no assignment keyword; the UCA- prefix anchor fires regardless of surrounding context."

@@ -15,8 +15,8 @@ fn filesystem_chunk_at(path: &std::path::Path, data: &str, base_offset: usize) -
     Chunk {
         data: SensitiveString::from(data),
         metadata: ChunkMetadata {
-            source_type: "filesystem".to_string(),
-            path: Some(path.to_string_lossy().into_owned()),
+            source_type: "filesystem".into(),
+            path: Some(path.to_string_lossy().into_owned().into()),
             base_offset,
             ..Default::default()
         },

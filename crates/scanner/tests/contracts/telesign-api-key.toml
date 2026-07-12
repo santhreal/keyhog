@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "TELESIGNcustomer-   '  : '=    : ='  \"  =    :C640fEXAMPLEEXAMPLE5BCC1"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = 'telesign_customer_id: "C640f2E9-9D9D-1baF-5ad2-06a2D0E5BCC1"'
+credential = "C640f2E9-9D9D-1baF-5ad2-06a2D0E5BCC1"
+reason = "Lower-cased YAML key with a quoted UUID; the case-insensitive telesign customer-id keyword alternation anchors the value."

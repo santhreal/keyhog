@@ -142,21 +142,12 @@ pub(in crate::filesystem) fn read_file_for_compressed_input(
         return Some(FileBytes::Owned(Vec::new()));
     }
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::AsRawFd;
-        // SAFETY: Simple advisory lock FFI call. A failure means someone else
-        // holds an exclusive lock; do not reopen and read the compressed file
-        // unlocked because that can scan a torn write.
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } != 0 {
-            tracing::warn!(
-                path = %path.display(),
-                "compressed file is locked by another process; skipping to avoid scanning a torn write"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return None;
-        }
-    }
+    // No re-flock: `open_file_safe` already holds the advisory LOCK_SH on this
+    // fd (a shared lock we hold blocks any new LOCK_EX), so this was a redundant
+    // syscall with a dead "locked by another process" branch. The lock persists
+    // until the deliberate LOCK_UN after the mmap below. ONE owner of the flock
+    // guard: `open_file_safe` (contract pinned by
+    // `externally_exclusive_locked_file_is_refused_by_open_and_mmap`).
 
     // SAFETY: read-only mapping, the `File` lives through the call,
     // and the returned `Mmap` owns its lifetime. We deliberately drop

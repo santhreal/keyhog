@@ -47,8 +47,9 @@ fn files_containing(chunks: &[Chunk], needle: &str) -> usize {
             let path = chunk
                 .metadata
                 .path
-                .clone()
-                .unwrap_or_else(|| String::from("<no-path>"));
+                .as_deref()
+                .unwrap_or("<no-path>")
+                .to_string();
             hit_paths.insert(path);
         }
     }
@@ -59,7 +60,7 @@ fn files_containing(chunks: &[Chunk], needle: &str) -> usize {
 fn distinct_paths(chunks: &[Chunk]) -> BTreeSet<String> {
     chunks
         .iter()
-        .filter_map(|c| c.metadata.path.clone())
+        .filter_map(|c| c.metadata.path.as_deref().map(String::from))
         .collect()
 }
 

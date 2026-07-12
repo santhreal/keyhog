@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "XboxLiveAPI:      \"  = \"     \":   :    M5NbbEXAMPLEEXAMPLEIpCB="
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# XBOX_API_KEY=M5Nbb3hRr6iZuT74aXW6c9c7PhQdj71UQ1PxIpCB=  # gaming"
+credential = "M5Nbb3hRr6iZuT74aXW6c9c7PhQdj71UQ1PxIpCB="
+reason = "Commented-out config; XBOX_API_KEY keyword + token (trailing = base64 pad) intact inside the comment."

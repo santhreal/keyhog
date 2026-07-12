@@ -33,13 +33,12 @@ Resolution order for the home: explicit ``corpus_dir`` arg, the
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import pathlib
 import subprocess
 import sys
 
-from .base import Corpus, LabeledRecord
+from .base import Corpus, LabeledRecord, load_jsonl_manifest
 
 _THIS = pathlib.Path(__file__).resolve()
 _BENCH_ROOT = _THIS.parents[2]                 # benchmarks/
@@ -96,7 +95,7 @@ class MirrorCorpus(Corpus):
     def manifest(self) -> pathlib.Path:
         return self._home / "manifest.jsonl"
 
-    def records(self) -> list[LabeledRecord]:
+    def _load_records(self) -> list[LabeledRecord]:
         man = self.manifest()
         if not man.exists():
             raise SystemExit(
@@ -104,23 +103,7 @@ class MirrorCorpus(Corpus):
                 f"  generate it with: make mirror  "
                 f"(or python -m bench.corpora.mirror --ensure)"
             )
-        out: list[LabeledRecord] = []
-        with open(man) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                r = json.loads(line)
-                out.append(LabeledRecord(
-                    id=r["id"],
-                    secret=r.get("secret", ""),
-                    label=bool(r.get("label")),
-                    category=r.get("category", "unknown"),
-                    file_path=r.get("on_disk_path") or r.get("file_path", ""),
-                    line_start=int(r.get("start_line", 0) or 0),
-                    line_end=int(r.get("end_line", 0) or 0),
-                ))
-        return out
+        return load_jsonl_manifest(man)
 
     def ensure(self, positives: int = 3000, negatives: int = 12000, seed: int = 0) -> None:
         """Generate the corpus into the split layout if absent (idempotent).

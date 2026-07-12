@@ -6,7 +6,7 @@
 //! scanner match the literal credential. Shares hex readers and lazy output
 //! allocation with the other decoders via [`super::util`].
 
-use super::util::{lazy_decoded_prefix, take_hex_digits_indexed};
+use super::util::{lazy_decoded_prefix, resolve_escaped_codepoint, take_hex_digits_indexed};
 
 /// Decode backslash escapes (`\uXXXX`, `\xXX`, and `\<char>`) in `input`.
 ///
@@ -25,29 +25,12 @@ pub(super) fn unicode_escape_decode(input: &str) -> Result<String, ()> {
         match chars.next().map(|(_, escaped)| escaped) {
             Some('u') => {
                 let code = take_hex_digits_indexed(&mut chars, 4)?;
-                let resolved = if (0xD800..=0xDBFF).contains(&code) {
-                    // High surrogate: a `\uXXXX` code unit in this range is only
-                    // half of an astral-plane character (e.g. an emoji written
-                    // `😀` in a JS/source string). It MUST be followed
-                    // by `\u` + a low surrogate, which we combine into the real
-                    // scalar. Previously this returned Err (char::from_u32 on a
-                    // lone surrogate is None), so surrogate-encoded payloads lost
-                    // their decode-through entirely. Mirrors json::json_escape_codepoint.
-                    match (chars.next(), chars.next()) {
-                        (Some((_, '\\')), Some((_, 'u'))) => {}
-                        _ => return Err(()),
-                    }
-                    let low = take_hex_digits_indexed(&mut chars, 4)?;
-                    if !(0xDC00..=0xDFFF).contains(&low) {
-                        return Err(());
-                    }
-                    super::util::surrogate_pair_to_char(code, low).ok_or(())?
-                } else if (0xDC00..=0xDFFF).contains(&code) {
-                    // A lone low surrogate is never valid on its own.
-                    return Err(());
-                } else {
-                    char::from_u32(code).ok_or(())?
-                };
+                // Shared surrogate-pair resolution (see `util`): reads the
+                // following `\u` low-surrogate code unit itself when `code` is a
+                // high surrogate. The `CharIndices` walker is mapped to a `char`
+                // iterator so the continuation read reflects on `chars`.
+                let resolved =
+                    resolve_escaped_codepoint(code, &mut chars.by_ref().map(|(_, c)| c))?;
                 lazy_decoded_prefix(&mut decoded_text, input, idx).push(resolved);
             }
             Some('x') => {

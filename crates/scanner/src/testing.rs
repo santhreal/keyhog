@@ -17,6 +17,59 @@ pub fn pattern_regex_strs(scanner: &crate::CompiledScanner) -> Vec<&str> {
     scanner.pattern_regex_strs()
 }
 
+/// SPEED/som-window (backlog 4786) lever-ceiling analysis: classify the CONFIRMED
+/// `ac_map` patterns of the embedded detector corpus by how they can be localized
+/// in the scan window, returning
+/// `(prefix_anchored, prefixless_with_internal_literal, whole_chunk_residue)`:
+/// - `prefix_anchored` — has a required PREFIX literal; already localized to
+///   candidate positions by `ConfirmedAnchorIndex` (no whole-chunk scan).
+/// - `prefixless_with_internal_literal` — no required prefix literal BUT has a
+///   required internal literal run (≥ `MIN_INNER_LITERAL_CHARS`); this is the set
+///   an internal-literal-AC extension of `ConfirmedAnchorIndex` could localize
+///   (the addressable ceiling of the 4786 lever). HS-SOM is NOT viable for these
+///   (it errors "Pattern too large" on complex regexes — see simd/backend.rs).
+/// - `whole_chunk_residue` — no required literal run at all; irreducibly
+///   whole-chunk-scanned.
+///
+/// The three buckets partition the confirmed `ac_map`. This is the durable
+/// introspection behind the 4786 scoping decision (how much of the whole-chunk
+/// confirmed-pass cost is actually localizable).
+pub fn confirmed_pattern_localization_distribution() -> (usize, usize, usize) {
+    let detectors = keyhog_core::load_embedded_detectors_or_fail()
+        .expect("embedded detector corpus must parse");
+    let scanner = crate::CompiledScanner::compile_with_gpu_policy(
+        detectors,
+        crate::GpuInitPolicy::ForceDisabled,
+    )
+    .expect("embedded detector corpus must compile without GPU acquisition");
+    let mut prefix_anchored = 0usize;
+    let mut prefixless_with_internal_literal = 0usize;
+    let mut whole_chunk_residue = 0usize;
+    for pattern in &scanner.ac_map {
+        let src = pattern.regex.as_str();
+        if crate::engine::required_prefix_literals_with_cap(
+            src,
+            crate::engine::CONFIRMED_MAX_LITERALS_PER_PATTERN,
+        )
+        .is_some()
+        {
+            prefix_anchored += 1;
+        } else if crate::compiler::compiler_prefix::regex_has_required_literal_run(
+            src,
+            crate::compiler::compiler_prefix::MIN_INNER_LITERAL_CHARS,
+        ) {
+            prefixless_with_internal_literal += 1;
+        } else {
+            whole_chunk_residue += 1;
+        }
+    }
+    (
+        prefix_anchored,
+        prefixless_with_internal_literal,
+        whole_chunk_residue,
+    )
+}
+
 /// Process-wide count of `LazyRegex` first-use compilations (see
 /// `crate::types::lazy_regex_compile_events`). The zero-recompile regression gate
 /// snapshots this around `warm()` + repeated scans to prove steady-state scanning
@@ -209,11 +262,61 @@ pub fn octal_escape_decode_for_test(input: &str) -> Option<String> {
     crate::decode::octal_escape_decode(input).ok()
 }
 
+/// Test seam for the bounded gzip/zlib inflate on the decode-through recall path
+/// (`decode::inflate::try_inflate_to_text`). Given decoded bytes beginning with a
+/// gzip (`1f 8b`) or zlib (`78 {01,9c,da}`) magic, inflates them capped at
+/// `MAX_INFLATE_BYTES` (16 MiB) and returns the UTF-8 text; `None` for
+/// non-container bytes, malformed streams, or non-UTF-8 output. This is the
+/// decompression-BOMB surface: a tiny blob can encode gigabytes, so the cap is a
+/// hard DoS bound. Lets an adversarial test feed a real bomb and prove the output
+/// never exceeds the cap (fails LOUDLY — OOM/hang — if the `Read::take` guard
+/// regresses).
+#[cfg(feature = "decode")]
+pub fn try_inflate_to_text_for_test(bytes: &[u8]) -> Option<String> {
+    crate::decode::inflate::try_inflate_to_text(bytes)
+}
+
+/// The inflate output ceiling (`MAX_INFLATE_BYTES`, 16 MiB) exposed so an
+/// adversarial DoS test can assert the bomb-truncation bound against the real
+/// constant instead of a hardcoded copy (ONE-PLACE).
+#[cfg(feature = "decode")]
+#[must_use]
+pub fn inflate_output_cap_for_test() -> usize {
+    crate::decode::inflate::MAX_INFLATE_BYTES as usize
+}
+
+/// Build a gzip container (`1f 8b …`) wrapping `data`, for use as an inflate
+/// fixture. Uses the scanner's own `flate2` dep so the integration-test binary —
+/// which cannot link `flate2` directly — can still construct a decompression
+/// bomb (compress a huge run of one byte into a tiny blob) and feed it to
+/// [`try_inflate_to_text_for_test`]. Deterministic; no I/O.
+#[cfg(feature = "decode")]
+#[must_use]
+pub fn gzip_compress_for_test(data: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+    enc.write_all(data)
+        .expect("gzip encode into Vec never fails");
+    enc.finish().expect("gzip finish into Vec never fails")
+}
+
+/// Build a zlib container (`78 9c …`) wrapping `data`, the zlib twin of
+/// [`gzip_compress_for_test`] — exercises the `try_inflate_to_text` zlib branch.
+#[cfg(feature = "decode")]
+#[must_use]
+pub fn zlib_compress_for_test(data: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    enc.write_all(data)
+        .expect("zlib encode into Vec never fails");
+    enc.finish().expect("zlib finish into Vec never fails")
+}
+
 /// Test seam for the decode-density gate on the main scan path
 /// (`decode::has_decodable_payload`): returns true iff `data` carries an encoded
 /// shape long enough to be worth routing into decode-through — a
 /// `MIN_DECODABLE_RUN` (24) contiguous base64/hex run, `MIN_PERCENT_ESCAPES` (4)
-/// `%XX` escapes, or `MIN_BACKSLASH_ESCAPES` (2) `\u`/`\x` escapes. This gate is
+/// `%XX` escapes, or `MIN_BACKSLASH_ESCAPES` (2) `\u`/`\x`/`\NNN` escapes. This gate is
 /// recall-load-bearing (it routes an otherwise prefilter-skipped, fully-encoded
 /// chunk into decode-through), so a silent threshold drift is a recall bug; this
 /// seam lets a test pin the exact boundaries.
@@ -238,7 +341,7 @@ pub fn looks_reversible_for_test(candidate: &str) -> bool {
 /// regex admits. Lets a gap test pin the shared detection contract exactly so a
 /// future edit to the one regex source can't silently shift either scan path.
 pub fn assign_re_captures_for_test(line: &str) -> Option<(String, String)> {
-    let re = crate::shared_regexes::ASSIGN_RE.as_ref()?;
+    let re = &*crate::shared_regexes::ASSIGN_RE;
     let caps = re.captures(line)?;
     Some((
         caps.get(1)?.as_str().to_string(),
@@ -246,15 +349,17 @@ pub fn assign_re_captures_for_test(line: &str) -> Option<(String, String)> {
     ))
 }
 
-/// Test seams for the Tier-B detector-classification query API
-/// (crates/scanner/src/detector_classification.rs). These four `pub(crate)`
-/// query functions drive real suppression/resolution decisions (weak-anchor
-/// shape gates, private-key-block nesting, the Stripe hot-path dedup) but have
-/// no behavioral coverage — the module's own `#[cfg(test)]` tests exercise only
-/// `parse_classification_rules`, never the cached query path. Each facade
-/// forwards verbatim to the live, bundled-TOML-backed query.
+/// Test seams for the detector-classification query API. The weak-anchor and
+/// private-key-block queries now read PER-DETECTOR `DetectorSpec` flags (DET-0;
+/// migrated out of `rules/detector-classification.toml`), while the Stripe
+/// hot-path prefix dedup stays a Tier-B list in
+/// `crates/scanner/src/detector_classification.rs`. These `pub(crate)` seams
+/// drive real suppression/resolution decisions but have no direct behavioral
+/// coverage otherwise, so each facade forwards verbatim to the live query.
 pub fn detector_is_residual_weak_anchor_for_test(detector_id: &str) -> Result<bool, String> {
-    Ok(keyhog_core::detector_spec_by_id(detector_id).is_some_and(|detector| detector.weak_anchor))
+    // Reads the migrated per-detector flag (was the classification `weak_anchor`
+    // list); infallible spec read, kept `Result` for caller compatibility.
+    Ok(keyhog_core::detector_spec_by_id(detector_id).is_some_and(|spec| spec.weak_anchor))
 }
 
 pub fn detector_is_private_key_block_for_test(detector_id: &str) -> Result<bool, String> {
@@ -431,32 +536,122 @@ pub fn entropy_has_low_alnum_ratio_for_test(value: &str) -> bool {
     crate::entropy::plausibility::has_low_alnum_ratio(value)
 }
 
-/// Distinct-scalar counter used by entropy plausibility. Its ASCII path shares
-/// the allocation-free distinct-byte primitive; non-ASCII input counts chars.
+/// Distinct-scalar counter (entropy::plausibility) — the ASCII fast path
+/// delegates to the single-owner distinct-byte primitive, the non-ASCII branch
+/// counts chars not bytes. Exposed so the counting contract can be pinned
+/// externally instead of an inline unit test.
 pub fn entropy_unique_char_count_for_test(value: &str) -> usize {
     crate::entropy::plausibility::unique_char_count(value)
 }
 
-/// Canonical allocation-free distinct-byte counter used by the ASCII path.
+/// The canonical distinct-byte primitive (entropy::unique_byte_count) that the
+/// ASCII `unique_char_count` path delegates to. Exposed alongside it so a test
+/// can pin that the two agree exactly on ASCII input.
 pub fn entropy_unique_byte_count_for_test(bytes: &[u8]) -> usize {
     crate::entropy::unique_byte_count(bytes)
 }
 
-/// Function-style concatenation marker used by multiline admission.
-#[cfg(feature = "multiline")]
-pub fn multiline_has_function_concat_marker_for_test(value: &str) -> bool {
-    crate::multiline::has_function_concat_marker(value)
+/// (ml_scorer::ml_features) distinct-bigram window stats + the bigram-bitset word
+/// count, exposed to pin the counting + bitset-sizing contract externally instead
+/// of an inline unit test.
+pub fn ml_unique_bigram_stats_for_test(bytes: &[u8]) -> (usize, usize) {
+    crate::ml_scorer::ml_features::unique_bigram_stats(bytes)
+}
+pub fn ml_bigram_bitset_words_for_test() -> usize {
+    crate::ml_scorer::ml_features::BIGRAM_BITSET_WORDS
 }
 
-/// Full multiline concatenation-indicator admission predicate.
-#[cfg(feature = "multiline")]
-pub fn multiline_has_concatenation_indicators_for_test(value: &str) -> bool {
-    crate::multiline::has_concatenation_indicators(value)
+/// (ml_scorer) the sigmoid squashing fn plus its single-owner saturation bound
+/// and score-cache capacity, exposed to pin the clamp/interior + capacity
+/// contract externally.
+pub fn ml_sigmoid_for_test(value: f32) -> f32 {
+    crate::ml_scorer::sigmoid(value)
+}
+pub fn ml_sigmoid_saturation_for_test() -> f32 {
+    crate::ml_scorer::SIGMOID_SATURATION
+}
+pub fn ml_score_cache_capacity_for_test() -> usize {
+    crate::ml_scorer::SCORE_CACHE_CAPACITY
 }
 
-/// Shared recursion-depth cap used by JSON and YAML structured parsers.
+/// (ml_scorer::model_arch) every MoE architecture dimension, derived parameter
+/// count, and flat-buffer offset the single owner defines. Exposed so
+/// `tests/ml_model_arch_wgsl_parity.rs` can pin the WGSL shader's string literals
+/// (and the CPU weight-buffer strides) to these exact values — the anti-drift
+/// guard that replaces four hand-copied definitions.
+pub struct MlModelArch {
+    pub input_dim: usize,
+    pub expert_count: usize,
+    pub expert_fc1_out: usize,
+    pub expert_fc2_out: usize,
+    pub expert_fc3_out: usize,
+    pub sigmoid_saturation: f32,
+    pub gate_w_count: usize,
+    pub gate_b_count: usize,
+    pub gate_w_off: usize,
+    pub gate_b_off: usize,
+    pub experts_off: usize,
+    pub expert_fc1_w_count: usize,
+    pub expert_fc1_b_count: usize,
+    pub expert_fc2_w_count: usize,
+    pub expert_fc2_b_count: usize,
+    pub expert_fc3_w_count: usize,
+    pub expert_fc3_b_count: usize,
+    pub expert_param_count: usize,
+    pub total_f32_count: usize,
+    pub workgroup_size: usize,
+}
+
+/// gpu-gated accessor to the GENERATED MoE WGSL shader string (`gpu::gpu_shader::moe_shader`)
+/// so `tests/unit/gates/gpu_shader_arch_consts_match_model_arch.rs` can pin the GENERATED
+/// shader's arch literals (complementing the SOURCE-level check in
+/// `tests/ml_model_arch_wgsl_parity.rs`) without reaching into `pub(crate)` gpu internals.
+#[cfg(feature = "gpu")]
+pub fn moe_shader_for_test() -> String {
+    crate::gpu::gpu_shader::moe_shader()
+}
+
+pub fn ml_model_arch_for_test() -> MlModelArch {
+    use crate::ml_scorer::model_arch as a;
+    MlModelArch {
+        input_dim: a::INPUT_DIM,
+        expert_count: a::EXPERT_COUNT,
+        expert_fc1_out: a::EXPERT_FC1_OUT,
+        expert_fc2_out: a::EXPERT_FC2_OUT,
+        expert_fc3_out: a::EXPERT_FC3_OUT,
+        sigmoid_saturation: a::SIGMOID_SATURATION,
+        gate_w_count: a::GATE_W_COUNT,
+        gate_b_count: a::GATE_B_COUNT,
+        gate_w_off: a::GATE_W_OFF,
+        gate_b_off: a::GATE_B_OFF,
+        experts_off: a::EXPERTS_OFF,
+        expert_fc1_w_count: a::EXPERT_FC1_W_COUNT,
+        expert_fc1_b_count: a::EXPERT_FC1_B_COUNT,
+        expert_fc2_w_count: a::EXPERT_FC2_W_COUNT,
+        expert_fc2_b_count: a::EXPERT_FC2_B_COUNT,
+        expert_fc3_w_count: a::EXPERT_FC3_W_COUNT,
+        expert_fc3_b_count: a::EXPERT_FC3_B_COUNT,
+        expert_param_count: a::EXPERT_PARAM_COUNT,
+        total_f32_count: a::TOTAL_F32_COUNT,
+        workgroup_size: a::WORKGROUP_SIZE,
+    }
+}
+
+/// (structured::parsers) the single-owner structured-traversal depth cap that the
+/// JSON and YAML recursion guards both read.
 pub fn structured_max_traversal_depth_for_test() -> usize {
     crate::structured::parsers::MAX_STRUCTURED_TRAVERSAL_DEPTH
+}
+
+/// (multiline::config) the concatenation-marker predicates, exposed to pin the
+/// marker recognition + both-scan indicator routing externally.
+#[cfg(feature = "multiline")]
+pub fn multiline_has_function_concat_marker_for_test(s: &str) -> bool {
+    crate::multiline::config::has_function_concat_marker(s)
+}
+#[cfg(feature = "multiline")]
+pub fn multiline_has_concatenation_indicators_for_test(text: &str) -> bool {
+    crate::multiline::config::has_concatenation_indicators(text)
 }
 
 /// The fast probabilistic noise gate (`probabilistic_gate`) — rejects obvious
@@ -495,6 +690,14 @@ pub fn normalized_assignment_keyword_has_secret_suffix_for_test(normalized: &str
     crate::engine::phase2_generic::keywords::normalized_assignment_keyword_has_secret_suffix(
         normalized,
     )
+}
+
+/// The password-family keyword classifier (`entropy::keywords`) — the ONE PLACE
+/// both entropy detector classifiers use to route `*_PASS=`/`*_PASSWORD=` keys
+/// to the Password tier. Lets a gap test pin the boundary that keeps
+/// `bypass`/`compass` out.
+pub fn keyword_is_password_family_for_test(keyword: &str) -> bool {
+    crate::entropy::keywords::keyword_is_password_family(keyword)
 }
 
 /// The strong-keyword hex-key anchor (`engine::phase2_generic::keywords`) — true
@@ -670,6 +873,307 @@ pub fn is_likely_innocuous_line_for_test(line: &str) -> bool {
     crate::entropy::keywords::is_likely_innocuous_line(line)
 }
 
+/// `is_keyword_assignment_line`: true when a line is a `key = value` assignment
+/// whose key seeds a credential-keyword entropy context. Space/paren-terminated
+/// import-prefix owner: a key that merely BEGINS with `import`/`package`
+/// (`important_key`, `package_secret`) still seeds, while genuine
+/// `import`/`use`/`include` declarations are rejected.
+pub fn is_keyword_assignment_line_for_test(line: &str, secret_keywords: &[String]) -> bool {
+    crate::entropy::keywords::is_keyword_assignment_line(line, secret_keywords)
+}
+
+/// `is_import_like_prefix`: true when a trimmed line begins with an
+/// import/use/include/require/package/from declaration prefix (the single owner
+/// that drives BOTH the keyword-assignment reject and the innocuous-line drop).
+pub fn is_import_like_prefix_for_test(trimmed: &str) -> bool {
+    crate::entropy::keywords::is_import_like_prefix(trimmed)
+}
+
+/// The `KEY_MATERIAL_COMPACT_KEYWORDS` vocabulary as UTF-8 strings, so an
+/// external test can prove every key-material anchor split out of
+/// `CREDENTIAL_COMPACT_KEYWORDS` is still recognized as a credential keyword.
+pub fn key_material_compact_keywords_for_test() -> Vec<&'static str> {
+    crate::entropy::keywords::KEY_MATERIAL_COMPACT_KEYWORDS
+        .iter()
+        .map(|word| std::str::from_utf8(word).expect("key-material anchor is ascii"))
+        .collect()
+}
+
+/// `parse_weights`: the fail-closed parser for the embedded little-endian `f32`
+/// weight buffer — rejects a size mismatch and any non-finite value (returning
+/// the offending index in the error). Returns the parsed weights as a `Vec`.
+pub fn parse_ml_weights_for_test(raw: &[u8]) -> Result<Vec<f32>, String> {
+    crate::ml_scorer::ml_weights::parse_weights(raw).map(|weights| weights.into_vec())
+}
+
+/// The canonical `TOTAL_F32_COUNT` (the exact `f32` count `parse_weights`
+/// requires) so an external test can build correctly/incorrectly sized buffers.
+pub fn ml_weights_total_f32_count() -> usize {
+    crate::ml_scorer::model_arch::TOTAL_F32_COUNT
+}
+
+/// The shipped embedded `weights.bin` bytes, so an external test can prove the
+/// production weights pass the fail-closed parse.
+pub fn ml_weights_embedded_bytes() -> &'static [u8] {
+    crate::ml_scorer::ml_weights::WEIGHTS
+}
+
+/// `reject_oversized_window_chunk`: the windowed-scan hard-skip backstop — true
+/// only when a chunk exceeds the absolute OOM ceiling (NOT a routine per-chunk
+/// gate: `scan_windowed` covers everything below it in bounded slices).
+pub fn reject_oversized_window_chunk_for_test(
+    chunk: &keyhog_core::Chunk,
+    chunk_text: &str,
+) -> bool {
+    crate::engine::reject_oversized_window_chunk(chunk, chunk_text)
+}
+
+/// The `MAX_WINDOW_CHUNK_BYTES` OOM-backstop ceiling (4 GiB), pinned against the
+/// old 512 MiB recall cliff that silently dropped scannable large chunks.
+pub fn max_window_chunk_bytes() -> usize {
+    crate::engine::MAX_WINDOW_CHUNK_BYTES
+}
+
+/// `unique_bigram_stats`: `(distinct_bigrams, total_bigram_windows)` over `bytes`,
+/// exercising the reused thread-local scratch (a leaked bit would inflate a later
+/// distinct count).
+pub fn unique_bigram_stats_for_test(bytes: &[u8]) -> (usize, usize) {
+    crate::ml_scorer::ml_features::unique_bigram_stats(bytes)
+}
+
+// ── SIMD ↔ scalar Shannon-entropy parity accessors ───────────────────────────
+// The entropy reduction has a scalar reference (`shannon_entropy_scalar`) plus
+// AVX2 / AVX-512 / NEON specializations, all counting through the one
+// `histogram_8way` contract. They MUST agree with the scalar path on every
+// input (Law 8: SIMD/scalar parity is not optional). These accessors expose the
+// scalar reference, the once-dispatched `shannon_entropy_simd`, and each
+// architecture path RUNTIME-GATED on the CPU actually carrying its features, so
+// the parity proptest only invokes a `#[target_feature]` fn where it is legal.
+
+/// Scalar reference Shannon entropy (bits/byte) — the parity oracle every SIMD
+/// path is compared against. [`crate::entropy::fast::shannon_entropy_scalar`].
+pub fn shannon_entropy_scalar_for_test(data: &[u8]) -> f64 {
+    crate::entropy::fast::shannon_entropy_scalar(data)
+}
+
+/// The once-resolved SIMD dispatcher [`crate::entropy::fast::shannon_entropy_simd`]
+/// — whatever tier this CPU selected. Must equal the scalar reference.
+pub fn shannon_entropy_simd_for_test(data: &[u8]) -> f64 {
+    crate::entropy::fast::shannon_entropy_simd(data)
+}
+
+/// AVX2 entropy IFF this x86_64 CPU carries `avx2`+`fma`, else `None` (so the
+/// test skips loudly rather than calling an illegal `#[target_feature]` fn on a
+/// CPU without it). [`crate::entropy::fast_x86::shannon_entropy_avx2`].
+#[cfg(target_arch = "x86_64")]
+pub fn shannon_entropy_avx2_if_supported_for_test(data: &[u8]) -> Option<f64> {
+    if std::is_x86_feature_detected!("avx2") && std::is_x86_feature_detected!("fma") {
+        // SAFETY: both required features were just runtime-detected above, and
+        // CPU features do not change during the process lifetime.
+        Some(unsafe { crate::entropy::fast_x86::shannon_entropy_avx2(data) })
+    } else {
+        None
+    }
+}
+
+/// AVX-512 entropy IFF this CPU carries `avx512f`+`avx512bw`+`avx512dq`, else
+/// `None`. [`crate::entropy::avx512::calculate_shannon_entropy`].
+#[cfg(target_arch = "x86_64")]
+pub fn shannon_entropy_avx512_if_supported_for_test(data: &[u8]) -> Option<f64> {
+    if std::is_x86_feature_detected!("avx512f")
+        && std::is_x86_feature_detected!("avx512bw")
+        && std::is_x86_feature_detected!("avx512dq")
+    {
+        // SAFETY: all three required features were just runtime-detected above.
+        Some(unsafe { crate::entropy::avx512::calculate_shannon_entropy(data) })
+    } else {
+        None
+    }
+}
+
+/// NEON entropy on aarch64 (NEON is baseline on aarch64, so always available).
+/// [`crate::entropy::fast_neon::shannon_entropy_neon`].
+#[cfg(target_arch = "aarch64")]
+pub fn shannon_entropy_neon_for_test(data: &[u8]) -> f64 {
+    crate::entropy::fast_neon::shannon_entropy_neon(data)
+}
+
+/// The ML low-entropy feature-bucket threshold and the deterministic
+/// symbolic-credential entropy floor — independently owned but currently
+/// coincident (both 3.5); exposed so an external test can pin that coincidence.
+pub fn ml_low_entropy_feature_threshold() -> f64 {
+    crate::ml_scorer::ml_features::ML_LOW_ENTROPY_FEATURE_THRESHOLD
+}
+
+/// See [`ml_low_entropy_feature_threshold`]: the symbolic-credential entropy floor
+/// owner in `entropy::plausibility`.
+pub fn symbolic_credential_entropy_floor() -> f64 {
+    crate::entropy::plausibility::SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR
+}
+
+/// The compiled generic-keyword bridge regex (GENERIC_RE) built from the derived
+/// assignment-keyword vocabulary; `Err` iff the derived alternation fails to
+/// compile (the fail-closed contract).
+pub fn build_generic_re_for_test() -> Result<regex::Regex, regex::Error> {
+    crate::engine::phase2_generic::build_generic_re()
+}
+
+/// Compile the generic bridge regex from an ARBITRARY group-1 alternation, so a
+/// test can prove a malformed alternation is a hard `Err` (never a silent `Ok`
+/// with the bridge disabled).
+pub fn compile_generic_re_for_test(alternation: &str) -> Result<regex::Regex, regex::Error> {
+    crate::engine::phase2_generic::compile_generic_re(alternation)
+}
+
+/// The group-1 keyword alternation string that GENERIC_RE is built from (derived
+/// vocabulary literals plus the appended vendor structural arm).
+pub fn generic_keyword_alternation_for_test() -> String {
+    crate::engine::phase2_generic::generic_keyword_alternation()
+}
+
+/// The appended `<vendor>_key` structural arm literal, so a test can strip it back
+/// off the alternation to recover the pure derived-vocabulary set.
+pub fn generic_re_vendor_suffix_arm() -> &'static str {
+    crate::engine::phase2_generic::GENERIC_RE_VENDOR_SUFFIX_ARM
+}
+
+/// Force the shipped `GENERIC_RE` LazyLock; panics (fail-closed) iff the bundled
+/// vocabulary does not compile. Returns once the regex is initialized.
+pub fn force_generic_re() {
+    std::sync::LazyLock::force(&crate::engine::phase2_generic::GENERIC_RE);
+}
+
+/// The derived assignment-keyword vocabulary (single owner), so a test can prove
+/// the GENERIC_RE alternation equals exactly this set.
+pub fn assignment_keywords_for_test() -> &'static [String] {
+    crate::assignment_keywords::assignment_keywords()
+}
+
+/// `keyword_is_key_material`: the broad key-material gate (32-hex lift family).
+pub fn keyword_is_key_material_for_test(keyword: &str) -> bool {
+    crate::entropy::scanner::keyword_is_key_material(keyword)
+}
+
+/// `keyword_is_crypto_key_material`: the strict crypto-key gate (64-hex lift).
+pub fn keyword_is_crypto_key_material_for_test(keyword: &str) -> bool {
+    crate::entropy::scanner::keyword_is_crypto_key_material(keyword)
+}
+
+/// The resolved entropy threshold that `keyword_context` derives for a line —
+/// the observable half of the shared `operator_entropy_override` owner (returned
+/// as a bare `f64` so the private `KeywordContext` stays crate-internal).
+pub fn keyword_context_threshold_for_test(
+    keyword_line: &str,
+    min_length: usize,
+    entropy_threshold: f64,
+    secret_keywords: &[String],
+    allow_canonical_lift: bool,
+) -> f64 {
+    crate::entropy::scanner::keyword_context(
+        keyword_line,
+        min_length,
+        entropy_threshold,
+        secret_keywords,
+        allow_canonical_lift,
+    )
+    .threshold
+}
+
+/// The unified credential-context minimum length (`CREDENTIAL_CONTEXT_MIN_LEN`),
+/// shared by the extraction floor and the too-short suppression gate.
+pub fn credential_context_min_len() -> usize {
+    crate::entropy::scanner::CREDENTIAL_CONTEXT_MIN_LEN
+}
+
+/// True iff `candidate` is rejected by the credential-context too-short gate
+/// specifically (`EntropyShapeStage::CredentialContextTooShort`). Encapsulates the
+/// white-box `KeywordContext` construction so the private struct/enum stay
+/// crate-internal; `threshold = 0` isolates the length gate from the entropy floor.
+pub fn credential_context_too_short_rejection_for_test(
+    candidate: &str,
+    keyword: &str,
+    min_len: usize,
+) -> bool {
+    use crate::adjudicate::{EntropyShapeStage, StageId};
+    let context = crate::entropy::keywords::KeywordContext {
+        keyword: keyword.to_string(),
+        threshold: 0.0,
+        min_len,
+        is_credential_context: true,
+        allow_canonical_shapes: false,
+    };
+    let entropy = crate::entropy::shannon_entropy(candidate.as_bytes());
+    matches!(
+        crate::entropy::scanner::candidate_plausibility_rejection_stage(
+            candidate,
+            entropy,
+            &context,
+            &[],
+        ),
+        Some(StageId::EntropyValueShape(
+            EntropyShapeStage::CredentialContextTooShort
+        ))
+    )
+}
+
+/// Seed every scanner coverage-gap counter to 9, run the single per-scan reset
+/// owner `reset_for_scan`, and report whether ALL counters were zeroed. Encapsulates
+/// the white-box `ScannerCoverageGapEvent::ALL` / `.counter()` access in-crate so
+/// the per-scan reset-completeness contract can be pinned externally. The historical
+/// bug omitted `STRUCTURED_OVERSIZE_SKIPS` from the reset, leaking a count into the
+/// next scan's report.
+pub fn telemetry_reset_zeroes_all_seeded_gap_counters() -> bool {
+    use crate::telemetry::ScannerCoverageGapEvent;
+    use std::sync::atomic::Ordering;
+    for gap in ScannerCoverageGapEvent::ALL {
+        gap.counter().store(9, Ordering::Relaxed);
+    }
+    crate::telemetry::reset_for_scan();
+    ScannerCoverageGapEvent::ALL
+        .iter()
+        .all(|gap| gap.counter().load(Ordering::Relaxed) == 0)
+}
+
+/// `(ALL.len(), all_six_variants_present)` for `ScannerCoverageGapEvent::ALL` — the
+/// reset owner iterates `ALL`, so a new variant added without extending `ALL` would
+/// silently escape the per-scan reset. Encapsulates the private variant set in-crate.
+pub fn telemetry_coverage_gap_all_completeness() -> (usize, bool) {
+    use crate::telemetry::ScannerCoverageGapEvent as E;
+    let all_present = [
+        E::StructuredParseFailure,
+        E::StructuredOversizeSkip,
+        E::DecodeTruncation,
+        E::InvalidPatternIndexSkip,
+        E::BoundaryResultCardinalityMismatch,
+        E::LineOffsetMappingMismatch,
+    ]
+    .iter()
+    .all(|variant| E::ALL.contains(variant));
+    (E::ALL.len(), all_present)
+}
+
+/// Drive `find_entropy_secrets_with_canonical_lift_and_lines` with a `line_offsets`
+/// slice shorter than `lines` — the desynced pair that must FAIL CLOSED (panic at
+/// the boundary assert) rather than index out of bounds. Used by a `#[should_panic]`
+/// external test.
+pub fn trigger_desynced_line_offsets_for_test() {
+    let lines = ["alpha", "beta", "gamma"];
+    let line_offsets = [0usize]; // shorter than lines: invariant violated
+    crate::entropy::scanner::find_entropy_secrets_with_canonical_lift_and_lines(
+        &lines,
+        &line_offsets,
+        8,
+        0,
+        4.5,
+        5.8,
+        &[],
+        &[],
+        &[],
+        None,
+        false,
+    );
+}
+
 /// `xml_assignment_tag`: returns the opening tag name of an XML-shaped line that
 /// has a matching `</tag>` close, for ANY well-formed element (NOT just
 /// credential-named ones — that filter lives in `xml_assignment_value`). Returns
@@ -776,6 +1280,209 @@ pub fn loop_expired_on_cadence_now_for_test(iteration: usize, cadence: usize) ->
     crate::deadline::loop_expired_on_cadence(deadline, iteration, cadence)
 }
 
+/// `deadline::expired(None)` — no configured deadline must NEVER report expired
+/// (else an unbounded scan would abort immediately). The cadence-wrapper tests
+/// only ever drive `expired` with a reached deadline, so this None arm and the
+/// not-yet-reached arm below are otherwise unexercised.
+pub fn deadline_expired_none_for_test() -> bool {
+    crate::deadline::expired(None)
+}
+
+/// `deadline::expired(Some(now))` — an already-reached deadline reports expired
+/// (the leaf `now >= deadline` true path, tested directly rather than only
+/// through the cadence wrapper's AND).
+pub fn deadline_expired_now_for_test() -> bool {
+    crate::deadline::expired(Some(std::time::Instant::now()))
+}
+
+/// `deadline::expired(Some(now + 1h))` — a comfortably-future deadline must NOT
+/// report expired. This is the not-yet-reached arm the reached-deadline cadence
+/// tests never hit; a regression flipping `>=`/`<` here would abort every scan.
+pub fn deadline_expired_far_future_for_test() -> bool {
+    match std::time::Instant::now().checked_add(std::time::Duration::from_secs(3600)) {
+        Some(future) => crate::deadline::expired(Some(future)),
+        // `now + 1h` is representable on any real clock; treat the impossible
+        // overflow as "not expired" rather than unwrap (no_unwrap_expect gate).
+        None => false,
+    }
+}
+
+/// `LoopDeadline::from_deadline(None).is_none()` — no deadline yields no loop
+/// deadline (the `deadline?` early return).
+pub fn loop_deadline_from_none_is_none_for_test() -> bool {
+    crate::deadline::LoopDeadline::from_deadline(None).is_none()
+}
+
+/// `LoopDeadline::from_deadline(Some(now)).expired()` — a deadline already in the
+/// past yields a ZERO budget (the `checked_duration_since` → `Duration::ZERO`
+/// fallback), and `expired()` reports true via the `budget.is_zero()` arm.
+pub fn loop_deadline_expired_reached_for_test() -> bool {
+    crate::deadline::LoopDeadline::from_deadline(Some(std::time::Instant::now()))
+        .map(crate::deadline::LoopDeadline::expired)
+        .unwrap_or(false)
+}
+
+/// `LoopDeadline::from_deadline(Some(now + 1h)).expired()` — a comfortably-future
+/// budget must NOT report expired (positive budget, ~zero elapsed): the
+/// `elapsed >= budget` false path.
+pub fn loop_deadline_expired_far_future_for_test() -> bool {
+    match std::time::Instant::now().checked_add(std::time::Duration::from_secs(3600)) {
+        Some(future) => crate::deadline::LoopDeadline::from_deadline(Some(future))
+            .map(crate::deadline::LoopDeadline::expired)
+            .unwrap_or(false),
+        None => false,
+    }
+}
+
+/// `platform_compat::path::path_basename` — the cross-platform final-component
+/// extractor that accepts BOTH `/` and `\` separators (the single owner every
+/// context/suppression path uses for file attribution). Exposed so a gap test can
+/// pin the mixed-separator BEHAVIOR, not just the source-shape one-owner gate.
+pub fn path_basename_for_test(path: &str) -> &str {
+    crate::platform_compat::path_basename(path)
+}
+
+/// `platform_compat::path::path_basename_bytes` — the byte-slice twin of
+/// [`path_basename_for_test`] used on the raw-bytes suppression hot path
+/// (`suppression::path_filter`). Exposed so a parity proptest can pin that the
+/// two implementations agree byte-for-byte (a divergence is a real suppression
+/// bug: the string path and the byte path would attribute a finding differently).
+pub fn path_basename_bytes_for_test(path: &[u8]) -> &[u8] {
+    crate::platform_compat::path_basename_bytes(path)
+}
+
+/// `platform_compat::path::path_has_any_component` — case-insensitive match of
+/// any exact `/`-or-`\`-delimited path component against `components`. This is
+/// the load-bearing predicate behind example-path suppression
+/// (`suppression::decision` / `context::inference`), so exposing it lets a test
+/// pin the exact-component (not substring) + case-insensitive + mixed-separator
+/// contract directly rather than only through a full scan.
+pub fn path_has_any_component_for_test(path: &str, components: &[&str]) -> bool {
+    crate::platform_compat::path_has_any_component(path, components)
+}
+
+/// `engine::phase2_truncate::regex_prefix_anchorable` — the soundness
+/// precondition for driving a pattern from prefix-anchor positions instead of a
+/// whole-chunk walk (finite, enumerable required-prefix set, every member >= 3
+/// bytes). A false TRUE would anchor a pattern that has no such prefix and
+/// silently miss matches; a false FALSE forfeits the fast path. Untested before.
+pub fn regex_prefix_anchorable_for_test(src: &str) -> bool {
+    crate::engine::phase2_truncate::regex_prefix_anchorable(src)
+}
+
+/// `engine::phase2_truncate::focus_floor_boundary` — round an index DOWN to the
+/// nearest UTF-8 char boundary (the decode-focus window's lower snap). Exposed so
+/// the multibyte-boundary contract can be pinned directly.
+pub fn focus_floor_boundary_for_test(s: &str, idx: usize) -> usize {
+    crate::engine::phase2_truncate::focus_floor_boundary(s, idx)
+}
+
+/// `engine::phase2_truncate::focus_ceil_boundary` — round an index UP to the
+/// nearest UTF-8 char boundary (the decode-focus window's upper snap).
+pub fn focus_ceil_boundary_for_test(s: &str, idx: usize) -> usize {
+    crate::engine::phase2_truncate::focus_ceil_boundary(s, idx)
+}
+
+/// `engine::phase2_truncate::truncate_src` — truncate `s` to at most `n` bytes on
+/// a char boundary, appending `…` when truncation occurred. Exposed so the
+/// boundary-safety + verbatim-when-short contract is pinned.
+pub fn truncate_src_for_test(s: &str, n: usize) -> String {
+    crate::engine::phase2_truncate::truncate_src(s, n)
+}
+
+/// `compiler::compiler_compile::compile_companion` — compile a `CompanionSpec`
+/// regex into a `CompiledCompanion`, returning `(name, capture_group)`. The
+/// capture group resolves to `Some(1)` iff the regex declares a (capturing)
+/// group, else `None`; a regex that fails to compile is an `Err` naming the
+/// detector. The capture-group resolution + error path were untested.
+pub fn compile_companion_for_test(
+    name: &str,
+    regex: &str,
+    detector_id: &str,
+) -> Result<(String, Option<usize>), String> {
+    let spec = keyhog_core::CompanionSpec {
+        name: name.to_string(),
+        regex: regex.to_string(),
+        within_lines: 1,
+        required: false,
+    };
+    crate::compiler::compiler_compile::compile_companion(&spec, detector_id)
+        .map(|c| (c.name, c.capture_group))
+        .map_err(|e| e.to_string())
+}
+
+/// `simdsieve_prefilter::build_hot_pattern_validators` — build the per-hot-pattern
+/// validator regexes from a detector set, returning `is_some()` per slot. Pins
+/// the "loaded hot detector => Some, absent or pattern-less => None" mapping
+/// without exposing the compiled `Regex`. Order matches
+/// [`hot_pattern_detector_ids_for_test`].
+#[cfg(feature = "simdsieve")]
+pub fn hot_pattern_validator_is_some_for_test(
+    detectors: &[keyhog_core::DetectorSpec],
+) -> Result<Vec<bool>, String> {
+    crate::simdsieve_prefilter::build_hot_pattern_validators(detectors)
+        .map(|v| v.iter().map(Option::is_some).collect())
+        .map_err(|e| e.to_string())
+}
+
+/// For hot-pattern slot `index`, whether the built validator (if any) matches
+/// `sample`; `None` when the slot has no validator. Pins the validator's
+/// `^`-anchored match behavior.
+#[cfg(feature = "simdsieve")]
+pub fn hot_pattern_validator_matches_for_test(
+    detectors: &[keyhog_core::DetectorSpec],
+    index: usize,
+    sample: &str,
+) -> Result<Option<bool>, String> {
+    crate::simdsieve_prefilter::build_hot_pattern_validators(detectors)
+        .map(|v| {
+            v.get(index)
+                .and_then(|slot| slot.as_ref())
+                .map(|re| re.is_match(sample))
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// The canonical hot-pattern detector-id list, so a test can locate a slot.
+#[cfg(feature = "simdsieve")]
+pub fn hot_pattern_detector_ids_for_test() -> &'static [&'static str] {
+    *crate::simdsieve_prefilter::HOT_PATTERN_DETECTOR_IDS
+}
+
+/// Round-trip a `ScannerTuningConfig` override (`None`/`Some(true)`/`Some(false)`)
+/// through its setter + getter, pinning the `BoolOverride` resolve logic:
+/// `None` ⇒ the compiled default, `Some(true)` ⇒ true, `Some(false)` ⇒ false.
+/// Uses a FRESH local config and sets the override EXPLICITLY, so the result is
+/// deterministic and independent of any process env seeding.
+pub fn tuning_phase2_localizer_roundtrip_for_test(mode: Option<bool>) -> bool {
+    let cfg = crate::tuning::ScannerTuning::default();
+    cfg.set_phase2_localizer(mode);
+    cfg.phase2_localizer_enabled()
+}
+
+/// As [`tuning_phase2_localizer_roundtrip_for_test`] for the GPU region-presence
+/// CPU recall floor override. Gated to `gpu`: it exercises the reader
+/// `gpu_recall_floor_enabled`, which is itself `#[cfg(feature = "gpu")]` (the
+/// GPU region-presence recall floor is a GPU-path-only knob), so the roundtrip
+/// helper — and its one test — compile only where that reader exists. The
+/// `ci-lean`/`portable` binaries have no GPU region path, so there is nothing
+/// to round-trip there.
+#[cfg(feature = "gpu")]
+pub fn tuning_gpu_recall_floor_roundtrip_for_test(mode: Option<bool>) -> bool {
+    let cfg = crate::tuning::ScannerTuning::default();
+    cfg.set_gpu_recall_floor(mode);
+    cfg.gpu_recall_floor_enabled()
+}
+
+/// Compiled default for the phase-2 localizer flag (what an unset override
+/// resolves to).
+pub const TUNING_LOCALIZER_DEFAULT: bool =
+    crate::scanner_config::ScannerTuningConfig::FALLBACK_LOCALIZER_DEFAULT;
+
+/// Compiled default for the GPU recall-floor flag.
+pub const TUNING_GPU_RECALL_FLOOR_DEFAULT: bool =
+    crate::scanner_config::ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT;
+
 /// GitLab structural-checksum verdict for `credential`, as a stable string
 /// (`"valid"` / `"structurally-valid"` / `"invalid"` / `"not-applicable"`). Lets
 /// a gap test pin the classic (20) and routable (16) body-length floors.
@@ -787,6 +1494,53 @@ pub fn gitlab_checksum_verdict_for_test(credential: &str) -> &'static str {
         crate::checksum::ChecksumResult::Invalid => "invalid",
         crate::checksum::ChecksumResult::NotApplicable => "not-applicable",
     }
+}
+
+/// Every single-owner checksum prefix (`crate::checksum::prefixes`) the
+/// validators strip, exposed so the `checksum_prefixes_are_backed_by_their_detector`
+/// guard (an external test crate) can bind each to its authoritative detector
+/// TOML and prove the validator literal never drifts from the pattern that
+/// surfaces the credential. The prefix→detector binding lives in the test
+/// (detector-id strings belong only to `detector_ids.rs` in src).
+pub fn checksum_prefixes() -> Vec<&'static str> {
+    crate::checksum::prefixes::all_checksum_prefixes()
+}
+
+/// SIMD prefilter hot-pattern `(prefix bytes, detector id)` bindings, exposed so
+/// the `hot_pattern_prefixes_are_backed_by_their_detector` guard (an external
+/// test crate) can bind each recall-load-bearing prefilter prefix to its
+/// authoritative `detectors/<id>.toml` and prove the SIMD fast-path trigger set
+/// never silently drifts from the detection pattern that surfaces the
+/// credential. Detector ids are already single-owned via `crate::detector_ids`;
+/// this surfaces the (prefix, id) pairing the guard needs.
+#[cfg(feature = "simdsieve")]
+pub fn simdsieve_hot_pattern_bindings() -> Vec<(&'static [u8], &'static str)> {
+    (*crate::simdsieve_prefilter::HOT_PATTERNS)
+        .iter()
+        .copied()
+        .zip(
+            (*crate::simdsieve_prefilter::HOT_PATTERN_DETECTOR_IDS)
+                .iter()
+                .copied(),
+        )
+        .collect()
+}
+
+/// The single-owner PEM armor marker (`crate::credential_shapes::PEM_BEGIN_MARKER`),
+/// exposed so a guard can bind it to its authoritative private-key detector TOML —
+/// proving the suppression carve-out and the entropy plausibility gate key off the
+/// exact literal the detector uses to surface a PEM key (no bare-literal drift).
+pub fn pem_begin_marker() -> &'static str {
+    crate::credential_shapes::PEM_BEGIN_MARKER
+}
+
+/// The single-owner JWT base64url header marker
+/// (`crate::jwt::JWT_BASE64_HEADER_PREFIX`), exposed so a guard can bind it to
+/// the authoritative jwt-token detector TOML — proving the entropy plausibility
+/// gate and the canonical-shape suppression check key off the exact `eyJ` marker
+/// the detector uses to surface a JWT (no bare-literal drift).
+pub fn jwt_header_prefix() -> &'static str {
+    crate::jwt::JWT_BASE64_HEADER_PREFIX
 }
 
 /// npm checksum verdict for `credential`, as a stable string. Lets a gap test
@@ -877,7 +1631,7 @@ pub fn generic_named_owned_keywords_for_test(service: &str, keywords: &[&str]) -
 /// constant cannot drift apart again.
 pub fn static_interner_seed_probe_for_test() -> (Vec<&'static str>, Vec<bool>, bool) {
     let interner = crate::static_intern::StaticInterner::from_detector_strings(Vec::<&str>::new());
-    let seeds: Vec<&'static str> = crate::static_intern::SEED_SOURCE_TYPES.to_vec();
+    let seeds: Vec<&'static str> = crate::static_intern::seed_source_types_leaked();
     let interned: Vec<bool> = seeds
         .iter()
         .map(|&s| interner.lookup(s).is_some())
@@ -904,7 +1658,7 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
     )
 }
 
-#[cfg(feature = "simd")]
+#[cfg(any(feature = "simd", feature = "gpu", test))]
 pub fn scan_windowed_with_triggered_for_test(
     scanner: &crate::CompiledScanner,
     chunk: &keyhog_core::Chunk,
@@ -913,7 +1667,7 @@ pub fn scan_windowed_with_triggered_for_test(
     scanner.scan_windowed_with_triggered(chunk, triggered_patterns, None, None, None, None, None)
 }
 
-#[cfg(feature = "simd")]
+#[cfg(any(feature = "simd", feature = "gpu", test))]
 pub fn scan_windowed_with_triggered_evidence_for_test(
     scanner: &crate::CompiledScanner,
     chunk: &keyhog_core::Chunk,
@@ -1014,7 +1768,7 @@ pub mod confidence {
         crate::confidence::known_prefix_body(credential)
     }
 
-    pub const KNOWN_PREFIXES: &[&str] = crate::confidence::KNOWN_PREFIXES;
+    pub use crate::confidence::KNOWN_PREFIXES;
 
     #[cfg(test)]
     pub(crate) fn finalize_confidence(score: f64) -> f64 {
@@ -1079,6 +1833,39 @@ pub mod confidence {
 
     pub fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
         crate::confidence::penalties::apply_calibration_multiplier(score, detector_id, None)
+    }
+
+    /// The whole report-confidence tail as one call, so the integration tree can
+    /// lock the CONTRACTUAL ORDER of the penalty pipeline (post-ML penalties +
+    /// encoded-text lift → path penalties → known-prefix floor → calibration
+    /// multiplier → checksum decision) and its terminal behaviors — most
+    /// importantly that the checksum decision runs LAST and can veto a match to
+    /// `None` even after a known-prefix floor lifted it. `calibration` is fixed to
+    /// `None` (the shipped default when no per-detector calibration store is
+    /// loaded); the multiplier-bearing leg is covered separately via
+    /// `apply_calibration_multiplier_with_store`. Primitive args only, since
+    /// `ReportConfidencePolicy` is `pub(crate)`.
+    pub fn finalize_report_confidence(
+        confidence: f64,
+        credential: &str,
+        detector_id: &str,
+        file_path: Option<&str>,
+        is_named_detector: bool,
+        penalize_test_paths: bool,
+        allow_encoded_text_lift: bool,
+    ) -> Option<f64> {
+        crate::confidence::policy::finalize_report_confidence(
+            confidence,
+            crate::confidence::policy::ReportConfidencePolicy {
+                credential,
+                detector_id,
+                file_path,
+                is_named_detector,
+                penalize_test_paths,
+                allow_encoded_text_lift,
+                calibration: None,
+            },
+        )
     }
 
     #[cfg(test)]
@@ -1192,20 +1979,97 @@ pub mod entropy_fast {
         crate::entropy::fast::shannon_entropy_simd(data)
     }
 
-    #[cfg(test)]
-    pub(crate) fn shannon_entropy_scalar(data: &[u8]) -> f64 {
+    /// The exact scalar reference reduction (always-compiled production owner,
+    /// shared by the x86/NEON fallbacks and `scan_loop`). Exposed so an external
+    /// test can pin the SIMD dispatch against it to a few ULPs.
+    pub fn shannon_entropy_scalar(data: &[u8]) -> f64 {
         crate::entropy::fast::shannon_entropy_scalar(data)
     }
 
-    #[cfg(test)]
-    pub(crate) fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
-        crate::entropy::fast::has_high_entropy_fast(data, threshold)
+    /// `(tier_is_stable_across_calls, tier_is_a_known_variant)` for the x86 entropy
+    /// SIMD-tier resolver. The tier is `cpuid`-resolved exactly once and cached in a
+    /// `OnceLock`, so two calls must return the identical variant, and it must be one
+    /// of the three known tiers. Encapsulates the private `X86EntropyTier` in-crate.
+    #[cfg(target_arch = "x86_64")]
+    pub fn x86_entropy_tier_stability() -> (bool, bool) {
+        use crate::entropy::fast::X86EntropyTier;
+        let first = crate::entropy::fast::resolve_x86_entropy_tier();
+        let second = crate::entropy::fast::resolve_x86_entropy_tier();
+        let stable = first == second;
+        let known = matches!(
+            first,
+            X86EntropyTier::Avx512 | X86EntropyTier::Avx2 | X86EntropyTier::Scalar
+        );
+        (stable, known)
     }
 }
 
 pub mod context {
     pub fn documentation_line_flags(lines: &[&str]) -> Vec<bool> {
         crate::context::documentation_line_flags(lines)
+    }
+
+    /// `is_false_positive_context`: true when the line at `line_idx` sits in a
+    /// false-positive suppression context (SRI integrity body, disclaimer
+    /// comment, …). External-test wrapper (the `#[cfg(test)]` sibling below is
+    /// only visible to the lib's own inline tests).
+    pub fn is_false_positive_context_for_test(
+        lines: &[&str],
+        line_idx: usize,
+        file_path: Option<&str>,
+    ) -> bool {
+        crate::context::is_false_positive_context(lines, line_idx, file_path)
+    }
+
+    /// `is_false_positive_match_context`: same suppression decision resolved from
+    /// a byte offset into the full text rather than a line index.
+    pub fn is_false_positive_match_context_for_test(
+        text: &str,
+        match_start: usize,
+        file_path: Option<&str>,
+    ) -> bool {
+        crate::context::is_false_positive_match_context(text, match_start, file_path)
+    }
+
+    /// `is_integrity_hash_bytes`: true when a line is an SRI `"integrity": "…"`
+    /// body carrying a canonical `sha512-`/`sha384-`/`sha256-` label — the
+    /// false-positive gate that must recognise EVERY canonical label.
+    pub fn is_integrity_hash_bytes_for_test(bytes: &[u8]) -> bool {
+        crate::context::is_integrity_hash_bytes(bytes)
+    }
+
+    /// `has_disclaimer_comment_bytes`: true when a line carries a disclaimer
+    /// phrase INSIDE a comment marker (`<#`, `* `, …) — a bare phrase without a
+    /// comment marker must not trip.
+    pub fn has_disclaimer_comment_bytes_for_test(bytes: &[u8]) -> bool {
+        crate::context::has_disclaimer_comment_bytes(bytes)
+    }
+
+    /// The canonical `HASH_ALGO_INTEGRITY_LABELS` vocabulary, so an external test
+    /// can prove the integrity gate recognises every label (sha384- regressed
+    /// once when a diverging subset omitted it).
+    pub fn hash_algo_integrity_labels_for_test() -> Vec<&'static str> {
+        crate::suppression::shape::HASH_ALGO_INTEGRITY_LABELS.to_vec()
+    }
+
+    /// `is_in_test_function`: look-back classifier — true when the match line
+    /// sits inside a test function. The look-back must STOP at a real
+    /// `pub(crate) fn` boundary instead of walking past it to a sibling `#[test]`.
+    pub fn is_in_test_function_for_test(lines: &[&str], line_idx: usize) -> bool {
+        crate::context::is_in_test_function(lines, line_idx)
+    }
+
+    /// `is_rust_fn_signature`: true when a trimmed line is a Rust `fn` signature
+    /// across the full qualifier family (pub/const/unsafe/async/extern/default).
+    pub fn is_rust_fn_signature_for_test(trimmed: &str) -> bool {
+        crate::context::is_rust_fn_signature(trimmed)
+    }
+
+    /// `strip_comment_prefix`: strips a leading canonical comment marker
+    /// (`//`, `#`, `<#`, `* `, …) and returns the remainder, or `None` when the
+    /// line is not comment-prefixed.
+    pub fn strip_comment_prefix_for_test(trimmed: &str) -> Option<&str> {
+        crate::context::strip_comment_prefix(trimmed)
     }
 
     #[cfg(test)]
@@ -1316,7 +2180,7 @@ pub mod fragment_cache {
             self.0.record_and_reassemble(inner_fragment(fragment))
         }
 
-        #[cfg(feature = "simd")]
+        #[cfg(any(feature = "simd", test))]
         pub fn record_and_reassemble_stamped(
             &self,
             fragment: SecretFragment,
@@ -1404,6 +2268,16 @@ pub mod multiline {
     #[cfg(feature = "multiline")]
     pub fn extract_dot_concatenation_for_test(line: &str) -> Option<(String, bool)> {
         crate::multiline::extract_dot_concatenation(line)
+    }
+
+    /// Test seam for the assignment-line RHS extractor: strips the Tier-B
+    /// variable-declaration keyword prefix
+    /// (`rules/multiline-var-decl-keywords.toml`) and returns the value side of
+    /// the assignment. Lets a test pin that the keyword set is data-driven and
+    /// complete without exposing the loader internals.
+    #[cfg(feature = "multiline")]
+    pub fn filter_line_content_for_test(line: &str) -> String {
+        crate::multiline::filter_line_content(line)
     }
 
     /// Test seam for the multiline preprocessor join pass, returning the joined
@@ -1538,7 +2412,7 @@ pub mod multiline {
 }
 
 #[cfg(all(test, feature = "gpu"))]
-pub(crate) use crate::compiler::build_gpu_literals;
+pub(crate) use crate::compiler::{build_gpu_literals, build_gpu_position_literals};
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) fn gpu_matcher_cache_dir_from_base(
     base: Option<std::path::PathBuf>,
@@ -1574,6 +2448,15 @@ pub fn suffix_gate_literals_for_test(src: &str) -> Vec<String> {
 }
 pub fn new_trigger_bitmap_for_test(n_patterns: usize) -> Vec<u64> {
     crate::engine::trigger_bitmap::new_trigger_bitmap(n_patterns)
+}
+/// Collect the bit indices `for_each_set_bit` reports for `words`, so a property
+/// test can prove the confirmed-pass hot-path bit walk recovers EXACTLY the set
+/// bits (no miss, no duplicate, strictly ascending). A missed bit silently drops
+/// a detector trigger; a duplicate double-fires the confirmed extraction.
+pub fn for_each_set_bit_collect_for_test(words: &[u64]) -> Vec<usize> {
+    let mut out = Vec::new();
+    crate::engine::trigger_bitmap::for_each_set_bit(words, |idx| out.push(idx));
+    out
 }
 /// Whether an entropy candidate's keyword reads as a strong credential anchor
 /// (admits the candidate past the file-extension gate). Reachable from
@@ -1650,12 +2533,6 @@ pub fn csr_from_rows_roundtrip_for_test(rows: Vec<Vec<usize>>) -> Vec<Vec<u32>> 
         .collect()
 }
 pub use crate::pipeline::compute_line_offsets;
-
-pub fn generic_assignment_keyword_lines(text: &str) -> Vec<usize> {
-    let mut lines = Vec::new();
-    crate::engine::phase2_generic::keywords::collect_generic_keyword_lines(text, &mut lines);
-    lines
-}
 pub fn normalize_chunk_data(data: &str) -> std::borrow::Cow<'_, str> {
     crate::normalize_chunk_data(data)
 }
@@ -1665,7 +2542,7 @@ pub fn normalize_chunk_data(data: &str) -> std::borrow::Cow<'_, str> {
 /// `named_detector_anchor_floor` regression test.
 pub const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = crate::confidence::policy::NAMED_DETECTOR_ANCHOR_FLOOR;
 
-/// Test seam for `crate::confidence::policy::apply_named_detector_anchor_floor`.
+/// Test seam for [`crate::confidence::policy::apply_named_detector_anchor_floor`].
 /// `has_anchor` is `has_context_anchor || has_literal_prefix` at the call site.
 pub fn apply_named_detector_anchor_floor(
     confidence: f64,
@@ -1679,6 +2556,209 @@ pub fn apply_named_detector_anchor_floor(
     )
 }
 
+/// Test seam for [`crate::suppression::shape::looks_like_english_prose`] — the
+/// prose-run heuristic that tightens FP filtering when a captured value reads like
+/// English text rather than a credential (all-lowercase >= 16, or >= 2 all-alpha
+/// words with at least one lowercase word).
+pub fn looks_like_english_prose_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_english_prose(value)
+}
+
+/// Test seam for [`crate::suppression::shape::looks_like_dashed_serial_key`] — a
+/// license/serial 5×5 dash shape (`XXXXX-XXXXX-XXXXX-XXXXX-XXXXX`, 29 chars, alnum
+/// groups). A product key, not a credential.
+pub fn looks_like_dashed_serial_key_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_dashed_serial_key(value)
+}
+
+/// Test seam for [`crate::suppression::shape::looks_like_prefixed_hash_digest`] — a
+/// hash-algo-labelled digest (`sha256:<64hex>`, `md5:<32hex>`, `sha256-<b64>`, …),
+/// case-insensitive label, substring-matched (so `nginx@sha256:<hex>` counts). The
+/// stripped body must itself be a canonical-length uniform hex or base64 integrity blob.
+pub fn looks_like_prefixed_hash_digest_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_prefixed_hash_digest(value)
+}
+
+/// Test seam for [`crate::suppression::shape::looks_like_prefixed_masked_sequence`]
+/// — a placeholder body: trailing `...` / `…`, OR an `xxx`/`***` mask prefix
+/// followed by a sequential digit/alpha run (`xxxx1234567890`, `***abcdefgh`).
+pub fn looks_like_prefixed_masked_sequence_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_prefixed_masked_sequence(value)
+}
+
+/// Test seam for [`crate::suppression::shape::has_repeated_block_mask`] — a masked
+/// value: three or more long (>= 4) identical-char runs, OR a short block that
+/// tiles the whole string (`abcabcabc…`).
+pub fn has_repeated_block_mask_for_test(value: &str) -> bool {
+    crate::suppression::shape::has_repeated_block_mask(value)
+}
+
+/// Test seam for [`crate::suppression::shape::looks_like_scheme_prefixed_uri`] — a
+/// `scheme:` / `scheme://` / hash-algo-labelled string (URI/URN shapes are not
+/// secrets even though their tails look random).
+pub fn looks_like_scheme_prefixed_uri_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_scheme_prefixed_uri(value)
+}
+
+/// Test seam for [`crate::suppression::shape::looks_like_url_or_path_segment`] — a
+/// `/`-separated path (>= 2 non-empty segments, each alnum/`_`/`-`/`.` with a letter).
+pub fn looks_like_url_or_path_segment_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_url_or_path_segment(value)
+}
+
+/// Test seam for [`crate::suppression::shape::looks_like_filename_reference`] — a
+/// value ending (case-insensitively) in a known config/keystore file suffix.
+pub fn looks_like_filename_reference_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_filename_reference(value)
+}
+
+/// Test seam for [`crate::suppression::shape::looks_like_aws_iam_arn`] — matches a
+/// FULL IAM ARN (`arn:<partition>:iam::…:role|user|group|policy|instance-profile/…`).
+pub fn looks_like_aws_iam_arn_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_aws_iam_arn(value)
+}
+
+/// Test seam for [`crate::suppression::shape::looks_like_trimmed_aws_iam_arn`] — the
+/// PRE-TRIMMED gate: matches the same body WITHOUT the leading `arn:`. Deliberately
+/// mutually exclusive with the full gate on the `arn:` prefix.
+pub fn looks_like_trimmed_aws_iam_arn_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_trimmed_aws_iam_arn(value)
+}
+
+/// Test seam for [`crate::suppression::shape::has_three_or_more_consecutive_identical`]
+/// — a masking-run detector that counts a run of ANY byte, dashes INCLUDED.
+pub fn has_three_or_more_consecutive_identical_for_test(value: &str) -> bool {
+    crate::suppression::shape::has_three_or_more_consecutive_identical(value)
+}
+
+/// Test seam for [`crate::suppression::shape::has_n_or_more_consecutive_identical`]
+/// — the parameterized run detector that EXCLUDES dashes (legitimate delimiters in
+/// PEM/UUID/JWT). Deliberately diverges from the three-or-more variant on dash runs.
+pub fn has_n_or_more_consecutive_identical_for_test(value: &str, n: usize) -> bool {
+    crate::suppression::shape::has_n_or_more_consecutive_identical(value, n)
+}
+
+/// Test seam for [`crate::suppression::shape::looks_like_bracketed_template_placeholder`]
+/// — a `{…}` / `<…>` / `${…}` wrapper no longer than the placeholder cap (80 bytes).
+pub fn looks_like_bracketed_template_placeholder_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_bracketed_template_placeholder(value)
+}
+
+/// Test seam for [`crate::suppression::shape::source::looks_like_program_identifier`]
+/// — a bare snake_case (`my_program`) or camelCase (`myProgram`) all-alpha program
+/// name; identifier grammar, not a secret.
+pub fn looks_like_program_identifier_for_test(value: &str) -> bool {
+    crate::suppression::shape::source::looks_like_program_identifier(value)
+}
+
+/// Test seam for [`crate::suppression::shape::source::looks_like_kebab_config_identifier`]
+/// — a short (<= 24) dash-joined majority-lowercase config key (`log-level`) with
+/// no base64-ish `+`/`/`/`=` chars.
+pub fn looks_like_kebab_config_identifier_for_test(value: &str) -> bool {
+    crate::suppression::shape::source::looks_like_kebab_config_identifier(value)
+}
+
+/// Test seam for [`crate::suppression::shape::public::looks_like_public_reference_selector`]
+/// — a value made entirely of `[sources.IDENT]` TOML-table selectors (IDENT =
+/// 3-80 upper/digit/`_`); a config reference, not a credential.
+pub fn looks_like_public_reference_selector_for_test(value: &str) -> bool {
+    crate::suppression::shape::public::looks_like_public_reference_selector(value)
+}
+
+/// Test seam for [`crate::suppression::shape::public::looks_like_percent_encoded_markup`]
+/// — percent-encoded XSS markup (encoded `<`…`>` around a script/handler keyword);
+/// an attack payload the scanner captured, not a secret.
+pub fn looks_like_percent_encoded_markup_for_test(value: &str) -> bool {
+    crate::suppression::shape::public::looks_like_percent_encoded_markup(value)
+}
+
+/// Test seam for [`crate::suppression::shape::public::looks_like_html_event_handler_fragment`]
+/// — a bare `oneventname=` HTML event-handler attribute; executable grammar, not a secret.
+pub fn looks_like_html_event_handler_fragment_for_test(value: &str) -> bool {
+    crate::suppression::shape::public::looks_like_html_event_handler_fragment(value)
+}
+
+/// Test seam for [`crate::suppression::shape::is_canonical_service_hex_key`] — a
+/// uniform-case pure-hex value at a SERVICE-KEY width (`32/40/48/64`). Deliberately
+/// a SUBSET of the bare-hex-digest widths (no 56/72/128), so a 56/72/128-hex value
+/// is a digest but NOT a service key — the two must not be conflated.
+pub fn is_canonical_service_hex_key_for_test(value: &str) -> bool {
+    crate::suppression::shape::is_canonical_service_hex_key(value)
+}
+
+/// Test seam for [`crate::suppression::shape::looks_like_truncated_uuid_v4_suffix`]
+/// — a UUID v4 with its 2 leading hex chars dropped (34 chars, `6-4-4-4-12`,
+/// version `4` at 12 + variant `8/9/a/b` at 17, uniform-case hex).
+pub fn looks_like_truncated_uuid_v4_suffix_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_truncated_uuid_v4_suffix(value)
+}
+
+/// Test seam for [`crate::suppression::shape::is_uuid_v4_shape`] — a 36-char
+/// canonical UUID (`8-4-4-4-12` with uniform-case hex bodies). Standard-shaped
+/// UUIDs are FP decoys, so the gate matches every RFC-4122 version, not just v4.
+pub fn is_uuid_v4_shape_for_test(value: &str) -> bool {
+    crate::suppression::shape::is_uuid_v4_shape(value)
+}
+
+/// Test seam for [`crate::suppression::shape::looks_like_bare_hex_digest`] — a
+/// uniform-case pure-hex value at a hash / truncated-hash-prefix length
+/// (`32/40/48/56/64/72/128`). These are digests or detector greedy-captures of a
+/// digest span, never real keys (real keys of those widths are base64, not hex).
+pub fn looks_like_bare_hex_digest_for_test(value: &str) -> bool {
+    crate::suppression::shape::looks_like_bare_hex_digest(value)
+}
+
+/// Test seam for [`crate::adjudicate::generic::bare_auth_value_allowed`] — decides
+/// whether a bare `auth = <value>` match carries enough signal to keep. Allows a
+/// structured dotted token (JWT/Discord) OR a dot-free value that has at least one
+/// non-alphanumeric byte AND passes the secret-strength checks; a plain word or a
+/// pure-alphanumeric identifier is rejected as a false positive.
+pub fn bare_auth_value_allowed_for_test(value: &str) -> bool {
+    crate::adjudicate::generic::bare_auth_value_allowed(value)
+}
+
+/// Test seam for [`crate::suppression::shape::is_structured_dotted_token`] — the
+/// tight allowlist of dotted credential shapes (a JWT `header.payload.signature`
+/// or a Discord `id.timestamp.hmac` token) that the scanner may trust despite the
+/// dots. Property/method chains (`obj.field.method`) also use dots, so this must
+/// stay a precise shape gate, never a general "contains a dot" relaxation.
+pub fn is_structured_dotted_token_for_test(value: &str) -> bool {
+    crate::suppression::shape::is_structured_dotted_token(value)
+}
+
+/// Test seam for [`crate::adjudicate::generic::generic_bridge_keyword_requires_word_boundary`]:
+/// only the substring-ambiguous bridge keywords `pass`/`auth` require a
+/// whole-word left boundary (others are distinctive enough to fire anywhere).
+pub fn generic_bridge_keyword_requires_word_boundary_for_test(keyword: &str) -> bool {
+    crate::adjudicate::generic::generic_bridge_keyword_requires_word_boundary(keyword)
+}
+
+/// Test seam for [`crate::adjudicate::generic::keyword_has_word_boundary`] — the
+/// left-boundary check that admits a camelCase hinge (`myPass` → boundary before
+/// `Pass`) while rejecting a substring tail (`bypass` → no boundary). Pins the
+/// exact FP-vs-recall contract for the `pass`/`auth` bridge keywords.
+pub fn keyword_has_word_boundary_for_test(line: &str, keyword_start: usize) -> bool {
+    crate::adjudicate::generic::keyword_has_word_boundary(line, keyword_start)
+}
+
+/// Test seam for [`crate::adjudicate::is_hex_digest_fragment`] — the precision
+/// gate that suppresses a detector match which is really a SUBSTRING of a longer
+/// contiguous hex digest (a SHA-1/256 split across the match boundary). Returns
+/// `true` (suppress) only when the credential is all-hex, at least the detector's
+/// `min_len`, has hex context on at least one side, and the total surrounding hex
+/// run reaches 40 chars (SHA-1 width). An unknown `detector_id` uses the default
+/// `min_len` of 16, giving deterministic behavior without the detector registry.
+pub fn is_hex_digest_fragment_for_test(
+    detector_id: &str,
+    data: &str,
+    start: usize,
+    end: usize,
+    credential: &str,
+) -> bool {
+    let detector_min_len = keyhog_core::detector_spec_by_id(detector_id).and_then(|s| s.min_len);
+    crate::adjudicate::is_hex_digest_fragment(detector_min_len, data, start, end, credential)
+}
+
 /// Test seam for the active-spec generic entropy floor. Accepts the exact
 /// detector spec a compiled scanner would pass, so tests can prove a custom
 /// detector policy wins without mutating the embedded corpus.
@@ -1690,7 +2770,21 @@ pub fn generic_entropy_floor_for_test(
     crate::adjudicate::generic_entropy_floor(entropy_threshold, detector, credential_len)
 }
 
-/// Test seam for `crate::confidence::policy::generic_secret_confidence`.
+/// Test seam for [`crate::confidence::policy::entropy_fallback_confidence`].
+/// `keyword_present=false` selects the keyword-free label (no +0.10 lift); `true`
+/// passes a real keyword so the lift applies. Exposed to pin the NaN-sanitize
+/// contract (a NaN entropy must never launder into a 0.55 mid-tier confidence).
+#[cfg(feature = "entropy")]
+pub fn entropy_fallback_confidence_for_test(entropy: f64, keyword_present: bool) -> f64 {
+    let keyword = if keyword_present {
+        "password"
+    } else {
+        crate::entropy::KEYWORD_FREE_LABEL
+    };
+    crate::confidence::policy::entropy_fallback_confidence(entropy, keyword)
+}
+
+/// Test seam for [`crate::confidence::policy::generic_secret_confidence`].
 /// `context_label` selects the `CodeContext` ("test" / "comment" / "doc" /
 /// anything else = ordinary source) so a gap test can pin the exact confidence
 /// formula without depending on the crate-internal `CodeContext` enum.
@@ -1705,6 +2799,7 @@ pub fn generic_secret_confidence_for_test(
         "test" => crate::context::CodeContext::TestCode,
         "comment" => crate::context::CodeContext::Comment,
         "doc" => crate::context::CodeContext::Documentation,
+        "assignment" => crate::context::CodeContext::Assignment,
         _ => crate::context::CodeContext::Unknown,
     };
     crate::confidence::policy::generic_secret_confidence(
@@ -1716,7 +2811,7 @@ pub fn generic_secret_confidence_for_test(
     )
 }
 
-/// Test seam for `crate::suppression::shape::is_canonical_service_hex_key`: the
+/// Test seam for [`crate::suppression::shape::is_canonical_service_hex_key`]: the
 /// predicate that exempts a service-anchored detector's canonical-length pure-hex
 /// capture from the bare-hex-digest shape gate.
 pub fn is_canonical_service_hex_key(credential: &str) -> bool {
@@ -1965,6 +3060,7 @@ pub fn scan_state_lazy_overestimated_priority_probe_for_test() -> (bool, Vec<key
 
     (built, state.into_matches())
 }
+
 #[cfg(any(feature = "entropy", feature = "simdsieve"))]
 pub fn scan_state_lazy_identity_tiebreak_probe_for_test() -> (bool, Vec<keyhog_core::RawMatch>) {
     const LIMIT: usize = 1;
@@ -2116,6 +3212,33 @@ pub(crate) fn phase2_pattern_diagnostics(
     scanner: &crate::engine::CompiledScanner,
 ) -> Vec<(String, Vec<String>)> {
     scanner.phase2_pattern_diagnostics()
+}
+
+#[cfg(test)]
+pub(crate) use crate::engine::Phase2PoolBreakdown;
+
+#[cfg(test)]
+pub(crate) fn phase2_always_active_family_breakdown(
+    scanner: &crate::engine::CompiledScanner,
+) -> Phase2PoolBreakdown {
+    scanner.phase2_always_active_family_breakdown()
+}
+
+#[cfg(all(test, feature = "simd"))]
+pub(crate) fn bench_hs_homoglyph_skip(
+    scanner: &crate::engine::CompiledScanner,
+    haystack: &str,
+    n_calls: u32,
+) -> (f64, f64, usize, usize) {
+    scanner.bench_hs_homoglyph_skip(haystack, n_calls)
+}
+
+#[cfg(all(test, feature = "simd"))]
+pub(crate) fn hs_mark_full_vs_lean_diff(
+    scanner: &crate::engine::CompiledScanner,
+    ascii_text: &str,
+) -> (usize, usize, Vec<usize>, Vec<usize>) {
+    scanner.hs_mark_full_vs_lean_diff(ascii_text)
 }
 
 #[cfg(test)]
@@ -2394,6 +3517,46 @@ pub mod entropy_isolated {
         crate::suppression::token_randomness::is_random_token(value)
     }
 
+    /// Mirror of [`is_random_token`]: the model is CONFIDENT `value` is a
+    /// pronounceable English word (>= MIN_ALPHA alpha, mean bigram log-prob ABOVE
+    /// the random threshold, and at least one non-hex letter). NOT the negation
+    /// of `is_random_token` (both are `false` on a too-short/sparse token).
+    pub fn is_confident_dictionary_word(value: &str) -> bool {
+        crate::suppression::token_randomness::is_confident_dictionary_word(value)
+    }
+
+    /// `value` has fewer than MIN_DISTINCT_LETTERS distinct ASCII letters — a
+    /// repetitive/alternating/digit mask, never a real password.
+    pub fn has_low_letter_diversity(value: &str) -> bool {
+        crate::suppression::token_randomness::has_low_letter_diversity(value)
+    }
+
+    /// Cache-HIT path: build the `TokenRandomness` handle over `value` itself and
+    /// ask it about the SAME `&str` — the ptr+len fast path returns the precomputed
+    /// evidence. Must equal [`is_random_token`] (the no-cache path) for every value.
+    pub fn token_randomness_self_is_random(value: &str) -> bool {
+        crate::suppression::token_randomness::TokenRandomness::for_candidate(value)
+            .is_random_token(value)
+    }
+
+    /// Cache-MISS path: build the handle over `candidate` and ask about a
+    /// DIFFERENT `value` (distinct allocation ⇒ ptr mismatch ⇒ recompute). Must
+    /// also equal [`is_random_token`] of `value` — the handle's candidate never
+    /// leaks into another value's verdict.
+    pub fn token_randomness_cross_is_random(candidate: &str, value: &str) -> bool {
+        crate::suppression::token_randomness::TokenRandomness::for_candidate(candidate)
+            .is_random_token(value)
+    }
+
+    /// Minimum alphabetic chars for a meaningful randomness verdict (below ⇒ fail
+    /// safe to NOT random). Exposed so the fail-safe boundary test reads the real
+    /// owner instead of hard-coding 6.
+    pub const MIN_ALPHA: usize = crate::suppression::token_randomness::MIN_ALPHA;
+
+    /// Minimum distinct letters for a `random` verdict (below ⇒ NOT random).
+    pub const MIN_DISTINCT_LETTERS: usize =
+        crate::suppression::token_randomness::MIN_DISTINCT_LETTERS;
+
     /// Shape gate: exactly one `:` (not `://`), left half >= 20 and right half
     /// >= 16, each all-alphanumeric with at least one letter and one digit — the
     /// `user:token` opaque-credential admission gate.
@@ -2504,13 +3667,24 @@ pub mod checksum {
         crate::checksum::crc32_base62_suffix(data, width)
     }
 
-    pub fn github_classic_pat_with_checksum(body30: &str) -> String {
-        assert_eq!(body30.len(), 30, "github classic body must be 30 chars");
+    /// Mint a valid token for ANY github classic-format prefix — `ghp_` (classic
+    /// PAT) plus the `gho_`/`ghu_`/`ghs_`/`ghr_` OAuth-family siblings, which share
+    /// the identical 30-entropy + 6-CRC32-base62 body (the CRC is over the body
+    /// only, so it is prefix-independent). ONE owner for all five families.
+    pub fn github_classic_format_with_checksum(prefix: &str, body30: &str) -> String {
+        assert_eq!(
+            body30.len(),
+            30,
+            "github classic-format body must be 30 chars"
+        );
         format!(
-            "ghp_{}{}",
-            body30,
+            "{prefix}{body30}{}",
             crc32_base62_suffix(body30.as_bytes(), 6)
         )
+    }
+
+    pub fn github_classic_pat_with_checksum(body30: &str) -> String {
+        github_classic_format_with_checksum("ghp_", body30)
     }
 
     pub fn npm_token_with_checksum(body30: &str) -> String {
@@ -2612,25 +3786,6 @@ pub(crate) const NUM_FEATURES: usize = crate::ml_scorer::NUM_FEATURES;
 pub(crate) fn compute_features_public(text: &str, context: &str) -> [f32; NUM_FEATURES] {
     crate::ml_scorer::compute_features_public(text, context)
 }
-
-#[cfg(test)]
-pub(crate) fn ml_unique_bigram_stats(bytes: &[u8]) -> (usize, usize) {
-    crate::ml_scorer::unique_bigram_stats_for_test(bytes)
-}
-
-#[cfg(test)]
-pub(crate) const ML_BIGRAM_BITSET_WORDS: usize = crate::ml_scorer::BIGRAM_BITSET_WORDS_FOR_TEST;
-
-#[cfg(test)]
-pub(crate) fn ml_sigmoid(value: f32) -> f32 {
-    crate::ml_scorer::sigmoid_for_test(value)
-}
-
-#[cfg(test)]
-pub(crate) const ML_SIGMOID_SATURATION: f32 = crate::ml_scorer::SIGMOID_SATURATION_FOR_TEST;
-
-#[cfg(test)]
-pub(crate) const ML_SCORE_CACHE_CAPACITY: usize = crate::ml_scorer::SCORE_CACHE_CAPACITY_FOR_TEST;
 
 /// Full feature extractor (with detector-config keyword lists) exposed for
 /// the ML training-pipeline parity harness (`ml/parity_check.py`), which
@@ -2836,6 +3991,22 @@ pub fn ml_score(text: &str, context: &str) -> f64 {
     crate::ml_scorer::score(text, context)
 }
 
+/// Capture the coalesced GPU region-presence batch for `chunks`: `(haystack bytes
+/// the GPU DFA scans, region start offsets, borrowed-single-chunk-fast-path?)`.
+/// Lets a differential test prove the borrowed-single-chunk path and the
+/// folded-scratch path present byte-identical input for the same case-folded
+/// content (GPU/CPU parity: a divergence there would silently corrupt presence
+/// bits). Delegates to the single `engine::gpu_region_batch` owner. Gated to the
+/// `gpu` feature because that owner (and the whole region-presence batch path)
+/// only exists in the GPU build; the `ci-lean`/`portable` binaries have no GPU
+/// region path to differentially test.
+#[cfg(feature = "gpu")]
+pub fn region_presence_batch_capture(
+    chunks: &[keyhog_core::Chunk],
+) -> Result<(Vec<u8>, Vec<u32>, bool), String> {
+    crate::engine::gpu_region_batch::region_presence_batch_capture(chunks)
+}
+
 pub mod unicode_hardening {
     use std::borrow::Cow;
 
@@ -2921,6 +4092,63 @@ pub mod unicode_hardening {
 
     pub fn is_evasion_char(ch: char) -> bool {
         crate::unicode_hardening::is_evasion_char(ch)
+    }
+
+    /// Per-character homoglyph-fold owners, so the parity tests can assert each
+    /// class's individual mapping truth (not just the composed `normalize_homoglyphs`).
+    pub fn cyrillic_to_latin(ch: char) -> Option<char> {
+        crate::unicode_hardening::cyrillic_to_latin(ch)
+    }
+
+    pub fn greek_to_latin(ch: char) -> Option<char> {
+        crate::unicode_hardening::greek_to_latin(ch)
+    }
+
+    /// The AC/regex-expand homoglyph map's `(ascii, glyphs)` entries, so the
+    /// cross-map consistency gate can assert it agrees with the normalize-path
+    /// folds (`cyrillic_to_latin`/`greek_to_latin`) on every shared codepoint.
+    pub fn homoglyph_confusables() -> Vec<(char, Vec<char>)> {
+        crate::homoglyph::homoglyph_confusables()
+    }
+
+    pub fn fullwidth_to_ascii(ch: char) -> char {
+        crate::unicode_hardening::fullwidth_to_ascii(ch)
+    }
+
+    /// True iff `ch` is a fullwidth ASCII variant (U+FF01–FF5E) — the only slice of
+    /// the Halfwidth-and-Fullwidth block that maps to an ASCII twin.
+    pub fn is_fullwidth(ch: char) -> bool {
+        crate::unicode_hardening::is_fullwidth(ch)
+    }
+
+    /// Invisible/zero-width classifier (incl. the newly-added filler/tag ranges).
+    pub fn is_zero_width(ch: char) -> bool {
+        crate::unicode_hardening::is_zero_width(ch)
+    }
+
+    pub fn is_combining_mark(ch: char) -> bool {
+        crate::unicode_hardening::is_combining_mark(ch)
+    }
+
+    pub fn is_rtl_override(ch: char) -> bool {
+        crate::unicode_hardening::is_rtl_override(ch)
+    }
+
+    /// True iff the per-char normalizer DROPS `ch` (invisible/evasion), exposing the
+    /// private `NormalizedChar::Drop` disposition without leaking the enum.
+    pub fn char_normalization_is_drop(ch: char) -> bool {
+        matches!(
+            crate::unicode_hardening::normalized_char(ch),
+            crate::unicode_hardening::NormalizedChar::Drop
+        )
+    }
+
+    /// True iff the per-char normalizer KEEPS `ch` unchanged (`NormalizedChar::Keep`).
+    pub fn char_normalization_is_keep(ch: char) -> bool {
+        matches!(
+            crate::unicode_hardening::normalized_char(ch),
+            crate::unicode_hardening::NormalizedChar::Keep
+        )
     }
 }
 
@@ -3019,6 +4247,12 @@ pub(crate) mod ascii_ci {
 
     pub(crate) fn ci_find_at(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         crate::ascii_ci::ci_find_at(haystack, needle)
+    }
+
+    /// Every match offset (ascending), collected — the multi-match yield of the
+    /// rare-byte-anchored `ci_find_iter` that `ci_find_at` takes the first of.
+    pub(crate) fn ci_find_all(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
+        crate::ascii_ci::ci_find_iter(haystack, needle).collect()
     }
 
     pub(crate) fn contains_path_segment(path: &str, segment: &str) -> bool {
@@ -3169,7 +4403,7 @@ pub(crate) fn match_proves_keyword_nearby(regex: &str, keywords: &[String]) -> b
 /// (no-inline-tests gate). The `matched_caesar_shifts` optimization must emit
 /// the exact same decoded-variant set as the all-25-shifts reference.
 pub mod decode_caesar {
-    pub const KNOWN_PREFIXES: &[&str] = crate::confidence::KNOWN_PREFIXES;
+    pub use crate::confidence::KNOWN_PREFIXES;
 
     pub const MIN_CAESAR_LEN: usize = crate::decode::caesar::MIN_CAESAR_LEN;
 
@@ -3181,8 +4415,20 @@ pub mod decode_caesar {
         crate::decode::caesar::candidate_shape_invariant(value)
     }
 
-    pub fn looks_credential_shaped(value: &str) -> bool {
-        crate::decode::caesar::looks_credential_shaped(value)
+    pub fn contains_known_prefix(value: &str) -> bool {
+        crate::decode::caesar::contains_known_prefix(value)
+    }
+
+    /// The full per-shift credential-shape gate the Caesar decoder applies to a
+    /// decoded variant: the shift-invariant structural half
+    /// (`candidate_shape_invariant`: ≥1 digit + an 8+ alnum run) AND the
+    /// shift-variant half (`contains_known_prefix`). This mirrors the exact
+    /// conjunction the decode loop enforces; it replaces the removed standalone
+    /// `looks_credential_shaped` combined predicate (dead in production — the
+    /// loop composes the two halves directly) so the shape tests still pin one
+    /// named contract.
+    pub fn caesar_credential_shape_gate(value: &str) -> bool {
+        candidate_shape_invariant(value) && contains_known_prefix(value)
     }
 
     pub fn matched_caesar_shifts(candidate: &str) -> [bool; 26] {
@@ -3260,158 +4506,13 @@ pub(crate) mod decode_structure {
 }
 
 pub mod segment_attribution {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct Segment {
-        pub id: u32,
-        pub start: u32,
-        pub len: u32,
-    }
-
-    impl Segment {
-        pub const fn new(id: u32, start: u32, len: u32) -> Self {
-            Self { id, start, len }
-        }
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct GlobalMatch {
-        pub pattern_id: u32,
-        pub start: u32,
-        pub end: u32,
-    }
-
-    impl GlobalMatch {
-        pub const fn new(pattern_id: u32, start: u32, end: u32) -> Self {
-            Self {
-                pattern_id,
-                start,
-                end,
-            }
-        }
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct AttributedMatch {
-        pub segment_id: u32,
-        pub pattern_id: u32,
-        pub local_start: u32,
-        pub local_end: u32,
-    }
-
-    impl AttributedMatch {
-        pub const fn new(
-            segment_id: u32,
-            pattern_id: u32,
-            local_start: u32,
-            local_end: u32,
-        ) -> Self {
-            Self {
-                segment_id,
-                pattern_id,
-                local_start,
-                local_end,
-            }
-        }
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum SegmentAttributionError {
-        SegmentEndOverflow {
-            segment_index: usize,
-            start: u32,
-            len: u32,
-        },
-        SegmentsNotSorted {
-            segment_index: usize,
-            previous_start: u32,
-            start: u32,
-        },
-        SegmentsOverlap {
-            previous_index: usize,
-            segment_index: usize,
-            previous_end: u32,
-            start: u32,
-        },
-        InvalidMatchRange {
-            match_index: usize,
-            start: u32,
-            end: u32,
-        },
-    }
-
-    fn inner_segment(segment: Segment) -> crate::engine::segment_attribution::Segment {
-        crate::engine::segment_attribution::Segment::new(segment.id, segment.start, segment.len)
-    }
-
-    fn inner_match(item: GlobalMatch) -> crate::engine::segment_attribution::GlobalMatch {
-        crate::engine::segment_attribution::GlobalMatch::new(item.pattern_id, item.start, item.end)
-    }
-
-    fn expose_match(item: crate::engine::segment_attribution::AttributedMatch) -> AttributedMatch {
-        AttributedMatch::new(
-            item.segment_id,
-            item.pattern_id,
-            item.local_start,
-            item.local_end,
-        )
-    }
-
-    fn expose_error(
-        error: crate::engine::segment_attribution::SegmentAttributionError,
-    ) -> SegmentAttributionError {
-        use crate::engine::segment_attribution::SegmentAttributionError as Inner;
-        match error {
-            Inner::SegmentEndOverflow {
-                segment_index,
-                start,
-                len,
-            } => SegmentAttributionError::SegmentEndOverflow {
-                segment_index,
-                start,
-                len,
-            },
-            Inner::SegmentsNotSorted {
-                segment_index,
-                previous_start,
-                start,
-            } => SegmentAttributionError::SegmentsNotSorted {
-                segment_index,
-                previous_start,
-                start,
-            },
-            Inner::SegmentsOverlap {
-                previous_index,
-                segment_index,
-                previous_end,
-                start,
-            } => SegmentAttributionError::SegmentsOverlap {
-                previous_index,
-                segment_index,
-                previous_end,
-                start,
-            },
-            Inner::InvalidMatchRange {
-                match_index,
-                start,
-                end,
-            } => SegmentAttributionError::InvalidMatchRange {
-                match_index,
-                start,
-                end,
-            },
-        }
-    }
-
-    pub fn map_offsets_to_segments(
-        segments: &[Segment],
-        matches: &[GlobalMatch],
-    ) -> Result<Vec<AttributedMatch>, SegmentAttributionError> {
-        let inner_segments: Vec<_> = segments.iter().copied().map(inner_segment).collect();
-        let inner_matches: Vec<_> = matches.iter().copied().map(inner_match).collect();
-        crate::engine::segment_attribution::map_offsets_to_segments(&inner_segments, &inner_matches)
-            .map(|items| items.into_iter().map(expose_match).collect())
-            .map_err(expose_error)
-    }
+    //! Doc-hidden test facade over the single owner
+    //! [`crate::engine::segment_attribution`]. Re-exports (no second hand-copied
+    //! body — ONE-PLACE / Law-11) so external tests reach the primitive at
+    //! `keyhog_scanner::testing::segment_attribution::*`.
+    pub use crate::engine::segment_attribution::{
+        map_offsets_to_segments, AttributedMatch, GlobalMatch, Segment, SegmentAttributionError,
+    };
 }
 
 pub struct CaesarDecoder;
@@ -3432,8 +4533,12 @@ pub fn is_source_code_path(path: Option<&str>) -> bool {
     crate::decode::caesar::is_source_code_path(path)
 }
 
-pub fn looks_credential_shaped(value: &str) -> bool {
-    crate::decode::caesar::looks_credential_shaped(value)
+/// Test-only Caesar credential-shape gate (shift-invariant + shift-variant
+/// conjunction the decode loop enforces). Re-exported at the `testing` top level
+/// so migrated inline tests reach it at `keyhog_scanner::testing::` alongside the
+/// sibling caesar helpers, instead of the nested `decode_caesar` path.
+pub fn caesar_credential_shape_gate(value: &str) -> bool {
+    decode_caesar::caesar_credential_shape_gate(value)
 }
 
 pub fn find_hex_strings(text: &str, min_length: usize) -> Vec<crate::decode::EncodedString> {
@@ -3568,11 +4673,6 @@ pub fn hyperscan_oversubscribed_match_ids_are_stable(
     }
 }
 
-#[cfg(feature = "gpu")]
-pub fn finite_gpu_scores_for_test(scores: &[f32]) -> Result<Vec<f64>, usize> {
-    crate::gpu::finite_gpu_scores_for_test(scores)
-}
-
 #[cfg(all(test, feature = "simd"))]
 pub(crate) fn cache_dir_under_allowed_root(
     path: &std::path::Path,
@@ -3595,6 +4695,30 @@ pub(crate) fn hot_pattern_index_at(
     offset: usize,
 ) -> Option<usize> {
     crate::simdsieve_prefilter::hot_pattern_index_at(&scanner.hot_pattern_slots, text_bytes, offset)
+}
+
+/// Standalone hot-pattern index resolver using the embedded detector corpus's
+/// static prefix table (no scanner required). Returns the first slot whose
+/// prefix is present at `offset`, or `None`.
+#[cfg(all(test, feature = "simdsieve"))]
+pub(crate) fn hot_pattern_index_at_standalone(text_bytes: &[u8], offset: usize) -> Option<usize> {
+    let rest = text_bytes.get(offset..)?;
+    (*crate::simdsieve_prefilter::HOT_PATTERNS)
+        .iter()
+        .enumerate()
+        .find_map(|(idx, prefix)| rest.starts_with(prefix).then_some(idx))
+}
+
+/// Return the hot-pattern prefix slice, dereferencing the LazyLock safely.
+#[cfg(all(test, feature = "simdsieve"))]
+pub(crate) fn hot_patterns_ref() -> &'static [&'static [u8]] {
+    *std::ops::Deref::deref(&crate::simdsieve_prefilter::HOT_PATTERNS)
+}
+
+/// Number of hot patterns, for proptest generators that need it at compile time.
+#[cfg(all(test, feature = "simdsieve"))]
+pub(crate) fn hot_patterns_len() -> usize {
+    hot_patterns_ref().len()
 }
 #[cfg(all(test, feature = "simdsieve"))]
 pub(crate) fn hot_pattern_rows(
@@ -3770,4 +4894,16 @@ pub(crate) fn parse_jupyter_derived(text: &str, decode_derived: bool) -> Vec<Str
         text,
         decode_derived,
     ))
+}
+
+/// Test seam for `structured/parsers/line.rs::resolve_line_number_options` — the
+/// JSON/YAML value-anchor line locator `finalize_pending_pairs` uses to attribute
+/// each extracted pair to its 1-based source line. Exposed through the sanctioned
+/// `testing` surface (rather than widening the parser module to `pub`) so
+/// integration proptests can pin its contract directly: repeated-needle dedup
+/// (two slots sharing one AC pattern both take the FIRST match's line), empty-needle
+/// skip (stays `None`), all-empty/empty-text early return, not-found `None`, and
+/// overlapping-substring resolution via `find_overlapping_iter`.
+pub fn resolve_line_number_options_for_test(text: &str, needles: &[&str]) -> Vec<Option<usize>> {
+    crate::structured::parsers::resolve_line_number_options(text, needles)
 }

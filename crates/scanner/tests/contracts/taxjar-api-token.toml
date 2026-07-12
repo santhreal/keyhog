@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "TAXJARTOKEN=f68f9EXAMPLEEXAMPLE8a06b"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = 'taxjar_api_token: "f68f9ea979a26968b99bd197cbe8a06b"'
+credential = "f68f9ea979a26968b99bd197cbe8a06b"
+reason = "Lower-cased YAML key with a quoted value — the case-insensitive keyword alternation still anchors the 32-hex token."

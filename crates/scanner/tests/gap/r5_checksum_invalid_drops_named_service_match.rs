@@ -4,14 +4,7 @@ use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 use std::sync::OnceLock;
 
-fn detector_dir() -> std::path::PathBuf {
-    let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
-
+use crate::support::paths::detector_dir;
 fn scanner() -> &'static CompiledScanner {
     static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
     SCANNER.get_or_init(|| {

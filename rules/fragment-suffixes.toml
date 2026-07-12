@@ -1,0 +1,24 @@
+# Tier-B data: token-name suffixes that mark a fragment/part of a larger value
+# (e.g. `KEY_prefix`, `TOKEN_chunk2`). The multiline string-extract path strips
+# these so a reassembled value is scored whole, not as its fragments.
+#
+# Schema: suffixes = ["name", ...]  (compared case-insensitively after `_` split)
+
+suffixes = [
+  "prefix",
+  "suffix",
+  "head",
+  "tail",
+  "left",
+  "right",
+  "chunk",
+  "piece",
+  "frag",
+  "fragment",
+  "part",
+  "chunks",
+  "pieces",
+  "frags",
+  "fragments",
+  "parts",
+]

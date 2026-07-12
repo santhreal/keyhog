@@ -2,7 +2,7 @@
 
 use super::archive::{
     archive_unix_mode_is_special, emit_archive_entry_error, emit_archive_entry_over_cap_error,
-    validate_scan_archive_entry_name,
+    validate_scan_archive_entry_name, ARCHIVE_ENTRY_READ_CAPACITY_HINT,
 };
 use super::{
     display_path, extraction_total_budget, is_symlink, read, record_default_excluded_archive_entry,
@@ -11,8 +11,6 @@ use keyhog_core::{Chunk, SourceError};
 use sevenz_rust2::{ArchiveReader, EncoderMethod, Password};
 use std::io::{Cursor, Read};
 use std::path::Path;
-
-const READ_CAPACITY_HINT: u64 = 64 * 1024;
 
 pub(super) fn extract_seven_zip_chunks(
     path: &Path,
@@ -213,7 +211,7 @@ pub(super) fn extract_seven_zip_chunks(
         let read = match crate::capped_read::read_to_cap(
             &mut *entry_reader,
             read_cap,
-            Some(entry_size.min(READ_CAPACITY_HINT)),
+            Some(entry_size.min(ARCHIVE_ENTRY_READ_CAPACITY_HINT)),
         ) {
             Ok(read) => read,
             Err(error) => {
@@ -360,9 +358,35 @@ fn drain_entry_or_stop(
     entry_reader: &mut dyn Read,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
-    match std::io::copy(entry_reader, &mut std::io::sink()) {
-        Ok(_) => true,
-        Err(error) => {
+    // LAW10 / decompression-bomb guard: a skipped solid-7z entry MUST be
+    // drained (to advance the decompressor's stream position) but MUST NOT
+    // be drained without a byte ceiling. A crafted archive whose skipped
+    // entries decompress without limit would spin the reader forever with no
+    // cap. Cap at UNCAPPED_ARCHIVE_BUDGET (1 GiB) so a skipped-but-enormous
+    // solid entry is truncated, the archive stops, and the partial coverage is
+    // surfaced loudly rather than hanging or OOM-ing the process.
+    let cap = super::UNCAPPED_ARCHIVE_BUDGET;
+    let drain = crate::capped_read::read_to_cap_preserving_error(entry_reader, cap, None);
+    if drain.truncated {
+        // The skipped entry expanded beyond the global budget — treat it as an
+        // archive-bomb abort: surface loudly, count, stop further extraction.
+        tracing::warn!(
+            archive = %archive_display,
+            entry = %entry_name,
+            cap,
+            "solid 7z skipped entry exceeded drain cap; stopping archive extraction (decompression-bomb guard)"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        let _emitted = emit(Err(SourceError::Other(format!(
+            "failed to drain skipped solid 7z entry '{archive_display}//{entry_name}': \
+             entry exceeded the {cap}-byte drain cap (decompression-bomb guard); \
+             remaining archive entries were not scanned"
+        ))));
+        return false;
+    }
+    match drain.error {
+        None => true,
+        Some(error) => {
             tracing::warn!(
                 archive = %archive_display,
                 entry = %entry_name,
@@ -371,7 +395,8 @@ fn drain_entry_or_stop(
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             let _emitted = emit(Err(SourceError::Other(format!(
-                "failed to drain skipped solid 7z entry '{archive_display}//{entry_name}': {error}; remaining archive entries were not scanned"
+                "failed to drain skipped solid 7z entry '{archive_display}//{entry_name}': \
+                 {error}; remaining archive entries were not scanned"
             ))));
             false
         }

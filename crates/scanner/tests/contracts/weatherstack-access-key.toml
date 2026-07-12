@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "weatherstack _        _   _   _  ___  _ _        _   _    _  _    __          _        KEY BKe3WEXAMPLEEXAMPLE8SSZg"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# WEATHERSTACK_ACCESS_KEY=BKe3WCBO8JIILnzQeTQgSIMCOhUAEJcABtxlR7lZST6ju3MBJSPfwjkh2Ek5g2ocLW8SSZg  # forecast"
+credential = "BKe3WCBO8JIILnzQeTQgSIMCOhUAEJcABtxlR7lZST6ju3MBJSPfwjkh2Ek5g2ocLW8SSZg"
+reason = "Commented-out config; WEATHERSTACK_ACCESS_KEY keyword + key intact inside the comment."

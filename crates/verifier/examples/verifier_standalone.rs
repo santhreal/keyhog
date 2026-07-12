@@ -4,6 +4,8 @@ use keyhog_verifier::{dedup_matches, DedupScope, VerificationEngine, VerifyConfi
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), keyhog_verifier::VerifyError> {
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "demo-token".into(),
         name: "Demo Token".into(),
@@ -17,6 +19,7 @@ async fn main() -> Result<(), keyhog_verifier::VerifyError> {
         verify: None,
         keywords: vec!["demo_".into()],
         min_confidence: None,
+        ..Default::default()
     };
 
     let engine = VerificationEngine::new(&[detector], VerifyConfig::default())?;

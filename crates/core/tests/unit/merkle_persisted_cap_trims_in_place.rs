@@ -136,9 +136,12 @@ fn persisted_cap_enforcement_does_not_replace_the_merged_map() {
     assert!(cap_fn.contains("merged.remove(&key)"));
     assert!(cap_fn.contains("oldest_eviction_keys(merged, Some(in_memory_paths), over_cap)"));
     assert!(cap_fn.contains("oldest_eviction_keys(merged, None, over_cap)"));
+    // Eviction order must be deterministic: primarily by last_seen_order, then
+    // tie-broken by path, then chunk_offset. The eviction-key sort tuples the
+    // key+entry (`a.0` = key, `a.1` = entry), so the tie-breakers read `a.0.*`.
     assert!(source.contains("last_seen_order"));
-    assert!(source.contains(".then_with(|| left_key.path.cmp(&right_key.path))"));
-    assert!(source.contains(".then_with(|| left_key.chunk_offset.cmp(&right_key.chunk_offset))"));
+    assert!(source.contains(".then_with(|| a.0.path.cmp(&b.0.path))"));
+    assert!(source.contains(".then_with(|| a.0.chunk_offset.cmp(&b.0.chunk_offset))"));
     assert!(!cap_fn.contains("HashMap::<PathBuf, CacheEntry>::with_capacity"));
     assert!(!cap_fn.contains("*merged = kept"));
 }

@@ -854,3 +854,94 @@ fn property_clean_inputs_are_byte_identical_after_normalize() {
         );
     }
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The section above runs the invariants over ~7 fixed inputs; these SWEEP them
+// over thousands of random Unicode compositions drawn from a mixed alphabet
+// (ASCII, mapped homoglyphs, strip-only categories, clean non-ASCII). Four
+// invariants: normalization is idempotent; the `contains_evasion` gate agrees
+// EXACTLY with the zero-copy borrow decision (borrowed ⟺ no evasion); strip-only
+// categories never survive into the output; and an input made only of ASCII +
+// mapped homoglyphs + strip chars normalizes to pure ASCII. Traced against
+// `normalize_homoglyphs` / `contains_evasion`. No proptest before.
+
+use proptest::prelude::*;
+
+/// Mixed alphabet spanning every category: ASCII, homoglyphs (→ ASCII), strip-only
+/// (vanish), and clean non-ASCII (kept verbatim).
+const MIX: &[char] = &[
+    'g',
+    'h',
+    'p',
+    '_',
+    'A',
+    'K',
+    'I',
+    '0',
+    '9', // ASCII
+    '\u{0430}',
+    '\u{03B1}',
+    '\u{FF53}',
+    '\u{041A}',
+    '\u{0391}', // homoglyphs → ASCII
+    '\u{200B}',
+    '\u{202E}',
+    '\u{00A0}',
+    '\u{0301}',
+    '\u{0000}', // strip-only
+    '\u{00E9}',
+    '\u{1F680}', // clean non-ASCII (kept)
+];
+/// Alphabet whose every char normalizes to ASCII or vanishes (no clean non-ASCII).
+const ASCII_CLOSURE: &[char] = &[
+    'g', 'h', 'p', '_', 'A', '0', '\u{0430}', '\u{03B1}', '\u{FF53}', '\u{041A}', '\u{0391}',
+    '\u{200B}', '\u{202E}', '\u{00A0}', '\u{0301}',
+];
+/// Strip-only categories that must never survive into the output.
+const STRIPPED: &[char] = &['\u{200B}', '\u{202E}', '\u{00A0}', '\u{0301}', '\u{0000}'];
+
+fn from_idxs(idxs: &[usize], alphabet: &[char]) -> String {
+    idxs.iter().map(|&i| alphabet[i]).collect()
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4_000))]
+
+    /// Normalization is idempotent: normalizing twice equals normalizing once.
+    #[test]
+    fn normalize_is_idempotent(idxs in prop::collection::vec(0usize..MIX.len(), 0..48)) {
+        let s = from_idxs(&idxs, MIX);
+        let once = norm(&s);
+        prop_assert_eq!(norm(&once), once);
+    }
+
+    /// The `contains_evasion` gate agrees EXACTLY with the zero-copy borrow decision:
+    /// the input is returned borrowed (same pointer) iff it contains no evasion.
+    #[test]
+    fn contains_evasion_agrees_with_borrow_decision(
+        idxs in prop::collection::vec(0usize..MIX.len(), 0..48),
+    ) {
+        let s = from_idxs(&idxs, MIX);
+        prop_assert_eq!(is_borrowed_same_ptr(&s), !contains_evasion(&s));
+    }
+
+    /// Strip-only categories never appear in the normalized output.
+    #[test]
+    fn stripped_chars_never_survive(idxs in prop::collection::vec(0usize..MIX.len(), 0..48)) {
+        let s = from_idxs(&idxs, MIX);
+        let out = norm(&s);
+        for &c in STRIPPED {
+            prop_assert!(!out.contains(c), "stripped U+{:04X} survived", c as u32);
+        }
+    }
+
+    /// An input made only of ASCII + mapped homoglyphs + strip chars normalizes to
+    /// pure ASCII (no non-ASCII residue).
+    #[test]
+    fn homoglyph_and_ascii_only_normalizes_to_ascii(
+        idxs in prop::collection::vec(0usize..ASCII_CLOSURE.len(), 0..48),
+    ) {
+        let s = from_idxs(&idxs, ASCII_CLOSURE);
+        prop_assert!(norm(&s).is_ascii());
+    }
+}

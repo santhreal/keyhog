@@ -6,6 +6,7 @@
 
 use crate::SensitiveString;
 use serde::Serialize;
+use std::sync::Arc;
 use thiserror::Error;
 
 /// A scannable chunk of text with metadata about where it came from.
@@ -65,15 +66,26 @@ impl From<&str> for Chunk {
 ///     ..Default::default()
 /// };
 ///
-/// assert_eq!(metadata.source_type, "git-diff");
+/// assert_eq!(&*metadata.source_type, "git-diff");
 /// ```
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ChunkMetadata {
-    pub source_type: String,
-    pub path: Option<String>,
-    pub commit: Option<String>,
-    pub author: Option<String>,
-    pub date: Option<String>,
+    /// `Arc<str>` (not `String`) so cloning a chunk's metadata — done per decode
+    /// sub-chunk, where every sub-chunk of a file shares the same `source_type`
+    /// and `path` — is a refcount bump, not a fresh heap allocation + copy of
+    /// each string. Mirrors the `Arc<str>` convention already used by
+    /// `MatchLocation` in `finding.rs`; serialized through the same
+    /// `serde_arc_str` helpers so no `serde` `rc` feature is needed.
+    #[serde(with = "crate::finding::serde_arc_str")]
+    pub source_type: Arc<str>,
+    #[serde(with = "crate::finding::serde_arc_str_opt")]
+    pub path: Option<Arc<str>>,
+    #[serde(with = "crate::finding::serde_arc_str_opt")]
+    pub commit: Option<Arc<str>>,
+    #[serde(with = "crate::finding::serde_arc_str_opt")]
+    pub author: Option<Arc<str>>,
+    #[serde(with = "crate::finding::serde_arc_str_opt")]
+    pub date: Option<Arc<str>>,
     pub base_offset: usize,
     /// Number of lines that precede `base_offset` in the original file -
     /// the line-number analog of `base_offset`. Zero for whole-file chunks

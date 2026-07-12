@@ -47,7 +47,7 @@ fn non_pdf_extension_text_fallback_keeps_plain_files_scannable() {
     );
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem"
+            chunk.metadata.source_type.as_ref() == "filesystem"
                 && chunk
                     .data
                     .contains("KEYHOG_NOT_ACTUALLY_PDF_TEXT_SECRET_1234567890")
@@ -75,7 +75,7 @@ fn non_pdf_extension_binary_strings_fallback_preserves_printable_runs() {
     );
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem:binary-strings"
+            chunk.metadata.source_type.as_ref() == "filesystem:binary-strings"
                 && chunk
                     .data
                     .contains("KEYHOG_NOT_PDF_BINARY_STRING_SECRET_1234567890")
@@ -236,7 +236,7 @@ fn pdf_decoded_stream_truncation_surfaces_source_error() {
     );
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/pdf"
+            chunk.metadata.source_type.as_ref() == "filesystem/pdf"
                 && chunk
                     .data
                     .contains("KEYHOG_PDF_TRUNCATED_PREFIX_SECRET_1234567890")
@@ -283,7 +283,7 @@ fn pdf_partial_flate_recovery_surfaces_archive_truncated_gap() {
     );
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/pdf"
+            chunk.metadata.source_type.as_ref() == "filesystem/pdf"
                 && chunk
                     .data
                     .contains("KEYHOG_PDF_RECOVERED_SECRET_1234567890")

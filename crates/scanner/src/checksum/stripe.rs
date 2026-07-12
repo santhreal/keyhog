@@ -18,10 +18,10 @@ const MAX_STRIPE_PAYLOAD_LEN: usize = 128;
 
 impl ChecksumValidator for StripeTokenValidator {
     fn validate(&self, credential: &str) -> ChecksumResult {
-        let prefixes = [
-            "sk_live_", "sk_test_", "pk_live_", "pk_test_", "rk_live_", "rk_test_",
-        ];
-        let Some(payload) = prefixes.iter().find_map(|p| credential.strip_prefix(p)) else {
+        let Some(payload) = super::prefixes::STRIPE_KEY_PREFIXES
+            .iter()
+            .find_map(|p| credential.strip_prefix(p))
+        else {
             return ChecksumResult::NotApplicable;
         };
         // Stripe does not publish a checksum. Keep this validator aligned

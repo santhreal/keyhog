@@ -10,7 +10,7 @@
 //!   * quiet stderr is EMPTY (0 bytes) even while findings stream;
 //!   * noisy stderr carries the banner and the canonical watched-root path;
 //!   * the STDOUT finding line is identical under both modes
-//!     (`🔍 aws-access-key <path>:<line> Critical (1.00)  AK...YA`);
+//!     (`🔍 aws-access-key <path>:<line> CRITICAL (1.00)  AK...YA`);
 //!   * the credential is redacted to `AK...YA`, never the full key;
 //!   * an invalid `--detectors` fails with exit code 2 regardless of `--quiet`.
 //!
@@ -259,7 +259,7 @@ fn quiet_watch_emits_full_finding_on_stdout() {
         "detector id missing; stdout=\n{stdout}"
     );
     assert!(
-        stdout.contains("Critical (1.00)"),
+        stdout.contains("CRITICAL (1.00)"),
         "severity/confidence wrong; stdout=\n{stdout}"
     );
     assert!(
@@ -394,7 +394,7 @@ fn quiet_and_noisy_emit_identical_finding_line() {
     // holds on hosts where the tempdir root is itself a symlink.
     let canon_file = file.canonicalize().expect("canonicalize planted file");
     let expected = format!(
-        "\u{1F50D} aws-access-key {}:1 Critical (1.00)  {REDACTED}",
+        "\u{1F50D} aws-access-key {}:1 CRITICAL (1.00)  {REDACTED}",
         canon_file.display()
     );
     assert_eq!(

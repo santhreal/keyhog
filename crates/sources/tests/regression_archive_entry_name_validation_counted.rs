@@ -21,7 +21,7 @@ fn scan_fixture(name: &str, bytes: Vec<u8>) -> (Vec<String>, Vec<String>, Vec<St
     let bodies = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
     let paths = chunks
         .iter()
-        .filter_map(|chunk| chunk.metadata.path.clone())
+        .filter_map(|chunk| chunk.metadata.path.as_deref().map(String::from))
         .collect();
     let errors = errors.iter().map(|error| error.to_string()).collect();
     (bodies, paths, errors)

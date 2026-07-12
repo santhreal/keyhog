@@ -459,7 +459,9 @@ fn detectors_subcommand_emits_json_array() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: serde_json::Value =
         serde_json::from_str(&stdout).expect("detectors --format json stdout is valid JSON");
-    let arr = parsed.as_array().expect("--format json output is a JSON array");
+    let arr = parsed
+        .as_array()
+        .expect("--format json output is a JSON array");
     assert!(
         arr.len() > 100,
         "expected hundreds of detectors; got {}",

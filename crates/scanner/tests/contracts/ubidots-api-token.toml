@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "BBFF-EXAMPLEEXAMPLEw5Tvm"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = 'curl -H "X-Auth-Token: BBFF-XQ8OBlzu2R0HzEBkpYHfJouztyi1Yx41cHgw5Tvm" https://industrial.ubidots.com/api/v1.6/devices'
+credential = "BBFF-XQ8OBlzu2R0HzEBkpYHfJouztyi1Yx41cHgw5Tvm"
+reason = "BBFF- token embedded in a curl auth header, not a KEY=value line — the BBFF- prefix anchor carries detection on its own."

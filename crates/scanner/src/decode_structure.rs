@@ -14,8 +14,12 @@
 //! false-suppresses a real credential:
 //!   * **Magic bytes.** A blob that decodes to a PNG/JPEG/GIF/gzip/zip/PDF/ELF/
 //!     Mach-O/PE/zstd/xz/bzip2/7z/SQLite/Java-class header IS that format. Over
-//!     3000 random 24-48 byte secrets, ZERO carry any of these headers at
-//!     offset 0 (they are 4-8 specific bytes out of 256^k).
+//!     3000 random 24-48 byte secrets, ZERO carry any of the >= 3-byte headers at
+//!     offset 0 (they are 3-8 specific bytes out of 256^k). The only 2-byte
+//!     magics ('MZ'/PE, 0x1f8b/gzip) are too weak on the prefix alone — a
+//!     printable 'MZ' can begin a real secret — so they are confirmed by the
+//!     format's internal structure (`is_pe_image` / `is_gzip_stream`) before they
+//!     may mark a candidate as binary.
 //!   * **Full protobuf-wire parse.** Bytes that parse end-to-end as a protobuf
 //!     wire stream (valid field tags, valid wire types, length-delimited fields
 //!     that stay in bounds, whole buffer consumed) with several fields are a
@@ -346,12 +350,18 @@ fn is_underscore_hex_candidate(s: &str) -> bool {
 /// bytes. These headers are definitional: a stream that starts with them IS
 /// that format, and no credential carries them.
 fn magic_format(b: &[u8]) -> Option<&'static str> {
+    // Magics of >= 3 specific bytes: over 3000 random 24-48 B secrets ZERO carry
+    // these at offset 0 (>= 3 specific bytes out of 256^k), so a prefix match IS
+    // the format. The 4 zlib FLG bytes below pair 0x78 with an RFC-1950 header
+    // whose checksum is already valid, keeping the pair as specific as a 2-byte
+    // magic can be. The genuinely weak 2-byte magics ('MZ', gzip 0x1f8b) are NOT
+    // in this table: two coincidental bytes (esp. printable 'MZ') can begin a
+    // real secret, so they are confirmed by internal structure below instead.
     const SIGS: &[(&[u8], &str)] = &[
         (b"\x89PNG\r\n\x1a\n", "png"),
         (b"\xff\xd8\xff", "jpeg"),
         (b"GIF87a", "gif"),
         (b"GIF89a", "gif"),
-        (b"\x1f\x8b", "gzip"),
         (b"BZh", "bzip2"),
         (b"\xfd7zXZ\x00", "xz"),
         (b"\x28\xb5\x2f\xfd", "zstd"),
@@ -365,20 +375,51 @@ fn magic_format(b: &[u8]) -> Option<&'static str> {
         (b"\xfe\xed\xfa\xcf", "mach-o"),
         (b"\xcf\xfa\xed\xfe", "mach-o"),
         (b"\xca\xfe\xba\xbe", "java-class"),
-        (b"MZ", "pe"),
         (b"SQLite format 3\x00", "sqlite"),
         (b"OggS", "ogg"),
         (b"RIFF", "riff"),
         (b"\x00\x61\x73\x6d", "wasm"),
-        // zlib streams: 0x78 followed by a valid FLEVEL byte.
+        // zlib streams: 0x78 followed by a valid-checksum FLEVEL byte.
         (b"\x78\x01", "zlib"),
         (b"\x78\x9c", "zlib"),
         (b"\x78\xda", "zlib"),
         (b"\x78\x5e", "zlib"),
     ];
-    SIGS.iter()
+    if let Some(name) = SIGS
+        .iter()
         .find(|(sig, _)| b.starts_with(sig))
         .map(|(_, name)| *name)
+    {
+        return Some(name);
+    }
+    if is_pe_image(b) {
+        return Some("pe");
+    }
+    if is_gzip_stream(b) {
+        return Some("gzip");
+    }
+    None
+}
+
+/// A real PE image: the 'MZ' DOS header whose `e_lfanew` (u32 LE at offset 0x3C)
+/// points at the `PE\0\0` NT signature inside the buffer. A bare 'MZ' prefix is
+/// only ~1/65536 per candidate — and, being two printable ASCII letters, can
+/// begin a genuine base64-decoded secret — so it must not drive suppression
+/// alone. A short high-entropy secret cannot satisfy this structural check.
+fn is_pe_image(b: &[u8]) -> bool {
+    if !b.starts_with(b"MZ") || b.len() < 0x40 {
+        return false;
+    }
+    let e_lfanew = u32::from_le_bytes([b[0x3c], b[0x3d], b[0x3e], b[0x3f]]) as usize;
+    e_lfanew.checked_add(4).and_then(|end| b.get(e_lfanew..end)) == Some(b"PE\x00\x00".as_slice())
+}
+
+/// A real gzip stream: the 0x1f 0x8b magic followed by CM=8 (DEFLATE), the only
+/// compression method gzip has ever used. Confirms the weak 2-byte magic with
+/// the mandatory third byte so a coincidental 0x1f 0x8b pair in a secret cannot
+/// mark it as binary.
+fn is_gzip_stream(b: &[u8]) -> bool {
+    matches!(b, [0x1f, 0x8b, 0x08, ..])
 }
 
 /// Parse `data` as a protobuf wire stream. Returns true only when the entire

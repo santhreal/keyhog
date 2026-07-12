@@ -27,10 +27,18 @@ fn zip_not_in_skip_extensions() {
     );
     let extract = read("src/filesystem/extract.rs");
     let archive = read("src/filesystem/extract/archive.rs");
+    // The archive extension set moved to the Tier-B `rules/openpack-extensions.toml`
+    // owner that `is_openpack_archive_ext` reads via the `OPENPACK_EXTS` list, so
+    // assert the routing wiring AND that zip/apk/ipa/crx/jar stay in that owner.
+    let openpack_exts = read("../../rules/openpack-extensions.toml");
     assert!(
         extract.contains("archive::is_openpack_archive_ext(ext)")
             && extract.contains("archive::extract_openpack_archive")
-            && archive.contains("\"zip\", \"apk\", \"ipa\", \"crx\", \"jar\""),
-        "filesystem extract/archive owners must keep zip archive routing"
+            && archive.contains("OPENPACK_EXTS")
+            && ["zip", "apk", "ipa", "crx", "jar"]
+                .iter()
+                .all(|ext| openpack_exts.contains(ext)),
+        "filesystem extract/archive owners must keep zip archive routing: zip/apk/ipa/crx/jar \
+         must stay in the Tier-B rules/openpack-extensions.toml set that is_openpack_archive_ext reads"
     );
 }

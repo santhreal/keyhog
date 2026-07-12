@@ -144,7 +144,13 @@ impl Allowlist {
         path: &Path,
         policy: AllowlistMetadataPolicy,
     ) -> Result<Self, std::io::Error> {
-        let contents = std::fs::read_to_string(path)?;
+        let bytes = crate::state_file::read_capped(
+            path,
+            crate::state_file::RULE_CONFIG_FILE_BYTES,
+            "allowlist",
+        )?;
+        let contents = String::from_utf8(bytes)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let allowlist = Self::parse_with_policy(&contents, policy);
         if !allowlist.expired_entries.is_empty() {
             return Err(allowlist.expired_entries_error(path));
@@ -630,9 +636,10 @@ impl Allowlist {
     /// Run the precompiled path-glob index against an already-normalized path,
     /// rebuilding the index first iff the public `ignored_paths` field was
     /// mutated directly since construction. The construction paths keep the
-    /// index in sync, so the scanner hot path always takes the fast branch;
-    /// only a hand-mutated allowlist pays the one-off rebuild, and it pays it
-    /// for correctness, not silently skips it.
+    /// index in sync, so the scanner hot path always takes the fast branch. A
+    /// hand-mutated allowlist rebuilds on every call (the index cannot be cached
+    /// behind `&self`), paying for correctness rather than silently skipping it;
+    /// callers that mutate `ignored_paths` in a loop should re-`parse` instead.
     fn path_matches(&self, normalized_path: &str) -> bool {
         if self.path_index.matches_sources(&self.ignored_paths) {
             self.path_index.matches(normalized_path)
@@ -675,7 +682,7 @@ fn invalid_bare_entry(entry: &str) -> Option<(&'static str, &'static str)> {
         ));
     }
     let bytes = entry.as_bytes();
-    if bytes.len() == 64 {
+    if bytes.len() == crate::git_lfs::SHA256_HEX_LEN {
         return Some((
             "hash",
             "bare 64-byte entry must be a valid SHA-256 hex digest; use `path:` for a literal 64-byte path glob",

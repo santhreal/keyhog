@@ -134,7 +134,7 @@ fn best_dedup_time(n: usize) -> Duration {
             n - 1,
             "expected {} additional_locations (one per distinct line beyond the \
              primary); got {} — distinct lines must all be retained, confirming \
-             the O(K^2) membership scan is exercised",
+             the per-group additional_locations accumulation is exercised",
             n - 1,
             deduped[0].additional_locations.len()
         );
@@ -162,12 +162,16 @@ fn dedup_additional_locations_is_subquadratic_in_group_size() {
          MEASURED: dedup(N={BASE_N}) = {:.3} ms, dedup(2N={}) = {:.3} ms, \
          doubling ratio = {ratio:.2}x (best-of-{TIMING_SAMPLES}).\n\
          TARGET: ratio < {SUBQUADRATIC_RATIO:.1}x (log-linear dedup doubles ~2.0-2.4x).\n\
-         ROOT CAUSE: crates/core/src/dedup.rs:179-186 — `existing.additional_locations\
-         .iter().any(|loc| is_same_location(loc, &matched.location))` is a LINEAR \
-         scan run once per duplicate match, making a K-repeat group O(K^2). No cap \
-         on additional_locations exists. FIX: track seen locations in a per-group \
-         HashSet, or rely on the existing offset sort (dedup.rs:130) and compare \
-         only against the last-pushed location, reducing the pass to O(K).",
+         DISAMBIGUATE: the additional_locations accumulation is ALREADY O(K) today \
+         (per-group `seen_locations` IndexSet membership, dedup.rs \
+         `insert_new_location_identity`). A ratio over target therefore means \
+         EITHER (a) a real complexity regression — the O(1) IndexSet membership \
+         check was removed and a linear `additional_locations.iter().any(...)` scan \
+         reintroduced, making a K-repeat group O(K^2) again — OR (b), commonly, \
+         wall-clock NOISE: this is a best-of-N WALL-TIME ratio and is load-sensitive, \
+         so a parallel build/test sharing the CPU inflates it. Re-run ISOLATED on an \
+         idle box to disambiguate. The durable fix is to count comparison OPERATIONS \
+         instead of racing the clock (tracked: TEST/flaky-perf-dedup-subquadratic).",
         t_n.as_secs_f64() * 1e3,
         BASE_N * 2,
         t_2n.as_secs_f64() * 1e3,

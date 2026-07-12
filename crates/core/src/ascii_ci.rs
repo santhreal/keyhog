@@ -1,3 +1,9 @@
+//! Shared ASCII case-insensitive primitives: `starts_with` /
+//! `ends_with_ignore_ascii_case` and the `ci_find` byte-substring search.
+//! Single owner (ONE PLACE) for allocation-free case-folded comparisons on the
+//! scanner and verifier hot paths — callers use these instead of allocating a
+//! lowercased copy of each candidate.
+
 /// Returns true when `value` starts with `prefix`, ignoring ASCII case.
 #[inline]
 pub fn starts_with_ignore_ascii_case(value: &str, prefix: &str) -> bool {
@@ -10,14 +16,7 @@ pub fn starts_with_ignore_ascii_case(value: &str, prefix: &str) -> bool {
 /// Returns true when `value` contains `needle`, ignoring ASCII case.
 #[inline]
 pub fn contains_ignore_ascii_case(value: &str, needle: &str) -> bool {
-    let needle = needle.as_bytes();
-    if needle.is_empty() {
-        return true;
-    }
-    value
-        .as_bytes()
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle))
+    contains_bytes_ignore_ascii_case(value, needle.as_bytes())
 }
 
 /// Returns true when `value` contains `needle`, ignoring ASCII case.

@@ -45,7 +45,11 @@ mod tests {
     #[test]
     fn exact_power_of_two_yields_that_log() {
         for k in 10u32..=31 {
-            assert_eq!(window_log(1u64 << k), k, "2^{k} should map to windowLog {k}");
+            assert_eq!(
+                window_log(1u64 << k),
+                k,
+                "2^{k} should map to windowLog {k}"
+            );
         }
     }
 
@@ -80,16 +84,39 @@ mod tests {
 
     #[test]
     fn result_is_always_within_libzstd_range() {
-        for b in [0u64, 1, 1023, 1024, 1025, 1 << 15, 1 << 20, 1 << 31, 1 << 40, u64::MAX] {
+        for b in [
+            0u64,
+            1,
+            1023,
+            1024,
+            1025,
+            1 << 15,
+            1 << 20,
+            1 << 31,
+            1 << 40,
+            u64::MAX,
+        ] {
             let log = window_log(b);
-            assert!((10..=31).contains(&log), "windowLog {log} for budget {b} is out of [10,31]");
+            assert!(
+                (10..=31).contains(&log),
+                "windowLog {log} for budget {b} is out of [10,31]"
+            );
         }
     }
 
     #[test]
     fn window_covers_budget_while_representable() {
         // For any budget that a 31-bit window can hold, `1 << log` must be >= it.
-        for b in [1u64, 1024, 1025, 4096, 65_537, (1 << 20) + 7, 1 << 30, 1 << 31] {
+        for b in [
+            1u64,
+            1024,
+            1025,
+            4096,
+            65_537,
+            (1 << 20) + 7,
+            1 << 30,
+            1 << 31,
+        ] {
             let log = window_log(b);
             assert!(
                 (1u64 << log) >= b,
@@ -119,7 +146,10 @@ mod tests {
         let mut b = 1u64;
         while b < (1u64 << 40) {
             let log = window_log(b);
-            assert!(log >= prev, "windowLog dropped from {prev} to {log} at budget {b}");
+            assert!(
+                log >= prev,
+                "windowLog dropped from {prev} to {log} at budget {b}"
+            );
             prev = log;
             b = b.saturating_mul(2).saturating_add(1);
         }

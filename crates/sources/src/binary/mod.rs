@@ -50,8 +50,6 @@ pub fn reset_binary_counters() {
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use wait_timeout::ChildExt;
 
-/// Minimum printable string length for strings-mode extraction.
-pub(crate) const MIN_STRING_LEN: usize = 8;
 const GHIDRA_STDERR_EXCERPT_BYTES: usize = 4096;
 
 /// Binary analysis source for executables and shared libraries.
@@ -269,8 +267,8 @@ impl BinarySource {
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     base_line: 0,
-                    source_type: "binary:ghidra:decompiled".to_string(),
-                    path: Some(crate::filesystem::display_path(&self.path)),
+                    source_type: "binary:ghidra:decompiled".into(),
+                    path: Some(crate::filesystem::display_path(&self.path).into()),
                     commit: None,
                     author: None,
                     date: None,
@@ -288,8 +286,8 @@ impl BinarySource {
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     base_line: 0,
-                    source_type: "binary:ghidra:strings".to_string(),
-                    path: Some(crate::filesystem::display_path(&self.path)),
+                    source_type: "binary:ghidra:strings".into(),
+                    path: Some(crate::filesystem::display_path(&self.path).into()),
                     commit: None,
                     author: None,
                     date: None,
@@ -347,15 +345,15 @@ impl BinarySource {
         }
 
         // Always do full strings extraction as fallback/supplement
-        let strings = extract_printable_strings(&bytes, MIN_STRING_LEN);
+        let strings = extract_printable_strings(&bytes, crate::strings::MIN_PRINTABLE_STRING_LEN);
         if !strings.is_empty() {
             chunks.push(Ok(Chunk {
                 data: crate::strings::join_sensitive_strings(&strings, "\n"),
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     base_line: 0,
-                    source_type: "binary:strings".to_string(),
-                    path: Some(path_display),
+                    source_type: "binary:strings".into(),
+                    path: Some(path_display.into()),
                     commit: None,
                     author: None,
                     date: None,

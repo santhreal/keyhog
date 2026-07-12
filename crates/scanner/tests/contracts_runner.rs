@@ -515,6 +515,49 @@ fn every_contract_readme_claim_present() {
 /// on `detector_id`, so a contract for a non-existent detector has VACUOUS
 /// precision coverage (its negatives can never fire). Found `nih-pubmed-api`
 /// (real id `nih-pubmed-api-key`) this way.
+/// Every contract MUST ship at least one `[[evasion]]` fixture. Ratchet gate:
+/// backlog must not grow above the pinned ceiling; lower the ceiling as
+/// backfill lands until it reaches 0 and this becomes a hard zero-tolerance gate.
+#[test]
+fn every_contract_has_evasion_section() {
+    /// Contracts still missing `[[evasion]]` (count from TOML scan). Lower when
+    /// backfilling; target reached. 2026-07-02: 129 contracts lacked `[[evasion]]`.
+    /// 2026-07-06: backfilled ALL 129 → 0. This is now a HARD ZERO-TOLERANCE GATE:
+    /// every detector contract ships at least one adversarial evasion fixture, and
+    /// any new detector added without one fails here. Each evasion was derived from a
+    /// valid positive (anchor+value preserved), wrapped in a realistic adversarial
+    /// context, and BINARY-PROBED with the shipped v0.5.40 CLI in isolation to
+    /// confirm it surfaces the exact credential before landing. Subtleties handled:
+    /// required companions (twilio-api-key/twilio-iot), `[\s"']`/quote-only separators
+    /// (typeform/zora/x2y2), the hex-digest gate on double-quoted 40-hex, special-char
+    /// values (z85/surrealdb/thales/upcloud), connection-strings (vercel/yugabytedb),
+    /// and multiline JSON (vertexai). The backfill also surfaced 5 recorded detector
+    /// findings (BACKLOG §4): aerisweather/x2y2 unanchored generic-header arms,
+    /// google-artifact garbage-capture, turso/woocommerce duplicate patterns.
+    const EVASION_BACKLOG_CEILING: usize = 0;
+
+    let contracts = load_contracts();
+    assert!(
+        !contracts.is_empty(),
+        "tests/contracts/ has no *.toml - at least one detector must ship a contract"
+    );
+
+    let mut missing: Vec<String> = Vec::new();
+    for (path, c) in &contracts {
+        if c.evasion.is_empty() {
+            missing.push(format!("{} ({})", c.detector_id, path.display()));
+        }
+    }
+
+    assert!(
+        missing.len() <= EVASION_BACKLOG_CEILING,
+        "{} contract(s) missing [[evasion]] (ceiling {EVASION_BACKLOG_CEILING}); \
+         backfill or raise ceiling only with explicit approval:\n  - {}",
+        missing.len(),
+        missing.join("\n  - "),
+    );
+}
+
 #[test]
 fn every_contract_detector_id_resolves() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors loadable");
@@ -556,4 +599,104 @@ fn contracts_cover_at_least_one_detector() {
             path.display(),
         );
     }
+}
+
+/// A secret-FREE fingerprint of a scan result: detector id, byte offset, and
+/// line for each surfaced match. Never the credential bytes (CLAUDE.md: never
+/// log secrets; `RawMatch`'s own `Debug` redacts the credential for the same
+/// reason). Offset makes the fingerprint injective per detector — one match
+/// starts at one offset — so a divergence names exactly which finding moved,
+/// appeared, or vanished without revealing the plaintext.
+fn scan_fingerprint(matches: &[keyhog_core::RawMatch]) -> Vec<(String, usize, Option<usize>)> {
+    matches
+        .iter()
+        .map(|m| {
+            (
+                m.detector_id.as_ref().to_string(),
+                m.location.offset,
+                m.location.line,
+            )
+        })
+        .collect()
+}
+
+/// Determinism / reproducibility lock over the WHOLE contract corpus.
+///
+/// Scanning identical bytes twice — each scan isolated by `clear_fragment_cache`
+/// exactly the way every corpus runner isolates a fixture (see the cross-scan
+/// fragment-state note on `every_contract_passes_positives_negatives_evasions`
+/// above) — MUST yield a byte-identical finding set once sorted. This guards the
+/// deliberately-engineered total order and content-determined eviction in
+/// `keyhog_core`'s `RawMatch: Ord`: the per-chunk match heap once evicted at its
+/// cap by HashMap / rayon *insertion* order, so the surfaced set flickered
+/// run-to-run on dense chunks (the fix is documented on `RawMatch::cmp`, keyed
+/// down to `location.offset`/`line` precisely so eviction is reproducible). A
+/// regression that reintroduces hash-set iteration order or thread-interleaving
+/// nondeterminism into the surfaced set turns this red.
+///
+/// This is a strict superset of `backend_parity_determinism_fixed_corpus`, which
+/// pins determinism on a hand-picked ten-item corpus: here EVERY positive across
+/// EVERY shipped contract is a determinism case. It is a sound BEHAVIOR contract
+/// (identical input ⇒ identical output), never an accuracy rate. We do NOT
+/// assert warm-cache == cold-cache: the scanner accumulates cross-scan fragment
+/// state by design, so a re-scan without clearing may legitimately differ; the
+/// reproducibility guarantee that callers actually depend on is the
+/// cache-isolated one, which is exactly what the runners rely on.
+#[test]
+fn every_positive_scans_deterministically_over_the_corpus() {
+    let scanner = scanner();
+    let contracts = load_contracts();
+    assert!(
+        !contracts.is_empty(),
+        "tests/contracts/ has no *.toml - the determinism sweep has nothing to drive"
+    );
+
+    // Three cache-isolated re-scans of identical bytes. Two would catch a
+    // deterministic divergence; a third cheaply widens the window on any
+    // order/thread-interleaving flake that only sometimes reorders the set,
+    // at negligible cost (fixtures are small).
+    const REPEATS: usize = 3;
+
+    let mut divergences: Vec<String> = Vec::new();
+    let mut scanned = 0usize;
+    for (_path, c) in &contracts {
+        for p in &c.positive {
+            let chunk = make_chunk(&p.text);
+
+            scanner.clear_fragment_cache();
+            let mut first = scanner.scan(&chunk);
+            first.sort();
+            let baseline = scan_fingerprint(&first);
+            scanned += 1;
+
+            for run in 1..REPEATS {
+                scanner.clear_fragment_cache();
+                let mut again = scanner.scan(&chunk);
+                again.sort();
+                // Full `RawMatch` equality (every field, floats via total_cmp)
+                // — the strongest possible identity, not just the fingerprint.
+                if first != again {
+                    let other = scan_fingerprint(&again);
+                    divergences.push(format!(
+                        "{det}: run#{run} finding set differs from run#0 for an identical, \
+                         cache-cleared re-scan\n  run#0: {baseline:?}\n  run#{run}: {other:?}",
+                        det = c.detector_id,
+                    ));
+                    break;
+                }
+            }
+        }
+    }
+
+    assert!(
+        scanned > 0,
+        "no positive fixtures were scanned - the corpus lost every positive"
+    );
+    assert!(
+        divergences.is_empty(),
+        "{} positive fixture(s) scanned NON-deterministically (identical bytes, fragment cache \
+         cleared before each scan, yet a different finding set surfaced):\n{}",
+        divergences.len(),
+        divergences.join("\n"),
+    );
 }

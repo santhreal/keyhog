@@ -25,6 +25,9 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
 
+/// Single owner of the per-chunk scan ceiling. Enforced by the in-process
+/// coalesced pipeline (below) AND the daemon path (`daemon::server`), so both
+/// refuse the same size and neither refusal string can drift from the limit.
 pub(crate) const COALESCED_CHUNK_SCAN_CEILING_BYTES: usize = 512 * 1024 * 1024;
 /// The scan ceiling in MiB, derived from the byte constant so the operator-facing
 /// skip messages can never name a different size than the limit actually enforced.
@@ -44,6 +47,62 @@ pub(super) fn record_oversized_coalesced_chunk_skip(chunk: &Chunk) {
         ceiling_mb = COALESCED_CHUNK_SCAN_CEILING_MB,
         "skipping chunk over scan ceiling"
     );
+}
+
+/// One classified `source.chunks()` item for the coalesced
+/// ([`CoalescedProducer::produce_sources`]) and fused ([`fused`]) producer loops.
+/// The shared FAIL-CLOSED bookkeeping — the oversized-chunk warning + coverage
+/// receipt and the read-error receipt — lives in [`classify_source_chunk`] so the
+/// two loops can NEVER drift on the scan-size ceiling or on which coverage
+/// receipts fire (a drift there would silently under-account coverage on one
+/// path). They differ ONLY in how a scannable chunk is batched onward.
+pub(super) enum ClassifiedSourceChunk {
+    /// Within the scan-size ceiling: the caller must batch/scan it.
+    Scan(Chunk),
+    /// Oversized (warned + receipted) or a read error (warned + receipted) —
+    /// already fully accounted; the caller does nothing further.
+    Skip,
+}
+
+/// Classify one `source.chunks()` item, performing the shared fail-closed
+/// bookkeeping, and advance the per-source counters. `src_chunks` counts every
+/// chunk the source yielded (scannable OR oversized-skipped); `src_errored`
+/// records that at least one read error occurred — together they drive
+/// [`finalize_source_outcome`]'s total-failure decision.
+pub(super) fn classify_source_chunk(
+    chunk_result: std::result::Result<Chunk, keyhog_core::SourceError>,
+    src_chunks: &mut usize,
+    src_errored: &mut bool,
+) -> ClassifiedSourceChunk {
+    match chunk_result {
+        Ok(c) if c.data.len() <= COALESCED_CHUNK_SCAN_CEILING_BYTES => {
+            *src_chunks += 1;
+            ClassifiedSourceChunk::Scan(c)
+        }
+        Ok(c) => {
+            *src_chunks += 1;
+            record_oversized_coalesced_chunk_skip(&c);
+            ClassifiedSourceChunk::Skip
+        }
+        Err(e) => {
+            let _receipt = crate::record_source_error();
+            *src_errored = true;
+            tracing::warn!("source: {e}");
+            ClassifiedSourceChunk::Skip
+        }
+    }
+}
+
+/// Finalize a source after its chunk stream drains: a source that yielded ZERO
+/// chunks AND errored failed entirely, recorded via `record_failed_source` so
+/// `run()` fails closed rather than reporting "clean" off another source's data.
+/// A source that produced ANY chunk — even one later skipped as oversized — is a
+/// partial success, not a total failure. Single owner of this rule for both
+/// producer loops.
+pub(super) fn finalize_source_outcome(src_chunks: usize, src_errored: bool) {
+    if src_chunks == 0 && src_errored {
+        let _receipt = crate::record_failed_source();
+    }
 }
 
 struct CoalescedScannerWorker {
@@ -154,7 +213,14 @@ impl CoalescedScannerWorker {
             return Ok(scan_start.elapsed());
         }
         let chosen_backend = self.router.choose(self.scanner.as_ref(), batch)?;
-        let ran_on_gpu = is_gpu_backend(chosen_backend);
+        let chose_gpu = is_gpu_backend(chosen_backend);
+        // Snapshot the scanner's runtime GPU-degrade counter BEFORE the GPU arm so
+        // we can tell whether THIS batch actually executed on the GPU or degraded
+        // to CPU/SIMD mid-dispatch. The degrade is already surfaced loudly by
+        // `deny_silent_gpu_degrade` (one-shot eprintln / --require-gpu hard-fail);
+        // this keeps the GPU_SCANNED_CHUNKS completion telemetry HONEST so the
+        // summary reports real GPU execution, not the router's CHOICE (Law 10).
+        let degrade_before = chose_gpu.then(|| self.scanner.gpu_degrade_count());
         let per_chunk = match chosen_backend {
             // The Vyre GpuLiteralSet region-presence route is the single on-GPU
             // trigger path. It owns backend acquisition and degrades LOUDLY to
@@ -180,6 +246,12 @@ impl CoalescedScannerWorker {
                 .scan_coalesced_with_backend(batch, ScanBackend::SimdCpu),
             backend => return Err(AutorouteRoutingError::unsupported_backend(backend)),
         };
+        // Count the batch as GPU-scanned only if it was routed to the GPU AND the
+        // scanner recorded no runtime degrade while dispatching it. A degrade
+        // (already reported loudly) means those chunks ran on CPU/SIMD, so
+        // claiming them as GPU would overstate acceleration in the summary.
+        let ran_on_gpu =
+            degrade_before.is_some_and(|before| self.scanner.gpu_degrade_count() == before);
         append_scanned_batch_findings(findings, batch, per_chunk, scanned_count, ran_on_gpu);
         Ok(scan_start.elapsed())
     }
@@ -309,34 +381,23 @@ impl CoalescedBatchProducer {
             let mut src_chunks = 0usize;
             let mut src_errored = false;
             for chunk_result in source.chunks() {
-                match chunk_result {
-                    Ok(c) if c.data.len() <= COALESCED_CHUNK_SCAN_CEILING_BYTES => {
-                        src_chunks += 1;
-                        if self.record_unchanged_chunk(&c) {
-                            continue;
-                        }
-                        self.push_chunk(c);
-                        if self.should_flush() {
-                            self.flush_batch();
-                            if !self.pipeline_alive {
-                                break 'sources;
-                            }
-                        }
-                    }
-                    Ok(c) => {
-                        src_chunks += 1;
-                        record_oversized_coalesced_chunk_skip(&c);
-                    }
-                    Err(e) => {
-                        let _receipt = crate::record_source_error();
-                        src_errored = true;
-                        tracing::warn!("source: {e}");
+                let ClassifiedSourceChunk::Scan(c) =
+                    classify_source_chunk(chunk_result, &mut src_chunks, &mut src_errored)
+                else {
+                    continue;
+                };
+                if self.record_unchanged_chunk(&c) {
+                    continue;
+                }
+                self.push_chunk(c);
+                if self.should_flush() {
+                    self.flush_batch();
+                    if !self.pipeline_alive {
+                        break 'sources;
                     }
                 }
             }
-            if src_chunks == 0 && src_errored {
-                let _receipt = crate::record_failed_source();
-            }
+            finalize_source_outcome(src_chunks, src_errored);
             self.skipped_unchanged += filesystem_source_skipped_unchanged(source.as_ref());
         }
 
@@ -591,30 +652,4 @@ impl ScanOrchestrator {
 }
 
 #[cfg(test)]
-mod dispatch_const_tests {
-    use super::*;
-
-    /// The MiB scan-ceiling used in operator skip messages is DERIVED from the
-    /// byte constant, so the two can never drift apart. Pins both the value (512)
-    /// and the exact byte<->MiB relationship the derivation relies on.
-    #[test]
-    fn coalesced_scan_ceiling_mb_is_derived_from_bytes() {
-        assert_eq!(COALESCED_CHUNK_SCAN_CEILING_MB, 512);
-        assert_eq!(
-            COALESCED_CHUNK_SCAN_CEILING_MB * 1024 * 1024,
-            COALESCED_CHUNK_SCAN_CEILING_BYTES
-        );
-    }
-
-    /// `is_gpu_backend` is the single owner of the "does this backend run on the
-    /// GPU" predicate that the coalesced worker's `ran_on_gpu` flag consumes.
-    /// Pin its verdict for every routable backend so an inline `matches!` copy
-    /// cannot silently reintroduce a divergent classification.
-    #[test]
-    fn is_gpu_backend_classifies_every_routable_backend() {
-        assert!(is_gpu_backend(ScanBackend::Gpu));
-        assert!(is_gpu_backend(ScanBackend::MegaScan));
-        assert!(!is_gpu_backend(ScanBackend::SimdCpu));
-        assert!(!is_gpu_backend(ScanBackend::CpuFallback));
-    }
-}
+mod tests;

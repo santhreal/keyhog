@@ -144,6 +144,12 @@ pub struct OobSession {
     waiters: Arc<Mutex<HashMap<String, WaiterEntry>>>,
     poller_handle: Mutex<Option<JoinHandle<()>>>,
     shutdown: Arc<AtomicBool>,
+    /// Set by the poller once polls fail for `OOB_DEGRADED_ERROR_THRESHOLD`
+    /// consecutive rounds and cleared on the next success. While set, a wait
+    /// timeout is inconclusive (the channel that would deliver the callback is
+    /// down), so `wait_for` fails closed with `Disabled` instead of a false
+    /// `NotObserved`. See `elapsed_verdict`.
+    degraded: Arc<AtomicBool>,
 }
 
 impl OobSession {
@@ -186,6 +192,7 @@ impl OobSession {
             waiters: Arc::new(Mutex::new(HashMap::new())),
             poller_handle: Mutex::new(None),
             shutdown: Arc::new(AtomicBool::new(false)),
+            degraded: Arc::new(AtomicBool::new(false)),
         });
         let handle = spawn_poller(Arc::clone(&session));
         *session.poller_handle.lock() = Some(handle);
@@ -276,7 +283,7 @@ impl OobSession {
 
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return OobObservation::NotObserved;
+                return elapsed_verdict(self.degraded.load(Ordering::Acquire));
             }
 
             let mut notified = std::pin::pin!(notify.notified());
@@ -291,7 +298,7 @@ impl OobSession {
                 return obs;
             }
             if woken.is_err() {
-                return OobObservation::NotObserved;
+                return elapsed_verdict(self.degraded.load(Ordering::Acquire));
             }
             // Wakeup but no matching observation (e.g. wrong protocol filter,
             // or notify_waiters fired without a corresponding store). Loop
@@ -409,7 +416,19 @@ impl OobSession {
             waiters: Arc::new(Mutex::new(HashMap::new())),
             poller_handle: Mutex::new(None),
             shutdown: Arc::new(AtomicBool::new(false)),
+            degraded: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    /// Test-only: force the degraded flag so integration tests can assert that a
+    /// wait timeout on an unreachable collector fails closed (`Disabled`) rather
+    /// than reporting a false `NotObserved`. Always-compiled `pub(crate)` seam
+    /// (like the sibling `*_for_test` accessors) so the re-homed integration test
+    /// in `tests/unit/oob_poller_degradation.rs` can drive it through the
+    /// `VerifierTestApi::oob_session_set_degraded_for_test` accessor — the
+    /// `oob::session` no-inline-tests folder gate forbids the former inline test.
+    pub(crate) fn set_degraded_for_test(&self, degraded: bool) {
+        self.degraded.store(degraded, Ordering::Release);
     }
 
     /// Test-only accessor for driving notify paths from integration tests.
@@ -487,6 +506,39 @@ impl From<keyhog_core::OobProtocol> for OobAccept {
     }
 }
 
+/// After this many CONSECUTIVE failed polls the OOB session is considered
+/// degraded: the background poller can no longer reliably deliver callbacks, so
+/// any subsequent wait timeout is inconclusive rather than proof the callback
+/// never fired. Kept small so a genuinely-unreachable collector fails closed
+/// quickly, but above 1 so a single transient poll blip does not flip healthy
+/// `NotObserved` verdicts into inconclusive `Disabled` ones. Any successful poll
+/// clears the state.
+pub(crate) const OOB_DEGRADED_ERROR_THRESHOLD: u32 = 3;
+
+/// Pure decision: is the poller degraded at this consecutive-error count? One
+/// owner for the threshold comparison so the poller and its test agree.
+pub(crate) fn poller_is_degraded(consecutive_errors: u32) -> bool {
+    consecutive_errors >= OOB_DEGRADED_ERROR_THRESHOLD
+}
+
+/// Verdict for a wait that elapsed with no matching interaction. A plain timeout
+/// means the callback never fired (`NotObserved`). But if the poller is degraded
+/// the timeout is UNTRUSTWORTHY — the channel that would have delivered the
+/// callback was down — so we fail closed with `Disabled` (a verification error)
+/// rather than silently downgrading a broken OOB channel to "not observed",
+/// which would misreport a live secret as dead (Law 10).
+pub(crate) fn elapsed_verdict(poller_degraded: bool) -> OobObservation {
+    if poller_degraded {
+        OobObservation::Disabled(
+            "OOB collector unreachable: poller degraded after consecutive poll failures; \
+             wait timeout is inconclusive, not a dead secret"
+                .into(),
+        )
+    } else {
+        OobObservation::NotObserved
+    }
+}
+
 fn spawn_poller(session: Arc<OobSession>) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut consecutive_errors = 0u32;
@@ -495,15 +547,36 @@ fn spawn_poller(session: Arc<OobSession>) -> JoinHandle<()> {
             if session.shutdown.load(Ordering::Acquire) {
                 break;
             }
+            // GC at the TOP of every iteration so retention stays bounded even
+            // while polls are FAILING. The error arm below `continue`s straight
+            // back here, so a GC placed after the poll (where it used to live)
+            // was skipped for the entire duration of a collector outage —
+            // `observations` grew unbounded exactly when the poller could no
+            // longer drain it.
+            if Instant::now() >= next_gc {
+                session.gc();
+                next_gc = Instant::now() + Duration::from_secs(60);
+            }
             match session.client.poll().await {
                 Ok(interactions) => {
                     consecutive_errors = 0;
+                    // A successful poll proves the channel is live again: clear
+                    // any degraded state so waiters resume trusting timeouts.
+                    session.degraded.store(false, Ordering::Release);
                     for interaction in interactions {
                         session.store_and_notify(interaction);
                     }
                 }
                 Err(e) => {
                     consecutive_errors += 1;
+                    // Once failures are SUSTAINED, mark the session degraded so a
+                    // subsequent wait timeout fails closed (`Disabled`) instead
+                    // of silently reporting `NotObserved` on a channel that can
+                    // no longer deliver callbacks (Law 10). Cleared on the next
+                    // success above.
+                    session
+                        .degraded
+                        .store(poller_is_degraded(consecutive_errors), Ordering::Release);
                     // Backoff progressively, but cap so we don't go silent for
                     // ages on a flaky collector.
                     let backoff_secs = (1u64 << consecutive_errors.min(5)).min(30);
@@ -527,10 +600,6 @@ fn spawn_poller(session: Arc<OobSession>) -> JoinHandle<()> {
                     tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
                     continue;
                 }
-            }
-            if Instant::now() >= next_gc {
-                session.gc();
-                next_gc = Instant::now() + Duration::from_secs(60);
             }
             tokio::time::sleep(session.config.poll_interval).await;
         }

@@ -119,11 +119,14 @@ pub struct GpuRoutingProfile {
     pub pattern_breakeven: usize,
 }
 
+/// GPU routing profile (engage/solo byte thresholds + pattern break-even) for
+/// the tier the given adapter name classifies to.
 #[must_use]
 pub fn gpu_routing_profile(adapter_name: Option<&str>) -> GpuRoutingProfile {
     profile_for_tier(classify_gpu_tier(adapter_name))
 }
 
+/// The GPU routing profiles for every tier (High, Mid, Low), in tier order.
 #[must_use]
 pub fn gpu_routing_profiles() -> [GpuRoutingProfile; GPU_TIER_COUNT] {
     [

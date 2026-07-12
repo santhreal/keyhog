@@ -42,19 +42,25 @@ impl CompiledScanner {
                     .extend(self.fragment_cache.record_and_reassemble_stamped(fragment));
             }
         }
+        // ONE owner for the reassembly admission floors and the synthetic probe
+        // shape: `scan_postprocess_fragments`. The in-chunk fragment scan and this
+        // no-phase-1-hit path MUST gate on the same entropy/length thresholds and
+        // build the same `reassembled_key = "…"` probe, or a credential glued
+        // across chunks would be admitted by one path and dropped by the other.
+        use super::scan_postprocess_fragments::{
+            reassembly_probe_data, REASSEMBLY_MIN_ENTROPY, REASSEMBLY_MIN_VALUE_LEN,
+        };
         for candidate in reassembled_candidates {
             let entropy = crate::pipeline::match_entropy(candidate.value.as_bytes());
-            if entropy < 3.0 || candidate.value.len() < 16 {
+            if entropy < REASSEMBLY_MIN_ENTROPY || candidate.value.len() < REASSEMBLY_MIN_VALUE_LEN
+            {
                 continue;
             }
-            let mut synthetic_data = String::with_capacity(candidate.value.len() + 24);
-            synthetic_data.push_str("reassembled_key = \"");
-            synthetic_data.push_str(candidate.value.as_str());
-            synthetic_data.push('"');
+            let synthetic_data = reassembly_probe_data(candidate.value.as_str());
 
             let mut synthetic_metadata = chunk.metadata.clone();
             if let Some(frag_path) = candidate.path.as_deref() {
-                synthetic_metadata.path = Some(frag_path.to_string());
+                synthetic_metadata.path = Some(frag_path.into());
             }
             let synthetic_chunk = Chunk {
                 data: synthetic_data.into(),

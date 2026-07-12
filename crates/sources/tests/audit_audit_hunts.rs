@@ -55,6 +55,11 @@
 //! so the web-fetch path refuses the same ranges as the verifier. After the
 //! fix, every URL below is refused before a socket is opened and these tests
 //! pass.
+//!
+//! The entire file drives `WebSource`, so it is gated on the `web` feature —
+//! without this the CI source-feature set (no `web`) fails to compile the
+//! `keyhog_sources::WebSource` import (E0432).
+#![cfg(feature = "web")]
 
 use keyhog_core::Source;
 use keyhog_sources::WebSource;

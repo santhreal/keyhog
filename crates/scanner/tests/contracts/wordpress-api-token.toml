@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "access-token '    : \"  '     =   : =     =  '' =     '  '\" '=    \" \" =:  lc%PFEXAMPLEEXAMPLEcCSnc"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# wordpress access_token=lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc  # blog"
+credential = "lc%PF8RBcccLMTOWauL6V%RM3uWA4svAHhkHtrTcvE2QRQGMr20xjfxEOtPczoGZOT07sN7v5W0bWdEMCsEt4jlWQiCcCSnc"
+reason = "Commented-out config; wordpress access_token keyword + token (with % chars) intact inside the comment."

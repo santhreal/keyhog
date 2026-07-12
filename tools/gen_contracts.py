@@ -113,7 +113,26 @@ def _pick_alternation(alt_body: str, rng: random.Random) -> str:
     return options[0]
 
 
-_SAFE_BODY_CHARS = string.ascii_letters + string.digits + "_-"
+def _toml_str(s: str) -> str:
+    """Encode `s` as a TOML basic string with safe escaping."""
+    out = ['"']
+    for ch in s:
+        if ch == "\\":
+            out.append("\\\\")
+        elif ch == '"':
+            out.append('\\"')
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\r":
+            out.append("\\r")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04X}")
+        else:
+            out.append(ch)
+    out.append('"')
+    return "".join(out)
 
 
 def synthesize_positive(regex: str, detector_id: str) -> Optional[tuple[str, str]]:
@@ -323,31 +342,10 @@ def build_contract_toml(detector: dict, detector_id: str) -> Optional[str]:
     neg_text1 = positive_text.replace(surfaced_credential, neg_body_placeholder, 1)
     neg_text2 = positive_text.replace(surfaced_credential, neg_body_example, 1)
 
-    def _toml_str(s: str) -> str:
-        """Encode `s` as a TOML basic string with safe escaping."""
-        out = ['"']
-        for ch in s:
-            if ch == "\\":
-                out.append("\\\\")
-            elif ch == '"':
-                out.append('\\"')
-            elif ch == "\n":
-                out.append("\\n")
-            elif ch == "\r":
-                out.append("\\r")
-            elif ch == "\t":
-                out.append("\\t")
-            elif ord(ch) < 0x20 or ord(ch) == 0x7F:
-                out.append(f"\\u{ord(ch):04X}")
-            else:
-                out.append(ch)
-        out.append('"')
-        return "".join(out)
-
     toml = f"""schema_version = 1
-detector_id = "{detector_id}"
-service = "{service}"
-severity = "{severity}"
+detector_id = {_toml_str(detector_id)}
+service = {_toml_str(service)}
+severity = {_toml_str(severity)}
 
 # Auto-generated contract (gen_contracts.py). Hand-edit to add more
 # real-world shapes; the auto-stub validates the detector at

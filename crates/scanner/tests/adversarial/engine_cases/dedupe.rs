@@ -3,6 +3,8 @@ use super::support::*;
 #[test]
 fn multiple_secrets_on_same_line_all_detected() {
     let detector1 = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "slack-bot".into(),
         name: "Slack Bot".into(),
@@ -21,6 +23,8 @@ fn multiple_secrets_on_same_line_all_detected() {
         ..Default::default()
     };
     let detector2 = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "aws-key".into(),
         name: "AWS Key".into(),

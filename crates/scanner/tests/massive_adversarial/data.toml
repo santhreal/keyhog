@@ -5212,6 +5212,39 @@ text = 'dp.s\u{0442}.0000000000000000000000000000000000000000'
 credential = 'dp.st.0000000000000000000000000000000000000000'
 
 [[case]]
+detector_id = "drake-api-credentials"
+suite = 27
+
+[[case.assertion]]
+kind = "fires"
+name = "normal"
+text = 'drake_account_number = "8402751639284057"'
+credential = '8402751639284057'
+
+[[case.assertion]]
+kind = "silent"
+name = "prefix"
+text = 'frake_account_number = "8402751639284057"'
+
+[[case.assertion]]
+kind = "fires"
+name = "zwsp"
+text = 'drake\u{200B}_account_number = "8402751639284057"'
+credential = '8402751639284057'
+
+[[case.assertion]]
+kind = "fires"
+name = "hyphen"
+text = 'drake_account_number = "84027516\u{00AD}39284057"'
+credential = '8402751639284057'
+
+[[case.assertion]]
+kind = "fires"
+name = "homoglyph"
+text = 'dr\u{0430}ke_account_number = "8402751639284057"'
+credential = '8402751639284057'
+
+[[case]]
 detector_id = "drata-api-token"
 suite = 27
 
@@ -6629,31 +6662,31 @@ suite = 37
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'ghs_123456789012345678901234567890123456'
-credential = 'ghs_123456789012345678901234567890123456'
+text = 'ghs_1234567890123456789012345678902PDSiF'
+credential = 'ghs_1234567890123456789012345678902PDSiF'
 
 [[case.assertion]]
 kind = "silent"
 name = "prefix"
-text = 'hhs_123456789012345678901234567890123456'
+text = 'hhs_1234567890123456789012345678902PDSiF'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'ghs_\u{200B}123456789012345678901234567890123456'
-credential = 'ghs_123456789012345678901234567890123456'
+text = 'ghs_\u{200B}1234567890123456789012345678902PDSiF'
+credential = 'ghs_1234567890123456789012345678902PDSiF'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'ghs_123456789012345678901234567890\u{00AD}123456'
-credential = 'ghs_123456789012345678901234567890123456'
+text = 'ghs_123456789012345678901234567890\u{00AD}2PDSiF'
+credential = 'ghs_1234567890123456789012345678902PDSiF'
 
 [[case.assertion]]
 kind = "fires"
 name = "homoglyph"
-text = 'g\u{04BB}s_123456789012345678901234567890123456'
-credential = 'ghs_123456789012345678901234567890123456'
+text = 'g\u{04BB}s_1234567890123456789012345678902PDSiF'
+credential = 'ghs_1234567890123456789012345678902PDSiF'
 
 [[case]]
 detector_id = "github-classic-pat"
@@ -6695,31 +6728,31 @@ suite = 37
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'gho_123456789012345678901234567890123456'
-credential = 'gho_123456789012345678901234567890123456'
+text = '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'
+credential = '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'
 
 [[case.assertion]]
 kind = "silent"
 name = "prefix"
-text = 'hho_123456789012345678901234567890123456'
+text = 'hho_1234567890123456789012345678902PDSiF'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'gho_\u{200B}123456789012345678901234567890123456'
-credential = 'gho_123456789012345678901234567890123456'
+text = 'gho_\u{200B}1234567890123456789012345678902PDSiF'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'gho_123456789012345678901234567890\u{00AD}123456'
-credential = 'gho_123456789012345678901234567890123456'
+text = 'gho_123456789012345678901234567890\u{00AD}2PDSiF'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "homoglyph"
-text = 'g\u{04BB}o_123456789012345678901234567890123456'
-credential = 'gho_123456789012345678901234567890123456'
+text = 'g\u{04BB}o_1234567890123456789012345678902PDSiF'
+credential = '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'
 
 [[case]]
 detector_id = "github-oauth-secret"
@@ -6794,31 +6827,31 @@ suite = 37
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'ghr_123456789012345678901234567890123456'
-credential = 'ghr_123456789012345678901234567890123456'
+text = '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'
+credential = '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'
 
 [[case.assertion]]
 kind = "silent"
 name = "prefix"
-text = 'hhr_123456789012345678901234567890123456'
+text = 'hhr_1234567890123456789012345678902PDSiF'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'ghr_\u{200B}123456789012345678901234567890123456'
-credential = 'ghr_123456789012345678901234567890123456'
+text = 'ghr_\u{200B}1234567890123456789012345678902PDSiF'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'ghr_123456789012345678901234567890\u{00AD}123456'
-credential = 'ghr_123456789012345678901234567890123456'
+text = 'ghr_123456789012345678901234567890\u{00AD}2PDSiF'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "homoglyph"
-text = 'g\u{04BB}r_123456789012345678901234567890123456'
-credential = 'ghr_123456789012345678901234567890123456'
+text = 'g\u{04BB}r_1234567890123456789012345678902PDSiF'
+credential = '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'
 
 [[case]]
 detector_id = "gitkraken-api-token"
@@ -29073,8 +29106,8 @@ suite = 89
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr9yELqD'
-credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr9yELqD'
+text = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt'
+credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt'
 
 [[case.assertion]]
 kind = "silent"
@@ -29084,62 +29117,62 @@ text = 'dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'ghs_Qy4gyJlDeVvhcdbD\u{200B}GXIrubm2bjUxGr9yELqD'
-credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr9yELqD'
+text = 'ghs_Qy4gyJlDeVvhcdbD\u{200B}GXIrubm2bjUxGr38XESt'
+credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'ghs_Qy4gyJlDeVvhcdbD\u{00AD}GXIrubm2bjUxGr9yELqD'
-credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr9yELqD'
+text = 'ghs_Qy4gyJlDeVvhcdbD\u{00AD}GXIrubm2bjUxGr38XESt'
+credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnj"
-text = 'ghs_Qy4gyJlDeVvhcdbD\u{200C}GXIrubm2bjUxGr9yELqD'
-credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr9yELqD'
+text = 'ghs_Qy4gyJlDeVvhcdbD\u{200C}GXIrubm2bjUxGr38XESt'
+credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwj"
-text = 'ghs_Qy4gyJlDeVvhcdbD\u{200D}GXIrubm2bjUxGr9yELqD'
-credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr9yELqD'
+text = 'ghs_Qy4gyJlDeVvhcdbD\u{200D}GXIrubm2bjUxGr38XESt'
+credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnbsp"
-text = 'ghs_Qy4gyJlDeVvhcdbD\u{FEFF}GXIrubm2bjUxGr9yELqD'
-credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr9yELqD'
+text = 'ghs_Qy4gyJlDeVvhcdbD\u{FEFF}GXIrubm2bjUxGr38XESt'
+credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt'
 
 [[case.assertion]]
 kind = "fires"
 name = "joiner"
-text = 'ghs_Qy4gyJlDeVvhcdbD\u{2060}GXIrubm2bjUxGr9yELqD'
-credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr9yELqD'
+text = 'ghs_Qy4gyJlDeVvhcdbD\u{2060}GXIrubm2bjUxGr38XESt'
+credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt'
 
 [[case.assertion]]
 kind = "fires"
 name = "mongolian"
-text = 'ghs_Qy4gyJlDeVvhcdbD\u{180E}GXIrubm2bjUxGr9yELqD'
-credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr9yELqD'
+text = 'ghs_Qy4gyJlDeVvhcdbD\u{180E}GXIrubm2bjUxGr38XESt'
+credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt'
 
 [[case.assertion]]
 kind = "fires"
 name = "rtl"
-text = 'ghs_Qy4gyJlDeVvhcdbD\u{202E}GXIrubm2bjUxGr9yELqD'
-credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr9yELqD'
+text = 'ghs_Qy4gyJlDeVvhcdbD\u{202E}GXIrubm2bjUxGr38XESt'
+credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt'
 
 [[case.assertion]]
 kind = "fires"
 name = "dir"
-text = 'ghs_Qy4gyJlDeVvhcdbD\u{202C}GXIrubm2bjUxGr9yELqD'
-credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr9yELqD'
+text = 'ghs_Qy4gyJlDeVvhcdbD\u{202C}GXIrubm2bjUxGr38XESt'
+credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt'
 
 [[case.assertion]]
 kind = "fires"
 name = "lrm"
-text = 'ghs_Qy4gyJlDeVvhcdbD\u{200E}GXIrubm2bjUxGr9yELqD'
-credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr9yELqD'
+text = 'ghs_Qy4gyJlDeVvhcdbD\u{200E}GXIrubm2bjUxGr38XESt'
+credential = 'ghs_Qy4gyJlDeVvhcdbDGXIrubm2bjUxGr38XESt'
 
 [[case]]
 detector_id = "github-app-private-key"
@@ -29287,8 +29320,8 @@ suite = 90
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk'
-credential = 'gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk'
+text = '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'
+credential = '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'
 
 [[case.assertion]]
 kind = "silent"
@@ -29298,62 +29331,62 @@ text = 'dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'gho_HsCoqSquucSEDTw1\u{200B}rbQZ3BJ0uv9HtXsANprk'
-credential = 'gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk'
+text = 'gho_HsCoqSquucSEDTw1\u{200B}rbQZ3BJ0uv9HtX0EBzkh'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'gho_HsCoqSquucSEDTw1\u{00AD}rbQZ3BJ0uv9HtXsANprk'
-credential = 'gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk'
+text = 'gho_HsCoqSquucSEDTw1\u{00AD}rbQZ3BJ0uv9HtX0EBzkh'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnj"
-text = 'gho_HsCoqSquucSEDTw1\u{200C}rbQZ3BJ0uv9HtXsANprk'
-credential = 'gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk'
+text = 'gho_HsCoqSquucSEDTw1\u{200C}rbQZ3BJ0uv9HtX0EBzkh'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwj"
-text = 'gho_HsCoqSquucSEDTw1\u{200D}rbQZ3BJ0uv9HtXsANprk'
-credential = 'gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk'
+text = 'gho_HsCoqSquucSEDTw1\u{200D}rbQZ3BJ0uv9HtX0EBzkh'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnbsp"
-text = 'gho_HsCoqSquucSEDTw1\u{FEFF}rbQZ3BJ0uv9HtXsANprk'
-credential = 'gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk'
+text = 'gho_HsCoqSquucSEDTw1\u{FEFF}rbQZ3BJ0uv9HtX0EBzkh'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "joiner"
-text = 'gho_HsCoqSquucSEDTw1\u{2060}rbQZ3BJ0uv9HtXsANprk'
-credential = 'gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk'
+text = 'gho_HsCoqSquucSEDTw1\u{2060}rbQZ3BJ0uv9HtX0EBzkh'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "mongolian"
-text = 'gho_HsCoqSquucSEDTw1\u{180E}rbQZ3BJ0uv9HtXsANprk'
-credential = 'gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk'
+text = 'gho_HsCoqSquucSEDTw1\u{180E}rbQZ3BJ0uv9HtX0EBzkh'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "rtl"
-text = 'gho_HsCoqSquucSEDTw1\u{202E}rbQZ3BJ0uv9HtXsANprk'
-credential = 'gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk'
+text = 'gho_HsCoqSquucSEDTw1\u{202E}rbQZ3BJ0uv9HtX0EBzkh'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "dir"
-text = 'gho_HsCoqSquucSEDTw1\u{202C}rbQZ3BJ0uv9HtXsANprk'
-credential = 'gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk'
+text = 'gho_HsCoqSquucSEDTw1\u{202C}rbQZ3BJ0uv9HtX0EBzkh'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "lrm"
-text = 'gho_HsCoqSquucSEDTw1\u{200E}rbQZ3BJ0uv9HtXsANprk'
-credential = 'gho_HsCoqSquucSEDTw1rbQZ3BJ0uv9HtXsANprk'
+text = 'gho_HsCoqSquucSEDTw1\u{200E}rbQZ3BJ0uv9HtX0EBzkh'
+credential = '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'
 
 [[case]]
 detector_id = "github-oauth-secret"
@@ -29512,8 +29545,8 @@ suite = 90
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'ghr_rH39afa0PHvEDg72PPnuryL5UP0ZUAPR44Bp'
-credential = 'ghr_rH39afa0PHvEDg72PPnuryL5UP0ZUAPR44Bp'
+text = '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'
+credential = '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'
 
 [[case.assertion]]
 kind = "silent"
@@ -29523,62 +29556,62 @@ text = 'dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'ghr_rH39afa0PHvEDg72\u{200B}PPnuryL5UP0ZUAPR44Bp'
-credential = 'ghr_rH39afa0PHvEDg72PPnuryL5UP0ZUAPR44Bp'
+text = 'ghr_rH39afa0PHvEDg72\u{200B}PPnuryL5UP0ZUA34ae9N'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'ghr_rH39afa0PHvEDg72\u{00AD}PPnuryL5UP0ZUAPR44Bp'
-credential = 'ghr_rH39afa0PHvEDg72PPnuryL5UP0ZUAPR44Bp'
+text = 'ghr_rH39afa0PHvEDg72\u{00AD}PPnuryL5UP0ZUA34ae9N'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnj"
-text = 'ghr_rH39afa0PHvEDg72\u{200C}PPnuryL5UP0ZUAPR44Bp'
-credential = 'ghr_rH39afa0PHvEDg72PPnuryL5UP0ZUAPR44Bp'
+text = 'ghr_rH39afa0PHvEDg72\u{200C}PPnuryL5UP0ZUA34ae9N'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwj"
-text = 'ghr_rH39afa0PHvEDg72\u{200D}PPnuryL5UP0ZUAPR44Bp'
-credential = 'ghr_rH39afa0PHvEDg72PPnuryL5UP0ZUAPR44Bp'
+text = 'ghr_rH39afa0PHvEDg72\u{200D}PPnuryL5UP0ZUA34ae9N'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnbsp"
-text = 'ghr_rH39afa0PHvEDg72\u{FEFF}PPnuryL5UP0ZUAPR44Bp'
-credential = 'ghr_rH39afa0PHvEDg72PPnuryL5UP0ZUAPR44Bp'
+text = 'ghr_rH39afa0PHvEDg72\u{FEFF}PPnuryL5UP0ZUA34ae9N'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "joiner"
-text = 'ghr_rH39afa0PHvEDg72\u{2060}PPnuryL5UP0ZUAPR44Bp'
-credential = 'ghr_rH39afa0PHvEDg72PPnuryL5UP0ZUAPR44Bp'
+text = 'ghr_rH39afa0PHvEDg72\u{2060}PPnuryL5UP0ZUA34ae9N'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "mongolian"
-text = 'ghr_rH39afa0PHvEDg72\u{180E}PPnuryL5UP0ZUAPR44Bp'
-credential = 'ghr_rH39afa0PHvEDg72PPnuryL5UP0ZUAPR44Bp'
+text = 'ghr_rH39afa0PHvEDg72\u{180E}PPnuryL5UP0ZUA34ae9N'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "rtl"
-text = 'ghr_rH39afa0PHvEDg72\u{202E}PPnuryL5UP0ZUAPR44Bp'
-credential = 'ghr_rH39afa0PHvEDg72PPnuryL5UP0ZUAPR44Bp'
+text = 'ghr_rH39afa0PHvEDg72\u{202E}PPnuryL5UP0ZUA34ae9N'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "dir"
-text = 'ghr_rH39afa0PHvEDg72\u{202C}PPnuryL5UP0ZUAPR44Bp'
-credential = 'ghr_rH39afa0PHvEDg72PPnuryL5UP0ZUAPR44Bp'
+text = 'ghr_rH39afa0PHvEDg72\u{202C}PPnuryL5UP0ZUA34ae9N'
+credential = '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'
 
 [[case.assertion]]
 kind = "fires"
 name = "lrm"
-text = 'ghr_rH39afa0PHvEDg72\u{200E}PPnuryL5UP0ZUAPR44Bp'
-credential = 'ghr_rH39afa0PHvEDg72PPnuryL5UP0ZUAPR44Bp'
+text = 'ghr_rH39afa0PHvEDg72\u{200E}PPnuryL5UP0ZUA34ae9N'
+credential = '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'
 
 [[case]]
 detector_id = "github-user-to-server-token"
@@ -29587,8 +29620,8 @@ suite = 90
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1'
-credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1'
+text = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh'
+credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh'
 
 [[case.assertion]]
 kind = "silent"
@@ -29598,62 +29631,62 @@ text = 'dummyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{200B}w3YzKp4Qx7Rm2Sn5Tab1'
-credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1'
+text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{200B}w3YzKp4Qx7Rm2S3cJfHh'
+credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{00AD}w3YzKp4Qx7Rm2Sn5Tab1'
-credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1'
+text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{00AD}w3YzKp4Qx7Rm2S3cJfHh'
+credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnj"
-text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{200C}w3YzKp4Qx7Rm2Sn5Tab1'
-credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1'
+text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{200C}w3YzKp4Qx7Rm2S3cJfHh'
+credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwj"
-text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{200D}w3YzKp4Qx7Rm2Sn5Tab1'
-credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1'
+text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{200D}w3YzKp4Qx7Rm2S3cJfHh'
+credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnbsp"
-text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{FEFF}w3YzKp4Qx7Rm2Sn5Tab1'
-credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1'
+text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{FEFF}w3YzKp4Qx7Rm2S3cJfHh'
+credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh'
 
 [[case.assertion]]
 kind = "fires"
 name = "joiner"
-text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{2060}w3YzKp4Qx7Rm2Sn5Tab1'
-credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1'
+text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{2060}w3YzKp4Qx7Rm2S3cJfHh'
+credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh'
 
 [[case.assertion]]
 kind = "fires"
 name = "mongolian"
-text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{180E}w3YzKp4Qx7Rm2Sn5Tab1'
-credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1'
+text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{180E}w3YzKp4Qx7Rm2S3cJfHh'
+credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh'
 
 [[case.assertion]]
 kind = "fires"
 name = "rtl"
-text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{202E}w3YzKp4Qx7Rm2Sn5Tab1'
-credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1'
+text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{202E}w3YzKp4Qx7Rm2S3cJfHh'
+credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh'
 
 [[case.assertion]]
 kind = "fires"
 name = "dir"
-text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{202C}w3YzKp4Qx7Rm2Sn5Tab1'
-credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1'
+text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{202C}w3YzKp4Qx7Rm2S3cJfHh'
+credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh'
 
 [[case.assertion]]
 kind = "fires"
 name = "lrm"
-text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{200E}w3YzKp4Qx7Rm2Sn5Tab1'
-credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tab1'
+text = 'ghu_Kp4Qx7Rm2Sn5Tb8V\u{200E}w3YzKp4Qx7Rm2S3cJfHh'
+credential = 'ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh'
 
 [[case]]
 detector_id = "github-webhook-secret"
@@ -38115,8 +38148,8 @@ suite = 102
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'libsql://78167825'
-credential = '78167825'
+text = 'libsql://x7k2m9q4rtp1w8z5n3vb'
+credential = 'x7k2m9q4rtp1w8z5n3vb'
 
 [[case.assertion]]
 kind = "silent"
@@ -38126,62 +38159,62 @@ text = 'dummy_prefix_0://xxxxxxxx'
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'libsql://7816\u{200B}7825'
-credential = '78167825'
+text = 'libsql://x7k2m9q4rt\u{200B}p1w8z5n3vb'
+credential = 'x7k2m9q4rtp1w8z5n3vb'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'libsql://7816\u{00AD}7825'
-credential = '78167825'
+text = 'libsql://x7k2m9q4rt\u{00AD}p1w8z5n3vb'
+credential = 'x7k2m9q4rtp1w8z5n3vb'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnj"
-text = 'libsql://7816\u{200C}7825'
-credential = '78167825'
+text = 'libsql://x7k2m9q4rt\u{200C}p1w8z5n3vb'
+credential = 'x7k2m9q4rtp1w8z5n3vb'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwj"
-text = 'libsql://7816\u{200D}7825'
-credential = '78167825'
+text = 'libsql://x7k2m9q4rt\u{200D}p1w8z5n3vb'
+credential = 'x7k2m9q4rtp1w8z5n3vb'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnbsp"
-text = 'libsql://7816\u{FEFF}7825'
-credential = '78167825'
+text = 'libsql://x7k2m9q4rt\u{FEFF}p1w8z5n3vb'
+credential = 'x7k2m9q4rtp1w8z5n3vb'
 
 [[case.assertion]]
 kind = "fires"
 name = "joiner"
-text = 'libsql://7816\u{2060}7825'
-credential = '78167825'
+text = 'libsql://x7k2m9q4rt\u{2060}p1w8z5n3vb'
+credential = 'x7k2m9q4rtp1w8z5n3vb'
 
 [[case.assertion]]
 kind = "fires"
 name = "mongolian"
-text = 'libsql://7816\u{180E}7825'
-credential = '78167825'
+text = 'libsql://x7k2m9q4rt\u{180E}p1w8z5n3vb'
+credential = 'x7k2m9q4rtp1w8z5n3vb'
 
 [[case.assertion]]
 kind = "fires"
 name = "rtl"
-text = 'libsql://7816\u{202E}7825'
-credential = '78167825'
+text = 'libsql://x7k2m9q4rt\u{202E}p1w8z5n3vb'
+credential = 'x7k2m9q4rtp1w8z5n3vb'
 
 [[case.assertion]]
 kind = "fires"
 name = "dir"
-text = 'libsql://7816\u{202C}7825'
-credential = '78167825'
+text = 'libsql://x7k2m9q4rt\u{202C}p1w8z5n3vb'
+credential = 'x7k2m9q4rtp1w8z5n3vb'
 
 [[case.assertion]]
 kind = "fires"
 name = "lrm"
-text = 'libsql://7816\u{200E}7825'
-credential = '78167825'
+text = 'libsql://x7k2m9q4rt\u{200E}p1w8z5n3vb'
+credential = 'x7k2m9q4rtp1w8z5n3vb'
 
 [[case]]
 detector_id = "lightstep-access-token"

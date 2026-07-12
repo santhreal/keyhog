@@ -18,6 +18,7 @@ mirror still scores identically.
 
 from __future__ import annotations
 
+import json
 import pathlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -80,8 +81,22 @@ class Corpus(ABC):
         return self.root
 
     @abstractmethod
+    def _load_records(self) -> list[LabeledRecord]:
+        """Parse the ground truth from disk. Empty list for a perf-only corpus.
+        Called at most once per instance — :meth:`records` memoizes it."""
+
     def records(self) -> list[LabeledRecord]:
-        """Ground-truth records. Empty list for a perf-only corpus."""
+        """Ground-truth records, parsed once and cached on the instance.
+
+        ``build_result`` -> ``info()`` -> ``records()`` plus ``score()`` and the
+        ``__main__`` calibrate/analyze paths all ask for the same records several
+        times per run; for CredData that is ~11k files re-opened and re-sliced.
+        Memoising here parses each meta CSV exactly once."""
+        cached = self.__dict__.get("_records_cache")
+        if cached is None:
+            cached = self._load_records()
+            self._records_cache = cached
+        return cached
 
     def is_labeled(self) -> bool:
         return bool(self.records())
@@ -127,6 +142,31 @@ class Corpus(ABC):
             except OSError:
                 continue
         return n
+
+
+def load_jsonl_manifest(path: pathlib.Path) -> list[LabeledRecord]:
+    """Parse a SecretBench-shape ``manifest.jsonl`` into :class:`LabeledRecord`.
+
+    Shared by the mirror and home-turf corpora (identical manifest shape and
+    split layout), so the record mapping lives in ONE place. Callers own the
+    manifest-missing error (each phrases its own regenerate hint)."""
+    out: list[LabeledRecord] = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            r = json.loads(line)
+            out.append(LabeledRecord(
+                id=r["id"],
+                secret=r.get("secret", ""),
+                label=bool(r.get("label")),
+                category=r.get("category", "unknown"),
+                file_path=r.get("on_disk_path") or r.get("file_path", ""),
+                line_start=int(r.get("start_line", 0) or 0),
+                line_end=int(r.get("end_line", 0) or 0),
+            ))
+    return out
 
 
 def resolve_corpus(name: str, **kw) -> Corpus:

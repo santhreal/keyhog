@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "xau_8EXAMPLEEXAMPLEYTAyW"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# xata (rotate): xau_8Di0DmOErHN_6oo82G98TQNTA815Z2aehzSbTPleCMZDqE5t6dg7eCqnGgBeji47hhMMJHbC0F0KrhnyFYTAyW"
+credential = "xau_8Di0DmOErHN_6oo82G98TQNTA815Z2aehzSbTPleCMZDqE5t6dg7eCqnGgBeji47hhMMJHbC0F0KrhnyFYTAyW"
+reason = "Commented-out token; the xau_ prefix anchor surfaces it with no keyword=value assignment."

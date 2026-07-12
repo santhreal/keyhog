@@ -8,6 +8,49 @@ use crate::scanner_config::ResolvedRuntimeTuningConfig;
 use aho_corasick::AhoCorasick;
 use std::sync::atomic::Ordering::Relaxed;
 
+/// ONE PLACE for the always-active prefilter's HS-vs-RegexSet engine gate (the
+/// hot-path decision in [`Phase2AlwaysActivePrefilter::mark_matches`]). HS engages
+/// when it is enabled AND the chunk is EITHER within the size gate OR pure ASCII of
+/// any size. On ASCII the RegexSet ASCII-fold is match-equivalent so HS is
+/// findings-IDENTICAL and ~2× faster (measured: 16 MB ASCII 1.55s→0.75s); large
+/// NON-ASCII chunks stay on the RegexSet because HS is NOT a win there — forcing
+/// HS on non-ASCII (with a supplemental unicode host set for the divergent
+/// `.`/`\w`/`\s` patterns) held recall but cost 2.75× more CPU than the RegexSet
+/// (its prefix-AC gating skips most patterns; the dot-heavy divergent set can't be
+/// gated). So the RegexSet is strictly faster on non-ASCII (Law 7). Kept pure +
+/// separate so the gate is unit-tested without a scanner (`hs_gate_tests`).
+#[cfg_attr(not(feature = "simd"), allow(dead_code))]
+fn hs_prefilter_engages(
+    fallback_hs: bool,
+    chunk_len: usize,
+    hs_prefilter_max_len: usize,
+    chunk_is_ascii: bool,
+) -> bool {
+    fallback_hs && (chunk_len <= hs_prefilter_max_len || chunk_is_ascii)
+}
+
+/// ONE PLACE for the homoglyph-variant skip decision, applied identically on the
+/// HS path and the RegexSet path (they MUST agree or `backend_parity_matrix`
+/// fails). The ~2.8k homoglyph prefix variants exist to catch unicode look-alikes
+/// in SOURCE text; they are inert — and so can be skipped — whenever a homoglyph
+/// cannot represent a real credential in THIS chunk:
+///   * pure-ASCII chunk: a look-alike prefix cannot appear in ASCII bytes, and any
+///     hit on the ASCII ORIGINAL is already produced by the base pattern (the
+///     invariant `homoglyph_ascii_skip_parity_default` proves);
+///   * DECODED sub-chunk (`profile::in_decode`): a base64/hex/url payload — a
+///     non-ASCII run there is binary noise, and any homoglyph-variant hit is
+///     structurally a non-credential (a real secret is ASCII/UTF-8 text, caught by
+///     the base pattern in the lean DB), so the variants are inert regardless of
+///     `is_ascii()`. This is what widens the ASCII-only skip to non-ASCII decoded
+///     blobs, which otherwise pay the full 2794-pattern DB on every decode rescan.
+/// Gated by the `homoglyph_ascii_skip` tuning knob (default on) — one switch.
+/// Replaces four divergent inline copies of this predicate (HS/RegexSet ×
+/// mark/any-match).
+#[inline]
+fn homoglyph_skip_applies(match_text: &str, homoglyph_ascii_skip: bool) -> bool {
+    homoglyph_ascii_skip && (match_text.is_ascii() || super::profile::in_decode())
+}
+
 impl Phase2AlwaysActivePrefilter {
     /// Patterns per RegexSet batch. A single set over all ~2.7k always-active
     /// patterns blows the compiled-program size limit; batching keeps each
@@ -583,14 +626,30 @@ impl Phase2AlwaysActivePrefilter {
         // SUPERSET (eligible patterns still route through the AC+verify path,
         // non-eligible through whole-chunk extraction), proven findings-identical.
         #[cfg(feature = "simd")]
-        if tuning.fallback_hs && match_text.len() <= tuning.hs_prefilter_max_len {
-            // Size-dispatch: HS wins on SMALL chunks (its near-constant per-scan
-            // cost beats the RegexSet's per-call lazy-DFA setup), but its unicode
-            // automaton over MANY bytes loses to the folded/truncated RegexSet on
-            // large chunks. Above the threshold, fall through to the batches.
+        if hs_prefilter_engages(
+            tuning.fallback_hs,
+            match_text.len(),
+            tuning.hs_prefilter_max_len,
+            match_text.is_ascii(),
+        ) {
+            // HS engages on (chunks ≤ the size gate) OR (ASCII chunks of ANY size).
+            // On ASCII the RegexSet ASCII-fold is match-equivalent, so HS is
+            // findings-IDENTICAL and ~2× faster on large chunks (the >8MB ASCII
+            // win). Large NON-ASCII chunks stay on the RegexSet: HS byte-mode
+            // under-marks the unicode `.`/`\w`/`\s` patterns there, and forcing HS
+            // + a supplemental unicode set was recall-safe but 2.75× slower than the
+            // RegexSet (see hs_prefilter_engages / HS_PREFILTER_MAX_LEN_DEFAULT).
             if let Some(hs) = self.hs(phase2_patterns) {
                 let _ = localize_plain; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
-                match hs.mark(match_text, scratch) {
+                                        // Homoglyph skip for the HS path: the homoglyph variants are inert on
+                                        // a pure-ASCII chunk (base AC covers the ASCII original) AND on any
+                                        // decoded sub-chunk (a homoglyph in decoded binary is a non-credential),
+                                        // so the lean sub-DB marks the identical CREDENTIAL set ~100× cheaper.
+                                        // SAME `homoglyph_skip_applies` owner the RegexSet path below uses, so
+                                        // both engines stay findings-consistent (backend_parity_matrix).
+                let skip_homoglyph =
+                    homoglyph_skip_applies(match_text, tuning.homoglyph_ascii_skip);
+                match hs.mark(match_text, scratch, skip_homoglyph) {
                     Ok(()) => {
                         // Per-pattern work served by the HS SIMD fast path.
                         record_mark_hs_served();
@@ -666,7 +725,11 @@ impl Phase2AlwaysActivePrefilter {
             // Proven recall-neutral by `homoglyph_ascii_skip_parity_default` (now a
             // live gate, not `#[ignore]`). Generic/case-sensitive plain fallbacks
             // (no base AC) are in non-skippable batches and are unaffected.
-            if batch.homoglyph_skippable && ascii && tuning.homoglyph_ascii_skip {
+            // `homoglyph_skip_applies` also skips the batch on decoded sub-chunks
+            // (binary noise → homoglyph hits are non-credentials), matching the HS path.
+            if batch.homoglyph_skippable
+                && homoglyph_skip_applies(match_text, tuning.homoglyph_ascii_skip)
+            {
                 continue;
             }
             // Or: the caller's localizer covers this plain batch.
@@ -731,7 +794,7 @@ impl Phase2AlwaysActivePrefilter {
     /// Gated to its sole caller (`has_active_phase2_patterns_for_chunk`, the
     /// no-phase-1-hit admission gate that exists only on the `simd`/`gpu` phase-2
     /// tail) so non-`simd` profiles don't carry it as dead code (Law 11).
-    #[cfg(any(feature = "simd", feature = "gpu"))]
+    #[cfg(any(feature = "simd", feature = "gpu", test))]
     pub(crate) fn any_active_match(
         &self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
@@ -755,7 +818,13 @@ impl Phase2AlwaysActivePrefilter {
         #[cfg(feature = "simd")]
         if tuning.fallback_hs && match_text.len() <= tuning.hs_prefilter_max_len {
             if let Some(hs) = self.hs(phase2_patterns) {
-                match hs.any_match(match_text) {
+                // Same `homoglyph_skip_applies` owner as `mark_matches` and the
+                // RegexSet admission path below: on ASCII (and on decoded sub-chunks)
+                // the lean sub-DB answers the identical "any always-active credential
+                // match?" question ~100× cheaper.
+                let skip_homoglyph =
+                    homoglyph_skip_applies(match_text, tuning.homoglyph_ascii_skip);
+                match hs.any_match(match_text, skip_homoglyph) {
                     Ok(hit) => return hit,
                     Err(error) => {
                         tracing::warn!(
@@ -782,7 +851,9 @@ impl Phase2AlwaysActivePrefilter {
         let ascii = match_text.is_ascii();
         let use_ascii = tuning.homoglyph_gate && ascii;
         for batch in &portable.batches {
-            if batch.homoglyph_skippable && ascii && tuning.homoglyph_ascii_skip {
+            if batch.homoglyph_skippable
+                && homoglyph_skip_applies(match_text, tuning.homoglyph_ascii_skip)
+            {
                 continue;
             }
             let set = match (
@@ -801,5 +872,34 @@ impl Phase2AlwaysActivePrefilter {
             }
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod hs_gate_tests {
+    use super::hs_prefilter_engages;
+
+    // Locks the always-active prefilter engine gate — in particular the
+    // `|| is_ascii` clause that makes HS run on large ASCII chunks (the ~2× >8MB
+    // speedup) while keeping large NON-ASCII chunks on the RegexSet, which is both
+    // recall-safe AND faster there. A regression that drops the ASCII clause
+    // (re-capping HS at 4096) or widens it to non-ASCII (2.75× slower CPU — see
+    // HS_PREFILTER_MAX_LEN_DEFAULT) fails here.
+    #[test]
+    fn engine_gate_hs_on_ascii_any_size_regexset_on_large_nonascii() {
+        const CAP: usize = 4096;
+        // Small chunk (≤ cap): HS regardless of ASCII-ness.
+        assert!(hs_prefilter_engages(true, 100, CAP, true));
+        assert!(hs_prefilter_engages(true, 100, CAP, false));
+        // Large ASCII: HS engages — findings-identical AND ~2× faster (the >8MB win).
+        assert!(hs_prefilter_engages(true, 5_000_000, CAP, true));
+        // Large NON-ASCII: MUST stay on the RegexSet (HS is 2.75× slower there).
+        assert!(!hs_prefilter_engages(true, 5_000_000, CAP, false));
+        // Cap boundary is inclusive (≤).
+        assert!(hs_prefilter_engages(true, CAP, CAP, false));
+        assert!(!hs_prefilter_engages(true, CAP + 1, CAP, false));
+        // Disabled: never HS, at any size or ASCII-ness.
+        assert!(!hs_prefilter_engages(false, 100, CAP, true));
+        assert!(!hs_prefilter_engages(false, 5_000_000, CAP, true));
     }
 }

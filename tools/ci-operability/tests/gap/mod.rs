@@ -1,3 +1,5 @@
+mod support;
+
 mod bench_nightly_missing_hyperscan_install;
 mod cargo_rdme_spec_waiver_has_expiry;
 mod ci_yml_not_santh_standard_template;

@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "VULTR     _       --   -        -   _    _ _       -   api       -       - _ _       -         _  - -    key \"  :    \"\"\"  :    ' \":  \"  M4919EXAMPLEEXAMPLEZZERI"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# vultr_api_key=M49195NUQSS5Y3NI88IUJABUUEJM9QWZZERI  # cloud"
+credential = "M49195NUQSS5Y3NI88IUJABUUEJM9QWZZERI"
+reason = "Commented-out config; vultr_api_key keyword + 36-char key intact inside the comment."

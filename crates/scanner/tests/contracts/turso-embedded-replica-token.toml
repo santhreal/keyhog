@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "libsqEXAMPLEEXAMPLEso.io"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# replica endpoint (staging, decommissioned 2024-10): libsql://rYtzWWtuGM68sLiqBQ0.turso.io"
+credential = "libsql://rYtzWWtuGM68sLiqBQ0.turso.io"
+reason = "The libsql://<name>.turso.io replica URL surfaces from a commented-out connection note; the host pattern anchors with no keyword, and the neutral comment words do not trip the placeholder gate."

@@ -43,3 +43,35 @@ fn ml_score_is_deterministic_across_cache_hits_and_evictions() {
         "score after cap-256 eviction + recompute must equal the original"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed test pins determinism/bounds at a couple of inputs + drives eviction;
+// this SWEEPS the two observable contracts of `ml_score` over arbitrary printable
+// inputs: every score is a sigmoid output in [0,1] AND the scorer is deterministic
+// (an immediate repeat hits the per-thread memo and must be bit-identical), and the
+// empty-text guard short-circuits to exactly 0.0 for any context. Traced against
+// `ml_scorer::score_with_config`. No proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    // Each case runs real model inference; keep the count modest.
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    /// Every score is in [0,1] and a repeat call (cache hit) is bit-identical.
+    #[test]
+    fn score_is_bounded_and_deterministic(
+        text in "[ -~]{0,40}",
+        context in "[ -~]{0,60}",
+    ) {
+        let first = ml_score(&text, &context);
+        prop_assert!((0.0..=1.0).contains(&first), "score {first} outside [0,1]");
+        prop_assert_eq!(ml_score(&text, &context), first, "cache hit must be identical");
+    }
+
+    /// Empty text short-circuits to exactly 0.0 regardless of context.
+    #[test]
+    fn empty_text_scores_zero(context in "[ -~]{0,60}") {
+        prop_assert_eq!(ml_score("", &context), 0.0);
+    }
+}

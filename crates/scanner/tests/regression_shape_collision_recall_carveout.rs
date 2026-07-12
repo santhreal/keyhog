@@ -52,7 +52,9 @@ fn matches(s: &CompiledScanner, chunk: &Chunk) -> Vec<(String, String)> {
 fn surfaces(text: &str, credential: &str) -> bool {
     let s = scanner();
     let chunk = make_chunk(text, "source", "probe.conf");
-    matches(&s, &chunk).iter().any(|(_, cred)| cred == credential)
+    matches(&s, &chunk)
+        .iter()
+        .any(|(_, cred)| cred == credential)
 }
 
 /// True iff the surfaced match carrying exactly `credential` came from `detector`.
@@ -68,7 +70,9 @@ fn surfaces_under(text: &str, detector: &str, credential: &str) -> bool {
 fn nothing_surfaces(text: &str, credential: &str) -> bool {
     let s = scanner();
     let chunk = make_chunk(text, "source", "probe.conf");
-    !matches(&s, &chunk).iter().any(|(_, cred)| cred == credential)
+    !matches(&s, &chunk)
+        .iter()
+        .any(|(_, cred)| cred == credential)
 }
 
 // Canonical, contract-proven token bodies (verbatim from each detector's
@@ -79,14 +83,11 @@ const CIRCLE_H40: &str = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"; // 40-hex /
 const CIRCLE_H40_LC: &str = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f7b2d9c5a"; // 40-hex
 const DATADOG_H40: &str = "3b70df2c347b7e02b642198793dc0b8a9827bb4c"; // 40-hex
 const NEWRELIC_H40: &str = "5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3ea9e2f5b8"; // 40-hex
-// DigitalOcean PAT = `dop_v1_` + this 64-hex core (SHA-256 shape).
-const DO_H64_CORE: &str =
-    "9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b";
-const DO_PAT: &str =
-    "dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b";
+                                                                       // DigitalOcean PAT = `dop_v1_` + this 64-hex core (SHA-256 shape).
+const DO_H64_CORE: &str = "9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b";
+const DO_PAT: &str = "dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b";
 // Brevo key = `xkeysib-` + 64-hex; Airtable PAT = `pat<14 alnum>.` + 64-hex.
-const BREVO_KEY: &str =
-    "xkeysib-7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d";
+const BREVO_KEY: &str = "xkeysib-7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d";
 const AIRTABLE_PAT: &str =
     "pat9X3kQp7VbT2hYR.9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b";
 
@@ -280,15 +281,27 @@ fn same_hex64_core_bare_line_stays_suppressed() {
 #[test]
 fn heroku_uuid_and_circleci_hex40_cosurface() {
     let text = format!("HEROKU_API_KEY={HEROKU_UUID}\nCIRCLE_TOKEN={CIRCLE_H40}\n");
-    assert!(surfaces(&text, HEROKU_UUID), "heroku UUID must surface alongside circleci");
-    assert!(surfaces(&text, CIRCLE_H40), "circleci 40-hex must surface alongside heroku");
+    assert!(
+        surfaces(&text, HEROKU_UUID),
+        "heroku UUID must surface alongside circleci"
+    );
+    assert!(
+        surfaces(&text, CIRCLE_H40),
+        "circleci 40-hex must surface alongside heroku"
+    );
 }
 
 #[test]
 fn digitalocean_and_brevo_tokens_cosurface() {
     let text = format!("DIGITALOCEAN_TOKEN={DO_PAT}\nBREVO_API_KEY={BREVO_KEY}\n");
-    assert!(surfaces(&text, DO_PAT), "digitalocean PAT must surface alongside brevo");
-    assert!(surfaces(&text, BREVO_KEY), "brevo key must surface alongside digitalocean");
+    assert!(
+        surfaces(&text, DO_PAT),
+        "digitalocean PAT must surface alongside brevo"
+    );
+    assert!(
+        surfaces(&text, BREVO_KEY),
+        "brevo key must surface alongside digitalocean"
+    );
 }
 
 #[test]
@@ -299,7 +312,16 @@ fn all_three_collision_shapes_cosurface_in_one_file() {
     let text = format!(
         "HEROKU_API_KEY={HEROKU_UUID}\nDATADOG_APP_KEY={DATADOG_H40}\nAIRTABLE_API_KEY={AIRTABLE_PAT}\n"
     );
-    assert!(surfaces(&text, HEROKU_UUID), "UUID-shaped vendor token must surface");
-    assert!(surfaces(&text, DATADOG_H40), "40-hex vendor token must surface");
-    assert!(surfaces(&text, AIRTABLE_PAT), "64-hex vendor token must surface");
+    assert!(
+        surfaces(&text, HEROKU_UUID),
+        "UUID-shaped vendor token must surface"
+    );
+    assert!(
+        surfaces(&text, DATADOG_H40),
+        "40-hex vendor token must surface"
+    );
+    assert!(
+        surfaces(&text, AIRTABLE_PAT),
+        "64-hex vendor token must surface"
+    );
 }

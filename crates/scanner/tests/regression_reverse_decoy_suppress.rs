@@ -31,8 +31,8 @@ fn chunk_with(data: &str, source_type: &str) -> Chunk {
     Chunk {
         data: data.to_string().into(),
         metadata: ChunkMetadata {
-            source_type: source_type.to_string(),
-            path: Some("reverse-decoy.txt".to_string()),
+            source_type: source_type.into(),
+            path: Some("reverse-decoy.txt".into()),
             ..Default::default()
         },
     }
@@ -220,7 +220,7 @@ fn decode_chunk_recovers_reversed_github_pat_and_suppresses_alphabet_decoy() {
         "expected exactly one /reverse output, got source_types={:?}",
         decoded
             .iter()
-            .map(|c| c.metadata.source_type.as_str())
+            .map(|c| c.metadata.source_type.as_ref())
             .collect::<Vec<_>>(),
     );
     let recovered = decoded
@@ -229,7 +229,7 @@ fn decode_chunk_recovers_reversed_github_pat_and_suppresses_alphabet_decoy() {
         .expect("one reverse output");
     let recovered_data: &str = &recovered.data;
     assert_eq!(recovered_data, "token = \"ghp_0123456789ABCDEFGH\"");
-    assert_eq!(recovered.metadata.source_type, "regr/reverse");
+    assert_eq!(recovered.metadata.source_type.as_ref(), "regr/reverse");
 
     // Reversed alphabet decoy (26 chars, also >= MIN_REVERSE_LEN): looks_reversible
     // is false, so the pipeline emits ZERO reverse outputs — it is suppressed.

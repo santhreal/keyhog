@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "SurveyMonkey .        _      _   .      ..   _  _    ._ .._      _    .___  .  _  api     _             _        _          _   _   _ _                __ _  _      _ key             '\"  ' ' \"   \"     '      '        \"           ' \"\"    '  ''  \"\"  o2y1LEXAMPLEEXAMPLEKMIJn"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = 'surveymonkey_api_token "o2y1LDibIOSdNQZA1XyFNFSLTuKMIJn"'
+credential = "o2y1LDibIOSdNQZA1XyFNFSLTuKMIJn"
+reason = "Config assignment with a quoted value; the surveymonkey api_token keyword anchors the value through the [\\s\"] separator arm (no =)."

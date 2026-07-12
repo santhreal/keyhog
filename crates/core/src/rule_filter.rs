@@ -118,7 +118,15 @@ impl RuleSuppressor {
         if !path.exists() {
             return Ok(Self::empty());
         }
-        let raw = std::fs::read_to_string(path).map_err(RuleSuppressorError::Io)?;
+        let bytes = crate::state_file::read_capped(
+            path,
+            crate::state_file::RULE_CONFIG_FILE_BYTES,
+            "suppression rules",
+        )
+        .map_err(RuleSuppressorError::Io)?;
+        let raw = String::from_utf8(bytes).map_err(|e| {
+            RuleSuppressorError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        })?;
         Self::parse(&raw)
     }
 
@@ -200,8 +208,9 @@ fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
     if let Some(s) = entry.severity_lte.as_deref() {
         // severity_lte over the curated rank set.
         let max = severity_rank(&normalise_severity(s)?)?;
-        let allowed: smallvec::SmallVec<[Arc<str>; 4]> =
-            (0..=max).map(|r| Arc::from(severity_label(r))).collect();
+        let allowed: smallvec::SmallVec<[Arc<str>; 4]> = (0..=max)
+            .map(|r| Arc::from(severity_label_for_rank(r)))
+            .collect();
         conditions.push(RuleCondition::FieldInSet {
             field: "severity".into(),
             set: allowed,
@@ -296,7 +305,7 @@ fn severity_rank(s: &str) -> Result<usize, String> {
         .ok_or_else(|| format!("unknown severity rank {s:?}"))
 }
 
-fn severity_label(rank: usize) -> &'static str {
+fn severity_label_for_rank(rank: usize) -> &'static str {
     Severity::label_for_rank(rank)
 }
 

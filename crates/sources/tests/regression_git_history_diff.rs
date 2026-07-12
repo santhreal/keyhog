@@ -126,7 +126,7 @@ mod git_regression {
         let chunk =
             chunk_with(&chunks, FILE_SECRET).expect("git-history must surface the added secret");
 
-        assert_eq!(chunk.metadata.source_type, "git-history");
+        assert_eq!(chunk.metadata.source_type.as_ref(), "git-history");
         assert_eq!(chunk.metadata.path.as_deref(), Some("creds.txt"));
         assert_eq!(
             chunk.metadata.commit.as_deref(),
@@ -273,7 +273,7 @@ mod git_regression {
         );
         let chunk = &chunks[0];
         assert!(chunk.data.contains(FILE_SECRET), "planted secret surfaces");
-        assert_eq!(chunk.metadata.source_type, "git-diff");
+        assert_eq!(chunk.metadata.source_type.as_ref(), "git-diff");
         assert_eq!(chunk.metadata.path.as_deref(), Some("secret.env"));
         assert_eq!(
             chunk.metadata.base_line, 0,

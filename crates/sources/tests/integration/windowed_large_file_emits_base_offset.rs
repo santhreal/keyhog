@@ -23,7 +23,7 @@ fn windowed_large_file_emits_base_offset() {
     );
     assert!(
         chunks.iter().any(|c| {
-            c.metadata.source_type == "filesystem/windowed" && c.metadata.base_offset > 0
+            c.metadata.source_type.as_ref() == "filesystem/windowed" && c.metadata.base_offset > 0
         }),
         "windowed chunks must carry non-zero base_offset; got {chunks:?}"
     );

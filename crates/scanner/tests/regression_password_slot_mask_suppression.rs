@@ -167,7 +167,11 @@ fn cli_repeated_zero_mask_suppressed() {
 #[test]
 fn url_random_password_still_surfaces() {
     assert!(
-        surfaces_under("ftp://deploy:pxidztpv@db.internal/data", "url-credentials", "pxidztpv"),
+        surfaces_under(
+            "ftp://deploy:pxidztpv@db.internal/data",
+            "url-credentials",
+            "pxidztpv"
+        ),
         "a random lowercase URL userinfo password (8 distinct letters) must STILL surface"
     );
 }

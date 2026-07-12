@@ -228,7 +228,7 @@ fn redirect_to_allowed_host_is_followed_to_the_secret() {
         .expect("redirect to an allowed host must be followed and scanned");
 
     assert_eq!(chunks.len(), 1);
-    assert_eq!(chunks[0].metadata.source_type, "web:js");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "web:js");
     assert!(
         chunks[0]
             .data
@@ -341,7 +341,7 @@ fn har_two_entries_expand_to_four_chunks_with_exact_metadata() {
     // Two entries × (request + response) = exactly four chunks, in order.
     assert_eq!(chunks.len(), 4, "chunks: {chunks:?}");
 
-    assert_eq!(chunks[0].metadata.source_type, "wire:har:request");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "wire:har:request");
     assert_eq!(
         chunks[0].metadata.path.as_deref(),
         Some("captured.har#https://api.example.test/login")
@@ -351,20 +351,20 @@ fn har_two_entries_expand_to_four_chunks_with_exact_metadata() {
         .as_ref()
         .starts_with("GET https://api.example.test/login"));
 
-    assert_eq!(chunks[1].metadata.source_type, "wire:har:response");
+    assert_eq!(chunks[1].metadata.source_type.as_ref(), "wire:har:response");
     assert_eq!(
         chunks[1].metadata.path.as_deref(),
         Some("captured.har#https://api.example.test/login")
     );
     assert!(chunks[1].data.as_ref().starts_with("200 OK"));
 
-    assert_eq!(chunks[2].metadata.source_type, "wire:har:request");
+    assert_eq!(chunks[2].metadata.source_type.as_ref(), "wire:har:request");
     assert_eq!(
         chunks[2].metadata.path.as_deref(),
         Some("captured.har#https://api.example.test/token")
     );
 
-    assert_eq!(chunks[3].metadata.source_type, "wire:har:response");
+    assert_eq!(chunks[3].metadata.source_type.as_ref(), "wire:har:response");
     assert!(chunks[3].data.as_ref().starts_with("401 Unauthorized"));
 }
 
@@ -459,7 +459,7 @@ fn har_malformed_base64_response_falls_back_to_raw_text() {
         .expect("no entry error");
 
     assert_eq!(chunks.len(), 2, "one request + one response chunk");
-    assert_eq!(chunks[1].metadata.source_type, "wire:har:response");
+    assert_eq!(chunks[1].metadata.source_type.as_ref(), "wire:har:response");
     assert!(
         chunks[1].data.as_ref().contains("secret_RAW_KEEP_777"),
         "malformed-base64 body must be scanned raw, got {:?}",
@@ -533,7 +533,7 @@ fn non_har_json_returns_none_but_har_shaped_input_expands() {
         .collect::<Result<Vec<_>, _>>()
         .expect("no entry error");
     assert_eq!(chunks.len(), 2);
-    assert_eq!(chunks[0].metadata.source_type, "wire:har:request");
-    assert_eq!(chunks[1].metadata.source_type, "wire:har:response");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "wire:har:request");
+    assert_eq!(chunks[1].metadata.source_type.as_ref(), "wire:har:response");
     assert!(chunks[1].data.as_ref().starts_with("204"));
 }

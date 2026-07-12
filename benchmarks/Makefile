@@ -122,4 +122,7 @@ keyhog:
 	cd $(REPO_ROOT) && cargo build --release -p keyhog --bin keyhog
 
 clean:
-	cd $(BENCH_DIR) && rm -rf bench/__pycache__ bench/**/__pycache__ .pytest_cache
+	# `bench/**/__pycache__` is a bash globstar, but make runs recipes with /bin/sh
+	# where `**` collapses to a single-level `*` and misses nested __pycache__.
+	# `find` is POSIX and recurses to every depth.
+	cd $(BENCH_DIR) && find bench -type d -name __pycache__ -prune -exec rm -rf {} +; rm -rf .pytest_cache

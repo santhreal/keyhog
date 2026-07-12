@@ -66,16 +66,51 @@ pub(crate) fn fragment_assignment_name_is_credential_like(var_name: &str) -> boo
     normalized_or_fragment_base_is_credential_like(&normalized)
 }
 
+/// Tier-B multiline assignment-name classification vocab — the single owner for
+/// both the ambiguous-fragment set and the public-metadata exact/suffix sets
+/// (`rules/multiline-assignment-name-classes.toml`). Was two inline `matches!`
+/// chains. Fails closed on an invalid/empty file (see the data file for the
+/// class contract).
+#[derive(serde::Deserialize)]
+struct AssignmentNameClasses {
+    ambiguous_fragment: Vec<String>,
+    public_metadata_exact: Vec<String>,
+    public_metadata_suffix: Vec<String>,
+}
+
+static ASSIGNMENT_NAME_CLASSES: std::sync::LazyLock<AssignmentNameClasses> =
+    std::sync::LazyLock::new(|| {
+        let raw = include_str!("../../../../rules/multiline-assignment-name-classes.toml");
+        match toml::from_str::<AssignmentNameClasses>(raw) {
+            Ok(parsed)
+                if !parsed.ambiguous_fragment.is_empty()
+                    && !parsed.public_metadata_exact.is_empty()
+                    && !parsed.public_metadata_suffix.is_empty() =>
+            {
+                parsed
+            }
+            Ok(_) => panic!(
+                "rules/multiline-assignment-name-classes.toml has an empty list; \
+                 ambiguous_fragment, public_metadata_exact, and public_metadata_suffix \
+                 must all be non-empty."
+            ),
+            Err(error) => panic!(
+                "rules/multiline-assignment-name-classes.toml is invalid: {error}. \
+                 Fix the bundled Tier-B multiline assignment-name class lists."
+            ),
+        }
+    });
+
 fn normalized_assignment_name_is_public_metadata_owner(normalized: &str) -> bool {
-    matches!(
-        normalized,
-        "digest" | "hash" | "checksum" | "version" | "lines"
-    ) || normalized.ends_with("_digest")
-        || normalized.ends_with("_hash")
-        || normalized.ends_with("_checksum")
-        || normalized.ends_with("_version")
-        || normalized.ends_with("_lines")
-        || normalized.ends_with("_dedup_key")
+    let classes = &*ASSIGNMENT_NAME_CLASSES;
+    classes
+        .public_metadata_exact
+        .iter()
+        .any(|name| name.as_str() == normalized)
+        || classes
+            .public_metadata_suffix
+            .iter()
+            .any(|suffix| normalized.ends_with(suffix.as_str()))
 }
 
 fn normalized_or_fragment_base_is_credential_like(normalized: &str) -> bool {
@@ -108,50 +143,45 @@ fn normalized_assignment_name_is_credential_like(
 }
 
 fn is_bare_ambiguous_fragment_owner(normalized: &str) -> bool {
-    matches!(
-        normalized,
-        "key"
-            | "token"
-            | "secret"
-            | "password"
-            | "passwd"
-            | "pwd"
-            | "pass"
-            | "credential"
-            | "auth"
-            | "authorization"
-    )
+    ASSIGNMENT_NAME_CLASSES
+        .ambiguous_fragment
+        .iter()
+        .any(|name| name.as_str() == normalized)
 }
 
 /// Fragment-name suffixes shared by the separated (`base_part`) and compact
 /// (`basepart`) credential-fragment strippers below. A single owner so the two
 /// suffix lists can never drift apart. The `part<digits>` numeric form is
 /// handled separately by each stripper (it is a pattern, not a fixed literal).
-const FRAGMENT_SUFFIXES: [&str; 16] = [
-    "prefix",
-    "suffix",
-    "head",
-    "tail",
-    "left",
-    "right",
-    "chunk",
-    "piece",
-    "frag",
-    "fragment",
-    "part",
-    "chunks",
-    "pieces",
-    "frags",
-    "fragments",
-    "parts",
-];
+#[derive(serde::Deserialize)]
+struct FragmentSuffixesFile {
+    suffixes: Vec<String>,
+}
+
+/// Token-name fragment/part suffixes, loaded from the Tier-B data file so the
+/// list has exactly one owner (`rules/fragment-suffixes.toml`).
+fn parse_fragment_suffixes(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<FragmentSuffixesFile>(raw)
+        .map(|parsed| parsed.suffixes)
+        .map_err(|error| error.to_string())
+}
+
+static FRAGMENT_SUFFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_fragment_suffixes(include_str!("../../../../rules/fragment-suffixes.toml")) {
+        Ok(suffixes) => suffixes,
+        Err(error) => panic!(
+            "rules/fragment-suffixes.toml is invalid: {error}. \
+             Fix the bundled Tier-B suffix list."
+        ),
+    }
+});
 
 fn strip_separated_fragment_suffix(normalized: &str) -> Option<&str> {
     let (base, suffix) = normalized.rsplit_once('_')?;
     if base.is_empty() {
         return None;
     }
-    let suffix_is_fragment = FRAGMENT_SUFFIXES.contains(&suffix)
+    let suffix_is_fragment = FRAGMENT_SUFFIXES.iter().any(|s| s == suffix)
         || suffix
             .strip_prefix("part")
             .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()));
@@ -159,8 +189,8 @@ fn strip_separated_fragment_suffix(normalized: &str) -> Option<&str> {
 }
 
 fn strip_compact_fragment_suffix(compact: &str) -> Option<&str> {
-    for suffix in FRAGMENT_SUFFIXES {
-        if let Some(base) = compact.strip_suffix(suffix) {
+    for suffix in &*FRAGMENT_SUFFIXES {
+        if let Some(base) = compact.strip_suffix(suffix.as_str()) {
             if !base.is_empty() {
                 return Some(base);
             }
@@ -322,20 +352,63 @@ pub(crate) fn extract_quoted_content(s: &str, open: char, close: char) -> Option
     None
 }
 
+/// Tier-B data: leading variable-declaration keywords stripped off an assignment
+/// line before the RHS value is extracted. Owned by
+/// `rules/multiline-var-decl-keywords.toml` (single source of truth) rather than
+/// a hardcoded `trim_start_matches` chain, so a new language's keyword is a data
+/// edit, not a source edit.
 #[cfg(feature = "multiline")]
-fn filter_line_content(line: &str) -> String {
-    let line = line
-        .trim_start_matches("const ")
-        .trim_start_matches("let ")
-        .trim_start_matches("var ")
-        .trim_start_matches("val ")
-        .trim_start_matches("final ")
-        .trim_start_matches("static ")
-        .trim_start_matches("string ")
-        .trim_start_matches("String ")
-        .trim_start_matches("auto ")
-        .trim_start_matches("dim ")
-        .trim_start_matches("my ");
+#[derive(serde::Deserialize)]
+struct VarDeclKeywords {
+    keywords: Vec<String>,
+}
+
+/// Parse the bundled Tier-B var-decl keyword list into `"<kw> "` prefix forms
+/// (the trailing space is the declaration/identifier separator; storing bare
+/// keywords keeps the data file clean). Returns an error rather than panicking so
+/// the static owner below is the single fail-closed site (`no_unwrap_expect`
+/// bans `expect` in production source).
+#[cfg(feature = "multiline")]
+fn parse_var_decl_keywords(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<VarDeclKeywords>(raw)
+        .map(|parsed| {
+            parsed
+                .keywords
+                .into_iter()
+                .map(|kw| format!("{kw} "))
+                .collect()
+        })
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(feature = "multiline")]
+static VAR_DECL_KEYWORD_PREFIXES: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| {
+        // `include_str!` embeds the file at compile time; no attacker input can
+        // reach this parse. A failure here is a build-time defect in the bundled
+        // Tier-B file, not a runtime hostile-input risk — fail closed (Law 10),
+        // naming the file so the build owner knows what to fix.
+        match parse_var_decl_keywords(include_str!(
+            "../../../../rules/multiline-var-decl-keywords.toml"
+        )) {
+            Ok(prefixes) => prefixes,
+            Err(error) => panic!(
+                "rules/multiline-var-decl-keywords.toml is invalid: {error}. \
+                 Fix the bundled Tier-B metadata file list."
+            ),
+        }
+    });
+
+#[cfg(feature = "multiline")]
+pub(crate) fn filter_line_content(line: &str) -> String {
+    // Strip every leading declaration keyword prefix, in list order, mirroring
+    // the old chained `trim_start_matches` (which also stripped stacked keywords
+    // like `static final `). Each `trim_start_matches` removes ALL leading
+    // repeats of that exact keyword prefix, preserving the prior semantics.
+    let mut line = line;
+    for prefix in &*VAR_DECL_KEYWORD_PREFIXES {
+        line = line.trim_start_matches(prefix.as_str());
+    }
 
     if let Some(pos) = line.find(" = ") {
         return line[pos + 3..].trim().to_string();
@@ -582,48 +655,66 @@ fn first_quoted_literal(s: &str) -> Option<String> {
     None
 }
 
+/// Byte index of the first unescaped `bytes[open]`-quote after `open`, or `None`
+/// if the literal is unterminated. `open` must point at an ASCII quote byte. The
+/// quote/backslash bytes are ASCII, so byte scanning is UTF-8 safe (multi-byte
+/// continuation bytes are all `>= 0x80` and never equal an ASCII quote). Shared
+/// by [`extract_python_implicit_concatenation`] and [`extract_quoted_strings`]
+/// so the quote/escape scan has one owner instead of two hand-rolled copies, and
+/// neither has to materialize a `Vec<char>` (one heap alloc per byte) per line.
+#[cfg(feature = "multiline")]
+fn scan_quoted_literal(bytes: &[u8], open: usize) -> Option<usize> {
+    let quote = bytes[open];
+    let mut j = open + 1;
+    let mut escaped = false;
+    while j < bytes.len() {
+        let c = bytes[j];
+        if escaped {
+            escaped = false;
+        } else if c == b'\\' {
+            escaped = true;
+        } else if c == quote {
+            return Some(j);
+        }
+        j += 1;
+    }
+    None
+}
+
 #[cfg(feature = "multiline")]
 fn extract_python_implicit_concatenation(line: &str) -> Option<(String, bool)> {
-    let chars: Vec<char> = line.chars().collect();
-    let mut parts = Vec::new();
+    let bytes = line.as_bytes();
+    let mut parts: Vec<&str> = Vec::new();
     let mut index = 0;
-    let mut last_end = None;
+    // Byte index of the previous literal's closing quote; the gap up to the next
+    // opening quote must be whitespace-only for implicit concatenation.
+    let mut last_close: Option<usize> = None;
 
-    while index < chars.len() {
-        if chars[index] == '"' || chars[index] == '\'' {
-            let quote = chars[index];
-            let start = index;
-            let mut j = index + 1;
-            let mut content = String::new();
-            let mut escaped = false;
-            let mut closed = false;
-
-            while j < chars.len() {
-                if escaped {
-                    content.push(chars[j]);
-                    escaped = false;
-                } else if chars[j] == '\\' {
-                    escaped = true;
-                    content.push(chars[j]);
-                } else if chars[j] == quote {
-                    closed = true;
-                    break;
-                } else {
-                    content.push(chars[j]);
-                }
-                j += 1;
-            }
-
-            if closed {
-                if let Some(prev_end) = last_end {
-                    let gap = &chars[prev_end + 1..start];
-                    if gap.iter().any(|&c| !c.is_whitespace()) {
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte == b'"' || byte == b'\'' {
+            let content_start = index + 1;
+            if let Some(close) = scan_quoted_literal(bytes, index) {
+                if let Some(prev_close) = last_close {
+                    // Char-level whitespace check (matches the original
+                    // `char::is_whitespace`) on the ASCII-bounded gap slice.
+                    if line[prev_close + 1..index]
+                        .chars()
+                        .any(|c| !c.is_whitespace())
+                    {
                         return None;
                     }
                 }
-                parts.push(content);
-                last_end = Some(j);
-                index = j;
+                parts.push(&line[content_start..close]);
+                last_close = Some(close);
+                index = close;
+            } else {
+                // Unterminated quote: the rest of the line is inside that
+                // literal, so no further literal can start. Stop rather than
+                // restart the scan at every later quote byte — on `\"\"\"...`
+                // (all-escaped quotes) each restart re-walks the escaped tail,
+                // which is the O(n^2) blowup this loop otherwise hits.
+                break;
             }
         }
         index += 1;
@@ -632,7 +723,7 @@ fn extract_python_implicit_concatenation(line: &str) -> Option<(String, bool)> {
     if parts.len() < 2 {
         return None;
     }
-    Some((parts.join(""), false))
+    Some((parts.concat(), false))
 }
 
 #[cfg(feature = "multiline")]
@@ -650,32 +741,22 @@ fn extract_function_concatenation(line: &str) -> Option<(String, bool)> {
 
 #[cfg(feature = "multiline")]
 fn extract_quoted_strings(line: &str) -> Vec<String> {
+    let bytes = line.as_bytes();
     let mut parts = Vec::new();
     let mut index = 0;
-    let chars: Vec<char> = line.chars().collect();
 
-    while index < chars.len() {
-        if chars[index] == '"' || chars[index] == '\'' {
-            let quote = chars[index];
-            let mut j = index + 1;
-            let mut content = String::new();
-            let mut escaped = false;
-
-            while j < chars.len() {
-                if escaped {
-                    content.push(chars[j]);
-                    escaped = false;
-                } else if chars[j] == '\\' {
-                    escaped = true;
-                    content.push(chars[j]);
-                } else if chars[j] == quote {
-                    parts.push(content);
-                    index = j;
-                    break;
-                } else {
-                    content.push(chars[j]);
-                }
-                j += 1;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte == b'"' || byte == b'\'' {
+            let content_start = index + 1;
+            if let Some(close) = scan_quoted_literal(bytes, index) {
+                parts.push(line[content_start..close].to_string());
+                index = close;
+            } else {
+                // Unterminated quote consumes the rest of the line; see
+                // extract_python_implicit_concatenation — stop instead of
+                // rescanning every trailing escaped quote (O(n^2)).
+                break;
             }
         }
         index += 1;

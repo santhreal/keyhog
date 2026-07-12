@@ -146,7 +146,10 @@ fn pypi_prefix_with_short_body_does_not_fire() {
 fn sonarcloud_anchor_with_short_token_does_not_fire() {
     // The SONAR anchor is present but a 20-hex body is below the 40-hex length.
     let k = hex(20, 21);
-    assert!(!fires(&format!("SONAR_CLOUD_TOKEN={k}"), "sonarcloud-token"));
+    assert!(!fires(
+        &format!("SONAR_CLOUD_TOKEN={k}"),
+        "sonarcloud-token"
+    ));
 }
 
 #[test]

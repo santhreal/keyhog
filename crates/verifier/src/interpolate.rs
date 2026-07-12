@@ -87,6 +87,28 @@ pub(crate) fn sanitize_raw_value(s: &str) -> String {
         .collect()
 }
 
+/// Resolve a field reference (`resolve_field`) and then strip control bytes
+/// (`sanitize_raw_value`) before the value is placed into an `Authorization`
+/// header or a URL query param. The single owner of the resolve-then-sanitize
+/// pairing every credential-bearing auth arm needs — omitting the sanitize step
+/// is a CR/LF/NUL header-injection bug (see the per-arm notes in `verify::auth`).
+pub(crate) fn resolve_and_sanitize_field(
+    field: &str,
+    credential: &str,
+    companions: &HashMap<String, String>,
+) -> String {
+    sanitize_raw_value(&resolve_field(field, credential, companions))
+}
+
+/// Upper bound on `{{…}}` tokens processed in a single template pass. Bounds
+/// both the companion-ref scan and the interpolation replacement loop from ONE
+/// owner — they walk the same templates, so a retune must move them together.
+/// `pub` (inside this private `interpolate` module) so the `testing` facade can
+/// re-export it and the DoS-bound regression test asserts against this single
+/// owner rather than duplicating the `1024` magic number. The module is private,
+/// so this leaks to the public API only through the explicit `testing` re-export.
+pub const MAX_TEMPLATE_TOKENS: usize = 1024;
+
 /// Replace `{{match}}` and `{{companion.*}}` placeholders in a template string.
 pub(crate) fn interpolate(
     template: &str,
@@ -132,16 +154,11 @@ pub(crate) fn missing_companion_field(
         .map(str::to_string)
 }
 
-pub(crate) fn missing_companion_refs(
-    template: &str,
-    companions: &HashMap<String, String>,
-) -> Vec<String> {
-    const MAX_COMPANION_REF_SCAN: usize = 1024;
-
+pub fn missing_companion_refs(template: &str, companions: &HashMap<String, String>) -> Vec<String> {
     let mut missing = Vec::new();
     let mut search_from = 0usize;
     let mut scanned = 0usize;
-    while scanned < MAX_COMPANION_REF_SCAN {
+    while scanned < MAX_TEMPLATE_TOKENS {
         let Some(offset) = template[search_from..].find("{{companion.") else {
             break;
         };
@@ -230,8 +247,6 @@ fn interpolate_with_context(
     companions: &HashMap<String, String>,
     context: InterpolationContext,
 ) -> String {
-    const MAX_INTERPOLATION_REPLACEMENTS: usize = 1024;
-
     if template == "{{match}}" {
         return sanitize_raw_value(credential);
     }
@@ -271,7 +286,7 @@ fn interpolate_with_context(
     let mut out = String::with_capacity(template.len());
     let mut rest = template;
     let mut replacements = 0usize;
-    while replacements < MAX_INTERPOLATION_REPLACEMENTS {
+    while replacements < MAX_TEMPLATE_TOKENS {
         let Some(open) = rest.find("{{") else { break };
         let after_open = &rest[open + 2..];
         let Some(close_rel) = after_open.find("}}") else {

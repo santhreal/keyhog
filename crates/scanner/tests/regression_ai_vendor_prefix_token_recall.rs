@@ -72,7 +72,9 @@ fn fires(text: &str, detector: &str) -> bool {
     scan(text).iter().any(|(id, _)| id == detector)
 }
 fn fires_any(text: &str, detectors: &[&str]) -> bool {
-    scan(text).iter().any(|(id, _)| detectors.contains(&id.as_str()))
+    scan(text)
+        .iter()
+        .any(|(id, _)| detectors.contains(&id.as_str()))
 }
 
 // ── HuggingFace: hf_<34> ─────────────────────────────────────────────────────
@@ -80,7 +82,10 @@ fn fires_any(text: &str, detectors: &[&str]) -> bool {
 #[test]
 fn huggingface_token_surfaces() {
     let k = format!("hf_{}", alnum(34, 1));
-    assert!(surfaces_under_any(&k, HF, &k), "hf_ token must surface as HuggingFace");
+    assert!(
+        surfaces_under_any(&k, HF, &k),
+        "hf_ token must surface as HuggingFace"
+    );
 }
 
 #[test]
@@ -94,7 +99,10 @@ fn huggingface_33_body_does_not_fire() {
 #[test]
 fn replicate_token_surfaces() {
     let k = format!("r8_{}", alnum(37, 3));
-    assert!(surfaces_under(&k, "replicate-api-key", &k), "r8_ token must surface");
+    assert!(
+        surfaces_under(&k, "replicate-api-key", &k),
+        "r8_ token must surface"
+    );
 }
 
 #[test]
@@ -118,13 +126,20 @@ fn replicate_36_body_does_not_fire() {
 #[test]
 fn groq_token_surfaces() {
     let k = format!("gsk_{}", alnum(52, 6));
-    assert!(surfaces_under(&k, "groq-api-key", &k), "gsk_ token must surface");
+    assert!(
+        surfaces_under(&k, "groq-api-key", &k),
+        "gsk_ token must surface"
+    );
 }
 
 #[test]
 fn groq_in_env_surfaces() {
     let k = format!("gsk_{}", alnum(52, 7));
-    assert!(surfaces_under(&format!("GROQ_API_KEY={k}"), "groq-api-key", &k));
+    assert!(surfaces_under(
+        &format!("GROQ_API_KEY={k}"),
+        "groq-api-key",
+        &k
+    ));
 }
 
 #[test]
@@ -138,7 +153,10 @@ fn groq_51_body_does_not_fire() {
 #[test]
 fn openrouter_token_surfaces() {
     let k = format!("sk-or-v1-{}", hex(48, 9));
-    assert!(surfaces_under(&k, "openrouter-api-key", &k), "sk-or-v1- token must surface");
+    assert!(
+        surfaces_under(&k, "openrouter-api-key", &k),
+        "sk-or-v1- token must surface"
+    );
 }
 
 #[test]
@@ -158,7 +176,10 @@ fn openrouter_47_body_does_not_fire() {
 #[test]
 fn perplexity_token_surfaces() {
     let k = format!("pplx-{}", alnum(32, 12));
-    assert!(surfaces_under(&k, "perplexity-api-key", &k), "pplx- token must surface");
+    assert!(
+        surfaces_under(&k, "perplexity-api-key", &k),
+        "pplx- token must surface"
+    );
 }
 
 #[test]
@@ -172,13 +193,21 @@ fn perplexity_31_body_does_not_fire() {
 #[test]
 fn mistral_api_key_surfaces() {
     let k = alnum(32, 14);
-    assert!(surfaces_under(&format!("MISTRAL_API_KEY={k}"), "mistral-api-key", &k));
+    assert!(surfaces_under(
+        &format!("MISTRAL_API_KEY={k}"),
+        "mistral-api-key",
+        &k
+    ));
 }
 
 #[test]
 fn mistral_lowercase_anchor_surfaces() {
     let k = alnum(32, 15);
-    assert!(surfaces_under(&format!("mistral_api_key={k}"), "mistral-api-key", &k));
+    assert!(surfaces_under(
+        &format!("mistral_api_key={k}"),
+        "mistral-api-key",
+        &k
+    ));
 }
 
 // ── Together AI: context-anchored 64-hex ─────────────────────────────────────
@@ -186,13 +215,20 @@ fn mistral_lowercase_anchor_surfaces() {
 #[test]
 fn togetherai_api_key_surfaces() {
     let k = hex(64, 16);
-    assert!(surfaces_under(&format!("TOGETHER_API_KEY={k}"), "togetherai-api-key", &k));
+    assert!(surfaces_under(
+        &format!("TOGETHER_API_KEY={k}"),
+        "togetherai-api-key",
+        &k
+    ));
 }
 
 #[test]
 fn togetherai_63_hex_does_not_fire() {
     let k = hex(63, 17); // 63 < the required 64
-    assert!(!fires(&format!("TOGETHER_API_KEY={k}"), "togetherai-api-key"));
+    assert!(!fires(
+        &format!("TOGETHER_API_KEY={k}"),
+        "togetherai-api-key"
+    ));
 }
 
 // ── Cohere: co_ bare (case-sensitive) + context 40-alnum ─────────────────────
@@ -200,13 +236,20 @@ fn togetherai_63_hex_does_not_fire() {
 #[test]
 fn cohere_context_api_key_surfaces() {
     let k = alnum(40, 18);
-    assert!(surfaces_under(&format!("COHERE_API_KEY={k}"), "cohere-api-key", &k));
+    assert!(surfaces_under(
+        &format!("COHERE_API_KEY={k}"),
+        "cohere-api-key",
+        &k
+    ));
 }
 
 #[test]
 fn cohere_co_prefix_bare_surfaces() {
     let k = format!("co_{}", alnum(40, 19));
-    assert!(surfaces_under(&k, "cohere-api-key", &k), "co_ bare token must surface");
+    assert!(
+        surfaces_under(&k, "cohere-api-key", &k),
+        "co_ bare token must surface"
+    );
 }
 
 #[test]

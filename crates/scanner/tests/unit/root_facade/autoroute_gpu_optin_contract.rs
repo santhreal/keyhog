@@ -1,11 +1,11 @@
 //! GPU opt-in and heuristic routing contract: the pure-fn decision inputs that
 //! non-calibrating router/reporting paths use (TESTING vector 12, lane 9).
 //!
-//! MEASURED FACT (2026-06-19, RTX 5090): the live region-presence GPU route
-//! did not beat best CPU/SIMD through 64 MiB. So the production autoroute path
-//! must not pick GPU unless install-time calibration selected it for the exact
-//! workload bucket. `--autoroute-gpu` makes calibration measure GPU as a
-//! candidate; `--backend gpu` still forces it for parity/research.
+//! MEASURED FACT (2026-06-20, RTX 5090): the live region-presence GPU route
+//! beats Hyperscan at 8 MiB by 4.5x (ratio 0.22) after the split-positioned-matcher
+//! fix. High-tier heuristic routing now engages at 8 MiB. Install-time autoroute
+//! calibration is authoritative and still measures GPU candidates when explicitly
+//! opted in. `--backend gpu` still forces it for parity/research.
 //!
 //! The calibration owner is pinned in `crates/cli/tests/unit/orchestrator/`.
 //! This suite pins the heuristic threshold predicate separately so backend
@@ -57,13 +57,13 @@ fn rtx_5090_classifies_as_high_tier() {
 
 #[test]
 fn gpu_could_engage_is_true_at_the_high_tier_floor_for_heuristic_routing() {
-    // At the high-tier floor (128 MiB, >=100 patterns) the deterministic
+    // At the high-tier floor (8 MiB, >=100 patterns) the deterministic
     // heuristic says GPU could engage. Calibration must still measure and
     // compare candidates before any default auto scan can trust that route.
     let caps = rtx_5090_caps();
     let floor = gpu_min_bytes_for_tier(GpuTier::High);
     let pattern_floor = gpu_pattern_breakeven_for_tier(GpuTier::High);
-    assert_eq!(floor, 128 * MIB, "high-tier GPU byte floor is 128 MiB");
+    assert_eq!(floor, 8 * MIB, "high-tier GPU byte floor is 8 MiB");
     assert_eq!(
         pattern_floor, 100,
         "high-tier GPU pattern break-even is 100"
@@ -71,7 +71,7 @@ fn gpu_could_engage_is_true_at_the_high_tier_floor_for_heuristic_routing() {
 
     assert!(
         gpu_could_engage(&caps, floor, pattern_floor),
-        "at the 128 MiB / 100-pattern high-tier floor, gpu_could_engage must stay \
+        "at the 8 MiB / 100-pattern high-tier floor, gpu_could_engage must stay \
          true for the heuristic router/reporting surface"
     );
     // keyhog's real detector count (>800) trivially clears the pattern floor.
@@ -84,7 +84,7 @@ fn gpu_could_engage_is_true_at_the_high_tier_floor_for_heuristic_routing() {
 #[test]
 fn gpu_could_engage_is_false_below_the_high_tier_floor() {
     let caps = rtx_5090_caps();
-    // Just under 128 MiB with the full detector set: below the byte floor and
+    // Just under 8 MiB with the full detector set: below the byte floor and
     // below the solo cap, so the heuristic predicate is false.
     let floor = gpu_min_bytes_for_tier(GpuTier::High);
     assert!(
@@ -92,8 +92,8 @@ fn gpu_could_engage_is_false_below_the_high_tier_floor() {
         "1 byte under the high-tier floor with 900 patterns must NOT engage the GPU"
     );
     assert!(
-        !gpu_could_engage(&caps, 8 * MIB, 900),
-        "an 8 MiB batch must NOT engage the fixed heuristic GPU route without calibration evidence"
+        !gpu_could_engage(&caps, 4 * MIB, 900),
+        "a 4 MiB batch must NOT engage the fixed heuristic GPU route without calibration evidence"
     );
 }
 
@@ -101,12 +101,12 @@ fn gpu_could_engage_is_false_below_the_high_tier_floor() {
 fn gpu_could_engage_solo_path_fires_for_one_huge_file() {
     let caps = rtx_5090_caps();
     let solo = gpu_solo_bytes_for_tier(GpuTier::High);
-    assert_eq!(solo, 256 * MIB, "high-tier solo break-even is 256 MiB");
-    // A single 256 MiB file clears the solo cap even with ZERO pattern-count
+    assert_eq!(solo, 8 * MIB, "high-tier solo break-even is 8 MiB");
+    // A single 8 MiB file clears the solo cap even with ZERO pattern-count
     // benefit — the solo branch of the predicate.
     assert!(
         gpu_could_engage(&caps, solo, 0),
-        "a 256 MiB single file clears the high-tier solo cap regardless of \
+        "an 8 MiB single file clears the high-tier solo cap regardless of \
          pattern count"
     );
     assert!(
@@ -147,11 +147,11 @@ fn calibration_gpu_optin_is_not_modeled_by_the_heuristic_threshold_predicate() {
         "64 KiB remains below the heuristic GPU floor"
     );
     assert!(
-        !gpu_could_engage(&caps, 2 * MIB, 900),
-        "2 MiB remains below the measured-safe heuristic GPU floor"
+        !gpu_could_engage(&caps, 4 * MIB, 900),
+        "4 MiB remains below the measured-safe heuristic GPU floor"
     );
     assert!(
-        gpu_could_engage(&caps, 128 * MIB, 900),
-        "128 MiB is inside the heuristic GPU floor"
+        gpu_could_engage(&caps, 8 * MIB, 900),
+        "8 MiB is at the heuristic GPU floor"
     );
 }

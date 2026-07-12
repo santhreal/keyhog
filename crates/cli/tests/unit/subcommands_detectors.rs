@@ -71,6 +71,50 @@ url = "https://api.example.com/{{companion.shop}}"
     assert_eq!(out.trim(), toml.trim());
 }
 
+// ── UTF-8 preservation: the rewrite must never corrupt non-ASCII bytes ──────
+// Regression for the byte-walk `byte as char` bug: a verify-block string value
+// with non-ASCII UTF-8 was reinterpreted as Latin-1 and rewritten into mojibake
+// (`héllo` -> `hÃ©llo`). The char-indexed rewrite keeps multi-byte scalars whole
+// while still rewriting the ASCII `{name}` placeholder.
+
+#[test]
+fn rewrite_braces_preserves_multibyte_scalars() {
+    let (out, n) = API.rewrite_detector_braces("café {shop} naïve résumé");
+    assert_eq!(
+        out, "café {{shop}} naïve résumé",
+        "non-ASCII around the placeholder must survive verbatim"
+    );
+    assert_eq!(n, 1);
+}
+
+#[test]
+fn rewrite_braces_preserves_astral_emoji() {
+    let (out, n) = API.rewrite_detector_braces("🔑 {tok} 🔒");
+    assert_eq!(out, "🔑 {{tok}} 🔒", "astral-plane scalars must survive");
+    assert_eq!(n, 1);
+}
+
+#[test]
+fn string_literal_rewrite_preserves_non_ascii_body() {
+    let (out, n) = API.rewrite_braces_in_string_literals(r#"body = "héllo {name} wörld""#);
+    assert_eq!(
+        out, r#"body = "héllo {{name}} wörld""#,
+        "the accented bytes must not be mangled by the brace rewrite"
+    );
+    assert_eq!(n, 1);
+}
+
+#[test]
+fn verify_block_rewrite_preserves_non_ascii() {
+    let toml = "[detector.verify]\nbody = \"grüße={name}\"\n";
+    let (out, n) = API.fix_single_brace_in_verify_blocks(toml);
+    assert_eq!(n, 1, "the {{name}} placeholder is rewritten");
+    assert!(
+        out.contains("grüße={{name}}"),
+        "non-ASCII in the verify body must be preserved, got: {out}"
+    );
+}
+
 #[test]
 fn embedded_detector_loading_uses_core_fail_closed_loader() {
     let src = include_str!("../../src/subcommands/detectors.rs");

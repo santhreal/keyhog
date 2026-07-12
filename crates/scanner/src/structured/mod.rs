@@ -199,12 +199,22 @@ fn detect_and_parse(
     })
 }
 
-#[cfg(feature = "multiline")]
-fn build_preprocessed_text<'a>(
-    text: &str,
-    pairs: Vec<ExtractedPair>,
-) -> ScannerPreprocessedText<'a> {
-    use crate::multiline::LineMapping;
+/// One synthesized offset→line mapping. Field-identical to both the multiline
+/// and non-multiline `LineMapping`; the cfg-gated wrapper copies it into whichever
+/// concrete type is active. This is the single owner of the offset arithmetic.
+struct SynthMapping {
+    line_number: usize,
+    start_offset: usize,
+    end_offset: usize,
+    original_start_offset: usize,
+}
+
+/// Always-compiled offset synthesis: build `final_text` (original bytes + one
+/// `'\n'` + each synthetic `"{context}: {value}"` line) and its flat mapping
+/// table. Both `build_preprocessed_text` wrappers convert the result into the
+/// feature-specific `LineMapping`/`PreprocessedText` type, so the offset math
+/// lives in exactly one place.
+fn synthesize_preprocessed(text: &str, pairs: Vec<ExtractedPair>) -> (String, Vec<SynthMapping>) {
     let original_end = text.len();
 
     // Pre-size the output: original bytes + one '\n' separator + each synthetic
@@ -218,20 +228,29 @@ fn build_preprocessed_text<'a>(
     final_text.push_str(text);
 
     // One mapping per source line plus one per synthetic line.
-    let line_count = text.split('\n').count();
+    // `compute_line_offsets` already yields the byte start of every line in a
+    // single SIMD (`memchr`) pass; reuse it for the source-line mappings instead
+    // of re-walking the text twice more (a `.split('\n').count()` plus a
+    // `.split('\n').enumerate()`). Line count == number of line-start offsets.
     let source_line_offsets = crate::compute_line_offsets(text);
-    let mut mappings: Vec<LineMapping> = Vec::with_capacity(line_count + pairs.len());
-    let mut offset = 0usize;
+    let line_count = source_line_offsets.len();
+    let mut mappings: Vec<SynthMapping> = Vec::with_capacity(line_count + pairs.len());
 
-    for (line_idx, line) in text.split('\n').enumerate() {
-        let end = offset + line.len();
-        mappings.push(LineMapping {
+    for line_idx in 0..line_count {
+        let start = source_line_offsets[line_idx];
+        // End of this line is the start of the next (one past its '\n'); the
+        // final newline-less line clamps to the text length instead of one past.
+        let end = source_line_offsets
+            .get(line_idx + 1)
+            .copied()
+            .unwrap_or(original_end)
+            .min(original_end);
+        mappings.push(SynthMapping {
             line_number: line_idx + 1,
-            start_offset: offset,
-            end_offset: (end + 1).min(original_end),
-            original_start_offset: offset,
+            start_offset: start,
+            end_offset: end,
+            original_start_offset: start,
         });
-        offset = end + 1;
     }
 
     final_text.push('\n');
@@ -240,7 +259,7 @@ fn build_preprocessed_text<'a>(
         // line == "{context}: {value}"; push the parts directly instead of
         // allocating an intermediate String via format!.
         let line_len = pair.context.len() + SYNTHETIC_PAIR_SEPARATOR.len() + pair.value.len();
-        mappings.push(LineMapping {
+        mappings.push(SynthMapping {
             line_number: pair.line,
             start_offset: current_offset,
             end_offset: current_offset + line_len,
@@ -253,6 +272,26 @@ fn build_preprocessed_text<'a>(
         current_offset += line_len + 1;
     }
 
+    (final_text, mappings)
+}
+
+#[cfg(feature = "multiline")]
+fn build_preprocessed_text<'a>(
+    text: &str,
+    pairs: Vec<ExtractedPair>,
+) -> ScannerPreprocessedText<'a> {
+    use crate::multiline::LineMapping;
+    let original_end = text.len();
+    let (final_text, synth) = synthesize_preprocessed(text, pairs);
+    let mappings = synth
+        .into_iter()
+        .map(|m| LineMapping {
+            line_number: m.line_number,
+            start_offset: m.start_offset,
+            end_offset: m.end_offset,
+            original_start_offset: m.original_start_offset,
+        })
+        .collect();
     crate::multiline::PreprocessedText {
         // Synthesized text (original + appended key/value lines): owned.
         text: std::borrow::Cow::Owned(final_text),
@@ -267,56 +306,16 @@ fn build_preprocessed_text<'a>(
     pairs: Vec<ExtractedPair>,
 ) -> ScannerPreprocessedText<'a> {
     use crate::types::LineMapping;
-
-    // Pre-size the output: original bytes + one '\n' separator + each synthetic
-    // line ("{context}: {value}\n"). Avoids repeated reallocation while pushing
-    // and the throwaway String that a `format!` per pair would allocate.
-    let appended_len: usize = pairs
-        .iter()
-        .map(|p| p.context.len() + SYNTHETIC_PAIR_SEPARATOR.len() + p.value.len() + 1)
-        .sum();
-    let mut final_text = String::with_capacity(text.len() + 1 + appended_len);
-    final_text.push_str(text);
-
-    // One mapping per source line plus one per synthetic line.
-    let line_count = text.split('\n').count();
-    let source_line_offsets = crate::compute_line_offsets(text);
-    let mut mappings: Vec<LineMapping> = Vec::with_capacity(line_count + pairs.len());
-    let mut offset = 0usize;
-
-    for (line_idx, line) in text.split('\n').enumerate() {
-        let end = offset + line.len();
-        mappings.push(LineMapping {
-            line_number: line_idx + 1,
-            start_offset: offset,
-            end_offset: end + 1,
-            original_start_offset: offset,
-        });
-        offset = end + 1;
-    }
-    if let Some(last) = mappings.last_mut() {
-        last.end_offset = text.len();
-    }
-
-    final_text.push('\n');
-    let mut current_offset = text.len() + 1;
-    for pair in pairs {
-        // line == "{context}: {value}"; push the parts directly instead of
-        // allocating an intermediate String via format!.
-        let line_len = pair.context.len() + SYNTHETIC_PAIR_SEPARATOR.len() + pair.value.len();
-        mappings.push(LineMapping {
-            line_number: pair.line,
-            start_offset: current_offset,
-            end_offset: current_offset + line_len,
-            original_start_offset: source_line_start(&source_line_offsets, pair.line),
-        });
-        final_text.push_str(&pair.context);
-        final_text.push_str(SYNTHETIC_PAIR_SEPARATOR);
-        final_text.push_str(&pair.value);
-        final_text.push('\n');
-        current_offset += line_len + 1;
-    }
-
+    let (final_text, synth) = synthesize_preprocessed(text, pairs);
+    let mappings = synth
+        .into_iter()
+        .map(|m| LineMapping {
+            line_number: m.line_number,
+            start_offset: m.start_offset,
+            end_offset: m.end_offset,
+            original_start_offset: m.original_start_offset,
+        })
+        .collect();
     crate::types::PreprocessedText {
         // Synthesized text (original + appended key/value lines): owned.
         text: std::borrow::Cow::Owned(final_text),

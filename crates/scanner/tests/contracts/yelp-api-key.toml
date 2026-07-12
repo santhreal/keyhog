@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "yelp_api_key=    ==  =    \"\"  N_spWEXAMPLEEXAMPLEI4Wxh"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# YELP_API_KEY=N_spWCVhNNjcvtWAQuULVnPuLZrfBUr4OoP7VfwZmmuRvJ20dan3kFN-XKkKkCRcPvkNkDvIxOztNovUn2TY2lNgvFJDCOuI4Wxh  # reviews"
+credential = "N_spWCVhNNjcvtWAQuULVnPuLZrfBUr4OoP7VfwZmmuRvJ20dan3kFN-XKkKkCRcPvkNkDvIxOztNovUn2TY2lNgvFJDCOuI4Wxh"
+reason = "Commented-out config; YELP_API_KEY keyword + token intact inside the comment."

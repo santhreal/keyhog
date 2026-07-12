@@ -264,7 +264,10 @@ fn gitlab_bare_glpat_without_dash_not_applicable() {
 
 #[test]
 fn gitlab_validator_id_is_gitlab_personal_access_token() {
-    assert_eq!(GitlabTokenValidator.validator_id(), "gitlab-personal-access-token");
+    assert_eq!(
+        GitlabTokenValidator.validator_id(),
+        "gitlab-personal-access-token"
+    );
 }
 
 // ══════════════════════════════ npm ══════════════════════════════════════
@@ -890,4 +893,79 @@ fn aggregator_unrelated_token_not_applicable() {
 fn aggregator_gitlab_glpat_valid_routes_through() {
     let token = format!("glpat-{}", "A".repeat(20));
     assert_eq!(validate_checksum(&token), ChecksumResult::StructurallyValid);
+}
+
+// ── Property tier: Stripe band + charset ──────────────────────────────────────
+// GitLab/npm/slack validators each already have a dedicated proptest file; Stripe
+// did NOT. The fixed vectors above pin its boundaries at fixed points — these SWEEP
+// the structural contract (stripe.rs: known prefix + `24..=128` ascii-alnum body):
+// a known prefix with an in-band alnum body is StructurallyValid; an under-24 or
+// over-128 alnum body is Invalid; an in-band body carrying a non-alnum byte is
+// Invalid; and an unknown prefix is NotApplicable. Traced against
+// `StripeTokenValidator`. No proptest before.
+
+use proptest::prelude::*;
+
+const STRIPE_PREFIXES: &[&str] = &[
+    "sk_live_", "sk_test_", "pk_live_", "pk_test_", "rk_live_", "rk_test_",
+];
+const UNKNOWN_STRIPE_PREFIXES: &[&str] = &[
+    "wk_live_", "sk_prod_", "ak_live_", "sk_dev_", "tk_test_", "sklive_",
+];
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// A known prefix with a 24..=128 ascii-alnum body is StructurallyValid.
+    #[test]
+    fn stripe_in_band_alnum_body_is_structurally_valid(
+        pi in 0usize..STRIPE_PREFIXES.len(),
+        body in "[A-Za-z0-9]{24,128}",
+    ) {
+        let token = format!("{}{body}", STRIPE_PREFIXES[pi]);
+        prop_assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::StructurallyValid);
+    }
+
+    /// A known prefix with an under-24 alnum body (incl. empty) is Invalid.
+    #[test]
+    fn stripe_below_floor_body_is_invalid(
+        pi in 0usize..STRIPE_PREFIXES.len(),
+        body in "[A-Za-z0-9]{0,23}",
+    ) {
+        let token = format!("{}{body}", STRIPE_PREFIXES[pi]);
+        prop_assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Invalid);
+    }
+
+    /// A known prefix with an over-128 alnum body is Invalid.
+    #[test]
+    fn stripe_above_ceiling_body_is_invalid(
+        pi in 0usize..STRIPE_PREFIXES.len(),
+        body in "[A-Za-z0-9]{129,160}",
+    ) {
+        let token = format!("{}{body}", STRIPE_PREFIXES[pi]);
+        prop_assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Invalid);
+    }
+
+    /// A known prefix with an in-band-length body carrying a non-alnum byte is
+    /// Invalid (charset gate).
+    #[test]
+    fn stripe_non_alnum_in_band_body_is_invalid(
+        pi in 0usize..STRIPE_PREFIXES.len(),
+        a in "[A-Za-z0-9]{12,60}",
+        b in "[A-Za-z0-9]{12,60}",
+    ) {
+        // len = a + 1 ('!') + b, in [25, 121] -> in the 24..=128 length band.
+        let token = format!("{}{a}!{b}", STRIPE_PREFIXES[pi]);
+        prop_assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::Invalid);
+    }
+
+    /// An unknown Stripe-shaped prefix is NotApplicable (not this validator's).
+    #[test]
+    fn stripe_unknown_prefix_is_not_applicable(
+        pi in 0usize..UNKNOWN_STRIPE_PREFIXES.len(),
+        body in "[A-Za-z0-9]{24,128}",
+    ) {
+        let token = format!("{}{body}", UNKNOWN_STRIPE_PREFIXES[pi]);
+        prop_assert_eq!(StripeTokenValidator.validate(&token), ChecksumResult::NotApplicable);
+    }
 }

@@ -39,16 +39,20 @@ fi
 
 publish() {
     local crate="$1"
+    # Unpredictable per-crate log path via mktemp: a fixed `/tmp/publish-<crate>.log`
+    # is a symlink-TOCTOU target and collides between concurrent publish runs.
+    local log
+    log="$(mktemp "${TMPDIR:-/tmp}/publish-${crate}.XXXXXX")"
     echo
     echo "==> cargo publish -p $crate"
-    if cargo publish -p "$crate" 2>&1 | tee "/tmp/publish-${crate}.log"; then
+    if cargo publish -p "$crate" 2>&1 | tee "$log"; then
         echo "==> $crate published."
         sleep "$WAIT_BETWEEN_PUBLISH"
     else
-        if grep -qE "already uploaded|already exists on crates.io index|crate version .* is already uploaded" "/tmp/publish-${crate}.log"; then
+        if grep -qE "already uploaded|already exists on crates.io index|crate version .* is already uploaded" "$log"; then
             echo "==> $crate already at this version on crates.io; skipping."
         else
-            echo "==> ERROR: $crate publish failed. See /tmp/publish-${crate}.log"
+            echo "==> ERROR: $crate publish failed. See $log"
             exit 1
         fi
     fi

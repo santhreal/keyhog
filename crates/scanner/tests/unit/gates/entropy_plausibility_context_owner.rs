@@ -1,27 +1,6 @@
 //! Gate: entropy plausibility has one typed-context production entry point.
 
-use std::path::{Path, PathBuf};
-
-fn scanner_src() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
-}
-
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{} not readable: {e}", path.display()))
-}
-
-fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{} not readable: {e}", dir.display()))
-    {
-        let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            collect_rs_files(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            out.push(path);
-        }
-    }
-}
+use super::support::*;
 
 #[test]
 fn entropy_plausibility_uses_typed_context_entry_points() {

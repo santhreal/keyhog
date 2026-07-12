@@ -298,7 +298,11 @@ fn every_contract_positive_fires_under_every_format_wrapper() {
             // Structured/context wrappers only — the decode-through wrappers
             // (base64/hex/url) are gated strictly and separately by
             // `every_contract_positive_fires_through_decode_wrappers` below.
-            for wrapper in Wrapper::ALL.iter().copied().filter(|w| !w.is_decode_through()) {
+            for wrapper in Wrapper::ALL
+                .iter()
+                .copied()
+                .filter(|w| !w.is_decode_through())
+            {
                 cases_run += 1;
                 scanner.clear_fragment_cache();
                 let wrapped = wrapper.wrap(&p.text);

@@ -19,7 +19,7 @@ pub(crate) fn parse_env(text: &str) -> Vec<ExtractedPair> {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let after_export = trimmed.strip_prefix("export ").unwrap_or(trimmed); // LAW10: no prefix/suffix to strip => value unchanged (intended), recall-safe
+        let after_export = strip_export_prefix(trimmed);
         if let Some((key, value)) = after_export.split_once('=') {
             let key = key.trim();
             let value = value.trim();
@@ -35,6 +35,18 @@ pub(crate) fn parse_env(text: &str) -> Vec<ExtractedPair> {
         }
     }
     pairs
+}
+
+/// Strip a leading `export` keyword (`export KEY=VALUE`, accepted by POSIX
+/// shells and dotenv) only when it is followed by ASCII whitespace, so a key
+/// literally named `export` (`export=1`) is not mis-stripped. Handles a tab or a
+/// run of spaces, not just the single space the old `strip_prefix("export ")`
+/// matched (which missed `export\tKEY=…`).
+fn strip_export_prefix(line: &str) -> &str {
+    match line.strip_prefix("export") {
+        Some(rest) if rest.starts_with(|c: char| c.is_ascii_whitespace()) => rest.trim_start(),
+        _ => line,
+    }
 }
 
 /// Strip surrounding ASCII quotes (`"`, `'`, or `` ` ``) when the closing quote

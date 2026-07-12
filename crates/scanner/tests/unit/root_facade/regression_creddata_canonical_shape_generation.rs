@@ -162,8 +162,8 @@ fn credentials_for(scanner: &CompiledScanner, line: &str) -> Vec<String> {
     let chunk = Chunk {
         data: line.into(),
         metadata: ChunkMetadata {
-            source_type: "filesystem".to_string(),
-            path: Some("config/app.env".to_string()),
+            source_type: "filesystem".into(),
+            path: Some("config/app.env".into()),
             ..ChunkMetadata::default()
         },
     };

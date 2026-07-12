@@ -45,3 +45,59 @@ fn out_of_bounds_spans_are_rejected() {
     assert!(!span_owned(&["api_key"], "api_key", 5, 2)); // start > end
     assert!(!span_owned(&["api_key"], "api_key", 0, 8)); // end > line length
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin the bounds guard, exact hit, and both expansion
+// directions; these SWEEP the safe-domain guarantees. NOTE: the bounds guard
+// checks only LENGTH, not char boundaries, so a mid-codepoint span panics on
+// `&line[start..end]` — filed as a robustness row in BACKLOG (fail-safe fix ready,
+// blocked on the foreign generic_keyword_owner refactor). These properties stay
+// within the char-aligned / out-of-bounds domain callers actually use. No
+// proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// An out-of-bounds span (`start > end` or `end > line.len()`) is rejected
+    /// BEFORE any slice — never owned, never a panic — even on arbitrary Unicode.
+    #[test]
+    fn out_of_bounds_span_is_never_owned(
+        line in "(?s).{0,40}",
+        owned in prop::collection::vec("[a-z_]{1,10}", 0..4),
+    ) {
+        let refs: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+        prop_assert!(!span_owned(&refs, &line, 0, line.len() + 1)); // end past len
+        prop_assert!(!span_owned(&refs, &line, line.len() + 2, line.len() + 1)); // start > end
+    }
+
+    /// The empty owned set owns NOTHING for any valid (char-aligned) span.
+    #[test]
+    fn empty_owned_set_is_never_owner(
+        line in "[ -~]{0,40}", // ASCII: every byte offset is a char boundary
+        a in 0usize..64,
+        b in 0usize..64,
+    ) {
+        let lo = a.min(b).min(line.len());
+        let hi = a.max(b).min(line.len());
+        prop_assert!(!span_owned(&[], &line, lo, hi));
+    }
+
+    /// No panic on ANY valid CHAR-ALIGNED span over arbitrary Unicode lines — the
+    /// contract callers uphold (offsets snapped to real char boundaries here).
+    #[test]
+    fn never_panics_on_char_aligned_spans(
+        line in "(?s).{0,40}",
+        owned in prop::collection::vec("[a-z_]{1,10}", 0..4),
+        i in 0usize..80,
+        j in 0usize..80,
+    ) {
+        let bounds: Vec<usize> = (0..=line.len()).filter(|&k| line.is_char_boundary(k)).collect();
+        let start = bounds[i % bounds.len()];
+        let end = bounds[j % bounds.len()];
+        let (lo, hi) = if start <= end { (start, end) } else { (end, start) };
+        let refs: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+        let _ = span_owned(&refs, &line, lo, hi);
+    }
+}

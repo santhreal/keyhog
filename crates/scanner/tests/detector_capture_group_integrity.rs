@@ -233,5 +233,8 @@ fn end_to_end_group_two_on_a_single_group_regex_is_out_of_bounds() {
     let len = captures_len(r"password=(\S+)");
     assert_eq!(len, 2);
     assert!(group_in_bounds(1, len), "group 1 (the value) is valid");
-    assert!(!group_in_bounds(2, len), "group 2 does not exist on a one-group regex");
+    assert!(
+        !group_in_bounds(2, len),
+        "group 2 does not exist on a one-group regex"
+    );
 }

@@ -8,7 +8,10 @@ id = "pinterest-access-token"
 name = "Pinterest Access Token"
 service = "pinterest"
 severity = "medium"
-keywords = ["PINTEREST", "pinterest", "PINTEREST_TOKEN", "access_token", "pinterest_token"]
+# "access_token" removed: over-broad generic prefilter(s) the regex does NOT need — every
+# pattern requires the service name as a leading anchor (kept), present in any real
+# match and thus also the keyword_nearby signal. Verified recall-neutral.
+keywords = ["PINTEREST", "pinterest", "PINTEREST_TOKEN", "pinterest_token"]
 
 [[detector.patterns]]
 regex = "(?:PINTEREST|pinterest)[._]?(?:ACCESS|access)?[._]?(?:TOKEN|token)?[=:\\s\"']+([A-Za-z0-9]{64})"

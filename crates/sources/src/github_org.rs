@@ -133,7 +133,7 @@ impl Source for GitHubOrgSource {
 /// the "a short page means the last page" terminator (`count < PER_PAGE`).
 /// Changing one without the other silently breaks pagination — either an early
 /// stop that drops repos or an extra empty page — so both read this constant.
-const REPOS_PER_PAGE: usize = 100;
+pub(crate) const REPOS_PER_PAGE: usize = 100;
 
 #[derive(Debug, Deserialize)]
 struct GitHubRepo {
@@ -292,14 +292,28 @@ fn github_listing_truncated_error(org: &str, repo_count: usize, max_pages: usize
     hosted_git::listing_truncated_error("GitHub", "organization", org, repo_count, max_pages)
 }
 
+const MAX_BACKOFF_ATTEMPTS: usize = 4;
+/// Ceiling on a single rate-limit backoff sleep. `Retry-After` is an untrusted
+/// response header: a hostile/compromised endpoint, a MITM under `--insecure`,
+/// or a proxy returning `Retry-After: 4000000000` would otherwise wedge a scan
+/// thread in `thread::sleep` effectively forever. Clamp before sleeping.
+pub(crate) const MAX_BACKOFF_SECS: u64 = 60;
+
+/// Backoff sleep (seconds) for a rate-limited attempt: the server's parsed
+/// `Retry-After` if present, else attempt-based linear backoff, always clamped
+/// to `MAX_BACKOFF_SECS` so an untrusted header can never wedge the thread.
+pub(crate) fn rate_limit_backoff_secs(retry_after: Option<u64>, attempt: usize) -> u64 {
+    retry_after
+        .unwrap_or((attempt + 1) as u64)
+        .min(MAX_BACKOFF_SECS)
+}
+
 fn send_github_request_with_backoff(
     client: &Client,
     org: &str,
     page: usize,
 ) -> Result<reqwest::blocking::Response, SourceError> {
-    const MAX_ATTEMPTS: usize = 4;
-
-    for attempt in 0..MAX_ATTEMPTS {
+    for attempt in 0..MAX_BACKOFF_ATTEMPTS {
         let response = client
             .get(format!(
                 "https://api.github.com/orgs/{org}/repos?per_page={REPOS_PER_PAGE}&page={page}"
@@ -325,40 +339,21 @@ fn send_github_request_with_backoff(
             return Ok(response);
         }
 
-        if attempt + 1 == MAX_ATTEMPTS {
+        if attempt + 1 == MAX_BACKOFF_ATTEMPTS {
             return Err(hosted_git::api_unreadable_error(format!(
                 "GitHub API rate limited while listing repositories for org {org}"
             )));
         }
 
-        std::thread::sleep(std::time::Duration::from_secs(
-            retry_after.unwrap_or((attempt + 1) as u64), // LAW10: absent Retry-After => attempt-based backoff default; perf/timing, recall-irrelevant
-        ));
+        // LAW10: absent Retry-After => attempt-based backoff; hostile/oversized
+        // header clamped to MAX_BACKOFF_SECS so it can't wedge the thread.
+        let backoff_secs = rate_limit_backoff_secs(retry_after, attempt);
+        std::thread::sleep(std::time::Duration::from_secs(backoff_secs));
     }
 
     Err(hosted_git::api_unreadable_error(
         "GitHub API retry limit exceeded",
     ))
-}
-
-#[cfg(test)]
-mod pagination_tests {
-    use super::REPOS_PER_PAGE;
-
-    #[test]
-    fn repos_per_page_is_github_max_and_drives_the_query() {
-        // GitHub's documented maximum page size. The list-repos loop pages with
-        // this value AND treats a page shorter than it as the last page, so this
-        // is the single owner both uses must read.
-        assert_eq!(REPOS_PER_PAGE, 100);
-        let url = format!(
-            "https://api.github.com/orgs/acme/repos?per_page={REPOS_PER_PAGE}&page=1"
-        );
-        assert_eq!(
-            url,
-            "https://api.github.com/orgs/acme/repos?per_page=100&page=1"
-        );
-    }
 }
 
 pub(crate) fn rewrite_chunk_path_for_test(

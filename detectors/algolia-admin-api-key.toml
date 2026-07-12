@@ -18,12 +18,6 @@ keywords = ["ALGOLIA_ADMIN_KEY", "algolia_admin_key", "admin_api_key", "ALGOLIA_
 regex = "(?i)algolia[_.-]?admin[_.-]?(?:api[_.-]?)?key[=:\\s\"']+([a-f0-9]{32})"
 description = "Algolia admin API key with context anchor"
 group = 1
-
-[[detector.patterns]]
-regex = "admin_api_key[=:\\s\"']+([a-f0-9]{32})"
-description = "Algolia admin key under the dedicated env-var name"
-group = 1
-
 [[detector.companions]]
 name = "application_id"
 regex = "(?:ALGOLIA_APP(?:LICATION)?_ID|algolia[_-]?app(?:lication)?[_-]?id|app[_-]?id)[=:\\s\"']+([A-Z0-9]{10})"

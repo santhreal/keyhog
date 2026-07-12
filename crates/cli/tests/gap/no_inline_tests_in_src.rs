@@ -2,10 +2,30 @@
 
 use std::path::{Path, PathBuf};
 
+/// True if the file hosts an inline `#[cfg(test)]`-gated module BLOCK
+/// (`#[cfg(test)] mod <name> { ... }`) — the pattern the Santh folder contract
+/// forbids in production source. A COMPLIANT sibling declaration
+/// (`#[cfg(test)] mod tests;`, whose body lives in a separate `tests.rs`) ends
+/// in `;` and is intentionally allowed. Any module NAME is caught, not just
+/// `tests`, so a `mod low_ram_cap_tests { .. }` cannot slip through.
 fn has_inline_test_block(content: &str) -> bool {
-    content
-        .lines()
-        .any(|line| line.trim().starts_with("mod tests {"))
+    let lines: Vec<&str> = content.lines().collect();
+    lines.iter().enumerate().any(|(i, line)| {
+        if line.trim() != "#[cfg(test)]" {
+            return false;
+        }
+        // The item this attribute gates: the next non-blank, non-attribute line.
+        lines[i + 1..]
+            .iter()
+            .find(|l| {
+                let t = l.trim();
+                !t.is_empty() && !t.starts_with("#[")
+            })
+            .is_some_and(|item| {
+                let t = item.trim();
+                t.starts_with("mod ") && t.ends_with('{')
+            })
+    })
 }
 
 fn scan_rust_sources(dir: &Path, offenders: &mut Vec<PathBuf>) {

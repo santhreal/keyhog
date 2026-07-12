@@ -11,19 +11,12 @@
 //! slip through. Each cell below varies (source_type) × (path present?) so the
 //! load-bearing field is pinned: detection must be identical across all four.
 
+mod support;
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::path::PathBuf;
+use support::paths::detector_dir;
 
 const LINE: &str = "AWS_ACCESS_KEY_ID=\"AKIAQYLPMN5HFIQR7XYA\"\n";
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn scanner() -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");

@@ -31,3 +31,10 @@ fixture_bytes = 1048576
 min_findings = 1
 max_seconds = 2.0
 note = "1 MiB filler + planted Zendesk API token."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# ZENDESK_API_TOKEN=5wSb6t3sE96nM6VaHoI2GWl6bp7zB8loar6sPi5w  # support"
+credential = "5wSb6t3sE96nM6VaHoI2GWl6bp7zB8loar6sPi5w"
+reason = "Commented-out config; the zendesk_api_token=<40> arm surfaces it (distinct from the agent@sub.zendesk.com/token: connection-string arm)."

@@ -38,14 +38,18 @@ fn surfaces_in(path: &str, text: &str, needle: &str) -> bool {
     let s = shared();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", path);
-    s.scan(&chunk).into_iter().any(|m| m.credential.to_string().contains(needle))
+    s.scan(&chunk)
+        .into_iter()
+        .any(|m| m.credential.to_string().contains(needle))
 }
 
 fn nothing_in(path: &str, text: &str, needle: &str) -> bool {
     let s = shared();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", path);
-    !s.scan(&chunk).into_iter().any(|m| m.credential.to_string().contains(needle))
+    !s.scan(&chunk)
+        .into_iter()
+        .any(|m| m.credential.to_string().contains(needle))
 }
 
 // ── TOML: nested tables, dotted keys, array-of-tables ─────────────────────────
@@ -54,28 +58,41 @@ fn nothing_in(path: &str, text: &str, needle: &str) -> bool {
 fn toml_nested_table_password_surfaces() {
     let v = secret(24, 1);
     let text = format!("[database.production]\nhost = \"db.internal\"\npassword = \"{v}\"\n");
-    assert!(surfaces_in("config.toml", &text, &v), "a [database.production] password must surface");
+    assert!(
+        surfaces_in("config.toml", &text, &v),
+        "a [database.production] password must surface"
+    );
 }
 
 #[test]
 fn toml_deeply_nested_table_secret_surfaces() {
     let v = secret(24, 2);
     let text = format!("[services.auth.provider.oauth]\nclient_secret = \"{v}\"\n");
-    assert!(surfaces_in("config.toml", &text, &v), "a 4-level-nested client_secret must surface");
+    assert!(
+        surfaces_in("config.toml", &text, &v),
+        "a 4-level-nested client_secret must surface"
+    );
 }
 
 #[test]
 fn toml_dotted_key_api_key_surfaces() {
     let v = secret(28, 3);
     let text = format!("database.production.api_key = \"{v}\"\n");
-    assert!(surfaces_in("config.toml", &text, &v), "a dotted-key api_key must surface");
+    assert!(
+        surfaces_in("config.toml", &text, &v),
+        "a dotted-key api_key must surface"
+    );
 }
 
 #[test]
 fn toml_array_of_tables_token_surfaces() {
     let v = secret(28, 4);
-    let text = format!("[[clients]]\nname = \"a\"\n[[clients]]\nname = \"b\"\napi_token = \"{v}\"\n");
-    assert!(surfaces_in("clients.toml", &text, &v), "an array-of-tables api_token must surface");
+    let text =
+        format!("[[clients]]\nname = \"a\"\n[[clients]]\nname = \"b\"\napi_token = \"{v}\"\n");
+    assert!(
+        surfaces_in("clients.toml", &text, &v),
+        "an array-of-tables api_token must surface"
+    );
 }
 
 // ── JSON: deeply-nested objects ───────────────────────────────────────────────
@@ -84,14 +101,20 @@ fn toml_array_of_tables_token_surfaces() {
 fn json_deeply_nested_password_surfaces() {
     let v = secret(24, 5);
     let text = format!("{{\"services\":{{\"db\":{{\"auth\":{{\"password\":\"{v}\"}}}}}}}}\n");
-    assert!(surfaces_in("config.json", &text, &v), "a 4-level-nested JSON password must surface");
+    assert!(
+        surfaces_in("config.json", &text, &v),
+        "a 4-level-nested JSON password must surface"
+    );
 }
 
 #[test]
 fn json_nested_secret_key_surfaces() {
     let v = secret(28, 6);
     let text = format!("{{\"app\":{{\"jwt\":{{\"secret_key\":\"{v}\"}}}}}}\n");
-    assert!(surfaces_in("settings.json", &text, &v), "a nested JSON secret_key must surface");
+    assert!(
+        surfaces_in("settings.json", &text, &v),
+        "a nested JSON secret_key must surface"
+    );
 }
 
 #[test]
@@ -100,7 +123,10 @@ fn json_pretty_printed_nested_password_surfaces() {
     let text = format!(
         "{{\n  \"database\": {{\n    \"credentials\": {{\n      \"password\": \"{v}\"\n    }}\n  }}\n}}\n"
     );
-    assert!(surfaces_in("config.json", &text, &v), "a pretty-printed nested password must surface");
+    assert!(
+        surfaces_in("config.json", &text, &v),
+        "a pretty-printed nested password must surface"
+    );
 }
 
 // ── YAML: deeply-nested mappings ──────────────────────────────────────────────
@@ -109,14 +135,20 @@ fn json_pretty_printed_nested_password_surfaces() {
 fn yaml_deeply_nested_api_key_surfaces() {
     let v = secret(28, 8);
     let text = format!("app:\n  integrations:\n    stripe:\n      api_key: {v}\n");
-    assert!(surfaces_in("values.yaml", &text, &v), "a 3-level-nested YAML api_key must surface");
+    assert!(
+        surfaces_in("values.yaml", &text, &v),
+        "a 3-level-nested YAML api_key must surface"
+    );
 }
 
 #[test]
 fn yaml_nested_quoted_password_surfaces() {
     let v = secret(24, 9);
     let text = format!("database:\n  primary:\n    password: \"{v}\"\n");
-    assert!(surfaces_in("app.yaml", &text, &v), "a nested quoted YAML password must surface");
+    assert!(
+        surfaces_in("app.yaml", &text, &v),
+        "a nested quoted YAML password must surface"
+    );
 }
 
 // ── .env: nested-by-convention double-underscore / prefixed keys ──────────────
@@ -125,14 +157,20 @@ fn yaml_nested_quoted_password_surfaces() {
 fn env_double_underscore_nested_password_surfaces() {
     let v = secret(24, 10);
     let text = format!("DATABASE__PRODUCTION__PASSWORD={v}\n");
-    assert!(surfaces_in(".env", &text, &v), "a __-nested env password must surface");
+    assert!(
+        surfaces_in(".env", &text, &v),
+        "a __-nested env password must surface"
+    );
 }
 
 #[test]
 fn env_prefixed_api_secret_surfaces() {
     let v = secret(28, 11);
     let text = format!("APP_STRIPE_API_SECRET={v}\n");
-    assert!(surfaces_in(".env", &text, &v), "a prefixed env api_secret must surface");
+    assert!(
+        surfaces_in(".env", &text, &v),
+        "a prefixed env api_secret must surface"
+    );
 }
 
 // ── HCL: nested blocks where key + value are on DIFFERENT lines ────────────────
@@ -142,7 +180,10 @@ fn hcl_nested_block_password_surfaces() {
     let v = secret(24, 12);
     let text =
         format!("resource \"db\" \"main\" {{\n  connection {{\n    password = \"{v}\"\n  }}\n}}\n");
-    assert!(surfaces_in("main.tf", &text, &v), "a nested HCL block password must surface");
+    assert!(
+        surfaces_in("main.tf", &text, &v),
+        "a nested HCL block password must surface"
+    );
 }
 
 #[test]
@@ -159,7 +200,10 @@ fn hcl_variable_default_secret_surfaces() {
 fn hcl_provider_nested_token_surfaces() {
     let v = secret(28, 14);
     let text = format!("provider \"vault\" {{\n  auth {{\n    token = \"{v}\"\n  }}\n}}\n");
-    assert!(surfaces_in("providers.tf", &text, &v), "a nested HCL provider token must surface");
+    assert!(
+        surfaces_in("providers.tf", &text, &v),
+        "a nested HCL provider token must surface"
+    );
 }
 
 // ── cross-format: two nested secrets in one file both surface ─────────────────
@@ -168,11 +212,15 @@ fn hcl_provider_nested_token_surfaces() {
 fn toml_two_nested_secrets_both_surface() {
     let a = secret(24, 15);
     let b = secret(28, 16);
-    let text = format!(
-        "[database]\npassword = \"{a}\"\n\n[redis]\nauth_token = \"{b}\"\n"
+    let text = format!("[database]\npassword = \"{a}\"\n\n[redis]\nauth_token = \"{b}\"\n");
+    assert!(
+        surfaces_in("config.toml", &text, &a),
+        "the first nested secret must surface"
     );
-    assert!(surfaces_in("config.toml", &text, &a), "the first nested secret must surface");
-    assert!(surfaces_in("config.toml", &text, &b), "the second nested secret must surface");
+    assert!(
+        surfaces_in("config.toml", &text, &b),
+        "the second nested secret must surface"
+    );
 }
 
 // ── precision: nested NON-secret keys and placeholders do not surface ─────────

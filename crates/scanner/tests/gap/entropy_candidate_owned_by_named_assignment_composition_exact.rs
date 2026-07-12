@@ -45,3 +45,82 @@ fn a_non_embedding_candidate_with_an_unowned_same_line_keyword_is_not_owned() {
 fn an_empty_owned_set_owns_nothing() {
     assert!(!candidate_owned(&[], "api_key=x", Some("api_key=secret")));
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin each branch; these SWEEP the COMPOSITION as a CROSS-FACADE
+// differential (real truth, not a source mirror): both disjuncts are delegated to
+// their own facades, so the oracle tests only the OR wiring — `candidate_owned` is
+// exactly `embeds(candidate) OR (same_line present AND its keyword owned)`. Plus
+// empty-set-owns-nothing, monotone-in-owned-set, and no-panic. Traced against
+// generic_keyword_owner.rs:171. No proptest before.
+
+use keyhog_scanner::testing::{
+    candidate_embeds_owned_assignment_key_for_test as embeds,
+    line_assignment_owned_by_named_detector_for_test as line_owned,
+};
+use proptest::prelude::*;
+
+/// The exact OR composition, each disjunct delegated to its own tested facade.
+fn oracle(owned: &[&str], candidate: &str, same_line: Option<&str>) -> bool {
+    embeds(owned, candidate) || same_line.is_some_and(|l| line_owned(owned, l))
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(3_000))]
+
+    /// FULL differential over assignment-shaped candidates / same-lines and
+    /// arbitrary owned sets.
+    #[test]
+    fn matches_the_or_composition(
+        candidate in "[A-Za-z0-9_.=:~ -]{0,40}",
+        owned in prop::collection::vec("[a-z_]{1,12}", 0..4),
+        same in prop::option::of("[A-Za-z0-9_.=:~ -]{0,40}"),
+    ) {
+        let refs: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+        let same_ref = same.as_deref();
+        prop_assert_eq!(
+            candidate_owned(&refs, &candidate, same_ref),
+            oracle(&refs, &candidate, same_ref)
+        );
+    }
+
+    /// The same differential over arbitrary Unicode (no-panic + agreement).
+    #[test]
+    fn matches_the_or_composition_on_arbitrary_unicode(
+        candidate in "(?s).{0,32}",
+        owned in prop::collection::vec("(?s).{0,10}", 0..4),
+        same in prop::option::of("(?s).{0,32}"),
+    ) {
+        let refs: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+        let same_ref = same.as_deref();
+        prop_assert_eq!(
+            candidate_owned(&refs, &candidate, same_ref),
+            oracle(&refs, &candidate, same_ref)
+        );
+    }
+
+    /// The empty owned set owns nothing, regardless of candidate or same-line.
+    #[test]
+    fn empty_owned_set_never_owns(
+        candidate in "(?s).{0,32}",
+        same in prop::option::of("(?s).{0,32}"),
+    ) {
+        prop_assert!(!candidate_owned(&[], &candidate, same.as_deref()));
+    }
+
+    /// Monotone in the owned set: adding owned keys can only ADD ownership.
+    #[test]
+    fn monotone_in_owned_set(
+        candidate in "[A-Za-z0-9_.=:~ -]{0,40}",
+        owned in prop::collection::vec("[a-z_]{1,12}", 0..3),
+        extra in prop::collection::vec("[a-z_]{1,12}", 0..3),
+        same in prop::option::of("[A-Za-z0-9_.=:~ -]{0,40}"),
+    ) {
+        let base_refs: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+        let same_ref = same.as_deref();
+        let base = candidate_owned(&base_refs, &candidate, same_ref);
+        let mut sup: Vec<&str> = base_refs.clone();
+        sup.extend(extra.iter().map(|s| s.as_str()));
+        prop_assert!(!base || candidate_owned(&sup, &candidate, same_ref)); // base => sup
+    }
+}

@@ -21,19 +21,23 @@ fn entropy_placeholder_and_ascii_uniqueness_stay_allocation_light() {
             && placeholder.contains("ends_with_ignore_ascii_case(bytes, b\"EXAMPLE\")"),
         "entropy placeholder marker checks should use shared ASCII byte-search primitives"
     );
-    // The ASCII path delegates to the shared distinct-byte primitive instead
-    // of carrying a fourth copy of its 256-slot table. Pin both the call site
-    // and the allocation-free single owner.
+    // The ASCII fast path was deduplicated: it now delegates to the single-owner
+    // distinct-byte primitive `entropy::unique_byte_count` (mod.rs) instead of
+    // re-inlining the 256-slot presence table a fourth time. Assert the
+    // allocation-light PRIMITIVE is used (not a per-candidate HashSet) and that
+    // the primitive itself still owns the fixed-size stack bitmap — pinning the
+    // owner, not a copy the dedup legitimately relocated (same principle as the
+    // placeholder marker assertion above).
     let entropy_mod = std::fs::read_to_string(root.join("src/entropy/mod.rs"))
-        .expect("entropy module source readable");
+        .expect("entropy mod source readable");
     assert!(
         plausibility.contains("if value.is_ascii()")
             && plausibility.contains("super::unique_byte_count(value.as_bytes())"),
-        "ASCII plausibility uniqueness must delegate to unique_byte_count before the Unicode fallback"
+        "ASCII plausibility uniqueness must delegate to the allocation-light unique_byte_count primitive before the Unicode fallback"
     );
     assert!(
         entropy_mod.contains("fn unique_byte_count(")
             && entropy_mod.contains("let mut seen = [false; 256];"),
-        "the canonical unique_byte_count primitive must retain its fixed-size stack bitmap"
+        "the canonical unique_byte_count primitive must own the fixed-size stack bitmap (no per-candidate allocation)"
     );
 }

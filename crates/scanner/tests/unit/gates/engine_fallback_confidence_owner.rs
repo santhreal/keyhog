@@ -1,41 +1,6 @@
 //! Gate: fallback confidence base-score policy has one confidence owner.
 
-use std::path::{Path, PathBuf};
-
-fn scanner_src() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
-}
-
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{} not readable: {e}", path.display()))
-}
-
-fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{} not readable: {e}", dir.display()))
-    {
-        let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            collect_rs_files(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            out.push(path);
-        }
-    }
-}
-
-fn uncommented_code(src: &str) -> String {
-    src.lines()
-        .filter_map(|line| {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("//") {
-                None
-            } else {
-                Some(line)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
+use super::support::*;
 
 #[test]
 fn entropy_and_generic_fallback_confidence_route_through_confidence_owner() {
@@ -59,9 +24,8 @@ fn entropy_and_generic_fallback_confidence_route_through_confidence_owner() {
     let entropy = uncommented_code(&read(&src.join("engine/phase2_entropy.rs")));
     let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
     assert!(
-        adjudicate.contains("fn detector_min_confidence_floor(")
-            && adjudicate.contains("detector_floor.unwrap_or(default_floor)"),
-        "adjudicate must own detector-local-or-default min-confidence floor resolution"
+        adjudicate.contains("fn detector_min_confidence_floor("),
+        "adjudicate must own active-detector min-confidence floor resolution"
     );
     assert!(
         entropy.contains("crate::confidence::policy::entropy_fallback_confidence("),
@@ -69,9 +33,10 @@ fn entropy_and_generic_fallback_confidence_route_through_confidence_owner() {
     );
     assert!(
         entropy.contains("crate::adjudicate::detector_min_confidence_floor(")
+            && entropy.contains("policy_detector.and_then(|detector| detector.min_confidence)")
             && !entropy.contains("min_confidence_floor: self.config.min_confidence")
             && !entropy.contains("ml_context,\n                    self.config.min_confidence"),
-        "entropy fallback must resolve detector-local-or-default min-confidence floors through adjudication"
+        "entropy fallback must resolve confidence from its active policy detector"
     );
     for forbidden in [
         "base_confidence",
@@ -104,8 +69,9 @@ fn entropy_and_generic_fallback_confidence_route_through_confidence_owner() {
     );
     assert!(
         generic.contains("crate::adjudicate::detector_min_confidence_floor(")
+            && generic.contains("owning_detector.and_then(|detector| detector.min_confidence)")
             && !generic.contains("min_confidence_floor: self.config.min_confidence"),
-        "generic fallback must resolve detector-local-or-default min-confidence floors through adjudication"
+        "generic fallback must resolve confidence from its active owning detector"
     );
     for forbidden in [
         "let base_conf",

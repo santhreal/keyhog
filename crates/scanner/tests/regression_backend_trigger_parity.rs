@@ -20,23 +20,14 @@
 //! still assert the concrete `CpuFallback` finding values and report the skipped
 //! SIMD leg loudly (CLAUDE.md Law 10).
 
+mod support;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use support::paths::detector_dir;
 
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 // ---- fixtures / shared helpers ------------------------------------------------
-
-/// Absolute path to `crates/scanner/../../detectors`, the on-disk Tier-B
-/// detector TOML directory, from `CARGO_MANIFEST_DIR` so it is cwd-stable.
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn scanner() -> CompiledScanner {
     let detectors = load_detectors(&detector_dir()).expect("load on-disk detectors");
@@ -142,7 +133,14 @@ fn both_cpu_backends(
 }
 
 const AWS_KEY: &str = "AKIAQYLPMN5HFIQR7XYA";
-const GHP_TOKEN: &str = "ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX";
+// Known-valid classic PAT: `ghp_` + 36 chars with a CORRECT trailing CRC32
+// checksum, so it clears the shipped `GithubClassicPatValidator` gate. The
+// previous fixture `ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX` was fabricated
+// with a bad checksum — once checksum wiring landed it was silently dropped, so
+// `github-classic-pat` surfaced zero findings and this (CI-orphaned) parity
+// suite failed. This is the same canonical token as `regression_github_pat_
+// boundary::GHP_VALID` (see keyhog checksum-fixture contract).
+const GHP_TOKEN: &str = "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";
 const TWILIO_AUTH_TOKEN: &str = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f";
 
 // A Twilio account_sid + auth_token env-pair; the required `account_sid`

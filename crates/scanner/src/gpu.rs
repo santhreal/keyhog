@@ -5,8 +5,8 @@
 //! available or for batches smaller than the crossover threshold.
 //!
 //! Architecture mirrors ml_scorer.rs exactly:
-//! - Gate: Linear(41→6) + softmax
-//! - 6 experts: Linear(41→32)+ReLU → Linear(32→16)+ReLU → Linear(16→1)
+//! - Gate: Linear(42→6) + softmax
+//! - 6 experts: Linear(42→32)+ReLU → Linear(32→16)+ReLU → Linear(16→1)
 //! - Output: sigmoid(weighted sum of expert logits)
 //!
 //! ## Feature-gating in the lean build
@@ -28,14 +28,17 @@
 // unchanged; only the files moved (and gpu_moe_backend.rs/gpu_env.rs were
 // renamed to match their module names).
 #[cfg(feature = "gpu")]
-mod gpu_shader;
+pub(crate) mod gpu_shader;
+// Re-exported for the arch-consistency gate (tests/unit/gates) to validate the
+// generated shader against `model_arch` without reaching into a private module.
+// Test-only AND gpu-only: `gpu_shader` itself is `#[cfg(feature = "gpu")]`, so a
+// bare `#[cfg(test)]` here fails to resolve under ci-lean (no gpu) — the gate
+// module that consumes it is likewise `#[cfg(feature = "gpu")]`.
+#[cfg(all(test, feature = "gpu"))]
+pub(crate) use gpu_shader::moe_shader;
 
 #[cfg(feature = "gpu")]
 mod backend;
-
-pub(crate) fn finite_gpu_scores_for_test(scores: &[f32]) -> Result<Vec<f64>, usize> {
-    backend::finite_gpu_scores(scores)
-}
 
 mod policy;
 pub use policy::*;
@@ -214,13 +217,32 @@ pub(crate) fn batch_ml_inference_with_timeout(
                         scores
                     }
                     Some(scores) => {
-                        tracing::warn!(
-                            candidates = candidates.len(),
-                            scores = scores.len(),
-                            "GPU MoE score count mismatch; recomputing CPU MoE scores for this batch"
+                        // Defense in depth. `batch_score_features` OWNS the length
+                        // invariant (backend.rs degrades + returns `None` when the
+                        // GPU readback count != batch_size == features.len()), and
+                        // this caller builds `features` one-per-candidate, so a
+                        // `Some` whose length differs from `candidates` cannot occur
+                        // via the real backend — this arm is unreachable today. Keep
+                        // it fail-LOUD instead of a silent CPU fallback (Law 10): if
+                        // a future backend change ever breaks that contract, route
+                        // the degrade through the SAME owner as every other MoE
+                        // dispatch failure (hard-fail under --require-gpu, one-shot
+                        // eprintln otherwise) rather than a second hand-rolled warn.
+                        debug_assert_eq!(
+                            scores.len(),
+                            candidates.len(),
+                            "backend::batch_score_features must return one score per input"
                         );
+                        backend::moe_runtime_degrade(&format!(
+                            "caller-side score count mismatch: backend returned {} scores for {} candidates",
+                            scores.len(),
+                            candidates.len()
+                        ));
                         score_features_on_cpu()
                     }
+                    // `None` here is a genuine GPU dispatch failure that
+                    // `batch_score_features` ALREADY degraded loudly (below-threshold
+                    // `None` cannot occur: this branch only runs for large batches).
                     None => score_features_on_cpu(),
                 }
             }

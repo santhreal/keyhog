@@ -239,8 +239,40 @@ fn cache_overwrite_same_key_updates_verdict_in_place() {
     assert_eq!(cache.len(), 1, "overwrite must not grow the map");
     assert_eq!(
         cache.queue_len(),
-        1,
-        "overwrite must not re-enqueue the key"
+        2,
+        "overwrite refreshes recency: a new generation marker is enqueued and \
+         the old marker becomes stale (skipped lazily by eviction, swept by \
+         reconcile) — the MAP must not grow, the queue may hold one stale marker"
+    );
+}
+
+#[test]
+fn capacity_eviction_prefers_stale_slot_over_refreshed_entry() {
+    // THE eviction-order bug this queue design fixes: a re-verified credential
+    // used to keep its ORIGINAL queue position, so capacity eviction dropped
+    // the freshest entry first and forced a redundant live re-verification.
+    let cache = VerificationCache::with_max_entries(Duration::from_secs(60), 2);
+    cache.put("refreshed", "det", VerificationResult::Live, HashMap::new());
+    cache.put("stale", "det", VerificationResult::Live, HashMap::new());
+    // Refresh the first key: its recency moves BEHIND "stale".
+    cache.put("refreshed", "det", VerificationResult::Dead, HashMap::new());
+    // Capacity 2 exceeded: the oldest CURRENT marker is now "stale".
+    cache.put("newest", "det", VerificationResult::Live, HashMap::new());
+
+    assert_eq!(cache.len(), 2, "capacity bound enforced");
+    assert_eq!(
+        cache.get("refreshed", "det").map(|(r, _)| r),
+        Some(VerificationResult::Dead),
+        "the refreshed entry must SURVIVE capacity eviction (its stale marker \
+         is skipped; its refreshed verdict is the one retained)"
+    );
+    assert!(
+        cache.get("stale", "det").is_none(),
+        "the genuinely oldest entry is the one evicted"
+    );
+    assert!(
+        cache.get("newest", "det").is_some(),
+        "the newest insert is retained"
     );
 }
 

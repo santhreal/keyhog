@@ -42,7 +42,7 @@ NEW_TOKEN=ghp_historyLineAdded00000001
         .copied()
         .find(|chunk| chunk.data.contains("ghp_historyLineAdded"))
         .expect("history source must include added secret line");
-    assert_eq!(secret_chunk.metadata.source_type, "git-history");
+    assert_eq!(secret_chunk.metadata.source_type.as_ref(), "git-history");
     assert_eq!(
         secret_chunk.metadata.author.as_deref(),
         Some("LR1 A5 <a5@test.example>")

@@ -8,7 +8,10 @@ id = "ifttt-service-key"
 name = "IFTTT Service/Webhook Key"
 service = "ifttt"
 severity = "medium"
-keywords = ["IFTTT", "ifttt", "maker.ifttt.com", "webhook"]
+# "webhook" removed: over-broad generic prefilter(s) the regex does NOT need — every
+# pattern requires the service name as a leading anchor (kept), present in any real
+# match and thus also the keyword_nearby signal. Verified recall-neutral.
+keywords = ["IFTTT", "ifttt", "maker.ifttt.com"]
 
 [[detector.patterns]]
 regex = "(?:IFTTT|ifttt)[=:\\s\"'']+([a-zA-Z0-9]{22})"

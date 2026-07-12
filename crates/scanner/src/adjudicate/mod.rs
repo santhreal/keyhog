@@ -644,6 +644,38 @@ fn decoded_reverse_placeholder_marker(reversed: &str) -> bool {
         || reversed.contains("YOUR_")
 }
 
+/// A decoded sub-chunk is SYNTHESIZED content — the bytes that fall out of a
+/// base64/hex/url/reverse decode, with NO surrounding keyword or structural
+/// context from the real file. A generic/entropy detector fires on shape/entropy
+/// ALONE, so on decoded content its "evidence" is nothing but the decoded bytes
+/// happening to look token-shaped. Decoding ordinary readable text routinely
+/// produces exactly that: exception names (`InvalidNextTokenException"}`), HTTP
+/// headers (`max-age1536000;includeSubdomains;preload`), library prose
+/// (`PythonlibraryimplementingthefullGithubAPIv3`), XML paths, `OAuth2.0`. On the
+/// full CredData tree, decode-through surfaced +264 such generic/entropy hits
+/// that are ALL non-secrets (measured decode-on−decode-off diff), for ~0 real
+/// TP — pure precision loss. A decoded match must carry its OWN structural
+/// evidence — a required vendor literal / anchored slot that survives the decode
+/// — to be trusted (KH-L-0404 "anchor decoded matches"). The generic/entropy
+/// family has none. Vendor/key detectors on decoded content (genuine encoded
+/// secrets — backblaze/confluent/wordpress tokens, `-----BEGIN`-headed key
+/// bodies) self-anchor on their required literal and are UNAFFECTED: this gate
+/// keys on the detector id only, never the value. Scoped to the decode path
+/// (`#[cfg(feature = "decode")]`) — top-level generic/entropy matches, which DO
+/// have real file context, are untouched.
+#[cfg(feature = "decode")]
+pub(crate) fn record_decoded_generic_entropy_suppression(
+    m: &RawMatch,
+    fallback_path: Option<&str>,
+) -> bool {
+    if crate::detector_ids::is_generic_or_entropy_detector(m.detector_id.as_ref()) {
+        record_match_example_suppression(m, fallback_path, "decoded_generic_entropy_unanchored");
+        true
+    } else {
+        false
+    }
+}
+
 fn explicit_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
     if let Some(stage_id) = ctx.explicit_stage {
         StageOutcome::Suppress(stage_id)

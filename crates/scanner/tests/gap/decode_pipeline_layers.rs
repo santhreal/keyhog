@@ -26,7 +26,7 @@ use keyhog_scanner::decode::{
     base64_decode, find_base64_strings, find_hex_strings, hex_decode, z85_decode,
 };
 use keyhog_scanner::testing::decode_caesar::{
-    caesar_shift, is_source_code_path, looks_credential_shaped,
+    caesar_credential_shape_gate, caesar_shift, is_source_code_path,
 };
 use keyhog_scanner::testing::{decode_chunk, AlphabetScreen};
 use keyhog_scanner::testing::{looks_reversible, reverse_str};
@@ -381,7 +381,7 @@ fn pipeline_surfaces_reverse_single_layer() {
 #[test]
 fn pipeline_surfaces_caesar_single_layer() {
     // Caesar-shifted (+5) AWS key; decoder tries shift 21 to recover it.
-    // looks_credential_shaped gate: decoded has a digit, an 8-alnum run, and
+    // caesar_credential_shape_gate gate: decoded has a digit, an 8-alnum run, and
     // contains the "AKIA" KNOWN_PREFIX.
     let c = chunk("token=FPNFNTXKTISS7JCFRUQJ");
     let out = decode_all(&c);
@@ -515,11 +515,13 @@ fn pipeline_nested_source_type_chains_decoder_names() {
     let out = decode_chunk(&c, 3, false, None, None);
     assert!(
         out.iter()
-            .any(|d| d.metadata.source_type == "file/base64/base64"),
+            .any(|d| d.metadata.source_type.as_ref() == "file/base64/base64"),
         "nested decode must chain decoder names in source_type"
     );
     // The first layer is recorded as exactly "file/base64".
-    assert!(out.iter().any(|d| d.metadata.source_type == "file/base64"));
+    assert!(out
+        .iter()
+        .any(|d| d.metadata.source_type.as_ref() == "file/base64"));
 }
 
 #[test]
@@ -785,15 +787,15 @@ fn caesar_shift_wraps_alphabet_and_leaves_digits() {
 }
 
 #[test]
-fn looks_credential_shaped_gates_on_digit_run_and_prefix() {
+fn caesar_credential_shape_gate_gates_on_digit_run_and_prefix() {
     // Real AWS key: digit + 8-alnum run + "AKIA" prefix -> shaped.
-    assert!(looks_credential_shaped(SECRET));
+    assert!(caesar_credential_shape_gate(SECRET));
     // No digit -> rejected even with a long run.
-    assert!(!looks_credential_shaped(
+    assert!(!caesar_credential_shape_gate(
         "AKIAIOSFODNNXEXAMPLE".replace('7', "X").as_str()
     ));
     // Has digit + run but no KNOWN_PREFIX substring -> rejected.
-    assert!(!looks_credential_shaped("zzzz1234zzzzzzzz"));
+    assert!(!caesar_credential_shape_gate("zzzz1234zzzzzzzz"));
 }
 
 #[test]

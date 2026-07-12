@@ -32,7 +32,7 @@
 ## Paths and environments
 
 - Work from the repository root.
-- Keep the Cargo target directory OUTSIDE the source tree — set `CARGO_TARGET_DIR`
+- Keep the Cargo target directory OUTSIDE the source tree; set `CARGO_TARGET_DIR`
   to a path on a fast local disk. This keeps multi-gigabyte build artifacts out of
   the working copy and out of the dogfood self-scan.
 

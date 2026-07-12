@@ -1,12 +1,6 @@
 //! KH-GAP-080: CI must unset CC so distcc/ccache wrappers cannot poison builds.
 
-use std::path::PathBuf;
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-}
+use super::support::repo_root;
 
 #[test]
 fn every_cargo_workflow_step_unsets_cc_before_build() {

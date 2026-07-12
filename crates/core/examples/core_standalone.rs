@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "demo-token".into(),
         name: "Demo Token".into(),
@@ -19,6 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         verify: None,
         keywords: vec!["demo_".into()],
         min_confidence: None,
+        ..Default::default()
     };
 
     let issues = validate_detector(&detector);

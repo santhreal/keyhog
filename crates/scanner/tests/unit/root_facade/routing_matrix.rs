@@ -88,7 +88,13 @@ fn with_env<R>(value: Option<&str>, body: impl FnOnce() -> R) -> R {
 #[test]
 fn env_override_gpu_forces_gpu_regardless_of_hardware() {
     let caps = caps_no_gpu(true, true);
-    for alias in ["gpu", "GPU", "gpu-region-presence"] {
+    for alias in [
+        "gpu",
+        "GPU",
+        "gpu-region-presence",
+        "gpu-zero-copy",
+        "literal-set",
+    ] {
         with_env(Some(alias), || {
             assert_eq!(
                 select_backend(&caps, 1 << 30, 10_000),
@@ -100,22 +106,29 @@ fn env_override_gpu_forces_gpu_regardless_of_hardware() {
 }
 
 #[test]
-fn retired_mega_scan_aliases_do_not_create_an_override() {
+fn env_override_mega_scan_forces_mega_scan() {
+    let caps = caps_with_gpu("Apple M1 Max", true, true);
     for alias in [
         "mega-scan",
-        "megascan",
+        "MEGA-SCAN",
         "gpu-mega-scan",
         "regex-nfa",
         "rule-pipeline",
     ] {
-        assert_eq!(parse_backend_str(alias), None);
+        with_env(Some(alias), || {
+            assert_eq!(
+                select_backend(&caps, 1 << 30, 10_000),
+                ScanBackend::MegaScan,
+                "env={alias} must force MegaScan"
+            );
+        });
     }
 }
 
 #[test]
 fn env_override_simd_forces_simd_even_when_gpu_would_win() {
     let caps = caps_with_gpu("NVIDIA RTX 5090", true, true);
-    for alias in ["simd", "SIMD", "simd-regex"] {
+    for alias in ["simd", "SIMD", "simd-regex", "hyperscan"] {
         with_env(Some(alias), || {
             assert_eq!(
                 select_backend(&caps, 1 << 30, 10_000),
@@ -129,7 +142,7 @@ fn env_override_simd_forces_simd_even_when_gpu_would_win() {
 #[test]
 fn env_override_cpu_forces_cpu_fallback() {
     let caps = caps_with_gpu("NVIDIA RTX 5090", true, true);
-    for alias in ["cpu", "CPU", "cpu-fallback"] {
+    for alias in ["cpu", "CPU", "cpu-fallback", "scalar"] {
         with_env(Some(alias), || {
             assert_eq!(
                 select_backend(&caps, 1 << 30, 10_000),
@@ -326,12 +339,14 @@ fn assert_high_tier_routing_cells() -> Vec<(u64, usize, ScanBackend, &'static st
             ScanBackend::SimdCpu,
             "high: zero bytes → SimdCpu",
         ),
-        // Above min but below pat_floor AND below solo: stays SimdCpu.
+        // Above min but below pat_floor: when solo == min (the 8 MiB
+        // crossover target), any bytes >= min also clears the solo cap,
+        // so GPU engages via the solo path regardless of pattern count.
         (
             min + 1,
             pat_floor - 1,
-            ScanBackend::SimdCpu,
-            "high: above min, below pat_floor, below solo → SimdCpu",
+            ScanBackend::Gpu,
+            "high: above min, below pat_floor, at/above solo → Gpu",
         ),
     ]
 }

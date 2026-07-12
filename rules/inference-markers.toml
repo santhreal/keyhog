@@ -1,0 +1,56 @@
+comment_prefixes = [
+  "//",
+  "#",
+  "/*",
+  "<!--",
+  "<#",
+  "* ",
+  "*/",
+  "rem ",
+  "REM ",
+]
+
+encrypted_prefixes = [
+  "$ANSIBLE_VAULT",
+  "ENC[",
+  "-----BEGIN PGP MESSAGE-----",
+  "-----BEGIN AGE ENCRYPTED",
+]
+
+encrypted_substrings = [
+  "sops:",
+  "sealed-secrets",
+]
+
+rust_test_attribute_prefixes = [
+  "#[tokio::test",
+  "#[test",
+]
+
+rust_test_attribute_exact = [
+  "#[test]",
+  "@Test",
+]
+
+test_function_prefixes = [
+  "def test_",
+  "class Test",
+  "it(",
+  "describe(",
+  "test(",
+  "func Test",
+]
+
+attribute_or_doc_prefixes = [
+  "#[",
+  "#![",
+  "//",
+  "/*",
+  "*",
+]
+
+assignment_operators = [
+  ":=",
+  "->",
+  "=",
+]

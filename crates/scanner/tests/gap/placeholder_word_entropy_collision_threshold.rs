@@ -45,3 +45,41 @@ fn one_sided_below_entropy_floor_still_suppresses() {
     assert_eq!(COLLISION_CANDIDATE.len(), 47);
     assert!(suppresses(COLLISION_CANDIDATE, "EXAMPLE", Some(4.0)));
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin the 4.0/5.0 flip; these SWEEP the whole entropy floor and
+// the both-sided short-circuit. This is a precision/recall boundary: suppress a
+// real high-entropy secret that merely collides with a placeholder word and it is
+// silently DROPPED (recall); fail to suppress a genuine placeholder and it floods
+// FP (precision). Src-confirmed: both-sided ⇒ `return true` before the entropy
+// gate; one-sided ⇒ suppress iff `entropy < 4.8`. No proptest before. Ranges stay
+// clear of the exact 4.8 float boundary.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// One-sided collision candidate BELOW the 4.8 floor still suppresses — the
+    /// placeholder wins because the credential is not (yet) entropic enough to be
+    /// a real colliding secret.
+    #[test]
+    fn one_sided_collision_below_entropy_floor_suppresses(e in 0.0f64..4.5) {
+        prop_assert!(suppresses(COLLISION_CANDIDATE, "EXAMPLE", Some(e)));
+    }
+
+    /// One-sided collision candidate AT/ABOVE the floor does NOT suppress — it is
+    /// treated as a real high-entropy secret colliding with the word, so the
+    /// finding is KEPT (the recall-preserving half of the gate).
+    #[test]
+    fn one_sided_collision_above_entropy_floor_does_not_suppress(e in 5.0f64..9.0) {
+        prop_assert!(!suppresses(COLLISION_CANDIDATE, "EXAMPLE", Some(e)));
+    }
+
+    /// A match bounded on BOTH sides always suppresses, regardless of entropy —
+    /// the entropy collision gate is only consulted for one-sided matches.
+    #[test]
+    fn both_sided_boundary_suppresses_regardless_of_entropy(e in 0.0f64..9.0) {
+        prop_assert!(suppresses("foo example bar", "EXAMPLE", Some(e)));
+    }
+}

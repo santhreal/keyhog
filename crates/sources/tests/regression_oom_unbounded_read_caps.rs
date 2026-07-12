@@ -35,27 +35,55 @@ fn mmap_fallback_buffered_reads_are_capped() {
         "read_file_mmap must NOT fall back to an unbounded `read_to_end(&mut file, ...)`: \
          a TOCTOU-grown file would OOM the process. Bound it with `capped_read::read_to_cap`."
     );
+    // Locked-file contention is refused at the SHARED open helper, not inside
+    // read_file_mmap. The 2026-07 refactor hoisted the advisory flock into
+    // `open_file_safe` (documented in raw.rs as "ONE owner of the flock guard"),
+    // so EVERY read path — prefix, buffered, and mmap — inherits the torn-write
+    // refusal instead of only the mmap path. Pin that (stronger) structure: the
+    // shared opener must take a NON-BLOCKING shared lock and turn contention into
+    // an ERROR (fail closed, never a fallback read), and read_file_mmap must
+    // treat any open failure as a visible unreadable SKIP with no unlocked reopen
+    // or buffered read. (The `scanning a torn write` message + its no-fallback
+    // contract now live on the large-file windowed path in extract.rs, pinned by
+    // the second half of this test and by `unit/file_gate.rs`.)
+    let open_fn_start = raw
+        .find("pub(crate) fn open_file_safe")
+        .expect("open_file_safe (the shared no-follow + advisory-lock owner)");
+    let open_fn = &raw[open_fn_start..];
+    assert!(
+        open_fn.contains("libc::flock(fd, libc::LOCK_SH | libc::LOCK_NB)")
+            && open_fn.contains("file is locked by another process"),
+        "open_file_safe must take a non-blocking advisory shared lock and turn \
+         lock contention into an error, so no read path can reopen a locked / \
+         torn-write file through an unlocked fallback"
+    );
     let mmap_fn_start = raw
         .find("pub(in crate::filesystem) fn read_file_mmap")
         .expect("read_file_mmap function");
-    let lock_start = raw[mmap_fn_start..]
-        .find("if unsafe { libc::flock(fd, libc::LOCK_SH | libc::LOCK_NB) } != 0")
+    let open_arm = raw[mmap_fn_start..]
+        .find("match open_file_safe(path)")
         .map(|offset| mmap_fn_start + offset)
-        .expect("raw read mmap lock branch");
-    let mmap_start = raw[lock_start..]
+        .expect("read_file_mmap must open through the shared open_file_safe helper");
+    let mmap_start = raw[open_arm..]
         .find("// SAFETY: the mapping is read-only")
-        .map(|offset| lock_start + offset)
-        .expect("mmap section after lock branch");
-    let lock_branch = &raw[lock_start..mmap_start];
+        .map(|offset| open_arm + offset)
+        .expect("mmap section after the open arm");
+    // Everything between the open call and the mmap SAFETY block is the pre-mmap
+    // failure handling (open error incl. lock contention, stat error, oversize):
+    // each arm must be a visible skip that returns None, with NO buffered/unlocked
+    // read. The bounded capped-read fallback is legitimate ONLY after a successful
+    // open+lock, on an mmap() failure — i.e. BELOW this SAFETY landmark.
+    let pre_mmap_failure = &raw[open_arm..mmap_start];
     assert!(
-        lock_branch.contains("SourceSkipEvent::Unreadable")
-            && lock_branch.contains("scanning a torn write"),
-        "locked-file contention must skip visibly as unreadable"
+        pre_mmap_failure.contains("SourceSkipEvent::Unreadable")
+            && pre_mmap_failure.contains("return None"),
+        "a failed open (incl. locked-file contention) must be a visible unreadable skip"
     );
     assert!(
-        !lock_branch.contains("read_to_end")
-            && !lock_branch.contains("crate::capped_read::read_to_cap"),
-        "locked-file contention must not have a buffered fallback; it must skip visibly"
+        !pre_mmap_failure.contains("read_to_end")
+            && !pre_mmap_failure.contains("crate::capped_read::read_to_cap"),
+        "the open-failure path must NOT buffer-read or reopen; it must skip visibly \
+         (the bounded capped-read fallback belongs below the mmap SAFETY landmark)"
     );
     assert!(
         raw.contains("crate::capped_read::read_to_cap")

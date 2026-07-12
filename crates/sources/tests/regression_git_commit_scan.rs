@@ -76,7 +76,7 @@ mod git_commit_scan {
         );
 
         let chunk = &chunks[0];
-        assert_eq!(chunk.metadata.source_type, "git/head");
+        assert_eq!(chunk.metadata.source_type.as_ref(), "git/head");
         assert_eq!(chunk.metadata.author.as_deref(), Some("LR1 A5"));
         assert_eq!(chunk.metadata.size_bytes, Some(TOKEN_LINE.len() as u64));
         // GitSource sets positional bases to 0 and does NOT populate a date.
@@ -124,7 +124,8 @@ mod git_commit_scan {
             .find(|c| c.data.contains(TOKEN))
             .expect("the removed-from-HEAD token blob must still surface");
         assert_eq!(
-            token_chunk.metadata.source_type, "git/history",
+            token_chunk.metadata.source_type.as_ref(),
+            "git/history",
             "a blob absent from HEAD's tree is history, not head"
         );
 
@@ -133,13 +134,13 @@ mod git_commit_scan {
             .iter()
             .find(|c| c.data.contains("TOKEN=redacted"))
             .expect("HEAD's current blob must surface");
-        assert_eq!(head_chunk.metadata.source_type, "git/head");
+        assert_eq!(head_chunk.metadata.source_type.as_ref(), "git/head");
 
         // Nothing carrying the token may be mislabeled as live HEAD content.
         assert_eq!(
             chunks
                 .iter()
-                .filter(|c| c.data.contains(TOKEN) && c.metadata.source_type == "git/head")
+                .filter(|c| c.data.contains(TOKEN) && c.metadata.source_type.as_ref() == "git/head")
                 .count(),
             0,
             "the removed token must never be labeled git/head"
@@ -160,7 +161,9 @@ mod git_commit_scan {
         );
         assert_eq!(chunks.len(), 2, "two tracked files => two blob chunks");
         assert!(
-            chunks.iter().all(|c| c.metadata.source_type == "git/head"),
+            chunks
+                .iter()
+                .all(|c| c.metadata.source_type.as_ref() == "git/head"),
             "both current-tree blobs are git/head"
         );
 
@@ -267,7 +270,7 @@ mod git_commit_scan {
 
         let chunk = chunks
             .iter()
-            .find(|c| c.metadata.source_type == "git-history" && c.data.contains(TOKEN))
+            .find(|c| c.metadata.source_type.as_ref() == "git-history" && c.data.contains(TOKEN))
             .expect("added token must surface in a git-history chunk");
         let commit_id = chunk.metadata.commit.as_deref().expect("history commit id");
         assert_full_hex_commit(commit_id);
@@ -305,7 +308,9 @@ mod git_commit_scan {
         assert_eq!(
             chunks
                 .iter()
-                .filter(|c| c.metadata.source_type == "git-history" && c.data.contains(TOKEN))
+                .filter(
+                    |c| c.metadata.source_type.as_ref() == "git-history" && c.data.contains(TOKEN)
+                )
                 .count(),
             1,
             "a token removed from HEAD must still surface exactly once in history"
@@ -390,7 +395,7 @@ mod git_commit_scan {
             .iter()
             .find(|c| c.data.contains(TOKEN))
             .expect("the newly added token line must surface in a git-diff chunk");
-        assert_eq!(chunk.metadata.source_type, "git-diff");
+        assert_eq!(chunk.metadata.source_type.as_ref(), "git-diff");
         assert!(
             chunk
                 .metadata

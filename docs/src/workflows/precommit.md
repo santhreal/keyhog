@@ -60,22 +60,31 @@ Stderr:
 
 ```text
 $ git commit -m "add staging config"
-keyhog: 1 finding blocked this commit
+  ┌    CRITICAL ─── Stripe Secret Key
+  │ Secret:     sk_l...p7dc
+  │ Location:   src/config/staging.env:14
+  │ Confidence: ■■■■■■ 100%
+  │ Action:     Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.
+  │ Docs:       https://docs.stripe.com/keys#roll-api-key
+  └─────────────────────────────────────────────
 
-src/config/staging.env:14:12  CRITICAL  stripe-secret-key
-                              sk_live_4eC39H...Tcd3Hc
+  ━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1 secret found · 1 unverified
 
-Options:
-  1. Remove the credential from src/config/staging.env, then commit again.
-  2. Use a placeholder + load the real value from env at runtime.
-  3. If this is a false positive, run keyhog with --no-suppress-test-fixtures
-     or add to .keyhog.toml suppressions.
-
-$
+  1. Revoke active secrets in the provider's dashboard.
 ```
 
-Exit code is `1`, so git aborts the commit and your work-in-progress
-stays in the index. Fix the file, `git add` the fix, and commit again.
+The hook is just `exec keyhog scan --fast --git-staged --backend simd`, so
+this is the ordinary scan report over the *staged* blobs. Exit code is `1`,
+so git aborts the commit and your work-in-progress stays in the index. Your
+options:
+
+1. Remove the credential from the file, `git add` the fix, and commit again.
+2. Replace it with a placeholder and load the real value from the environment
+   at runtime.
+3. If it is a false positive, add its hash to `.keyhogignore` (see below) or a
+   `.keyhog.toml` suppression, or re-run with `--no-suppress-test-fixtures` to
+   confirm it is a documented example.
 
 ## When you really need to commit anyway
 
@@ -90,9 +99,10 @@ prerogative. Use it sparingly. A team norm of `--no-verify` for
 A better pattern when a legitimate-looking credential needs to ship
 (e.g. a public OAuth client_id that vendor docs say to commit):
 
-1. Add its sha256 hash to `.keyhogignore`:
+1. Add its hash to `.keyhogignore` as `hash:` + the bare 64-character SHA-256
+   hex digest (no `sha256:` prefix; that spelling is baseline-file-only):
    ```text
-   hash:sha256:abc123...
+   hash:5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
    ```
 2. Commit the suppression file alongside the credential.
 3. The next commit sees the hash and skips it.

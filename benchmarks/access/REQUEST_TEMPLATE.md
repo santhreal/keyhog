@@ -1,6 +1,6 @@
-# SecretBench dataset access request — template
+# SecretBench dataset access request template
 
-Subject: **SecretBench dataset access request — benchmarking keyhog secret scanner**
+Subject: **SecretBench dataset access request: benchmarking keyhog secret scanner**
 
 To: `sbasak4@ncsu.edu`
 Cc: `lnneil@ncsu.edu`, `bgreaves@ncsu.edu`, `laurie_williams@ncsu.edu`
@@ -17,7 +17,7 @@ publicly with full citation.
 
 A few specifics so you can decide if this is a fit:
 
-* **Tool**: keyhog v0.5.16 — Rust, 889 first-class detectors plus
+* **Tool**: keyhog v0.5.40, Rust. 919 embedded detectors plus
   generic-entropy scanning, decode-through pipeline (base64/hex/
   url-percent/json/gzip/z85/rot13), live verification for a subset
   of credential families. MIT/Apache-2.0 dual licensed.
@@ -37,12 +37,12 @@ A few specifics so you can decide if this is a fit:
   outcomes (TP/FP/FN counts), no raw credential bytes ever leave
   the host. I'll mirror that pattern in the keyhog CI config too.
 * **Citation**: every scoreboard run includes the paper citation
-  (`Basak et al., MSR 2023 — SecretBench: A Dataset of Software
+  (`Basak et al., MSR 2023: SecretBench: A Dataset of Software
   Secrets`) in both the README and the JSON output.
 
 If there's a form or DPA to fill in I'll get it back same-day.
 
-Thanks for putting this dataset together — the comparative-study
+Thanks for putting this dataset together. The comparative-study
 methodology in the follow-up paper has been useful for thinking
 about what a fair benchmark looks like.
 

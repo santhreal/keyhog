@@ -121,13 +121,30 @@ fn passthrough_multiline_offsets_include_the_newline_byte() {
 }
 
 #[test]
-fn passthrough_brace_prefixed_text_is_not_preprocessed() {
-    // has_concatenation_indicators bails when trimmed starts with '{' or '['.
-    // Even a '+' inside JSON-looking text must NOT trigger a join.
-    let text = "{ \"a\": \"x\" + \"y\" }\n";
-    let p = pre(text);
-    assert_eq!(p.text, text);
-    assert_eq!(p.original_end, text.len());
+fn brace_prefixed_invalid_json_concat_is_preprocessed_valid_json_passes_through() {
+    // The old blanket leading-`{`/`[` reject was REMOVED (Law 10: it silently
+    // dropped the entire multiline surface of a JS/TS module that opens with an
+    // object literal but carries a concatenated secret, e.g.
+    // `{ apiKey: "gh" +\n "p_…" }`). A `{`-prefixed buffer with a concat shape
+    // that does NOT parse as strict JSON is JS/TS source and is now PREPROCESSED
+    // (its string literals joined and appended for scanning) instead of skipped.
+    // The exact join form is a preprocessor artifact — what this pins is that the
+    // buffer is no longer passed through unchanged.
+    let js = "{ \"a\": \"x\" + \"y\" }\n";
+    let p = pre(js);
+    assert_ne!(
+        p.text, js,
+        "invalid-JSON braces with a concat must be preprocessed, not passed through"
+    );
+    assert!(p.text.starts_with(js), "original bytes preserved as prefix");
+    assert_eq!(p.original_end, js.len());
+
+    // A `{`-prefixed buffer that DOES parse as strict JSON is genuine data with
+    // no recoverable concat surface (the `" +` shape lived inside a quoted,
+    // escaped value), so the strict-JSON disambiguation keeps it a passthrough.
+    let json = "{ \"a\": \"x\\\" + \\\"y\" }\n";
+    let pj = pre(json);
+    assert_eq!(pj.text, json, "valid JSON data must pass through unchanged");
 }
 
 #[test]
@@ -675,6 +692,24 @@ fn inline_array_non_credential_metadata_is_not_concatenated() {
     );
     let p = pre(text);
     assert!(!p.text.contains("VX-701VX-703VX-709VX-710"), "{:?}", p.text);
+}
+
+#[test]
+fn inline_array_escaped_quote_does_not_split_literal_early() {
+    // Without backslash-escape handling, the `\"` inside the first array element
+    // closes the literal at the escaped quote, dropping "IOSFOD" and corrupting
+    // reassembly. Must match extract_quoted_content: keep `\` + `"` in content.
+    let text = concat!(
+        "url = \"https://\" +\n",
+        "      \"example.com\"\n",
+        "api_key_parts = [\"AKIA\\\"IOSFOD\", \"NN7EXAMPLE12\"]\n",
+    );
+    let p = pre(text);
+    assert!(
+        p.text.contains("AKIA\\\"IOSFODNN7EXAMPLE12"),
+        "{:?}",
+        p.text
+    );
 }
 
 // ---------------------------------------------------------------------------

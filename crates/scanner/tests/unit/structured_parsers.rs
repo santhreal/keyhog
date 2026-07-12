@@ -47,9 +47,24 @@ fn parse_env_comment_lines_excluded() {
 fn parse_env_blank_lines_excluded() {
     let text = "\n\n\nFOO=bar\n\n";
     let pairs = parse_env(text);
+    // The one real assignment is extracted with its exact key AND value...
+    let foo: Vec<&_> = pairs.iter().filter(|p| p.context.contains("FOO")).collect();
+    assert_eq!(
+        foo.len(),
+        1,
+        "exactly one FOO assignment must be extracted, got pairs: {pairs:?}"
+    );
+    assert_eq!(
+        foo[0].value.as_str(),
+        "bar",
+        "FOO value must be exactly `bar`, got {:?}",
+        foo[0].value
+    );
+    // ...and the surrounding blank lines must NOT leak in as empty-context pairs
+    // (the actual contract this test's name promises).
     assert!(
-        !pairs.is_empty(),
-        "non-empty .env with a pair should produce results"
+        pairs.iter().all(|p| !p.context.trim().is_empty()),
+        "blank lines must not become extracted pairs; got {pairs:?}"
     );
 }
 
@@ -67,8 +82,16 @@ fn parse_env_quoted_value_extracted() {
 #[test]
 fn parse_env_empty_value_not_extracted_as_secret() {
     let text = "EMPTY_KEY=\n";
-    // An empty value is not a secret — check the parser doesn't panic
-    let _ = parse_env(text);
+    let pairs = parse_env(text);
+    // The actual contract: a blank right-hand side carries no secret, so the
+    // parser must never pair EMPTY_KEY with a non-empty value (it must not invent
+    // one). Asserting the real behaviour, not merely "doesn't panic".
+    assert!(
+        pairs
+            .iter()
+            .all(|p| !(p.context.contains("EMPTY_KEY") && !p.value.trim().is_empty())),
+        "EMPTY_KEY= (blank value) must not be extracted as a non-empty secret; got {pairs:?}"
+    );
 }
 
 // ── parse_docker_compose ──────────────────────────────────────────────────────
@@ -136,10 +159,17 @@ fn parse_k8s_secret_base64_data_extracted() {
     let b64_val = base64::engine::general_purpose::STANDARD.encode(b"fake_k8s_secret_value");
     let text = format!("apiVersion: v1\nkind: Secret\ndata:\n  my-key: {b64_val}\n");
     let pairs = parse_k8s_secret(&text);
-    // Should extract and decode the base64 value
-    assert!(
-        !pairs.is_empty(),
-        "k8s secret data block must produce pairs"
+    // The base64 `data` value must be extracted AND decoded back to the plaintext
+    // secret — not left base64-encoded, and not merely "non-empty".
+    let my_key = pairs
+        .iter()
+        .find(|p| p.context == "my-key")
+        .unwrap_or_else(|| panic!("k8s secret `data.my-key` must be extracted; got {pairs:?}"));
+    assert_eq!(
+        my_key.value.as_str(),
+        "fake_k8s_secret_value",
+        "the base64 `data` value must be decoded to plaintext, got {:?}",
+        my_key.value
     );
 }
 
@@ -170,10 +200,14 @@ fn parse_k8s_secret_data_and_string_data_lines_are_attributed() {
 #[test]
 fn parse_k8s_secret_non_secret_kind_returns_empty() {
     let text = "apiVersion: v1\nkind: ConfigMap\ndata:\n  key: value\n";
-    // ConfigMap is not a Secret — should return empty (the parser is specific to Secret kind)
-    // Accept either empty or non-empty — the parser may extract configmap data too.
-    // Primary assertion: no panic.
-    let _ = parse_k8s_secret(text);
+    let pairs = parse_k8s_secret(text);
+    // A ConfigMap is not a Secret: its `data` is plaintext configuration, not
+    // credential material, so the Secret-specific parser must extract nothing —
+    // extracting a ConfigMap value would be a false-positive source.
+    assert!(
+        pairs.is_empty(),
+        "ConfigMap (non-Secret kind) must yield no extracted secret pairs; got {pairs:?}"
+    );
 }
 
 // ── parse_tfstate ────────────────────────────────────────────────────────────
@@ -199,16 +233,23 @@ fn parse_tfstate_sensitive_attributes_extracted() {
   }]
 }"#;
     let pairs = parse_tfstate(text);
-    // Should extract the sensitive attribute
-    if !pairs.is_empty() {
-        assert!(
-            pairs
-                .iter()
-                .any(|p| p.value.contains("fake_tf_secret_value")),
-            "tfstate sensitive attribute must be extracted"
-        );
-    }
-    // Primary assertion: no panic on this input
+    // The sensitive `master_password` attribute must be extracted with its exact
+    // value — UNCONDITIONALLY. The previous `if !pairs.is_empty()` guard made the
+    // whole check vacuous: it passed even when the parser extracted nothing.
+    // (The parser surfaces every attribute value as a candidate — including
+    // non-sensitive ones like `cluster_identifier` — and leaves the keep/drop
+    // decision to the downstream detectors + entropy screens, so we assert only
+    // that the real secret is present, not that others are absent.)
+    let master = pairs
+        .iter()
+        .find(|p| p.value.contains("fake_tf_secret_value"))
+        .unwrap_or_else(|| panic!("tfstate `master_password` must be extracted; got {pairs:?}"));
+    assert_eq!(
+        master.value.as_str(),
+        "fake_tf_secret_value",
+        "master_password value must be extracted exactly, got {:?}",
+        master.value
+    );
 }
 
 #[test]
@@ -234,16 +275,15 @@ fn parse_jupyter_code_cell_with_assignment_extracted() {
   }]
 }"#;
     let pairs = parse_jupyter(text);
-    // Should extract the assignment from the notebook cell
-    if !pairs.is_empty() {
-        assert!(
-            pairs
-                .iter()
-                .any(|p| p.value.contains("fake_notebook_secret_value")),
-            "Jupyter code cell secret must be extracted"
-        );
-    }
-    // Primary assertion: no panic
+    // The assignment inside the code cell must be extracted with its value —
+    // UNCONDITIONALLY (the previous `if !pairs.is_empty()` guard passed even when
+    // the parser extracted nothing).
+    assert!(
+        pairs
+            .iter()
+            .any(|p| p.value.contains("fake_notebook_secret_value")),
+        "Jupyter code-cell assignment must be extracted; got {pairs:?}"
+    );
 }
 
 #[test]
@@ -254,8 +294,16 @@ fn parse_jupyter_markdown_cell_not_extracted() {
     "source": ["token = 'should_not_be_extracted'\n"]
   }]
 }"#;
-    // Markdown cells should not be treated as code — no panic required.
-    let _ = parse_jupyter(text);
+    let pairs = parse_jupyter(text);
+    // A markdown cell is prose, not code: the parser must NOT extract the
+    // assignment-shaped text inside it (only `code` cells carry real assignments).
+    // Asserting the real contract, not merely "doesn't panic".
+    assert!(
+        pairs
+            .iter()
+            .all(|p| !p.value.contains("should_not_be_extracted")),
+        "markdown-cell content must not be extracted as a secret; got {pairs:?}"
+    );
 }
 
 #[test]

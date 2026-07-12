@@ -4,8 +4,6 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-pub(crate) const MAX_MATCHES_PER_CHUNK_LIMIT: usize = 1_000_000;
-
 use keyhog_core::{Calibration, ScanConfig};
 
 /// Explicit per-scanner performance-route tuning.
@@ -256,23 +254,6 @@ pub struct ScannerConfig {
     pub calibration: Option<Arc<Calibration>>,
 }
 
-/// Invalid scanner installation policy.
-#[derive(Debug, thiserror::Error)]
-pub enum ScannerConfigInstallError {
-    /// Invalid shared detection configuration.
-    #[error(transparent)]
-    Shared(#[from] keyhog_core::ConfigError),
-    /// A present zero timeout expires before scanning any bytes.
-    #[error("per_chunk_timeout_ms must be greater than zero when set; use None to disable the deadline")]
-    ZeroPerChunkTimeout,
-    /// A zero cap discards every candidate.
-    #[error("max_matches_per_chunk must be greater than zero")]
-    ZeroMaxMatchesPerChunk,
-    /// Excessive retained-match capacity risks runaway memory use.
-    #[error("max_matches_per_chunk must not exceed {max}, found {found}")]
-    MaxMatchesPerChunkTooHigh { found: usize, max: usize },
-}
-
 impl Deref for ScannerConfig {
     type Target = ScanConfig;
     fn deref(&self) -> &ScanConfig {
@@ -297,17 +278,6 @@ impl ScannerConfig {
     /// canonical `ScanConfig::default()` floor (0.40) on purpose: precision mode
     /// trades recall for a near-zero false-positive rate at mass-scan scale.
     pub const HIGH_PRECISION_MIN_CONFIDENCE: f64 = 0.85;
-
-    /// Validate shared and scanner-local detection policy without mutating it.
-    pub fn validate(&self) -> Result<(), keyhog_core::ConfigError> {
-        self.scan.validate()?;
-        if let Some(bound) = self.entropy_bpe_max_bytes_per_token_override {
-            if !bound.is_finite() || bound <= 0.0 {
-                return Err(keyhog_core::ConfigError::InvalidBpeBound(bound));
-            }
-        }
-        Ok(())
-    }
 
     pub fn fast() -> Self {
         let mut config = Self::default();
@@ -372,16 +342,19 @@ impl ScannerConfig {
             .map(|ms| Instant::now() + Duration::from_millis(ms))
     }
 
-    /// Explicitly normalize a programmatically assembled configuration by
-    /// replacing non-finite values with compiled defaults and bounding numeric
-    /// fields. CLI and TOML operator input does not call this method: those
-    /// boundaries reject invalid policy, and [`crate::CompiledScanner::try_with_config`]
-    /// validates again without rewriting it.
+    /// Clamp every float field into its valid range and replace any
+    /// NaN with a safe default. A user-supplied
+    /// `--min-confidence=-5.0` or a corrupt config TOML feeding
+    /// `min_confidence = nan` would otherwise NaN-infect the
+    /// confidence-comparison path and silently drop every finding
+    /// (NaN comparisons are always false, so `conf < min_confidence`
+    /// is `false`, but `conf >= min_confidence` is also `false`,
+    /// behaviour-dependent on the call site).
     ///
     /// Idempotent - sanitising an already-sane config is a no-op.
-    /// This is explicit normalization, not part of `From<ScanConfig>`: implicit
-    /// conversion preserves invalid input so [`crate::CompiledScanner::try_with_config`]
-    /// can reject it rather than silently replacing operator policy.
+    /// Called inside `From<ScanConfig>` so any path that constructs
+    /// a ScannerConfig from a user-influenced source pays this
+    /// once at config-build time.
     pub fn sanitise(&mut self) {
         // Probabilities: clamp to [0.0, 1.0], NaN → canonical default. The
         // NaN fallbacks READ FROM `ScanConfig::default()` rather than repeating
@@ -438,8 +411,8 @@ impl ScannerConfig {
         if self.max_decode_depth > max_decode_depth {
             self.max_decode_depth = max_decode_depth;
         }
-        if self.max_matches_per_chunk > MAX_MATCHES_PER_CHUNK_LIMIT {
-            self.max_matches_per_chunk = MAX_MATCHES_PER_CHUNK_LIMIT;
+        if self.max_matches_per_chunk > 1_000_000 {
+            self.max_matches_per_chunk = 1_000_000;
         }
         if self.max_matches_per_chunk == 0 {
             self.max_matches_per_chunk = 1000;
@@ -466,8 +439,8 @@ impl ScannerConfig {
         bound: f64,
     ) -> Result<Self, keyhog_core::ConfigError> {
         self.scan.entropy_bpe_max_bytes_per_token = bound;
+        self.scan.validate()?;
         self.entropy_bpe_max_bytes_per_token_override = Some(bound);
-        self.validate()?;
         Ok(self)
     }
 }
@@ -490,7 +463,7 @@ impl From<ScanConfig> for ScannerConfig {
         let entropy_bpe_max_bytes_per_token_override =
             (scan.entropy_bpe_max_bytes_per_token.to_bits() != canonical_bpe_bound.to_bits())
                 .then_some(scan.entropy_bpe_max_bytes_per_token);
-        Self {
+        let mut out = Self {
             scan,
             entropy_bpe_max_bytes_per_token_override,
             multiline: crate::multiline::MultilineConfig::default(),
@@ -499,7 +472,12 @@ impl From<ScanConfig> for ScannerConfig {
             profile: false,
             perf_trace: false,
             calibration: None,
-        }
+        };
+        // Defensive clamp + NaN scrub on every user-influenced numeric field
+        // (applied to the wrapped `ScanConfig` via `DerefMut`). Idempotent.
+        // See `ScannerConfig::sanitise` for rationale.
+        out.sanitise();
+        out
     }
 }
 

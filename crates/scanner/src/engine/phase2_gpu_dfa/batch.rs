@@ -36,10 +36,7 @@ impl Drop for ZeroPhase2GpuDfaScratch<'_> {
         }
         self.scratch.haystack_len = 0;
         self.scratch.region_starts.clear();
-        self.scratch.dispatch.haystack_bytes.fill(0);
-        self.scratch.dispatch.haystack_bytes.clear();
-        self.scratch.dispatch.hit_bytes.fill(0);
-        self.scratch.dispatch.hit_bytes.clear();
+        crate::engine::gpu_literal_scratch::zero_scan_dispatch_scratch(&mut self.scratch.dispatch);
         self.scratch.matches.clear();
     }
 }

@@ -1,14 +1,10 @@
 //! Gate unicode hardening hot paths against double-pass normalization and full-input drop masks.
 
+use super::support::{read, scanner_src, uncommented_code};
+
 #[test]
 fn unicode_hardening_normalizes_evasion_with_lazy_single_pass() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/unicode_hardening.rs");
-    let src = std::fs::read_to_string(path).expect("unicode_hardening source readable");
-    let prod = src
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let prod = uncommented_code(&read(&scanner_src().join("unicode_hardening.rs")));
 
     assert!(
         prod.contains("fn normalize_evasive_chars"),
@@ -28,13 +24,7 @@ fn unicode_hardening_normalizes_evasion_with_lazy_single_pass() {
 
 #[test]
 fn unicode_hardening_strips_controls_with_drop_indices_not_full_mask() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/unicode_hardening.rs");
-    let src = std::fs::read_to_string(path).expect("unicode_hardening source readable");
-    let prod = src
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let prod = uncommented_code(&read(&scanner_src().join("unicode_hardening.rs")));
 
     assert!(
         prod.contains("drop_indices"),

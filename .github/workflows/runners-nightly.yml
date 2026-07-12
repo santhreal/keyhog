@@ -66,3 +66,74 @@ jobs:
             --test comment_embed_runner \
             --test companion_contracts_runner \
             --test cve_replay_runner
+
+      - name: Perf / timing regression guards (nightly, non-blocking)
+        # Allocation- and time-budget guards (oom skip-gate, per-input quadratic
+        # guard, perf floors). Too machine-variance-sensitive for the blocking PR
+        # gate, but real regression guards — run nightly on a fresh runner with
+        # `continue-on-error` so timing jitter never false-reddens the workflow.
+        # Wiring them here (each `--test <name>`) also de-orphans them for
+        # `scripts/gates/tests_wired.py`. Release profile: budgets assume it.
+        continue-on-error: true
+        run: |
+          cargo test -p keyhog-scanner --profile release-fast \
+            --test oom_test \
+            --test perf_alloc_perchunk \
+            --test perf_compile_cache \
+            --test perf_floor \
+            --test perf_floor_matrix \
+            --test perf_simd_scan \
+            --test performance_regression \
+            --test lane6_adversarial_boundary_cases
+
+      - name: Host/GPU-dependent + recall-debt trackers (nightly, informational)
+        # These are NOT blockable on hosted CI: backend-parity/*-matrix compare
+        # SimdCpu/CpuFallback/GPU (the GPU legs need a self-hosted GPU runner that
+        # does not exist yet, so those cases fail here and are absorbed); the
+        # `gpu_*` files are `--features gpu`-gated (compile to empty without it);
+        # and the recall-debt worklists (`capability_target_spec` and the
+        # full-corpus proptests) are DELIBERATELY red — they report the count of
+        # still-unclosed recall targets (see BACKLOG DR-334). `continue-on-error`
+        # keeps them informational while `--test <name>` de-orphans each for
+        # `scripts/gates/tests_wired.py`. When a `[self-hosted, gpu]` runner lands,
+        # split the GPU set into a real `--features gpu` job.
+        continue-on-error: true
+        run: |
+          cargo test -p keyhog-scanner --profile release-fast \
+            --test backend_parity_matrix \
+            --test backend_parity_coalesced_vs_individual \
+            --test backend_parity_determinism_fixed_corpus \
+            --test backend_parity_empty_and_edge_chunks \
+            --test backend_parity_entropy_fallback \
+            --test backend_parity_chunk_boundary_all_backends \
+            --test backend_parity_large_corpus_stress \
+            --test backend_robustness \
+            --test backend_crossover_sweep \
+            --test worst_case_backend_parity \
+            --test decode_backend_matrix \
+            --test diagnose_sb_divergence \
+            --test gpu_parity \
+            --test gpu_ac_smoke \
+            --test gpu_ac_recall_bug_56 \
+            --test gpu_moe_degrade_contract \
+            --test gpu_proptest_invariants \
+            --test gpu_region_overfire_validation \
+            --test ml_forward_parity \
+            --test vyre_megakernel_primitive_probe \
+            --test capability_target_spec \
+            --test scanner_invariants_full_corpus_proptest \
+            --test lane6_full_corpus_property_invariants \
+            --test regression_ml_scorer_features \
+            --test phase2_no_hit_branch_recall \
+            --test openai_html_comment_bug_62
+
+      - name: Chunk-AD contract validation (nightly)
+        # `chunk_ad_runner` is a corpus harness — it validates the contract TOMLs
+        # named in KEYHOG_CHUNK_IDS. Provision the id list from the shipped
+        # detector set so it actually runs in CI instead of being an orphan.
+        continue-on-error: true
+        run: |
+          ls crates/core/detectors/*.toml | xargs -n1 basename | sed 's/\.toml$//' \
+            > "${RUNNER_TEMP:-/tmp}/chunk_ids.txt"
+          KEYHOG_CHUNK_IDS="${RUNNER_TEMP:-/tmp}/chunk_ids.txt" \
+            cargo test -p keyhog-scanner --profile release-fast --test chunk_ad_runner

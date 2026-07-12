@@ -1,21 +1,13 @@
 //! Contract: twilio-auth-token dot-property evasion fixture still fires.
 
+use crate::support::paths::detector_dir;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
 
 const DETECTOR_ID: &str = "twilio-auth-token";
 const TEXT: &str = "Twilio.AccountSid=AC7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d
 Twilio.AuthToken=4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f";
 const CREDENTIAL: &str = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f";
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 #[test]
 fn twilio_auth_token_dot_property_evasion_fires() {

@@ -117,3 +117,87 @@ fn fine_grained_segment_length_boundaries_are_exact() {
         "a 58-char right segment is not the 59-char format"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin the layout at a handful of points; these SWEEP both
+// validators over ARBITRARY entropy bodies (not the fixed `"a".repeat`), using the
+// real `npm_expected_checksum_for_test` = base62(crc32(body),6) checksum owner. For
+// the classic PAT: any 30-char alnum body with its correct checksum is "valid";
+// any single checksum-char change (kept alnum, so the compare — not the charset
+// gate — decides) is "invalid"; a <36 payload is "not-applicable" and a >36 alnum
+// payload is "invalid" (the length policy split). For the fine-grained PAT: a
+// correct 22-char-left / 53+6-char-right token is "valid", and any left length !=
+// 22 is "invalid". Traced against GithubClassic/FineGrainedPatValidator. No
+// proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// Any 30-char alnum body with its correct base62-CRC32 checksum validates.
+    #[test]
+    fn classic_correct_checksum_validates_sweep(body in "[A-Za-z0-9]{30}") {
+        let checksum = npm_expected_checksum_for_test(&body);
+        let token = format!("ghp_{body}{checksum}");
+        prop_assert_eq!(github_classic_checksum_verdict_for_test(&token), "valid");
+    }
+
+    /// Changing any single checksum char (to a different alnum char) breaks the
+    /// checksum compare — "invalid", never a false "valid".
+    #[test]
+    fn classic_any_checksum_char_change_is_invalid(
+        body in "[A-Za-z0-9]{30}",
+        pos in 0usize..6,
+    ) {
+        let mut cs: Vec<char> = npm_expected_checksum_for_test(&body).chars().collect();
+        // Flip to a guaranteed-different base62 (alnum) char so the charset gate
+        // still passes and the checksum comparison is what rejects.
+        cs[pos] = if cs[pos] == 'a' { 'b' } else { 'a' };
+        let bad: String = cs.into_iter().collect();
+        let token = format!("ghp_{body}{bad}");
+        prop_assert_eq!(github_classic_checksum_verdict_for_test(&token), "invalid");
+    }
+
+    /// A payload shorter than 36 chars is unmodelled -> "not-applicable" (the length
+    /// gate rejects before any checksum math).
+    #[test]
+    fn classic_short_payload_is_not_applicable(payload in "[A-Za-z0-9]{0,35}") {
+        let token = format!("ghp_{payload}");
+        prop_assert_eq!(github_classic_checksum_verdict_for_test(&token), "not-applicable");
+    }
+
+    /// A payload longer than 36 alnum chars is fabricated -> "invalid".
+    #[test]
+    fn classic_overlong_payload_is_invalid(payload in "[A-Za-z0-9]{37,60}") {
+        let token = format!("ghp_{payload}");
+        prop_assert_eq!(github_classic_checksum_verdict_for_test(&token), "invalid");
+    }
+
+    /// A well-formed fine-grained token (22 alnum left, 53 alnum entropy + correct
+    /// 6-char checksum right) validates for any entropy.
+    #[test]
+    fn fine_grained_correct_right_checksum_validates_sweep(
+        left in "[A-Za-z0-9]{22}",
+        right_entropy in "[A-Za-z0-9]{53}",
+    ) {
+        let checksum = npm_expected_checksum_for_test(&right_entropy);
+        let token = format!("github_pat_{left}_{right_entropy}{checksum}");
+        prop_assert_eq!(github_fine_grained_checksum_verdict_for_test(&token), "valid");
+    }
+
+    /// A left segment of any length != 22 is not the fine-grained format ->
+    /// "invalid", even with a correct right segment.
+    #[test]
+    fn fine_grained_wrong_left_length_is_invalid(
+        off in 1usize..8,
+        longer in any::<bool>(),
+        right_entropy in "[A-Za-z0-9]{53}",
+    ) {
+        let left_len = if longer { 22 + off } else { 22 - off };
+        let left = "a".repeat(left_len);
+        let checksum = npm_expected_checksum_for_test(&right_entropy);
+        let token = format!("github_pat_{left}_{right_entropy}{checksum}");
+        prop_assert_eq!(github_fine_grained_checksum_verdict_for_test(&token), "invalid");
+    }
+}

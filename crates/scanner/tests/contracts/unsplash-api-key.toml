@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "UNSPLASHACCESSKEY=b56N2EXAMPLEEXAMPLEkSOxB"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = 'unsplash_access_key: "b56N2Squqb-gGnPqf5VOZGsBl15UBi9LJhkMOwkSOxB"'
+credential = "b56N2Squqb-gGnPqf5VOZGsBl15UBi9LJhkMOwkSOxB"
+reason = "YAML key with a quoted 43-char access key; the unsplash access-key keyword anchors the value through the quotes."

@@ -1,28 +1,16 @@
 #!/usr/bin/env python3
-"""Identify the entropy-unification's dropped TPs: secrets the baseline
-(e6cb66b1) caught but the entropy->MoE build misses. Inspect their shape so we
-know whether a cheap non-model recall floor (entropy magnitude / charset /
-length / prefix) can separate them from the suppressed FPs.
+"""Identify TPs a baseline keyhog build caught that a candidate build misses,
+and inspect their shape so we know whether a cheap non-model recall floor
+(entropy magnitude / charset / length / prefix) can separate them from the
+suppressed FPs. Both binaries are CLI args (no hardcoded machine paths).
 """
-import math
-import os
-import pathlib
+import argparse
 import sys
 
 from bench.corpora.base import resolve_corpus
 from bench.scanners.base import resolve_scanner
 from bench.score import _build_file_index, _resolve_finding_file, overlap
-
-BASE = "/mnt/FlareTraining/santh-archive/cargo-target/keyhog-baseline/release-fast/keyhog"
-NEW = "/mnt/FlareTraining/santh-archive/cargo-target/keyhog/release-fast/keyhog"
-
-
-def shannon(s: str) -> float:
-    if not s:
-        return 0.0
-    from collections import Counter
-    n = len(s)
-    return -sum((c / n) * math.log2(c / n) for c in Counter(s).values())
+from bench.textstats import shannon_entropy as shannon
 
 
 def hits(corpus, findings):
@@ -47,12 +35,20 @@ def hits(corpus, findings):
 
 
 def main():
-    corpus = resolve_corpus("creddata")
-    cfg_scanner = resolve_scanner("keyhog", binary=BASE)
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--baseline-bin", required=True,
+                    help="keyhog binary for the baseline (reference) build")
+    ap.add_argument("--new-bin", required=True,
+                    help="keyhog binary for the candidate build under test")
+    ap.add_argument("--corpus", default="creddata")
+    args = ap.parse_args()
+
+    corpus = resolve_corpus(args.corpus)
+    cfg_scanner = resolve_scanner("keyhog", binary=args.baseline_bin)
     base_findings, _ = cfg_scanner.run(corpus.scan_root, cfg_scanner.default_config())
     base_hits = hits(corpus, base_findings)
 
-    new_scanner = resolve_scanner("keyhog", binary=NEW)
+    new_scanner = resolve_scanner("keyhog", binary=args.new_bin)
     new_findings, _ = new_scanner.run(corpus.scan_root, new_scanner.default_config())
     new_hits = hits(corpus, new_findings)
 

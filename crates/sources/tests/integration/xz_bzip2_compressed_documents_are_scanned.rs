@@ -35,7 +35,7 @@ fn xz_plain_payload_is_decompressed_and_scanned() {
     );
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/compressed"
+            chunk.metadata.source_type.as_ref() == "filesystem/compressed"
                 && chunk
                     .data
                     .contains("KEYHOG_XZ_COMPRESSED_SECRET_1234567890")
@@ -52,7 +52,7 @@ fn uppercase_xz_extension_is_decompressed_and_scanned() {
     );
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/compressed"
+            chunk.metadata.source_type.as_ref() == "filesystem/compressed"
                 && chunk
                     .data
                     .contains("KEYHOG_UPPER_XZ_COMPRESSED_SECRET_1234567890")
@@ -69,7 +69,7 @@ fn bzip2_plain_payload_is_decompressed_and_scanned() {
     );
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/compressed"
+            chunk.metadata.source_type.as_ref() == "filesystem/compressed"
                 && chunk
                     .data
                     .contains("KEYHOG_BZIP2_COMPRESSED_SECRET_1234567890")
@@ -84,7 +84,7 @@ fn tar_xz_payload_is_untarred_and_scanned_with_inner_path() {
     let chunks = scan_file("archive.tar.xz", encode_xz(&tar_bytes));
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/archive"
+            chunk.metadata.source_type.as_ref() == "filesystem/archive"
                 && chunk
                     .metadata
                     .path

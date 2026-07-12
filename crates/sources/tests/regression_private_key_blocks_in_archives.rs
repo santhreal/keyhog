@@ -65,7 +65,7 @@ fn scan_archive(name: &str, bytes: &[u8]) -> (tempfile::TempDir, Vec<keyhog_core
 fn unpacked_text(chunks: &[keyhog_core::Chunk]) -> String {
     chunks
         .iter()
-        .filter(|c| c.metadata.source_type == "filesystem/archive")
+        .filter(|c| c.metadata.source_type.as_ref() == "filesystem/archive")
         .map(|c| c.data.as_ref())
         .collect::<Vec<_>>()
         .join("\n")
@@ -76,9 +76,9 @@ fn archive_chunk_with<'a>(
     chunks: &'a [keyhog_core::Chunk],
     needle: &str,
 ) -> Option<&'a keyhog_core::Chunk> {
-    chunks
-        .iter()
-        .find(|c| c.metadata.source_type == "filesystem/archive" && c.data.contains(needle))
+    chunks.iter().find(|c| {
+        c.metadata.source_type.as_ref() == "filesystem/archive" && c.data.contains(needle)
+    })
 }
 
 fn zip_of(entry: &str, body: &str) -> Vec<u8> {
@@ -96,7 +96,10 @@ fn pem_in_zip_surfaces_as_archive_chunk() {
     assert!(
         archive_chunk_with(&chunks, "-----BEGIN RSA PRIVATE KEY-----").is_some(),
         "a PEM inside a zip must be unpacked into a filesystem/archive chunk; got {:?}",
-        chunks.iter().map(|c| c.metadata.source_type.as_str()).collect::<Vec<_>>()
+        chunks
+            .iter()
+            .map(|c| c.metadata.source_type.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -116,7 +119,10 @@ fn pem_in_zip_preserves_interior_newlines() {
     let block_start = chunk.data.find("-----BEGIN RSA PRIVATE KEY-----").unwrap();
     let block_end = chunk.data.find("-----END RSA PRIVATE KEY-----").unwrap();
     let block = &chunk.data[block_start..block_end];
-    assert!(block.contains('\n'), "the unpacked key block must retain its newlines");
+    assert!(
+        block.contains('\n'),
+        "the unpacked key block must retain its newlines"
+    );
     assert!(
         block.matches('\n').count() >= 5,
         "all interior base64 lines must be present (>=5 newlines), got {}",
@@ -138,7 +144,10 @@ fn pem_in_zip_has_both_begin_and_end_markers() {
     let (_d, chunks) = scan_archive("keys.zip", &zip_of("k.pem", PEM_KEY));
     let text = unpacked_text(&chunks);
     assert!(text.contains("-----BEGIN RSA PRIVATE KEY-----"));
-    assert!(text.contains("-----END RSA PRIVATE KEY-----"), "the END marker closes the block");
+    assert!(
+        text.contains("-----END RSA PRIVATE KEY-----"),
+        "the END marker closes the block"
+    );
 }
 
 #[test]
@@ -146,7 +155,11 @@ fn pem_in_zip_entry_path_uses_double_slash_separator() {
     let (_d, chunks) = scan_archive("keys.zip", &zip_of("etc/ssl/server.pem", PEM_KEY));
     let chunk = archive_chunk_with(&chunks, "-----BEGIN RSA PRIVATE KEY-----").expect("pem chunk");
     assert!(
-        chunk.metadata.path.as_deref().is_some_and(|p| p.contains(".zip//etc/ssl/server.pem")),
+        chunk
+            .metadata
+            .path
+            .as_deref()
+            .is_some_and(|p| p.contains(".zip//etc/ssl/server.pem")),
         "archive entry path must be <archive>//<entry>; got {:?}",
         chunk.metadata.path
     );
@@ -163,14 +176,20 @@ fn pem_in_tar_surfaces_as_archive_chunk() {
 #[test]
 fn pem_in_tar_block_is_byte_intact() {
     let (_d, chunks) = scan_archive("keys.tar", &tar_of("secrets/id_rsa.pem", PEM_KEY));
-    assert!(unpacked_text(&chunks).contains(PEM_KEY), "tar must also preserve the full PEM block");
+    assert!(
+        unpacked_text(&chunks).contains(PEM_KEY),
+        "tar must also preserve the full PEM block"
+    );
 }
 
 #[test]
 fn pem_in_tar_preserves_interior_newlines() {
     let (_d, chunks) = scan_archive("keys.tar", &tar_of("k.pem", PEM_KEY));
     let chunk = archive_chunk_with(&chunks, PEM_INTERIOR_SENTINEL).expect("pem chunk");
-    assert!(chunk.data.matches('\n').count() >= 6, "tar entry must keep every key line");
+    assert!(
+        chunk.data.matches('\n').count() >= 6,
+        "tar entry must keep every key line"
+    );
 }
 
 // ── PuTTY .ppk in a ZIP ──────────────────────────────────────────────────────
@@ -187,7 +206,10 @@ fn ppk_in_zip_surfaces_as_archive_chunk() {
 #[test]
 fn ppk_in_zip_block_is_byte_intact() {
     let (_d, chunks) = scan_archive("keys.zip", &zip_of("deploy.ppk", PPK_KEY));
-    assert!(unpacked_text(&chunks).contains(PPK_KEY), "the full .ppk file must survive intact");
+    assert!(
+        unpacked_text(&chunks).contains(PPK_KEY),
+        "the full .ppk file must survive intact"
+    );
 }
 
 #[test]
@@ -195,9 +217,18 @@ fn ppk_in_zip_has_header_private_lines_and_mac() {
     let (_d, chunks) = scan_archive("keys.zip", &zip_of("deploy.ppk", PPK_KEY));
     let text = unpacked_text(&chunks);
     // The three structural anchors the putty detector regex requires.
-    assert!(text.contains("PuTTY-User-Key-File-2:"), "header anchor present");
-    assert!(text.contains("Private-Lines:"), "Private-Lines body marker present");
-    assert!(text.contains(&format!("Private-MAC: {PPK_MAC}")), "trailing Private-MAC present");
+    assert!(
+        text.contains("PuTTY-User-Key-File-2:"),
+        "header anchor present"
+    );
+    assert!(
+        text.contains("Private-Lines:"),
+        "Private-Lines body marker present"
+    );
+    assert!(
+        text.contains(&format!("Private-MAC: {PPK_MAC}")),
+        "trailing Private-MAC present"
+    );
 }
 
 #[test]
@@ -221,7 +252,10 @@ fn ppk_in_tar_surfaces_as_archive_chunk() {
 #[test]
 fn ppk_in_tar_block_is_byte_intact() {
     let (_d, chunks) = scan_archive("keys.tar", &tar_of("deploy.ppk", PPK_KEY));
-    assert!(unpacked_text(&chunks).contains(PPK_KEY), "tar must preserve the full .ppk file");
+    assert!(
+        unpacked_text(&chunks).contains(PPK_KEY),
+        "tar must preserve the full .ppk file"
+    );
 }
 
 #[test]
@@ -246,13 +280,26 @@ fn pem_and_ppk_in_same_zip_both_surface() {
 
 #[test]
 fn two_pem_blocks_in_one_entry_both_present() {
-    let second = PEM_KEY.replace(PEM_INTERIOR_SENTINEL, "SECONDpemBODYsentinel9876543210ZYXwvu");
+    let second = PEM_KEY.replace(
+        PEM_INTERIOR_SENTINEL,
+        "SECONDpemBODYsentinel9876543210ZYXwvu",
+    );
     let body = format!("{PEM_KEY}\n\n# next key\n\n{second}");
     let (_d, chunks) = scan_archive("keys.zip", &zip_of("two_keys.pem", &body));
     let text = unpacked_text(&chunks);
-    assert!(text.contains(PEM_INTERIOR_SENTINEL), "first key body present");
-    assert!(text.contains("SECONDpemBODYsentinel9876543210ZYXwvu"), "second key body present");
-    assert_eq!(text.matches("-----BEGIN RSA PRIVATE KEY-----").count(), 2, "both BEGIN markers present");
+    assert!(
+        text.contains(PEM_INTERIOR_SENTINEL),
+        "first key body present"
+    );
+    assert!(
+        text.contains("SECONDpemBODYsentinel9876543210ZYXwvu"),
+        "second key body present"
+    );
+    assert_eq!(
+        text.matches("-----BEGIN RSA PRIVATE KEY-----").count(),
+        2,
+        "both BEGIN markers present"
+    );
 }
 
 #[test]
@@ -264,7 +311,10 @@ fn key_alongside_benign_files_still_surfaces() {
         ("data.json", b"{\"ok\":true}\n"),
     ]);
     let (_d, chunks) = scan_archive("repo.zip", &zip);
-    assert!(unpacked_text(&chunks).contains(PEM_KEY), "the key entry surfaces among benign files");
+    assert!(
+        unpacked_text(&chunks).contains(PEM_KEY),
+        "the key entry surfaces among benign files"
+    );
 }
 
 #[test]
@@ -273,7 +323,11 @@ fn deeply_nested_key_entry_path_is_preserved() {
     let (_d, chunks) = scan_archive("keys.zip", &zip_of(entry, PEM_KEY));
     let chunk = archive_chunk_with(&chunks, "-----BEGIN RSA PRIVATE KEY-----").expect("pem chunk");
     assert!(
-        chunk.metadata.path.as_deref().is_some_and(|p| p.contains(entry)),
+        chunk
+            .metadata
+            .path
+            .as_deref()
+            .is_some_and(|p| p.contains(entry)),
         "the deep entry path must be preserved; got {:?}",
         chunk.metadata.path
     );
@@ -284,9 +338,18 @@ fn pem_with_crlf_line_endings_survives_in_zip() {
     let crlf = PEM_KEY.replace('\n', "\r\n");
     let (_d, chunks) = scan_archive("keys.zip", &zip_of("crlf.pem", &crlf));
     let text = unpacked_text(&chunks);
-    assert!(text.contains("-----BEGIN RSA PRIVATE KEY-----"), "CRLF PEM begin marker survives");
-    assert!(text.contains(PEM_INTERIOR_SENTINEL), "CRLF PEM body line survives");
-    assert!(text.contains("-----END RSA PRIVATE KEY-----"), "CRLF PEM end marker survives");
+    assert!(
+        text.contains("-----BEGIN RSA PRIVATE KEY-----"),
+        "CRLF PEM begin marker survives"
+    );
+    assert!(
+        text.contains(PEM_INTERIOR_SENTINEL),
+        "CRLF PEM body line survives"
+    );
+    assert!(
+        text.contains("-----END RSA PRIVATE KEY-----"),
+        "CRLF PEM end marker survives"
+    );
 }
 
 #[test]
@@ -294,13 +357,22 @@ fn pem_entry_without_extension_still_surfaces() {
     // The detector keys on the `-----BEGIN` marker, not the filename, so an
     // extensionless entry (e.g. an OpenSSH `id_rsa`) must still surface.
     let (_d, chunks) = scan_archive("keys.tar", &tar_of("id_rsa", PEM_KEY));
-    assert!(unpacked_text(&chunks).contains(PEM_KEY), "an extensionless key entry surfaces");
+    assert!(
+        unpacked_text(&chunks).contains(PEM_KEY),
+        "an extensionless key entry surfaces"
+    );
 }
 
 #[test]
 fn ppk_as_only_entry_surfaces_intact() {
     let (_d, chunks) = scan_archive("only.zip", &zip_of("k.ppk", PPK_KEY));
     let text = unpacked_text(&chunks);
-    assert!(text.contains("PuTTY-User-Key-File-2: ssh-ed25519"), "header line intact");
-    assert!(text.contains(PPK_KEY), "the sole .ppk entry is delivered whole");
+    assert!(
+        text.contains("PuTTY-User-Key-File-2: ssh-ed25519"),
+        "header line intact"
+    );
+    assert!(
+        text.contains(PPK_KEY),
+        "the sole .ppk entry is delivered whole"
+    );
 }

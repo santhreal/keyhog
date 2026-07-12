@@ -11,7 +11,28 @@ use std::time::Instant;
 
 /// Hyperscan-backed always-active prefilter engine. See the `hs` field on
 /// [`Phase2AlwaysActivePrefilter`].
+///
+/// Holds TWO compiled sub-databases:
+///   * `full` — every always-active pattern (incl. the ~2.8k homoglyph variants).
+///     Used on non-ASCII chunks, where a unicode look-alike prefix can genuinely
+///     appear and only the homoglyph variant catches it.
+///   * `ascii_lean` — the NON-homoglyph subset only. On a pure-ASCII chunk the
+///     homoglyph variants are inert: their look-alike prefixes cannot appear in
+///     ASCII bytes, and any match on the ASCII ORIGINAL is already produced by the
+///     base pattern via the AC/confirmed path — the exact invariant the RegexSet
+///     path's `homoglyph_ascii_skip` (and its `homoglyph_ascii_skip_parity_default`
+///     gate) rely on. The full DB is 99.9% homoglyph variants whose char classes
+///     include the ASCII original (`[AА]` matches ASCII 'A'), so HS's literal
+///     prefilter still activates their expensive NFAs on ASCII — measured 100-215×
+///     slower than the lean DB (`hs_homoglyph_ascii_skip_prize`). `None` when there
+///     are no homoglyph variants to drop (then `full` is used for ASCII too).
 pub(crate) struct Phase2HsEngine {
+    full: HsSubEngine,
+    ascii_lean: Option<HsSubEngine>,
+}
+
+/// One compiled HS sub-database over a chosen slice of always-active patterns.
+struct HsSubEngine {
     scanner: HsScanner,
     /// HS pattern id -> always-active phase-2 index (the `det_idx` slot we set
     /// on each surviving pattern at build).
@@ -22,20 +43,20 @@ pub(crate) struct Phase2HsEngine {
     dropped: Vec<(usize, LazyRegex)>,
 }
 
-impl Phase2HsEngine {
-    /// Compile an HS database over the always-active patterns. Each pattern
+impl HsSubEngine {
+    /// Compile an HS database over the given always-active `indices`. Each pattern
     /// carries its OWN case flag (`is_case_insensitive`) so the marked set is
     /// identical to the per-pattern `regex` reference, plus `SINGLEMATCH` so a
     /// broad always-active pattern fires once instead of storming the callback.
     /// Returns `None` (caller keeps the RegexSet path) if no pattern survives.
-    pub(crate) fn build(
+    fn build(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
-        always_active: &[usize],
+        indices: &[usize],
     ) -> Option<Self> {
-        let mut refs: Vec<(usize, usize, &str, bool)> = Vec::with_capacity(always_active.len());
-        let mut caseless: Vec<bool> = Vec::with_capacity(always_active.len());
+        let mut refs: Vec<(usize, usize, &str, bool)> = Vec::with_capacity(indices.len());
+        let mut caseless: Vec<bool> = Vec::with_capacity(indices.len());
         let mut dropped = Vec::new();
-        for &idx in always_active {
+        for &idx in indices {
             let (pat, _) = &phase2_patterns[idx];
             if hs_prefilter_requires_host_regex(pat.regex.as_str()) {
                 dropped.push((idx, pat.regex.clone()));
@@ -69,7 +90,7 @@ impl Phase2HsEngine {
                 tracing::warn!(
                     target: "keyhog::phase2",
                     %error,
-                    "HS always-active prefilter compile failed — using the regex::RegexSet path",
+                    "HS always-active prefilter compile failed; using the regex::RegexSet path",
                 );
                 return None;
             }
@@ -113,12 +134,8 @@ impl Phase2HsEngine {
         })
     }
 
-    /// Mark every always-active pattern that can match `match_text`. One SIMD
-    /// scan marks the HS-covered patterns; the loud host path marks the few
-    /// HS-incompatible ones. The marked set is a sound superset of the matching
-    /// patterns (extraction filters), identical to the RegexSet path.
     #[inline]
-    pub(crate) fn mark(
+    fn mark(
         &self,
         match_text: &str,
         scratch: &mut ActivePatternsScratch,
@@ -150,13 +167,8 @@ impl Phase2HsEngine {
         Ok(())
     }
 
-    /// True iff ANY always-active pattern can fire on `match_text`. The BOOLEAN
-    /// companion to [`mark`](Self::mark): one SIMD scan that early-exits at the
-    /// first hit (HS native termination), plus the loud host path for the few
-    /// HS-incompatible patterns. Recall-identical to `mark(...)` followed by a
-    /// non-empty check — same patterns, same haystack — without building the set.
     #[inline]
-    pub(crate) fn any_match(&self, match_text: &str) -> std::result::Result<bool, String> {
+    fn any_match(&self, match_text: &str) -> std::result::Result<bool, String> {
         if self.scanner.any_match_result(match_text.as_bytes())? {
             return Ok(true);
         }
@@ -166,6 +178,78 @@ impl Phase2HsEngine {
             }
         }
         Ok(false)
+    }
+}
+
+impl Phase2HsEngine {
+    /// Compile the full DB over all `always_active` patterns and, when there are
+    /// homoglyph variants to skip, the lean ASCII DB over the non-homoglyph subset.
+    /// Returns `None` (caller keeps the RegexSet path) if the full DB has no
+    /// surviving pattern.
+    pub(crate) fn build(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        always_active: &[usize],
+    ) -> Option<Self> {
+        let full = HsSubEngine::build(phase2_patterns, always_active)?;
+        // Lean ASCII sub-DB: the non-homoglyph always-active patterns. Built ONLY
+        // when it is a strict subset (there are homoglyph variants to skip on
+        // ASCII); otherwise ASCII reuses `full` (no second DB, no extra memory).
+        let non_homoglyph: Vec<usize> = always_active
+            .iter()
+            .copied()
+            .filter(|&i| !phase2_patterns[i].0.homoglyph_variant)
+            .collect();
+        let ascii_lean = if non_homoglyph.len() < always_active.len() {
+            HsSubEngine::build(phase2_patterns, &non_homoglyph)
+        } else {
+            None
+        };
+        Some(Self { full, ascii_lean })
+    }
+
+    /// Pick the sub-engine for this chunk: the lean ASCII DB when the caller has
+    /// determined the homoglyph-ASCII skip applies (pure-ASCII chunk +
+    /// `homoglyph_ascii_skip` tuning on) and a lean DB exists; else the full DB.
+    #[inline]
+    fn engine_for(&self, skip_homoglyph_ascii: bool) -> &HsSubEngine {
+        if skip_homoglyph_ascii {
+            self.ascii_lean.as_ref().unwrap_or(&self.full)
+        } else {
+            &self.full
+        }
+    }
+
+    /// Mark every always-active pattern that can match `match_text`. One SIMD
+    /// scan marks the HS-covered patterns; the loud host path marks the few
+    /// HS-incompatible ones. The marked set is a sound superset of the matching
+    /// patterns (extraction filters), identical to the RegexSet path.
+    ///
+    /// `skip_homoglyph_ascii` MUST be computed by the caller as `chunk.is_ascii()
+    /// && tuning.homoglyph_ascii_skip` — the same predicate the RegexSet path uses
+    /// to skip homoglyph batches — so the two engines stay findings-consistent.
+    #[inline]
+    pub(crate) fn mark(
+        &self,
+        match_text: &str,
+        scratch: &mut ActivePatternsScratch,
+        skip_homoglyph_ascii: bool,
+    ) -> std::result::Result<(), String> {
+        self.engine_for(skip_homoglyph_ascii)
+            .mark(match_text, scratch)
+    }
+
+    /// True iff ANY always-active pattern can fire on `match_text`. The BOOLEAN
+    /// companion to [`mark`](Self::mark): one SIMD scan that early-exits at the
+    /// first hit (HS native termination), plus the loud host path for the few
+    /// HS-incompatible patterns. Recall-identical to `mark(...)` followed by a
+    /// non-empty check — same patterns, same haystack — without building the set.
+    #[inline]
+    pub(crate) fn any_match(
+        &self,
+        match_text: &str,
+        skip_homoglyph_ascii: bool,
+    ) -> std::result::Result<bool, String> {
+        self.engine_for(skip_homoglyph_ascii).any_match(match_text)
     }
 }
 

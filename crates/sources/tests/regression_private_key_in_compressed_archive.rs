@@ -55,7 +55,7 @@ fn scan_archive(name: &str, bytes: &[u8]) -> (tempfile::TempDir, Vec<keyhog_core
 fn unpacked_text(chunks: &[keyhog_core::Chunk]) -> String {
     chunks
         .iter()
-        .filter(|c| c.metadata.source_type == "filesystem/archive")
+        .filter(|c| c.metadata.source_type.as_ref() == "filesystem/archive")
         .map(|c| c.data.as_ref())
         .collect::<Vec<_>>()
         .join("\n")
@@ -65,9 +65,9 @@ fn archive_chunk_with<'a>(
     chunks: &'a [keyhog_core::Chunk],
     needle: &str,
 ) -> Option<&'a keyhog_core::Chunk> {
-    chunks
-        .iter()
-        .find(|c| c.metadata.source_type == "filesystem/archive" && c.data.contains(needle))
+    chunks.iter().find(|c| {
+        c.metadata.source_type.as_ref() == "filesystem/archive" && c.data.contains(needle)
+    })
 }
 
 /// A bare `.gz` of a single file decompresses to ONE leaf chunk tagged
@@ -77,15 +77,15 @@ fn compressed_chunk_with<'a>(
     chunks: &'a [keyhog_core::Chunk],
     needle: &str,
 ) -> Option<&'a keyhog_core::Chunk> {
-    chunks
-        .iter()
-        .find(|c| c.metadata.source_type == "filesystem/compressed" && c.data.contains(needle))
+    chunks.iter().find(|c| {
+        c.metadata.source_type.as_ref() == "filesystem/compressed" && c.data.contains(needle)
+    })
 }
 
 fn decompressed_text(chunks: &[keyhog_core::Chunk]) -> String {
     chunks
         .iter()
-        .filter(|c| c.metadata.source_type == "filesystem/compressed")
+        .filter(|c| c.metadata.source_type.as_ref() == "filesystem/compressed")
         .map(|c| c.data.as_ref())
         .collect::<Vec<_>>()
         .join("\n")
@@ -103,14 +103,20 @@ fn pem_in_tgz_surfaces_as_archive_chunk() {
     assert!(
         archive_chunk_with(&chunks, "-----BEGIN RSA PRIVATE KEY-----").is_some(),
         "a PEM inside a .tgz must be decompressed+untarred; got {:?}",
-        chunks.iter().map(|c| c.metadata.source_type.as_str()).collect::<Vec<_>>()
+        chunks
+            .iter()
+            .map(|c| c.metadata.source_type.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn pem_in_tgz_block_is_byte_intact() {
     let (_d, chunks) = scan_archive("release.tgz", &tgz("pkg/id_rsa.pem", PEM_KEY));
-    assert!(unpacked_text(&chunks).contains(PEM_KEY.trim_end()), "full PEM block survives the tgz path");
+    assert!(
+        unpacked_text(&chunks).contains(PEM_KEY.trim_end()),
+        "full PEM block survives the tgz path"
+    );
 }
 
 #[test]
@@ -119,7 +125,10 @@ fn pem_in_tgz_preserves_interior_newlines() {
     let chunk = archive_chunk_with(&chunks, PEM_INTERIOR_SENTINEL).expect("pem chunk");
     let begin = chunk.data.find("-----BEGIN RSA PRIVATE KEY-----").unwrap();
     let end = chunk.data.find("-----END RSA PRIVATE KEY-----").unwrap();
-    assert!(chunk.data[begin..end].matches('\n').count() >= 4, "interior line breaks preserved");
+    assert!(
+        chunk.data[begin..end].matches('\n').count() >= 4,
+        "interior line breaks preserved"
+    );
 }
 
 #[test]
@@ -133,7 +142,10 @@ fn pem_in_tgz_has_begin_and_end_markers() {
 #[test]
 fn pem_in_tgz_interior_body_line_present() {
     let (_d, chunks) = scan_archive("release.tgz", &tgz("k.pem", PEM_KEY));
-    assert!(unpacked_text(&chunks).contains(PEM_INTERIOR_SENTINEL), "no mid-block truncation");
+    assert!(
+        unpacked_text(&chunks).contains(PEM_INTERIOR_SENTINEL),
+        "no mid-block truncation"
+    );
 }
 
 #[test]
@@ -142,7 +154,11 @@ fn pem_in_tgz_nested_entry_path_preserved() {
     let (_d, chunks) = scan_archive("npm-pkg.tgz", &tgz(entry, PEM_KEY));
     let chunk = archive_chunk_with(&chunks, "-----BEGIN RSA PRIVATE KEY-----").expect("pem chunk");
     assert!(
-        chunk.metadata.path.as_deref().is_some_and(|p| p.contains(entry)),
+        chunk
+            .metadata
+            .path
+            .as_deref()
+            .is_some_and(|p| p.contains(entry)),
         "deep tgz entry path preserved; got {:?}",
         chunk.metadata.path
     );
@@ -154,7 +170,7 @@ fn pem_in_tgz_is_archive_chunk_not_raw_binary() {
     let carriers: Vec<&str> = chunks
         .iter()
         .filter(|c| c.data.contains(PEM_INTERIOR_SENTINEL))
-        .map(|c| c.metadata.source_type.as_str())
+        .map(|c| c.metadata.source_type.as_ref())
         .collect();
     assert!(!carriers.is_empty(), "the key must be found");
     assert!(
@@ -175,7 +191,10 @@ fn crlf_pem_in_tgz_survives() {
 #[test]
 fn extensionless_key_entry_in_tgz_surfaces() {
     let (_d, chunks) = scan_archive("keys.tgz", &tgz("id_rsa", PEM_KEY));
-    assert!(unpacked_text(&chunks).contains(PEM_KEY.trim_end()), "extensionless entry surfaces");
+    assert!(
+        unpacked_text(&chunks).contains(PEM_KEY.trim_end()),
+        "extensionless entry surfaces"
+    );
 }
 
 // ── PuTTY .ppk inside a .tgz ──────────────────────────────────────────────────
@@ -209,12 +228,18 @@ fn pem_and_ppk_in_same_tgz_both_surface() {
     let (_d, chunks) = scan_archive("bundle.tgz", &bytes);
     let text = unpacked_text(&chunks);
     assert!(text.contains(PEM_INTERIOR_SENTINEL), "PEM entry surfaces");
-    assert!(text.contains("PuTTY-User-Key-File-2:"), ".ppk entry surfaces");
+    assert!(
+        text.contains("PuTTY-User-Key-File-2:"),
+        ".ppk entry surfaces"
+    );
 }
 
 #[test]
 fn two_pem_entries_in_tgz_both_surface() {
-    let second = PEM_KEY.replace(PEM_INTERIOR_SENTINEL, "SECONDtgzKEYsentinel987654321ZYXwvuts");
+    let second = PEM_KEY.replace(
+        PEM_INTERIOR_SENTINEL,
+        "SECONDtgzKEYsentinel987654321ZYXwvuts",
+    );
     let bytes = tgz_with_entries(&[
         ("first.pem", PEM_KEY.as_bytes()),
         ("second.pem", second.as_bytes()),
@@ -222,7 +247,10 @@ fn two_pem_entries_in_tgz_both_surface() {
     let (_d, chunks) = scan_archive("two.tgz", &bytes);
     let text = unpacked_text(&chunks);
     assert!(text.contains(PEM_INTERIOR_SENTINEL), "first key surfaces");
-    assert!(text.contains("SECONDtgzKEYsentinel987654321ZYXwvuts"), "second key surfaces");
+    assert!(
+        text.contains("SECONDtgzKEYsentinel987654321ZYXwvuts"),
+        "second key surfaces"
+    );
 }
 
 #[test]
@@ -234,7 +262,10 @@ fn key_among_benign_entries_in_tgz_surfaces() {
         ("index.js", b"module.exports = {};\n"),
     ]);
     let (_d, chunks) = scan_archive("npm.tgz", &bytes);
-    assert!(unpacked_text(&chunks).contains(PEM_INTERIOR_SENTINEL), "key surfaces among package files");
+    assert!(
+        unpacked_text(&chunks).contains(PEM_INTERIOR_SENTINEL),
+        "key surfaces among package files"
+    );
 }
 
 // ── bare .gz (single gzipped file, not a tarball) ─────────────────────────────
@@ -251,22 +282,34 @@ fn gzipped_pem_file_surfaces() {
 #[test]
 fn gzipped_pem_block_is_byte_intact() {
     let (_d, chunks) = scan_archive("id_rsa.pem.gz", &gzip_bytes(PEM_KEY.as_bytes()));
-    assert!(decompressed_text(&chunks).contains(PEM_KEY.trim_end()), "bare .gz preserves the PEM block");
+    assert!(
+        decompressed_text(&chunks).contains(PEM_KEY.trim_end()),
+        "bare .gz preserves the PEM block"
+    );
 }
 
 #[test]
 fn gzipped_pem_preserves_newlines() {
     let (_d, chunks) = scan_archive("id_rsa.pem.gz", &gzip_bytes(PEM_KEY.as_bytes()));
     let chunk = compressed_chunk_with(&chunks, PEM_INTERIOR_SENTINEL).expect("pem chunk");
-    assert!(chunk.data.matches('\n').count() >= 4, "bare .gz keeps key line breaks");
+    assert!(
+        chunk.data.matches('\n').count() >= 4,
+        "bare .gz keeps key line breaks"
+    );
 }
 
 #[test]
 fn gzipped_ppk_file_surfaces() {
     let (_d, chunks) = scan_archive("deploy.ppk.gz", &gzip_bytes(PPK_KEY.as_bytes()));
     let text = decompressed_text(&chunks);
-    assert!(text.contains("PuTTY-User-Key-File-2:"), "bare gzipped .ppk surfaces");
-    assert!(text.contains(&format!("Private-MAC: {PPK_MAC}")), "MAC present");
+    assert!(
+        text.contains("PuTTY-User-Key-File-2:"),
+        "bare gzipped .ppk surfaces"
+    );
+    assert!(
+        text.contains(&format!("Private-MAC: {PPK_MAC}")),
+        "MAC present"
+    );
 }
 
 // ── negatives / robustness ────────────────────────────────────────────────────

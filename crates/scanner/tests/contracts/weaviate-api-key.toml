@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "WEAVIATE_API_KEY = ='\":  '  : ''=''  fFYVhEXAMPLEEXAMPLEdiBA8"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# WEAVIATE_API_KEY=fFYVh4YwwAywcTqCYxW_T2KAznn8C1t-T93ToYqujuK-OboPiSPuXAQDkb2l7eozXdiBA8  # vector"
+credential = "fFYVh4YwwAywcTqCYxW_T2KAznn8C1t-T93ToYqujuK-OboPiSPuXAQDkb2l7eozXdiBA8"
+reason = "Commented-out config; WEAVIATE_API_KEY keyword + token intact inside the comment."

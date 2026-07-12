@@ -103,7 +103,7 @@ if [ "$SKIP_SYNC" != "1" ]; then
   rsync -az --delete \
     --exclude '.git' --exclude 'target' --exclude '**/__pycache__' \
     --exclude 'benchmarks/corpora' --exclude 'benchmarks/results' \
-    --exclude 'tools/secretbench' --exclude 'tools/diff_bench' --exclude '/pathlib' \
+    --exclude 'tools/secretbench' \
     "$LOCAL_REPO/" "$DEVICE:$REMOTE_REPO/"
 fi
 

@@ -29,6 +29,21 @@ fn expand_homoglyphs_produces_exact_class_expansion() {
         "mapped 'a' expands; '.' is escaped as a literal"
     );
 
+    // 'l' expands ONLY to the dotless-i / fullwidth-l cluster. The Greek/Cyrillic
+    // o-lookalikes (Ο U+039F, ο U+03BF, о U+043E) are an 'o' cluster and must NOT
+    // appear in the 'l' class, or an 'l' prefix would match an 'o' in that slot.
+    assert_eq!(
+        expand("l"),
+        "[lіІιΙｌ]",
+        "'l' maps only to dotless-i/fullwidth-l lookalikes, not the o cluster"
+    );
+    for wrong in ['Ο', 'ο', 'о'] {
+        assert!(
+            !expand("l").contains(wrong),
+            "'l' class must not contain o-lookalike {wrong:?}"
+        );
+    }
+
     // An unmapped, non-special char passes through verbatim.
     assert_eq!(expand("z"), "z", "an unmapped char is emitted as-is");
 

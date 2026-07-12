@@ -12,7 +12,7 @@ pub(crate) fn extract_string_literals(line: &str, out: &mut Vec<String>) {
                 }
                 i += 1;
             }
-            if i >= start + crate::binary::MIN_STRING_LEN {
+            if i >= start + crate::strings::MIN_PRINTABLE_STRING_LEN {
                 // The inner loop only stops at a `"` byte or EOF, both valid
                 // UTF-8 char boundaries, and `start` is the byte right after
                 // an opening `"`; `.min(line.len())` clamps the escape-skip
@@ -20,7 +20,7 @@ pub(crate) fn extract_string_literals(line: &str, out: &mut Vec<String>) {
                 // lines containing multi-byte UTF-8 (verified by fuzz).
                 let raw = &line[start..i.min(line.len())];
                 let unescaped = unescape_c_string(raw);
-                if unescaped.len() >= crate::binary::MIN_STRING_LEN {
+                if unescaped.len() >= crate::strings::MIN_PRINTABLE_STRING_LEN {
                     out.push(unescaped);
                 }
             }
@@ -32,6 +32,12 @@ pub(crate) fn extract_string_literals(line: &str, out: &mut Vec<String>) {
 }
 
 pub(crate) fn unescape_c_string(s: &str) -> String {
+    // Fast path: a literal with no backslash has no escapes to expand, so the
+    // char-by-char scan below would just copy it verbatim — a single memcpy is
+    // faster and is the common case for the bulk of extracted binary literals.
+    if !s.contains('\\') {
+        return s.to_string();
+    }
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {

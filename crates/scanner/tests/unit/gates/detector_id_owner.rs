@@ -1,10 +1,10 @@
 //! Gate: scanner detector-id literals and family predicates have one owner.
 
+use super::support::*;
+// This gate must also ignore `#[cfg(...)]`-gated blocks, so it binds the
+// stricter shared stripper under the local name its call sites use.
+use super::support::uncommented_code_strip_cfg as uncommented_code;
 use std::path::{Path, PathBuf};
-
-fn scanner_src() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
-}
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -12,37 +12,6 @@ fn repo_root() -> PathBuf {
         .and_then(Path::parent)
         .expect("scanner crate must live under crates/scanner")
         .to_path_buf()
-}
-
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{} not readable: {e}", path.display()))
-}
-
-fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{} not readable: {e}", dir.display()))
-    {
-        let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            collect_rs_files(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            out.push(path);
-        }
-    }
-}
-
-fn uncommented_code(src: &str) -> String {
-    src.lines()
-        .filter_map(|line| {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("//") || trimmed.starts_with("#[cfg") {
-                None
-            } else {
-                Some(line)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 #[test]
@@ -75,7 +44,6 @@ fn detector_ids_module_owns_scanner_detector_identity() {
         "\"generic-keyword-secret\"",
         "\"generic-api-key\"",
         "\"generic-password\"",
-        "\"generic-database-url\"",
         "\"generic-private-key\"",
         "\"entropy-generic\"",
         "\"entropy-password\"",
@@ -86,8 +54,14 @@ fn detector_ids_module_owns_scanner_detector_identity() {
         "\"aws-access-key\"",
         "\"anthropic-api-key\"",
         "\"github-classic-pat\"",
+        // Historical phantom validator labels kept forbidden so they can't be
+        // reintroduced as hardcoded literals; the real detectors they were meant
+        // to name are `github-pat-fine-grained` / `gitlab-personal-access-token`
+        // (owned below).
         "\"github-fine-grained-pat\"",
+        "\"github-pat-fine-grained\"",
         "\"gitlab-token\"",
+        "\"gitlab-personal-access-token\"",
         "\"npm-access-token\"",
         "\"pypi-api-token\"",
         "\"openai-api-key\"",
@@ -128,31 +102,43 @@ fn detector_ids_module_owns_scanner_detector_identity() {
     );
 
     let classification = read(&src.join("detector_classification.rs"));
-    let suppression = read(&src.join("suppression/api.rs"));
-    let rules = read(&repo_root().join("rules/stripe-hot-confirmed-prefixes.toml"));
+    let rules = read(&repo_root().join("rules/detector-classification.toml"));
+    let spec = read(&repo_root().join("crates/core/src/spec.rs"));
     let confirmed_extract = read(
         &src.join("engine")
             .join("scan_postprocess")
             .join("confirmed_extract.rs"),
     );
+    // DET-0 architecture law: `weak_anchor` and `private_key_block` are PER-DETECTOR
+    // `DetectorSpec` flags declared in each detector's own TOML — one file tells the
+    // whole story of one detector. They are NOT hardcoded in detector_ids.rs and are
+    // NO LONGER centralized id lists in the Tier-B classification rules. Exact family
+    // membership is pinned by `weak_anchor_family_is_toml_declared` /
+    // `private_key_block_family_is_toml_declared` (detector_ids.rs). The old
+    // `is_residual_weak_anchor` / classification `is_private_key_block_detector`
+    // query fns are gone; the private-key-block predicate now reads `spec.private_key_block`
+    // and lives in detector_ids.rs (the family-predicate owner).
     assert!(
-        !owner.contains("RESIDUAL_WEAK_ANCHORED")
+        spec.contains("pub weak_anchor: bool")
+            && !owner.contains("RESIDUAL_WEAK_ANCHORED")
             && !owner.contains("is_residual_weak_anchored")
-            && !classification.contains("is_residual_weak_anchor")
-            && !rules.contains("weak_anchor = [")
-            && suppression.contains("if spec.weak_anchor"),
-        "weak-anchor classification must come from each active DetectorSpec"
+            && !classification.contains("fn is_residual_weak_anchor")
+            && !rules.contains("weak_anchor = ["),
+        "weak-anchor classification must be the per-detector `DetectorSpec::weak_anchor` flag (DET-0), not a detector_ids.rs / classification-rules id list"
     );
     assert!(
-        !owner.contains("PRIVATE_KEY | SSH_PRIVATE_KEY | GITHUB_APP_PRIVATE_KEY")
-            && owner.contains("detector_spec_by_id(detector_id)")
-            && owner.contains("detector.private_key_block")
-            && !classification.contains("is_private_key_block_detector")
+        spec.contains("pub private_key_block: bool")
+            && !owner.contains("PRIVATE_KEY | SSH_PRIVATE_KEY | GITHUB_APP_PRIVATE_KEY")
+            && owner.contains("fn is_private_key_block_detector")
+            && owner.contains("spec.private_key_block")
+            && !classification.contains("fn is_private_key_block_detector")
             && !rules.contains("private_key_block = ["),
-        "private-key block classification must come from each detector's TOML-backed spec"
+        "private-key-block classification must be the per-detector `DetectorSpec::private_key_block` flag read by detector_ids.rs (DET-0), not a classification-rules id list"
     );
     assert!(
         classification.contains("stripe_hot_confirmed_prefix")
+            && classification
+                .contains("include_str!(\"../../../rules/detector-classification.toml\")")
             && rules.contains("stripe_hot_confirmed_prefix = [")
             && !confirmed_extract.contains("sk_live_")
             && !confirmed_extract.contains("rk_test_")

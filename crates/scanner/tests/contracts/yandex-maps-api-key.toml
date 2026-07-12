@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "yandex-maps-key:    ' : :    \"   ='   = \"=   :    =  :        = \"  ': =\"'\"= '    = =  \"    :    3wqAyEXAMPLEEXAMPLEOuwq7"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# yandex_maps_key=3wqAy3v9FCiWkuLmZkFc3JmlVeDmJK4HeVLQpQNePjrjElkcXkvisO3NDEWRkkEohSzfgv8KjofrTJVj2yUZ13oLXOuwq7  # maps"
+credential = "3wqAy3v9FCiWkuLmZkFc3JmlVeDmJK4HeVLQpQNePjrjElkcXkvisO3NDEWRkkEohSzfgv8KjofrTJVj2yUZ13oLXOuwq7"
+reason = "Commented-out config; yandex_maps_key keyword + key intact inside the comment."

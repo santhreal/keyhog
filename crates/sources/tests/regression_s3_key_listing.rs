@@ -51,7 +51,6 @@ fn anon_localhost_guard() -> MutexGuard<'static, ()> {
     let guard = ENV_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", "1");
     for name in [
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
@@ -472,4 +471,66 @@ fn non_truncated_page_with_stray_token_makes_no_second_request() {
         0,
         "a stray token on a non-truncated page must NOT drive a second listing"
     );
+}
+
+// ---------------------------------------------------------------------------
+// XXE defense on the real operator path (httpmock, localhost, anonymous).
+// ---------------------------------------------------------------------------
+
+/// Run a hostile ListObjectsV2 body through the real `S3Source` (anonymous,
+/// localhost mock) and return `(ok_chunk_count, rendered_error_messages)`. The
+/// caller holds `anon_localhost_guard`.
+fn run_hostile_listing(body: &str) -> (usize, Vec<String>) {
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .query_param("list-type", "2");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(body);
+    });
+    let source = TestApi.s3_source_with_endpoint(BUCKET, server.url(""));
+    let rows: Vec<_> = source.chunks().collect();
+    let (ok, errors) = split_chunk_results(&rows);
+    (ok.len(), errors.iter().map(|e| e.to_string()).collect())
+}
+
+/// XXE DEFENSE, END-TO-END: a hostile or compromised S3 endpoint returning a
+/// ListObjectsV2 body carrying `<!DOCTYPE`/`<!ENTITY` markup (classic external
+/// entity, lowercase-doctype evasion, or a bare entity decl) must be rejected by
+/// `parse_s3_listing`'s DTD/entity pre-screen BEFORE deserialization — so NO
+/// object is scanned and the operator sees the "DTD/entity declarations" refusal
+/// surfaced through `record_unreadable_listing_skip`. This proves the defense on
+/// the shipped source path (stronger than a unit test): a regression that dropped
+/// the pre-screen would silently re-open XXE and this test fails closed on it.
+#[test]
+fn hostile_xxe_listing_is_rejected_and_scans_nothing() {
+    let _guard = anon_localhost_guard();
+    let hostile = [
+        // DOCTYPE + external ENTITY (classic XXE file-exfiltration attempt).
+        concat!(
+            "<?xml version=\"1.0\"?>\n",
+            "<!DOCTYPE ListBucketResult [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>\n",
+            "<ListBucketResult><Name>regression-key-bucket</Name>",
+            "<IsTruncated>false</IsTruncated>",
+            "<Contents><Key>&xxe;</Key><Size>16</Size></Contents></ListBucketResult>",
+        ),
+        // Lowercase `<!doctype` — a naive case-sensitive screen would miss this.
+        "<!doctype listbucketresult><ListBucketResult/>",
+        // Bare entity declaration.
+        "<!ENTITY lol \"lol\"><ListBucketResult/>",
+    ];
+    for body in hostile {
+        let (ok_count, errors) = run_hostile_listing(body);
+        assert_eq!(
+            ok_count, 0,
+            "a hostile XXE listing must scan nothing; body={body:?}"
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|m| m.contains("DTD/entity declarations")),
+            "the XXE pre-screen must surface the 'DTD/entity declarations' refusal to the operator; body={body:?}, errors={errors:?}"
+        );
+    }
 }

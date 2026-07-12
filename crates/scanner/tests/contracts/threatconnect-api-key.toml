@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "THREATCONNECT-    -   token :  : 05166EXAMPLEEXAMPLE90975"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# threatconnect token=05166866232440590975  # threat feed"
+credential = "05166866232440590975"
+reason = "Commented-out config; the 20-digit token surfaces with the threatconnect token keyword anchor despite the pure-numeric shape."

@@ -46,11 +46,13 @@ extension:
 - `.wasm` → linear-memory + import section dumped as strings (best-
   effort; native WASM symbol extraction lives behind the `binary`
   feature).
-- Everything else → one chunk of text.
+- Everything else (HTML, JSON that is not a source map, extensionless,
+  …) → one chunk of text, scanned as-is.
 
 Findings are tagged `source: "web:js"`, `web:sourcemap`,
-`web:sourcemap:raw`, `web:wasm`, or `web:other`. The original URL
-is the `file_path`.
+`web:sourcemap:raw`, or `web:wasm`. Anything scanned as plain text
+(including the "everything else" case above) carries `web:js`; there is
+no separate `web:other` tag. The original URL is the `file_path`.
 
 ### SSRF defense
 
@@ -197,7 +199,7 @@ not part of the shipped HTTP-wire contract:
 A modern SPA bundle on a typical SaaS app can ship 200+ npm
 dependencies and a sourcemap that exposes every server-side env
 var the build process touched. Manual code review of one
-`main.js.map` against the 905-detector corpus is hours; running
+`main.js.map` against the 920-detector corpus is hours; running
 `keyhog scan --url https://app.target.com/static/main.js.map`
 takes seconds.
 

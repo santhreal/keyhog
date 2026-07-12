@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "TIKTOK      -_   -     -      _           - -   -    _     -   access     -   -token    \"::   ' =\" :DNL9QEXAMPLEEXAMPLEzAlcm"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# tiktok_access_token=DNL9QfTsgehDL3sLMGsQBSEHc0mBjZii2Cg04YdzAlcm  # social"
+credential = "DNL9QfTsgehDL3sLMGsQBSEHc0mBjZii2Cg04YdzAlcm"
+reason = "Commented-out config; tiktok access_token keyword + token intact inside the comment."

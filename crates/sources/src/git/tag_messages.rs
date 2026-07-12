@@ -15,7 +15,7 @@ pub(crate) struct GitTagMessageRef {
 pub(crate) fn collect_reachable_tag_messages(
     repo_arg: &str,
 ) -> Result<VecDeque<GitTagMessageRef>, SourceError> {
-    let mut command = Command::new(super::git_bin()?);
+    let mut command = super::git_command()?;
     command.args([
         "-C",
         repo_arg,
@@ -242,9 +242,9 @@ fn decode_tag_message_chunk(
             base_offset: 0,
             base_line: 0,
             source_type: tag_ref.source_type.into(),
-            path: Some(tag_ref.path),
+            path: Some(tag_ref.path.into()),
             commit: None,
-            author,
+            author: author.map(Into::into),
             date: None,
             mtime_ns: None,
             size_bytes: Some(message_bytes.len() as u64),

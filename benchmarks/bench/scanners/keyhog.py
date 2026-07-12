@@ -33,7 +33,7 @@ import subprocess
 import tempfile
 
 from ..schema import ScannerConfig
-from .base import Finding, RunStats, Scanner, run_measured
+from .base import Finding, RunStats, Scanner, _line, run_measured
 
 _BACKENDS = ("simd", "cpu", "gpu", "auto", "megascan")
 _DETERMINISTIC_BACKENDS = {"simd", "cpu", "auto"}
@@ -84,8 +84,11 @@ def resolve_keyhog_binary(explicit: str | None = None) -> str | None:
     target dir. Returns None if no real binary exists (callers fail LOUDLY —
     never silently treat 'no binary' as 'no findings')."""
     import pathlib as _pl
+    # An explicit arg / KEYHOG_BIN is honored unconditionally: the operator
+    # pointed at a specific binary, so a missing one must fail LOUDLY at exec —
+    # never be silently swapped for the freshly-built or archive binary (Law 10).
     cand = explicit or os.environ.get("KEYHOG_BIN")
-    if cand and _pl.Path(cand).exists():
+    if cand:
         return cand
     fresh = _freshly_built_keyhog()
     if fresh:
@@ -99,17 +102,23 @@ def resolve_keyhog_binary(explicit: str | None = None) -> str | None:
     return None
 
 
-def _line(value: object) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
 def _normalize_keyhog(data: object) -> list[Finding]:
-    records = data if isinstance(data, list) else (
-        data.get("findings") if isinstance(data, dict) else []
-    )
+    if isinstance(data, list):
+        records = data
+    elif isinstance(data, dict):
+        if "findings" not in data:
+            # A well-formed dict of an unexpected shape (schema rename/nesting)
+            # would otherwise score recall 0.0 on a success exit — the exact
+            # silent zero-finding scan _parse fails loud on for corrupt JSON.
+            raise RuntimeError(
+                "keyhog JSON object has no 'findings' key "
+                f"(keys: {sorted(data)}); refusing to score it as zero findings"
+            )
+        records = data["findings"]
+    else:
+        raise RuntimeError(
+            f"keyhog JSON is neither list nor object (got {type(data).__name__})"
+        )
     norm: list[Finding] = []
     seen: set[tuple[str, int, str, str]] = set()
     for finding in records or []:
@@ -156,15 +165,10 @@ class KeyhogScanner(Scanner):
 
     @property
     def binary(self) -> str:
-        # Explicit override wins; else the freshly-built release binary (so
-        # the bench scores HEAD, not a stale PATH install); else PATH.
-        if self._binary:
-            return self._binary
-        env = os.environ.get(self.binary_env)
-        if env:
-            return env
-        fresh = _freshly_built_keyhog()
-        return fresh or self.binary_name
+        # ONE resolution order — the same locator the gate tests use, so the
+        # bench and the tests can never drift. Falls back to a bare PATH lookup
+        # only when no real binary is found.
+        return resolve_keyhog_binary(self._binary) or self.binary_name
 
     # ── config matrix ──────────────────────────────────────────────────
 
@@ -226,7 +230,10 @@ class KeyhogScanner(Scanner):
         # currently surfaces only as below-threshold scores (the source of the
         # kubernetes-bootstrap-token +203-FP retrain regression).
         if cfg.min_confidence is not None:
-            cmd += ["--min-confidence", repr(float(cfg.min_confidence))]
+            # Fixed decimal, never repr(): repr(0.00001) == '1e-05', which the
+            # CLI's numeric flag parser rejects — and the harvest path sets this
+            # floor deliberately low.
+            cmd += ["--min-confidence", format(float(cfg.min_confidence), "f")]
         cmd += ["--daemon"] if cfg.daemon == "on" else ["--no-daemon"]
         if cfg.mode == "fast":
             cmd.append("--fast")
@@ -287,7 +294,7 @@ class KeyhogScanner(Scanner):
                 f"keyhog exited {stats.exit_code} for {cfg.config_id}: {detail}"
             )
 
-        findings = self._parse(output)
+        findings = self._parse(output, config_id=cfg.config_id)
         if tmp_out is not None:
             try:
                 output.unlink()
@@ -296,17 +303,26 @@ class KeyhogScanner(Scanner):
         return findings, stats
 
     @staticmethod
-    def _parse(output: pathlib.Path) -> list[Finding]:
+    def _parse(output: pathlib.Path, config_id: str = "") -> list[Finding]:
+        # The exit code already confirmed success here, so a read/parse failure
+        # is NOT "zero findings" — it is corrupt output that would silently score
+        # recall 0. Fail closed loudly (Law 10) rather than swallow it; only a
+        # genuinely empty valid file yields [].
         try:
             text = output.read_text().strip()
-        except OSError:
-            return []
+        except OSError as exc:
+            raise RuntimeError(
+                f"keyhog output unreadable for {config_id or output}: {exc}"
+            ) from exc
         if not text:
             return []
         try:
             data = json.loads(text)
-        except json.JSONDecodeError:
-            return []
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"keyhog wrote invalid JSON for {config_id or output} "
+                f"(exit was success): {exc}"
+            ) from exc
         return _normalize_keyhog(data)
 
     # ── daemon lifecycle (used by the perf matrix for daemon=on rows) ──

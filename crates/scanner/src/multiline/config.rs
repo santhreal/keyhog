@@ -1,9 +1,4 @@
 #[cfg(feature = "multiline")]
-use regex::Regex;
-#[cfg(feature = "multiline")]
-use std::sync::LazyLock;
-
-#[cfg(feature = "multiline")]
 const MAX_MULTILINE_PREPROCESS_BYTES: usize = 2 * 1024 * 1024;
 #[cfg(feature = "multiline")]
 const MAX_MULTILINE_LINE_BYTES: usize = 64 * 1024;
@@ -15,40 +10,18 @@ const MAX_MULTILINE_LINE_BYTES: usize = 64 * 1024;
 const LARGE_FILE_KEYWORD_GATE_BYTES: usize = 4096;
 pub(crate) const DEFAULT_MAX_JOIN_LINES: usize = 64;
 
+// `LineMapping` + `source_offset_from_mapping` are the ONE always-compiled owners
+// in `crate::types` (this module's `#[cfg(feature="multiline")]` copies were
+// field/body-identical duplicates). `source_line_at` is internal to
+// `source_offset_from_mapping`, so it is not imported here.
+// `pub(crate)` re-export so sibling modules (`preprocessor`, `structural`) that
+// `use super::config::LineMapping` keep resolving after the definition moved to
+// the single `crate::types` owner. `source_offset_from_mapping` is only called
+// within this module, so it stays a private import.
 #[cfg(feature = "multiline")]
-static VAR_REF_CONCAT_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    match Regex::new(
-        r#"(?i)^\s*[a-z0-9_\-\.]{2,64}\s*[:=]\s*[a-z0-9_\-]{2,32}(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8}\s*;?\s*$"#,
-    ) {
-        Ok(re) => Some(re),
-        Err(error) => {
-            crate::prefilter_degrade::warn_prefilter_disabled(
-                "multiline variable-reference concatenation regex (VAR_REF_CONCAT_RE)",
-                &error,
-            );
-            None
-        }
-    }
-});
-
+use crate::types::source_offset_from_mapping;
 #[cfg(feature = "multiline")]
-pub(crate) fn warm_runtime_regexes() {
-    let _ = VAR_REF_CONCAT_RE.as_ref(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
-}
-
-/// A mapping from an offset in the joined text back to the original line number.
-#[cfg(feature = "multiline")]
-#[derive(Debug, Clone)]
-pub(crate) struct LineMapping {
-    /// Start offset in the joined text (inclusive).
-    pub(crate) start_offset: usize,
-    /// End offset in the joined text (exclusive).
-    pub(crate) end_offset: usize,
-    /// Original line number (1-indexed).
-    pub(crate) line_number: usize,
-    /// Start byte offset of the mapped source line in the original text.
-    pub(crate) original_start_offset: usize,
-}
+pub(crate) use crate::types::LineMapping;
 
 pub(super) fn source_line_offset_or_record_gap(
     source_line_offsets: &[usize],
@@ -159,55 +132,6 @@ impl<'a> PreprocessedText<'a> {
     }
 }
 
-#[cfg(feature = "multiline")]
-fn source_offset_from_mapping(
-    source: &str,
-    mapping: &LineMapping,
-    offset: usize,
-    credential: &str,
-) -> usize {
-    if mapping.start_offset == mapping.original_start_offset && offset < source.len() {
-        return offset;
-    }
-    if let Some(line) = source_line_at(source, mapping.original_start_offset) {
-        if let Some(column) = line.find(credential) {
-            return mapping.original_start_offset + column;
-        }
-    }
-    let candidate = mapping
-        .original_start_offset
-        .saturating_add(offset.saturating_sub(mapping.start_offset));
-    if candidate < source.len() {
-        candidate
-    } else if mapping.original_start_offset < source.len() {
-        mapping.original_start_offset
-    } else {
-        source.len().saturating_sub(1)
-    }
-}
-
-#[cfg(feature = "multiline")]
-fn source_line_at(source: &str, start: usize) -> Option<&str> {
-    if start >= source.len() {
-        return None;
-    }
-    // `start` is a byte offset carried through the line-mapping bookkeeping; on
-    // binary / lossy-UTF-8 input (e.g. a compiled artifact decoded with U+FFFD
-    // replacement chars) it can land INSIDE a multi-byte scalar, where a raw
-    // `&source[start..]` panics with "byte index N is not a char boundary" and
-    // aborts the whole worker. Snap DOWN to the enclosing char boundary - the
-    // line that contains that byte is unchanged - so the slice is always valid.
-    // LAW10: snapping down to a char boundary is recall-preserving -- the same
-    // line text is scanned and findings are unchanged; it only prevents a panic
-    // on a mid-scalar byte index. Mirrors the pervasive `floor_char_boundary`
-    // guarding the engine's other offset slices.
-    let start = crate::engine::floor_char_boundary(source, start);
-    let rest = &source[start..];
-    let end = rest.find('\n').unwrap_or(rest.len()); // LAW10: no newline means the line runs to source end; reporting-only coordinate slice
-    let line = &rest[..end];
-    Some(line.strip_suffix('\r').unwrap_or(line)) // LAW10: no CR suffix means the source line is already normalized; reporting-only coordinate slice
-}
-
 /// Configuration for multiline concatenation recovery.
 #[derive(Debug, Clone)]
 pub struct MultilineConfig {
@@ -254,13 +178,25 @@ pub(crate) fn has_function_concat_marker(s: &str) -> bool {
 #[cfg(feature = "multiline")]
 pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     let trimmed = text.trim_start();
-    if trimmed.starts_with('{')
-        || trimmed.starts_with('[')
-        || trimmed.starts_with("<?xml")
-        || trimmed.starts_with('<')
-    {
+    // XML / HTML markup never carries a string-CONCATENATION continuation shape
+    // (there is no `"a" + "b"` splice in element text), and is owned by its own
+    // structured path, so a leading `<` / `<?xml` is a cheap, sound reject.
+    if trimmed.starts_with("<?xml") || trimmed.starts_with('<') {
         return false;
     }
+    // A buffer that OPENS with `{` / `[` is ambiguous: it may be JSON DATA (owned
+    // by the structured JSON parser, and with no `"a" + "b"` concat surface to
+    // recover) OR a JS / TS / Groovy / Jsonnet SOURCE file that legitimately
+    // starts with an object / array literal carrying a multiline-concatenated
+    // secret — e.g. a module that opens `{ apiKey: "gh" +\n  "p_deadbeef…" }`.
+    // The old blanket leading-brace reject dropped the SECOND case's entire
+    // multiline surface (Law 10: a whole scan surface silently skipped on a
+    // shape heuristic). We defer the STRUCTURAL disambiguation (a strict-JSON
+    // parse) to AFTER the cheap concat-indicator gate below so it runs only for
+    // the narrow set of `{`/`[`-leading buffers that actually tripped a concat
+    // shape — a benign large JSON blob with no concat bytes still bails via the
+    // cheap byte scans without ever paying a full parse.
+    let starts_structured = trimmed.starts_with('{') || trimmed.starts_with('[');
 
     let bytes = text.as_bytes();
 
@@ -299,6 +235,15 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
         && !has_implicit
         && !has_var_ref_concat
     {
+        return false;
+    }
+
+    // At least one concat shape is present. If the buffer nonetheless opened with
+    // `{`/`[` AND parses as strict JSON, it is genuine JSON data (the concat byte
+    // lived inside a quoted JSON value, e.g. a backtick or `+` in a string) with
+    // no recoverable concatenation surface — skip it. A JS/TS object literal
+    // fails this parse fast and proceeds to the per-line scan below.
+    if starts_structured && parses_as_strict_json(trimmed) {
         return false;
     }
 
@@ -342,6 +287,25 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     }
 
     false
+}
+
+/// Robust structural discriminator for a `{` / `[`-leading buffer: `true` iff
+/// the WHOLE buffer parses as strict JSON.
+///
+/// This replaces the old "starts with `{`/`[` ⇒ skip" first-byte heuristic that
+/// silently dropped the multiline surface of every JS/TS source file opening
+/// with an object/array literal (Law 10). JSON has no string-concatenation
+/// syntax, so a genuine JSON data file has nothing for the multiline join pass
+/// to recover and is correctly skipped here; a JS/TS/Groovy literal is NOT valid
+/// JSON (unquoted keys, `+` concatenation, backtick templates, trailing commas,
+/// comments) and serde's streaming parser rejects it at the first offending
+/// token — cheaply, without walking the whole buffer — so it falls through to
+/// the concatenation-indicator scan and keeps its multiline surface.
+#[cfg(feature = "multiline")]
+fn parses_as_strict_json(text: &str) -> bool {
+    // `IgnoredAny` validates the JSON grammar without materializing a `Value`
+    // tree — zero heap allocation on the common already-JSON path.
+    serde_json::from_str::<serde::de::IgnoredAny>(text).is_ok()
 }
 
 /// Detect a PHP / Perl `.`-operator string-concatenation join: a `.` that sits
@@ -455,9 +419,7 @@ fn has_var_ref_concat_line(line: &str) -> bool {
     if !line.contains('+') {
         return false;
     }
-    VAR_REF_CONCAT_RE
-        .as_ref()
-        .is_some_and(|re| re.is_match(line))
+    super::structural::CONCAT_RE.is_match(line)
 }
 
 #[cfg(feature = "multiline")]

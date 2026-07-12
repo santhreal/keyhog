@@ -53,21 +53,15 @@ pub(crate) fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
         }
 
         if let Some(end) = end_idx {
-            let mut inner = &pattern[1..end];
-            // Strip non-capturing group prefix (?:, (?i:, (?im:, etc.)
-            if inner.starts_with("?:") {
-                inner = &inner[2..];
-            } else if inner.starts_with("?i:")
-                || inner.starts_with("?m:")
-                || inner.starts_with("?s:")
-            {
-                inner = &inner[3..];
-            } else if inner.starts_with("?im:")
-                || inner.starts_with("?is:")
-                || inner.starts_with("?ms:")
-            {
-                inner = &inner[4..];
-            }
+            // Strip the non-capturing / inline-flag group prefix (`?:`, `?i:`,
+            // `?im:`, …) through the single shared owner `strip_group_prefix`,
+            // instead of a second hand-maintained copy of the same flag-form set.
+            // Byte-identical to the old inline chain (same forms, same order), and
+            // now the recognised-flag set has ONE definitional home — so extending
+            // it (e.g. the missing 3-flag `?ims:` form) is a one-place change that
+            // this routing path and `extract_group_alternatives`/`expand_*` all
+            // pick up together instead of drifting.
+            let inner = strip_group_prefix(&pattern[1..end]);
             // Split by |, but only at depth 0
             let mut parts = Vec::new();
             let mut start = 0;

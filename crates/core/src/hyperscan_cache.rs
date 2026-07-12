@@ -1,5 +1,15 @@
 //! Shared Hyperscan serialized-database cache header contract.
 
+/// Filename prefix of every Keyhog Hyperscan shard cache file (`hs-<sha256>.db`).
+/// Single owner shared by the hardening lockdown gate (which strips it to
+/// recognise a trusted compiled-pattern cache) and the scanner shard writer
+/// (which builds the name), so the two can never disagree.
+pub const HYPERSCAN_CACHE_PREFIX: &str = "hs-";
+
+/// Filename suffix of every Keyhog Hyperscan shard cache file. See
+/// [`HYPERSCAN_CACHE_PREFIX`].
+pub const HYPERSCAN_CACHE_SUFFIX: &str = ".db";
+
 /// Magic bytes at the front of every Keyhog Hyperscan shard cache file.
 pub const HYPERSCAN_CACHE_MAGIC: &[u8; 4] = b"KHHS";
 
@@ -30,4 +40,16 @@ pub fn hyperscan_cache_header_is_valid(header: &[u8]) -> bool {
 pub fn write_hyperscan_cache_header(output: &mut Vec<u8>) {
     output.extend_from_slice(HYPERSCAN_CACHE_MAGIC);
     output.extend_from_slice(&HYPERSCAN_CACHE_VERSION.to_le_bytes());
+}
+
+/// Build the on-disk filename of a Keyhog Hyperscan shard cache file from its
+/// content `shard_key`: `hs-<shard_key>.db`. Single owner of the name FORMAT,
+/// shared by the scanner shard writer (which persists the file) and the
+/// hardening lockdown gate (which recognises/strips it via
+/// [`HYPERSCAN_CACHE_PREFIX`]/[`HYPERSCAN_CACHE_SUFFIX`]), so writer and reader
+/// can never disagree on the shard filename. Previously the writer re-inlined
+/// the `hs-`/`.db` affixes in a `format!`, a latent drift from this owner.
+#[must_use]
+pub fn hyperscan_cache_filename(shard_key: &str) -> String {
+    format!("{HYPERSCAN_CACHE_PREFIX}{shard_key}{HYPERSCAN_CACHE_SUFFIX}")
 }

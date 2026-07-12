@@ -156,10 +156,7 @@ fn rescan_zero_large_repeated_chunk() {
 
 #[test]
 fn rescan_zero_high_entropy_random() {
-    assert_rescan_recompiles_nothing(
-        "api_key = 7Hx9Kp2Qm4Rn8Sb6Tw1Vz3Yc5Ad0Be7Cf2Dg9Eh4Fi6Gj",
-        5,
-    );
+    assert_rescan_recompiles_nothing("api_key = 7Hx9Kp2Qm4Rn8Sb6Tw1Vz3Yc5Ad0Be7Cf2Dg9Eh4Fi6Gj", 5);
 }
 
 #[test]
@@ -182,13 +179,20 @@ fn warm_is_idempotent_compiles_nothing() {
     s.warm();
     s.warm();
     let after = lazy_regex_compile_events();
-    assert_eq!(after, before, "a redundant warm() recompiled {} regex(es)", after - before);
+    assert_eq!(
+        after,
+        before,
+        "a redundant warm() recompiled {} regex(es)",
+        after - before
+    );
 }
 
 #[test]
 fn fifty_rescans_compile_nothing() {
     let s = primed();
-    let c = chunk("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI7K8MDENGbPxRfiCYEXKEYAAAA password=Hunter2Value99");
+    let c = chunk(
+        "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI7K8MDENGbPxRfiCYEXKEYAAAA password=Hunter2Value99",
+    );
     s.clear_fragment_cache();
     let _ = s.scan(&c);
     let before = lazy_regex_compile_events();
@@ -196,7 +200,11 @@ fn fifty_rescans_compile_nothing() {
         s.clear_fragment_cache();
         let _ = s.scan(&c);
     }
-    assert_eq!(lazy_regex_compile_events(), before, "50 re-scans recompiled a regex");
+    assert_eq!(
+        lazy_regex_compile_events(),
+        before,
+        "50 re-scans recompiled a regex"
+    );
 }
 
 #[test]
@@ -204,14 +212,21 @@ fn cold_first_scan_then_warm_rescans_compile_nothing() {
     // The "cold vs warm" measurement: the first scan of a chunk may compile its
     // lazy paths once; every subsequent (warm) scan must recompile nothing.
     let s = primed();
-    let c = chunk("token: glsoat-Kc4Np8Qr3St9Uw6Xz2Yb5Bd7E client_secret=Xy8Q~kPv3mNz.aB7dEfGhIjKlMnOp");
+    let c = chunk(
+        "token: glsoat-Kc4Np8Qr3St9Uw6Xz2Yb5Bd7E client_secret=Xy8Q~kPv3mNz.aB7dEfGhIjKlMnOp",
+    );
     s.clear_fragment_cache();
     let _ = s.scan(&c); // cold for this chunk's lazy paths
     let warm0 = lazy_regex_compile_events();
     s.clear_fragment_cache();
     let _ = s.scan(&c); // warm
     let warm1 = lazy_regex_compile_events();
-    assert_eq!(warm1, warm0, "the warm re-scan recompiled {} regex(es)", warm1 - warm0);
+    assert_eq!(
+        warm1,
+        warm0,
+        "the warm re-scan recompiled {} regex(es)",
+        warm1 - warm0
+    );
 }
 
 #[test]
@@ -237,7 +252,11 @@ fn distinct_primed_files_in_sequence_compile_nothing() {
         s.clear_fragment_cache();
         let _ = s.scan(&c);
     }
-    assert_eq!(lazy_regex_compile_events(), before, "scanning a primed file sequence recompiled a regex");
+    assert_eq!(
+        lazy_regex_compile_events(),
+        before,
+        "scanning a primed file sequence recompiled a regex"
+    );
 }
 
 #[test]
@@ -253,7 +272,11 @@ fn clearing_fragment_cache_does_not_recompile_patterns() {
     }
     s.clear_fragment_cache();
     let _ = s.scan(&c);
-    assert_eq!(lazy_regex_compile_events(), before, "clearing the fragment cache recompiled a regex");
+    assert_eq!(
+        lazy_regex_compile_events(),
+        before,
+        "clearing the fragment cache recompiled a regex"
+    );
 }
 
 #[test]
@@ -281,7 +304,11 @@ fn second_scanner_from_same_corpus_rescans_compile_nothing() {
         fresh.clear_fragment_cache();
         let _ = fresh.scan(&c);
     }
-    assert_eq!(lazy_regex_compile_events(), before, "a second scanner recompiled a regex on re-scan");
+    assert_eq!(
+        lazy_regex_compile_events(),
+        before,
+        "a second scanner recompiled a regex on re-scan"
+    );
 }
 
 #[test]
@@ -303,5 +330,9 @@ fn interleaved_diverse_chunks_after_priming_compile_nothing() {
             let _ = s.scan(&chunk(t));
         }
     }
-    assert_eq!(lazy_regex_compile_events(), before, "interleaved diverse re-scans recompiled a regex");
+    assert_eq!(
+        lazy_regex_compile_events(),
+        before,
+        "interleaved diverse re-scans recompiled a regex"
+    );
 }

@@ -26,7 +26,9 @@ use std::sync::LazyLock;
 /// reproducer; see dogfood-2026-05-21.md finding #5).
 pub(crate) struct CaesarDecoder;
 
-pub(crate) const MIN_CAESAR_LEN: usize = 16;
+/// Semantic alias of the shared evasion-decode floor — same value as
+/// `reverse::MIN_REVERSE_LEN`, owned once in [`super::util::MIN_EVASION_DECODE_LEN`].
+pub(crate) const MIN_CAESAR_LEN: usize = super::util::MIN_EVASION_DECODE_LEN;
 const MIN_ALNUM_RUN: usize = 8;
 
 /// Minimum accumulated base64 run (in chars) before [`encoded_private_key_payload_spans`]
@@ -35,6 +37,13 @@ const MIN_ALNUM_RUN: usize = 8;
 /// so shorter runs cannot be a wrapped private key and are skipped rather than
 /// decoded on every short base64-ish config line.
 const MIN_ENCODED_PRIVATE_KEY_B64_LEN: usize = 128;
+
+/// Per-line base64 floor: a single line's trimmed value must reach this many
+/// standard-base64 chars before it joins (or starts) an accumulated
+/// private-key run. Below it the line is too short to be a wrapped-PEM body
+/// line and is treated as a run terminator. Distinct from the whole-run
+/// `MIN_ENCODED_PRIVATE_KEY_B64_LEN` accumulation threshold above.
+const MIN_PRIVATE_KEY_B64_LINE_LEN: usize = 16;
 
 /// Number of letters in the ASCII alphabet — the modulus for a Caesar/ROT-N
 /// letter rotation (and the base for the `26 - k` inverse shift). This is the
@@ -51,9 +60,9 @@ const ALPHABET_LEN: u8 = 26;
 /// position-wise bijection on a string, so for any candidate `c`:
 ///   `caesar_shift(c, k).contains(P)`  ⟺  `c.contains(caesar_shift(P, 26 - k))`.
 /// Therefore "some shift in `1..=25` of `c` contains some known prefix" is
-/// EXACTLY "`c` contains some needle in this automaton". The final gate inside
-/// [`looks_credential_shaped`] is precisely that `KNOWN_PREFIXES` substring
-/// test, and its other two gates (≥1 digit, an 8+ alphanumeric run) are
+/// EXACTLY "`c` contains some needle in this automaton". The final per-shift
+/// gate is precisely that `KNOWN_PREFIXES` substring test (`contains_known_prefix`
+/// on the decoded variant), and its other two gates (≥1 digit, an 8+ alnum run) are
 /// shift-invariant and checked once by [`candidate_shape_invariant`]. So a
 /// candidate that matches NO needle here can never produce a credential-shaped
 /// variant under any shift — its entire 25× `caesar_shift` fan-out + re-scan is
@@ -61,45 +70,121 @@ const ALPHABET_LEN: u8 = 26;
 /// unsound "longest alphabetic run ≥ 16" gate (a `0x` / `SG.` / `hf_` prefix
 /// needs only a 1–2 letter run, so a credential-shaped shift can arise from a
 /// chunk with no long alphabetic run). See `perf_decode_caesar.rs`.
-static ROTATED_PREFIX_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
+static ROTATED_PREFIX_AC: LazyLock<AhoCorasick> = LazyLock::new(|| {
     let mut needles: Vec<String> = Vec::new();
-    for prefix in crate::confidence::KNOWN_PREFIXES {
+    for prefix in &*crate::confidence::KNOWN_PREFIXES {
         for k in 1..=25u8 {
             // rot_{-k}(P) == caesar_shift(P, 26 - k); k in 1..=25 => 26-k in 1..=25.
             needles.push(caesar_shift(prefix, ALPHABET_LEN - k));
         }
     }
+    // Law 10 (build-bug ⇒ fail closed): the needle set is derived ENTIRELY from
+    // the compiled-in `KNOWN_PREFIXES` constant — no attacker input reaches it —
+    // so an `AhoCorasick::new` failure is an invariant violation in the bundled
+    // data / this construction, not a runtime hostile-input condition. The old
+    // path warned + returned `None`, degrading `matched_caesar_shifts` to an
+    // all-25-shifts scan: recall-preserving but a ~25× per-candidate
+    // pessimization on the decoder that emits ~84% of all decode sub-chunks (a
+    // "recall-safe but slow" fallback is itself a Law-7 bug). PANIC here so the
+    // build defect is impossible to miss instead of silently shipping the slow
+    // path.
     match AhoCorasick::new(&needles) {
-        Ok(ac) => Some(ac),
-        // Law 10: built from the constant `KNOWN_PREFIXES`, so a build failure is
-        // an invariant violation. `matched_caesar_shifts` falls back to trying
-        // all 25 shifts (recall-preserving), but that must not happen silently.
-        Err(e) => {
-            crate::prefilter_degrade::warn_prefilter_disabled(
-                "Caesar rotated-prefix gate (ROTATED_PREFIX_AC)",
-                &e,
-            );
-            None
-        }
+        Ok(ac) => ac,
+        Err(e) => panic!(
+            "Caesar rotated-prefix automaton (ROTATED_PREFIX_AC) failed to build \
+             from the compiled-in KNOWN_PREFIXES needle set: {e}. This is a build \
+             defect in the prefix list or its rotation, not a runtime condition."
+        ),
     }
 });
+
+/// Aho-Corasick over the UN-rotated [`crate::confidence::KNOWN_PREFIXES`] — the
+/// final per-shift gate ([`contains_known_prefix`], called on each of up to 25
+/// decoded variants of a surviving candidate). Replaces an
+/// `O(prefixes × |variant|)` fan of `str::contains` calls with one linear pass,
+/// mirroring the sibling [`ROTATED_PREFIX_AC`] and reusing the same
+/// `aho_corasick` dependency (ONE-PLACE: both prefix automata are built from the
+/// single `KNOWN_PREFIXES` source of truth). `is_match` is an unanchored
+/// substring test, exactly equivalent to `any(|p| variant.contains(p))`.
+static PLAIN_PREFIX_AC: LazyLock<AhoCorasick> = LazyLock::new(|| {
+    // Law 10 (build-bug ⇒ fail closed): the needle set is the compiled-in
+    // `KNOWN_PREFIXES` constant — no attacker input reaches it — so a build
+    // failure is an invariant violation, not a runtime condition. Panic so the
+    // defect can't ship as a silent slow/degraded path (matching ROTATED_PREFIX_AC).
+    match AhoCorasick::new(crate::confidence::KNOWN_PREFIXES.iter()) {
+        Ok(ac) => ac,
+        Err(e) => panic!(
+            "Caesar plain-prefix automaton (PLAIN_PREFIX_AC) failed to build from \
+             the compiled-in KNOWN_PREFIXES needle set: {e}. This is a build \
+             defect in the prefix list, not a runtime condition."
+        ),
+    }
+});
+
+#[derive(serde::Deserialize)]
+struct ProgramSourceCodeExtensions {
+    extensions: Vec<String>,
+}
 
 /// Program/source extensions where source-like identifier density makes
 /// Caesar-decoding pure noise. Matched against the suffix of
 /// `chunk.metadata.path` after ASCII-lowercasing and slash normalization.
-const PROGRAM_SOURCE_CODE_EXTENSIONS: &[&str] = &[
-    ".rs", ".py", ".go", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt", ".scala", ".c", ".cc",
-    ".cpp", ".cxx", ".h", ".hh", ".hpp", ".cs", ".rb", ".php", ".swift", ".m", ".mm", ".sh",
-    ".bash", ".zsh", ".fish", ".lua", ".pl", ".pm", ".sql", ".html", ".htm", ".css", ".scss",
-    ".sass", ".vue", ".svelte", ".tbl", ".mk", ".cmake",
-];
+/// Parse the bundled Tier-B program-source-extension list. Returns an error
+/// rather than panicking so the `PROGRAM_SOURCE_CODE_EXTENSIONS` owner below is
+/// the single fail-closed site (the `no_unwrap_expect` gate bans `expect`).
+fn parse_program_source_extensions(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<ProgramSourceCodeExtensions>(raw)
+        .map(|parsed| parsed.extensions)
+        .map_err(|error| error.to_string())
+}
 
-const SOURCE_CODE_FILENAMES: &[&str] = &["kconfig", "makefile", "cmakelists.txt"];
+/// Program/source extensions where source-like identifier density makes
+/// Caesar-decoding pure noise. Matched against the suffix of
+/// `chunk.metadata.path` after ASCII-lowercasing and slash normalization.
+static PROGRAM_SOURCE_CODE_EXTENSIONS: LazyLock<Vec<String>> = LazyLock::new(|| {
+    match parse_program_source_extensions(include_str!(
+        "../../../../rules/program-source-extensions.toml"
+    )) {
+        Ok(extensions) => extensions,
+        Err(error) => panic!(
+            "rules/program-source-extensions.toml is invalid: {error}. \
+             Fix the bundled Tier-B metadata file list."
+        ),
+    }
+});
+
+#[derive(serde::Deserialize)]
+struct CaesarNoiseLists {
+    source_code_filenames: Vec<String>,
+    text_noise_extensions: Vec<String>,
+}
+
+fn parse_caesar_noise_lists(raw: &str) -> Result<CaesarNoiseLists, String> {
+    toml::from_str::<CaesarNoiseLists>(raw).map_err(|error| error.to_string())
+}
+
+/// Single parse of the caesar-noise Tier-B list: both classifiers below read
+/// one field each from this owner instead of re-parsing the embedded TOML twice
+/// (the previous two statics each `include_str!`'d + parsed the whole file).
+/// Fail-closed (Law 10): invalid bundled metadata panics loudly at first use.
+static CAESAR_NOISE_LISTS: LazyLock<CaesarNoiseLists> = LazyLock::new(|| {
+    match parse_caesar_noise_lists(include_str!("../../../../rules/caesar-noise-lists.toml")) {
+        Ok(lists) => lists,
+        Err(error) => panic!(
+            "rules/caesar-noise-lists.toml is invalid: {error}. \
+             Fix the bundled Tier-B metadata file list."
+        ),
+    }
+});
+
+static SOURCE_CODE_FILENAMES: LazyLock<Vec<String>> =
+    LazyLock::new(|| CAESAR_NOISE_LISTS.source_code_filenames.clone());
 
 /// Text/document paths are also decode-noise for ROT-N, but they are not
 /// program source for entropy suppression. Keep this separate so entropy does
 /// not inherit a Caesar-specific broad definition of "source".
-const CAESAR_TEXT_NOISE_EXTENSIONS: &[&str] = &[".md", ".rst", ".txt", ".adoc"];
+static CAESAR_TEXT_NOISE_EXTENSIONS: LazyLock<Vec<String>> =
+    LazyLock::new(|| CAESAR_NOISE_LISTS.text_noise_extensions.clone());
 
 /// Zero-allocation path classification. The previous form built TWO heap
 /// allocations per call — `p.replace('\\', "/").to_ascii_lowercase()` — on a
@@ -109,32 +194,38 @@ const CAESAR_TEXT_NOISE_EXTENSIONS: &[&str] = &[".md", ".rst", ".txt", ".adoc"];
 /// check extracts the basename over BOTH separators via `path_basename_bytes`
 /// (no allocation) and compares case-insensitively against the (lowercase)
 /// constant filenames. Behaviour is identical to the lowered-string form.
-fn source_path_matches(path: &str, extensions: &[&str], filenames: &[&str]) -> bool {
+fn source_path_matches<S: AsRef<str>, F: AsRef<str>>(
+    path: &str,
+    extensions: &[S],
+    filenames: &[F],
+) -> bool {
     use crate::ascii_ci::ends_with_ignore_ascii_case;
     let bytes = path.as_bytes();
     if !filenames.is_empty() {
         let base = crate::platform_compat::path_basename_bytes(bytes);
         if filenames
             .iter()
-            .any(|name| base.eq_ignore_ascii_case(name.as_bytes()))
+            .any(|name| base.eq_ignore_ascii_case(name.as_ref().as_bytes()))
         {
             return true;
         }
     }
     extensions
         .iter()
-        .any(|ext| ends_with_ignore_ascii_case(bytes, ext.as_bytes()))
+        .any(|ext| ends_with_ignore_ascii_case(bytes, ext.as_ref().as_bytes()))
 }
 
 pub(crate) fn is_program_source_code_path(path: Option<&str>) -> bool {
     let Some(p) = path else { return false };
-    source_path_matches(p, PROGRAM_SOURCE_CODE_EXTENSIONS, SOURCE_CODE_FILENAMES)
+    source_path_matches(p, &*PROGRAM_SOURCE_CODE_EXTENSIONS, &*SOURCE_CODE_FILENAMES)
 }
 
 pub(crate) fn is_source_code_path(path: Option<&str>) -> bool {
-    let Some(p) = path else { return false };
-    source_path_matches(p, PROGRAM_SOURCE_CODE_EXTENSIONS, SOURCE_CODE_FILENAMES)
-        || source_path_matches(p, CAESAR_TEXT_NOISE_EXTENSIONS, &[])
+    // Superset of `is_program_source_code_path` (reuse it as the ONE owner of the
+    // program-source check) plus the Caesar-specific text-noise extensions.
+    is_program_source_code_path(path)
+        || path
+            .is_some_and(|p| source_path_matches(p, &*CAESAR_TEXT_NOISE_EXTENSIONS, &[] as &[&str]))
 }
 
 /// True when `line` contains a `scheme://user:pass@host` URL with embedded
@@ -262,7 +353,9 @@ fn encoded_private_key_payload_spans(text: &str) -> Vec<(usize, usize)> {
         let line_body = line.trim_end_matches(['\r', '\n']);
         let absolute_line_end = line_start + line_body.len();
         let (value_start, value) = base64ish_line_value(line_body, line_start);
-        if value.len() >= 16 && value.bytes().all(super::is_standard_base64_byte) {
+        if value.len() >= MIN_PRIVATE_KEY_B64_LINE_LEN
+            && value.bytes().all(super::is_standard_base64_byte)
+        {
             match &mut run {
                 Some(active) => {
                     active.end = absolute_line_end;
@@ -357,12 +450,12 @@ impl Decoder for CaesarDecoder {
                 // SHIFT-INVARIANT PRECONDITION (sound; a true superset of "some
                 // shift is credential-shaped"). `caesar_shift` maps letter->letter,
                 // digit->digit, other->other, so the two structural gates inside
-                // `looks_credential_shaped` are identical for the candidate and ALL
+                // the per-shift credential-shape gate are identical for the candidate and ALL
                 // 25 of its shifts:
                 //   * "contains >=1 ASCII digit"        - digits are shift-identity
                 //   * "has an 8+ ASCII-ALPHANUMERIC run" - alnum-ness is preserved
                 // If the RAW candidate fails either gate, NONE of its 25 shifts can
-                // pass `looks_credential_shaped`, so we skip the entire 25x
+                // pass the per-shift credential-shape gate, so we skip the entire 25x
                 // `caesar_shift` allocation + re-scan loop for it. Only the
                 // KNOWN_PREFIXES check (the one gate a shift CAN newly satisfy) is
                 // left to the per-shift loop. This is byte-for-byte recall-
@@ -381,7 +474,7 @@ impl Decoder for CaesarDecoder {
                 //   caesar_shift(candidate, k).contains(P) ⟺ candidate.contains(needle(P,k))
                 // where needle(P,k) = caesar_shift(P, 26-k) is needle index
                 // `prefix_idx*25 + (k-1)`. So a shift `k` can satisfy
-                // `looks_credential_shaped` ONLY if some needle with that `k` matched.
+                // the per-shift credential-shape gate ONLY if some needle with that `k` matched.
                 // The old code learned "≥1 needle matched" (`is_match`) then tried ALL
                 // 25 shifts; instead, recover the exact set of matched `k`s and shift
                 // to only those. Every shift that could pass is in this set, so the
@@ -397,7 +490,13 @@ impl Decoder for CaesarDecoder {
                         continue;
                     }
                     let decoded = caesar_shift(candidate, shift);
-                    if !looks_credential_shaped(&decoded) {
+                    // Only the KNOWN_PREFIXES substring (the sole shift-VARIANT
+                    // gate) can differ per shift; `candidate_shape_invariant`
+                    // already proved the digit + 8-alnum-run half above, and
+                    // both are shift-invariant, so re-running the full
+                    // the per-shift credential-shape gate here would recompute a
+                    // provably-constant predicate on every emitted shift.
+                    if !contains_known_prefix(&decoded) {
                         continue;
                     }
                     // NOTE: we intentionally use the non-spliced push.
@@ -421,7 +520,7 @@ impl Decoder for CaesarDecoder {
 }
 
 /// The set of Caesar shifts `k ∈ 1..=25` worth trying for `candidate`, as a
-/// `[bool; 26]` indexed by `k`. A shift can satisfy `looks_credential_shaped`
+/// `[bool; 26]` indexed by `k`. A shift can satisfy the per-shift credential-shape gate
 /// (whose binding gate is a KNOWN_PREFIXES substring in the shifted text) ONLY
 /// if some rotated-prefix needle with that `k` matched the raw candidate — by
 /// the `caesar_shift` bijection, `caesar_shift(candidate,k).contains(P)` iff
@@ -429,27 +528,21 @@ impl Decoder for CaesarDecoder {
 /// (i % 25) + 1`. So restricting the shift loop to these `k`s is recall- and
 /// precision-EXACT: every shift that could pass is included, and the dead 22–24
 /// shifts (84% of all decode sub-chunks come from Caesar's fan-out) are dropped.
-/// Falls back to all 25 shifts if the AC failed to build.
+/// The automaton is fail-closed (a build defect panics at first use), so there
+/// is no silent all-25-shifts degrade path.
 pub(crate) fn matched_caesar_shifts(candidate: &str) -> [bool; 26] {
     let mut try_shift = [false; 26];
-    match ROTATED_PREFIX_AC.as_ref() {
-        Some(ac) => {
-            // `find_overlapping_iter` is required (not `find_iter`): needles can
-            // nest/overlap, and a non-overlapping walk would drop a matched `k`.
-            for m in ac.find_overlapping_iter(candidate) {
-                try_shift[(m.pattern().as_usize() % 25) + 1] = true;
-            }
-        }
-        None => {
-            for slot in try_shift.iter_mut().skip(1) {
-                *slot = true;
-            }
-        }
+    // `ROTATED_PREFIX_AC` is fail-closed (panics on a build defect), so it is
+    // always present here — no silent all-25-shifts fallback branch.
+    // `find_overlapping_iter` is required (not `find_iter`): needles can
+    // nest/overlap, and a non-overlapping walk would drop a matched `k`.
+    for m in ROTATED_PREFIX_AC.find_overlapping_iter(candidate) {
+        try_shift[(m.pattern().as_usize() % 25) + 1] = true;
     }
     try_shift
 }
 
-/// Shift-invariant half of `looks_credential_shaped`, evaluated ONCE on the raw
+/// Shift-invariant half of the per-shift credential-shape gate, evaluated ONCE on the raw
 /// candidate before the 25x shift loop. A Caesar/ROT-N shift is a permutation
 /// within the letters and the identity on digits/punctuation, so both of these
 /// gates produce the SAME answer for the candidate and for every one of its 25
@@ -458,9 +551,9 @@ pub(crate) fn matched_caesar_shifts(candidate: &str) -> [bool; 26] {
 ///   2. an 8+ contiguous ASCII-alphanumeric run (alphanumeric-ness of each
 ///      byte is preserved under a shift).
 /// If the raw candidate fails either, no shift can satisfy
-/// `looks_credential_shaped`, so the whole 25-allocation fan-out for that
+/// the per-shift credential-shape gate, so the whole 25-allocation fan-out for that
 /// candidate is pure waste and is skipped. This is a true SUPERSET of the
-/// per-shift `looks_credential_shaped` predicate (it only ever short-circuits
+/// per-shift the per-shift credential-shape gate predicate (it only ever short-circuits
 /// candidates that would have produced zero shaped shifts), so it is exactly
 /// recall-preserving. It deliberately does NOT pre-check the KNOWN_PREFIXES
 /// substring - that is the one gate a shift CAN newly satisfy by rotating
@@ -469,7 +562,7 @@ pub(crate) fn candidate_shape_invariant(s: &str) -> bool {
     let bytes = s.as_bytes();
     // Must contain at least one letter for any shift to do anything, AND the
     // shift-invariant ">=1 digit + an 8+ alphanumeric run" shape that
-    // `looks_credential_shaped` also requires (the one gate it adds — a
+    // the per-shift credential-shape gate also requires (the one gate it adds — a
     // KNOWN_PREFIXES substring — is the only thing a shift can newly satisfy, so
     // it stays out of this precondition).
     bytes.iter().any(|b| b.is_ascii_alphabetic()) && has_digit_and_long_alnum_run(bytes)
@@ -478,7 +571,7 @@ pub(crate) fn candidate_shape_invariant(s: &str) -> bool {
 /// `true` iff `bytes` contains at least one ASCII digit AND a contiguous run of
 /// at least [`MIN_ALNUM_RUN`] ASCII-alphanumeric bytes. This is the structural
 /// half shared verbatim by [`candidate_shape_invariant`] (evaluated once on the
-/// raw candidate) and [`looks_credential_shaped`] (evaluated per shift) — both
+/// raw candidate) and the per-shift credential-shape gate (`contains_known_prefix` + the shift-invariant `candidate_shape_invariant`) (evaluated per shift) — both
 /// are shift-invariant under `caesar_shift`, so factoring them here keeps the two
 /// callers from drifting on the digit/run thresholds.
 fn has_digit_and_long_alnum_run(bytes: &[u8]) -> bool {
@@ -520,23 +613,20 @@ pub(crate) fn caesar_shift(input: &str, shift: u8) -> String {
     out
 }
 
-pub(crate) fn looks_credential_shaped(s: &str) -> bool {
-    if !has_digit_and_long_alnum_run(s.as_bytes()) {
-        return false;
-    }
-    // Same rationale as `reverse::looks_reversible`: gate on a known
-    // provider prefix appearing in the decoded text. Without this, any
-    // Caesar shift of a credential-shaped input (e.g. `sk_live_...`
-    // shifted +23 → `ph_ifsb_...`) gets emitted as a decoded chunk
-    // whose substrings can incidentally collide with detector regexes
-    // (`sb_4bZ39EnIvgT...` matches the stackblitz `sb_[a-zA-Z0-9_-]{20,}`
-    // regex purely by letter coincidence). The downstream
-    // `suppress_named_detector_finding` bypasses the
-    // EXAMPLE / INSERT / CHANGE / REPLACE markers for `/caesar`
-    // source_types (because evasion-decoded inputs CAN legitimately
-    // be a planted-credential rotation), so the gate has to happen
-    // here at decoder-output time.
-    crate::confidence::KNOWN_PREFIXES
-        .iter()
-        .any(|prefix| s.contains(prefix))
+/// The shift-VARIANT half of the Caesar credential-shape gate: a known provider
+/// prefix appears in the decoded text. Gating on this is what stops any Caesar
+/// shift of a credential-shaped input (e.g. `sk_live_...` shifted +23 →
+/// `ph_ifsb_...`) from being emitted as a decoded chunk whose substrings can
+/// incidentally collide with detector regexes (`sb_4bZ39EnIvgT...` matching the
+/// stackblitz `sb_[a-zA-Z0-9_-]{20,}` regex purely by letter coincidence). The
+/// downstream `suppress_named_detector_finding` bypasses the
+/// EXAMPLE / INSERT / CHANGE / REPLACE markers for `/caesar` source_types
+/// (evasion-decoded inputs CAN legitimately be a planted-credential rotation),
+/// so the gate has to happen here at decoder-output time. Split out so the
+/// per-shift loop evaluates ONLY this variant part — the invariant digit/run
+/// half is proved once by [`candidate_shape_invariant`].
+pub(crate) fn contains_known_prefix(s: &str) -> bool {
+    // Single linear AC pass over the prefix set (see [`PLAIN_PREFIX_AC`]),
+    // equivalent to `any(|p| s.contains(p))` but O(|s|) not O(prefixes × |s|).
+    PLAIN_PREFIX_AC.is_match(s)
 }

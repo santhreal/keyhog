@@ -19,7 +19,7 @@ fn binary_source_strings_only_mode_extracts_printable_secret_runs() {
     assert!(!chunks.is_empty());
     let chunk = chunks[0].as_ref().unwrap();
     assert!(chunk.data.contains("AKIA"));
-    assert_eq!(chunk.metadata.source_type, "binary:strings");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "binary:strings");
 }
 
 #[cfg(feature = "binary")]

@@ -80,3 +80,62 @@ fn both_surfaces_route_through_one_owner() {
         "the empty-key guard must survive inside the shared owner"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin one compose + one k8s document; these SWEEP the shared
+// `push_scalar_mapping_pairs` owner over N distinct scalar entries per surface.
+// Contract traced to parsers/yaml.rs: a mapping entry `key: value` under
+// `environment:` (compose) / `stringData:` (k8s) surfaces as
+// (key, scalar_value, 1-based line of the `key: value` anchor), in document
+// order. Distinct `K{i}` keys keep every line-anchor unambiguous; `v_<rand>`
+// values are always plain YAML scalars (no number/bool/null coercion). The line
+// math matches the fixed tests exactly (compose header = 3 lines → entries from
+// line 4; k8s Secret header = 5 lines → entries from line 6). NB the parser
+// SOURCE is mid phase-2 refactor (dirty), so this round-trip asserts the CURRENT
+// observable contract — a behavior change surfaces here as a regression signal.
+// No proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1_000))]
+
+    /// A docker-compose `environment:` mapping of N distinct scalar entries parses
+    /// to EXACTLY those (key, value, line) tuples in document order; header
+    /// occupies lines 1..=3, so entry i lands on line 4+i.
+    #[test]
+    fn compose_environment_mapping_round_trips(
+        vals in prop::collection::vec("[a-z0-9]{4,12}", 2..=8),
+    ) {
+        let mut doc = String::from("services:\n  web:\n    environment:\n");
+        let mut expected: Vec<(String, String, usize)> = Vec::new();
+        for (i, r) in vals.iter().enumerate() {
+            let key = format!("K{i}");
+            let value = format!("v_{r}");
+            doc.push_str(&format!("      {key}: {value}\n"));
+            expected.push((key, value, 4 + i));
+        }
+        let got = keyhog_scanner::testing::parse_docker_compose_tuples(&doc);
+        prop_assert_eq!(got, expected);
+    }
+
+    /// A k8s `stringData:` mapping of N distinct scalar entries parses to EXACTLY
+    /// those (key, value, line) tuples in document order; the canonical Secret
+    /// header occupies lines 1..=5, so entry i lands on line 6+i.
+    #[test]
+    fn k8s_string_data_mapping_round_trips(
+        vals in prop::collection::vec("[a-z0-9]{4,12}", 2..=8),
+    ) {
+        let mut doc =
+            String::from("apiVersion: v1\nkind: Secret\nmetadata:\n  name: test\nstringData:\n");
+        let mut expected: Vec<(String, String, usize)> = Vec::new();
+        for (i, r) in vals.iter().enumerate() {
+            let key = format!("K{i}");
+            let value = format!("v_{r}");
+            doc.push_str(&format!("  {key}: {value}\n"));
+            expected.push((key, value, 6 + i));
+        }
+        let got = keyhog_scanner::testing::parse_k8s_secret_tuples(&doc);
+        prop_assert_eq!(got, expected);
+    }
+}

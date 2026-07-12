@@ -1,18 +1,16 @@
 //! Gate `structured::parsers`: no .unwrap( / .expect( in production source lines.
 
+use super::support::unwrap_expect_offenders;
+
 #[test]
 fn structured_parsers_no_unwrap_expect() {
     let mut offenders: Vec<(String, usize, String)> = Vec::new();
     for path in parser_source_paths() {
         let src = std::fs::read_to_string(&path).expect("source readable");
-        for (i, line) in src.lines().enumerate() {
-            let t = line.trim();
-            if t.starts_with("//") || t.contains("#[cfg(test)]") {
-                continue;
-            }
-            if t.contains(".unwrap(") || t.contains(".expect(") {
-                offenders.push((path.clone(), i + 1, line.to_string()));
-            }
+        // Shared single-line scan (this gate spans the whole parsers/ dir, so it
+        // owns each offender's path); the block-aware GPU variant stays separate.
+        for (line_no, line) in unwrap_expect_offenders(&src) {
+            offenders.push((path.clone(), line_no, line.to_string()));
         }
     }
     assert!(

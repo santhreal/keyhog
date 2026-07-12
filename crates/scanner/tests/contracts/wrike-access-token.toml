@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "WRIKE_ACCESS_TOKEN=2XE9pEXAMPLEEXAMPLEPzoa4"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# WRIKE_ACCESS_TOKEN=2XE9ph0wHZ8cNfIMR56S5DHN4Pzoa4  # pm"
+credential = "2XE9ph0wHZ8cNfIMR56S5DHN4Pzoa4"
+reason = "Commented-out config; WRIKE_ACCESS_TOKEN keyword + token intact inside the comment."

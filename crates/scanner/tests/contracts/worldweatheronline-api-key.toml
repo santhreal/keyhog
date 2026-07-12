@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "WORLD WEATHER ONLINE          _          _       __  _   _  __           _  _          __ _  _KEY   :  '  '  '\":   =:     \" \"\"          R2GcAEXAMPLEEXAMPLEMPii9"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# WORLDWEATHERONLINE_KEY=R2GcANPDiinhD4nWMPii9  # weather"
+credential = "R2GcANPDiinhD4nWMPii9"
+reason = "Commented-out config; WORLDWEATHERONLINE_KEY keyword + key intact inside the comment."

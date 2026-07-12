@@ -71,3 +71,50 @@ fn structured_line_resolver_uses_shared_offset_builder() {
         "offset 30 is the trailing empty line 5"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vector pins one text's table + lookups; these SWEEP both contracts.
+// `compute_line_offsets` must EXACTLY equal the naive `[0] ++ [i+1 for each '\n']`
+// table (a DIFFERENTIAL keeping the memchr_iter builder behavior-identical to the
+// scalar loop — a divergence drifts every structured pair's reported line). And the
+// resolver's `partition_point` lookup must map any offset to `1 + (newlines strictly
+// before it)` — the true 1-based line, independent of the table's construction.
+// Traced against `compute_line_offsets` + `line_number_for_offset`. No proptest before.
+
+use proptest::prelude::*;
+
+/// Naive line-start table: a leading 0, then one entry per newline at `pos + 1`.
+fn naive_line_offsets(text: &str) -> Vec<usize> {
+    let mut v = vec![0usize];
+    for (i, b) in text.bytes().enumerate() {
+        if b == b'\n' {
+            v.push(i + 1);
+        }
+    }
+    v
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4_000))]
+
+    /// The shared builder equals the naive table for any text (letters, spaces and
+    /// newlines exercise both the leading-0 and per-newline pushes).
+    #[test]
+    fn line_offsets_match_the_naive_table(text in "[a-z \n]{0,80}") {
+        prop_assert_eq!(compute_line_offsets(&text), naive_line_offsets(&text));
+    }
+
+    /// The resolver's partition_point lookup maps any offset to `1 + (number of
+    /// newlines strictly before it)` — the correct 1-based line.
+    #[test]
+    fn line_number_is_one_plus_preceding_newlines(
+        text in "[a-z \n]{0,80}",
+        offset in 0usize..90,
+    ) {
+        let offsets = compute_line_offsets(&text);
+        let line = line_number_for_offset(&offsets, offset);
+        let cap = offset.min(text.len());
+        let newlines_before = text.as_bytes()[..cap].iter().filter(|&&b| b == b'\n').count();
+        prop_assert_eq!(line, 1 + newlines_before);
+    }
+}

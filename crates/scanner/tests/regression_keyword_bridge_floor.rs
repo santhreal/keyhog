@@ -2,7 +2,7 @@
 //!
 //! The generic-assignment bridge (`engine/phase2_generic.rs` →
 //! `generic_value_shape_rejected` → `adjudicate::generic_bridge_entropy_below_floor`)
-//! applies a PER-FAMILY Shannon-entropy floor (`rules/entropy-floors.toml`) as its
+//! applies the active detector's per-family Shannon-entropy floor as its
 //! very first suppression gate. When `generic_keyword_low_entropy` is ON (the
 //! shipped default) a keyword-anchored value is judged against the
 //! `generic-keyword-secret` family floor of **1.5** bits/byte; when it is OFF the
@@ -25,12 +25,12 @@ use keyhog_core::{Chunk, ChunkMetadata, RawMatch, Severity};
 use keyhog_scanner::testing::entropy_fast::shannon_entropy_simd;
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 
-/// `generic-keyword-secret` family floor (rules/entropy-floors.toml, single
+/// `generic-keyword-secret` detector-local floor (single
 /// bucket). A keyword-anchored candidate at or below this bits/byte value is
 /// dropped even with the low-entropy floor ON.
 const KEYWORD_SECRET_FLOOR: f64 = 1.5;
-/// `generic-secret` family floor for length <= 24 (rules/entropy-floors.toml,
-/// first bucket). This is the floor the bridge falls back to when
+/// `generic-secret` detector-local floor for length <= 24 (the first bucket).
+/// This is the floor the bridge falls back to when
 /// `generic_keyword_low_entropy` is OFF.
 const GENERIC_SECRET_SHORT_FLOOR: f64 = 2.8;
 

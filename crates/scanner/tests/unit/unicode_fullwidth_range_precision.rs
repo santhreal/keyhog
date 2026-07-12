@@ -1,10 +1,13 @@
 //! Precision/perf contract for `is_fullwidth`: only the fullwidth forms of
 //! printable ASCII (U+FF01–FF5E) are "fullwidth ASCII variants" and get
 //! normalized to their ASCII twin. The rest of the Halfwidth-and-Fullwidth-Forms
-//! block (halfwidth katakana U+FF61–FF9F, hangul, fullwidth brackets
-//! U+FF5F–FF60, CJK currency signs U+FFE0–FFE6) are NOT ASCII variants: they
-//! must be left untouched and must NOT be reported as evasion, so legitimate CJK
-//! text stays on the zero-allocation fast path.
+//! block (halfwidth katakana U+FF61–FF9F, the VISIBLE hangul letters, fullwidth
+//! brackets U+FF5F–FF60, CJK currency signs U+FFE0–FFE6) are NOT ASCII variants:
+//! they must be left untouched and must NOT be reported as evasion, so legitimate
+//! CJK text stays on the zero-allocation fast path. The ONE exception is the
+//! INVISIBLE U+FFA0 HALFWIDTH HANGUL FILLER (zero-advance), which is a documented
+//! credential-splice vector and IS stripped as evasion — see
+//! `halfwidth_hangul_filler_ffa0_is_stripped_as_evasion` below.
 //!
 //! Every fullwidth credential-charset char (A–Z, a–z, 0–9, `_ + / = . -`) lives
 //! in U+FF01–FF5E, so the narrowing preserves all credential normalization.
@@ -147,8 +150,25 @@ fn halfwidth_katakana_ff9f_is_kept() {
 }
 
 #[test]
-fn halfwidth_hangul_ffa0_is_kept() {
-    assert_kept_and_not_evasion('\u{FFA0}', "halfwidth hangul filler");
+fn halfwidth_hangul_filler_ffa0_is_stripped_as_evasion() {
+    // U+FFA0 HALFWIDTH HANGUL FILLER is the ONE exception to "halfwidth hangul is
+    // kept": unlike the VISIBLE halfwidth hangul letters (U+FFA1–FFDC) and katakana
+    // (U+FF61–FF9F) this file protects, the FILLER is INVISIBLE (zero-advance). It
+    // is grouped in `unicode_hardening`'s invisible-`Lo`-filler strip set with the
+    // other Hangul fillers (U+115F/1160/3164) precisely because it renders blank and
+    // is a classic "looks empty" credential-splice vector — `gh<FFA0>p_token` must
+    // fold to `ghp_token`. So it MUST be flagged as evasion and stripped, matching
+    // `unicode_hardening`'s `hangul_filler_split_credential_is_recovered`.
+    let spliced = "token_\u{FFA0}_value";
+    assert!(
+        contains_evasion(spliced),
+        "the invisible halfwidth hangul filler U+FFA0 must be flagged as an evasion splice vector"
+    );
+    let normalized = normalize_homoglyphs(spliced);
+    assert!(
+        !normalized.contains('\u{FFA0}'),
+        "U+FFA0 must be stripped from the value scan path, got {normalized:?}"
+    );
 }
 
 #[test]

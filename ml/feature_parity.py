@@ -16,17 +16,28 @@ Base layout (indices, mirrors the Rust comment "37 base + 4 padding = 41"):
 Feature #41 (the 42nd, appended when the Rust scanner is bumped to 42 features):
   41    decode-structure is_binary_payload — keyhog's decode-through advantage
         fed into the model. Computed on the credential text via decode_structure.
+
+Feature #42 (the 43rd, DET-1 keyword specificity):
+  42    service-context — the ML context window names a SPECIFIC service from
+        the detector corpus (vs generic role words only, which feature 17
+        already covers). Vocabulary re-derived here from detectors/*.toml with
+        rules byte-identical to ml_scorer/service_vocab.rs (length floor 4,
+        generic-family keyword exclusion, stem-spread >= 3 exclusion).
 """
 
 from __future__ import annotations
 
 import math
+import tomllib
+from pathlib import Path
 
 import decode_structure
 
 NUM_BASE_FEATURES = 41
 DECODE_FEATURE_INDEX = 41
-NUM_FEATURES = 42
+SERVICE_CONTEXT_FEATURE_INDEX = 42
+NUM_FEATURES = 43
+
 
 FILE_TYPE_OFFSET = 32
 MAX_NORMALIZED_TEXT_LENGTH = 200.0
@@ -57,6 +68,59 @@ BINARY_FILE_TYPE_INDEX = 5
 COMMENT_CONTEXT_FEATURE_INDEX = 38
 ASSIGNMENT_OPERATOR_FEATURE_INDEX = 39
 TEST_FILE_CONTEXT_FEATURE_INDEX = 40
+
+# ── service vocabulary (feature 42, DET-1) ── mirrors ml_scorer/service_vocab.rs
+MIN_SERVICE_KEYWORD_LEN = 4
+GENERIC_STEM_SPREAD_LIMIT = 3
+_DETECTORS_DIR = Path(__file__).resolve().parents[1] / "detectors"
+_SERVICE_VOCAB: list[str] | None = None
+
+
+def _ascii_lower(s: str) -> str:
+    """ASCII-only lowering, matching Rust `to_ascii_lowercase` (str.lower()
+    would also fold non-ASCII and diverge)."""
+    return s.encode("utf-8").lower().decode("utf-8")
+
+
+def _is_generic_family(detector_id: str) -> bool:
+    return detector_id.startswith("generic-") or detector_id.startswith("entropy")
+
+
+def _build_service_vocabulary(specs: list[tuple[str, list[str]]]) -> list[str]:
+    """Pure builder over (detector_id, keywords) pairs; rules mirror
+    service_vocab.rs::build_service_vocabulary exactly."""
+    generic_words: set[str] = set()
+    stems_by_keyword: dict[str, set[str]] = {}
+    for detector_id, keywords in specs:
+        if _is_generic_family(detector_id):
+            for kw in keywords:
+                generic_words.add(_ascii_lower(kw))
+            continue
+        stem = detector_id.split("-", 1)[0]
+        for kw in keywords:
+            stems_by_keyword.setdefault(_ascii_lower(kw), set()).add(stem)
+    return sorted(
+        kw
+        for kw, stems in stems_by_keyword.items()
+        if len(kw.encode("utf-8")) >= MIN_SERVICE_KEYWORD_LEN
+        and len(stems) < GENERIC_STEM_SPREAD_LIMIT
+        # substring-of-generic exclusion: `api_` ⊂ `api_key` fires everywhere
+        # the generic word does (see service_vocab.rs rule 2).
+        and not any(kw in g for g in generic_words)
+    )
+
+
+def _service_vocabulary() -> list[str]:
+    """The vocabulary derived from detectors/*.toml, loaded once."""
+    global _SERVICE_VOCAB
+    if _SERVICE_VOCAB is None:
+        specs = []
+        for p in sorted(_DETECTORS_DIR.glob("*.toml")):
+            with open(p, "rb") as fh:
+                det = tomllib.load(fh)["detector"]
+            specs.append((det["id"], det.get("keywords", [])))
+        _SERVICE_VOCAB = _build_service_vocabulary(specs)
+    return _SERVICE_VOCAB
 
 COMMENT_PREFIXES = ["#", "//", "/*", "--"]
 BINARY_MARKERS = [
@@ -271,5 +335,8 @@ def compute_features(
 
     if with_decode:
         f[DECODE_FEATURE_INDEX] = _binary(decode_structure.is_encoded_binary(text))
+        f[SERVICE_CONTEXT_FEATURE_INDEX] = _binary(
+            bool(context) and _ci_contains_any(cb, _service_vocabulary())
+        )
 
     return f

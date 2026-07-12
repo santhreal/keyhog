@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "WASABIKEY=D1R7EEXAMPLEEXAMPLEMK1F2"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# WASABI_ACCESS_KEY=D1R7E3FCOQ5SBACMK1F2  # storage"
+credential = "D1R7E3FCOQ5SBACMK1F2"
+reason = "Commented-out config; WASABI_ACCESS_KEY keyword + 20-char access key intact inside the comment."

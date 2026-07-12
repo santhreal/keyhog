@@ -10,7 +10,9 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
 mod extract;
-mod filter;
+#[cfg(fuzzing)]
+pub use extract::fuzz_extract_pdf_text;
+pub(crate) mod filter;
 mod path;
 mod read;
 mod reader;
@@ -171,10 +173,28 @@ pub(crate) fn mmap_toctou_sanity_cap_bytes_for_test() -> u64 {
     read::mmap_toctou_sanity_cap_bytes_for_test()
 }
 
-const EXPANDABLE_SYMLINK_EXTS: &[&str] = &[
-    "har", "zip", "apk", "ipa", "crx", "jar", "tar", "gz", "tgz", "zst", "lz4", "sz", "bz2", "xz",
-    "7z", "rar", "pdf",
-];
+#[derive(serde::Deserialize)]
+struct ExpandableSymlinkExtensions {
+    extensions: Vec<String>,
+}
+
+fn parse_expandable_symlink_extensions(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<ExpandableSymlinkExtensions>(raw)
+        .map(|parsed| parsed.extensions)
+        .map_err(|error| error.to_string())
+}
+
+static EXPANDABLE_SYMLINK_EXTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_expandable_symlink_extensions(include_str!(
+        "../../../rules/expandable-symlink-extensions.toml"
+    )) {
+        Ok(extensions) => extensions,
+        Err(error) => panic!(
+            "rules/expandable-symlink-extensions.toml is invalid: {error}. \
+                 Fix the bundled Tier-B expandable-symlink extensions list."
+        ),
+    }
+});
 
 fn is_expandable_path(path: &Path) -> bool {
     path.extension()
@@ -182,7 +202,7 @@ fn is_expandable_path(path: &Path) -> bool {
         .and_then(|e| e.to_str())
         // LAW10: non-UTF8 extension cannot match the curated ASCII archive-extension set; fail-closed
         .is_some_and(|ext| {
-            EXPANDABLE_SYMLINK_EXTS
+            (&*EXPANDABLE_SYMLINK_EXTS)
                 .iter()
                 .any(|candidate| ext.eq_ignore_ascii_case(candidate))
         })
@@ -709,9 +729,12 @@ impl Source for FilesystemSource {
                 // (see `har_symlink_target_is_not_followed_via_include`).
                 // The expandable-extension set mirrors the archive/compressed
                 // branches in `extract.rs::process_entry`.
+                // stat failure => treat as non-symlink: the file is still
+                // included via the canonicalize branch below, so recall is
+                // unaffected; only the archive-symlink refusal is skipped.
                 let is_link = std::fs::symlink_metadata(p)
                     .map(|m| m.file_type().is_symlink())
-                    .unwrap_or(false); // LAW10: empty/absent => documented numeric default, recall-safe
+                    .unwrap_or(false);
                 if !is_link {
                     allowed.push(p.canonicalize().unwrap_or_else(|_| p.clone())); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
                     continue;

@@ -119,7 +119,15 @@ fn assert_layout_parity(in_dim: usize, out_dim: usize, draws: usize, seed: u64) 
     }
 }
 
-/// fc1 shape: 42 features → 32 hidden.
+/// Production FC1 shape after DET-1: `model_arch::INPUT_DIM`=43 features → 32 hidden.
+#[test]
+fn output_stationary_kernel_is_bit_identical_fc1_production_shape() {
+    assert_layout_parity(43, 32, 20_000, 0x1234_5678_9abc_def2);
+}
+
+/// Pre-DET-1 42×32 shape, RETAINED as a dimension-agnostic kernel regression
+/// check: the output-stationary kernel must stay bit-identical at the old width
+/// too (proves the kernel is not hard-coded to the current INPUT_DIM).
 #[test]
 fn output_stationary_kernel_is_bit_identical_fc1_shape() {
     assert_layout_parity(42, 32, 20_000, 0x1234_5678_9abc_def1);

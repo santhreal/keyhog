@@ -1,3 +1,8 @@
+// This whole tripwire measures the Hyperscan (`simd`) cold-compile path and
+// calls `set_hyperscan_cache_dir`, which only exists under the `simd` feature.
+// Gate the binary on `simd` so the default `simdsieve`-only test build (which
+// has no Hyperscan) does not fail to compile against a feature-gated symbol.
+#![cfg(feature = "simd")]
 //! PERF TRIPWIRE — cold detector-compile is a SERIAL Hyperscan build that
 //! does not use the machine's cores.
 //!

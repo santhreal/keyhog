@@ -446,6 +446,25 @@ function Find-Minisign {
     return $null
 }
 
+function Get-HttpStatusCode {
+    # Extract the HTTP status code from a terminating web-request error, or 0 if
+    # the failure carried no HTTP response (a DNS/timeout/connection transport
+    # error). Works across Windows PowerShell 5.1 (System.Net.WebException) and
+    # PowerShell 7+ (HttpResponseException): both expose Exception.Response.StatusCode.
+    param($ErrorRecord)
+    $resp = $null
+    try { $resp = $ErrorRecord.Exception.Response } catch { $resp = $null }
+    if ($null -ne $resp) {
+        try { return [int]$resp.StatusCode } catch { }
+    }
+    try {
+        if ($null -ne $ErrorRecord.Exception.PSObject.Properties['StatusCode']) {
+            return [int]$ErrorRecord.Exception.StatusCode
+        }
+    } catch { }
+    return 0
+}
+
 function Verify-ReleaseSignature {
     param($BinaryPath, $AssetName)
     $sigPath = [System.IO.Path]::GetTempFileName()
@@ -453,7 +472,15 @@ function Verify-ReleaseSignature {
         try {
             Download-Asset -Name "$AssetName.minisig" -OutPath $sigPath
         } catch {
-            return (Allow-UnverifiedInstall "No .minisig signature was published for $AssetName at $($Script:Tag).")
+            # Classify the failure: a genuine HTTP 404 means the signature is
+            # absent, but a network/transport error must NOT be silently
+            # downgraded to "no signature published" and skipped (fail closed
+            # for security controls). Download-Asset already retried transients.
+            $code = Get-HttpStatusCode $_
+            if ($code -eq 404) {
+                return (Allow-UnverifiedInstall "No .minisig signature was published for $AssetName at $($Script:Tag).")
+            }
+            return (Allow-UnverifiedInstall "Could not fetch the .minisig signature for $AssetName ($($_.Exception.Message)): a network/transport failure, not a missing signature. A retry may succeed.")
         }
         if ((Get-Item $sigPath).Length -eq 0) {
             return (Allow-UnverifiedInstall "No .minisig signature was published for $AssetName at $($Script:Tag).")
@@ -482,13 +509,29 @@ function Verify-Checksum {
     param($BinaryPath, $AssetName)
     $checksumUrl = Get-ReleaseAssetUrl -Name "$AssetName.sha256"
     $expected = $null
-    try {
-        $line = Invoke-RestMethod -Uri $checksumUrl -ErrorAction Stop
-        if ($line) {
-            $expected = ($line -split '\s+')[0]
+    # Fetch the published checksum with transient-retry, classifying failures so
+    # a network/transport error is never silently downgraded to "no checksum
+    # published" and skipped (fail closed for security controls). A genuine HTTP
+    # 404 (asset absent) fails fast; only non-404 transport errors are retried,
+    # matching Download-Asset's policy, and a persistent one is surfaced honestly.
+    $attempts = 5
+    for ($i = 1; $i -le $attempts; $i++) {
+        try {
+            $line = Invoke-RestMethod -Uri $checksumUrl -ErrorAction Stop
+            if ($line) { $expected = ($line -split '\s+')[0] }
+            break
+        } catch {
+            $code = Get-HttpStatusCode $_
+            if ($code -eq 404) {
+                return (Allow-UnverifiedInstall "No .sha256 checksum was published for $AssetName at $($Script:Tag).")
+            }
+            if ($i -ge $attempts) {
+                return (Allow-UnverifiedInstall "Could not fetch the .sha256 checksum for $AssetName ($($_.Exception.Message)): a network/transport failure, not a missing checksum. A retry may succeed.")
+            }
+            $delay = [math]::Min(2 * $i, 10)
+            Warn "  checksum fetch attempt $i/$attempts failed: $($_.Exception.Message)"
+            Start-Sleep -Seconds $delay
         }
-    } catch {
-        return (Allow-UnverifiedInstall "No .sha256 checksum was published for $AssetName at $($Script:Tag).")
     }
     if (-not $expected) {
         return (Allow-UnverifiedInstall "No .sha256 checksum was published for $AssetName at $($Script:Tag).")
@@ -673,9 +716,21 @@ function Download-VerifiedGpuLiteralSidecar {
             try {
                 Download-Asset -Name $sidecarName -OutPath $sidecarPath
             } catch {
-                Err "No GPU literal artifact sidecar was published for $($Script:Asset) at $($Script:Tag)."
-                Err "Refusing to install a release that would recompile shipped detector matchers at runtime."
-                Err "Fix: rebuild the release workflow so $sidecarName, $sidecarName.sha256, and $sidecarName.minisig are uploaded."
+                # Classify the fetch failure (Law 10: never conflate a transport
+                # failure with a missing asset). Only a real 404 means the sidecar
+                # was not published; a network/DNS/transport error (status 0 or
+                # 5xx) must NOT tell the operator to rebuild the release workflow
+                # for an asset that may well be present.
+                $code = Get-HttpStatusCode $_
+                if ($code -eq 404) {
+                    Err "No GPU literal artifact sidecar was published for $($Script:Asset) at $($Script:Tag)."
+                    Err "Refusing to install a release that would recompile shipped detector matchers at runtime."
+                    Err "Fix: rebuild the release workflow so $sidecarName, $sidecarName.sha256, and $sidecarName.minisig are uploaded."
+                } else {
+                    Err "Could not download the GPU literal artifact sidecar $sidecarName (network/transport error $code, not a missing asset): $($_.Exception.Message)"
+                    Err "This is a network/transport failure, so the sidecar may well be published; a retry may succeed."
+                    Err "Refusing to install a release whose shipped detector matchers could not be fetched (they must not be recompiled at runtime)."
+                }
                 return $false
             }
             if (-not (Verify-ReleaseSignature -BinaryPath $sidecarPath -AssetName $sidecarName)) {
@@ -1377,13 +1432,28 @@ function New-CalibrationWebFixture {
 function Start-CalibrationWebServer {
     param([string]$Path, [string]$PortFile)
     $job = Start-Job -ScriptBlock {
-        param([string]$Root, [string]$PortPath)
+        param([string]$Root, [string]$PortPath, [int]$ParentPid, [int]$MaxSeconds)
         $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse('127.0.0.1'), 0)
         $listener.Start()
         try {
             $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
             Set-Content -Path $PortPath -Encoding ASCII -Value $port
+            # Lifetime bound (parity with install.sh, whose server is reaped by
+            # the parent's cleanup trap): a raw `while ($true) AcceptTcpClient()`
+            # blocks forever and would LEAK a listener holding a loopback port if
+            # the installer died between Start-Job and Stop-Job. Poll() with a
+            # 500ms window lets the loop re-check its guards between connections
+            # and exit if the parent installer is gone or the calibration
+            # deadline passed. The happy path is unchanged: a pending connection
+            # makes Poll return $true immediately, so AcceptTcpClient never
+            # blocks.
+            $deadline = [DateTime]::UtcNow.AddSeconds($MaxSeconds)
             while ($true) {
+                if (-not $listener.Server.Poll(500000, [System.Net.Sockets.SelectMode]::SelectRead)) {
+                    if ([DateTime]::UtcNow -gt $deadline) { break }
+                    if ($ParentPid -gt 0 -and -not (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) { break }
+                    continue
+                }
                 $client = $listener.AcceptTcpClient()
                 try {
                     $stream = $client.GetStream()
@@ -1403,7 +1473,7 @@ function Start-CalibrationWebServer {
         } finally {
             $listener.Stop()
         }
-    } -ArgumentList $Path, $PortFile
+    } -ArgumentList $Path, $PortFile, $PID, 600
 
     for ($i = 0; $i -lt 100; $i++) {
         if (Test-Path -PathType Leaf $PortFile) {
@@ -1589,6 +1659,27 @@ function Test-Binary {
     return $true
 }
 
+# Roll back a failed post-install verification: restore the pre-install backup
+# if one exists (upgrade/repair over a binary that worked), otherwise remove the
+# freshly-staged binary (fresh install). Single owner so the doctor / autoroute
+# / non-runnable failure paths cannot drift apart (ONE PLACE - mirrors
+# install.sh's finalize_install rollback block).
+function Restore-PreviousInstallOrRemove {
+    param(
+        [Parameter(Mandatory)] [string]$BinPath,
+        [string]$RemovedNote = "Removed the failed install; no working keyhog was overwritten."
+    )
+    if ($Script:InstallBackup -and (Test-Path $Script:InstallBackup)) {
+        Move-Item -Force $Script:InstallBackup $BinPath
+        $Script:InstallBackup = $null
+        Warn "Rolled back to your previous working keyhog at $BinPath."
+    } else {
+        Remove-Item -Force $BinPath -ErrorAction SilentlyContinue
+        $Script:InstallBackup = $null
+        Warn $RemovedNote
+    }
+}
+
 # Verify the freshly-staged binary; on failure restore the previous working
 # binary (upgrade) or remove the broken download (fresh install). Returns
 # $true on success. Mirrors install.sh's finalize_install.
@@ -1597,43 +1688,46 @@ function Finalize-Install {
     if (Test-Binary -BinPath $BinPath) {
         # Native post-install health check (parity with install.sh): reuses the
         # scanner's own hw_probe and runs an end-to-end scan self-test, proving
-        # the binary actually detects a secret on this host. Non-fatal; a PATH
-        # note shouldn't fail an otherwise-working install.
+        # the binary actually detects a secret on this host. doctor exits 4
+        # (EXIT_HEALTH_FAILURE) iff it deems the binary UNHEALTHY - the planted
+        # secret was NOT detected, the detector corpus is missing, or (on a GPU
+        # host) the fail-closed DEFAULT GPU scan route is dead - and 0 otherwise
+        # (PATH-only notices are exit-0 warnings; GPU self-tests are skipped on
+        # no-GPU/headless hosts). A non-zero exit means the binary we just
+        # installed cannot do its primary job on the route it will actually use:
+        # fail closed and roll back rather than report "installed" (Law 10 - no
+        # silent fallback past a failed self-test).
         Say ""
         try {
             # Out-Host: doctor prints to the console but its stdout must NOT
             # land on this function's output stream, or it would contaminate
             # the boolean return value (Finalize-Install is used as a predicate).
             & $BinPath doctor | Out-Host
-            if ($LASTEXITCODE -ne 0) {
-                Warn "keyhog doctor reported issues above; the binary is installed but may not be fully healthy."
+            $doctorExit = $LASTEXITCODE
+            if ($doctorExit -eq 4) {
+                Err "keyhog doctor reports the freshly-installed binary is UNHEALTHY (exit 4): it failed its own end-to-end scan self-test above."
+                Err "Refusing to leave a scanner that cannot detect secrets on its default route; rolling back this install."
+                Err "  If only the GPU route is broken, the CPU/SIMD paths still work - reinstall, then scan with an explicit '--backend cpu' or '--backend simd' override."
+                Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the unhealthy binary; no working keyhog was overwritten."
+                return $false
+            } elseif ($doctorExit -ne 0) {
+                Err "keyhog doctor did not complete (exit $doctorExit): the installed binary could not even run its own health self-test."
+                Err "Rolling back rather than leaving an install whose health is unknown."
+                Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the binary that could not self-test; no working keyhog was overwritten."
+                return $false
             }
         } catch {
             Warn "Could not run 'keyhog doctor' for post-install verification: $_"
         }
         if (-not (Invoke-AutorouteCalibration -BinPath $BinPath)) {
             Err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
-            if ($Script:InstallBackup -and (Test-Path $Script:InstallBackup)) {
-                Move-Item -Force $Script:InstallBackup $BinPath
-                $Script:InstallBackup = $null
-                Warn "Rolled back to your previous working keyhog at $BinPath."
-            } else {
-                Remove-Item -Force $BinPath -ErrorAction SilentlyContinue
-                Warn "Removed the uncalibrated binary; no working keyhog was overwritten."
-            }
+            Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the uncalibrated binary; no working keyhog was overwritten."
             return $false
         }
         if ($Script:InstallBackup) { Remove-Item -Force $Script:InstallBackup -ErrorAction SilentlyContinue; $Script:InstallBackup = $null }
         return $true
     }
-    if ($Script:InstallBackup -and (Test-Path $Script:InstallBackup)) {
-        Move-Item -Force $Script:InstallBackup $BinPath
-        $Script:InstallBackup = $null
-        Warn "Rolled back to your previous working keyhog at $BinPath."
-    } else {
-        Remove-Item -Force $BinPath -ErrorAction SilentlyContinue
-        Warn "Removed the non-runnable download; no working keyhog was overwritten."
-    }
+    Restore-PreviousInstallOrRemove -BinPath $BinPath -RemovedNote "Removed the non-runnable download; no working keyhog was overwritten."
     return $false
 }
 
@@ -1650,6 +1744,25 @@ function Show-Summary {
     }
 }
 
+function Test-PathContainsDir {
+    # Windows PATH entries compare case-insensitively and accumulate formatting
+    # noise (trailing backslashes, stray spaces) AND are frequently stored
+    # unexpanded as REG_EXPAND_SZ (`%LOCALAPPDATA%\...`, `%USERPROFILE%\...`). A
+    # raw compare on the split misses `C:\keyhog\` vs `C:\keyhog` and, worse,
+    # misses `%LOCALAPPDATA%\Programs\keyhog` vs its expansion - re-appending a
+    # DUPLICATE entry on every re-install. One normalized, ENV-EXPANDED
+    # comparison, used by every PATH check (Windows analog of install.sh's
+    # $HOME/~ spelling match).
+    param([string]$PathString, [string]$Dir)
+    if (-not $PathString) { return $false }
+    $needle = [Environment]::ExpandEnvironmentVariables($Dir).Trim().TrimEnd('\')
+    foreach ($entry in ($PathString -split ';')) {
+        $normalized = [Environment]::ExpandEnvironmentVariables($entry).Trim().TrimEnd('\')
+        if ($normalized -and ($normalized -ieq $needle)) { return $true }
+    }
+    return $false
+}
+
 function Ensure-OnPath {
     # PATH wiring runs in EVERY install mode -- not only the interactive wizard.
     # The canonical quick install (`iwr ... | iex`) and `-Yes` are
@@ -1660,11 +1773,10 @@ function Ensure-OnPath {
     # install left `keyhog` off PATH and unrunnable, a silent config gap.)
     # Interactive runs still prompt; a decline prints the exact manual command --
     # never a silent skip.
-    $pathEntries = $env:PATH -split ';'
-    if ($pathEntries -contains $InstallDir) { return }
+    if (Test-PathContainsDir $env:PATH $InstallDir) { return }
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if (-not $userPath) { $userPath = "" }
-    if (($userPath -split ';') -contains $InstallDir) {
+    if (Test-PathContainsDir $userPath $InstallDir) {
         Dim "  $InstallDir already in your User PATH (open a new shell to pick it up)."
         return
     }
@@ -1864,14 +1976,18 @@ function Do-Diagnose {
     $bin = Get-CurrentBinary
     if ($bin) {
         Say "  Path:    $bin"
-        Say "  Version: $((Get-CurrentVersion) -or '(does not run)')"
+        # NOT `-or`: PowerShell `-or` is a BOOLEAN operator, so
+        # `$version -or '(does not run)'` coerces the version STRING to $true
+        # and the report printed "Version: True". Use an explicit empty check.
+        $version = Get-CurrentVersion
+        if ([string]::IsNullOrWhiteSpace($version)) { $version = '(does not run)' }
+        Say "  Version: $version"
     } else {
         Say "  (no keyhog found on PATH or in $InstallDir)"
     }
     Write-Host ""
     Use-Color "PATH" 'White'
-    $pathEntries = $env:PATH -split ';'
-    if ($pathEntries -contains $InstallDir) {
+    if (Test-PathContainsDir $env:PATH $InstallDir) {
         Ok "  $InstallDir is on PATH."
     } else {
         Warn "  $InstallDir is NOT on PATH."

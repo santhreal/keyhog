@@ -43,6 +43,71 @@ fn gzip_zlib_pdf_elf_are_binary_payloads() {
 }
 
 #[test]
+fn real_pe_image_is_binary_payload() {
+    // A real PE: 'MZ' DOS header whose e_lfanew (u32 LE @ 0x3C) points at the
+    // PE\0\0 NT signature. is_pe_image requires this structure, so a genuine
+    // embedded PE still classifies as binary.
+    let mut pe = vec![0u8; 0x40];
+    pe[0] = b'M';
+    pe[1] = b'Z';
+    pe[0x3c..0x40].copy_from_slice(&0x40u32.to_le_bytes());
+    pe.extend_from_slice(b"PE\x00\x00");
+    pe.extend_from_slice(&[0u8; 8]);
+    let s = b64(&pe);
+    let a = analyze(&s);
+    assert_eq!(a.magic, Some("pe"), "a real PE image must classify as pe");
+    assert!(a.is_binary_payload());
+    assert!(is_encoded_binary(&s));
+}
+
+#[test]
+fn bare_mz_prefix_secret_is_not_suppressed_as_pe() {
+    // Regression: a 36-byte high-entropy secret whose decoded bytes merely begin
+    // with the two printable ASCII letters 'M','Z' is NOT a PE (no e_lfanew /
+    // PE\0\0 structure, and shorter than the 0x40 DOS header). A 2-byte magic
+    // must not drive suppression, or genuine credentials are silently dropped.
+    let mut blob = vec![b'M', b'Z'];
+    blob.extend_from_slice(&[0x42u8; 34]);
+    let s = b64(&blob);
+    let a = analyze(&s);
+    assert_eq!(a.magic, None, "bare 'MZ' prefix must not classify as pe");
+    assert!(
+        !a.is_binary_payload(),
+        "bare 'MZ' secret must not be suppressed as binary"
+    );
+    assert!(!is_encoded_binary(&s));
+}
+
+#[test]
+fn mz_without_pe_signature_at_e_lfanew_is_not_pe() {
+    // Long enough to hold e_lfanew, but the pointed-at bytes are not PE\0\0.
+    let mut blob = vec![0u8; 0x40];
+    blob[0] = b'M';
+    blob[1] = b'Z';
+    blob[0x3c..0x40].copy_from_slice(&0x40u32.to_le_bytes());
+    blob.extend_from_slice(b"NOPE");
+    blob.extend_from_slice(&[0u8; 8]);
+    let s = b64(&blob);
+    assert_eq!(
+        analyze(&s).magic,
+        None,
+        "MZ without PE\\0\\0 at e_lfanew is not a PE"
+    );
+}
+
+#[test]
+fn gzip_wrong_compression_method_is_not_gzip() {
+    // 0x1f 0x8b but CM != 8 (gzip only ever uses DEFLATE): not a real gzip
+    // stream, so the 2-byte magic must not suppress.
+    let mut blob = vec![0x1f, 0x8b, 0x07];
+    blob.extend_from_slice(&[9u8; 24]);
+    let s = b64(&blob);
+    let a = analyze(&s);
+    assert_eq!(a.magic, None, "gzip magic with CM!=8 is not gzip");
+    assert!(!a.is_binary_payload());
+}
+
+#[test]
 fn real_protobuf_message_is_binary_payload() {
     // field 1 (varint) = 150; field 2 (len-delimited) = "testing";
     // field 3 (varint) = 1; field 4 (32-bit) = 0xdeadbeef.

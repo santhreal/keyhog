@@ -1,0 +1,47 @@
+# Tier-B: path substrings that mark a file as security-sensitive, boosting the
+# confidence of a match found in it. Matched case-insensitively as substrings
+# via a single Aho-Corasick automaton (see confidence/signals.rs). Drop new
+# markers here to extend coverage — no code change required.
+markers = [
+  # Sensitive filenames
+  ".env",
+  ".env.local",
+  ".env.production",
+  ".env.staging",
+  "credentials",
+  "secrets",
+  "apikeys",
+  "api_keys",
+  ".npmrc",
+  ".pypirc",
+  ".netrc",
+  ".pgpass",
+  "terraform.tfvars",
+  "variables.tf",
+  "docker-compose",
+  "application.yml",
+  "application.properties",
+  "config.json",
+  "config.yaml",
+  "config.toml",
+  # Sensitive extensions (matched as substrings — extensions are at end of path
+  # and names are distinctive)
+  ".pem",
+  ".key",
+  ".p12",
+  ".pfx",
+  ".jks",
+  ".keystore",
+  ".cer",
+  ".crt",
+  # CI/CD secret files
+  ".github/workflows",
+  "gitlab-ci.yml",
+  "Jenkinsfile",
+  "buildspec.yml",
+  # Cloud config
+  "serverless.yml",
+  "sam-template",
+  "helm/values",
+  "chart/values",
+]

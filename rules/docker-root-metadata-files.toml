@@ -1,0 +1,5 @@
+files = [
+  "manifest.json",
+  "index.json",
+  "oci-layout",
+]

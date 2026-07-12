@@ -1,14 +1,10 @@
 //! Gate JWT hot path shape parsing: no validate-then-resplit and no audience clone vector.
 
+use super::support::{read, scanner_src, uncommented_code};
+
 #[test]
 fn jwt_analyze_reuses_validated_segments() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/jwt.rs");
-    let src = std::fs::read_to_string(path).expect("jwt source readable");
-    let prod = src
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let prod = uncommented_code(&read(&scanner_src().join("jwt.rs")));
 
     assert!(
         prod.contains("fn jwt_segments(s: &str) -> Option<(&str, &str, &str)>"),
@@ -32,13 +28,7 @@ fn jwt_analyze_reuses_validated_segments() {
 
 #[test]
 fn jwt_audience_and_exp_extraction_avoid_clone_collect_shape() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/jwt.rs");
-    let src = std::fs::read_to_string(path).expect("jwt source readable");
-    let prod = src
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let prod = uncommented_code(&read(&scanner_src().join("jwt.rs")));
 
     assert!(
         prod.contains("fn join_audience_strings"),

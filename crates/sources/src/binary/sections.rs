@@ -68,7 +68,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                         let section_bytes = &bytes[start..end];
                         let strings = crate::binary::extract_printable_strings(
                             section_bytes,
-                            crate::binary::MIN_STRING_LEN,
+                            crate::strings::MIN_PRINTABLE_STRING_LEN,
                         );
                         if !strings.is_empty() {
                             chunks.push(Chunk {
@@ -76,8 +76,8 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                 metadata: ChunkMetadata {
                                     base_offset: 0,
                                     base_line: 0,
-                                    source_type: format!("binary:elf:{name}"),
-                                    path: Some(path.to_string()),
+                                    source_type: format!("binary:elf:{name}").into(),
+                                    path: Some(path.into()),
                                     commit: None,
                                     author: None,
                                     date: None,
@@ -120,7 +120,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                         let section_bytes = &bytes[start..end];
                         let strings = crate::binary::extract_printable_strings(
                             section_bytes,
-                            crate::binary::MIN_STRING_LEN,
+                            crate::strings::MIN_PRINTABLE_STRING_LEN,
                         );
                         if !strings.is_empty() {
                             chunks.push(Chunk {
@@ -128,8 +128,8 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                 metadata: ChunkMetadata {
                                     base_offset: 0,
                                     base_line: 0,
-                                    source_type: format!("binary:pe:{name}"),
-                                    path: Some(path.to_string()),
+                                    source_type: format!("binary:pe:{name}").into(),
+                                    path: Some(path.into()),
                                     commit: None,
                                     author: None,
                                     date: None,
@@ -229,7 +229,7 @@ fn append_macho_sections(
                     let section_bytes = &bytes[start..end];
                     let strings = crate::binary::extract_printable_strings(
                         section_bytes,
-                        crate::binary::MIN_STRING_LEN,
+                        crate::strings::MIN_PRINTABLE_STRING_LEN,
                     );
                     if !strings.is_empty() {
                         chunks.push(Chunk {
@@ -237,8 +237,8 @@ fn append_macho_sections(
                             metadata: ChunkMetadata {
                                 base_offset: 0,
                                 base_line: 0,
-                                source_type: format!("binary:macho:{name}"),
-                                path: Some(path.to_string()),
+                                source_type: format!("binary:macho:{name}").into(),
+                                path: Some(path.into()),
                                 commit: None,
                                 author: None,
                                 date: None,

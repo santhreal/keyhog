@@ -9,6 +9,9 @@ name = "GitHub App Private Key"
 service = "github"
 severity = "critical"
 keywords = ["-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN OPENSSH PRIVATE KEY-----", "GitHub App"]
+# Private-key block: the match span is an enclosing PEM/OpenSSH key body, so
+# resolution suppresses lower-specificity findings nested inside it (per-detector,
+# DetectorSpec::private_key_block; was rules/detector-classification.toml list).
 private_key_block = true
 
 # The inter-marker body is restricted to the PEM base64 alphabet plus

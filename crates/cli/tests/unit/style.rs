@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 mod style;
 
 use style::{
-    fail, for_stderr, for_stdout, info, pass, terminal_clear_line_prefix, terminal_palette, warn,
-    write_diagnostic_finding,
+    fail, for_stderr, for_stdout, info, no_color_from_env, pass, terminal_clear_line_prefix,
+    terminal_palette, warn, write_diagnostic_finding,
 };
 
 fn repo_root() -> PathBuf {
@@ -45,6 +45,34 @@ fn color_only_on_tty_without_no_color() {
 #[test]
 fn no_color_forces_plain_even_on_a_tty() {
     assert_eq!(terminal_palette(true, true).green, "");
+}
+
+// no-color.org contract: disable color ONLY when NO_COLOR is present AND
+// non-empty. Exercised on the pure predicate so no process-global env is
+// mutated (unit tests share one process and run in parallel).
+#[test]
+fn no_color_from_env_follows_presence_and_nonempty_rule() {
+    use std::ffi::OsStr;
+    assert!(
+        !no_color_from_env(None),
+        "unset NO_COLOR must keep color enabled"
+    );
+    assert!(
+        !no_color_from_env(Some(OsStr::new(""))),
+        "empty NO_COLOR= must NOT disable color (spec: present AND non-empty)"
+    );
+    assert!(
+        no_color_from_env(Some(OsStr::new("1"))),
+        "NO_COLOR=1 disables color"
+    );
+    assert!(
+        no_color_from_env(Some(OsStr::new("0"))),
+        "any non-empty value disables color, regardless of the value"
+    );
+    assert!(
+        no_color_from_env(Some(OsStr::new("false"))),
+        "even NO_COLOR=false disables color: the convention ignores the value once non-empty"
+    );
 }
 
 #[test]
@@ -102,7 +130,7 @@ fn write_diagnostic_finding_with_confidence_and_line() {
     let s = String::from_utf8(buf).expect("diagnostic output must be utf-8");
     assert_eq!(
         s,
-        "FINDING detector_1 src/main.rs:42 Critical (0.95)  redacted_secret\n"
+        "FINDING detector_1 src/main.rs:42 CRITICAL (0.95)  redacted_secret\n"
     );
 }
 
@@ -121,7 +149,7 @@ fn write_diagnostic_finding_no_confidence_no_line() {
     )
     .expect("diagnostic finding should write to in-memory buffer");
     let s = String::from_utf8(buf).expect("diagnostic output must be utf-8");
-    assert_eq!(s, "WATCH detector_2 src/lib.rs Medium  redacted_other\n");
+    assert_eq!(s, "WATCH detector_2 src/lib.rs MEDIUM  redacted_other\n");
 }
 
 #[test]

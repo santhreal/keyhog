@@ -1,6 +1,6 @@
 # keyhog integration and end-to-end tests
 
-This directory holds **repo-level** integration tests — Docker image scans,
+This directory holds **repo-level** integration tests: Docker image scans,
 install-script scenarios, CLI entrypoint smoke tests, and the cross-crate
 file-gate matrix. Per-crate unit, contract, property, and adversarial tests
 live under each crate's own `tests/` tree.
@@ -38,11 +38,11 @@ cargo run --release -p keyhog -- scan .
 
 ## Test naming conventions inside crates
 
-- `tests/unit/` — targeted unit tests for a single module.
-- `tests/gap/` — regression tests that close a specific gap or ticket.
-- `tests/property/` — proptest / fuzz-style invariant checks.
-- `tests/contracts/` — per-detector data-driven contracts (`crates/scanner/tests/contracts/`).
-- `tests/e2e/` / `tests/e2e_binary.rs` — full CLI-driven end-to-end tests.
+- `tests/unit/`: targeted unit tests for a single module.
+- `tests/gap/`: regression tests that close a specific gap or ticket.
+- `tests/property/`: proptest / fuzz-style invariant checks.
+- `tests/contracts/`: per-detector data-driven contracts (`crates/scanner/tests/contracts/`).
+- `tests/e2e/` / `tests/e2e_binary.rs`: full CLI-driven end-to-end tests.
 
 The testing model is data + multipliers + gates: per-detector contract data
 (`crates/*/tests/contracts/`), transform multipliers that re-run each positive

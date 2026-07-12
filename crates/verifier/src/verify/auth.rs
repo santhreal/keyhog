@@ -5,8 +5,8 @@ use keyhog_core::{AuthSpec, VerificationResult};
 use reqwest::Client;
 
 use crate::interpolate::{
-    interpolate_http_value, missing_companion_field, missing_companion_refs, resolve_field,
-    sanitize_raw_value,
+    interpolate_http_value, missing_companion_field, missing_companion_refs,
+    resolve_and_sanitize_field,
 };
 use crate::verify::{build_aws_probe, missing_companion_error, RequestBuildResult};
 
@@ -36,7 +36,7 @@ pub(crate) async fn build_request_for_auth(
             // interpolate_http_value().
             // A raw newline in a bearer token would silently terminate the
             // header line and inject the next byte into the request stream.
-            let token = sanitize_raw_value(&resolve_field(field, credential, companions));
+            let token = resolve_and_sanitize_field(field, credential, companions);
             RequestBuildResult::Ready(request.bearer_auth(token))
         }
         AuthSpec::Basic { username, password } => {
@@ -49,8 +49,8 @@ pub(crate) async fn build_request_for_auth(
             // a NUL byte in the raw username/password still propagates as
             // a `\0` byte through the encoding round-trip and can confuse
             // C-FFI HTTP parsers downstream. Strip controls first.
-            let u = sanitize_raw_value(&resolve_field(username, credential, companions));
-            let p = sanitize_raw_value(&resolve_field(password, credential, companions));
+            let u = resolve_and_sanitize_field(username, credential, companions);
+            let p = resolve_and_sanitize_field(password, credential, companions);
             RequestBuildResult::Ready(request.basic_auth(u, Some(p)))
         }
         AuthSpec::Header { name, template } => {
@@ -68,7 +68,7 @@ pub(crate) async fn build_request_for_auth(
             // SECURITY: same finding - query params land in the URL.
             // reqwest percent-encodes safe chars but control bytes can
             // still survive in raw form depending on serializer path.
-            let value = sanitize_raw_value(&resolve_field(field, credential, companions));
+            let value = resolve_and_sanitize_field(field, credential, companions);
             RequestBuildResult::Ready(request.query(&[(param, value)]))
         }
         AuthSpec::AwsV4 {

@@ -554,7 +554,7 @@ pub(crate) mod serde_hash_hex {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&hex::encode(val))
+        serializer.serialize_str(&super::hex_encode(val))
     }
 
     pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
@@ -562,7 +562,7 @@ pub(crate) mod serde_hash_hex {
         D: Deserializer<'de>,
     {
         let s = Cow::<'de, str>::deserialize(deserializer)?;
-        if s.len() != 64 {
+        if s.len() != crate::git_lfs::SHA256_HEX_LEN {
             return Err(serde::de::Error::invalid_length(
                 s.len(),
                 &"64-char hex SHA-256 digest",

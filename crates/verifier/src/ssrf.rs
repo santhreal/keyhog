@@ -15,7 +15,7 @@ const DNS_CACHE_TTL: Duration = Duration::from_secs(60);
 
 /// Hard cap on distinct host:port entries. Bounds memory regardless of how many
 /// unique (e.g. `*.evil.example`) hostnames a scan resolves: once the cap is hit
-/// the cache is cleared rather than grown without limit.
+/// the oldest entries are evicted rather than the cache grown without limit.
 const DNS_CACHE_MAX_ENTRIES: usize = 4096;
 
 /// `(inserted_at, resolved addresses)` so expired entries can be detected on read.
@@ -42,9 +42,14 @@ pub async fn resolve_dns_cached(host_port: &str) -> std::io::Result<Vec<SocketAd
     // Perform lookup
     let addrs: Vec<SocketAddr> = tokio::net::lookup_host(host_port).await?.collect();
     if !addrs.is_empty() {
-        // Bound entry count: clear rather than grow unbounded when the cap is hit.
+        // Bound entry count: drop the oldest ~1/8 rather than wipe every
+        // still-fresh record (a full clear forces a re-resolve storm).
         if cache.len() >= DNS_CACHE_MAX_ENTRIES {
-            cache.clear();
+            crate::cache::evict_oldest_dashmap_entries(
+                cache,
+                crate::cache::oldest_eviction_batch(DNS_CACHE_MAX_ENTRIES),
+                |(inserted_at, _)| *inserted_at,
+            );
         }
         cache.insert(
             host_port.to_string(),

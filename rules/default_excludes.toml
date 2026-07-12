@@ -116,13 +116,21 @@ dirs = [
 ]
 
 suffixes = [
-  ".min.js",
-  ".min.css",
+  ".chunk.js",
   ".bak",
   ".swp",
   ".tmp",
   ".map",
   ".cache",
+]
+
+# Case-insensitive substring markers of generated/minified bundles that can sit
+# anywhere before the extension (`app.min.js`, `vendor.bundle.css`, `x.min.mjs`).
+# `.min.` subsumes the former `.min.js`/`.min.css` suffixes; `.bundle.` subsumes
+# `.bundle.js`. Consolidated here from a former inline gate in filesystem/extract.rs.
+infixes = [
+  ".min.",
+  ".bundle.",
 ]
 
 filenames = [

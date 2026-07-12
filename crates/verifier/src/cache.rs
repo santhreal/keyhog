@@ -5,7 +5,7 @@
 //! only hashes so plaintext credentials are not retained in memory longer than needed.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -33,9 +33,16 @@ pub(crate) struct VerificationCache {
     inserts: AtomicUsize,
     max_entries: usize,
     ttl: Duration,
-    /// Concurrent FIFO queue for fast eviction of the oldest entries
-    /// without locking all DashMap shards.
-    queue: parking_lot::Mutex<std::collections::VecDeque<CacheKey>>,
+    /// Monotonic insert generation. Each `put` stamps the entry AND its queue
+    /// marker with the same generation, so eviction can tell a key's CURRENT
+    /// queue position from stale markers left by earlier overwrites.
+    generation: AtomicU64,
+    /// Concurrent recency queue `(key, generation)` for fast eviction of the
+    /// oldest entries without locking all DashMap shards. A key overwritten by
+    /// a later `put` leaves its old marker behind (generation mismatch); the
+    /// eviction/reconcile paths skip such stale markers lazily instead of
+    /// paying an O(queue) reposition on every refresh.
+    queue: parking_lot::Mutex<std::collections::VecDeque<(CacheKey, u64)>>,
 }
 
 #[derive(Hash, Eq, PartialEq, Clone)]
@@ -48,6 +55,9 @@ struct CacheEntry {
     result: VerificationResult,
     metadata: HashMap<String, String>,
     expires_at: Instant,
+    /// The queue-marker generation this entry was written with; see
+    /// [`VerificationCache::generation`].
+    generation: u64,
 }
 
 impl VerificationCache {
@@ -94,6 +104,7 @@ impl VerificationCache {
             inserts: AtomicUsize::new(0),
             max_entries: max_entries.max(1),
             ttl,
+            generation: AtomicU64::new(0),
             queue: parking_lot::Mutex::new(std::collections::VecDeque::new()),
         }
     }
@@ -195,19 +206,31 @@ impl VerificationCache {
             self.evict_expired();
         }
 
-        let replaced = self
-            .entries
-            .insert(
-                key.clone(),
-                CacheEntry {
-                    result,
-                    metadata: sanitize_metadata(metadata),
-                    expires_at: Instant::now() + self.ttl,
-                },
-            )
-            .is_some();
-        if !replaced {
-            self.queue.lock().push_back(key);
+        // Stamp the entry and its queue marker with one fresh generation. An
+        // overwrite REFRESHES the key's recency: the new marker goes to the
+        // back, and the old marker (now generation-mismatched) is skipped
+        // lazily by eviction — previously a re-verified credential kept its
+        // ORIGINAL queue slot and capacity eviction dropped the freshest
+        // entries first, forcing redundant live re-verification.
+        let generation = self.generation.fetch_add(1, Ordering::Relaxed);
+        self.entries.insert(
+            key.clone(),
+            CacheEntry {
+                result,
+                metadata: sanitize_metadata(metadata),
+                expires_at: Instant::now() + self.ttl,
+                generation,
+            },
+        );
+        let needs_stale_sweep = {
+            let mut queue = self.queue.lock();
+            queue.push_back((key, generation));
+            // Overwrites accumulate stale markers; bound the queue's memory by
+            // sweeping once it doubles past the live map (amortized O(1)).
+            queue.len() > self.max_entries.saturating_mul(2)
+        };
+        if needs_stale_sweep {
+            self.reconcile_queue_with_entries();
         }
 
         self.enforce_max_entries_bound();
@@ -283,9 +306,16 @@ impl VerificationCache {
 
     fn reconcile_queue_with_entries(&self) {
         let mut queue = self.queue.lock();
-        queue.retain(|key| self.entries.contains_key(key));
+        // Keep only CURRENT markers: the key must still be live AND the marker
+        // must be the generation of its latest write (stale markers from
+        // overwritten entries are dropped here).
+        queue.retain(|(key, generation)| {
+            self.entries
+                .get(key)
+                .is_some_and(|entry| entry.generation == *generation)
+        });
         while queue.len() > self.max_entries {
-            if let Some(key) = queue.pop_front() {
+            if let Some((key, _)) = queue.pop_front() {
                 self.entries.remove(&key);
             } else {
                 break;
@@ -295,8 +325,15 @@ impl VerificationCache {
 
     fn evict_one_oldest(&self) -> bool {
         let mut queue = self.queue.lock();
-        while let Some(key) = queue.pop_front() {
-            if self.entries.remove(&key).is_some() {
+        while let Some((key, generation)) = queue.pop_front() {
+            // A generation mismatch is a STALE marker: the key was refreshed by
+            // a later put and its current marker sits further back. Skip it —
+            // evicting here would drop the freshest entry first.
+            if self
+                .entries
+                .remove_if(&key, |_, entry| entry.generation == generation)
+                .is_some()
+            {
                 return true;
             }
         }
@@ -328,8 +365,54 @@ impl VerificationCache {
                 result,
                 metadata: sanitize_metadata(metadata),
                 expires_at: Instant::now() + self.ttl,
+                generation: self.generation.fetch_add(1, Ordering::Relaxed),
             },
         );
+    }
+}
+
+/// One-batch eviction size for a bounded cache that hit its cap: drop the oldest
+/// `1/8`, never fewer than one. Single owner for the fraction shared by the
+/// DNS-resolution and pinned-client caches so tuning it happens in one place.
+/// `pub` (inside the private `cache` module) so the eviction-primitive regression
+/// test can assert the `.max(1)` never-zero floor against this single owner;
+/// reaches the public API only via the explicit `testing` re-export.
+pub fn oldest_eviction_batch(max_entries: usize) -> usize {
+    (max_entries / 8).max(1)
+}
+
+/// Evict the oldest `count` entries from a bounded age-stamped `DashMap` instead
+/// of wiping it wholesale. Shared by the DNS-resolution and pinned-client caches
+/// (`ssrf`, `verify::request`) so both bound memory on cap without discarding
+/// every still-valid entry and forcing a re-resolve / TLS-client-rebuild storm.
+pub(crate) fn evict_oldest_dashmap_entries<K, V>(
+    cache: &DashMap<K, V>,
+    count: usize,
+    age_of: impl Fn(&V) -> Instant,
+) where
+    K: Eq + std::hash::Hash + Clone,
+{
+    if count == 0 {
+        return;
+    }
+    let mut by_age: Vec<(K, Instant)> = cache
+        .iter()
+        .map(|entry| (entry.key().clone(), age_of(entry.value())))
+        .collect();
+    // We only need the `count` OLDEST entries, not a fully sorted list. When
+    // `count < len`, `select_nth_unstable_by_key` partitions the oldest `count`
+    // into the prefix in O(n) rather than the O(n log n) full sort the whole
+    // cache used to pay on every cap-hit eviction — the lever on a large hot
+    // cache. The partition leaves `[0, count)` as the smallest-`Instant` (oldest)
+    // entries; their internal order is irrelevant since we remove all of them.
+    // Same eviction set as the old sort (ties at the boundary are arbitrary in
+    // both), just without ordering the tail we immediately discard.
+    if count < by_age.len() {
+        by_age.select_nth_unstable_by_key(count, |(_, inserted_at)| *inserted_at);
+        by_age.truncate(count);
+    }
+    for (key, _) in by_age {
+        cache.remove(&key);
     }
 }
 
@@ -340,8 +423,38 @@ fn cache_key(credential: &str, detector_id: &str) -> CacheKey {
     }
 }
 
+/// Identity/high-value metadata keys retained first when a finding's metadata
+/// exceeds `MAX_METADATA_ENTRIES`. Ordering is stable so the SAME oversized
+/// metadata map always keeps the SAME entries run-to-run (a bare `HashMap`
+/// iterator `.take(16)` kept an arbitrary, nondeterministic subset — `arn`
+/// could survive one scan and vanish the next).
+const PRIORITY_METADATA_KEYS: &[&str] = &[
+    "arn",
+    "account_id",
+    "user_id",
+    "oob_observed",
+    "oob_unique_id",
+    "oob_protocol",
+    "oob_remote_address",
+];
+
+fn metadata_priority_rank(key: &str) -> usize {
+    PRIORITY_METADATA_KEYS
+        .iter()
+        .position(|k| *k == key)
+        .unwrap_or(PRIORITY_METADATA_KEYS.len())
+}
+
 fn sanitize_metadata(metadata: HashMap<String, String>) -> HashMap<String, String> {
-    metadata
+    let mut entries: Vec<(String, String)> = metadata.into_iter().collect();
+    // Priority keys first, then lexicographic — total order, so retention is
+    // deterministic and identity fields are never dropped in favor of noise.
+    entries.sort_unstable_by(|(a, _), (b, _)| {
+        metadata_priority_rank(a)
+            .cmp(&metadata_priority_rank(b))
+            .then_with(|| a.cmp(b))
+    });
+    entries
         .into_iter()
         .take(VerificationCache::MAX_METADATA_ENTRIES)
         .map(|(key, value)| {

@@ -27,7 +27,13 @@ mod scan;
 /// disk-cached independently (keyed by the SHA-256 of its own pattern
 /// list), so the warm path stays a deserialize-only load. Overridable through
 /// explicit scanner compile tuning (`[tuning].hs_shard_target` in the CLI).
-const TARGET_PATTERNS_PER_SHARD: usize = 320;
+// ONE-PLACE: the shard-target default has a single literal owner in
+// `ScannerTuningConfig::HS_SHARD_TARGET_DEFAULT` (the value the CLI's
+// `[tuning].hs_shard_target` knob defaults to). Deriving it here keeps the
+// SIMD backend's absent-tuning fallback (line ~519) from silently diverging
+// from the config layer's fallback if the default is ever retuned.
+const TARGET_PATTERNS_PER_SHARD: usize =
+    crate::scanner_config::ScannerTuningConfig::HS_SHARD_TARGET_DEFAULT;
 
 /// Hard ceiling on shard count, so a pathologically large detector set on a
 /// 128-core box cannot spawn an unbounded number of databases (each costs a
@@ -564,7 +570,7 @@ impl HsScanner {
             .enumerate()
             .map(|(shard_idx, pats)| {
                 let shard_key = Self::shard_cache_key(cache_key, shard_count, shard_idx, &pats);
-                let cache_path = cache_dir.join(format!("hs-{shard_key}.db"));
+                let cache_path = cache_dir.join(keyhog_core::hyperscan_cache_filename(&shard_key));
 
                 if let Some((db, dropped)) =
                     Self::load_cached_shard(&cache_path, shard_idx, pats.len())

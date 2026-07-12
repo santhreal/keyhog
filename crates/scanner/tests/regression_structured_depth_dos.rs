@@ -80,6 +80,75 @@ fn tfstate_resource_instance_attribute_extracts_exact_context() {
 }
 
 #[test]
+fn tfstate_complex_object_output_value_surfaces_nested_secret() {
+    // A Terraform `output "credentials" { value = { api_key = "…" } }` renders in
+    // state as an output whose `value` is a JSON OBJECT, not a scalar. The old
+    // parser only handled the scalar `value` arm and silently dropped every
+    // secret buried inside a complex output value (Law 10). The walk must now
+    // recurse into the object and surface the nested scalar, anchored under the
+    // output's context.
+    let text = r#"{"outputs":{"credentials":{"value":{"api_key":"AKIA-nested-1234","note":"prod"},"sensitive":true}}}"#;
+    let pairs = testing::parse_tfstate_tuples(&text);
+    assert!(
+        pairs.contains(&(
+            "tfstate-output.credentials.api_key".to_string(),
+            "AKIA-nested-1234".to_string(),
+            1,
+        )),
+        "a secret nested inside a complex (object) tfstate output value must surface \
+         with a `tfstate-output.<name>.<attr>` context; got {pairs:?}"
+    );
+    // The sibling non-secret scalar in the same object is extracted too (context
+    // is exact), proving the whole object was walked, not just the first key.
+    assert!(
+        pairs.contains(&(
+            "tfstate-output.credentials.note".to_string(),
+            "prod".to_string(),
+            1,
+        )),
+        "sibling scalars of a complex output value must all surface; got {pairs:?}"
+    );
+}
+
+#[test]
+fn tfstate_array_output_value_surfaces_each_nested_secret() {
+    // `value` is a LIST — e.g. `output "keys" { value = ["k1…", "k2…"] }`. Every
+    // element scalar must surface, indexed into the context path.
+    let text = r#"{"outputs":{"keys":{"value":["list-secret-aaa","list-secret-bbb"]}}}"#;
+    let pairs = testing::parse_tfstate_tuples(&text);
+    assert!(
+        pairs.contains(&(
+            "tfstate-output.keys.[0]".to_string(),
+            "list-secret-aaa".to_string(),
+            1,
+        )) && pairs.contains(&(
+            "tfstate-output.keys.[1]".to_string(),
+            "list-secret-bbb".to_string(),
+            1,
+        )),
+        "each element of a list-valued tfstate output must surface with an indexed \
+         context; got {pairs:?}"
+    );
+}
+
+#[test]
+fn tfstate_deeply_nested_object_output_value_surfaces_secret() {
+    // Nested map-of-map output value: the secret is two object levels below
+    // `value`. The recursion must reach it (well within the 256 traversal cap).
+    let text = r#"{"outputs":{"cfg":{"value":{"db":{"conn":{"password":"deep-obj-secret-77"}}}}}}"#;
+    let pairs = testing::parse_tfstate_tuples(&text);
+    assert!(
+        pairs.contains(&(
+            "tfstate-output.cfg.db.conn.password".to_string(),
+            "deep-obj-secret-77".to_string(),
+            1,
+        )),
+        "a secret nested several object levels inside a complex output value must \
+         surface with the full dotted context; got {pairs:?}"
+    );
+}
+
+#[test]
 fn tfstate_deep_but_within_limit_still_surfaces_buried_secret() {
     // 40 nested `"values"` wrappers around the outputs block. This is well under
     // both serde_json's parse recursion limit (128) and the 256 traversal cap,

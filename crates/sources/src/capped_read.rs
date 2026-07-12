@@ -11,9 +11,14 @@ pub(crate) struct CappedReadPrefix {
     pub(crate) error: Option<io::Error>,
 }
 
-/// Upper bound on initial allocation for capped reads and their source-side
-/// capacity hints. Keeping this 64 KiB ceiling visible within the crate lets
-/// cloud, hosted-git, and web readers share the same resource-exhaustion bound.
+/// Upper bound on the initial `Vec` reservation for a capped read.
+///
+/// `read_to_cap*` clamps its preallocation to this ceiling so a hostile
+/// capacity hint cannot force a giant up-front allocation (see the
+/// decompression-bomb tests below). Cloud/web/hosted-git callers that compute a
+/// capacity hint for `read_to_cap` clamp to the SAME ceiling, so this is the
+/// single owner of that 64 KiB value — they reference it instead of pasting
+/// `64 * 1024` inline.
 pub(crate) const MAX_PREALLOCATED_READ_BYTES: u64 = 64 * 1024;
 
 pub(crate) fn read_to_cap(
@@ -61,6 +66,7 @@ pub(crate) fn read_to_cap_preserving_error(
 #[cfg(test)]
 mod tests {
     use super::{read_to_cap, read_to_cap_preserving_error};
+    use proptest::prelude::*;
     use std::io::{Error, ErrorKind, Read};
 
     struct FailsAfterPrefix {
@@ -78,6 +84,15 @@ mod tests {
             self.emitted = true;
             Ok(len)
         }
+    }
+
+    #[test]
+    fn preallocation_ceiling_is_exactly_64_kib() {
+        // Single owner of the 64 KiB capacity-hint clamp: the cloud/web/hosted-git
+        // callers reference this constant instead of pasting `64 * 1024` inline, so
+        // pin the concrete value they all depend on.
+        assert_eq!(super::MAX_PREALLOCATED_READ_BYTES, 65_536);
+        assert_eq!(super::MAX_PREALLOCATED_READ_BYTES, 64 * 1024);
     }
 
     #[test]
@@ -240,9 +255,16 @@ mod tests {
     fn infinite_stream_is_bounded_to_exact_cap_and_terminates() {
         // io::repeat never ends; without the take() bound this would never return.
         let read = read_to_cap(io::repeat(b'A'), 4096, None).expect("read");
-        assert_eq!(read.bytes.len(), 4096, "an infinite stream is capped to exactly the cap");
+        assert_eq!(
+            read.bytes.len(),
+            4096,
+            "an infinite stream is capped to exactly the cap"
+        );
         assert!(read.bytes.iter().all(|&b| b == b'A'));
-        assert!(read.truncated, "an infinite stream is always truncated at the cap");
+        assert!(
+            read.truncated,
+            "an infinite stream is always truncated at the cap"
+        );
     }
 
     #[test]
@@ -277,8 +299,16 @@ mod tests {
         let read = read_to_cap(reader, cap, None).expect("read");
         assert_eq!(read.bytes.len(), cap as usize);
         assert!(read.truncated);
-        assert_eq!(delivered.get(), cap + 1, "exactly cap+1 bytes pulled even when dribbled");
-        assert_eq!(calls.get(), cap + 1, "read() called exactly cap+1 times, never unbounded");
+        assert_eq!(
+            delivered.get(),
+            cap + 1,
+            "exactly cap+1 bytes pulled even when dribbled"
+        );
+        assert_eq!(
+            calls.get(),
+            cap + 1,
+            "read() called exactly cap+1 times, never unbounded"
+        );
     }
 
     #[test]
@@ -301,8 +331,15 @@ mod tests {
         let read = read_to_cap_preserving_error(reader, 2048, None);
         assert_eq!(read.bytes.len(), 2048);
         assert!(read.truncated);
-        assert!(read.error.is_none(), "take(cap+1) stops before the bomb's error read");
-        assert_eq!(errored_calls.get(), 0, "the erroring branch must never be reached");
+        assert!(
+            read.error.is_none(),
+            "take(cap+1) stops before the bomb's error read"
+        );
+        assert_eq!(
+            errored_calls.get(),
+            0,
+            "the erroring branch must never be reached"
+        );
     }
 
     #[test]
@@ -352,7 +389,10 @@ mod tests {
     fn cap_zero_on_empty_input_is_not_truncated() {
         let read = read_to_cap(io::empty(), 0, None).expect("read");
         assert!(read.bytes.is_empty());
-        assert!(!read.truncated, "cap 0 over empty input read everything (nothing)");
+        assert!(
+            !read.truncated,
+            "cap 0 over empty input read everything (nothing)"
+        );
     }
 
     #[test]
@@ -367,7 +407,10 @@ mod tests {
         let blob = vec![b'm'; 5000];
         let read = read_to_cap(&blob[..], 5000, None).expect("read");
         assert_eq!(read.bytes.len(), 5000);
-        assert!(!read.truncated, "input of exactly cap bytes is complete, not truncated");
+        assert!(
+            !read.truncated,
+            "input of exactly cap bytes is complete, not truncated"
+        );
     }
 
     #[test]
@@ -376,14 +419,21 @@ mod tests {
         let read = read_to_cap(reader, 4096, None).expect("read");
         assert_eq!(read.bytes.len(), 4095);
         assert!(!read.truncated);
-        assert_eq!(delivered.get(), 4095, "a sub-cap stream is drained fully, no more");
+        assert_eq!(
+            delivered.get(),
+            4095,
+            "a sub-cap stream is drained fully, no more"
+        );
     }
 
     #[test]
     fn huge_cap_with_small_reader_reads_all_without_overflow_or_hang() {
         let read = read_to_cap(&b"tiny"[..], u64::MAX, None).expect("read");
         assert_eq!(read.bytes, b"tiny");
-        assert!(!read.truncated, "a small finite reader under an unbounded cap is complete");
+        assert!(
+            !read.truncated,
+            "a small finite reader under an unbounded cap is complete"
+        );
     }
 
     #[test]
@@ -397,7 +447,10 @@ mod tests {
             64,
             None,
         );
-        assert!(result.is_err(), "an immediate read error propagates from read_to_cap");
+        assert!(
+            result.is_err(),
+            "an immediate read error propagates from read_to_cap"
+        );
 
         let preserved = read_to_cap_preserving_error(
             FailsAfterPrefix {
@@ -427,7 +480,10 @@ mod tests {
         );
         assert_eq!(read.bytes, b"recovered-secret-prefix");
         assert!(!read.truncated, "the prefix was under the cap");
-        assert_eq!(read.error.expect("late error preserved").kind(), ErrorKind::InvalidData);
+        assert_eq!(
+            read.error.expect("late error preserved").kind(),
+            ErrorKind::InvalidData
+        );
     }
 
     #[test]
@@ -436,7 +492,11 @@ mod tests {
         let unit = "héllo".as_bytes().to_vec(); // 'é' is two bytes
         let blob: Vec<u8> = unit.iter().copied().cycle().take(10_000).collect();
         let read = read_to_cap(&blob[..], 4097, None).expect("read");
-        assert_eq!(read.bytes.len(), 4097, "byte cap is honored regardless of codepoint edges");
+        assert_eq!(
+            read.bytes.len(),
+            4097,
+            "byte cap is honored regardless of codepoint edges"
+        );
         assert!(read.truncated);
         assert_eq!(read.bytes, &blob[..4097]);
     }
@@ -463,7 +523,11 @@ mod tests {
         let (reader, delivered, _calls) = counting(io::repeat(b's').take(50_000));
         let read = read_to_cap(reader, 9999, None).expect("read");
         assert_eq!(read.bytes.len(), 9999);
-        assert_eq!(delivered.get(), 10_000, "exactly cap+1 pulled from an over-cap finite source");
+        assert_eq!(
+            delivered.get(),
+            10_000,
+            "exactly cap+1 pulled from an over-cap finite source"
+        );
     }
 
     #[test]
@@ -474,5 +538,44 @@ mod tests {
         assert!(read.truncated);
         assert!(read.error.is_none());
         assert_eq!(delivered.get(), 2001);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(4000))]
+
+        /// The core capped-read contract, FUZZED across arbitrary payloads, caps,
+        /// and capacity hints against a finite in-memory reader (which never
+        /// errors). The 40 example tests above each pin ONE input; this one
+        /// invariant generalizes them over the whole space (Testing Contract:
+        /// property coverage on a security-critical DoS chokepoint), asserting the
+        /// three properties every caller relies on PLUS the cross-variant
+        /// equivalence no example test exercises:
+        ///   1. kept length == `min(input_len, cap)`;
+        ///   2. `truncated` is set IFF the input strictly exceeded the cap;
+        ///   3. the kept bytes are the EXACT `input[..len]` prefix (never reordered
+        ///      or corrupted — a value-integrity guarantee the scanner depends on);
+        ///   4. `read_to_cap` and `read_to_cap_preserving_error` agree byte-for-byte
+        ///      on the clean path, and the preserving variant fabricates no error
+        ///      for an infallible reader (Law 10: no silent divergence between the
+        ///      two public entry points).
+        #[test]
+        fn read_to_cap_is_exact_prefix_and_truncation_flag_matches(
+            input in proptest::collection::vec(any::<u8>(), 0..2048usize),
+            cap in 0u64..3000,
+            hint in proptest::option::of(0u64..1_000_000),
+        ) {
+            let expected_len = (input.len() as u64).min(cap) as usize;
+            let expected_truncated = input.len() as u64 > cap;
+
+            let read = read_to_cap(&input[..], cap, hint).expect("in-memory reader never errors");
+            prop_assert_eq!(read.bytes.len(), expected_len, "kept length is min(input_len, cap)");
+            prop_assert_eq!(read.truncated, expected_truncated, "truncated iff input exceeded cap");
+            prop_assert_eq!(&read.bytes[..], &input[..expected_len], "kept bytes are the exact prefix");
+
+            let preserved = read_to_cap_preserving_error(&input[..], cap, hint);
+            prop_assert!(preserved.error.is_none(), "a clean in-memory read carries no error");
+            prop_assert_eq!(&preserved.bytes, &read.bytes, "both entry points keep identical bytes");
+            prop_assert_eq!(preserved.truncated, read.truncated, "both entry points agree on truncation");
+        }
     }
 }

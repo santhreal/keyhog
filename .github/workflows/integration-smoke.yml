@@ -69,8 +69,10 @@ jobs:
           # install.ps1's default Windows install dir is %LOCALAPPDATA%\keyhog\bin
           # (param: Join-Path $env:LOCALAPPDATA 'keyhog\bin'), NOT ~/.local/bin —
           # that was a unix-ism that left keyhog off PATH and failed the Version
-          # step with exit 127. In -Yes (non-interactive) mode the installer does
-          # not mutate PATH itself, so the caller adds the real install dir here.
+          # step with exit 127. Under -Yes the installer DOES persist that dir to
+          # the User PATH (Ensure-OnPath auto-approves the Yes-default), but that
+          # persistent User PATH is not visible to the already-running job step,
+          # so the caller still exports it to GITHUB_PATH for the next step here.
           Add-Content -Path $env:GITHUB_PATH -Value "$env:LOCALAPPDATA\keyhog\bin"
 
       - name: Version

@@ -70,7 +70,7 @@ fn scan_clean(bytes: Vec<u8>) -> Vec<Chunk> {
 fn pdf_has(chunks: &[Chunk], marker: &str) -> bool {
     chunks
         .iter()
-        .any(|c| c.metadata.source_type == "filesystem/pdf" && c.data.contains(marker))
+        .any(|c| c.metadata.source_type.as_ref() == "filesystem/pdf" && c.data.contains(marker))
 }
 
 /// True when ANY emitted chunk carries `marker` (proves a drop is total, not

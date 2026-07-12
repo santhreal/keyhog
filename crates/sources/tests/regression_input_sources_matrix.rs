@@ -37,7 +37,7 @@ fn har_request_chunk_renders_exact_bytes_with_header_and_query_secret() {
     assert_eq!(chunks.len(), 2, "one entry -> request + response chunk");
 
     let request = chunks[0].as_ref().expect("request chunk ok");
-    assert_eq!(request.metadata.source_type, "wire:har:request");
+    assert_eq!(request.metadata.source_type.as_ref(), "wire:har:request");
     assert_eq!(
         request.metadata.path.as_deref(),
         Some("capture.har#https://api.example.test/v1")
@@ -55,7 +55,7 @@ fn har_request_chunk_renders_exact_bytes_with_header_and_query_secret() {
 fn har_response_chunk_renders_exact_bytes_with_reflected_token() {
     let chunks = expand(HAR_HEADER_AND_QUERY, "capture.har");
     let response = chunks[1].as_ref().expect("response chunk ok");
-    assert_eq!(response.metadata.source_type, "wire:har:response");
+    assert_eq!(response.metadata.source_type.as_ref(), "wire:har:response");
     assert_eq!(
         response.metadata.path.as_deref(),
         Some("capture.har#https://api.example.test/v1")
@@ -101,7 +101,7 @@ fn har_two_entries_emit_four_chunks_in_request_response_order() {
     assert_eq!(chunks.len(), 4, "two entries -> four chunks");
     let types: Vec<&str> = chunks
         .iter()
-        .map(|c| c.as_ref().expect("ok").metadata.source_type.as_str())
+        .map(|c| c.as_ref().expect("ok").metadata.source_type.as_ref())
         .collect();
     assert_eq!(
         types,
@@ -244,10 +244,13 @@ fn binary_blob_yields_exact_ascii_printable_runs() {
     blob.extend_from_slice(b"second_run_secret"); // len 17 >= 8 -> kept
     blob.push(0x80);
 
-    let chunks = filesystem_chunks_for(&blob, "blob.bin");
+    // NOT ".bin": that extension is in rules/default_excludes.toml (disk-image /
+    // firmware group) so FilesystemSource skips it and produces zero chunks,
+    // masking the binary-strings path this test exercises. ".dat" is not excluded.
+    let chunks = filesystem_chunks_for(&blob, "blob.dat");
     let strings_chunk = chunks
         .iter()
-        .find(|c| c.metadata.source_type == "filesystem:binary-strings")
+        .find(|c| c.metadata.source_type.as_ref() == "filesystem:binary-strings")
         .expect("binary blob must yield a binary-strings chunk");
     assert_eq!(
         &*strings_chunk.data,
@@ -266,7 +269,10 @@ fn binary_blob_with_only_short_runs_yields_no_chunk() {
     blob.extend_from_slice(&[0, 0, 0, 0]);
     blob.push(0x80);
 
-    let chunks = filesystem_chunks_for(&blob, "short.bin");
+    // ".dat" (not the default-excluded ".bin") so the file is actually scanned:
+    // this proves the sub-threshold blob yields no chunk because its only run is
+    // < MIN_PRINTABLE_STRING_LEN, NOT because the extension was skipped.
+    let chunks = filesystem_chunks_for(&blob, "short.dat");
     assert_eq!(
         chunks.len(),
         0,
@@ -284,10 +290,10 @@ fn binary_blob_recovers_utf16le_wide_string() {
         blob.push(b);
         blob.push(0x00);
     }
-    let chunks = filesystem_chunks_for(&blob, "wide.bin");
+    let chunks = filesystem_chunks_for(&blob, "wide.dat");
     let strings_chunk = chunks
         .iter()
-        .find(|c| c.metadata.source_type == "filesystem:binary-strings")
+        .find(|c| c.metadata.source_type.as_ref() == "filesystem:binary-strings")
         .expect("wide-encoded blob must yield a binary-strings chunk");
     assert_eq!(&*strings_chunk.data, "WideSecretValue");
 }

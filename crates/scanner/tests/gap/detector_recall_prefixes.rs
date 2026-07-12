@@ -32,23 +32,15 @@
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::testing::checksum::{
-    base62_encode_u32, github_classic_pat_with_checksum, github_fine_grained_pat_with_checksum,
-    npm_token_with_checksum, standard_crc32,
+    base62_encode_u32, github_classic_format_with_checksum, github_classic_pat_with_checksum,
+    github_fine_grained_pat_with_checksum, npm_token_with_checksum, standard_crc32,
 };
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
 use std::sync::OnceLock;
 
 // ── Scanner harness (mirrors tests/adversarial/oracle_support.rs) ────────────
 
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
-
+use crate::support::paths::detector_dir;
 fn scanner() -> &'static CompiledScanner {
     static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
     SCANNER.get_or_init(|| {
@@ -131,6 +123,8 @@ fn mint_crc_token(prefix: &str, body30: &str) -> String {
     assert_eq!(body30.len(), 30, "github/npm body is exactly 30 chars");
     match prefix {
         "ghp_" => github_classic_pat_with_checksum(body30),
+        // gho_/ghu_/ghs_/ghr_ share the classic body + CRC (prefix-independent).
+        "gho_" | "ghu_" | "ghs_" | "ghr_" => github_classic_format_with_checksum(prefix, body30),
         "npm_" => npm_token_with_checksum(body30),
         other => panic!("unsupported checksum fixture prefix: {other}"),
     }
@@ -280,32 +274,101 @@ fn github_classic_pat_invalid_crc_is_dropped() {
 
 #[test]
 fn github_oauth_access_token_gho_fires() {
-    // gho_ has no CRC validator in checksum/mod.rs → NotApplicable, passes
-    // through. Pattern: gho_[A-Za-z0-9]{36}.
-    let tok = format!("gho_{}", "aBcDefGhIjKlMnOpQrStUvWxYz0123456789");
-    let text = format!("oauth_token = \"{tok}\"\n");
-    assert_fires("github-oauth-access-token", &text, &tok);
+    // gho_ shares the classic 30-entropy + 6-CRC32 body. A valid-checksum token
+    // fires; a fabricated CRC is dropped pre-scoring (the precision gain — the
+    // classic validator now covers gho_/ghu_/ghs_/ghr_, not only ghp_). Regex:
+    // gho_[A-Za-z0-9]{36}.
+    let tok = mint_crc_token("gho_", &"aBcDe12345".repeat(3));
+    assert_fires(
+        "github-oauth-access-token",
+        &format!("oauth_token = \"{tok}\"\n"),
+        &tok,
+    );
+    // Negative twin: wrong 6-char CRC suffix → the detector must NOT fire.
+    let bad = format!("gho_{}XXXXXX", "aBcDe12345".repeat(3));
+    assert_silent(
+        "github-oauth-access-token",
+        &format!("oauth_token = \"{bad}\"\n"),
+    );
 }
 
 #[test]
 fn github_user_to_server_token_ghu_fires() {
-    let tok = format!("ghu_{}", "Zz9Yy8Xx7Ww6Vv5Uu4Tt3Ss2Rr1Qq0Pp0011");
-    let text = format!("GITHUB_TOKEN={tok}\n");
-    assert_fires("github-user-to-server-token", &text, &tok);
+    let tok = mint_crc_token("ghu_", &"Fg6Hi7Jk89".repeat(3));
+    assert_fires(
+        "github-user-to-server-token",
+        &format!("GITHUB_TOKEN={tok}\n"),
+        &tok,
+    );
+    let bad = format!("ghu_{}XXXXXX", "Fg6Hi7Jk89".repeat(3));
+    assert_silent(
+        "github-user-to-server-token",
+        &format!("GITHUB_TOKEN={bad}\n"),
+    );
 }
 
 #[test]
 fn github_app_installation_token_ghs_fires() {
-    let tok = format!("ghs_{}", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789");
-    let text = format!("installation_token: {tok}\n");
-    assert_fires("github-app-installation-token", &text, &tok);
+    let tok = mint_crc_token("ghs_", &"Lm0No1Pq23".repeat(3));
+    assert_fires(
+        "github-app-installation-token",
+        &format!("installation_token: {tok}\n"),
+        &tok,
+    );
+    let bad = format!("ghs_{}XXXXXX", "Lm0No1Pq23".repeat(3));
+    assert_silent(
+        "github-app-installation-token",
+        &format!("installation_token: {bad}\n"),
+    );
 }
 
 #[test]
 fn github_refresh_token_ghr_fires() {
-    let tok = format!("ghr_{}", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789");
-    let text = format!("GITHUB_REFRESH_TOKEN={tok}\n");
-    assert_fires("github-refresh-token", &text, &tok);
+    let tok = mint_crc_token("ghr_", &"Rs4Tu5Vw67".repeat(3));
+    assert_fires(
+        "github-refresh-token",
+        &format!("GITHUB_REFRESH_TOKEN={tok}\n"),
+        &tok,
+    );
+    let bad = format!("ghr_{}XXXXXX", "Rs4Tu5Vw67".repeat(3));
+    assert_silent(
+        "github-refresh-token",
+        &format!("GITHUB_REFRESH_TOKEN={bad}\n"),
+    );
+}
+
+#[test]
+fn plain_anchored_detector_survives_multibyte_dense_window() {
+    // Regression for the anchored PLAIN-extractor UTF-8 boundary bug
+    // (`engine/extract.rs::extract_plain_matches`). The phase-2 / GPU anchored
+    // path localises the regex scan to a BYTE window around a literal hit. When
+    // that window start landed mid-multibyte-char, the plain extractor passed a
+    // non-boundary byte index straight to `Regex::find_at`, panicking the whole
+    // scan — the grouped extractor snapped with `floor_char_boundary`, the plain
+    // one did not. `github-classic-pat` (`ghp_[A-Za-z0-9]{36}\b`, NO capture
+    // group) routes through the PLAIN extractor; a dense run of 3-byte chars
+    // before the token forces a non-boundary window start.
+    //
+    // Vary the pad length across all three mod-3 residues (and again further out)
+    // so at least one alignment lands the anchored window start mid-`中`: pre-fix
+    // that alignment panicked; post-fix every alignment completes and the token
+    // is still surfaced.
+    let tok = mint_crc_token("ghp_", &"aBcDe12345".repeat(3));
+    for pad_n in [64usize, 65, 66, 127, 128, 129] {
+        let pad = "中".repeat(pad_n);
+        let text = format!("github_token = \"{pad} {tok}\"\n");
+        // The only `ghp_`-shaped token in the input is `tok`, so a
+        // github-classic-pat hit == the token surfaced through the plain
+        // anchored extractor. Reaching this assert at all means the scan did
+        // not panic on the non-boundary window start.
+        let matches = scan(&text, "github-classic-multibyte-recall.env");
+        let fired: Vec<&str> = matches.iter().map(|m| m.detector_id.as_ref()).collect();
+        assert!(
+            !hits(&matches, "github-classic-pat").is_empty(),
+            "github-classic-pat must survive multibyte-dense anchored extraction \
+             with no UTF-8 boundary panic (pad_n={pad_n}); detectors that fired = {fired:?}"
+        );
+    }
 }
 
 #[test]

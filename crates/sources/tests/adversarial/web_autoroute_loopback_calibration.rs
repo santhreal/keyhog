@@ -50,7 +50,7 @@ fn web_loopback_fetch_requires_explicit_autoroute_calibration() {
         chunk.data.contains("keyhog-web-autoroute-calibration"),
         "autoroute calibration loopback fetch must emit the JS chunk"
     );
-    assert_eq!(chunk.metadata.source_type, "web:js");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "web:js");
     assert!(
         chunk.metadata.path.as_deref() == Some(url.as_str()),
         "autoroute calibration chunk must preserve web source URL, got {chunk:?}"

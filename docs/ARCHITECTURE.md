@@ -1,4 +1,4 @@
-# keyhog architecture — the whole pipeline, one page
+# keyhog architecture: the whole pipeline, one page
 
 This is the **map**: where everything lives and how a byte becomes a finding.
 It links to the authoritative in-code docs rather than restating them, so there
@@ -6,7 +6,7 @@ is one source of truth per fact. Read this first; then jump to the cited module.
 
 - New contributor? Read [Repository layout](#repository-layout) →
   [The pipeline](#the-pipeline-bytes--finding) → the "[where do I find X?](#where-do-i-find-x)" table.
-- Touching detection? The detector format is data, not code — see
+- Touching detection? The detector format is data, not code; see
   [`detectors/`](#detectors--data-not-code).
 - Touching the scan engine? Its own header doc is the deepest map:
   [`crates/scanner/src/engine/mod.rs`](../crates/scanner/src/engine/mod.rs)
@@ -19,20 +19,20 @@ is one source of truth per fact. Read this first; then jump to the cited module.
 Every top-level directory, one line each. **Code** is Rust under `crates/`;
 everything else is data, tooling, docs, or eval harness.
 
-| Dir | What it is |
-|-----|-----------|
-| `crates/` | The Rust workspace — the only place runtime code lives. Five crates (below). |
-| `detectors/` | **916 detector TOMLs — DATA, not code.** One file = one secret type. Drop a file to add a detector; no recompile of detection logic. See [below](#detectors--data-not-code). |
-| `rules/` | Other Tier-B data files (e.g. `aws-canary-accounts.toml`). Same idea as `detectors/`: ship data, users extend by dropping files. |
-| `ml/` | The Python ML pipeline that produces the scanner's embedded `weights.bin`: synthetic + real corpus → blend → train → gate. Entry point `retrain_loop.sh`. Trains the model; `crates/scanner` *serves* it. |
-| `benchmarks/` | Reproducible eval harness (`bench/` python pkg): corpus generators, scanner adapters, scorer, the regression/differential `gate`, and the README leaderboard generator. The numbers in the README come from here. |
-| `tests/` | **Repo-level** integration tests (Docker images, install flows, cross-OS). Per-crate unit/contract tests live under each crate's own `tests/`. |
+| Dir | Role |
+|-----|------|
+| `crates/` | Rust workspace: runtime code only (five crates; see [below](#the-crates-and-their-layering)). |
+| `detectors/` | **920 detector TOMLs (data, not code).** One file = one secret type; drop a file to add a detector without recompiling detection logic. See [detectors](#detectors--data-not-code). |
+| `rules/` | Tier-B data (e.g. `aws-canary-accounts.toml`); same drop-in model as `detectors/`. |
+| `ml/` | Python pipeline for embedded `weights.bin`: harvest → blend → train → gate (`retrain_loop.sh`). Trains; `crates/scanner` serves. |
+| `benchmarks/` | Eval harness (`bench/`): corpora, scanner adapters, scorer, regression/differential `gate`, README leaderboard. |
+| `tests/` | Repo-level integration tests (Docker, install, cross-OS). Per-crate tests live under each crate's `tests/`. |
 | `fuzz/` | `cargo-fuzz` targets (structure-aware, one sink per target). |
-| `tools/` | Build-time generators (`gen_contracts.py`, `gen_companion_contracts.py`) that emit test fixtures. (Also holds a large *gitignored* SecretBench corpus.) |
-| `scripts/` | Dev/ops scripts: dogfood-all-os, prerelease, audit, triage. |
-| `docs/` | Markdown docs. This file, mdBook source, execution plan, and deep technical references. |
-| `site/` | The published documentation website (HTML). `architecture.html` is the long-form, diagram-rich version of this page. |
-| `demo/` | A self-contained demo deployment (app + infra + scripts). |
+| `tools/` | Build-time generators (`gen_contracts.py`, `gen_companion_contracts.py`). Large *gitignored* SecretBench corpus. |
+| `scripts/` | Dev/ops: dogfood-all-os, prerelease, audit, triage. |
+| `docs/` | Markdown, mdBook source, execution plan, deep references. |
+| `site/` | Published docs site (HTML); `architecture.html` is the long-form version of this page. |
+| `demo/` | Self-contained demo deployment (app + infra + scripts). |
 | `metrics/` | Star and project-health metrics. |
 
 Internal execution planning lives in the private Santh monorepo, not in this
@@ -42,7 +42,7 @@ public repository.
 
 ## The crates and their layering
 
-Dependencies point one way — `core` is the foundation and depends on no other
+Dependencies point one way: `core` is the foundation and depends on no other
 keyhog crate; `cli` sits on top and wires the rest together. This DAG is enforced
 by Cargo and must stay acyclic (domain logic never imports CLI/transport/UI).
 
@@ -82,35 +82,35 @@ by Cargo and must stay acyclic (domain logic never imports CLI/transport/UI).
 The end-to-end flow, stage by stage, each pointing at the crate/module that owns
 it. The scan engine's own header doc
 ([`engine/mod.rs`](../crates/scanner/src/engine/mod.rs)) is the authoritative,
-method-level version of steps 2–4.
+method-level version of steps 2-4.
 
-1. **Acquire bytes** — a source yields file-path + content chunks.
+1. **Acquire bytes:** a source yields file-path + content chunks.
    `sources/` (`filesystem/`, `git/`, `stdin`, `docker`, `s3/`, `gcs.rs`,
    `cloud/azure_blob.rs`, `github_org.rs`, `gitlab_group.rs`,
    `bitbucket_workspace.rs`, `hosted_git.rs`, `web/`, `har.rs`, `strings.rs`,
    `binary/`).
-2. **Phase 1 — trigger production** (which detectors *could* fire, and where).
+2. **Phase 1: trigger production** (which detectors *could* fire, and where).
    Swappable backend: CPU Hyperscan prefilter (`engine/scan.rs`) or the GPU
    batched literal region-presence route (`engine/gpu_region_dispatch.rs`). Produces one
    "which detectors may match here" bitmap per chunk. The fast prefilters
    (`simdsieve`, `bigram_bloom`, `alphabet_filter`, `prefix_trie`) live at
    `scanner/src/` top level; the detector→matcher build is `engine/compile.rs`
    + `compiler.rs` + `compiler/`.
-3. **Phase 2 — extraction** (the shared tail, identical for CPU and GPU):
+3. **Phase 2: extraction** (the shared tail, identical for CPU and GPU):
    per-chunk `confirmed → phase2 capture → generic → entropy → ML`
    (`engine/extract.rs`, `engine/phase2*.rs`, `engine/scan.rs`). Decode-through
    (base64/hex/url/unicode/json) runs here and recurses: `decode/`.
-4. **Post-process** — suppression, dedup, confidence, decode recursion, cross-chunk
+4. **Post-process:** suppression, dedup, confidence, decode recursion, cross-chunk
    seam reassembly (`engine/scan_postprocess.rs`, `engine/process.rs`,
    `engine/boundary.rs`). Confidence + ML scoring: `confidence/`, `ml_scorer.rs`
    + `ml_scorer/` (`ml_features`, `ml_weights`); context inference: `context/`. The
    per-match policy here (suppression gates · example/placeholder · checksum ·
-   confidence penalties) is governed by one invariant — see **Match adjudication:
+   confidence penalties) is governed by one invariant; see **Match adjudication:
    one policy, one chokepoint** below.
-5. **Verify (optional)** — for the 344 detectors with a `[detector.verify]`
+5. **Verify (optional):** for the 345 detectors with a `[detector.verify]`
    endpoint, turn a candidate into verified-live, behind SSRF/bogon/rate guards.
    `verifier/`.
-6. **Report** — dedup, allowlist, emit text/JSON/SARIF; diff against a baseline
+6. **Report:** dedup, allowlist, emit text/JSON/SARIF; diff against a baseline
    for CI gates. `core/report/`, `core/dedup.rs`, `cli/reporting.rs`,
    `cli/format.rs`.
 
@@ -137,8 +137,8 @@ final reported finding.
 
 ### Match adjudication: one policy, one chokepoint
 
-**Governing invariant.** Whether a candidate match becomes a reported finding —
-and at what confidence — is a pure function of the **value and its context**,
+**Governing invariant.** Whether a candidate match becomes a reported finding,
+and at what confidence, is a pure function of the **value and its context**,
 *never* of which emission path produced it. A value that is a `${}` shell
 template, a `name-name:v1` public identifier, or `Config-Word-and-Word-only`
 policy prose is not a secret no matter whether the entropy detector, the generic
@@ -164,14 +164,14 @@ adjudicate_match(CandidateMatch, MatchCtx)            ← the ONLY funnel
 ```
 
 `MatchCtx` carries every input a stage needs (`value, detector, span, path,
-entropy, anchor_kind, in_comment, …`) so no stage is silently starved of data —
+entropy, anchor_kind, in_comment, …`) so no stage is silently starved of data;
 the reason a path could otherwise reach for a weaker overload. The `Verdict`
 names the deciding stage, which is exactly what `--dogfood` prints, so every
 suppression is explainable in one place. Adding a gate is a one-line edit to
 `public_noncredential_shape` and applies to *all* paths by construction.
 
 **Why this shape.** Per-match policy split across paths drifts: a richer path
-gains a gate the others lack, and a value's fate starts depending on its path —
+gains a gate the others lack, and a value's fate starts depending on its path:
 a silent override (Law 10). One funnel makes the whole policy readable top to
 bottom and makes divergence impossible to introduce. Enforcement is mechanical:
 no `looks_like_*` / `checksum_adjusted_confidence` / `should_suppress_known_example_*`
@@ -210,7 +210,7 @@ ml/retrain_loop.sh     one command: harvest → train → (--write) ship weights
 ```
 
 Because the model is compile-time-embedded, a new model is only observable after
-a rebuild — which is why `--verify` rebuilds before benching. The adjacent
+a rebuild, which is why `--verify` rebuilds before benching. The adjacent
 `crates/scanner/src/model_card.json` carries the model hash, training inputs,
 and gate metrics; `build.rs` refuses a card/weights mismatch and embeds the
 summary shown by `keyhog --version`.
@@ -224,7 +224,7 @@ summary shown by `keyhog --version`.
 | Add/edit a detector | `detectors/<name>.toml` (data; see `CONTRIBUTING.md` for the schema) |
 | Understand the scan flow at method level | `crates/scanner/src/engine/mod.rs` header |
 | Change how confidence is scored | `crates/scanner/src/confidence/`, `ml_scorer.rs` |
-| Add a suppression gate / change what counts as a non-secret | the one gate list `public_noncredential_shape` — see "Match adjudication" above (never inline a `looks_like_*` call in an emission path) |
+| Add a suppression gate / change what counts as a non-secret | the one gate list `public_noncredential_shape`; see "Match adjudication" above (never inline a `looks_like_*` call in an emission path) |
 | Retrain / improve the ML model | `ml/retrain_loop.sh` (+ `ml/README.md`) |
 | Add an input source | `crates/sources/src/` |
 | Add live verification for a detector | `[detector.verify]` in the TOML + `crates/verifier/src/verify/` |
@@ -236,4 +236,4 @@ summary shown by `keyhog --version`.
 
 *The long-form, diagram-rich version of this page (hardware routing matrix,
 profiling tips) is [`site/architecture.html`](../site/architecture.html). When
-they disagree, this file — checked next to the code — wins.*
+they disagree, this file, checked next to the code, wins.*

@@ -1,0 +1,12 @@
+connectors = [
+  "and",
+  "or",
+  "to",
+  "for",
+  "from",
+  "with",
+  "without",
+  "non",
+  "only",
+  "into",
+]

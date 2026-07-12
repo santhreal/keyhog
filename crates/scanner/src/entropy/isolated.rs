@@ -33,13 +33,9 @@ pub(crate) fn has_isolated_bare_secret_candidate(
     // allocation). `text.lines()` yields exactly the same `&str` sequence the
     // collected slice did, so this is byte-for-byte equivalent.
     let threshold = isolated_bare_entropy_threshold(entropy_threshold);
-    text.lines()
-        .any(|line| line_has_isolated_bare_secret_candidate(
-            line,
-            threshold,
-            placeholder_keywords,
-            min_len
-        ))
+    text.lines().any(|line| {
+        line_has_isolated_bare_secret_candidate(line, threshold, placeholder_keywords, min_len)
+    })
 }
 
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
@@ -50,16 +46,9 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_lines(
     min_len: usize,
 ) -> bool {
     let threshold = isolated_bare_entropy_threshold(entropy_threshold);
-    lines
-        .iter()
-        .any(|line| {
-            line_has_isolated_bare_secret_candidate(
-                line,
-                threshold,
-                placeholder_keywords,
-                min_len,
-            )
-        })
+    lines.iter().any(|line| {
+        line_has_isolated_bare_secret_candidate(line, threshold, placeholder_keywords, min_len)
+    })
 }
 
 /// Per-line predicate shared by the `&str` and `&[&str]` entry points so the

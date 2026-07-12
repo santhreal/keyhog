@@ -40,7 +40,7 @@ pub fn oracle_plain_file_symlink_refused() {
     );
     let paths: Vec<_> = chunks
         .iter()
-        .filter_map(|chunk| chunk.metadata.path.as_ref())
+        .filter_map(|chunk| chunk.metadata.path.as_deref())
         .collect();
 
     assert!(paths.iter().any(|p| p.ends_with("real.txt")));

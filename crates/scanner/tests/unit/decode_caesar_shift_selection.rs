@@ -7,13 +7,13 @@
 //! inventing) a decoded variant: a recall/precision bug, not a speedup.
 
 use keyhog_scanner::testing::decode_caesar::{
-    caesar_shift, candidate_shape_invariant, looks_credential_shaped, matched_caesar_shifts,
+    caesar_credential_shape_gate, caesar_shift, candidate_shape_invariant, matched_caesar_shifts,
     KNOWN_PREFIXES, MIN_CAESAR_LEN,
 };
 use std::collections::BTreeSet;
 
 /// Reference: emitted-variant set under the ORIGINAL all-25-shifts loop (gated by
-/// `candidate_shape_invariant` + `looks_credential_shaped`, exactly as the
+/// `candidate_shape_invariant` + `caesar_credential_shape_gate`, exactly as the
 /// pre-optimization code was).
 fn reference_emit(candidate: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
@@ -22,7 +22,7 @@ fn reference_emit(candidate: &str) -> BTreeSet<String> {
     }
     for shift in 1..=25u8 {
         let decoded = caesar_shift(candidate, shift);
-        if looks_credential_shaped(&decoded) {
+        if caesar_credential_shape_gate(&decoded) {
             out.insert(decoded);
         }
     }
@@ -41,7 +41,7 @@ fn optimized_emit(candidate: &str) -> BTreeSet<String> {
             continue;
         }
         let decoded = caesar_shift(candidate, shift);
-        if looks_credential_shaped(&decoded) {
+        if caesar_credential_shape_gate(&decoded) {
             out.insert(decoded);
         }
     }
@@ -63,7 +63,7 @@ const ALNUM: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234
 #[test]
 fn matched_shifts_emit_identical_set_to_all_25() {
     let mut state = 0x9E3779B97F4A7C15u64;
-    let prefixes: Vec<&str> = KNOWN_PREFIXES.to_vec();
+    let prefixes: Vec<&str> = (&*KNOWN_PREFIXES).iter().map(|s| s.as_str()).collect();
     let mut checked = 0u64;
     for i in 0..100_000u64 {
         // Build a random alnum candidate of length 8..=48.

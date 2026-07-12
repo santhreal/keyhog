@@ -106,8 +106,14 @@ def run_once(
     )
     if stats.timed_out:
         result.error = "scanner timed out"
+        result.available = False
     elif not scanner.exit_success(stats.exit_code):
+        # A scanner that crashed (nonzero, non-success exit) produced no usable
+        # result; keeping available=True would rank a crashed competitor as a
+        # legitimate low-recall entrant (the gate/leaderboard filter on
+        # `available`). Fail it closed instead.
         result.error = f"scanner exited {stats.exit_code}"
+        result.available = False
     return result
 
 

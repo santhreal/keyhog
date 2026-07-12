@@ -8,7 +8,10 @@ id = "convertkit-api-key"
 name = "ConvertKit API Key"
 service = "convertkit"
 severity = "critical"
-keywords = ["convertkit", "CONVERTKIT", "api_secret", "api_key"]
+# "api_key" removed: over-broad generic prefilter the regex does NOT need — every
+# pattern self-anchors on the service name (kept), which is present in any real
+# match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.
+keywords = ["convertkit", "CONVERTKIT", "api_secret"]
 
 [[detector.patterns]]
 regex = """(?i)convertkit[_-]?(?:api[_-]?)?(?:secret|key)[=:\\s\"']+([a-zA-Z0-9_-]{20,})"""

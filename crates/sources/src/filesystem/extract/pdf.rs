@@ -16,7 +16,7 @@ use std::path::Path;
 const STREAM: &[u8] = b"stream";
 const ENDSTREAM: &[u8] = b"endstream";
 const ENDOBJ: &[u8] = b"endobj";
-const PDF_UNCAPPED_DECODE_BUDGET: usize = 1024 * 1024 * 1024;
+
 const MIN_PDF_TEXT_LEN: usize = 4;
 /// How far back the stream-dictionary window may reach. A stream's `<< >>`
 /// object dictionary sits immediately before its `stream` keyword; 8 KiB is
@@ -95,8 +95,8 @@ pub(super) fn extract_pdf_chunks(
     if !emit(Ok(Chunk {
         data: text.to_owned().into(),
         metadata: ChunkMetadata {
-            source_type: "filesystem/pdf".to_string(),
-            path: Some(path_display),
+            source_type: "filesystem/pdf".into(),
+            path: Some(path_display.into()),
             mtime_ns: live_mtime_ns,
             size_bytes: Some(file_size),
             decoded_span: None,
@@ -148,8 +148,10 @@ fn emit_non_pdf_extension_fallback(
     let (data, source_type) = match read::decode_text_file(&bytes) {
         Some(text) if !text.is_empty() => (text.into(), "filesystem"),
         _ => {
-            let strings =
-                crate::strings::extract_printable_strings(&bytes, super::MIN_PRINTABLE_STRING_LEN);
+            let strings = crate::strings::extract_printable_strings(
+                &bytes,
+                crate::strings::MIN_PRINTABLE_STRING_LEN,
+            );
             if strings.is_empty() {
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
                 return;
@@ -164,8 +166,8 @@ fn emit_non_pdf_extension_fallback(
     if !emit(Ok(Chunk {
         data,
         metadata: ChunkMetadata {
-            source_type: source_type.to_string(),
-            path: Some(path_display),
+            source_type: source_type.into(),
+            path: Some(path_display.into()),
             mtime_ns: live_mtime_ns,
             size_bytes: Some(file_size),
             decoded_span: None,
@@ -177,13 +179,14 @@ fn emit_non_pdf_extension_fallback(
 }
 
 fn pdf_decode_budget(max_size: u64) -> usize {
+    let uncapped_budget = super::UNCAPPED_ARCHIVE_BUDGET as usize;
     if max_size == 0 {
-        return PDF_UNCAPPED_DECODE_BUDGET;
+        return uncapped_budget;
     }
     let budget = max_size.saturating_mul(4);
     match usize::try_from(budget) {
-        Ok(value) => value.min(PDF_UNCAPPED_DECODE_BUDGET),
-        Err(_error) => PDF_UNCAPPED_DECODE_BUDGET,
+        Ok(value) => value.min(uncapped_budget),
+        Err(_error) => uncapped_budget,
     }
 }
 
@@ -278,6 +281,18 @@ fn extract_pdf_text(bytes: &[u8], decoded_budget: usize) -> PdfExtract {
 
     append_pdf_strings_outside_streams(bytes, &ranges, &mut out.text);
     out
+}
+
+/// Fuzz-only byte-level entry into the hand-rolled PDF text extractor (the
+/// `(...)` literal / `<...>` hex string parser, `<<>>` dict skipping, stream
+/// inflate, and dictionary-window search). Compiled ONLY under `cargo fuzz`
+/// (`--cfg fuzzing`), so it adds zero production API surface. Contract the
+/// fuzzer enforces: for ANY input bytes and any budget, the extractor must
+/// never panic, slice out of bounds, or hang (it is the reachable target when a
+/// user scans an attacker-supplied `.pdf`).
+#[cfg(fuzzing)]
+pub fn fuzz_extract_pdf_text(bytes: &[u8], budget: usize) -> String {
+    extract_pdf_text(bytes, budget).text
 }
 
 enum StreamDecode<'a> {

@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "gI0K0EXAMPLEEXAMPLENkZRN"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = 'credentials "app.terraform.io" { token = "gI0K0lFi9sRt6a.atlasv1.pjqKbeILsS9prSy4rJKA1mJkK4NG3iIsHrn4dAeHHYYvyPyGSVh8TcjSx4sgN3ONTyqGEUhq40bJJtI6OFNkZRN" }'
+credential = "gI0K0lFi9sRt6a.atlasv1.pjqKbeILsS9prSy4rJKA1mJkK4NG3iIsHrn4dAeHHYYvyPyGSVh8TcjSx4sgN3ONTyqGEUhq40bJJtI6OFNkZRN"
+reason = "A real ~/.terraformrc credentials HCL block — the `.atlasv1.` infix anchor fires inside the HCL structure, not only a KEY=value line."

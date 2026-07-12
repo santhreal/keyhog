@@ -2,7 +2,7 @@
 
 use super::archive::{
     archive_unix_mode_is_special, emit_archive_entry_over_cap_error,
-    validate_scan_archive_entry_name,
+    validate_scan_archive_entry_name, ARCHIVE_ENTRY_READ_CAPACITY_HINT,
 };
 use super::{
     display_path, extraction_total_budget, is_symlink, read, record_default_excluded_archive_entry,
@@ -14,13 +14,6 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::path::Path;
 use std::rc::Rc;
-
-/// Initial capacity reserved for a RAR entry's decoded body. A 64 KiB starting
-/// buffer avoids repeated small reallocations while decoding while keeping the
-/// up-front reservation bounded for a tiny entry (the real size caps the
-/// reservation for a small entry via `min`). Named once so the two entry sinks
-/// cannot drift apart, mirroring `seven_zip::READ_CAPACITY_HINT`.
-const RAR_ENTRY_BUFFER_CAPACITY_HINT: usize = 64 * 1024;
 
 pub(super) fn extract_rar_chunks(
     path: &Path,
@@ -824,7 +817,7 @@ struct RarEntrySink {
 
 impl RarEntrySink {
     fn new(entry_name: String, expected_size: u64, cap: u64) -> Self {
-        let capacity = expected_size.min(RAR_ENTRY_BUFFER_CAPACITY_HINT as u64) as usize;
+        let capacity = expected_size.min(ARCHIVE_ENTRY_READ_CAPACITY_HINT) as usize;
         Self {
             entry_name,
             content: Vec::with_capacity(capacity),
@@ -847,18 +840,33 @@ impl RarEntrySink {
     }
 }
 
+/// Append `buf` to a decoded-entry buffer, failing (and latching `hit_cap`) if the
+/// running total would exceed `cap`. Single owner of the capped-append `Write`
+/// core that `RarEntrySink` and `SolidRarEntrySink` share — they differed only in
+/// the `what` label baked into the over-cap error. The drain sink counts instead
+/// of storing, so it stays separate.
+fn capped_extend(
+    content: &mut Vec<u8>,
+    cap: u64,
+    hit_cap: &mut bool,
+    buf: &[u8],
+    what: &str,
+) -> std::io::Result<usize> {
+    let next_len = content.len().saturating_add(buf.len()) as u64;
+    if next_len > cap {
+        *hit_cap = true;
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("RAR {what} decoded size exceeds configured extraction cap"),
+        ));
+    }
+    content.extend_from_slice(buf);
+    Ok(buf.len())
+}
+
 impl Write for RarEntrySink {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let next_len = self.content.len().saturating_add(buf.len()) as u64;
-        if next_len > self.cap {
-            self.hit_cap = true;
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "RAR entry decoded size exceeds configured extraction cap",
-            ));
-        }
-        self.content.extend_from_slice(buf);
-        Ok(buf.len())
+        capped_extend(&mut self.content, self.cap, &mut self.hit_cap, buf, "entry")
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
@@ -878,7 +886,7 @@ impl SolidRarEntrySink {
     fn new(entry_name: String, cap: u64, decoded: Rc<RefCell<Vec<RarDecodedEntry>>>) -> Self {
         Self {
             entry_name,
-            content: Vec::with_capacity(RAR_ENTRY_BUFFER_CAPACITY_HINT),
+            content: Vec::with_capacity(ARCHIVE_ENTRY_READ_CAPACITY_HINT as usize),
             cap,
             hit_cap: false,
             decoded,
@@ -888,16 +896,13 @@ impl SolidRarEntrySink {
 
 impl Write for SolidRarEntrySink {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let next_len = self.content.len().saturating_add(buf.len()) as u64;
-        if next_len > self.cap {
-            self.hit_cap = true;
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "RAR solid entry decoded size exceeds configured extraction cap",
-            ));
-        }
-        self.content.extend_from_slice(buf);
-        Ok(buf.len())
+        capped_extend(
+            &mut self.content,
+            self.cap,
+            &mut self.hit_cap,
+            buf,
+            "solid entry",
+        )
     }
 
     fn flush(&mut self) -> std::io::Result<()> {

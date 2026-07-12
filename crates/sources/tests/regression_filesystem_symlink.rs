@@ -61,8 +61,9 @@ fn files_containing(chunks: &[Chunk], needle: &str) -> usize {
             let path = chunk
                 .metadata
                 .path
-                .clone()
-                .unwrap_or_else(|| String::from("<no-path>"));
+                .as_deref()
+                .unwrap_or("<no-path>")
+                .to_string();
             hit_paths.insert(path);
         }
     }

@@ -74,7 +74,7 @@ fn git_source_scans_blob_with_non_utf8_byte() {
         "single committed text blob should emit exactly one chunk, got {chunks:?}"
     );
     let chunk = chunks[0];
-    assert_eq!(chunk.metadata.source_type, "git/head");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "git/head");
     assert!(
         chunk
             .metadata

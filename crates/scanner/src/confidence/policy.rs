@@ -157,6 +157,17 @@ pub(crate) fn apply_named_detector_anchor_floor(
     is_named_detector: bool,
     has_anchor: bool,
 ) -> f64 {
+    // A NaN confidence is a broken upstream signal, never a real score. `f64::max`
+    // IGNORES NaN, so `NaN.max(FLOOR)` would silently manufacture the anchor floor
+    // from garbage, and an un-floored NaN would propagate to poison every
+    // downstream `>=` gate (every comparison against NaN is false). Collapse NaN to
+    // 0.0 first — loud in debug, fail-closed in release (Law 10) — so a broken
+    // score is never laundered into a mid-tier confidence nor leaked as NaN.
+    debug_assert!(
+        !confidence.is_nan(),
+        "apply_named_detector_anchor_floor received NaN confidence — broken upstream score"
+    );
+    let confidence = if confidence.is_nan() { 0.0 } else { confidence };
     if is_named_detector && has_anchor {
         confidence.max(NAMED_DETECTOR_ANCHOR_FLOOR)
     } else {
@@ -360,6 +371,18 @@ pub(crate) fn probabilistic_promise_confidence_override(
 
 #[cfg(feature = "entropy")]
 pub(crate) fn entropy_fallback_confidence(entropy: f64, keyword: &str) -> f64 {
+    // A NaN entropy is undefined evidence, never a real measurement
+    // (`shannon_entropy` is bounded to `[0, 8]`). Critically, `f64::min` IGNORES
+    // NaN, so the `0.55.min(entropy / 8.0)` fallback below would silently launder
+    // a NaN into a 0.55 mid-tier confidence (Law 10: no silent fallback). Collapse
+    // NaN to the zero-evidence case up front — loudly in debug so a broken upstream
+    // entropy is caught, conservatively (0.0) in release so it can never be
+    // credited as signal.
+    debug_assert!(
+        !entropy.is_nan(),
+        "entropy_fallback_confidence received NaN entropy — broken upstream entropy computation"
+    );
+    let entropy = if entropy.is_nan() { 0.0 } else { entropy };
     // Keyword-free high-entropy candidates carry weaker evidence than
     // keyword/isolated-token candidates, so only the latter get the historical
     // +0.10 lift. The emit path owns routing; this owner owns the base score.
@@ -370,7 +393,7 @@ pub(crate) fn entropy_fallback_confidence(entropy: f64, keyword: &str) -> f64 {
     } else {
         0.55_f64.min(entropy / 8.0)
     };
-    if keyword != "none (high-entropy)" {
+    if keyword != crate::entropy::KEYWORD_FREE_LABEL {
         (base_confidence + 0.1).min(0.90_f64)
     } else {
         base_confidence
@@ -396,7 +419,10 @@ pub(crate) fn generic_secret_confidence(
         context::CodeContext::Comment => 0.30,
         _ => 0.60,
     };
-    let entropy_boost = ((entropy - 3.5) * 0.1).min(0.25);
+    let entropy_boost = ((entropy - 3.5) * 0.1).clamp(0.0, 0.25);
     let length_boost = ((value_len as f64 - 16.0) * 0.005).clamp(0.0, 0.15);
-    (base_confidence + entropy_boost + length_boost).min(0.95)
+    // Lower clamp is defensive: the boosts already floor at 0.0, but pin the
+    // whole score into [0.0, 0.95] so no future base/boost retune can emit a
+    // negative or >0.95 confidence into the pipeline.
+    (base_confidence + entropy_boost + length_boost).clamp(0.0, 0.95)
 }

@@ -114,7 +114,7 @@ fn value_owned_by_local_key_matching(
 fn random_byte_assignment_key_is_high_signal(normalized: &str) -> bool {
     let compact: String = normalized
         .bytes()
-        .filter(|b| !matches!(b, b'_' | b'-' | b'.'))
+        .filter(|&b| !crate::engine::phase2_generic::keywords::is_assignment_compact_separator(b))
         .map(|b| b.to_ascii_lowercase() as char)
         .collect();
     let separated_suffix =

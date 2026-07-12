@@ -395,7 +395,10 @@ fn windowed_path_emits_multiple_chunks_with_overlap() {
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
     assert_eq!(chunks.len(), 2, "expected 2 windowed chunks for 200B file");
-    assert_eq!(chunks[0].metadata.source_type, "filesystem/windowed");
+    assert_eq!(
+        chunks[0].metadata.source_type.as_ref(),
+        "filesystem/windowed"
+    );
     assert_eq!(chunks[0].metadata.base_offset, 0);
     assert_eq!(chunks[1].metadata.base_offset, 128 - 32);
     // Every chunk must carry the same overall file size + a populated mtime.
@@ -422,7 +425,7 @@ fn default_windowing_splits_multimegabyte_source_files() {
     );
     assert!(chunks
         .iter()
-        .all(|chunk| chunk.metadata.source_type == "filesystem/windowed"));
+        .all(|chunk| chunk.metadata.source_type.as_ref() == "filesystem/windowed"));
     assert_eq!(chunks[0].metadata.base_offset, 0);
     assert_eq!(chunks[1].metadata.base_offset, 1024 * 1024 - 128 * 1024);
 }
@@ -511,7 +514,8 @@ fn windowed_path_single_chunk_for_file_at_exactly_window_size() {
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(chunks.len(), 1);
     assert_ne!(
-        chunks[0].metadata.source_type, "filesystem/windowed",
+        chunks[0].metadata.source_type.as_ref(),
+        "filesystem/windowed",
         "exact-size file must take the regular read path, not the windowed path"
     );
 }
@@ -615,12 +619,12 @@ fn compressed_gz_file_yields_decompressed_chunk() {
     assert!(
         chunks
             .iter()
-            .any(|c| c.metadata.source_type == "filesystem/compressed"),
+            .any(|c| c.metadata.source_type.as_ref() == "filesystem/compressed"),
         "expected filesystem/compressed source_type"
     );
     let combined: String = chunks
         .iter()
-        .filter(|c| c.metadata.source_type == "filesystem/compressed")
+        .filter(|c| c.metadata.source_type.as_ref() == "filesystem/compressed")
         .map(|c| c.data.to_string())
         .collect();
     assert!(

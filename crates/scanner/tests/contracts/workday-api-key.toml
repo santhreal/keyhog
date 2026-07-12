@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "WD.tenant :'   \"\"':'      '            :  \"' :54mjwEXAMPLEEXAMPLEy.com"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# workday_host=54mjwwtk73-7zxl11dknajfhduuh2afa51xv6hqbd9rzkboo2a0tqfke6a9zxu7poeyzriabsbi3-qxkd2z00m2ynphds.workday.com  # hcm"
+credential = "54mjwwtk73-7zxl11dknajfhduuh2afa51xv6hqbd9rzkboo2a0tqfke6a9zxu7poeyzriabsbi3-qxkd2z00m2ynphds.workday.com"
+reason = "Commented-out config; workday_host keyword + tenant host intact inside the comment."

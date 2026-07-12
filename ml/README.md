@@ -27,7 +27,7 @@ Recall holds; precision jumps; base64-of-binary false positives go to zero.
 The synthetic corpus (`corpus.py`) gives breadth but not the real distribution
 keyhog is deployed against. A synthetic-only model scored real but shape-ambiguous
 CredData secrets (lowercase-heavy tokens, digit-run ids, symbol-laden passwords)
-near ~0.02 — it learned "junk-looking shape = non-secret" from synthetic
+near ~0.02; it learned "junk-looking shape = non-secret" from synthetic
 negatives. The
 fix is to train on the real candidates keyhog actually surfaces, labelled by
 ground truth:
@@ -43,16 +43,16 @@ define the training distribution.
 
 which runs:
 
-1. **harvest** (`harvest_corpus.py`) — scan the real corpora (CredData) with
+1. **harvest** (`harvest_corpus.py`): scan the real corpora (CredData) with
    keyhog, label each candidate via the bench's ground-truth overlap
    (`benchmarks/bench/score.py`), and emit `{text, context, label, kind, class,
    detector_id, source_file}` where `context` is the byte-exact serve ml_context
    (`file:{path}\n{±5-line window}`), `class` is the scorer category, and
    `detector_id` is the keyhog detector that fired.
-2. **retrain** (`train_classifier.py --real-corpus`) — blend synthetic (random
-   85/15) + real (split **by file**, never randomly — a repo's secrets must not
+2. **retrain** (`train_classifier.py --real-corpus`): blend synthetic (random
+   85/15) + real (split **by file**, never randomly; a repo's secrets must not
    span train/test) and report metrics on a leakage-free real held-out.
-3. **gate** — `--write` refuses unless synthetic held-out F1 ≥ `--min-f1`, real
+3. **gate:** `--write` refuses unless synthetic held-out F1 ≥ `--min-f1`, real
    held-out recall@0.40-floor ≥ `--min-real-recall`, every positive-bearing
    real held-out class clears `--min-real-class-recall` without regressing versus
    the existing model card when class metrics are present, and the model card
@@ -61,14 +61,14 @@ which runs:
 
 Measured impact of one loop (CredData): real held-out recall@floor 0 → **0.76**,
 synthetic F1 held at 0.96, and on the never-trained-on mirror corpus precision
-held (0.994) with recall +0.7pt — i.e. it generalises, it did not overfit to
+held (0.994) with recall +0.7pt (i.e. it generalises; it did not overfit to
 CredData. With the better model the entropy→MoE unification
 (`entropy_ml_authoritative`, default on) flips from a recall regression into a
 recall-safe precision win (CredData +1 TP / −127 FP). Run the loop each dogfood
 round so real FPs/FNs keep flowing back into the model.
 
 > Note: `ml/data/real_corpus.jsonl` and `benchmarks/results/` contain REAL
-> secrets and are gitignored — never commit them.
+> secrets and are gitignored; never commit them.
 
 ## Architecture (must match `ml_scorer.rs` exactly)
 

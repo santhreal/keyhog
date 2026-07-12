@@ -58,8 +58,8 @@ fn try_expand_har_splits_request_and_response() {
         expand_har(fixture.as_bytes(), "cap.har", 10 * 1024 * 1024).expect("fixture should parse");
     let chunks: Vec<_> = chunks.into_iter().map(|c| c.unwrap()).collect();
     assert_eq!(chunks.len(), 2, "one request + one response per entry");
-    assert_eq!(chunks[0].metadata.source_type, "wire:har:request");
-    assert_eq!(chunks[1].metadata.source_type, "wire:har:response");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "wire:har:request");
+    assert_eq!(chunks[1].metadata.source_type.as_ref(), "wire:har:response");
     assert!(chunks[0]
         .data
         .as_ref()
@@ -142,7 +142,8 @@ fn response_side_expansion_budget_truncation_surfaces_source_error() {
         "request chunk should remain visible before response expansion exceeds budget"
     );
     assert_eq!(
-        ok_chunks[0].metadata.source_type, "wire:har:request",
+        ok_chunks[0].metadata.source_type.as_ref(),
+        "wire:har:request",
         "only the admitted request chunk should be emitted before truncation"
     );
     assert_eq!(
@@ -198,7 +199,7 @@ fn base64_encoded_response_body_is_decoded_before_scanning() {
     let response = chunks
         .into_iter()
         .map(|c| c.unwrap())
-        .find(|c| c.metadata.source_type == "wire:har:response")
+        .find(|c| c.metadata.source_type.as_ref() == "wire:har:response")
         .expect("a response chunk");
     let body = response.data.as_ref();
     assert!(
@@ -219,7 +220,7 @@ fn base64_encoding_label_is_case_insensitive() {
     let response = chunks
         .into_iter()
         .map(|c| c.unwrap())
-        .find(|c| c.metadata.source_type == "wire:har:response")
+        .find(|c| c.metadata.source_type.as_ref() == "wire:har:response")
         .expect("a response chunk");
     assert!(
         response.data.as_ref().contains(AWS_TEST_KEY),
@@ -235,7 +236,7 @@ fn wrapped_base64_response_body_is_decoded_before_scanning() {
     let response = chunks
         .into_iter()
         .map(|c| c.unwrap())
-        .find(|c| c.metadata.source_type == "wire:har:response")
+        .find(|c| c.metadata.source_type.as_ref() == "wire:har:response")
         .expect("a response chunk");
     assert!(
         response.data.as_ref().contains(AWS_TEST_KEY),
@@ -263,7 +264,7 @@ fn base64_decoded_invalid_utf8_response_body_is_scanned_lossy() {
     let response = chunks
         .into_iter()
         .map(|c| c.unwrap())
-        .find(|c| c.metadata.source_type == "wire:har:response")
+        .find(|c| c.metadata.source_type.as_ref() == "wire:har:response")
         .expect("a response chunk");
     assert!(
         response.data.as_ref().contains("\u{FFFD}AKIA"),
@@ -279,7 +280,7 @@ fn malformed_base64_encoding_falls_back_to_raw_text() {
     let response = chunks
         .into_iter()
         .map(|c| c.unwrap())
-        .find(|c| c.metadata.source_type == "wire:har:response")
+        .find(|c| c.metadata.source_type.as_ref() == "wire:har:response")
         .expect("a response chunk");
     assert!(
         response.data.as_ref().contains(AWS_TEST_KEY),
@@ -294,7 +295,7 @@ fn plain_text_response_body_is_unchanged() {
     let response = chunks
         .into_iter()
         .map(|c| c.unwrap())
-        .find(|c| c.metadata.source_type == "wire:har:response")
+        .find(|c| c.metadata.source_type.as_ref() == "wire:har:response")
         .expect("a response chunk");
     assert!(response.data.as_ref().contains(AWS_TEST_KEY));
 }
@@ -370,7 +371,7 @@ fn har_post_data_params_are_rendered() {
     let request = chunks
         .into_iter()
         .map(|c| c.unwrap())
-        .find(|c| c.metadata.source_type == "wire:har:request")
+        .find(|c| c.metadata.source_type.as_ref() == "wire:har:request")
         .expect("a request chunk");
     assert!(
         request
@@ -399,11 +400,11 @@ fn har_cookie_redirect_and_comments_are_rendered() {
     let chunks: Vec<_> = chunks.into_iter().map(|c| c.unwrap()).collect();
     let request = chunks
         .iter()
-        .find(|c| c.metadata.source_type == "wire:har:request")
+        .find(|c| c.metadata.source_type.as_ref() == "wire:har:request")
         .expect("request chunk");
     let response = chunks
         .iter()
-        .find(|c| c.metadata.source_type == "wire:har:response")
+        .find(|c| c.metadata.source_type.as_ref() == "wire:har:response")
         .expect("response chunk");
 
     assert!(request.data.contains("session=request_cookie_secret_123"));

@@ -9,6 +9,7 @@
 //! stale number in the generator (cf. the deleted `*_is_902` gates that baked
 //! the count into their own filename and rotted).
 
+use crate::support::paths::detector_dir;
 use std::path::PathBuf;
 
 fn repo_root() -> PathBuf {
@@ -16,12 +17,6 @@ fn repo_root() -> PathBuf {
     d.pop();
     d.pop();
     d
-}
-
-/// `crates/scanner/../../detectors` — the on-disk Tier-B detector dir, computed
-/// from `CARGO_MANIFEST_DIR` (same convention as the sibling contract gates).
-fn detector_dir() -> PathBuf {
-    repo_root().join("detectors")
 }
 
 #[test]
@@ -34,7 +29,7 @@ fn generate_contracts_script_claim_matches_loader() {
     let text = std::fs::read_to_string(&script)
         .unwrap_or_else(|e| panic!("read {}: {e}", script.display()));
 
-    let expected = format!("README_CLAIM = \"{n} service-specific detectors\"");
+    let expected = format!("README_CLAIM = \"{n} embedded detectors\"");
     assert!(
         text.contains(&expected),
         "generate_contracts.py must pin the live loader count: loader returned {n}, so \

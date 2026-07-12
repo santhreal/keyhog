@@ -5,6 +5,8 @@ use keyhog_core::{
 
 fn detector_with_pattern(regex: &str) -> DetectorSpec {
     DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "test-detector".into(),
         name: "Test Detector".into(),

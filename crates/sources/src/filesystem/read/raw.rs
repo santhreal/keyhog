@@ -320,20 +320,13 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return None;
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::AsRawFd;
-        let fd = file.as_raw_fd();
-        // SAFETY: Simple advisory lock FFI call.
-        if unsafe { libc::flock(fd, libc::LOCK_SH | libc::LOCK_NB) } != 0 {
-            tracing::warn!(
-                path = %path.display(),
-                "file is locked by another process; skipping to avoid scanning a torn write"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return None;
-        }
-    }
+    // NB: no re-flock here. `open_file_safe` (which opened `file`) already holds
+    // the advisory `LOCK_SH` on this fd, and a shared lock we already hold blocks
+    // any new exclusive lock — so a re-request could only re-confirm the lock we
+    // own (a redundant syscall whose "locked by another process" failure branch
+    // was dead). The lock stays held for `file`'s lifetime, which spans the mmap
+    // below. ONE owner of the flock guard: `open_file_safe`. Contract pinned by
+    // `externally_exclusive_locked_file_is_refused_by_open_and_mmap`.
 
     // SAFETY: the mapping is read-only, the `File` lives through the mapping
     // call, and we decode the bytes immediately without storing the mmap past

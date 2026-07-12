@@ -172,6 +172,24 @@ fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
     (on, off)
 }
 
+/// As [`scan_both`], but keeps HS ON and scans via `SimdCpu` so the HYPERSCAN
+/// always-active path is exercised. With the fix, the HS engine honors
+/// `homoglyph_ascii_skip` via its lean ASCII sub-DB, so skip-ON and skip-OFF must
+/// still produce byte-identical `RawMatch` sets on ASCII — the end-to-end proof
+/// that routing ASCII marking through the lean DB adds no FP and drops no TP.
+fn scan_both_hs(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
+    keyhog_scanner::testing::set_phase2_hs(scanner, Some(true));
+    keyhog_scanner::testing::set_homoglyph_ascii_skip(scanner, Some(false));
+    scanner.clear_fragment_cache();
+    let off = canonical(&scanner.scan_with_backend(chunk, ScanBackend::SimdCpu));
+    keyhog_scanner::testing::set_homoglyph_ascii_skip(scanner, Some(true));
+    scanner.clear_fragment_cache();
+    let on = canonical(&scanner.scan_with_backend(chunk, ScanBackend::SimdCpu));
+    keyhog_scanner::testing::set_homoglyph_ascii_skip(scanner, None);
+    keyhog_scanner::testing::set_phase2_hs(scanner, None);
+    (on, off)
+}
+
 fn report(on: &[Key], off: &[Key], input: &[u8]) -> String {
     let dropped: Vec<&Key> = off.iter().filter(|k| !on.contains(k)).take(5).collect();
     let added: Vec<&Key> = on.iter().filter(|k| !off.contains(k)).take(5).collect();
@@ -249,6 +267,52 @@ fn homoglyph_ascii_skip_parity_default() {
     assert!(
         checked >= n + TOKENS.len(),
         "expected random sweep plus deterministic token coverage, got {checked}"
+    );
+}
+
+/// SOUNDNESS gate for the HYPERSCAN homoglyph-ASCII skip (the lean ASCII sub-DB).
+/// Mirrors `homoglyph_ascii_skip_parity_default` but drives the HS/`SimdCpu` path:
+/// with the fix, marking ASCII chunks through the lean DB (which excludes the ~2.8k
+/// homoglyph variants) must yield byte-identical `RawMatch` sets to the full DB — no
+/// FP added, no TP dropped. Before the fix the HS path scanned the full DB on ASCII
+/// (findings-identical but ~100-215× slower); this locks that the speed fix stayed
+/// findings-neutral. A divergence names the exact detector+credential a homoglyph
+/// variant catches on ASCII that the base path does not — a real gap, not a reason
+/// to weaken the test.
+#[test]
+fn homoglyph_ascii_skip_parity_hs_backend() {
+    let _telemetry_guard = super::super::telemetry_serial::lock();
+    let scanner = scanner();
+    scanner.clear_fragment_cache();
+
+    let deterministic_cases = deterministic_ascii_cases();
+    for (i, bytes) in deterministic_cases.iter().enumerate() {
+        assert!(bytes.is_ascii(), "deterministic case {i} must be ASCII");
+        let chunk = chunk_of(bytes, &format!("hs-deterministic-{i}"));
+        let (on, off) = scan_both_hs(scanner, &chunk);
+        assert_eq!(on, off, "HS backend: {}", report(&on, &off, bytes));
+    }
+
+    // Bounded synthetic ASCII sweep through the HS path (kept smaller than the
+    // RegexSet default gate — this tail runs near the lib-test memory ceiling).
+    let mut rng = Lcg(0x0f0e_0d0c_0b0a_0908);
+    let n: usize = std::env::var("KEYHOG_PARITY_N")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_PARITY_N / 4);
+    let mut checked = deterministic_cases.len();
+    for i in 0..n {
+        let bytes = gen_ascii_chunk(&mut rng);
+        if !bytes.is_ascii() {
+            continue;
+        }
+        let chunk = chunk_of(&bytes, &format!("hs-gen-{i}"));
+        let (on, off) = scan_both_hs(scanner, &chunk);
+        assert_eq!(on, off, "HS backend: {}", report(&on, &off, &bytes));
+        checked += 1;
+    }
+    eprintln!(
+        "homoglyph_ascii_skip_parity_hs_backend: {checked} ASCII inputs checked, HS skip ≡ full"
     );
 }
 

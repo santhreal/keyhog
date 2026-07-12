@@ -172,3 +172,27 @@ fn dedup_prefers_original_location_over_nearby_decoder_alias() {
         "nearby decoded aliases should not report as extra locations"
     );
 }
+
+#[test]
+fn dedup_many_same_group_matches_use_borrowed_lookup() {
+    // Regression for dedup.rs hot path: duplicate matches must collapse via
+    // borrowed DedupKeyRef lookup without cloning detector_id/credential per hit.
+    let cred = "AKIA0000000000000000";
+    let matches: Vec<_> = (0..500)
+        .map(|line| {
+            let mut m = sample_match("aws-access-key", cred, "config.env");
+            m.location.line = Some(line + 1);
+            m.location.offset = line * 64;
+            m
+        })
+        .collect();
+
+    let deduped = dedup_matches(matches, &DedupScope::Credential);
+    assert_eq!(deduped.len(), 1);
+    assert_eq!(deduped[0].credential.as_ref(), cred);
+    assert_eq!(
+        deduped[0].additional_locations.len(),
+        499,
+        "each distinct line should become one additional location"
+    );
+}

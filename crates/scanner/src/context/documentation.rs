@@ -130,11 +130,31 @@ fn first_docstring_delimiter(trimmed: &str) -> Option<usize> {
     trimmed.find("\"\"\"").or_else(|| trimmed.find("'''"))
 }
 
-/// True when `segment` holds an even number of each regular quote, i.e. scanning
-/// it leaves us OUTSIDE any `"…"`/`'…'` string — the only position from which a
-/// following triple-quote can open a docstring.
+/// True when scanning `segment` leaves us OUTSIDE any `"…"`/`'…'` string — the
+/// only position from which a following triple-quote can open a docstring.
+///
+/// Escaped quotes (`\"`, `\'`) inside a string are NOT string boundaries, so a
+/// naive even/odd count of raw quote bytes was wrong: `x = "a\"b"` has three `"`
+/// bytes (odd) yet the string is balanced. Track quote state with escapes,
+/// matching `before_line_comment` above.
 fn has_balanced_regular_quotes(segment: &str) -> bool {
-    let double = segment.bytes().filter(|&b| b == b'"').count();
-    let single = segment.bytes().filter(|&b| b == b'\'').count();
-    double % 2 == 0 && single % 2 == 0
+    let bytes = segment.as_bytes();
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    for &byte in bytes {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if quote.is_some() && byte == b'\\' {
+            escaped = true;
+            continue;
+        }
+        match quote {
+            Some(open) if byte == open => quote = None,
+            None if byte == b'"' || byte == b'\'' => quote = Some(byte),
+            _ => {}
+        }
+    }
+    quote.is_none()
 }

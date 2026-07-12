@@ -1,8 +1,15 @@
-//! Behavioral contract for detector-owned classification plus the shared
-//! Stripe-prefix query.
+//! Behavioral contract for the detector-classification query API, against the
+//! LIVE bundled detector corpus + `rules/detector-classification.toml`.
 //!
-//! Weak-anchor and private-key-block membership comes from each detector spec;
-//! the ordered Stripe prefix list remains shared Tier-B data.
+//! Post-DET-0 the `weak_anchor` and `private_key_block` queries read PER-DETECTOR
+//! `DetectorSpec` flags (`weak_anchor = true` / `private_key_block = true` in each
+//! detector's own TOML), while `stripe_hot_confirmed_prefixes` / `validate` still
+//! come from the Tier-B `rules/detector-classification.toml` prefix list. All four
+//! drive real suppression/resolution behaviour, yet have thin direct coverage —
+//! these pin them through the public facades with EXACT values, including
+//! cross-classification negatives (an id flagged in one family must report `false`
+//! for the other). The values are IDENTICAL to the pre-migration classification
+//! lists, so this also proves the migration preserved behaviour.
 
 use keyhog_scanner::testing::{
     detector_classification_validate_for_test as validate,
@@ -16,7 +23,7 @@ fn live_rules_validate_clean() {
     assert_eq!(
         validate(),
         Ok(()),
-        "the bundled Stripe prefix policy must parse + validate clean"
+        "the bundled detector-classification.toml must parse + validate clean"
     );
 }
 

@@ -1,17 +1,10 @@
 //! Gate `multiline::string_extract`: plus-concat extraction stays allocation-light.
 
+use super::support::{read, scanner_src, uncommented_code};
+
 #[test]
 fn plus_concatenation_does_not_collect_split_parts() {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/multiline/string_extract.rs"
-    );
-    let source = std::fs::read_to_string(path).expect("multiline string_extract source readable");
-    let production = source
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let production = uncommented_code(&read(&scanner_src().join("multiline/string_extract.rs")));
 
     // Quote-aware split: extraction must stream segments from the lazy
     // `split_concatenation_operators` iterator (which only breaks on `+` outside

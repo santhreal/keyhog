@@ -46,7 +46,7 @@ fn minimal_entry_emits_exactly_two_chunks_method_url_and_status() {
     );
 
     let request = expect_ok(&rows[0]);
-    assert_eq!(request.metadata.source_type, "wire:har:request");
+    assert_eq!(request.metadata.source_type.as_ref(), "wire:har:request");
     assert_eq!(
         request.metadata.path.as_deref(),
         Some("min.har#https://min.test/a")
@@ -54,7 +54,7 @@ fn minimal_entry_emits_exactly_two_chunks_method_url_and_status() {
     assert_eq!(&*request.data, "GET https://min.test/a\n");
 
     let response = expect_ok(&rows[1]);
-    assert_eq!(response.metadata.source_type, "wire:har:response");
+    assert_eq!(response.metadata.source_type.as_ref(), "wire:har:response");
     assert_eq!(
         response.metadata.path.as_deref(),
         Some("min.har#https://min.test/a")

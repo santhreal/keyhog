@@ -10,7 +10,13 @@
 /// Used by the suppression gate to peek inside base64-wrapped
 /// fixtures whose outer shape looks generic but whose decoded
 /// content is a known placeholder / hash / ARN / UUID.
-pub(super) fn try_decode_b64_to_utf8(credential: &str) -> Option<String> {
+///
+/// `pub(crate)` (widened from `pub(super)`) so the crate lib-test tree can
+/// unit-test the suppression-specific len<8 floor and the two recall-preserving
+/// `None` paths directly (mirroring how `token_randomness`'s predicates are
+/// tested via `keyhog_scanner::suppression::…`), not only transitively through
+/// the end-to-end suppression truth table.
+pub(crate) fn try_decode_b64_to_utf8(credential: &str) -> Option<String> {
     // Keep only the suppression-specific floor here. Padding, alphabet,
     // variant, and the DoS ceiling are owned by `decode::base64_decode`.
     if credential.len() < 8 {

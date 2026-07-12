@@ -104,6 +104,8 @@ pub(crate) struct StandardBase64Shape {
     pub(crate) distinct_alnum: u32,
 }
 
+/// Whether a byte can appear in a standard or URL-safe base64 string: ASCII
+/// alphanumeric or one of `+ / = - _`.
 pub fn is_base64_candidate_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'-' | b'_')
 }
@@ -147,6 +149,8 @@ pub(crate) fn standard_base64_shape(candidate: &str) -> Option<StandardBase64Sha
     })
 }
 
+/// Find every base64/base64url substring of at least `min_length` bytes in
+/// `text`, returned as decodable [`EncodedString`] spans.
 pub fn find_base64_strings(text: &str, min_length: usize) -> Vec<EncodedString> {
     find_base64_string_spans(text, min_length)
         .into_iter()
@@ -264,6 +268,9 @@ fn scan_base64_candidate(candidate: &str) -> Option<Base64CandidateFacts> {
 /// Maximum base64 input length we'll decode (prevents OOM from malicious input).
 pub(crate) const MAX_BASE64_INPUT_LEN: usize = 16 * 1024 * 1024; // 16 MB -> ~12 MB decoded
 
+/// Decode a standard or URL-safe base64 string, bounded to
+/// `MAX_BASE64_INPUT_LEN` bytes for DoS safety. `Err(())` on invalid or
+/// over-length input.
 #[allow(clippy::result_unit_err)]
 pub fn base64_decode(input: &str) -> Result<Vec<u8>, ()> {
     if input.len() > MAX_BASE64_INPUT_LEN {
@@ -320,6 +327,8 @@ fn visit_z85_string_spans(
 /// Maximum Z85 input length we'll decode.
 const MAX_Z85_INPUT_LEN: usize = 16 * 1024 * 1024;
 
+/// Decode a Z85-encoded string (length must be a multiple of 5), bounded to
+/// `MAX_Z85_INPUT_LEN` bytes for DoS safety. `Err(())` on invalid input.
 #[allow(clippy::result_unit_err)]
 pub fn z85_decode(input: &str) -> Result<Vec<u8>, ()> {
     if !input.len().is_multiple_of(5) || input.len() > MAX_Z85_INPUT_LEN {

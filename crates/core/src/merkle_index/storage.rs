@@ -19,6 +19,7 @@ use super::{
 };
 use crate::hex_encode;
 use crate::merkle_spec_hash::hex_to_array;
+use crate::state_file::{self, MERKLE_INDEX_CACHE_FILE_BYTES};
 
 /// On-disk per-entry record (v4). The `mtime_ns` + `size` pair is the fast-path
 /// key: a successful match short-circuits the BLAKE3 read entirely. `hash`
@@ -173,32 +174,33 @@ impl MerkleIndex {
         expected_spec_hash: Option<&[u8; 32]>,
         max_entries: usize,
     ) -> (Self, MerkleLoadStatus) {
-        let bytes = match std::fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return (
-                    Self::with_max_entries(max_entries),
-                    MerkleLoadStatus::Missing {
-                        path: path.to_path_buf(),
-                    },
-                );
-            }
-            Err(error) => {
-                let error = error.to_string();
-                tracing::warn!(
-                    cache = %path.display(),
-                    %error,
-                    "merkle index file read failed; treating as cold start"
-                );
-                return (
-                    Self::with_max_entries(max_entries),
-                    MerkleLoadStatus::ReadFailed {
-                        path: path.to_path_buf(),
-                        error,
-                    },
-                );
-            }
-        };
+        let bytes =
+            match state_file::read_capped(path, MERKLE_INDEX_CACHE_FILE_BYTES, "merkle index") {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    return (
+                        Self::with_max_entries(max_entries),
+                        MerkleLoadStatus::Missing {
+                            path: path.to_path_buf(),
+                        },
+                    );
+                }
+                Err(error) => {
+                    let error = error.to_string();
+                    tracing::warn!(
+                        cache = %path.display(),
+                        %error,
+                        "merkle index file read failed; treating as cold start"
+                    );
+                    return (
+                        Self::with_max_entries(max_entries),
+                        MerkleLoadStatus::ReadFailed {
+                            path: path.to_path_buf(),
+                            error,
+                        },
+                    );
+                }
+            };
         let on_disk: OnDisk = match serde_json::from_slice(&bytes) {
             Ok(on_disk) => on_disk,
             Err(error) => {
@@ -437,25 +439,34 @@ fn oldest_eviction_keys(
             None => true,
         })
         .collect::<Vec<_>>();
-    candidates.sort_by(|(left_key, left_entry), (right_key, right_entry)| {
-        left_entry
-            .last_seen_order
-            .cmp(&right_entry.last_seen_order)
-            .then_with(|| left_key.path.cmp(&right_key.path))
-            .then_with(|| left_key.chunk_offset.cmp(&right_key.chunk_offset))
-    });
-    candidates
-        .into_iter()
-        .take(remove_count)
-        .map(|(key, _)| key.clone())
-        .collect()
+    // Eviction needs only the `remove_count` OLDEST entries, not a fully ordered
+    // set. Fully sorting is O(N log N) over the whole cache (up to millions of
+    // entries) to keep a handful; `select_nth_unstable_by` partitions the oldest
+    // `take` into the prefix in O(N), and only that small prefix is then sorted
+    // for a deterministic eviction order.
+    let cmp = |a: &(&CacheKey, &CacheEntry), b: &(&CacheKey, &CacheEntry)| {
+        a.1.last_seen_order
+            .cmp(&b.1.last_seen_order)
+            .then_with(|| a.0.path.cmp(&b.0.path))
+            .then_with(|| a.0.chunk_offset.cmp(&b.0.chunk_offset))
+    };
+    let take = remove_count.min(candidates.len());
+    if take == 0 {
+        return Vec::new();
+    }
+    if take < candidates.len() {
+        candidates.select_nth_unstable_by(take - 1, cmp);
+        candidates.truncate(take);
+    }
+    candidates.sort_by(cmp);
+    candidates.into_iter().map(|(key, _)| key.clone()).collect()
 }
 
 /// Default Merkle index location: `$XDG_CACHE_HOME/keyhog/merkle.idx` or
 /// `~/.cache/keyhog/merkle.idx` on Linux, `~/Library/Caches/keyhog/...` on
 /// macOS.
 pub fn merkle_default_cache_path() -> Option<PathBuf> {
-    dirs::cache_dir().map(|dir| dir.join("keyhog").join("merkle.idx"))
+    crate::keyhog_cache_root().map(|dir| dir.join("merkle.idx"))
 }
 
 pub use merkle_default_cache_path as default_cache_path;
@@ -495,18 +506,7 @@ fn flatten_shards(index: &MerkleIndex) -> HashMap<CacheKey, CacheEntry> {
 }
 
 fn persist_atomically(path: &Path, serialized: &[u8]) -> std::io::Result<()> {
-    // `Path::parent()` is `None` only for a root/empty path, where the CWD (".")
-    // is the correct directory to create the temp file in.
-    let parent = path.parent().unwrap_or_else(|| Path::new(".")); // LAW10: deterministic default, not a swallowed failure
-    std::fs::create_dir_all(parent)?;
-
-    let mut tmp = tempfile::Builder::new()
-        .prefix(MERKLE_TMP_PREFIX)
-        .tempfile_in(parent)?;
-    std::io::Write::write_all(&mut tmp, serialized)?;
-    tmp.as_file().sync_all()?;
-    tmp.persist(path).map_err(|error| error.error)?;
-    Ok(())
+    state_file::write_atomically(path, MERKLE_TMP_PREFIX, serialized)
 }
 
 struct CacheWriteLock {

@@ -261,7 +261,7 @@ fn elf_rodata_section_yields_exact_secret_chunk() {
 
     let rodata: Vec<_> = chunks
         .iter()
-        .filter(|c| c.metadata.source_type == "binary:elf:.rodata")
+        .filter(|c| c.metadata.source_type.as_ref() == "binary:elf:.rodata")
         .collect();
     assert_eq!(
         rodata.len(),
@@ -297,14 +297,14 @@ fn elf_data_section_is_classified_as_data_not_rodata() {
     assert_eq!(
         chunks
             .iter()
-            .filter(|c| c.metadata.source_type == "binary:elf:.data")
+            .filter(|c| c.metadata.source_type.as_ref() == "binary:elf:.data")
             .count(),
         1
     );
     assert_eq!(
         chunks
             .iter()
-            .filter(|c| c.metadata.source_type == "binary:elf:.rodata")
+            .filter(|c| c.metadata.source_type.as_ref() == "binary:elf:.rodata")
             .count(),
         0,
         "a .data section must never be mislabelled as .rodata"
@@ -343,7 +343,7 @@ fn elf_non_target_text_section_is_not_section_extracted_but_strings_recovered() 
     assert_eq!(
         chunks
             .iter()
-            .filter(|c| c.metadata.source_type == "binary:strings"
+            .filter(|c| c.metadata.source_type.as_ref() == "binary:strings"
                 && c.data.contains("TEXTSECTION_NONTARGET_MARKER_98765"))
             .count(),
         1,
@@ -371,7 +371,7 @@ fn elf_binarysource_pipeline_yields_both_section_and_strings_chunk() {
     assert_eq!(
         chunks
             .iter()
-            .filter(|c| c.metadata.source_type == "binary:elf:.rodata"
+            .filter(|c| c.metadata.source_type.as_ref() == "binary:elf:.rodata"
                 && c.data.contains("AKIAELFPIPELINE7SECRETX0000001"))
             .count(),
         1,
@@ -380,7 +380,7 @@ fn elf_binarysource_pipeline_yields_both_section_and_strings_chunk() {
     assert_eq!(
         chunks
             .iter()
-            .filter(|c| c.metadata.source_type == "binary:strings")
+            .filter(|c| c.metadata.source_type.as_ref() == "binary:strings")
             .count(),
         1,
         "the whole-file strings supplement must always be emitted alongside sections"
@@ -416,7 +416,7 @@ fn truncated_elf_falls_back_to_whole_file_strings() {
     assert_eq!(
         chunks
             .iter()
-            .filter(|c| c.metadata.source_type == "binary:strings"
+            .filter(|c| c.metadata.source_type.as_ref() == "binary:strings"
                 && c.data.contains("AKIATRUNCATEDELF7SECRET000001"))
             .count(),
         1,
@@ -435,7 +435,7 @@ fn macho_cstring_section_yields_exact_secret_chunk() {
 
     let cstring: Vec<_> = chunks
         .iter()
-        .filter(|c| c.metadata.source_type == "binary:macho:__cstring")
+        .filter(|c| c.metadata.source_type.as_ref() == "binary:macho:__cstring")
         .collect();
     assert_eq!(
         cstring.len(),
@@ -486,7 +486,7 @@ fn non_binary_text_file_is_handled_via_strings_only() {
     assert_eq!(
         chunks
             .iter()
-            .filter(|c| c.metadata.source_type == "binary:strings"
+            .filter(|c| c.metadata.source_type.as_ref() == "binary:strings"
                 && c.data.contains("AKIANONBINARYTEXT7SECRET01"))
             .count(),
         1,
@@ -644,7 +644,7 @@ fn docker_root_manifest_metadata_labelled_and_scanned_exactly() {
         1,
         "only manifest.json is present, so exactly one metadata chunk is expected"
     );
-    assert_eq!(chunks[0].metadata.source_type, "docker");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "docker");
     assert_eq!(
         chunks[0].metadata.path.as_deref(),
         Some("keyhog:edge:metadata:manifest.json"),

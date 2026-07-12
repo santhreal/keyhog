@@ -135,14 +135,22 @@ fn trailing_runtime_segment_dropped_adjacent_literals_kept() {
     // dropped from the candidate.
     let p = pre("$x = \"ADJA11\" . \"ADJB22\" . $logsuffix;\n");
     assert!(p.text.contains("ADJA11ADJB22"), "{:?}", p.text);
-    assert!(!appended(&p).contains("logsuffix"), "appended={:?}", appended(&p));
+    assert!(
+        !appended(&p).contains("logsuffix"),
+        "appended={:?}",
+        appended(&p)
+    );
 }
 
 #[test]
 fn trailing_constant_segment_dropped_adjacent_literals_kept() {
     let p = pre("$x = \"SEKRET99\" . \"MORE88\" . PHP_EOL;\n");
     assert!(p.text.contains("SEKRET99MORE88"), "{:?}", p.text);
-    assert!(!appended(&p).contains("PHP_EOL"), "appended={:?}", appended(&p));
+    assert!(
+        !appended(&p).contains("PHP_EOL"),
+        "appended={:?}",
+        appended(&p)
+    );
 }
 
 // ── POSITIVE: layout robustness ────────────────────────────────────────────
@@ -159,7 +167,11 @@ fn trailing_semicolon_stripped_from_last_segment() {
     // reassembled value.
     let p = pre("$k = \"SEMIA11\" . \"SEMIB22\";\n");
     assert!(p.text.contains("SEMIA11SEMIB22"), "{:?}", p.text);
-    assert!(!appended(&p).contains("SEMIB22;"), "appended={:?}", appended(&p));
+    assert!(
+        !appended(&p).contains("SEMIB22;"),
+        "appended={:?}",
+        appended(&p)
+    );
 }
 
 #[test]
@@ -241,7 +253,11 @@ fn dotted_hostname_value_not_split() {
     let text = "$host = \"api.example.com\";\n";
     let p = pre(text);
     assert!(!p.text.contains("apiexamplecom"), "{:?}", p.text);
-    assert!(p.text.contains("api.example.com"), "value preserved: {:?}", p.text);
+    assert!(
+        p.text.contains("api.example.com"),
+        "value preserved: {:?}",
+        p.text
+    );
 }
 
 #[test]
@@ -276,9 +292,17 @@ fn explode_dot_argument_not_concatenated() {
     // The `.` lives INSIDE a single quoted literal (`"."`), and there is only
     // one quoted literal, so the two-literal guard rejects it.
     let p = pre("$parts = explode(\".\", $serialized);\n");
-    assert!(!appended(&p).contains("explode"), "appended={:?}", appended(&p));
+    assert!(
+        !appended(&p).contains("explode"),
+        "appended={:?}",
+        appended(&p)
+    );
     // `.` was not promoted to a join: the lone `.` literal is untouched.
-    assert!(p.text.contains("explode(\".\", $serialized)"), "{:?}", p.text);
+    assert!(
+        p.text.contains("explode(\".\", $serialized)"),
+        "{:?}",
+        p.text
+    );
 }
 
 #[test]
@@ -337,7 +361,10 @@ fn e2e_scan_dot_concatenated_aws_key_fires() {
             .iter()
             .any(|m| m.credential.as_ref().contains("AKIAZ7Q2LMN4XKCD9PQR")),
         "dot-split AWS key must surface via reassembly: {:?}",
-        matches.iter().map(|m| m.credential.as_ref()).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| m.credential.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -357,9 +384,14 @@ fn e2e_benign_dot_concat_does_not_fabricate_aws_key() {
     // be reassembled INTO a spurious AWS finding.
     let matches = scan("$region = \"us\" . \"east\" . \"1\";\n");
     assert!(
-        !matches.iter().any(|m| m.detector_id.as_ref() == "aws-access-key"),
+        !matches
+            .iter()
+            .any(|m| m.detector_id.as_ref() == "aws-access-key"),
         "benign dot-concat must not fabricate an AWS key: {:?}",
-        matches.iter().map(|m| m.detector_id.as_ref()).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| m.detector_id.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -367,8 +399,13 @@ fn e2e_benign_dot_concat_does_not_fabricate_aws_key() {
 fn e2e_dotted_hostname_does_not_fire_aws() {
     let matches = scan("$endpoint = \"sts.amazonaws.com\";\n");
     assert!(
-        !matches.iter().any(|m| m.detector_id.as_ref() == "aws-access-key"),
+        !matches
+            .iter()
+            .any(|m| m.detector_id.as_ref() == "aws-access-key"),
         "a dotted hostname is not a key: {:?}",
-        matches.iter().map(|m| m.detector_id.as_ref()).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| m.detector_id.as_ref())
+            .collect::<Vec<_>>()
     );
 }

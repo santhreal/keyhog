@@ -1,6 +1,6 @@
 //! Regression contract for the MoE ML scorer's feature extractor and score path.
 //!
-//! These tests pin CONCRETE expected values of the 42-dimensional feature vector
+//! These tests pin CONCRETE expected values of the 43-dimensional feature vector
 //! (`ml_scorer::compute_features_with_config`) and of the observable score path
 //! (`testing::ml_score`, which routes through the memoized `score` → forward pass
 //! → rational sigmoid). Every assertion is an exact value: an f32 within a tight
@@ -17,10 +17,12 @@
 //!   [24]=unique_chars/40 [25]=unique_bigram ratio [26]=dots/5 [27]=dashes/10
 //!   [32..37]=file-type one-hot (config,source,ci,infra,other,binary)
 //!   [38]=comment [39]=assignment [40]=test-file [41]=decode-structure binary
+//!   [42]=service-context (DET-1: context names a specific service from the
+//!        detector-corpus-derived vocab, vs a generic api_key/secret/token role word)
 
 const EPS: f32 = 1e-6;
 
-fn feats(text: &str, ctx: &str) -> [f32; 42] {
+fn feats(text: &str, ctx: &str) -> [f32; 43] {
     keyhog_scanner::ml_scorer::compute_features_with_config(text, ctx, &[], &[], &[], &[])
 }
 
@@ -31,7 +33,7 @@ fn feats_cfg(
     secret_kw: &[String],
     test_kw: &[String],
     placeholder_kw: &[String],
-) -> [f32; 42] {
+) -> [f32; 43] {
     keyhog_scanner::ml_scorer::compute_features_with_config(
         text,
         ctx,
@@ -251,7 +253,7 @@ fn structure_features_unique_chars_and_punctuation_counts() {
 #[test]
 fn file_type_one_hot_is_exactly_one_and_priority_ordered() {
     // Helper: sum of the six one-hot slots must always be exactly 1.0.
-    let one_hot_sum = |f: &[f32; 42]| f[32] + f[33] + f[34] + f[35] + f[36] + f[37];
+    let one_hot_sum = |f: &[f32; 43]| f[32] + f[33] + f[34] + f[35] + f[36] + f[37];
 
     // Empty context -> OTHER (index 4 -> slot 36).
     let other = feats("secret", "");
@@ -349,6 +351,54 @@ fn context_keyword_features_use_supplied_lists() {
     let placeholder_kw = vec!["changeme".to_string()];
     let ph = feats_cfg("changeme", "", &[], &[], &[], &placeholder_kw);
     assert_eq!(ph[20], 1.0, "placeholder keyword in text");
+}
+
+#[test]
+fn service_context_feature_reflects_named_service_vs_generic() {
+    // Feature 42 (DET-1 keyword specificity): the full feature vector's slot [42]
+    // must be WIRED to `service_vocab::context_names_service` on the context — a
+    // context that names a specific service from the detector-corpus-derived vocab
+    // makes an otherwise-generic value credible (fires), while a purely generic
+    // role-word context (api_key/secret/token — excluded from the vocab) does not.
+    // The token value is held constant; ONLY the context varies, isolating slot 42.
+    let value = "gH7kLmN9pQ2rS4tV6wX8yZ0aB1cD3eF5";
+
+    // A named service ("zendesk" is pinned in-vocab by tests/unit/service_vocab.rs)
+    // -> slot 42 fires. Uses a realistic assignment context.
+    let named = feats(
+        value,
+        "zendesk_api_token = gH7kLmN9pQ2rS4tV6wX8yZ0aB1cD3eF5",
+    );
+    assert_eq!(
+        named[42], 1.0,
+        "a service-named context must set the DET-1 service-context feature"
+    );
+
+    // Case-fold: the vocab match is ASCII case-insensitive, so an uppercased
+    // service name fires identically (guards against a case-sensitive regression).
+    let named_upper = feats(value, "ZENDESK_API_TOKEN = xyz");
+    assert_eq!(
+        named_upper[42], 1.0,
+        "service match must be case-insensitive"
+    );
+
+    // A generic role-word-only context (no service in the vocab) -> slot 42 is 0.0.
+    // This is the exact confusion DET-1 exists to resolve: generic-keyword+opaque
+    // value is an identifier (reject), service-keyword+opaque value is a credential.
+    let generic = feats(value, "api_key = gH7kLmN9pQ2rS4tV6wX8yZ0aB1cD3eF5");
+    assert_eq!(
+        generic[42], 0.0,
+        "a generic-role-word-only context must NOT set the service-context feature"
+    );
+
+    // Empty context short-circuits to 0.0 (context_names_service empty-guard).
+    let no_context = feats(value, "");
+    assert_eq!(no_context[42], 0.0, "empty context -> no service named");
+
+    // Slot 42 is binary: every observed value is exactly 0.0 or 1.0.
+    for f in [&named, &named_upper, &generic, &no_context] {
+        assert!(f[42] == 0.0 || f[42] == 1.0, "feature 42 must be binary");
+    }
 }
 
 #[test]

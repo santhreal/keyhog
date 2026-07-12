@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "X-API-KEY                                          :                                                    JSuKxEXAMPLEEXAMPLEilvi7"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = '# x2y2 (rotate): X2Y2_API_KEY = "JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"'
+credential = "JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
+reason = "Commented-out config; the QUOTED X2Y2_API_KEY = form fires x2y2-api-key distinctly (the bare X-API-KEY: form is claimed by the overlapping 8x8-api-credentials which shares that generic pattern)."

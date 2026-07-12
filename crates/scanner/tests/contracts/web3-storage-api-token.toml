@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "WEB3_STORAGE_api\" :''= :  : =  =:' '    '     =':  :  =  ' ' :  :=   ' :' '   :  :  = \" = ztBgXEXAMPLEEXAMPLEqrxeX"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# WEB3_STORAGE_TOKEN=ztBgX8885i7cJJ3AFamWevxVwRRNP17GA1vuF3j6uPcjvc5i7NBFchxP2Cf8izK47yUGqPT3x8aDqrxeX  # ipfs"
+credential = "ztBgX8885i7cJJ3AFamWevxVwRRNP17GA1vuF3j6uPcjvc5i7NBFchxP2Cf8izK47yUGqPT3x8aDqrxeX"
+reason = "Commented-out config; WEB3_STORAGE_TOKEN keyword + token intact inside the comment."

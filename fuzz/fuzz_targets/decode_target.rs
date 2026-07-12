@@ -1,17 +1,14 @@
 #![no_main]
 use keyhog_core::Chunk;
 // Drive the decode pipeline through the crate's public test/fuzz surface
-// (`keyhog_scanner::testing`) instead of its private internals. `decode` and
-// `alphabet_filter` are `pub(crate)`; importing them directly broke the fuzz
-// build with E0603 (Fuzz smoke CI). `testing::decode_chunk` is the same 5-arg
-// pipeline entry, and `testing::AlphabetScreen::new(&[String])` wraps the inner
-// screen identically -- so the fuzz coverage is unchanged.
+// (`keyhog_scanner::testing`): `decode` and `alphabet_filter` are `pub(crate)`.
+// `testing::decode_chunk` is the same pipeline entry, and
+// `testing::AlphabetScreen::new(&[String])` wraps the inner screen identically.
 use keyhog_scanner::testing::{decode_chunk, AlphabetScreen};
 use libfuzzer_sys::fuzz_target;
 
 /// Build a `Chunk` from raw text. `Chunk.data` is a `SensitiveString`, so the
-/// `String` must be converted via `.into()` (the bare `data: text.to_string()`
-/// field assignment used by the pre-fix target did not type-check).
+/// `String` is converted via `.into()`.
 fn chunk_from(text: &str) -> Chunk {
     Chunk {
         data: text.to_string().into(),
@@ -32,9 +29,8 @@ fuzz_target!(|data: &[u8]| {
     if let Ok(text) = std::str::from_utf8(payload) {
         let chunk = chunk_from(text);
 
-        // Drive both the no-screen path and the screen-enabled path. The
-        // screen is the 5th parameter of `decode_chunk`; the pre-fix call
-        // site passed only four arguments and failed to compile.
+        // Drive both the no-screen path and the screen-enabled path (the
+        // screen is the last parameter of `decode_chunk`).
         let _ = decode_chunk(&chunk, depth, validate, None, None);
 
         let screen = AlphabetScreen::new(&[text.to_string()]);
@@ -44,15 +40,10 @@ fuzz_target!(|data: &[u8]| {
 
 #[cfg(test)]
 mod regression {
-    //! Regression coverage for the fuzz target's API drift.
-    //!
-    //! Root cause: `decode::pipeline::decode_chunk` grew a 5th parameter
-    //! (`screen: Option<&AlphabetScreen>`), and `Chunk.data` became a
-    //! `SensitiveString` rather than a `String`. The fuzz target still called
-    //! the 4-arg form and field-assigned a bare `String`, so the binary no
-    //! longer compiled. These tests pin the CURRENT 5-arg contract and the
-    //! `SensitiveString` field shape with concrete, code-derived values; they
-    //! do not compile/pass against the old 4-arg call.
+    //! Regression coverage pinning the `decode_chunk` contract the fuzz body
+    //! exercises: the `screen: Option<&AlphabetScreen>` parameter and the
+    //! `SensitiveString` `Chunk.data` field, asserted with concrete,
+    //! code-derived values.
 
     use super::*;
 

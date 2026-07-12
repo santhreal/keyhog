@@ -87,7 +87,7 @@ impl S3Source {
     /// Limit scanning to objects whose keys start with `prefix`.
     ///
     pub(crate) fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
-        crate::gcs::set_optional(&mut self.prefix, prefix.into());
+        crate::cloud::set_optional(&mut self.prefix, prefix.into());
         self
     }
 
@@ -99,7 +99,7 @@ impl S3Source {
 
     /// Limit the number of objects listed from the bucket before stopping.
     pub(crate) fn with_max_objects(mut self, max_objects: usize) -> Self {
-        crate::gcs::set_optional(&mut self.max_objects, max_objects);
+        crate::cloud::set_optional(&mut self.max_objects, max_objects);
         self
     }
 }
@@ -158,7 +158,7 @@ fn collect_s3_chunks(
     // the per-source default timeout when `http.timeout` is None - keeps the
     // existing behavior for callers that don't override.
     let client = crate::cloud::blocking_client("S3", http)?;
-    let base_url = build_base_url(&bucket, endpoint)?;
+    let base_url = build_base_url(&bucket, endpoint, http.allow_private_endpoint)?;
     let aws_auth = resolve_s3_auth(&base_url, endpoint, allow_credential_forward)?;
     let mut continuation_token = None::<String>;
     let mut chunks = Vec::new();
@@ -432,7 +432,7 @@ fn fetch_object_chunk(
             base_offset: 0,
             base_line: 0,
             source_type: "s3".into(),
-            path: Some(format!("{bucket}/{key}")),
+            path: Some(format!("{bucket}/{key}").into()),
             commit: None,
             author: None,
             date: None,
@@ -455,22 +455,21 @@ fn fetch_object_chunk(
 /// host (`s3.amazonaws.co`) falls into the non-AWS bucket and the
 /// operator must opt in explicitly.
 pub(crate) fn endpoint_is_aws(endpoint: &str) -> bool {
-    let parsed = match reqwest::Url::parse(endpoint) {
-        Ok(u) => u,
-        Err(_) => return false, // LAW10: failure => fail-closed error (blocked/refused), never proceeds; security guard
-    };
-    let host = match parsed.host_str() {
-        Some(h) => h,
-        None => return false,
-    };
-    crate::cloud::host_matches_domain_ascii_ci(host, "amazonaws.com")
-        || crate::cloud::host_matches_domain_ascii_ci(host, "amazonaws.com.cn")
+    // LAW10: shared helper fails closed (non-AWS) on a malformed/host-less
+    // endpoint, so ambient AWS creds are never auto-forwarded to it.
+    crate::cloud::endpoint_host_matches_domain(endpoint, "amazonaws.com")
+        || crate::cloud::endpoint_host_matches_domain(endpoint, "amazonaws.com.cn")
 }
 
-fn build_base_url(bucket: &str, endpoint: Option<&str>) -> Result<String, SourceError> {
+fn build_base_url(
+    bucket: &str,
+    endpoint: Option<&str>,
+    allow_private: bool,
+) -> Result<String, SourceError> {
     match endpoint {
         Some(endpoint) => {
-            let endpoint = validate_endpoint(endpoint)?;
+            let endpoint =
+                crate::cloud::validate_cloud_endpoint(endpoint, "S3", allow_private, false)?;
             Ok(format!(
                 "{}/{}",
                 endpoint.trim_end_matches('/'),
@@ -484,9 +483,14 @@ fn build_base_url(bucket: &str, endpoint: Option<&str>) -> Result<String, Source
     }
 }
 
+/// S3 bucket-name length bounds (AWS bucket naming rules): 3–63 characters.
+/// https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
+const S3_BUCKET_NAME_MIN_LEN: usize = 3;
+const S3_BUCKET_NAME_MAX_LEN: usize = 63;
+
 fn validate_bucket_name(bucket: &str) -> Result<String, SourceError> {
     let bucket = bucket.trim();
-    if bucket.len() < 3 || bucket.len() > 63 {
+    if bucket.len() < S3_BUCKET_NAME_MIN_LEN || bucket.len() > S3_BUCKET_NAME_MAX_LEN {
         return Err(SourceError::Other("invalid S3 bucket name length".into()));
     }
     if bucket.starts_with('.')
@@ -506,15 +510,6 @@ fn validate_bucket_name(bucket: &str) -> Result<String, SourceError> {
         return Err(SourceError::Other(format!("invalid S3 bucket '{bucket}'")));
     }
     Ok(bucket.to_string())
-}
-
-fn validate_endpoint(endpoint: &str) -> Result<String, SourceError> {
-    let parsed = crate::cloud::parse_http_endpoint(endpoint, "S3")?;
-    if parsed.query().is_some() {
-        return Err(SourceError::Other("invalid S3 endpoint".into()));
-    }
-
-    Ok(parsed.to_string().trim_end_matches('/').to_string())
 }
 
 #[cfg(test)]

@@ -38,7 +38,9 @@ fn password_surfaces(text: &str, password: &str) -> bool {
     let s = shared();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "conn.conf");
-    s.scan(&chunk).into_iter().any(|m| m.credential.to_string().contains(password))
+    s.scan(&chunk)
+        .into_iter()
+        .any(|m| m.credential.to_string().contains(password))
 }
 
 /// The detector ids whose credential contains `password`, for asserting routing.
@@ -58,61 +60,91 @@ fn detectors_for(text: &str, password: &str) -> Vec<String> {
 #[test]
 fn postgres_uri_password_surfaces() {
     let pw = "Pg5ecretPass99Xy";
-    assert!(password_surfaces(&format!("postgres://app:{pw}@db.example.com:5432/mydb"), pw));
+    assert!(password_surfaces(
+        &format!("postgres://app:{pw}@db.example.com:5432/mydb"),
+        pw
+    ));
 }
 
 #[test]
 fn postgresql_uri_password_surfaces() {
     let pw = "Adm1nPassXyz789Qw";
-    assert!(password_surfaces(&format!("postgresql://admin:{pw}@localhost/app"), pw));
+    assert!(password_surfaces(
+        &format!("postgresql://admin:{pw}@localhost/app"),
+        pw
+    ));
 }
 
 #[test]
 fn mysql_uri_password_surfaces() {
     let pw = "MyR00tSecret123Ab";
-    assert!(password_surfaces(&format!("mysql://root:{pw}@10.0.0.5:3306/data"), pw));
+    assert!(password_surfaces(
+        &format!("mysql://root:{pw}@10.0.0.5:3306/data"),
+        pw
+    ));
 }
 
 #[test]
 fn mongodb_uri_password_surfaces() {
     let pw = "M0ngoSecretPw88Cd";
-    assert!(password_surfaces(&format!("mongodb://dbuser:{pw}@cluster0.example.com:27017/test"), pw));
+    assert!(password_surfaces(
+        &format!("mongodb://dbuser:{pw}@cluster0.example.com:27017/test"),
+        pw
+    ));
 }
 
 #[test]
 fn mongodb_srv_uri_password_surfaces() {
     let pw = "SrvP4ssw0rdAtlas12";
-    assert!(password_surfaces(&format!("mongodb+srv://user:{pw}@cluster0.abcde.mongodb.net/db"), pw));
+    assert!(password_surfaces(
+        &format!("mongodb+srv://user:{pw}@cluster0.abcde.mongodb.net/db"),
+        pw
+    ));
 }
 
 #[test]
 fn redis_uri_empty_user_password_surfaces() {
     let pw = "RedisAuthPw45678Ef";
-    assert!(password_surfaces(&format!("redis://:{pw}@redis.example.com:6379/0"), pw));
+    assert!(password_surfaces(
+        &format!("redis://:{pw}@redis.example.com:6379/0"),
+        pw
+    ));
 }
 
 #[test]
 fn rediss_tls_uri_password_surfaces() {
     let pw = "RedisTlsPw998877Gh";
-    assert!(password_surfaces(&format!("rediss://default:{pw}@redis.example.com:6380"), pw));
+    assert!(password_surfaces(
+        &format!("rediss://default:{pw}@redis.example.com:6380"),
+        pw
+    ));
 }
 
 #[test]
 fn amqp_uri_password_surfaces() {
     let pw = "Rabb1tMqP4sswordIj";
-    assert!(password_surfaces(&format!("amqp://guest:{pw}@broker.example.com:5672/vhost"), pw));
+    assert!(password_surfaces(
+        &format!("amqp://guest:{pw}@broker.example.com:5672/vhost"),
+        pw
+    ));
 }
 
 #[test]
 fn amqps_tls_uri_password_surfaces() {
     let pw = "AmqpsSecur3Pass99Kl";
-    assert!(password_surfaces(&format!("amqps://svc:{pw}@mq.example.com:5671"), pw));
+    assert!(password_surfaces(
+        &format!("amqps://svc:{pw}@mq.example.com:5671"),
+        pw
+    ));
 }
 
 #[test]
 fn sqlalchemy_driver_qualified_uri_password_surfaces() {
     let pw = "SqlAlchemyPw98765Mn";
-    assert!(password_surfaces(&format!("postgresql+psycopg2://user:{pw}@h/db"), pw));
+    assert!(password_surfaces(
+        &format!("postgresql+psycopg2://user:{pw}@h/db"),
+        pw
+    ));
 }
 
 // ── JDBC connection strings (password in a query parameter) ──────────────────
@@ -178,13 +210,19 @@ fn odbc_pwd_dsn_password_surfaces() {
 #[test]
 fn database_url_env_assignment_password_surfaces() {
     let pw = "DbUrlEnvSecret789Ab";
-    assert!(password_surfaces(&format!("DATABASE_URL=postgres://u:{pw}@h/db"), pw));
+    assert!(password_surfaces(
+        &format!("DATABASE_URL=postgres://u:{pw}@h/db"),
+        pw
+    ));
 }
 
 #[test]
 fn spring_datasource_password_surfaces() {
     let pw = "SpringDsPass123456Cd";
-    assert!(password_surfaces(&format!("spring.datasource.password={pw}"), pw));
+    assert!(password_surfaces(
+        &format!("spring.datasource.password={pw}"),
+        pw
+    ));
 }
 
 #[test]

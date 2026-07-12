@@ -4,6 +4,7 @@ use std::io::Write;
 
 use crate::{Severity, VerifiedFinding};
 
+use super::escape::sanitize_terminal;
 use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
 
 /// GitHub Actions workflow command annotations.
@@ -24,19 +25,19 @@ impl<W: Write + Send> Reporter for GithubAnnotationsReporter<W> {
 
         let mut first_property = true;
         if let Some(file_path) = &finding.location.file_path {
-            write_property(
-                &mut self.writer,
-                &mut first_property,
-                "file",
-                file_path.as_ref(),
-            )?;
+            let file_path = sanitize_terminal(file_path.as_ref());
+            write_property(&mut self.writer, &mut first_property, "file", &file_path)?;
         }
         if let Some(line) = finding.location.line {
             let line_text = line.to_string();
             write_property(&mut self.writer, &mut first_property, "line", &line_text)?;
         }
 
-        let title = format!("keyhog {} {}", finding.severity, finding.detector_id);
+        let title = format!(
+            "keyhog {} {}",
+            finding.severity,
+            sanitize_terminal(&finding.detector_id)
+        );
         write_property(&mut self.writer, &mut first_property, "title", &title)?;
         write!(self.writer, "::")?;
         writeln!(self.writer, "{}", escape_command_data(&message(finding)))?;
@@ -77,14 +78,15 @@ fn message(finding: &VerifiedFinding) -> String {
     let verification = super::style::verification_token(&finding.verification);
     let mut text = format!(
         "{} detector={} service={} redacted={} verification={}",
-        finding.detector_name,
-        finding.detector_id,
-        finding.service,
-        finding.credential_redacted,
+        sanitize_terminal(&finding.detector_name),
+        sanitize_terminal(&finding.detector_id),
+        sanitize_terminal(&finding.service),
+        sanitize_terminal(&finding.credential_redacted),
         verification
     );
     if let Some(confidence) = finding.confidence {
-        text.push_str(&format!(" confidence={confidence:.3}"));
+        use std::fmt::Write;
+        let _ = write!(text, " confidence={confidence:.3}");
     }
     text
 }

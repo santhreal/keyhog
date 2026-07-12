@@ -96,16 +96,16 @@ fn malformed_har_base64_body_counts_partial_decode_gap_and_scans_raw_text() {
         .collect();
 
     assert!(
-        chunks
-            .iter()
-            .any(|chunk| chunk.metadata.source_type == "wire:har:response"
-                && chunk.data.contains("AKIAQYLPMN5HFIQR7XYA")),
+        chunks.iter().any(
+            |chunk| chunk.metadata.source_type.as_ref() == "wire:har:response"
+                && chunk.data.contains("AKIAQYLPMN5HFIQR7XYA")
+        ),
         "malformed declared-base64 HAR body must still be scanned raw; chunks={chunks:?}"
     );
     assert!(
         chunks
             .iter()
-            .filter(|chunk| chunk.metadata.source_type == "wire:har:response")
+            .filter(|chunk| chunk.metadata.source_type.as_ref() == "wire:har:response")
             .filter_map(|chunk| chunk.metadata.path.as_deref())
             .any(|chunk_path| {
                 chunk_path.ends_with("capture.har#https://example.test/api")

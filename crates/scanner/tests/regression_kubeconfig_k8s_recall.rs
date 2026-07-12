@@ -67,7 +67,9 @@ fn scan_file(path: &str, text: &str) -> Vec<RawMatch> {
 
 /// True iff SOME surfaced credential contains `needle`.
 fn surfaces(path: &str, text: &str, needle: &str) -> bool {
-    scan_file(path, text).iter().any(|m| m.credential.as_ref().contains(needle))
+    scan_file(path, text)
+        .iter()
+        .any(|m| m.credential.as_ref().contains(needle))
 }
 
 /// True iff SOME surfaced credential contains `needle` AND is attributed to `detector`.
@@ -109,7 +111,10 @@ fn baseline_b64_pem_in_generic_value_surfaces() {
     // The general decode-through recovers a base64-wrapped PEM from an ordinary
     // `key = "value"` line — the capability this whole suite leans on.
     let text = format!("decoded_payload = \"{}\"\n", b64(PEM));
-    assert!(surfaces("config.txt", &text, PEM_NEEDLE), "base64-wrapped PEM must decode-through");
+    assert!(
+        surfaces("config.txt", &text, PEM_NEEDLE),
+        "base64-wrapped PEM must decode-through"
+    );
 }
 
 // ── kubeconfig client-key-data: base64 PEM client private key ─────────────────
@@ -169,7 +174,11 @@ fn kubeconfig_plaintext_jwt_token_surfaces() {
                dQw4Z2V0X3NpZ25hdHVyZV92YWx1ZV9oZXJlX2Zvcl90ZXN0aW5nXzEyMzQ1Ng";
     let body = format!("    token: {jwt}\n");
     assert!(
-        surfaces("kubeconfig", &kubeconfig(&body), "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"),
+        surfaces(
+            "kubeconfig",
+            &kubeconfig(&body),
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+        ),
         "a plaintext JWT bearer token in a kubeconfig must surface"
     );
 }
@@ -181,7 +190,10 @@ fn kubeconfig_client_key_and_token_both_surface() {
                c2lnbmF0dXJlX2Jsb2JfZm9yX3Rlc3Rpbmdfb25seV9ub3RfcmVhbF8wOTg3NjU";
     let body = format!("    client-key-data: {}\n    token: {jwt}\n", b64(PEM));
     let kc = kubeconfig(&body);
-    assert!(surfaces("kubeconfig", &kc, PEM_NEEDLE), "client key must surface alongside token");
+    assert!(
+        surfaces("kubeconfig", &kc, PEM_NEEDLE),
+        "client key must surface alongside token"
+    );
     assert!(
         surfaces("kubeconfig", &kc, "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9"),
         "token must surface alongside client key"
@@ -194,7 +206,12 @@ fn kubeconfig_client_key_and_token_both_surface() {
 fn kubeconfig_client_certificate_data_is_not_a_private_key() {
     let body = format!("    client-certificate-data: {}\n", b64(CERT));
     assert!(
-        never_under("kubeconfig", &kubeconfig(&body), "private-key", CERT_BODY_NEEDLE),
+        never_under(
+            "kubeconfig",
+            &kubeconfig(&body),
+            "private-key",
+            CERT_BODY_NEEDLE
+        ),
         "a public client-certificate-data X.509 block must NOT surface as a private key"
     );
 }
@@ -246,7 +263,10 @@ fn k8s_secret_stringdata_plaintext_password_surfaces() {
     let text = format!(
         "apiVersion: v1\nkind: Secret\nmetadata:\n  name: db\nstringData:\n  password: {pw}\n"
     );
-    assert!(surfaces("db-secret.yaml", &text, pw), "a stringData plaintext password must surface");
+    assert!(
+        surfaces("db-secret.yaml", &text, pw),
+        "a stringData plaintext password must surface"
+    );
 }
 
 #[test]
@@ -268,8 +288,14 @@ fn k8s_secret_list_items_both_secrets_surface() {
         "apiVersion: v1\nkind: List\nitems:\n- apiVersion: v1\n  kind: Secret\n  metadata:\n    name: a\n  data:\n    tls.key: {}\n- apiVersion: v1\n  kind: Secret\n  metadata:\n    name: b\n  stringData:\n    api_password: Zq7Wm2Np9Rt4Lk6Xs8C\n",
         b64(PEM)
     );
-    assert!(surfaces("bundle.yaml", &text, PEM_NEEDLE), "the first List item's PEM must surface");
-    assert!(surfaces("bundle.yaml", &text, "Zq7Wm2Np9Rt4Lk6Xs8C"), "the second List item's password must surface");
+    assert!(
+        surfaces("bundle.yaml", &text, PEM_NEEDLE),
+        "the first List item's PEM must surface"
+    );
+    assert!(
+        surfaces("bundle.yaml", &text, "Zq7Wm2Np9Rt4Lk6Xs8C"),
+        "the second List item's password must surface"
+    );
 }
 
 // ── dockerconfigjson: base64 JSON whose inner `auth` is base64(user:pass) ──────
@@ -279,7 +305,8 @@ fn dockerconfigjson_secret_inner_basic_auth_surfaces() {
     // .dockerconfigjson decodes to JSON; the registry `auth` field is itself
     // base64(user:password). Recovering the credential needs nested decode.
     let inner = b64("deploy:s3cretRegistryPassw0rd");
-    let docker_json = format!("{{\"auths\":{{\"registry.example.com\":{{\"auth\":\"{inner}\"}}}}}}");
+    let docker_json =
+        format!("{{\"auths\":{{\"registry.example.com\":{{\"auth\":\"{inner}\"}}}}}}");
     let text = format!(
         "apiVersion: v1\nkind: Secret\nmetadata:\n  name: regcred\ntype: kubernetes.io/dockerconfigjson\ndata:\n  .dockerconfigjson: {}\n",
         b64(&docker_json)
@@ -333,7 +360,10 @@ fn configmap_kind_is_not_decoded_as_secret() {
 #[test]
 fn kubeconfig_truncated_client_key_data_surfaces_no_private_key() {
     // A short, non-PEM base64 body (benign) must not trip private-key.
-    let body = format!("    client-key-data: {}\n", b64("not a private key, just notes"));
+    let body = format!(
+        "    client-key-data: {}\n",
+        b64("not a private key, just notes")
+    );
     assert!(
         never_under("kubeconfig", &kubeconfig(&body), "private-key", "BEGIN"),
         "a benign short client-key-data value must surface no private key"

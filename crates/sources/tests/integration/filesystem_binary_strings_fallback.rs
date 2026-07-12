@@ -22,7 +22,7 @@ fn filesystem_binary_strings_fallback() {
     );
     assert!(
         chunks.iter().any(|c| {
-            c.metadata.source_type == "filesystem:binary-strings"
+            c.metadata.source_type.as_ref() == "filesystem:binary-strings"
                 && c.data.contains("AKIAINTEGRATIONFALLBACK00")
         }),
         "binary fallback must emit printable strings; got {chunks:?}"

@@ -11,10 +11,16 @@
 #   scripts/prerelease.sh --skip-rust     # skip the slow per-crate cargo gates
 #
 # Knobs (env or flag): CARGO_TARGET_DIR, PROFILE (release-fast), SKIP_RUST=1.
+#
+# SC2317: the smoke-check functions below (installed_version_smoke, …) are invoked
+# INDIRECTLY through the `check` dispatcher (`check <label> <fn> <args>` runs
+# `"$@"`), which ShellCheck cannot trace, so it wrongly reports their bodies as
+# unreachable. Disable it file-wide (must precede the first command) for this pattern.
+# shellcheck disable=SC2317
 set -uo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$REPO"
+cd "$REPO" || exit 1
 
 BUMP=""
 SKIP_RUST="${SKIP_RUST:-0}"
@@ -162,12 +168,22 @@ if [ -n "$BUMP" ]; then
   if [ "$fail" != "0" ]; then
     echo "  REFUSING to bump: ${#FAILED[@]} gate(s) failed (${FAILED[*]})"; exit 1
   fi
+  # Portable in-place sed: GNU `sed -i` takes no arg but BSD/macOS `sed -i`
+  # requires a backup-suffix arg (`sed -i ''`), so a bare `sed -i "…" file`
+  # silently breaks a release cut from macOS. Route both through a temp file
+  # (no flavor dependency, no stray .bak litter, preserves the file perms/inode).
+  sed_inplace() {
+    local script="$1" file="$2" tmp
+    tmp="$(mktemp "${TMPDIR:-/tmp}/prerelease-sed.XXXXXX")" || return 1
+    if sed "$script" "$file" >"$tmp"; then cat "$tmp" >"$file"; else rm -f "$tmp"; return 1; fi
+    rm -f "$tmp"
+  }
   # Workspace package version + the internal `=X.Y.Z` path-dep pins.
-  sed -i "s/^version = \"$CUR\"/version = \"$BUMP\"/" Cargo.toml
-  sed -i "s/=$CUR\"/=$BUMP\"/g" Cargo.toml
+  sed_inplace "s/^version = \"$CUR\"/version = \"$BUMP\"/" Cargo.toml
+  sed_inplace "s/=$CUR\"/=$BUMP\"/g" Cargo.toml
   # CHANGELOG: rename the top `## Unreleased` to `## $BUMP - <date>`.
   TODAY="$(date -u +%Y-%m-%d)"
-  sed -i "0,/^## Unreleased$/s//## $BUMP - $TODAY/" CHANGELOG.md
+  sed_inplace "0,/^## Unreleased$/s//## $BUMP - $TODAY/" CHANGELOG.md
   echo "  bumped Cargo.toml + rolled CHANGELOG (## $BUMP - $TODAY)"
   echo "  verify: cargo build -p keyhog --bin keyhog && target/$PROFILE/keyhog --version"
 fi

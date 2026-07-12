@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 #[test]
 fn test_scan_timeout_respects_deadline() {
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "redos-detector".into(),
         name: "ReDoS Detector".into(),
@@ -66,6 +68,8 @@ fn test_scan_timeout_respects_deadline() {
 #[test]
 fn test_inner_loop_deadline_aborts_many_match_pattern() {
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "many-match-detector".into(),
         name: "Many Match Detector".into(),
@@ -118,6 +122,8 @@ fn test_inner_loop_deadline_aborts_many_match_pattern() {
 #[test]
 fn test_inner_loop_deadline_aborts_many_match_grouped_pattern() {
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "many-match-grouped-detector".into(),
         name: "Many Match Grouped Detector".into(),
@@ -159,6 +165,8 @@ fn test_inner_loop_deadline_aborts_many_match_grouped_pattern() {
 #[test]
 fn test_inner_loop_deadline_aborts_many_match_anchored_pattern() {
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "many-match-anchored-detector".into(),
         name: "Many Match Anchored Detector".into(),
@@ -204,6 +212,8 @@ fn test_inner_loop_deadline_aborts_many_match_anchored_pattern() {
 #[test]
 fn test_generic_assignment_deadline_aborts_inside_bridge() {
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "prefix-pass-detector".into(),
         name: "Prefix Pass Detector".into(),

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import pathlib
 import random
 import re
@@ -16,50 +15,13 @@ DETECTORS = REPO / "detectors"
 COMPANION_CONTRACTS = REPO / "crates" / "scanner" / "tests" / "contracts" / "companion"
 
 sys.path.insert(0, str(REPO / "tools"))
-from gen_contracts import synthesize_positive  # noqa: E402
-
-
-def load_toml(path: pathlib.Path) -> dict:
-    if sys.version_info >= (3, 11):
-        import tomllib as _toml
-        with open(path, "rb") as f:
-            return _toml.load(f)
-    import tomli as _toml  # type: ignore
-    with open(path, "rb") as f:
-        return _toml.load(f)
-
-
-def _det_rng(seed: str) -> random.Random:
-    h = hashlib.sha256(seed.encode()).digest()
-    return random.Random(int.from_bytes(h[:8], "big"))
-
-
-def _expand_charclass(spec: str) -> list[str]:
-    out: list[str] = []
-    i = 0
-    while i < len(spec):
-        c = spec[i]
-        if i + 2 < len(spec) and spec[i + 1] == "-":
-            lo, hi = spec[i], spec[i + 2]
-            if ord(hi) >= ord(lo):
-                out.extend(chr(x) for x in range(ord(lo), ord(hi) + 1))
-                i += 3
-                continue
-        if c == "\\" and i + 1 < len(spec):
-            esc = spec[i + 1]
-            mapping = {"d": "0123456789", "w": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"}
-            out.extend(list(mapping.get(esc, esc)))
-            i += 2
-            continue
-        out.append(c)
-        i += 1
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for ch in out:
-        if ch not in seen:
-            seen.add(ch)
-            ordered.append(ch)
-    return ordered
+from gen_contracts import (  # noqa: E402
+    _det_rng,
+    _expand_charclass,
+    _toml_str,
+    load_toml,
+    synthesize_positive,
+)
 
 
 def _synth_from_class(charclass: str, length: int, rng: random.Random) -> str:
@@ -231,27 +193,6 @@ def _toml_key(k: str) -> str:
     return _toml_str(k)
 
 
-def _toml_str(s: str) -> str:
-    out = ['"']
-    for ch in s:
-        if ch == "\\":
-            out.append("\\\\")
-        elif ch == '"':
-            out.append('\\"')
-        elif ch == "\n":
-            out.append("\\n")
-        elif ch == "\r":
-            out.append("\\r")
-        elif ch == "\t":
-            out.append("\\t")
-        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
-            out.append(f"\\u{ord(ch):04X}")
-        else:
-            out.append(ch)
-    out.append('"')
-    return "".join(out)
-
-
 def _toml_map(d: dict[str, str]) -> str:
     if not d:
         return "{}"
@@ -303,27 +244,28 @@ def build_companion_contract(det: dict, detector_id: str) -> Optional[str]:
             f"Missing required companion(s) ({comp_names}); scanner must suppress match."
         )
     else:
-        primary_only_findings = f'["{detector_id}"]'
+        primary_only_findings = f"[{_toml_str(detector_id)}]"
         primary_only_reason = (
             f"Primary found without companion {comp_names}; verification must NOT proceed."
         )
 
+    det_id_str = _toml_str(detector_id)
     return f"""schema_version = 1
-detector_id = "{detector_id}"
-service = "{service}"
-severity = "{severity}"
+detector_id = {det_id_str}
+service = {_toml_str(service)}
+severity = {_toml_str(severity)}
 
 [positive_with_companion]
 text = {_toml_str(positive_both)}
-expected_findings = ["{detector_id}"]
+expected_findings = [{det_id_str}]
 expected_companions = {_toml_map(expected_companions)}
-reason = "Primary paired with companion(s) {comp_names}."
+reason = {_toml_str(f"Primary paired with companion(s) {comp_names}.")}
 
 [positive_primary_only]
 text = {_toml_str(primary_text)}
 expected_findings = {primary_only_findings}
 must_not_verify = true
-reason = "{primary_only_reason}"
+reason = {_toml_str(primary_only_reason)}
 
 [negative_companion_lookalike]
 text = {_toml_str(negative_text)}

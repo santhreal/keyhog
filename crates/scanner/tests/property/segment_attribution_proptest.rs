@@ -4,7 +4,9 @@ use keyhog_scanner::testing::segment_attribution::{
 use proptest::prelude::*;
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    // Testing Contract: 10k+ cases. This invariant is pure interval arithmetic
+    // (no scan/GPU/IO per case), so 10k runs in well under a second.
+    #![proptest_config(ProptestConfig::with_cases(10_000))]
 
     #[test]
     fn test_valid_and_invalid_matches(

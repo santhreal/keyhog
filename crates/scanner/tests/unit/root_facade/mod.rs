@@ -55,7 +55,6 @@ mod regression_decode_postprocess_suppression_trace;
 mod regression_dogfood_entropy_gauntlet_trace;
 mod regression_dogfood_generic_gauntlet_trace;
 mod regression_dogfood_shape_suppression_trace;
-mod regression_entropy_fast_dispatch_and_sample;
 mod regression_entropy_fma3_dispatch;
 mod regression_fragment_cache_determinism;
 mod regression_instructional_fragment_multibyte_boundary;

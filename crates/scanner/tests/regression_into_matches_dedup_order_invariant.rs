@@ -186,7 +186,11 @@ fn output_identical_across_all_permutations_with_identity_collisions() {
         .filter(|x| &*x.detector_id == "aws")
         .map(|x| x.confidence.unwrap())
         .collect();
-    assert_eq!(aws, vec![0.95], "the colliding identity keeps exactly its max-confidence entry");
+    assert_eq!(
+        aws,
+        vec![0.95],
+        "the colliding identity keeps exactly its max-confidence entry"
+    );
 }
 
 #[test]
@@ -207,8 +211,11 @@ fn large_shuffle_with_many_collisions_is_order_independent() {
     reversed.reverse();
     assert_eq!(shape(&scan_state_drain(reversed, LIMIT)), canonical);
 
-    let (evens, odds): (Vec<_>, Vec<_>) =
-        base.iter().cloned().enumerate().partition(|(i, _)| i % 2 == 0);
+    let (evens, odds): (Vec<_>, Vec<_>) = base
+        .iter()
+        .cloned()
+        .enumerate()
+        .partition(|(i, _)| i % 2 == 0);
     let mut split: Vec<RawMatch> = odds.into_iter().map(|(_, x)| x).collect();
     split.extend(evens.into_iter().map(|(_, x)| x));
     assert_eq!(shape(&scan_state_drain(split, LIMIT)), canonical);
@@ -217,7 +224,9 @@ fn large_shuffle_with_many_collisions_is_order_independent() {
     let drained = scan_state_drain(base, LIMIT);
     assert_eq!(drained.len(), 60, "60 distinct identities survive");
     assert!(
-        drained.iter().all(|x| (x.confidence.unwrap() - 0.7).abs() < 1e-9),
+        drained
+            .iter()
+            .all(|x| (x.confidence.unwrap() - 0.7).abs() < 1e-9),
         "every survivor is the 0.7 max of its 3-way collision"
     );
 }
@@ -282,7 +291,11 @@ fn distinct_credentials_never_merge() {
         vec![hi("d", "cred_a", 4, 0.8), hi("d", "cred_b", 4, 0.8)],
         LIMIT,
     );
-    assert_eq!(drained.len(), 2, "same detector+offset but different credential are distinct");
+    assert_eq!(
+        drained.len(),
+        2,
+        "same detector+offset but different credential are distinct"
+    );
 }
 
 #[test]
@@ -291,9 +304,17 @@ fn distinct_offsets_never_merge() {
         vec![hi("d", "cred", 4, 0.8), hi("d", "cred", 9, 0.8)],
         LIMIT,
     );
-    assert_eq!(drained.len(), 2, "same detector+credential at different offsets are distinct");
+    assert_eq!(
+        drained.len(),
+        2,
+        "same detector+credential at different offsets are distinct"
+    );
     let offsets: Vec<usize> = drained.iter().map(|x| x.location.offset).collect();
-    assert_eq!(offsets, vec![4, 9], "distinct-offset survivors are ordered by offset ascending");
+    assert_eq!(
+        offsets,
+        vec![4, 9],
+        "distinct-offset survivors are ordered by offset ascending"
+    );
 }
 
 #[test]
@@ -302,14 +323,25 @@ fn distinct_detectors_never_merge() {
         vec![hi("det_a", "cred", 4, 0.8), hi("det_b", "cred", 4, 0.8)],
         LIMIT,
     );
-    assert_eq!(drained.len(), 2, "same credential+offset under different detectors are distinct");
+    assert_eq!(
+        drained.len(),
+        2,
+        "same credential+offset under different detectors are distinct"
+    );
 }
 
 #[test]
 fn all_identical_inputs_collapse_to_single() {
     let one = hi("d", "cred", 4, 0.5);
-    let drained = scan_state_drain(vec![one.clone(), one.clone(), one.clone(), one.clone(), one], LIMIT);
-    assert_eq!(drained.len(), 1, "five identical matches collapse to exactly one");
+    let drained = scan_state_drain(
+        vec![one.clone(), one.clone(), one.clone(), one.clone(), one],
+        LIMIT,
+    );
+    assert_eq!(
+        drained.len(),
+        1,
+        "five identical matches collapse to exactly one"
+    );
 }
 
 #[test]
@@ -323,7 +355,11 @@ fn matches_differing_only_in_line_dedup_to_one() {
         ],
         LIMIT,
     );
-    assert_eq!(drained.len(), 1, "line is not an identity field; these dedup");
+    assert_eq!(
+        drained.len(),
+        1,
+        "line is not an identity field; these dedup"
+    );
 }
 
 // ── Group C: best-first output ordering ──────────────────────────────────────
@@ -339,7 +375,11 @@ fn output_sorted_descending_by_confidence() {
         LIMIT,
     );
     let confs: Vec<f64> = drained.iter().map(|x| x.confidence.unwrap()).collect();
-    assert_eq!(confs, vec![0.90, 0.55, 0.20], "output is highest-confidence first");
+    assert_eq!(
+        confs,
+        vec![0.90, 0.55, 0.20],
+        "output is highest-confidence first"
+    );
 }
 
 #[test]
@@ -371,7 +411,11 @@ fn equal_confidence_and_severity_break_by_detector_id_ascending() {
         LIMIT,
     );
     let ids: Vec<&str> = drained.iter().map(|x| &*x.detector_id).collect();
-    assert_eq!(ids, vec!["alpha", "mike", "zeta"], "tie breaks by detector_id ascending");
+    assert_eq!(
+        ids,
+        vec!["alpha", "mike", "zeta"],
+        "tie breaks by detector_id ascending"
+    );
 }
 
 #[test]
@@ -387,7 +431,11 @@ fn equal_through_credential_breaks_by_offset_ascending() {
         LIMIT,
     );
     let offsets: Vec<usize> = drained.iter().map(|x| x.location.offset).collect();
-    assert_eq!(offsets, vec![10, 20, 30], "final tie resolves by offset ascending");
+    assert_eq!(
+        offsets,
+        vec![10, 20, 30],
+        "final tie resolves by offset ascending"
+    );
 }
 
 // ── Group D: boundaries / fast path ──────────────────────────────────────────
@@ -401,7 +449,11 @@ fn empty_input_yields_empty() {
 fn single_match_passes_through_unchanged() {
     let one = hi("d", "only", 4, 0.42);
     let drained = scan_state_drain(vec![one.clone()], LIMIT);
-    assert_eq!(drained, vec![one], "the len<=1 fast path returns the single match verbatim");
+    assert_eq!(
+        drained,
+        vec![one],
+        "the len<=1 fast path returns the single match verbatim"
+    );
 }
 
 #[test]
@@ -414,12 +466,13 @@ fn single_match_with_none_confidence_passes_through() {
 
 #[test]
 fn two_distinct_matches_both_survive_sorted() {
-    let drained = scan_state_drain(
-        vec![hi("d", "low", 1, 0.2), hi("d", "high", 2, 0.9)],
-        LIMIT,
-    );
+    let drained = scan_state_drain(vec![hi("d", "low", 1, 0.2), hi("d", "high", 2, 0.9)], LIMIT);
     assert_eq!(drained.len(), 2);
-    assert_eq!(drained[0].credential.as_ref(), "high", "best-first even at n=2");
+    assert_eq!(
+        drained[0].credential.as_ref(),
+        "high",
+        "best-first even at n=2"
+    );
     assert_eq!(drained[1].credential.as_ref(), "low");
 }
 
@@ -429,10 +482,7 @@ fn two_distinct_matches_both_survive_sorted() {
 fn none_confidence_sorts_after_any_scored_match() {
     let mut none_match = hi("d", "noconf", 9, 0.0);
     none_match.confidence = None;
-    let drained = scan_state_drain(
-        vec![none_match, hi("d", "scored", 1, 0.05)],
-        LIMIT,
-    );
+    let drained = scan_state_drain(vec![none_match, hi("d", "scored", 1, 0.05)], LIMIT);
     assert_eq!(
         drained[0].credential.as_ref(),
         "scored",
@@ -450,7 +500,11 @@ fn duplicate_none_vs_some_keeps_the_scored_entry() {
     let some_match = m("d", "cred", 4, 0.5, Severity::High, 5);
     let drained = scan_state_drain(vec![none_match, some_match], LIMIT);
     assert_eq!(drained.len(), 1);
-    assert_eq!(drained[0].confidence, Some(0.5), "the scored duplicate wins over the None one");
+    assert_eq!(
+        drained[0].confidence,
+        Some(0.5),
+        "the scored duplicate wins over the None one"
+    );
 }
 
 #[test]
@@ -463,7 +517,10 @@ fn repeated_drain_is_deterministic() {
     ];
     let first = scan_state_drain(base.clone(), LIMIT);
     let second = scan_state_drain(base, LIMIT);
-    assert_eq!(first, second, "draining the same input twice is byte-identical");
+    assert_eq!(
+        first, second,
+        "draining the same input twice is byte-identical"
+    );
 }
 
 // ── Group F: totality premise that makes the unstable final sort sound ────────
@@ -523,13 +580,20 @@ fn dense_collisions_preserve_one_survivor_per_identity() {
     let confs = [0.10, 0.55, 0.33, 0.99, 0.42];
     for round in 0..5 {
         for id in 0..4usize {
-            input.push(hi("det", &format!("c{id}"), id * 3, confs[(round + id) % confs.len()]));
+            input.push(hi(
+                "det",
+                &format!("c{id}"),
+                id * 3,
+                confs[(round + id) % confs.len()],
+            ));
         }
     }
     let drained = scan_state_drain(input, LIMIT);
     assert_eq!(drained.len(), 4, "4 identities collapse to 4 survivors");
     assert!(
-        drained.iter().all(|x| (x.confidence.unwrap() - 0.99).abs() < 1e-9),
+        drained
+            .iter()
+            .all(|x| (x.confidence.unwrap() - 0.99).abs() < 1e-9),
         "every survivor is the 0.99 max present in its identity's collision set"
     );
 }

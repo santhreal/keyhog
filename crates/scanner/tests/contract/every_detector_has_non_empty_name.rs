@@ -1,14 +1,6 @@
 //! Contract: every detector declares a human-readable `name`.
 
-use std::path::PathBuf;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
+use crate::support::paths::detector_dir;
 
 #[test]
 fn every_detector_has_non_empty_name() {

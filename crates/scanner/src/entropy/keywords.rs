@@ -1,3 +1,13 @@
+//! Entropy keyword-context parsing, candidate cleaning, and value extraction.
+//!
+//! Per-detector entropy gates: the extraction helpers thread the classified
+//! active generic detector spec into the [`PlausibilityContext`], so
+//! `passes_secret_strength_checks` consumes that scan's `entropy_high` and
+//! `mixed_alnum_floor` values without re-reading the embedded registry. `None`
+//! falls back to the compiled defaults.
+
+use std::sync::LazyLock;
+
 use super::plausibility::{is_candidate_plausible, is_secret_plausible, PlausibilityContext};
 use crate::adjudicate::{EntropyShapeStage, StageId};
 use crate::engine::phase2_generic::keywords::normalize_assignment_keyword;
@@ -42,20 +52,27 @@ pub(crate) fn find_keyword_assignment_lines<'a>(
         .collect()
 }
 
-fn is_keyword_assignment_line(line: &str, secret_keywords: &[String]) -> bool {
+pub(crate) fn is_keyword_assignment_line(line: &str, secret_keywords: &[String]) -> bool {
     let trimmed = line.trim();
-    if is_import_like(trimmed) {
+    if is_import_like_prefix(trimmed) {
+        return false;
+    }
+    // Fast path: every credential-assignment surface and every keyword-
+    // anchored assignment requires '=' or ':'. A single SIMD memchr2 scan
+    // skips the expensive credential-surface check and 19-keyword CI search
+    // for the ~50% of source lines that have neither separator.
+    let line_bytes = line.as_bytes();
+    if memchr::memchr3(b'=', b':', b'<', line_bytes).is_none() {
         return false;
     }
     if line_has_credential_assignment_surface(line) {
         return true;
     }
 
-    let line_bytes = line.as_bytes();
     let has_keyword = secret_keywords
         .iter()
         .any(|keyword| crate::ascii_ci::ci_find_nonempty(line_bytes, keyword.as_bytes()));
-    has_keyword && (line.contains('=') || line.contains(':'))
+    has_keyword
 }
 
 /// True when a line is structurally innocuous and should be dropped before
@@ -76,15 +93,7 @@ pub(crate) fn is_likely_innocuous_line(line: &str) -> bool {
     if starts_with_uri && line_has_credential_assignment_surface(trimmed) {
         return false;
     }
-    if trimmed.starts_with("import ")
-        || trimmed.starts_with("from ")
-        || trimmed.starts_with("require(")
-        || trimmed.starts_with("use ")
-        || trimmed.starts_with("package ")
-        || trimmed.starts_with("include ")
-        || trimmed.starts_with("#include ")
-        || starts_with_uri
-    {
+    if is_import_like_prefix(trimmed) || starts_with_uri {
         return true;
     }
 
@@ -95,11 +104,16 @@ pub(crate) fn is_likely_innocuous_line(line: &str) -> bool {
     // case-sensitively was the lone inconsistency that let upper-case digest
     // lines leak into entropy extraction as false positives.
     let wq = without_quotes.as_bytes();
-    if crate::ascii_ci::starts_with_ignore_ascii_case(wq, b"sha256:")
-        || crate::ascii_ci::starts_with_ignore_ascii_case(wq, b"sha512:")
-        || crate::ascii_ci::starts_with_ignore_ascii_case(wq, b"sha1:")
-        || crate::ascii_ci::starts_with_ignore_ascii_case(wq, b"md5:")
-        || crate::ascii_ci::starts_with_ignore_ascii_case(wq, b"git-sha:")
+    // Shared colon-form hash-algo labels from the single owner
+    // (`suppression::shape::HASH_ALGO_COLON_LABELS`), plus `git-sha:` (git commit
+    // refs) — an entropy-LOCAL extra the suppression digest-strip intentionally
+    // does not carry. A prefix match means this value is an algo-labelled digest,
+    // not a secret. (Byte-identical to the former 5-way `||` chain.)
+    if crate::suppression::shape::HASH_ALGO_COLON_LABELS
+        .iter()
+        .copied()
+        .chain(std::iter::once(b"git-sha:".as_slice()))
+        .any(|label| crate::ascii_ci::starts_with_ignore_ascii_case(wq, label))
     {
         return true;
     }
@@ -237,6 +251,12 @@ fn extract_candidates_internal(
     }
 
     if let Some(sep_pos) = line.find('=').or_else(|| line.find(':')) {
+        // SAFETY: `line.find('=')` / `line.find(':')` returns a byte offset at which
+        // a single-byte ASCII character (`=` or `:`) sits. Adding 1 steps to the byte
+        // immediately after that ASCII character, which is always a valid UTF-8 char
+        // boundary (any byte following a single-byte ASCII is boundary-aligned).
+        // `sep_pos + 1 <= line.len()` because `find` guarantees the match is within the
+        // string, so the character plus one byte never exceeds the string length.
         push_candidate(&line[sep_pos + 1..], false, true);
     }
 
@@ -282,12 +302,38 @@ fn push_extraction_rejection(
     }
 }
 
-fn is_import_like(trimmed: &str) -> bool {
-    trimmed.starts_with("import")
-        || trimmed.starts_with("package")
-        || trimmed.starts_with("use ")
-        || trimmed.starts_with("from ")
-        || trimmed.starts_with("require(")
+/// Import/module-declaration line prefixes — the single Tier-B owner
+/// (`rules/import-line-prefixes.toml`; was an inline `&[&str]` const). A line
+/// opening with one of these is a language `import`/`use`/`include`/`package`
+/// statement, never a credential assignment. Every prefix is space- or
+/// paren-terminated so an identifier that merely *begins* with the keyword
+/// (`important_key`, `package_secret`) is NOT matched — that divergence used to
+/// reject real credential lines here while [`is_likely_innocuous_line`] accepted
+/// them (the termination contract is documented in the data file). Fails closed
+/// on an invalid/empty list.
+static IMPORT_LINE_PREFIXES: LazyLock<Vec<String>> = LazyLock::new(|| {
+    #[derive(serde::Deserialize)]
+    struct Prefixes {
+        prefixes: Vec<String>,
+    }
+    let raw = include_str!("../../../../rules/import-line-prefixes.toml");
+    match toml::from_str::<Prefixes>(raw) {
+        Ok(parsed) if !parsed.prefixes.is_empty() => parsed.prefixes,
+        Ok(_) => panic!(
+            "rules/import-line-prefixes.toml is empty; it must list the \
+             import/module-declaration line prefixes."
+        ),
+        Err(error) => panic!(
+            "rules/import-line-prefixes.toml is invalid: {error}. \
+             Fix the bundled Tier-B import-line-prefix list."
+        ),
+    }
+});
+
+pub(crate) fn is_import_like_prefix(trimmed: &str) -> bool {
+    IMPORT_LINE_PREFIXES
+        .iter()
+        .any(|prefix| trimmed.starts_with(prefix.as_str()))
 }
 
 pub(crate) fn line_has_credential_assignment_surface(line: &str) -> bool {
@@ -331,7 +377,13 @@ pub(crate) fn normalized_assignment_keyword_is_credential(normalized: &str) -> b
     let separated_secret_suffix = normalized.contains('_')
         && matches!(
             normalized.rsplit('_').next(),
-            Some("key" | "secret" | "token" | "password" | "passwd" | "pwd")
+            // `pass` is the `*_PASS=` credential-env stem (the dominant CredData
+            // shape, e.g. `SES_PASS=`, `DB_PASS=`). The `_`-separated-SUFFIX
+            // requirement is the left boundary: `bypass`/`compass` (no `_`) and
+            // `CI_BYPASS` (suffix `bypass`) never match, so only a genuine
+            // `<name>_PASS=` assignment is promoted. Mirrors the `pass` prefilter
+            // stem in `assignment_keywords::PASS_STEM` (ONE intent, both paths).
+            Some("key" | "secret" | "token" | "password" | "passwd" | "pwd" | "pass")
         );
     if separated_secret_suffix {
         return true;
@@ -349,8 +401,15 @@ pub(crate) fn normalized_assignment_keyword_is_credential(normalized: &str) -> b
     compact_assignment_keyword_bytes_are_credential(&compact[..len])
 }
 
-/// Whether an assignment key names a password-family slot. A bare `pass` must
-/// be its final separator-delimited segment so `bypass` remains non-secret.
+/// True when an assignment key names a PASSWORD-FAMILY credential slot: it
+/// contains `password`/`pwd`, OR its last separator-delimited segment is exactly
+/// `pass` (the dominant `*_PASS=` CredData credential-env stem, e.g. `SES_PASS`,
+/// `DB_PASS`, `app.pass`). The last-segment requirement is the boundary that
+/// keeps `bypass`/`compass`/`encompass` (no separator before `pass`) and
+/// `*_PASSING` (segment `passing`, not `pass`) out. ONE PLACE for the
+/// password-family keyword test shared by both entropy classifiers
+/// (`classify_entropy_detector_index` bucket + `classify_keyword_to_detector_id`
+/// detector-id), so the two can never drift on which keys are passwords.
 pub(crate) fn keyword_is_password_family(keyword: &str) -> bool {
     use crate::ascii_ci::ci_find;
     let bytes = keyword.as_bytes();
@@ -363,38 +422,64 @@ pub(crate) fn keyword_is_password_family(keyword: &str) -> bool {
         .is_some_and(|segment| segment.eq_ignore_ascii_case("pass"))
 }
 
-const CREDENTIAL_COMPACT_KEYWORDS: &[&[u8]] = &[
-    b"password",
-    b"passwd",
-    b"pwd",
-    b"passphrase",
-    b"token",
-    b"secret",
-    b"credential",
-    b"bearer",
-    b"authorization",
-    b"apikey",
-    b"accesskey",
-    b"authkey",
-    b"privatekey",
-    b"signingkey",
-    b"encryptionkey",
-    b"masterkey",
-    b"secretkey",
-    b"sessionkey",
-    b"clientsecret",
-    b"appsecret",
-    b"salt",
-    b"nonce",
-    b"seed",
-    b"hmacsalt",
-    b"hmacseed",
-    b"passwordsalt",
-];
+/// Parse the requested field of the Tier-B credential-keyword vocabulary
+/// `rules/credential-keywords.toml`, leaking each keyword to `&'static [u8]` (a
+/// one-time init, conceptually static data) so the loaded list keeps the exact
+/// `&[u8]` element type the byte-exact membership checks below and the shared
+/// `entropy::scanner::KEY_MATERIAL_ANCHORS` lift gate consume — no caller type
+/// change vs the former inline `&[&[u8]]` consts. Fails closed on invalid/empty.
+fn parse_credential_keyword_field(key_material: bool) -> Vec<&'static [u8]> {
+    #[derive(serde::Deserialize)]
+    struct Vocab {
+        compact: Vec<String>,
+        key_material: Vec<String>,
+    }
+    let raw = include_str!("../../../../rules/credential-keywords.toml");
+    let vocab: Vocab = match toml::from_str(raw) {
+        Ok(vocab) => vocab,
+        Err(error) => panic!(
+            "rules/credential-keywords.toml is invalid: {error}. \
+             Fix the bundled Tier-B credential-keyword vocabulary."
+        ),
+    };
+    let list = if key_material {
+        vocab.key_material
+    } else {
+        vocab.compact
+    };
+    assert!(
+        !list.is_empty(),
+        "rules/credential-keywords.toml must list the {} credential keywords",
+        if key_material {
+            "key-material"
+        } else {
+            "compact"
+        }
+    );
+    list.into_iter()
+        .map(|word| &*word.into_bytes().leak())
+        .collect()
+}
+
+/// Broad credential-keyword vocabulary — the single Tier-B owner
+/// (`rules/credential-keywords.toml` `compact` list; was an inline `&[&[u8]]`).
+static CREDENTIAL_COMPACT_KEYWORDS: LazyLock<Vec<&'static [u8]>> =
+    LazyLock::new(|| parse_credential_keyword_field(false));
+
+/// Explicit cryptographic key-material vocabulary. Canonical owner shared by the
+/// broad compact credential membership check above AND the entropy
+/// canonical-shape lift anchors (`entropy::scanner::KEY_MATERIAL_ANCHORS`), so a
+/// new key-material word reaches BOTH gates instead of being pasted twice and
+/// drifting. Both membership predicates chain this list, so it participates in
+/// the compact credential check exactly as if it were still inlined. Now the
+/// Tier-B `rules/credential-keywords.toml` `key_material` list (was inline).
+pub(crate) static KEY_MATERIAL_COMPACT_KEYWORDS: LazyLock<Vec<&'static [u8]>> =
+    LazyLock::new(|| parse_credential_keyword_field(true));
 
 fn compact_assignment_keyword_bytes_are_credential(compact: &[u8]) -> bool {
     CREDENTIAL_COMPACT_KEYWORDS
         .iter()
+        .chain(KEY_MATERIAL_COMPACT_KEYWORDS.iter())
         .any(|keyword| *keyword == compact)
         || compact.ends_with(b"salt")
         || compact.ends_with(b"nonce")
@@ -404,6 +489,7 @@ fn compact_assignment_keyword_bytes_are_credential(compact: &[u8]) -> bool {
 fn compact_normalized_assignment_keyword_is_credential_slow(normalized: &str) -> bool {
     CREDENTIAL_COMPACT_KEYWORDS
         .iter()
+        .chain(KEY_MATERIAL_COMPACT_KEYWORDS.iter())
         .any(|keyword| compact_normalized_keyword_eq(normalized, keyword))
         || compact_normalized_keyword_ends_with(normalized, b"salt")
         || compact_normalized_keyword_ends_with(normalized, b"nonce")
@@ -477,7 +563,13 @@ pub(crate) fn authorization_header_value(line: &str) -> Option<&str> {
     token.split_whitespace().next()
 }
 
-pub(crate) fn xml_assignment_tag(line: &str) -> Option<&str> {
+/// Parse an `<tag>value</tag>` assignment line ONCE, returning the tag name and
+/// the trimmed inner value. Single owner of the open-tag + close-tag scan that
+/// `xml_assignment_tag` and `xml_assignment_value` previously each ran — `value`
+/// re-found the `<`, the `>`, and re-ran the close-tag search the tag parse had
+/// already computed. The close-tag search is zero-alloc (matches `</` + tag-name
+/// + `>` instead of building a `format!("</{tag}>")` needle) and runs exactly once.
+fn parse_xml_assignment(line: &str) -> Option<(&str, &str)> {
     let trimmed = line.trim();
     let start = trimmed.find('<')?;
     let after_open = &trimmed[start + 1..];
@@ -489,26 +581,21 @@ pub(crate) fn xml_assignment_tag(line: &str) -> Option<&str> {
     if tag.is_empty() || tag.starts_with('/') {
         return None;
     }
-    // Zero-alloc close-tag search instead of `contains(&format!("</{tag}>"))`
-    // (Law 7: this runs per XML-shaped line, and xml_assignment_value rebuilt
-    // the same needle a second time). Byte-identical: the search matches exactly
-    // the `</` + tag-name + `>` byte sequence.
-    find_xml_close_tag(&trimmed[start + 1 + tag_end + 1..], tag)
-        .is_some()
-        .then_some(tag)
+    // Value starts just past the open tag's `>`. `find_xml_close_tag` returns the
+    // offset relative to that slice, so the value is `[value_start, value_start+rel)`.
+    let value_start = start + 1 + tag_end + 1;
+    let close_rel = find_xml_close_tag(&trimmed[value_start..], tag)?;
+    Some((tag, trimmed[value_start..value_start + close_rel].trim()))
+}
+
+pub(crate) fn xml_assignment_tag(line: &str) -> Option<&str> {
+    parse_xml_assignment(line).map(|(tag, _)| tag)
 }
 
 pub(crate) fn xml_assignment_value(line: &str) -> Option<&str> {
-    let tag = xml_assignment_tag(line)?;
-    let trimmed = line.trim();
-    let open_start = trimmed.find('<')?;
-    let open_end = trimmed[open_start..].find('>')? + open_start;
-    // Reuse the same zero-alloc close-tag search (was a second `format!`). The
-    // returned offset is relative to the post-open-tag slice, so add it back.
-    let close_start = open_end + 1 + find_xml_close_tag(&trimmed[open_end + 1..], tag)?;
+    let (tag, value) = parse_xml_assignment(line)?;
     let normalized = normalize_assignment_keyword(tag)?;
-    normalized_assignment_keyword_is_credential(&normalized)
-        .then_some(trimmed[open_end + 1..close_start].trim())
+    normalized_assignment_keyword_is_credential(&normalized).then_some(value)
 }
 
 /// Byte offset of the `</tag>` closing tag within `haystack`, or `None`.
@@ -522,6 +609,9 @@ fn find_xml_close_tag(haystack: &str, tag: &str) -> Option<usize> {
     let tag_bytes = tag.as_bytes();
     let mut cursor = 0;
     while let Some(rel) = memchr::memchr(b'<', &bytes[cursor..]) {
+        // SAFETY: `cursor` starts at 0 and is only advanced to `open + 1` where
+        // `open = cursor + rel` and `rel < bytes.len() - cursor` (guaranteed by memchr);
+        // therefore `cursor <= bytes.len()` always holds and the slice is valid.
         let open = cursor + rel;
         let name_start = open + 2;
         let name_end = name_start + tag_bytes.len();

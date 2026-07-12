@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Quickstart · keyhog</title>
   <meta name="description" content="Your first keyhog scan in under a minute.">
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -168,7 +167,7 @@ Security Dashboard, or any SARIF-aware tool.</p>
 <pre><code><span class="prompt">$</span> keyhog scan . --verify</code></pre>
 
 <p>For findings that keyhog knows how to verify (GitHub PATs, AWS keys, Slack
-tokens, Stripe keys, OpenAI keys, 344 detectors with a vendor verifier endpoint), keyhog hits the vendor API
+tokens, Stripe keys, OpenAI keys, 341 detectors with a vendor verifier endpoint), keyhog hits the vendor API
 read-only to confirm the credential is live. Unverified findings are marked
 with <code>[unverified]</code>; live ones get <code>[verified ✓]</code>.</p>
 

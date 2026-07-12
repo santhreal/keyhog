@@ -34,3 +34,10 @@ fixture_bytes = 1048576
 min_findings = 1
 max_seconds = 2.0
 note = "1 MiB filler + planted Zora API key."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "zora_api_key: 'k7mNp2qRs4tUv8wXy1zA3bC5dEfGhIj'"
+credential = "k7mNp2qRs4tUv8wXy1zA3bC5dEfGhIj"
+reason = "Config line with a single-quoted value; the zora regex requires quotes around the value (a bracketed quote class before and after), so this exercises the quoted-value arm that a bare = form cannot reach."

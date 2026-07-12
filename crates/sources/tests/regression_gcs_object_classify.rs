@@ -19,12 +19,12 @@
 //!
 //! HOST-INDEPENDENCE: no accelerator is touched. The SSRF-refusal and
 //! malformed-input assertions are fully hermetic — they abort inside
-//! `validate_bucket_name` / `validate_endpoint` BEFORE any network I/O, so they
+//! `validate_bucket_name` / `validate_cloud_endpoint` BEFORE any network I/O, so they
 //! are deterministic on every host. The two mock-server tests use a loopback
-//! httpmock endpoint and therefore require the loud, default-off
-//! `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` opt-in; every network-reading test
-//! serializes on `NET_LOCK` and sets the exact env state it needs while holding
-//! the lock, so a parallel test can never observe the wrong SSRF-allow state.
+//! httpmock endpoint and therefore build their source with
+//! `allow_private_endpoint = true` (per-source Tier-A config, NOT a process-
+//! global env); the SSRF-refusal tests build with the default `false`. Each
+//! source carries its own screen state, so there is no env and no lock to hold.
 
 #![cfg(feature = "gcs")]
 
@@ -32,7 +32,6 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use std::sync::{Mutex, MutexGuard};
 use support::split_chunk_results;
 
 /// A syntactically valid GCS bucket name (3-222 chars, lowercase/digit/dash,
@@ -46,39 +45,18 @@ const BUCKET: &str = "keyhog-gcs-classify";
 const GCS_SSRF_REFUSAL: &str =
     "refusing GCS endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)";
 
-/// Serializes every test whose code path READS
-/// `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` (the endpoint SSRF screen). SSRF tests
-/// require it ABSENT; the mock-server tests require it PRESENT. Holding a single
-/// lock and setting the required state at the start of each guarded test makes
-/// the env observation race-free within this binary.
-static NET_LOCK: Mutex<()> = Mutex::new(());
-
-/// Acquire `NET_LOCK` and force the SSRF-allow opt-in OFF (private endpoints
-/// must be refused). Self-healing: even if a prior mock test left the var set,
-/// this removes it under the lock before the guarded body runs.
-fn ssrf_screen_active_guard() -> MutexGuard<'static, ()> {
-    let guard = NET_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    std::env::remove_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT");
-    guard
-}
-
-/// Acquire `NET_LOCK` and turn the loud, default-off loopback allowance ON so a
-/// 127.0.0.1 httpmock endpoint is reachable.
-fn loopback_allowed_guard() -> MutexGuard<'static, ()> {
-    let guard = NET_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", "1");
-    guard
-}
+// The private-endpoint allowance is now per-source Tier-A config
+// (`HttpClientConfig.allow_private_endpoint`), threaded into each source by the
+// `TestApi.gcs_source_with_endpoint*` builders — the SSRF-refusal tests drive
+// `allow_private = false` and the loopback mock tests drive `true`, with no
+// process-global `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` env and so no lock.
 
 /// Drive `GcsSource::chunks()` for a custom `endpoint` and return the single
 /// error message string. An endpoint refused before listing yields exactly one
 /// error row, so this asserts that shape too.
 fn single_endpoint_error(endpoint: &str) -> String {
-    let source = TestApi.gcs_source_with_endpoint(BUCKET, endpoint);
+    // SSRF-refusal path: the screen must be ACTIVE (allow_private = false).
+    let source = TestApi.gcs_source_with_endpoint_allow_private(BUCKET, endpoint, false);
     let rows: Vec<_> = source.chunks().collect();
     assert_eq!(
         rows.len(),
@@ -207,7 +185,6 @@ fn credential_forward_is_caller_explicit_only() {
 
 #[test]
 fn loopback_ipv4_endpoint_is_refused() {
-    let _net = ssrf_screen_active_guard();
     let error = single_endpoint_error("http://127.0.0.1");
     assert!(
         error.contains(GCS_SSRF_REFUSAL),
@@ -217,7 +194,6 @@ fn loopback_ipv4_endpoint_is_refused() {
 
 #[test]
 fn gcp_metadata_ip_endpoint_is_refused() {
-    let _net = ssrf_screen_active_guard();
     // 169.254.169.254 is the link-local cloud-metadata (IMDS) endpoint.
     let error = single_endpoint_error("http://169.254.169.254");
     assert!(
@@ -228,7 +204,6 @@ fn gcp_metadata_ip_endpoint_is_refused() {
 
 #[test]
 fn ipv6_loopback_endpoint_is_refused() {
-    let _net = ssrf_screen_active_guard();
     let error = single_endpoint_error("https://[::1]");
     assert!(
         error.contains(GCS_SSRF_REFUSAL),
@@ -238,7 +213,6 @@ fn ipv6_loopback_endpoint_is_refused() {
 
 #[test]
 fn ssrf_refusal_is_source_error_other_with_full_wrapper() {
-    let _net = ssrf_screen_active_guard();
     // Proves the refusal surfaces as `SourceError::Other`, whose Display wraps
     // the reason with the operator-facing "Fix:" guidance — the exact bytes.
     let error = single_endpoint_error("http://10.0.0.5");
@@ -254,7 +228,6 @@ Fix: adjust the source settings or input so KeyHog can read plain text safely"
 
 #[test]
 fn non_http_scheme_endpoint_is_invalid_not_ssrf() {
-    let _net = ssrf_screen_active_guard();
     // An `ftp://` endpoint is refused by the scheme gate, not the host screen,
     // so the message is the generic invalid-endpoint form (no "(SSRF)").
     let error = single_endpoint_error("ftp://storage.example.com");
@@ -266,7 +239,6 @@ fn non_http_scheme_endpoint_is_invalid_not_ssrf() {
 
 #[test]
 fn userinfo_bearing_endpoint_is_invalid() {
-    let _net = ssrf_screen_active_guard();
     // Embedded credentials (`user:pass@host`) are refused by the userinfo gate.
     let error = single_endpoint_error("https://user:pass@storage.example.com");
     assert!(
@@ -322,8 +294,6 @@ fn bucket_with_dot_dot_is_refused() {
 
 #[test]
 fn listed_object_maps_to_exact_gs_path_and_metadata() {
-    let _net = loopback_allowed_guard();
-
     let server = httpmock::MockServer::start();
     let list_body = r#"{"items":[{"name":"logs/app.log","size":"42"}]}"#;
     let _list = server.mock(|when, then| {
@@ -362,7 +332,11 @@ fn listed_object_maps_to_exact_gs_path_and_metadata() {
         Some("gs://keyhog-gcs-classify/logs/app.log"),
         "chunk path must be the exact gs:// URI for the listed object"
     );
-    assert_eq!(meta.source_type, "gcs", "source_type must be \"gcs\"");
+    assert_eq!(
+        meta.source_type.as_ref(),
+        "gcs",
+        "source_type must be \"gcs\""
+    );
     // size_bytes carries the LISTED size (42), not the downloaded body length.
     assert_eq!(
         meta.size_bytes,
@@ -381,8 +355,6 @@ fn listed_object_maps_to_exact_gs_path_and_metadata() {
 
 #[test]
 fn malformed_listed_object_size_is_exact_error() {
-    let _net = loopback_allowed_guard();
-
     let server = httpmock::MockServer::start();
     // `size` is not a base-10 integer -> `GcsObject::size_bytes` fails with a
     // named error before any object GET is issued.

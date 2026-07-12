@@ -86,7 +86,9 @@ fn arb_literal_match() -> impl Strategy<Value = vyre_libs::scan::LiteralMatch> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(5000))]
+    // Testing Contract: 10k+ cases. Pure in-place interval-coalescing math
+    // (no scan/GPU/IO per case), so 10k is a fraction of a second.
+    #![proptest_config(ProptestConfig::with_cases(10_000))]
 
     // =========================================================================
     // INVARIANT 1: In-place Span Coalescing (Interval Cover Parity)
@@ -274,8 +276,8 @@ fn test_window_boundary_dedup_non_contiguous_or_different_files() {
         Chunk {
             data: "A".repeat(1024).into(),
             metadata: ChunkMetadata {
-                path: Some("/test/file.txt".to_string()),
-                source_type: "file".to_string(),
+                path: Some("/test/file.txt".into()),
+                source_type: "file".into(),
                 base_offset: 0,
                 ..Default::default()
             },
@@ -283,8 +285,8 @@ fn test_window_boundary_dedup_non_contiguous_or_different_files() {
         Chunk {
             data: "B".repeat(1024).into(),
             metadata: ChunkMetadata {
-                path: Some("/test/file.txt".to_string()),
-                source_type: "file".to_string(),
+                path: Some("/test/file.txt".into()),
+                source_type: "file".into(),
                 base_offset: 1124, // 100 bytes gap
                 ..Default::default()
             },
@@ -303,8 +305,8 @@ fn test_window_boundary_dedup_non_contiguous_or_different_files() {
         Chunk {
             data: "A".repeat(1024).into(),
             metadata: ChunkMetadata {
-                path: Some("/test/file_a.txt".to_string()),
-                source_type: "file".to_string(),
+                path: Some("/test/file_a.txt".into()),
+                source_type: "file".into(),
                 base_offset: 0,
                 ..Default::default()
             },
@@ -312,8 +314,8 @@ fn test_window_boundary_dedup_non_contiguous_or_different_files() {
         Chunk {
             data: "B".repeat(1024).into(),
             metadata: ChunkMetadata {
-                path: Some("/test/file_b.txt".to_string()),
-                source_type: "file".to_string(),
+                path: Some("/test/file_b.txt".into()),
+                source_type: "file".into(),
                 base_offset: 1024, // Contiguous offset but different path
                 ..Default::default()
             },
@@ -334,8 +336,8 @@ fn test_boundary_defensive_dedup_prevents_duplicate_reports() {
         Chunk {
             data: "A".repeat(1024).into(),
             metadata: ChunkMetadata {
-                path: Some("/test/file.txt".to_string()),
-                source_type: "file".to_string(),
+                path: Some("/test/file.txt".into()),
+                source_type: "file".into(),
                 base_offset: 0,
                 ..Default::default()
             },
@@ -343,8 +345,8 @@ fn test_boundary_defensive_dedup_prevents_duplicate_reports() {
         Chunk {
             data: "B".repeat(1024).into(),
             metadata: ChunkMetadata {
-                path: Some("/test/file.txt".to_string()),
-                source_type: "file".to_string(),
+                path: Some("/test/file.txt".into()),
+                source_type: "file".into(),
                 base_offset: 1024, // Contiguous
                 ..Default::default()
             },

@@ -47,6 +47,7 @@ cfb-mode = { workspace = true }
 rand = { workspace = true }
 uuid = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+toml = { workspace = true }
 
 # AWS SigV4 signing for credential verification
 

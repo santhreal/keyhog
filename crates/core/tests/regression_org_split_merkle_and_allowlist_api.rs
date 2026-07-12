@@ -249,18 +249,38 @@ fn root_cache_path_exports_use_explicit_owner_names() {
 
 #[test]
 fn merkle_tmp_hygiene_does_not_flatten_read_dir_errors() {
-    let src = std::fs::read_to_string(concat!(
+    // The dir-entry read loop is now owned by the shared sweeper
+    // `state_file::sweep_stale_tmp_siblings` (merkle + calibration both delegate
+    // to it — ONE place). The no-silent-drop contract must hold at that owner:
+    // each read_dir entry error is matched explicitly and logged, never
+    // `.flatten()`-ed away (which would silently skip unreadable entries).
+    let state_file_src =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/state_file.rs"))
+            .expect("state_file source readable");
+    let sweep_body = state_file_src
+        .split("fn sweep_stale_tmp_siblings(")
+        .nth(1)
+        .expect("sweep_stale_tmp_siblings exists")
+        .split("\nfn ")
+        .next()
+        .expect("sweep body");
+    assert!(
+        !sweep_body.contains(".flatten()"),
+        "shared tmp sweep must match read_dir entry errors explicitly, not flatten them away"
+    );
+    assert!(
+        sweep_body.contains("skip unreadable tmp dir entry"),
+        "shared tmp sweep must log unreadable directory entries rather than silently drop them"
+    );
+    // And the merkle sweep still routes through that shared error-explicit owner.
+    let tmp_hygiene_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/merkle_index/tmp_hygiene.rs"
     ))
     .expect("tmp hygiene source readable");
     assert!(
-        !src.contains("entries.flatten()"),
-        "tmp hygiene sweep must match read_dir entry errors explicitly"
-    );
-    assert!(
-        src.contains("cannot read cache tmp directory entry"),
-        "tmp hygiene sweep must log unreadable directory entries"
+        tmp_hygiene_src.contains("state_file::sweep_stale_tmp_siblings("),
+        "merkle tmp hygiene must delegate to the shared error-explicit sweeper"
     );
 }
 
@@ -281,10 +301,22 @@ fn merkle_storage_split_keeps_spec_gate_and_atomic_persist_owner() {
     );
     assert!(
         storage_src.contains("tmp_hygiene::{sweep_stale_tmp_files, MERKLE_TMP_PREFIX}")
-            && storage_src.contains("tempfile::Builder::new()")
-            && storage_src.contains(".prefix(MERKLE_TMP_PREFIX)")
+            && storage_src
+                .contains("state_file::write_atomically(path, MERKLE_TMP_PREFIX, serialized)")
             && !storage_src.contains("tempfile::NamedTempFile::new_in(parent)"),
-        "merkle storage must create temp files through the same explicit prefix owner swept by tmp_hygiene"
+        "merkle storage must persist through the shared atomic writer, handing it the explicit \
+         keyhog prefix that tmp_hygiene sweeps"
+    );
+    // The shared writer is the single owner that stamps that caller prefix onto
+    // the temp file — verify it there so the delegation can't route through a
+    // prefix-ignoring writer.
+    let state_file_src =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/state_file.rs"))
+            .expect("state_file source readable");
+    assert!(
+        state_file_src.contains("fn write_atomically(path: &Path, prefix: &str, bytes: &[u8])")
+            && state_file_src.contains(".prefix(prefix)"),
+        "the shared atomic writer must create the temp file with the caller's explicit prefix"
     );
 
     let root_src =
@@ -308,10 +340,19 @@ fn cache_temp_file_prefix_contract_is_explicit() {
         "tmp hygiene must own the merkle cache temp-file prefix constant"
     );
     assert!(
-        tmp_hygiene_src.contains("name_str.starts_with(MERKLE_TMP_PREFIX)")
+        tmp_hygiene_src.contains("&[MERKLE_TMP_PREFIX, &legacy_tmp_prefix]")
             && tmp_hygiene_src.contains("legacy_cache_tmp_prefix(cache_path)")
             && !tmp_hygiene_src.contains("name_str.starts_with(\".tmp\")"),
-        "tmp hygiene must sweep keyhog-owned temp prefixes without broad anonymous .tmp deletion"
+        "tmp hygiene must hand the shared sweeper its explicit keyhog-owned prefixes \
+         (current + legacy), never a broad anonymous .tmp match"
+    );
+    // Prefix-scoped deletion is enforced in ONE place — the shared sweeper.
+    let state_file_src =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/state_file.rs"))
+            .expect("state_file source readable");
+    assert!(
+        state_file_src.contains("if !prefixes.iter().any(|p| name_str.starts_with(p))"),
+        "the shared tmp sweeper must only remove files whose name starts with a caller-supplied prefix"
     );
 
     let calibration_src =
@@ -320,10 +361,12 @@ fn cache_temp_file_prefix_contract_is_explicit() {
     assert!(
         calibration_src.contains("const CALIBRATION_TMP_PREFIX")
             && calibration_src.contains("sweep_stale_calibration_tmp_files(path);")
-            && calibration_src.contains("tempfile::Builder::new()")
-            && calibration_src.contains(".prefix(CALIBRATION_TMP_PREFIX)")
+            && calibration_src.contains(
+                "state_file::write_atomically(path, CALIBRATION_TMP_PREFIX, &serialized)"
+            )
             && !calibration_src.contains("tempfile::NamedTempFile::new_in(parent)"),
-        "calibration saves must use and sweep an explicit cache temp-file prefix instead of anonymous .tmp siblings"
+        "calibration saves must use and sweep an explicit cache temp-file prefix through the \
+         shared atomic writer instead of anonymous .tmp siblings"
     );
 }
 

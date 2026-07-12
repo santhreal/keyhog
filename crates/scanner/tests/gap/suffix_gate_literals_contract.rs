@@ -42,3 +42,46 @@ fn suffix_gate_literals_extracts_only_long_finite_suffixes() {
         "empty source yields no suffix literal"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin the floor and a few shapes; these SWEEP the contract. The
+// UNIVERSAL output invariant holds for ANY pattern: at most 4 literals, each ≥6
+// bytes and ASCII-lowercased — a literal that violated this would be an unsound
+// suffix gate (a missed match / recall bug). Plus constructive recall: a pure
+// literal ≥6 is its own lowercased suffix, and a sub-6 literal yields nothing.
+// Traced against `suffix_gate_literals`. No proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(3_000))]
+
+    /// Every returned literal meets the gate contract, for any pattern (alternation
+    /// `|` may produce several) — ≤4, each ≥6 bytes and all-lowercase. Also no panic.
+    #[test]
+    fn every_returned_literal_meets_the_contract(pattern in "[a-zA-Z0-9|]{0,24}") {
+        let lits = suffix_lits(&pattern);
+        prop_assert!(lits.len() <= 4, "at most 4 literals, got {}", lits.len());
+        for lit in &lits {
+            prop_assert!(lit.len() >= 6, "literal {:?} shorter than 6 bytes", lit);
+            prop_assert!(
+                !lit.bytes().any(|b| b.is_ascii_uppercase()),
+                "literal {:?} is not ASCII-lowercased",
+                lit
+            );
+        }
+    }
+
+    /// A pure literal of ≥6 chars is its own required suffix, ASCII-lowercased.
+    #[test]
+    fn pure_literal_at_least_six_returns_itself_lowercased(p in "[a-zA-Z0-9]{6,20}") {
+        prop_assert_eq!(suffix_lits(&p), vec![p.to_ascii_lowercase()]);
+    }
+
+    /// A pure literal below the 6-byte floor yields nothing (the pattern runs
+    /// unconditionally — never a missed match).
+    #[test]
+    fn pure_literal_below_six_is_empty(p in "[a-zA-Z0-9]{1,5}") {
+        prop_assert!(suffix_lits(&p).is_empty());
+    }
+}

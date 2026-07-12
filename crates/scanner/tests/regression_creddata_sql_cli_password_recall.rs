@@ -226,9 +226,7 @@ fn cli_password_angle_template_suppressed() {
 #[test]
 fn sql_prose_identified_by_no_quotes_no_match() {
     assert!(
-        no_password_slot_match(
-            "The bug was identified by the security team during the Q3 audit."
-        ),
+        no_password_slot_match("The bug was identified by the security team during the Q3 audit."),
         "prose `identified by` with no quoted value must not match"
     );
 }

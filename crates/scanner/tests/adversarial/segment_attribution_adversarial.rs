@@ -5,7 +5,7 @@
 //! ordering violations.
 
 use keyhog_scanner::testing::segment_attribution::{
-    map_offsets_to_segments, GlobalMatch, Segment, SegmentAttributionError,
+    map_offsets_to_segments, AttributedMatch, GlobalMatch, Segment, SegmentAttributionError,
 };
 
 // ────────────────────────────────────────────────────────────
@@ -101,9 +101,15 @@ fn match_spanning_two_segments() {
         pattern_id: 0,
     }];
     let result = map_offsets_to_segments(&segments, &matches);
-    // The match spans two segments — implementation should handle this
-    // gracefully (attribute to first, second, or both).
-    assert!(result.is_ok());
+    // A match [45,55) that spills across the boundary is fully contained in
+    // NEITHER segment ([0,50) nor [50,100)), so the attributor drops it — it only
+    // rewrites matches that fit wholly inside a single segment. Assert that exact
+    // behaviour: Ok, but no attributed match.
+    let attributed = result.expect("valid segments must not error");
+    assert!(
+        attributed.is_empty(),
+        "a boundary-spanning match must be attributed to neither segment; got {attributed:?}"
+    );
 }
 
 // ────────────────────────────────────────────────────────────
@@ -151,8 +157,14 @@ fn zero_length_segment() {
         pattern_id: 0,
     }];
     let result = map_offsets_to_segments(&segments, &matches);
-    // Should not panic on zero-length segment.
-    assert!(result.is_ok());
+    // The zero-length segment 0 ([50,50)) is skipped; the match [50,55) attributes
+    // to the real segment 1 ([50,150)) as segment-local offsets [0,5). Assert the
+    // exact attribution, not merely "did not panic".
+    assert_eq!(
+        result.expect("valid segments must not error"),
+        vec![AttributedMatch::new(1, 0, 0, 5)],
+        "match must attribute to the non-empty segment (id 1), skipping the zero-length one"
+    );
 }
 
 // ────────────────────────────────────────────────────────────
@@ -178,17 +190,18 @@ fn segment_end_overflows_u32() {
     // start + len would overflow u32.
     let segments = [Segment::new(0, u32::MAX, 1)];
     let result = map_offsets_to_segments(&segments, &[]);
-    // Should detect overflow and return error.
-    match result {
-        Err(SegmentAttributionError::SegmentEndOverflow { .. }) => {}
-        Ok(_) => {
-            // Also acceptable — empty matches, no actual overflow triggered.
+    // `start + len` = u32::MAX + 1 overflows. Segment validation runs UPFRONT
+    // (`validate_segments` before any match is processed), so this ALWAYS errors
+    // regardless of the empty match slice — the previous "Ok also acceptable" arm
+    // was wrong. Assert the exact error, including its fields.
+    assert_eq!(
+        result.unwrap_err(),
+        SegmentAttributionError::SegmentEndOverflow {
+            segment_index: 0,
+            start: u32::MAX,
+            len: 1,
         }
-        Err(other) => {
-            // Any error is acceptable as long as no panic.
-            let _ = other;
-        }
-    }
+    );
 }
 
 // ────────────────────────────────────────────────────────────

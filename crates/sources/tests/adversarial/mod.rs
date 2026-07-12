@@ -103,6 +103,7 @@ mod web_redirect_target_loopback_blocked;
 mod web_redirect_target_metadata_ip_blocked;
 mod web_redirect_target_zero_address_blocked;
 mod web_scan_serializes_skip_gate;
+mod web_ssrf_forked_gap_ranges_blocked;
 mod zero_byte_gzip_no_panic;
 mod zero_byte_plain_file_handled;
 mod zip_bomb_4x_budget_aborts_before_late_entry;

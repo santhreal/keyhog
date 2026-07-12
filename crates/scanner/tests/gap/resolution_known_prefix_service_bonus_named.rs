@@ -56,3 +56,45 @@ fn generic_detector_does_not_receive_the_known_prefix_bonus() {
         "generic (non-service-anchored) detector must not receive the bonus; got delta {delta}"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin the bonus at one confidence; these SWEEP it. Every
+// weighted term besides the known-prefix bonus is a function of detector_id,
+// confidence, or credential LENGTH — all identical between the two 16-byte creds —
+// so their difference is EXACTLY the bonus for ANY confidence: 5.0 for a
+// service-anchored detector, 0 for a generic one. A third property pins that the
+// confidence term is positive (priority strictly increases with confidence).
+// Traced against resolution.rs:276. No proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// The known-prefix bonus is EXACTLY 5.0 for a service-anchored detector, at
+    /// any confidence (every other term cancels in the delta).
+    #[test]
+    fn known_prefix_bonus_is_exactly_five_for_any_confidence(conf in 0.0f64..=1.0) {
+        let with_prefix = match_priority_for_test("aws-access-key", KNOWN_PREFIX_CRED, Some(conf));
+        let without = match_priority_for_test("aws-access-key", NO_PREFIX_CRED, Some(conf));
+        prop_assert!(((with_prefix - without) - 5.0).abs() < EPSILON);
+    }
+
+    /// A generic (non-service-anchored) detector receives NO bonus at any
+    /// confidence — the delta is exactly zero.
+    #[test]
+    fn generic_detector_gets_no_bonus_for_any_confidence(conf in 0.0f64..=1.0) {
+        let with_prefix = match_priority_for_test("generic-password", KNOWN_PREFIX_CRED, Some(conf));
+        let without = match_priority_for_test("generic-password", NO_PREFIX_CRED, Some(conf));
+        prop_assert!((with_prefix - without).abs() < EPSILON);
+    }
+
+    /// Priority strictly increases with confidence (the confidence weight is
+    /// positive), holding detector and credential fixed.
+    #[test]
+    fn priority_strictly_increases_with_confidence(c in 0.0f64..0.98, d in 0.005f64..0.02) {
+        let lo = match_priority_for_test("aws-access-key", KNOWN_PREFIX_CRED, Some(c));
+        let hi = match_priority_for_test("aws-access-key", KNOWN_PREFIX_CRED, Some(c + d));
+        prop_assert!(hi > lo, "priority must increase with confidence: {} !> {}", hi, lo);
+    }
+}

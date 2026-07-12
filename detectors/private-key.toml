@@ -18,6 +18,9 @@ name = "Private Key (PEM)"
 service = "crypto"
 severity = "critical"
 keywords = ["BEGIN", "PRIVATE KEY"]
+# Private-key block: the match span is an enclosing PEM/OpenSSH key body, so
+# resolution suppresses lower-specificity findings nested inside it (per-detector,
+# DetectorSpec::private_key_block; was rules/detector-classification.toml list).
 private_key_block = true
 
 # Multi-line PEM body capture. `[\s\S]*?` (lazy) keeps the match bounded

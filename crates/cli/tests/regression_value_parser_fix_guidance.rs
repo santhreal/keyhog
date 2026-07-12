@@ -125,6 +125,9 @@ fn min_confidence_out_of_range_keeps_pinned_wording() {
         e.contains("min_confidence must be between 0.0 and 1.0"),
         "{e}"
     );
+    // Routed through the shared out_of_range() owner, so the range branch now
+    // carries a concrete in-range example like every sibling parser.
+    assert!(e.contains("example: 0.85"), "must give example: {e}");
 }
 
 #[test]
@@ -134,6 +137,7 @@ fn ml_threshold_out_of_range_keeps_pinned_wording() {
         e.contains("--ml-threshold must be between 0.0 and 1.0"),
         "{e}"
     );
+    assert!(e.contains("example: 0.5"), "must give example: {e}");
 }
 
 #[test]
@@ -155,6 +159,7 @@ fn verify_rate_above_cap_names_the_cap() {
 fn decode_depth_zero_states_range() {
     let e = API.parse_decode_depth("0").unwrap_err();
     assert!(e.contains("decode depth must be between 1 and"), "{e}");
+    assert!(e.contains("example: 3"), "must give example: {e}");
 }
 
 #[test]

@@ -17,7 +17,10 @@ from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 
-NUM_FEATURES = 42
+# Width of the CURRENT serve path (model_arch::INPUT_DIM). Legacy prefixes
+# (41 = pre-decode-structure, 42 = pre-service-context) remain requestable:
+# features are strictly appended, so a narrower model is a column prefix.
+NUM_FEATURES = 43
 
 Lists = tuple[Sequence[str], Sequence[str], Sequence[str], Sequence[str]]
 
@@ -90,9 +93,9 @@ def compute_feature_matrix(
     lists: Lists,
     num_features: int,
 ) -> np.ndarray:
-    if num_features not in (41, NUM_FEATURES):
+    if num_features not in (41, 42, NUM_FEATURES):
         raise ValueError(
-            f"unsupported feature width {num_features}; expected 41 or {NUM_FEATURES}"
+            f"unsupported feature width {num_features}; expected 41, 42 or {NUM_FEATURES}"
         )
     materialized = list(records)
     for idx, rec in enumerate(materialized):

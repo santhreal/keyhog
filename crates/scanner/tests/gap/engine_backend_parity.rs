@@ -27,28 +27,13 @@
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 use std::sync::OnceLock;
 
 // ----------------------------------------------------------------------------
 // Shared fixtures
 // ----------------------------------------------------------------------------
 
-/// Absolute path to the on-disk Tier-B detector TOML directory.
-///
-/// `CARGO_MANIFEST_DIR` for this test target is `crates/scanner`; the detector
-/// corpus lives at the repo root `detectors/`, i.e. two `pop()`s up then
-/// `detectors`. Mirrors `tests/support/paths::detector_dir`, inlined because
-/// this gap module is `mod`-included from `tests/gaps.rs` and does not pull the
-/// `support` tree into scope.
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
-
+use crate::support::paths::detector_dir;
 /// Build the full detector-corpus scanner exactly once for the whole module.
 ///
 /// Compilation walks ~894 detector TOMLs; sharing one `CompiledScanner` keeps

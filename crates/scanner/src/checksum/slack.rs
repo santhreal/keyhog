@@ -78,9 +78,9 @@ impl SlackTokenValidator {
 
 impl ChecksumValidator for SlackTokenValidator {
     fn validate(&self, credential: &str) -> ChecksumResult {
-        let verdict = if credential.starts_with("xoxb-") {
+        let verdict = if credential.starts_with(super::prefixes::SLACK_BOT_TOKEN) {
             Self::slack_bot_match(credential)
-        } else if credential.starts_with("xoxp-") {
+        } else if credential.starts_with(super::prefixes::SLACK_USER_TOKEN) {
             Self::slack_user_match(credential)
         } else {
             return ChecksumResult::NotApplicable;

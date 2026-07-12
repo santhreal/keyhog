@@ -90,18 +90,19 @@ fn clean_scan_cpu_backend_exits_zero() {
 }
 
 #[test]
-fn stable_evidence_label_is_not_a_duplicate_cli_command() {
+fn clean_scan_cpu_fallback_alias_also_exits_zero() {
+    // `cpu` and `cpu-fallback` are advertised aliases of the same
+    // `ScanBackend::CpuFallback`; the alias must resolve identically (no silent
+    // fall-through to autoroute), so a clean tree is still exactly 0.
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("clean.txt");
     std::fs::write(&path, "the quick brown fox jumps over the lazy dog\n").expect("write clean");
-    let (code, stdout, stderr) = scan_with("cpu-fallback", &path, &["--format", "json"]);
+    let (code, _stdout, stderr) = scan_with("cpu-fallback", &path, &["--format", "json"]);
     assert_eq!(
         code,
-        Some(EXIT_USER_ERROR),
-        "the evidence label must fail at the CLI boundary; stderr={stderr}"
+        Some(EXIT_SUCCESS),
+        "the cpu-fallback backend alias must behave identically to cpu (clean -> 0); stderr={stderr}"
     );
-    assert!(stdout.is_empty(), "rejected label must not run the scan");
-    assert!(stderr.contains("cpu-fallback") && stderr.contains("invalid value"));
 }
 
 // ---------------------------------------------------------------------------

@@ -73,16 +73,7 @@ fn extract_k8s_secret_maps(
             let decoded = match keyhog_core::decode_standard_base64(&encoded) {
                 Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
                 Err(error) => {
-                    // LAW10: at depth 0 `structured_gap_is_real` records the
-                    // structured-parse-failure counter, so a genuine decode-through
-                    // gap is counted and surfaced; at depth>0 the `data:` value was
-                    // already decoded once by the pipeline, so the re-decode failure
-                    // loses nothing and is correctly not counted. The raw value
-                    // still flows through the normal whole-chunk scan, so recall is
-                    // preserved either way (the bool is unused; we always continue).
-                    let _ = super::structured_gap_is_real(decode_derived);
-                    // LAW10: supplementary diagnostic only -- the gap was already
-                    // counted and surfaced above and recall is preserved by the
+                    // LAW10: supplementary diagnostic only — recall is preserved by the
                     // whole-chunk scan, so this debug line is not the sole surface.
                     tracing::debug!(
                         target: "keyhog::structured",
@@ -181,11 +172,14 @@ pub(crate) fn parse_docker_compose(text: &str, decode_derived: bool) -> Vec<Extr
 /// instead of being mistaken for the post-parse compose traversal cap below.
 const SERDE_YAML_PARSE_RECURSION_LIMIT: usize = 128;
 
-/// Report a YAML parse failure on a structured-format surface.
+/// Report a YAML parse failure on a structured-format surface. Pure logging: the
+/// file-level telemetry counter is the CALLER's decision (via
+/// [`super::record_structured_gap`]) so a multi-document file that drops several
+/// documents records the FILE once, not once per dropped document.
 ///
 /// At decode depth 0 (`decode_derived == false`) the parsed `text` IS the
 /// original file, so a parse failure genuinely loses the decode-through surface:
-/// count it (it is a real structured-coverage gap, Law 10) and warn loudly.
+/// warn loudly (the caller records it, Law 10).
 ///
 /// At depth > 0 (`decode_derived == true`) the `text` is a buffer the
 /// decode-through pipeline synthesised by splicing an already-decoded payload
@@ -194,54 +188,60 @@ const SERDE_YAML_PARSE_RECURSION_LIMIT: usize = 128;
 /// base64url header decodes to inline JSON `{"alg":...}.<sig>` is not — yet the
 /// secret it carried was already surfaced and scanned when the pipeline produced
 /// this buffer. Announcing "decode-through disabled / lost surface" here is a
-/// FALSE alarm and inflates the structured-parse-failure telemetry, so the
-/// failure is recorded only as debug detail and never counted as a lost surface.
+/// FALSE alarm, so the failure is logged only as debug detail.
+///
+/// `documents_parsed` is how many `---`-separated documents were decoded before
+/// the failing one stopped the stream. libyaml cannot resync a multi-document
+/// YAML past a syntax error (every subsequent `parser.next()` re-returns the same
+/// error), so any documents AFTER the failure are truncated too — surfacing this
+/// count makes that loss visible instead of silently dropping the tail.
 fn report_yaml_parse_failure(
     error: &serde_yaml::Error,
     surface: &'static str,
     lost_decode_surface: &'static str,
     decode_derived: bool,
+    documents_parsed: usize,
 ) {
-    if !super::structured_gap_is_real(decode_derived) {
+    if !super::gap_is_real(decode_derived) {
         tracing::debug!(
             target: "keyhog::structured",
             %error,
             surface,
+            documents_parsed,
             "decode-derived buffer is not valid YAML; nothing lost (payload already \
              decoded and scanned by the decode-through pipeline)"
         );
         return;
     }
     // Law 10: a structured file that won't parse loses its decode-through
-    // surface (already counted above). Warn loudly per surface so the operator
-    // sees exactly which structured format dropped coverage; serde_yaml also
-    // rejects deeply nested YAML before Value construction.
-    match surface {
-        "k8s-secret" => tracing::warn!(
-            target: "keyhog::structured",
-            %error,
-            surface,
-            lost_decode_surface,
-            serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
-            "k8s secret YAML parse failed; decode-through disabled"
-        ),
-        "docker-compose" => tracing::warn!(
-            target: "keyhog::structured",
-            %error,
-            surface,
-            lost_decode_surface,
-            serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
-            "docker-compose YAML parse failed; decode-through disabled"
-        ),
-        _ => tracing::warn!(
-            target: "keyhog::structured",
-            %error,
-            surface,
-            lost_decode_surface,
-            serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
-            "structured YAML parse failed; decode-through disabled"
-        ),
-    }
+    // surface (the caller records it). Warn loudly with a per-surface message so
+    // the operator sees exactly which structured format dropped coverage, and how
+    // many documents decoded before the stream was truncated at the parse error.
+    // serde_yaml also rejects deeply nested YAML before Value construction,
+    // hence the recursion-limit field.
+    let message = match surface {
+        "k8s-secret" => {
+            "k8s secret YAML parse failed; decode-through disabled for the failing \
+             document and any documents after it in the stream"
+        }
+        "docker-compose" => {
+            "docker-compose YAML parse failed; decode-through disabled for the \
+             failing document and any documents after it in the stream"
+        }
+        _ => {
+            "structured YAML parse failed; decode-through disabled for the failing document and \
+             any documents after it in the stream"
+        }
+    };
+    tracing::warn!(
+        target: "keyhog::structured",
+        %error,
+        surface,
+        lost_decode_surface,
+        documents_parsed,
+        serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
+        "{message}"
+    );
 }
 
 fn parse_yaml_value(
@@ -253,7 +253,10 @@ fn parse_yaml_value(
     match serde_yaml::from_str(text) {
         Ok(value) => Some(value),
         Err(error) => {
-            report_yaml_parse_failure(&error, surface, lost_decode_surface, decode_derived);
+            if super::gap_is_real(decode_derived) {
+                super::record_structured_gap();
+            }
+            report_yaml_parse_failure(&error, surface, lost_decode_surface, decode_derived, 0);
             None
         }
     }
@@ -266,16 +269,35 @@ fn parse_yaml_documents(
     decode_derived: bool,
 ) -> Option<Vec<serde_yaml::Value>> {
     let mut values = Vec::new();
-    let mut had_error = false;
+    let mut parse_error = None;
+    // A parse error truncates the stream: libyaml cannot resync a multi-document
+    // YAML past a syntax error (every subsequent `parser.next()` re-returns the
+    // same error — continuing here would loop forever), so we keep the documents
+    // decoded BEFORE the failure and stop. The failing document and any after it
+    // are surfaced by `documents_parsed` below rather than dropped silently.
     for document in serde_yaml::Deserializer::from_str(text) {
         match serde_yaml::Value::deserialize(document) {
             Ok(value) => values.push(value),
             Err(error) => {
-                had_error = true;
-                report_yaml_parse_failure(&error, surface, lost_decode_surface, decode_derived);
+                parse_error = Some(error);
                 break;
             }
         }
+    }
+    let had_error = parse_error.is_some();
+    if let Some(error) = parse_error {
+        // Record the FILE once (not once per document) and surface how many
+        // documents decoded before the stream was truncated at the failure.
+        if super::gap_is_real(decode_derived) {
+            super::record_structured_gap();
+        }
+        report_yaml_parse_failure(
+            &error,
+            surface,
+            lost_decode_surface,
+            decode_derived,
+            values.len(),
+        );
     }
     if values.is_empty() && had_error {
         None

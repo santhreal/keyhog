@@ -49,12 +49,15 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
     decoder_name: &str,
 ) {
     // Fast ASCII check: control chars are always in 0x00-0x1F range.
-    // Byte-level iteration avoids UTF-8 decode overhead.
+    // Byte-level iteration avoids UTF-8 decode overhead. Backspace (0x08) and
+    // form-feed (0x0c) are ALLOWED: the json/unicode-escape decoders legitimately
+    // emit them from `\b`/`\f`, so rejecting them made those decode paths dead
+    // (a secret wrapped as `\b`/`\f` never reached the scanner).
     let bytes = text.as_bytes();
     if text.is_empty()
         || bytes
             .iter()
-            .any(|&b| b < 0x20 && b != b'\n' && b != b'\r' && b != b'\t')
+            .any(|&b| b < 0x20 && !matches!(b, b'\n' | b'\r' | b'\t' | 0x08 | 0x0c))
     {
         return;
     }
@@ -109,7 +112,7 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
         metadata: ChunkMetadata {
             base_offset,
             base_line,
-            source_type: format!("{}/{}", chunk.metadata.source_type, decoder_name),
+            source_type: format!("{}/{}", chunk.metadata.source_type, decoder_name).into(),
             path: chunk.metadata.path.clone(),
             commit: chunk.metadata.commit.clone(),
             author: chunk.metadata.author.clone(),
@@ -226,25 +229,13 @@ where
 pub(in crate::decode) fn decode_candidate_spans_exact<F>(
     chunk: &Chunk,
     candidates: Vec<ExtractedValue>,
-    mut decode: F,
+    decode: F,
     decoder_name: &str,
 ) -> Vec<Chunk>
 where
     F: FnMut(&str) -> Result<String, ()>,
 {
-    let mut decoded_chunks = Vec::new();
-    for candidate in candidates {
-        if let Ok(text) = decode(&candidate.value) {
-            // LAW10: failed trial decode is recall-preserving — it keeps the original candidate-bearing chunk in the scan path unchanged.
-            push_decoded_text_chunk_spliced_at(
-                &mut decoded_chunks,
-                chunk,
-                candidate.span(),
-                &candidate.value,
-                text,
-                decoder_name,
-            );
-        }
-    }
-    decoded_chunks
+    // Owned-candidate variant: the loop body is identical to the borrowed one, so
+    // borrow into the single owner rather than hand-roll a second copy.
+    decode_candidate_refs_exact(chunk, candidates.iter(), decode, decoder_name)
 }

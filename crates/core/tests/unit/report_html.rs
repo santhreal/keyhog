@@ -179,7 +179,7 @@ fn html_report_summary_surfaces_not_checked_findings() {
         "summary metrics must include an explicit not-checked count"
     );
     assert!(
-        out.contains("const notChecked = findings.filter(f => verificationIsUnattempted(f.verification)).length;"),
+        out.contains("const notChecked = allFindings.filter(f => verificationIsUnattempted(f.verification)).length;"),
         "summary not-checked count must reuse the canonical verification predicate"
     );
     assert!(

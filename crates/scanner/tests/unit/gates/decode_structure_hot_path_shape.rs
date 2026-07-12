@@ -1,14 +1,10 @@
 //! Gate decode-structure hot path: one cached decode pass feeds all predicates.
 
+use super::support::{read, scanner_src, uncommented_code};
+
 #[test]
 fn decode_structure_uses_one_fact_cache() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/decode_structure.rs");
-    let src = std::fs::read_to_string(path).expect("decode_structure source readable");
-    let prod = src
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let prod = uncommented_code(&read(&scanner_src().join("decode_structure.rs")));
 
     assert!(
         prod.contains("struct DecodeEvidence")
@@ -77,13 +73,7 @@ fn decode_evidence_feeds_ml_confidence_and_fallback_paths() {
 
 #[test]
 fn decode_structure_reuses_shared_hex_and_protobuf_tables() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/decode_structure.rs");
-    let src = std::fs::read_to_string(path).expect("decode_structure source readable");
-    let prod = src
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let prod = uncommented_code(&read(&scanner_src().join("decode_structure.rs")));
 
     assert!(
         prod.matches("crate::decode::hex_decode(s).ok()").count() == 2,

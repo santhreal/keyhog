@@ -52,3 +52,62 @@ fn table_length_matches_input_and_disjoint_prefixes_have_no_superstrings() {
     assert_eq!(table, vec![Vec::<usize>::new(), Vec::<usize>::new()]);
     assert_eq!(table.len(), 2);
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors above pin the move-on-last output on hand-built chains; these
+// SWEEP the propagation table against a naive O(N²) superstring oracle over
+// generated prefix sets. This table is recall-load-bearing: it drives "a broad
+// prefix hit cheaply activates its more-specific superstring detectors" in the
+// phase-1 AC prefilter, so a MISSING superstring (incompleteness) silently fails
+// to activate a detector = lost recall, and a SPURIOUS one wastes work. Sibling
+// order is HashMap-nondeterministic, so every comparison is order-independent
+// (both sides sorted). Driven only through the public
+// `build_propagation_table_for_test` facade; no proptest covered this before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4_000))]
+
+    /// SOUNDNESS + COMPLETENESS: `table[i]` must equal EXACTLY the set of indices
+    /// `j` whose prefix is a strict superstring of `prefixes[i]` — i.e.
+    /// `prefixes[j].starts_with(prefixes[i]) && prefixes[j].len() > prefixes[i].len()`.
+    /// The small `[a-c]` alphabet with lengths 0..5 (empty strings included)
+    /// densely generates shared prefixes, duplicates, and chains, so the trie's
+    /// descendant-collection is checked against the ground-truth relation on rich
+    /// overlap. Also pins the shape (one row per input) and irreflexivity
+    /// (`i ∉ table[i]` — a prefix is never its own strict superstring).
+    #[test]
+    fn propagation_matches_naive_strict_superstring_relation(
+        prefixes in prop::collection::vec("[a-c]{0,5}", 0..12),
+    ) {
+        let table = build(&prefixes);
+        prop_assert_eq!(table.len(), prefixes.len());
+        for (i, row) in table.iter().enumerate() {
+            let mut expected: Vec<usize> = (0..prefixes.len())
+                .filter(|&j| {
+                    prefixes[j].starts_with(prefixes[i].as_str())
+                        && prefixes[j].len() > prefixes[i].len()
+                })
+                .collect();
+            let mut got = row.clone();
+            expected.sort_unstable();
+            got.sort_unstable();
+            prop_assert_eq!(got, expected, "row {} mismatch for prefix {:?}", i, prefixes[i]);
+            prop_assert!(!row.contains(&i), "row {} is self-referential", i);
+        }
+    }
+
+    /// `build_propagation_table_for_test` must never panic on arbitrary prefixes
+    /// — including empty strings, multi-byte Unicode, and embedded newlines
+    /// (`(?s)`) — since the trie walks `.chars()` and indexes the output by input
+    /// position. The table length must still equal the input length regardless of
+    /// content.
+    #[test]
+    fn build_propagation_table_never_panics_on_arbitrary_unicode(
+        prefixes in prop::collection::vec("(?s).{0,6}", 0..10),
+    ) {
+        let table = build(&prefixes);
+        prop_assert_eq!(table.len(), prefixes.len());
+    }
+}

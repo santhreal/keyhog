@@ -8,7 +8,10 @@ id = "vonage-api-key"
 name = "Vonage/Nexmo API Key"
 service = "vonage"
 severity = "critical"
-keywords = ["vonage", "VONAGE", "nexmo", "NEXMO", "api_key", "API_KEY"]
+# "api_key", "API_KEY" removed: over-broad generic prefilter the regex does NOT need — every
+# pattern self-anchors on the service name (kept), which is present in any real
+# match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.
+keywords = ["vonage", "VONAGE", "nexmo", "NEXMO"]
 
 [[detector.patterns]]
 regex = "(?:vonage|VONAGE|nexmo|NEXMO)[_\\-\\s]*(?:api[_\\-\\s]*key|API[_\\-\\s]*KEY)[=:\\s\\\"']+([a-f0-9]{8})"

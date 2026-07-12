@@ -326,7 +326,6 @@ impl CompiledScanner {
                                 Err(error) => {
                                     let reason =
                                         format!("phase-2 GPU admission dispatch failed: {error}");
-                                    self.record_gpu_degrade(reason.clone());
                                     super::gpu_forced::deny_silent_gpu_degrade_with_reason(
                                         self,
                                         ScanBackend::Gpu,
@@ -353,7 +352,6 @@ impl CompiledScanner {
                             Err(error) => {
                                 let reason =
                                     format!("phase-2 GPU admission dispatch failed: {error}");
-                                self.record_gpu_degrade(reason.clone());
                                 super::gpu_forced::deny_silent_gpu_degrade_with_reason(
                                     self,
                                     ScanBackend::Gpu,
@@ -724,6 +722,7 @@ mod tests {
             admitted: vec![true, false, true],
             complete: true,
             matches_seen: 7,
+            marked: Vec::new(),
         };
 
         let full = expand_phase2_gpu_admission(subset, &[1, 3, 4], 5);
@@ -739,6 +738,7 @@ mod tests {
             admitted: vec![true],
             complete: true,
             matches_seen: 1,
+            marked: Vec::new(),
         };
 
         let full = expand_phase2_gpu_admission(subset, &[0, 2], 3);

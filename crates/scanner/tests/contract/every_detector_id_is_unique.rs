@@ -1,15 +1,7 @@
 //! Contract: detector ids are unique across the loaded catalog.
 
+use crate::support::paths::detector_dir;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 #[test]
 fn every_detector_id_is_unique() {

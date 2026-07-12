@@ -53,7 +53,7 @@ fn chunk_with_path(path: Option<&str>) -> Chunk {
         data: "AKIAIOSFODNN7EXAMPLE".into(),
         metadata: ChunkMetadata {
             source_type: "filesystem".into(),
-            path: path.map(str::to_string),
+            path: path.map(Into::into),
             commit: Some("deadbeefcafebabe".into()),
             author: Some("cloned-history-author".into()),
             date: Some("2026-07-01T00:00:00Z".into()),
@@ -92,7 +92,8 @@ fn github_blob_path_classifies_to_org_repo_relative_and_strips_history() {
         "blob path must classify to <org>/<repo>/<relative>"
     );
     assert_eq!(
-        out.metadata.source_type, "github-org",
+        out.metadata.source_type.as_ref(),
+        "github-org",
         "the rewritten chunk must be tagged as the github-org source"
     );
     assert_eq!(

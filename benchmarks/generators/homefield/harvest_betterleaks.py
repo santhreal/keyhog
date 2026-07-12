@@ -33,6 +33,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import sys
 
 BETTERLEAKS_MODULE = "github.com/betterleaks/betterleaks@v1.1.1"
@@ -103,6 +104,31 @@ def _unescape_go(s: str) -> str:
         )
 
 
+def _strip_go_strings(line: str) -> str:
+    """Blank the contents of Go double-quoted and raw (backtick) string literals
+    so brace counting isn't skewed by braces INSIDE a literal (a secret or a
+    Go template like `{...}`). Quotes/backticks themselves are dropped too."""
+    out: list[str] = []
+    i = 0
+    n = len(line)
+    while i < n:
+        ch = line[i]
+        if ch == '"':
+            i += 1
+            while i < n and line[i] != '"':
+                i += 2 if line[i] == "\\" else 1
+            i += 1
+        elif ch == "`":
+            i += 1
+            while i < n and line[i] != "`":
+                i += 1
+            i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 def _extract_block(lines: list[str], start: int) -> tuple[list[str], int]:
     """From the line index of a `tps :=`/`fps :=` opening, collect static
     string-literal elements until the closing `}`. Returns (values, end_idx)."""
@@ -112,8 +138,9 @@ def _extract_block(lines: list[str], start: int) -> tuple[list[str], int]:
     opened = False
     while i < len(lines):
         raw = lines[i]
-        depth += raw.count("{") - raw.count("}")
-        if "{" in raw:
+        code = _strip_go_strings(raw)
+        depth += code.count("{") - code.count("}")
+        if "{" in code:
             opened = True
         body = raw.strip()
         if body.startswith("//"):
@@ -182,6 +209,10 @@ def harvest(rules_dir: pathlib.Path) -> list[dict]:
 
 def write_corpus(records: list[dict], home: pathlib.Path = _HOME) -> pathlib.Path:
     out_dir = home / "corpus"
+    # Prune any prior fixture set so a re-harvest with FEWER records leaves no
+    # orphan file (a scan hit on an unrecorded file scores as a false positive).
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = home / "manifest.jsonl"
     with open(manifest, "w") as mf:

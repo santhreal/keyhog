@@ -48,15 +48,22 @@ struct ServiceEnvFile {
 /// matching takes the first hit, the data file must list more-specific needles
 /// before broader substrings they could otherwise shadow.
 ///
-/// A corrupt baseline is a build-time-embedded constant, so a parse failure
-/// there is a hard programming error and we surface it LOUDLY (unconditional
-/// `eprintln!`) and fall back to the screaming-snake derivation rather than
-/// silently producing wrong fix advice.
+/// The map is `include_str!`d at compile time, so an invalid document is a BUILD
+/// bug, never a runtime/user condition — identical to `REMEDIATION_MAP`. Failing
+/// loud (panic in the initializer) is the fail-closed response; degrading to the
+/// screaming-snake derivation would silently ship wrong fix advice (Law 10).
+#[allow(clippy::panic)]
 static SERVICE_ENV_MAP: LazyLock<Vec<ServiceEnvEntry>> = LazyLock::new(|| {
-    parse_service_env_file(
+    match parse_service_env_file(
         include_str!("../data/service-env-vars.toml"),
         "<embedded data/service-env-vars.toml>",
-    )
+    ) {
+        Ok(entries) => entries,
+        Err(error) => panic!(
+            "keyhog: service-env map '<embedded data/service-env-vars.toml>' is invalid: {error}. \
+             Fix: correct crates/core/data/service-env-vars.toml and rebuild"
+        ),
+    }
 });
 
 /// Provider-specific remediation advice emitted by text, JSON, SARIF, and HTML
@@ -167,21 +174,68 @@ static REMEDIATION_MAP: LazyLock<RemediationFile> =
         }
     });
 
-/// Parse one `service-env-vars.toml` document into its entries. On a parse
-/// error we surface the failure LOUDLY (Law 10: no silent fallback) and return
-/// an empty list so the caller degrades to the deterministic screaming-snake
-/// derivation rather than silently dropping curated advice.
-fn parse_service_env_file(raw: &str, origin: &str) -> Vec<ServiceEnvEntry> {
-    match toml::from_str::<ServiceEnvFile>(raw) {
-        Ok(parsed) => parsed.service,
-        Err(e) => {
-            eprintln!(
-                "keyhog: service-env map '{origin}' failed to parse: {e}; \
-                 falling back to <SERVICE>_KEY derivation for all services"
-            );
-            Vec::new()
+/// The per-severity remediation fallback, resolved once into a rank-indexed total
+/// array. `REMEDIATION_MAP`'s initializer runs `validate_severity_remediation`,
+/// which fails the (compile-time-embedded) load unless every `Severity::ORDERED`
+/// carries a `[[severity]]` entry — so every slot is populated. Resolving it here
+/// lets `remediation_for` do an infallible `[rank]` index instead of a fallible
+/// `find(...).expect(...)` on a value the load-time invariant already guarantees.
+static SEVERITY_FALLBACKS: LazyLock<[RemediationFields; Severity::ORDERED.len()]> =
+    LazyLock::new(|| {
+        let file = &*REMEDIATION_MAP;
+        std::array::from_fn(|rank| {
+            let severity = Severity::ORDERED[rank];
+            match file
+                .severity
+                .iter()
+                .find(|entry| entry.severity == severity.as_str())
+            {
+                Some(entry) => entry.fields.clone(),
+                // Unreachable: REMEDIATION_MAP's initializer enforces the
+                // completeness invariant (it panics on a missing severity). A loud
+                // sentinel — never a silent/empty value — keeps a hypothetical
+                // invariant break visible rather than fail-silent (Law 10).
+                None => RemediationFields {
+                    action: format!(
+                        "(internal) remediation map is missing a {} fallback — rebuild keyhog",
+                        severity.as_str()
+                    ),
+                    revoke_url: None,
+                    docs_url: None,
+                    revoke_command: None,
+                },
+            }
+        })
+    });
+
+/// Parse one `service-env-vars.toml` document into its entries. A parse error is
+/// returned (fail-closed) so the caller can refuse rather than silently ship
+/// wrong fix advice (Law 10).
+fn parse_service_env_file(raw: &str, origin: &str) -> Result<Vec<ServiceEnvEntry>, String> {
+    let entries = toml::from_str::<ServiceEnvFile>(raw)
+        .map(|parsed| parsed.service)
+        .map_err(|error| format!("failed to parse {origin}: {error}"))?;
+    // Fail closed on malformed Tier-B rows: an empty needle would match EVERY
+    // service (shadowing every later entry) and an empty env would emit the
+    // nonsense replacement `${}`; a duplicate (needle, prefix) is a dead row
+    // the first-hit lookup can never reach. Reject rather than silently ship
+    // wrong fix advice (Law 10).
+    let mut seen = BTreeSet::new();
+    for (index, entry) in entries.iter().enumerate() {
+        if entry.needle.trim().is_empty() {
+            return Err(format!("{origin} [[service]] row {index} has empty match"));
+        }
+        if entry.env.trim().is_empty() {
+            return Err(format!("{origin} [[service]] row {index} has empty env"));
+        }
+        if !seen.insert((entry.needle.as_str(), entry.prefix)) {
+            return Err(format!(
+                "{origin} [[service]] contains duplicate match {:?} with prefix={}",
+                entry.needle, entry.prefix
+            ));
         }
     }
+    Ok(entries)
 }
 
 pub(crate) fn validate_remediation_file_for_test(raw: &str) -> Result<(), String> {
@@ -445,21 +499,11 @@ pub(crate) fn remediation_for(detector_id: &str, service: &str, severity: Severi
         return Remediation::from(&entry.fields);
     }
 
-    if let Some(entry) = data
-        .severity
-        .iter()
-        .find(|entry| entry.severity == severity.as_str())
-    {
-        return Remediation::from(&entry.fields);
-    }
-
-    Remediation {
-        action: "Remove the exposed credential from the codebase and rotate it at the provider."
-            .to_string(),
-        revoke_url: None,
-        docs_url: None,
-        revoke_command: None,
-    }
+    // The severity table is the single owner of the no-detector/no-service-match
+    // fallback. `SEVERITY_FALLBACKS` resolves it into a rank-indexed total array at
+    // load, so this is an infallible index (`rank()` is `0..ORDERED.len()`) rather
+    // than a fallible `find(...).expect(...)` on the load-guaranteed invariant.
+    Remediation::from(&SEVERITY_FALLBACKS[severity.rank()])
 }
 
 fn service_entry_matches(service: &str, needle: &str, prefix: bool) -> bool {

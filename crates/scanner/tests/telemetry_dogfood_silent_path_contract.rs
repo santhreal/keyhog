@@ -16,7 +16,7 @@ fn example_suppression_silent_path_returns_before_dogfood_work() {
     let body = slice_between(
         &src,
         "fn record_example_suppression_in(",
-        "/// Insert `path\\0credential_hash`",
+        "/// Insert `credential_hash`",
     );
 
     let counter = body

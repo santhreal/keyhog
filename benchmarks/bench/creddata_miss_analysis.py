@@ -36,9 +36,7 @@ from __future__ import annotations
 import argparse
 import collections
 import csv
-import glob
 import json
-import math
 import os
 import pathlib
 import re
@@ -46,6 +44,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+from .corpora.creddata import _slice_value_from_lines
+from .textstats import shannon_entropy as shannon
 
 _BENCH_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _DEFAULT_CREDDATA = _BENCH_ROOT / "corpora" / "creddata" / "CredData"
@@ -64,14 +65,6 @@ KEYKW = re.compile(
     r"signing[_-]?key)"
     r"[\"'` ]*[=:]"
 )
-
-
-def shannon(s: str) -> float:
-    if not s:
-        return 0.0
-    counts = collections.Counter(s)
-    n = len(s)
-    return -sum(c / n * math.log2(c / n) for c in counts.values())
 
 
 def _shape(val: str) -> str:
@@ -124,13 +117,14 @@ def cmd_shapes(root: pathlib.Path) -> int:
         label = "POS" if gt == "T" else "NEG"
         cat = (row.get("Category") or "").strip()
         ls = int(row.get("LineStart") or 0)
+        le = int(row.get("LineEnd") or 0)
         vs = int(row.get("ValueStart") or -1)
         ve = int(row.get("ValueEnd") or -1)
         lines = cache.lines((row.get("FilePath") or "").strip())
         if not lines or ls < 1 or ls > len(lines) or vs < 0:
             continue
         line = lines[ls - 1]
-        val = line[vs:(ve if ve >= 0 else None)]
+        val = _slice_value_from_lines(lines, ls, le, vs, ve)
         if not val:
             continue
         shape = _shape(val)
@@ -179,13 +173,14 @@ def cmd_keywords(root: pathlib.Path) -> int:
         gt = (row.get("GroundTruth") or "").strip().upper()
         label = "POS" if gt == "T" else "NEG"
         ls = int(row.get("LineStart") or 0)
+        le = int(row.get("LineEnd") or 0)
         vs = int(row.get("ValueStart") or -1)
         ve = int(row.get("ValueEnd") or -1)
         lines = cache.lines((row.get("FilePath") or "").strip())
         if not lines or ls < 1 or ls > len(lines) or vs < 0:
             continue
         line = lines[ls - 1]
-        val = line[vs:(ve if ve >= 0 else None)]
+        val = _slice_value_from_lines(lines, ls, le, vs, ve)
         if not val or not HEX.match(val) or len(val) not in (32, 48):
             continue
         m = KW_TOKEN.search(line[:vs])
@@ -319,12 +314,13 @@ def cmd_simulate(root: pathlib.Path, candidate: str) -> int:
         files.add(rel)
         gt = (row.get("GroundTruth") or "").strip().upper()
         ls = int(row.get("LineStart") or 0)
+        le = int(row.get("LineEnd") or 0)
         vs = int(row.get("ValueStart") or -1)
         ve = int(row.get("ValueEnd") or -1)
         lines = cache.lines(rel)
         if not lines or ls < 1 or ls > len(lines) or vs < 0:
             continue
-        val = lines[ls - 1][vs:(ve if ve >= 0 else None)]
+        val = _slice_value_from_lines(lines, ls, le, vs, ve)
         if not val:
             continue
         if gt == "T":
@@ -391,6 +387,7 @@ def cmd_decompose(root: pathlib.Path, scanner_bin: str, backend: str = "simd") -
         rel = (row.get("FilePath") or "").strip()
         try:
             ls = int(row.get("LineStart") or 0)
+            le = int(row.get("LineEnd") or 0)
             vs = int(row.get("ValueStart") or -1)
             ve = int(row.get("ValueEnd") or -1)
         except ValueError:
@@ -398,7 +395,7 @@ def cmd_decompose(root: pathlib.Path, scanner_bin: str, backend: str = "simd") -
         lines = cache.lines(rel)
         if not lines or ls < 1 or ls > len(lines) or vs < 0:
             continue
-        val = lines[ls - 1][vs:(ve if ve >= 0 else None)]
+        val = _slice_value_from_lines(lines, ls, le, vs, ve)
         if val:
             pos.append((rel, val))
     rels = sorted({r for r, _ in pos})
@@ -416,11 +413,15 @@ def cmd_decompose(root: pathlib.Path, scanner_bin: str, backend: str = "simd") -
         # autoroute calibration (no persisted decision for this workload bucket),
         # which would abort the diagnostic. Findings are backend-invariant, so
         # `simd` gives the same recall map without priming the autoroute cache.
-        proc = subprocess.run(
-            [scanner_bin, "scan", "--path", str(tmp), "--backend", backend,
-             "--dogfood", "--show-secrets", "--format", "jsonl"],
-            capture_output=True, text=True,
-        )
+        try:
+            proc = subprocess.run(
+                [scanner_bin, "scan", "--path", str(tmp), "--backend", backend,
+                 "--dogfood", "--show-secrets", "--format", "jsonl"],
+                capture_output=True, text=True, timeout=3600,
+            )
+        except subprocess.TimeoutExpired:
+            print("scan timed out after 3600s", file=sys.stderr)
+            return 1
         if proc.returncode not in (0, 1):
             print(f"scan failed rc={proc.returncode}: {proc.stderr[:500]}",
                   file=sys.stderr)

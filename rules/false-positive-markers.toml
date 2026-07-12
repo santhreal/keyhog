@@ -1,0 +1,10 @@
+cors_headers = [
+  "access-control-allow-origin",
+  "access-control-allow-methods",
+  "access-control-allow-headers",
+  "access-control-allow-credentials",
+  "access-control-expose-headers",
+  "access-control-max-age",
+  "access-control-request-method",
+  "access-control-request-headers",
+]

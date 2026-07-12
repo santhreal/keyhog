@@ -16,7 +16,7 @@ mod support;
 
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{skip_counts, AzureBlobSource, SourceLimits};
+use keyhog_sources::{skip_counts, SourceLimits};
 use std::sync::{Mutex, MutexGuard};
 use support::split_chunk_results;
 
@@ -24,13 +24,14 @@ static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 
 fn counter_guard() -> MutexGuard<'static, ()> {
     // httpmock points the cloud endpoint at 127.0.0.1, which the default cloud
-    // SSRF endpoint screen refuses. Opt into the loud, default-off allowance for
-    // this (separate) test binary while holding COUNTER_LOCK so the env write and
-    // the global skip counters can never race a parallel test.
+    // SSRF endpoint screen refuses; the sources are built via
+    // `TestApi.azure_blob_source`, which opts into the loopback allowance through
+    // Tier-A config (`HttpClientConfig.allow_private_endpoint`), NOT a process-
+    // global env var. Hold COUNTER_LOCK so the global skip counters can never
+    // race a parallel test.
     let guard = COUNTER_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", "1");
     guard
 }
 
@@ -85,7 +86,8 @@ fn single_binary_extension_blob_drop_bumps_binary_exactly_once() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     let (ok, errors) = split_chunk_results(&rows);
@@ -135,7 +137,8 @@ fn two_binary_extension_blobs_bump_binary_twice() {
     );
     let _list = list_mock(&server, listing(&body));
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     let (ok, errors) = split_chunk_results(&rows);
@@ -167,7 +170,8 @@ fn binary_listing_content_type_image_jpeg_drops_without_get() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     let (ok, errors) = split_chunk_results(&rows);
@@ -210,7 +214,8 @@ fn over_cap_listed_size_drops_without_get_bumps_over_max_size() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     let (ok, errors) = split_chunk_results(&rows);
@@ -255,7 +260,8 @@ fn empty_blob_is_dropped_without_scan_or_skip_count() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     assert_eq!(
@@ -294,7 +300,8 @@ fn non_success_listing_counts_unreadable_once() {
         then.status(503).body("unavailable");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     assert_eq!(rows.len(), 1, "a failed listing surfaces exactly one row");
@@ -337,7 +344,8 @@ fn malformed_listing_counts_unreadable_once() {
     // Truncated XML: passes the DOCTYPE/entity screen but fails deserialization.
     let _list = list_mock(&server, "<EnumerationResults><Blobs>".to_string());
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     assert_eq!(
@@ -385,7 +393,8 @@ fn non_success_object_get_counts_unreadable_once() {
         then.status(500).body("ServerError");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     assert_eq!(
@@ -479,7 +488,8 @@ fn octet_stream_binary_body_counts_binary_once() {
             .body(vec![0x00u8, 0x01, 0x02, 0x00, 0xFF, 0xFE, 0x00, 0x80]);
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     let (ok, errors) = split_chunk_results(&rows);
@@ -542,7 +552,8 @@ fn mixed_listing_scanned_and_dropped_blob_total_is_exact() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     let (ok, errors) = split_chunk_results(&rows);
@@ -611,7 +622,8 @@ fn scanned_blob_carries_exact_body_path_and_size() {
             .body("service endpoint value\n");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect::<Result<Vec<_>, _>>()
         .expect("clean scan must not error");
@@ -632,8 +644,7 @@ fn scanned_blob_carries_exact_body_path_and_size() {
         "size_bytes carries the listed length"
     );
     assert_eq!(
-        &*rows[0].metadata.source_type,
-        "azure_blob",
+        &*rows[0].metadata.source_type, "azure_blob",
         "source_type is azure_blob"
     );
 
@@ -669,7 +680,8 @@ fn clean_multi_blob_scan_does_not_touch_skip_counters() {
         });
     }
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect::<Result<Vec<_>, _>>()
         .expect("clean multi-blob scan must not error");

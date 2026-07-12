@@ -1,4 +1,4 @@
-use keyhog_scanner::testing::entropy_fast::{has_high_entropy_fast, shannon_entropy_scalar};
+use keyhog_scanner::testing::entropy_fast::shannon_entropy_scalar;
 
 #[test]
 fn test_entropy_known_values() {
@@ -24,13 +24,4 @@ fn test_entropy_known_values() {
         "Binary entropy should be ~1.0, got {}",
         ent
     );
-}
-
-#[test]
-fn test_fast_check() {
-    let high_entropy: Vec<u8> = (0..100).map(|i| (i * 7) as u8).collect();
-    assert!(has_high_entropy_fast(&high_entropy, 4.0));
-
-    let low_entropy = vec![0x41u8; 100];
-    assert!(!has_high_entropy_fast(&low_entropy, 4.0));
 }

@@ -191,31 +191,40 @@ fn decoded_mount_target_if_included(
 /// dead-code warning on Windows / macOS.
 #[cfg(target_os = "linux")]
 fn decode_octal_escapes(s: &str) -> Result<String> {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
+    // Decode into a byte buffer, not a `String`: a `\NNN` escape names a single
+    // raw path BYTE, and `byte as char` would map a byte >= 0x80 to its Latin-1
+    // scalar (U+0080..U+00FF), corrupting any multi-byte path. `/proc/mounts` is
+    // read via `read_to_string`, so the input is already valid UTF-8 and the
+    // kernel only escapes ASCII controls (space/tab/newline/backslash); the final
+    // `from_utf8` therefore succeeds, but if a high-byte escape ever produced
+    // invalid UTF-8 we fail closed loudly rather than silently mojibake the path.
+    let mut out: Vec<u8> = Vec::with_capacity(s.len());
+    let mut bytes = s.bytes().peekable();
+    while let Some(b) = bytes.next() {
+        if b == b'\\' {
             let mut octal = String::with_capacity(3);
             for _ in 0..3 {
-                if let Some(&d) = chars.peek() {
-                    if d.is_ascii_digit() {
-                        octal.push(d);
-                        chars.next();
+                match bytes.peek() {
+                    Some(&d) if d.is_ascii_digit() => {
+                        octal.push(d as char);
+                        bytes.next();
                     }
+                    _ => break,
                 }
             }
             if octal.len() == 3 {
                 let byte = u8::from_str_radix(&octal, 8)
                     .with_context(|| format!("invalid octal mount escape \\{octal}"))?;
-                out.push(byte as char);
+                out.push(byte);
                 continue;
             }
             anyhow::bail!("incomplete mount escape \\{octal}");
         } else {
-            out.push(c);
+            out.push(b);
         }
     }
-    Ok(out)
+    String::from_utf8(out)
+        .with_context(|| format!("decoded /proc/mounts target is not UTF-8: {s:?}"))
 }
 
 #[cfg(target_os = "macos")]

@@ -27,11 +27,11 @@ fn readme_text() -> Option<String> {
 }
 
 /// README + banner claim: the detector count. SINGLE-SOURCED from the
-/// loader — the number is NOT hardcoded here. `keyhog_core::load_detectors`
+/// loader - the number is NOT hardcoded here. `keyhog_core::load_detectors`
 /// is the same path the CLI uses; the README headline and the banner SVG
 /// must advertise exactly that count. Adding/removing a detector updates the
 /// loader automatically, and this test then requires only the human-facing
-/// surfaces (README + banner) to be bumped to match — no test-literal churn,
+/// surfaces (README + banner) to be bumped to match - no test-literal churn,
 /// and no per-contract count stamp (cf. the de-duplication in G9).
 #[test]
 fn readme_claim_detector_count() {
@@ -43,13 +43,13 @@ fn readme_claim_detector_count() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
     let n = detectors.len();
 
-    let claim = format!("{n} service-specific detectors");
+    let claim = format!("{n} embedded detectors");
     assert!(
         readme.contains(&claim),
         "README must advertise the live detector count: the loader returned {n}, so \
          README.md must contain {claim:?}. When the corpus changes, bump every \
-         '<count> detectors' / '<count> service-specific detectors' spot in \
-         README.md and the banner SVG to {n} — that is the ONLY place the count \
+         '<count> detectors' / '<count> embedded detectors' spot in \
+         README.md and the banner SVG to {n} - that is the ONLY place the count \
          lives now.",
     );
 

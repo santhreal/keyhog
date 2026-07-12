@@ -24,6 +24,8 @@ use keyhog_core::{
 /// Build a fully-populated detector so every hashed field is exercised.
 fn detector(id: &str, severity: Severity, regex: &str, keywords: &[&str]) -> DetectorSpec {
     DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: id.to_string(),
         name: id.to_string(),
@@ -37,6 +39,9 @@ fn detector(id: &str, severity: Severity, regex: &str, keywords: &[&str]) -> Det
         }],
         companions: vec![],
         verify: None,
+        // Default any newer optional spec fields so this exhaustive literal does
+        // not break each time DetectorSpec grows a field (explicit fields win).
+        ..Default::default()
     }
 }
 

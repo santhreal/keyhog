@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "WEATHERBIT  __ __    _     __ _  _ _    _ _             _                _     __          _     __      API  _    _   KEY=\":=do7f9EXAMPLEEXAMPLExk9Jh"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# WEATHERBIT_API_KEY=do7f9H1T085pk2OEzhOjdnH7SnHwHU1dhKaY28nS61FJjZWxUvfnK1xk9Jh  # forecast"
+credential = "do7f9H1T085pk2OEzhOjdnH7SnHwHU1dhKaY28nS61FJjZWxUvfnK1xk9Jh"
+reason = "Commented-out config; WEATHERBIT_API_KEY keyword + key intact inside the comment."

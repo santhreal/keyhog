@@ -4,7 +4,7 @@
 //!
 //!   1. ENDPOINT SYNTAX. A custom `--s3-endpoint` flows through the real
 //!      production path `S3Source::chunks()` -> `collect_s3_chunks` ->
-//!      `build_base_url` -> `validate_endpoint` -> `cloud::parse_http_endpoint`.
+//!      `build_base_url` -> `validate_cloud_endpoint` -> `cloud::parse_http_endpoint`.
 //!      A malformed endpoint (wrong scheme, embedded credentials, fragment,
 //!      query string, unparseable, missing scheme) is refused BEFORE any socket
 //!      is opened, so the source aborts with EXACTLY ONE error row carrying the
@@ -36,7 +36,7 @@ use keyhog_sources::testing::{SourceTestApi, TestApi};
 /// execution reaches the endpoint validation stage.
 const BUCKET: &str = "keyhog-region-bucket";
 
-/// The load-bearing refusal substring emitted by `validate_endpoint` /
+/// The load-bearing refusal substring emitted by `validate_cloud_endpoint` /
 /// `parse_http_endpoint` for a malformed S3 endpoint. `SourceError::Other`
 /// wraps it as `failed to read source: invalid S3 endpoint. Fix: ...`, so a
 /// substring match is stable against the surrounding boilerplate.
@@ -73,7 +73,7 @@ fn single_endpoint_error(endpoint: &str) -> String {
 #[test]
 fn custom_endpoint_with_query_string_is_refused() {
     // Shape (scheme/host/no-userinfo/no-fragment) passes `parse_http_endpoint`;
-    // `validate_endpoint`'s own `query().is_some()` guard then rejects it. Host
+    // `validate_cloud_endpoint`'s own `query().is_some()` guard then rejects it. Host
     // `minio.invalid` is a guaranteed NXDOMAIN (RFC 6761), so the intervening
     // DNS screen fast-fails to "no address" and never opens a socket.
     let error = single_endpoint_error("https://minio.invalid/?list-type=2");
@@ -210,7 +210,7 @@ fn amazonaws_domain_in_userinfo_is_ignored() {
 #[test]
 fn classification_is_scheme_agnostic_and_host_driven() {
     // `endpoint_is_aws` screens only the host, independent of scheme (scheme is
-    // enforced separately by `validate_endpoint`). Both http and ftp forms of a
+    // enforced separately by `validate_cloud_endpoint`). Both http and ftp forms of a
     // genuine AWS host classify as AWS-owned.
     assert!(
         TestApi.s3_endpoint_is_aws("http://s3.amazonaws.com"),

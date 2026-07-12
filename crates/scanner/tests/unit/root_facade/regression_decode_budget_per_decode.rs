@@ -103,7 +103,7 @@ impl Decoder for FanoutDecoder {
             out.push(Chunk {
                 data: SensitiveString::from(format!("c9.tok.{i:05}.end")),
                 metadata: ChunkMetadata {
-                    source_type: format!("{}/{TAG}", chunk.metadata.source_type),
+                    source_type: format!("{}/{TAG}", chunk.metadata.source_type).into(),
                     path: chunk.metadata.path.clone(),
                     ..Default::default()
                 },
@@ -127,7 +127,7 @@ impl Decoder for OversizeDecodedChunk {
         vec![Chunk {
             data: SensitiveString::from("Z".repeat(256)),
             metadata: ChunkMetadata {
-                source_type: format!("{}/oversize-decoded", chunk.metadata.source_type),
+                source_type: format!("{}/oversize-decoded", chunk.metadata.source_type).into(),
                 path: chunk.metadata.path.clone(),
                 ..Default::default()
             },
@@ -144,7 +144,7 @@ fn inert_root(path: &str) -> Chunk {
     Chunk {
         data: SensitiveString::from("alpha.bravo.charlie.delta.echo.foxtrot"),
         metadata: ChunkMetadata {
-            path: Some(path.to_string()),
+            path: Some(path.to_string().into()),
             ..Default::default()
         },
     }

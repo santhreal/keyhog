@@ -5,6 +5,8 @@ use keyhog_scanner::telemetry::DogfoodEvent;
 fn pure_placeholder_not_flagged() {
     // A placeholder that matches the pattern but is obviously fake.
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "aws-key".into(),
         name: "AWS Key".into(),
@@ -42,6 +44,8 @@ fn example_suppression_is_recorded_in_telemetry() {
     let _guard = keyhog_scanner::testing::telemetry_serial_lock();
     keyhog_scanner::telemetry::testing::reset();
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "aws-key".into(),
         name: "AWS Key".into(),
@@ -75,6 +79,8 @@ fn example_suppression_is_recorded_in_telemetry() {
 #[test]
 fn dogfood_captures_redacted_event() {
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "aws-key".into(),
         name: "AWS Key".into(),
@@ -144,6 +150,8 @@ fn dogfood_captures_redacted_event() {
 #[test]
 fn github_pat_example_suppressed() {
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "github-pat".into(),
         name: "GitHub PAT".into(),
@@ -324,6 +332,8 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
     keyhog_scanner::telemetry::testing::reset();
     keyhog_scanner::telemetry::enable_dogfood();
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "generic-secret".into(),
         name: "Generic Secret".into(),

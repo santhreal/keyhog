@@ -2,7 +2,7 @@
 
 What an actual cross-OS dogfood of the keyhog source at HEAD found, run from the
 work-linux hub over SSH against every host in `~/.ssh/config`. Every line below
-is a command that was really run and its real output — nothing here is inferred.
+is a command that was really run and its real output; nothing here is inferred.
 
 Driver: `scripts/dogfood-all-os.sh` (build + CLI + installer matrix) plus the
 focused payloads recorded in this doc. Source-level contracts that pin these
@@ -21,12 +21,12 @@ Last run: 2026-06-15.
 | linux-host-3      | **DOWN**     | `ssh: connect to host <redacted> port 22: Connection timed out` |
 
 LOUD, not a silent skip (Law 10): the primary Linux build host was
-**unreachable** — the Linux leg of this run was NOT exercised on the fleet
+**unreachable**; the Linux leg of this run was NOT exercised on the fleet
 (only the work-linux hub, which is the source tree itself). The two secondary
 Linux hosts are likewise down. A green macOS+Windows matrix here does NOT clear
 Linux-on-fleet; it is "not run on those hosts this round."
 
-## macOS (macos-host, Darwin arm64) — REACHED, built, dogfooded
+## macOS (macos-host, Darwin arm64): REACHED, built, dogfooded
 
 Build: `cargo build --profile release-fast -p keyhog --no-default-features
 --features portable` → **rc 0** in 1m10s. That historical run reported three
@@ -48,17 +48,17 @@ Operator path (real binary, real temp inputs):
 | `uninstall --yes`                    | **rc 0, binary REMOVED** (kernel unlinks the running exe) |
 
 Installer proof (`tests/install/linux/install_from_local_build.sh` and
-`tests/install/macos/install_from_local_build.sh`): **11 / 11 PASS**
-— `--from-file` install, binary placed, `--version`, `doctor` exit 0, seeded
+`tests/install/macos/install_from_local_build.sh`): **11 / 11 PASS**:
+`--from-file` install, binary placed, `--version`, `doctor` exit 0, seeded
 scan exit 1, empty scan exit 0, SARIF well-formed, correct/tampered `.sha256`
 gate, missing-file error path, and the `expect`-driven interactive wizard.
 
-## Windows (windows-host, Windows 10.0.26200) — REACHED, built, dogfooded
+## Windows (windows-host, Windows 10.0.26200): REACHED, built, dogfooded
 
 The Santh NFS share is **not** mounted on Windows (`Test-Path Z:\... = False`),
 so the only build path is an offline source ship. The previous source package
 failed there because the Vyre dependencies escaped the repo tree; this is now
-resolved by exact crates.io `=0.6.3` Vyre pins. The last full Windows dogfood
+resolved by exact crates.io `=0.6.4` Vyre pins. The last full Windows dogfood
 build recorded below was run before that pin cleanup:
 
 Build: `cargo build --profile release-fast -p keyhog --no-default-features
@@ -78,14 +78,14 @@ Operator path (`scripts/dogfood-windows.ps1` payload):
 | `uninstall` (dry run)                | rc 0 |
 | `uninstall --yes`                    | **rc 2, binary STILL PRESENT** (Windows can't delete a running .exe) |
 
-Every surface is exit-code-identical to macOS **except `uninstall --yes`** — the
+Every surface is exit-code-identical to macOS **except `uninstall --yes`**: the
 single deliberate divergence (next section).
 
 ## Findings
 
-### F1 — DELIBERATE divergence: `uninstall --yes` exit code (0 unix / 2 windows)
+### F1: DELIBERATE divergence: `uninstall --yes` exit code (0 unix / 2 windows)
 
-Not a bug — a documented, intentional platform difference, now proven live on
+Not a bug: a documented, intentional platform difference, now proven live on
 both OSes and pinned so it can never silently change:
 
 * Unix (`crates/cli/src/subcommands/uninstall.rs`, `#[cfg(unix)]`):
@@ -100,14 +100,14 @@ both OSes and pinned so it can never silently change:
 
 Pinned by:
 * `crates/cli/tests/target_spec/cross_os_contracts.rs::uninstall_remove_binary_is_per_os_and_windows_fails_closed`
-  (GREEN, every OS — source-level: both `#[cfg]` arms, Windows fails closed, no
+  (GREEN, every OS: source-level: both `#[cfg]` arms, Windows fails closed, no
   `remove_file` on the Windows arm).
 * `crates/cli/tests/target_spec/cross_os_contracts.rs::main_defines_exit_user_error_two_for_windows_uninstall_path`
-  (GREEN — pins `EXIT_USER_ERROR = 2`).
+  (GREEN: pins `EXIT_USER_ERROR = 2`).
 * `scripts/dogfood-windows.ps1` phase 5 (live end-to-end: asserts exit 2 + the
   binary persists; verified PASS on the Windows host).
 
-### F2 — CROSS-OS BUILD BLOCKER (RESOLVED): old Vyre path override escaped the repo tree
+### F2: CROSS-OS BUILD BLOCKER (RESOLVED): old Vyre path override escaped the repo tree
 
 Reproduced on the Windows host (no NFS share). `tar`-shipping ONLY the keyhog
 source and running `cargo metadata` there:
@@ -120,7 +120,7 @@ Caused by:
 ```
 
 Resolved 2026-06-17: the root `Cargo.toml` now pins all five runtime `vyre*`
-crates to exact `=0.6.3` crates.io versions. That keeps
+crates to exact `=0.6.4` crates.io versions. That keeps
 `vyre_libs::scan::build_regex_dfa_unanchored` available without requiring the
 Santh NFS share or any local Vyre source mirror, so an offline source
 distribution can build on a share-less host.

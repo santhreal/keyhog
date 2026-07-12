@@ -56,8 +56,8 @@ fn caps(
 
 #[test]
 fn tiny_input_high_tier_gpu_cannot_engage() {
-    // A 1 KiB file on the fastest tier: below both the 128 MiB min floor and the
-    // 256 MiB solo cap, and pattern count is irrelevant when neither byte gate is
+    // A 1 KiB file on the fastest tier: below both the 8 MiB min floor and the
+    // 8 MiB solo cap, and pattern count is irrelevant when neither byte gate is
     // met. Lowest-overhead backend wins -> GPU is excluded.
     let hw = caps(true, Some("NVIDIA GeForce RTX 4090"), false, true);
     assert!(!gpu_could_engage(&hw, 1024, 10));
@@ -66,25 +66,27 @@ fn tiny_input_high_tier_gpu_cannot_engage() {
 
 #[test]
 fn high_tier_min_bytes_pattern_floor_boundary() {
-    // High tier: min=128 MiB, floor=100 patterns, solo=256 MiB.
+    // High tier: min=8 MiB, floor=100 patterns, solo=8 MiB.
+    // When min == solo, the solo path fires at the threshold regardless of
+    // pattern count, so the pattern floor is only testable BELOW the solo cap.
     let hw = caps(true, Some("NVIDIA GeForce RTX 5090"), false, true);
-    let min = 128 * MIB;
-    // Exactly at the min byte floor AND exactly at the pattern floor -> engage.
+    let min = 8 * MIB;
+    // At the min/solo threshold: engages regardless of pattern count (solo path).
     assert!(gpu_could_engage(&hw, min, 100));
-    // At the byte floor but ONE pattern short, and below the solo cap -> no.
-    assert!(!gpu_could_engage(&hw, min, 99));
+    assert!(gpu_could_engage(&hw, min, 99));
+    assert!(gpu_could_engage(&hw, min, 0));
     // One byte below the min floor with a huge pattern count -> still no (the
-    // AND gate needs BOTH, and solo is not met either).
+    // AND gate needs BOTH min+patterns, and solo is not met either).
     assert!(!gpu_could_engage(&hw, min - 1, 1_000_000));
 }
 
 #[test]
 fn high_tier_solo_cap_overrides_pattern_count() {
-    // At/above the 256 MiB solo cap a single very large file engages GPU with
+    // At/above the 8 MiB solo cap a single very large file engages GPU with
     // ZERO patterns; one byte below it needs the pattern path (which 1 pattern
     // fails) so it stays on CPU/SIMD.
     let hw = caps(true, Some("NVIDIA RTX 4090"), false, true);
-    let solo = 256 * MIB;
+    let solo = 8 * MIB;
     assert!(gpu_could_engage(&hw, solo, 0));
     assert!(gpu_could_engage(&hw, solo + 1, 0));
     assert!(!gpu_could_engage(&hw, solo - 1, 1));
@@ -140,8 +142,8 @@ fn no_gpu_probe_never_engages() {
 fn routing_profile_high_tier_exact_values() {
     let p = gpu_routing_profile(Some("NVIDIA GeForce RTX 4090"));
     assert_eq!(p.tier, "high");
-    assert_eq!(p.min_bytes, 128 * MIB);
-    assert_eq!(p.solo_bytes, 256 * MIB);
+    assert_eq!(p.min_bytes, 8 * MIB);
+    assert_eq!(p.solo_bytes, 8 * MIB);
     assert_eq!(p.pattern_breakeven, 100);
 }
 
@@ -169,7 +171,7 @@ fn routing_profiles_table_order_and_length() {
     assert_eq!(table[1].tier, "mid");
     assert_eq!(table[2].tier, "low");
     // The table entries agree byte-for-byte with the per-adapter lookup.
-    assert_eq!(table[0].min_bytes, 128 * MIB);
+    assert_eq!(table[0].min_bytes, 8 * MIB);
     assert_eq!(table[1].solo_bytes, 512 * MIB);
     assert_eq!(table[2].pattern_breakeven, 2000);
 }
@@ -177,7 +179,7 @@ fn routing_profiles_table_order_and_length() {
 // ─── string parsing: canonical backend aliases ──────────────────────────────
 
 #[test]
-fn parse_backend_str_maps_cli_names_and_stable_evidence_labels() {
+fn parse_backend_str_maps_canonical_aliases() {
     assert_eq!(parse_backend_str("gpu"), Some(ScanBackend::Gpu));
     assert_eq!(
         parse_backend_str("gpu-region-presence"),

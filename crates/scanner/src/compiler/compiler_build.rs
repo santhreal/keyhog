@@ -272,23 +272,36 @@ pub(crate) fn rewrite_alternation_prefix(
         // this function is strictly for `(?:...)` alternation prefixes.
         return None;
     };
-    // Find the matching closing `)` for the leading group.
-    let bytes = body.as_bytes();
+    // Find the matching closing `)` for the leading group, using the SAME
+    // escape- and char-class-aware discipline as `split_top_level_alternatives`
+    // (the two paren scanners in this file must agree). An escaped `\)` or a
+    // `)` / `(` inside a `[...]` class is a LITERAL, not a group delimiter:
+    // counting it would prematurely balance `depth` and mis-locate the close,
+    // then splice a wrong slice — e.g. `(?:a|b\)c)x` with prefix `a` stopped at
+    // the escaped `\)` and produced the malformed `{expanded}c)x` (unbalanced
+    // paren). Tracking escapes and classes finds the real top-level close, so
+    // the rewrite is either correct or cleanly declined (`None`), never wrong.
     let mut depth: i32 = 0;
     let mut close_at: Option<usize> = None;
-    for (i, &b) in bytes.iter().enumerate() {
-        match b {
-            b'(' => depth += 1,
-            b')' => {
+    let mut in_class = false;
+    let mut escaped = false;
+    for (idx, ch) in body.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            '(' if !in_class => depth += 1,
+            ')' if !in_class => {
                 depth -= 1;
                 if depth == 0 {
-                    close_at = Some(i);
+                    close_at = Some(idx);
                     break;
                 }
             }
-            // Don't track escapes - we only need to find the *top-level*
-            // closing paren, and within a regex source a literal `(` or
-            // `)` inside a character class is rare in real detectors.
             _ => {}
         }
     }

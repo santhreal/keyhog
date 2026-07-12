@@ -355,6 +355,11 @@ pub(crate) fn is_transient_accept_error(e: &std::io::Error) -> bool {
 }
 
 async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Result<()> {
+    // Belt-and-suspenders peer-cred gate, symmetric with the client's
+    // `verify_connected_peer`. The 0600 socket + 0700 parent dir are the primary
+    // boundary; this rejects a cross-uid peer that reaches us through a bind-race
+    // before the socket is chmod-tightened, or a root connection.
+    trust::verify_accepted_peer(&stream)?;
     let mut transport = frame::server_transport(stream);
     let read_timeout = state.request_read_timeout;
     loop {
@@ -431,7 +436,7 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
                     data: text.into(),
                     metadata: ChunkMetadata {
                         source_type: "stdin".into(),
-                        path: chunk_path,
+                        path: chunk_path.map(Into::into),
                         ..Default::default()
                     },
                 };
@@ -583,13 +588,14 @@ fn daemon_scan_path_chunks(path: &Path) -> Result<(Vec<Chunk>, SourceCoverageGap
         let chunk = chunk.with_context(|| {
             format!("daemon: expanding filesystem source for {}", path.display())
         })?;
-        if chunk.data.len() > 512 * 1024 * 1024 {
+        if chunk.data.len() > crate::orchestrator::COALESCED_CHUNK_SCAN_CEILING_BYTES {
             let chunk_path = match chunk.metadata.path.as_deref() {
                 Some(path) => path.to_owned(),
                 None => path.display().to_string(),
             };
             anyhow::bail!(
-                "daemon: refusing chunk over 512 MiB from {}. Pass --no-daemon to use the full in-process scanner.",
+                "daemon: refusing chunk over {} MiB from {}. Pass --no-daemon to use the full in-process scanner.",
+                crate::orchestrator::COALESCED_CHUNK_SCAN_CEILING_MB,
                 chunk_path
             );
         }
@@ -640,6 +646,6 @@ fn drain_daemon_scan_telemetry(
 #[doc(hidden)]
 pub(crate) mod testing {
     pub(crate) use crate::daemon::trust::testing::{
-        ensure_private_socket_dir, remove_stale_socket_if_trusted,
+        ensure_private_socket_dir, remove_stale_socket_if_trusted, verify_accepted_peer,
     };
 }

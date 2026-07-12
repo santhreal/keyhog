@@ -19,8 +19,21 @@
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use regex_syntax::ast::{Ast, RepetitionKind, RepetitionRange};
 
-use super::{floor_char_boundary, CompiledScanner};
+use super::{absolute_line, absolute_offset, floor_char_boundary, CompiledScanner};
 use crate::types::CompiledPattern;
+
+/// Cross-seam reassembly cap for the unbounded / entropy boundary context.
+///
+/// When an active generator has no finite match width (an unbounded detector
+/// regex, or entropy on a non-source path) the seam buffer would otherwise
+/// splice ALL of chunk A onto ALL of chunk B and full-rescan a ~2x-chunk buffer
+/// for EVERY adjacent pair — O(pairs x chunk_bytes) plus large transient
+/// allocations on a many-chunk gapless producer. A straddling secret only needs
+/// a bounded reassembly window: any credential/line longer than this on one
+/// side is already visible whole inside that chunk's own in-chunk scan. Sized
+/// at the FilesystemSource window overlap so the seam covers exactly the
+/// straddle range the overlap design already assumes catchable.
+pub(crate) const MAX_BOUNDARY_SEAM_BYTES: usize = crate::types::WINDOW_OVERLAP_BYTES;
 
 /// Scanner-derived cross-seam context requirement for compiled detector regexes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -122,7 +135,7 @@ pub(crate) fn scan_chunk_boundaries(
             continue;
         };
         groups
-            .entry((c.metadata.source_type.as_str(), path))
+            .entry((c.metadata.source_type.as_ref(), path))
             .or_default()
             .push(i);
     }
@@ -181,7 +194,7 @@ fn scan_one_pair(
     // pair and scan the synthetic buffer as one unit below.
     let context_bytes = match context {
         BoundaryContextBytes::Bounded(bytes) => bytes,
-        BoundaryContextBytes::FullAdjacentChunks => usize::MAX,
+        BoundaryContextBytes::FullAdjacentChunks => MAX_BOUNDARY_SEAM_BYTES,
     };
     let tail_start = a_bytes.len().saturating_sub(context_bytes);
     let tail_start = floor_char_boundary(a.data.as_ref(), tail_start);
@@ -201,13 +214,10 @@ fn scan_one_pair(
     // correct file coordinate via the standard
     // `local_offset + base_offset` reporting path.
     //
-    // kimi-engine audit: caller-supplied chunk metadata sets
-    // `base_offset`. A malformed source that reports `base_offset`
-    // near `usize::MAX` would overflow the additions below - debug
-    // panic, release wrap to a bogus offset that misattributes the
-    // finding. checked_add + early return keeps the scan moving and
-    // simply skips the (impossible-on-real-input) boundary case.
-    let Some(boundary_base_offset) = a.metadata.base_offset.checked_add(tail_start) else {
+    // Caller-supplied chunk metadata sets `base_offset`; a malformed source
+    // reporting one near `usize::MAX` would misattribute the finding. The shared
+    // `absolute_offset` guard skips this (impossible-on-real-input) case.
+    let Some(boundary_base_offset) = absolute_offset(a.metadata.base_offset, tail_start) else {
         return;
     };
     let mut buf = String::with_capacity(tail.len() + head.len());
@@ -220,10 +230,10 @@ fn scan_one_pair(
     // begins). `..b.metadata.clone()` would wrongly inherit B's base line,
     // but the seam buffer starts inside A's tail, so derive it from A. This
     // is the line analog of `boundary_base_offset = a.base_offset + tail_start`.
-    let boundary_base_line = a
-        .metadata
-        .base_line
-        .saturating_add(memchr::memchr_iter(b'\n', &a_bytes[..tail_start]).count());
+    let boundary_base_line = absolute_line(
+        a.metadata.base_line,
+        memchr::memchr_iter(b'\n', &a_bytes[..tail_start]).count(),
+    );
     let boundary_chunk = Chunk {
         data: buf.into(),
         metadata: ChunkMetadata {
@@ -234,7 +244,7 @@ fn scan_one_pair(
     };
 
     let boundary_matches = scan_boundary_chunk_whole(scanner, &boundary_chunk);
-    let Some(seam_file_offset) = boundary_base_offset.checked_add(seam_local) else {
+    let Some(seam_file_offset) = absolute_offset(boundary_base_offset, seam_local) else {
         return;
     };
 
@@ -321,11 +331,8 @@ fn boundary_context_for_pair(
 }
 
 fn scan_boundary_chunk_whole(scanner: &CompiledScanner, chunk: &Chunk) -> Vec<RawMatch> {
-    // Boundary reassembly is a shared semantic tail, not a new autoroute
-    // decision. Keep it on the deterministic reference backend so an explicit
-    // or calibrated parent route cannot be silently replaced by fresh hardware
-    // heuristics for the synthetic seam chunk.
-    let backend = crate::hw_probe::ScanBackend::CpuFallback;
+    let backend = scanner.select_backend_for_file(chunk.data.len() as u64);
+    super::gpu_forced::deny_silent_gpu_degrade(scanner, backend);
     let mut matches = scanner.scan_inner(chunk, backend, None);
     scanner.post_process_matches(chunk, &mut matches, None);
     matches

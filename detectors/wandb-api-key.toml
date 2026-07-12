@@ -1,5 +1,5 @@
 # Docs: https://docs.wandb.ai/quickstart
-# Format: 40-character hexadecimal string (no unique prefix)
+# Format: 40- or 32-character hexadecimal string (no unique prefix)
 # Verify: GET /viewer with Bearer auth
 # Prefix: none (requires context anchoring)
 
@@ -11,8 +11,8 @@ severity = "high"
 keywords = ["WANDB_API_KEY", "wandb"]
 
 [[detector.patterns]]
-regex = "(?:WANDB_API_KEY|wandb.api.key)[=: \\s\"'']+([a-f0-9]{40})"
-description = "Weights & Biases API key with context anchor"
+regex = "(?:WANDB_API_KEY|wandb.api.key)[=: \\s\"'']+([a-f0-9]{40}|[a-f0-9]{32})"
+description = "Weights & Biases API key with context anchor (40- or 32-char hex)"
 group = 1
 
 [detector.verify]

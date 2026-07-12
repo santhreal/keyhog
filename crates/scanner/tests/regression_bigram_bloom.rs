@@ -316,3 +316,83 @@ fn crossing_saturation_flips_absent_bigram_to_true() {
         "control at K=25 is false for the identical probe"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The exact fixed vectors above pin specific bit-math cases; these SWEEP the
+// three contracts the Layer-0.5 prefilter must uphold across arbitrary input.
+// `maybe_overlaps` is a RECALL gate — a false negative (returning `false` for a
+// chunk that DOES carry a literal prefix) makes the scanner skip a chunk holding
+// a real secret — so (1) and (2) are recall guarantees, not cosmetics. All three
+// drive ONLY the public facade (`from_literal_prefixes` + `maybe_overlaps`),
+// matching this file's black-box contract; no proptest covered this primitive
+// before. Literal sets are kept small/short so the table never approaches the
+// 39322-of-65536 saturation threshold, keeping the direct-table semantics exact.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4_000))]
+
+    /// RECALL GUARANTEE (no false negatives): a chunk that contains a literal
+    /// prefix `lit` (>= 2 bytes) anywhere as a contiguous substring MUST overlap
+    /// — the chunk necessarily carries every adjacent bigram of `lit`, all of
+    /// which `from_literal_prefixes` set. A regression returning `false` here
+    /// would make the prefilter silently drop the chunk (and its secret). The
+    /// arbitrary `prefix`/`suffix` place the literal at any offset, including the
+    /// very start or end of the chunk.
+    #[test]
+    fn chunk_containing_a_literal_prefix_always_overlaps(
+        lit in "[A-Za-z0-9_-]{2,20}",
+        prefix in prop::collection::vec(any::<u8>(), 0..24),
+        suffix in prop::collection::vec(any::<u8>(), 0..24),
+    ) {
+        let bloom = BigramBloom::from_literal_prefixes(&[lit.clone()]);
+        let mut chunk = prefix;
+        chunk.extend_from_slice(lit.as_bytes());
+        chunk.extend_from_slice(&suffix);
+        prop_assert!(
+            bloom.maybe_overlaps(&chunk),
+            "recall violation: chunk containing literal {:?} did not overlap",
+            lit
+        );
+    }
+
+    /// RECALL MONOTONICITY under catalog growth: adding more literal prefixes can
+    /// only ADD set bits, never clear them, and saturation is monotone in the bit
+    /// count — so a chunk that overlaps a bloom built from `base` MUST still
+    /// overlap the bloom built from `base + extra`. This locks the invariant that
+    /// registering a NEW detector prefix can never cause the prefilter to start
+    /// skipping a chunk it used to scan (a silent recall regression as the
+    /// detector catalog grows). Only the `true ⇒ true` direction is asserted; the
+    /// converse is legitimately false.
+    #[test]
+    fn adding_literal_prefixes_never_removes_an_overlap(
+        base in prop::collection::vec("[ -~]{1,12}", 0..5),
+        extra in prop::collection::vec("[ -~]{1,12}", 0..5),
+        chunk in prop::collection::vec(any::<u8>(), 0..48),
+    ) {
+        let base_bloom = BigramBloom::from_literal_prefixes(&base);
+        let mut grown = base.clone();
+        grown.extend(extra);
+        let grown_bloom = BigramBloom::from_literal_prefixes(&grown);
+        if base_bloom.maybe_overlaps(&chunk) {
+            prop_assert!(
+                grown_bloom.maybe_overlaps(&chunk),
+                "monotonicity violated: growing the literal set removed an overlap"
+            );
+        }
+    }
+
+    /// `maybe_overlaps` must never panic on ANY chunk length or content: it
+    /// byte-indexes `chunk[i]`/`chunk[i + 1]` across a 4-wide unrolled group and
+    /// a tail mop-up, so an off-by-one in the group/tail split would slice out of
+    /// bounds. Sweeps lengths 0..128 (every residue mod 4) over arbitrary bytes.
+    #[test]
+    fn maybe_overlaps_never_panics_on_arbitrary_chunk(
+        literals in prop::collection::vec("[ -~]{1,16}", 0..6),
+        chunk in prop::collection::vec(any::<u8>(), 0..128),
+    ) {
+        let bloom = BigramBloom::from_literal_prefixes(&literals);
+        let _ = bloom.maybe_overlaps(&chunk);
+    }
+}

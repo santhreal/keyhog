@@ -1,5 +1,7 @@
 #![allow(clippy::needless_borrow, clippy::needless_update, clippy::useless_vec)]
 
+mod support;
+
 #[path = "gap/adversarial_bulk_lacks_per_detector_hostile_twins.rs"]
 mod adversarial_bulk_lacks_per_detector_hostile_twins;
 #[path = "gap/alphabet_targets_no_per_pattern_clone.rs"]
@@ -74,6 +76,8 @@ mod csr_build_exact_capacity;
 mod csr_hot_maps_adopted;
 #[path = "gap/deadline_cadence_tick_dedup.rs"]
 mod deadline_cadence_tick_dedup;
+#[path = "gap/deadline_leaf_predicates_truth_table.rs"]
+mod deadline_leaf_predicates_truth_table;
 #[path = "gap/decode_encoded_value_extraction.rs"]
 mod decode_encoded_value_extraction;
 #[path = "gap/decode_pipeline_exceeds_modularity_cap.rs"]
@@ -138,6 +142,8 @@ mod generic_secret_confidence_formula;
 mod github_checksum_token_structure;
 #[path = "gap/gitlab_checksum_body_length_floors.rs"]
 mod gitlab_checksum_body_length_floors;
+#[path = "gap/gpu_region_presence_anchorless_gap_surfaced.rs"]
+mod gpu_region_presence_anchorless_gap_surfaced;
 #[path = "gap/gpu_routing_profile_tier_table.rs"]
 mod gpu_routing_profile_tier_table;
 #[path = "gap/gpu_threshold_mib_units.rs"]
@@ -195,6 +201,8 @@ mod normalized_assignment_keyword_is_credential_exact;
 mod npm_checksum_token_structure;
 #[path = "gap/orphan_github_pat_contract.rs"]
 mod orphan_github_pat_contract;
+#[path = "gap/path_basename_mixed_separator_extraction.rs"]
+mod path_basename_mixed_separator_extraction;
 #[path = "gap/pattern_signals_keyword_invariant_hoisted.rs"]
 mod pattern_signals_keyword_invariant_hoisted;
 #[path = "gap/phase2_always_active_sparse.rs"]
@@ -297,6 +305,8 @@ mod strong_keyword_anchored_encoded_text_secret_exact;
 mod strong_keyword_anchored_hex_key_decision_tree_exact;
 #[path = "gap/structured_line_offsets_shared_builder.rs"]
 mod structured_line_offsets_shared_builder;
+#[path = "gap/structured_line_resolver_needle_attribution.rs"]
+mod structured_line_resolver_needle_attribution;
 #[path = "gap/suffix_gate_literals_contract.rs"]
 mod suffix_gate_literals_contract;
 #[path = "gap/suppression_postprocess_exceeds_modularity_cap.rs"]

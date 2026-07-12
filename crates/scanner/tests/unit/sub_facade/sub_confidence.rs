@@ -138,7 +138,7 @@ fn degenerate_repeat_blocks_floor() {
 fn known_prefixes_table_contains_core_providers() {
     for p in ["ghp_", "AKIA", "sk_live_", "xoxb-", "npm_", "glpat-"] {
         assert!(
-            KNOWN_PREFIXES.contains(&p),
+            (&*KNOWN_PREFIXES).iter().any(|x| x == p),
             "{p} missing from KNOWN_PREFIXES"
         );
     }

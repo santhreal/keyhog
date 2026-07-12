@@ -46,6 +46,11 @@ mod session;
 pub(crate) use client::MintedUrl;
 pub use client::{Interaction, InteractionProtocol, InteractshClient, InteractshError};
 pub use session::{redact_interactsh_error, OobAccept, OobConfig, OobObservation, OobSession};
+// Crate-internal poller-degradation helpers, surfaced to the re-homed
+// `tests/unit/oob_poller_degradation.rs` through `pub fn` wrappers in the
+// `testing` facade (the `oob::session` no-inline-tests gate forbids testing them
+// in place). Kept `pub(crate)` so they do NOT widen the crate's public API.
+pub(crate) use session::{elapsed_verdict, poller_is_degraded, OOB_DEGRADED_ERROR_THRESHOLD};
 
 pub(crate) fn decrypt_entry_for_test(
     aes_key: &[u8],
@@ -59,4 +64,12 @@ pub(crate) fn ssrf_check_collector_dns_result_for_test(
     resolved: std::io::Result<Vec<std::net::SocketAddr>>,
 ) -> Result<(), InteractshError> {
     client::ssrf_check_collector_dns_result_for_test(server, resolved)
+}
+
+pub(crate) fn collector_reuses_proxy_client_for_test(
+    server: &str,
+    proxy_in_use: bool,
+    resolved: std::io::Result<Vec<std::net::SocketAddr>>,
+) -> Result<bool, InteractshError> {
+    client::collector_reuses_proxy_client_for_test(server, proxy_in_use, resolved)
 }

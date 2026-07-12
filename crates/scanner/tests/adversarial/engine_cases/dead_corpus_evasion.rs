@@ -323,8 +323,8 @@ fn evasion_full_file_scan_uses_production_scanner() {
             metadata: ChunkMetadata {
                 base_offset: 0,
                 base_line: 0,
-                source_type: format!("test/corpus/{EVASION}"),
-                path: Some(path.display().to_string()),
+                source_type: format!("test/corpus/{EVASION}").into(),
+                path: Some(path.display().to_string().into()),
                 commit: None,
                 author: None,
                 date: None,

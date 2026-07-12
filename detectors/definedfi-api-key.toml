@@ -8,7 +8,10 @@ id = "definedfi-api-key"
 name = "Defined.fi API Key"
 service = "definedfi"
 severity = "medium"
-keywords = ["defined", "DEFINED", "definedfi", "api_key"]
+# "api_key" removed: over-broad generic prefilter the regex does NOT need — every
+# pattern self-anchors on the service name (kept), which is present in any real
+# match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.
+keywords = ["defined", "DEFINED", "definedfi"]
 
 [[detector.patterns]]
 regex = "(?:DEFINED|defined)[_=:\\s\"'']+(?:api[_-]?)?key[=:\\s\"'']+([a-f0-9]{64})"

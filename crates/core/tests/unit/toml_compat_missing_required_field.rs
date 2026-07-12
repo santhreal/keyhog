@@ -58,8 +58,13 @@ regex = "test_[A-Z0-9]{8}"
 }
 
 #[test]
-fn toml_compat_missing_patterns_array_errors() {
-    let invalid_toml = r#"
+fn missing_patterns_parses_but_is_rejected_by_the_quality_gate() {
+    // Unlike id/name/service/severity (genuinely required — no serde default),
+    // `patterns` IS `#[serde(default)]` so a phase2-generic keyword detector can
+    // omit it. Omitting patterns therefore PARSES; the recall-safety requirement
+    // (a regex detector must carry an anchor) is enforced at validation time by
+    // `validate_patterns_present`, not at parse time.
+    let toml = r#"
 [detector]
 id = "test"
 name = "Test"
@@ -68,12 +73,19 @@ severity = "high"
 keywords = ["test"]
 "#;
 
-    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+    let detectors = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
         &keyhog_core::testing::TestApi,
-        invalid_toml,
-    );
+        toml,
+    )
+    .expect("omitting patterns must PARSE: patterns is #[serde(default)]");
+
+    let issues = keyhog_core::validate_detector(&detectors[0]);
     assert!(
-        matches!(result, Err(SpecError::InvalidToml { .. })),
-        "Missing patterns array must be rejected"
+        issues.iter().any(|i| matches!(
+            i,
+            keyhog_core::QualityIssue::Error(m) if m.contains("no patterns defined")
+        )),
+        "a default (regex) kind detector with no patterns must be a 'no patterns defined' \
+         quality Error; got {issues:?}"
     );
 }

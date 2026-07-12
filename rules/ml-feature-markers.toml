@@ -1,0 +1,87 @@
+comment_prefixes = [
+  "#",
+  "//",
+  "/*",
+  "--",
+]
+
+binary_markers = [
+  "load:",
+  ".rodata",
+  "xref",
+  "lea rdi",
+  "go.string",
+  "core::str",
+  "alloc::string",
+  "objdump",
+  "strings:",
+  "symbol:",
+]
+
+ci_markers = [
+  "jobs:",
+  "stages:",
+  "pipeline",
+  "jenkinsfile",
+  ".gitlab-ci",
+  "buildspec",
+  ".github/workflows",
+  ".github/actions",
+  "circleci",
+  ".travis.yml",
+  "azure-pipelines",
+  "bitbucket-pipelines",
+  "semaphore",
+  "concourse",
+  "tekton",
+  "argocd",
+]
+
+infra_markers = [
+  "resource ",
+  "apiversion:",
+  ".tf",
+  ".tfvars",
+  "dockerfile",
+  "docker-compose",
+  "k8s",
+  "ansible",
+  "helm",
+  "kustomize",
+  "cloudformation",
+  "serverless.yml",
+  "wrangler.toml",
+  "pulumi",
+  "vagrant",
+]
+
+source_markers = [
+  "const ",
+  "let ",
+  "var ",
+  "def ",
+  "fn ",
+]
+
+source_extensions = [
+  ".py",
+  ".js",
+  ".ts",
+  ".go",
+  ".rs",
+  ".java",
+  ".rb",
+  ".php",
+  ".swift",
+  ".kt",
+]
+
+config_markers = [
+  ".env",
+  ".yaml",
+  ".json",
+  ".toml",
+  ".properties",
+  ".cfg",
+  ".ini",
+]

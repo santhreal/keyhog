@@ -77,17 +77,10 @@ impl<W: Write + Send> TextReporter<W> {
     pub(crate) fn set_dogfood_active(&mut self, active: bool) {
         self.dogfood_active = active;
     }
-
-    fn print_header(&mut self) -> Result<(), ReportError> {
-        Ok(())
-    }
 }
 
 impl<W: Write + Send> Reporter for TextReporter<W> {
     fn report(&mut self, finding: &VerifiedFinding) -> Result<(), ReportError> {
-        if self.count == 0 {
-            self.print_header()?;
-        }
         self.count += 1;
 
         // Track verification stats. `Dead` and `Revoked` are both CONFIRMED-
@@ -109,19 +102,25 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
         let severity_str = report_style::severity_label(finding.severity, self.color);
         let verified = report_style::verification_label(&finding.verification, self.color);
         let location = format_location(&finding.location);
-        let confidence_value = finding.confidence.unwrap_or(0.0); // LAW10: empty confidence bar for a path; display only, finding still printed
+        // `confidence` is a public field, so a library-constructed finding could
+        // carry an out-of-range or NaN score. Sanitize ONCE into [0,1] and derive
+        // both the bar fill and the percent from it, so they can never disagree
+        // (e.g. a full bar rendered "150%", or a NaN percent). NaN -> 0, matching
+        // the scanner's `finalize_confidence` (clamp alone does not sanitize NaN).
+        let confidence_value = finding.confidence.unwrap_or(0.0); // LAW10: no confidence score -> empty bar; display only, finding still printed
+        let display_conf = if confidence_value.is_finite() {
+            confidence_value.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         const BAR_WIDTH: usize = 6;
-        let filled = (confidence_value * BAR_WIDTH as f64) as usize;
-        let bar = format!(
-            "{}{}",
-            "■".repeat(filled.min(BAR_WIDTH)),
-            "□".repeat(BAR_WIDTH.saturating_sub(filled.min(BAR_WIDTH)))
-        );
+        let filled = ((display_conf * BAR_WIDTH as f64) as usize).min(BAR_WIDTH);
+        let bar = format!("{}{}", "■".repeat(filled), "□".repeat(BAR_WIDTH - filled));
         let confidence = format!(
             "{} {}",
-            report_style::confidence_bar(&bar, confidence_value, self.color),
+            report_style::confidence_bar(&bar, display_conf, self.color),
             report_style::dim(
-                &format!("{:>3}%", (confidence_value * 100.0) as u32),
+                &format!("{:>3}%", (display_conf * 100.0) as u32),
                 self.color,
             )
         );
@@ -285,7 +284,6 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
 
     fn finish(&mut self) -> Result<(), ReportError> {
         if self.count == 0 {
-            self.print_header()?;
             if self.example_suppressions > 0 {
                 let plural = if self.example_suppressions == 1 {
                     ""

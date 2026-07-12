@@ -61,7 +61,10 @@ fn fires_url_credentials(text: &str) -> bool {
 fn scheme_password_surfaces(scheme: &str, seed: usize) {
     let p = pw(12, seed);
     let text = format!("{scheme}://svcuser:{p}@host.example.net:1234");
-    assert!(surfaces(&text, &p), "{scheme}:// userinfo password must surface");
+    assert!(
+        surfaces(&text, &p),
+        "{scheme}:// userinfo password must surface"
+    );
 }
 
 // ── positives: high-entropy userinfo password surfaces across schemes ─────────
@@ -122,7 +125,10 @@ fn mongodb_srv_scheme_with_plus_surfaces() {
     // Exercises the `+` allowed in the scheme grammar (`[a-z0-9+.-]*`).
     let p = pw(12, 11);
     let text = format!("mongodb+srv://app:{p}@cluster0.mongodb.net/db");
-    assert!(surfaces(&text, &p), "mongodb+srv password must surface (plus in scheme)");
+    assert!(
+        surfaces(&text, &p),
+        "mongodb+srv password must surface (plus in scheme)"
+    );
 }
 
 #[test]
@@ -137,7 +143,10 @@ fn novel_custom_scheme_still_surfaces() {
     // Generality: an unknown scheme must work — the detector is not an allowlist.
     let p = pw(12, 13);
     let text = format!("acmesvc://robot:{p}@api.internal.acme");
-    assert!(surfaces(&text, &p), "a novel custom scheme must still surface its password");
+    assert!(
+        surfaces(&text, &p),
+        "a novel custom scheme must still surface its password"
+    );
 }
 
 // ── precision: guards hold uniformly across these schemes ─────────────────────
@@ -154,24 +163,35 @@ fn imap_host_only_does_not_fire() {
 
 #[test]
 fn ldap_dn_path_without_userinfo_does_not_fire() {
-    assert!(!fires_url_credentials("ldap://ldap.corp.local/dc=corp,dc=local"));
+    assert!(!fires_url_credentials(
+        "ldap://ldap.corp.local/dc=corp,dc=local"
+    ));
 }
 
 #[test]
 fn sftp_dictionary_password_suppressed() {
     // "password" is a dictionary word — suppressed regardless of scheme.
-    assert!(nothing_surfaces("sftp://user:password@files.partner.com", "password"));
+    assert!(nothing_surfaces(
+        "sftp://user:password@files.partner.com",
+        "password"
+    ));
 }
 
 #[test]
 fn ftps_placeholder_changeme_suppressed() {
-    assert!(nothing_surfaces("ftps://upload:changeme@ftp.vendor.net", "changeme"));
+    assert!(nothing_surfaces(
+        "ftps://upload:changeme@ftp.vendor.net",
+        "changeme"
+    ));
 }
 
 #[test]
 fn smtp_five_char_password_below_floor_no_match() {
     // 5 chars is below the regex's {6,128} minimum.
-    assert!(nothing_surfaces("smtp://mailer:Xk9p2@smtp.relay.net", "Xk9p2"));
+    assert!(nothing_surfaces(
+        "smtp://mailer:Xk9p2@smtp.relay.net",
+        "Xk9p2"
+    ));
 }
 
 #[test]
@@ -180,7 +200,10 @@ fn ldap_angle_bracket_template_password_no_match() {
     // high-entropy value inside the brackets must not surface (it's a template).
     let p = pw(12, 14);
     let text = format!("ldap://binduser:<{p}>@ldap.corp.local");
-    assert!(nothing_surfaces(&text, &p), "angle-bracket template password must not match");
+    assert!(
+        nothing_surfaces(&text, &p),
+        "angle-bracket template password must not match"
+    );
 }
 
 // ── cross-scheme co-surfacing ─────────────────────────────────────────────────
@@ -191,6 +214,12 @@ fn smtp_and_ldap_credentials_cosurface() {
     let ldap_pw = pw(12, 22);
     let text =
         format!("smtp://mailer:{smtp_pw}@smtp.relay.net\nldap://bind:{ldap_pw}@ldap.corp.local\n");
-    assert!(surfaces(&text, &smtp_pw), "SMTP password must surface alongside LDAP");
-    assert!(surfaces(&text, &ldap_pw), "LDAP password must surface alongside SMTP");
+    assert!(
+        surfaces(&text, &smtp_pw),
+        "SMTP password must surface alongside LDAP"
+    );
+    assert!(
+        surfaces(&text, &ldap_pw),
+        "LDAP password must surface alongside SMTP"
+    );
 }

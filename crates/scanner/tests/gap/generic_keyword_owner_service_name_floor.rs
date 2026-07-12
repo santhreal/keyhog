@@ -45,3 +45,80 @@ fn bare_service_marker_without_secret_suffix_is_not_owned() {
     let owned = generic_named_owned_keywords_for_test("segment", &["segment_write_key", "segment"]);
     assert_eq!(owned, vec!["segment_write_key".to_string()]);
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin the floor at 2/3 chars and the bare-marker case; these
+// SWEEP the three ownership gates in isolation. A keyword is owned iff ALL of:
+// (a) service.len() >= MIN_SERVICE_NAME_LEN (3), (b) the keyword has a secret
+// suffix, and (c) the keyword CONTAINS the service substring — and the result is a
+// sorted, deduped BTreeSet. Each property flips exactly one gate. Traced against
+// `build_generic_named_assignment_keywords` (generic_keyword_owner.rs:100). No
+// proptest before.
+
+use proptest::prelude::*;
+
+/// Secret-suffixed keyword tails (each string-ends with a credential suffix).
+const SECRET_TAILS: &[&str] = &[
+    "secret_key",
+    "api_token",
+    "password",
+    "access_secret",
+    "auth_token",
+];
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// The service-length floor is exactly 3: a service under 3 chars owns nothing;
+    /// 3+ chars owns its secret-suffixed, service-embedding anchor.
+    #[test]
+    fn service_length_floor_is_three_sweep(svc in "[a-z]{1,10}") {
+        let anchor = format!("{svc}_secret_key");
+        let owned = generic_named_owned_keywords_for_test(&svc, &[anchor.as_str()]);
+        if svc.len() >= 3 {
+            prop_assert_eq!(owned, vec![anchor]);
+        } else {
+            prop_assert!(owned.is_empty());
+        }
+    }
+
+    /// (b) The secret-suffix gate: a 3+ char service whose anchor lacks a credential
+    /// suffix (`_region`) owns nothing.
+    #[test]
+    fn keyword_without_secret_suffix_is_not_owned(svc in "[a-z]{3,10}") {
+        let anchor = format!("{svc}_region");
+        let owned = generic_named_owned_keywords_for_test(&svc, &[anchor.as_str()]);
+        prop_assert!(owned.is_empty());
+    }
+
+    /// (c) The embedding gate: a secret-suffixed keyword that does NOT contain the
+    /// service substring is not owned. The service is drawn from letters `m-p`,
+    /// none of which appear in `aws_secret_key`, so containment cannot hold.
+    #[test]
+    fn secret_suffixed_keyword_not_containing_service_is_not_owned(svc in "[m-p]{4,6}") {
+        let owned = generic_named_owned_keywords_for_test(&svc, &["aws_secret_key"]);
+        prop_assert!(owned.is_empty());
+    }
+
+    /// The owned set is sorted, deduped, and filtered to exactly the secret-suffixed
+    /// service-embedding anchors (a non-suffixed sibling and a duplicate are dropped).
+    #[test]
+    fn owned_set_is_sorted_deduped_and_filtered(
+        svc in "[a-z]{3,8}",
+        i in 0usize..SECRET_TAILS.len(),
+        j in 0usize..SECRET_TAILS.len(),
+    ) {
+        let a = format!("{svc}_{}", SECRET_TAILS[i]);
+        let b = format!("{svc}_{}", SECRET_TAILS[j]);
+        let non_suffix = format!("{svc}_region");
+        let owned = generic_named_owned_keywords_for_test(
+            &svc,
+            &[a.as_str(), b.as_str(), non_suffix.as_str(), a.as_str()], // a repeated
+        );
+        // BTreeSet semantics: the distinct secret-suffixed anchors, sorted.
+        let mut expected: Vec<String> = vec![a, b];
+        expected.sort();
+        expected.dedup();
+        prop_assert_eq!(owned, expected);
+    }
+}

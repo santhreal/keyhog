@@ -138,7 +138,9 @@ fn chunk_cap_every_returned_chunk_is_a_decoded_variant() {
     assert_eq!(out.len(), 1000);
     let non_decoded = out
         .iter()
-        .filter(|c| !c.metadata.source_type.contains('/') || c.metadata.source_type == "decodecap")
+        .filter(|c| {
+            !c.metadata.source_type.contains('/') || c.metadata.source_type.as_ref() == "decodecap"
+        })
         .count();
     assert_eq!(non_decoded, 0, "no root/undecoded chunk may be returned");
 }

@@ -1,6 +1,7 @@
 //! Gap test: the ML feature vector's two comment-context signals share one owner.
 //!
-//! `compute_features_with_config` emits a 42-float vector. Two of those floats
+//! `compute_features_with_config` emits a 43-float vector (`model_arch::INPUT_DIM`,
+//! the single owner of the count). Two of those floats
 //! encode "is this match inside a comment": feature 19 (in the context-feature
 //! block) and feature 38 (`COMMENT_CONTEXT_FEATURE_INDEX`). Both derive from the
 //! SAME `COMMENT_PREFIXES`/`context.trim().starts_with(..)` check, hoisted into a

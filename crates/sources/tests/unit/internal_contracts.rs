@@ -167,7 +167,7 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
         "blocking_thread.rs and cloud/mod.rs must own shared remote thread, cloud client, endpoint, and credential-forward primitives"
     );
     assert!(
-        cloud.contains("const BINARY_OBJECT_EXTS")
+        cloud.contains("static BINARY_OBJECT_EXTS")
             && cloud.contains("crate::filesystem::is_default_skip_extension(ext)")
             && cloud.contains("ext.eq_ignore_ascii_case(candidate)")
             && cloud.contains("fn starts_with_ignore_ascii_case(")
@@ -215,14 +215,15 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
         );
         if matches!(rel, "src/s3/mod.rs" | "src/gcs.rs") {
             assert!(
-                source.contains("host_matches_domain_ascii_ci(")
+                source.contains("endpoint_host_matches_domain(")
                     && !source.contains("host.to_ascii_lowercase()"),
-                "{rel} must use allocation-free shared host suffix matching for credential-forward guards"
+                "{rel} must use the shared allocation-free endpoint_host_matches_domain host-suffix matcher for credential-forward guards"
             );
         }
         assert!(
-            source.contains("parse_http_endpoint("),
-            "{rel} must route endpoint shape parsing through cloud/mod.rs"
+            source.contains("parse_http_endpoint(") || source.contains("validate_cloud_endpoint("),
+            "{rel} must route endpoint shape parsing through cloud/mod.rs (directly via \
+             parse_http_endpoint, or via the validate_cloud_endpoint wrapper it owns)"
         );
         assert!(
             source.contains("read_text_object_body("),
@@ -700,7 +701,7 @@ fn github_org_rewrite_preserves_offsets_and_requires_real_repo_relative_path() {
         data: "AWS_SECRET_ACCESS_KEY=abcdefghijklmnopqrstuvwxyz1234567890abcd".into(),
         metadata: keyhog_core::ChunkMetadata {
             source_type: "filesystem".into(),
-            path: Some(file.display().to_string()),
+            path: Some(file.display().to_string().into()),
             base_offset: 8192,
             base_line: 77,
             size_bytes: Some(64),
@@ -713,7 +714,7 @@ fn github_org_rewrite_preserves_offsets_and_requires_real_repo_relative_path() {
     let rewritten = TestApi
         .github_org_rewrite_chunk_path(chunk, "santhsecurity", "keyhog", dir.path())
         .expect("rewrite succeeds");
-    assert_eq!(rewritten.metadata.source_type, "github-org");
+    assert_eq!(rewritten.metadata.source_type.as_ref(), "github-org");
     assert_eq!(
         rewritten.metadata.path.as_deref(),
         Some("santhsecurity/keyhog/src/secret.env")
@@ -746,7 +747,7 @@ fn github_org_rewrite_fails_loud_for_missing_or_outside_paths() {
     let outside_chunk = keyhog_core::Chunk {
         data: "x".into(),
         metadata: keyhog_core::ChunkMetadata {
-            path: Some(outside.path().display().to_string()),
+            path: Some(outside.path().display().to_string().into()),
             ..Default::default()
         },
     };
@@ -962,7 +963,7 @@ fn web_ssrf_url_classifier_uses_verifier_owner() {
     );
     assert!(
         http.contains("pub(crate) fn effective_timeout(&self) -> Duration")
-            && http.contains("self.timeout.unwrap_or(DEFAULT_TIMEOUT)")
+            && http.contains("self.timeout.unwrap_or(crate::timeouts::HTTP_REQUEST)")
             && http.contains("timeout(cfg.effective_timeout())"),
         "shared HTTP builder must own the Tier-A timeout default"
     );

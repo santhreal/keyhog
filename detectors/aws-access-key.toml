@@ -11,7 +11,10 @@ severity = "critical"
 keywords = ["AKIA", "ASIA"]
 simdsieve_prefixes = ["AKIA", "ASIA"]
 
-# AWS access key IDs are exactly 20 bytes: AKIA/ASIA plus 16 characters.
+# Credential shape: an AWS access key ID is EXACTLY 20 bytes (AKIA/ASIA + 16).
+# A candidate of any other length is not a valid key id and is suppressed by the
+# shape gate. Per-detector (DetectorSpec::credential_shape; was the centralized
+# rules/detector-credential-shapes.toml list).
 [detector.credential_shape]
 exact_length = 20
 

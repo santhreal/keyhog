@@ -2,49 +2,37 @@
 
 use std::sync::LazyLock;
 
-pub(crate) struct GenericKeywordStemSet {
-    stems: Vec<Vec<u8>>,
+struct GenericKeywordStemSet {
+    stems: Vec<&'static [u8]>,
     by_first: [Vec<usize>; 256],
     has_first: [bool; 256],
 }
 
 static GENERIC_KEYWORD_STEMS: LazyLock<GenericKeywordStemSet> = LazyLock::new(|| {
-    GenericKeywordStemSet::from_keywords(crate::assignment_keywords::assignment_keywords())
-});
-
-impl GenericKeywordStemSet {
-    pub(crate) fn from_keywords(keywords: &[String]) -> Self {
-        let stems = generic_keyword_prefilter_stems_for(keywords)
-            .into_iter()
-            .map(|stem| stem.as_bytes().to_vec())
-            .collect::<Vec<_>>();
-        let mut by_first: [Vec<usize>; 256] = std::array::from_fn(|_| Vec::new());
-        let mut has_first = [false; 256];
-        for (idx, stem) in stems.iter().enumerate() {
-            if let Some(&first) = stem.first() {
-                let lower = first.to_ascii_lowercase();
-                let upper = first.to_ascii_uppercase();
-                by_first[lower as usize].push(idx);
-                has_first[lower as usize] = true;
-                if upper != lower {
-                    by_first[upper as usize].push(idx);
-                    has_first[upper as usize] = true;
-                }
+    let stems: Vec<&'static [u8]> = generic_keyword_prefilter_stems()
+        .into_iter()
+        .map(str::as_bytes)
+        .collect();
+    let mut by_first: [Vec<usize>; 256] = std::array::from_fn(|_| Vec::new());
+    let mut has_first = [false; 256];
+    for (idx, stem) in stems.iter().enumerate() {
+        if let Some(&first) = stem.first() {
+            let lower = first.to_ascii_lowercase();
+            let upper = first.to_ascii_uppercase();
+            by_first[lower as usize].push(idx);
+            has_first[lower as usize] = true;
+            if upper != lower {
+                by_first[upper as usize].push(idx);
+                has_first[upper as usize] = true;
             }
         }
-        Self {
-            stems,
-            by_first,
-            has_first,
-        }
     }
-
-    pub(crate) fn contains(&self, bytes: &[u8]) -> bool {
-        bytes.iter().enumerate().any(|(index, byte)| {
-            self.has_first[*byte as usize] && generic_stem_matches_at(bytes, index, self)
-        })
+    GenericKeywordStemSet {
+        stems,
+        by_first,
+        has_first,
     }
-}
+});
 
 /// Compact keyword spellings into the minimal safe prefilter stems used by the
 /// generic assignment bridge.
@@ -54,9 +42,9 @@ impl GenericKeywordStemSet {
 /// regex, so each returned stem must be a recall-preserving substring of one or
 /// more regex arms. Unknown added keywords keep their exact spelling, which
 /// prevents a keyword-list expansion from becoming invisible to the prefilter.
-fn generic_keyword_prefilter_stems_for(keywords: &[String]) -> Vec<&str> {
+pub(crate) fn generic_keyword_prefilter_stems() -> Vec<&'static str> {
     let mut stems = Vec::new();
-    for keyword in keywords
+    for keyword in crate::assignment_keywords::assignment_keywords()
         .iter()
         .map(String::as_str)
         // Local vendor-prefixed `<name>_key=` support needs a bare `key`
@@ -79,14 +67,7 @@ fn generic_keyword_prefilter_stems_for(keywords: &[String]) -> Vec<&str> {
 /// and stops scanning a line after its first stem hit because the generic bridge
 /// only needs to decide which lines should run the heavier assignment regex.
 pub(crate) fn collect_generic_keyword_lines(text: &str, out: &mut Vec<usize>) {
-    collect_generic_keyword_lines_with_stems(text, &GENERIC_KEYWORD_STEMS, out);
-}
-
-pub(crate) fn collect_generic_keyword_lines_with_stems(
-    text: &str,
-    stem_set: &GenericKeywordStemSet,
-    out: &mut Vec<usize>,
-) {
+    let stem_set = &*GENERIC_KEYWORD_STEMS;
     let bytes = text.as_bytes();
     let mut idx = 0usize;
     let mut line_idx = 0usize;
@@ -128,12 +109,13 @@ pub(crate) fn collect_generic_keyword_lines_from_positions(
     }
     for &pos in positions {
         let pos = pos as usize;
+        // `partition_point` returns `0..=len`; `saturating_sub(1)` maps it into
+        // `0..=len-1` (the early return guarantees `len >= 1`), so every result
+        // is an in-range line index.
         let line_idx = line_offsets
             .partition_point(|&line_start| line_start <= pos)
             .saturating_sub(1);
-        if line_idx < line_offsets.len() {
-            out.push(line_idx);
-        }
+        out.push(line_idx);
     }
     out.sort_unstable();
     out.dedup();
@@ -142,7 +124,7 @@ pub(crate) fn collect_generic_keyword_lines_from_positions(
 #[inline]
 fn generic_stem_matches_at(bytes: &[u8], start: usize, stem_set: &GenericKeywordStemSet) -> bool {
     for &stem_idx in &stem_set.by_first[bytes[start] as usize] {
-        let stem = &stem_set.stems[stem_idx];
+        let stem = stem_set.stems[stem_idx];
         let end = start + stem.len();
         if end <= bytes.len() && bytes[start..end].eq_ignore_ascii_case(stem) {
             return true;
@@ -151,7 +133,7 @@ fn generic_stem_matches_at(bytes: &[u8], start: usize, stem_set: &GenericKeyword
     false
 }
 
-pub(crate) fn generic_keyword_prefilter_stem(keyword: &str) -> &str {
+pub(crate) fn generic_keyword_prefilter_stem(keyword: &'static str) -> &'static str {
     if keyword.contains("secret") {
         "secret"
     } else if keyword.contains("pass") {
@@ -183,7 +165,7 @@ pub(crate) fn normalize_assignment_keyword(keyword: &str) -> Option<String> {
         if byte.is_ascii_alphanumeric() {
             normalized.push(byte.to_ascii_lowercase() as char);
             last_was_sep = false;
-        } else if matches!(byte, b'_' | b'-' | b'.') && !normalized.is_empty() && !last_was_sep {
+        } else if is_assignment_compact_separator(byte) && !normalized.is_empty() && !last_was_sep {
             normalized.push('_');
             last_was_sep = true;
         }
@@ -197,10 +179,8 @@ pub(crate) fn normalize_assignment_keyword(keyword: &str) -> Option<String> {
 /// True for assignment-key names whose suffix claims a credential slot, not a
 /// bare service marker like `segment`.
 pub(crate) fn normalized_assignment_keyword_has_secret_suffix(normalized: &str) -> bool {
-    matches!(
-        normalized.rsplit('_').next(),
-        Some("key" | "secret" | "token" | "password" | "passwd" | "pwd")
-    ) || normalized.ends_with("key")
+    matches!(normalized.rsplit('_').next(), Some("passwd" | "pwd"))
+        || normalized.ends_with("key")
         || normalized.ends_with("secret")
         || normalized.ends_with("token")
         || normalized.ends_with("password")
@@ -221,9 +201,9 @@ pub(crate) fn is_strong_keyword_anchored_hex_key(keyword: &str, value: &str) -> 
     // Deliberately EXCLUDES the weaker / more ambiguous bridge anchors
     // (`token`, `pass*`, `auth*`, `credential`, `license_key`, `passphrase`),
     // whose hex captures are not as cleanly real on CredData.
-    if STRONG_HEX_KEY_COMPACT_EXACT
+    if strong_hex_key_anchors()
         .iter()
-        .any(|exact| compact_keyword_eq(keyword, exact, is_assignment_compact_separator))
+        .any(|exact| compact_keyword_eq(keyword, exact.as_bytes(), is_assignment_compact_separator))
     {
         return true;
     }
@@ -236,17 +216,47 @@ pub(crate) fn is_strong_keyword_anchored_hex_key(keyword: &str, value: &str) -> 
         || compact_keyword_ends_with(keyword, b"secret", is_assignment_compact_separator)
 }
 
-const STRONG_HEX_KEY_COMPACT_EXACT: &[&[u8]] = &[
-    b"secret",
-    b"apikey",
-    b"privatekey",
-    b"encryptionkey",
-    b"signingkey",
-    b"accesskey",
-    b"clientsecret",
-    b"appsecret",
-    b"masterkey",
-];
+/// The STRONG cryptographic-key anchor vocabulary, loaded from Tier-B
+/// `rules/strong-hex-key-anchors.toml` (compact lowercase, no separators). ONE
+/// home for the list — a team widens it by editing the TOML, no recompile of the
+/// classifier logic. Fails CLOSED (panic) on invalid embedded data.
+pub(crate) fn strong_hex_key_anchors() -> &'static [String] {
+    &STRONG_HEX_KEY_ANCHORS
+}
+
+static STRONG_HEX_KEY_ANCHORS: LazyLock<Vec<String>> = LazyLock::new(|| {
+    parse_strong_hex_key_anchors(include_str!(
+        "../../../../../rules/strong-hex-key-anchors.toml"
+    ))
+    .unwrap_or_else(|error| {
+        panic!(
+            "rules/strong-hex-key-anchors.toml is invalid: {error}. Fix the bundled Tier-B \
+             strong-hex-key anchor vocabulary; refusing to run without the strong-key hex \
+             classifier truth."
+        )
+    })
+});
+
+#[derive(serde::Deserialize)]
+struct StrongHexKeyAnchorFile {
+    strong_hex_key_anchors: AnchorSection,
+}
+
+/// Parse + validate the strong hex-key anchors from raw TOML. Compact lowercase
+/// tokens only (no separators): the classifier compares against a separator-
+/// stripped, case-folded keyword, so any separator here would be dead bytes.
+pub(crate) fn parse_strong_hex_key_anchors(raw: &str) -> Result<Vec<String>, String> {
+    let parsed: StrongHexKeyAnchorFile = toml::from_str(raw)
+        .map_err(|error| format!("invalid strong-hex-key-anchors.toml: {error}"))?;
+    crate::tier_b_list::parse_token_list(
+        parsed.strong_hex_key_anchors.anchors,
+        &crate::tier_b_list::ListPolicy {
+            what: "strong hex-key anchor",
+            require_lowercase: true,
+            separators: b"",
+        },
+    )
+}
 
 /// True for a generic assignment where the key is a strong credential anchor
 /// and the value is an encoded printable text secret rather than a binary/base64
@@ -260,21 +270,61 @@ pub(crate) fn is_strong_keyword_anchored_encoded_text_secret(keyword: &str, valu
         return false;
     };
     let strong_anchor = normalized_assignment_keyword_has_secret_suffix(&normalized)
-        || ENCODED_TEXT_SECRET_ANCHORS
-            .iter()
-            .any(|anchor| compact_keyword_eq(&normalized, anchor, is_normalized_compact_separator));
+        || encoded_text_secret_anchors().iter().any(|anchor| {
+            compact_keyword_eq(
+                &normalized,
+                anchor.as_bytes(),
+                is_normalized_compact_separator,
+            )
+        });
     strong_anchor && crate::decode_structure::decodes_to_printable_text(value)
 }
 
-const ENCODED_TEXT_SECRET_ANCHORS: &[&[u8]] = &[
-    b"password",
-    b"passwd",
-    b"pwd",
-    b"passphrase",
-    b"token",
-    b"secret",
-    b"credential",
-];
+/// The encoded-printable-text credential anchor vocabulary, loaded from Tier-B
+/// `rules/encoded-text-secret-anchors.toml` (compact lowercase, no separators).
+/// ONE home for the list. Fails CLOSED (panic) on invalid embedded data.
+pub(crate) fn encoded_text_secret_anchors() -> &'static [String] {
+    &ENCODED_TEXT_SECRET_ANCHORS
+}
+
+static ENCODED_TEXT_SECRET_ANCHORS: LazyLock<Vec<String>> = LazyLock::new(|| {
+    parse_encoded_text_secret_anchors(include_str!(
+        "../../../../../rules/encoded-text-secret-anchors.toml"
+    ))
+    .unwrap_or_else(|error| {
+        panic!(
+            "rules/encoded-text-secret-anchors.toml is invalid: {error}. Fix the bundled Tier-B \
+             encoded-text secret-anchor vocabulary; refusing to run without the encoded-text \
+             classifier truth."
+        )
+    })
+});
+
+/// Shared section shape for the compact-anchor Tier-B files.
+#[derive(serde::Deserialize)]
+struct AnchorSection {
+    anchors: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct EncodedTextSecretAnchorFile {
+    encoded_text_secret_anchors: AnchorSection,
+}
+
+/// Parse + validate the encoded-text secret anchors from raw TOML. Compact
+/// lowercase tokens only (no separators), matching the normalized keyword form.
+pub(crate) fn parse_encoded_text_secret_anchors(raw: &str) -> Result<Vec<String>, String> {
+    let parsed: EncodedTextSecretAnchorFile = toml::from_str(raw)
+        .map_err(|error| format!("invalid encoded-text-secret-anchors.toml: {error}"))?;
+    crate::tier_b_list::parse_token_list(
+        parsed.encoded_text_secret_anchors.anchors,
+        &crate::tier_b_list::ListPolicy {
+            what: "encoded-text secret anchor",
+            require_lowercase: true,
+            separators: b"",
+        },
+    )
+}
 
 pub(crate) fn is_assignment_compact_separator(byte: u8) -> bool {
     matches!(byte, b'_' | b'-' | b'.')
@@ -322,4 +372,231 @@ pub(crate) fn compact_keyword_ends_with(
         }
     }
     suffix_index == 0
+}
+
+#[cfg(test)]
+mod position_line_mapping_tests {
+    use super::collect_generic_keyword_lines_from_positions;
+
+    #[test]
+    fn maps_positions_to_line_indexes_sorted_deduped() {
+        // Three lines starting at byte 0, 10, 25.
+        let line_offsets = [0usize, 10, 25];
+        let positions = [0u32, 5, 10, 24, 25, 30];
+        let mut out = Vec::new();
+        collect_generic_keyword_lines_from_positions(&line_offsets, &positions, &mut out);
+        assert_eq!(out, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn positions_within_one_line_dedup_to_that_line() {
+        let line_offsets = [0usize, 10, 25];
+        let positions = [10u32, 12, 20, 24];
+        let mut out = Vec::new();
+        collect_generic_keyword_lines_from_positions(&line_offsets, &positions, &mut out);
+        assert_eq!(out, vec![1]);
+    }
+
+    #[test]
+    fn empty_line_offsets_yields_empty() {
+        let mut out = vec![7, 8, 9];
+        collect_generic_keyword_lines_from_positions(&[], &[3u32], &mut out);
+        assert!(out.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod strong_anchor_tests {
+    use super::{
+        encoded_text_secret_anchors, is_strong_keyword_anchored_encoded_text_secret,
+        is_strong_keyword_anchored_hex_key, parse_encoded_text_secret_anchors,
+        parse_strong_hex_key_anchors, strong_hex_key_anchors,
+    };
+
+    const HEX_32: &str = "0123456789abcdef0123456789abcdef";
+    const HEX_48: &str = "0123456789abcdef0123456789abcdef0123456789abcdef";
+    // 32 chars, but the final `g` is not a hex digit.
+    const NOT_HEX_32: &str = "0123456789abcdef0123456789abcdeg";
+    // base64 of "ThisIsAPlaintextSecretValueForTests" — decodes to printable ASCII.
+    const PRINTABLE_B64: &str = "VGhpc0lzQVBsYWludGV4dFNlY3JldFZhbHVlRm9yVGVzdHM=";
+
+    // ── Tier-B vocab loaded with the exact expected values (real assertions) ─
+
+    #[test]
+    fn strong_hex_key_anchor_vocab_is_the_expected_list() {
+        assert_eq!(
+            strong_hex_key_anchors(),
+            &[
+                "secret",
+                "apikey",
+                "privatekey",
+                "encryptionkey",
+                "signingkey",
+                "accesskey",
+                "clientsecret",
+                "appsecret",
+                "masterkey",
+            ]
+        );
+    }
+
+    #[test]
+    fn encoded_text_secret_anchor_vocab_is_the_expected_list() {
+        assert_eq!(
+            encoded_text_secret_anchors(),
+            &[
+                "password",
+                "passwd",
+                "pwd",
+                "passphrase",
+                "token",
+                "secret",
+                "credential",
+            ]
+        );
+    }
+
+    // ── is_strong_keyword_anchored_hex_key: strong family vs adversarial twins ─
+
+    #[test]
+    fn exact_strong_anchor_hex_key_is_admitted() {
+        // Separator/case-folded exact anchors.
+        assert!(is_strong_keyword_anchored_hex_key("api_key", HEX_32));
+        assert!(is_strong_keyword_anchored_hex_key("API-KEY", HEX_48));
+        assert!(is_strong_keyword_anchored_hex_key("encryption.key", HEX_32));
+        assert!(is_strong_keyword_anchored_hex_key("clientSecret", HEX_32));
+        assert!(is_strong_keyword_anchored_hex_key("secret", HEX_48));
+    }
+
+    #[test]
+    fn vendor_prefixed_key_or_secret_suffix_hex_is_admitted() {
+        // Not an exact anchor, but ends in `key`/`secret` after compacting.
+        assert!(is_strong_keyword_anchored_hex_key(
+            "stripe_secret_key",
+            HEX_32
+        ));
+        assert!(is_strong_keyword_anchored_hex_key(
+            "vault_root_secret",
+            HEX_48
+        ));
+    }
+
+    #[test]
+    fn weak_or_ambiguous_anchors_are_rejected_for_hex() {
+        // The deliberately-excluded weak family: hex under these is more likely a
+        // digest than a key, so it stays gated.
+        assert!(!is_strong_keyword_anchored_hex_key("token", HEX_32));
+        assert!(!is_strong_keyword_anchored_hex_key("password", HEX_32));
+        assert!(!is_strong_keyword_anchored_hex_key("passphrase", HEX_48));
+        assert!(!is_strong_keyword_anchored_hex_key("credential", HEX_32));
+        // `license_key` is explicitly weak even though it ends in `key`.
+        assert!(!is_strong_keyword_anchored_hex_key("license_key", HEX_32));
+    }
+
+    #[test]
+    fn non_canonical_length_or_non_hex_values_are_rejected() {
+        // Right anchor, wrong shape.
+        assert!(!is_strong_keyword_anchored_hex_key("api_key", NOT_HEX_32));
+        assert!(!is_strong_keyword_anchored_hex_key(
+            "api_key",
+            &HEX_32[..31]
+        )); // length 31
+        assert!(!is_strong_keyword_anchored_hex_key("api_key", "deadbeef")); // length 8
+    }
+
+    // ── is_strong_keyword_anchored_encoded_text_secret ─────────────────────
+
+    #[test]
+    fn list_only_anchor_lifts_encoded_printable_text() {
+        // `credential` earns the lift ONLY via the migrated Tier-B anchor list (it
+        // has no `key`/`secret`/`token` suffix), so this exercises the list path.
+        assert!(is_strong_keyword_anchored_encoded_text_secret(
+            "credential",
+            PRINTABLE_B64
+        ));
+        // `password` (a list anchor AND a suffix) also lifts.
+        assert!(is_strong_keyword_anchored_encoded_text_secret(
+            "passphrase",
+            PRINTABLE_B64
+        ));
+    }
+
+    #[test]
+    fn non_anchor_keyword_does_not_lift_encoded_text() {
+        // Adversarial twin: same decodable value, but the key is not a credential
+        // anchor — no lift.
+        assert!(!is_strong_keyword_anchored_encoded_text_secret(
+            "hostname",
+            PRINTABLE_B64
+        ));
+    }
+
+    #[test]
+    fn dotted_or_short_values_short_circuit_before_decode() {
+        // A `.` in the value (JWT-like segmenting) and a sub-24-char value both bail
+        // before the decode check, regardless of anchor.
+        assert!(!is_strong_keyword_anchored_encoded_text_secret(
+            "password",
+            "aGVsbG8.d29ybGQ="
+        ));
+        assert!(!is_strong_keyword_anchored_encoded_text_secret(
+            "password", "c2hvcnQ="
+        ));
+    }
+
+    // ── Tier-B loaders fail CLOSED on malformed embedded data ──────────────
+
+    #[test]
+    fn strong_hex_key_anchor_parser_rejects_uppercase() {
+        let err =
+            parse_strong_hex_key_anchors("[strong_hex_key_anchors]\nanchors = [\"APIKEY\"]\n")
+                .unwrap_err();
+        assert!(err.contains("lowercase"), "got: {err}");
+    }
+
+    #[test]
+    fn strong_hex_key_anchor_parser_rejects_a_separator() {
+        // Compact-only policy: a separator is not allowed (it would be dead bytes).
+        let err =
+            parse_strong_hex_key_anchors("[strong_hex_key_anchors]\nanchors = [\"api_key\"]\n")
+                .unwrap_err();
+        assert!(err.contains("alphanumeric"), "got: {err}");
+    }
+
+    #[test]
+    fn strong_hex_key_anchor_parser_rejects_duplicates_and_empties() {
+        assert!(parse_strong_hex_key_anchors(
+            "[strong_hex_key_anchors]\nanchors = [\"secret\", \"secret\"]\n"
+        )
+        .unwrap_err()
+        .contains("duplicate"));
+        assert!(
+            parse_strong_hex_key_anchors("[strong_hex_key_anchors]\nanchors = []\n")
+                .unwrap_err()
+                .contains("at least one")
+        );
+    }
+
+    #[test]
+    fn strong_hex_key_anchor_parser_rejects_malformed_toml() {
+        let err = parse_strong_hex_key_anchors("not valid = = toml").unwrap_err();
+        assert!(
+            err.contains("invalid strong-hex-key-anchors.toml"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn encoded_text_secret_anchor_parser_round_trips_and_validates() {
+        let out = parse_encoded_text_secret_anchors(
+            "[encoded_text_secret_anchors]\nanchors = [\"token\", \"secret\"]\n",
+        )
+        .unwrap();
+        assert_eq!(out, vec!["token", "secret"]);
+        assert!(parse_encoded_text_secret_anchors(
+            "[encoded_text_secret_anchors]\nanchors = [\"Token\"]\n"
+        )
+        .unwrap_err()
+        .contains("lowercase"));
+    }
 }

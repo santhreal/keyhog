@@ -9,11 +9,62 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
+}
+
+/// Spawn `keyhog watch [extra] <dir>`, draining its stderr on a background thread
+/// into a shared buffer so a caller can poll for a marker DETERMINISTICALLY
+/// instead of racing a fixed sleep against ~900-detector debug-build compilation
+/// (the old `sleep(300ms)` sampled an empty window — the compile hadn't reached
+/// the banner yet — so a byte-length check passed vacuously on two empty outputs).
+fn spawn_watch_streaming(
+    extra: &[&str],
+    dir: &std::path::Path,
+) -> (std::process::Child, Arc<Mutex<String>>) {
+    let mut cmd = Command::new(binary());
+    cmd.arg("watch").arg(dir);
+    for a in extra {
+        cmd.arg(a);
+    }
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn keyhog watch");
+    let buf = Arc::new(Mutex::new(String::new()));
+    let stderr = child.stderr.take().expect("piped stderr");
+    let sink = Arc::clone(&buf);
+    thread::spawn(move || {
+        let mut reader = BufReader::new(stderr);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => sink.lock().unwrap().push_str(&line),
+            }
+        }
+    });
+    (child, buf)
+}
+
+/// Poll `buf` (case-insensitively) for `marker` until it appears or `timeout`
+/// elapses; returns whether the marker was seen.
+fn stderr_contains_within(buf: &Arc<Mutex<String>>, marker: &str, timeout: Duration) -> bool {
+    let start = Instant::now();
+    loop {
+        if buf.lock().unwrap().to_lowercase().contains(marker) {
+            return true;
+        }
+        if start.elapsed() >= timeout {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
 }
 
 /// `keyhog watch --help` documents the path argument, --detectors, and --quiet flags.
@@ -83,45 +134,38 @@ fn watch_path_starts_watching_directory() {
 fn watch_quiet_flag_suppresses_status_messages() {
     let dir = TempDir::new().expect("create tempdir");
 
-    // Start watch WITHOUT --quiet and capture output.
-    let mut noisy = Command::new(binary())
-        .arg("watch")
-        .arg(dir.path())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn keyhog watch (noisy)");
-
-    thread::sleep(Duration::from_millis(300));
+    // Non-quiet: once ~900-detector compilation finishes, watch.rs prints the
+    // "    watching: <root>" banner to stderr. Poll for it deterministically (no
+    // fixed-sleep race — Law 7) instead of sampling a fixed window the debug
+    // compile blows through. Measure how long it took so the quiet window below
+    // can be tied to THIS machine's compile latency.
+    let (mut noisy, noisy_buf) = spawn_watch_streaming(&[], dir.path());
+    let noisy_start = Instant::now();
+    let noisy_saw_banner = stderr_contains_within(&noisy_buf, "watching", Duration::from_secs(60));
+    let noisy_banner_latency = noisy_start.elapsed();
     let _ = noisy.kill();
-    let noisy_output = noisy.wait_with_output().expect("capture noisy output");
-    let noisy_stdout = String::from_utf8_lossy(&noisy_output.stdout);
-    let noisy_stderr = String::from_utf8_lossy(&noisy_output.stderr);
-    let noisy_combined = format!("{noisy_stdout}\n{noisy_stderr}");
-
-    // Start watch WITH --quiet and capture output.
-    let mut quiet = Command::new(binary())
-        .arg("watch")
-        .arg(dir.path())
-        .arg("--quiet")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn keyhog watch --quiet");
-
-    thread::sleep(Duration::from_millis(300));
-    let _ = quiet.kill();
-    let quiet_output = quiet.wait_with_output().expect("capture quiet output");
-    let quiet_stdout = String::from_utf8_lossy(&quiet_output.stdout);
-    let quiet_stderr = String::from_utf8_lossy(&quiet_output.stderr);
-    let quiet_combined = format!("{quiet_stdout}\n{quiet_stderr}");
-
-    // With --quiet, watch should emit less status (or no status at all).
-    // We verify that --quiet mode does not crash and runs at least as long
-    // as noisy mode, or produces less "watching" mentions.
+    let _ = noisy.wait();
     assert!(
-        quiet_combined.len() <= noisy_combined.len() + 100, // allow for slight variance
-        "quiet mode should produce similar or less output than noisy mode"
+        noisy_saw_banner,
+        "non-quiet watch must print the 'watching' status banner within 60s; got: {}",
+        noisy_buf.lock().unwrap()
+    );
+
+    // Quiet: the banner is gated behind `if !args.quiet`, so it must NEVER appear.
+    // Give quiet a window of the observed noisy banner latency + a healthy margin,
+    // so a regression that (wrongly) printed the banner under --quiet WOULD have
+    // done so within the window regardless of this machine's compile speed — then
+    // assert the banner was suppressed. This is the real --quiet contract, not a
+    // byte-length proxy (Law 6).
+    let (mut quiet, quiet_buf) = spawn_watch_streaming(&["--quiet"], dir.path());
+    let quiet_window = noisy_banner_latency + Duration::from_secs(3);
+    let quiet_saw_banner = stderr_contains_within(&quiet_buf, "watching", quiet_window);
+    let _ = quiet.kill();
+    let _ = quiet.wait();
+    assert!(
+        !quiet_saw_banner,
+        "--quiet must suppress the 'watching' status banner entirely; got quiet output: {}",
+        quiet_buf.lock().unwrap()
     );
 }
 

@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "THINGSPEAKwrite-apikey   \"     =\"\"' ' =='= \":  = \"' \"= :: ===      \"   wEEelEXAMPLEEXAMPLEzvcTN"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = 'thingspeak_write_api_key = "wEEelk6NGtXzvcTN"'
+credential = "wEEelk6NGtXzvcTN"
+reason = "Clean config assignment (contrast to the noisy positive) with a quoted value; the thingspeak write-api-key keyword anchors the 16-char token."

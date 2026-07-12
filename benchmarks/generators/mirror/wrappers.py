@@ -1,10 +1,11 @@
 """Wrapper formats — embed a credential in a realistic file shape.
 
-Each wrapper returns (file_extension, contents). Wrappers are chosen
-randomly per positive so the generated corpus has wide format
-coverage: .env, YAML, JSON, Dockerfile, shell export, INI, k8s
-Secret, GitHub-Actions step, Terraform, Helm, Python source, JS
-source, Rust source, log line.
+Each builder takes ``(secret, rnd, key_override)`` and returns the file
+CONTENTS (a str). Wrappers are chosen randomly per positive so the generated
+corpus has wide format coverage: .env, YAML, JSON, Dockerfile, shell export,
+INI, k8s Secret, GitHub-Actions step, Terraform, Helm, Python source, JS
+source, Rust source, log line. The extension travels alongside the builder in
+the :data:`Wrapper` tuple, not as a return value.
 """
 
 from __future__ import annotations
@@ -12,10 +13,12 @@ from __future__ import annotations
 import base64
 import json
 import random
-from typing import Callable
+from typing import Callable, Optional
 
+# builder(secret, rnd, key_override) -> file contents
+WrapperFn = Callable[[str, random.Random, Optional[str]], str]
 # (display_name, extension, builder)
-Wrapper = tuple[str, str, Callable[[str, random.Random], str]]
+Wrapper = tuple[str, str, WrapperFn]
 
 
 # All wrappers accept an optional `key_override` so the generator

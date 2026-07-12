@@ -181,26 +181,38 @@ fn is_evasion_char_zero_width_and_rtl_true() {
 
 #[test]
 fn is_evasion_char_invisible_operators_gap_now_closed() {
-    // Historical memory note: "is_zero_width still missing U+2061-2064".
-    // The CURRENT code range is `'\u{2060}'..='\u{2064}'`, so is_zero_width — and
-    // therefore is_evasion_char — is now TRUE for the whole invisible-operator
-    // block. Asserting the REAL current value (TEST TRUTH): the gap is CLOSED.
-    for cp in 0x2060u32..=0x2064 {
+    // Historical memory note: "is_zero_width still missing U+2061-2064" — now
+    // closed AND the block extended. `is_zero_width` (unicode_hardening.rs) covers
+    // the WHOLE `U+2060..=206F` invisible-operator/format/isolate block (2065
+    // Reserved/Default_Ignorable, 2066-2069 bidi isolates, 206A-206F deprecated
+    // Cf) — NOT just 2060-2064. It does NOT include the visible-width space
+    // separators (NBSP U+00A0, MMSP U+205F, …); those are a separate
+    // `contains_evasion` concern. `is_evasion_char = is_zero_width ||
+    // is_rtl_override`. TEST TRUTH — the whole invisible block is flagged:
+    for cp in 0x2060u32..=0x206F {
         let ch = char::from_u32(cp).unwrap();
         assert!(
             uh::is_evasion_char(ch),
-            "U+{cp:04X} must be flagged (gap closed)"
+            "U+{cp:04X} (invisible-operator block) must be flagged"
         );
     }
-    // Boundary: U+2065 sits one past the range and is neither zero-width nor RTL.
+    // Boundary: U+2070 (SUPERSCRIPT ZERO) is the first codepoint past the 206F
+    // block that is in NEITHER is_zero_width NOR is_rtl_override (U+202A..=202E).
     assert!(
-        !uh::is_evasion_char('\u{2065}'),
-        "U+2065 is outside the invisible-operator range"
+        !uh::is_evasion_char('\u{2070}'),
+        "U+2070 is a visible superscript digit, outside every evasion set"
     );
-    // A Unicode separator (U+00A0 NBSP) is NOT covered by is_evasion_char
-    // (which only unions zero-width + RTL); it is caught by contains_evasion.
-    assert!(!uh::is_evasion_char('\u{00A0}'), "NBSP is a separator, not zw/rtl");
-    assert!(!uh::is_evasion_char('\u{205F}'), "MMSP is a separator, not zw/rtl");
+    // NBSP (U+00A0) and MMSP (U+205F) are visible-width SPACE SEPARATORS, NOT in
+    // is_zero_width (invisible/zero-advance format chars only), so is_evasion_char
+    // is false for them — a broader `contains_evasion` separator pass handles them.
+    assert!(
+        !uh::is_evasion_char('\u{00A0}'),
+        "NBSP is a space separator, not in is_zero_width/is_rtl_override"
+    );
+    assert!(
+        !uh::is_evasion_char('\u{205F}'),
+        "MMSP is a space separator, not in is_zero_width/is_rtl_override"
+    );
 }
 
 // ── contains_evasion: full truth table incl. the DEL / structural boundary ───

@@ -17,5 +17,5 @@ reason = "Primary found without companion env0_api_secret; verification must NOT
 
 [negative_companion_lookalike]
 text = "ENV0_API_SECRET:\"'  \"      \"'' ' \"= ''  :\"':  = =       =    '   \"  :   :::' '\"     ':   =: ': \"\"=: :       'xec7dbj0x9Zk9IUeu0xiUqcy1d2TYigblZSO9QDfxcTBM"
-expected_findings = []
-reason = "Companion lookalike(s) without primary."
+expected_findings = ["env0-api-key"]
+reason = "An env0 API secret is intentionally detectable as a standalone primary."

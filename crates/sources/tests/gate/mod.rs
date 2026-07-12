@@ -13,6 +13,7 @@ mod git_source_non_repo_name_only;
     feature = "gcs"
 ))]
 mod http_default_no_explicit_proxy;
+mod read_file_safe_bytes_size_cap;
 mod s3_empty_bucket_name;
 mod stdin_name_is_stdin;
 mod strings_binary_extracts_ascii;

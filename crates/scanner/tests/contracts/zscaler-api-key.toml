@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "ZSCALERID=tNQHjEXAMPLEEXAMPLEjQ2MF"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# ZSCALER_CLIENT_ID=tNQHjfW1z0NhsUM9rf5jQ2MF  # security"
+credential = "tNQHjfW1z0NhsUM9rf5jQ2MF"
+reason = "Commented-out config; ZSCALER_CLIENT_ID keyword + id intact inside the comment."

@@ -69,17 +69,48 @@ def crate_pkg(crate: str) -> str:
     return "keyhog" if crate == "cli" else f"keyhog-{crate}"
 
 
+def logical_command_lines(text: str) -> list[str]:
+    """Join shell backslash-continued lines into ONE logical command string.
+
+    A CI step commonly narrows across continuation lines:
+
+        cargo test -p keyhog-scanner --profile release-fast \\
+          --test contracts_runner \\
+          --test adversarial_explosion_runner
+
+    Scanning line-by-line, the FIRST line carries no `--test`, so a naive check
+    would misread it as an all-targets run and vacuously wire every orphan. We
+    fold each `\\`-continued run into a single logical line so the narrowing
+    flags on later lines are seen as part of the same command.
+    """
+    out: list[str] = []
+    buf = ""
+    for raw in text.splitlines():
+        stripped = raw.rstrip()
+        if stripped.endswith("\\"):
+            buf += stripped[:-1] + " "
+        else:
+            out.append(buf + raw)
+            buf = ""
+    if buf:
+        out.append(buf)
+    return out
+
+
 def runs_all_targets(pkg: str) -> bool:
     """True iff a workflow runs `cargo test -p <pkg>` with no target filter.
 
     Such a step compiles + runs every integration target — each top-level
     `tests/*.rs` as its own binary — so it wires them all without aggregation.
+    Continuation lines are folded first (`logical_command_lines`) so a
+    multi-line command whose `--test` flags sit on later lines is correctly
+    recognised as NARROWED, not all-targets.
     """
     if not WORKFLOWS.is_dir():
         return False
     pkg_ref = re.compile(rf"-p\s+{re.escape(pkg)}(?:\s|$)")
     for wf in sorted(WORKFLOWS.glob("*.yml")):
-        for line in wf.read_text().splitlines():
+        for line in logical_command_lines(wf.read_text()):
             if "cargo test" not in line or not pkg_ref.search(line):
                 continue
             if any(flag in line for flag in TARGET_NARROWING):
@@ -185,6 +216,18 @@ def self_test() -> int:
         ok = False
     if not any(f in "cargo test -p x --test all_tests" for f in TARGET_NARROWING):
         print("self-test: --test not flagged as narrowing", file=sys.stderr)
+        ok = False
+    # Backslash continuations fold into one logical line, so a multi-line
+    # `cargo test -p x \\ --test y` reads as NARROWED (its --test is on line 2),
+    # not as an all-targets run — the bug that would vacuously wire every orphan
+    # the moment scanner (whose strict-runner step is exactly this shape) joins
+    # ENFORCED_CRATES.
+    folded = logical_command_lines("cargo test -p keyhog-scanner \\\n  --test contracts_runner\nplain")
+    if not any("cargo test" in ln and "--test " in ln for ln in folded):
+        print("self-test: continuation not folded into one command", file=sys.stderr)
+        ok = False
+    if "plain" not in folded:
+        print("self-test: folding dropped a non-continued line", file=sys.stderr)
         ok = False
     # crate -> cargo package name (cli ships as `keyhog`).
     if (crate_pkg("cli"), crate_pkg("core")) != ("keyhog", "keyhog-core"):

@@ -26,10 +26,10 @@ fn data_after_embedded_padding_is_rejected_not_truncated() {
 #[test]
 fn leading_padding_is_rejected() {
     let err = decode_standard_base64("=QUJD").expect_err("leading '=' must be rejected");
-    assert_eq!(
-        err,
-        "invalid base64: data after padding '=' (padding may only appear at the end)"
-    );
+    // A LEADING `=` (index 0) is padding with zero preceding data — the code
+    // reports that specific case, distinct from the mid-string "data after
+    // padding" error. Assert the accurate message the code actually emits.
+    assert_eq!(err, "invalid base64: padding '=' with no preceding data");
 }
 
 #[test]

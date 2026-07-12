@@ -8,15 +8,79 @@ use super::doc_markers::{check_markers, MarkerVerdict};
 use super::shape::{
     has_n_or_more_consecutive_identical, has_repeated_block_mask,
     has_three_or_more_consecutive_identical, is_uuid_v4_shape, looks_like_bare_hex_digest,
-    looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
-    looks_like_prefixed_hash_digest, looks_like_standard_base64_blob,
-    looks_like_truncated_uuid_v4_suffix, HIGH_ENTROPY_BASE64_CUTOFF, RFC7519_EXAMPLE_JWT_PREFIX,
+    looks_like_base64_integrity_body, looks_like_bracketed_template_placeholder,
+    looks_like_dashed_serial_key, looks_like_prefixed_hash_digest, looks_like_standard_base64_blob,
+    looks_like_truncated_uuid_v4_suffix, HASH_ALGO_INTEGRITY_LABELS, HIGH_ENTROPY_BASE64_CUTOFF,
+    RFC7519_EXAMPLE_JWT_PREFIX,
 };
 use crate::{adjudicate::StageId, context};
+
+#[derive(serde::Deserialize)]
+struct FakeSequences {
+    sequences: Vec<String>,
+}
+
+fn parse_fake_sequences(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<FakeSequences>(raw)
+        .map(|parsed| parsed.sequences)
+        .map_err(|error| error.to_string())
+}
+
+static FAKE_SEQUENCES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_fake_sequences(include_str!("../../../../rules/fake-sequences.toml")) {
+        Ok(sequences) => sequences,
+        Err(error) => panic!(
+            "rules/fake-sequences.toml is invalid: {error}. \
+             Fix the bundled Tier-B fake sequences list."
+        ),
+    }
+});
+
+#[derive(serde::Deserialize)]
+struct ExamplePathComponents {
+    components: Vec<String>,
+}
+
+fn parse_example_path_components(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<ExamplePathComponents>(raw)
+        .map(|parsed| parsed.components)
+        .map_err(|error| error.to_string())
+}
+
+static EXAMPLE_PATH_COMPONENTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_example_path_components(include_str!(
+        "../../../../rules/example-path-components.toml"
+    )) {
+        Ok(components) => components,
+        Err(error) => panic!(
+            "rules/example-path-components.toml is invalid: {error}. \
+             Fix the bundled Tier-B example path components list."
+        ),
+    }
+});
 
 #[inline]
 fn suppress(reason: &'static str) -> Option<StageId> {
     Some(StageId::ShapeGate(reason))
+}
+
+/// If `source_type` came from an adversarial evasion decoder, return the
+/// generic-fallback suppression reason for that decoder. `/caesar` and
+/// `/reverse` are the two evasion decoders; ONE owner so the decision tree
+/// (which only needs "is this evasion output?" to skip EXAMPLE-marker
+/// suppression) and `api.rs` (which suppresses coincidental GENERIC / weak-anchor
+/// matches on that output) can never check divergent decoder sets. The api
+/// gate previously checked `/caesar` alone and silently let `/reverse`
+/// generic-fallback noise through.
+pub(super) fn evasion_decoder_reason(source_type: Option<&str>) -> Option<&'static str> {
+    let s = source_type?;
+    if s.contains("/caesar") {
+        Some("caesar_generic_fallback")
+    } else if s.contains("/reverse") {
+        Some("reverse_generic_fallback")
+    } else {
+        None
+    }
 }
 
 /// True when `s` is multi-word English prose carrying an interior whitespace run
@@ -58,9 +122,11 @@ pub(super) fn suppression_stage_inner(
     allow_base64_blob_shape: bool,
     allow_encoded_text_secret: bool,
 ) -> Option<StageId> {
-    let from_evasion_decoder =
-        source_type.is_some_and(|s| s.contains("/reverse") || s.contains("/caesar"));
-    let upper = credential.to_uppercase();
+    let from_evasion_decoder = evasion_decoder_reason(source_type).is_some();
+    // ASCII uppercase: every marker/needle compared against `upper` is ASCII, so
+    // this is byte-identical for matching yet avoids the full Unicode case-fold
+    // (allocation + length changes like `ß`→`SS`) on the suppression hot path.
+    let upper = credential.to_ascii_uppercase();
 
     // ── 1-2. Doc / placeholder / instructional / RFC7519 / known-prefix /
     //         DOC_MARKER substring scans.
@@ -80,7 +146,7 @@ pub(super) fn suppression_stage_inner(
     // suppressed by `has_n_or_more_consecutive_identical` and the
     // PEM `private-key` detector silently misses them - see
     // `tests/contracts/private-key.toml` OPENSSH positive.
-    if credential.starts_with("-----BEGIN") {
+    if crate::credential_shapes::is_pem_block(credential) {
         return None;
     }
 
@@ -157,13 +223,13 @@ pub(super) fn suppression_stage_inner(
     }
 
     // ── 4. Known fake sequences ──
-    // Only suppress if the fake sequence is a DOMINANT part of the credential
-    // (>50% of the non-prefix content). Substring matches in long credentials
-    // produce false suppressions on real secrets.
+    // Only suppress if the fake sequence is a DOMINANT part of the credential:
+    // its length must exceed 40% of the FULL credential length (no prefix
+    // stripping). Substring matches in long credentials produce false
+    // suppressions on real secrets.
     if !bypass_shape_gates {
-        const FAKE_SEQUENCES: &[&str] = &["1234567890", "0123456789", "ABCDEFGH", "ABCDEFGHIJ"];
-        for seq in FAKE_SEQUENCES {
-            if upper.contains(seq) {
+        for seq in &*FAKE_SEQUENCES {
+            if upper.contains(seq.as_str()) {
                 // Only suppress short credentials dominated by the fake sequence,
                 // not long ones where it's a small substring.
                 let seq_ratio = seq.len() as f64 / credential.len().max(1) as f64;
@@ -308,9 +374,9 @@ pub(super) fn suppression_stage_inner(
         return suppress("aws_iam_arn");
     }
 
-    // ── 5e2. HTML colour codes (`#RRGGBB`, `#RGB`). 6-or-3 hex
-    //          digits prefixed by `#`. Real credentials are never
-    //          prefixed with `#`. SecretBench-medium 15k seed-0:
+    // ── 5e2. HTML colour codes (`#RGB`, `#RRGGBB`, `#RRGGBBAA`). 3, 6,
+    //          or 8 hex digits prefixed by `#`. Real credentials are
+    //          never prefixed with `#`. SecretBench-medium 15k seed-0:
     //          22 FPs from html-color.
     if let Some(body) = credential.strip_prefix('#') {
         if (body.len() == 3 || body.len() == 6 || body.len() == 8)
@@ -399,11 +465,8 @@ pub(super) fn suppression_stage_inner(
 
     // ── 8. Path-based heuristic ──
     if let Some(path) = path {
-        const EXAMPLE_PATH_COMPONENTS: &[&str] = &[
-            "example", "examples", "test", "tests", "fixture", "fixtures",
-        ];
         let is_example_path =
-            crate::platform_compat::path_has_any_component(path, EXAMPLE_PATH_COMPONENTS);
+            crate::platform_compat::path_has_any_component(path, &*EXAMPLE_PATH_COMPONENTS);
         if is_example_path && super::doc_markers::upper_contains_token(&upper, "EXAMPLE") {
             return suppress("example_path_marker");
         }
@@ -476,7 +539,18 @@ pub(crate) fn decoded_benign_text_reason(credential: &str) -> Option<&'static st
     if decoded_looks_like_labelled_hash(decoded) {
         return Some("decoded_labelled_hash_digest");
     }
-    if decoded_looks_like_bare_hash_digest(decoded) {
+    // Same length set as the direct bare-hex arm (32/40/48/56/64/72/128) so a
+    // base64-wrapped md5 (32) / sha1 (40) digest is suppressed too — the old
+    // 56|64|72|128 gate here dropped the md5/sha1 lengths and leaked them.
+    //
+    // This is context-FREE (it only sees the base64 value): a decoded hex32 is
+    // indistinguishable from an md5 here, so it CANNOT decide "AES key vs hash".
+    // That discrimination is the CALLER's job — a decoded canonical hex key
+    // assigned to a STRONG credential keyword (`api-key: <b64>`) is exempted
+    // BEFORE this arm via `decoded_hex_key_is_strong_anchored`, mirroring the
+    // direct path's `is_strong_keyword_anchored_hex_key`. Keeping this arm
+    // unconditional preserves the bare-md5/sha1 suppression contract.
+    if looks_like_bare_hex_digest(decoded) {
         return Some("decoded_bare_hash_digest");
     }
     if looks_like_dashed_serial_key(decoded) {
@@ -510,18 +584,17 @@ fn decoded_looks_like_labelled_hash(decoded: &str) -> bool {
     if looks_like_prefixed_hash_digest(decoded) {
         return true;
     }
-    for label in ["sha512-", "sha256-"] {
+    for &label in HASH_ALGO_INTEGRITY_LABELS {
         let Some(idx) = decoded.find(label) else {
             continue;
         };
         let body = &decoded[idx + label.len()..];
-        if body.len() >= 32 && crate::decode::standard_base64_shape(body).is_some() {
+        // Same 40-char base64 integrity floor as the canonical owner: the two
+        // sites carried divergent floors (32 here vs 40 there) for the same
+        // labelled-integrity-body test.
+        if looks_like_base64_integrity_body(body) {
             return true;
         }
     }
     false
-}
-
-fn decoded_looks_like_bare_hash_digest(decoded: &str) -> bool {
-    matches!(decoded.len(), 56 | 64 | 72 | 128) && looks_like_bare_hex_digest(decoded)
 }

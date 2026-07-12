@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "defauEXAMPLEEXAMPLERuuqf"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# unleash edge token (rotate): default:production.xElc1Ruuqf"
+credential = "default:production.xElc1Ruuqf"
+reason = "Commented-out token; the full default:production.<hash> unleash token pattern is self-anchoring and surfaces from the comment."

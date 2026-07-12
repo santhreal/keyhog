@@ -6,34 +6,34 @@
 //! # Module map (by pipeline stage)
 //!
 //! The modules below are declared in dependency order, but they READ in pipeline
-//! order — the same bytes→finding flow as the repository's `docs/ARCHITECTURE.md` and the
-//! method-level map in `engine` (`engine::mod` "# The one flow"). To find a
+//! order — the same bytes→finding flow as [`docs/ARCHITECTURE.md`] and the
+//! method-level map in [`engine`] (`engine::mod` "# The one flow"). To find a
 //! responsibility, locate its stage:
 //!
-//! - **Config / state / shared types** — `scanner_config`, `scan_state`,
-//!   `types`, [`hw_probe`] (hardware routing), `error`.
+//! - **Config / state / shared types** — [`scanner_config`], [`scan_state`],
+//!   [`types`], [`hw_probe`] (hardware routing), [`error`].
 //! - **Phase 1 · prefilter** (cheap "could a detector fire here?") —
-//!   `alphabet_filter`, `bigram_bloom`, `prefix_trie`, `ascii_ci`,
+//!   [`alphabet_filter`], [`bigram_bloom`], [`prefix_trie`], `ascii_ci`,
 //!   `simd` / `simdsieve_prefilter` (feature-gated), `prefilter_degrade`
 //!   (loud Law-10 fallback).
-//! - **Compile** (detectors → matchers) — `compiler`, `shared_regexes`,
-//!   `static_intern`.
+//! - **Compile** (detectors → matchers) — [`compiler`], `shared_regexes`,
+//!   [`static_intern`].
 //! - **Scan engine** (phase 1 triggers + phase 2 extraction; CPU or GPU) —
-//!   `engine` (start at its header doc), `pipeline`, [`gpu`].
+//!   [`engine`] (start at its header doc), [`pipeline`], [`gpu`].
 //! - **Decode-through** (nested base64/hex/url/unicode, recursive) —
-//!   [`decode`], `decode_structure`.
+//!   [`decode`], [`decode_structure`].
 //! - **Entropy** — [`entropy`] is now the single home for all of it: the
 //!   keyword/scanner detection logic plus the fast Shannon-entropy primitive
 //!   `entropy::fast` (+ `entropy::avx512` / `entropy::fast_x86` /
 //!   `entropy::fast_neon` SIMD impls, arch-gated).
 //! - **Confidence / ML** — [`ml_scorer`] (serves the embedded `weights.bin`;
-//!   trained out-of-band by the repo's `ml/`), `confidence`,
+//!   trained out-of-band by the repo's `ml/`), [`confidence`],
 //!   `probabilistic_gate`.
 //! - **Context, fragment reassembly, multiline, suppression, resolution** —
-//!   [`context`], `fragment_cache`, `multiline`, `suppression`,
+//!   [`context`], `fragment_cache`, [`multiline`], `suppression`,
 //!   [`resolution`], `structured`.
 //! - **Specialized validators** — [`checksum`], [`jwt`], [`aws`],
-//!   `homoglyph`, `unicode_hardening`.
+//!   `homoglyph`, [`unicode_hardening`].
 //! - **Cross-cutting** — `platform_compat`, `placeholder_words`,
 //!   `process_exit`, [`telemetry`], `util_hash`.
 //!
@@ -61,6 +61,9 @@ mod gate;
 #[path = "../tests/property/mod.rs"]
 mod property;
 #[cfg(test)]
+#[path = "../tests/support/mod.rs"]
+mod support;
+#[cfg(test)]
 #[path = "../tests/unit/mod.rs"]
 mod unit;
 
@@ -86,7 +89,6 @@ pub mod decode;
 /// Decode-structure analysis: classify what a candidate base64/hex-decodes to
 /// (binary asset magic bytes, protobuf wire) so decode-through feeds scoring.
 pub(crate) mod decode_structure;
-#[cfg(test)]
 pub(crate) mod detector_catalog;
 pub(crate) mod detector_classification;
 /// Canonical detector-id strings and scanner-side detector-family predicates.
@@ -121,7 +123,7 @@ pub(crate) mod scan_state;
 pub(crate) mod scanner_config;
 /// Tier-B distinctive vendor secret-prefix vocabulary for the multiline no-hit gate.
 pub(crate) mod secret_prefixes;
-/// Static-string interner backed by vyre's CHD perfect hash.
+/// Static-string interner backed by a single-hash `ahash` map.
 /// Used by `CompiledScanner` to pre-intern detector metadata strings
 /// so the per-scan `ScanState` interner is hit only by dynamic
 /// strings (file paths, commit SHAs).
@@ -163,7 +165,7 @@ pub(crate) mod unicode_hardening;
 /// Shared FNV-1a hash + content-keyed memoization primitives. Single home for
 /// the seed every per-scan cache keys on, plus the bounded thread-local cache
 /// helper they all share, so a hash change can never re-key only some caches.
-pub(crate) mod util_hash;
+pub mod util_hash;
 
 /// Loud, recall-preserving degradation for static prefilter automata (Law 10).
 pub(crate) mod prefilter_degrade;
@@ -215,13 +217,25 @@ pub fn validate_hyperscan_cache_dir(path: &std::path::Path) -> std::result::Resu
 /// finding by detector family — and the contract test harness, which must not
 /// gate context-dependent firings all-or-nothing — use this to distinguish the
 /// entropy fallback from service-anchored detectors without re-encoding the
-/// naming contract owned by `detector_ids`.
+/// naming contract owned by [`detector_ids`].
 #[inline]
 pub fn is_entropy_detector(detector_id: &str) -> bool {
     detector_ids::is_entropy_detector(detector_id)
 }
 
-/// Normalize scannable text by removing evasion characters and handling homoglyphs.
+/// True for a detector that fires via the entropy / phase2-generic path (the
+/// `generic-*` family + entropy fallback), carrying ZERO patterns by design.
+#[inline]
+pub fn is_generic_or_entropy_detector(detector_id: &str) -> bool {
+    detector_ids::is_generic_or_entropy_detector(detector_id)
+}
+
+/// Strip invisible-reorder evasion characters (zero-width + RTL override, per
+/// [`unicode_hardening::is_evasion_char`]) from context-window text. Deliberately
+/// narrower than [`unicode_hardening::normalize_homoglyphs`]: this feeds the
+/// surrounding-context features, where collapsing homoglyphs/fullwidth/combining
+/// marks in ordinary prose would distort keyword and comment context; homoglyph
+/// folding stays on the credential-value scan path.
 pub(crate) fn normalize_chunk_data(data: &str) -> Cow<'_, str> {
     if data.is_ascii() {
         return Cow::Borrowed(data);

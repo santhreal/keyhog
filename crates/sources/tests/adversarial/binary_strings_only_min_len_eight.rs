@@ -37,7 +37,7 @@ fn binary_strings_only_min_len_eight() {
     );
     assert!(
         chunks.iter().all(|chunk| {
-            chunk.metadata.source_type == "binary:strings"
+            chunk.metadata.source_type.as_ref() == "binary:strings"
                 && chunk
                     .metadata
                     .path

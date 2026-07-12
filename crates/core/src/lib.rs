@@ -29,7 +29,6 @@
 //! Core types shared across all KeyHog crates.
 mod allowlist;
 mod api;
-/// Allocation-free ASCII case-insensitive matching primitives.
 pub mod ascii_ci;
 /// Offline AWS account-ID decode + canary-token classification (single source
 /// of truth shared by the scanner's finding metadata and the verifier's
@@ -47,7 +46,6 @@ mod finding;
 /// Git-LFS pointer recognition, shared by the scanner (oid suppression) and
 /// sources (unscanned-blob coverage gap).
 pub mod git_lfs;
-pub mod winpath;
 /// Security hardening: memory zeroization and process isolation helpers.
 mod hardening;
 mod hyperscan_cache;
@@ -57,10 +55,9 @@ mod report;
 mod safe_bin;
 mod source;
 mod spec;
+mod state_file;
+pub mod winpath;
 use std::borrow::Cow;
-
-/// Global registry for sources and verifiers.
-mod registry;
 
 pub use api::*;
 pub use ascii_ci::{
@@ -68,8 +65,9 @@ pub use ascii_ci::{
     starts_with_ignore_ascii_case,
 };
 pub use hyperscan_cache::{
-    hyperscan_cache_header_is_valid, write_hyperscan_cache_header, HYPERSCAN_CACHE_FILE_BYTES,
-    HYPERSCAN_CACHE_HEADER_LEN, HYPERSCAN_CACHE_MAGIC, HYPERSCAN_CACHE_VERSION,
+    hyperscan_cache_filename, hyperscan_cache_header_is_valid, write_hyperscan_cache_header,
+    HYPERSCAN_CACHE_FILE_BYTES, HYPERSCAN_CACHE_HEADER_LEN, HYPERSCAN_CACHE_MAGIC,
+    HYPERSCAN_CACHE_VERSION,
 };
 /// Auto-fix suggestion logic for SARIF output.
 mod auto_fix;
@@ -100,6 +98,25 @@ pub(crate) fn embedded_detector_tomls() -> &'static [(&'static str, &'static str
 #[inline]
 pub fn embedded_detector_count() -> usize {
     embedded_detector_tomls().len()
+}
+
+/// Age (seconds) after which an abandoned `*.tmp` working file is considered
+/// stale and safe to remove. ONE owner for the tmp-file hygiene policy shared by
+/// `calibration` (calibration cache) and `merkle_index::tmp_hygiene` (index
+/// build) — both used to define their own `60 * 60` const, which could silently
+/// drift apart.
+pub(crate) const STALE_TMP_CUTOFF_SECS: u64 = 60 * 60;
+
+/// The `keyhog` path component under the OS cache root. ONE owner for the
+/// cache-root segment shared by the calibration cache, the merkle index, and the
+/// lockdown past-findings gate — a rename here moves all three together so the
+/// lockdown scan can never desynchronize from where scan artifacts actually land.
+pub(crate) const KEYHOG_CACHE_SUBDIR: &str = "keyhog";
+
+/// Absolute path of keyhog's per-user cache root (`<os-cache>/keyhog`), or
+/// `None` when the platform exposes no cache directory.
+pub(crate) fn keyhog_cache_root() -> Option<std::path::PathBuf> {
+    dirs::cache_dir().map(|dir| dir.join(KEYHOG_CACHE_SUBDIR))
 }
 
 /// Parse the embedded detector corpus, FAILING CLOSED on any malformed TOML.

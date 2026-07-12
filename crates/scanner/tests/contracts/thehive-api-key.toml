@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "thehivekey=RZZb2EXAMPLEEXAMPLENb2lJ"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# thehive_api_key=RZZb2fgi8yCQFuZNb2lJ  # SOC integration"
+credential = "RZZb2fgi8yCQFuZNb2lJ"
+reason = "Commented-out key; thehive api_key keyword + 20-char value intact inside the comment."

@@ -15,8 +15,8 @@
 //! resolved address is one the fleet-canonical
 //! `keyhog_verifier::ssrf::is_private_ip_addr` classifier — the SAME predicate
 //! WebSource's `resolve_and_screen` uses — rejects. The whole screen is disabled
-//! by the loud `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` opt-in so loopback mock /
-//! self-hosted (MinIO / Ceph / httpmock) endpoints still work.
+//! per-source by the `allow_private_endpoint` Tier-A config (not env) so loopback
+//! mock / self-hosted (MinIO / Ceph / httpmock) endpoints still work.
 //!
 //! Two kinds of coverage:
 //!   * **Predicate tests** exercise the shared post-DNS screen predicate
@@ -33,7 +33,6 @@ use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_verifier::ssrf::is_private_ip_addr;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::sync::Mutex;
 
 // ==========================================================================
 // Group A — the shared post-DNS screen predicate, asserted directly on the
@@ -131,9 +130,10 @@ fn resolved_public_cloudflare_dns_is_not_screened() {
 
 // ==========================================================================
 // Group B — driven `S3Source::chunks()` production path through
-// `parse_http_endpoint`. `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` is process-global,
-// so every driven test that reads or writes it is serialized under ENV_LOCK and
-// sets the exact env state it needs while holding the lock.
+// `parse_http_endpoint`. The private-endpoint allowance is per-source Tier-A
+// config (`HttpClientConfig.allow_private_endpoint`), threaded into each source
+// by `TestApi.s3_source_with_endpoint_allow_private`, so each test sets exactly
+// the state it needs with no process-global env and no serialization.
 // ==========================================================================
 
 /// Syntactically valid S3 bucket name so `validate_bucket_name` passes and
@@ -144,50 +144,40 @@ const BUCKET: &str = "keyhog-rebind-bucket";
 const SSRF_STRING_REFUSAL: &str =
     "refusing S3 endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)";
 
-static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-/// Run `f` with `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` set to `value` (or removed
-/// when `None`), serialized against every other env-touching driven test. The
-/// var is cleared afterward so the process env is left clean for other tests.
-fn with_optin<R>(value: Option<&str>, f: impl FnOnce() -> R) -> R {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
-    match value {
-        Some(v) => std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", v),
-        None => std::env::remove_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT"),
-    }
-    let result = f();
-    std::env::remove_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT");
-    result
-}
-
-/// Collect all chunk rows produced for `endpoint`.
-fn rows_for(endpoint: &str) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
+/// Collect all chunk rows produced for `endpoint` with the SSRF endpoint screen
+/// either active (`allow_private = false`) or opted out (`true`) — the Tier-A
+/// config (`HttpClientConfig.allow_private_endpoint`) replacement for the retired
+/// `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` env, threaded per-source so no
+/// process-global state is touched and the tests need no serialization.
+fn rows_for(
+    endpoint: &str,
+    allow_private: bool,
+) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
     TestApi
-        .s3_source_with_endpoint(BUCKET, endpoint)
+        .s3_source_with_endpoint_allow_private(BUCKET, endpoint, allow_private)
         .chunks()
         .collect()
 }
 
-/// Drive the source for `endpoint` (no opt-in) and return the single error
-/// string, asserting the source aborts with exactly one error row.
+/// Drive the source for `endpoint` with the SSRF screen ACTIVE (no opt-in) and
+/// return the single error string, asserting the source aborts with exactly one
+/// error row.
 fn single_refusal_no_optin(endpoint: &str) -> String {
-    with_optin(None, || {
-        let rows = rows_for(endpoint);
-        assert_eq!(
-            rows.len(),
-            1,
-            "an SSRF-refused endpoint must abort with exactly one error row before listing; \
-             got {} row(s) for {endpoint}",
-            rows.len()
-        );
-        match rows.into_iter().next().expect("one row") {
-            Ok(chunk) => panic!(
-                "endpoint {endpoint} must be REFUSED, but a chunk was produced: {:?}",
-                chunk.metadata
-            ),
-            Err(error) => error.to_string(),
-        }
-    })
+    let rows = rows_for(endpoint, false);
+    assert_eq!(
+        rows.len(),
+        1,
+        "an SSRF-refused endpoint must abort with exactly one error row before listing; \
+         got {} row(s) for {endpoint}",
+        rows.len()
+    );
+    match rows.into_iter().next().expect("one row") {
+        Ok(chunk) => panic!(
+            "endpoint {endpoint} must be REFUSED, but a chunk was produced: {:?}",
+            chunk.metadata
+        ),
+        Err(error) => error.to_string(),
+    }
 }
 
 #[test]
@@ -225,12 +215,12 @@ Fix: adjust the source settings or input so KeyHog can read plain text safely"
 }
 
 #[test]
-fn optin_value_one_allows_loopback_endpoint() {
-    // With the opt-in, BOTH the string screen and the resolve screen are
-    // disabled: 127.0.0.1 is accepted past `parse_http_endpoint`, so the source
-    // proceeds to connect (to a dead port -> connection error), and NO row is an
-    // SSRF refusal.
-    let rows = with_optin(Some("1"), || rows_for("http://127.0.0.1:1"));
+fn config_allow_private_allows_loopback_endpoint() {
+    // With `allow_private_endpoint = true`, BOTH the string screen and the
+    // resolve screen are disabled: 127.0.0.1 is accepted past
+    // `parse_http_endpoint`, so the source proceeds to connect (to a dead port
+    // -> connection error), and NO row is an SSRF refusal.
+    let rows = rows_for("http://127.0.0.1:1", true);
     assert!(
         !rows.is_empty(),
         "an accepted-but-unreachable loopback endpoint must still yield a connection error row"
@@ -240,41 +230,30 @@ fn optin_value_one_allows_loopback_endpoint() {
             let message = error.to_string();
             assert!(
                 !message.contains("(SSRF)"),
-                "opt-in must suppress the SSRF refusal, got: {message}"
+                "the allow-private config must suppress the SSRF refusal, got: {message}"
             );
         }
     }
 }
 
 #[test]
-fn optin_value_true_word_allows_loopback_endpoint() {
-    // The truthy word form of the opt-in must also bypass the screen.
-    let rows = with_optin(Some("true"), || rows_for("http://127.0.0.1:1"));
-    for row in &rows {
-        if let Err(error) = row {
-            assert!(
-                !error.to_string().contains("(SSRF)"),
-                "opt-in \"true\" must suppress the SSRF refusal, got: {error}"
-            );
-        }
-    }
-}
-
-#[test]
-fn optin_falsy_zero_value_still_refuses_loopback_endpoint() {
-    // "0" is NOT a truthy opt-in, so the screen stays active and 127.0.0.1 is
-    // refused with the string-screen reason (proves only truthy values bypass).
-    let error = with_optin(Some("0"), || {
-        let rows = rows_for("http://127.0.0.1");
-        assert_eq!(rows.len(), 1, "falsy opt-in must still refuse the endpoint");
-        match rows.into_iter().next().expect("one row") {
-            Ok(chunk) => panic!("must be refused, got chunk: {:?}", chunk.metadata),
-            Err(error) => error.to_string(),
-        }
-    });
+fn config_screen_active_refuses_loopback_endpoint() {
+    // With `allow_private_endpoint = false` (the default) the screen stays active
+    // and 127.0.0.1 is refused with the string-screen reason — the config bool,
+    // not a truthy/falsy env string, is now the single decision input.
+    let rows = rows_for("http://127.0.0.1", false);
+    assert_eq!(
+        rows.len(),
+        1,
+        "screen-active config must refuse the endpoint"
+    );
+    let error = match rows.into_iter().next().expect("one row") {
+        Ok(chunk) => panic!("must be refused, got chunk: {:?}", chunk.metadata),
+        Err(error) => error.to_string(),
+    };
     assert!(
         error.contains(SSRF_STRING_REFUSAL),
-        "falsy opt-in \"0\" must still refuse loopback with the SSRF reason, got: {error}"
+        "screen-active config must refuse loopback with the SSRF reason, got: {error}"
     );
 }
 
@@ -285,7 +264,7 @@ fn public_host_passes_both_screens_resolve_step_fails_open() {
     // resolution error (no address -> no SSRF target), so `parse_http_endpoint`
     // returns Ok and any later failure is a network/DNS error — NOT an SSRF
     // refusal and NOT an invalid-endpoint rejection.
-    let rows = with_optin(None, || rows_for("https://objectstore.public.invalid"));
+    let rows = rows_for("https://objectstore.public.invalid", false);
     for row in &rows {
         if let Err(error) = row {
             let message = error.to_string();

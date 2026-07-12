@@ -178,7 +178,7 @@ fn oci_manifest_config_ref_yields_single_chunk_with_digest_in_path() {
         Some(expected_path.as_str()),
         "config chunk path must carry index/ref/config-digest identity"
     );
-    assert_eq!(chunks[0].metadata.source_type, "docker");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "docker");
 }
 
 #[cfg(feature = "docker")]

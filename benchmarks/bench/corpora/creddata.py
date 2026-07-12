@@ -155,10 +155,20 @@ def _to_int(s: Any, default: int = -1) -> int:
 
 def _slice_value_from_lines(lines: list[str], line_start: int, line_end: int,
                             value_start: int, value_end: int) -> str:
-    if line_start <= 0 or value_start < 0:
+    if line_start <= 0:
         return ""
     if line_start > len(lines):
         return ""
+    # ValueStart == -1 marks a WHOLE-LINE span: the secret is the entire
+    # line(s) with no sub-line offset. CredData uses this for multi-line
+    # secrets — PEM/RSA private keys, service-account JSON — whose value has no
+    # column offset. Clamp a negative start to the line beginning (a negative
+    # end already falls through to len(line) in both branches below). Treating
+    # value_start < 0 as "invalid → empty" silently dropped 1003 real private-key
+    # positives from the ground truth, which both undercounted private-key/ssh
+    # recall in the bench and starved the MoE retrain of PEM-key positives.
+    if value_start < 0:
+        value_start = 0
     if line_end <= 0:
         line_end = line_start
     if line_start == line_end:
@@ -172,23 +182,6 @@ def _slice_value_from_lines(lines: list[str], line_start: int, line_end: int,
     last_line = lines[line_end - 1]
     last = last_line[:value_end] if value_end >= 0 else last_line
     return "\n".join([first, *middle, last])
-
-
-def _extract_value(file_path: pathlib.Path, line_start: int, line_end: int,
-                   value_start: int, value_end: int) -> str:
-    """Slice the literal secret from the file at the CredData span. Returns ""
-    on any inconsistency (missing file, out-of-range, whole-line markup) — a
-    positive whose value can't be anchored to a real on-disk byte range is
-    dropped by the caller rather than guessed, keeping the corpus free of
-    fabricated truth."""
-    try:
-        # latin-1: source files are arbitrary bytes; we only need a stable
-        # byte-faithful substring for the containment overlap, not valid UTF-8.
-        with open(file_path, "r", encoding="latin-1") as fh:
-            lines = fh.read().splitlines()
-    except OSError:
-        return ""
-    return _slice_value_from_lines(lines, line_start, line_end, value_start, value_end)
 
 
 class CredDataCorpus(Corpus):
@@ -233,7 +226,7 @@ class CredDataCorpus(Corpus):
         data = self._root / "data"
         return self.meta_dir().is_dir() and data.is_dir() and any(data.iterdir())
 
-    def records(self) -> list[LabeledRecord]:
+    def _load_records(self) -> list[LabeledRecord]:
         manifest = self._find_manifest()
         if manifest is not None:
             if manifest.suffix == ".jsonl":
@@ -262,7 +255,20 @@ class CredDataCorpus(Corpus):
             if path not in line_cache:
                 try:
                     with open(path, "r", encoding="latin-1") as fh:
-                        line_cache[path] = fh.read().splitlines()
+                        raw = fh.read()
+                    # CredData's LineStart/LineEnd count '\n' boundaries
+                    # ONLY. str.splitlines() ALSO breaks on the vertical
+                    # tab, form feed, file/group/record separators, NEL
+                    # (U+0085) and the Unicode line/paragraph separators,
+                    # which drifts the line index on files that contain them
+                    # and dropped 181 real positives whose labeled line no
+                    # longer matched. Split on '\n' and strip a single
+                    # trailing '\r' so CRLF files behave like LF without the
+                    # over-splitting.
+                    line_cache[path] = [
+                        ln[:-1] if ln.endswith("\r") else ln
+                        for ln in raw.split("\n")
+                    ]
                 except OSError:
                     line_cache[path] = None
             return line_cache[path]

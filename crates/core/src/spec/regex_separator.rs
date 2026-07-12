@@ -43,7 +43,7 @@
 //!    whitespace is *ambiguous* with value-assignment spacing (`Key[\s]*:`),
 //!    which must keep its own (often unbounded) semantics. Only the presence of
 //!    `_`/`-` makes a class an *unambiguous* keyword separator.
-//! 2. **It is corpus-verified.** Auditing all 902 shipped detectors, every class
+//! 2. **It is corpus-verified.** Auditing all 919 shipped detectors, every class
 //!    matching this oracle sits between keyword words or alternation groups —
 //!    never inside a token body or a value-assignment run. A class carrying any
 //!    other byte (a letter range, a digit, `=`/`:`/quote) fails the subset test

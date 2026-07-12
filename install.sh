@@ -41,6 +41,27 @@
 
 set -eu
 
+# Refuse to run when SOURCED. This installer calls `exit` on many paths, and
+# `exit` inside a sourced script terminates the caller's interactive shell — a
+# nasty surprise for anyone who runs `. install.sh` / `source install.sh`. The
+# guard is scoped to bash/zsh (the shells that expose a sourcing signal); under a
+# plain POSIX `sh` the documented `curl | sh` RUN path hits neither branch and is
+# left completely unchanged. `if`/`then` (not `[ ] && …`) keeps it safe under the
+# `set -e` above when the condition is false on the normal run path.
+if [ -n "${BASH_SOURCE:-}" ]; then
+    if [ "${BASH_SOURCE}" != "$0" ]; then
+        printf '%s\n' "keyhog installer: run this script (sh install.sh), do not source it." >&2
+        return 1
+    fi
+elif [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
+    case "$ZSH_EVAL_CONTEXT" in
+        *:file)
+            printf '%s\n' "keyhog installer: run this script (sh install.sh), do not source it." >&2
+            return 1
+            ;;
+    esac
+fi
+
 REPO="santhsecurity/keyhog"
 RELEASE_PUBLIC_KEY="RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go"
 INSTALL_DIR="$HOME/.local/bin"
@@ -652,7 +673,23 @@ verify_release_signature() {
     asset_name="$2"
     sigfile=$(mktemp)
 
-    if ! download_asset "$asset_name.minisig" "$sigfile" 2>/dev/null || [ ! -s "$sigfile" ]; then
+    # Classify the signature fetch: a transient transport failure (DNS/timeout/
+    # reset) must NOT be silently downgraded to "no signature published" and
+    # skipped (fail closed for security controls). download_asset already
+    # --retries transient blips; its curl exit code then distinguishes a genuine
+    # HTTP 404 (curl -f exit 22, asset absent) from a network/transport error
+    # (any other non-zero). Only the former legitimately means "not published".
+    if download_asset "$asset_name.minisig" "$sigfile" 2>/dev/null; then
+        sig_dl_rc=0
+    else
+        sig_dl_rc=$?
+    fi
+    if [ "$sig_dl_rc" -ne 0 ] && [ "$sig_dl_rc" -ne 22 ]; then
+        rm -f "$sigfile"
+        allow_unverified_install "Could not fetch the .minisig signature for $asset_name (curl error $sig_dl_rc): a network/transport failure, not a missing signature. A retry may succeed."
+        return $?
+    fi
+    if [ ! -s "$sigfile" ]; then
         rm -f "$sigfile"
         allow_unverified_install "No .minisig signature was published for $asset_name at $TAG."
         return $?
@@ -680,7 +717,22 @@ verify_checksum() {
     binary="$1"
     asset_name="$2"
     checksum_url=$(release_asset_url "$asset_name.sha256")
-    expected=$(curl -fsSL "$checksum_url" 2>/dev/null | awk '{print $1}' | head -n1)
+    # Fetch the checksum in its own step (not inside a pipe) so curl's exit
+    # status can be classified: a transient transport failure (DNS/timeout/reset)
+    # must NOT be silently downgraded to "no checksum published" and skipped
+    # (fail closed for security controls). --retry rides out transient blips
+    # first, matching download_asset's policy; a genuine HTTP 404 (curl -f exit
+    # 22) then legitimately means the checksum asset is absent.
+    if checksum_body=$(curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused "$checksum_url" 2>/dev/null); then
+        checksum_rc=0
+    else
+        checksum_rc=$?
+    fi
+    if [ "$checksum_rc" -ne 0 ] && [ "$checksum_rc" -ne 22 ]; then
+        allow_unverified_install "Could not fetch the .sha256 checksum for $asset_name (curl error $checksum_rc): a network/transport failure, not a missing checksum. A retry may succeed."
+        return $?
+    fi
+    expected=$(printf '%s\n' "$checksum_body" | awk '{print $1}' | head -n1)
     if [ -z "$expected" ]; then
         allow_unverified_install "No .sha256 checksum was published for $asset_name at $TAG."
         return $?
@@ -848,7 +900,23 @@ download_verified_gpu_literal_sidecar() {
     fi
     sidecar_name="$ASSET.gpu-literals.tar.gz"
     sidecar_tmp=$(mktemp)
-    if ! download_asset "$sidecar_name" "$sidecar_tmp" 2>/dev/null || [ ! -s "$sidecar_tmp" ]; then
+    # Classify the fetch (Law 10: never conflate a transport failure with a
+    # missing asset). curl's exit 22 (via download_asset) means the server
+    # returned an HTTP error >=400 (a real 404 => not published); any other
+    # non-zero exit is a network/DNS/transport failure and must NOT tell the
+    # operator to rebuild the release workflow for a sidecar that may be present.
+    if download_asset "$sidecar_name" "$sidecar_tmp" 2>/dev/null; then
+        sidecar_dl_rc=0
+    else
+        sidecar_dl_rc=$?
+    fi
+    if [ "$sidecar_dl_rc" -ne 0 ] && [ "$sidecar_dl_rc" -ne 22 ]; then
+        rm -f "$sidecar_tmp"
+        err "Could not download the GPU literal artifact sidecar $sidecar_name (curl error $sidecar_dl_rc): a network/transport failure, not a missing asset. A retry may succeed."
+        err "Refusing to install a release whose shipped detector matchers could not be fetched (they must not be recompiled at runtime)."
+        return 1
+    fi
+    if [ ! -s "$sidecar_tmp" ]; then
         rm -f "$sidecar_tmp"
         err "No GPU literal artifact sidecar was published for $ASSET at $TAG."
         err "Refusing to install a release that would recompile shipped detector matchers at runtime."
@@ -1196,11 +1264,31 @@ verify_install() {
         # hw_probe the scanner uses (so there's no shell-side GPU detection to
         # drift from runtime) and runs an end-to-end scan self-test: it plants
         # a synthetic secret and confirms the freshly-installed binary actually
-        # detects it on THIS host. Exit 4 means the self-test failed (broken
-        # binary) - surface it, but don't fail the install over a PATH warning.
+        # detects it on THIS host. Per doctor's contract it exits 4
+        # (EXIT_HEALTH_FAILURE) iff it deems the binary UNHEALTHY - the planted
+        # secret was NOT detected, the detector corpus is missing, or (on a
+        # GPU-capable host) the fail-closed DEFAULT GPU scan route is dead - and
+        # exits 0 otherwise (PATH-only notices are exit-0 warnings, never a
+        # failure; GPU self-tests are skipped on no-GPU/headless hosts so CI
+        # stays green). A non-zero exit therefore means the binary we just
+        # installed cannot do its primary job on the route it will actually
+        # use. That is a disqualifying install condition, not a cosmetic
+        # warning: fail closed and let finalize_install roll back rather than
+        # leave a broken scanner reporting "installed" (Law 10 - no silent
+        # fallback past a failed self-test; and consistent with the autoroute
+        # gate immediately below, which already refuses a broken default route).
         say ""
-        if ! "$INSTALL_DIR/keyhog" doctor; then
-            warn "keyhog doctor reported issues above; the binary is installed but may not be fully healthy."
+        "$INSTALL_DIR/keyhog" doctor
+        doctor_status=$?
+        if [ "$doctor_status" -eq 4 ]; then
+            err "keyhog doctor reports the freshly-installed binary is UNHEALTHY (exit 4): it failed its own end-to-end scan self-test above."
+            err "Refusing to leave a scanner that cannot detect secrets on its default route; rolling back this install."
+            err "  If only the GPU route is broken, the CPU/SIMD paths still work - reinstall, then scan with an explicit '--backend cpu' or '--backend simd' override."
+            return 1
+        elif [ "$doctor_status" -ne 0 ]; then
+            err "keyhog doctor did not complete (exit $doctor_status): the installed binary could not even run its own health self-test."
+            err "Rolling back rather than leaving an install whose health is unknown."
+            return 1
         fi
         if ! prime_autoroute_cache "$INSTALL_DIR/keyhog"; then
             err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
@@ -2002,7 +2090,12 @@ start_calibration_web_server() {
     python_cmd="$5"
     (
         cd "$dir" || exit 1
-        "$python_cmd" - "$port_file" <<'PY'
+        # exec so this subshell process BECOMES the Python server: $! below then
+        # captures the server's real PID, so stop_calibration_web_server's kill
+        # reaps the actual HTTP server. Without exec, POSIX sh forks Python as a
+        # child of the subshell and $! is the subshell's PID — killing it orphans
+        # the Python process, leaking a server that still holds the loopback port.
+        exec "$python_cmd" - "$port_file" <<'PY'
 import http.server
 import socketserver
 import sys
@@ -2128,11 +2221,16 @@ post_install_wizard() {
     # the feature lands.
 
     if confirm "Wire keyhog as a git pre-commit hook in the CURRENT directory?" N; then
-        if [ -d .git ]; then
+        # `[ -d .git ]` is wrong inside a git WORKTREE, where `.git` is a FILE
+        # (a `gitdir:` pointer), not a directory — the hook install was silently
+        # skipped there. `git rev-parse --is-inside-work-tree` is true for a
+        # regular repo, a worktree, and a subdirectory alike.
+        if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            hook_path="$(git rev-parse --git-path hooks/pre-commit 2>/dev/null || echo .git/hooks/pre-commit)"
             if ! hook_err="$(mktemp -t keyhog-hook-err-XXXXXX)"; then
                 warn "  pre-commit hook install failed: could not create a temporary stderr file."
             elif "$INSTALL_DIR/keyhog" hook install 2>"$hook_err"; then
-                ok "  Pre-commit hook installed in $(pwd)/.git/hooks/pre-commit"
+                ok "  Pre-commit hook installed in $hook_path"
                 rm -f "$hook_err"
             else
                 warn_wizard_command_failure \
@@ -2143,7 +2241,7 @@ post_install_wizard() {
                 rm -f "$hook_err"
             fi
         else
-            warn "  No .git directory here, skipping."
+            warn "  Not inside a git work tree here, skipping."
         fi
     fi
 }
@@ -2200,12 +2298,35 @@ path_setup_entry_present() {
     rc="$1"
     shell_name="$2"
     [ -f "$rc" ] || return 1
+    # The PATH-wiring line shape to require, per shell.
     if [ "$shell_name" = "fish" ]; then
-        grep -F "set -gx PATH $INSTALL_DIR " "$rc" >/dev/null 2>&1 && return 0
+        _wiring='set -gx PATH|fish_add_path'
     else
-        grep -F "export PATH=\"$INSTALL_DIR:" "$rc" >/dev/null 2>&1 && return 0
+        _wiring='(^|[^A-Za-z0-9_])PATH='
     fi
-    grep -F '# keyhog' "$rc" >/dev/null 2>&1 && grep -F "$INSTALL_DIR" "$rc" >/dev/null 2>&1
+    # Match ANY PATH wiring that mentions INSTALL_DIR -- quoted or unquoted,
+    # prepended or appended, fish_add_path or set -gx, AND under any spelling of
+    # the directory. `set --` builds the candidate spellings: the absolute path
+    # always, plus the ~ / $HOME / ${HOME} relative forms when INSTALL_DIR lives
+    # under $HOME (a hand-edited rc commonly writes `~/.local/bin` or
+    # `$HOME/.local/bin`). Matching one exact spelling missed those variants and
+    # appended a DUPLICATE block on every re-install.
+    set -- "$INSTALL_DIR"
+    case "$INSTALL_DIR" in
+        "$HOME"/*)
+            _rel="${INSTALL_DIR#"$HOME"}"
+            set -- "$@" "~$_rel" "\$HOME$_rel" "\${HOME}$_rel"
+            ;;
+    esac
+    for _spelling in "$@"; do
+        grep -F "$_spelling" "$rc" 2>/dev/null | grep -E "$_wiring" >/dev/null 2>&1 && return 0
+    done
+    # Fallback: our own marker comment plus any spelling of the dir anywhere.
+    grep -F '# keyhog' "$rc" >/dev/null 2>&1 || return 1
+    for _spelling in "$@"; do
+        grep -F "$_spelling" "$rc" >/dev/null 2>&1 && return 0
+    done
+    return 1
 }
 
 install_completions() {
@@ -2276,7 +2397,10 @@ zsh_completion_wiring_present() {
     rc="$1"
     [ -f "$rc" ] || return 1
     grep -F '# keyhog completions' "$rc" >/dev/null 2>&1 && return 0
-    grep -F '.zfunc' "$rc" >/dev/null 2>&1 && grep -F 'compinit' "$rc" >/dev/null 2>&1
+    # A bare `.zfunc` mention (a comment, an alias, another tool's docs) does
+    # NOT prove the completion dir is on fpath -- completions would silently
+    # never load. Require an actual fpath entry naming .zfunc plus compinit.
+    grep -E 'fpath=.*\.zfunc' "$rc" >/dev/null 2>&1 && grep -F 'compinit' "$rc" >/dev/null 2>&1
 }
 
 run_binary_uninstall() {
@@ -2340,7 +2464,7 @@ remove_path_setup_entry() {
             next
         }
         { print }
-    ' "$rc" > "$tmp" && cp "$tmp" "$rc"; then
+    ' "$rc" > "$tmp" && cat "$tmp" > "$rc"; then
         ok "  Removed PATH entry from $rc"
     else
         warn "  Could not remove PATH entry from $rc"
@@ -2366,7 +2490,7 @@ remove_zsh_completion_wiring() {
             next
         }
         { print }
-    ' "$rc" > "$tmp" && cp "$tmp" "$rc"; then
+    ' "$rc" > "$tmp" && cat "$tmp" > "$rc"; then
         ok "  Removed zsh completion wiring from $rc"
     else
         warn "  Could not remove zsh completion wiring from $rc"

@@ -42,6 +42,22 @@ pub(crate) fn build_gpu_literals(
     )
 }
 
+pub(crate) fn build_gpu_position_literals(
+    confirmed_anchor_literals: &[String],
+    generic_keyword_literals: &[String],
+) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
+    build_gpu_literal_rows(
+        confirmed_anchor_literals
+            .iter()
+            .chain(generic_keyword_literals),
+        "GPU positioned literal set",
+    )
+}
+
+/// One-shot guard so the empty-literal GPU-disable notice is printed to stderr at
+/// most once per process (the `tracing::warn!` still fires every time for logs).
+static GPU_LITERAL_EMPTY_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
 fn build_gpu_literal_rows<'a>(
     literals: impl Iterator<Item = &'a String>,
     label: &'static str,
@@ -62,7 +78,19 @@ fn build_gpu_literal_rows<'a>(
     let mut rows = Vec::new();
     for literal in literals {
         if literal.is_empty() {
+            // Law 10: an empty AC literal disables the ENTIRE GPU literal scan for
+            // this build (every scan then routes to CPU/SIMD). A `tracing::warn!`
+            // alone is silent to an operator running `--backend gpu` at the default
+            // log level — surface it loudly, once, like report_gpu_matcher_unavailable.
             tracing::warn!("{label} contains an empty literal; disabling GPU literal scan");
+            if GPU_LITERAL_EMPTY_WARNED.set(()).is_ok() {
+                eprintln!(
+                    "keyhog: a detector produced an empty literal in the {label}, so the GPU \
+literal matcher was discarded and every scan will route through CPU/SIMD instead of the GPU \
+literal path. Check your detector definitions for an empty AC literal (an empty `keywords`/\
+prefix entry). Use --require-gpu when GPU acceleration is mandatory."
+                );
+            }
             return None;
         }
         rows.push(literal.to_ascii_lowercase().into_bytes());

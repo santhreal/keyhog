@@ -13,7 +13,13 @@ use parking_lot::RwLock;
 use std::cell::RefCell;
 use std::sync::Arc;
 
-static DECODERS: std::sync::OnceLock<RwLock<Vec<Arc<dyn Decoder>>>> = std::sync::OnceLock::new();
+// The active decoder set is stored behind ONE shared `Arc<Vec<..>>` so the
+// per-`decode_chunk` `active_decoders()` read hands back a refcount bump instead
+// of deep-cloning the 14-decoder Vec (14 Arc bumps + a heap allocation) on every
+// chunk. Mutation (`register_decoder`) is copy-on-write, so in-flight readers
+// keep a consistent snapshot.
+static DECODERS: std::sync::OnceLock<RwLock<Arc<Vec<Arc<dyn Decoder>>>>> =
+    std::sync::OnceLock::new();
 
 #[cfg(test)]
 thread_local! {
@@ -144,39 +150,53 @@ pub(crate) fn default_decoder_names() -> Vec<&'static str> {
     default_decoders().iter().map(|d| d.name()).collect()
 }
 
-fn decoder_registry() -> &'static RwLock<Vec<Arc<dyn Decoder>>> {
-    DECODERS.get_or_init(|| RwLock::new(default_decoders()))
+fn decoder_registry() -> &'static RwLock<Arc<Vec<Arc<dyn Decoder>>>> {
+    DECODERS.get_or_init(|| RwLock::new(Arc::new(default_decoders())))
 }
 
 #[cfg(not(test))]
-pub(super) fn active_decoders() -> Vec<Arc<dyn Decoder>> {
-    decoder_registry().read().clone()
+pub(super) fn active_decoders() -> Arc<Vec<Arc<dyn Decoder>>> {
+    // One `Arc` clone (a single atomic increment) instead of deep-cloning the
+    // decoder Vec on every `decode_chunk`. Callers only iterate, so the shared
+    // snapshot suffices.
+    Arc::clone(&decoder_registry().read())
 }
 
 #[cfg(test)]
-pub(super) fn active_decoders() -> Vec<Arc<dyn Decoder>> {
-    let mut decoders = decoder_registry().read().clone();
+pub(super) fn active_decoders() -> Arc<Vec<Arc<dyn Decoder>>> {
+    let base = Arc::clone(&decoder_registry().read());
     THREAD_DECODERS.with(|thread_decoders| {
-        decoders.extend(thread_decoders.borrow().iter().cloned());
-    });
-    decoders
+        let thread = thread_decoders.borrow();
+        if thread.is_empty() {
+            // Common case: no per-test decoder registered — hand back the shared
+            // snapshot with no allocation, matching the non-test fast path.
+            base
+        } else {
+            let mut combined = (*base).clone();
+            combined.extend(thread.iter().cloned());
+            Arc::new(combined)
+        }
+    })
 }
 
 /// Register a custom decoder.
 pub fn register_decoder(decoder: Box<dyn Decoder>) {
     let decoder_name = decoder.name();
-    let mut decoders = decoder_registry().write();
-    if decoders
-        .iter()
-        .any(|existing| existing.name() == decoder_name)
-    {
+    let mut guard = decoder_registry().write();
+    if guard.iter().any(|existing| existing.name() == decoder_name) {
         tracing::warn!(
             decoder = decoder_name,
             "register_decoder called with a duplicate decoder name; decoder ignored"
         );
         return;
     }
-    decoders.push(Arc::from(decoder));
+    // Copy-on-write: publish a fresh snapshot so any `active_decoders()` Arc
+    // already handed out keeps its consistent view. Registration happens at
+    // startup / test setup, never on the decode hot path, so this one-time Vec
+    // clone is not a concern.
+    let mut next = (**guard).clone();
+    next.push(Arc::from(decoder));
+    *guard = Arc::new(next);
 }
 
 #[cfg(test)]

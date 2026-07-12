@@ -8,6 +8,10 @@
 //! separator-skipping and substring (mid-keyword) cases.
 
 use keyhog_scanner::testing::entropy_scanner::canonical_shape_lift_allowed;
+use keyhog_scanner::testing::{
+    keyword_is_crypto_key_material_for_test as is_crypto_key,
+    keyword_is_key_material_for_test as is_key_material,
+};
 
 const HEX32: &str = "0123456789abcdef0123456789abcdef";
 const HEX40: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -47,4 +51,66 @@ fn canonical_lift_keyword_material_matches_compacted_contains() {
         "not-a-hex-or-uuid-value!!",
         "encryption_key"
     ));
+}
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin each shape at a handful of keywords; these SWEEP the gate
+// (scanner.rs:canonical_shape_lift_allowed): UUID → true for ANY keyword (early
+// return before the hex arms); a 32-hex value lifts iff the keyword is key material
+// and a 64-hex value lifts iff the keyword is crypto-key material — both as
+// cross-facade DIFFERENTIALS against the tested `is_key_material` / `is_crypto_key`
+// predicates, covering positive AND negative keywords without hardcoding needles;
+// and 40-hex, 128-hex, and non-hex/non-UUID values never lift under any keyword.
+// No proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(3_000))]
+
+    /// A UUID-shaped value lifts under ANY keyword (handled before the hex arms).
+    #[test]
+    fn uuid_lifts_under_any_keyword(kw in "[a-zA-Z0-9_.-]{0,24}") {
+        prop_assert!(canonical_shape_lift_allowed(UUID, &kw));
+    }
+
+    /// A 32-hex value lifts iff the keyword is key material — DIFFERENTIAL over any
+    /// keyword against the tested `is_key_material` predicate.
+    #[test]
+    fn hex32_lift_matches_key_material_oracle(kw in "[a-zA-Z0-9_.-]{0,24}") {
+        prop_assert_eq!(
+            canonical_shape_lift_allowed(HEX32, &kw),
+            is_key_material(&kw)
+        );
+    }
+
+    /// A 64-hex value lifts iff the keyword is crypto-key material — DIFFERENTIAL
+    /// over any keyword (the narrower sha256 discrimination).
+    #[test]
+    fn hex64_lift_matches_crypto_key_oracle(kw in "[a-zA-Z0-9_.-]{0,24}") {
+        prop_assert_eq!(
+            canonical_shape_lift_allowed(HEX64, &kw),
+            is_crypto_key(&kw)
+        );
+    }
+
+    /// A 40-hex (sha1/git-SHA) value never lifts, under any keyword.
+    #[test]
+    fn hex40_never_lifts(kw in "[a-zA-Z0-9_.-]{0,24}") {
+        prop_assert!(!canonical_shape_lift_allowed(HEX40, &kw));
+    }
+
+    /// A 128-hex (sha512) value never lifts, under any keyword.
+    #[test]
+    fn hex128_never_lifts(kw in "[a-zA-Z0-9_.-]{0,24}") {
+        let hex128 = format!("{HEX64}{HEX64}");
+        prop_assert!(!canonical_shape_lift_allowed(&hex128, &kw));
+    }
+
+    /// A non-hex, non-UUID value never lifts, under any keyword (chars g-z are not
+    /// hex digits, so the all-hex gate fails).
+    #[test]
+    fn non_hex_non_uuid_never_lifts(value in "[g-z]{16,40}", kw in "[a-zA-Z0-9_.-]{0,24}") {
+        prop_assert!(!canonical_shape_lift_allowed(&value, &kw));
+    }
 }

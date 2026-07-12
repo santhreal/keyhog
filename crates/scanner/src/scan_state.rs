@@ -180,6 +180,20 @@ impl From<&keyhog_core::RawMatch> for OwnedMatchIdentity {
     }
 }
 
+impl OwnedMatchIdentity {
+    /// Zero-alloc identity equality against a live match. Compares the exact
+    /// three fields `From<&RawMatch>` builds and the derived `Eq` checks
+    /// (`SensitiveString::eq` is itself `as_str() == as_str()`), but borrows the
+    /// credential as `&str` instead of cloning its `SensitiveString` — a heap
+    /// allocation + zeroize-on-drop — for every element compared on the
+    /// claim/replace path (`.any`/`.position`/`.find` over the whole match heap).
+    fn matches_raw(&self, m: &keyhog_core::RawMatch) -> bool {
+        self.offset == m.location.offset
+            && self.detector_id.as_ref() == m.detector_id.as_ref()
+            && self.credential.as_ref() == m.credential.as_ref()
+    }
+}
+
 #[cfg(any(feature = "entropy", feature = "simdsieve"))]
 impl OwnedMatchIdentity {
     fn from_priority(priority: &RawMatchPriority<'_>) -> Self {
@@ -370,21 +384,24 @@ impl ScanState {
         identity: &OwnedMatchIdentity,
         candidate: keyhog_core::RawMatch,
     ) -> bool {
-        let mut matches = std::mem::take(&mut self.matches).into_vec();
-        let mut replaced = false;
-
-        for existing in &mut matches {
-            if OwnedMatchIdentity::from(&*existing) == *identity {
-                if candidate < *existing {
-                    *existing = candidate;
-                    replaced = true;
-                }
-                break;
-            }
+        let should_replace = self
+            .matches
+            .iter()
+            .any(|existing| identity.matches_raw(existing) && candidate < *existing);
+        if !should_replace {
+            return false;
         }
 
-        self.matches = BinaryHeap::from(matches);
-        replaced
+        let mut data = std::mem::take(&mut self.matches).into_vec();
+        let idx = data
+            .iter()
+            .position(|existing| identity.matches_raw(existing))
+            .expect("identity in claimed_match_identities implies heap entry");
+        data[idx] = candidate;
+        // `BinaryHeap::from` re-heapifies the whole vec (O(n) rebuild), so a manual
+        // sift here would be thrown away — let `from` restore heap order.
+        self.matches = BinaryHeap::from(data);
+        true
     }
 
     #[cfg(any(feature = "entropy", feature = "simdsieve"))]
@@ -395,7 +412,7 @@ impl ScanState {
     ) -> bool {
         self.matches
             .iter()
-            .find(|existing| OwnedMatchIdentity::from(*existing) == *identity)
+            .find(|existing| identity.matches_raw(existing))
             .is_none_or(|existing| !priority.cmp_raw_match(existing).is_gt())
     }
 

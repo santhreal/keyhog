@@ -61,3 +61,59 @@ fn the_two_boundaries_in_the_first_two_windows_are_64_and_128() {
         "the deadline re-check fires exactly at iterations 64 and 128 across two windows"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors walk the first two windows at the real cadence 64; these SWEEP
+// the shared `cadence_tick` gate over ANY iteration and ANY nonzero cadence as a
+// DIFFERENTIAL against the naive `iteration > 0 && iteration % cadence == 0`. A
+// divergence would silently re-check the wall-clock deadline at the wrong rate in
+// one of the four hot loops (a timeout honored unevenly). Both wrappers must match
+// the formula AND each other on every input. Traced against deadline.rs:12. No
+// proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4_000))]
+
+    /// Both cadence wrappers equal the naive `iteration > 0 && iteration % cadence
+    /// == 0` gate for ANY iteration and ANY nonzero cadence.
+    #[test]
+    fn both_wrappers_match_the_naive_multiple_formula(
+        iteration in 0usize..100_000,
+        cadence in 1usize..=256,
+    ) {
+        let expected = iteration > 0 && iteration % cadence == 0;
+        prop_assert_eq!(expired_on_cadence_now_for_test(iteration, cadence), expected);
+        prop_assert_eq!(loop_expired_on_cadence_now_for_test(iteration, cadence), expected);
+    }
+
+    /// The two wrappers agree with each other on every input (they share the one
+    /// cadence owner).
+    #[test]
+    fn both_wrappers_agree_with_each_other(
+        iteration in 0usize..100_000,
+        cadence in 1usize..=256,
+    ) {
+        prop_assert_eq!(
+            expired_on_cadence_now_for_test(iteration, cadence),
+            loop_expired_on_cadence_now_for_test(iteration, cadence),
+        );
+    }
+
+    /// Iteration 0 is never a boundary; every nonzero multiple of the cadence IS
+    /// one, and (for cadence > 1) one past a multiple is not — constructive over a
+    /// swept multiple index.
+    #[test]
+    fn nonzero_multiples_are_boundaries_and_zero_is_not(
+        k in 1usize..1_000,
+        cadence in 1usize..=256,
+    ) {
+        prop_assert!(!expired_on_cadence_now_for_test(0, cadence));
+        let multiple = k * cadence;
+        prop_assert!(expired_on_cadence_now_for_test(multiple, cadence));
+        if cadence > 1 {
+            prop_assert!(!expired_on_cadence_now_for_test(multiple + 1, cadence));
+        }
+    }
+}

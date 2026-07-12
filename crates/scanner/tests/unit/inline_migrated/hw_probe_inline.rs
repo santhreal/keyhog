@@ -173,37 +173,33 @@ fn env_override_accepts_label_aliases() {
     // Each backend has multiple opt-in aliases; CI runners and Dockerfiles
     // routinely use the human-readable label as the env value, so all forms
     // must map to the same backend. Asserted on the pure mapping (no global env).
-    for value in ["gpu", "GPU", "gpu-region-presence", " gpu "] {
+    for value in [
+        "gpu",
+        "GPU",
+        "gpu-region-presence",
+        "Gpu-Zero-Copy",
+        " gpu ",
+        "literal-set",
+    ] {
         assert_eq!(
             parse_backend_str(value),
             Some(ScanBackend::Gpu),
             "value {value:?} must map to Gpu"
         );
     }
-    for value in ["simd", "SIMD", "simd-regex"] {
+    for value in ["simd", "SIMD", "simd-regex", "hyperscan", "HYPERSCAN"] {
         assert_eq!(
             parse_backend_str(value),
             Some(ScanBackend::SimdCpu),
             "value {value:?} must map to SimdCpu"
         );
     }
-    for value in ["cpu", "Cpu", "cpu-fallback"] {
+    for value in ["cpu", "Cpu", "cpu-fallback", "scalar"] {
         assert_eq!(
             parse_backend_str(value),
             Some(ScanBackend::CpuFallback),
             "value {value:?} must map to CpuFallback"
         );
-    }
-    for retired in [
-        "gpu-zero-copy",
-        "literal-set",
-        "mega-scan",
-        "megascan",
-        "gpu-mega-scan",
-        "hyperscan",
-        "scalar",
-    ] {
-        assert_eq!(parse_backend_str(retired), None);
     }
 }
 
@@ -286,9 +282,10 @@ fn high_tier_gpu_activates_at_measured_safe_floor() {
         thresholds::GPU_MIN_BYTES_HIGH_TIER,
         thresholds::GPU_PATTERN_BREAKEVEN
     ));
-    // The required 8 MiB target no longer clears the fixed heuristic because
-    // the live RTX 5090 sweep did not beat CPU/SIMD through 64 MiB.
-    assert!(!gpu_could_engage(&caps, 8 * 1024 * 1024, 5_000));
+    // The required 8 MiB target now clears the fixed heuristic because the
+    // optimized entropy prefilter + 384 KiB windowing lets the RTX 5090 beat
+    // CPU/SIMD at 8 MiB (the 10x crossover target).
+    assert!(gpu_could_engage(&caps, 8 * 1024 * 1024, 5_000));
     // High-tier solo cap opens even with a low pattern count.
     assert!(gpu_could_engage(
         &caps,

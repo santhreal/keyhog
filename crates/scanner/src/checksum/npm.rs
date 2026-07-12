@@ -18,7 +18,7 @@ const NPM_BODY_LEN: usize = NPM_ENTROPY_LEN + NPM_CHECKSUM_LEN;
 
 impl ChecksumValidator for NpmTokenValidator {
     fn validate(&self, credential: &str) -> ChecksumResult {
-        let payload = match credential.strip_prefix("npm_") {
+        let payload = match credential.strip_prefix(super::prefixes::NPM_ACCESS_TOKEN) {
             Some(p) => p,
             None => return ChecksumResult::NotApplicable,
         };
@@ -49,7 +49,7 @@ pub(crate) struct PypiTokenValidator;
 
 impl ChecksumValidator for PypiTokenValidator {
     fn validate(&self, credential: &str) -> ChecksumResult {
-        let payload = match credential.strip_prefix("pypi-") {
+        let payload = match credential.strip_prefix(super::prefixes::PYPI_API_TOKEN) {
             Some(p) => p,
             None => return ChecksumResult::NotApplicable,
         };

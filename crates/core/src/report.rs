@@ -1,7 +1,7 @@
 //! Reporting logic for scan results.
 
 pub(crate) mod csv;
-mod escape;
+pub(crate) mod escape;
 pub(crate) mod github_annotations;
 pub(crate) mod gitlab_sast;
 pub(crate) mod html;

@@ -118,7 +118,10 @@ fn push_match_lazy_zero_limit_never_builds_or_retains() {
         },
     );
 
-    assert!(!built, "a zero-capacity heap must reject before construction");
+    assert!(
+        !built,
+        "a zero-capacity heap must reject before construction"
+    );
     assert_eq!(state.into_matches(), Vec::<RawMatch>::new());
 }
 

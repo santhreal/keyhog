@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use futures_util::StreamExt;
 use keyhog_core::{MetadataSpec, VerificationResult};
@@ -69,11 +70,26 @@ pub(crate) async fn execute_and_read_response(
     Ok(HttpResponseBody { status, body })
 }
 
+/// Preallocation hint for a streamed response body: honor the server's
+/// advertised `Content-Length`, but CLAMP to `MAX_RESPONSE_BODY_BYTES` so a
+/// lying or hostile header cannot make us reserve gigabytes up front (the
+/// streaming loop still enforces the true cap byte-by-byte). `None` (no header)
+/// => no preallocation. The `.min` is done in `u64` space so a huge length can
+/// never wrap through the `usize` cast.
+pub(crate) fn body_capacity_hint(content_length: Option<u64>) -> usize {
+    content_length
+        .map(|len| len.min(MAX_RESPONSE_BODY_BYTES as u64) as usize)
+        .unwrap_or(0)
+}
+
 pub(crate) async fn read_response_body(
     response: reqwest::Response,
 ) -> std::result::Result<String, RequestError> {
+    // Preallocate from Content-Length (clamped) to avoid repeated Vec-growth
+    // reallocations while streaming a large body.
+    let capacity_hint = body_capacity_hint(response.content_length());
     let mut stream = response.bytes_stream();
-    let mut body = Vec::new();
+    let mut body = Vec::with_capacity(capacity_hint);
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| RequestError {
             result: VerificationResult::Error(BODY_READ_FAILED_ERROR.into()),
@@ -156,13 +172,52 @@ pub(crate) fn body_indicates_error(body: &str) -> bool {
         return json_indicates_error(&json);
     }
     // Non-JSON fallback: whole-word match so embedded substrings
-    // (e.g. `error_rate`, `myinvalidatedname`) do not trip the heuristic.
-    body.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-        .any(is_error_contract_token)
+    // (e.g. `error_rate`, `myinvalidatedname`) do not trip the heuristic. An
+    // error word is discounted when the preceding word negates it, so benign
+    // plaintext like `no errors` / `never expired` / `0 errors` stays Live.
+    let mut prev = "";
+    for token in body.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+        if token.is_empty() {
+            continue;
+        }
+        if is_error_contract_token(token) && !is_error_negation_token(prev) {
+            return true;
+        }
+        prev = token;
+    }
+    false
+}
+
+/// Words that, immediately before an error token in a plaintext body, denote the
+/// *absence* of an error (`no errors`, `never expired`, `zero errors`).
+fn is_error_negation_token(token: &str) -> bool {
+    matches!(
+        token.to_ascii_lowercase().as_str(),
+        "no" | "not" | "never" | "without" | "zero" | "non" | "0"
+    )
+}
+
+#[derive(serde::Deserialize)]
+struct JsonErrorKeysFile {
+    keys: Vec<String>,
 }
 
 /// Error key names recognized inside a JSON response body.
-const JSON_ERROR_KEYS: &[&str] = &["error", "errors", "invalid", "expired", "revoked"];
+fn parse_json_error_keys(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<JsonErrorKeysFile>(raw)
+        .map(|parsed| parsed.keys)
+        .map_err(|error| error.to_string())
+}
+
+static JSON_ERROR_KEYS: LazyLock<Vec<String>> = LazyLock::new(|| {
+    match parse_json_error_keys(include_str!("../../../../rules/json-error-keys.toml")) {
+        Ok(keys) => keys,
+        Err(error) => panic!(
+            "rules/json-error-keys.toml is invalid: {error}. \
+             Fix the bundled Tier-B json-error-keys data."
+        ),
+    }
+});
 
 /// Recursively decide whether a JSON body carries a *populated* error signal.
 fn json_indicates_error(value: &serde_json::Value) -> bool {

@@ -1,4 +1,4 @@
-//! `candidate_shape_invariant` and `looks_credential_shaped` share ONE structural
+//! `candidate_shape_invariant` and `caesar_credential_shape_gate` share ONE structural
 //! predicate (`has_digit_and_long_alnum_run`: >=1 ASCII digit AND an 8+
 //! contiguous ASCII-alphanumeric run). This pins the exact run-length boundary,
 //! the digit requirement, the contiguity requirement, and the shift-invariance
@@ -6,7 +6,7 @@
 //! two callers can never drift on the thresholds after the DEDUP.
 
 use keyhog_scanner::testing::decode_caesar::{
-    caesar_shift, candidate_shape_invariant, looks_credential_shaped, KNOWN_PREFIXES,
+    caesar_credential_shape_gate, caesar_shift, candidate_shape_invariant, KNOWN_PREFIXES,
 };
 
 #[test]
@@ -26,24 +26,26 @@ fn caesar_shape_predicates_share_exact_digit_and_run_boundary() {
     // reset the run) -> fails: contiguity is required, not a total count.
     assert!(!candidate_shape_invariant("abc-defg-1234"));
 
-    // ── looks_credential_shaped = the shared shape AND a KNOWN_PREFIXES hit ──
+    // ── caesar_credential_shape_gate = the shared shape AND a KNOWN_PREFIXES hit ──
 
     // AKIA is a known provider prefix; AKIA1234ABCD has a digit and a 12-char
     // alnum run -> shaped.
-    assert!(looks_credential_shaped("AKIA1234ABCD"));
+    assert!(caesar_credential_shape_gate("AKIA1234ABCD"));
     // Same prefix + long run but NO digit -> the shared half rejects it.
-    assert!(!looks_credential_shaped("AKIAABCDEFGH"));
+    assert!(!caesar_credential_shape_gate("AKIAABCDEFGH"));
 
     // The two predicates differ ONLY by the KNOWN_PREFIXES gate: a value that
     // passes the shared shape but carries no known prefix is candidate-shaped
     // (worth trying shifts) yet not itself credential-shaped.
     const NO_PREFIX: &str = "qzqz1234qzqz";
     assert!(
-        KNOWN_PREFIXES.iter().all(|p| !NO_PREFIX.contains(p)),
+        (&*KNOWN_PREFIXES)
+            .iter()
+            .all(|p| !NO_PREFIX.contains(p.as_str())),
         "test fixture must contain no known prefix, else the assertion below is vacuous"
     );
     assert!(candidate_shape_invariant(NO_PREFIX));
-    assert!(!looks_credential_shaped(NO_PREFIX));
+    assert!(!caesar_credential_shape_gate(NO_PREFIX));
 }
 
 #[test]

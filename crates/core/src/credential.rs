@@ -113,21 +113,29 @@ impl From<Vec<u8>> for Credential {
     }
 }
 
+/// Constant-time byte-slice equality — the ONE owner of timing-safe secret
+/// comparison shared by every credential-bearing type in this module
+/// ([`Credential`], [`SensitiveString`]). Compares in time proportional to the
+/// input length regardless of WHERE the first mismatch is, so equality checks
+/// during dedup / inflight de-duplication cannot leak secret bytes through CPU
+/// branch timing. Length inequality short-circuits (a value's length is not
+/// itself secret material), then every remaining byte is folded into one XOR
+/// accumulator. The cost is one extra XOR per byte vs `==`, negligible at
+/// credential sizes (<1 KiB typical).
+pub(crate) fn constant_time_bytes_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff: u8 = 0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 impl PartialEq for Credential {
     fn eq(&self, other: &Self) -> bool {
-        // Constant-time equality. Credentials are compared during dedup
-        // and inflight de-duplication; using `==` on naked bytes leaks
-        // information through CPU branch timing in pathological cases.
-        // The cost is one extra XOR per byte vs `==`, negligible at the
-        // sizes of credentials (<1 KiB typical).
-        if self.inner.len() != other.inner.len() {
-            return false;
-        }
-        let mut diff: u8 = 0;
-        for (a, b) in self.inner.iter().zip(other.inner.iter()) {
-            diff |= a ^ b;
-        }
-        diff == 0
+        constant_time_bytes_eq(&self.inner, &other.inner)
     }
 }
 
@@ -278,7 +286,12 @@ impl std::borrow::Borrow<str> for SensitiveString {
 
 impl PartialEq for SensitiveString {
     fn eq(&self, other: &Self) -> bool {
-        self.as_str() == other.as_str()
+        // Timing-safe: `SensitiveString` wraps secret material (zeroized on
+        // drop), so its equality must not leak bytes through branch timing any
+        // more than `Credential`'s does — both route through the single
+        // constant-time owner. Byte-length equality implies char-boundary
+        // equality for equal-length UTF-8 comparison purposes here.
+        constant_time_bytes_eq(self.as_str().as_bytes(), other.as_str().as_bytes())
     }
 }
 
@@ -352,3 +365,13 @@ impl<'de> Deserialize<'de> for SensitiveString {
         String::deserialize(deserializer).map(Self::new)
     }
 }
+
+// Tests for the constant-time equality contract of `Credential` /
+// `SensitiveString` live in `crates/core/tests/property/credential_contract.rs`.
+// The crate forbids inline cfg-test modules in `credential.rs` (enforced by the
+// `credential_no_inline_tests` / `no_inline_tests_in_src` gates, which reject the
+// literal cfg-test attribute anywhere in this file — hence the paraphrase here).
+// The property suite subsumes and strengthens the removed inline cases: the
+// equal-prefix / differing-suffix / length-mismatch / empty cases are covered
+// over 10k arbitrary inputs by `prop_credential_eq_iff_bytes_eq` and
+// `prop_sensitive_eq_iff_str_eq`.

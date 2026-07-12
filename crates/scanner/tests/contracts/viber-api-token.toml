@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "viber  _-     -      _   _-_    - -   --  -  _ -    -     --  -     _    _     _    AUTH    _    _ -   -        _  --  _     __  -_ _ ___  --          _    _  TOKEN ==   \" ' : ' :            :    ' ' '::  ==    ' \":     :\"' =     \" :   \":   :\" kUTz4EXAMPLEEXAMPLE3s2Dh"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# viber_auth_token=kUTz4ge6WKM61ydrtTcvV6hHqoiO8zXB3s2Dh  # bot"
+credential = "kUTz4ge6WKM61ydrtTcvV6hHqoiO8zXB3s2Dh"
+reason = "Commented-out config; viber_auth_token keyword + token intact inside the comment."

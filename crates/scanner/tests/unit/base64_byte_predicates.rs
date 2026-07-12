@@ -160,3 +160,36 @@ fn only_dash_and_underscore_differ() {
         );
     }
 }
+
+// ── autoroute decode-density consumer (keyhog-cli workload) dedup contract ───
+// `orchestrator::dispatch::backend::workload::decode_density_bucket` inlined a
+// byte-identical `is_encoded_alphabet_byte`; it now routes through this same
+// `is_base64_candidate_byte` owner. These three pin the exact classification
+// the encoded-run counter depends on so the two can never drift again.
+
+#[test]
+fn autoroute_counts_alphanumeric_run_bytes() {
+    // Valid alnum: every ASCII letter/digit is an encoded-run byte.
+    for byte in [b'A', b'M', b'Z', b'a', b'm', b'z', b'0', b'5', b'9'] {
+        assert!(
+            is_base64_candidate_byte(byte),
+            "autoroute must count alnum byte {byte:#x} into an encoded run"
+        );
+    }
+}
+
+#[test]
+fn autoroute_counts_plus_and_slash_run_bytes() {
+    // '+' '/' chars: standard-base64 symbols that continue an encoded run.
+    assert!(is_base64_candidate_byte(b'+'));
+    assert!(is_base64_candidate_byte(b'/'));
+}
+
+#[test]
+fn autoroute_breaks_run_on_invalid_byte() {
+    // Invalid byte: a space is not alphabet, so it terminates an encoded run
+    // (the branch that flushes `encoded_run` in `decode_density_bucket`).
+    assert!(!is_base64_candidate_byte(b' '));
+    assert!(!is_base64_candidate_byte(b','));
+    assert!(!is_base64_candidate_byte(0x00));
+}

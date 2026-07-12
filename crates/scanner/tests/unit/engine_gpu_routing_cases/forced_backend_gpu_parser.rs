@@ -12,8 +12,7 @@ fn forced_backend_gpu_parser() {
         parse_backend_str("gpu-region-presence"),
         Some(ScanBackend::Gpu)
     );
-    // SIMD/CPU arms and the case-insensitive contract. Descriptive labels stay
-    // readable because persisted autoroute evidence uses them.
+    // SIMD/CPU arms and the case-insensitive contract.
     assert_eq!(parse_backend_str("simd"), Some(ScanBackend::SimdCpu));
     assert_eq!(parse_backend_str("simd-regex"), Some(ScanBackend::SimdCpu));
     assert_eq!(parse_backend_str("cpu"), Some(ScanBackend::CpuFallback));

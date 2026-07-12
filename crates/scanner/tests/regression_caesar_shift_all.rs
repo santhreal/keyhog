@@ -41,8 +41,8 @@ fn chunk(data: &str, source_type: &str, path: Option<&str>) -> Chunk {
     Chunk {
         data: data.into(),
         metadata: ChunkMetadata {
-            source_type: source_type.to_string(),
-            path: path.map(str::to_string),
+            source_type: source_type.into(),
+            path: path.map(Into::into),
             ..Default::default()
         },
     }
@@ -64,9 +64,9 @@ fn expected_shift_table(candidate: &str) -> [bool; 26] {
     let mut expected = [false; 26];
     for k in 1..=25u8 {
         let shifted = decode_caesar::caesar_shift(candidate, k);
-        expected[k as usize] = decode_caesar::KNOWN_PREFIXES
+        expected[k as usize] = (&*decode_caesar::KNOWN_PREFIXES)
             .iter()
-            .any(|prefix| shifted.contains(prefix));
+            .any(|prefix| shifted.contains(prefix.as_str()));
     }
     expected
 }
@@ -227,10 +227,10 @@ fn decode_chunk_recovers_credential_via_registry_selected_shift() {
     // Every emitted sub-chunk carries the parent source-type with `/caesar`
     // appended, and is itself credential-shaped (a real shift, not noise).
     for oc in &out {
-        assert_eq!(oc.metadata.source_type, "src/caesar");
+        assert_eq!(oc.metadata.source_type.as_ref(), "src/caesar");
         let data: &str = &oc.data;
         assert!(
-            decode_caesar::looks_credential_shaped(data),
+            decode_caesar::caesar_credential_shape_gate(data),
             "emitted chunk must be credential-shaped: {data:?}"
         );
     }

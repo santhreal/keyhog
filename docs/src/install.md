@@ -97,6 +97,29 @@ The installer auto-detects, but you can override:
 | `GITHUB_TOKEN=...`                      | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
 | `--yes` / `-y`                          | Non-interactive: accept all defaults, no prompts.             |
 | `--no-color`                            | Disable ANSI colors (e.g. for log capture).                   |
+| `--from-file=/path/to/asset`            | Offline / air-gapped install from a pre-downloaded release asset (verified against its sibling `.sha256`, GPU sidecar included). |
+| `--calibrate`                           | Re-run only the post-install autoroute calibration phase on an already-installed binary. |
+| `--insecure`                            | Emergency-only: proceed when signature/checksum *proof is missing*. A present-but-wrong signature or checksum is always fatal, `--insecure` or not. |
+
+### Download integrity
+
+Every downloaded asset is verified before it replaces anything: a minisign
+signature check against the pinned release public key, then a SHA-256
+checksum, for both the binary and the GPU literal sidecar (which is also
+hardened against path traversal and symlink escapes). Verification runs on the
+freshly downloaded file in a temporary location, so a binary that fails either
+check is deleted and never installed.
+
+Verification fails closed by default. If the signature or checksum cannot be
+obtained or does not verify, the install aborts rather than proceed with an
+unverified binary. Passing `--insecure` (`-Insecure` on Windows) is the only way
+to accept an unverified binary, and it is intended for emergency or local
+diagnostics, not routine installs.
+
+The binary swap itself is recoverable: the previous binary is backed up before
+the new one is moved into place and restored automatically if the new binary
+fails its post-install self-test, so a failed or interrupted install leaves a
+working binary behind.
 
 ### Runtime GPU controls
 

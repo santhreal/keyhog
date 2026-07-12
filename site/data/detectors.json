@@ -122,7 +122,6 @@
     "severity": "high",
     "keywords": [
       "ADOBE",
-      "CLIENT_ID",
       "adobe_io"
     ]
   },
@@ -183,7 +182,6 @@
     "severity": "high",
     "keywords": [
       "AGENTA_API_KEY",
-      "ApiKey",
       "agenta"
     ]
   },
@@ -280,8 +278,6 @@
     "keywords": [
       "AKOYA_CLIENT_ID",
       "AKOYA_CLIENT_SECRET",
-      "client_id",
-      "client_secret",
       "akoya"
     ]
   },
@@ -484,8 +480,7 @@
       "APPDYNAMICS",
       "appdynamics",
       "X-AppD-API-Key",
-      "account_name",
-      "api_key"
+      "account_name"
     ]
   },
   {
@@ -567,8 +562,6 @@
     "severity": "high",
     "keywords": [
       "arduino",
-      "client_id",
-      "client_secret",
       "api2.arduino.cc"
     ]
   },
@@ -630,7 +623,6 @@
       "AUTH0_API_KEY",
       "AUTH0_CLIENT_SECRET",
       "client_id",
-      "client_secret",
       "domain",
       "AUTH0_CLIENT"
     ]
@@ -692,8 +684,7 @@
     "keywords": [
       "AVALARA",
       "avatax",
-      "license_key",
-      "account_id"
+      "license_key"
     ]
   },
   {
@@ -716,10 +707,7 @@
     "severity": "critical",
     "keywords": [
       "aweber",
-      "AWEBER",
-      "client_id",
-      "client_secret",
-      "access_token"
+      "AWEBER"
     ]
   },
   {
@@ -867,9 +855,6 @@
     "keywords": [
       "sig=",
       "sv=",
-      "se=",
-      "sp=",
-      "srt=",
       "blob.core.windows.net"
     ]
   },
@@ -1041,8 +1026,7 @@
     "keywords": [
       "BAIDU_MAPS_KEY",
       "baidu.maps.key",
-      "baidu_maps_key",
-      "ak"
+      "baidu_maps_key"
     ]
   },
   {
@@ -1216,9 +1200,7 @@
     "severity": "high",
     "keywords": [
       "bitquery",
-      "BITQUERY",
-      "api_key",
-      "apikey"
+      "BITQUERY"
     ]
   },
   {
@@ -1317,8 +1299,7 @@
       "BOOKING_COM",
       "booking.com",
       "booking_com",
-      "BXML",
-      "OTA"
+      "BXML"
     ]
   },
   {
@@ -1549,10 +1530,7 @@
     "severity": "high",
     "keywords": [
       "CANOPY",
-      "canopy",
-      "x-api-key",
-      "client_id",
-      "client_secret"
+      "canopy"
     ]
   },
   {
@@ -1621,10 +1599,7 @@
     "keywords": [
       "catchpoint",
       "CATCHPOINT",
-      "api_token",
-      "rest_api_key",
-      "client_id",
-      "client_secret"
+      "rest_api_key"
     ]
   },
   {
@@ -1636,9 +1611,7 @@
       "CCH",
       "cch",
       "AXCESS",
-      "axcess",
-      "x-api-key",
-      "client_id"
+      "axcess"
     ]
   },
   {
@@ -1862,7 +1835,6 @@
       "clickatell",
       "CLICKATELL",
       "clickatell.com",
-      "api_key",
       "api_id"
     ]
   },
@@ -2185,8 +2157,7 @@
     "keywords": [
       "convertkit",
       "CONVERTKIT",
-      "api_secret",
-      "api_key"
+      "api_secret"
     ]
   },
   {
@@ -2527,8 +2498,7 @@
     "keywords": [
       "defined",
       "DEFINED",
-      "definedfi",
-      "api_key"
+      "definedfi"
     ]
   },
   {
@@ -2782,7 +2752,6 @@
     "severity": "critical",
     "keywords": [
       "DOCUSIGN",
-      "INTEGRATION_KEY",
       "ds_integration_key"
     ]
   },
@@ -2863,9 +2832,7 @@
     "severity": "critical",
     "keywords": [
       "drip",
-      "DRIP",
-      "api_token",
-      "access_token"
+      "DRIP"
     ]
   },
   {
@@ -2992,8 +2959,7 @@
     "severity": "high",
     "keywords": [
       "ELASTICSEARCH_API_KEY",
-      "elasticsearch_api_key",
-      "ApiKey"
+      "elasticsearch_api_key"
     ]
   },
   {
@@ -3136,7 +3102,6 @@
     "keywords": [
       "EXPEDIA_API_KEY",
       "EXPEDIA",
-      "x-api-key",
       "expedia"
     ]
   },
@@ -3442,9 +3407,7 @@
     "severity": "medium",
     "keywords": [
       "footprint",
-      "FOOTPRINT",
-      "api_key",
-      "apikey"
+      "FOOTPRINT"
     ]
   },
   {
@@ -3828,7 +3791,6 @@
     "keywords": [
       "glagent-",
       "gitlab",
-      "kas",
       "agentk"
     ]
   },
@@ -3863,8 +3825,7 @@
     "keywords": [
       "glft-",
       "gitlab",
-      "feed_token",
-      "rss"
+      "feed_token"
     ]
   },
   {
@@ -3886,7 +3847,6 @@
     "keywords": [
       "gloas-",
       "gitlab",
-      "oauth",
       "client_secret"
     ]
   },
@@ -4019,9 +3979,7 @@
     "severity": "high",
     "keywords": [
       "goldsky",
-      "GOLDSKY",
-      "api_key",
-      "apikey"
+      "GOLDSKY"
     ]
   },
   {
@@ -4370,7 +4328,6 @@
     "keywords": [
       "hashnode",
       "HASHNODE",
-      "pat",
       "personal_access_token"
     ]
   },
@@ -4628,8 +4585,7 @@
     "keywords": [
       "hubitat",
       "maker_api",
-      "access_token",
-      "app_id"
+      "access_token"
     ]
   },
   {
@@ -4737,7 +4693,6 @@
     "keywords": [
       "idenfy",
       "IDENFY",
-      "api_key",
       "api_secret"
     ]
   },
@@ -4749,8 +4704,7 @@
     "keywords": [
       "IFTTT",
       "ifttt",
-      "maker.ifttt.com",
-      "webhook"
+      "maker.ifttt.com"
     ]
   },
   {
@@ -4809,8 +4763,7 @@
     "keywords": [
       "infobip",
       "INFOBIP",
-      "authorization",
-      "app"
+      "authorization"
     ]
   },
   {
@@ -5179,14 +5132,7 @@
       "BOOTSTRAP_TOKEN",
       "tokenID",
       "token-id",
-      "kubeadm",
-      "kubelet",
-      "kube-controller-manager",
-      "kubernetes",
-      "kube",
-      "k8s",
-      "K8S",
-      "KUBERNETES"
+      "kubeadm"
     ]
   },
   {
@@ -5622,7 +5568,6 @@
       "magento",
       "MAGE",
       "MAGENTO",
-      "access_token",
       "rest_token",
       "admin_token"
     ]
@@ -6232,7 +6177,6 @@
     "keywords": [
       "-----BEGIN NATS USER JWT-----",
       "-----BEGIN NATS USER NKEY SEED-----",
-      "SU",
       "nats://",
       "NATS_"
     ]
@@ -6675,7 +6619,6 @@
     "keywords": [
       "opencart",
       "OPENCART",
-      "api_key",
       "api_id",
       "opencart_api"
     ]
@@ -6732,7 +6675,6 @@
       "GenieKey",
       "OPSGENIE",
       "opsgenie",
-      "api_key",
       "api-key"
     ]
   },
@@ -7090,7 +7032,6 @@
       "PINTEREST",
       "pinterest",
       "PINTEREST_TOKEN",
-      "access_token",
       "pinterest_token"
     ]
   },
@@ -7355,8 +7296,7 @@
     "keywords": [
       "PMAK-",
       "POSTMAN_API_KEY",
-      "postman_api_key",
-      "X-Api-Key"
+      "postman_api_key"
     ]
   },
   {
@@ -7818,7 +7758,6 @@
     "keywords": [
       "REDIS_CLOUD_V2",
       "REDIS_V2",
-      "x-api-key",
       "redis_cloud_v2"
     ]
   },
@@ -7840,7 +7779,6 @@
     "service": "redis",
     "severity": "high",
     "keywords": [
-      "x-api-key",
       "redislabs",
       "redis_labs",
       "REDIS_LABS",
@@ -8013,8 +7951,7 @@
       "rollbar_access_token",
       "X-Rollbar-Access-Token",
       "ROLLBAR_TOKEN",
-      "rollbarToken",
-      "access_token"
+      "rollbarToken"
     ]
   },
   {
@@ -8358,7 +8295,6 @@
     "keywords": [
       "sentry.io",
       "sentry_dsn",
-      "dsn",
       "o0.ingest",
       "o1.ingest"
     ]
@@ -8428,8 +8364,7 @@
     "severity": "critical",
     "keywords": [
       "shpat_",
-      "shopify",
-      "admin"
+      "shopify"
     ]
   },
   {
@@ -8463,9 +8398,7 @@
     "severity": "high",
     "keywords": [
       "SHUTTERSTOCK",
-      "shutterstock",
-      "consumer_key",
-      "consumer_secret"
+      "shutterstock"
     ]
   },
   {
@@ -8513,8 +8446,7 @@
       "sinch",
       "SINCH",
       "key_id",
-      "key_secret",
-      "project_id"
+      "key_secret"
     ]
   },
   {
@@ -8571,9 +8503,8 @@
     "service": "slack",
     "severity": "critical",
     "keywords": [
-      "xoxb",
-      "slack",
-      "bot"
+      "xoxb-",
+      "slack"
     ]
   },
   {
@@ -8605,9 +8536,8 @@
     "service": "slack",
     "severity": "critical",
     "keywords": [
-      "xoxp",
-      "slack",
-      "user"
+      "xoxp-",
+      "slack"
     ]
   },
   {
@@ -8711,8 +8641,7 @@
       "SNOWFLAKE",
       "snowflakecomputing",
       "SNOWSQL",
-      "password",
-      "private_key"
+      "password"
     ]
   },
   {
@@ -8845,7 +8774,6 @@
     "keywords": [
       "SOVOS",
       "sovos",
-      "api_key",
       "api_secret"
     ]
   },
@@ -9160,7 +9088,6 @@
     "keywords": [
       "subgraph",
       "studio",
-      "api_key",
       "SUBGRAPH_STUDIO"
     ]
   },
@@ -9343,8 +9270,7 @@
     "severity": "critical",
     "keywords": [
       "TAXJAR",
-      "taxjar",
-      "api_token"
+      "taxjar"
     ]
   },
   {
@@ -9405,9 +9331,7 @@
     "keywords": [
       "telesign",
       "TELESIGN",
-      "customer_id",
-      "api_key",
-      "API_KEY"
+      "customer_id"
     ]
   },
   {
@@ -9481,7 +9405,6 @@
     "severity": "medium",
     "keywords": [
       "thingspeak",
-      "api_key",
       "write_api_key",
       "read_api_key"
     ]
@@ -9494,9 +9417,7 @@
     "keywords": [
       "ONESOURCE",
       "onesource",
-      "thomson_reuters",
-      "client_id",
-      "client_secret"
+      "thomson_reuters"
     ]
   },
   {
@@ -9672,9 +9593,7 @@
     "severity": "high",
     "keywords": [
       "transpose",
-      "TRANSPOSE",
-      "api_key",
-      "apikey"
+      "TRANSPOSE"
     ]
   },
   {
@@ -9752,9 +9671,7 @@
     "severity": "high",
     "keywords": [
       "trulioo",
-      "TRULIOO",
-      "client_id",
-      "client_secret"
+      "TRULIOO"
     ]
   },
   {
@@ -9801,9 +9718,7 @@
     "keywords": [
       "tuya",
       "access_id",
-      "access_secret",
-      "client_id",
-      "client_secret"
+      "access_secret"
     ]
   },
   {
@@ -9963,9 +9878,7 @@
     "severity": "high",
     "keywords": [
       "BBFF-",
-      "ubidots",
-      "auth_token",
-      "X-Auth-Token"
+      "ubidots"
     ]
   },
   {
@@ -10371,9 +10284,7 @@
       "vonage",
       "VONAGE",
       "nexmo",
-      "NEXMO",
-      "api_key",
-      "API_KEY"
+      "NEXMO"
     ]
   },
   {
@@ -10397,8 +10308,7 @@
     "severity": "high",
     "keywords": [
       "vouched",
-      "VOUCHED",
-      "api_key"
+      "VOUCHED"
     ]
   },
   {
@@ -10615,8 +10525,6 @@
       "wix",
       "WIX",
       "app_secret",
-      "app_id",
-      "instance_id",
       "wix_app"
     ]
   },
@@ -10689,10 +10597,8 @@
       "WORLDPAY",
       "worldpay",
       "SERVICE_ID",
-      "API_KEY",
       "fiserv",
-      "FISERV",
-      "merchant_id"
+      "FISERV"
     ]
   },
   {

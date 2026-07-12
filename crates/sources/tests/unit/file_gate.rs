@@ -120,7 +120,7 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
         "filesystem include-symlink/archive symlink checks must cover link and resolved target paths, and unreadable target classification must surface visibly"
     );
     assert!(
-        archive.contains("const OPENPACK_EXTS")
+        archive.contains("static OPENPACK_EXTS")
             && archive.contains("ext.eq_ignore_ascii_case(candidate)")
             && archive.contains("ext.eq_ignore_ascii_case(\"crx\")")
             && archive.contains("extract_openpack_archive(\n    path: &Path,\n    ext: &str,")
@@ -164,11 +164,12 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
         "buffered and mmap file reads must preserve already-read bytes when text decoding rejects them"
     );
     assert!(
-        extract.contains("Some(read::BufferedFileRead::Bytes(bytes))")
-            && extract.contains("extract_printable_strings(&bytes, 8)")
-            && extract.contains("Some(read::BufferedFileRead::Mmap(mmap))")
-            && extract.contains("extract_printable_strings(&mmap, 8)"),
-        "filesystem binary-strings fallback must reuse buffered/mmap bytes instead of rereading the file"
+        extract.contains("Some(read::BufferedFileRead::Bytes(bytes)) =>")
+            && extract.contains("Some(read::BufferedFileRead::Mmap(mmap)) =>")
+            && extract.contains("extract_printable_strings(")
+            && extract.contains("&bytes,")
+            && extract.contains("&mmap,"),
+        "filesystem binary-strings fallback must reuse the already-read buffer (&bytes / &mmap) via extract_printable_strings instead of rereading the file"
     );
 }
 

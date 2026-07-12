@@ -8,7 +8,10 @@ id = "agenta-api-key"
 name = "Agenta API Key"
 service = "agenta"
 severity = "high"
-keywords = ["AGENTA_API_KEY", "ApiKey", "agenta"]
+# "ApiKey" removed: over-broad generic prefilter the regex does NOT need — every
+# pattern self-anchors on the service name (kept), which is present in any real
+# match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.
+keywords = ["AGENTA_API_KEY", "agenta"]
 
 [[detector.patterns]]
 regex = "(?:\\bAGENTA_API_KEY|\\bagenta\\.api\\.key)[=:\\s\"'']+([a-f0-9]{32})"

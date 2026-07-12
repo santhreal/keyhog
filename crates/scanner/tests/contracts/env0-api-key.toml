@@ -19,6 +19,10 @@ reason = "env0 API Secret with 44 alphanumeric chars."
 text = "ENV0_API_KEY=short"
 reason = "Body is not a UUID — pattern requires 8-4-4-4-12 hex format."
 
+[[negative]]
+text = "ENV0_API_KEY=a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d-extra"
+reason = "A continuation after the UUID must not produce a truncated API-key ID."
+
 [[evasion]]
 text = "export ENV0_API_KEY=a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
 credential = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"

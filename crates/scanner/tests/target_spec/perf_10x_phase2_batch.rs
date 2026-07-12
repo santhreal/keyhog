@@ -31,18 +31,16 @@
 //! declaration-coverage checks only and must not duplicate the heavy scans
 //! already owned by the named cells.
 
+mod support;
+
+use crate::support::paths::detector_dir;
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
 use keyhog_scanner::{probe_hardware, select_backend, CompiledScanner, ScanBackend};
-use std::path::PathBuf;
 use std::time::Instant;
-
-fn detectors_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors")
-}
 
 fn build_scanner() -> CompiledScanner {
     let detectors =
-        load_detectors(&detectors_dir()).expect("load detectors for phase-2 target-spec");
+        load_detectors(&detector_dir()).expect("load detectors for phase-2 target-spec");
     CompiledScanner::compile(detectors).expect("compile scanner for phase-2 target-spec")
 }
 
@@ -118,7 +116,7 @@ fn chunk_of(data: String, label: &str) -> Chunk {
         data: data.into(),
         metadata: ChunkMetadata {
             source_type: "phase2-target-spec".into(),
-            path: Some(format!("corpus/{label}.rs")),
+            path: Some(format!("corpus/{label}.rs").into()),
             base_offset: 0,
             ..Default::default()
         },

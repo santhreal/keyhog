@@ -13,6 +13,13 @@ pub(super) use super::report_archive_truncation;
 
 mod zip_scan;
 
+/// Initial decode-buffer capacity reserved per archive entry, capped by the
+/// entry's real size via `min`. A 64 KiB starting buffer avoids repeated small
+/// reallocations while keeping the up-front reservation bounded for tiny
+/// entries. ONE PLACE owner for every archive backend (zip/7z/rar) — never
+/// re-hardcode this value in a per-format module.
+pub(super) const ARCHIVE_ENTRY_READ_CAPACITY_HINT: u64 = 64 * 1024;
+
 pub(crate) fn duplicate_zip_central_entries_error_for_test(path: &Path) -> Result<String, String> {
     zip_scan::duplicate_zip_central_entries_error_for_test(path)
 }
@@ -28,33 +35,31 @@ pub(crate) fn duplicate_zip_reopen_error_for_test(path: &Path) -> Option<String>
     zip_scan::duplicate_zip_reopen_error_for_test(path)
 }
 
+#[derive(serde::Deserialize)]
+struct OpenpackExtensions {
+    extensions: Vec<String>,
+}
+
+fn parse_openpack_extensions(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<OpenpackExtensions>(raw)
+        .map(|parsed| parsed.extensions)
+        .map_err(|error| error.to_string())
+}
+
+static OPENPACK_EXTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_openpack_extensions(include_str!(
+        "../../../../../rules/openpack-extensions.toml"
+    )) {
+        Ok(extensions) => extensions,
+        Err(error) => panic!(
+            "rules/openpack-extensions.toml is invalid: {error}. \
+                 Fix the bundled Tier-B openpack extensions list."
+        ),
+    }
+});
+
 pub(super) fn is_openpack_archive_ext(ext: &str) -> bool {
-    const OPENPACK_EXTS: &[&str] = &[
-        // Plain ZIP and ZIP-wrapped app/package formats.
-        "zip", "apk", "ipa", "crx", "jar",
-        // Compiled / published package artifacts that are ALSO plain ZIP
-        // containers. Without these a `.whl` / `.war` / `.aar` / … is read as
-        // opaque binary, so a credential baked into a DEFLATE-compressed entry
-        // (a `application.properties` in a WAR, a config in a Python wheel, a
-        // `.nuspec`/embedded appsettings in a NuGet package) is never reached.
-        // Unpacking the ZIP scans each entry like any other archived file.
-        //   whl   — Python wheel            war/ear — Java web/enterprise archive
-        //   aar   — Android library         nupkg/snupkg — NuGet (+symbols) package
-        //   egg   — Python egg              xpi   — Firefox extension
-        //   vsix  — VS Code extension
-        "whl", "war", "ear", "aar", "nupkg", "snupkg", "egg", "xpi", "vsix",
-        // OOXML office documents (Word/Excel/PowerPoint) are ZIP containers
-        // whose text lives in member XML (`word/document.xml`,
-        // `xl/sharedStrings.xml`, `ppt/slides/*.xml`). A credential pasted into
-        // a spreadsheet/doc is a real, common leak that was previously dropped
-        // silently at the walker (it was in SKIP_EXTENSIONS); unpacking the ZIP
-        // reaches the XML so it is scanned like any other archived file.
-        "docx", "xlsx", "pptx",
-        // OpenDocument (LibreOffice/OpenOffice) are likewise ZIP containers
-        // (`content.xml`); without this they would be read as opaque binary.
-        "odt", "ods", "odp",
-    ];
-    OPENPACK_EXTS
+    (&*OPENPACK_EXTS)
         .iter()
         .any(|candidate| ext.eq_ignore_ascii_case(candidate))
 }
@@ -578,3 +583,28 @@ fn contains_parent_traversal(value: &str) -> bool {
     value.contains("../") || value.ends_with("/..") || value == ".."
 }
 
+#[cfg(test)]
+mod capacity_hint_one_place_tests {
+    /// ONE PLACE guard: the 64 KiB per-entry decode-buffer hint has exactly one
+    /// owner (`ARCHIVE_ENTRY_READ_CAPACITY_HINT` in this file). Fails if any
+    /// per-format extractor re-hardcodes it as a local `const … = 64 * 1024`.
+    /// Sources embedded at compile time via `include_str!` so the check needs no
+    /// CWD-relative read.
+    #[test]
+    fn no_per_format_capacity_hint_const_redefinition() {
+        for (name, src) in [
+            ("rar.rs", include_str!("rar.rs")),
+            ("seven_zip.rs", include_str!("seven_zip.rs")),
+        ] {
+            for line in src.lines() {
+                let t = line.trim();
+                assert!(
+                    !(t.contains("const ") && t.contains("64 * 1024")),
+                    "{name} re-defines a 64 KiB capacity-hint const; import \
+                     archive::ARCHIVE_ENTRY_READ_CAPACITY_HINT instead: {t}"
+                );
+            }
+        }
+        assert_eq!(super::ARCHIVE_ENTRY_READ_CAPACITY_HINT, 64 * 1024);
+    }
+}

@@ -35,12 +35,13 @@ fn per_chunk_gpu_presence_reuses_and_zeroes_scratch() {
         "per-chunk GPU trigger production must fail loud when device readback sets impossible detector bits"
     );
     assert!(
-        scratch_src.contains("zero_gpu_literal_scratch")
+        scratch_src.contains("zero_scan_dispatch_scratch")
             && scratch_src.contains("scratch.haystack_bytes.fill(0);")
             && scratch_src.contains("scratch.haystack_bytes.clear();")
             && scratch_src.contains("scratch.hit_bytes.fill(0);")
             && scratch_src.contains("scratch.hit_bytes.clear();"),
-        "reused GPU presence scratch must be zeroed and logically cleared before retention"
+        "reused GPU presence scratch must be zeroed and logically cleared before retention \
+         (single owner `zero_scan_dispatch_scratch`, shared by every dispatch-scratch guard)"
     );
     assert!(
         scratch_src.contains("try_borrow_mut()"),

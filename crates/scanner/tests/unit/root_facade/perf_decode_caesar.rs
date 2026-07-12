@@ -20,7 +20,7 @@
 //!
 //! A Caesar/ROT-N shift only moves `a-z`/`A-Z`; digits and punctuation are the
 //! identity, and the shift is a position-wise BIJECTION on the string. The
-//! final gate inside `looks_credential_shaped` (`caesar.rs`) is a
+//! final gate inside `caesar_credential_shape_gate` (`caesar.rs`) is a
 //! `KNOWN_PREFIXES` substring test on the SHIFTED text, so
 //! `shift_k(c).contains(P)` ⟺ `c.contains(rot_{-k}(P))`. A candidate that
 //! contains NONE of the `rot_{-k}(KNOWN_PREFIXES)` needles (for any prefix and
@@ -60,14 +60,22 @@
 //! ## Why this assertion is robust to CI/machine variance
 //!
 //! It is a RATIO of two in-process measurements over the SAME bytes:
-//!   * `caesar` = best-of-K `CaesarDecoder::decode_chunk`, and
-//!   * `scan`   = best-of-K of a single linear pass computing the longest
-//!     contiguous ASCII-alphabetic run (exactly the precondition the fix adds).
+//!   * `caesar` = `CaesarDecoder::decode_chunk`, and
+//!   * `scan`   = one linear pass computing the longest contiguous
+//!     ASCII-alphabetic run (exactly the precondition the fix adds).
 //! Both are O(n) in chunk size, so the ratio is hardware-independent (it held
 //! 838 / 853 / 814 across 16 / 32 / 64 KB). The tripwire floor is 50x: ~16x
 //! below the measured ~840x (so an unoptimized build trips it under any
 //! plausible jitter) and ~10x above an optimized ~5x (so the gated build won't
-//! flake). Best-of-K (K=7, keep the min) strips scheduler noise.
+//! flake). To stay robust to the CPU contention of the full parallel test
+//! suite, the two are measured back-to-back WITHIN each of `REPS` reps and the
+//! smallest paired `caesar/scan` ratio is kept: pairing ties both samples to
+//! the same contention moment (a 14 ms decode is far likelier to be preempted
+//! in every rep than a 0.2 ms scan, so measuring their minima independently
+//! overstated the ratio and flaked on gated code), and the min-ratio picks the
+//! least-preempted paired sample. This cannot mask a real regression — an
+//! ungated decoder runs the fan-out on every rep, so even the min paired ratio
+//! stays >= 50x.
 //!
 //! Build/run:
 //!   cd /media/mukund-thiru/SanthData/Santh/software/keyhog && \
@@ -78,9 +86,13 @@ use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::testing::{decode_chunk, CaesarDecoder};
 use std::time::Instant;
 
-/// Best-of-K reps, keep the min. K=7 strips scheduler/jitter noise on a busy
-/// CI box while staying fast (sub-second total even on the largest fixture).
-const REPS: usize = 7;
+/// Paired-measurement reps: each rep times `decode_chunk` then the linear scan
+/// back-to-back and the smallest `caesar/scan` ratio is kept (see the module
+/// doc's robustness note). 25 (not a bare timing loop's ~7) because the
+/// min-ratio only helps if at least one rep catches the ~14 ms decode running
+/// un-preempted, so it needs more tries under the full parallel suite's
+/// contention; still sub-second total even on the largest fixture.
+const REPS: usize = 25;
 
 /// Hardware-independent floor. Measured ~814-853x on release-fast on the audit
 /// host (see module doc). A Caesar decoder gated on an alphabetic-run
@@ -149,17 +161,6 @@ fn longest_alpha_run(data: &[u8]) -> usize {
     max
 }
 
-fn best_ns<F: FnMut() -> u128>(mut f: F) -> u128 {
-    let mut best = u128::MAX;
-    for _ in 0..REPS {
-        let ns = f();
-        if ns < best {
-            best = ns;
-        }
-    }
-    best
-}
-
 /// PERF TRIPWIRE. FAILS on the current code (the fan-out runs unconditionally);
 /// PASSES once `CaesarDecoder::decode_chunk` gates the extractor walk + 25x
 /// shift loop on a `longest_alpha_run(..) >= MIN_CAESAR_LEN` precondition and
@@ -195,25 +196,38 @@ fn caesar_runfree_chunk_must_be_gated_not_fanned_out() {
 
     // Warm caches/branch predictors before timing.
     let _ = decoder.decode_chunk(&chunk);
+    let _ = longest_alpha_run(&data);
 
-    let caesar_ns = best_ns(|| {
-        let start = Instant::now();
+    // Pair both measurements WITHIN each rep and keep the rep with the smallest
+    // ratio. Measuring `best_ns(caesar)` and `best_ns(scan)` independently was
+    // load-fragile: under the full parallel test suite a 14 ms decode is far
+    // likelier to be preempted in every one of its reps than a 0.2 ms scan, so
+    // an inflated caesar minimum divided by a clean scan minimum overstated the
+    // ratio and tripped the 50x floor on gated (correct) code. Pairing ties the
+    // two samples to the same contention moment, and the min-ratio picks the
+    // least-preempted paired sample. This does NOT weaken the tripwire: an
+    // ungated decoder runs the fan-out on every rep, so even the min paired
+    // ratio stays >= 50x.
+    let mut ratio = f64::MAX;
+    let (mut caesar_ns, mut scan_ns) = (0u128, 0u128);
+    for _ in 0..REPS {
+        let c_start = Instant::now();
         let out = decoder.decode_chunk(&chunk);
-        let ns = start.elapsed().as_nanos();
+        let caesar = c_start.elapsed().as_nanos();
         std::hint::black_box(out);
-        ns
-    });
 
-    let scan_ns = best_ns(|| {
-        let start = Instant::now();
-        let r = longest_alpha_run(&data);
-        let ns = start.elapsed().as_nanos();
-        std::hint::black_box(r);
-        ns
-    })
-    .max(1); // guard div-by-zero on absurdly fast hosts
+        let s_start = Instant::now();
+        let run = longest_alpha_run(&data);
+        let scan = s_start.elapsed().as_nanos().max(1); // guard div-by-zero
+        std::hint::black_box(run);
 
-    let ratio = caesar_ns as f64 / scan_ns as f64;
+        let paired = caesar as f64 / scan as f64;
+        if paired < ratio {
+            ratio = paired;
+            caesar_ns = caesar;
+            scan_ns = scan;
+        }
+    }
 
     assert!(
         ratio < MAX_CAESAR_OVER_SCAN_RATIO,

@@ -5,7 +5,10 @@ use keyhog_scanner::testing::{
 use proptest::prelude::*;
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(1000))]
+    // Testing Contract: 10k+ cases. Single test; per case = prefilter primitive
+    // ops (AlphabetMask/BigramBloom/AlphabetScreen) + 2 SIMD-vs-scalar parity
+    // passes over <=4KB — no full scan, so 10k stays cheap.
+    #![proptest_config(ProptestConfig::with_cases(10_000))]
 
     #[test]
     fn test_prefilter_soundness_and_parity(

@@ -19,13 +19,22 @@ fn z85_rejects_non_multiple_of_5_length() {
 
 #[test]
 fn z85_accepts_multiple_of_5_length() {
-    // Valid lengths: 5, 10, 15, 20, ...
-    // Use valid Z85 characters to avoid decode errors from invalid alphabet.
-    let valid = "00000"; // 5 bytes of Z85 zero
-    assert!(z85_decode(valid).is_ok(), "z85 length 5 must succeed");
-
-    let valid_10 = "0000000000"; // 10 bytes
-    assert!(z85_decode(valid_10).is_ok(), "z85 length 10 must succeed");
+    // Z85 decodes each 5-character group into exactly 4 bytes. Assert the DECODED
+    // bytes, not merely that decoding returned Ok. "HelloWorld" is the canonical
+    // Z85 test vector from the ZMQ RFC (https://rfc.zeromq.org/spec/32): it is the
+    // Z85 encoding of these 8 bytes, so any correct decoder must reproduce them.
+    assert_eq!(
+        z85_decode("HelloWorld"),
+        Ok(vec![0x86, 0x4F, 0xD2, 0x6F, 0xB5, 0x59, 0xF7, 0x5B]),
+        "canonical Z85 vector `HelloWorld` must decode to its 8 spec bytes"
+    );
+    // The all-zero group: five Z85 '0' chars (alphabet value 0) encode the 32-bit
+    // value 0, so a length-5 input decodes to exactly four zero bytes.
+    assert_eq!(
+        z85_decode("00000"),
+        Ok(vec![0u8, 0, 0, 0]),
+        "length-5 all-zero Z85 must decode to exactly four zero bytes"
+    );
 }
 
 #[test]

@@ -1,5 +1,6 @@
 use super::pipeline::{decode_candidate_refs_exact, with_extracted_value_spans};
 use super::Decoder;
+use aho_corasick::AhoCorasick;
 use keyhog_core::Chunk;
 use std::sync::LazyLock;
 
@@ -14,7 +15,9 @@ use std::sync::LazyLock;
 /// useless chunks for the scanner to dedup.
 pub(crate) struct ReverseDecoder;
 
-const MIN_REVERSE_LEN: usize = 16;
+/// Semantic alias of the shared evasion-decode floor — same value as
+/// `caesar::MIN_CAESAR_LEN`, owned once in [`super::util::MIN_EVASION_DECODE_LEN`].
+const MIN_REVERSE_LEN: usize = super::util::MIN_EVASION_DECODE_LEN;
 
 /// Minimum contiguous ASCII-alphanumeric run (scanned in the reversed
 /// direction) for a candidate to be worth reverse-decoding. Filters
@@ -29,19 +32,36 @@ const MIN_REVERSE_ALNUM_RUN: usize = 12;
 /// [`looks_reversible`]). Every 3+ char vendor prefix still gates as before.
 const MIN_REVERSE_PREFIX_LEN: usize = 3;
 
-/// Reverse-prefix needles for [`looks_reversible`].
+/// Reverse-prefix automaton for [`looks_reversible`]: an Aho-Corasick over the
+/// reversed known prefixes (each 3+ chars). One linear pass replaces an
+/// `O(prefixes × |candidate|)` fan of `str::contains` calls — the twin of the
+/// caesar decoder's `PLAIN_PREFIX_AC`, built from the same `KNOWN_PREFIXES`
+/// source of truth (ONE-PLACE).
 ///
 /// SOUNDNESS: `reverse(candidate).contains(prefix)` iff
 /// `candidate.contains(reverse(prefix))`, because reverse is a bijection over
 /// character positions. The decoder still reverses only admitted candidates
 /// when emitting output; this gate just avoids allocating a full reversed copy
-/// for the overwhelmingly common no-match candidate.
-static REVERSED_KNOWN_PREFIXES: LazyLock<Vec<String>> = LazyLock::new(|| {
-    crate::confidence::KNOWN_PREFIXES
+/// for the overwhelmingly common no-match candidate. `is_match` is an unanchored
+/// substring test, exactly equivalent to `any(|p| candidate.contains(p))`.
+static REVERSED_PREFIX_AC: LazyLock<AhoCorasick> = LazyLock::new(|| {
+    let needles: Vec<String> = (&*crate::confidence::KNOWN_PREFIXES)
         .iter()
         .filter(|prefix| prefix.len() >= MIN_REVERSE_PREFIX_LEN)
-        .map(|prefix| reverse_str(prefix))
-        .collect()
+        .map(|prefix| reverse_str(prefix.as_str()))
+        .collect();
+    // Law 10 (build-bug ⇒ fail closed): needles derive ENTIRELY from the
+    // compiled-in `KNOWN_PREFIXES` constant, so a build failure is an invariant
+    // violation, not a runtime hostile-input condition. Panic so the defect can't
+    // ship as a silent degraded path (matching caesar's PLAIN_PREFIX_AC).
+    match AhoCorasick::new(&needles) {
+        Ok(ac) => ac,
+        Err(e) => panic!(
+            "Reverse-decode prefix automaton (REVERSED_PREFIX_AC) failed to build \
+             from the compiled-in KNOWN_PREFIXES needle set: {e}. This is a build \
+             defect in the prefix list or its reversal, not a runtime condition."
+        ),
+    }
 });
 
 impl Decoder for ReverseDecoder {
@@ -121,7 +141,5 @@ pub(crate) fn looks_reversible(candidate: &str) -> bool {
     // reversed string is exotic enough that the recall loss is near zero;
     // every 3+ char vendor prefix (`hf_`, `SG.`, `eyJ`, `sk-`, `ghp_`,
     // ...) still gates as before.
-    REVERSED_KNOWN_PREFIXES
-        .iter()
-        .any(|prefix| candidate.contains(prefix))
+    REVERSED_PREFIX_AC.is_match(candidate)
 }

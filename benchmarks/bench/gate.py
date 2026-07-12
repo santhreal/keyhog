@@ -34,6 +34,7 @@ import tempfile
 
 from .keyhog_version import KeyhogVersionError, assert_version_matches_workspace
 from .report import canonical_leaderboard, load_results
+from .scanners import SCANNER_NAMES
 from .schema import DetectorStat, RunResult
 
 # Per-detector FP-regression tolerances. The overall-F1 baseline gate is blind
@@ -309,7 +310,7 @@ def _main(argv: list[str] | None = None) -> int:
                                  "differential bench gate.")
     ap.add_argument("--corpus", default="mirror")
     ap.add_argument("--scanners",
-                    default="keyhog,betterleaks,kingfisher,noseyparker,trufflehog,titus",
+                    default=",".join(SCANNER_NAMES),
                     help="comma-separated scanner names to run when --results "
                          "is not given")
     ap.add_argument("--results", type=pathlib.Path, default=None,

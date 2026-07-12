@@ -1,6 +1,7 @@
 //! MC-15 gap: `--no-suppress-test-fixtures` (`ScannerConfig.penalize_test_paths
 //! = false`) must clear the path-keyed confidence haircut on the
-//! **generic-secret fallback** too, not only on the named-detector / ML paths.
+//! **generic assignment fallback** (`engine/phase2_generic.rs`, serving every
+//! generic-* detector) too, not only on the named-detector / ML paths.
 //!
 //! The bug: `engine/phase2_generic.rs` historically baked the test-context
 //! base confidence (0.25 for `TestCode`, 0.30 for `Documentation`) into
@@ -23,22 +24,17 @@
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScannerConfig};
-use std::path::PathBuf;
 
-/// Absolute path to the on-disk Tier-B detector TOML tree, from
-/// `CARGO_MANIFEST_DIR` (gap submodules can't reach the `tests/support` helper).
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
-
+use crate::support::paths::detector_dir;
 /// A high-entropy value with no service prefix, assigned to a generic
 /// `license_key` key. Entropy and ML are disabled in the scanner config below
-/// so this isolates the generic-secret assignment fallback rather than letting
-/// entropy or the named generic-password detector claim the line first.
+/// so this isolates the GENERIC ASSIGNMENT FALLBACK (`engine/phase2_generic.rs`,
+/// the path MC-15 fixed) rather than letting entropy or a named detector claim
+/// the line first. `license_key` is an explicit keyword of the `generic-api-key`
+/// detector, so THAT is the generic-* detector that owns this line — the MC-15
+/// `base_conf` haircut is shared by every generic-* detector through
+/// `confidence::policy::generic_secret_confidence`, so `generic-api-key`
+/// exercises the exact same fix.
 const GENERIC_SECRET_LINE: &str =
     "license_key = \"Zx9Kq2Wm7Lp4Rn8Tv3Yb6Hc1Df5Gj0Ks2Md4Pw7Qz9Xa3B\"";
 const GENERIC_VALUE: &str = "Zx9Kq2Wm7Lp4Rn8Tv3Yb6Hc1Df5Gj0Ks2Md4Pw7Qz9Xa3B";
@@ -69,12 +65,16 @@ fn generic_confidence(scanner: &CompiledScanner, path: &str) -> Option<f64> {
     let matches: Vec<RawMatch> = scanner.scan(&chunk);
     matches
         .iter()
-        // Pin the `generic-secret` fallback specifically — that is the
-        // `engine/phase2_generic.rs` path whose `base_conf` MC-15 fixed.
-        // (`generic-password` / `entropy-api-key` also fire on this value via
-        // other paths and would mask the haircut if we took the max over all.)
+        // Pin the ONE generic-* detector that owns this line — `generic-api-key`
+        // via its explicit `license_key` keyword — that is the
+        // `engine/phase2_generic.rs` path whose `base_conf` MC-15 fixed. Isolating
+        // one detector (not a max over all) keeps a co-firing detector from
+        // masking the haircut; with entropy+ML disabled only `generic-api-key`
+        // fires on this value. (The MC-15 base_conf haircut is shared by every
+        // generic-* detector through `generic_secret_confidence`, so this
+        // exercises the exact same fix as `generic-secret` would.)
         .filter(|m| {
-            m.detector_id.as_ref() == "generic-secret"
+            m.detector_id.as_ref() == "generic-api-key"
                 && m.credential.as_ref().contains(GENERIC_VALUE)
         })
         .filter_map(|m| m.confidence)

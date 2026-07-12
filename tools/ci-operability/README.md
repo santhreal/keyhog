@@ -17,7 +17,7 @@ cargo test
 ## Layout
 
 - `tests/gap/` — regression tests that close specific CI-operability gaps.
-- `tests/gap/support/` — shared helpers (`repo_root`, `spec_waiver_active`).
+- `tests/gap/support/` — shared helpers (`repo_root`, `read_workflow`, `spec_waiver_active`, `STRICT_RUNNERS`).
 - `spec_waivers/` — time-bounded waiver files referenced by the gap tests.
 
 ## Adding a waiver

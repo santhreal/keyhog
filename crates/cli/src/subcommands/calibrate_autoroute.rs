@@ -193,7 +193,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     {
         anyhow::bail!(
             "`--autoroute-cache off` disables persistence, but calibrate-autoroute exists to \
-             persist routing decisions — every probe would fail closed. Drop the flag to use the \
+             persist routing decisions; every probe would fail closed. Drop the flag to use the \
              default cache, or pass a writable file path."
         );
     }
@@ -223,25 +223,20 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         );
     }
 
+    let sweep = ProbeSweep {
+        exe: &exe,
+        workspace: workspace.path(),
+        autoroute_cache: args.autoroute_cache.as_deref(),
+        total,
+        quiet: args.quiet,
+        palette: &p,
+    };
     let mut idx = 0usize;
     let mut failed = 0usize;
     for policy in &policy_flags {
         for workload in &workloads {
             idx += 1;
-            // LAW10: reporting_only — display label for the default (no-flag) policy.
-            let policy_label = policy.unwrap_or("default policy");
-            if let Err(error) = run_probe(
-                &exe,
-                workspace.path(),
-                workload,
-                *policy,
-                args.autoroute_cache.as_deref(),
-                idx,
-                total,
-                policy_label,
-                args.quiet,
-                &p,
-            ) {
+            if let Err(error) = sweep.run_probe(workload, *policy, idx) {
                 failed += 1;
                 // The probe already printed its FAIL line; surface the cause
                 // loudly (Law 10) rather than swallowing it behind the counter.
@@ -275,80 +270,87 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Materialize one probe and run a child `keyhog scan --autoroute-calibrate`
-/// against it. Returns `Err` (with the child's first stderr line) if the probe
-/// could not be created or the scan exited non-zero.
-#[allow(clippy::too_many_arguments)]
-fn run_probe(
-    exe: &Path,
-    workspace: &Path,
-    workload: &Workload,
-    policy: Option<&str>,
-    autoroute_cache: Option<&str>,
-    idx: usize,
+/// The sweep-wide invariants every probe shares: the binary under calibration,
+/// the probe workspace, the cache override, and the presentation context.
+/// Per-probe variation (workload, policy, index) stays a method argument.
+struct ProbeSweep<'a> {
+    exe: &'a Path,
+    workspace: &'a Path,
+    autoroute_cache: Option<&'a str>,
     total: usize,
-    policy_label: &str,
     quiet: bool,
-    p: &Palette,
-) -> Result<()> {
-    let label = workload.label();
-    if !quiet {
-        print!(
-            "  [{idx}/{total}] {tag} {label} {dim}({policy_label}){reset} ",
-            tag = crate::style::info("calibrating", p),
-            dim = p.dim,
-            reset = p.reset,
-        );
-        // LAW10: no runtime effect — a progress-line flush error is cosmetic; stdout flushes at exit.
-        std::io::stdout().flush().ok();
-    }
+    palette: &'a Palette,
+}
 
-    let out = workspace.join(format!("probe-{idx}.json"));
-    let mut cmd = Command::new(exe);
-    cmd.arg("scan")
-        .arg("--autoroute-calibrate")
-        .arg("--no-config");
-    if let Some(cache) = autoroute_cache {
-        cmd.arg("--autoroute-cache").arg(cache);
-    }
-    // The probe target (positional path, or `--stdin` + piped file) is added by
-    // `materialize_probe`; the returned handle, if any, becomes the child stdin.
-    let stdin_handle = materialize_probe(workspace, idx, workload, &mut cmd)
-        .with_context(|| format!("creating {label} calibration probe"))?;
-    if let Some(flag) = policy {
-        cmd.arg(flag);
-    }
-    cmd.arg("--format").arg("json").arg("-o").arg(&out);
-    cmd.stdout(Stdio::null());
-    cmd.stderr(Stdio::piped());
-    match stdin_handle {
-        Some(file) => {
-            cmd.stdin(Stdio::from(file));
+impl ProbeSweep<'_> {
+    /// Materialize one probe and run a child `keyhog scan --autoroute-calibrate`
+    /// against it. Returns `Err` (with the child's first stderr line) if the
+    /// probe could not be created or the scan exited non-zero.
+    fn run_probe(&self, workload: &Workload, policy: Option<&str>, idx: usize) -> Result<()> {
+        let p = self.palette;
+        let label = workload.label();
+        // LAW10: reporting_only — display label for the default (no-flag) policy.
+        let policy_label = policy.unwrap_or("default policy");
+        if !self.quiet {
+            print!(
+                "  [{idx}/{total}] {tag} {label} {dim}({policy_label}){reset} ",
+                total = self.total,
+                tag = crate::style::info("calibrating", p),
+                dim = p.dim,
+                reset = p.reset,
+            );
+            // LAW10: no runtime effect — a progress-line flush error is cosmetic; stdout flushes at exit.
+            std::io::stdout().flush().ok();
         }
-        None => {
-            cmd.stdin(Stdio::null());
-        }
-    }
 
-    let output = cmd
-        .output()
-        .with_context(|| format!("spawning {label} calibration probe"))?;
-    if output.status.success() {
-        if !quiet {
-            println!("{}", crate::style::pass("ok", p));
+        let out = self.workspace.join(format!("probe-{idx}.json"));
+        let mut cmd = Command::new(self.exe);
+        cmd.arg("scan")
+            .arg("--autoroute-calibrate")
+            .arg("--no-config");
+        if let Some(cache) = self.autoroute_cache {
+            cmd.arg("--autoroute-cache").arg(cache);
         }
-        Ok(())
-    } else {
-        if !quiet {
-            println!("{}", crate::style::fail("FAIL", p));
+        // The probe target (positional path, or `--stdin` + piped file) is added
+        // by `materialize_probe`; the returned handle, if any, becomes the child
+        // stdin.
+        let stdin_handle = materialize_probe(self.workspace, idx, workload, &mut cmd)
+            .with_context(|| format!("creating {label} calibration probe"))?;
+        if let Some(flag) = policy {
+            cmd.arg(flag);
         }
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let reason = stderr
-            .lines()
-            .find(|line| !line.trim().is_empty())
-            // LAW10: reporting-only error-message string; placeholder for a child that wrote no stderr.
-            .unwrap_or("no error output");
-        anyhow::bail!("{label} ({policy_label}): {reason}");
+        cmd.arg("--format").arg("json").arg("-o").arg(&out);
+        cmd.stdout(Stdio::null());
+        cmd.stderr(Stdio::piped());
+        match stdin_handle {
+            Some(file) => {
+                cmd.stdin(Stdio::from(file));
+            }
+            None => {
+                cmd.stdin(Stdio::null());
+            }
+        }
+
+        let output = cmd
+            .output()
+            .with_context(|| format!("spawning {label} calibration probe"))?;
+        if output.status.success() {
+            if !self.quiet {
+                println!("{}", crate::style::pass("ok", p));
+            }
+            Ok(())
+        } else {
+            if !self.quiet {
+                println!("{}", crate::style::fail("FAIL", p));
+            }
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let reason = stderr
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                // LAW10: reporting-only error-message string; placeholder for a child that wrote no stderr.
+                .unwrap_or("no error output");
+            anyhow::bail!("{label} ({policy_label}): {reason}");
+        }
     }
 }
 

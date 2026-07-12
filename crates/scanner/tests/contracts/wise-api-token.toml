@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "Wise-Token                                                                                  :=:==:=:::=::=:::::===:=:====:=:==:=:====:::==:===:==:::::=::::=               hHntXEXAMPLEEXAMPLEbT1Q8'"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# WISE_API_TOKEN=hHntXBBhcMghHhw15s27KqbT1Q8  # payments"
+credential = "hHntXBBhcMghHhw15s27KqbT1Q8"
+reason = "Commented-out config; WISE_API_TOKEN keyword + token intact inside the comment."

@@ -1,4 +1,10 @@
-//! Bayesian Beta(α, β) calibration per detector.
+//! Bayesian Beta(α, β) *confidence* calibration, per detector.
+//!
+//! Disambiguation: this is the `keyhog calibrate --tp/--fp` subsystem that
+//! shapes a finding's confidence score from operator-confirmed true/false
+//! positives. It is unrelated to *autoroute* "calibration" (backend selection
+//! timing/parity) in `keyhog_cli`'s `orchestrator::dispatch::backend`; the two
+//! share only the English word "calibration".
 //!
 //! Tier-B moat innovation #4 from the internal design notes: surface
 //! per-detector reliability based on observed true-positive vs false-
@@ -40,7 +46,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 const CALIBRATION_TMP_PREFIX: &str = ".tmp.keyhog-calibration-";
-const STALE_CALIBRATION_TMP_CUTOFF_SECS: u64 = 60 * 60;
+use crate::state_file::{self, CALIBRATION_CACHE_FILE_BYTES};
+use crate::STALE_TMP_CUTOFF_SECS;
 
 /// A detector's running Beta posterior counters. Always ≥1 each (Beta(1,1)
 /// uniform prior baseline) to avoid posterior_mean undefined when a detector
@@ -61,7 +68,12 @@ impl Default for BetaCounters {
 impl BetaCounters {
     /// Posterior mean: α / (α + β). Falls in [0, 1]; the higher, the more
     /// reliable the detector is historically.
-    pub(crate) fn posterior_mean(&self) -> f64 {
+    ///
+    /// This is the single canonical implementation. The scanner
+    /// confidence pipeline and the `keyhog calibrate --show` UI both call
+    /// this method rather than re-deriving the arithmetic, so the three
+    /// crates can never drift apart.
+    pub fn posterior_mean(&self) -> f64 {
         let total = self.alpha as f64 + self.beta as f64;
         if total == 0.0 {
             0.5
@@ -80,7 +92,11 @@ impl BetaCounters {
     /// so the result clamps at `u32::MAX` instead of wrapping. That's
     /// still a frozen counter at saturation, but the posterior mean
     /// stays correct and no detector silently gets disabled.
-    pub(crate) fn observations(&self) -> u32 {
+    ///
+    /// Public for the same single-source-of-truth reason as
+    /// [`BetaCounters::posterior_mean`]: the scanner observation gate and
+    /// the CLI `--show` table share this one implementation.
+    pub fn observations(&self) -> u32 {
         // Subtract the Beta(1, 1) prior baseline.
         self.alpha
             .saturating_sub(1)
@@ -138,6 +154,12 @@ pub enum CalibrationLoadError {
     /// Detector identifiers are part of the persisted routing identity.
     #[error("calibration cache '{}' contains an empty detector id", path.display())]
     EmptyDetectorId { path: PathBuf },
+    /// The cache file exceeds the bounded read cap for calibration artifacts.
+    #[error(
+        "calibration cache '{}' exceeds {cap} byte cap; delete the cache file and rerun calibration",
+        path.display()
+    )]
+    TooLarge { path: PathBuf, cap: u64 },
 }
 
 /// Process-wide calibration store. Concurrent updates are serialized via
@@ -157,9 +179,19 @@ impl Calibration {
 
     pub fn try_load(path: &Path) -> Result<Option<Self>, CalibrationLoadError> {
         sweep_stale_calibration_tmp_files(path);
-        let bytes = match std::fs::read(path) {
+        let bytes = match state_file::read_capped(
+            path,
+            CALIBRATION_CACHE_FILE_BYTES,
+            "calibration cache",
+        ) {
             Ok(b) => b,
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(source) if source.kind() == std::io::ErrorKind::InvalidData => {
+                return Err(CalibrationLoadError::TooLarge {
+                    path: path.to_path_buf(),
+                    cap: CALIBRATION_CACHE_FILE_BYTES,
+                });
+            }
             Err(source) => {
                 return Err(CalibrationLoadError::Read {
                     path: path.to_path_buf(),
@@ -208,15 +240,7 @@ impl Calibration {
         };
         let serialized = serde_json::to_vec_pretty(&on_disk)
             .map_err(|e| std::io::Error::other(format!("calibration encode: {e}")))?;
-        let parent = path.parent().unwrap_or_else(|| std::path::Path::new(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
-        std::fs::create_dir_all(parent)?;
-        let mut tmp = tempfile::Builder::new()
-            .prefix(CALIBRATION_TMP_PREFIX)
-            .tempfile_in(parent)?;
-        std::io::Write::write_all(&mut tmp, &serialized)?;
-        tmp.as_file().sync_all()?;
-        tmp.persist(path).map_err(|e| e.error)?;
-        Ok(())
+        state_file::write_atomically(path, CALIBRATION_TMP_PREFIX, &serialized)
     }
 
     /// Record an operator-confirmed outcome for `detector_id`.
@@ -260,7 +284,7 @@ impl Calibration {
             .read()
             .get(detector_id)
             .copied()
-            .unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
+            .unwrap_or_default() // LAW10: uncalibrated detector => Beta(1,1) uniform prior (posterior mean 0.5); deterministic default, not a swallowed value
             .posterior_mean()
     }
 
@@ -270,7 +294,7 @@ impl Calibration {
             .read()
             .get(detector_id)
             .copied()
-            .unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
+            .unwrap_or_default() // LAW10: uncalibrated detector => Beta(1,1) uniform prior (posterior mean 0.5); deterministic default, not a swallowed value
     }
 
     /// Iterate every recorded `(detector_id, counters)`. Useful for
@@ -299,7 +323,7 @@ impl Calibration {
 /// Default calibration cache location: `$XDG_CACHE_HOME/keyhog/calibration.json`
 /// (or the macOS/Windows equivalents via the `dirs` crate).
 pub fn calibration_default_cache_path() -> Option<PathBuf> {
-    dirs::cache_dir().map(|d| d.join("keyhog").join("calibration.json"))
+    crate::keyhog_cache_root().map(|d| d.join("calibration.json"))
 }
 
 fn validate_on_disk(path: &Path, on_disk: &OnDisk) -> Result<(), CalibrationLoadError> {
@@ -322,50 +346,18 @@ fn validate_on_disk(path: &Path, on_disk: &OnDisk) -> Result<(), CalibrationLoad
 }
 
 fn sweep_stale_calibration_tmp_files(cache_path: &Path) {
-    let Some(parent) = cache_path.parent() else {
-        return;
-    };
-    let Ok(entries) = std::fs::read_dir(parent) else {
-        return;
-    };
-    let now = std::time::SystemTime::now();
-    let mut swept = 0usize;
-    for entry in entries {
-        let Ok(entry) = entry else {
-            continue;
-        };
-        let name = entry.file_name();
-        let Some(name_str) = name.to_str() else {
-            continue;
-        };
-        if !name_str.starts_with(CALIBRATION_TMP_PREFIX) {
-            continue;
-        }
-        let path = entry.path();
-        if path == cache_path {
-            continue;
-        }
-        let Ok(meta) = path.metadata() else {
-            continue;
-        };
-        let Ok(modified) = meta.modified() else {
-            continue;
-        };
-        let Ok(age) = now.duration_since(modified) else {
-            continue;
-        };
-        if age.as_secs() < STALE_CALIBRATION_TMP_CUTOFF_SECS {
-            continue;
-        }
-        if std::fs::remove_file(&path).is_ok() {
-            swept += 1;
-        }
-    }
+    let swept = state_file::sweep_stale_tmp_siblings(
+        cache_path,
+        &[CALIBRATION_TMP_PREFIX],
+        STALE_TMP_CUTOFF_SECS,
+    );
     if swept > 0 {
-        tracing::debug!(
-            count = swept,
-            dir = %parent.display(),
-            "swept stale calibration cache tmp files left by an interrupted save"
-        );
+        if let Some(parent) = cache_path.parent() {
+            tracing::debug!(
+                count = swept,
+                dir = %parent.display(),
+                "swept stale calibration cache tmp files left by an interrupted save"
+            );
+        }
     }
 }

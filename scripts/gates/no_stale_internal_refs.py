@@ -36,6 +36,27 @@ PATTERNS = [
     "cli-surface-bloat.md",
 ]
 
+# Distinctive internal-planning *content* markers (not just filenames). These
+# phrases belong to phase-design docs, session logs, and triage ledgers and
+# never appear in consumer or contributor reference docs. They catch an internal
+# planning doc dropped into the tree even when it names no purged file -- the gap
+# that once let `autoroute-calibration-phase.md` and a Gemini triage sweep ship
+# in `docs/`. Each is specific enough not to collide with legitimate prose
+# (e.g. bare "audit"/"triage"/"phase" stay allowed; only these exact phrasings
+# trip the gate).
+CONTENT_PATTERNS = [
+    re.compile(r"Phase Design"),
+    re.compile(r"Phase tasks"),
+    re.compile(r"task list #\d"),
+    re.compile(r"Session findings"),
+    re.compile(r"drive #\d"),
+    re.compile(r"Innovation lane"),
+    re.compile(r"Pending-wire"),
+    re.compile(r"ugliness sweep"),
+    re.compile(r"REACHED, built"),
+    re.compile(r"everything wired so far"),
+]
+
 ALLOWED = {
     ".gitignore",
     "CHANGELOG.md",
@@ -118,6 +139,9 @@ def collect() -> list[tuple[str, int, str, str]]:
             for pattern in PATTERNS:
                 if pattern in line:
                     hits.append((rel, lineno, pattern, line.strip()))
+            for marker in CONTENT_PATTERNS:
+                if marker.search(line):
+                    hits.append((rel, lineno, marker.pattern, line.strip()))
     return hits
 
 
@@ -129,11 +153,21 @@ def self_test() -> int:
         "see TESTING_PROGRAM.md section 3": True,
         "old backlog cli-surface-bloat.md": True,
         "see docs/EXECUTION_PLAN.md (now purged)": True,
+        "## Phase Design — autoroute": True,
+        "Phase tasks (see task list #31-#43)": True,
+        "Session findings (2026-06-27)": True,
+        "empirical, drive #34/#36": True,
+        "Gemini ugliness sweep — triage": True,
+        "macOS — REACHED, built, dogfooded": True,
         "Druid coordinator string is unrelated": False,
+        "this phase of the scan is the design": False,
+        "run a security audit and triage findings": False,
     }
     ok = True
     for line, want in samples.items():
-        got = any(pattern in line for pattern in PATTERNS)
+        got = any(pattern in line for pattern in PATTERNS) or any(
+            marker.search(line) for marker in CONTENT_PATTERNS
+        )
         if got != want:
             print(f"self-test mismatch want={want} got={got}: {line}", file=sys.stderr)
             ok = False

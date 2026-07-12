@@ -117,6 +117,10 @@ pub(crate) fn truncate_src(s: &str, n: usize) -> String {
     format!("{}…", &s[..i])
 }
 
-// Tests live in `tests/fallback_truncate_contract.rs` (scanner src forbids
-// inline test modules, KH-GAP-004); `truncate_for_prefilter` is re-exported at
-// the crate root (lib.rs) so the contract is proven through the public path.
+// Tests live in `tests/unit/root_facade/phase2_truncate_contract.rs` (the
+// structural truncation cases: invalid→None, bounded-not-truncated, `{n,}`→`{n}`,
+// `+`→single, `*`→drop) and `tests/unit/phase2_truncate_prefilter.rs` (the
+// recall-soundness SUPERSET invariant via `assert_superset` + boundary cases).
+// Scanner src forbids inline test modules (KH-GAP-004); `truncate_for_prefilter`
+// is re-exported at the crate root (lib.rs) so the contract is proven through the
+// public path.

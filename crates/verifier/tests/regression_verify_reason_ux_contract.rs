@@ -24,7 +24,9 @@ const ACTIONABLE_REASONS: &[(&str, &str)] = &[
 
 /// The substring after the `Fix:` marker (the remedy guidance).
 fn fix_portion(msg: &str) -> &str {
-    let idx = msg.find("Fix:").expect("message must contain a Fix: marker");
+    let idx = msg
+        .find("Fix:")
+        .expect("message must contain a Fix: marker");
     &msg[idx + "Fix:".len()..]
 }
 
@@ -79,7 +81,10 @@ fn aws_region_leads_with_legacy_phrase() {
 
 #[test]
 fn aws_region_has_fix_section() {
-    assert!(INVALID_AWS_REGION_ERROR.contains("Fix:"), "must state the fix");
+    assert!(
+        INVALID_AWS_REGION_ERROR.contains("Fix:"),
+        "must state the fix"
+    );
 }
 
 #[test]
@@ -122,7 +127,10 @@ fn every_actionable_reason_leads_with_its_legacy_phrase() {
 #[test]
 fn every_actionable_reason_has_a_fix_section() {
     for (msg, _) in ACTIONABLE_REASONS {
-        assert!(msg.contains("Fix:"), "every actionable reason must include `Fix:`: {msg:?}");
+        assert!(
+            msg.contains("Fix:"),
+            "every actionable reason must include `Fix:`: {msg:?}"
+        );
     }
 }
 
@@ -139,7 +147,9 @@ fn every_actionable_reason_has_problem_then_fix_structure() {
 
 #[test]
 fn every_actionable_reason_fix_has_an_imperative_verb() {
-    const VERBS: &[&str] = &["check", "raise", "retry", "correct", "lower", "set", "reduce", "point"];
+    const VERBS: &[&str] = &[
+        "check", "raise", "retry", "correct", "lower", "set", "reduce", "point",
+    ];
     for (msg, _) in ACTIONABLE_REASONS {
         let fix = fix_portion(msg);
         assert!(
@@ -163,14 +173,20 @@ fn no_actionable_reason_ends_at_the_fix_marker() {
 #[test]
 fn every_actionable_reason_is_single_line() {
     for (msg, _) in ACTIONABLE_REASONS {
-        assert!(!msg.contains('\n'), "reason must be single-line for report/SARIF: {msg:?}");
+        assert!(
+            !msg.contains('\n'),
+            "reason must be single-line for report/SARIF: {msg:?}"
+        );
     }
 }
 
 #[test]
 fn no_actionable_reason_has_a_double_space() {
     for (msg, _) in ACTIONABLE_REASONS {
-        assert!(!msg.contains("  "), "reason has a double space (bad line continuation): {msg:?}");
+        assert!(
+            !msg.contains("  "),
+            "reason has a double space (bad line continuation): {msg:?}"
+        );
     }
 }
 
@@ -187,7 +203,10 @@ fn no_actionable_reason_leaks_a_template_placeholder() {
 #[test]
 fn every_actionable_reason_is_substantial() {
     for (msg, _) in ACTIONABLE_REASONS {
-        assert!(msg.len() >= 60, "{msg:?} is too short to carry context + fix");
+        assert!(
+            msg.len() >= 60,
+            "{msg:?} is too short to carry context + fix"
+        );
     }
 }
 

@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "trnslEXAMPLEEXAMPLEabc99"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# yandex translate (rotate): trnsl.1.1.54796602T665349Z.d20cc47c.5ca127c5317179907a1abc99"
+credential = "trnsl.1.1.54796602T665349Z.d20cc47c.5ca127c5317179907a1abc99"
+reason = "Commented-out token; the trnsl.1.1.<...> Yandex Translate token is self-anchoring and surfaces from the comment."

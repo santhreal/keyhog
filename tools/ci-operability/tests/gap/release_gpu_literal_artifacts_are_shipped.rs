@@ -1,20 +1,12 @@
 //! AX10: release assets must ship compiled GPU literal artifacts, not just a
 //! dead helper binary.
 
-use std::path::PathBuf;
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-}
+use super::support::read_workflow;
 
 #[test]
 fn release_workflow_builds_uploads_and_signs_gpu_literal_artifacts() {
-    let text = std::fs::read_to_string(repo_root().join(".github/workflows/release.yml"))
-        .expect("read release.yml");
-    let ci =
-        std::fs::read_to_string(repo_root().join(".github/workflows/ci.yml")).expect("read ci.yml");
+    let text = read_workflow("release.yml");
+    let ci = read_workflow("ci.yml");
 
     assert!(
         text.contains("--bin keyhog-scanner-artifacts")

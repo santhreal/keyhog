@@ -1,15 +1,8 @@
 //! Contract: each detector TOML filename maps to exactly one loaded id.
 
+use crate::support::paths::detector_dir;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn parse_id(path: &PathBuf) -> String {
     let text = std::fs::read_to_string(path).expect("read detector toml");

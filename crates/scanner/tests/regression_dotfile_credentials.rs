@@ -274,7 +274,10 @@ fn netrc_prose_machine_password_does_not_fire() {
 /// A `pypi-` upload token body in the detector's required {100,128} range:
 /// a 40-char `[a-zA-Z0-9]` unit x3 = 120 chars (subset of the value class).
 fn pypi_token() -> String {
-    format!("pypi-{}", "abcdefGHIJ0123456789klmnopQRSTUV01234567".repeat(3))
+    format!(
+        "pypi-{}",
+        "abcdefGHIJ0123456789klmnopQRSTUV01234567".repeat(3)
+    )
 }
 
 #[test]
@@ -291,7 +294,10 @@ fn pypirc_upload_token_fires_and_captures_full_token() {
 #[test]
 fn pypirc_bare_token_attributed_to_pypi_detector() {
     let tok = pypi_token();
-    assert_eq!(capture_for(&tok, "pypi-api-token").as_deref(), Some(tok.as_str()));
+    assert_eq!(
+        capture_for(&tok, "pypi-api-token").as_deref(),
+        Some(tok.as_str())
+    );
 }
 
 #[test]
@@ -327,7 +333,10 @@ fn git_credentials_template_password_does_not_fire() {
 #[test]
 fn git_credentials_empty_userinfo_password_does_not_fire() {
     // No password between `:` and `@`.
-    assert_eq!(capture_for("https://gituser:@github.com", "url-credentials"), None);
+    assert_eq!(
+        capture_for("https://gituser:@github.com", "url-credentials"),
+        None
+    );
 }
 
 // ===========================================================================
@@ -346,7 +355,10 @@ fn mycnf_password_slot_fires() {
 #[test]
 fn mycnf_env_template_does_not_fire() {
     assert_eq!(
-        capture_for("[client]\nuser=root\npassword=${DB_PASS}\n", "generic-password"),
+        capture_for(
+            "[client]\nuser=root\npassword=${DB_PASS}\n",
+            "generic-password"
+        ),
         None
     );
 }
@@ -368,7 +380,10 @@ fn pgpass_password_is_a_documented_gap_not_yet_surfaced() {
     let surfaced = scan(PGPASS)
         .iter()
         .any(|m| m.credential.as_ref().contains("Rk5Mn8Qw2Lp6Vt"));
-    assert!(!surfaced, "if .pgpass is now supported, convert this to a recall lock");
+    assert!(
+        !surfaced,
+        "if .pgpass is now supported, convert this to a recall lock"
+    );
 }
 
 #[test]
@@ -376,8 +391,12 @@ fn pgpass_line_does_not_false_fire_url_or_generic_password() {
     // Precision: the 5-colon `.pgpass` shape is neither a URL userinfo nor a
     // `password=` slot, so it must not be misread as either.
     let hits = scan(PGPASS);
-    assert!(!hits.iter().any(|m| m.detector_id.as_ref() == "url-credentials"));
-    assert!(!hits.iter().any(|m| m.detector_id.as_ref() == "generic-password"));
+    assert!(!hits
+        .iter()
+        .any(|m| m.detector_id.as_ref() == "url-credentials"));
+    assert!(!hits
+        .iter()
+        .any(|m| m.detector_id.as_ref() == "generic-password"));
 }
 
 // ===========================================================================
@@ -404,7 +423,13 @@ fn all_covered_dotfile_credentials_surface_together() {
         "Xk7Qw9RpLm5Vn8Zt",
         "Tn4Bv8Cx2Wq6Hs9Jp",
     ] {
-        assert!(creds.iter().any(|c| c.contains(needle)), "missing {needle}: {creds:?}");
+        assert!(
+            creds.iter().any(|c| c.contains(needle)),
+            "missing {needle}: {creds:?}"
+        );
     }
-    assert!(creds.iter().any(|c| c.contains("pypi-")), "missing pypi token: {creds:?}");
+    assert!(
+        creds.iter().any(|c| c.contains("pypi-")),
+        "missing pypi token: {creds:?}"
+    );
 }

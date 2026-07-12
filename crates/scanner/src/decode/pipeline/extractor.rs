@@ -155,6 +155,9 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
     let mut pct_block = String::new();
     let mut pct_start: Option<usize> = None;
     let mut pct_end = 0usize;
+    // Running count of '%' pushed into `pct_block`, maintained incrementally so
+    // `flush_pct` reads it instead of rescanning the whole accumulated run.
+    let mut pct_percent_count = 0usize;
 
     let is_b64_char =
         |ch: char| -> bool { ch.is_ascii() && crate::decode::is_base64_candidate_byte(ch as u8) };
@@ -193,15 +196,14 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
         pct_block: &mut String,
         pct_start: &mut Option<usize>,
         pct_end: usize,
+        pct_percent_count: &mut usize,
     ) {
         // One triplet (3 chars, e.g. `%41`) is the floor: short percent-encoded
         // dev IDs and other compact secrets that `encoding_explosion_runner`
         // percent-encodes wholesale can be a single triplet, so accept a run of
         // at least one `%`-triplet rather than gating freestanding runs higher.
         const MIN_PCT_TRIPLETS: usize = 1;
-        if pct_block.len() >= MIN_PCT_TRIPLETS * 3
-            && pct_block.matches('%').count() >= MIN_PCT_TRIPLETS
-        {
+        if pct_block.len() >= MIN_PCT_TRIPLETS * 3 && *pct_percent_count >= MIN_PCT_TRIPLETS {
             if let Some(start) = pct_start.take() {
                 values.push(ExtractedValue::new(
                     std::mem::take(pct_block),
@@ -212,9 +214,11 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
                 pct_block.clear();
             }
         } else {
+            pct_block.clear();
             *pct_start = None;
         }
-        pct_block.clear();
+        // `pct_block` is empty after every flush path, so the running count resets.
+        *pct_percent_count = 0;
     }
 
     // Single-pass char-level iteration. Safe for UTF-8 (no mid-codepoint splits).
@@ -224,7 +228,13 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
         if ch == '"' || ch == '\'' || ch == '`' {
             // Flush any pending b64 block
             flush_b64(&mut values, &mut b64_block, &mut b64_start, b64_end);
-            flush_pct(&mut values, &mut pct_block, &mut pct_start, pct_end);
+            flush_pct(
+                &mut values,
+                &mut pct_block,
+                &mut pct_start,
+                pct_end,
+                &mut pct_percent_count,
+            );
 
             let quote = ch;
             chars.next();
@@ -264,7 +274,13 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
         // ── Assignment values (key=value / key: value) ──────────────
         if ch == ':' || ch == '=' {
             flush_b64(&mut values, &mut b64_block, &mut b64_start, b64_end);
-            flush_pct(&mut values, &mut pct_block, &mut pct_start, pct_end);
+            flush_pct(
+                &mut values,
+                &mut pct_block,
+                &mut pct_start,
+                pct_end,
+                &mut pct_percent_count,
+            );
 
             chars.next();
             // Skip whitespace after delimiter
@@ -311,6 +327,9 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
             } else {
                 pct_start.get_or_insert(idx);
                 pct_end = idx + ch.len_utf8();
+                if ch == '%' {
+                    pct_percent_count += 1;
+                }
                 pct_block.push(ch);
                 // Don't fall into the b64 accumulator branch on the
                 // same char; `%` and the hex digits are still valid
@@ -322,7 +341,13 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
                 continue;
             }
         } else if !pct_block.is_empty() {
-            flush_pct(&mut values, &mut pct_block, &mut pct_start, pct_end);
+            flush_pct(
+                &mut values,
+                &mut pct_block,
+                &mut pct_start,
+                pct_end,
+                &mut pct_percent_count,
+            );
         }
 
         // ── Base64 block accumulation (merged from old second pass) ─
@@ -332,17 +357,23 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
             b64_block.push(ch);
         } else if !ch.is_whitespace() {
             flush_b64(&mut values, &mut b64_block, &mut b64_start, b64_end);
-        } else if b64_start.is_some() {
-            b64_end = idx + ch.len_utf8();
         }
-        // else: whitespace inside b64 blocks is allowed (line continuations)
+        // whitespace inside a b64 block is skipped (line continuations) WITHOUT
+        // advancing b64_end: the span must end at the last real base64 char, not
+        // past trailing whitespace.
 
         chars.next();
     }
 
     // Flush trailing b64 block
     flush_b64(&mut values, &mut b64_block, &mut b64_start, b64_end);
-    flush_pct(&mut values, &mut pct_block, &mut pct_start, pct_end);
+    flush_pct(
+        &mut values,
+        &mut pct_block,
+        &mut pct_start,
+        pct_end,
+        &mut pct_percent_count,
+    );
 
     values
 }

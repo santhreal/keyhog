@@ -5,15 +5,15 @@
 //! them with Vyre's own wire format, so install/release calibration can persist
 //! matcher artifacts without reimplementing scanner compile semantics.
 
-use super::{gpu_cache, phase2_anchor};
+use super::{gpu_cache, phase2_anchor, phase2_generic, scan_postprocess};
 use crate::compiler::{
-    build_compile_state, build_gpu_literals, build_phase2_keyword_ac,
+    build_compile_state, build_gpu_literals, build_gpu_position_literals, build_phase2_keyword_ac,
 };
 use crate::error::{Result, ScanError};
 use crate::scanner_config::ScannerTuningConfig;
 use keyhog_core::DetectorSpec;
 use std::sync::Arc;
-use vyre_libs::scan::{GpuLiteralSet, MatchEngineCache};
+use vyre_libs::scan::GpuLiteralSet;
 
 /// Serialized Vyre literal matcher plus the cache identity used by runtime.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -35,11 +35,7 @@ pub struct GpuLiteralArtifact {
 pub struct GpuLiteralArtifacts {
     /// Main phase-1 region-presence matcher.
     pub literal: Option<GpuLiteralArtifact>,
-    /// Retired positioned-matcher slot, kept for source compatibility.
-    ///
-    /// Runtime removed the redundant second GPU literal pass in v0.5.40; the
-    /// artifact compiler therefore returns `None` and performs no positioned
-    /// matcher compilation. Consumers should ignore this field.
+    /// Positioned matcher used by localized post-phase-1 accelerators.
     pub positioned_literal: Option<GpuLiteralArtifact>,
 }
 
@@ -73,6 +69,16 @@ pub fn compile_gpu_literal_artifacts(
         .as_ref()
         .map_or(&[] as &[String], |index| index.always_anchor_literals());
 
+    let confirmed_anchor_index =
+        scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::build(&state.ac_map);
+    let confirmed_anchor_literals = confirmed_anchor_index
+        .as_ref()
+        .map_or(&[] as &[String], |index| index.anchor_literals());
+    let generic_keyword_literals = phase2_generic::keywords::generic_keyword_prefilter_stems()
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+
     Ok(GpuLiteralArtifacts {
         literal: serialize_literal_rows(
             "lit",
@@ -82,7 +88,10 @@ pub fn compile_gpu_literal_artifacts(
                 phase2_always_anchor_literals,
             ),
         )?,
-        positioned_literal: None,
+        positioned_literal: serialize_literal_rows(
+            "pos-lit",
+            build_gpu_position_literals(confirmed_anchor_literals, &generic_keyword_literals),
+        )?,
     })
 }
 
@@ -142,22 +151,13 @@ fn serialize_literal_rows(
         return Ok(None);
     };
     let literal_refs: Vec<&[u8]> = rows.iter().map(Vec::as_slice).collect();
-    let cache_key = format!(
-        "{cache_prefix}-{}",
-        gpu_cache::gpu_matcher_cache_key(&literal_refs)
-    );
+    let cache_key = gpu_cache::gpu_matcher_cache_key_with_prefix(cache_prefix, &literal_refs);
     let pattern_count = literal_refs.len();
     let matcher = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         GpuLiteralSet::compile(&literal_refs)
     }))
     .map_err(|panic| {
-        let detail = if let Some(message) = panic.downcast_ref::<String>() {
-            message.as_str()
-        } else if let Some(message) = panic.downcast_ref::<&'static str>() {
-            message
-        } else {
-            "non-string panic payload"
-        };
+        let detail = super::gpu_lazy_helpers::catch_unwind_panic_detail(panic);
         ScanError::Gpu(format!(
             "GPU literal artifact compile panicked for cache prefix {cache_prefix} with {pattern_count} patterns: {detail}. Fix: reduce literal rows, increase Vyre's DFA budget, or shard the literal set."
         ))
@@ -168,11 +168,36 @@ fn serialize_literal_rows(
         ))
     })?;
 
+    // Vyre stamps its literal-set wire envelope header at the front of the
+    // serialized blob: a 4-byte magic followed by a little-endian u32 version
+    // (`vyre_foundation::serial::envelope` layout). Read the stamped values
+    // straight out of `bytes` — that is the single source of truth for what
+    // this artifact actually carries and cannot drift from Vyre's (private)
+    // wire constants, which 0.6.4 exposes no public accessor for.
+    let (wire_magic, wire_version) = literal_set_wire_header(&bytes).ok_or_else(|| {
+        ScanError::Gpu(format!(
+            "GPU literal artifact for cache prefix {cache_prefix} serialized to {} bytes, too short for Vyre's 8-byte wire envelope header. Fix: upgrade Vyre or rebuild the artifact with a compatible keyhog binary.",
+            bytes.len()
+        ))
+    })?;
+
     Ok(Some(GpuLiteralArtifact {
         cache_key,
         pattern_count,
         bytes,
-        wire_magic: GpuLiteralSet::WIRE_MAGIC,
-        wire_version: GpuLiteralSet::WIRE_VERSION,
+        wire_magic,
+        wire_version,
     }))
+}
+
+/// Parse Vyre's literal-set wire envelope header — a `[u8; 4]` magic followed
+/// by a little-endian `u32` version — from the front of a serialized
+/// `GpuLiteralSet` blob. Returns `None` when the blob is shorter than the
+/// 8-byte header (Vyre always writes it, so `None` signals a corrupt/truncated
+/// serialization the caller surfaces loudly rather than defaulting).
+fn literal_set_wire_header(bytes: &[u8]) -> Option<([u8; 4], u32)> {
+    let header: [u8; 8] = bytes.get(..8)?.try_into().ok()?;
+    let magic: [u8; 4] = header[0..4].try_into().ok()?;
+    let version = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
+    Some((magic, version))
 }

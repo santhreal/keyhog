@@ -138,7 +138,7 @@ pub fn assert_detector_silent_across_chunk_boundary(detector_id: &str, text: &st
         data: pad.into(),
         metadata: ChunkMetadata {
             source_type: "adversarial".into(),
-            path: Some(path.clone()),
+            path: Some(path.clone().into()),
             base_offset: 0,
             ..Default::default()
         },
@@ -147,7 +147,7 @@ pub fn assert_detector_silent_across_chunk_boundary(detector_id: &str, text: &st
         data: unescape_rust_unicode(text).into(),
         metadata: ChunkMetadata {
             source_type: "adversarial".into(),
-            path: Some(path),
+            path: Some(path.into()),
             base_offset: len_a,
             ..Default::default()
         },

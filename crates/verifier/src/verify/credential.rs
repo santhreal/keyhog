@@ -10,9 +10,10 @@ use crate::interpolate::{companions_with_oob, interpolate_url};
 use crate::oob::{OobObservation, OobSession};
 use crate::verify::multi_step::verify_multi_step;
 use crate::verify::{
-    apply_header_body_templates, body_indicates_error, build_request_for_step, evaluate_success,
-    execute_and_read_response, extract_metadata, resolved_client_for_url,
-    validate_header_body_templates, validate_template_companions, RequestBuildResult,
+    apply_header_body_templates, build_request_for_step, evaluate_success,
+    execute_and_read_response, extract_metadata, resolve_live_verdict, resolved_client_for_url,
+    retryable_http_status, success_spec_is_explicit, validate_header_body_templates,
+    validate_template_companions, RequestBuildResult,
 };
 
 const MAX_VERIFY_ATTEMPTS: usize = 3;
@@ -112,6 +113,7 @@ pub(crate) async fn verify_with_retry(
         MAX_VERIFY_ATTEMPTS,
         RETRY_DELAY_MS,
         Some(crate::rate_limit::get_rate_limiter()),
+        &spec.service,
         |_| {
             verify_credential(
                 client,
@@ -143,6 +145,7 @@ async fn retry_loop<F, Fut>(
     max_attempts: usize,
     base_delay_ms: u64,
     limiter: Option<&crate::rate_limit::RateLimiter>,
+    service: &str,
     mut attempt_fn: F,
 ) -> (VerificationResult, HashMap<String, String>)
 where
@@ -165,7 +168,7 @@ where
 
         let result = attempt_fn(attempt).await;
         if let Some(limiter) = limiter {
-            record_rate_limit_feedback(limiter, &result);
+            record_rate_limit_feedback(limiter, service, &result);
         }
 
         if !result.transient {
@@ -186,6 +189,7 @@ where
 
 fn record_rate_limit_feedback(
     limiter: &crate::rate_limit::RateLimiter,
+    service: &str,
     attempt: &VerificationAttempt,
 ) {
     match &attempt.result {
@@ -193,6 +197,9 @@ fn record_rate_limit_feedback(
         VerificationResult::Error(_) if attempt.transient => limiter.record_error(),
         VerificationResult::Live | VerificationResult::Dead | VerificationResult::Revoked => {
             limiter.record_success();
+            // Additive-increase: a completed round-trip means the service is
+            // responding, so recover a step of any per-service 429 backoff.
+            limiter.reward_service(service);
         }
         _ => {}
     }
@@ -210,7 +217,7 @@ pub(crate) fn retry_delay_bounds_for_attempt(attempt: usize, base_delay_ms: u64)
 
 pub(crate) async fn retry_loop_preserves_metadata_on_exhaustion_for_test(
 ) -> (VerificationResult, HashMap<String, String>) {
-    retry_loop(2, 0, None, |_| async {
+    retry_loop(2, 0, None, "test-service", |_| async {
         let mut metadata = HashMap::new();
         metadata.insert("oob_id".to_string(), "abc".to_string());
         VerificationAttempt {
@@ -227,6 +234,7 @@ pub(crate) fn rate_limit_feedback_sequence_for_test() -> (usize, usize, usize, u
 
     record_rate_limit_feedback(
         &limiter,
+        "svc",
         &VerificationAttempt {
             result: VerificationResult::RateLimited,
             metadata: HashMap::new(),
@@ -237,6 +245,7 @@ pub(crate) fn rate_limit_feedback_sequence_for_test() -> (usize, usize, usize, u
 
     record_rate_limit_feedback(
         &limiter,
+        "svc",
         &VerificationAttempt {
             result: VerificationResult::Error("transient verifier failure".to_string()),
             metadata: HashMap::new(),
@@ -247,6 +256,7 @@ pub(crate) fn rate_limit_feedback_sequence_for_test() -> (usize, usize, usize, u
 
     record_rate_limit_feedback(
         &limiter,
+        "svc",
         &VerificationAttempt {
             result: VerificationResult::Dead,
             metadata: HashMap::new(),
@@ -257,6 +267,7 @@ pub(crate) fn rate_limit_feedback_sequence_for_test() -> (usize, usize, usize, u
 
     record_rate_limit_feedback(
         &limiter,
+        "svc",
         &VerificationAttempt {
             result: VerificationResult::Unverifiable,
             metadata: HashMap::new(),
@@ -267,6 +278,7 @@ pub(crate) fn rate_limit_feedback_sequence_for_test() -> (usize, usize, usize, u
 
     record_rate_limit_feedback(
         &limiter,
+        "svc",
         &VerificationAttempt {
             result: VerificationResult::Revoked,
             metadata: HashMap::new(),
@@ -287,7 +299,7 @@ pub(crate) fn rate_limit_feedback_sequence_for_test() -> (usize, usize, usize, u
 pub(crate) async fn retry_loop_records_rate_limit_feedback_for_test() -> usize {
     let limiter = crate::rate_limit::RateLimiter::new(1_000.0);
     let before = limiter.error_count_for_test();
-    let _result = retry_loop(1, 0, Some(&limiter), |_| async {
+    let _result = retry_loop(1, 0, Some(&limiter), "test-service", |_| async {
         VerificationAttempt {
             result: VerificationResult::RateLimited,
             metadata: HashMap::new(),
@@ -383,7 +395,12 @@ pub(crate) async fn verify_credential(
 
     let timeout = verification_timeout(spec, timeout);
 
-    let base_request = if is_self_constructing_auth && url_template.is_empty() {
+    // AwsV4 self-constructs its own STS endpoint + client in `build_aws_probe`,
+    // so it never consumes `url_template`. Resolving/SSRF-screening/pinning a
+    // client for `url_template` here would be discarded — skip it entirely and
+    // go straight to the self-constructing path (using a placeholder URL the
+    // AwsV4 auth arm ignores). Non-AwsV4 auth still resolves + SSRF-screens.
+    let base_request = if is_self_constructing_auth {
         let placeholder_url = match reqwest::Url::parse("https://placeholder.invalid") {
             Ok(url) => url,
             Err(error) => {
@@ -515,7 +532,7 @@ pub(crate) async fn verify_credential(
     let status = response.status;
     let body = response.body;
 
-    let retryable_status = status == 429 || (500..=504).contains(&status);
+    let retryable_status = retryable_http_status(status);
     let mut success_error = None;
     let is_live = success.map_or(status == 200, |s| {
         match evaluate_success(s, status, &body) {
@@ -542,16 +559,20 @@ pub(crate) async fn verify_credential(
         };
     }
 
-    let is_actually_live = is_live && !body_indicates_error(&body);
+    let is_actually_live = resolve_live_verdict(
+        is_live,
+        success.is_some_and(success_spec_is_explicit),
+        &body,
+    );
     let mut metadata = extract_metadata(&spec.metadata, &body);
 
     let http_only_result = if is_actually_live {
         VerificationResult::Live
     } else if retryable_status {
         if status == 429 {
-            crate::rate_limit::get_rate_limiter()
-                .update_limit(&spec.service, 0.5)
-                .await;
+            // Multiplicative-decrease backoff for this service (recovers on
+            // subsequent successes via record_rate_limit_feedback → reward_service).
+            crate::rate_limit::get_rate_limiter().penalize_service(&spec.service);
         }
         VerificationResult::RateLimited
     } else {
@@ -589,6 +610,22 @@ async fn combine_oob(
     http_live: bool,
     metadata: &mut HashMap<String, String>,
 ) -> VerificationResult {
+    // Short-circuit: under OobAndHttp the verdict is `http_only_result` whenever
+    // HTTP already failed — the OOB observation cannot change it (see the
+    // `!http_live` arm of `oob_combined_verdict`). Waiting up to `timeout` (30s
+    // default) for a callback we will never consult is pure latency, so record
+    // OOB's absence and return immediately. The only observation this skips is an
+    // exfil callback firing for a credential whose HTTP probe already failed — a
+    // doomed OobAndHttp verdict either way.
+    if matches!(ctx.spec.policy, OobPolicy::OobAndHttp) && !http_live {
+        metadata.insert("oob_unique_id".to_string(), ctx.unique_id.clone());
+        metadata.insert("oob_observed".to_string(), "false".to_string());
+        metadata.insert(
+            "oob_skipped".to_string(),
+            "http-failed-under-oob-and-http".to_string(),
+        );
+        return http_only_result;
+    }
     let timeout = ctx
         .spec
         .timeout_secs
@@ -621,7 +658,22 @@ async fn combine_oob(
         ));
     }
 
-    match ctx.spec.policy {
+    oob_combined_verdict(ctx.spec.policy, http_only_result, http_live, observed)
+}
+
+/// Pure verdict combiner: fold the HTTP outcome and the OOB observation into a
+/// final [`VerificationResult`] per the detector's [`OobPolicy`]. Extracted from
+/// `combine_oob` (which owns the async wait + metadata) so the policy truth
+/// table is ONE testable owner — and so the `OobAndHttp` short-circuit above can
+/// point at the exact arm (`!http_live` ⇒ `http_only_result`, independent of
+/// `observed`) that proves skipping the wait is verdict-safe.
+pub(crate) fn oob_combined_verdict(
+    policy: OobPolicy,
+    http_only_result: VerificationResult,
+    http_live: bool,
+    observed: bool,
+) -> VerificationResult {
+    match policy {
         OobPolicy::OobAndHttp => {
             if http_live && observed {
                 VerificationResult::Live

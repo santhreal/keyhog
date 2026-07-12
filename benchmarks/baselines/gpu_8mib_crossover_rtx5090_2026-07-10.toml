@@ -7,7 +7,7 @@ gpu = "NVIDIA GeForce RTX 5090"
 gpu_memory_mib = 32607
 driver = "570.211.01"
 gpu_backend = "cuda"
-detectors = 922
+detectors = 923
 source_mib = 8
 window_mib = 1
 window_overlap_kib = 128
@@ -18,38 +18,38 @@ warmups_excluded_per_process = 1
 processes = 5
 full_raw_match_parity = true
 gpu_degraded = false
-benchmark_commit = "c2f5d79b5"
-implementation_commit = "d82882f9b"
+benchmark_commit = "dced245eb"
+implementation_commit = "8cfe9919c"
 command = "KH_BENCH_ITERS=30 <cargo-target>/release/deps/gpu_vs_hs_8mib-<hash>"
 notes = "Production FilesystemSource topology: one 8 MiB source file becomes nine 1 MiB windows with 128 KiB overlap. Throughput uses the 8 MiB source size, not the duplicated overlap bytes. Every timed call clears cross-file fragment state. The benchmark compares sorted full RawMatch values, verifies every timed result against its warm result, rejects GPU degradation, and fails unless the GPU median beats Hyperscan. The earlier single-8-MiB-chunk measurement is not comparable because it prevented the CPU path from using production Rayon window parallelism."
 
 [[process_samples]]
-simd_hyperscan_ms = 33.3240
-gpu_cuda_ms = 31.7817
-gpu_over_simd_ratio = 0.9537
+simd_hyperscan_ms = 35.0860
+gpu_cuda_ms = 34.0512
+gpu_over_simd_ratio = 0.9705
 
 [[process_samples]]
-simd_hyperscan_ms = 32.2348
-gpu_cuda_ms = 31.1134
-gpu_over_simd_ratio = 0.9652
+simd_hyperscan_ms = 35.3080
+gpu_cuda_ms = 30.7962
+gpu_over_simd_ratio = 0.8722
 
 [[process_samples]]
-simd_hyperscan_ms = 32.3599
-gpu_cuda_ms = 31.2567
-gpu_over_simd_ratio = 0.9659
+simd_hyperscan_ms = 34.2831
+gpu_cuda_ms = 32.6441
+gpu_over_simd_ratio = 0.9522
 
 [[process_samples]]
-simd_hyperscan_ms = 32.0616
-gpu_cuda_ms = 31.0892
-gpu_over_simd_ratio = 0.9697
+simd_hyperscan_ms = 33.3864
+gpu_cuda_ms = 31.1543
+gpu_over_simd_ratio = 0.9331
 
 [[process_samples]]
-simd_hyperscan_ms = 32.4820
-gpu_cuda_ms = 30.5055
-gpu_over_simd_ratio = 0.9392
+simd_hyperscan_ms = 35.8135
+gpu_cuda_ms = 31.4524
+gpu_over_simd_ratio = 0.8782
 
 [aggregate]
-median_of_process_medians_simd_ms = 32.3599
-median_of_process_medians_gpu_ms = 31.1134
-gpu_over_simd_ratio = 0.9615
+median_of_process_medians_simd_ms = 35.0860
+median_of_process_medians_gpu_ms = 31.4524
+gpu_over_simd_ratio = 0.8964
 winner = "gpu"

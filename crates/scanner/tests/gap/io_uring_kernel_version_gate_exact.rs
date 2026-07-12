@@ -43,3 +43,57 @@ fn surrounding_whitespace_is_trimmed() {
         "osrelease is trimmed before parsing"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin a handful of points; these SWEEP the gate. For any
+// well-formed `major.minor.patch` osrelease the result is EXACTLY the `(major,
+// minor) >= (5, 1)` tuple order — an implementation-independent characterization of
+// the 5.1 floor (and it proves the patch/suffix is irrelevant). Plus: surrounding
+// whitespace never changes the verdict, and any single-component or non-numeric
+// string fails closed (never a spurious io_uring attempt on an unknown kernel).
+// Traced against `kernel_supports_io_uring`. No proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4_000))]
+
+    /// A well-formed version is supported iff `(major, minor) >= (5, 1)` — swept
+    /// densely across the 5.0/5.1 boundary and both sides of major 5.
+    #[test]
+    fn wellformed_version_matches_the_5_1_floor(
+        major in 3u32..9,
+        minor in 0u32..6,
+        patch in 0u32..300,
+    ) {
+        let v = format!("{major}.{minor}.{patch}-generic");
+        let expected = (major, minor) >= (5, 1);
+        prop_assert_eq!(supports(&v), expected);
+    }
+
+    /// Surrounding whitespace/newlines are trimmed before parsing, so they never
+    /// change the verdict.
+    #[test]
+    fn surrounding_whitespace_does_not_change_the_verdict(
+        major in 3u32..9,
+        minor in 0u32..6,
+    ) {
+        let v = format!("{major}.{minor}.0");
+        let padded = format!("  {v}  \n\t");
+        prop_assert_eq!(supports(&padded), supports(&v));
+    }
+
+    /// A single numeric component (no minor), a non-numeric major/minor, or an empty
+    /// string all fail closed.
+    #[test]
+    fn single_component_or_nonnumeric_fails_closed(
+        n in 0u32..100_000,
+        s in "[a-zA-Z]{1,6}",
+    ) {
+        let single = n.to_string();
+        prop_assert!(!supports(&single), "single component {single:?} has no minor");
+        let nonnumeric = format!("{s}.{s}");
+        prop_assert!(!supports(&nonnumeric), "non-numeric {nonnumeric:?} must fail closed");
+        prop_assert!(!supports(""));
+    }
+}

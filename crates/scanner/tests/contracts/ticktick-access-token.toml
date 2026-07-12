@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "TICKTICK_ACCESS_TOKEN=a6XSuEXAMPLEEXAMPLElsOMO"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = 'export TICKTICK_ACCESS_TOKEN="a6XSuv28Xs8URY6RovRoAkfqsq4yO-r0oI0lsOMO"  # sync'
+credential = "a6XSuv28Xs8URY6RovRoAkfqsq4yO-r0oI0lsOMO"
+reason = "Shell export with a double-quoted value; TICKTICK_ACCESS_TOKEN keyword + token survive the quoting."

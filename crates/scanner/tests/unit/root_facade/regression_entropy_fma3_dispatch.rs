@@ -29,9 +29,7 @@
 //! back to `avx2`-only — while the numeric assertions independently lock the
 //! reduction's correctness on whatever tier this host actually runs.
 
-use keyhog_scanner::testing::entropy_fast::{
-    has_high_entropy_fast, shannon_entropy_scalar, shannon_entropy_simd,
-};
+use keyhog_scanner::testing::entropy_fast::{shannon_entropy_scalar, shannon_entropy_simd};
 
 /// Deterministic >255-active-byte high-entropy blob: bytes 0,1,...,255,0,1,...143.
 /// active_len stays 400 (no fully-null 8-byte chunk: byte 0x00 only ever shares
@@ -77,31 +75,6 @@ fn simd_dispatch_does_not_sigill_and_matches_exact_within_drift() {
     assert!(
         (h - EXACT_ENTROPY).abs() <= POLY_LOG2_DRIFT,
         "SIMD entropy {h} is outside the {POLY_LOG2_DRIFT}-bit drift band around exact {EXACT_ENTROPY}"
-    );
-    // Positive direction of the fast gate: the blob's distinct-byte ceiling is
-    // log2(256) = 8.0, far above 4.5, so the early-exit must NOT short-circuit
-    // and the verdict must be "high entropy".
-    assert!(
-        has_high_entropy_fast(&blob, 4.5),
-        "near-uniform 256-symbol blob must read as high entropy"
-    );
-}
-
-#[test]
-fn fast_gate_negative_twin_short_circuits_below_ceiling() {
-    // Negative twin: 8 distinct symbols cap entropy at log2(8) = 3.0 bits/byte,
-    // so a threshold strictly above the ceiling must be rejected by the sound
-    // early-exit without consulting the (FMA-emitting) reduction at all. This
-    // also exercises the >255 active-length size on the low-entropy side.
-    let buf: Vec<u8> = (0..1000u32).map(|i| (i % 8) as u8).collect();
-    assert!(
-        !has_high_entropy_fast(&buf, 3.5),
-        "8-symbol buffer (ceiling 3.0) must be short-circuited below 3.5"
-    );
-    // Comfortably under the ceiling and clear of polynomial drift: still high.
-    assert!(
-        has_high_entropy_fast(&buf, 2.5),
-        "8-symbol buffer (ceiling 3.0) must read high at 2.5"
     );
 }
 

@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "trip_advisor=aedf9EXAMPLEEXAMPLEa4a50"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# TA_API_KEY=aedf902ad3666643f5392685a7ca4a50  # content api"
+credential = "aedf902ad3666643f5392685a7ca4a50"
+reason = "Commented-out config key using the TA_API_KEY alias; keyword + 32-hex value intact inside the comment."

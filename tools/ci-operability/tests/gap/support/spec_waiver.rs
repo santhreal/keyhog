@@ -1,12 +1,6 @@
 //! Shared SPEC waiver helpers for meta gap oracles.
 
-use std::path::PathBuf;
-
-pub fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-}
+use super::repo_root;
 
 pub fn spec_waiver_active(rel: &str) -> bool {
     let path = repo_root().join(rel);

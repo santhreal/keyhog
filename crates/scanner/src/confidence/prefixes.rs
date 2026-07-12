@@ -15,112 +15,32 @@
 /// `xoxs-`, `vercel_`, `sbp_`, `0x`, `rk_test_`, `sk-`; the inference
 /// copies missed `PRIVATE KEY`, `-----BEGIN`, `TESTKEY_`). Consolidated
 /// here (kimi-dedup audit rows #12-13).
-pub(crate) const KNOWN_PREFIXES: &[&str] = &[
-    // GitHub PATs (every documented variant)
-    "ghp_",
-    "gho_",
-    "ghu_",
-    "ghs_",
-    "ghr_",
-    "github_pat_",
-    // Stripe live + test for all key families
-    "sk_live_",
-    "sk_test_",
-    "pk_live_",
-    "pk_test_",
-    "rk_live_",
-    "rk_test_",
-    // AWS access key ID prefixes
-    "AKIA",
-    "ASIA",
-    // Slack (full variant set)
-    "xoxb-",
-    "xoxp-",
-    "xoxa-",
-    "xoxr-",
-    "xoxs-",
-    // OpenAI / Anthropic / generic sk-
-    "sk-proj-",
-    "sk-ant-",
-    "sk-",
-    // Google API keys
-    "AIza",
-    // SendGrid
-    "SG.",
-    // HuggingFace
-    "hf_",
-    // npm
-    "npm_",
-    // PyPI
-    "pypi-",
-    // GitLab PAT variants
-    "glpat-",
-    "glcbt-",
-    "glrt-",
-    // DigitalOcean
-    "dop_v1_",
-    // Distinctive-prefix vendor tokens whose BODY is pure lowercase hex
-    // (`[a-f0-9]{N}`). A pure-hex body earns almost no entropy/shape signal, so
-    // `compute_confidence` normalizes a bare-token match (literal-prefix weight
-    // only) below the 0.40 floor and `apply_post_ml_penalties` crushes it
-    // further — the exact "lift-back defeated" path this floor exists to survive.
-    // Without the floor these critical/high-severity vendor tokens were dropped
-    // as `below_min_confidence` (a real recall bug: e.g. `API_TOKEN=shpat_<32hex>`
-    // reported nothing while `sk-<32hex>` reported deepseek, purely because `sk-`
-    // was floored and `shpat_` was not). Only DISTINCTIVE prefixes go here — the
-    // generic hex-body prefixes (`api-`, `key-`, `sdk-`, `ck_`, `pub-c-`) are
-    // deliberately excluded because flooring them would lift ordinary
-    // `key-<hex>` identifiers to findings; those detectors must earn a keyword
-    // context anchor instead. Each prefix below is proven to surface an
-    // exact-shape token on both CPU backends by
-    // `regression_hexbody_vendor_prefix_floor`.
-    // Shopify (admin / custom-app / storefront)
-    "shpat_",
-    "shpca_",
-    "shpss_",
-    // Brevo (Sendinblue)
-    "xkeysib-",
-    // RubyGems
-    "rubygems_",
-    // Postman
-    "PMAK-",
-    // Shippo (live)
-    "shippo_live_",
-    // Flipt
-    "flipt_",
-    // JWT shape (base64url of `{"alg":...}`)
-    "eyJ",
-    // Vercel
-    "vercel_",
-    // Supabase project
-    "sbp_",
-    // Hex-prefixed credentials (Ethereum-style addresses + a few API
-    // keys that ship as 0x<hex>).
-    "0x",
-    // Bare keyword used as a credential - the upstream detector already
-    // gated on `PRIVATE KEY` substring so this floor only lifts captured
-    // bodies, not arbitrary PEM blocks.
-    "PRIVATE KEY",
-    // PEM-framed private key blocks captured by the `private-key`
-    // detector start with `-----BEGIN` (e.g. `-----BEGIN RSA-PRIVATE-KEY-----`).
-    "-----BEGIN",
-    // PuTTY `.ppk` private-key files captured by the `putty-private-key`
-    // detector start with `PuTTY-User-Key-File-<version>:`. Same class as the
-    // PEM `-----BEGIN` floor: the distinctive header marker is the
-    // high-confidence signal, so the captured key file is floored to 0.8 rather
-    // than scored on the low-entropy header lines that precede the base64 body.
-    "PuTTY-User-Key-File-",
-    // RFC 4716 / ssh.com SSH2 private-key blocks captured by the
-    // `ssh2-private-key` detector start with the 4-dash spaced framing
-    // `---- BEGIN SSH2 [ENCRYPTED ]PRIVATE KEY ----`. Same class as the PEM
-    // `-----BEGIN` and PuTTY floors: the distinctive header is the high-confidence
-    // signal, so the whole captured block is floored to 0.8 rather than scored on
-    // the (possibly low-entropy) base64 body, which would otherwise drop a real
-    // key whose body happens to be short or repetitive.
-    "---- BEGIN SSH2",
-    // Test-fixture marker used by the bundled suppression list.
-    "TESTKEY_",
-];
+#[derive(serde::Deserialize)]
+struct Wrapper {
+    prefixes: Vec<String>,
+}
+
+// `pub` (not `pub(crate)`) so `crate::testing` can `pub use` it out to the
+// external test crates (confidence_known_prefix_contract, decode_caesar parity)
+// that assert against the list; those re-exports need a `pub` source.
+pub static KNOWN_PREFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_known_prefixes(include_str!("../../../../rules/known-prefixes.toml")) {
+        Ok(prefixes) => prefixes,
+        Err(error) => panic!(
+            "rules/known-prefixes.toml is invalid: {error}. \
+                 Fix the bundled Tier-B metadata file list."
+        ),
+    }
+});
+
+/// Parse the bundled Tier-B known-prefix list. Returns an error rather than
+/// panicking so the `KNOWN_PREFIXES` owner above is the single fail-closed site
+/// (the `no_unwrap_expect` gate bans `expect` in production source).
+fn parse_known_prefixes(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<Wrapper>(raw)
+        .map(|wrapper| wrapper.prefixes)
+        .map_err(|error| error.to_string())
+}
 
 /// Minimum confidence a credential carrying a well-known literal prefix is lifted
 /// to. Named (not an inline `0.8`) so this floor has a single owner alongside the
@@ -174,8 +94,8 @@ pub(crate) fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
 /// future reorder or a newly-added shorter prefix cannot silently change the body
 /// that feeds sequence-detection and the confidence floor.
 pub(crate) fn known_prefix_body(credential: &str) -> Option<&str> {
-    KNOWN_PREFIXES
+    (&*KNOWN_PREFIXES)
         .iter()
-        .filter_map(|prefix| credential.strip_prefix(prefix))
+        .filter_map(|prefix| credential.strip_prefix(prefix.as_str()))
         .min_by_key(|body| body.len())
 }

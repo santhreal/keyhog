@@ -75,20 +75,32 @@ fn fires(text: &str, detector: &str) -> bool {
 #[test]
 fn datadog_dd_api_key_underscore_surfaces() {
     let k = hex(32, 1);
-    assert!(surfaces_under(&format!("DD_API_KEY={k}"), "datadog-api-key", &k));
+    assert!(surfaces_under(
+        &format!("DD_API_KEY={k}"),
+        "datadog-api-key",
+        &k
+    ));
 }
 
 #[test]
 fn datadog_full_api_key_surfaces() {
     let k = hex(32, 2);
-    assert!(surfaces_under(&format!("DATADOG_API_KEY={k}"), "datadog-api-key", &k));
+    assert!(surfaces_under(
+        &format!("DATADOG_API_KEY={k}"),
+        "datadog-api-key",
+        &k
+    ));
 }
 
 #[test]
 fn datadog_api_key_header_dash_form_surfaces() {
     // The regex uses `DD.API.KEY` where `.` matches the `-` of the header name.
     let k = hex(32, 3);
-    assert!(surfaces_under(&format!("DD-API-Key: {k}"), "datadog-api-key", &k));
+    assert!(surfaces_under(
+        &format!("DD-API-Key: {k}"),
+        "datadog-api-key",
+        &k
+    ));
 }
 
 // ── Datadog application key: 40 hex ──────────────────────────────────────────
@@ -106,7 +118,11 @@ fn datadog_application_key_surfaces() {
 #[test]
 fn datadog_dd_app_key_underscore_surfaces() {
     let k = hex(40, 5);
-    assert!(surfaces_under(&format!("DD_APP_KEY={k}"), "datadog-application-key", &k));
+    assert!(surfaces_under(
+        &format!("DD_APP_KEY={k}"),
+        "datadog-application-key",
+        &k
+    ));
 }
 
 #[test]
@@ -141,13 +157,20 @@ fn newrelic_license_key_surfaces() {
 #[test]
 fn newrelic_license_anchor_surfaces() {
     let k = hex(40, 10);
-    assert!(surfaces_under(&format!("NEWRELIC_LICENSE={k}"), "newrelic-license-key", &k));
+    assert!(surfaces_under(
+        &format!("NEWRELIC_LICENSE={k}"),
+        "newrelic-license-key",
+        &k
+    ));
 }
 
 #[test]
 fn newrelic_license_key_39_hex_does_not_fire() {
     let k = hex(39, 11); // 39 < 40
-    assert!(!fires(&format!("NEW_RELIC_LICENSE_KEY={k}"), "newrelic-license-key"));
+    assert!(!fires(
+        &format!("NEW_RELIC_LICENSE_KEY={k}"),
+        "newrelic-license-key"
+    ));
 }
 
 // ── New Relic user API key: NRAK-<27 [A-Z0-9]> ───────────────────────────────
@@ -155,7 +178,10 @@ fn newrelic_license_key_39_hex_does_not_fire() {
 #[test]
 fn newrelic_nrak_user_key_surfaces() {
     let k = format!("NRAK-{}", uppernum(27, 12));
-    assert!(surfaces_under(&k, "newrelic-user-api-key", &k), "NRAK- token must surface");
+    assert!(
+        surfaces_under(&k, "newrelic-user-api-key", &k),
+        "NRAK- token must surface"
+    );
 }
 
 #[test]
@@ -179,7 +205,11 @@ fn circleci_api_token_surfaces() {
 #[test]
 fn circleci_circle_token_env_surfaces() {
     let k = hex(40, 15);
-    assert!(surfaces_under(&format!("CIRCLE_TOKEN={k}"), "circleci-api-token", &k));
+    assert!(surfaces_under(
+        &format!("CIRCLE_TOKEN={k}"),
+        "circleci-api-token",
+        &k
+    ));
 }
 
 // ── Fastly: 32-char token ────────────────────────────────────────────────────
@@ -187,13 +217,21 @@ fn circleci_circle_token_env_surfaces() {
 #[test]
 fn fastly_api_token_surfaces() {
     let k = alnum(32, 16);
-    assert!(surfaces_under(&format!("FASTLY_API_TOKEN={k}"), "fastly-api-token", &k));
+    assert!(surfaces_under(
+        &format!("FASTLY_API_TOKEN={k}"),
+        "fastly-api-token",
+        &k
+    ));
 }
 
 #[test]
 fn fastly_key_header_surfaces() {
     let k = alnum(32, 17);
-    assert!(surfaces_under(&format!("Fastly-Key: {k}"), "fastly-api-token", &k));
+    assert!(surfaces_under(
+        &format!("Fastly-Key: {k}"),
+        "fastly-api-token",
+        &k
+    ));
 }
 
 // ── Heroku: UUID api key ─────────────────────────────────────────────────────
@@ -201,13 +239,21 @@ fn fastly_key_header_surfaces() {
 #[test]
 fn heroku_api_key_uuid_surfaces() {
     let u = uuid(18);
-    assert!(surfaces_under(&format!("HEROKU_API_KEY={u}"), "heroku-api-key", &u));
+    assert!(surfaces_under(
+        &format!("HEROKU_API_KEY={u}"),
+        "heroku-api-key",
+        &u
+    ));
 }
 
 #[test]
 fn heroku_camelcase_key_surfaces() {
     let u = uuid(19);
-    assert!(surfaces_under(&format!("herokuApiKey: \"{u}\""), "heroku-api-key", &u));
+    assert!(surfaces_under(
+        &format!("herokuApiKey: \"{u}\""),
+        "heroku-api-key",
+        &u
+    ));
 }
 
 #[test]
@@ -222,13 +268,21 @@ fn heroku_non_uuid_body_does_not_fire() {
 #[test]
 fn travis_token_surfaces() {
     let k = alnum(22, 21);
-    assert!(surfaces_under(&format!("TRAVIS_TOKEN={k}"), "travisci-token", &k));
+    assert!(surfaces_under(
+        &format!("TRAVIS_TOKEN={k}"),
+        "travisci-token",
+        &k
+    ));
 }
 
 #[test]
 fn travis_lowercase_anchor_surfaces() {
     let k = alnum(22, 22);
-    assert!(surfaces_under(&format!("travis_token={k}"), "travisci-token", &k));
+    assert!(surfaces_under(
+        &format!("travis_token={k}"),
+        "travisci-token",
+        &k
+    ));
 }
 
 #[test]

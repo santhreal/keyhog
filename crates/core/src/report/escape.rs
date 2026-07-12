@@ -114,3 +114,10 @@ pub(crate) fn escape_cdata(value: &str) -> Cow<'_, str> {
         sanitized
     }
 }
+
+// Tests live in `tests/regression_report_escape_invariants.rs` (all five escapers
+// are proptested there — including the CORRECT `escape_cdata` round-trip invariant,
+// `wrap + decode_cdata_sections == sanitize_xml(input)`, NOT the naive
+// "output has no `]]>`" check that a correct `]]]]><![CDATA[>` escape intentionally
+// violates) and the `tests/regression_report_junit_wellformed_proptest.rs`
+// integration layer. Per the repo convention, no inline test module in `src/`.

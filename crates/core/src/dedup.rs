@@ -168,19 +168,21 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     });
 
     for matched in matches {
-        let detector_id_arc = Arc::clone(&matched.detector_id);
-        let credential = matched.credential.clone();
-
-        let key: DedupKey = match scope {
-            DedupScope::Credential => (detector_id_arc, credential, None),
-            DedupScope::File => {
-                let file = Some(file_scope_identity(&matched.location));
-                (detector_id_arc, credential, file)
-            }
-            DedupScope::None => continue,
+        let key_ref = DedupKeyRef {
+            detector_id: matched.detector_id.as_ref(),
+            credential: matched.credential.as_str(),
+            file_scope: match scope {
+                DedupScope::Credential => None,
+                DedupScope::File => Some(FileScopeIdentityRef {
+                    source: matched.location.source.as_ref(),
+                    file_path: matched.location.file_path.as_deref(),
+                    commit: matched.location.commit.as_deref(),
+                }),
+                DedupScope::None => continue,
+            },
         };
 
-        match groups.get_full_mut(&key) {
+        match groups.get_full_mut(&key_ref) {
             Some((idx, _, existing)) => {
                 if is_decoder_alias_pair(&existing.primary_location, &matched.location) {
                     if is_decoder_location(&existing.primary_location)
@@ -230,6 +232,15 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                 seen.insert(location_identity(&matched.location));
                 let credential_hash =
                     effective_credential_hash(matched.credential.as_ref(), matched.credential_hash);
+                let file_scope = match scope {
+                    DedupScope::File => Some(file_scope_identity(&matched.location)),
+                    DedupScope::Credential | DedupScope::None => None,
+                };
+                let key = (
+                    Arc::clone(&matched.detector_id),
+                    matched.credential.clone(),
+                    file_scope,
+                );
                 groups.insert(
                     key,
                     DedupedMatch {
@@ -262,6 +273,17 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     deduped.into_iter().map(|(_, v)| v).collect()
 }
 
+/// A decoded-source match and its raw twin count as the same finding when their
+/// known lines are within this many lines of each other. The splice preprocessor
+/// can shift the decoded credential onto an adjacent line, so exact-line equality
+/// is too strict; more than one line apart is treated as a distinct location.
+const DECODER_ALIAS_MAX_LINE_DELTA: usize = 1;
+
+/// When neither location carries a line number, fall back to byte offset: the
+/// decoded chunk is spliced in at (or a few bytes from) the original blob, so an
+/// offset gap within this many bytes marks the pair as a decoder alias.
+const DECODER_ALIAS_MAX_OFFSET_DELTA: usize = 16;
+
 fn is_decoder_alias_pair(a: &MatchLocation, b: &MatchLocation) -> bool {
     if a.file_path != b.file_path || a.commit != b.commit {
         return false;
@@ -270,11 +292,13 @@ fn is_decoder_alias_pair(a: &MatchLocation, b: &MatchLocation) -> bool {
         return false;
     }
     match (a.line, b.line) {
-        (Some(left), Some(right)) if left.abs_diff(right) <= 1 => return true,
+        (Some(left), Some(right)) if left.abs_diff(right) <= DECODER_ALIAS_MAX_LINE_DELTA => {
+            return true
+        }
         (Some(_), Some(_)) => return false,
         _ => {}
     }
-    a.offset.abs_diff(b.offset) <= 16
+    a.offset.abs_diff(b.offset) <= DECODER_ALIAS_MAX_OFFSET_DELTA
 }
 
 fn serialize_companions_sorted<S>(
@@ -293,10 +317,34 @@ where
     map.end()
 }
 
+/// `/{decoder_name}` source suffixes, loaded once from the Tier-B data file
+/// `rules/decoder-source-suffixes.toml`. Single owner shared with the scanner's
+/// decode registry (see the file header): a decoder missing here would leave its
+/// aliases uncollapsed as duplicate findings.
+static DECODER_SUFFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    #[derive(serde::Deserialize)]
+    struct DecoderNames {
+        decoder_names: Vec<String>,
+    }
+    let raw = include_str!("../../../rules/decoder-source-suffixes.toml");
+    match toml::from_str::<DecoderNames>(raw) {
+        Ok(parsed) if !parsed.decoder_names.is_empty() => parsed
+            .decoder_names
+            .iter()
+            .map(|n| format!("/{n}"))
+            .collect(),
+        Ok(_) => panic!(
+            "rules/decoder-source-suffixes.toml is empty; it must list every \
+             default decoder name so match dedup can collapse decoder aliases."
+        ),
+        Err(error) => panic!(
+            "rules/decoder-source-suffixes.toml is invalid: {error}. \
+             Fix the Tier-B decoder-suffix list."
+        ),
+    }
+});
+
 fn is_decoder_location(location: &MatchLocation) -> bool {
-    const DECODER_SUFFIXES: &[&str] = &[
-        "/base64", "/hex", "/url", "/json", "/z85", "/reverse", "/caesar",
-    ];
     DECODER_SUFFIXES
         .iter()
         .any(|suffix| location.source.ends_with(suffix))
@@ -340,8 +388,17 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
     type GroupKey = (CredentialHash, Option<Arc<str>>);
     let mut groups: IndexMap<GroupKey, Vec<DedupedMatch>> = IndexMap::with_capacity(deduped.len());
     for m in deduped {
-        let key = (m.credential_hash, m.primary_location.file_path.clone());
-        groups.entry(key).or_default().push(m);
+        let key_ref = CrossDetectorGroupKeyRef {
+            credential_hash: m.credential_hash,
+            file_path: m.primary_location.file_path.as_deref(),
+        };
+        match groups.get_full_mut(&key_ref) {
+            Some((_, _, group)) => group.push(m),
+            None => {
+                let key = (m.credential_hash, m.primary_location.file_path.clone());
+                groups.insert(key, vec![m]);
+            }
+        }
     }
 
     let mut out: Vec<DedupedMatch> = Vec::with_capacity(groups.len());
@@ -411,10 +468,21 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
     }
 
     // Re-sort for cross-run determinism (insertion order is input-dependent).
+    // Tiebreak on file_path then offset so the order is TOTAL: two winners that
+    // share (detector_id, credential_hash) across different files would otherwise
+    // compare Equal and fall back to IndexMap insertion order, reintroducing the
+    // input-order dependence the rest of this module eliminates for stable
+    // SARIF/baseline diffs.
     out.sort_by(|a, b| {
         a.detector_id
             .cmp(&b.detector_id)
             .then_with(|| a.credential_hash.cmp(&b.credential_hash))
+            .then_with(|| {
+                a.primary_location
+                    .file_path
+                    .cmp(&b.primary_location.file_path)
+            })
+            .then_with(|| a.primary_location.offset.cmp(&b.primary_location.offset))
     });
     out
 }
@@ -439,6 +507,72 @@ struct FileScopeIdentity {
     source: Arc<str>,
     file_path: Option<Arc<str>>,
     commit: Option<Arc<str>>,
+}
+
+struct FileScopeIdentityRef<'a> {
+    source: &'a str,
+    file_path: Option<&'a str>,
+    commit: Option<&'a str>,
+}
+
+impl Hash for FileScopeIdentityRef<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.source.hash(state);
+        self.file_path.hash(state);
+        self.commit.hash(state);
+    }
+}
+
+impl Equivalent<FileScopeIdentity> for FileScopeIdentityRef<'_> {
+    fn equivalent(&self, key: &FileScopeIdentity) -> bool {
+        self.source == key.source.as_ref()
+            && self.file_path == key.file_path.as_deref()
+            && self.commit == key.commit.as_deref()
+    }
+}
+
+struct DedupKeyRef<'a> {
+    detector_id: &'a str,
+    credential: &'a str,
+    file_scope: Option<FileScopeIdentityRef<'a>>,
+}
+
+impl Hash for DedupKeyRef<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.detector_id.hash(state);
+        self.credential.hash(state);
+        self.file_scope.hash(state);
+    }
+}
+
+impl Equivalent<(Arc<str>, SensitiveString, Option<FileScopeIdentity>)> for DedupKeyRef<'_> {
+    fn equivalent(&self, key: &(Arc<str>, SensitiveString, Option<FileScopeIdentity>)) -> bool {
+        self.detector_id == key.0.as_ref()
+            && self.credential == key.1.as_str()
+            && match (&self.file_scope, key.2.as_ref()) {
+                (None, None) => true,
+                (Some(scope_ref), Some(scope)) => scope_ref.equivalent(scope),
+                _ => false,
+            }
+    }
+}
+
+struct CrossDetectorGroupKeyRef<'a> {
+    credential_hash: CredentialHash,
+    file_path: Option<&'a str>,
+}
+
+impl Hash for CrossDetectorGroupKeyRef<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.credential_hash.hash(state);
+        self.file_path.hash(state);
+    }
+}
+
+impl Equivalent<(CredentialHash, Option<Arc<str>>)> for CrossDetectorGroupKeyRef<'_> {
+    fn equivalent(&self, key: &(CredentialHash, Option<Arc<str>>)) -> bool {
+        self.credential_hash == key.0 && self.file_path == key.1.as_deref()
+    }
 }
 
 fn file_scope_identity(location: &MatchLocation) -> FileScopeIdentity {
@@ -524,6 +658,11 @@ fn insert_new_location_identity(
 }
 
 fn merge_companions(existing: &mut HashMap<String, String>, incoming: HashMap<String, String>) {
+    // Most duplicate matches carry no companions; skip the Vec alloc + sort in
+    // that hot-loop-common case. (dedup calls this once per merged duplicate.)
+    if incoming.is_empty() {
+        return;
+    }
     // Sort incoming by key so the merged " | "-delimited string is stable
     // across runs even though the existing field is a HashMap. Without this,
     // rerunning the same scan can produce different companion orderings.

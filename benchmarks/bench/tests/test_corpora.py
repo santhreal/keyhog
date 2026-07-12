@@ -232,6 +232,70 @@ def test_creddata_native_meta_reuses_file_reads(tmp_path, monkeypatch):
     assert len(source_opens) == 1
 
 
+def test_creddata_recovers_multiline_and_split_drift_positives(tmp_path):
+    """Two slicer bugs each silently dropped real positives from the ground
+    truth (undercounting recall + starving the MoE retrain):
+
+    * ValueStart == -1 marks a WHOLE-LINE multi-line span (PEM/RSA private keys,
+      1003 CredData positives) — the old `value_start < 0 -> return ""` guard
+      dropped every one.
+    * `str.splitlines()` breaks on \\v \\f \\x1c-\\x1e \\x85 U+2028 U+2029, which
+      CredData's `\\n`-based LineStart does not, drifting the line index so the
+      labeled line no longer held the secret (181 CredData positives).
+
+    Both are asserted with EXACT recovered values, not just a non-empty count.
+    """
+    data_dir = tmp_path / "data" / "repo"
+    (tmp_path / "meta").mkdir()
+    data_dir.mkdir(parents=True)
+
+    # (1) multi-line PEM key, ValueStart/ValueEnd = -1 (whole-line span).
+    pem_body = (
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        "MIIFakeKeyMaterialLine0000\n"
+        "-----END RSA PRIVATE KEY-----\n"
+    )
+    (data_dir / "id.pem").write_text(pem_body, encoding="latin-1")
+    # (2) a NEL (U+0085) before the labeled line: splitlines() would make the
+    #     secret land on line 3, '\n'-counting keeps it on line 2.
+    (data_dir / "drift.env").write_text(
+        "pre\x85post\nkey = DRIFTSECRET tail\n", encoding="latin-1"
+    )
+
+    fields = [
+        "Id", "FilePath", "LineStart", "LineEnd",
+        "GroundTruth", "ValueStart", "ValueEnd", "Category",
+    ]
+    with open(tmp_path / "meta" / "repo.csv", "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer.writeheader()
+        writer.writerow({
+            "Id": "pem", "FilePath": "data/repo/id.pem",
+            "LineStart": "1", "LineEnd": "3", "GroundTruth": "T",
+            "ValueStart": "-1", "ValueEnd": "-1", "Category": "PEM Private Key",
+        })
+        writer.writerow({
+            "Id": "drift", "FilePath": "data/repo/drift.env",
+            "LineStart": "2", "LineEnd": "2", "GroundTruth": "T",
+            "ValueStart": "6", "ValueEnd": "17", "Category": "Password",
+        })
+
+    records = CredDataCorpus(root=tmp_path).records()
+    by_id = {r.id: r for r in records}
+    # both survive (neither dropped as "unextractable")
+    assert len(records) == 2, [r.secret for r in records]
+
+    pem = next(r for r in records if r.category == "PEM Private Key")
+    assert pem.secret == (
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        "MIIFakeKeyMaterialLine0000\n"
+        "-----END RSA PRIVATE KEY-----"
+    )
+
+    drift = next(r for r in records if r.category == "Password")
+    assert drift.secret == "DRIFTSECRET"
+
+
 def test_resolve_corpus_known_adapters(tmp_path):
     assert resolve_corpus("mirror", corpus_dir=tmp_path).name == "mirror"
     assert resolve_corpus("creddata", root=tmp_path).name == "creddata"

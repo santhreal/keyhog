@@ -423,6 +423,8 @@ fn invalid_entry_hash_reports_invalid_entry_hash() {
 
 fn sample_detector(severity: Severity) -> DetectorSpec {
     DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "sample-detector".into(),
         name: "sample".into(),
@@ -436,6 +438,11 @@ fn sample_detector(severity: Severity) -> DetectorSpec {
         }],
         companions: vec![],
         verify: None,
+        // Fill any newer optional fields (allowlist_paths/allowlist_values/
+        // entropy_high, …) with their defaults so this exhaustive literal does
+        // not break every time the spec grows a field. Explicit fields above
+        // still win; only unlisted ones default.
+        ..Default::default()
     }
 }
 

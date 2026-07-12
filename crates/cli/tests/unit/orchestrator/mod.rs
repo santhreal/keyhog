@@ -4,6 +4,8 @@ pub mod allowlist_policy_fail_closed_contract;
 pub mod allowlist_root_directory_unchanged;
 pub mod allowlist_root_file_uses_parent;
 pub mod allowlist_root_file_without_parent_falls_back_dot;
+pub mod allowlist_root_real_dotted_directory_stays_itself;
+pub mod allowlist_root_real_extensionless_file_uses_parent;
 pub mod autoroute_host_identity_no_path_fallback;
 pub mod build_scanner_config_deep_mode;
 pub mod build_scanner_config_diagnostics;

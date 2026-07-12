@@ -1,0 +1,12 @@
+source_code_filenames = [
+  "kconfig",
+  "makefile",
+  "cmakelists.txt",
+]
+
+text_noise_extensions = [
+  ".md",
+  ".rst",
+  ".txt",
+  ".adoc",
+]

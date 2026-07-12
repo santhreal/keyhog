@@ -3,10 +3,10 @@
 //! README.md and docs/src/verification.md make a NUMERIC claim about how many
 //! shipped detectors carry a live `[detector.verify]` endpoint:
 //!   * README:        "344 detectors carry an active `[detector.verify]` endpoint"
-//!   * verification.md "344 of the 909 detectors do (about 38%)"
+//!   * verification.md "344 of the 919 detectors do (about 38%)"
 //!
 //! A prior README said 341 and verification.md said "About 60%"; both had drifted
-//! from the corpus (the real count is 344 of 909 = 38%). A doc number nobody pins
+//! from the corpus (the real count is 344 of 919 = 37%). A doc number nobody pins
 //! to the artifact rots silently — the operator reading "60%" mis-plans which
 //! findings `--verify` can confirm.
 //!
@@ -123,8 +123,8 @@ fn verify_block_count_is_pinned_and_every_block_has_a_url() {
     let (total, with_verify, with_verify_url) = count_verify_corpus(&root.join("detectors"));
 
     assert_eq!(
-        total, 909,
-        "shipped detector corpus is 909 TOMLs (the README/docs cited total); got {total}. \
+        total, 920,
+        "shipped detector corpus is 920 TOMLs (the README/docs cited total); got {total}. \
          If a detector was added/removed, update the README banner, verification.md, and \
          this assertion together."
     );
@@ -160,7 +160,7 @@ fn readme_verifier_line_quotes_real_verify_count() {
 }
 
 /// verification.md's "Detectors without verification" section must quote the real
-/// verify-block count AND the real total (`344 of the 902`), and must NOT keep the
+/// verify-block count AND the real total (`344 of the 919`), and must NOT keep the
 /// stale "About 60%" claim (the true fraction is ~38%). Pins doc↔corpus agreement.
 #[test]
 fn verification_doc_quotes_real_verify_fraction() {

@@ -37,7 +37,11 @@ fn gen(n: usize, seed: usize, charset: &[u8]) -> String {
 
 /// A 35-char Telegram token segment over the full `[A-Za-z0-9_-]` charset.
 fn token35(seed: usize) -> String {
-    gen(35, seed, b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
+    gen(
+        35,
+        seed,
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+    )
 }
 
 fn scan(text: &str) -> Vec<(String, String)> {
@@ -83,7 +87,10 @@ fn telegram_token_in_api_url_surfaces() {
     // form was missed entirely until `api.telegram.org` was added as a keyword.
     // Asserting telegram-bot-token specifically fires proves that fix.
     let tok = format!("987654321:{}", token35(2));
-    assert!(surfaces(&format!("https://api.telegram.org/bot{tok}/getMe"), &tok));
+    assert!(surfaces(
+        &format!("https://api.telegram.org/bot{tok}/getMe"),
+        &tok
+    ));
 }
 
 #[test]
@@ -112,13 +119,19 @@ fn telegram_token_python_bot_token_var_surfaces() {
 #[test]
 fn telegram_token_yaml_field_surfaces() {
     let tok = format!("556677889:{}", token35(6));
-    assert!(surfaces_any(&format!("telegram:\n  bot_token: {tok}\n"), &tok));
+    assert!(surfaces_any(
+        &format!("telegram:\n  bot_token: {tok}\n"),
+        &tok
+    ));
 }
 
 #[test]
 fn telegram_token_json_field_surfaces() {
     let tok = format!("778899001:{}", token35(7));
-    assert!(surfaces(&format!("{{\"telegram_bot_token\":\"{tok}\"}}"), &tok));
+    assert!(surfaces(
+        &format!("{{\"telegram_bot_token\":\"{tok}\"}}"),
+        &tok
+    ));
 }
 
 #[test]
@@ -151,7 +164,14 @@ fn telegram_token_leading_zero_id_surfaces() {
 fn telegram_token_with_underscore_and_dash_surfaces() {
     // Token segment explicitly containing the `_` and `-` charset members,
     // generated to guarantee exactly 35 chars.
-    let seg = format!("A_{}-B", gen(31, 12, b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"));
+    let seg = format!(
+        "A_{}-B",
+        gen(
+            31,
+            12,
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        )
+    );
     assert_eq!(seg.len(), 35, "fixture token must be 35 chars");
     let tok = format!("246801357:{seg}");
     assert!(surfaces(&format!("TELEGRAM_BOT_TOKEN={tok}"), &tok));
@@ -184,7 +204,14 @@ fn telegram_token_no_colon_separator_does_not_fire() {
 #[test]
 fn telegram_token_segment_34_chars_does_not_fire() {
     // 34-char token segment is one short of the required 35.
-    let tok = format!("123456789:{}", gen(34, 15, b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"));
+    let tok = format!(
+        "123456789:{}",
+        gen(
+            34,
+            15,
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        )
+    );
     assert!(does_not_fire(&format!("TELEGRAM_BOT_TOKEN={tok}")));
 }
 
@@ -200,13 +227,17 @@ fn telegram_token_broken_by_space_does_not_fire() {
     // A space inside the token breaks the 35-char run.
     let token = token35(17);
     let broken = format!("{} {}", &token[..17], &token[18..]);
-    assert!(does_not_fire(&format!("TELEGRAM_BOT_TOKEN=123456789:{broken}")));
+    assert!(does_not_fire(&format!(
+        "TELEGRAM_BOT_TOKEN=123456789:{broken}"
+    )));
 }
 
 #[test]
 fn telegram_token_broken_by_dot_does_not_fire() {
     // `.` is not in [A-Za-z0-9_-]; placed early it prevents any 35-char run.
-    assert!(does_not_fire("TELEGRAM_BOT_TOKEN=123456789:ab.cdefghijklmnopqrstuvwxyz0123456"));
+    assert!(does_not_fire(
+        "TELEGRAM_BOT_TOKEN=123456789:ab.cdefghijklmnopqrstuvwxyz0123456"
+    ));
 }
 
 // ── cross-cutting ─────────────────────────────────────────────────────────────

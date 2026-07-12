@@ -8,7 +8,10 @@ id = "baidu-maps-api-key"
 name = "Baidu Maps API Key"
 service = "baidu"
 severity = "high"
-keywords = ["BAIDU_MAPS_KEY", "baidu.maps.key", "baidu_maps_key", "ak"]
+# "ak" removed: a 2-char over-trigger (make/take/back/…) that NO regex references
+# — every pattern here requires a `baidu[_.]maps[_.]key` anchor, so "ak" only
+# wasted scan passes. Recall-neutral.
+keywords = ["BAIDU_MAPS_KEY", "baidu.maps.key", "baidu_maps_key"]
 
 [[detector.patterns]]
 regex = "(?:BAIDU[_-]?MAPS[_-]?KEY|baidu[_-]?maps[_-]?key|baidu\\.maps\\.key)[=:\\s\"'']+([A-Za-z0-9]{24,32})"

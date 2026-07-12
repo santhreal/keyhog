@@ -11,18 +11,29 @@ self-contained report page, and `junit` emits a JUnit XML test-report
 
 ## `--format text` (default)
 
-Human-readable table. Best for terminal use, pre-commit hook output,
+Human-readable boxes. Best for terminal use, pre-commit hook output,
 and screenshots. Colors auto-detect TTY; pipe through `cat` (or set
 `NO_COLOR=1`) to disable.
 
 ```text
-src/config/staging.env:14:12  HIGH  stripe-secret-key
-                              sk_live_4eC39H…Tcd3Hc (redacted)
-                              entropy 5.21 │ confidence 0.999 │ unverified
+  ┌    CRITICAL ─── Stripe Secret Key
+  │ Secret:     sk_l...p7dc
+  │ Location:   src/config/staging.env:14
+  │ Confidence: ■■■■■■ 100%
+  │ Action:     Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.
+  │ Docs:       https://docs.stripe.com/keys#roll-api-key
+  └─────────────────────────────────────────────
+
+  ━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1 secret found · 1 unverified
 ```
 
-The columns are `file:line:offset`, severity, detector ID. The second
-line is the redacted credential. The third is metadata.
+Each finding is a severity-colored box: the header carries the severity
+and detector name, then `Secret:` (the credential redacted to its first
+and last few characters), `Location:` (`file:line:offset`), a
+`Confidence:` bar, and an `Action:`/`Docs:` remediation hint. Verified
+runs add the liveness state and commit/author rows when known. The
+`Results` footer joins the counts with ` · `.
 
 ## `--format json`
 
@@ -126,12 +137,13 @@ keyhog scan . --verify --format json \
 
 ## Findings-only output
 
-`keyhog scan` has no `--quiet` flag. You don't need one: the banner is
-printed only when stderr is a TTY (it never appears in a pipe, a file,
-or CI logs), and the structured formats (`json`, `jsonl`, `sarif`,
-`csv`, `github-annotations`, `gitlab-sast`, `junit`) carry findings only,
-with no banner or footer prose. So a CI script that wants machine output just selects a
-structured format:
+On an interactive terminal `keyhog scan` shows a banner, a live progress
+ticker, and a completion summary on stderr. Most of the time you do not need to
+silence it: the banner and ticker are printed only when stderr is a TTY (they
+never appear in a pipe, a file, or CI logs), and the structured formats
+(`json`, `jsonl`, `sarif`, `csv`, `github-annotations`, `gitlab-sast`,
+`junit`) carry findings only, with no banner or footer prose. So a CI script
+that wants machine output just selects a structured format:
 
 ```sh
 keyhog scan . --format json
@@ -140,6 +152,14 @@ keyhog scan . --format json
 The `text` format does print a footer summary (counts + any skip
 summary) to stdout alongside the findings; if you want findings only,
 choose `json`/`jsonl`/`sarif`/`csv`/`github-annotations`/`gitlab-sast` instead. The
-animated banner is the only TTY-gated piece and never reaches a pipe or
-a file. Exit code semantics are unchanged by the format choice (see
+animated banner is TTY-gated and never reaches a pipe or a file. Exit code
+semantics are unchanged by the format choice (see
 [exit codes](./reference/exit-codes.md)).
+
+When you do want to silence the interactive chrome on a TTY (for example a
+local run whose stderr you are capturing), pass `--quiet`. It suppresses the
+banner, the progress ticker, and the "Scan complete" summary, but still prints
+coverage `FAIL`/`WARN` lines and fatal errors so a quiet scan can never be
+mistaken for a clean one. Use `--no-color` to drop ANSI styling regardless of
+whether output is a TTY (the [`NO_COLOR`](./reference/env.md) convention is also
+honored).

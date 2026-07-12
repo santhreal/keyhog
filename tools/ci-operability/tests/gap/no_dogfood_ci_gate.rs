@@ -1,12 +1,6 @@
 //! KH-GAP-131: STANDARD dogfood requires real-product CI exercise.
 
-use std::path::PathBuf;
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-}
+use super::support::repo_root;
 
 #[test]
 fn ci_workflows_include_dogfood_scan_gate() {

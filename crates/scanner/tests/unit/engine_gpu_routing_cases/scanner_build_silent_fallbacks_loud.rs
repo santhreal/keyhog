@@ -125,16 +125,18 @@ fn phase2_gpu_admission_loss_is_operator_visible() {
 }
 
 #[test]
-fn gpu_auxiliary_loss_updates_runtime_status() {
+fn positioned_gpu_candidate_loss_updates_runtime_status() {
     let src = engine_src("gpu_region_dispatch.rs");
     assert!(
         src.matches("self.record_gpu_degrade(").count() >= 4,
-        "coalesced GPU degrade, under-fire recovery, and both phase-2 admission loss branches must update runtime status"
+        "coalesced GPU degrade and every positioned-candidate loss branch must update runtime status"
     );
     assert!(
-        src.matches("phase-2 GPU admission dispatch failed").count() >= 2
-            && src.contains("GPU region-presence under-fire recovered"),
-        "phase-2 admission and under-fire branches must keep concrete degradation reasons"
+        src.contains("positioned literal matcher not built for this scanner")
+            && src.contains("positioned GPU candidate collection failed")
+            && src.contains("still exceeds cap")
+            && src.contains("pathological literal density"),
+        "positioned matcher-missing, scan-error, and unsplittable-over-cap branches must keep concrete degradation reasons"
     );
     let forced = engine_src("gpu_forced.rs");
     assert!(
@@ -178,15 +180,16 @@ fn gpu_matcher_loss_is_operator_visible() {
     assert!(
         helpers.contains("fn report_gpu_matcher_unavailable")
             && helpers.contains("GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED")
+            && helpers.contains("GPU_POSITION_MATCHER_UNAVAILABLE_WARNED")
             && helpers.contains("eprintln!(")
             && helpers.contains("Use --require-gpu when GPU acceleration is mandatory"),
-        "GPU literal matcher compile loss must be visible to normal CLI stderr"
+        "GPU matcher compile loss must be visible to normal CLI stderr, with independent guards per matcher kind"
     );
     assert!(
         src.matches("report_gpu_matcher_unavailable(&error,")
             .count()
-            >= 1,
-        "literal matcher compile failures must route through the visible reporter"
+            >= 2,
+        "both literal and positioned-literal matcher compile failures must route through the visible reporter"
     );
 }
 
@@ -269,23 +272,78 @@ fn phase2_keyword_ac_build_failure_warns() {
 }
 
 #[test]
-fn static_prefilter_regexes_warn_on_compile_failure() {
-    // Every build-from-constant LazyLock regex/AC must call warn_prefilter_disabled
-    // on compile failure, not silently return None via .ok().
-    let files = [
-        "multiline/structural.rs",
-        "multiline/config.rs",
-        "shared_regexes.rs",
-        "checksum/slack.rs",
-        "unicode_hardening.rs",
-    ];
-    for file in files {
+fn static_prefilter_regexes_handle_build_failure_loudly() {
+    // Every static (LazyLock/OnceLock) regex/AC prefilter must handle a build
+    // failure LOUDLY, never silently return None via `.ok()` (that path is
+    // separately banned by `static_prefilter_regexes_no_raw_ok_swallow`). TWO
+    // loud forms qualify, and each file must exhibit exactly the one that fits
+    // its prefilter:
+    //  - WARN + recall-preserving degrade (`prefilter_degrade::warn_prefilter_disabled`),
+    //    correct ONLY when the prefilter is a superset filter whose absence loses
+    //    speed but not recall (the full scan still runs). `checksum/slack.rs`.
+    //  - Fail-closed PANIC (Law 10), correct for a compile-time-constant pattern
+    //    or embedded Tier-B automaton whose only failure mode is a build/data bug
+    //    AND whose absence would SILENTLY drop recall — so degrading is not an
+    //    option and it must refuse to run. `shared_regexes.rs` (ASSIGN_RE),
+    //    `unicode_hardening.rs` (evasion-anchor AC). `multiline/structural.rs`
+    //    also fail-closes; it is pinned precisely by
+    //    `structural_constant_regexes_fail_closed`.
+    // (`multiline/config.rs` was previously listed but builds NO static prefilter
+    // — its "prefilter" is a memchr2 fast-path, nothing fallible to guard — so
+    // requiring a loud handler there was a stale contract.)
+    let warn_degrade = ["checksum/slack.rs"];
+    let fail_closed = ["shared_regexes.rs", "unicode_hardening.rs"];
+    for file in warn_degrade {
         let src = scanner_src(file);
         assert!(
             src.contains("prefilter_degrade::warn_prefilter_disabled"),
-            "{file} must call warn_prefilter_disabled on static prefilter build failure"
+            "{file} builds a recall-preserving prefilter, so it must call \
+             warn_prefilter_disabled (loud degrade) on build failure"
         );
     }
+    for file in fail_closed {
+        let src = scanner_src(file);
+        assert!(
+            src.contains("panic!"),
+            "{file} builds a recall-load-bearing static prefilter whose absence \
+             would silently drop recall, so it must FAIL CLOSED with a panic on \
+             build failure, never warn+degrade or silently return None"
+        );
+    }
+}
+
+/// `multiline/structural.rs` is exempt from the warn+degrade gate above BECAUSE
+/// it takes the stronger fail-closed path: its compile-time-constant CONCAT_RE /
+/// TVAR_RE can only fail to build on a bad literal (a build defect, never a
+/// runtime condition), so each `Regex::new` match branches its `Err` arm into a
+/// `panic!` with a fix-the-pattern message instead of silently disabling
+/// multiline scanning. This pins that contract so the exemption can never decay
+/// into a silent `.ok()` (the companion `no_raw_ok_swallow` gate still covers it).
+#[test]
+fn structural_constant_regexes_fail_closed() {
+    // Strip full-line `//` comments so the rationale comment (which names
+    // `warn_prefilter_disabled`) cannot satisfy the "must not warn" assertion.
+    let raw = scanner_src("multiline/structural.rs");
+    let src: String = raw
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    // Both constant regexes must branch their build-error arm into a hard panic.
+    let panic_arms = src.matches("Err(error) => panic!").count();
+    assert!(
+        panic_arms >= 2,
+        "structural.rs must fail closed (panic) on CONCAT_RE and TVAR_RE build \
+         failure — found {panic_arms} `Err(error) => panic!` arms, expected >= 2"
+    );
+    // And it must NOT reintroduce the warn+degrade path it deliberately dropped:
+    // a compile-time constant has no recall-preserving degrade, so warn+None here
+    // would silently disable multiline scanning on a build defect.
+    assert!(
+        !src.contains("warn_prefilter_disabled"),
+        "structural.rs constants must fail closed, not warn+degrade — remove the \
+         warn_prefilter_disabled call and keep the panic"
+    );
 }
 
 #[test]

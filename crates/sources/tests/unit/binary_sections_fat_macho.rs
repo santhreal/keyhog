@@ -109,14 +109,14 @@ fn fat_macho_section_extraction_preserves_arch_section_chunks() {
 
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "binary:macho:__cstring"
+            chunk.metadata.source_type.as_ref() == "binary:macho:__cstring"
                 && chunk.data.contains("SANTH_FAT_MACHO_SECRET_ONE")
         }),
         "Fat Mach-O must parse the first nested architecture section instead of falling through to strings-only extraction: {chunks:?}"
     );
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "binary:macho:__cstring"
+            chunk.metadata.source_type.as_ref() == "binary:macho:__cstring"
                 && chunk.data.contains("SANTH_FAT_MACHO_SECRET_TWO")
         }),
         "Fat Mach-O must continue across later nested architecture sections: {chunks:?}"

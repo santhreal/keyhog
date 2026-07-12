@@ -27,16 +27,10 @@ fn homoglyph_map() -> &'static HashMap<char, Vec<char>> {
         m.insert('s', vec!['ѕ', 'ｓ']);
         m.insert('t', vec!['т', 'τ', 'ｔ']);
         m.insert('u', vec!['υ', 'ｕ']);
-        // 'l' confuses with the I/1/| cluster (Cyrillic/Greek dotless i, fullwidth
-        // l). The ASCII 'O'/'o' previously here were invalid: a homoglyph maps an
-        // ASCII char to its NON-ASCII lookalikes, so ASCII glyphs add no obfuscation
-        // coverage — they only made the ASCII-folded class `[l...Oo]→[lOo]` match a
-        // literal 'O'/'o' in the 'l' position (pure false-positive surface +
-        // automaton bloat). Removed; the load-bearing 'l' member is preserved.
-        // (The non-ASCII O-lookalikes Ο/ο/о are also a wrong cluster for 'l' but
-        // trimming them changes non-ASCII matching, so that is deferred to a
-        // differential-bench-validated pass.)
-        m.insert('l', vec!['і', 'І', 'ι', 'Ι', 'ｌ', 'Ο', 'ο', 'о']);
+        // 'l' confuses with the I/1/| cluster: Cyrillic/Greek dotless i and
+        // fullwidth l. The Greek/Cyrillic o-lookalikes (Ο/ο/о) are an 'o' cluster,
+        // not 'l', and only add a false-positive/automaton-bloat surface here.
+        m.insert('l', vec!['і', 'І', 'ι', 'Ι', 'ｌ']);
         m.insert('x', vec!['х', 'χ', 'ｘ']);
         m.insert('y', vec!['у', 'ｙ']);
         m.insert('L', vec!['Ｌ']);
@@ -58,6 +52,20 @@ fn homoglyph_map() -> &'static HashMap<char, Vec<char>> {
         m.insert('Y', vec!['Υ', 'Ｙ']);
         m
     })
+}
+
+/// The `(ascii, confusable-glyphs)` entries of [`homoglyph_map`], sorted by the
+/// ASCII key for deterministic iteration. Exposed (via the `testing` facade) so a
+/// cross-map consistency gate can assert this AC/regex-expand map agrees with the
+/// `unicode_hardening` normalize-path folds (`cyrillic_to_latin`/`greek_to_latin`)
+/// on every shared codepoint — the two are separate scan paths that must not drift.
+pub(crate) fn homoglyph_confusables() -> Vec<(char, Vec<char>)> {
+    let mut entries: Vec<(char, Vec<char>)> = homoglyph_map()
+        .iter()
+        .map(|(k, v)| (*k, v.clone()))
+        .collect();
+    entries.sort_by_key(|(k, _)| *k);
+    entries
 }
 
 /// Expand a regex pattern to include homoglyphs.

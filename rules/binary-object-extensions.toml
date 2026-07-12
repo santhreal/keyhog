@@ -1,0 +1,14 @@
+extensions = [
+  "zip",
+  "gz",
+  "tgz",
+  "tar",
+  "7z",
+  "rar",
+  "pdf",
+  "bz2",
+  "xz",
+  "zst",
+  "lz4",
+  "sz",
+]

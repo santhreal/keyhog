@@ -133,7 +133,8 @@ fn scan_ids_returns_id_and_credential_for_known_token() {
     let t = format!("pplx-{}", alnum(32, 1));
     let got = scan_ids(&t);
     assert!(
-        got.iter().any(|(id, cred)| !id.is_empty() && cred.contains(&t)),
+        got.iter()
+            .any(|(id, cred)| !id.is_empty() && cred.contains(&t)),
         "scan_ids must return a labelled match for a real token: {got:?}"
     );
 }

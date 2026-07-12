@@ -24,23 +24,14 @@
 //! assert the concrete `CpuFallback` values alone and report the skipped SIMD
 //! leg loudly (CLAUDE.md Law 10). No GPU path is ever touched.
 
+mod support;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use support::paths::detector_dir;
 
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 // ---- fixtures / shared helpers -----------------------------------------------
-
-/// Absolute path to `crates/scanner/../../detectors` from `CARGO_MANIFEST_DIR`
-/// so the load is cwd-stable under any test runner.
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn scanner() -> CompiledScanner {
     let detectors = load_detectors(&detector_dir()).expect("load on-disk detectors");

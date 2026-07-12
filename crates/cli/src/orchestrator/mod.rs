@@ -2,6 +2,7 @@
 
 mod allowlist;
 mod dispatch;
+pub(crate) use dispatch::{COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB};
 mod postprocess;
 mod reporting;
 mod run;
@@ -388,8 +389,7 @@ pub(crate) fn setup_default_scan_runtime(
                     &error,
                 )
             })?
-            .try_with_config(effective_config.scanner.clone())
-            .with_context(|| "validating resolved scanner configuration")?
+            .with_config(effective_config.scanner.clone())
             .with_tuning_config(effective_config.scanner_tuning.clone()),
     );
 
@@ -719,8 +719,7 @@ impl ScanOrchestrator {
                 &effective_config.scanner_tuning,
             )
             .with_context(|| format!("compiling scanner from {} detector specs", detectors.len()))?
-            .try_with_config(effective_config.scanner.clone())
-            .with_context(|| "validating resolved scanner configuration")?
+            .with_config(effective_config.scanner.clone())
             .with_tuning_config(effective_config.scanner_tuning.clone()),
         );
 

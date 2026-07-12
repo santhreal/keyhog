@@ -24,22 +24,47 @@ Output (split layout the bench loader reads):
 """
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import pathlib
+import shutil
 import sys
 
 import yaml
 
-KF = pathlib.Path(
-    "/mnt/FlareTraining/santh-corpus/competitor-src/kingfisher"
-    "/crates/kingfisher-rules/data/rules"
-)
+# Rules dir under a kingfisher checkout, relative to its root.
+_RULES_REL = pathlib.Path("crates") / "kingfisher-rules" / "data" / "rules"
 # Split layout under the canonical corpus home (manifest beside, not inside,
 # the neutrally-named scan tree) — see bench.corpora.homefield.
 _HOME = (
     pathlib.Path(__file__).resolve().parents[2] / "corpora" / "homefield" / "kingfisher"
 )
-OUT = _HOME / "corpus"
+
+
+def _candidate_roots(explicit: str | None = None) -> list[pathlib.Path]:
+    # No hardcoded machine path: a kingfisher checkout has no standard cache
+    # location, so the root is supplied via --kingfisher-root / KINGFISHER_ROOT
+    # (mirrors harvest_betterleaks' resolution contract; fails closed otherwise).
+    roots: list[pathlib.Path] = []
+    if explicit:
+        roots.append(pathlib.Path(explicit).expanduser())
+    if os.environ.get("KINGFISHER_ROOT"):
+        roots.append(pathlib.Path(os.environ["KINGFISHER_ROOT"]).expanduser())
+    return roots
+
+
+def resolve_kingfisher_root(explicit: str | None = None) -> pathlib.Path:
+    tried: list[pathlib.Path] = []
+    for root in _candidate_roots(explicit):
+        tried.append(root)
+        if (root / _RULES_REL).is_dir():
+            return root
+    attempts = "\n  - ".join(str(p) for p in tried)
+    raise FileNotFoundError(
+        "kingfisher rules dir not found. Pass --kingfisher-root or set "
+        f"KINGFISHER_ROOT. Tried:\n  - {attempts}"
+    )
 
 
 def _as_str_list(v) -> list[str]:
@@ -54,10 +79,10 @@ def _as_str_list(v) -> list[str]:
     return []
 
 
-def harvest() -> list[dict]:
+def harvest(rules_dir: pathlib.Path) -> list[dict]:
     records: list[dict] = []
     counter = 0
-    for yf in sorted(KF.glob("*.yml")) + sorted(KF.glob("*.yaml")):
+    for yf in sorted(rules_dir.glob("*.yml")) + sorted(rules_dir.glob("*.yaml")):
         try:
             doc = yaml.safe_load(yf.read_text(errors="replace"))
         except yaml.YAMLError:
@@ -91,31 +116,55 @@ def harvest() -> list[dict]:
     return records
 
 
-def write_corpus(records: list[dict]) -> None:
-    OUT.mkdir(parents=True, exist_ok=True)
-    with open(OUT / "manifest.jsonl", "w") as mf:
+def write_corpus(records: list[dict], home: pathlib.Path = _HOME) -> pathlib.Path:
+    out_dir = home / "corpus"
+    # Prune any prior fixture set so a re-harvest with FEWER records leaves no
+    # orphan file (a scan hit on an unrecorded file scores as a false positive).
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # Answer key beside, not inside, the neutrally-named scan tree — the loader
+    # (bench.corpora.homefield) reads <home>/manifest.jsonl.
+    manifest = home / "manifest.jsonl"
+    with open(manifest, "w") as mf:
         for rec in records:
             shard = rec["id"][-2:]
-            (OUT / shard).mkdir(exist_ok=True)
+            (out_dir / shard).mkdir(exist_ok=True)
             rel = f"{shard}/{rec['id']}.txt"
-            (OUT / rel).write_text(rec["value"])
+            (out_dir / rel).write_text(rec["value"])
             out = {k: v for k, v in rec.items() if k != "value"}
             out["on_disk_path"] = rel
             mf.write(json.dumps(out) + "\n")
+    return out_dir
 
 
 def main() -> int:
-    if not KF.is_dir():
-        print(f"kingfisher rules dir not found: {KF}", file=sys.stderr)
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--kingfisher-root",
+        default=None,
+        help="checkout root for kingfisher (also accepted via KINGFISHER_ROOT)",
+    )
+    ap.add_argument(
+        "--out-home",
+        type=pathlib.Path,
+        default=_HOME,
+        help="homefield output directory that will receive manifest.jsonl and corpus/",
+    )
+    args = ap.parse_args()
+    try:
+        root = resolve_kingfisher_root(args.kingfisher_root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
-    records = harvest()
+    records = harvest(root / _RULES_REL)
     pos = sum(1 for r in records if r["label"])
     neg = len(records) - pos
     cats = len({r["category"] for r in records})
-    write_corpus(records)
+    out_dir = write_corpus(records, args.out_home)
     print(
         f"harvested {len(records)} fixtures from kingfisher "
-        f"({pos} examples / {neg} negative_examples) across {cats} rules → {OUT}"
+        f"({pos} examples / {neg} negative_examples) across {cats} rules → {out_dir}"
     )
     return 0
 

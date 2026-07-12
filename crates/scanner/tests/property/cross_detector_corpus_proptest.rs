@@ -50,20 +50,16 @@
 //! build (~2-3s); we pay it once via `LazyLock` and amortise across
 //! all properties.
 
+#[path = "../support/mod.rs"]
+mod support;
+
+use crate::support::paths::detector_dir;
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, Severity};
 use keyhog_scanner::CompiledScanner;
 use proptest::prelude::*;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::LazyLock;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn contracts_dir() -> PathBuf {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -232,51 +228,45 @@ fn every_critical_severity_detector_has_a_positive_contract_fixture() {
     );
 }
 
+/// Every regex the scanner stores MUST re-parse cleanly through the SAME
+/// `regex` builder + flags the scanner uses internally (`case_insensitive(true)`,
+/// the canonical detector build flag). DETERMINISTIC + EXHAUSTIVE over the full
+/// corpus (~900 regexes, ~2s): 100% coverage with no random-sampling gaps —
+/// strictly better than a sampled proptest for a finite enumerable set (which
+/// both left holes at 1k and cost 18s at 10k). Failure modes caught:
+///   * a detector whose TOML regex passed `regex_syntax` parse at compile-time
+///     but trips a builder-level limit (DFA size, lookaround) once flags apply,
+///   * `LazyRegex` returning the silent `never_match` placeholder because the
+///     underlying source has a typo,
+///   * a future refactor that strips a flag and silently changes matching.
+#[test]
+fn every_compiled_regex_recompiles_under_regex_crate() {
+    let srcs = &*PATTERN_REGEX_SRCS;
+    assert!(
+        !srcs.is_empty(),
+        "detector corpus must expose regex sources"
+    );
+    for (i, src) in srcs.iter().enumerate() {
+        // Same builder shape as `compiler_compile::shared_regex` for
+        // case-insensitive detector patterns. If the scanner can use it, an
+        // external rebuild must succeed too.
+        let built = regex::RegexBuilder::new(src).case_insensitive(true).build();
+        assert!(
+            built.is_ok(),
+            "pattern #{i} regex source {src:?} stored by scanner FAILED to recompile under \
+             regex::RegexBuilder(case_insensitive=true): {:?}. A stored regex that does not \
+             rebuild is either a never_match silent dead pattern or corpus corruption.",
+            built.err(),
+        );
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig {
         cases: 1_000,
         max_shrink_iters: 256,
         ..ProptestConfig::default()
     })]
-
-    /// Every regex string the scanner exposes MUST re-parse cleanly
-    /// through the SAME `regex` builder + flags the scanner uses
-    /// internally (`case_insensitive(true)`, the canonical detector
-    /// build flag). Failure modes this catches:
-    ///   * a detector whose TOML regex passed `regex_syntax` parse
-    ///     at compile-time but trips a builder-level limit (DFA
-    ///     size, lookaround) once flags are applied,
-    ///   * `LazyRegex` returning the silent `never_match` placeholder
-    ///     because the underlying source has a typo,
-    ///   * a future refactor that strips a flag and silently
-    ///     changes how the corpus matches.
-    /// We sample indices rather than iterating the full set so the
-    /// 1k case budget actually buys randomised coverage of the AC +
-    /// fallback ordering combined with proptest's shrink path.
-    #[test]
-    fn every_compiled_regex_recompiles_under_regex_crate(
-        idx in 0..usize::MAX,
-    ) {
-        let srcs = &*PATTERN_REGEX_SRCS;
-        prop_assume!(!srcs.is_empty());
-        let i = idx % srcs.len();
-        let src = &srcs[i];
-        // Same builder shape as `compiler_compile::shared_regex` for
-        // case-insensitive detector patterns. If the scanner can use
-        // it, an external rebuild must succeed too.
-        let built = regex::RegexBuilder::new(src)
-            .case_insensitive(true)
-            .build();
-        prop_assert!(
-            built.is_ok(),
-            "pattern #{i} regex source {:?} stored by scanner FAILED to recompile under \
-             regex::RegexBuilder(case_insensitive=true): {:?}. \
-             A stored regex that does not rebuild is either a never_match silent dead \
-             pattern or corpus corruption.",
-            src,
-            built.err(),
-        );
-    }
 
     /// For every random pick of an on-disk positive fixture, the
     /// planted credential MUST surface in some scanner finding even

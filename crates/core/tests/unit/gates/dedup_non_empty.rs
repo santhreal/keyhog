@@ -57,6 +57,10 @@ fn dedup_non_empty() {
     assert!(
         src.contains("struct LocationIdentityRef<'a>")
             && src.contains("impl Equivalent<LocationIdentity> for LocationIdentityRef<'_>")
+            && src.contains("struct DedupKeyRef<'a>")
+            && src.contains("impl Equivalent<(Arc<str>, SensitiveString, Option<FileScopeIdentity>)> for DedupKeyRef<'_>")
+            && src.contains("struct CrossDetectorGroupKeyRef<'a>")
+            && src.contains("impl Equivalent<(CredentialHash, Option<Arc<str>>)> for CrossDetectorGroupKeyRef<'_>")
             && src.contains("fn insert_new_location_identity(")
             && src.contains("seen.contains(&identity)")
             && src.contains("seen.insert(location_identity(location))"),

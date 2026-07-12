@@ -70,6 +70,61 @@ pub(crate) fn looks_like_public_reference_selector(value: &str) -> bool {
     count >= 1 && rest.is_empty()
 }
 
+#[derive(serde::Deserialize)]
+struct PublicWords {
+    words: Vec<String>,
+}
+
+fn parse_public_words(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<PublicWords>(raw)
+        .map(|parsed| parsed.words)
+        .map_err(|error| error.to_string())
+}
+
+static PUBLIC_WORDS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_public_words(include_str!("../../../../../rules/public-words.toml")) {
+        Ok(words) => words,
+        Err(error) => panic!(
+            "rules/public-words.toml is invalid: {error}. \
+             Fix the bundled Tier-B public words list."
+        ),
+    }
+});
+
+#[derive(serde::Deserialize)]
+struct PublicShapeLists {
+    algorithms: Vec<String>,
+    extensions: Vec<String>,
+    html_events: Vec<String>,
+}
+
+fn parse_public_shape_lists(raw: &str) -> Result<PublicShapeLists, String> {
+    toml::from_str::<PublicShapeLists>(raw).map_err(|error| error.to_string())
+}
+
+/// Single parse of the public-shape Tier-B lists: the three field statics below
+/// each read one list from this owner instead of re-`include_str!`'ing and
+/// re-parsing the whole file three times at startup. Fail-closed (Law 10):
+/// invalid bundled metadata panics loudly at first use.
+static PUBLIC_SHAPE_LISTS: std::sync::LazyLock<PublicShapeLists> = std::sync::LazyLock::new(|| {
+    match parse_public_shape_lists(include_str!("../../../../../rules/public-shape-lists.toml")) {
+        Ok(lists) => lists,
+        Err(error) => panic!(
+            "rules/public-shape-lists.toml is invalid: {error}. \
+             Fix the bundled public shape lists."
+        ),
+    }
+});
+
+static ALGORITHMS: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| PUBLIC_SHAPE_LISTS.algorithms.clone());
+
+static EXTENSIONS: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| PUBLIC_SHAPE_LISTS.extensions.clone());
+
+static HTML_EVENTS: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| PUBLIC_SHAPE_LISTS.html_events.clone());
+
 /// Public taxonomy / provenance labels used in source ledgers:
 /// `official-author-documentation`, `primary-protocol-specification`,
 /// `source-available`, etc.
@@ -87,60 +142,6 @@ pub(crate) fn looks_like_public_metadata_identifier_with_randomness(
     {
         return false;
     }
-    const PUBLIC_WORDS: &[&str] = &[
-        "advisory",
-        "api",
-        "archive",
-        "artifact",
-        "author",
-        "benchmark",
-        "capability",
-        "classification",
-        "coding",
-        "control",
-        "dead",
-        "documentation",
-        "fixture",
-        "format",
-        "framework",
-        "fusion",
-        "guidance",
-        "guide",
-        "handbook",
-        "implementation",
-        "language",
-        "ledger",
-        "manual",
-        "metadata",
-        "mlir",
-        "model",
-        "official",
-        "paper",
-        "pass",
-        "policy",
-        "primary",
-        "project",
-        "protocol",
-        "provenance",
-        "public",
-        "recommendation",
-        "reference",
-        "repository",
-        "research",
-        "security",
-        "source",
-        "spec",
-        "specification",
-        "standard",
-        "taxonomy",
-        "technical",
-        "toolchain",
-        "transform",
-        "vendor",
-        "versioning",
-        "vulnerability",
-        "weakness",
-    ];
     let mut parts = 0usize;
     let mut public_parts = 0usize;
     for part in value.split('-') {
@@ -148,8 +149,11 @@ pub(crate) fn looks_like_public_metadata_identifier_with_randomness(
             return false;
         }
         parts += 1;
-        if PUBLIC_WORDS.contains(&part) {
-            public_parts += 1;
+        for word in &*PUBLIC_WORDS {
+            if word == part {
+                public_parts += 1;
+                break;
+            }
         }
     }
     parts >= 2 && public_parts >= 1 && !randomness.is_random_token(value)
@@ -217,12 +221,9 @@ fn looks_like_public_crypto_algorithm_identifier(value: &str) -> bool {
     // Case-insensitive exact match without allocating a lowercased copy (Law 7).
     // `eq_ignore_ascii_case` is byte-identical to the prior
     // `value.to_ascii_lowercase().as_str() == <lowercase literal>` form.
-    const ALGORITHMS: &[&str] = &[
-        "argon2", "argon2d", "argon2i", "argon2id", "bcrypt", "scrypt", "pbkdf2",
-    ];
     ALGORITHMS
         .iter()
-        .any(|algo| value.eq_ignore_ascii_case(algo))
+        .any(|algo| value.eq_ignore_ascii_case(algo.as_str()))
 }
 
 fn looks_like_public_fixture_identifier(value: &str) -> bool {
@@ -300,50 +301,49 @@ pub(crate) fn looks_like_public_artifact_reference_with_randomness(
         return false;
     }
 
-    let lower = value.to_ascii_lowercase();
-    const EXTENSIONS: &[&str] = &[
-        ".rs", ".md", ".json", ".toml", ".yaml", ".yml", ".c", ".h", ".hpp", ".cpp", ".py", ".go",
-        ".ts", ".tsx", ".js", ".jsx", ".sh", ".lock", ".log",
-    ];
-    let extension_hits: usize = EXTENSIONS
-        .iter()
-        .map(|extension| lower.matches(extension).count())
-        .sum();
-    if extension_hits == 0 {
-        return false;
-    }
+    use crate::ascii_ci::{ci_find, ci_find_at, ends_with_ignore_ascii_case};
 
-    let has_path_or_build_marker = lower.contains('/')
-        || lower.contains('\\')
-        || lower.contains("$out_dir")
-        || lower.contains("src")
-        || lower.contains("docs")
-        || lower.contains("tests")
-        || lower.contains("target")
-        || lower.contains("#[")
-        || lower.contains("#![");
-    let has_line_marker =
-        lower.contains(":{") || lower.bytes().any(|b| b == b':') && lower.contains('-');
-    let has_multiple_artifacts = extension_hits >= 2;
-    let has_public_filename_shape = EXTENSIONS.iter().any(|extension| {
-        if lower.ends_with(extension) {
-            return true;
+    // Single guided pass over the value per extension: derive the total hit
+    // count AND the filename-shape verdict from the same scan (each extension's
+    // occurrences are found once, not recomputed by a separate `ci_find_at`).
+    let mut extension_hits = 0usize;
+    let mut filename_shape = false;
+    for extension in EXTENSIONS.iter() {
+        let ext = extension.as_bytes();
+        let mut first_idx = None;
+        let mut start = 0usize;
+        while start + ext.len() <= bytes.len() {
+            let Some(rel) = ci_find_at(&bytes[start..], ext) else {
+                break;
+            };
+            let idx = start + rel;
+            first_idx.get_or_insert(idx);
+            extension_hits += 1;
+            start = idx + ext.len();
         }
-        lower.find(extension).is_some_and(|idx| {
-            let after = &lower[idx + extension.len()..];
+        if filename_shape {
+            continue;
+        }
+        if ends_with_ignore_ascii_case(bytes, ext) {
+            filename_shape = true;
+            continue;
+        }
+        if let Some(idx) = first_idx {
+            let after = &value[idx + ext.len()..];
             if after.is_empty() {
-                return false;
+                continue;
             }
             if after.len() <= 16
                 && after
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
             {
-                return true;
+                filename_shape = true;
+                continue;
             }
             if let Some(prose_suffix) = after.strip_prefix('-') {
                 let mut parts = 0usize;
-                return prose_suffix.split('-').all(|part| {
+                let prose_ok = prose_suffix.split('-').all(|part| {
                     if part.is_empty()
                         || part.len() > 24
                         || !part.bytes().all(|b| b.is_ascii_lowercase())
@@ -354,10 +354,28 @@ pub(crate) fn looks_like_public_artifact_reference_with_randomness(
                     true
                 }) && parts >= 3
                     && !randomness.is_random_token(prose_suffix);
+                if prose_ok {
+                    filename_shape = true;
+                }
             }
-            false
-        })
-    }) && (value.contains('_') || value.contains('-'));
+        }
+    }
+    if extension_hits == 0 {
+        return false;
+    }
+
+    let has_path_or_build_marker = bytes.contains(&b'/')
+        || bytes.contains(&b'\\')
+        || ci_find(bytes, b"$out_dir")
+        || ci_find(bytes, b"src")
+        || ci_find(bytes, b"docs")
+        || ci_find(bytes, b"tests")
+        || ci_find(bytes, b"target")
+        || ci_find(bytes, b"#[")
+        || ci_find(bytes, b"#!");
+    let has_line_marker = ci_find(bytes, b":{") || bytes.contains(&b':') && bytes.contains(&b'-');
+    let has_multiple_artifacts = extension_hits >= 2;
+    let has_public_filename_shape = filename_shape && (value.contains('_') || value.contains('-'));
 
     has_path_or_build_marker
         || has_line_marker
@@ -433,21 +451,29 @@ pub(crate) fn looks_like_html_event_handler_fragment(value: &str) -> bool {
     if event.len() < 5 || event.len() > 24 || !event.bytes().all(|b| b.is_ascii_alphabetic()) {
         return false;
     }
-    const HTML_EVENTS: &[&str] = &[
-        "onblur",
-        "onchange",
-        "onclick",
-        "onerror",
-        "onfocus",
-        "oninput",
-        "onkeydown",
-        "onkeypress",
-        "onkeyup",
-        "onload",
-        "onmouseover",
-        "onsubmit",
-    ];
     HTML_EVENTS
         .iter()
-        .any(|known| event.eq_ignore_ascii_case(known))
+        .any(|known| event.eq_ignore_ascii_case(known.as_str()))
+}
+
+#[cfg(test)]
+mod artifact_reference_tests {
+    use super::looks_like_public_artifact_reference_with_randomness;
+    use crate::suppression::token_randomness::TokenRandomness;
+
+    fn is_artifact(value: &str) -> bool {
+        let randomness = TokenRandomness::for_candidate(value);
+        looks_like_public_artifact_reference_with_randomness(value, &randomness)
+    }
+
+    #[test]
+    fn single_pass_shape_detection_matches_expected() {
+        // Two artifacts + a path marker (single guided pass counts both hits).
+        assert!(is_artifact("src/foo.rs:1-3docs/bar.md"));
+        // Single filename shape with an underscore, no other marker.
+        assert!(is_artifact("my_module.rs"));
+        // No extension at all => the extension_hits==0 guard rejects it even
+        // though it is otherwise opaque.
+        assert!(!is_artifact("AKIAIOSFODNN7EXAMPLE"));
+    }
 }

@@ -398,7 +398,7 @@ fn layer_secret_surfaces_with_exact_digest_metadata_path() {
                     .collect::<Vec<_>>()
             )
         });
-    assert_eq!(secret_chunk.metadata.source_type, "docker");
+    assert_eq!(secret_chunk.metadata.source_type.as_ref(), "docker");
     assert!(
         secret_chunk.data.contains("AKIAIOSFODNN7EXAMPLE"),
         "the digest-labeled chunk must carry the layer's secret payload, got {:?}",
@@ -424,7 +424,7 @@ fn rewrite_normalizes_nested_path_under_digest_label_and_clears_git_fields() {
         data: "STRIPE=sk_live_x\n".into(),
         metadata: keyhog_core::ChunkMetadata {
             source_type: "filesystem/windowed".into(),
-            path: Some(file.display().to_string()),
+            path: Some(file.display().to_string().into()),
             base_offset: 8192,
             base_line: 64,
             commit: Some("deadbeef".into()),
@@ -446,7 +446,7 @@ fn rewrite_normalizes_nested_path_under_digest_label_and_clears_git_fields() {
         Some("img:1.0:blobs/sha256/1111111111111111111111111111111111111111111111111111111111111111:usr/local/app/.env"),
         "nested layer path must normalize to forward slashes under the digest label"
     );
-    assert_eq!(out.metadata.source_type, "docker");
+    assert_eq!(out.metadata.source_type.as_ref(), "docker");
     assert_eq!(out.metadata.commit, None, "layer rewrite must clear commit");
     assert_eq!(out.metadata.author, None, "layer rewrite must clear author");
     assert_eq!(out.metadata.date, None, "layer rewrite must clear date");

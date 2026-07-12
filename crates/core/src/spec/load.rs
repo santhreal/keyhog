@@ -206,12 +206,33 @@ fn assemble_detector_load(
         }
     }
 
+    // Sort before the duplicate-id scan so identical ids are adjacent and one
+    // linear pass finds them. A detector id is a unique key — it selects the
+    // checksum validator, suppression rules, and finding attribution — so two
+    // detectors sharing an id silently shadow each other (the loser's
+    // patterns/companions never fire). Law 10: surface it, don't let it pass.
+    // Folded into the SAME gate as other corpus-integrity failures (fail closed
+    // under the gate, logged otherwise) rather than a bespoke rejection path.
+    detectors.sort_by(|a, b| a.id.cmp(&b.id));
+    let mut duplicate_ids: Vec<&str> = detectors
+        .windows(2)
+        .filter(|w| w[0].id == w[1].id)
+        .map(|w| w[0].id.as_str())
+        .collect();
+    duplicate_ids.dedup();
+    if !duplicate_ids.is_empty() {
+        load_state.gate_rejected += duplicate_ids.len();
+        for id in duplicate_ids {
+            load_state.gate_errors.push(format!(
+                "duplicate detector id `{id}` (a later spec would shadow the earlier)"
+            ));
+        }
+    }
+
     log_load_summary(&load_state);
     if enforce_gate && load_state.has_failures() {
         return Err(load_state.into_rejected_error(dir, total));
     }
-
-    detectors.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(detectors)
 }
 

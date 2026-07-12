@@ -55,7 +55,9 @@ fn surfaces(text: &str, needle: &str) -> bool {
     let s = shared();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "cloud.conf");
-    s.scan(&chunk).into_iter().any(|m| m.credential.to_string().contains(needle))
+    s.scan(&chunk)
+        .into_iter()
+        .any(|m| m.credential.to_string().contains(needle))
 }
 
 /// Detector ids whose credential contains `needle`, for asserting attribution.
@@ -128,7 +130,10 @@ fn aws_secret_access_key_ini_anchor_surfaces() {
 #[test]
 fn aws_secret_access_key_env_export_surfaces() {
     let sec = body(40, 2);
-    assert!(surfaces(&format!("export AWS_SECRET_ACCESS_KEY={sec}\n"), &sec));
+    assert!(surfaces(
+        &format!("export AWS_SECRET_ACCESS_KEY={sec}\n"),
+        &sec
+    ));
 }
 
 #[test]
@@ -143,7 +148,10 @@ fn aws_shared_credentials_file_both_keys_surface() {
 #[test]
 fn aws_secret_access_key_camelcase_json_surfaces() {
     let sec = body(40, 7);
-    assert!(surfaces(&format!("\"awsSecretAccessKey\": \"{sec}\""), &sec));
+    assert!(surfaces(
+        &format!("\"awsSecretAccessKey\": \"{sec}\""),
+        &sec
+    ));
 }
 
 // ── Azure storage ────────────────────────────────────────────────────────────
@@ -240,7 +248,10 @@ fn gcp_sa_json_minified_private_key_surfaces() {
 #[test]
 fn gcp_sa_json_multiline_private_key_surfaces() {
     // The canonical downloaded key file — real newlines between fields.
-    assert!(surfaces(&sa_json_multiline(), "-----BEGIN PRIVATE KEY-----"));
+    assert!(surfaces(
+        &sa_json_multiline(),
+        "-----BEGIN PRIVATE KEY-----"
+    ));
 }
 
 #[test]

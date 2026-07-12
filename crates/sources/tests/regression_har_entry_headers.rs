@@ -43,7 +43,7 @@ fn request_authorization_bearer_header_surfaces_in_request_chunk_with_metadata()
     assert_eq!(rows.len(), 2, "one request + one response chunk per entry");
 
     let request = expect_ok(&rows[0]);
-    assert_eq!(request.metadata.source_type, "wire:har:request");
+    assert_eq!(request.metadata.source_type.as_ref(), "wire:har:request");
     assert_eq!(
         request.metadata.path.as_deref(),
         Some("capture.har#https://api.example.test/v1/login")
@@ -63,7 +63,7 @@ fn response_set_cookie_header_secret_surfaces_in_response_chunk() {
 
     let rows = expand(har, "sc.har", BIG);
     let response = expect_ok(&rows[1]);
-    assert_eq!(response.metadata.source_type, "wire:har:response");
+    assert_eq!(response.metadata.source_type.as_ref(), "wire:har:response");
     assert_eq!(
         response.metadata.path.as_deref(),
         Some("sc.har#https://s.test/login")

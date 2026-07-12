@@ -47,10 +47,13 @@ impl fmt::Display for GpuRuntimePolicy {
 
 static GPU_RUNTIME_POLICY: AtomicU8 = AtomicU8::new(GpuRuntimePolicy::Auto as u8);
 
+/// Set the process-wide GPU runtime policy (`Auto`/`On`/`Off`) consulted by
+/// backend routing and GPU init.
 pub fn set_gpu_runtime_policy(policy: GpuRuntimePolicy) {
     GPU_RUNTIME_POLICY.store(policy as u8, Ordering::SeqCst);
 }
 
+/// The current process-wide GPU runtime policy.
 #[must_use]
 pub fn gpu_runtime_policy() -> GpuRuntimePolicy {
     GpuRuntimePolicy::from_u8(GPU_RUNTIME_POLICY.load(Ordering::SeqCst))

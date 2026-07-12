@@ -96,6 +96,14 @@ def build_battery() -> list[tuple[str, str, tuple]]:
         ("Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij", "secret = Xk9...", EMPTY_LISTS),
         # unicode context (ascii-fold + utf-8 byte length)
         ("café_token_abc123XYZ", "passwörd = café_token_abc123XYZ", DEFAULT_LISTS),
+        # service-context (feature 42, DET-1): specific service named vs
+        # generic-role-word-only context, path-carried service, case fold.
+        ("7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d", "codecov_token = 7b3e5d8c-...", DEFAULT_LISTS),
+        ("7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d", "api_key = 7b3e5d8c-...", DEFAULT_LISTS),
+        ("7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d", "GRAFANA_API_KEY: 7b3e...", DEFAULT_LISTS),
+        ("hunter2hunter2", "file:config/grafana.ini\npassword = hunter2hunter2", DEFAULT_LISTS),
+        ("hunter2hunter2", "file:src/settings.py\npassword = hunter2hunter2", DEFAULT_LISTS),
+        ("xJ8sKd0fmA2bC4dE6fG8", "STRIPE_WEBHOOK: xJ8s...", DEFAULT_LISTS),
     ]
     return records
 

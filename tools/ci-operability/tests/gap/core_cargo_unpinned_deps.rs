@@ -1,12 +1,6 @@
 //! KH-GAP-112: STANDARD supply chain requires exact-version pins (`=x.y.z`) on external deps.
 
-use std::path::PathBuf;
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-}
+use super::support::repo_root;
 
 fn dependency_section_lines<'a>(toml: &'a str, section: &'a str) -> Vec<&'a str> {
     let needle = format!("[{section}]");

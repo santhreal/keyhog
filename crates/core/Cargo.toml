@@ -69,5 +69,6 @@ libc = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+quick-xml = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }

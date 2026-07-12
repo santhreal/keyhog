@@ -8,7 +8,10 @@ id = "elasticsearch-api-key"
 name = "Elasticsearch API Key"
 service = "elasticsearch"
 severity = "high"
-keywords = ["ELASTICSEARCH_API_KEY", "elasticsearch_api_key", "ApiKey"]
+# "ApiKey" removed: over-broad generic prefilter the regex does NOT need — every
+# pattern self-anchors on the service name (kept), which is present in any real
+# match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.
+keywords = ["ELASTICSEARCH_API_KEY", "elasticsearch_api_key"]
 
 [[detector.patterns]]
 regex = "(?:ELASTICSEARCH_API_KEY|elasticsearch_api_key)[=:\\s\"']+([A-Za-z0-9_-]{20,}:[A-Za-z0-9_-]{16,})"

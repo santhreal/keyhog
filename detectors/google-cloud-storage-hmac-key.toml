@@ -10,19 +10,26 @@ service = "gcp"
 severity = "critical"
 keywords = ["GOOG", "HMAC", "GOOG1", "GOOG2", "GOOG3", "GOOG4", "GOOG5", "gcs_hmac"]
 
+# `(?-i)` forces case-sensitive matching (keyhog compiles every regex
+# case_insensitive(true)). Real GCS HMAC access IDs are UPPERCASE `GOOG1E…`; the
+# default case-insensitive body `[0-9A-Z]` otherwise also matched lowercase, so a
+# CamelCase identifier such as `GoogleAnalyticsConnectorProfileCredentials`
+# (case-folded `GOOG` keyword + 38 letters) false-fired. Same guard as aws-access-key.
 [[detector.patterns]]
-regex = "(GOOG[0-9A-Z]{37,40})"
+regex = "(?-i)(GOOG[0-9A-Z]{37,40})\\b(?:[^A-Za-z0-9_-]|$)"
 description = "Google Cloud Storage HMAC access key ID"
 group = 1
 
+# The `hmac_access_key` prefix stays case-insensitive (env vars are often
+# HMAC_ACCESS_KEY), but the GOOG body is pinned case-sensitive via `(?-i:…)`.
 [[detector.patterns]]
-regex = "hmac[_-]?access[_-]?key[=:\\s\"'']+(GOOG[0-9A-Z]{37,40})"
+regex = "hmac[_-]?access[_-]?key[=:\\s\"'']+(?-i:(GOOG[0-9A-Z]{37,40}))\\b(?:[^A-Za-z0-9_-]|$)"
 description = "GCS HMAC access key with context anchor"
 group = 1
 
 [[detector.companions]]
 name = "hmac_secret"
-regex = "[a-zA-Z0-9+/]{40,}"
+regex = "(?i)(?:gcs[_-]?)?hmac[_-]?(?:secret|secret[_-]?access[_-]?key)[=:\\s\"'']+([a-zA-Z0-9+/]{40,}={0,2})"
 within_lines = 3
 
 [[detector.tests]]

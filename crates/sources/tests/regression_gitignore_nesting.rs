@@ -55,8 +55,9 @@ fn files_containing(chunks: &[Chunk], needle: &str) -> usize {
             let path = chunk
                 .metadata
                 .path
-                .clone()
-                .unwrap_or_else(|| String::from("<no-path>"));
+                .as_deref()
+                .unwrap_or("<no-path>")
+                .to_string();
             hit_paths.insert(path);
         }
     }
@@ -70,12 +71,12 @@ fn scanned_relpaths(chunks: &[Chunk], root: &Path) -> BTreeSet<String> {
     let root_canon = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     chunks
         .iter()
-        .filter_map(|c| c.metadata.path.as_ref())
+        .filter_map(|c| c.metadata.path.as_deref())
         .map(|p| {
             let pb = Path::new(p);
             pb.strip_prefix(&root_canon)
                 .map(|rel| rel.to_string_lossy().replace('\\', "/"))
-                .unwrap_or_else(|_| p.clone())
+                .unwrap_or_else(|_| p.to_string())
         })
         .collect()
 }

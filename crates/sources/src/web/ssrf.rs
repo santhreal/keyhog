@@ -25,6 +25,26 @@ mod tests {
     }
 
     #[test]
+    fn resolve_with_abandon_returns_numeric_addr_exactly() {
+        let addrs = resolve_with_abandon("127.0.0.1".to_string(), 8080, Duration::from_secs(5))
+            .expect("loopback literal must resolve");
+        assert_eq!(addrs, vec!["127.0.0.1:8080".parse::<SocketAddr>().unwrap()]);
+    }
+
+    #[test]
+    fn resolve_with_abandon_times_out_and_frees_the_worker() {
+        // A 1ns budget cannot be met by any real getaddrinfo, so the worker
+        // abandons the helper and returns TimedOut instead of blocking forever.
+        let err = resolve_with_abandon("example.com".to_string(), 443, Duration::from_nanos(1))
+            .expect_err("sub-nanosecond budget must abandon the resolve");
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert_eq!(
+            err.to_string(),
+            "getaddrinfo exceeded the DNS screening budget"
+        );
+    }
+
+    #[test]
     fn remaining_fetch_timeout_deducts_dns_screening_elapsed_time() {
         let started = Instant::now();
         std::thread::sleep(Duration::from_millis(2));
@@ -41,9 +61,7 @@ mod tests {
     }
 }
 
-pub(crate) fn redact_url(url: &str) -> std::borrow::Cow<'_, str> {
-    crate::url_redaction::redact_url(url)
-}
+pub(crate) use crate::url_redaction::redact_url;
 
 pub(crate) fn is_disallowed_web_host(url: &str) -> bool {
     keyhog_verifier::ssrf::is_private_url(url)
@@ -186,6 +204,7 @@ fn resolve_socket_addrs_with_timeout(
         .try_send(DnsJob {
             host: host.to_string(),
             port,
+            budget: timeout,
             reply,
         })
         .map_err(|error| match error {
@@ -232,6 +251,12 @@ fn receive_dns_result(
 struct DnsJob {
     host: String,
     port: u16,
+    /// Hard ceiling the worker gives a single `getaddrinfo` before abandoning
+    /// it. Without this, a black-holed/slow resolver leaves the blocking
+    /// `to_socket_addrs` stuck with no OS-level timeout and permanently consumes
+    /// one of the fixed `DNS_SCREEN_WORKERS` slots; a handful of attacker-chosen
+    /// hosts would then starve DNS screening for the rest of the scan.
+    budget: Duration,
     reply: mpsc::SyncSender<std::io::Result<Vec<SocketAddr>>>,
 }
 
@@ -265,8 +290,6 @@ impl DnsResolverPool {
 }
 
 fn dns_worker_loop(receiver: Arc<Mutex<mpsc::Receiver<DnsJob>>>) {
-    use std::net::ToSocketAddrs;
-
     loop {
         let job = match receiver.lock() {
             Ok(receiver) => receiver.recv(),
@@ -275,9 +298,43 @@ fn dns_worker_loop(receiver: Arc<Mutex<mpsc::Receiver<DnsJob>>>) {
         let Ok(job) = job else {
             return;
         };
-        let result = (job.host.as_str(), job.port)
-            .to_socket_addrs()
-            .map(|iter| iter.collect());
+        let result = resolve_with_abandon(job.host, job.port, job.budget);
         let _ignored = job.reply.send(result);
+    }
+}
+
+/// Resolve `(host, port)` but never block the pool worker for longer than
+/// `budget`. The blocking `getaddrinfo` runs on a detached helper thread; if it
+/// exceeds the budget the worker returns a `TimedOut` error and goes back to the
+/// pool, leaving the stuck helper to finish (the OS resolver bounds it) and exit
+/// on its own. This bounds worker occupancy to `budget` so a slow/black-holed
+/// host cannot permanently consume one of the fixed `DNS_SCREEN_WORKERS` slots.
+fn resolve_with_abandon(
+    host: String,
+    port: u16,
+    budget: Duration,
+) -> std::io::Result<Vec<SocketAddr>> {
+    use std::net::ToSocketAddrs;
+
+    let (tx, rx) = mpsc::sync_channel::<std::io::Result<Vec<SocketAddr>>>(1);
+    std::thread::Builder::new()
+        .name("keyhog-web-dns-getaddrinfo".to_string())
+        .spawn(move || {
+            let result = (host.as_str(), port)
+                .to_socket_addrs()
+                .map(|it| it.collect());
+            let _ignored = tx.send(result);
+        })?;
+
+    match rx.recv_timeout(budget) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "getaddrinfo exceeded the DNS screening budget",
+        )),
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "DNS resolver helper thread exited before returning addresses",
+        )),
     }
 }

@@ -23,11 +23,6 @@ pub(super) enum MarkerVerdict {
     KeepChecking,
 }
 
-/// Case-insensitive word-boundary token-contains. The previous implementation
-/// mixed byte- and char-indexing (`upper.chars().nth(byte_idx - 1)`) which,
-/// for any credential containing non-ASCII bytes before the match, returned
-/// the wrong character and silently let placeholder tokens slip past. ASCII
-/// inputs happened to work because `byte_idx == char_idx` for pure ASCII.
 /// True when `upper` (an already-uppercased credential) mentions an RFC 2606
 /// reserved example domain (`example.com` / `example.org`). Both the
 /// `contains_EXAMPLE_token` carve-out and the doc-marker substring carve-out
@@ -38,6 +33,12 @@ fn upper_mentions_reserved_example_domain(upper: &str) -> bool {
     upper.contains("EXAMPLE.COM") || upper.contains("EXAMPLE.ORG")
 }
 
+/// Case-insensitive word-boundary token-contains. Reads the boundary chars on
+/// BYTE offsets (`upper[..idx].chars().next_back()`); an earlier implementation
+/// mixed byte- and char-indexing (`upper.chars().nth(byte_idx - 1)`) and, for
+/// any credential containing non-ASCII bytes before the match, returned the
+/// wrong character and silently let placeholder tokens slip past (ASCII inputs
+/// happened to work because `byte_idx == char_idx` for pure ASCII).
 pub(super) fn upper_contains_token(upper: &str, token: &str) -> bool {
     upper.match_indices(token).any(|(idx, _)| {
         let before = upper[..idx].chars().next_back();

@@ -42,7 +42,7 @@ fn present_bigrams_from_ghp_prefix_probe_true() {
     assert_eq!(b.maybe_overlaps(b"_Z"), true, "'_' row is fully set");
     assert_eq!(b.maybe_overlaps(b"_\x00"), true, "'_' row includes NUL");
     // A realistic PAT-bearing chunk overlaps via 'gh'.
-    assert_eq!(b.maybe_overlaps(b"token=ghp_016CabcDEF"), true);
+    assert!(b.maybe_overlaps(b"token=ghp_016CabcDEF"));
 }
 
 /// A realistic GitHub-PAT chunk hits; a benign Java-ish chunk that contains
@@ -50,10 +50,10 @@ fn present_bigrams_from_ghp_prefix_probe_true() {
 #[test]
 fn github_pat_recall_and_benign_source_rejection() {
     let b = bloom(&["ghp_"]);
-    assert_eq!(b.maybe_overlaps(b"Authorization: ghp_ZZZ"), true);
+    assert!(b.maybe_overlaps(b"Authorization: ghp_ZZZ"));
     // "public class Main": no 'gh', no 'hp', no 'p_', and no underscore, so
     // no set bigram is present -> exact false (direct table, zero FP).
-    assert_eq!(b.maybe_overlaps(b"public class Main"), false);
+    assert!(!(b.maybe_overlaps(b"public class Main")));
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -67,9 +67,9 @@ fn known_absent_bigram_probes_false() {
     let b = bloom(&["ghp_"]);
     // 'X'==0x58, 'Y'==0x59: (0x58,0x59) is not gh/hp/p_ and 'X' is not the
     // terminal '_' row, so its bit is unset.
-    assert_eq!(b.maybe_overlaps(b"XY"), false);
+    assert!(!(b.maybe_overlaps(b"XY")));
     // 'q'..'z' pair likewise absent.
-    assert_eq!(b.maybe_overlaps(b"qz"), false);
+    assert!(!(b.maybe_overlaps(b"qz")));
 }
 
 /// Bigram order is significant: `gh` was inserted but its reverse `hg` was
@@ -148,7 +148,7 @@ fn terminal_extension_row_vs_unrelated_pair() {
     assert_eq!(b.maybe_overlaps(b"_9"), true, "'_' terminal row set");
     assert_eq!(b.maybe_overlaps(b"sk"), true, "leading bigram 'sk' set");
     // 'q'..'z' pair is neither an inserted bigram nor the terminal row.
-    assert_eq!(b.maybe_overlaps(b"qz"), false);
+    assert!(!(b.maybe_overlaps(b"qz")));
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -164,8 +164,8 @@ fn duplicate_literal_insertion_is_idempotent() {
     let twice = bloom(&["AB", "AB"]);
 
     // Concrete anchors so this is not a pure equality tautology.
-    assert_eq!(once.maybe_overlaps(b"AB"), true);
-    assert_eq!(once.maybe_overlaps(b"AC"), false);
+    assert!(once.maybe_overlaps(b"AB"));
+    assert!(!(once.maybe_overlaps(b"AC")));
 
     for probe in [
         &b"AB"[..],
@@ -228,8 +228,8 @@ fn empty_literal_list_rejects_all_bigrams() {
     assert_eq!(b.maybe_overlaps(b"hello world"), false, "no bit set");
     assert_eq!(b.maybe_overlaps(b"AB"), false, "no bit set");
     // Sub-bigram chunks cannot be proven clean -> admitted.
-    assert_eq!(b.maybe_overlaps(b"x"), true);
-    assert_eq!(b.maybe_overlaps(b""), true);
+    assert!(b.maybe_overlaps(b"x"));
+    assert!(b.maybe_overlaps(b""));
 }
 
 /// An empty-string literal contributes nothing; the bloom behaves like the
@@ -237,8 +237,8 @@ fn empty_literal_list_rejects_all_bigrams() {
 #[test]
 fn empty_string_literal_is_ignored() {
     let b = bloom(&[""]);
-    assert_eq!(b.maybe_overlaps(b"ab"), false);
-    assert_eq!(b.maybe_overlaps(b"ZZ"), false);
+    assert!(!(b.maybe_overlaps(b"ab")));
+    assert!(!(b.maybe_overlaps(b"ZZ")));
 }
 
 // ─────────────────────────────────────────────────────────────────────────

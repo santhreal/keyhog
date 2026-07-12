@@ -19,6 +19,12 @@ libfuzzer-sys = "0.4"
 [dependencies.keyhog-core]
 path = "../crates/core"
 
+[dependencies.keyhog-sources]
+path = "../crates/sources"
+# Only the always-on filesystem/PDF extraction path is fuzzed; drop the network
+# source features (git/web/…) so the harness builds lean and deterministic.
+default-features = false
+
 [dependencies.keyhog-scanner]
 path = "../crates/scanner"
 # Fuzz the scan LOGIC (panics / hangs / OOM), not the GPU backend. The default
@@ -30,13 +36,6 @@ path = "../crates/scanner"
 # deterministically; drop `gpu` so the targets never touch a software Vulkan.
 default-features = false
 features = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd"]
-
-[[bin]]
-name = "fuzz_target_1"
-path = "fuzz_targets/fuzz_target_1.rs"
-test = false
-doc = false
-bench = false
 
 [[bin]]
 name = "decode_target"
@@ -58,13 +57,35 @@ test = false
 doc = false
 bench = false
 
-# regex_compile_target - fuzz the detector-regex compiler. The
-# 899 detector regexes are user-extensible via TOML, so a bad
-# regex string MUST NOT panic the compiler - it must return a
-# typed Err and let the loader skip that detector.
+# regex_compile_target - fuzz the detector-regex compiler. Detector
+# regexes are user-extensible via TOML, so a bad regex string MUST NOT
+# panic the compiler - it must return a typed Err and let the loader
+# skip that detector.
 [[bin]]
 name = "regex_compile_target"
 path = "fuzz_targets/regex_compile_target.rs"
+test = false
+doc = false
+bench = false
+
+# pdf_extract_target - fuzz the hand-rolled PDF text extractor in
+# keyhog-sources (the un-fuzzed `crates/sources` parser surface). A user
+# scanning an attacker-supplied `.pdf` reaches `(...)`/`<...>` string parsing,
+# stream inflate, and dict-window search; a panic / OOB / hang here is a real
+# untrusted-document DoS. The entry is `#[cfg(fuzzing)]`-gated (no prod API).
+[[bin]]
+name = "pdf_extract_target"
+path = "fuzz_targets/pdf_extract_target.rs"
+test = false
+doc = false
+bench = false
+
+# har_expand_target - fuzz the HAR expander (JSON parse + UTF-16/8 decode +
+# chunk rendering) in keyhog-sources. A user scanning an attacker `.har`
+# reaches it; panic / OOB / hang here is an untrusted-document DoS.
+[[bin]]
+name = "har_expand_target"
+path = "fuzz_targets/har_expand_target.rs"
 test = false
 doc = false
 bench = false

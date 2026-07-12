@@ -20,46 +20,89 @@ pub(crate) fn get_log2_table() -> &'static [f64; 256] {
     })
 }
 
-/// Fast entropy calculation using unrolled scalar accumulation.
-/// Processes data in 32-byte chunks with 8 parallel accumulators on x86_64.
+/// The x86_64 SIMD entropy tier, resolved ONCE from the runtime CPU features.
+///
+/// CPU feature availability is fixed for the life of the process, so the
+/// `is_x86_feature_detected!` gates (each a branch plus an atomic load over a
+/// std-internal cpuid cache) do NOT belong in the entropy hot loop, where
+/// `shannon_entropy_simd` runs once per candidate. This enum records the single
+/// winning tier so the loop dispatches on a plain `Copy` value instead.
+#[cfg(target_arch = "x86_64")]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum X86EntropyTier {
+    Avx512,
+    Avx2,
+    /// The SSE2 baseline (guaranteed on every x86_64 target), whose
+    /// histogram+reduction is bit- and codegen-identical to
+    /// [`shannon_entropy_scalar`]. Reaching this tier is NOT a silent degrade
+    /// (Law 10): it is the correct baseline path, and it is recorded loudly and
+    /// exactly once by [`resolve_x86_entropy_tier`].
+    Scalar,
+}
+
+#[cfg(target_arch = "x86_64")]
+static X86_ENTROPY_TIER: OnceLock<X86EntropyTier> = OnceLock::new();
+
+/// Detect the entropy SIMD tier once, record the choice loudly, and cache it.
+///
+/// SAFETY (dispatch soundness): the runtime probe for a tier MUST be a SUPERSET
+/// of every feature the dispatched function's `#[target_feature]` enables —
+/// entering a `target_feature` fn on a CPU lacking those features is UB/SIGILL
+/// (the compiler assumes them throughout the body):
+///  - the AVX-512 reduction (`entropy::avx512::calculate_shannon_entropy`)
+///    declares `avx512f,avx512bw`; soundness needs only those two. The gate ALSO
+///    requires `avx512dq` as deliberate forward-headroom, so a future dq-using
+///    re-vectorization of the reduction needs no gate change (entropy/avx512.rs)
+///    — a sound over-gate, not a current intrinsic need. KH C10/M9.
+///  - the AVX2 reduction (`fast_x86::shannon_entropy_avx2`) declares `avx2,fma`,
+///    which licenses the compiler to emit FMA3 (VFMADD231PD) in its body, so
+///    `fma` is required in addition to `avx2` (else SIGILL on an AVX2-without-FMA
+///    CPU/VM). Falling through lands on the SSE2/scalar baseline.
+///
+/// The feature gates are read here exactly once; the dispatch site consumes the
+/// cached tier and performs no further probing.
+#[cfg(target_arch = "x86_64")]
+pub(crate) fn resolve_x86_entropy_tier() -> X86EntropyTier {
+    *X86_ENTROPY_TIER.get_or_init(|| {
+        let tier = if is_x86_feature_detected!("avx512f")
+            && is_x86_feature_detected!("avx512bw")
+            && is_x86_feature_detected!("avx512dq")
+        {
+            X86EntropyTier::Avx512
+        } else if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            X86EntropyTier::Avx2
+        } else {
+            X86EntropyTier::Scalar
+        };
+        // Loud, one-time record of the selected path (Law 10: a SIMD→scalar
+        // fall-through is surfaced, never silent). Emitted once at first use, so
+        // it costs nothing on the per-candidate hot path.
+        tracing::info!(
+            tier = ?tier,
+            "keyhog entropy: selected x86_64 SIMD tier for the Shannon-entropy reduction"
+        );
+        tier
+    })
+}
+
+/// Fast entropy calculation dispatched on the once-resolved [`X86EntropyTier`].
 #[cfg(target_arch = "x86_64")]
 pub(crate) fn shannon_entropy_simd(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
     }
 
-    // SAFETY: We verify AVX2/SSE2 support via is_x86_feature_detected! before calling specialized paths.
-    //
-    // The runtime probe must be a SUPERSET of every feature the dispatched
-    // function's `#[target_feature]` enables — entering a target_feature fn on a
-    // CPU that lacks those features is UB/SIGILL (the compiler assumes them
-    // throughout the body):
-    //  - the AVX-512 reduction (`entropy::avx512::calculate_shannon_entropy`)
-    //    declares `avx512f,avx512bw`; soundness needs only those two. The gate
-    //    ALSO requires `avx512dq` as deliberate forward-headroom, so a future
-    //    dq-using re-vectorization of the reduction needs no gate change (see
-    //    entropy/avx512.rs) — a sound over-gate, not a current intrinsic need.
-    //    KH C10/M9.
-    //  - the AVX2 reduction (`fast_x86::shannon_entropy_avx2`) declares
-    //    `avx2,fma`, which licenses the compiler to emit FMA3 (VFMADD231PD) in
-    //    its body, so `fma` is required in addition to `avx2` (else SIGILL on an
-    //    AVX2-without-FMA CPU/VM). Falling through lands on SSE2/scalar.
-    unsafe {
-        if is_x86_feature_detected!("avx512f")
-            && is_x86_feature_detected!("avx512bw")
-            && is_x86_feature_detected!("avx512dq")
-        {
-            return crate::entropy::avx512::calculate_shannon_entropy(data);
-        }
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            return crate::entropy::fast_x86::shannon_entropy_avx2(data);
-        }
-        if is_x86_feature_detected!("sse2") {
-            return crate::entropy::fast_x86::shannon_entropy_sse2(data);
-        }
+    match resolve_x86_entropy_tier() {
+        // SAFETY: `resolve_x86_entropy_tier` proved the CPU carries every feature
+        // each dispatched `#[target_feature]` fn requires (see its SAFETY note),
+        // and CPU features do not change at runtime, so the cached tier stays
+        // valid for the life of the process.
+        X86EntropyTier::Avx512 => unsafe {
+            crate::entropy::avx512::calculate_shannon_entropy(data)
+        },
+        X86EntropyTier::Avx2 => unsafe { crate::entropy::fast_x86::shannon_entropy_avx2(data) },
+        X86EntropyTier::Scalar => shannon_entropy_scalar(data),
     }
-
-    shannon_entropy_scalar(data)
 }
 
 /// AArch64 true Neon SIMD parallel histogram calculations.
@@ -83,7 +126,7 @@ pub(crate) fn shannon_entropy_simd(data: &[u8]) -> f64 {
 /// 256-bin histogram and `active_len` (input length minus the padding bytes).
 ///
 /// This is the single definition of that contract. The scalar path and every
-/// SIMD path (`avx2`/`sse2`/`avx512`/`neon`) count through here, so they agree
+/// SIMD path (`avx2`/`avx512`/`neon`) count through here, so they agree
 /// bit-for-bit regardless of pointer alignment or input length. Folding it into
 /// one helper also removes the divergence an alignment-prologue histogram used
 /// to introduce on short/unaligned inputs, where the byte-at-a-time prologue
@@ -153,7 +196,7 @@ pub(crate) fn histogram_8way(data: &[u8]) -> ([u32; 256], usize) {
 /// `active_len` (non-padding byte count).
 ///
 /// This is the single, exact reduction shared by the scalar path and every SIMD
-/// path (`avx2`/`sse2`/`avx512`/`neon`). Counting is the memory-bound part and
+/// path (`avx2`/`avx512`/`neon`). Counting is the memory-bound part and
 /// lives in [`histogram_8way`]; the reduction over 256 bins is negligible work,
 /// so all paths funnel through this one `f64::log2` reduction and therefore agree
 /// to a few ULPs regardless of which ISA produced the histogram.
@@ -211,78 +254,4 @@ pub(crate) fn shannon_entropy_scalar(data: &[u8]) -> f64 {
 
     let (counts, active_len) = histogram_8way(data);
     entropy_from_histogram(&counts, active_len)
-}
-
-/// Fast check if data MIGHT have high entropy.
-/// Returns quickly for obviously low-entropy data.
-///
-/// Features vectorized unique checks and expanded sampling threshold optimizations
-/// (KH-21, KH-26, KH-30).
-#[cfg(test)]
-pub(crate) fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
-    #[cfg(target_arch = "x86_64")]
-    {
-        if is_x86_feature_detected!("sse2") {
-            // SAFETY: the `is_x86_feature_detected!("sse2")` guard immediately
-            // above proves the CPU supports `sse2`, the only feature the callee's
-            // `#[target_feature(enable = "sse2")]` requires.
-            unsafe {
-                return crate::entropy::fast_x86::has_high_entropy_fast_x86(data, threshold);
-            }
-        }
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        // SAFETY: NEON is baseline on every Rust-supported aarch64 target, so the
-        // callee's NEON requirement is always satisfied under this `#[cfg]`; the
-        // single raw 16-byte load inside is bounds-proven in its own SAFETY note.
-        unsafe {
-            return crate::entropy::fast_neon::has_high_entropy_fast_neon(data, threshold);
-        }
-    }
-
-    has_high_entropy_fast_scalar(data, threshold)
-}
-
-/// Count the distinct byte values present in `data` via a stack-only 256-bit
-/// bitset (4 × u64). O(n) with no allocation; the buffer is already resident in
-/// cache on the entropy hot path.
-///
-/// This is the single source of the high-entropy early-exit decision: the
-/// number of distinct symbols `u` caps Shannon entropy at `log2(u)` bits/byte,
-/// so a buffer whose *whole* contents span fewer than `2^threshold` distinct
-/// bytes provably cannot reach `threshold` and the float-heavy reduction can be
-/// skipped. Counting over the full buffer (not a 12-/16-byte sample) is what
-/// makes the short-circuit sound and makes the scalar and SIMD paths agree
-/// bit-for-bit — a tiny sample could miss a constant run hiding a high-entropy
-/// remainder (false negative) or simply look at different bytes per arch.
-#[inline]
-#[cfg(test)]
-pub(crate) fn distinct_byte_count(data: &[u8]) -> u32 {
-    let mut seen = [0u64; 4];
-    for &b in data {
-        seen[(b >> 6) as usize] |= 1u64 << (b & 63);
-    }
-    seen[0].count_ones() + seen[1].count_ones() + seen[2].count_ones() + seen[3].count_ones()
-}
-
-/// Scalar fallback for has_high_entropy_fast
-#[inline]
-#[cfg(test)]
-fn has_high_entropy_fast_scalar(data: &[u8], threshold: f64) -> bool {
-    if data.is_empty() {
-        return shannon_entropy_scalar(data) >= threshold;
-    }
-
-    // Sound early exit (KH-26): a buffer with `u` distinct byte values can carry
-    // at most log2(u) bits/byte of Shannon entropy. Count distinct bytes over
-    // the FULL buffer and bypass the full reduction only when that ceiling is
-    // strictly below the threshold — never on a non-representative sample.
-    let unique = distinct_byte_count(data);
-    if (unique as f64).log2() < threshold {
-        return false;
-    }
-
-    // Ceiling permits the threshold - do the full calculation.
-    shannon_entropy_simd(data) >= threshold
 }

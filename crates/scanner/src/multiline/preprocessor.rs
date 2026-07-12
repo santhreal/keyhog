@@ -41,10 +41,17 @@ pub(crate) fn preprocess_multiline<'a>(
         };
     }
 
-    let first_nonwhite = text.trim_start().chars().next().unwrap_or(' '); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
-    if first_nonwhite == '{' || first_nonwhite == '[' {
-        return passthrough_text(text_owned);
-    }
+    // NB: the "leading `{`/`[` ⇒ passthrough" first-byte reject that used to sit
+    // here has been removed. It was a byte-identical DUPLICATE of the structural
+    // gate now owned solely by `has_concatenation_indicators` (ONE PLACE), and
+    // keeping it here re-introduced the exact Law-10 bug that gate was fixed for:
+    // a JS/TS source file opening with an object literal (`{ apiKey: "a" + "b" }`)
+    // was force-passed-through and lost its whole multiline surface. The gate
+    // reached via `should_passthrough` above (which calls
+    // `has_concatenation_indicators`) already returns early for real JSON data
+    // (`should_passthrough` ⇒ passthrough at the top of this fn), so a `{`-leading
+    // buffer only reaches this point when it is NOT strict JSON and DID trip a
+    // concat shape — precisely the JS/TS case we must preprocess.
 
     // `result_lines` gets exactly one push per outer-loop iteration and the loop
     // advances `index` by at least 1 each time, so it never holds more than
@@ -227,6 +234,7 @@ fn process_line_chain(
                 || continuation_type == ContinuationType::PlusOperator
                 || continuation_type == ContinuationType::DotOperator
                 || continuation_type == ContinuationType::Implicit
+                || continuation_type == ContinuationType::TemplateLiteral
                 || !part.is_empty()
             {
                 joined_parts.push(part);

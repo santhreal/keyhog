@@ -45,6 +45,11 @@ struct InteractionRaw {
 /// the verifier renders.
 const MAX_RAW_PAYLOAD: usize = 16 * 1024;
 
+/// AES-256-CFB IV length in bytes (one 128-bit cipher block). The interactsh
+/// wire format prepends the IV to every ciphertext, so a valid entry is at least
+/// this long and the IV is the first `AES_CFB_IV_LEN` bytes.
+const AES_CFB_IV_LEN: usize = 16;
+
 pub(super) fn decrypt_entry(
     aes_key: &[u8],
     b64: &str,
@@ -52,13 +57,13 @@ pub(super) fn decrypt_entry(
     let mut bytes = B64
         .decode(b64.as_bytes())
         .map_err(|e| InteractshError::Decrypt(format!("base64: {e}")))?;
-    if bytes.len() < 16 {
+    if bytes.len() < AES_CFB_IV_LEN {
         return Err(InteractshError::Decrypt(format!(
-            "ciphertext too short ({} < 16)",
+            "ciphertext too short ({} < {AES_CFB_IV_LEN})",
             bytes.len()
         )));
     }
-    let (iv, payload) = bytes.split_at_mut(16);
+    let (iv, payload) = bytes.split_at_mut(AES_CFB_IV_LEN);
     Aes256CfbDec::new_from_slices(aes_key, iv)
         .map_err(|e| InteractshError::Decrypt(format!("cfb init: {e}")))?
         .decrypt(payload);
@@ -125,7 +130,16 @@ pub(super) fn decrypt_entry(
 }
 
 fn truncate_raw_payload(mut raw_payload: String) -> String {
-    if let Some((idx, _)) = raw_payload.char_indices().nth(MAX_RAW_PAYLOAD) {
+    // `MAX_RAW_PAYLOAD` is a BYTE bound (the memory cap on an attacker-influenced
+    // OOB callback payload). The previous `char_indices().nth(MAX_RAW_PAYLOAD)`
+    // made it a CHAR cap, so a multi-byte payload could retain up to 4× the bound
+    // (~64 KiB) and walked up to 16 K chars. Cap by bytes, snapping DOWN to the
+    // nearest char boundary (at most 3 bytes) so the truncation stays valid UTF-8.
+    if raw_payload.len() > MAX_RAW_PAYLOAD {
+        let mut idx = MAX_RAW_PAYLOAD;
+        while idx > 0 && !raw_payload.is_char_boundary(idx) {
+            idx -= 1;
+        }
         raw_payload.truncate(idx);
     }
     raw_payload

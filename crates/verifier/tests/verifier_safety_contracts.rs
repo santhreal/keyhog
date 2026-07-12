@@ -1151,7 +1151,7 @@ fn oob_decrypt_hot_path_does_not_clone_ciphertext_or_recollect_payload() {
         .expect("oob/decrypt.rs must be readable");
 
     assert!(
-        src.contains("split_at_mut(16)") && src.contains(".decrypt(payload)"),
+        src.contains("split_at_mut(AES_CFB_IV_LEN)") && src.contains(".decrypt(payload)"),
         "decrypt_entry must decrypt in place inside the decoded buffer, not clone ciphertext"
     );
     assert!(
@@ -1208,18 +1208,43 @@ fn verifier_reqwest_has_no_auto_decompression_feature() {
 //     explicitly (call-site defense-in-depth, not just the Cargo feature pin)
 // ===========================================================================
 
+/// The no-decompression + no-redirect posture now lives in ONE definitional
+/// home — `harden_verifier_client_builder` (lib.rs) — which every verifier and
+/// OOB client routes through. Assert the owner disables all four codecs and
+/// refuses redirects, so pinning it here covers the base client, the DNS-pinned
+/// rebuild, and the OOB collector at once.
+fn assert_shared_harden_disables_decompression_and_redirects() {
+    let lib_src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
+        .expect("lib.rs must be readable");
+    let harden = lib_src
+        .split("fn harden_verifier_client_builder(")
+        .nth(1)
+        .expect("harden_verifier_client_builder must exist")
+        .split("\nfn ")
+        .next()
+        .expect("harden fn body bounded");
+    for needle in [
+        ".no_gzip()",
+        ".no_brotli()",
+        ".no_zstd()",
+        ".no_deflate()",
+        ".redirect(reqwest::redirect::Policy::none())",
+    ] {
+        assert!(
+            harden.contains(needle),
+            "harden_verifier_client_builder (single owner) must call {needle} \
+             (transitive-feature decompression-bomb / redirect-SSRF defense)"
+        );
+    }
+}
+
 #[test]
 fn engine_base_client_builder_disables_auto_decompression_explicitly() {
-    // The feature pin above stops the verifier's OWN reqwest from enabling
-    // gzip/brotli/zstd/deflate. But a TRANSITIVE dependency could enable a
-    // decompression feature for the whole reqwest crate (Cargo unions
-    // features). reqwest exposes `no_gzip()`/`no_brotli()`/`no_zstd()`/
-    // `no_deflate()` precisely so a client can opt OUT even when another crate
-    // opted the feature IN. The base engine client (verify/mod.rs) is the
-    // client used on the proxy path and as the AwsV4 self-constructing client;
-    // it must call all four so the 1 MB streaming cap always measures wire
-    // bytes. These methods exist unconditionally and are no-ops when the
-    // feature is off, so the call is always safe.
+    // The base engine client (verify/mod.rs) is used on the proxy path and as
+    // the AwsV4 self-constructing client. It must carry the no-decompression
+    // posture — now applied by the single-owner `harden_verifier_client_builder`.
+    // Verify (a) the base client routes through that owner, and (b) the owner
+    // disables all four codecs.
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/mod.rs"))
         .expect("verify/mod.rs must be readable");
     let new_fn = src
@@ -1230,42 +1255,36 @@ fn engine_base_client_builder_disables_auto_decompression_explicitly() {
         .split("let client = builder.build()")
         .next()
         .expect("client build site");
-    for needle in [".no_gzip()", ".no_brotli()", ".no_zstd()", ".no_deflate()"] {
-        assert!(
-            builder_section.contains(needle),
-            "VerificationEngine base client builder must call {needle} \
-             (transitive-feature decompression-bomb defense)"
-        );
-    }
+    assert!(
+        builder_section.contains("harden_verifier_client_builder("),
+        "VerificationEngine base client must apply the shared hardened posture \
+         (harden_verifier_client_builder)"
+    );
+    assert_shared_harden_disables_decompression_and_redirects();
 }
 
 #[test]
 fn dns_pinned_rebuild_client_disables_auto_decompression_explicitly() {
-    // The DNS-pinned per-request rebuild in resolved_client_for_url() is the
-    // client that actually serves the request on the direct (no-proxy) path.
-    // It MUST mirror the base client's no-decompression posture or the 1 MB
-    // cap would measure inflated bytes on that path. Scope the inspection to
-    // the pinned `.build()` site so we don't accidentally match calls elsewhere.
+    // The DNS-pinned per-request rebuild serves the request on the direct
+    // (no-proxy) path; it MUST mirror the base client's no-decompression posture
+    // or the 1 MB cap would measure inflated bytes there. It now delegates to the
+    // single-owner `crate::build_pinned_verifier_client`, which applies
+    // `harden_verifier_client_builder`. Verify the delegation + the shared owner.
     let src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/verify/request.rs"
     ))
     .expect("request.rs must be readable");
-    let pin_section = src
-        .split("danger_accept_invalid_certs(insecure_tls)")
+    let pin_fn = src
+        .split("fn build_pinned_client(")
         .nth(1)
-        .expect("the pinned client builder section");
-    let pin_builder = pin_section
-        .split(".resolve_to_addrs(&host, &pinned_addrs)")
-        .next()
-        .expect("text up to resolve_to_addrs");
-    for needle in [".no_gzip()", ".no_brotli()", ".no_zstd()", ".no_deflate()"] {
-        assert!(
-            pin_builder.contains(needle),
-            "DNS-pinned rebuild client must call {needle} so the body cap \
-             measures wire bytes on the direct path too"
-        );
-    }
+        .expect("build_pinned_client must exist");
+    assert!(
+        pin_fn.contains("crate::build_pinned_verifier_client("),
+        "the DNS-pinned rebuild must route through the single-owner pinned client \
+         builder (build_pinned_verifier_client)"
+    );
+    assert_shared_harden_disables_decompression_and_redirects();
 }
 
 // ===========================================================================
@@ -1327,12 +1346,14 @@ fn oob_collector_direct_client_is_dns_pinned() {
         "OOB collector direct path must resolve the collector host before contact"
     );
     assert!(
-        helper_body.contains("check_collector_resolved_addrs(server, &addrs)?"),
-        "OOB collector direct path must screen every resolved address"
+        helper_body.contains("collector_client_plan(server, proxy_in_use, resolved)?"),
+        "OOB collector must screen every resolved address through the single decision owner \
+         `collector_client_plan` before deciding direct-vs-proxy"
     );
     assert!(
-        helper_body.contains(".resolve_to_addrs(&host, &pinned_addrs)"),
-        "OOB collector direct path must pin the screened DNS answers"
+        helper_body.contains("build_pinned_verifier_client(&host, &pinned_addrs"),
+        "OOB collector direct path must pin the screened DNS answers via the single-owner \
+         pinned client builder"
     );
     assert!(
         helper_body.contains("refusing an unpinned collector client"),
@@ -1342,32 +1363,34 @@ fn oob_collector_direct_client_is_dns_pinned() {
 
 #[test]
 fn oob_collector_pinned_client_preserves_security_builder_options() {
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/oob/client.rs"))
-        .expect("oob/client.rs must be readable");
-    let helper = src
-        .split("async fn collector_http_client(")
+    // The OOB collector's pinned client is built by the single-owner
+    // `crate::build_pinned_verifier_client` (lib.rs) — the same builder the
+    // per-request verify path uses. Verify that owner preserves the timeout +
+    // invalid-cert posture + no_proxy + the address pin AND routes decompression/
+    // redirect through `harden_verifier_client_builder`.
+    let lib_src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
+        .expect("lib.rs must be readable");
+    let pinned = lib_src
+        .split("fn build_pinned_verifier_client(")
         .nth(1)
-        .expect("collector_http_client must exist");
-    let builder = helper
-        .split(".resolve_to_addrs(&host, &pinned_addrs)")
+        .expect("build_pinned_verifier_client must exist")
+        .split("\n}\n")
         .next()
-        .expect("collector pinned builder must be present");
+        .expect("build_pinned_verifier_client body bounded");
 
     for needle in [
         ".timeout(timeout)",
         ".danger_accept_invalid_certs(insecure_tls)",
         ".no_proxy()",
-        ".no_gzip()",
-        ".no_brotli()",
-        ".no_zstd()",
-        ".no_deflate()",
-        ".redirect(reqwest::redirect::Policy::none())",
+        "harden_verifier_client_builder(",
+        ".resolve_to_addrs(host, pinned_addrs)",
     ] {
         assert!(
-            builder.contains(needle),
-            "OOB pinned collector client must preserve {needle}"
+            pinned.contains(needle),
+            "build_pinned_verifier_client (single owner) must carry {needle}"
         );
     }
+    assert_shared_harden_disables_decompression_and_redirects();
 }
 
 #[test]

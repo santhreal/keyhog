@@ -200,7 +200,10 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("gpu_timing")
             && backend.contains("gpu_cold_ns")
             && backend.contains("gpu_warm_ms")
-            && backend.contains("gpu_warm_timing")
+            // v21: the GPU cold/warm/route values are DERIVED via the
+            // `gpu_cold_warm_route` accessor (single owner), not stored as a
+            // `gpu_warm_timing` field — assert the derivation accessor instead.
+            && backend.contains("gpu_cold_warm_route")
             && backend.contains("gpu_route_ns")
             && backend.contains("gpu_cold_warm_route_evidence")
             && backend.contains("trials_ns")
@@ -214,7 +217,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("source_class_hash")
             && backend.contains("StableHasher::new(\"autoroute-source-class\")")
             && backend.contains("StableHasher::new(\"autoroute-correctness-digest\")")
-            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 20")
+            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 21")
             && backend.contains("AUTOROUTE_CALIBRATION_TRIALS: usize = 7")
             && backend.contains("trials"),
         "autoroute cache must persist binary identity, build feature identity, exact host identity, and measured calibration evidence"
@@ -241,7 +244,11 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("selected backend is not the fastest persisted timing evidence")
             && backend.contains("resolved_routing_backend")
             && backend.contains("deterministic tie-break among statistically tied routes")
-            && backend.contains("cache decision has mismatched GPU cold/warm route evidence")
+            // v21: the GPU cold/warm/route values are DERIVED on demand from
+            // `gpu_timing` (single owner), never stored, so there is no copy to
+            // "mismatch". The only remaining fail-closed invariant is that the
+            // persisted timing is structurally *able* to derive route evidence.
+            && backend.contains("cache decision has invalid GPU cold/warm timing evidence")
             && backend.contains("backend rejected by autoroute GPU degrade check")
             && backend.contains("cache decision is missing a calibration timestamp")
             && backend.contains("duplicate autoroute workload decision")

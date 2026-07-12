@@ -416,9 +416,14 @@ printf '%s  local_keyhog_no_sidecar\n' "$(sha_of "$FIX_DIR/local_keyhog_no_sidec
 #   MOCK_ASSET      - path to the binary to serve, or "404"
 #   MOCK_LATEST_ASSET - legacy latest-redirect fixture hook, or "404"
 #   MOCK_FALLBACK   - path to serve for the *fallback* asset, or "404"
-#   MOCK_GPU_LITERAL_SIDECAR - path to serve for <asset>.gpu-literals.tar.gz, or "404"
-#   MOCK_SIG        - "match" | "invalid" | "absent"
-#   MOCK_SHA        - "match" | "mismatch" | "absent"
+#   MOCK_GPU_LITERAL_SIDECAR - path to serve for <asset>.gpu-literals.tar.gz, or
+#                     "404" (curl exit 22 = HTTP 404 = not published) or
+#                     "neterror" (curl exit 6 = a network/transport failure)
+#   MOCK_SIG        - "match" | "invalid" | "absent" | "neterror"
+#   MOCK_SHA        - "match" | "mismatch" | "absent" | "neterror"
+#     ("absent" = curl exit 22 / HTTP 404 = asset genuinely not published;
+#      "neterror" = curl exit 6 = a network/transport failure, which must NOT
+#      be silently downgraded to "not published" — see tests 6.4ac-6.4ai.)
 #   MOCK_LDD        - "ok" | path-to-missing-lib-name (e.g. "libhyperscan.so.5")
 build_sandbox() {
     os=$1 arch=$2 nv=$3 lib=$4 toolkit=$5
@@ -554,12 +559,14 @@ case "$url" in
   *.minisig)
     case "${MOCK_SIG:-match}" in
       absent)  exit 22 ;;
+      neterror) echo "mock curl: could not resolve host" >&2; exit 6 ;;
       invalid) printf 'invalid mock minisig\n' | emit; exit 0 ;;
       match)   printf 'trusted mock minisig\n' | emit; exit 0 ;;
     esac ;;
   *.sha256)
     case "${MOCK_SHA:-absent}" in
       absent)   exit 22 ;;
+      neterror) echo "mock curl: could not resolve host" >&2; exit 6 ;;
       mismatch) printf '%s  asset\n' "0000000000000000000000000000000000000000000000000000000000000000" | emit; exit 0 ;;
       match)
         sf=$(cat "$sd/served" 2>/dev/null)
@@ -571,7 +578,8 @@ case "$url" in
     asset_name="${url##*/}"
     case "$asset_name" in
       *.gpu-literals.tar.gz)
-        served="${MOCK_GPU_LITERAL_SIDECAR:-$FIX_DIR/gpu-literals.tar.gz}" ;;
+        served="${MOCK_GPU_LITERAL_SIDECAR:-$FIX_DIR/gpu-literals.tar.gz}"
+        if [ "$served" = "neterror" ]; then echo "mock curl: could not resolve host" >&2; exit 6; fi ;;
       *)
         served="${MOCK_LATEST_ASSET:-${MOCK_ASSET:-404}}" ;;
     esac
@@ -585,6 +593,7 @@ case "$url" in
     case "$asset_name" in
       *.gpu-literals.tar.gz)
         served="${MOCK_GPU_LITERAL_SIDECAR:-$FIX_DIR/gpu-literals.tar.gz}"
+        if [ "$served" = "neterror" ]; then echo "mock curl: could not resolve host" >&2; exit 6; fi
         if [ "$served" = "404" ]; then exit 22; fi
         printf '%s' "$served" > "$sd/served"
         cat "$served" > "$out"
@@ -832,6 +841,19 @@ expect_match  "6.4f missing GPU literal sidecar refuses" "No GPU literal artifac
 expect_status "6.4g missing GPU literal sidecar exits 1" 1 "$st"
 expect_nofile "6.4h no binary written without GPU literal sidecar" "$h/.local/bin/keyhog"
 rm -rf "$h"
+# 6.4f-net a network/transport failure fetching the sidecar must NOT be reported
+# as "not published" (Law 10: never conflate a transport failure with a missing
+# asset). curl exit 6 (DNS) != exit 22 (HTTP 404), so the operator is told the
+# sidecar may well exist and a retry may succeed — never to rebuild the workflow.
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR=neterror run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match   "6.4f-net sidecar transport failure names the transport error" "network/transport failure, not a missing asset" "$out"
+expect_match   "6.4f-net2 sidecar transport failure invites a retry" "A retry may succeed" "$out"
+expect_nomatch "6.4f-net3 sidecar transport failure does NOT claim 'not published'" "was published" "$out"
+expect_nomatch "6.4f-net4 sidecar transport failure does NOT tell operator to rebuild the workflow" "rebuild the release workflow" "$out"
+expect_status "6.4f-net5 sidecar transport failure still fails closed (exit 1)" 1 "$st"
+expect_nofile "6.4f-net6 no binary written after sidecar transport failure" "$h/.local/bin/keyhog"
+rm -rf "$h"
 # 6.4i link entries in the GPU literal sidecar refuse before binary overwrite.
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR="$FIX_DIR/gpu-literals-link.tar.gz" run_install "$sb" "$h" -- --no-prompt); st=$?
@@ -873,6 +895,36 @@ out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=i
 expect_match  "6.4y invalid .minisig still refuses with insecure" "Minisign signature verification failed" "$out"
 expect_status "6.4z invalid .minisig insecure exits 1" 1 "$st"
 expect_nofile "6.4aa no binary written after invalid signature with insecure" "$h/.local/bin/keyhog"
+rm -rf "$h"
+# 6.4na a transient network/transport failure fetching the .sha256 must NOT be
+# silently downgraded to "no checksum published" and skipped (a CDN blip would
+# otherwise waive integrity verification). Under strict mode it fails closed with
+# an HONEST message that names it a network failure, not a missing checksum.
+# (The GPU literal sidecar is left present/default since it is mandatory; its own
+# .sha256 fetch also hits neterror, so whichever checksum runs first fails.)
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=match MOCK_SHA=neterror run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match   "6.4na checksum network error is named honestly" "network/transport failure, not a missing checksum" "$out"
+expect_nomatch "6.4nb checksum network error is NOT mislabeled 'not published'" "No \\.sha256 checksum was published" "$out"
+expect_status  "6.4nc checksum network error fails closed" 1 "$st"
+expect_nofile  "6.4nd no binary written when the checksum fetch fails on the network" "$h/.local/bin/keyhog"
+rm -rf "$h"
+# 6.4ne with --insecure the operator may waive verification, but the skip is loud
+# and still honestly names the network failure (never a false "not published").
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=match MOCK_SHA=neterror run_install "$sb" "$h" -- --no-prompt --insecure); st=$?
+expect_match   "6.4ne checksum network error insecure override is loud + honest" "INSECURE.*network/transport failure" "$out"
+expect_status  "6.4nf checksum network error insecure override installs" 0 "$st"
+expect_exec    "6.4ng binary present after explicit insecure checksum waiver" "$h/.local/bin/keyhog"
+rm -rf "$h"
+# 6.4nh a transient network/transport failure fetching the .minisig is likewise
+# fail-closed with an honest message (not a false "no signature published").
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=neterror MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match   "6.4nh signature network error is named honestly" "network/transport failure, not a missing signature" "$out"
+expect_nomatch "6.4ni signature network error is NOT mislabeled 'not published'" "No \\.minisig signature was published" "$out"
+expect_status  "6.4nj signature network error fails closed" 1 "$st"
+expect_nofile  "6.4nk no binary written when the signature fetch fails on the network" "$h/.local/bin/keyhog"
 rm -rf "$h"
 # 6.4ab missing minisign verifier fails closed unless explicitly insecure.
 sb_no_minisign=$(build_sandbox Linux x86_64 no no no); rm -f "$sb_no_minisign/bin/minisign"
@@ -1010,11 +1062,18 @@ h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_broken" MOCK_SHA=match MOCK_LDD=libssl.so.3 run_install "$sb" "$h" -- --no-prompt)
 expect_match  "8.4 openssl hint shown" "libssl3|OpenSSL runtime" "$out"
 rm -rf "$h"
-# 8.5 doctor fails -> install still succeeds but warns
+# 8.5 doctor UNHEALTHY (exit 4) -> install FAILS CLOSED + rolls back.
+#     Law 10: a freshly-installed scanner that fails its own end-to-end scan
+#     self-test must NOT report "installed". The installer honors doctor's
+#     exit-4 unhealthy verdict, removes the staged binary, and exits non-zero
+#     rather than silently leaving a scanner that cannot detect secrets.
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_doctor_fail" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "8.5 doctor-fail warns" "may not be fully healthy" "$out"
-expect_status "8.6 doctor-fail install exit 0" 0 "$st"
+expect_match  "8.5 doctor-unhealthy reported" "UNHEALTHY \(exit 4\)|failed its own end-to-end scan self-test" "$out"
+expect_match  "8.5b doctor-unhealthy rolls back" "rolling back this install" "$out"
+expect_nomatch "8.5c doctor-unhealthy does not falsely claim installed" "may not be fully healthy" "$out"
+expect_status "8.6 doctor-unhealthy install fails closed" 1 "$st"
+expect_nofile "8.6b doctor-unhealthy leaves no binary on PATH" "$h/.local/bin/keyhog"
 rm -rf "$sb" "$h"
 
 # ======================================================================
@@ -1671,6 +1730,30 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
             "markers=$zsh_markers fpath=$zsh_fpath rc=$(cat "$h/.zshrc" 2>/dev/null)"
     fi
     rm -rf "$sb" "$h"
+
+    # 21.14 A hand-edited rc that spells INSTALL_DIR with $HOME (not the absolute
+    #       path install.sh itself writes) must still be RECOGNIZED, so a
+    #       re-install reports "already configured" and appends NO duplicate
+    #       keyhog PATH block. Before the fix, path_setup_entry_present grepped
+    #       only the absolute path and missed the $HOME form.
+    reset_mocks
+    sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
+    # Pre-seed .bashrc with a $HOME-form keyhog block, literal '$HOME' preserved
+    # by the single-quoted printf format string.
+    printf '\n# keyhog\nexport PATH="$HOME/.local/bin:$PATH"\n' > "$h/.bashrc"
+    home_env="PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9"
+    home_cmd="env -i $home_env MOCK_STATE_DIR=$h/home-state sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
+    out=$(printf 'y\ny\ny\nn\nn\n' | script -qefc "$home_cmd" /dev/null 2>&1); st=$?
+    expect_status "21.14 install over a \$HOME-form rc exits 0" 0 "$st"
+    expect_match  "21.15 \$HOME-form PATH entry recognized as already configured" "PATH already configured" "$out"
+    home_markers=$(grep -c '^# keyhog$' "$h/.bashrc" 2>/dev/null || true)
+    if [ "$home_markers" = "1" ]; then
+        _record_pass "21.16 \$HOME-form rc gets no duplicate keyhog PATH block"
+    else
+        _record_fail "21.16 \$HOME-form rc gets no duplicate keyhog PATH block" \
+            "markers=$home_markers rc=$(cat "$h/.bashrc" 2>/dev/null)"
+    fi
+    rm -rf "$sb" "$h"
 else
     skip "21.1 first bash PATH setup install exits 0" "script(1) PTY helper unavailable"
     skip "21.2 second bash PATH setup install exits 0" "script(1) PTY helper unavailable"
@@ -1685,6 +1768,38 @@ else
     skip "21.11 zsh completion setup rerun exits 0" "script(1) PTY helper unavailable"
     skip "21.12 zsh completion setup rerun reports existing wiring" "script(1) PTY helper unavailable"
     skip "21.13 zsh completion wiring writes exactly one fpath block" "script(1) PTY helper unavailable"
+    skip "21.14 install over a \$HOME-form rc exits 0" "script(1) PTY helper unavailable"
+    skip "21.15 \$HOME-form PATH entry recognized as already configured" "script(1) PTY helper unavailable"
+    skip "21.16 \$HOME-form rc gets no duplicate keyhog PATH block" "script(1) PTY helper unavailable"
+fi
+
+# ======================================================================
+# 22. cross-installer coherence (install.sh vs install.ps1)
+# ======================================================================
+# The minisign release public key is the installer's trust root: it verifies
+# every downloaded release signature, so it MUST be baked into each bootstrap
+# installer (fetching it would defeat the verification it enables). That makes
+# the value unavoidably duplicated across the sh and ps1 installers, and the one
+# real hazard is DRIFT - a key rotation that updates only one platform. Lock the
+# two together so a divergence fails CI instead of shipping a broken installer.
+printf '\n[22] cross-installer coherence\n'
+INSTALL_PS1="$ROOT/install.ps1"
+if [ -f "$INSTALL_PS1" ]; then
+    sh_key=$(sed -n 's/^RELEASE_PUBLIC_KEY="\([^"]*\)".*/\1/p' "$INSTALL_SH" | head -n1)
+    ps_key=$(sed -n "s/.*ReleasePublicKey *= *'\([^']*\)'.*/\1/p" "$INSTALL_PS1" | head -n1)
+    if [ -n "$sh_key" ]; then _record_pass "22.1 install.sh pins a minisign public key"
+    else _record_fail "22.1 install.sh pins a minisign public key" "no RELEASE_PUBLIC_KEY found"; fi
+    if [ -n "$ps_key" ]; then _record_pass "22.2 install.ps1 pins a minisign public key"
+    else _record_fail "22.2 install.ps1 pins a minisign public key" "no ReleasePublicKey found"; fi
+    if [ -n "$sh_key" ] && [ "$sh_key" = "$ps_key" ]; then
+        _record_pass "22.3 both installers pin the SAME minisign key (no drift)"
+    else
+        _record_fail "22.3 both installers pin the SAME minisign key (no drift)" "sh=[$sh_key] ps=[$ps_key]"
+    fi
+else
+    skip "22.1 install.sh pins a minisign public key" "install.ps1 not found"
+    skip "22.2 install.ps1 pins a minisign public key" "install.ps1 not found"
+    skip "22.3 both installers pin the SAME minisign key (no drift)" "install.ps1 not found"
 fi
 
 # ======================================================================

@@ -1,14 +1,10 @@
 //! Gate crate-root scan-text normalization against eager non-ASCII allocation.
 
+use super::support::{read, scanner_src, uncommented_code};
+
 #[test]
 fn normalize_chunk_data_allocates_only_after_first_evasion_char() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs");
-    let src = std::fs::read_to_string(path).expect("scanner lib source readable");
-    let prod = src
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let prod = uncommented_code(&read(&scanner_src().join("lib.rs")));
 
     assert!(
         prod.contains("let mut normalized: Option<String> = None;"),

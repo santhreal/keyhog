@@ -308,6 +308,10 @@ jobs:
   # repo Dockerfile (multi-stage, non-root runtime, embedded detector corpus).
   docker:
     name: Publish container image (GHCR)
+    # Gate on the build: the container bundles the release binaries, so it must
+    # not publish before those artifacts exist (a race that could ship an empty
+    # or stale image on a parallel-job run).
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -368,6 +372,10 @@ jobs:
   # -moved each release. Standalone so a tag-push failure never blocks assets.
   major-tag:
     name: Update floating major tag
+    # Gate on the build: the floating major tag (e.g. `v1`) must not move to a
+    # release ref until that release has actually built, so consumers pinning
+    # `@v1` never resolve to a half-published or failed build.
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write

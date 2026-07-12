@@ -113,5 +113,13 @@ pub(crate) fn read_to_string_limited(
     // the same bytes — an inconsistency, and real secrets do live in otherwise
     // non-UTF-8 inputs (embedded configs, archive members, latin-1 logs). The
     // size cap above already bounds memory.
-    Ok(String::from_utf8_lossy(&read.bytes).into_owned())
+    //
+    // `from_utf8` (consuming the owned `Vec`) reuses the buffer's allocation on
+    // the common valid-UTF-8 path — zero copy — and only the rare invalid input
+    // pays the lossy re-encode; `from_utf8_lossy(&bytes).into_owned()` copied the
+    // whole stdin buffer even when it was already valid UTF-8.
+    match String::from_utf8(read.bytes) {
+        Ok(text) => Ok(text),
+        Err(err) => Ok(String::from_utf8_lossy(&err.into_bytes()).into_owned()),
+    }
 }

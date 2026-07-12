@@ -193,7 +193,7 @@ fn stdin_chunk_metadata_child() {
 
     assert_eq!(&*chunk.data, expected.as_str());
     assert_eq!(chunk.data.len(), expected.len());
-    assert_eq!(chunk.metadata.source_type, "stdin");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "stdin");
     assert_eq!(chunk.metadata.base_offset, 0);
     assert_eq!(chunk.metadata.base_line, 0);
     assert_eq!(chunk.metadata.path, None);
@@ -228,7 +228,7 @@ fn stdin_large_chunk_child() {
         Err(err) => panic!("large stdin chunk must be Ok, got {err:?}"),
     };
     assert_eq!(chunk.data.len(), len);
-    assert_eq!(chunk.metadata.source_type, "stdin");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "stdin");
     assert_eq!(chunk.metadata.base_offset, 0);
     assert!(chunk.data.as_bytes().iter().all(|b| *b == b'A'));
 }

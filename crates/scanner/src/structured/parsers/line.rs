@@ -70,7 +70,7 @@ fn anchor_value<'a>(anchor: &'a LineAnchor, value: &'a str) -> &'a str {
     }
 }
 
-pub(super) fn resolve_line_number_options(text: &str, needles: &[&str]) -> Vec<Option<usize>> {
+pub(crate) fn resolve_line_number_options(text: &str, needles: &[&str]) -> Vec<Option<usize>> {
     let mut lines = vec![None; needles.len()];
     if text.is_empty() || needles.is_empty() {
         return lines;

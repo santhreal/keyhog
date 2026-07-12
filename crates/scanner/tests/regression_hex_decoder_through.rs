@@ -17,7 +17,9 @@
 //! Every assertion pins a concrete value (exact bytes / exact string / exact
 //! count / exact detector id), never a bare `is_empty()`/`is_ok()` shape check.
 
+mod support;
 use std::io::Write;
+use support::paths::detector_dir;
 
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -32,15 +34,6 @@ const AWS_KEY: &str = "AKIAQYLPMN5HFIQR7XYA";
 const AWS_KEY_HEX: &str = "414b494151594c504d4e35484649515237585941";
 
 // ── scanner harness ──────────────────────────────────────────────────
-
-fn detector_dir() -> std::path::PathBuf {
-    // CARGO_MANIFEST_DIR = crates/scanner ; pop twice -> repo root.
-    let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn full_scanner() -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors from disk");

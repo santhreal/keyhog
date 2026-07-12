@@ -36,7 +36,10 @@ use keyhog_scanner::testing::{
 #[test]
 fn compact_unique_salt() {
     assert!(compact_set("salt"));
-    assert!(!suffix_set("salt"), "salt has no secret-suffix; only the compact set catches it");
+    assert!(
+        !suffix_set("salt"),
+        "salt has no secret-suffix; only the compact set catches it"
+    );
 }
 #[test]
 fn compact_unique_nonce() {
@@ -66,7 +69,10 @@ fn compact_unique_passphrase() {
 #[test]
 fn suffix_unique_webhookkey() {
     assert!(suffix_set("webhookkey"));
-    assert!(!compact_set("webhookkey"), "webhookkey is not in the compact list");
+    assert!(
+        !compact_set("webhookkey"),
+        "webhookkey is not in the compact list"
+    );
 }
 #[test]
 fn suffix_unique_idempotencytoken() {
@@ -93,7 +99,10 @@ fn suffix_unique_randomtoken() {
 
 #[test]
 fn union_includes_compact_only_salt() {
-    assert!(union("salt"), "compact-only keyword must reach the scan via the union");
+    assert!(
+        union("salt"),
+        "compact-only keyword must reach the scan via the union"
+    );
 }
 #[test]
 fn union_includes_compact_only_nonce() {
@@ -105,7 +114,10 @@ fn union_includes_compact_only_bearer() {
 }
 #[test]
 fn union_includes_suffix_only_webhookkey() {
-    assert!(union("webhookkey"), "suffix-only keyword must reach the scan via the union");
+    assert!(
+        union("webhookkey"),
+        "suffix-only keyword must reach the scan via the union"
+    );
 }
 #[test]
 fn union_includes_suffix_only_mypassword() {
@@ -146,8 +158,14 @@ fn neither_predicate_endpoint() {
 
 #[test]
 fn union_excludes_bare_secret_though_compact_matches() {
-    assert!(compact_set("secret"), "the raw compact predicate matches the word `secret`");
-    assert!(!union("secret"), "but a BARE `secret` var name is too ambiguous for the union");
+    assert!(
+        compact_set("secret"),
+        "the raw compact predicate matches the word `secret`"
+    );
+    assert!(
+        !union("secret"),
+        "but a BARE `secret` var name is too ambiguous for the union"
+    );
 }
 #[test]
 fn union_excludes_bare_password_though_both_match() {
@@ -171,8 +189,14 @@ fn union_excludes_bare_key_though_suffix_matches() {
 
 #[test]
 fn union_excludes_dedup_key_metadata_though_compact_matches() {
-    assert!(compact_set("cache_dedup_key"), "the `_key` separated suffix matches");
-    assert!(!union("cache_dedup_key"), "but `*_dedup_key` is public metadata, not a secret");
+    assert!(
+        compact_set("cache_dedup_key"),
+        "the `_key` separated suffix matches"
+    );
+    assert!(
+        !union("cache_dedup_key"),
+        "but `*_dedup_key` is public metadata, not a secret"
+    );
 }
 #[test]
 fn union_excludes_digest_suffixed_owner() {
@@ -189,7 +213,10 @@ fn union_excludes_digest_suffixed_owner() {
 #[test]
 fn union_reenables_bare_secret_under_fragment_suffix() {
     assert!(!union("secret"), "bare `secret` is excluded");
-    assert!(union("secret_part2"), "but `secret_part2` is a fragment of a real secret");
+    assert!(
+        union("secret_part2"),
+        "but `secret_part2` is a fragment of a real secret"
+    );
 }
 #[test]
 fn union_reenables_bare_token_under_fragment_suffix() {

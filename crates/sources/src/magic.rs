@@ -101,6 +101,7 @@ pub(crate) fn starts_with_zstd_frame(bytes: &[u8]) -> bool {
 }
 
 #[inline]
+#[cfg(feature = "web")]
 pub(crate) fn starts_with_wasm_module(bytes: &[u8]) -> bool {
     bytes.starts_with(WASM_MAGIC)
 }

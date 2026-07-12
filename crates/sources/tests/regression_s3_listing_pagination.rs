@@ -41,7 +41,6 @@ fn counter_guard() -> MutexGuard<'static, ()> {
     let guard = COUNTER_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", "1");
     guard
 }
 

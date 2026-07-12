@@ -8,9 +8,9 @@ use crate::interpolate::interpolate_url;
 use crate::verify::credential::{empty_credential_attempt, verification_timeout};
 use crate::verify::{
     apply_header_body_templates, body_indicates_error, build_request_for_step, evaluate_success,
-    execute_and_read_response, extract_metadata, resolved_client_for_url,
-    validate_header_body_templates, validate_template_companions, RequestBuildResult,
-    VerificationAttempt,
+    execute_and_read_response, extract_metadata, resolved_client_for_url, retryable_http_status,
+    success_spec_is_explicit, validate_header_body_templates, validate_template_companions,
+    RequestBuildResult, VerificationAttempt,
 };
 
 pub(crate) async fn verify_multi_step(
@@ -145,9 +145,9 @@ pub(crate) async fn verify_multi_step(
 
         if retryable_http_status(status) {
             if status == 429 {
-                crate::rate_limit::get_rate_limiter()
-                    .update_limit(service, 0.5)
-                    .await;
+                // Multiplicative-decrease backoff for this service; recovers on
+                // later successes (record_rate_limit_feedback → reward_service).
+                crate::rate_limit::get_rate_limiter().penalize_service(service);
             }
             return VerificationAttempt {
                 result: VerificationResult::RateLimited,
@@ -167,7 +167,12 @@ pub(crate) async fn verify_multi_step(
             }
         };
 
-        if !success_matches || body_indicates_error(&body) {
+        // An explicit step success contract is authoritative; the generic
+        // body_indicates_error backstop only runs when the step declared no
+        // meaningful success spec (see credential.rs resolve_live_verdict twin).
+        if !success_matches
+            || (!success_spec_is_explicit(&step.success) && body_indicates_error(&body))
+        {
             return VerificationAttempt {
                 result: VerificationResult::Dead,
                 metadata: all_metadata,
@@ -198,8 +203,4 @@ pub(crate) fn rate_limit_service_name<'a>(
         keyhog_core::AuthSpec::AwsV4 { service, .. } => service,
         _ => spec.service.as_str(),
     }
-}
-
-fn retryable_http_status(status: u16) -> bool {
-    status == 429 || (500..=504).contains(&status)
 }

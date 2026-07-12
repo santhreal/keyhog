@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "TRANSPOSE=cdce9EXAMPLEEXAMPLEc6429"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = 'transpose_api_key = "cdce91dd51dd450d5b00d6009adc6429"'
+credential = "cdce91dd51dd450d5b00d6009adc6429"
+reason = "Config assignment with a quoted value; the transpose api_key keyword anchors the 32-hex token through the quotes."

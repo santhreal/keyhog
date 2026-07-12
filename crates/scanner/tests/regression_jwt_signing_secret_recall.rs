@@ -48,17 +48,23 @@ fn scan(path: &str, text: &str) -> Vec<(String, String)> {
 
 /// True iff some surfaced credential contains `needle`.
 fn surfaces(path: &str, text: &str, needle: &str) -> bool {
-    scan(path, text).iter().any(|(_, cred)| cred.contains(needle))
+    scan(path, text)
+        .iter()
+        .any(|(_, cred)| cred.contains(needle))
 }
 
 /// True iff some surfaced credential under `detector` contains `needle`.
 fn surfaces_under(path: &str, text: &str, detector: &str, needle: &str) -> bool {
-    scan(path, text).iter().any(|(id, cred)| id == detector && cred.contains(needle))
+    scan(path, text)
+        .iter()
+        .any(|(id, cred)| id == detector && cred.contains(needle))
 }
 
 /// True iff NO surfaced credential contains `needle`.
 fn nothing_surfaces(path: &str, text: &str, needle: &str) -> bool {
-    !scan(path, text).iter().any(|(_, cred)| cred.contains(needle))
+    !scan(path, text)
+        .iter()
+        .any(|(_, cred)| cred.contains(needle))
 }
 
 /// PEM private key proven to fire `private-key` unwrapped.
@@ -76,8 +82,7 @@ fn b64url(s: &str) -> String {
 /// jwt.io demo claim (`"sub":"1234567890","name":"John Doe"`), which keyhog
 /// correctly suppresses as `rfc7519_example_jwt` — see the dedicated precision
 /// locks below.
-const REAL_PAYLOAD: &str =
-    r#"{"email":"ops@acme.io","sub":"auth0|65f3a9c1d2b4","scope":"read:billing","iat":1700000000,"exp":1700003600}"#;
+const REAL_PAYLOAD: &str = r#"{"email":"ops@acme.io","sub":"auth0|65f3a9c1d2b4","scope":"read:billing","iat":1700000000,"exp":1700003600}"#;
 /// High-entropy, non-specimen signature (NOT the demo `SflKxw…` signature).
 const REAL_SIG: &str = "Kp7Vb2T9hYR3qZ8mNx4cLwF6aD1sG5jB0eU2iO7tArQ9xZ";
 
@@ -167,7 +172,11 @@ fn jwt_secret_base64_value_surfaces() {
     // (32 random bytes) under JWT_SECRET must surface.
     let sec = "aGVsbG9zZWNyZXR2YWx1ZWZvcmp3dHNpZ25pbmcxMjM0NTY3OA==";
     assert!(
-        surfaces("app.env", &format!("JWT_SECRET={sec}\n"), "aGVsbG9zZWNyZXR2YWx1ZWZvcmp3"),
+        surfaces(
+            "app.env",
+            &format!("JWT_SECRET={sec}\n"),
+            "aGVsbG9zZWNyZXR2YWx1ZWZvcmp3"
+        ),
         "a base64-encoded JWT_SECRET value must surface"
     );
 }
@@ -211,33 +220,48 @@ fn rs256_signing_key_pem_block_surfaces() {
 #[test]
 fn hs256_alg_first_token_surfaces() {
     let t = jwt("HS256");
-    assert!(surfaces_under("h.txt", &t, "jwt-token", &t), "an HS256 JWT must surface as jwt-token");
+    assert!(
+        surfaces_under("h.txt", &t, "jwt-token", &t),
+        "an HS256 JWT must surface as jwt-token"
+    );
 }
 
 #[test]
 fn rs256_alg_token_surfaces() {
     let t = jwt("RS256");
-    assert!(surfaces_under("r.txt", &t, "jwt-token", &t), "an RS256 JWT must surface as jwt-token");
+    assert!(
+        surfaces_under("r.txt", &t, "jwt-token", &t),
+        "an RS256 JWT must surface as jwt-token"
+    );
 }
 
 #[test]
 fn es256_alg_token_surfaces() {
     let t = jwt("ES256");
-    assert!(surfaces_under("e.txt", &t, "jwt-token", &t), "an ES256 JWT must surface as jwt-token");
+    assert!(
+        surfaces_under("e.txt", &t, "jwt-token", &t),
+        "an ES256 JWT must surface as jwt-token"
+    );
 }
 
 #[test]
 fn jwt_in_authorization_bearer_header_surfaces() {
     let t = jwt("HS256");
     let text = format!("Authorization: Bearer {t}\n");
-    assert!(surfaces_under("req.http", &text, "jwt-token", &t), "a Bearer-header JWT must surface");
+    assert!(
+        surfaces_under("req.http", &text, "jwt-token", &t),
+        "a Bearer-header JWT must surface"
+    );
 }
 
 #[test]
 fn jwt_in_json_id_token_field_surfaces() {
     let t = jwt("HS256");
     let text = format!("{{\"id_token\":\"{t}\"}}\n");
-    assert!(surfaces_under("resp.json", &text, "jwt-token", &t), "a JSON id_token JWT must surface");
+    assert!(
+        surfaces_under("resp.json", &text, "jwt-token", &t),
+        "a JSON id_token JWT must surface"
+    );
 }
 
 // ── precision: weak / placeholder signing secrets are correctly suppressed ────

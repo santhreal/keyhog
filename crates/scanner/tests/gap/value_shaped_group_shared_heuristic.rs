@@ -77,3 +77,75 @@ fn two_or_fewer_groups_never_scans_siblings() {
         "with <= 2 total groups the heuristic must not scan for siblings"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin one example per branch; these SWEEP the shared heuristic
+// through real compiled regexes across the variable-name / value-shaped boundary:
+// a variable-name group (`[A-Za-z0-9_]`, ≤64) moves to a value-shaped sibling
+// (non-`\w`, ≥8 bytes); a group already non-variable-name is left unchanged; a
+// var-name group with no value-shaped sibling keeps the original; and a ≤2-group
+// pattern never scans. All assert the resolved BYTE RANGE (Law 6). Traced against
+// `resolve_value_shaped_group` + `looks_like_variable_name`. No proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// A variable-name group falls back to a value-shaped sibling (contains a
+    /// non-`\w` byte AND ≥ 8 bytes).
+    #[test]
+    fn var_name_group_moves_to_value_shaped_sibling(
+        tok1 in "[A-Za-z0-9_]{1,20}",
+        a in "[A-Za-z0-9]{4}",
+        b in "[A-Za-z0-9]{3,20}",
+    ) {
+        let tok2 = format!("{a}-{b}"); // has '-', len >= 8 => value-shaped
+        let text = format!("{tok1} {tok2}");
+        let resolved = resolve(r"(\S+) (\S+)", &text, 1);
+        prop_assert!(resolved.is_some());
+        let (s, e) = resolved.unwrap();
+        prop_assert_eq!(&text[s..e], tok2.as_str());
+    }
+
+    /// A group that is already NOT variable-name shaped is returned unchanged, even
+    /// when a value-shaped sibling exists.
+    #[test]
+    fn non_var_name_group_is_unchanged(
+        a in "[A-Za-z0-9]{2,10}",
+        b in "[A-Za-z0-9]{2,10}",
+        sib in "[A-Za-z0-9]{4}-[A-Za-z0-9]{4}",
+    ) {
+        let tok1 = format!("{a}-{b}"); // has '-' => not variable-name shaped
+        let text = format!("{tok1} {sib}");
+        let resolved = resolve(r"(\S+) (\S+)", &text, 1);
+        prop_assert!(resolved.is_some());
+        let (s, e) = resolved.unwrap();
+        prop_assert_eq!(&text[s..e], tok1.as_str());
+    }
+
+    /// A var-name group whose only sibling is ALSO variable-name shaped (not
+    /// value-shaped) keeps the original group — no spurious move.
+    #[test]
+    fn no_value_shaped_sibling_keeps_original(
+        tok1 in "[A-Za-z0-9_]{1,20}",
+        tok2 in "[A-Za-z0-9_]{1,20}",
+    ) {
+        let text = format!("{tok1} {tok2}");
+        let resolved = resolve(r"(\S+) (\S+)", &text, 1);
+        prop_assert!(resolved.is_some());
+        let (s, e) = resolved.unwrap();
+        prop_assert_eq!(&text[s..e], tok1.as_str());
+    }
+
+    /// With ≤ 2 total groups the heuristic short-circuits and returns the
+    /// configured group unchanged (never scans for siblings).
+    #[test]
+    fn single_group_pattern_never_scans_siblings(value in "[A-Za-z0-9_]{1,20}") {
+        let text = format!("key={value}");
+        let resolved = resolve(r"\w+=(\w+)", &text, 1);
+        prop_assert!(resolved.is_some());
+        let (s, e) = resolved.unwrap();
+        prop_assert_eq!(&text[s..e], value.as_str());
+    }
+}

@@ -129,8 +129,31 @@ def _build_file_index(
     return by_key, aliases
 
 
+def _normalize_path_spelling(path: str) -> str:
+    return path.replace("\\", "/").rstrip("/")
+
+
+def _basename(norm_path: str) -> str:
+    return norm_path.rsplit("/", 1)[-1]
+
+
+def build_basename_index(aliases: dict[str, str]) -> dict[str, list[tuple[str, str]]]:
+    """basename -> [(normalized spelling, canonical key)]. Built ONCE per file
+    index; every non-exact path match (equality, "/"-suffix either direction,
+    basename) preserves the final path component, so a finding only ever needs
+    the candidates sharing its basename — turning the per-finding alias scan
+    from O(all aliases) into O(same-basename aliases)."""
+    index: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for spelling, key in aliases.items():
+        norm = _normalize_path_spelling(spelling)
+        index[_basename(norm)].append((norm, key))
+    return index
+
+
 def _resolve_finding_file(
-    fpath: str, aliases: dict[str, str]
+    fpath: str,
+    aliases: dict[str, str],
+    basename_index: dict[str, list[tuple[str, str]]] | None = None,
 ) -> str | None:
     """Map a finding's file path to a canonical record key. Exact first,
     then unique suffix/basename matching for scanners that report shortened
@@ -138,25 +161,27 @@ def _resolve_finding_file(
     a finding to whichever same-basename file appeared first."""
     if fpath in aliases:
         return aliases[fpath]
-    matches = _resolve_finding_file_candidates(fpath, aliases)
+    matches = _resolve_finding_file_candidates(fpath, aliases, basename_index)
     if len(matches) == 1:
         return next(iter(matches))
     return None
 
 
-def _normalize_path_spelling(path: str) -> str:
-    return path.replace("\\", "/").rstrip("/")
-
-
-def _resolve_finding_file_candidates(fpath: str, aliases: dict[str, str]) -> set[str]:
+def _resolve_finding_file_candidates(
+    fpath: str,
+    aliases: dict[str, str],
+    basename_index: dict[str, list[tuple[str, str]]] | None = None,
+) -> set[str]:
     if fpath in aliases:
         return {aliases[fpath]}
     needle = _normalize_path_spelling(fpath)
     if not needle:
         return set()
+    if basename_index is None:
+        basename_index = build_basename_index(aliases)
+    candidates = basename_index.get(_basename(needle), [])
     tail_matches: set[str] = set()
-    for spelling, key in aliases.items():
-        haystack = _normalize_path_spelling(spelling)
+    for haystack, key in candidates:
         if (
             haystack == needle
             or haystack.endswith("/" + needle)
@@ -165,13 +190,18 @@ def _resolve_finding_file_candidates(fpath: str, aliases: dict[str, str]) -> set
             tail_matches.add(key)
     if tail_matches:
         return tail_matches
-
-    base = needle.rsplit("/", 1)[-1]
-    return {
-        key
-        for spelling, key in aliases.items()
-        if _normalize_path_spelling(spelling).rsplit("/", 1)[-1] == base
-    }
+    # No "/"-anchored suffix match. A finding path that CARRIES directory
+    # structure (contains a "/") but matches no record's path is a file the
+    # corpus simply does not label — e.g. a duplicate-basename doc in a snapshot
+    # whose *other* files are labeled (CredData has 60+ files named
+    # `b3356305.md`). Resolve it to "no record" (empty) so the finding is
+    # skipped, NEVER blamed on the dozens of unrelated same-basename files: that
+    # spurious ambiguity crashed the harvest's exact-path guard. The
+    # same-basename fallback is only meaningful for a scanner that reports a BARE
+    # basename, where the basename is the only disambiguating signal available.
+    if "/" in needle:
+        return set()
+    return {key for _haystack, key in candidates}
 
 
 def _file_category(recs: list[LabeledRecord]) -> str:
@@ -204,10 +234,11 @@ def found_record_ids(
     ``score``) because ``score`` additionally threads per-detector confidence
     bookkeeping that a recall hit-set does not need."""
     by_key, aliases = _build_file_index(records, file_root)
+    basename_index = build_basename_index(aliases)
     found: set[str] = set()
     for f in findings:
         fpath = f.get("file") or ""
-        key = _resolve_finding_file(fpath, aliases) if fpath else None
+        key = _resolve_finding_file(fpath, aliases, basename_index) if fpath else None
         if key is None:
             continue
         value = f.get("value") or ""
@@ -248,6 +279,7 @@ def score(
     per_det: dict[str, DetectorStat] = defaultdict(DetectorStat)
 
     by_key, aliases = _build_file_index(records, file_root)
+    basename_index = build_basename_index(aliases)
     hit_ids: set[str] = set()
     # record id -> {detector_id: max confidence of a finding that caught it}
     record_hits: dict[str, dict[str, float | None]] = defaultdict(dict)
@@ -257,7 +289,7 @@ def score(
         detector = f.get("detector") or ""
         conf = f.get("confidence")
         fpath = f.get("file") or ""
-        key = _resolve_finding_file(fpath, aliases) if fpath else None
+        key = _resolve_finding_file(fpath, aliases, basename_index) if fpath else None
         if key is None:
             # Finding on a file with no record at all -> false positive.
             fp_total += 1

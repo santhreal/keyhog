@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 82a869048995a16f06c838f75fae9aee21ffa96e85c7b0cb11bb6cfb5fbcfce7 # shrinks to body = "aa0A0Aa00a000AaaaaAaaAa0BwHUJa015LfJ", quote_style = 1, with_comment = false, comment_text = "06iuU1OV a NX", var_name = "RLW_ZGPTIC_F__SA"
+cc 9f804e834e3b792bb864e0b9458e09d829f2434bd75948dd618fe1422f094d8d # shrinks to body = "aaA00AAAaAAaAaa0aa0Wto9M711Vu7PBMa0X", var_name = "QJOY_F"

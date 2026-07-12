@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "verceEXAMPLEEXAMPLELSvNU"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# vercel deploy (rotate): vercel_v2_cAOp9dzV2rgZio80vbSLSvNU"
+credential = "vercel_v2_cAOp9dzV2rgZio80vbSLSvNU"
+reason = "Commented-out token; the vercel_v2_ prefix anchor surfaces the token with no keyword=value assignment."

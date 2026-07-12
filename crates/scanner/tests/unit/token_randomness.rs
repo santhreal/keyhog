@@ -47,7 +47,10 @@ fn lowercase_random_token_is_not_dictionary_word() {
             !is_confident_dictionary_word(token),
             "{token} is a random token, not a confident dictionary word"
         );
-        assert!(is_random_token(token), "{token} must read as a random token");
+        assert!(
+            is_random_token(token),
+            "{token} must read as a random token"
+        );
     }
 }
 
@@ -133,11 +136,11 @@ fn genuine_random_passwords_clear_the_diversity_floor() {
     // The recall the family must KEEP: a real short/low-alpha password has ≥ 3
     // distinct letters and must NOT be flagged as a low-diversity mask.
     for pw in [
-        "i8cr1w!",           // 4 distinct letters (i,c,r,w) — the recovery case
-        "pxidztpv",          // userinfo random
-        "argriyjqr",         // SQL IDENTIFIED BY random
-        "Rcuhxw1486",        // PowerShell -Password random
-        "Qx7Kp2Vn9Rm4Lt8w",  // long mixed random
+        "i8cr1w!",          // 4 distinct letters (i,c,r,w) — the recovery case
+        "pxidztpv",         // userinfo random
+        "argriyjqr",        // SQL IDENTIFIED BY random
+        "Rcuhxw1486",       // PowerShell -Password random
+        "Qx7Kp2Vn9Rm4Lt8w", // long mixed random
     ] {
         assert!(
             !has_low_letter_diversity(pw),
@@ -181,8 +184,14 @@ fn evidence_counts_distinct_letters_case_insensitively() {
     // `aAbBcC` folds to three distinct letters; the diversity floor sees 3.
     assert_eq!(RandomTokenEvidence::analyze("aAbBcC").distinct_letters(), 3);
     assert_eq!(RandomTokenEvidence::analyze("aabbcc").distinct_letters(), 3);
-    assert_eq!(RandomTokenEvidence::analyze("xxxxxxxx").distinct_letters(), 1);
-    assert_eq!(RandomTokenEvidence::analyze("12345678").distinct_letters(), 0);
+    assert_eq!(
+        RandomTokenEvidence::analyze("xxxxxxxx").distinct_letters(),
+        1
+    );
+    assert_eq!(
+        RandomTokenEvidence::analyze("12345678").distinct_letters(),
+        0
+    );
 }
 
 #[test]
@@ -190,16 +199,22 @@ fn evidence_mean_bigram_logprob_is_none_below_min_alpha() {
     // Fewer than MIN_ALPHA alphabetic chars ⇒ the model abstains (None), the
     // fail-safe that keeps the predicates from judging a too-short token.
     assert_eq!("abcde".len(), MIN_ALPHA - 1);
-    assert!(RandomTokenEvidence::analyze("abcde").mean_bigram_logprob().is_none());
+    assert!(RandomTokenEvidence::analyze("abcde")
+        .mean_bigram_logprob()
+        .is_none());
     // Digits break the alphabetic run, so they do not count toward MIN_ALPHA.
-    assert!(RandomTokenEvidence::analyze("a1b2c3").mean_bigram_logprob().is_none());
+    assert!(RandomTokenEvidence::analyze("a1b2c3")
+        .mean_bigram_logprob()
+        .is_none());
 }
 
 #[test]
 fn evidence_mean_bigram_logprob_is_some_at_min_alpha() {
     // At MIN_ALPHA contiguous letters the model produces a score.
     assert_eq!("secret".len(), MIN_ALPHA);
-    assert!(RandomTokenEvidence::analyze("secret").mean_bigram_logprob().is_some());
+    assert!(RandomTokenEvidence::analyze("secret")
+        .mean_bigram_logprob()
+        .is_some());
 }
 
 #[test]
@@ -226,7 +241,10 @@ fn dictionary_words_are_not_random_tokens() {
     // treated as a random token, or the identifier gates would lift real code
     // references back into findings.
     for word in ["password", "username", "welcome"] {
-        assert!(!is_random_token(word), "{word} is English, not a random token");
+        assert!(
+            !is_random_token(word),
+            "{word} is English, not a random token"
+        );
     }
 }
 
@@ -238,10 +256,16 @@ fn token_randomness_cached_verdict_matches_direct_predicate() {
     // value must return the cached verdict, and querying a DIFFERENT value must
     // recompute — both agreeing byte-for-byte with the free `is_random_token`.
     let randomness = TokenRandomness::for_candidate("pxidztpv");
-    assert_eq!(randomness.is_random_token("pxidztpv"), is_random_token("pxidztpv"));
+    assert_eq!(
+        randomness.is_random_token("pxidztpv"),
+        is_random_token("pxidztpv")
+    );
     assert!(randomness.is_random_token("pxidztpv"));
     // Different value ⇒ recomputed path, still correct.
-    assert_eq!(randomness.is_random_token("password"), is_random_token("password"));
+    assert_eq!(
+        randomness.is_random_token("password"),
+        is_random_token("password")
+    );
     assert!(!randomness.is_random_token("password"));
 }
 

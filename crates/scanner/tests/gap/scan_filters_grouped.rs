@@ -23,18 +23,7 @@ use std::sync::OnceLock;
 
 // ── Test harness ────────────────────────────────────────────────────────────
 
-/// Absolute path to the on-disk Tier-B detector TOML directory, derived from
-/// `CARGO_MANIFEST_DIR` (the scanner crate root) the same way the shipped
-/// `tests/support/paths.rs` helper does. Self-contained so this module can be
-/// included from the `tests/gaps.rs` aggregator without a `mod support;`.
-fn detector_dir() -> std::path::PathBuf {
-    let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
-
+use crate::support::paths::detector_dir;
 /// Compile the full real detector set exactly once for the whole module.
 /// Compilation walks ~894 TOML files; sharing it keeps the suite fast.
 fn scanner() -> &'static CompiledScanner {

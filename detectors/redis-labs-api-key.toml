@@ -8,7 +8,10 @@ id = "redis-labs-api-key"
 name = "Redis Labs API Key"
 service = "redis"
 severity = "high"
-keywords = ["x-api-key", "redislabs", "redis_labs", "REDIS_LABS", "api.redislabs", "REDIS_API_KEY", "redis_api_key"]
+# "x-api-key" removed: over-broad generic prefilter(s) the regex does NOT need — every
+# pattern requires the service name as a leading anchor (kept), present in any real
+# match and thus also the keyword_nearby signal. Verified recall-neutral.
+keywords = ["redislabs", "redis_labs", "REDIS_LABS", "api.redislabs", "REDIS_API_KEY", "redis_api_key"]
 
 [[detector.patterns]]
 regex = "(?:REDIS|redis|REDISLABS|redislabs).{0,20}(?:API_KEY|api_key|api-key|key).{0,5}[=:\\s\"']+([a-f0-9]{32})"

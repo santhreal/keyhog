@@ -130,7 +130,7 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
             if stale {
                 let palette = style::for_stderr();
                 eprintln!(
-                    "{} this daemon is running keyhog {} but you are on {} — it holds an \
+                    "{} this daemon is running keyhog {} but you are on {}: it holds an \
                      OLDER detector corpus and the scan route will BYPASS it (run \
                      in-process) until you restart it: `keyhog daemon stop && keyhog \
                      daemon start`.",

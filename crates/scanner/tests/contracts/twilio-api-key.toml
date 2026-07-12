@@ -31,6 +31,15 @@ reason = "API key alone — required secret companion missing."
 text = "TWILIO_API_SECRET=7a2c4e6f8b1d3a5c7e9f2b4d6a8c1e3f"
 reason = "Secret alone — no SK primary pattern."
 
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = '''# staging creds dumped to build log 2024-11-03, rotate asap:
+#   TWILIO_API_KEY=SK3d5f7b9c1e2a4d6f8b0c2e4a6d8f1b3c
+#   TWILIO_API_SECRET=7a2c4e6f8b1d3a5c7e9f2b4d6a8c1e3f'''
+credential = "SK3d5f7b9c1e2a4d6f8b0c2e4a6d8f1b3c"
+reason = "The SK key and its REQUIRED `TWILIO_API_SECRET` companion, both commented-out in a leaked config dump within the 3-line proximity window — the companion requirement is satisfied inside the comment block, and the neutral `rotate`/`staging` words must not trip the placeholder gate."
+
 [perf]
 fixture_bytes = 4096
 max_microseconds = 25000

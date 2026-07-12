@@ -15,8 +15,7 @@ import string
 from collections.abc import Iterator
 from typing import Callable
 
-B62 = string.ascii_letters + string.digits
-HEX = string.hexdigits.lower()
+from alphabets import B62, HEX  # noqa: E402
 
 
 def _rand_chars(rnd: random.Random, alphabet: str, length: int) -> str:

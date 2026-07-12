@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "X-AUTH-CLIENT:':  ;\" bd3e5EXAMPLEEXAMPLE1dfed"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# veriff client (rotate): veriff=bd3e5ab3-5b99-d7d5-9427-3a5531a1dfed"
+credential = "bd3e5ab3-5b99-d7d5-9427-3a5531a1dfed"
+reason = "Commented-out config; the veriff keyword + short separator surfaces the UUID client key."

@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "USPS_USER=prEZZ__EXAMPLE"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# USPS_USER=prEZZ_  # shipping"
+credential = "prEZZ_"
+reason = "Commented-out config; USPS_USER keyword + short user id intact inside the comment."

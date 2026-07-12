@@ -340,20 +340,6 @@ impl MerkleIndex {
         *blake3::hash(content).as_bytes()
     }
 
-    /// Record one observed chunk and return `true` when it matched the
-    /// previously indexed content hash. This is the production incremental
-    /// scan contract: callers provide the path, stat metadata, and bytes they
-    /// already read; the index owns hashing, skip classification, and update.
-    pub fn record_chunk_and_check_unchanged(
-        &self,
-        path: PathBuf,
-        mtime_ns: u64,
-        size: u64,
-        content: &[u8],
-    ) -> bool {
-        self.record_chunk_at_offset_and_check_unchanged(path, 0, mtime_ns, size, content)
-    }
-
     /// Record one observed chunk at its absolute byte offset and return `true`
     /// when the same `(path, chunk_offset)` previously held the same content.
     pub fn record_chunk_at_offset_and_check_unchanged(
@@ -401,14 +387,16 @@ impl MerkleIndex {
     /// content hash. Kept for callers that already have the hash in hand
     /// (e.g. the orchestrator's chunk-level skip path).
     pub(crate) fn unchanged(&self, path: &Path, content_hash: &[u8; 32]) -> bool {
-        self.unchanged_key(&CacheKey::file(path.to_path_buf()), content_hash)
-    }
-
-    fn unchanged_key(&self, key: &CacheKey, content_hash: &[u8; 32]) -> bool {
-        let i = shard_index(&key.path);
+        // perf: borrow the path via CacheKeyRef (zero-alloc Equivalent lookup,
+        // same as the write path at `record_*`) instead of allocating a
+        // CacheKey::file(path.to_path_buf()) on every chunk-level skip check.
+        let i = shard_index(path);
         self.shards[i]
             .read()
-            .get(key)
+            .get(&CacheKeyRef {
+                path,
+                chunk_offset: 0,
+            })
             .is_some_and(|prev| &prev.hash == content_hash)
     }
 
@@ -418,11 +406,15 @@ impl MerkleIndex {
     /// A `false` return means "either we've never seen this path, or
     /// metadata differs - caller must read + hash to decide."
     pub fn metadata_unchanged(&self, path: &Path, mtime_ns: u64, size: u64) -> bool {
-        let key = CacheKey::file(path.to_path_buf());
+        // perf: this is the per-file fast-path skip (dominant cold-cache cost);
+        // borrow the path via CacheKeyRef so it never allocates a PathBuf.
         let i = shard_index(path);
         self.shards[i]
             .read()
-            .get(&key)
+            .get(&CacheKeyRef {
+                path,
+                chunk_offset: 0,
+            })
             .is_some_and(|prev| prev.mtime_ns == mtime_ns && prev.size == size)
     }
 
@@ -431,11 +423,14 @@ impl MerkleIndex {
     /// verifiers that want to confirm content didn't change even when
     /// metadata happens to match.
     pub(crate) fn lookup(&self, path: &Path) -> Option<(u64, u64, [u8; 32])> {
-        let key = CacheKey::file(path.to_path_buf());
+        // perf: zero-alloc borrowed lookup (see `metadata_unchanged`).
         let i = shard_index(path);
         self.shards[i]
             .read()
-            .get(&key)
+            .get(&CacheKeyRef {
+                path,
+                chunk_offset: 0,
+            })
             .map(|e| (e.mtime_ns, e.size, e.hash))
     }
 

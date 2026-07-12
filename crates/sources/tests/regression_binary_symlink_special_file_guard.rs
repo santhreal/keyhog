@@ -51,7 +51,9 @@ const SENTINEL_B: &str = "KEYHOG_SECOND_SENTINEL_b7c2d4e6";
 /// Poison is recovered (`into_inner`) so a single failing assert isolates to that
 /// test instead of cascading `PoisonError` through the rest of the binary.
 fn guarded() -> MutexGuard<'static, ()> {
-    let guard = COUNTER_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+    let guard = COUNTER_LOCK
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
     reset_binary_counters();
     TestApi.reset_skip_counters();
     guard
@@ -79,7 +81,11 @@ fn make_fifo(path: &Path) {
         .arg(path)
         .status()
         .expect("spawn mkfifo");
-    assert!(status.success(), "mkfifo failed to create {}", path.display());
+    assert!(
+        status.success(),
+        "mkfifo failed to create {}",
+        path.display()
+    );
 }
 
 /// Collect the binary source's emitted rows for `path` (strings-only, so the
@@ -89,7 +95,11 @@ fn scan_rows(path: PathBuf) -> Vec<Result<keyhog_core::Chunk, keyhog_core::Sourc
 }
 
 fn assert_refused(rows: &[Result<keyhog_core::Chunk, keyhog_core::SourceError>], what: &str) {
-    assert_eq!(rows.len(), 1, "{what} must surface exactly one source error row");
+    assert_eq!(
+        rows.len(),
+        1,
+        "{what} must surface exactly one source error row"
+    );
     let err = rows[0]
         .as_ref()
         .err()
@@ -232,8 +242,16 @@ fn binary_fifo_refusal_counts_one_unreadable() {
     let fifo_for_worker = fifo.clone();
     let rows = within_timeout(10, move || scan_rows(fifo_for_worker));
     assert_refused(&rows, "a FIFO binary target");
-    assert_eq!(binary_unreadable(), 1, "a refused FIFO must count one unreadable drop");
-    assert_eq!(skip_counts().unreadable, 1, "and flow through the shared skip snapshot");
+    assert_eq!(
+        binary_unreadable(),
+        1,
+        "a refused FIFO must count one unreadable drop"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "and flow through the shared skip snapshot"
+    );
     drop(dir);
 }
 
@@ -246,7 +264,11 @@ fn binary_symlink_refusal_counts_one_unreadable() {
     let link = dir.path().join("link.bin");
     symlink(&target, &link).unwrap();
     assert_refused(&scan_rows(link), "a symlinked binary");
-    assert_eq!(binary_unreadable(), 1, "a refused symlink must count one unreadable drop");
+    assert_eq!(
+        binary_unreadable(),
+        1,
+        "a refused symlink must count one unreadable drop"
+    );
     assert_eq!(skip_counts().unreadable, 1);
 }
 
@@ -269,7 +291,10 @@ fn binary_dev_zero_is_refused_as_unreadable_not_streamed() {
     // so this `binary_unreadable() == 1` assertion is the crisp lock on the fix.
     let _g = guarded();
     let zero = PathBuf::from("/dev/zero");
-    assert!(zero.exists(), "/dev/zero is missing on this host — cannot validate device refusal");
+    assert!(
+        zero.exists(),
+        "/dev/zero is missing on this host — cannot validate device refusal"
+    );
     let rows = within_timeout(10, move || scan_rows(zero));
     assert_refused(&rows, "the /dev/zero character device");
     assert_eq!(
@@ -307,7 +332,11 @@ fn binary_symlink_to_unix_socket_is_refused() {
     let link = dir.path().join("link.bin");
     symlink(&sock, &link).unwrap();
     assert_refused(&scan_rows(link), "a symlink-to-socket binary target");
-    assert_eq!(binary_unreadable(), 1, "a symlink-to-socket refusal counts one unreadable drop");
+    assert_eq!(
+        binary_unreadable(),
+        1,
+        "a symlink-to-socket refusal counts one unreadable drop"
+    );
 }
 
 // ── error-message quality (UX): the refusal names the path ──────────────────
@@ -340,12 +369,19 @@ fn real_regular_binary_secret_surfaces() {
 
     let rows = scan_rows(bin);
     let (chunks, errors) = split_chunk_results(&rows);
-    assert!(errors.is_empty(), "a real regular binary must not error; got {errors:?}");
+    assert!(
+        errors.is_empty(),
+        "a real regular binary must not error; got {errors:?}"
+    );
     assert!(
         chunks.iter().any(|c| c.data.contains(SENTINEL)),
         "the embedded printable string must still be extracted after the safe-open change"
     );
-    assert_eq!(binary_unreadable(), 0, "a readable binary must NOT be counted unreadable");
+    assert_eq!(
+        binary_unreadable(),
+        0,
+        "a readable binary must NOT be counted unreadable"
+    );
 }
 
 #[test]
@@ -411,5 +447,9 @@ fn real_regular_binary_does_not_count_skip() {
     let bin = dir.path().join("clean.bin");
     std::fs::write(&bin, format!("body_{SENTINEL}_end").as_bytes()).unwrap();
     let _rows = scan_rows(bin);
-    assert_eq!(skip_counts().unreadable, 0, "a clean regular binary records no unreadable gap");
+    assert_eq!(
+        skip_counts().unreadable,
+        0,
+        "a clean regular binary records no unreadable gap"
+    );
 }

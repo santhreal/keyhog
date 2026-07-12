@@ -25,8 +25,11 @@ the Hyperscan runtime: <code>sudo apt-get install -y libhyperscan5</code>
 
 <pre><code><span class="prompt">$</span> iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -useb | iex</code></pre>
 
-<p>Drops <code>keyhog.exe</code> in <code>%LOCALAPPDATA%\keyhog\bin</code>
-and adds it to your <code>PATH</code>.</p>
+<p>Drops <code>keyhog.exe</code> in <code>%LOCALAPPDATA%\keyhog\bin</code> and
+persists that directory to your User <code>PATH</code> (open a new shell to
+pick it up). An interactive run prompts first; the <code>-Yes</code> and piped
+<code>iex</code> forms auto-approve the PATH entry rather than leaving the
+binary installed-but-unrunnable.</p>
 
 <h3>GPU selection</h3>
 
@@ -37,6 +40,40 @@ runs SIMD on the CPU path. If you have the full CUDA toolkit installed
 <a href="performance.html">Performance →</a>. An explicit CUDA request fails
 closed if the CUDA release asset is missing; only auto-selected CUDA hosts may
 fall back to the WGPU + SIMD asset.</p>
+
+<h3>Integrity &amp; verification</h3>
+
+<p>Every downloaded asset is verified <em>before</em> it replaces your binary:
+each release carries a minisign signature (pinned public key) and a SHA-256
+checksum, and the GPU literal sidecar is verified and hardened against path
+traversal / symlink escapes. A bad signature or checksum is always fatal.
+Missing proof also fails closed unless you explicitly pass
+<code>--insecure</code> (<code>-Insecure</code> on Windows) for an emergency
+install; the installer prints a loud warning when you do.</p>
+
+<h3>Offline / air-gapped install</h3>
+
+<p>Point the installer at a pre-downloaded asset and its sibling
+<code>.sha256</code> (and GPU sidecar) instead of fetching from GitHub:</p>
+
+<pre><code><span class="prompt">$</span> ./install.sh --from-file=/path/to/keyhog-linux-x86_64</code></pre>
+
+<h3>Maintenance modes</h3>
+
+<p>The same script manages the whole lifecycle (mirrored on Windows as
+<code>-Repair</code>, <code>-Diagnose</code>, <code>-Calibrate</code>,
+<code>-Uninstall</code>):</p>
+
+<pre><code><span class="prompt">$</span> ./install.sh --repair      <span class="c"># re-download a known-good binary, then verify</span>
+<span class="prompt">$</span> ./install.sh --diagnose    <span class="c"># health report (defers to `keyhog doctor`)</span>
+<span class="prompt">$</span> ./install.sh --calibrate   <span class="c"># re-run the autoroute backend calibration only</span>
+<span class="prompt">$</span> ./install.sh --uninstall   <span class="c"># remove the binary + installer-owned shell/PATH edits</span></code></pre>
+
+<p>On a full build the installer runs a visible autoroute calibration phase at
+the end (it measures each eligible backend, proves finding parity, and records
+the fastest correct choice); portable single-backend builds have nothing to
+route and skip it. See
+<a href="architecture.html">Architecture →</a>.</p>
 
 <h3>Minimal source build (no SIMD, no ML)</h3>
 

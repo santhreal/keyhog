@@ -226,7 +226,7 @@ keyhog:
     - curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
     - export PATH="$HOME/.local/bin:$PATH"
   script:
-    - keyhog scan . --format json -o keyhog.json --min-confidence 0.3
+    - keyhog scan . --format gitlab-sast -o keyhog.json --min-confidence 0.3
     - keyhog scan . --severity high --min-confidence 0.5
   artifacts:
     when: always
@@ -434,21 +434,6 @@ For directory-tree / git / docker walking, drive `keyhog-sources`
 or shell out to the CLI - `CompiledScanner` is one chunk at a time
 by design.
 
-When configuration can contain user or file input, install it through the
-result-returning validation boundary:
-
-```rust
-use keyhog_scanner::{CompiledScanner, ScannerConfig};
-
-let mut config = ScannerConfig::default();
-config.entropy_bpe_max_bytes_per_token = 2.3;
-let scanner = CompiledScanner::compile(specs)?.try_with_config(config)?;
-```
-
-`try_with_config` rejects invalid probabilities, entropy/BPE bounds, decode
-depth, and resource limits. `with_config` is the compatibility builder for
-configuration that the embedding application has already validated.
-
 For finer-grained control of individual detector features:
 
 ```toml
@@ -558,14 +543,17 @@ See [keyhogignore-toml.md](keyhogignore-toml.md) for the full schema.
 - `0` - no findings
 - `1` - findings at or above `--severity` / `--min-confidence`
 - `2` - user error (bad flag, missing/unreadable path, config error)
+- `3` - system error (local environment failure: low-level I/O, or GPU/hardware init)
 - `10` - live credentials confirmed (only under `--verify`)
 - `11` - scanner thread panicked mid-scan (state unreliable)
 - `12` - required GPU unavailable
 - `13` - requested source failed or input coverage was incomplete
+- `130` - interrupted (SIGINT / Ctrl-C)
 
 CI gates should treat `exit 1` and `exit 10` as build-blocking scan
-outcomes. `exit 2`, `exit 12`, and `exit 13` are operator/configuration
-problems to surface to the on-call.
+outcomes. `exit 2`, `exit 3`, `exit 12`, and `exit 13` are operator/configuration
+problems to surface to the on-call. `exit 130` means the run was interrupted
+(SIGINT / Ctrl-C) and should be retried, not treated as a clean pass.
 
 ---
 

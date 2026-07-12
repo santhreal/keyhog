@@ -22,6 +22,15 @@ fn canonicalize_for_shadow_check(path: std::path::PathBuf) -> std::path::PathBuf
     std::fs::canonicalize(&path).unwrap_or(path) // LAW10: canonicalize failure => original path for reporting-only PATH-shadow diagnostic; recall-safe
 }
 
+/// True iff `dir` is one of the entries in `pathvar`, comparing CANONICAL forms
+/// so a trailing-slash / symlinked / `.`-relative PATH entry
+/// (`~/.local/bin/` vs `~/.local/bin`) still matches. Pure over its inputs so the
+/// normalization contract is unit-testable without mutating the process PATH.
+fn dir_is_on_path(dir: &std::path::Path, pathvar: &std::ffi::OsStr) -> bool {
+    let target = canonicalize_for_shadow_check(dir.to_path_buf());
+    std::env::split_paths(pathvar).any(|d| canonicalize_for_shadow_check(d) == target)
+}
+
 fn current_exe_for_shadow_check() -> Option<std::path::PathBuf> {
     std::env::current_exe()
         .ok() // LAW10: unavailable executable path => omit reporting-only shadow comparison; recall-safe
@@ -80,7 +89,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
             // still fire here; only the no-keyword bare-shape case is affected.
             format!(
                 "{yellow}absent{reset}  keyword-anchored detection preserved via the \
-                 regex fallback; bare context-less tokens have reduced coverage — \
+                 regex fallback; bare context-less tokens have reduced coverage, \
                  install the simd/full build for complete recall"
             )
         }
@@ -92,8 +101,14 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
         Ok(exe) => {
             println!("  binary         {}", exe.display());
             if let Some(dir) = exe.parent() {
+                // Canonicalize BOTH the install dir and each PATH entry before
+                // comparing, so a trailing-slash / symlinked / `.`-relative PATH
+                // entry (`~/.local/bin/` vs `~/.local/bin`) is not a false "on
+                // PATH: no". The raw `d == dir` string compare missed those and
+                // disagreed with the installer's normalized `Test-PathContainsDir`
+                // and the shadow check below (which already canonicalizes).
                 let on_path = std::env::var_os("PATH")
-                    .map(|p| std::env::split_paths(&p).any(|d| d == dir))
+                    .map(|p| dir_is_on_path(dir, &p))
                     .unwrap_or(false); // LAW10: empty/absent => documented numeric default, recall-safe
                 if on_path {
                     println!("  on PATH        {green}yes{reset}");
@@ -197,14 +212,14 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
         );
     } else if !autoroute.present {
         println!(
-            "  calibration    {dim}not calibrated — run `keyhog calibrate-autoroute` (or `install.sh --calibrate` / `install.ps1 -Calibrate`), or scan with an explicit `--backend`{reset}"
+            "  calibration    {dim}not calibrated: run `keyhog calibrate-autoroute` (or `install.sh --calibrate` / `install.ps1 -Calibrate`), or scan with an explicit `--backend`{reset}"
         );
     } else {
         let decisions: usize = autoroute.configs.iter().map(|c| c.decision_count).sum();
         if autoroute.identity_matches_build == Some(false) {
             warned = true;
             println!(
-                "  calibration    {yellow}STALE{reset}  {dim}cache is for a different build; auto scans will reject it — re-run `keyhog calibrate-autoroute` or `install.sh --calibrate`{reset}"
+                "  calibration    {yellow}STALE{reset}  {dim}cache is for a different build; auto scans will reject it, re-run `keyhog calibrate-autoroute` or `install.sh --calibrate`{reset}"
             );
         } else {
             println!(
@@ -285,7 +300,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
                 if known_lowering_gap {
                     warned = true;
                     println!(
-                        "  gpu literal    {}  vyre literal-set path has a known lowering limitation; scans use the AC kernel path checked above.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
+                        "  gpu literal    {}  vyre literal-set path has a known lowering limitation (the canonical pre-emit lowering rejects the subgroup_ballot form append_match_subgroup emits, surfacing as `_vyre_match_leader is referenced before binding`); scans use the AC kernel path checked above.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
                         style::warn("WARN", &palette)
                     );
                 } else {
@@ -317,7 +332,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
                 if parity_degrade {
                     warned = true;
                     println!(
-                        "  gpu moe path   {}  GPU MoE shader diverges from CPU reference; GPU ML acceleration is disabled on this host and scoring uses the deterministic CPU MoE path.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
+                        "  gpu moe path   {}  GPU MoE shader diverges from the CPU MoE reference; GPU ML acceleration is disabled on this host and scoring uses the deterministic CPU MoE path.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
                         style::warn("WARN", &palette)
                     );
                 } else {
@@ -357,3 +372,9 @@ pub(crate) mod testing {
         super::canonicalize_for_shadow_check(path)
     }
 }
+
+// PATH-membership unit tests live in a sibling `doctor/tests.rs` module (not an
+// inline `#[cfg(test)] mod {}` block) so the KH-GAP-004 `no_inline_tests_in_src`
+// gate stays green.
+#[cfg(test)]
+mod tests;

@@ -1,9 +1,8 @@
-//! Reference-backend determinism: explicit SIMD coalescing must return a byte-identical
+//! Reference-backend determinism: `scan_coalesced` must return a byte-identical
 //! canonical match set on every call over the SAME fixed chunk set.
 //!
 //! This is the contract autoroute calibration relies on (`measure_reference_simd`
-//! runs `scan_coalesced_with_backend(..., SimdCpu)` over a fixed sample for
-//! `AUTOROUTE_CALIBRATION_TRIALS`
+//! runs `scan_coalesced` over a fixed sample for `AUTOROUTE_CALIBRATION_TRIALS`
 //! and aborts the whole routing decision if any trial's `canonical_matches`
 //! differ — "reference backend produced inconsistent calibration results"). On a
 //! high-core host that abort broke `install.sh --calibrate`. A single-threaded
@@ -23,7 +22,6 @@ mod support;
 use std::collections::BTreeSet;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::ScanBackend;
 
 /// One fully-comparable projection of a `RawMatch`, mirroring the calibration's
 /// `CanonicalMatch` tuple (chunk index, detector, credential hash, file, line,
@@ -63,7 +61,7 @@ fn fixed_chunks() -> Vec<Chunk> {
                 data: text.into(),
                 metadata: ChunkMetadata {
                     source_type: "ref-determinism".into(),
-                    path: Some(path.to_string_lossy().into_owned()),
+                    path: Some(path.to_string_lossy().into_owned().into()),
                     ..Default::default()
                 },
             });
@@ -112,7 +110,7 @@ fn fixed_chunks() -> Vec<Chunk> {
                 data: text.into(),
                 metadata: ChunkMetadata {
                     source_type: "ref-determinism".into(),
-                    path: Some(label),
+                    path: Some(label.into()),
                     ..Default::default()
                 },
             });
@@ -127,7 +125,7 @@ fn fixed_chunks() -> Vec<Chunk> {
 }
 
 #[test]
-fn simd_coalesced_is_deterministic_across_trials() {
+fn scan_coalesced_is_deterministic_across_trials() {
     let scanner = support::compile_full_detector_scanner();
     let chunks = fixed_chunks();
 
@@ -138,15 +136,11 @@ fn simd_coalesced_is_deterministic_across_trials() {
     const TRIALS: usize = 40;
 
     scanner.clear_fragment_cache();
-    let reference = canonical(
-        &scanner.scan_coalesced_with_backend(&chunks, ScanBackend::SimdCpu),
-    );
+    let reference = canonical(&scanner.scan_coalesced(&chunks));
 
     for trial in 1..TRIALS {
         scanner.clear_fragment_cache();
-        let got = canonical(
-            &scanner.scan_coalesced_with_backend(&chunks, ScanBackend::SimdCpu),
-        );
+        let got = canonical(&scanner.scan_coalesced(&chunks));
         if got != reference {
             let only_ref: Vec<&Record> = reference.difference(&got).collect();
             let only_got: Vec<&Record> = got.difference(&reference).collect();

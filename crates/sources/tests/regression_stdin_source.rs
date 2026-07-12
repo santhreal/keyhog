@@ -166,7 +166,7 @@ fn stdin_child_default_source_single_chunk() {
     };
 
     assert_eq!(&*chunk.data, expected.as_str());
-    assert_eq!(chunk.metadata.source_type, "stdin");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "stdin");
     assert_eq!(chunk.metadata.base_offset, 0);
     assert_eq!(chunk.metadata.base_line, 0);
     assert_eq!(chunk.metadata.path, None);

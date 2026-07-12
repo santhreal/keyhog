@@ -151,7 +151,10 @@ fn single_long_rsa_block_matches_github_app() {
         1,
         "a real ≥200B RSA key must still match the detector exactly once; got {creds:?}"
     );
-    assert!(creds[0].contains("LONGKEY1"), "the match captures the real key body");
+    assert!(
+        creds[0].contains("LONGKEY1"),
+        "the match captures the real key body"
+    );
 }
 
 #[test]
@@ -192,7 +195,11 @@ fn two_adjacent_long_rsa_blocks_match_as_two_separate_keys() {
             "each match is a single block: {cred:?}"
         );
     }
-    assert_eq!(creds.len(), 2, "two distinct long keys → two distinct matches; got {creds:?}");
+    assert_eq!(
+        creds.len(),
+        2,
+        "two distinct long keys → two distinct matches; got {creds:?}"
+    );
 }
 
 #[test]
@@ -228,11 +235,40 @@ fn long_block_between_two_short_blocks_matches_only_the_long_one() {
         short_block("RSA PRIVATE KEY", "POSTSHT1")
     );
     let creds = github_app_credentials(&text);
-    assert_eq!(creds.len(), 1, "only the long middle key matches; got {creds:?}");
+    assert_eq!(
+        creds.len(),
+        1,
+        "only the long middle key matches; got {creds:?}"
+    );
     assert!(creds[0].contains("MIDLONG1"));
     assert!(
         !creds[0].contains("PRESHRT1") && !creds[0].contains("POSTSHT1"),
         "the long-key match must not reach into the short neighbors: {:?}",
         creds[0]
+    );
+}
+
+/// DR-329 CONSOLIDATION GUARD — the PEM armor marker `-----BEGIN` is detection
+/// signal (the load-bearing prefix of the private-key detector patterns). Scanner
+/// logic also keys off it in two places — the suppression carve-out
+/// (`suppression/decision.rs`, so a PEM body is not masking-pattern suppressed)
+/// and the entropy plausibility gate (`entropy/plausibility.rs`). Those were two
+/// bare `"-----BEGIN"` literals free to drift; they now share the single owner
+/// `credential_shapes::PEM_BEGIN_MARKER` via `is_pem_block`. This binds that
+/// const to its authoritative detector so it can never diverge from the pattern
+/// that actually surfaces a PEM key. (Lives HERE — a regression file
+/// `#[path]`-included in `all_tests`, which CI runs via `--test all_tests` — not
+/// in `pem_private_key_recall_64.rs`, which is a CI-orphan; see DR-334.)
+#[test]
+fn pem_begin_marker_is_backed_by_the_private_key_detector() {
+    let marker = keyhog_scanner::testing::pem_begin_marker();
+    let path = detector_dir().join("private-key.toml");
+    let toml = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read private-key detector {}: {e}", path.display()));
+    assert!(
+        toml.contains(marker),
+        "PEM marker {marker:?} (credential_shapes::PEM_BEGIN_MARKER) is absent from its \
+         authoritative private-key.toml pattern — the single-owner const drifted from the \
+         detector that surfaces a PEM key"
     );
 }

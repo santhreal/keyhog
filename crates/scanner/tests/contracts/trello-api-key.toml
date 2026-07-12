@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "TRELLO_API_KEY=f351eEXAMPLEEXAMPLE10f77"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# TRELLO_API_KEY=f351ef9f096d298e7f030fc4d5410f77  # legacy board integration, rotate before prod"
+credential = "f351ef9f096d298e7f030fc4d5410f77"
+reason = "Commented-out key line with a trailing inline comment; the TRELLO_API_KEY keyword and 32-hex value are intact inside the comment, and neutral legacy/rotate words do not trip the placeholder gate."

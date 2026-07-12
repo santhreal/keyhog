@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "TRELLO_API_TOKEN=ViHrrEXAMPLEEXAMPLEvR05_"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# TRELLO_API_TOKEN=ViHrr2Iq7a43W4O4uE_6NJW5N1Uzm5XkEzq7IhdxW1M4JvR05_  # board"
+credential = "ViHrr2Iq7a43W4O4uE_6NJW5N1Uzm5XkEzq7IhdxW1M4JvR05_"
+reason = "Commented-out config; TRELLO_API_TOKEN keyword + 50-char token intact inside the comment."

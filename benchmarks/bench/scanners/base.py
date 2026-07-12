@@ -43,6 +43,15 @@ except ImportError:  # pragma: no cover - Windows has no resource module.
 Finding = dict
 
 
+def _line(value: object) -> int:
+    """Coerce a scanner's reported line number to int, defaulting to 0 for
+    missing/garbage values. Shared by every adapter's normaliser."""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 @dataclass
 class RunStats:
     wall_ms: float = 0.0
@@ -134,7 +143,6 @@ def run_measured(
         assert _GNU_TIME is not None
         run_cmd = [_GNU_TIME, "-v", "-o", rss_file.name, *cmd]
 
-    rusage_before = _child_maxrss_kb()
     t0 = time.perf_counter()
     timed_out = False
     try:
@@ -182,12 +190,17 @@ def run_measured(
             except OSError:
                 pass
     if peak_rss_kb == 0:
-        # Fallback: RUSAGE_CHILDREN ru_maxrss. Windows has no resource module,
-        # so peak RSS stays 0 unless GNU time is available.
+        # Fallback (no GNU time — macOS / minimal containers): RUSAGE_CHILDREN
+        # ru_maxrss is a MONOTONIC HIGH-WATER MARK across ALL children this
+        # process ever reaped, NOT a per-run figure — once a large scan runs,
+        # every later fallback measurement in the same process reports at least
+        # that peak. GNU time (`/usr/bin/time -v`) is the accurate per-run path
+        # and is used whenever present (the whole Linux fleet); treat this value
+        # as an upper-bound proxy only. Windows has no resource module, so peak
+        # RSS stays 0 there without GNU time.
         after = _child_maxrss_kb()
         if after is not None:
-            before = rusage_before or 0
-            peak_rss_kb = max(after - before, after)
+            peak_rss_kb = after
 
     return stdout, stderr, RunStats(
         wall_ms=wall_ms, peak_rss_kb=peak_rss_kb, exit_code=rc, timed_out=timed_out)
@@ -217,15 +230,17 @@ def _kill_process_tree(process: subprocess.Popen) -> None:
 # ── version probe (verbatim intent from score.py::scanner_version) ────
 
 
-def probe_version(binary: str) -> str:
-    """Best-effort ``<binary> --version`` so a result records exactly which
-    build produced it (closes the stale-binary provenance gap). Returns ""
-    if the binary is absent or the probe fails — never raises."""
+def probe_version(binary: str, args: tuple[str, ...] = ("--version",)) -> str:
+    """Best-effort ``<binary> <args>`` (default ``--version``) so a result
+    records exactly which build produced it (closes the stale-binary
+    provenance gap). ``args`` lets a scanner whose version command differs
+    (e.g. titus ``version``) reuse this. Returns "" if the binary is absent or
+    the probe fails — never raises."""
     if shutil.which(binary) is None and not pathlib.Path(binary).exists():
         return ""
     try:
         completed = subprocess.run(
-            [binary, "--version"], capture_output=True, text=True,
+            [binary, *args], capture_output=True, text=True,
             check=False, timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
@@ -283,28 +298,14 @@ class Scanner(ABC):
 
 
 def resolve_scanner(name: str, **kw) -> Scanner:
-    """Factory: scanner name -> adapter. Lazy imports so a missing binary in
-    one adapter never breaks importing another."""
-    name = name.lower()
-    if name == "keyhog":
-        from .keyhog import KeyhogScanner
-        return KeyhogScanner(**kw)
-    if name == "betterleaks":
-        from .competitors import BetterleaksScanner
-        return BetterleaksScanner(**kw)
-    if name == "kingfisher":
-        from .competitors import KingfisherScanner
-        return KingfisherScanner(**kw)
-    if name == "noseyparker":
-        from .competitors import NoseyparkerScanner
-        return NoseyparkerScanner(**kw)
-    if name == "trufflehog":
-        from .competitors import TrufflehogScanner
-        return TrufflehogScanner(**kw)
-    if name == "titus":
-        from .competitors import TitusScanner
-        return TitusScanner(**kw)
-    raise SystemExit(
-        f"unknown scanner {name!r}; known: keyhog, betterleaks, kingfisher, "
-        f"noseyparker, trufflehog, titus"
-    )
+    """Factory: scanner name -> adapter, driven by the single ``SCANNERS``
+    registry (:mod:`bench.scanners`) so there is one place adapters register."""
+    from . import SCANNERS  # deferred: the registry imports this module
+
+    key = name.lower()
+    try:
+        return SCANNERS[key](**kw)
+    except KeyError:
+        raise SystemExit(
+            f"unknown scanner {name!r}; known: {', '.join(SCANNERS)}"
+        ) from None

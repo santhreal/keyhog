@@ -37,7 +37,8 @@ pub struct JwtAnalysis {
     pub aud: Option<String>,
     /// Payload `exp` claim, if numeric.
     pub exp: Option<i64>,
-    /// Whether the JWT has expired relative to `Instant::now`.
+    /// Whether the JWT has expired relative to wall-clock time
+    /// (`SystemTime::now` as Unix epoch seconds, compared against `exp`).
     pub expired: Option<bool>,
     /// Anomalies detected during analysis. Non-empty implies a suspicious
     /// JWT that warrants higher reporting severity.
@@ -96,9 +97,9 @@ pub(crate) fn anomalies_to_metadata(analysis: &JwtAnalysis) -> Option<BTreeMap<S
 /// findings carry no JWT keys); otherwise returns the claim evidence the
 /// module doc promises - `jwt.alg`, and any of `jwt.iss` / `jwt.sub` /
 /// `jwt.aud` / `jwt.exp` that are present - PLUS every anomaly key from
-/// `anomalies_to_metadata` (notably `jwt.alg_none` for an unsigned forgery).
+/// [`anomalies_to_metadata`] (notably `jwt.alg_none` for an unsigned forgery).
 ///
-/// This is the single, shared bridge between the fully-built `analyze` and
+/// This is the single, shared bridge between the fully-built [`analyze`] and
 /// the scan output: the in-process finalize, the verify skip branch, and the
 /// daemon-route finalize all call it, so the JWT evidence reaches the operator
 /// regardless of route (no `jwt.alg_none` divergence between in-process and
@@ -143,9 +144,24 @@ pub fn finding_metadata(credential: &str) -> Option<std::collections::HashMap<St
 
 /// Returns `true` when `s` looks like a JWT (three base64url segments).
 /// Cheap shape check - does NOT decode.
-#[cfg(test)]
 pub(crate) fn looks_like_jwt(s: &str) -> bool {
     jwt_segments(s).is_some()
+}
+
+/// The base64url encoding of a JWT header's opening `{"` — every JWT/JWS begins
+/// `eyJ…` because the header JSON starts `{"alg"…`. SINGLE OWNER of this marker:
+/// it is the load-bearing prefix of the `jwt-token` (and every JWT-shaped vendor)
+/// detector pattern, and scanner logic keys off it in the entropy plausibility
+/// gate and the canonical-shape suppression check — those were three bare `"eyJ"`
+/// literals free to drift and are now this const, bound to the jwt-token detector
+/// by a guard test.
+pub(crate) const JWT_BASE64_HEADER_PREFIX: &str = "eyJ";
+
+/// True when `s` opens with the JWT/JWS base64url header marker (`eyJ`). This is
+/// only the cheap PREFIX check; callers needing full JWT validation add their own
+/// segment/dot conditions (or use the structural [`jwt_segments`]).
+pub(crate) fn has_jwt_header_prefix(s: &str) -> bool {
+    s.starts_with(JWT_BASE64_HEADER_PREFIX)
 }
 
 fn jwt_segments(s: &str) -> Option<(&str, &str, &str)> {

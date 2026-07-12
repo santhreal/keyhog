@@ -9,9 +9,7 @@ use keyhog_scanner::entropy::{
     is_entropy_appropriate, is_entropy_appropriate_with_content, normalized_entropy,
     shannon_entropy, HIGH_ENTROPY_THRESHOLD, LOW_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD,
 };
-use keyhog_scanner::testing::entropy_fast::{
-    has_high_entropy_fast, shannon_entropy_scalar, shannon_entropy_simd,
-};
+use keyhog_scanner::testing::entropy_fast::{shannon_entropy_scalar, shannon_entropy_simd};
 
 const EPS: f64 = 1e-9;
 /// The SIMD reductions (AVX2/AVX512/NEON) and the scalar path are allowed to
@@ -183,53 +181,6 @@ fn normalized_is_bounded_unit_interval() {
     for s in samples {
         let h = normalized_entropy(s);
         assert!((0.0..=1.0).contains(&h), "out of range: {} for {:?}", h, s);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// has_high_entropy_fast — sound early-exit predicate
-// ---------------------------------------------------------------------------
-
-#[test]
-fn high_entropy_fast_rejects_low_entropy() {
-    // Single distinct byte: ceiling log2(1) = -inf < any threshold -> false.
-    assert!(!has_high_entropy_fast(b"aaaaaaaaaaaaaaaa", 4.5));
-    // Two distinct symbols cap at log2(2)=1 bit; cannot clear 4.5.
-    assert!(!has_high_entropy_fast(b"ababababababab", 4.5));
-}
-
-#[test]
-fn high_entropy_fast_accepts_high_entropy() {
-    // 256 distinct bytes -> 8 bits/byte, clears 4.5 and even 7.9.
-    let data: Vec<u8> = (0u16..256).map(|b| b as u8).collect();
-    assert!(has_high_entropy_fast(&data, 4.5));
-    assert!(has_high_entropy_fast(&data, 7.9));
-    assert!(!has_high_entropy_fast(&data, 8.1)); // above the 8.0 ceiling
-}
-
-#[test]
-fn high_entropy_fast_agrees_with_direct_entropy() {
-    // The fast predicate must equal `shannon_entropy >= threshold` for inputs
-    // whose distinct-byte ceiling permits the threshold (no false early exit).
-    let cases: Vec<Vec<u8>> = vec![
-        b"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".to_vec(),
-        b"hello world".to_vec(),
-        (0u16..64).map(|b| b as u8).collect(),
-    ];
-    for thr in [3.0_f64, 4.5, 5.0] {
-        for case in &cases {
-            let fast = has_high_entropy_fast(case, thr);
-            let direct = shannon_entropy_scalar(case) >= thr;
-            assert_eq!(
-                fast,
-                direct,
-                "threshold {} len {} fast {} direct {}",
-                thr,
-                case.len(),
-                fast,
-                direct
-            );
-        }
     }
 }
 

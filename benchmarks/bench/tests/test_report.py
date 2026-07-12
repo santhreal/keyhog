@@ -37,6 +37,26 @@ def test_report_inject_replaces_marker_body():
     assert updated == "a\n<!-- BENCH:perf:start -->\nnew\n<!-- BENCH:perf:end -->\nz"
 
 
+def test_written_reports_are_never_reported_stale(tmp_path):
+    # Single-owner invariant: write_reports and stale_report_paths both consume
+    # report_files(), so anything just written must NOT be flagged stale. This
+    # fails if the two ever diverge (the byte-identical-dict drift risk removed
+    # by factoring report_files).
+    result = _result("keyhog", 5, 20.0)
+    reports_dir = tmp_path / "reports"
+
+    report.write_reports([result], "mirror", reports_dir)
+
+    written = {p.name for p in reports_dir.iterdir()}
+    assert "category-recall.md" in written, "category-recall dashboard must be written"
+    assert written == set(report.report_files([result], "mirror")), (
+        "write_reports must emit exactly the report_files() set"
+    )
+    assert report.stale_report_paths([result], "mirror", reports_dir) == [], (
+        "freshly-written reports must not be flagged stale"
+    )
+
+
 def test_report_check_does_not_write_stale_reports(tmp_path, capsys):
     result = _result("keyhog", 5, 20.0)
     results_dir = tmp_path / "results"
@@ -91,6 +111,52 @@ def test_gap_report_shows_category_recall_gap_dashboard():
     assert "KeyHog P/R/F1" in text
     assert "Recall gap" in text
     assert "| `generic` | 1.000 / 0.333 / 0.500 | 1/2 | BetterLeaks 0.750 / 1.000 / 0.857 | +0.667 |" in text
+
+
+def test_primary_category_collapses_composite_labels_to_last_atom():
+    assert report.primary_category("API:Anthropic API Key:Key") == "Key"
+    assert report.primary_category("Token:UUID") == "UUID"
+    assert report.primary_category("Password") == "Password"
+    assert report.primary_category("") == "unknown"
+    assert report.primary_category(None) == "unknown"
+
+
+def test_collapse_per_category_sums_fragmented_cells_into_primary():
+    per_cat = {
+        "API:Anthropic API Key:Key": Outcome(tp=1, fp=2, fn=3),
+        "AWS:Key": Outcome(tp=4, fp=0, fn=5),
+        "Token:UUID": Outcome(tp=0, fp=0, fn=7),
+    }
+    collapsed = report.collapse_per_category(per_cat)
+    assert collapsed["Key"].tp == 5
+    assert collapsed["Key"].fp == 2
+    assert collapsed["Key"].fn == 8
+    assert collapsed["UUID"].fn == 7
+
+
+def test_category_recall_dashboard_ranks_by_miss_count():
+    keyhog = _result("keyhog", 3, 20.0)
+    keyhog.corpus.name = "creddata"
+    keyhog.detection.per_category = {
+        "API:Key": Outcome(tp=80, fp=200, fn=3700),
+        "Token:UUID": Outcome(tp=7, fp=10, fn=2260),
+        "Password": Outcome(tp=1145, fp=985, fn=1221),
+    }
+    better = _result("betterleaks", 2, 10.0)
+    better.corpus.name = "creddata"
+    better.detection.per_category = {
+        "API:Key": Outcome(tp=3300, fp=100, fn=500),
+        "Password": Outcome(tp=1000, fp=50, fn=1366),
+    }
+
+    text = report.render_category_recall([keyhog, better], "creddata")
+    lines = [ln for ln in text.splitlines() if ln.startswith("| `")]
+    # Key has the most misses, so it must rank first; UUID second.
+    assert lines[0].startswith("| `Key` |")
+    assert lines[1].startswith("| `UUID` |")
+    assert "| `Key` | 80/3700 | 0.021 | BetterLeaks 0.868 |" in text
+    # UUID has no competitor cell -> em dash, not a fabricated 0.000 winner.
+    assert "| `UUID` | 7/2260 | 0.003 | — |" in text
 
 
 def test_class_recall_differential_requires_full_scanner_set():

@@ -3,6 +3,8 @@ use keyhog_scanner::CompiledScanner;
 
 fn main() -> Result<(), keyhog_scanner::ScanError> {
     let scanner = CompiledScanner::compile(vec![DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "demo-token".into(),
         name: "Demo Token".into(),
@@ -18,6 +20,7 @@ fn main() -> Result<(), keyhog_scanner::ScanError> {
         verify: None,
         keywords: vec!["demo_".into()],
         min_confidence: None,
+        ..Default::default()
     }])?;
 
     let matches = scanner.scan(&Chunk {

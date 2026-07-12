@@ -285,12 +285,11 @@ impl CompiledScanner {
                     ));
                 }
                 // Union with AC triggers so the GPU literal matcher is never
-                // the sole gate for context-anchored detectors.
+                // the sole gate for context-anchored detectors. Mark the GPU
+                // presence bits straight into the CPU-trigger bitmap rather than
+                // allocating a second per-chunk `Vec<u64>` only to OR it in.
                 let mut triggered = self.collect_triggered_patterns_cpu(text);
-                let gpu = self.triggered_patterns_from_gpu_presence(&presence);
-                for (slot, bits) in triggered.iter_mut().zip(gpu.iter()) {
-                    *slot |= *bits;
-                }
+                self.mark_gpu_presence_into(&mut triggered, &presence);
                 triggered
             }
             Err(error) => degrade(format!("gpu presence scan failed: {error}")),
@@ -404,18 +403,30 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
 
     pub(crate) fn triggered_patterns_from_gpu_presence(&self, presence: &[u32]) -> Vec<u64> {
         let mut triggered = super::trigger_bitmap::new_trigger_bitmap(self.ac_map.len());
+        self.mark_gpu_presence_into(&mut triggered, presence);
+        triggered
+    }
+
+    /// Union GPU literal-presence bits INTO an existing trigger bitmap (marking,
+    /// via [`Self::mark_triggered_pattern`], every set presence bit and its prefix
+    /// propagation). The buffer-reusing counterpart of
+    /// [`Self::triggered_patterns_from_gpu_presence`]: the GPU-union path
+    /// (`collect_triggered_patterns_gpu`) already holds the CPU-trigger bitmap, so
+    /// marking straight into it avoids allocating and then discarding a SECOND
+    /// per-chunk `Vec<u64>` just to OR it in — the fresh-per-chunk allocation the
+    /// GPU trigger path used to pay on every chunk.
+    pub(crate) fn mark_gpu_presence_into(&self, triggered: &mut [u64], presence: &[u32]) {
         for (word_idx, &word) in presence.iter().enumerate() {
             let mut bits = word;
             while bits != 0 {
                 let bit = bits.trailing_zeros() as usize;
                 let literal_idx = word_idx * 32 + bit;
                 if literal_idx < self.ac_map.len() {
-                    self.mark_triggered_pattern(&mut triggered, literal_idx);
+                    self.mark_triggered_pattern(triggered, literal_idx);
                 }
                 bits &= bits - 1;
             }
         }
-        triggered
     }
 
     #[cfg(feature = "gpu")]

@@ -21,6 +21,7 @@
 //! Every assertion checks a specific value (exact stem string, exact bool, exact
 //! `Option<String>`, exact detector-id string) — never a bare `is_empty`/`len`.
 
+mod support;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::testing::{
     assignment_keyword_owned_by_named_detector_for_test, compact_keyword_ends_with_for_test,
@@ -31,20 +32,11 @@ use keyhog_scanner::testing::{
     normalized_assignment_keyword_has_secret_suffix_for_test,
 };
 use keyhog_scanner::{is_entropy_detector, CompiledScanner, ScanBackend};
+use support::paths::detector_dir;
 
 // ---------------------------------------------------------------------------
 // End-to-end scan harness (CpuFallback => host-independent, no accelerator).
 // ---------------------------------------------------------------------------
-
-fn detector_dir() -> std::path::PathBuf {
-    // `CARGO_MANIFEST_DIR` = crates/scanner; the on-disk Tier-B detector TOMLs
-    // live at <repo>/detectors, matching tests/support/paths.rs::detector_dir.
-    let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn build_scanner() -> CompiledScanner {
     let detectors =

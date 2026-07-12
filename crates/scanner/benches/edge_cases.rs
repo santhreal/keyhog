@@ -23,6 +23,8 @@ fn make_chunk(data: &str, path: Option<&str>) -> Chunk {
 
 fn create_minimal_detectors() -> Vec<DetectorSpec> {
     vec![DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "openai-api-key".into(),
         name: "OpenAI API Key".into(),
@@ -46,6 +48,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
         verify: None,
         keywords: vec!["sk-proj-".into(), "sk-".into(), "openai".into()],
         min_confidence: None,
+        ..Default::default()
     }]
 }
 

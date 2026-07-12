@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "uptimerobot.apikey  =:\"\"\"     '         '   \"    : \" =    \"  '   :     '  = ':'  ''   \"  : :\"'  == ::     := \":: :\"txEAQEXAMPLEEXAMPLEwYnVo"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# uptimerobot_api_key=txEAQ75nr5b3EUwg8Z2t_rVOv98Cu6rjH1Gj6XeqNqcKMtTV_va_OGMqcbIYxgaJnFGSwYnVo  # monitor"
+credential = "txEAQ75nr5b3EUwg8Z2t_rVOv98Cu6rjH1Gj6XeqNqcKMtTV_va_OGMqcbIYxgaJnFGSwYnVo"
+reason = "Commented-out config key; uptimerobot api_key keyword + value intact inside the comment."

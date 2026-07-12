@@ -191,6 +191,48 @@ fn looks_like_source_format_template_fragment(value: &str) -> bool {
             || template.contains("%s"))
 }
 
+#[derive(serde::Deserialize)]
+struct SourceTypeTerms {
+    terms: Vec<String>,
+}
+
+fn parse_source_type_terms(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<SourceTypeTerms>(raw)
+        .map(|parsed| parsed.terms)
+        .map_err(|error| error.to_string())
+}
+
+static SOURCE_TYPE_TERMS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_source_type_terms(include_str!("../../../../../rules/source-type-terms.toml")) {
+        Ok(terms) => terms,
+        Err(error) => panic!(
+            "rules/source-type-terms.toml is invalid: {error}. \
+             Fix the bundled Tier-B source-type terms list."
+        ),
+    }
+});
+
+#[derive(serde::Deserialize)]
+struct SourceReceivers {
+    receivers: Vec<String>,
+}
+
+fn parse_source_receivers(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<SourceReceivers>(raw)
+        .map(|parsed| parsed.receivers)
+        .map_err(|error| error.to_string())
+}
+
+static SOURCE_RECEIVERS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_source_receivers(include_str!("../../../../../rules/source-receivers.toml")) {
+        Ok(receivers) => receivers,
+        Err(error) => panic!(
+            "rules/source-receivers.toml is invalid: {error}. \
+             Fix the bundled source receivers list."
+        ),
+    }
+});
+
 pub(crate) fn looks_like_source_symbol_identifier_with_randomness(
     value: &str,
     randomness: &TokenRandomness<'_>,
@@ -218,18 +260,10 @@ pub(crate) fn looks_like_source_symbol_identifier_with_randomness(
     if upper < 2 || lower < 3 {
         return false;
     }
-    const SOURCE_TYPE_TERMS: &[&str] = &[
-        "HashMap",
-        "HashSet",
-        "BTreeMap",
-        "BTreeSet",
-        "VecDeque",
-        "SmallVec",
-        "InputKey",
-        "CacheKey",
-        "SourceKey",
-    ];
-    SOURCE_TYPE_TERMS.iter().any(|term| value.contains(term)) || !randomness.is_random_token(value)
+    SOURCE_TYPE_TERMS
+        .iter()
+        .any(|term| value.contains(term.as_str()))
+        || !randomness.is_random_token(value)
 }
 
 /// Heuristic: is this string a likely source-code identifier rather than a
@@ -275,53 +309,53 @@ pub(crate) fn looks_like_kebab_config_identifier(value: &str) -> bool {
 }
 
 pub(crate) fn looks_like_dotted_source_identifier(value: &str) -> bool {
-    let segments: Vec<&str> = value.split('.').collect();
-    if !(2..=5).contains(&segments.len()) || segments.iter().any(|segment| segment.is_empty()) {
-        return false;
+    // Single validating pass over `.`-separated segments (Law 7: per-candidate
+    // suppression predicate, no `Vec`). Tracks count, first segment (for the
+    // receiver match), camel-case presence, and credential-word presence.
+    let mut count = 0usize;
+    let mut first = "";
+    let mut has_camel_segment = false;
+    let mut has_credential_word = false;
+    for segment in value.split('.') {
+        count += 1;
+        if count == 1 {
+            first = segment;
+        }
+        let seg = segment.as_bytes();
+        if seg.is_empty()
+            || !seg
+                .iter()
+                .all(|&byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        {
+            return false;
+        }
+        if seg
+            .windows(2)
+            .any(|pair| pair[0].is_ascii_lowercase() && pair[1].is_ascii_uppercase())
+        {
+            has_camel_segment = true;
+        }
+        // `ci_find` needles are pre-lowered against the ONE canonical
+        // credential-keyword needle set (`super::CREDENTIAL_KEYWORD_NEEDLES`).
+        if super::CREDENTIAL_KEYWORD_NEEDLES
+            .iter()
+            .any(|needle| crate::ascii_ci::ci_find(seg, needle))
+        {
+            has_credential_word = true;
+        }
     }
-    if !segments.iter().all(|segment| {
-        segment
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-    }) {
+    if !(2..=5).contains(&count) {
         return false;
     }
 
-    // Receiver match without allocating a lowercased copy of the first segment
-    // (Law 7: this runs per-candidate in a suppression predicate).
-    const SOURCE_RECEIVERS: &[&str] = &[
-        "this", "self", "window", "process", "global", "config", "client", "service",
-    ];
+    // Receiver match without allocating a lowercased copy of the first segment.
     if SOURCE_RECEIVERS
         .iter()
-        .any(|recv| segments[0].eq_ignore_ascii_case(recv))
+        .any(|recv| first.eq_ignore_ascii_case(recv.as_str()))
     {
         return true;
     }
 
-    let has_camel_segment = segments.iter().any(|segment| {
-        segment
-            .as_bytes()
-            .windows(2)
-            .any(|pair| pair[0].is_ascii_lowercase() && pair[1].is_ascii_uppercase())
-    });
-    // Case-insensitive substring search instead of a per-segment
-    // `to_ascii_lowercase()` allocation (Law 7); `ci_find` needles are
-    // pre-lowered. Behaviour is identical to the prior lower-then-contains form.
-    const CREDENTIAL_WORDS: &[&[u8]] = &[
-        b"token",
-        b"secret",
-        b"key",
-        b"auth",
-        b"password",
-        b"credential",
-    ];
-    let has_credential_word = segments.iter().any(|segment| {
-        let seg = segment.as_bytes();
-        CREDENTIAL_WORDS
-            .iter()
-            .any(|needle| crate::ascii_ci::ci_find(seg, needle))
-    });
     has_camel_segment && has_credential_word
 }
 
@@ -370,4 +404,57 @@ pub(crate) fn looks_like_source_type_identifier_with_randomness(
     let lower = bytes.iter().filter(|b| b.is_ascii_lowercase()).count();
     let digits = bytes.iter().filter(|b| b.is_ascii_digit()).count();
     upper >= 2 && lower >= 3 && digits >= 1 && !randomness.is_random_token(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Intent pin for the `CREDENTIAL_KEYWORD_NEEDLES` unification: `passwd`
+    /// is a canonical credential keyword (same set the entropy keyword list and
+    /// the TS non-null identifier gate use), so a camel-cased dotted candidate
+    /// carrying a `passwd` segment IS a source identifier and must suppress.
+    /// If someone narrows the canonical set and drops `passwd`, this fails.
+    #[test]
+    fn dotted_source_identifier_suppresses_camel_passwd_segment() {
+        assert!(
+            looks_like_dotted_source_identifier("userDb.passwd.value"),
+            "camel-cased dotted candidate with a passwd segment must be a source identifier",
+        );
+    }
+
+    /// Guardrail on the widening: `passwd` alone (no camel segment, no known
+    /// receiver) must NOT suppress, so the passwd inclusion does not silently
+    /// swallow flat dotted credential paths.
+    #[test]
+    fn dotted_passwd_without_camel_or_receiver_does_not_suppress() {
+        assert!(
+            !looks_like_dotted_source_identifier("db.passwd.field"),
+            "a flat passwd dotted path with no camel segment must not be suppressed",
+        );
+    }
+
+    /// Single-pass rewrite must preserve the 2..=5 segment-count window and the
+    /// empty-segment / non-alnum rejections.
+    #[test]
+    fn dotted_source_identifier_segment_count_and_body_bounds() {
+        // 6 dotted segments is over the 5-segment ceiling → not an identifier.
+        assert!(!looks_like_dotted_source_identifier("aB.cD.eF.gH.iJ.kL"));
+        // Single segment (no dot) is under the floor.
+        assert!(!looks_like_dotted_source_identifier("userDbPasswd"));
+        // Empty segment rejects regardless of count.
+        assert!(!looks_like_dotted_source_identifier("userDb..passwd"));
+        // Non-alnum body byte rejects.
+        assert!(!looks_like_dotted_source_identifier("userDb.pass-wd.value"));
+    }
+
+    /// First-segment receiver match short-circuits to true without needing a
+    /// camel/credential segment (the `first` capture in the single pass).
+    #[test]
+    fn dotted_source_identifier_receiver_first_segment() {
+        assert!(looks_like_dotted_source_identifier(&format!(
+            "{}.field",
+            SOURCE_RECEIVERS[0].as_str()
+        )));
+    }
 }

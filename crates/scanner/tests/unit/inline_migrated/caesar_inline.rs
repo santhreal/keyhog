@@ -1,7 +1,7 @@
 //! Migrated from src/decode/caesar.rs
 
 use keyhog_scanner::testing::{
-    caesar_shift, is_source_code_path, looks_credential_shaped, CaesarDecoder,
+    caesar_credential_shape_gate, caesar_shift, is_source_code_path, CaesarDecoder,
 };
 
 #[test]
@@ -17,10 +17,10 @@ fn shift_preserves_non_letters() {
 }
 
 #[test]
-fn looks_credential_shaped_requires_digit_and_run() {
-    assert!(looks_credential_shaped("AKIA64ABDEFSEWKR"));
-    assert!(!looks_credential_shaped("HELLOWORLDFOOBAR")); // no digit
-    assert!(!looks_credential_shaped("12-34-56-78-")); // no 8-alnum run
+fn caesar_credential_shape_gate_requires_digit_and_run() {
+    assert!(caesar_credential_shape_gate("AKIA64ABDEFSEWKR"));
+    assert!(!caesar_credential_shape_gate("HELLOWORLDFOOBAR")); // no digit
+    assert!(!caesar_credential_shape_gate("12-34-56-78-")); // no 8-alnum run
 }
 
 #[test]

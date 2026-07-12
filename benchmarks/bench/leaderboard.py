@@ -23,11 +23,11 @@ import sys
 
 from . import hardware
 from .runner import build_result, resolve_corpus_with_root, write_result
-from .scanners import resolve_scanner
+from .scanners import SCANNER_NAMES, resolve_scanner
 from .scanners.keyhog import KeyhogScanner
 from .schema import RunResult, ScannerConfig
 
-_DEFAULT_SCANNERS = ["keyhog", "betterleaks", "kingfisher", "noseyparker", "trufflehog", "titus"]
+_DEFAULT_SCANNERS = list(SCANNER_NAMES)
 
 
 def results_dir(base: pathlib.Path | None = None) -> pathlib.Path:
@@ -68,8 +68,12 @@ def run_one(scanner_name: str, corpus_name: str, cfg: ScannerConfig,
                           cfg=cfg, corpus=corpus, findings=findings, stats=stats)
     if stats.timed_out:
         result.error = "scanner timed out"
+        result.available = False
     elif not scanner.exit_success(stats.exit_code):
+        # A crashed scanner produced no usable result — mark it unavailable so a
+        # nonzero-exit competitor isn't ranked as a real low-recall entrant.
         result.error = f"scanner exited {stats.exit_code}"
+        result.available = False
     return result
 
 

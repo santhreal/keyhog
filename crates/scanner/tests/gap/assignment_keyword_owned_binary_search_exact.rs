@@ -48,3 +48,50 @@ fn empty_owned_set_and_single_entry_boundaries() {
     assert!(!owned(&["key"], "keys")); // superstring
     assert!(!owned(&["key"], "ke")); // prefix
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin hand-picked keys; these SWEEP the ownership decision
+// against a naive membership oracle. This gate decides whether the broad generic
+// `KEY=value` bridge defers to a named detector, so a WRONG ownership verdict
+// either double-counts (bridge fires on an owned key) or drops (bridge skips a
+// key the named detector does not actually own) — both recall/precision faults on
+// the highest-volume generic path. Driven only through the public facade (which
+// sorts+dedups via BTreeSet before the binary_search); no proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4_000))]
+
+    /// EXACT MEMBERSHIP: `owned(keys, q)` must equal `keys.contains(q)` for ALL
+    /// inputs — never a prefix/superstring/substring/case-fold match. The same
+    /// small `[a-z_]` alphabet for both keys and query yields natural hits AND
+    /// misses (and duplicate keys, which the BTreeSet dedups without changing
+    /// membership), exercising both branches of the binary_search.
+    #[test]
+    fn owned_matches_naive_set_membership(
+        keys in prop::collection::vec("[a-z_]{1,6}", 0..12),
+        query in "[a-z_]{1,6}",
+    ) {
+        let key_refs: Vec<&str> = keys.iter().map(|s| s.as_str()).collect();
+        let expected = keys.contains(&query);
+        prop_assert_eq!(owned(&key_refs, &query), expected);
+    }
+
+    /// POSITIVE PATH: every key actually present in the set is owned — a stronger
+    /// guarantee than the differential's incidental hits, catching a sort/dedup
+    /// regression that could make the binary_search miss a genuine member.
+    #[test]
+    fn every_present_key_is_owned(
+        keys in prop::collection::vec("[a-z_]{1,6}", 1..12),
+        idx in 0usize..12,
+    ) {
+        let key_refs: Vec<&str> = keys.iter().map(|s| s.as_str()).collect();
+        let chosen = &keys[idx % keys.len()];
+        prop_assert!(
+            owned(&key_refs, chosen),
+            "present key {:?} was not owned",
+            chosen
+        );
+    }
+}

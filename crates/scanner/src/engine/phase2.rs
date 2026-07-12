@@ -339,7 +339,7 @@ impl CombinedNoCandidateGate {
     /// admission gate. Checks each pattern's own regex, early-exiting at the first
     /// match, so the admission decision is exact (never over- or under-admits).
     #[inline]
-    #[cfg(any(feature = "simd", feature = "gpu"))]
+    #[cfg(any(feature = "simd", feature = "gpu", test))]
     pub(crate) fn any_non_anchorable_match(&self, match_text: &str) -> bool {
         self.non_anchorable
             .iter()
@@ -372,6 +372,13 @@ pub(crate) struct Phase2AlwaysActivePrefilter {
     /// ~1000x faster (`phase2_prefilter_hs_vs_regexset`) and findings-identical
     /// (`phase2_prefilter_hs_findings_parity`). `None` when the `simd` feature
     /// is off or HS failed to compile (then the RegexSet batches are the path).
+    ///
+    /// The engine holds TWO sub-databases (`Phase2HsEngine::{full, ascii_lean}`):
+    /// on a pure-ASCII chunk with `homoglyph_ascii_skip` on, `mark_matches` passes
+    /// `skip_homoglyph_ascii=true` and marking routes through the lean sub-DB that
+    /// EXCLUDES the ~2.8k inert homoglyph variants — the same skip the RegexSet
+    /// path already applies, extended to HS (measured 100-215× cheaper on ASCII,
+    /// recall-neutral: `hs_homoglyph_ascii_skip_drops_only_homoglyph_variants`).
     #[cfg(feature = "simd")]
     pub(crate) hs: OnceLock<Option<Phase2HsEngine>>,
 }

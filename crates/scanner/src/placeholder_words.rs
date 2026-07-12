@@ -215,6 +215,17 @@ pub(crate) fn bytes_contain_entropy_placeholder_marker(bytes: &[u8]) -> bool {
     }
     // Category 5: whole-value EXACT, case-sensitive (Tier-B
     // `[entropy_markers].exact_values`).
+    is_exact_entropy_placeholder(bytes)
+}
+
+/// Whole-value EXACT, case-sensitive match against the Tier-B
+/// `[entropy_markers].exact_values` (`null`/`none`/`undefined`/`empty`/`default`/
+/// `secret`/`password`). A credential that *is* one of these words is a
+/// placeholder on ANY detector path, so this is the ONE owner shared by the
+/// entropy-marker check ([`bytes_contain_entropy_placeholder_marker`] Category 5)
+/// and the named-detector suppression Tier-A gate — named/vendor detectors
+/// otherwise bypass the entropy-path check and emit a bare `password` value.
+pub(crate) fn is_exact_entropy_placeholder(bytes: &[u8]) -> bool {
     entropy_marker_exact_values()
         .iter()
         .any(|marker| bytes == marker.as_bytes())
@@ -259,8 +270,10 @@ fn looks_like_high_entropy_marker_collision(credential: &str, entropy_hint: Opti
 
 /// Back-compat wrapper: parse only the placeholder-word list. Kept so the
 /// `parse_placeholder_words_for_test` facade and its callers (which pass
-/// `[placeholder_words]`-only TOMLs) keep working unchanged (Law 3). Test-only:
-/// production parses the full vocabulary through [`parse_vocab`].
+/// `[placeholder_words]`-only TOMLs) keep working unchanged (Law 3). Test-only —
+/// production parses the full vocab via `parse_vocab`, so this is `#[cfg(test)]`
+/// to stay dead-code-warning-clean in the lib build (its sole callers are the
+/// `#[cfg(test)]` facade + the inline parse tests).
 #[cfg(test)]
 pub(crate) fn parse_placeholder_words(raw: &str) -> Result<Vec<PlaceholderWord>, String> {
     Ok(parse_vocab(raw)?.words)
@@ -650,6 +663,26 @@ mod tests {
             .map(String::as_str)
             .collect();
         assert_eq!(loaded.as_slice(), LEGACY_ENTROPY_EXACT);
+    }
+
+    #[test]
+    fn is_exact_entropy_placeholder_matches_whole_value_only() {
+        // The ONE owner shared by the entropy-marker check and the named-detector
+        // Tier-A gate: whole-value EXACT (case-sensitive) against the loaded list.
+        for exact in LEGACY_ENTROPY_EXACT {
+            assert!(
+                is_exact_entropy_placeholder(exact.as_bytes()),
+                "{exact:?} is an exact placeholder and must match",
+            );
+        }
+        // A value that merely CONTAINS a placeholder word is NOT an exact match —
+        // this is what keeps a real credential like `mysecretkey123` alive.
+        assert!(!is_exact_entropy_placeholder(b"password123"));
+        assert!(!is_exact_entropy_placeholder(b"mysecretkey123"));
+        assert!(!is_exact_entropy_placeholder(b"defaultKeyX7"));
+        // Case-sensitive, matching Category 5 of the entropy-marker check.
+        assert!(!is_exact_entropy_placeholder(b"PASSWORD"));
+        assert!(!is_exact_entropy_placeholder(b""));
     }
 
     #[test]

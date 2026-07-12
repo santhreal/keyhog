@@ -2,29 +2,7 @@
 //! the shared `process_match` adjudicator after the SIMD literal and precise
 //! regex validator.
 
-use std::path::{Path, PathBuf};
-
-fn scanner_src() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
-}
-
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{} not readable: {e}", path.display()))
-}
-
-fn uncommented_code(src: &str) -> String {
-    src.lines()
-        .filter_map(|line| {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("//") {
-                None
-            } else {
-                Some(line)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
+use super::support::*;
 
 #[test]
 fn canonical_hot_patterns_delegate_to_process_match() {

@@ -260,12 +260,13 @@ pub async fn cli_main() -> ExitCode {
         }
     });
 
-    // Color the log stream only when stderr is a TTY and NO_COLOR is unset;
-    // otherwise pipes, files, and CI logs would receive raw ANSI escape
-    // sequences.
+    // Color the log stream only when stderr is a TTY and color is not opted
+    // out via NO_COLOR; otherwise pipes, files, and CI logs would receive raw
+    // ANSI escape sequences. Route through the one `no_color_requested()` owner
+    // so the empty-string `NO_COLOR=` spec rule is applied consistently.
     let log_ansi = {
         use std::io::IsTerminal;
-        std::io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+        std::io::stderr().is_terminal() && !crate::style::no_color_requested()
     };
     let default_log_directive = match "keyhog=warn".parse() {
         Ok(directive) => directive,
@@ -277,14 +278,28 @@ pub async fn cli_main() -> ExitCode {
             tracing_subscriber::filter::Directive::from(tracing::Level::INFO)
         }
     };
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_ansi(log_ansi)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env().add_directive(default_log_directive),
-        )
-        .with_target(false)
-        .init();
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+        let fmt_layer = tracing_subscriber::fmt::layer()
+            .with_writer(std::io::stderr)
+            .with_ansi(log_ansi)
+            .with_target(false);
+        // Per-callsite WARN rate limit: a warning that fires thousands of times
+        // in one scan shows its first few occurrences here; the remainder are
+        // counted and reported once by the summary guard below (Law 10: hidden
+        // from the stream, never from the operator).
+        let fmt_layer =
+            tracing_subscriber::Layer::with_filter(fmt_layer, log_dedup::WarnRepeatLimit);
+        tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::EnvFilter::from_default_env()
+                    .add_directive(default_log_directive),
+            )
+            .with(fmt_layer)
+            .init();
+    }
+    let _warn_dedup_summary = log_dedup::WarnDedupSummaryGuard;
 
     let cli = args::parse();
 
@@ -453,6 +468,7 @@ pub(crate) mod config;
 pub mod exit_codes;
 pub(crate) mod format;
 pub(crate) mod installer;
+pub(crate) mod log_dedup;
 pub(crate) mod runtime_preflight;
 // Daemon uses Unix-domain sockets (`tokio::net::UnixListener` and
 // `std::os::unix::net`). Windows lacks both surfaces in the form

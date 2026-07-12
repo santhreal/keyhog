@@ -100,3 +100,61 @@ fn contains_evasion_delegates_to_normalized_char_single_owner() {
         "the duplicated 8-predicate disjunction must be gone from contains_evasion"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vector enumerates one instance per evasion category; these SWEEP the
+// two directional guarantees the detector exists for. `contains_evasion` gates
+// the unicode-hardening scan path — a false negative lets an evasion-obfuscated
+// secret through (recall), a false positive flags clean source (precision). No
+// proptest covered it before.
+
+use keyhog_scanner::testing::unicode_hardening::contains_evasion;
+use proptest::prelude::*;
+
+/// One always-evasion char per non-`Keep` `normalized_char` arm the fixed test
+/// enumerates: Cyrillic + fullwidth homoglyphs (Replace) and zero-width / RTL /
+/// no-break-space / combining (Drop). Each must be flagged in ANY clean context.
+const EVASION_CHARS: &[char] = &[
+    '\u{200B}', // zero-width space (Drop)
+    '\u{0430}', // Cyrillic a homoglyph (Replace)
+    '\u{202E}', // RTL override (Drop)
+    '\u{00A0}', // no-break space (Drop)
+    '\u{FF41}', // fullwidth a (Replace)
+    '\u{0301}', // combining acute (Drop)
+];
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4_000))]
+
+    /// PRECISION: clean printable ASCII (0x20..=0x7e — no control byte, no
+    /// homoglyph) is NEVER flagged as evasion, so ordinary source lines are never
+    /// falsely rejected by the hardening gate.
+    #[test]
+    fn clean_printable_ascii_is_never_evasion(s in "[\\x20-\\x7e]{0,60}") {
+        prop_assert!(!contains_evasion(&s));
+    }
+
+    /// RECALL: a single evasion char is detected regardless of surrounding clean
+    /// text — no clean prefix or suffix can mask it. One char per non-Keep
+    /// category, wrapped in arbitrary clean-ASCII context.
+    #[test]
+    fn an_evasion_char_is_detected_in_any_clean_context(
+        prefix in "[\\x20-\\x7e]{0,30}",
+        suffix in "[\\x20-\\x7e]{0,30}",
+        idx in 0usize..EVASION_CHARS.len(),
+    ) {
+        let evasive = EVASION_CHARS[idx];
+        let text = format!("{prefix}{evasive}{suffix}");
+        prop_assert!(
+            contains_evasion(&text),
+            "evasion char U+{:04X} masked by clean context",
+            evasive as u32
+        );
+    }
+
+    /// The detector must never panic on arbitrary Unicode input.
+    #[test]
+    fn contains_evasion_never_panics(s in "(?s).{0,60}") {
+        let _ = contains_evasion(&s);
+    }
+}

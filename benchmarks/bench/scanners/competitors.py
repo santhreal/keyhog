@@ -2,21 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import pathlib
-import subprocess
 import sqlite3
 import tempfile
 
 from ..schema import ScannerConfig
-from .base import Finding, RunStats, Scanner, run_measured
-
-
-def _line(value: object) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
+from .base import Finding, RunStats, Scanner, _line, probe_version, run_measured
 
 
 def _load_json(text: str) -> object:
@@ -107,7 +100,9 @@ def _normalize_titus_datastore(db_path: pathlib.Path) -> list[Finding]:
         left join provenance on provenance.blob_id = matches.blob_id
     """
     out: list[Finding] = []
-    with sqlite3.connect(db_path) as con:
+    # closing() actually closes the handle; the sqlite context manager only
+    # commits/rolls back and would leak the connection into the rmtree below.
+    with contextlib.closing(sqlite3.connect(db_path)) as con:
         for path, line, value, detector in con.execute(query):
             if isinstance(value, bytes):
                 value = value.decode("utf-8", "replace")
@@ -282,20 +277,8 @@ class TitusScanner(Scanner):
         return [ScannerConfig(backend="default", cache="off", daemon="off", mode="no-validate")]
 
     def version(self) -> str:
-        if not self.available():
-            return ""
-        try:
-            completed = subprocess.run(
-                [self.binary, "version"],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return ""
-        out = (completed.stdout or completed.stderr or "").strip()
-        return " ".join(line.strip() for line in out.splitlines() if line.strip())
+        # titus uses a `version` subcommand, not `--version`.
+        return probe_version(self.binary, ("version",))
 
     def run(
         self,

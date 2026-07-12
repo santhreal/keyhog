@@ -1,12 +1,16 @@
 // LR2-A4: migrated inline tests + new hand oracles
 mod calibration_nan_sanitized;
 mod compiler_alt_basic;
+mod compiler_alt_escaped_class;
 mod compiler_alt_inline_flag;
 mod compiler_alt_nested;
 mod compiler_alt_none_capturing;
 mod compiler_alt_none_literal;
 mod compiler_alt_none_singleton;
+mod compiler_alt_rewrite_regex_validity_proptest;
+mod compiler_homoglyph_rewrite_regex_validity_proptest;
 mod compiler_split_flag_i;
+mod compiler_split_flag_partition_proptest;
 mod compiler_split_no_flag;
 mod context_anchor_case_01;
 mod context_anchor_case_02;

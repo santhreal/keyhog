@@ -1,5 +1,32 @@
 use super::{CONFIDENCE_MAX, CONFIDENCE_MIN};
-use keyhog_core::BetaCounters;
+
+#[derive(serde::Deserialize)]
+struct ExamplePathComponents {
+    components: Vec<String>,
+}
+
+fn parse_fixture_path_components(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<ExamplePathComponents>(raw)
+        .map(|parsed| parsed.components)
+        .map_err(|error| error.to_string())
+}
+
+/// Tier-B fixture/example path components that trigger the path-confidence
+/// haircut. Loaded from the SAME `rules/example-path-components.toml` the
+/// suppression path uses so the two lists cannot drift to different sets (they
+/// previously diverged: this owner carried `sample`/`samples` but not
+/// `fixture`/`fixtures`, the suppression owner the reverse).
+static FIXTURE_PATH_COMPONENTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_fixture_path_components(include_str!(
+        "../../../../rules/example-path-components.toml"
+    )) {
+        Ok(components) => components,
+        Err(error) => panic!(
+            "rules/example-path-components.toml is invalid: {error}. \
+                 Fix the bundled Tier-B example path components list."
+        ),
+    }
+});
 
 /// Sanitize a confidence value so a NaN or infinity entering the
 /// pipeline can never reach the final finding.
@@ -289,27 +316,10 @@ pub(crate) fn apply_calibration_multiplier(
     // history, the multiplier diverges from 0.5 and meaningfully shapes
     // the score.
     let counters = calibration.counters(detector_id);
-    if calibration_observations(counters) == 0 {
+    if counters.observations() == 0 {
         return finalize_confidence(score);
     }
-    let multiplier = calibration_posterior_mean(counters);
-    finalize_confidence(score * multiplier)
-}
-
-fn calibration_posterior_mean(counters: BetaCounters) -> f64 {
-    let total = counters.alpha as f64 + counters.beta as f64;
-    if total == 0.0 {
-        0.5
-    } else {
-        counters.alpha as f64 / total
-    }
-}
-
-fn calibration_observations(counters: BetaCounters) -> u32 {
-    counters
-        .alpha
-        .saturating_sub(1)
-        .saturating_add(counters.beta.saturating_sub(1))
+    finalize_confidence(score * counters.posterior_mean())
 }
 
 /// Apply path-based confidence penalties for matches in test or placeholder directories.
@@ -330,10 +340,8 @@ pub(crate) fn apply_path_confidence_penalties(
     if !penalize {
         return finalize_confidence(score);
     }
-    const FIXTURE_COMPONENTS: &[&str] =
-        &["test", "tests", "example", "examples", "sample", "samples"];
     let is_fixture_like = crate::platform_compat::path_component_matches(path, |component| {
-        FIXTURE_COMPONENTS
+        FIXTURE_PATH_COMPONENTS
             .iter()
             .any(|fixture| component.eq_ignore_ascii_case(fixture))
             || crate::placeholder_words::words()
@@ -358,10 +366,67 @@ mod tests {
     //! tests live here.
 
     use super::{
-        apply_post_ml_penalties_with_encoded_text_lift, is_degenerate_repeat,
-        longest_repeat_run_len, max_repeat_run, DATA_ENVELOPE_PENALTY, DEGENERATE_RUN_LEN,
-        DEGENERATE_SHAPE_PENALTY, LOW_DIVERSITY_PENALTY, PLACEHOLDER_WORD_PENALTY,
+        apply_path_confidence_penalties, apply_post_ml_penalties_with_encoded_text_lift,
+        is_degenerate_repeat, longest_repeat_run_len, max_repeat_run, DATA_ENVELOPE_PENALTY,
+        DEGENERATE_RUN_LEN, DEGENERATE_SHAPE_PENALTY, FIXTURE_PATH_COMPONENTS,
+        LOW_DIVERSITY_PENALTY, PLACEHOLDER_WORD_PENALTY,
     };
+
+    // ── Tier-B fixture-path component loader (rules/example-path-components.toml) ─
+    #[test]
+    fn fixture_path_components_load_the_union_superset() {
+        // The consolidated Tier-B list must carry BOTH the components the
+        // suppression owner had (`fixture`/`fixtures`) AND the ones this
+        // confidence owner previously hardcoded (`sample`/`samples`), so the two
+        // consumers can never disagree again.
+        for expected in [
+            "test", "tests", "example", "examples", "fixtures", "samples",
+        ] {
+            assert!(
+                FIXTURE_PATH_COMPONENTS
+                    .iter()
+                    .any(|c| c.eq_ignore_ascii_case(expected)),
+                "rules/example-path-components.toml missing `{expected}`"
+            );
+        }
+    }
+
+    #[test]
+    fn path_haircut_fires_for_fixture_dirs_and_halves_confidence() {
+        // A `samples/` component (added by the union) must trigger the 0.5 haircut.
+        let scored = apply_path_confidence_penalties(0.8, Some("src/samples/config.rs"), true);
+        assert!(
+            (scored - 0.4).abs() < 1e-9,
+            "expected 0.8 × 0.5 = 0.4 for a samples/ path, got {scored}"
+        );
+        // A `fixtures/` component (from the suppression side of the union) too.
+        let scored = apply_path_confidence_penalties(0.8, Some("a/fixtures/b.rs"), true);
+        assert!((scored - 0.4).abs() < 1e-9, "fixtures/ path, got {scored}");
+    }
+
+    #[test]
+    fn path_haircut_does_not_fire_for_ordinary_source() {
+        let scored = apply_path_confidence_penalties(0.8, Some("src/handlers/auth.rs"), true);
+        assert!(
+            (scored - 0.8).abs() < 1e-9,
+            "ordinary source path must not be haircut, got {scored}"
+        );
+    }
+
+    #[test]
+    fn path_haircut_is_disabled_when_penalize_is_false() {
+        // `--no-suppress-test-fixtures` clears the haircut even in a fixtures dir.
+        let scored = apply_path_confidence_penalties(0.8, Some("a/fixtures/b.rs"), false);
+        assert!(
+            (scored - 0.8).abs() < 1e-9,
+            "penalize=false must keep full confidence, got {scored}"
+        );
+    }
+
+    #[test]
+    fn path_haircut_sanitizes_nan_even_without_a_path() {
+        assert_eq!(apply_path_confidence_penalties(f64::NAN, None, true), 0.0);
+    }
 
     // ── the hoisted post-ML penalty multipliers are pinned ───────────────────
     #[test]

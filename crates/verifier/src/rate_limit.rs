@@ -12,9 +12,41 @@ use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+/// Aggregate transient-error count above which global backpressure engages,
+/// injecting [`GLOBAL_BACKPRESSURE_PENALTY`] per request until successes drain
+/// the counter back down. Hoisted to a single named owner (was an inline `> 50`
+/// / `from_secs(1)` pair). Tier-A CLI/TOML tuning is tracked separately.
+const GLOBAL_BACKPRESSURE_ERROR_THRESHOLD: usize = 50;
+const GLOBAL_BACKPRESSURE_PENALTY: Duration = Duration::from_secs(1);
+
+/// Per-service AIMD backoff (single named owners; Tier-A CLI/TOML tuning tracked
+/// separately). A `429 Too Many Requests` for a service MULTIPLICATIVELY DECREASES
+/// its rate (interval `*= RATE_LIMIT_BACKOFF_MULTIPLIER`, capped at
+/// `RATE_LIMIT_MAX_INTERVAL`); each subsequent SUCCESSFUL round-trip
+/// ADDITIVELY INCREASES the rate back (interval `-= base/RATE_LIMIT_RECOVERY_STEP_DIVISOR`,
+/// floored at the configured `base_interval`). This is the classic AIMD shape:
+/// back off fast when throttled, recover gently so the service is not immediately
+/// re-throttled. It replaces the previous `update_limit(service, 0.5)` hard-set,
+/// which pinned a service to 0.5 rps forever after a single 429 and NEVER
+/// recovered even after thousands of successes (Law 7: a permanently throttled
+/// verifier is a throughput bug).
+const RATE_LIMIT_BACKOFF_MULTIPLIER: u32 = 2;
+/// Slowest per-service pace under sustained throttling (~0.125 rps). The ceiling
+/// is `max(this, base_interval)` so a service configured slower than this is
+/// never sped up by the cap.
+const RATE_LIMIT_MAX_INTERVAL: Duration = Duration::from_secs(8);
+/// Additive-increase granularity: each success recovers `base_interval / this` of
+/// the backoff, so one doubling heals in `this` successes (gentle, monotone).
+const RATE_LIMIT_RECOVERY_STEP_DIVISOR: u32 = 2;
+
 struct ServiceLimit {
     last_request: Instant,
+    /// Current working inter-request interval (AIMD-adjusted: `>= base_interval`,
+    /// grows on 429, shrinks back on success).
     interval: Duration,
+    /// Configured target interval — the FASTEST (smallest) pace for this service
+    /// and the floor AIMD recovery returns to. Set at creation / `update_limit`.
+    base_interval: Duration,
 }
 
 pub struct RateLimiter {
@@ -52,10 +84,12 @@ impl RateLimiter {
     }
 
     pub async fn wait(&self, service: &str) {
-        let bp = if self.global_error_count.load(Ordering::Relaxed) > 50 {
-            Duration::from_secs(1)
+        let bp = if self.global_error_count.load(Ordering::Relaxed)
+            > GLOBAL_BACKPRESSURE_ERROR_THRESHOLD
+        {
+            GLOBAL_BACKPRESSURE_PENALTY
         } else {
-            Duration::from_millis(0)
+            Duration::ZERO
         };
         let wait_time = {
             let default = self.default_interval();
@@ -65,8 +99,9 @@ impl RateLimiter {
             } else {
                 let inserted = self.services.entry(service.to_string()).or_insert_with(|| {
                     Mutex::new(ServiceLimit {
-                        last_request: Instant::now() - default,
+                        last_request: initial_last_request(Instant::now(), default),
                         interval: default,
+                        base_interval: default,
                     })
                 });
                 let mut limit = inserted.value().lock();
@@ -98,6 +133,8 @@ impl RateLimiter {
         self.global_error_count.load(Ordering::Relaxed)
     }
 
+    /// Configure a service's TARGET rate (the `base_interval` AIMD recovers to).
+    /// A config change resets any in-flight backoff: `interval == base_interval`.
     pub async fn update_limit(&self, service: &str, rps: f64) {
         let interval = Duration::from_nanos(rps_to_nanos(rps));
         self.services.insert(
@@ -105,9 +142,77 @@ impl RateLimiter {
             Mutex::new(ServiceLimit {
                 last_request: Instant::now(),
                 interval,
+                base_interval: interval,
             }),
         );
     }
+
+    /// Multiplicative-decrease: a `429` for `service` slows it by
+    /// [`RATE_LIMIT_BACKOFF_MULTIPLIER`], capped at
+    /// `max(RATE_LIMIT_MAX_INTERVAL, base_interval)` (never faster than the
+    /// configured base). If the service has no slot yet, one is created at the
+    /// default pace already backed off once. Takes effect on the next
+    /// [`Self::wait`]. Recovery is driven by [`Self::reward_service`] on success.
+    pub fn penalize_service(&self, service: &str) {
+        if let Some(entry) = self.services.get(service) {
+            let mut limit = entry.value().lock();
+            let ceiling = RATE_LIMIT_MAX_INTERVAL.max(limit.base_interval);
+            limit.interval = limit
+                .interval
+                .checked_mul(RATE_LIMIT_BACKOFF_MULTIPLIER)
+                .unwrap_or(ceiling)
+                .min(ceiling);
+        } else {
+            let default = self.default_interval();
+            let ceiling = RATE_LIMIT_MAX_INTERVAL.max(default);
+            let interval = default
+                .checked_mul(RATE_LIMIT_BACKOFF_MULTIPLIER)
+                .unwrap_or(ceiling)
+                .min(ceiling);
+            self.services.entry(service.to_string()).or_insert_with(|| {
+                Mutex::new(ServiceLimit {
+                    last_request: Instant::now(),
+                    interval,
+                    base_interval: default,
+                })
+            });
+        }
+    }
+
+    /// Additive-increase: a successful round-trip for `service` recovers
+    /// `base_interval / RATE_LIMIT_RECOVERY_STEP_DIVISOR` of its backoff, floored
+    /// at `base_interval` (never faster than configured). No-op when the service
+    /// has no slot or is already at base — cheap to call on every success.
+    pub fn reward_service(&self, service: &str) {
+        if let Some(entry) = self.services.get(service) {
+            let mut limit = entry.value().lock();
+            if limit.interval > limit.base_interval {
+                let step = limit.base_interval / RATE_LIMIT_RECOVERY_STEP_DIVISOR;
+                limit.interval = limit.interval.saturating_sub(step).max(limit.base_interval);
+            }
+        }
+    }
+
+    /// Current working inter-request interval for `service`, or `None` if the
+    /// service has no slot yet. Introspection of the live AIMD state (used by the
+    /// recovery regression test and available for operator diagnostics).
+    pub fn service_interval(&self, service: &str) -> Option<Duration> {
+        self.services
+            .get(service)
+            .map(|entry| entry.value().lock().interval)
+    }
+}
+
+/// Initial `last_request` for a freshly-created service slot: one interval in
+/// the past so the very first request is admitted immediately (`next_slot =
+/// last_request + interval = now`). On a host with very low uptime (a fresh
+/// container, where `Instant::now()` can be *less than* `interval` from the
+/// monotonic clock's origin) a plain `now - interval` underflows and PANICS.
+/// `checked_sub` clamps to `now` instead: the first request then waits one
+/// interval — a one-off politeness delay, never a correctness or security
+/// regression, and never a panic.
+pub(crate) fn initial_last_request(now: Instant, interval: Duration) -> Instant {
+    now.checked_sub(interval).unwrap_or(now)
 }
 
 fn reserve_service_slot(limit: &mut ServiceLimit, now: Instant) -> Option<Duration> {

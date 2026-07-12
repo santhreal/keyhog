@@ -511,7 +511,7 @@ fn reporting_sarif_includes_scanner_decode_truncation_gap() {
     let chunk = Chunk {
         data: SensitiveString::from("plain inert text"),
         metadata: ChunkMetadata {
-            path: Some("encoded/audit.txt".to_string()),
+            path: Some("encoded/audit.txt".into()),
             ..Default::default()
         },
     };

@@ -1,7 +1,6 @@
 use super::archive::unpack_layer_archive;
 use super::metadata::manifest_layer_archives as find_manifest_layer_archives;
 use super::{create_private_directory_all, DockerScanWorkspace};
-use codewalk::{CodeWalker, WalkConfig};
 use keyhog_core::{Chunk, Source, SourceError};
 use std::path::{Path, PathBuf};
 
@@ -43,15 +42,7 @@ pub(super) fn find_layer_archives(
     }
 
     let mut layers = Vec::new();
-    let walker = CodeWalker::new(
-        root_path,
-        WalkConfig::default()
-            .follow_symlinks(false)
-            .respect_gitignore(false)
-            .skip_hidden(false)
-            .skip_binary(false)
-            .max_file_size(0),
-    );
+    let walker = super::exhaustive_archive_walker(root_path);
 
     for entry in walker.walk_iter() {
         let entry = match entry {
@@ -81,10 +72,21 @@ pub(super) fn rewrite_layer_chunks<I>(
 where
     I: IntoIterator<Item = Result<Chunk, SourceError>>,
 {
+    // Canonicalize the layer root ONCE, not per chunk: it is invariant across
+    // every chunk in the layer, and `std::fs::canonicalize` is a syscall that
+    // walks the whole path resolving symlinks — a big layer paid it thousands
+    // of times for the same directory. Callers pass a real unpacked layer dir,
+    // so a canonicalize failure here is a genuine setup error surfaced once.
+    let normalized_root = std::fs::canonicalize(layer_root).map_err(|error| {
+        SourceError::Other(format!(
+            "docker layer root '{}' cannot be canonicalized: {error}",
+            layer_root.display()
+        ))
+    })?;
     let mut rewritten = Vec::new();
     for chunk in input_chunks {
         match chunk {
-            Ok(chunk) => rewritten.push(rewrite_chunk(chunk, image, layer_root, layer_name)?),
+            Ok(chunk) => rewritten.push(rewrite_chunk(chunk, image, &normalized_root, layer_name)?),
             Err(error) => {
                 return Err(SourceError::Other(format!(
                     "docker layer {layer_name} scan failed: {error}"
@@ -145,7 +147,7 @@ fn is_fallback_layer_archive_path(path: &Path) -> bool {
 fn rewrite_chunk(
     mut chunk: Chunk,
     image: &str,
-    layer_root: &Path,
+    normalized_root: &Path,
     layer_name: &str,
 ) -> Result<Chunk, SourceError> {
     let source_path = chunk.metadata.path.as_deref().ok_or_else(|| {
@@ -153,22 +155,26 @@ fn rewrite_chunk(
             "docker layer {layer_name} produced a chunk without a file path"
         ))
     })?;
-    let relative_path = layer_relative_path(source_path, layer_root)?;
+    let relative_path = layer_relative_path(source_path, normalized_root)?;
 
     chunk.metadata.source_type = "docker".into();
-    chunk.metadata.path = Some(format!("{image}:{layer_name}:{relative_path}"));
+    chunk.metadata.path = Some(format!("{image}:{layer_name}:{relative_path}").into());
     chunk.metadata.commit = None;
     chunk.metadata.author = None;
     chunk.metadata.date = None;
     Ok(chunk)
 }
 
-fn layer_relative_path(path: &str, layer_root: &Path) -> Result<String, SourceError> {
+/// Resolve one chunk's path relative to an ALREADY-canonicalized layer root.
+/// The root is canonicalized once by the caller (`rewrite_layer_chunks`) and
+/// passed in, so this per-chunk hot path pays only the one unavoidable
+/// canonicalize of the chunk's own path.
+fn layer_relative_path(path: &str, normalized_root: &Path) -> Result<String, SourceError> {
     let raw_path = Path::new(path);
     let candidate = if raw_path.is_absolute() {
         raw_path.to_path_buf()
     } else {
-        layer_root.join(raw_path)
+        normalized_root.join(raw_path)
     };
     let normalized_path = std::fs::canonicalize(&candidate).map_err(|error| {
         SourceError::Other(format!(
@@ -176,14 +182,8 @@ fn layer_relative_path(path: &str, layer_root: &Path) -> Result<String, SourceEr
             candidate.display()
         ))
     })?;
-    let normalized_root = std::fs::canonicalize(layer_root).map_err(|error| {
-        SourceError::Other(format!(
-            "docker layer root '{}' cannot be canonicalized: {error}",
-            layer_root.display()
-        ))
-    })?;
     let relative = normalized_path
-        .strip_prefix(&normalized_root)
+        .strip_prefix(normalized_root)
         .map_err(|_| {
             SourceError::Other(format!(
                 "docker layer chunk path '{}' is outside layer root '{}'",

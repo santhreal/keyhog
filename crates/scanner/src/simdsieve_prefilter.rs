@@ -118,3 +118,63 @@ pub(crate) fn build_hot_pattern_validator(
         })?;
     Ok(re)
 }
+
+/// Build validators for ALL detectors that declare simdsieve prefixes,
+/// returning one `Option<Regex>` per detector (in the same order as the
+/// input slice). Detectors without simdsieve prefixes get `None`.
+#[cfg(feature = "simdsieve")]
+pub(crate) fn build_hot_pattern_validators(
+    detectors: &[keyhog_core::DetectorSpec],
+) -> crate::error::Result<Vec<Option<regex::Regex>>> {
+    detectors
+        .iter()
+        .map(|detector| {
+            if detector.simdsieve_prefixes.is_empty() {
+                Ok(None)
+            } else {
+                build_hot_pattern_validator(detector).map(Some)
+            }
+        })
+        .collect()
+}
+
+/// Static hot-pattern data: (prefix bytes, detector id) pairs, one per
+/// simdsieve prefix across all embedded detectors. Computed once from
+/// `keyhog_core::embedded_detector_specs()` and leaked to satisfy the
+/// `&'static` contract used by test helpers.
+#[cfg(feature = "simdsieve")]
+static HOT_PATTERN_DATA: std::sync::OnceLock<(&'static [&'static [u8]], &'static [&'static str])> =
+    std::sync::OnceLock::new();
+
+#[cfg(feature = "simdsieve")]
+fn compute_hot_pattern_data() -> (&'static [&'static [u8]], &'static [&'static str]) {
+    let detectors = keyhog_core::embedded_detector_specs();
+    let mut prefixes: Vec<&'static [u8]> = Vec::new();
+    let mut detector_ids: Vec<&'static str> = Vec::new();
+    for detector in detectors {
+        for prefix in &detector.simdsieve_prefixes {
+            // Leak the prefix string to get a 'static slice. This runs once
+            // per process and the total volume is tiny (< 16 prefixes).
+            let static_prefix: &'static [u8] =
+                Box::leak(prefix.clone().into_bytes().into_boxed_slice());
+            prefixes.push(static_prefix);
+            detector_ids.push(detector.id.as_str());
+        }
+    }
+    // Leak the Vecs into 'static slices. One-time cost, tiny volume.
+    let static_prefixes: &'static [&'static [u8]] = Box::leak(prefixes.into_boxed_slice());
+    let static_ids: &'static [&'static str] = Box::leak(detector_ids.into_boxed_slice());
+    (static_prefixes, static_ids)
+}
+
+/// The canonical hot-pattern prefix bytes, one entry per simdsieve prefix
+/// across all embedded detectors. Order follows `embedded_detector_specs()`.
+#[cfg(feature = "simdsieve")]
+pub(crate) static HOT_PATTERNS: std::sync::LazyLock<&'static [&'static [u8]]> =
+    std::sync::LazyLock::new(|| HOT_PATTERN_DATA.get_or_init(compute_hot_pattern_data).0);
+
+/// The canonical hot-pattern detector IDs, one per simdsieve prefix (parallel
+/// to [`HOT_PATTERNS`]). Each prefix is paired with the detector that owns it.
+#[cfg(feature = "simdsieve")]
+pub(crate) static HOT_PATTERN_DETECTOR_IDS: std::sync::LazyLock<&'static [&'static str]> =
+    std::sync::LazyLock::new(|| HOT_PATTERN_DATA.get_or_init(compute_hot_pattern_data).1);

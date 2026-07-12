@@ -13,7 +13,8 @@
 # Usage:
 #   ml/retrain_loop.sh                      # measure only (writes a scratch model)
 #   ml/retrain_loop.sh --write              # ship weights.bin if train-gates pass (+.bak)
-#   ml/retrain_loop.sh --write --verify     # ship, then REBUILD + per-detector FP gate;
+#   ml/retrain_loop.sh --write --verify     # ship, then REBUILD + per-detector FP gate
+#                                           #   + contract-recall gate (920 fixtures);
 #                                           #   auto-revert weights.bin on any regression
 #   KEYHOG_BIN=/path/to/keyhog ml/retrain_loop.sh   # explicit external harvester
 #   CORPORA="creddata" ml/retrain_loop.sh   # which real corpora to harvest
@@ -29,6 +30,13 @@
 # (fail-closed: restores weights.bin from .bak + rebuilds) on any per-detector FP
 # spike or overall-F1 regression. Without --verify, --write prints a loud banner
 # that this guard has NOT run — it never silently ships an unverified model.
+#
+# Contract-recall gate (--verify, second guard): the bench above is BLIND to the
+# 920 known-positive contract fixtures, so a model that suppresses generic/entropy
+# contract positives passes the bench yet breaks the contract CI gate (how
+# moe-v1-1cbb8088 shipped with CredData F1 +0.088 but MISSED 13 contract positives
+# on 2026-07-07). --verify now also runs contracts_runner against the candidate and
+# fail-closed reverts on any contract failure (VERIFY_CONTRACTS=0 disables, iteration only).
 set -euo pipefail
 
 ML_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,8 +46,14 @@ cd "${REPO_ROOT}"
 CORPORA="${CORPORA:-creddata}"
 REAL_OUT="${REAL_OUT:-ml/data/real_corpus.jsonl}"
 SYN_CORPUS="${SYN_CORPUS:-ml/data/corpus.jsonl}"
-FEATURES="${FEATURES:-42}"
+FEATURES="${FEATURES:-43}"
 WEIGHTS="${WEIGHTS:-crates/scanner/src/weights.bin}"
+# The model card is written+backed-up alongside weights.bin by train_classifier's
+# write_model_card. build.rs enforces weights.bin <-> model_card consistency
+# (model_version + weights_fnv1a64), so a fail-closed revert MUST restore BOTH or
+# the post-revert rebuild fails the consistency check and leaves the tree in a
+# weights=baseline / card=candidate mismatch.
+MODEL_CARD="${MODEL_CARD:-crates/scanner/src/model_card.json}"
 # Corpora the bench-verify gate runs on. mirror = the precision guardian, creddata
 # = the real-distribution recall corpus where the prior regression surfaced.
 VERIFY_CORPORA="${VERIFY_CORPORA:-mirror creddata}"
@@ -111,6 +125,21 @@ _gate_vs() {  # corpus, results_dir, baseline_dir
     && python3 -m bench gate --corpus "$1" --results "$2" --baseline "$3" \
        --epsilon "${VERIFY_EPSILON}" --no-beat-competitors )
 }
+# Contract-recall gate (--verify): the per-detector FP/F1 bench above is BLIND to
+# the 920 known-positive contract fixtures. A model that suppresses generic/entropy
+# contract positives (`password=<real>`, `{"secret":"<real>"}`) sails through the
+# bench yet breaks the hard contract CI gate — exactly how moe-v1-1cbb8088 shipped
+# past --verify on 2026-07-07 (CredData F1 +0.088, mirror recall flat) while MISSING
+# 13 contract positives (generic-password + 8 JSON-wrapped evasions). Running
+# contracts_runner against the just-shipped candidate closes that hole so --verify
+# is honest. Absolute (candidate must pass ALL contracts): if the tree's contracts
+# are already red from concurrent work, fix the tree before shipping a model. Set
+# VERIFY_CONTRACTS=0 only for throwaway iteration, never for a real ship.
+VERIFY_CONTRACTS="${VERIFY_CONTRACTS:-1}"
+_contracts_gate() {  # run the 920-fixture contract suite against the current (candidate) weights.bin
+  ( cd "${REPO_ROOT}" \
+    && CARGO_TARGET_DIR="${TARGET_DIR}" cargo test -p keyhog-scanner --test contracts_runner )
+}
 # Fail-closed revert: put the pre-ship model back and rebuild so the live binary
 # never embeds a rejected candidate (Law 10 — never silently leave the worse
 # model shipped).
@@ -120,6 +149,12 @@ _restore_and_rebuild() {
     return 1
   fi
   cp -f "${WEIGHTS}.bak" "${WEIGHTS}"
+  # Restore the model card too, so build.rs's weights<->card consistency check
+  # passes on the post-revert rebuild (Law-10: never leave a mismatched pair).
+  if [[ -f "${MODEL_CARD}.bak" ]]; then
+    cp -f "${MODEL_CARD}.bak" "${MODEL_CARD}"
+    echo "→ [verify] restored ${MODEL_CARD} from .bak (weights<->card kept consistent)" >&2
+  fi
   echo "→ [verify] restored ${WEIGHTS} from .bak; rebuilding the known-good model" >&2
   if ! _rebuild; then
     echo "error: rebuild after restore failed; live binary may still embed the rejected candidate" >&2
@@ -163,6 +198,24 @@ echo "→ keyhog: ${KEYHOG_BIN} (${KEYHOG_VERSION})"
 # 2) Harvest the real distribution (labels via the bench's ground-truth overlap).
 echo "→ harvesting real corpus: ${CORPORA}"
 python3 ml/harvest_corpus.py --corpora ${CORPORA} --keyhog-bin "${KEYHOG_BIN}" --out "${REAL_OUT}"
+
+# 2b) Blend the detector contract fixtures in as labeled training data
+#     (positive/evasion=1, negative=0). CredData alone never taught the model
+#     these context-anchored medium-entropy shapes, so a precision retrain drops
+#     them — moe-v1-1cbb8088 shipped past the bench gate but MISSED 13 contract
+#     positives. Blending them (+ their placeholder negatives, which reinforce
+#     precision) is what lets a precision retrain also clear the contract gate.
+#     Contract records force into the train split (train_classifier._group_split)
+#     so they never dilute the honest CredData held-out. Set CONTRACT_CORPUS to a
+#     pre-generated jsonl: `python3 ml/gen_contract_corpus.py ml/data/contract_corpus.jsonl`.
+if [[ -n "${CONTRACT_CORPUS:-}" ]]; then
+  if [[ ! -f "${CONTRACT_CORPUS}" ]]; then
+    echo "error: CONTRACT_CORPUS set but not found: ${CONTRACT_CORPUS}" >&2; exit 2
+  fi
+  n_before="$(wc -l < "${REAL_OUT}")"
+  cat "${CONTRACT_CORPUS}" >> "${REAL_OUT}"
+  echo "→ blended contract fixtures into real corpus: ${n_before} -> $(wc -l < "${REAL_OUT}") records"
+fi
 
 # 2.5) [verify] Capture the PRE-SHIP baseline from VERIFY_BIN (just rebuilt from
 #      the current weights.bin), BEFORE train --write overwrites it — so the gate
@@ -211,6 +264,16 @@ if [[ "${DO_WRITE}" == "1" && "${DO_VERIFY}" == "1" ]]; then
       VERIFY_FAILED=1
     fi
   done
+  # Contract-recall gate — the bench above cannot see the 920 known-positive
+  # fixtures; run them against the candidate so a generic/entropy recall
+  # regression can't slip through (the moe-v1-1cbb8088 failure mode).
+  if [[ "${VERIFY_FAILED}" == "0" && "${VERIFY_CONTRACTS}" == "1" ]]; then
+    echo "→ [verify] contract-recall gate: 920 known-positive fixtures (bench-blind)"
+    if ! _contracts_gate; then
+      echo "✗ [verify] contract-recall gate FAILED — candidate suppresses known-positive contract fixtures" >&2
+      VERIFY_FAILED=1
+    fi
+  fi
   if [[ "${VERIFY_FAILED}" != "0" ]]; then
     echo "✗ [verify] regression detected — model REJECTED" >&2
     _restore_and_rebuild || exit 2

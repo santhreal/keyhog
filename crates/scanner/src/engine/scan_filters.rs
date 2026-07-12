@@ -310,7 +310,10 @@ fn extend_base64_padding<'a>(
 }
 
 fn is_provider_token_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')
+    // ONE owner for the `_ - .` token-separator set:
+    // `crate::engine::phase2_generic::keywords::is_assignment_compact_separator`.
+    byte.is_ascii_alphanumeric()
+        || crate::engine::phase2_generic::keywords::is_assignment_compact_separator(byte)
 }
 
 /// Compute the two per-pattern-constant confidence signals (`keyword_nearby`,
@@ -362,48 +365,26 @@ mod tests {
         has_secret_keyword_fast, DEFAULT_ENTROPY_RUN_BYTES,
     };
 
+    #[derive(serde::Deserialize)]
+    struct CuratedPrefixes {
+        prefixes: Vec<String>,
+    }
+
     /// The EXACT set of distinctive vendor prefixes `has_secret_keyword_fast`
     /// treats as split-across-lines secret anchors. This is the contract: the fn
     /// must fire for every one of these, so if a future edit drops one the
     /// `every_curated_prefix_triggers` test fails loudly. Ordered by vendor to
     /// mirror the source list.
-    const CURATED_PREFIXES: &[&str] = &[
-        // OpenAI
-        "sk-proj-",
-        "sk-svcacct-",
-        "sk-admin-",
-        // Stripe
-        "sk_live_",
-        "sk_test_",
-        "rk_live_",
-        "pk_live_",
-        // GitHub (all installation variants)
-        "ghp_",
-        "ghs_",
-        "gho_",
-        "ghu_",
-        "ghr_",
-        "github_pat_",
-        // Slack
-        "xoxb-",
-        "xoxp-",
-        "xoxa-",
-        "xoxr-",
-        "xoxs-",
-        "xapp-",
-        // Anthropic
-        "sk-ant-",
-        // HuggingFace
-        "hf_",
-        // GCP service-account email shard
-        ".iam.gserviceaccount.com",
-        // GitLab
-        "glpat-",
-        // npm
-        "npm_",
-        // Heroku
-        "HRKU-",
-    ];
+    static CURATED_PREFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+        let raw = include_str!("../../../../rules/curated-prefixes.toml");
+        match toml::from_str::<CuratedPrefixes>(raw) {
+            Ok(parsed) => parsed.prefixes,
+            Err(error) => panic!(
+                "rules/curated-prefixes.toml is invalid: {error}. \
+                     Fix the bundled Tier-B curated prefixes list."
+            ),
+        }
+    });
 
     #[test]
     fn curated_prefix_list_has_exactly_twenty_five_entries() {
@@ -415,7 +396,7 @@ mod tests {
 
     #[test]
     fn every_curated_prefix_triggers() {
-        for prefix in CURATED_PREFIXES {
+        for prefix in &*CURATED_PREFIXES {
             let line = format!("api_key = {prefix}A1b2C3d4E5f6");
             assert!(
                 has_secret_keyword_fast(line.as_bytes()),

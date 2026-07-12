@@ -32,6 +32,13 @@ CONF_BINS = 20
 CONF_BIN_WIDTH = 1.0 / CONF_BINS
 
 
+def precision_of(tp: int, fp: int) -> float:
+    """TP / (TP + FP), 0.0 when the detector/outcome never fired. ONE home for
+    the precision formula, shared by :class:`Outcome` and :class:`DetectorStat`."""
+    d = tp + fp
+    return tp / d if d else 0.0
+
+
 def conf_bin(confidence: float) -> int:
     """Bucket a confidence in [0, 1] into ``[0, CONF_BINS-1]`` (clamped)."""
     idx = int(confidence / CONF_BIN_WIDTH)
@@ -56,8 +63,7 @@ class Outcome:
     fn: int = 0
 
     def precision(self) -> float:
-        d = self.tp + self.fp
-        return self.tp / d if d else 0.0
+        return precision_of(self.tp, self.fp)
 
     def recall(self) -> float:
         d = self.tp + self.fn
@@ -112,8 +118,7 @@ class DetectorStat:
     fp_hist: list[int] = field(default_factory=lambda: [0] * CONF_BINS)
 
     def precision(self) -> float:
-        d = self.tp + self.fp
-        return self.tp / d if d else 0.0
+        return precision_of(self.tp, self.fp)
 
     def add_tp(self, confidence: float | None) -> None:
         self.tp += 1

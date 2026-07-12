@@ -28,7 +28,10 @@ pub(crate) fn stream_finding_preview<W: Write>(w: &mut W, f: &VerifiedFinding) {
     if let Err(error) = writeln!(
         w,
         "[stream] {sev:<8} {service}/{detector}  {path}:{line}  {redacted}",
-        sev = format!("{:?}", f.severity).to_uppercase(),
+        // Canonical severity text (kebab-case), uppercased for the preview.
+        // Deriving from `{:?}` here diverged for `ClientSafe` (Debug =>
+        // "CLIENTSAFE", not "CLIENT-SAFE"); route through the one table.
+        sev = f.severity.as_str().to_uppercase(),
         service = f.service,
         detector = f.detector_id,
         path = path,
@@ -67,7 +70,7 @@ pub(crate) fn stream_report_previews(findings: &[VerifiedFinding]) {
 pub(crate) fn scanner_panic_notice(panicked: bool) -> Option<String> {
     panicked.then(|| {
         "SCAN INCOMPLETE: the scanner thread panicked mid-scan. The findings below \
-         are PARTIAL — chunks in flight when it crashed were NOT scanned, so a \
+         are PARTIAL: chunks in flight when it crashed were NOT scanned, so a \
          \"0 secrets\" / low count is NOT a clean result. The process exits with a \
          distinct scanner-panic code. Re-run; if it persists, file a bug with the \
          input that triggered it."
@@ -116,6 +119,25 @@ fn count_token(count: usize, label: &str, color_code: &str, color: bool) -> Stri
     crate::style::paint(format!("{count} {label}"), color_code, color)
 }
 
+/// Singular/plural noun for a secret count. One owner so the completion summary
+/// and the verification ticker agree; a single finding must read "1 secret".
+pub(crate) fn secret_noun(count: usize) -> &'static str {
+    if count == 1 {
+        "secret"
+    } else {
+        "secrets"
+    }
+}
+
+/// Singular/plural noun for a finding count (scan/reporting tickers).
+pub(crate) fn finding_noun(count: usize) -> &'static str {
+    if count == 1 {
+        "finding"
+    } else {
+        "findings"
+    }
+}
+
 fn dot_join(parts: &[String], color: bool) -> String {
     let sep = if color {
         format!("{C_MUTED} · {C_RESET}")
@@ -123,17 +145,6 @@ fn dot_join(parts: &[String], color: bool) -> String {
         " · ".to_string()
     };
     parts.join(&sep)
-}
-
-fn severity_label(severity: Severity) -> &'static str {
-    match severity {
-        Severity::Critical => "critical",
-        Severity::High => "high",
-        Severity::Medium => "medium",
-        Severity::Low => "low",
-        Severity::ClientSafe => "client-safe",
-        Severity::Info => "info",
-    }
 }
 
 fn severity_color(severity: Severity) -> &'static str {
@@ -179,12 +190,7 @@ pub(crate) fn render_severity_line(findings: &[VerifiedFinding], color: bool) ->
         .into_iter()
         .filter(|(_, count)| *count > 0)
         .map(|(severity, count)| {
-            count_token(
-                count,
-                severity_label(severity),
-                severity_color(severity),
-                color,
-            )
+            count_token(count, severity.as_str(), severity_color(severity), color)
         })
         .collect();
     let (muted, reset) = if color { (C_MUTED, C_RESET) } else { ("", "") };
@@ -214,7 +220,7 @@ pub(crate) fn render_verification_line(
     // Verification was never attempted for ANY finding: say so explicitly.
     if b.skipped == total {
         return Some(format!(
-            "{muted}↳ verification: {amber}not checked{reset}{muted} — liveness check did not run; pass {brand}--verify{reset}{muted} \
+            "{muted}↳ verification: {amber}not checked{reset}{muted}: liveness check did not run; pass {brand}--verify{reset}{muted} \
              to confirm which are active{reset}"
         ));
     }
@@ -261,9 +267,12 @@ pub(crate) fn report_completion_summary(
             palette.green, palette.reset, palette.yellow, elapsed, palette.reset
         );
     } else {
+        // Pluralize the noun so a single finding reads "Found 1 secret", not
+        // "1 secrets"; matches the stdout `Results` footer's `secret{plural}`.
+        let noun = secret_noun(count);
         eprintln!(
-            "\nScan complete. Found {}{}{} secrets in {}{:.2}s{}.",
-            palette.red, count, palette.reset, palette.yellow, elapsed, palette.reset
+            "\nScan complete. Found {}{}{} {} in {}{:.2}s{}.",
+            palette.red, count, palette.reset, noun, palette.yellow, elapsed, palette.reset
         );
         if let Some(line) = render_severity_line(findings, ansi) {
             eprintln!("{line}");
@@ -447,7 +456,7 @@ pub(crate) fn render_ticker_line(
     };
     let spin = FRAMES[frame % FRAMES.len()];
     // Findings count lights up the instant the first one lands; noun agrees in number.
-    let noun = if findings == 1 { "finding" } else { "findings" };
+    let noun = finding_noun(findings);
     let find_seg = if findings > 0 {
         format!("{bold}{amber}{findings}{reset} {muted}{noun}{reset}")
     } else {
@@ -460,7 +469,13 @@ pub(crate) fn render_ticker_line(
             fmt_secs(elapsed)
         )
     } else {
-        let frac = scanned as f64 / total as f64;
+        // `scanned` and `total` are independent Relaxed atomics sampled at two
+        // instants, so a fresh `scanned` against a stale `total` can transiently
+        // read `scanned > total`. Clamp the DISPLAYED count so the bar, the
+        // percentage, and the `n/total` ratio can never show ">100%" or
+        // "1001/1000"; the true underlying rate/eta still use the raw `scanned`.
+        let shown = scanned.min(total);
+        let frac = shown as f64 / total as f64;
         let pct = (frac * 100.0).floor() as u64;
         let bar = render_progress_bar(frac, BAR_WIDTH, color);
         let rate = if elapsed > 0.05 {
@@ -468,21 +483,21 @@ pub(crate) fn render_ticker_line(
         } else {
             0.0
         };
-        let eta = if rate > 0.5 && scanned < total {
+        let eta = if rate > 0.5 && shown < total {
             format!(
                 "  {muted}eta {}{reset}",
-                fmt_secs((total - scanned) as f64 / rate)
+                fmt_secs((total - shown) as f64 / rate)
             )
         } else {
             String::new()
         };
-        let label = if scanned >= total {
+        let label = if shown >= total {
             "finalizing"
         } else {
             "scanning"
         };
         format!(
-            "{brand}{spin}{reset} {bold}{label}{reset} {rail}▕{reset}{bar}{rail}▏{reset} {bold}{pct:>3}%{reset}  {muted}{scanned}/{total}{reset}  {muted}·{reset}  {find_seg}  {muted}·{reset}  {muted}{rate:.0}/s{reset}  {muted}·{reset}  {muted}{}{reset}{eta}",
+            "{brand}{spin}{reset} {bold}{label}{reset} {rail}▕{reset}{bar}{rail}▏{reset} {bold}{pct:>3}%{reset}  {muted}{shown}/{total}{reset}  {muted}·{reset}  {find_seg}  {muted}·{reset}  {muted}{rate:.0}/s{reset}  {muted}·{reset}  {muted}{}{reset}{eta}",
             fmt_secs(elapsed)
         )
     }
@@ -501,7 +516,7 @@ pub(crate) fn render_verification_ticker_line(
     };
     let spin = FRAMES[frame % FRAMES.len()];
     let sweep = render_indeterminate_bar(frame, BAR_WIDTH, color);
-    let noun = if total == 1 { "secret" } else { "secrets" };
+    let noun = secret_noun(total);
     format!(
         "{brand}{spin}{reset} {bold}verifying{reset} {muted}·{reset} {sweep} {muted}·{reset} checking {bold}{total}{reset} {noun} {muted}·{reset} {muted}{}{reset}",
         fmt_secs(elapsed)
@@ -521,7 +536,7 @@ pub(crate) fn render_reporting_ticker_line(
     };
     let spin = FRAMES[frame % FRAMES.len()];
     let sweep = render_indeterminate_bar(frame, BAR_WIDTH, color);
-    let noun = if total == 1 { "finding" } else { "findings" };
+    let noun = finding_noun(total);
     format!(
         "{brand}{spin}{reset} {bold}reporting{reset} {muted}·{reset} {sweep} {muted}·{reset} writing {bold}{total}{reset} {noun} {muted}·{reset} {muted}{}{reset}",
         fmt_secs(elapsed)
@@ -710,58 +725,4 @@ pub(crate) fn dump_dogfood_trace() {
 }
 
 #[cfg(test)]
-mod ticker_const_tests {
-    use super::*;
-
-    /// The braille spinner cycle is exactly ten glyphs; `frame % FRAMES.len()`
-    /// steps 1/10 of a turn per tick. Pin the count and the two endpoints so a
-    /// reordered/trimmed table is caught.
-    #[test]
-    fn frames_is_ten_braille_spinner_glyphs() {
-        assert_eq!(FRAMES.len(), 10);
-        assert_eq!(FRAMES[0], "⠋");
-        assert_eq!(FRAMES[9], "⠏");
-    }
-
-    /// The shared bar width is 22 cells. Prove it is load-bearing: a full
-    /// determinate bar rendered at BAR_WIDTH is exactly 22 filled `█` cells.
-    #[test]
-    fn bar_width_is_twenty_two_cells() {
-        assert_eq!(BAR_WIDTH, 22);
-        let full = render_progress_bar(1.0, BAR_WIDTH, false);
-        assert_eq!(full.chars().count(), 22);
-        assert_eq!(full.chars().filter(|&c| c == '█').count(), 22);
-    }
-
-    /// Single-owner proof: the scan, verification and reporting tickers all read
-    /// the hoisted module-level `FRAMES`/`BAR_WIDTH` — not private per-function
-    /// copies. Each renders the same spinner glyph for a given frame and an
-    /// indeterminate sweep of exactly BAR_WIDTH cells. If any function
-    /// reintroduced a divergent local const, one of these equalities would break.
-    #[test]
-    fn every_phase_ticker_shares_one_frames_and_bar_width_owner() {
-        // `█`/`░` cells only appear in the indeterminate sweep of a no-color line.
-        fn sweep_cells(line: &str) -> usize {
-            line.chars().filter(|&c| c == '█' || c == '░').count()
-        }
-
-        for frame in 0..FRAMES.len() {
-            // total == 0 drives render_ticker_line down its indeterminate branch.
-            let scan = render_ticker_line(0, 0, 0, 0.0, frame, false);
-            let verify = render_verification_ticker_line(1, 0.0, frame, false);
-            let report = render_reporting_ticker_line(1, 0.0, frame, false);
-
-            // Same spinner glyph from the shared FRAMES table (no-color => the
-            // line starts with the bare spinner char, no leading SGR escape).
-            let want = FRAMES[frame % FRAMES.len()];
-            assert_eq!(scan.chars().next().unwrap().to_string(), want);
-            assert_eq!(verify.chars().next().unwrap().to_string(), want);
-            assert_eq!(report.chars().next().unwrap().to_string(), want);
-
-            // Same sweep width from the shared BAR_WIDTH const.
-            assert_eq!(sweep_cells(&scan), BAR_WIDTH);
-            assert_eq!(sweep_cells(&verify), BAR_WIDTH);
-            assert_eq!(sweep_cells(&report), BAR_WIDTH);
-        }
-    }
-}
+mod tests;

@@ -15,19 +15,6 @@ pub struct GcsSource {
     allow_token_forward: bool,
 }
 
-/// Set a cloud-source builder's optional field to `Some(value)`.
-///
-/// Single owner for the byte-identical `with_prefix` / `with_max_objects`
-/// setter bodies shared by the S3, GCS, and Azure Blob sources: each setter
-/// delegates here so the "wrap in `Some`, overwriting any prior value" rule
-/// lives in exactly one place. (Conceptually this belongs in `crate::cloud`
-/// alongside the other cross-source helpers; it is hosted here only because the
-/// cloud module root is outside this change's edit scope, and referenced via
-/// `crate::gcs::set_optional` from the sibling sources.)
-pub(crate) fn set_optional<T>(slot: &mut Option<T>, value: T) {
-    *slot = Some(value);
-}
-
 impl GcsSource {
     pub fn new(bucket: impl Into<String>) -> Self {
         Self {
@@ -63,7 +50,7 @@ impl GcsSource {
     }
 
     pub(crate) fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
-        set_optional(&mut self.prefix, prefix.into());
+        crate::cloud::set_optional(&mut self.prefix, prefix.into());
         self
     }
 
@@ -73,7 +60,7 @@ impl GcsSource {
     }
 
     pub(crate) fn with_max_objects(mut self, max_objects: usize) -> Self {
-        set_optional(&mut self.max_objects, max_objects);
+        crate::cloud::set_optional(&mut self.max_objects, max_objects);
         self
     }
 }
@@ -154,7 +141,8 @@ fn collect_gcs_chunks(
     allow_token_forward: bool,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     let bucket = validate_bucket_name(bucket)?;
-    let endpoint = validate_endpoint(endpoint)?;
+    let endpoint =
+        crate::cloud::validate_cloud_endpoint(endpoint, "GCS", http.allow_private_endpoint, true)?;
     let client = crate::cloud::blocking_client("GCS", http)?;
     let bearer = resolve_gcs_auth(&endpoint, allow_token_forward)?;
     let mut page_token = None::<String>;
@@ -371,7 +359,7 @@ fn fetch_gcs_object_chunk(
             base_offset: 0,
             base_line: 0,
             source_type: "gcs".into(),
-            path: Some(format!("gs://{bucket}/{name}")),
+            path: Some(format!("gs://{bucket}/{name}").into()),
             commit: None,
             author: None,
             date: None,
@@ -405,9 +393,14 @@ fn gcs_media_url(endpoint: &str, bucket: &str, name: &str) -> String {
     )
 }
 
+/// GCS bucket-name length bounds (Google Cloud Storage naming rules): 3–222
+/// characters. https://cloud.google.com/storage/docs/buckets#naming
+const GCS_BUCKET_NAME_MIN_LEN: usize = 3;
+const GCS_BUCKET_NAME_MAX_LEN: usize = 222;
+
 fn validate_bucket_name(bucket: &str) -> Result<String, SourceError> {
     let bucket = bucket.trim();
-    if bucket.len() < 3 || bucket.len() > 222 {
+    if bucket.len() < GCS_BUCKET_NAME_MIN_LEN || bucket.len() > GCS_BUCKET_NAME_MAX_LEN {
         return Err(SourceError::Other("invalid GCS bucket name length".into()));
     }
     if bucket.contains("..") || bucket.contains('/') || bucket.chars().any(char::is_control) {
@@ -433,23 +426,10 @@ fn validate_bucket_name(bucket: &str) -> Result<String, SourceError> {
     Ok(bucket.to_string())
 }
 
-fn validate_endpoint(endpoint: &str) -> Result<String, SourceError> {
-    let parsed = crate::cloud::parse_http_endpoint(endpoint, "GCS")?;
-    if parsed.query().is_some() || !matches!(parsed.path(), "" | "/") {
-        return Err(SourceError::Other("invalid GCS endpoint".into()));
-    }
-    Ok(parsed.to_string().trim_end_matches('/').to_string())
-}
-
 pub(crate) fn endpoint_is_google(endpoint: &str) -> bool {
-    let parsed = match reqwest::Url::parse(endpoint) {
-        Ok(parsed) => parsed,
-        Err(_) => return false, // LAW10: malformed endpoint is fail-closed as non-Google, so credential forwarding stays disabled.
-    };
-    let Some(host) = parsed.host_str() else {
-        return false;
-    };
-    crate::cloud::host_matches_domain_ascii_ci(host, "googleapis.com")
+    // LAW10: shared helper fails closed (non-Google) on a malformed/host-less
+    // endpoint, so credential forwarding stays disabled.
+    crate::cloud::endpoint_host_matches_domain(endpoint, "googleapis.com")
 }
 
 fn gcs_bearer_token(

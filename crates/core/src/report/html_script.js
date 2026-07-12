@@ -515,7 +515,8 @@ function renderTable(findings, isInitial) {
     const commitStr = finding.location.commit ? escapeHtml(finding.location.commit) : 'none';
     const authorStr = finding.location.author ? escapeHtml(finding.location.author) : 'none';
     const dateStr = finding.location.date ? escapeHtml(finding.location.date) : 'none';
-    const confidenceStr = finding.confidence ? `${Math.round(finding.confidence * 100)}%` : 'none';
+    const confidenceStr = (finding.confidence != null && Number.isFinite(finding.confidence))
+      ? `${Math.round(finding.confidence * 100)}%` : 'none';
 
     // Format companion strings
     let metadataItems = '';
@@ -570,15 +571,19 @@ function renderTable(findings, isInitial) {
 }
 
 function renderMetrics(findings, isInitial) {
+  // Single pass instead of eight full .filter() scans of the finding set.
   const total = findings.length;
-  const live = findings.filter(f => f.verification.toLowerCase().startsWith('live')).length;
-  const notChecked = findings.filter(f => verificationIsUnattempted(f.verification)).length;
-  const critical = findings.filter(f => f.severity.toLowerCase() === 'critical').length;
-  const high = findings.filter(f => f.severity.toLowerCase() === 'high').length;
-  const medium = findings.filter(f => f.severity.toLowerCase() === 'medium').length;
-  const low = findings.filter(f => f.severity.toLowerCase() === 'low').length;
-  const info = findings.filter(f => f.severity.toLowerCase() === 'info').length;
-  const clientSafe = findings.filter(f => f.severity.toLowerCase() === 'client-safe').length;
+  let live = 0, notChecked = 0;
+  const sevCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0, 'client-safe': 0 };
+  findings.forEach(f => {
+    const v = (f.verification || '').toLowerCase();
+    if (v.startsWith('live')) live++;
+    if (verificationIsUnattempted(f.verification)) notChecked++;
+    const s = (f.severity || '').toLowerCase();
+    if (s in sevCounts) sevCounts[s]++;
+  });
+  const { critical, high, medium, low, info } = sevCounts;
+  const clientSafe = sevCounts['client-safe'];
 
   // Count up on the initial render (the "settle" moment); set directly when
   // re-rendering from a filter so the numbers track typing without jitter.

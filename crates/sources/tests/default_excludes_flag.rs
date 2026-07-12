@@ -42,6 +42,10 @@ fn body_contains(chunks: &[Chunk], needle: &str) -> bool {
 }
 
 const SENTINEL: &str = "ghp_defaultexcludesentinel0123456789ABCD";
+/// A distinct marker used only in near-miss control files that must be SCANNED
+/// (their names merely contain the letters `min`/`bundle`/`chunk` without the
+/// dot-bounded marker), so we can prove they are not swept up by the infix rule.
+const NEAR_MISS: &str = "near_miss_source_file_must_be_scanned_marker";
 const RAR_UNIX_REGULAR_MODE: u64 = 0o100644;
 const RAR15_40_UNIX_HOST_OS: u64 = 3;
 
@@ -820,4 +824,63 @@ fn default_excludes_apply_inside_rar_archives() {
         "--no-default-excludes must scan default-excluded entries inside RAR archives"
     );
     assert_eq!(skip_counts().excluded, 0);
+}
+
+/// DR-056: minified/bundled bundles are default-excluded via the Tier-B
+/// `rules/default_excludes.toml` — the `.min.`/`.bundle.` INFIXES (case-insensitive)
+/// plus the `.chunk.js` suffix, consolidated from a former inline gate in
+/// `filesystem/extract.rs`. Generated bundles are noise, so any secret-shaped
+/// token in them is dropped; near-miss source files whose names merely CONTAIN
+/// the letters `min`/`bundle`/`chunk` (without the dot-bounded marker) are real
+/// source and must still be scanned. `App.MIN.js` locks the deliberate CS→CI
+/// broadening (the former inline `str::contains(".min.")` was case-SENSITIVE; the
+/// mechanism is case-insensitive like every other default-exclude rule).
+#[test]
+fn default_excludes_drop_minified_and_bundled_files_by_infix() {
+    let _guard = counter_guard();
+    let dir = tempfile::tempdir().unwrap();
+    // Excluded: `.min.` / `.bundle.` infix + `.chunk.js` suffix (incl. the CI case).
+    for name in [
+        "app.min.js",
+        "App.MIN.js",
+        "vendor.bundle.js",
+        "main.chunk.js",
+    ] {
+        fs::write(dir.path().join(name), format!("var t=\"{SENTINEL}\";\n")).unwrap();
+    }
+    // Controls that MUST be scanned: a plain `.js` (proves `.js` is scannable, so
+    // `app.min.js`'s drop is the infix and not the extension) and two near-miss
+    // names that only contain the letters.
+    for name in ["app.js", "bundler.ts", "chunky.js"] {
+        fs::write(dir.path().join(name), format!("const t=\"{NEAR_MISS}\";\n")).unwrap();
+    }
+
+    TestApi.reset_skip_counters();
+    let kept = scan_dir(dir.path(), true);
+    assert!(
+        !body_contains(&kept, SENTINEL),
+        "minified/bundled files (.min./.bundle./.chunk.js, incl. App.MIN.js) must be default-excluded; a bundle token leaked into a chunk"
+    );
+    assert!(
+        body_contains(&kept, NEAR_MISS),
+        "near-miss source files (app.js / bundler.ts / chunky.js) must NOT be excluded — real credentials there must still be scanned"
+    );
+    assert_eq!(
+        skip_counts().excluded,
+        4,
+        "all four minified/bundled files must increment the typed excluded counter (and only those four)"
+    );
+
+    // --no-default-excludes must scan the minified/bundled files too.
+    TestApi.reset_skip_counters();
+    let included = scan_dir(dir.path(), false);
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan minified/bundled files"
+    );
+    assert_eq!(
+        skip_counts().excluded,
+        0,
+        "--no-default-excludes must not count minified/bundled files as excluded"
+    );
 }

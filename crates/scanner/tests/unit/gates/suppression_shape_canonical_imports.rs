@@ -1,41 +1,6 @@
 //! Gate: shape and path suppression predicates use their owner modules.
 
-use std::path::{Path, PathBuf};
-
-fn scanner_src() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
-}
-
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{} not readable: {e}", path.display()))
-}
-
-fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{} not readable: {e}", dir.display()))
-    {
-        let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            collect_rs_files(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            out.push(path);
-        }
-    }
-}
-
-fn uncommented_code(src: &str) -> String {
-    src.lines()
-        .filter_map(|line| {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("//") {
-                None
-            } else {
-                Some(line)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
+use super::support::*;
 
 #[test]
 fn shape_predicates_do_not_route_through_pipeline_or_suppression_root() {
@@ -398,4 +363,29 @@ fn aws_iam_arn_shape_lives_in_shape_owner() {
             && decision.contains("crate::suppression::shape::looks_like_aws_iam_arn(decoded)"),
         "generic, direct suppression, and decoded suppression paths must call the shape owner"
     );
+}
+
+/// Lock the SRI dash-label unification: `strip_hash_algo_prefix` (the report-time
+/// integrity strip) MUST chain the ONE owner `HASH_ALGO_INTEGRITY_LABELS` and
+/// MUST NOT re-own the dash-form SRI labels as byte literals. A diverging
+/// `{sha512-, sha256-}` subset here previously dropped `sha384-`, so `sha384-`
+/// SRI bodies suppressed at entropy generation / decode yet leaked at report
+/// time. This gate fails the instant a second dash-label copy reappears.
+#[test]
+fn strip_hash_algo_prefix_binds_the_sri_label_owner() {
+    let shape = uncommented_code(&read(&scanner_src().join("suppression/shape/canonical.rs")));
+    // Whitespace-insensitive: `cargo fmt` wraps the `.iter().map(...)` chain
+    // across lines. Normalize whitespace before matching so the gate pins the
+    // semantic owner-binding, not a particular line layout.
+    let shape_ws = source_without_whitespace(&shape);
+    assert!(
+        shape_ws.contains("HASH_ALGO_INTEGRITY_LABELS.iter().map(|label|label.as_bytes())"),
+        "strip_hash_algo_prefix must chain the HASH_ALGO_INTEGRITY_LABELS owner for its dash labels"
+    );
+    for reowned in ["b\"sha512-\"", "b\"sha384-\"", "b\"sha256-\""] {
+        assert!(
+            !shape.contains(reowned),
+            "canonical.rs must not re-own the dash SRI label {reowned} as a byte literal — bind the owner instead"
+        );
+    }
 }

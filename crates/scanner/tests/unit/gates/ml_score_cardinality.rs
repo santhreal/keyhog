@@ -147,10 +147,15 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             && gpu.contains("crate::confidence::policy::ml_score_for_candidate_text(")
             && gpu.contains("crate::confidence::policy::apply_empty_candidate_score_policy(")
             && !gpu.contains("*score = 0.0;")
-            && gpu.contains(
-                "GPU MoE score count mismatch; recomputing CPU MoE scores for this batch"
-            ),
-        "GPU MoE caller must reject malformed score vectors and score the same batch on CPU"
+            // The caller's malformed-score arm must surface the mismatch LOUDLY
+            // through the SHARED degrade owner (Law 10 + ONE-PLACE), not a bare
+            // tracing::warn! — the backend already owns the length invariant, so a
+            // caller-side mismatch routes through the same moe_runtime_degrade
+            // (hard-fail under --require-gpu, one-shot eprintln otherwise) before
+            // recomputing the batch on the CPU MoE.
+            && gpu.contains("backend::moe_runtime_degrade(")
+            && gpu.contains("caller-side score count mismatch"),
+        "GPU MoE caller must reject malformed score vectors, surface the mismatch loudly via the shared moe_runtime_degrade owner, and score the same batch on CPU"
     );
     assert!(
         backend.contains("scores.len() != batch_size")

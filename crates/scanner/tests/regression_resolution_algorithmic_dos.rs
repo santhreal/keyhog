@@ -31,7 +31,7 @@ use keyhog_scanner::resolution::resolve_matches;
 use sha2::{Digest, Sha256};
 
 /// A detector id classified as a private-key BLOCK detector (see
-/// its detector-TOML `private_key_block` flag): its matches define
+/// rules/detector-classification.toml `private_key_block`): its matches define
 /// the suppression spans and are themselves never suppressed.
 const SPAN_ID: &str = "private-key";
 /// A generic (non-block, non-entropy) probe detector id: its matches are the
@@ -139,14 +139,20 @@ fn probe_at_exact_span_bounds_is_suppressed() {
 fn probe_at_span_start_boundary_is_suppressed() {
     // start == block_start, end < block_end.
     let resolved = resolve_matches(vec![span(FILE, 100, 200), probe(FILE, 100, 50)]);
-    assert!(!probe_kept(&resolved, 100), "left-aligned nested probe is suppressed");
+    assert!(
+        !probe_kept(&resolved, 100),
+        "left-aligned nested probe is suppressed"
+    );
 }
 
 #[test]
 fn probe_at_span_end_boundary_is_suppressed() {
     // end == block_end (100+200 == 290+10), start > block_start.
     let resolved = resolve_matches(vec![span(FILE, 100, 200), probe(FILE, 290, 10)]);
-    assert!(!probe_kept(&resolved, 290), "right-aligned nested probe is suppressed");
+    assert!(
+        !probe_kept(&resolved, 290),
+        "right-aligned nested probe is suppressed"
+    );
 }
 
 #[test]
@@ -193,7 +199,10 @@ fn probe_contained_in_both_overlapping_spans_is_suppressed() {
         span(FILE, 500, 1000),
         probe(FILE, 600, 100),
     ]);
-    assert!(!probe_kept(&resolved, 600), "a probe inside overlapping spans is suppressed");
+    assert!(
+        !probe_kept(&resolved, 600),
+        "a probe inside overlapping spans is suppressed"
+    );
 }
 
 // ── not nested → kept ───────────────────────────────────────────────────────
@@ -202,14 +211,20 @@ fn probe_contained_in_both_overlapping_spans_is_suppressed() {
 fn probe_entirely_before_span_is_kept() {
     // probe [0, 50) ends at 50, span starts at 100.
     let resolved = resolve_matches(vec![span(FILE, 100, 200), probe(FILE, 0, 50)]);
-    assert!(probe_kept(&resolved, 0), "a probe before the span is not nested → kept");
+    assert!(
+        probe_kept(&resolved, 0),
+        "a probe before the span is not nested → kept"
+    );
 }
 
 #[test]
 fn probe_entirely_after_span_is_kept() {
     // span [100, 300); probe [400, 450) is past the end.
     let resolved = resolve_matches(vec![span(FILE, 100, 200), probe(FILE, 400, 50)]);
-    assert!(probe_kept(&resolved, 400), "a probe after the span is not nested → kept");
+    assert!(
+        probe_kept(&resolved, 400),
+        "a probe after the span is not nested → kept"
+    );
 }
 
 #[test]
@@ -236,14 +251,20 @@ fn probe_starting_one_byte_before_span_is_kept() {
 fn probe_straddling_span_left_edge_is_kept() {
     // probe [50, 150) straddles the span's start (100): partial overlap, not nested.
     let resolved = resolve_matches(vec![span(FILE, 100, 200), probe(FILE, 50, 100)]);
-    assert!(probe_kept(&resolved, 50), "left-straddling probe is not nested → kept");
+    assert!(
+        probe_kept(&resolved, 50),
+        "left-straddling probe is not nested → kept"
+    );
 }
 
 #[test]
 fn probe_straddling_span_right_edge_is_kept() {
     // probe [250, 350) straddles the span's end (300).
     let resolved = resolve_matches(vec![span(FILE, 100, 200), probe(FILE, 250, 100)]);
-    assert!(probe_kept(&resolved, 250), "right-straddling probe is not nested → kept");
+    assert!(
+        probe_kept(&resolved, 250),
+        "right-straddling probe is not nested → kept"
+    );
 }
 
 #[test]
@@ -285,17 +306,13 @@ fn only_same_file_span_suppresses_when_two_files_each_have_a_span() {
         probe("c.txt", 100, 50),
     ]);
     assert!(
-        !resolved
-            .iter()
-            .any(|m| m.detector_id.as_ref() == PROBE_ID
-                && m.location.file_path.as_deref() == Some("a.txt")),
+        !resolved.iter().any(|m| m.detector_id.as_ref() == PROBE_ID
+            && m.location.file_path.as_deref() == Some("a.txt")),
         "the probe in a.txt (which has a covering span) is suppressed"
     );
     assert!(
-        resolved
-            .iter()
-            .any(|m| m.detector_id.as_ref() == PROBE_ID
-                && m.location.file_path.as_deref() == Some("c.txt")),
+        resolved.iter().any(|m| m.detector_id.as_ref() == PROBE_ID
+            && m.location.file_path.as_deref() == Some("c.txt")),
         "the probe in c.txt (no span) is kept"
     );
 }
@@ -344,7 +361,11 @@ fn no_private_key_spans_keeps_every_probe() {
         probe(FILE, 1000, 50),
         probe(FILE, 2000, 50),
     ]);
-    assert_eq!(count_probes(&resolved), 3, "with no spans, every probe is kept");
+    assert_eq!(
+        count_probes(&resolved),
+        3,
+        "with no spans, every probe is kept"
+    );
 }
 
 #[test]
@@ -394,7 +415,11 @@ fn many_spans_each_with_a_nested_probe_suppresses_all_probes() {
     }
     let resolved = resolve_matches(input);
     assert_eq!(count_spans(&resolved), N, "every block span survives");
-    assert_eq!(count_probes(&resolved), 0, "every nested probe is suppressed");
+    assert_eq!(
+        count_probes(&resolved),
+        0,
+        "every nested probe is suppressed"
+    );
 }
 
 #[test]
@@ -417,7 +442,10 @@ fn interleaved_nested_and_outside_probes_partition_correctly() {
     // Spot-check the partition holds per index, not just in aggregate.
     for i in [0usize, N / 2, N - 1] {
         let start = i * 1_000;
-        assert!(!probe_kept(&resolved, start + 20), "nested probe {i} suppressed");
+        assert!(
+            !probe_kept(&resolved, start + 20),
+            "nested probe {i} suppressed"
+        );
         assert!(probe_kept(&resolved, start + 500), "gap probe {i} kept");
     }
 }
@@ -449,6 +477,14 @@ fn adversarial_many_spans_and_nested_probes_resolve_within_time_bound() {
          scan was reintroduced (algorithmic-DoS, Law 7)"
     );
     // The bound is only meaningful alongside correctness: the work was real.
-    assert_eq!(count_spans(&resolved), N, "all {N} spans survive the fast path");
-    assert_eq!(count_probes(&resolved), 0, "all {N} nested probes are suppressed");
+    assert_eq!(
+        count_spans(&resolved),
+        N,
+        "all {N} spans survive the fast path"
+    );
+    assert_eq!(
+        count_probes(&resolved),
+        0,
+        "all {N} nested probes are suppressed"
+    );
 }

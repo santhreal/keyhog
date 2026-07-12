@@ -34,11 +34,24 @@ fn proxy_resolution_has_one_mode_owner() {
 
 #[test]
 fn dns_pinned_rebuild_neutralizes_ambient_proxy() {
-    let src = include_str!("../../../src/verify/request.rs");
-    let pinned_builder = src
-        .split("fn build_pinned_client(")
+    // The DNS-pinned direct rebuild delegates to the single-owner
+    // `build_pinned_verifier_client` (lib.rs), which must call `.no_proxy()`
+    // BEFORE `.resolve_to_addrs(...)` so an ambient env proxy can never bypass
+    // the pinned DNS result.
+    let req = include_str!("../../../src/verify/request.rs");
+    assert!(
+        req.split("fn build_pinned_client(")
+            .nth(1)
+            .expect("request.rs must own build_pinned_client")
+            .contains("crate::build_pinned_verifier_client("),
+        "build_pinned_client must route through the single-owner pinned client builder"
+    );
+
+    let lib = include_str!("../../../src/lib.rs");
+    let pinned_builder = lib
+        .split("fn build_pinned_verifier_client(")
         .nth(1)
-        .expect("request.rs must own build_pinned_client")
+        .expect("lib.rs must own build_pinned_verifier_client")
         .split(".resolve_to_addrs(host, pinned_addrs)")
         .next()
         .expect("pinned client builder must call resolve_to_addrs");

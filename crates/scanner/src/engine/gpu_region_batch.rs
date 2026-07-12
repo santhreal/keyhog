@@ -65,6 +65,12 @@ impl Drop for ZeroRegionPresenceScratch<'_> {
     }
 }
 
+/// The coalesced region-presence haystack is addressed by the GPU with u32
+/// offsets, so one batch may not exceed this many bytes. The dispatch caller
+/// (`scan_coalesced_gpu_region_presence`) splits larger inputs into
+/// region-boundary sub-batches; this builder fails closed if handed one over cap.
+pub(super) const REGION_PRESENCE_BATCH_BYTE_LIMIT: usize = u32::MAX as usize;
+
 pub(super) fn build_region_presence_batch(
     chunks: &[keyhog_core::Chunk],
     scratch: &mut RegionPresenceScratch,
@@ -75,7 +81,7 @@ pub(super) fn build_region_presence_batch(
             "coalesced GPU region-presence batch length overflows host usize".to_string()
         })?;
     }
-    if total > u32::MAX as usize {
+    if total > REGION_PRESENCE_BATCH_BYTE_LIMIT {
         return Err(format!(
             "coalesced GPU region-presence batch is {total} byte(s), above the u32 GPU ABI; split the batch before dispatch"
         ));
@@ -112,6 +118,26 @@ pub(super) fn build_region_presence_batch(
         scratch.haystack.set_len(total);
     }
     Ok(())
+}
+
+/// Capture what [`with_region_presence_batch`] hands its callback for `chunks`:
+/// the exact haystack bytes the GPU region-presence DFA will scan, the region
+/// start offsets, and whether the borrowed-single-chunk fast path ran (`true`) or
+/// the folded-scratch path (`false`). The single owner both paths flow through, so
+/// a differential test can prove they present BYTE-IDENTICAL input for the same
+/// case-folded content — a stray NUL separator or a lowercasing divergence between
+/// the paths would make the GPU DFA see different bytes and emit different presence
+/// bits (a silent GPU/CPU parity break). Exposed to `crate::testing` for that test.
+pub(crate) fn region_presence_batch_capture(
+    chunks: &[keyhog_core::Chunk],
+) -> std::result::Result<(Vec<u8>, Vec<u32>, bool), String> {
+    with_region_presence_batch(chunks, |haystack, region_starts, mode| {
+        Ok((
+            haystack.to_vec(),
+            region_starts.to_vec(),
+            matches!(mode, RegionPresenceBatchMode::BorrowedSingleChunk),
+        ))
+    })
 }
 
 pub(super) fn with_region_presence_batch<R>(

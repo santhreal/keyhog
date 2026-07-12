@@ -23,7 +23,7 @@ fn successful_non_200_response_body_is_scanned() {
         .expect("2xx response should be scanned");
 
     assert_eq!(chunks.len(), 1);
-    assert_eq!(chunks[0].metadata.source_type, "web:js");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "web:js");
     assert!(
         chunks[0].data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"), // keyhog:ignore detector=aws-access-key
         "2xx non-200 body must be scanned, got {:?}",
@@ -51,7 +51,7 @@ fn extensionless_wasm_routes_by_content_type() {
         .expect("extensionless wasm should be scanned");
 
     assert_eq!(chunks.len(), 1);
-    assert_eq!(chunks[0].metadata.source_type, "web:wasm");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "web:wasm");
     assert!(
         chunks[0].data.as_ref().contains("extensionless_secret"),
         "WASM content-type must route to printable-string extraction, got {:?}",
@@ -77,7 +77,7 @@ fn extensionless_sourcemap_routes_by_content_type() {
         .expect("extensionless source map should be scanned");
 
     assert_eq!(chunks.len(), 1);
-    assert_eq!(chunks[0].metadata.source_type, "web:sourcemap");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "web:sourcemap");
     assert!(
         chunks[0].data.as_ref().contains("decoded_sourcemap_marker"),
         "JSON source map content-type must route to sourcemap expansion, got {:?}",
@@ -101,7 +101,7 @@ fn ordinary_json_response_stays_raw_web_text() {
         .expect("ordinary JSON should still be scanned");
 
     assert_eq!(chunks.len(), 1);
-    assert_eq!(chunks[0].metadata.source_type, "web:js");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "web:js");
     assert!(
         chunks[0].data.as_ref().contains("plain_json_marker"),
         "generic JSON must remain a raw scanned web chunk, got {:?}",

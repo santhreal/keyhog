@@ -225,7 +225,8 @@ fn scan_regular_file_yields_one_filesystem_chunk_with_secret() {
     );
     let chunk = chunks[0];
     assert_eq!(
-        chunk.metadata.source_type, "filesystem",
+        chunk.metadata.source_type.as_ref(),
+        "filesystem",
         "a plain-text filesystem file is delivered with the 'filesystem' source type"
     );
     assert_eq!(
@@ -347,7 +348,7 @@ fn scan_full_special_file_matrix_yields_only_the_regular_file() {
         1,
         "exactly one chunk: the sole regular file; every special file is dropped"
     );
-    assert_eq!(chunks[0].metadata.source_type, "filesystem");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "filesystem");
     assert_eq!(&*chunks[0].data, body.as_str());
     assert!(
         !chunks[0].data.contains(VICTIM_SECRET),

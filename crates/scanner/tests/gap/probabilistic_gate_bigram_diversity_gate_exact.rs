@@ -65,3 +65,53 @@ fn sufficient_bigram_diversity_and_real_tokens_are_promising() {
         "a padded base64 token must be promising"
     );
 }
+
+// ── Property tier: no-panic + the two SOUND boundary invariants ─────────────
+// The fixed vectors above pin the bigram branch precisely. These sweep the gate
+// over generated input to lock the two contracts the LIVE suppression path
+// (`adjudicate/mod.rs:72`: `!looks_promising(credential) ⇒ suppress as
+// ProbabilisticGateNotPromising`) depends on — a false negative here suppresses
+// a real secret, so these are recall guarantees, not cosmetics.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4_000))]
+
+    /// The gate must never panic on ANY input: it byte-indexes (`s.as_bytes()`,
+    /// `windows(2)`, `seen[b as usize]`, the `bigram_slot_512` mix), so a slicing
+    /// or index regression would crash the scan on a hostile candidate. `(?s)`
+    /// so newlines and control bytes are in the swept alphabet too.
+    #[test]
+    fn never_panics_on_arbitrary_input(s in "(?s).{0,80}") {
+        let _ = promising(&s);
+    }
+
+    /// RECALL GUARANTEE: any candidate under 16 BYTES is unconditionally
+    /// promising (the `s.len() < 16` passthrough returns `true` before any
+    /// screen). The gate therefore can NEVER suppress a short secret — a
+    /// regression that lowered or removed that threshold would silently drop
+    /// findings. Swept over every ASCII byte-length 0..=15.
+    #[test]
+    fn inputs_shorter_than_16_bytes_are_always_promising(s in "[\\x00-\\x7f]{0,15}") {
+        prop_assert!(s.len() < 16);
+        prop_assert!(
+            promising(&s),
+            "a {}-byte candidate is below the 16-byte floor and must be promising",
+            s.len()
+        );
+    }
+
+    /// A candidate of >= 16 bytes drawn from at most four distinct letters has
+    /// fewer than five distinct bytes, so the diversity screen (`count < 5`)
+    /// rejects it before the UUID/bigram branches — the documented low-diversity
+    /// noise reject (the `aaaa…`-class redaction-mask family).
+    #[test]
+    fn long_low_diversity_inputs_are_rejected(s in "[abcd]{16,64}") {
+        prop_assert!(
+            !promising(&s),
+            "a {}-byte <=4-distinct-letter mask must be rejected by the diversity screen",
+            s.len()
+        );
+    }
+}

@@ -52,14 +52,11 @@
 //! collector, and the union/HS\AC distinction does not exist — the
 //! differential assertions are skipped (documented at each site).
 
+mod support;
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::collections::BTreeSet;
-use std::path::PathBuf;
-
-fn detectors_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors")
-}
+use support::paths::detector_dir;
 
 fn make_chunk(data: &str) -> Chunk {
     Chunk {
@@ -126,7 +123,7 @@ fn simd_union_is_load_bearing_for_recall() {
         return;
     }
 
-    let detectors = load_detectors(&detectors_dir()).expect("load detectors");
+    let detectors = load_detectors(&detector_dir()).expect("load detectors");
     let scanner = CompiledScanner::compile(detectors).expect("compile scanner");
 
     let mut union_load_bearing = 0usize;
@@ -198,7 +195,7 @@ fn simd_findings_are_a_superset_of_scalar() {
         return;
     }
 
-    let detectors = load_detectors(&detectors_dir()).expect("load detectors");
+    let detectors = load_detectors(&detector_dir()).expect("load detectors");
     let scanner = CompiledScanner::compile(detectors).expect("compile scanner");
 
     // Literal-anchored control: a fixed-prefix secret (AKIA) is in the AC literal

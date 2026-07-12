@@ -1,0 +1,11 @@
+terms = [
+  "HashMap",
+  "HashSet",
+  "BTreeMap",
+  "BTreeSet",
+  "VecDeque",
+  "SmallVec",
+  "InputKey",
+  "CacheKey",
+  "SourceKey",
+]

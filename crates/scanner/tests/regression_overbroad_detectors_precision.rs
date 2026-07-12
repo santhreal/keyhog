@@ -30,19 +30,11 @@
 //! `crates/scanner/src/compiler/compiler_compile.rs::shared_regex_compile`). It FAILS on
 //! the old over-broad regexes and PASSES on the tightened ones.
 
-use std::path::PathBuf;
+mod support;
+use support::paths::detector_dir;
 
 use keyhog_core::{load_detectors, DetectorSpec, PatternSpec};
 use regex::Regex;
-
-/// `crates/scanner/../../detectors` — the on-disk Tier-B detector directory.
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop(); // crates/scanner -> crates
-    d.pop(); // crates        -> repo root
-    d.push("detectors");
-    d
-}
 
 fn load_detector(id: &str) -> DetectorSpec {
     let detectors = load_detectors(&detector_dir())

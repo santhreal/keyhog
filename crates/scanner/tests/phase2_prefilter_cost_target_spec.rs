@@ -15,9 +15,10 @@
 //! convention). Do NOT weaken the threshold to make it pass (Law 9); close the
 //! cost instead.
 //!
-//! Run (release, the only meaningful regime for a ns-scale target):
+//! Run (release, the only meaningful regime for a ns-scale target; debug
+//! measures-and-reports without gating):
 //!   cargo test -p keyhog-scanner --features simd --release \
-//!     --test phase2_prefilter_cost_target_spec -- --ignored --nocapture
+//!     --test phase2_prefilter_cost_target_spec -- --nocapture
 
 mod support;
 use support::paths::detector_dir;
@@ -46,7 +47,7 @@ fn no_candidate_chunks(n: usize) -> Vec<Chunk> {
                 data: text.into(),
                 metadata: ChunkMetadata {
                     source_type: "swe101-cost".into(),
-                    path: Some(format!("/synthetic/mod_{i}.rs")),
+                    path: Some(format!("/synthetic/mod_{i}.rs").into()),
                     base_offset: 0,
                     ..Default::default()
                 },
@@ -56,15 +57,10 @@ fn no_candidate_chunks(n: usize) -> Vec<Chunk> {
 }
 
 #[test]
-#[ignore = "SWE-101 target spec: EXPECTED RED until phase2:prefilter < 1µs/chunk; run --release --ignored"]
 fn fb_prefilter_under_one_microsecond_per_chunk() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors unavailable: {e}");
-            return;
-        }
-    };
+    // Required test asset: fail closed rather than skip the whole cost gate.
+    let detectors = keyhog_core::load_detectors(&detector_dir())
+        .expect("load detectors from the required on-disk detector directory");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
     let chunks = no_candidate_chunks(20_000);
 
@@ -92,6 +88,15 @@ fn fb_prefilter_under_one_microsecond_per_chunk() {
          (target < {TARGET_NS_PER_CHUNK:.0} ns)"
     );
 
+    // Debug builds run orders of magnitude slower than this ns-scale target, so
+    // the absolute cost is only meaningful in `--release` (the only regime the
+    // header documents). Debug measures + reports without gating; the functional
+    // zero-findings assertion above still runs in every mode. In release this is
+    // a RUNNING RED target-spec gate (like `target_spec/perf_10x_*`, never
+    // `#[ignore]`) that turns green only when the residual per-chunk cost closes.
+    if cfg!(debug_assertions) {
+        return;
+    }
     // NOTE: this measures the WHOLE scan path per no-candidate chunk, not the
     // isolated prefilter span, so it is a strict upper bound on `phase2:prefilter`. It
     // stays RED until the residual no-candidate per-chunk cost is under the target.

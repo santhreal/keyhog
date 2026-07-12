@@ -30,7 +30,7 @@ use keyhog_scanner::resolution::resolve_matches;
 use keyhog_scanner::CompiledScanner;
 
 /// Detector ids classified as private-key BLOCK detectors (see
-/// each owning detector TOML's `private_key_block` flag).
+/// rules/detector-classification.toml `private_key_block`).
 const BLOCK_IDS: &[&str] = &["private-key", "ssh-private-key", "github-app-private-key"];
 
 /// A closed PEM block for `label` with a body-unique `marker`.

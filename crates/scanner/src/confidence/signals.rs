@@ -18,7 +18,32 @@ pub(crate) struct ConfidenceSignals {
     pub has_companion: bool,
 }
 
-/// Check if a file path suggests a sensitive file.
+#[derive(serde::Deserialize)]
+struct SensitivePathMarkers {
+    markers: Vec<String>,
+}
+
+fn parse_sensitive_path_markers(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<SensitivePathMarkers>(raw)
+        .map(|parsed| parsed.markers)
+        .map_err(|error| error.to_string())
+}
+
+/// Tier-B sensitive-path marker substrings. Single owner; loaded from
+/// `rules/sensitive-path-markers.toml` so operators extend coverage by editing
+/// data, not code. Panics on invalid embedded Tier-B data (a build-time bug).
+static SENSITIVE_PATH_MARKERS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_sensitive_path_markers(include_str!(
+        "../../../../rules/sensitive-path-markers.toml"
+    )) {
+        Ok(markers) => markers,
+        Err(error) => panic!(
+            "rules/sensitive-path-markers.toml is invalid: {error}. \
+                 Fix the bundled Tier-B sensitive-path marker list."
+        ),
+    }
+});
+
 /// Check if a file path suggests a sensitive file using Aho-Corasick.
 ///
 /// Single AC automaton replaces O(n*m) nested loop with O(n) scan.
@@ -30,65 +55,24 @@ pub(crate) fn is_sensitive_path(path: &str) -> bool {
     let ac = AC.get_or_init(|| {
         match aho_corasick::AhoCorasickBuilder::new()
             .ascii_case_insensitive(true)
-            .build([
-                // Sensitive filenames
-                ".env",
-                ".env.local",
-                ".env.production",
-                ".env.staging",
-                "credentials",
-                "secrets",
-                "apikeys",
-                "api_keys",
-                ".npmrc",
-                ".pypirc",
-                ".netrc",
-                ".pgpass",
-                "terraform.tfvars",
-                "variables.tf",
-                "docker-compose",
-                "application.yml",
-                "application.properties",
-                "config.json",
-                "config.yaml",
-                "config.toml",
-                // Sensitive extensions (matched as substrings - works because
-                // extensions are at end of path and names are distinctive)
-                ".pem",
-                ".key",
-                ".p12",
-                ".pfx",
-                ".jks",
-                ".keystore",
-                ".cer",
-                ".crt",
-                // CI/CD secret files
-                ".github/workflows",
-                "gitlab-ci.yml",
-                "Jenkinsfile",
-                "buildspec.yml",
-                // Cloud config
-                "serverless.yml",
-                "sam-template",
-                "helm/values",
-                "chart/values",
-            ]) {
+            .build(SENSITIVE_PATH_MARKERS.iter())
+        {
             Ok(ac) => Some(ac),
             Err(error) => {
-                // Law 10: never silently swallow the build error. This marker
-                // list is a fixed compile-time constant, so a build failure can
-                // only mean an INVALID marker (e.g. an empty string) was added
-                // above — a development-time bug. The old `.ok()` turned that
-                // into `None` and then returned `false` for EVERY path, silently
-                // deleting the sensitive-file confidence signal fleet-wide. Surface
-                // it LOUDLY (this hot path forbids panics — see the
-                // `confidence_signals_no_unwrap_expect` gate) and fall through to
-                // the recall-preserving branch below.
+                // Law 10: never silently swallow the build error. The marker
+                // list is Tier-B data (rules/sensitive-path-markers.toml) already
+                // validated as TOML at load, so a build failure can only mean an
+                // INVALID marker (e.g. an empty string) — a data bug. The old
+                // `.ok()` turned that into `None` and then returned `false` for
+                // EVERY path, silently deleting the sensitive-file confidence
+                // signal fleet-wide. Surface it LOUDLY (this hot path forbids
+                // panics — see the `confidence_signals_no_unwrap_expect` gate) and
+                // fall through to the recall-preserving branch below.
                 eprintln!(
-                    "keyhog: BUG — the static sensitive-path marker list failed to \
+                    "keyhog: BUG — the sensitive-path marker list failed to \
                      build an Aho-Corasick automaton ({error}); an invalid marker \
-                     was added in confidence/signals.rs. Treating every path as \
-                     sensitive (fail toward recall) until the list is fixed."
+                     is present in rules/sensitive-path-markers.toml. Treating every \
+                     path as sensitive (fail toward recall) until the list is fixed."
                 );
                 None
             }

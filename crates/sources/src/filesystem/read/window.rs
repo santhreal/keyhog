@@ -144,26 +144,12 @@ pub(in crate::filesystem) fn for_each_file_windowed_mmap(
         )));
         return WindowedMmapOutcome::Consumed;
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::AsRawFd;
-        let fd = file.as_raw_fd();
-        // SAFETY: Simple advisory lock FFI call. A failure means
-        // someone else holds an exclusive lock; do not reopen and scan the
-        // file unlocked through the caller's buffered fallback.
-        if unsafe { libc::flock(fd, libc::LOCK_SH | libc::LOCK_NB) } != 0 {
-            tracing::warn!(
-                path = %path.display(),
-                "large file is locked by another process; skipping to avoid scanning a torn write"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            let _continue_scan = emit(Err(windowed_mmap_error(
-                path,
-                "large file is locked by another process",
-            )));
-            return WindowedMmapOutcome::Consumed;
-        }
-    }
+    // No re-flock: `open_file_safe` already holds the advisory LOCK_SH on this
+    // fd (a shared lock we hold blocks any new LOCK_EX), so this was a redundant
+    // syscall with a dead "locked by another process" branch. The lock persists
+    // until the deliberate LOCK_UN after the windowed mmap below. ONE owner of
+    // the flock guard: `open_file_safe` (contract pinned by
+    // `externally_exclusive_locked_file_is_refused_by_open_and_mmap`).
 
     // SAFETY: the mapping is read-only, the `File` lives through the
     // mapping call, and we drop the mmap before this function returns

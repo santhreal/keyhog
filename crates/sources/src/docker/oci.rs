@@ -1,7 +1,6 @@
 use super::file_read::read_capped_file;
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use std::collections::BTreeMap;
-use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -75,12 +74,15 @@ pub(super) fn config_chunks(
                 base_offset: 0,
                 base_line: 0,
                 source_type: "docker".into(),
-                path: Some(format!(
-                    "{image}:oci[{idx}]:{label}:config:{digest}",
-                    idx = loaded.index,
-                    label = loaded.label,
-                    digest = config.digest
-                )),
+                path: Some(
+                    format!(
+                        "{image}:oci[{idx}]:{label}:config:{digest}",
+                        idx = loaded.index,
+                        label = loaded.label,
+                        digest = config.digest
+                    )
+                    .into(),
+                ),
                 commit: None,
                 author: None,
                 date: None,
@@ -281,11 +283,16 @@ fn parse_oci_sha256_digest<'a>(kind: &str, digest: &'a str) -> Result<&'a str, S
     Ok(hex)
 }
 
-fn verify_oci_blob_sha256(path: &Path, digest: &str) -> Result<(), SourceError> {
+pub(crate) fn verify_oci_blob_sha256(path: &Path, digest: &str) -> Result<(), SourceError> {
     use sha2::{Digest, Sha256};
 
     let expected = parse_oci_sha256_digest("blob", digest)?;
-    let mut file = File::open(path).map_err(SourceError::Io)?;
+    // Route through the crate's safe opener (O_NONBLOCK + O_NOFOLLOW +
+    // regular-file check + advisory lock) like every other sources read path,
+    // instead of a raw `File::open`. A malicious OCI layout could place a FIFO
+    // where a blob belongs — a raw open+read would HANG the scan — or a symlink
+    // pointing outside the layout. `open_file_safe` refuses both. ONE opener owner.
+    let mut file = crate::filesystem::open_file_safe(path).map_err(SourceError::Io)?;
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {

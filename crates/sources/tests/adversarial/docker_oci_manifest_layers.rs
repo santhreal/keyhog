@@ -308,7 +308,7 @@ fn docker_layer_rewrite_preserves_offsets_and_rejects_bad_paths() {
         data: "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n".into(),
         metadata: keyhog_core::ChunkMetadata {
             source_type: "filesystem/windowed".into(),
-            path: Some(file.display().to_string()),
+            path: Some(file.display().to_string().into()),
             base_offset: 4096,
             base_line: 33,
             size_bytes: Some(128),
@@ -327,7 +327,7 @@ fn docker_layer_rewrite_preserves_offsets_and_rejects_bad_paths() {
         .expect("rewrite");
     assert_eq!(rewritten.len(), 1);
     let chunk = &rewritten[0];
-    assert_eq!(chunk.metadata.source_type, "docker");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "docker");
     assert_eq!(
         chunk.metadata.path.as_deref(),
         Some("keyhog:test:blobs/sha256/layer.tar:etc/secret.env")
@@ -359,7 +359,7 @@ fn docker_layer_rewrite_preserves_offsets_and_rejects_bad_paths() {
     let outside_chunk = keyhog_core::Chunk {
         data: "x".into(),
         metadata: keyhog_core::ChunkMetadata {
-            path: Some(outside.path().display().to_string()),
+            path: Some(outside.path().display().to_string().into()),
             ..Default::default()
         },
     };
@@ -497,7 +497,7 @@ fn docker_manifest_config_yields_metadata_chunks() {
         .unwrap();
     assert_eq!(chunks.len(), 1);
     let chunk = &chunks[0];
-    assert_eq!(chunk.metadata.source_type, "docker");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "docker");
     assert!(
         chunk
             .metadata
@@ -541,7 +541,7 @@ fn docker_metadata_less_config_json_yields_metadata_chunks() {
         .unwrap();
     assert_eq!(chunks.len(), 1);
     let chunk = &chunks[0];
-    assert_eq!(chunk.metadata.source_type, "docker");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "docker");
     assert!(
         chunk.metadata.path.as_deref().is_some_and(
             |path| path.contains("keyhog:test:fallback-config[0]:metadata/config.json")

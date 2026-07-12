@@ -1,0 +1,10 @@
+receivers = [
+  "this",
+  "self",
+  "window",
+  "process",
+  "global",
+  "config",
+  "client",
+  "service",
+]

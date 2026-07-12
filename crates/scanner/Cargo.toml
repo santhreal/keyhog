@@ -18,9 +18,12 @@ status = "alpha"
 
 [features]
 # Default = full desktop experience: GPU stack + Hyperscan + SIMD prefilter +
-# every ML/decode/multiline data path. Strip with `--no-default-features
-# --features ci` to drop the GPU drivers and Hyperscan for a maximally-light
-# CI binary (no libhs link, no wgpu/Vulkan probe, ~150ms cold-start).
+# every ML/decode/multiline data path. Build the GPU-less CI binary with
+# `--no-default-features --features ci-lean`: it drops ONLY the wgpu/Vulkan GPU
+# dispatch stack (no adapter probe) while keeping Hyperscan + simdsieve + all
+# ML/decode/multiline data paths, so detection recall is identical. To also drop
+# the libhs link entirely, omit `simd`/`simdsieve` (e.g. `--no-default-features
+# --features ml,entropy,decode,multiline`); `entropy` is required to compile.
 default = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd", "gpu"]
 # Lean CI aggregator build: every default detection/data feature (Hyperscan +
 # SIMD prefilter + ML/decode/multiline) EXCEPT the GPU dispatch stack. The
@@ -131,7 +134,7 @@ tempfile = { workspace = true }
 # without touching Rust.
 toml = { workspace = true }
 # BPE tokenizer for the entropy "rare-not-random" precision gate: tiktoken
-# cl100k_base chars-per-token separates word-like non-secrets (dotted API paths,
+# cl100k_base bytes-per-token separates word-like non-secrets (dotted API paths,
 # English prose) from random secrets. Optional, gated by the `entropy` feature so
 # non-entropy builds don't pull it. Vocab ranks are embedded (self-contained).
 tiktoken-rs = { version = "0.6", optional = true }
@@ -158,6 +161,10 @@ rusty-fork = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tempfile = { workspace = true }
 md5 = "0.7"
+# Validates the generated MoE WGSL (gpu_shader::moe_shader) parses + type-checks
+# without needing a GPU adapter. Pinned to the version wgpu already pulls in so
+# this adds no new download.
+naga = { version = "25", features = ["wgsl-in"] }
 # `toml` moved to [dependencies] for the Tier-B disclaimer-phrase
 # loader in src/context/false_positive.rs.
 
@@ -184,6 +191,90 @@ path = "tests/property/prefilter_robustness_proptest.rs"
 [[test]]
 name = "cross_detector_corpus_proptest"
 path = "tests/property/cross_detector_corpus_proptest.rs"
+
+[[test]]
+name = "entropy_simd_scalar_parity_proptest"
+path = "tests/property/entropy_simd_scalar_parity_proptest.rs"
+
+[[test]]
+name = "checksum_primitives_proptest"
+path = "tests/property/checksum_primitives_proptest.rs"
+
+[[test]]
+name = "hex_digest_fragment_proptest"
+path = "tests/property/hex_digest_fragment_proptest.rs"
+
+[[test]]
+name = "generic_keyword_boundary_proptest"
+path = "tests/property/generic_keyword_boundary_proptest.rs"
+
+[[test]]
+name = "structured_dotted_token_proptest"
+path = "tests/property/structured_dotted_token_proptest.rs"
+
+[[test]]
+name = "bare_auth_value_allowed_proptest"
+path = "tests/property/bare_auth_value_allowed_proptest.rs"
+
+[[test]]
+name = "hex_uuid_shape_proptest"
+path = "tests/property/hex_uuid_shape_proptest.rs"
+
+[[test]]
+name = "masking_run_and_template_proptest"
+path = "tests/property/masking_run_and_template_proptest.rs"
+
+[[test]]
+name = "aws_iam_arn_shape_proptest"
+path = "tests/property/aws_iam_arn_shape_proptest.rs"
+
+[[test]]
+name = "path_uri_shape_proptest"
+path = "tests/property/path_uri_shape_proptest.rs"
+
+[[test]]
+name = "masked_placeholder_proptest"
+path = "tests/property/masked_placeholder_proptest.rs"
+
+[[test]]
+name = "serial_and_prefixed_hash_proptest"
+path = "tests/property/serial_and_prefixed_hash_proptest.rs"
+
+[[test]]
+name = "english_prose_shape_proptest"
+path = "tests/property/english_prose_shape_proptest.rs"
+
+[[test]]
+name = "service_hex_and_truncated_uuid_proptest"
+path = "tests/property/service_hex_and_truncated_uuid_proptest.rs"
+
+[[test]]
+name = "identifier_and_markup_shape_proptest"
+path = "tests/property/identifier_and_markup_shape_proptest.rs"
+
+[[test]]
+name = "decode_dos_bounds_proptest"
+path = "tests/property/decode_dos_bounds_proptest.rs"
+
+[[test]]
+name = "inflate_bomb_bound_proptest"
+path = "tests/property/inflate_bomb_bound_proptest.rs"
+
+[[test]]
+name = "caesar_prefix_ac_equivalence_proptest"
+path = "tests/property/caesar_prefix_ac_equivalence_proptest.rs"
+
+[[test]]
+name = "path_predicate_parity_proptest"
+path = "tests/property/path_predicate_parity_proptest.rs"
+
+[[test]]
+name = "phase2_truncate_boundary_proptest"
+path = "tests/property/phase2_truncate_boundary_proptest.rs"
+
+[[test]]
+name = "token_randomness_cache_soundness_proptest"
+path = "tests/property/token_randomness_cache_soundness_proptest.rs"
 
 [[test]]
 name = "gap_decode_pipeline_layers"

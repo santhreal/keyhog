@@ -12,6 +12,8 @@ mod archive;
 mod compressed;
 mod hexnib;
 mod pdf;
+#[cfg(fuzzing)]
+pub use pdf::fuzz_extract_pdf_text;
 mod rar;
 mod seven_zip;
 
@@ -22,18 +24,10 @@ mod seven_zip;
 pub(crate) use archive::validate_scan_archive_entry_name;
 
 /// Aggregate decoded-byte ceiling used when `--max-file-size 0` removes the
-/// per-file cap. Extraction still needs a hard bomb guard so an archive or
-/// compressed stream cannot expand without bound.
+/// per-file cap. Extraction/decoding still needs a hard bomb guard so an archive,
+/// compressed stream, or PDF cannot expand without bound.
 pub(super) const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
 const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
-
-/// Minimum length of a printable run kept when a non-text (binary) file or
-/// archive entry is scanned as extracted strings. Shared by every
-/// `extract_printable_strings` call on the filesystem path so the strings-scan
-/// floor is set in ONE place, matching the crate convention of a named length
-/// (`binary::MIN_STRING_LEN`, `web::MIN_WASM_STRING_LEN`) rather than a bare
-/// literal at each call site.
-pub(super) const MIN_PRINTABLE_STRING_LEN: usize = 8;
 
 /// Upper bound on a Git-LFS pointer file's size. A canonical pointer is the
 /// three short lines `version …` / `oid sha256:…` / `size …` (~130 bytes; a few
@@ -95,9 +89,10 @@ pub(crate) fn duplicate_zip_reopen_error_for_test(path: &Path) -> Option<String>
 /// single-pass-correct choice. (Was KH-41 SYMLINK_CACHE; removed - the
 /// cache was pure retained-forever overhead on single-pass walks.)
 fn is_symlink(path: &Path) -> bool {
+    // stat failure => treated as non-symlink (the file is still walked/read).
     std::fs::symlink_metadata(path)
         .map(|m| m.file_type().is_symlink())
-        .unwrap_or(false) // LAW10: empty/absent => documented numeric default, recall-safe
+        .unwrap_or(false)
 }
 
 /// True when `path` begins with a UTF-16 byte-order mark (`FF FE` LE / `FE FF`
@@ -162,14 +157,17 @@ pub(super) fn chunk_from_extracted_entry(
         Ok(text) if !text.is_empty() => Some(Ok(Chunk {
             data: text.into(),
             metadata: ChunkMetadata {
-                source_type: text_source_type.to_string(),
-                path: Some(entry_path),
+                source_type: text_source_type.into(),
+                path: Some(entry_path.into()),
                 ..Default::default()
             },
         })),
         Ok(_) => None, // empty entry: nothing to scan, not a coverage gap
         Err(bytes) => {
-            let strings = crate::strings::extract_printable_strings(&bytes, MIN_PRINTABLE_STRING_LEN);
+            let strings = crate::strings::extract_printable_strings(
+                &bytes,
+                crate::strings::MIN_PRINTABLE_STRING_LEN,
+            );
             if strings.is_empty() {
                 record_binary_without_printable_strings(&entry_path);
                 None
@@ -181,8 +179,8 @@ pub(super) fn chunk_from_extracted_entry(
                 Some(Ok(Chunk {
                     data: crate::strings::join_sensitive_strings(&strings, "\n"),
                     metadata: ChunkMetadata {
-                        source_type: binary_source_type.to_string(),
-                        path: Some(entry_path),
+                        source_type: binary_source_type.into(),
+                        path: Some(entry_path.into()),
                         ..Default::default()
                     },
                 }))
@@ -363,16 +361,9 @@ pub(super) fn process_entry(
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
         return;
     }
-    if respect_default_excludes
-        && (filename.contains(".min.")
-            || filename.contains(".bundle.")
-            || filename.ends_with(".chunk.js")
-            || filename.ends_with(".min.js")
-            || filename.ends_with(".bundle.js"))
-    {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
-        return;
-    }
+    // Minified/bundled exclusion (`.min.`/`.bundle.` infixes + `.chunk.js` suffix)
+    // is now owned by the Tier-B `default_excludes.toml` and applied by the
+    // `is_default_excluded` check above (DR-056) — no separate inline gate.
 
     let live_metadata = file_live_metadata(&path);
     let file_size = live_metadata.map_or(entry.size, |meta| meta.size_bytes);
@@ -633,8 +624,8 @@ pub(super) fn process_entry(
                     let chunk = Ok(Chunk {
                         data: w.text.into(),
                         metadata: ChunkMetadata {
-                            source_type: "filesystem/windowed".to_string(),
-                            path: Some(display.clone()),
+                            source_type: "filesystem/windowed".into(),
+                            path: Some(display.clone().into()),
                             base_offset: w.offset,
                             base_line: w.base_line,
                             mtime_ns: live_mtime_ns,
@@ -770,8 +761,8 @@ pub(super) fn process_entry(
                     let chunk = Ok(Chunk {
                         data: data.into(),
                         metadata: ChunkMetadata {
-                            source_type: "filesystem/windowed".to_string(),
-                            path: Some(display.clone()),
+                            source_type: "filesystem/windowed".into(),
+                            path: Some(display.clone().into()),
                             base_offset: current_offset,
                             base_line: current_base_line,
                             mtime_ns: live_mtime_ns,
@@ -823,7 +814,10 @@ pub(super) fn process_entry(
         Some(read::BufferedFileRead::Text(text)) if text.is_empty() => return,
         Some(read::BufferedFileRead::Text(text)) => (text.into(), "filesystem"),
         Some(read::BufferedFileRead::Bytes(bytes)) => {
-            let strings = crate::strings::extract_printable_strings(&bytes, MIN_PRINTABLE_STRING_LEN);
+            let strings = crate::strings::extract_printable_strings(
+                &bytes,
+                crate::strings::MIN_PRINTABLE_STRING_LEN,
+            );
             if strings.is_empty() {
                 record_binary_without_printable_strings(&display_path(&path));
                 return;
@@ -838,7 +832,10 @@ pub(super) fn process_entry(
             )
         }
         Some(read::BufferedFileRead::Mmap(mmap)) => {
-            let strings = crate::strings::extract_printable_strings(&mmap, MIN_PRINTABLE_STRING_LEN);
+            let strings = crate::strings::extract_printable_strings(
+                &mmap,
+                crate::strings::MIN_PRINTABLE_STRING_LEN,
+            );
             if strings.is_empty() {
                 record_binary_without_printable_strings(&display_path(&path));
                 return;
@@ -881,8 +878,8 @@ pub(super) fn process_entry(
     if !emit(Ok(Chunk {
         data: content,
         metadata: ChunkMetadata {
-            source_type: source_type.to_string(),
-            path: Some(display_path(&path)),
+            source_type: source_type.into(),
+            path: Some(display_path(&path).into()),
             mtime_ns: live_mtime_ns,
             size_bytes: Some(file_size),
             decoded_span: None,
@@ -905,7 +902,9 @@ fn file_live_metadata(path: &Path) -> Option<FileLiveMetadata> {
         .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok()) // LAW10: pre-epoch mtime disables only Merkle fast-path; live size and scan still proceed; recall-safe
         .map(|dur| {
             let nanos = dur.as_secs() as u128 * 1_000_000_000 + dur.subsec_nanos() as u128;
-            u64::try_from(nanos).unwrap_or(u64::MAX) // LAW10: empty/absent => documented numeric default, recall-safe
+            // mtime is a Merkle cache key only; saturating past u64::MAX ns
+            // (unreachable before year 2554) cannot affect scan recall.
+            u64::try_from(nanos).unwrap_or(u64::MAX)
         });
     Some(FileLiveMetadata {
         mtime_ns,

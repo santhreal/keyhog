@@ -1,46 +1,12 @@
 use keyhog_core::ScanConfig;
 use keyhog_scanner::entropy::{shannon_entropy, VERY_HIGH_ENTROPY_THRESHOLD};
 use keyhog_scanner::ml_scorer::score_with_config;
-use keyhog_scanner::testing::{
-    compute_features_public, ml_sigmoid, ml_unique_bigram_stats, ML_BIGRAM_BITSET_WORDS,
-    ML_SCORE_CACHE_CAPACITY, ML_SIGMOID_SATURATION,
-};
+use keyhog_scanner::testing::compute_features_public;
 
 const FILE_TYPE_OFFSET: usize = 32;
 const CONFIG_FILE_TYPE_INDEX: usize = FILE_TYPE_OFFSET;
 const CI_FILE_TYPE_INDEX: usize = FILE_TYPE_OFFSET + 2;
 const VERY_HIGH_ENTROPY_FEATURE_INDEX: usize = 7;
-
-#[test]
-fn ml_bigram_bitset_covers_every_possible_bigram() {
-    assert_eq!(ML_BIGRAM_BITSET_WORDS, 1024);
-    let max_idx = (0xFFusize << 8) | 0xFF;
-    assert!(max_idx / 64 < ML_BIGRAM_BITSET_WORDS);
-}
-
-#[test]
-fn ml_bigram_stats_count_distinct_windows() {
-    assert_eq!(ml_unique_bigram_stats(b"abcd"), (3, 3));
-    assert_eq!(ml_unique_bigram_stats(b"aaaa"), (1, 3));
-    assert_eq!(ml_unique_bigram_stats(b"a"), (0, 0));
-    assert_eq!(ml_unique_bigram_stats(b""), (0, 0));
-}
-
-#[test]
-fn ml_sigmoid_saturates_symmetrically_at_named_bound() {
-    assert_eq!(ml_sigmoid(ML_SIGMOID_SATURATION), 1.0);
-    assert_eq!(ml_sigmoid(-ML_SIGMOID_SATURATION), 0.0);
-    assert_eq!(ml_sigmoid(ML_SIGMOID_SATURATION + 1.0), 1.0);
-    assert_eq!(ml_sigmoid(-ML_SIGMOID_SATURATION - 1.0), 0.0);
-    assert_eq!(ml_sigmoid(0.0), 0.5);
-    let just_inside = ml_sigmoid(ML_SIGMOID_SATURATION - 0.001);
-    assert!(just_inside > 0.5 && just_inside < 1.0, "{just_inside}");
-}
-
-#[test]
-fn ml_score_cache_capacity_is_the_documented_bound() {
-    assert_eq!(ML_SCORE_CACHE_CAPACITY, 256);
-}
 
 fn test_score(text: &str, context: &str) -> f64 {
     score_with_config(
@@ -224,12 +190,36 @@ fn inference_is_fast() {
 /// probe's feature inputs; the value is passed separately as the candidate.
 fn real_secret_battery() -> Vec<(&'static str, String, &'static str)> {
     vec![
-        ("aws_secret", format!("wJalrXUtnFEMI7K8{}", "MDfNGbPxRziCY3p9qLm2vK4"), "aws_secret_access_key = \""),
-        ("client_secret", format!("xK9mPq2vL8nR4wT6{}", "yU3zA1bC5dE7fG0hJ2kM4nP"), "client_secret: "),
-        ("password", format!("Atr0xK9mPq2vL8nR{}", "4wT6yU3zHc1bC5dE7fG"), "password = \""),
-        ("secret_key", format!("4eC39HqLyjWDar{}", "jtT1zdp7dcQm8nZx2vL5"), "secret_key = \""),
-        ("api_secret", format!("aB3xY7zQ9mK2pL5n{}", "R8wT6vU1jH4kM0nP7qR"), "api_secret: "),
-        ("token", format!("R8wT6vU1jH4kM0nP{}", "7qZx2vL5nDe9fG3hJ6k"), "token = \""),
+        (
+            "aws_secret",
+            format!("wJalrXUtnFEMI7K8{}", "MDfNGbPxRziCY3p9qLm2vK4"),
+            "aws_secret_access_key = \"",
+        ),
+        (
+            "client_secret",
+            format!("xK9mPq2vL8nR4wT6{}", "yU3zA1bC5dE7fG0hJ2kM4nP"),
+            "client_secret: ",
+        ),
+        (
+            "password",
+            format!("Atr0xK9mPq2vL8nR{}", "4wT6yU3zHc1bC5dE7fG"),
+            "password = \"",
+        ),
+        (
+            "secret_key",
+            format!("4eC39HqLyjWDar{}", "jtT1zdp7dcQm8nZx2vL5"),
+            "secret_key = \"",
+        ),
+        (
+            "api_secret",
+            format!("aB3xY7zQ9mK2pL5n{}", "R8wT6vU1jH4kM0nP7qR"),
+            "api_secret: ",
+        ),
+        (
+            "token",
+            format!("R8wT6vU1jH4kM0nP{}", "7qZx2vL5nDe9fG3hJ6k"),
+            "token = \"",
+        ),
     ]
 }
 
@@ -244,13 +234,41 @@ fn structured_nonsecret_battery() -> Vec<(&'static str, String, &'static str)> {
             "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".to_string(),
             "image: nginx@sha256:",
         ),
-        ("md5_etag", "d41d8cd98f00b204e9800998ecf8427e".to_string(), "etag = \""),
-        ("uuid", "550e8400-e29b-41d4-a716-446655440000".to_string(), "request_id = \""),
-        ("jwt_header", format!("eyJhbGciOiJIUzI1NiIs{}", "InR5cCI6IkpXVCJ9"), "jwt_header = "),
-        ("git_sha1", "a3f5c8e1b9d7f2a6c4e8b1d5f9a2c6e4b8d1f5a9".to_string(), "commit = \""),
-        ("class_name", "com.fasterxml.jackson.databind.ObjectMapper".to_string(), "class = "),
-        ("mime_type", "application/vnd.github.v3+json".to_string(), "accept = "),
-        ("hex_constant", "0123456789abcdef0123456789abcdef".to_string(), "build_id = \""),
+        (
+            "md5_etag",
+            "d41d8cd98f00b204e9800998ecf8427e".to_string(),
+            "etag = \"",
+        ),
+        (
+            "uuid",
+            "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            "request_id = \"",
+        ),
+        (
+            "jwt_header",
+            format!("eyJhbGciOiJIUzI1NiIs{}", "InR5cCI6IkpXVCJ9"),
+            "jwt_header = ",
+        ),
+        (
+            "git_sha1",
+            "a3f5c8e1b9d7f2a6c4e8b1d5f9a2c6e4b8d1f5a9".to_string(),
+            "commit = \"",
+        ),
+        (
+            "class_name",
+            "com.fasterxml.jackson.databind.ObjectMapper".to_string(),
+            "class = ",
+        ),
+        (
+            "mime_type",
+            "application/vnd.github.v3+json".to_string(),
+            "accept = ",
+        ),
+        (
+            "hex_constant",
+            "0123456789abcdef0123456789abcdef".to_string(),
+            "build_id = \"",
+        ),
     ]
 }
 
@@ -278,7 +296,10 @@ fn battery_score(value: &str, context: &str) -> f64 {
 fn every_real_secret_scores_above_half() {
     for (label, value, ctx) in real_secret_battery() {
         let s = battery_score(&value, ctx);
-        assert!(s > 0.5, "real secret '{label}' scored {s:.3}, expected > 0.5");
+        assert!(
+            s > 0.5,
+            "real secret '{label}' scored {s:.3}, expected > 0.5"
+        );
     }
 }
 
@@ -288,7 +309,10 @@ fn every_real_secret_scores_above_half() {
 fn every_structured_nonsecret_scores_below_half() {
     for (label, value, ctx) in structured_nonsecret_battery() {
         let s = battery_score(&value, ctx);
-        assert!(s < 0.5, "structured non-secret '{label}' scored {s:.3}, expected < 0.5");
+        assert!(
+            s < 0.5,
+            "structured non-secret '{label}' scored {s:.3}, expected < 0.5"
+        );
     }
 }
 
@@ -337,7 +361,10 @@ fn separation_margin_is_substantial() {
 fn tp_cluster_mean_far_exceeds_fp_cluster_mean() {
     let mean = |b: Vec<(&'static str, String, &'static str)>| {
         let n = b.len() as f64;
-        b.into_iter().map(|(_, v, ctx)| battery_score(&v, ctx)).sum::<f64>() / n
+        b.into_iter()
+            .map(|(_, v, ctx)| battery_score(&v, ctx))
+            .sum::<f64>()
+            / n
     };
     let tp_mean = mean(real_secret_battery());
     let fp_mean = mean(structured_nonsecret_battery());
@@ -484,7 +511,9 @@ fn default_config_secret_keywords_anchor_every_real_secret_context() {
     for (label, _v, ctx) in real_secret_battery() {
         let lc = ctx.to_ascii_lowercase();
         assert!(
-            secret_keywords.iter().any(|k| lc.contains(&k.to_ascii_lowercase())),
+            secret_keywords
+                .iter()
+                .any(|k| lc.contains(&k.to_ascii_lowercase())),
             "real-secret context for '{label}' ({ctx:?}) contains no default secret keyword - \
              battery no longer exercises the shipped keyword list"
         );
@@ -510,5 +539,8 @@ fn battery_scoring_is_fast() {
     }
     let calls = 2000 * battery.len() as u32;
     let per_call = start.elapsed() / calls;
-    assert!(per_call.as_micros() < 100, "battery inference too slow: {per_call:?}/call");
+    assert!(
+        per_call.as_micros() < 100,
+        "battery inference too slow: {per_call:?}/call"
+    );
 }

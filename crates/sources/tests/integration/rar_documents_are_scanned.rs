@@ -32,7 +32,7 @@ fn rar_text_entry_is_unpacked_and_scanned_with_inner_path() {
     let chunks = scan_file("bundle.rar", version_rar_bytes());
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/archive"
+            chunk.metadata.source_type.as_ref() == "filesystem/archive"
                 && chunk
                     .metadata
                     .path

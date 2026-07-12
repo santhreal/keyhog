@@ -5,14 +5,51 @@ use std::collections::HashMap;
 
 const INLINE_CONTEXT_PREV_LINE: &str = "__keyhog_internal_inline_prev_line_v1";
 const INLINE_CONTEXT_CURRENT_LINE: &str = "__keyhog_internal_inline_current_line_v1";
-const INLINE_SUPPRESSION_DIRECTIVES: &[&str] = &[
-    "keyhog:ignore",
-    "keyhog:allow",
-    "gitleaks:allow",
-    "betterleaks:allow",
-];
+#[derive(serde::Deserialize)]
+struct InlineSuppressionDirectives {
+    directives: Vec<String>,
+}
+
+fn parse_inline_suppression_directives(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<InlineSuppressionDirectives>(raw)
+        .map(|parsed| parsed.directives)
+        .map_err(|error| error.to_string())
+}
+
+static INLINE_SUPPRESSION_DIRECTIVES: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| {
+        match parse_inline_suppression_directives(include_str!(
+            "../../../rules/inline-suppression-directives.toml"
+        )) {
+            Ok(directives) => directives,
+            Err(error) => panic!(
+                "rules/inline-suppression-directives.toml is invalid: {error}. \
+                 Fix the bundled Tier-B inline-suppression directives list."
+            ),
+        }
+    });
 const DETECTOR_DIRECTIVE_PREFIX: &str = "detector=";
-const INLINE_COMMENT_MARKERS: &[&str] = &["//", "#", "--", "/*", "<!--"];
+
+#[derive(serde::Deserialize)]
+struct InlineCommentMarkers {
+    markers: Vec<String>,
+}
+
+fn parse_inline_comment_markers(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<InlineCommentMarkers>(raw)
+        .map(|parsed| parsed.markers)
+        .map_err(|error| error.to_string())
+}
+
+static INLINE_COMMENT_MARKERS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_inline_comment_markers(include_str!("../../../rules/inline-comment-markers.toml")) {
+        Ok(markers) => markers,
+        Err(error) => panic!(
+            "rules/inline-comment-markers.toml is invalid: {error}. \
+                 Fix the bundled Tier-B inline-comment markers list."
+        ),
+    }
+});
 
 pub(crate) fn filter_inline_suppressions(matches: Vec<RawMatch>) -> Vec<RawMatch> {
     use std::io::BufRead;
@@ -131,7 +168,9 @@ fn attach_inline_suppression_context_to_match(
     if attach_inline_suppression_context_from_chunk(primary_chunk, m) {
         return;
     }
-    if primary_chunk.metadata.source_type != "filesystem" || primary_chunk.metadata.path.is_none() {
+    if primary_chunk.metadata.source_type.as_ref() != "filesystem"
+        || primary_chunk.metadata.path.is_none()
+    {
         return;
     }
     for candidate in chunks {
@@ -145,7 +184,7 @@ fn attach_inline_suppression_context_to_match(
 }
 
 fn attach_inline_suppression_context_from_chunk(chunk: &Chunk, m: &mut RawMatch) -> bool {
-    if chunk.metadata.source_type != "filesystem" || chunk.metadata.path.is_none() {
+    if chunk.metadata.source_type.as_ref() != "filesystem" || chunk.metadata.path.is_none() {
         return false;
     }
     let text = chunk.data.as_ref();
@@ -163,8 +202,8 @@ fn attach_inline_suppression_context_from_chunk(chunk: &Chunk, m: &mut RawMatch)
 }
 
 fn same_filesystem_chunk_identity(left: &Chunk, right: &Chunk) -> bool {
-    left.metadata.source_type == "filesystem"
-        && right.metadata.source_type == "filesystem"
+    left.metadata.source_type.as_ref() == "filesystem"
+        && right.metadata.source_type.as_ref() == "filesystem"
         && left.metadata.path.as_deref() == right.metadata.path.as_deref()
 }
 
@@ -248,14 +287,15 @@ fn inline_suppression_directive(line: &str) -> Option<String> {
 }
 
 fn comment_segments(line: &str) -> impl Iterator<Item = &str> {
-    INLINE_COMMENT_MARKERS
-        .iter()
-        .filter_map(|marker| line.find(marker).map(|index| &line[index + marker.len()..]))
+    INLINE_COMMENT_MARKERS.iter().filter_map(|marker| {
+        line.find(marker.as_str())
+            .map(|index| &line[index + marker.len()..])
+    })
 }
 
 fn extract_directive_from_comment(comment: &str) -> Option<String> {
-    for &dir in INLINE_SUPPRESSION_DIRECTIVES {
-        if let Some(directive_index) = comment.find(dir) {
+    for dir in &*INLINE_SUPPRESSION_DIRECTIVES {
+        if let Some(directive_index) = comment.find(dir.as_str()) {
             if comment[..directive_index]
                 .chars()
                 .any(|character| !character.is_whitespace())

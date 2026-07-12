@@ -24,7 +24,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import pathlib
 import random
 import sys
@@ -33,22 +32,24 @@ from collections.abc import Iterator
 # Import sibling modules without forcing the user to install the
 # package — script lives next to providers/wrappers/negatives.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+# benchmarks/ on the path so `bench.textstats` (the ONE Shannon-entropy home) is
+# importable without installing the package.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 import negatives  # noqa: E402
 import providers  # noqa: E402
 import wrappers  # noqa: E402
+
+from bench.textstats import shannon_entropy  # noqa: E402
 
 
 # ── helpers ────────────────────────────────────────────────────────
 
 
-def shannon_entropy(s: str) -> float:
-    if not s:
-        return 0.0
-    counts: dict[str, int] = {}
-    for ch in s:
-        counts[ch] = counts.get(ch, 0) + 1
-    n = len(s)
-    return -sum((c / n) * math.log2(c / n) for c in counts.values())
+# base64url alphabet: the same symbol set `has_symbol` excludes from being a
+# symbol (`+ / = - _`), so a value with `-`/`_` is base64(url), not alphanumeric.
+_BASE64_CHARS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=-_"
+)
 
 
 def classify_charset(s: str) -> str:
@@ -59,7 +60,7 @@ def classify_charset(s: str) -> str:
         return "symbolic"
     if all(c in "0123456789abcdefABCDEF" for c in s):
         return "hex"
-    if all(c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=" for c in s):
+    if s and all(c in _BASE64_CHARS for c in s):
         return "base64"
     if has_letter and has_digit:
         return "alphanumeric"

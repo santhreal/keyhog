@@ -125,9 +125,9 @@ fn length_mod_four_equals_one_fails_closed_urlsafe() {
 fn length_mod_four_zero_two_three_all_decode() {
     // Valid unpadded lengths: %4==0 (full group), %4==2, %4==3 all decode.
     assert_eq!(base64_decode("aGVs").unwrap(), vec![104u8, 101, 108]); // %4==0 -> "hel"
-    // %4==2 must be CANONICAL: the final 2-char group's leftover 4 bits must be
-    // zero. "hell" -> "aGVsbA" (`A`=000000); "aGVsbG" (`G`=000110) is non-canonical
-    // and the strict decoder correctly rejects it.
+                                                                       // %4==2 must be CANONICAL: the final 2-char group's leftover 4 bits must be
+                                                                       // zero. "hell" -> "aGVsbA" (`A`=000000); "aGVsbG" (`G`=000110) is non-canonical
+                                                                       // and the strict decoder correctly rejects it.
     assert_eq!(base64_decode("aGVsbA").unwrap(), vec![104u8, 101, 108, 108]); // %4==2 -> "hell"
     assert_eq!(
         base64_decode("aGVsbG8").unwrap(),

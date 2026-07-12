@@ -5,6 +5,8 @@ use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec, Severity};
 
 fn make(id: &str) -> DetectorSpec {
     DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: id.to_string(),
         name: id.to_string(),

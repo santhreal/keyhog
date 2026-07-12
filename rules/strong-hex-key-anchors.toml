@@ -1,0 +1,38 @@
+# Tier-B data: STRONG cryptographic-key anchors for the generic-bridge hex-key
+# exemption (`is_strong_keyword_anchored_hex_key` in
+# `crates/scanner/src/engine/phase2_generic/keywords.rs`).
+#
+# Schema:
+#   [strong_hex_key_anchors]
+#   anchors = ["compact-lowercase-keyword", ...]
+#
+# Semantics:
+# - A complete pure-hex value of canonical key length (32 or 48 chars) captured
+#   under one of these keywords is treated as a real cryptographic key, NOT a hash
+#   digest, so it is exempted from the bare-hex-digest shape gate. Every OTHER
+#   generic-bridge gate (placeholder, entropy, ownership, boundary) still applies.
+# - Entries are the COMPACT form: lowercase ASCII alphanumerics with NO separators.
+#   The captured keyword is case-folded and has its `_`/`-`/`.` separators stripped
+#   before comparison, so `API_KEY`, `api-key` and `apiKey` all match `apikey`.
+# - This is the STRONG family ONLY. Deliberately EXCLUDES the weaker / more
+#   ambiguous bridge anchors (`token`, `pass*`, `auth*`, `credential`,
+#   `license_key`, `passphrase`) whose 32/48-char hex captures are not cleanly real
+#   on CredData — adding them here would readmit hash-digest false positives.
+# - Vendor-prefixed `*_key` / `*_secret` compounds are handled structurally in code
+#   (except the explicitly-weak `license_key`); this list is the exact-match core.
+# - Invalid data (non-lowercase, non-alphanumeric, duplicate, empty) fails CLOSED
+#   at load (panic): this vocab is compiled into the binary, so a bad entry is a
+#   build defect, never a runtime condition.
+
+[strong_hex_key_anchors]
+anchors = [
+  "secret",
+  "apikey",
+  "privatekey",
+  "encryptionkey",
+  "signingkey",
+  "accesskey",
+  "clientsecret",
+  "appsecret",
+  "masterkey",
+]

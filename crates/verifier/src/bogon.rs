@@ -40,7 +40,9 @@
 //! (`2001:db8::/32`), Teredo (`2001::/32`), ORCHIDv2
 //! (`2001:20::/28`), discard prefix (`100::/64`), benchmark
 //! (`2001:2::/48`), deprecated site-local (`fec0::/10`), NAT64
-//! well-known prefix wrapping a bogon IPv4 (`64:ff9b::/96`), 6to4
+//! well-known prefix wrapping a bogon IPv4 (`64:ff9b::/96`, RFC 6052)
+//! AND the NAT64 Local-Use prefix wrapping a bogon IPv4
+//! (`64:ff9b:1::/48`, RFC 8215), 6to4
 //! wrapping a bogon IPv4 (`2002::/16`), IPv4-mapped (`::ffff:0:0/96`) and
 //! IPv4-compatible (`::a.b.c.d`) wrappings of bogon IPv4.
 //!
@@ -106,8 +108,9 @@ pub(crate) fn ip_addr_is_bogon(ip: IpAddr) -> bool {
                 || v.is_documentation()
                 // 0.0.0.0/8 "this network" (RFC 1122 §3.2.1.3), not just the
                 // single 0.0.0.0 that `is_unspecified()` matches. 0.0.0.1 et al.
-                // are non-routable and an SSRF target (parity with the fast path
-                // `is_private_ip_addr_fast`, which masks `val & 0xFF000000 == 0`).
+                // are non-routable and an SSRF target. `verifier_blocks_ip_addr`
+                // (and its `is_private_ip_addr_fast` alias) enforce this range
+                // by delegating here — the whole first octet is the check.
                 || v.octets()[0] == 0
             {
                 return true;
@@ -147,19 +150,12 @@ pub(crate) fn ip_addr_is_bogon(ip: IpAddr) -> bool {
                 return ip_addr_is_bogon(IpAddr::V4(compat));
             }
             let segs = v.segments();
-            if segs[0] == 0x0064
-                && segs[1] == 0xff9b
-                && segs[2] == 0
-                && segs[3] == 0
-                && segs[4] == 0
-                && segs[5] == 0
-            {
-                let v4 = core::net::Ipv4Addr::new(
-                    (segs[6] >> 8) as u8,
-                    (segs[6] & 0xff) as u8,
-                    (segs[7] >> 8) as u8,
-                    (segs[7] & 0xff) as u8,
-                );
+            // NAT64 (RFC 6052 / RFC 8215): an IPv4 embedded in a NAT64 prefix
+            // round-trips to that IPv4 once the gateway translates, so a NAT64
+            // wrapper of a bogon IPv4 is itself an SSRF vector. Decompose every
+            // standardized NAT64 prefix (well-known /96 AND Local-Use /48) in
+            // ONE owner and apply the IPv4 policy to the embedded address.
+            if let Some(v4) = nat64_embedded_ipv4(&segs) {
                 if ip_addr_is_bogon(IpAddr::V4(v4)) {
                     return true;
                 }
@@ -200,4 +196,46 @@ pub(crate) fn ip_addr_is_bogon(ip: IpAddr) -> bool {
                 || v.is_unicast_link_local()
         }
     }
+}
+
+/// Extract the IPv4 address a NAT64 prefix embeds, if `segs` sits in one of the
+/// two standardized NAT64 prefixes. Single owner for the NAT64 → IPv4
+/// decomposition (RFC 6052 §2.2 embedding format).
+///
+/// - **Well-Known Prefix** `64:ff9b::/96` (RFC 6052 §2.1): /96 embedding only —
+///   the IPv4 occupies the low 32 bits (`segs[6..8]`).
+/// - **Local-Use Prefix** `64:ff9b:1::/48` (RFC 8215): /48 embedding — the IPv4
+///   occupies bits 48-63 (`segs[3]`) and 72-87 (`segs[4]` low byte, `segs[5]`
+///   high byte), skipping the reserved u-octet at bits 64-71. The u-octet is
+///   NOT required to be zero here: the whole /48 is dedicated to NAT64, so an
+///   attacker setting it must not smuggle an embedded internal IPv4 past the
+///   screen (fail closed — extract and check regardless).
+///
+/// Network-Specific Prefixes (operator-chosen, any of the six RFC 6052 lengths)
+/// are intentionally not enumerated: they are unknowable without operator
+/// config, and a self-hosted NAT64 gateway is already inside the trust boundary.
+#[must_use]
+fn nat64_embedded_ipv4(segs: &[u16; 8]) -> Option<core::net::Ipv4Addr> {
+    if segs[0] != 0x0064 || segs[1] != 0xff9b {
+        return None;
+    }
+    // Well-Known Prefix 64:ff9b::/96 — IPv4 in the low 32 bits.
+    if segs[2] == 0 && segs[3] == 0 && segs[4] == 0 && segs[5] == 0 {
+        return Some(core::net::Ipv4Addr::new(
+            (segs[6] >> 8) as u8,
+            (segs[6] & 0xff) as u8,
+            (segs[7] >> 8) as u8,
+            (segs[7] & 0xff) as u8,
+        ));
+    }
+    // Local-Use Prefix 64:ff9b:1::/48 — RFC 6052 §2.2 /48 embedding.
+    if segs[2] == 0x0001 {
+        return Some(core::net::Ipv4Addr::new(
+            (segs[3] >> 8) as u8,
+            (segs[3] & 0xff) as u8,
+            (segs[4] & 0xff) as u8,
+            (segs[5] >> 8) as u8,
+        ));
+    }
+    None
 }

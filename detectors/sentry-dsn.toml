@@ -8,7 +8,10 @@ id = "sentry-dsn"
 name = "Sentry DSN"
 service = "sentry"
 severity = "high"
-keywords = ["sentry.io", "sentry_dsn", "dsn", "o0.ingest", "o1.ingest"]
+# "dsn" removed: over-broad (fires on ODBC/`dsn=` connection strings and any
+# "dsn" mention) and redundant — both regexes require `.ingest.sentry.io`
+# (keyword "sentry.io"), which every real Sentry DSN contains. Recall-neutral.
+keywords = ["sentry.io", "sentry_dsn", "o0.ingest", "o1.ingest"]
 
 [[detector.patterns]]
 regex = 'https://[a-f0-9]{32}@o[0-9]+\.ingest\.sentry\.io/[0-9]+'

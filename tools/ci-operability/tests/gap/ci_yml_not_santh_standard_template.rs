@@ -1,11 +1,7 @@
 //! KH-GAP-130: STANDARD CI contract — repo `.github/workflows/ci.yml` is the 5-line santh-ci reuse.
 
-#[path = "support/mod.rs"]
-mod support;
-
-use support::spec_waiver::{repo_root, spec_waiver_active};
-
-const WAIVER_REL: &str = "tools/ci-operability/spec_waivers/ci_yml_santh_ci_migration.toml";
+use super::support::spec_waiver::spec_waiver_active;
+use super::support::{repo_root, CI_YML_WAIVER as WAIVER_REL};
 
 #[test]
 fn ci_yml_uses_santh_ci_shared_workflow_template() {

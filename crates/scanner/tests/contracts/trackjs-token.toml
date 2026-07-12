@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "trackJs     \"  =   \"=:= : =   ' ::\"  ='    = :\"\" =:\"    \" =:'  :     :   \"  =   '   {\"g$U!9Sn;9jh1?I<{ACM_CwKKy4gunU65OTL9>~token   = ::  :   ::=      \": = '     ': ' =   ': ZCLsLEXAMPLEEXAMPLEmSZYO"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = '# trackjs: {"token": "ZCLsL1ZLqacFatMzJYNYaxTkv/MBCWDu:bV8PI58J4RjmL5n1DLvmSZYO"}'
+credential = "ZCLsL1ZLqacFatMzJYNYaxTkv/MBCWDu:bV8PI58J4RjmL5n1DLvmSZYO"
+reason = "Commented-out JSON config; the trackjs keyword + {...token...} object structure and the <32>:<24> token are intact inside the comment."

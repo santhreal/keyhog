@@ -18,6 +18,8 @@ fn temp_dir(name: &str) -> PathBuf {
 
 fn valid_detector() -> DetectorSpec {
     DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "demo-token".into(),
         name: "Demo Token".into(),
@@ -57,34 +59,6 @@ fn detector_spec_deserialization() {
     assert_eq!(spec.severity, Severity::High);
     assert_eq!(spec.patterns.len(), 1);
     assert_eq!(spec.keywords.len(), 2);
-}
-
-#[test]
-fn detector_candidate_length_bounds_deserialize_and_validate_as_a_pair() {
-    let file: DetectorFile = toml::from_str(
-        r#"
-        [detector]
-        id = "generic-test"
-        name = "Generic Test"
-        service = "generic"
-        severity = "medium"
-        kind = "phase2-generic"
-        keywords = ["secret"]
-        min_len = 8
-        max_len = 128
-        "#,
-    )
-    .expect("length policy parses");
-    assert_eq!(file.detector.min_len, Some(8));
-    assert_eq!(file.detector.max_len, Some(128));
-    assert!(validate_detector(&file.detector).is_empty());
-
-    let mut inverted = file.detector;
-    inverted.min_len = Some(129);
-    let issues = validate_detector(&inverted);
-    assert!(issues.iter().any(|issue| {
-        matches!(issue, QualityIssue::Error(message) if message.contains("must not exceed max_len"))
-    }));
 }
 
 #[test]

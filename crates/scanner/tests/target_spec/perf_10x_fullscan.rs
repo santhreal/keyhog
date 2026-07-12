@@ -37,17 +37,15 @@
 //! baseline and the `<= baseline/10` assertion fails by ~10x. That gap is the
 //! finding.
 
+mod support;
+
+use crate::support::paths::detector_dir;
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
 use keyhog_scanner::{probe_hardware, select_backend, CompiledScanner, ScanBackend};
-use std::path::PathBuf;
 use std::time::Instant;
 
-fn detectors_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors")
-}
-
 fn build_scanner() -> CompiledScanner {
-    let detectors = load_detectors(&detectors_dir()).expect("load detectors for target-spec perf");
+    let detectors = load_detectors(&detector_dir()).expect("load detectors for target-spec perf");
     CompiledScanner::compile(detectors).expect("compile scanner for target-spec perf")
 }
 
@@ -141,7 +139,7 @@ fn chunk_of(data: String, label: &str) -> Chunk {
             // NOTE: must not contain `.keyhog` / `detectors` path segments — the
             // scan entry point skips those (telemetry record_file_skipped), which
             // would make the measured time meaninglessly fast.
-            path: Some(format!("corpus/{label}.rs")),
+            path: Some(format!("corpus/{label}.rs").into()),
             base_offset: 0,
             ..Default::default()
         },

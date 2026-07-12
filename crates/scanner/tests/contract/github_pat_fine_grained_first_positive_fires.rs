@@ -1,22 +1,14 @@
 //! Contract: github-pat-fine-grained first positive fires with exact credential.
 
+use crate::support::paths::detector_dir;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
 
 const DETECTOR_ID: &str = "github-pat-fine-grained";
 const TEXT: &str =
     "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";
 const CREDENTIAL: &str =
     "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";
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 #[test]
 fn github_pat_fine_grained_first_positive_fires() {

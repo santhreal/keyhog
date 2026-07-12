@@ -101,8 +101,8 @@ pub(crate) fn try_expand_har(
             chunks.push(Ok(Chunk {
                 data: request_text.into(),
                 metadata: ChunkMetadata {
-                    source_type: "wire:har:request".to_string(),
-                    path: Some(format!("{path_str}#{url}")),
+                    source_type: "wire:har:request".into(),
+                    path: Some(format!("{path_str}#{url}").into()),
                     ..Default::default()
                 },
             }));
@@ -124,8 +124,8 @@ pub(crate) fn try_expand_har(
             chunks.push(Ok(Chunk {
                 data: response_text.into(),
                 metadata: ChunkMetadata {
-                    source_type: "wire:har:response".to_string(),
-                    path: Some(format!("{path_str}#{url}")),
+                    source_type: "wire:har:response".into(),
+                    path: Some(format!("{path_str}#{url}").into()),
                     ..Default::default()
                 },
             }));
@@ -133,6 +133,17 @@ pub(crate) fn try_expand_har(
     }
 
     Some(chunks)
+}
+
+/// Fuzz-only byte-level entry into the HAR expander (`har_text` UTF-16/8
+/// decode, BOM/whitespace trim, HAR-marker sniff, serde_json parse, and the
+/// request/response chunk rendering + base64 compaction). Compiled ONLY under
+/// `cargo fuzz` (`--cfg fuzzing`), so it adds no production API surface. A user
+/// scanning an attacker-supplied `.har` reaches this; the oracle is no panic /
+/// OOB / hang on ANY bytes.
+#[cfg(fuzzing)]
+pub fn fuzz_try_expand_har(bytes: &[u8], max_size: u64) {
+    let _ = try_expand_har(bytes, "fuzz.har", max_size);
 }
 
 fn har_text(bytes: &[u8]) -> Option<Cow<'_, str>> {

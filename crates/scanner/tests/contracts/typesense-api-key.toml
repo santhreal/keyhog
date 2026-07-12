@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "typesense_apikey  =  \":=:          '\"      :\"    '    \" ' '_NwUTEXAMPLEEXAMPLEoY4rp"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = 'typesense_api_key: "_NwUTwDJ0AkkHfG_SILwMoE_aPXONvjo_PoY4rp"'
+credential = "_NwUTwDJ0AkkHfG_SILwMoE_aPXONvjo_PoY4rp"
+reason = "docker-compose env value with a quoted, underscore-leading token; the typesense_api_key keyword anchors the value through the quotes."

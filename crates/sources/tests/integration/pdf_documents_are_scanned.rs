@@ -33,7 +33,7 @@ fn pdf_literal_text_stream_is_scanned_as_pdf() {
     let chunks = scan_pdf(bytes);
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/pdf"
+            chunk.metadata.source_type.as_ref() == "filesystem/pdf"
                 && chunk.data.contains("KEYHOG_PDF_LITERAL_SECRET_1234567890")
         }),
         "PDF literal text stream must emit filesystem/pdf chunk; got {chunks:?}"
@@ -41,7 +41,7 @@ fn pdf_literal_text_stream_is_scanned_as_pdf() {
     assert!(
         chunks
             .iter()
-            .all(|chunk| chunk.metadata.source_type != "filesystem"),
+            .all(|chunk| chunk.metadata.source_type.as_ref() != "filesystem"),
         "PDF bytes must not be decoded as plain filesystem text"
     );
 }
@@ -58,7 +58,7 @@ fn pdf_flate_text_stream_is_decompressed_and_scanned() {
     let chunks = scan_pdf(bytes);
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/pdf"
+            chunk.metadata.source_type.as_ref() == "filesystem/pdf"
                 && chunk.data.contains("KEYHOG_PDF_FLATE_SECRET_1234567890")
         }),
         "FlateDecode PDF text stream must be decompressed and scanned; got {chunks:?}"
@@ -75,7 +75,7 @@ fn pdf_hex_text_string_is_decoded_and_scanned() {
     let chunks = scan_pdf(bytes);
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/pdf"
+            chunk.metadata.source_type.as_ref() == "filesystem/pdf"
                 && chunk.data.contains("KEYHOG_PDF_HEX_SECRET_1234567890")
         }),
         "hex PDF text string must be decoded and scanned; got {chunks:?}"

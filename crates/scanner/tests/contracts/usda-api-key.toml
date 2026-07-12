@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "USDA_API_KEY=1XcqoEXAMPLEEXAMPLEO8uRS"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# USDA_API_KEY=1XcqoEeyy5Y9Vh0tDmTMEw04Uksa5KSO8uRS  # nutrition"
+credential = "1XcqoEeyy5Y9Vh0tDmTMEw04Uksa5KSO8uRS"
+reason = "Commented-out config; USDA_API_KEY keyword + 36-char key intact inside the comment."

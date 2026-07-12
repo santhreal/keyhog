@@ -247,7 +247,7 @@ fn malformed_sourcemap_is_raw_scanned_and_counted_partial() {
         1,
         "malformed source map should still produce one raw fallback chunk"
     );
-    assert_eq!(ok[0].metadata.source_type, "web:sourcemap:raw");
+    assert_eq!(ok[0].metadata.source_type.as_ref(), "web:sourcemap:raw");
     assert!(
         ok[0].data.contains(raw_marker),
         "raw fallback chunk must retain the malformed source map body"
@@ -286,14 +286,14 @@ fn uppercase_sourcemap_extension_with_query_routes_to_sourcemap() {
         .expect("uppercase sourcemap URL should scan");
 
     assert!(
-        chunks
-            .iter()
-            .any(|chunk| chunk.metadata.source_type == "web:sourcemap"
+        chunks.iter().any(
+            |chunk| chunk.metadata.source_type.as_ref() == "web:sourcemap"
                 && chunk
                     .metadata
                     .path
                     .as_deref()
-                    .is_some_and(|path| path.ends_with("!src.ts"))),
+                    .is_some_and(|path| path.ends_with("!src.ts"))
+        ),
         "uppercase .MAP path with query must route through sourcemap expansion, got {chunks:?}"
     );
 }
@@ -333,15 +333,17 @@ fn partially_malformed_sourcemap_scans_decoded_entries_and_raw_map() {
         "mixed source map must emit the valid decoded entry plus one raw fallback chunk"
     );
     assert!(
-        ok.iter()
-            .any(|chunk| chunk.metadata.source_type == "web:sourcemap"
-                && chunk.data.contains(parsed_marker)),
+        ok.iter().any(
+            |chunk| chunk.metadata.source_type.as_ref() == "web:sourcemap"
+                && chunk.data.contains(parsed_marker)
+        ),
         "valid sourcesContent string must still be decoded and scanned"
     );
     assert!(
-        ok.iter()
-            .any(|chunk| chunk.metadata.source_type == "web:sourcemap:raw"
-                && chunk.data.contains(raw_marker)),
+        ok.iter().any(
+            |chunk| chunk.metadata.source_type.as_ref() == "web:sourcemap:raw"
+                && chunk.data.contains(raw_marker)
+        ),
         "malformed sourcesContent object must be covered by raw-map scanning"
     );
 
@@ -519,7 +521,7 @@ fn valid_wasm_with_printable_strings_is_scanned_as_wasm_chunk() {
         Ok(chunk) => chunk,
         Err(err) => panic!("valid WASM with printable strings must scan, got {err}"),
     };
-    assert_eq!(chunk.metadata.source_type, "web:wasm");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "web:wasm");
     assert_eq!(chunk.metadata.path.as_deref(), Some(url.as_str()));
     assert!(
         chunk.data.as_ref().contains("credential_string"),

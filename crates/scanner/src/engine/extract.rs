@@ -298,7 +298,15 @@ impl CompiledScanner {
         // via `find_at` so the anchored-window path stays cheap. The
         // legacy path (range_start=0, range_end=bytes_total) behaves
         // identically to the prior `find_iter` loop.
-        let mut cursor = range_start;
+        //
+        // Snap the anchored start DOWN to a UTF-8 char boundary before the
+        // first `find_at`: the GPU-anchored cursor is a raw byte offset that
+        // can land mid-multibyte-char, and `Regex::find_at` panics on a
+        // non-boundary start. The grouped variant snaps identically at its
+        // cursor init (see `extract_grouped_matches`); floor (not ceil) so we
+        // never skip past a match starting at the char that contains
+        // `range_start`.
+        let mut cursor = super::floor_char_boundary(search_text, range_start);
         // Compile-on-first-use (see LazyRegex); bind once for the walk.
         let rx = entry.regex.get();
         let loop_deadline = crate::deadline::LoopDeadline::from_deadline(deadline);

@@ -1,0 +1,44 @@
+# Tier-B classification vocab for multiline assignment-name analysis
+# (scanner/src/multiline/string_extract.rs). Two independent classes:
+#
+# ambiguous_fragment    = bare assignment names that are AMBIGUOUS on their own —
+#   a lone `key`/`token`/... fragment is not strong enough evidence to treat a
+#   split-string fragment as a credential (the containing context must add more).
+#
+# public_metadata_exact / public_metadata_suffix = assignment names that hold
+#   PUBLIC, non-credential metadata (content digests, versions, line counts), so a
+#   high-entropy value under them is NOT a secret. `_exact` matches the whole
+#   normalized name; `_suffix` matches its tail (`file_digest`, `content_hash`).
+#
+# All three lists MUST stay non-empty (a build-time panic guards that). Extend a
+# list to teach the multiline extractor a new ambiguous fragment or metadata name.
+
+ambiguous_fragment = [
+    "key",
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "pwd",
+    "pass",
+    "credential",
+    "auth",
+    "authorization",
+]
+
+public_metadata_exact = [
+    "digest",
+    "hash",
+    "checksum",
+    "version",
+    "lines",
+]
+
+public_metadata_suffix = [
+    "_digest",
+    "_hash",
+    "_checksum",
+    "_version",
+    "_lines",
+    "_dedup_key",
+]

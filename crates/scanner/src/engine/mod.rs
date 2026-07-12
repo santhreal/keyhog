@@ -23,10 +23,8 @@
 //!
 //! There is exactly ONE production on-GPU trigger producer: the region-presence
 //! dispatch in [`gpu_region_dispatch`]. Selecting a GPU backend (`--backend gpu`)
-//! routes the batch path through it. The compatibility library `scan()` method
-//! is the deterministic portable CPU reference; accelerated library calls name
-//! a backend explicitly, while the CLI consumes persisted fastest-correct
-//! calibration. The GPU path degrades LOUDLY
+//! routes the batch path through it;
+//! the default backend is the CPU Hyperscan path. The GPU path degrades LOUDLY
 //! to CPU on any failure (never a silent empty result — Law 10).
 //!
 //! # Where each method lives (the `CompiledScanner` god-object is split by job)
@@ -62,6 +60,8 @@ pub(crate) use boundary::scan_chunk_boundaries as scan_chunk_boundaries_for_test
 mod compile;
 mod compile_helpers;
 mod compiled_api;
+#[cfg(test)]
+pub(crate) use compiled_api::Phase2PoolBreakdown;
 mod csr;
 pub(crate) use csr::CsrU32;
 mod extract;
@@ -75,7 +75,7 @@ mod gpu_lazy;
 mod gpu_lazy_helpers;
 mod gpu_literal_scratch;
 #[cfg(feature = "gpu")]
-mod gpu_region_batch;
+pub(crate) mod gpu_region_batch;
 #[cfg(feature = "gpu")]
 mod gpu_region_dispatch;
 #[cfg(feature = "gpu")]
@@ -86,6 +86,14 @@ pub(crate) mod phase2;
 mod phase2_anchor;
 #[cfg(test)]
 pub(crate) use phase2_anchor::required_prefix_literals as phase2_required_prefix_literals_for_test;
+// Always-on re-export (NOT cfg(test)) so `crate::testing` — which is compiled
+// even when the crate is linked as a dependency of the integration-test binary,
+// where `cfg(test)` is false for this crate — can classify confirmed patterns by
+// the SAME required-prefix predicate `ConfirmedAnchorIndex` uses (backlog 4786
+// localization-ceiling analysis).
+pub(crate) use phase2_anchor::{
+    required_prefix_literals_with_cap, CONFIRMED_MAX_LITERALS_PER_PATTERN,
+};
 mod phase2_anchor_scan;
 mod phase2_compiled;
 mod phase2_compiled_anchored;
@@ -122,6 +130,11 @@ mod scan_postprocess_ml;
 mod scan_postprocess_profile;
 #[path = "scan_postprocess/suffix_gate.rs"]
 mod scan_postprocess_suffix_gate;
+// Coalesced-attribution primitive. No production scan-pipeline consumer yet;
+// its only user is the doc-hidden `testing::segment_attribution` facade, which
+// now RE-EXPORTS this single owner (`pub use`) instead of carrying a second
+// hand-copied body (ONE-PLACE / Law-11). Kept `pub(crate)` with `pub` items so
+// the re-export can widen them to the testing facade's public surface.
 pub(crate) mod segment_attribution;
 pub(crate) mod trigger_bitmap;
 mod windowed;
@@ -154,6 +167,7 @@ pub(crate) use scan_inner_profile::scan_inner_profile_dump;
 #[cfg(test)]
 pub(crate) use scan_postprocess::decode_profile_dump;
 pub(crate) use scan_postprocess_suffix_gate::suffix_gate_literals;
+pub(crate) use windowed::{reject_oversized_window_chunk, MAX_WINDOW_CHUNK_BYTES};
 pub(crate) use windowed_support::{absolute_line, absolute_offset, ceil_char_boundary};
 pub use windowed_support::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
@@ -250,10 +264,6 @@ pub struct CompiledScanner {
     /// preserves the exact first-match-by-exact-or-normalized semantics. Built
     /// ONCE at construction (see [`crate::generic_keyword_owner::GenericOwningDetectorIndex`]).
     pub(crate) generic_owning_detector: crate::generic_keyword_owner::GenericOwningDetectorIndex,
-    /// One compiled generic-assignment policy containing both extraction and
-    /// line admission, so custom-corpus keywords and bounds cannot drift across
-    /// parallel runtime structures.
-    pub(crate) generic_assignment: phase2_generic::GenericAssignmentPolicy,
     /// Per-`ac_map` regex byte upper bound for GPU hit-local validation. `None`
     /// means the detector regex is unbounded or unparsable by the AST bounder,
     /// so GPU validation must keep the full prepared-chunk oracle.
@@ -402,5 +412,32 @@ mod max_inner_loop_iters_tests {
     #[test]
     fn bigram_bloom_min_chunk_bytes_is_sixty_four() {
         assert_eq!(super::BIGRAM_BLOOM_MIN_CHUNK_BYTES, 64);
+    }
+
+    /// The unbounded/entropy cross-seam reassembly cap replaced a `usize::MAX`
+    /// full-chunk splice (O(pairs x chunk_bytes) rescan). It is pinned to the
+    /// FilesystemSource window overlap so the seam covers exactly the straddle
+    /// range the overlap design assumes catchable; drifting it silently changes
+    /// boundary recall AND the per-pair reassembly cost.
+    #[test]
+    fn boundary_seam_cap_matches_window_overlap() {
+        assert_eq!(
+            super::boundary::MAX_BOUNDARY_SEAM_BYTES,
+            crate::types::WINDOW_OVERLAP_BYTES
+        );
+        assert_eq!(super::boundary::MAX_BOUNDARY_SEAM_BYTES, 128 * 1024);
+    }
+
+    /// The no-phase-1-hit keyword-free entropy admission cap is exactly the bare
+    /// `32 * 1024` the three admission sites used to inline. Pinning it locks the
+    /// recall/perf boundary in ONE place: a no-hit chunk larger than this with a
+    /// bare anchorless high-entropy secret is not admitted to the entropy path.
+    #[cfg(feature = "simd")]
+    #[test]
+    fn no_hit_entropy_admission_cap_is_thirty_two_kib() {
+        assert_eq!(
+            super::scan_coalesced::NO_HIT_ENTROPY_ADMISSION_MAX_BYTES,
+            32 * 1024
+        );
     }
 }

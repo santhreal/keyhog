@@ -38,8 +38,5 @@ pub fn has_windows_drive_prefix(s: &str) -> bool {
 #[must_use]
 pub fn is_windows_absolute(s: &str) -> bool {
     let b = s.as_bytes();
-    b.len() >= 3
-        && b[0].is_ascii_alphabetic()
-        && b[1] == b':'
-        && (b[2] == b'/' || b[2] == b'\\')
+    b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'/' || b[2] == b'\\')
 }

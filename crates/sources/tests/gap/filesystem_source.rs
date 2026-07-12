@@ -436,6 +436,11 @@ fn file_one_byte_over_cap_is_skipped() {
 
 #[test]
 fn live_size_over_cap_wins_over_stale_recorded_size() {
+    // Hold the exclusive skip-counter lease across reset -> scan -> assert so a
+    // concurrent counter-asserting test can't perturb the process-global
+    // over_max_size count (without it this exact-count assert races and sees 2).
+    // Same lease the guarded counter tests in this file take.
+    let _guard = TestApi.skip_counter_guard();
     reset_skipped_over_max_size();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("grown.txt");
@@ -528,10 +533,10 @@ fn max_file_size_zero_expands_nonempty_har() {
     );
     assert!(chunks
         .iter()
-        .any(|chunk| chunk.metadata.source_type == "wire:har:request"));
+        .any(|chunk| chunk.metadata.source_type.as_ref() == "wire:har:request"));
     assert!(chunks
         .iter()
-        .any(|chunk| chunk.metadata.source_type == "wire:har:response"));
+        .any(|chunk| chunk.metadata.source_type.as_ref() == "wire:har:response"));
     let body = combined_body(&chunks);
     assert!(body.contains("har_header_secret_123456"));
     assert!(body.contains("har_response_secret_123456"));
@@ -539,11 +544,12 @@ fn max_file_size_zero_expands_nonempty_har() {
 
 #[test]
 fn oversize_skip_increments_global_counter() {
-    // process_entry bumps crate::SKIPPED_OVER_MAX_SIZE per over-cap file.
-    // The counter is process-global and tests run in parallel, so we reset
-    // then assert the count strictly increased by at least our own over-cap
-    // file (>= 1) rather than an exact value that a concurrent test could
-    // perturb.
+    // process_entry bumps crate::SKIPPED_OVER_MAX_SIZE per over-cap file. The
+    // counter is process-global, so hold the exclusive skip-counter lease across
+    // reset -> scan -> assert to serialize with every other counter-asserting
+    // test. Without the lease a concurrent test's reset can zero our bump between
+    // the scan and the assert, so even `>= 1` fails intermittently.
+    let _guard = TestApi.skip_counter_guard();
     reset_skipped_over_max_size();
     let dir = tempfile::tempdir().unwrap();
     let big = "B=".to_string() + &"q".repeat(2048);
@@ -758,7 +764,7 @@ fn ordinary_text_extension_is_scanned() {
     fs::write(&path, "API_KEY = 'scanned_python_secret_01'").unwrap();
     let chunks = scan_single_file(&path);
     assert_eq!(chunks.len(), 1);
-    assert_eq!(chunks[0].metadata.source_type, "filesystem");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "filesystem");
     assert!(chunks[0].data.contains("scanned_python_secret_01"));
 }
 
@@ -801,14 +807,14 @@ fn elf_magic_with_nonskip_extension_falls_back_to_strings_not_text() {
     assert!(
         chunks
             .iter()
-            .all(|c| c.metadata.source_type != "filesystem"),
+            .all(|c| c.metadata.source_type.as_ref() != "filesystem"),
         "ELF magic must keep the decoder from treating it as plain text"
     );
     assert!(
-        chunks
-            .iter()
-            .any(|c| c.metadata.source_type == "filesystem:binary-strings"
-                && c.data.contains("API_KEY=elfmarker")),
+        chunks.iter().any(
+            |c| c.metadata.source_type.as_ref() == "filesystem:binary-strings"
+                && c.data.contains("API_KEY=elfmarker")
+        ),
         "embedded printable run must surface via the binary-strings fallback"
     );
 }
@@ -911,7 +917,7 @@ fn extensionless_clean_text_passes_the_sniff() {
     fs::write(&path, "CONFIG_TOKEN=clean_no_extension_value").unwrap();
     let chunks = scan_single_file(&path);
     assert_eq!(chunks.len(), 1);
-    assert_eq!(chunks[0].metadata.source_type, "filesystem");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "filesystem");
     assert!(chunks[0].data.contains("clean_no_extension_value"));
 }
 
@@ -951,10 +957,10 @@ fn high_nul_density_binary_falls_back_to_printable_strings() {
 
     let chunks = chunks_of(dir.path());
     assert!(
-        chunks
-            .iter()
-            .any(|c| c.metadata.source_type == "filesystem:binary-strings"
-                && c.data.contains("AKIAFALLBACKSTRINGMARKER01")),
+        chunks.iter().any(
+            |c| c.metadata.source_type.as_ref() == "filesystem:binary-strings"
+                && c.data.contains("AKIAFALLBACKSTRINGMARKER01")
+        ),
         "binary body must surface via printable-strings fallback; got {:?}",
         chunks
             .iter()
@@ -974,10 +980,10 @@ fn mmap_binary_falls_back_to_printable_strings_without_reread() {
 
     let chunks = scan_single_file(&path);
     assert!(
-        chunks
-            .iter()
-            .any(|c| c.metadata.source_type == "filesystem:binary-strings"
-                && c.data.contains("AKIAMMAPFALLBACKMARKER01")),
+        chunks.iter().any(
+            |c| c.metadata.source_type.as_ref() == "filesystem:binary-strings"
+                && c.data.contains("AKIAMMAPFALLBACKMARKER01")
+        ),
         "mmap-backed binary body must surface via printable-strings fallback; got {:?}",
         chunks
             .iter()
@@ -1037,7 +1043,7 @@ fn large_utf16le_file_with_ascii_secret_is_decoded_not_windowed_nul_interleaved(
     let chunks = scan_single_file(&path);
     let source_types: Vec<String> = chunks
         .iter()
-        .map(|c| c.metadata.source_type.clone())
+        .map(|c| c.metadata.source_type.to_string())
         .collect();
     let body = combined_body(&chunks);
 
@@ -1060,7 +1066,7 @@ fn large_utf16le_file_with_ascii_secret_is_decoded_not_windowed_nul_interleaved(
     assert!(
         chunks
             .iter()
-            .all(|c| c.metadata.source_type != "filesystem/windowed"),
+            .all(|c| c.metadata.source_type.as_ref() != "filesystem/windowed"),
         "UTF-16 large file must not be emitted as raw windowed chunks; source_types {source_types:?}"
     );
 }
@@ -1109,7 +1115,7 @@ fn pdf_magic_dat_file_not_scanned_as_text() {
     assert!(
         chunks
             .iter()
-            .all(|c| c.metadata.source_type != "filesystem"),
+            .all(|c| c.metadata.source_type.as_ref() != "filesystem"),
         "PDF-magic file must never be decoded as plain text"
     );
 }
@@ -1340,7 +1346,7 @@ fn scanned_text_chunk_carries_path_and_size_metadata() {
     let chunks = chunks_of(dir.path());
     assert_eq!(chunks.len(), 1);
     let meta = &chunks[0].metadata;
-    assert_eq!(meta.source_type, "filesystem");
+    assert_eq!(meta.source_type.as_ref(), "filesystem");
     assert_eq!(meta.size_bytes, Some(size));
     assert!(meta.mtime_ns.is_some());
     let p = meta.path.as_deref().expect("path metadata must be set");

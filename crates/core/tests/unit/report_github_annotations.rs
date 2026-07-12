@@ -52,18 +52,30 @@ fn github_annotation_escapes_workflow_command_injection() {
         1,
         "escaped annotation must remain one workflow-command line: {out:?}"
     );
+    // The file path is a scan-derived string, so it first passes through
+    // `sanitize_terminal`, which NEUTRALIZES control chars (incl. the newline) to
+    // the visible replacement char U+FFFD before `escape_property` %-escapes the
+    // structural chars. Neutralize-then-escape is strictly stronger than escaping
+    // the raw newline to `%0A`: a literal newline can never survive to inject a
+    // second workflow command. Comma/colon/percent are still %-escaped.
     assert!(
-        out.contains("file=dir%2Cevil%3Apart%25%0Afile.env"),
-        "file property must escape comma, colon, percent, and newline: {out:?}"
+        out.contains("file=dir%2Cevil%3Apart%25\u{FFFD}file.env"),
+        "file property must %-escape comma/colon/percent and neutralize the newline to U+FFFD: {out:?}"
     );
     assert!(
         out.contains("title=keyhog high id%3Awith%2Cchars::"),
         "title property must escape colon and comma: {out:?}"
     );
+    // detector_name is scan-derived too, so its newline is neutralized to U+FFFD
+    // by `sanitize_terminal` before the message data is percent-escaped.
     assert!(
-        out.contains("Detector%0A::warning title=owned::message%25"),
-        "message data must escape newline and percent: {out:?}"
+        out.contains("Detector\u{FFFD}::warning title=owned::message%25"),
+        "message data must neutralize the scan-derived newline to U+FFFD and %-escape percent: {out:?}"
     );
+    // The verification token is NOT run through `sanitize_terminal`; its CR/LF are
+    // instead escaped to %0D/%0A by `escape_command_data`. Either layer prevents a
+    // literal newline from injecting a second command (see the one-line assertion
+    // above) — this pins that the verification path uses the escape layer.
     assert!(
         out.contains("verification=error: bad%0D%0A::error title=owned::pwn%25"),
         "error verification text must escape CR/LF and percent: {out:?}"

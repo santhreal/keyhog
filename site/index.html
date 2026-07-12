@@ -4,8 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>keyhog — secret scanner for source, history, and systems</title>
-  <meta name="description" content="922 embedded detector TOMLs, calibrated backend routing, SARIF output, git/source scanning, and Rust libraries.">
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta name="description" content="902 embedded detector TOMLs, calibrated backend routing, SARIF output, git/source scanning, and Rust libraries.">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -64,7 +63,6 @@
 <article data-toc="off">
 
 <section class="hero">
-  <div class="eyebrow"><span class="signal-dot" aria-hidden="true"></span> secrets detection, measured end to end</div>
   <h1>Find leaked credentials <span class="mark">before</span> attackers do.</h1>
   <p class="lede">
     keyhog scans source trees, git history, Docker images, and S3 buckets for
@@ -77,13 +75,7 @@
   </div>
 </section>
 
-<div class="terminal-shell" aria-label="Example keyhog scan">
-  <div class="terminal-bar" aria-hidden="true">
-    <span></span><span></span><span></span>
-    <strong>keyhog / scan</strong>
-    <em>calibrated</em>
-  </div>
-<pre class="hero-terminal" data-nocopy="true"><code><span class="prompt">$</span> <span class="k">cargo</span> install keyhog
+<pre data-nocopy="true"><code><span class="prompt">$</span> <span class="k">cargo</span> install keyhog
 <span class="prompt">$</span> <span class="k">keyhog</span> scan .
 <span class="a">keyhog v0.5.40 | 16 cores | SIMD: AVX-512 | Hyperscan | 922 detectors</span>
 <span class="a">scanning 1,247 files…</span>
@@ -94,12 +86,11 @@
 <span class="c">.env.production:3</span>
   <span class="k">stripe-secret-key</span>  <span class="s">sk_live_4eC39HqLyjW…</span>  <span class="a">[critical · 0.99]</span>
 
-<span class="a">2 findings · 1247 files scanned</span></code></pre>
-</div>
+<span class="a">2 findings · 0.4s · 1247 files scanned</span></code></pre>
 
 <div class="stats">
   <div class="stat">
-    <div class="num">922</div>
+    <div class="num">902</div>
     <div class="lbl">Detectors</div>
   </div>
   <div class="stat">
@@ -112,7 +103,7 @@
   </div>
   <div class="stat">
     <div class="num">0</div>
-    <div class="lbl">Required config</div>
+    <div class="lbl">Config files</div>
   </div>
 </div>
 
@@ -126,7 +117,7 @@
     repair it instead of guessing silently.</p>
   </a>
   <a href="detectors.html" class="card">
-    <h3>922 service detectors</h3>
+    <h3>902 service detectors</h3>
     <p>Service-specific patterns with checksum validation (GitHub&nbsp;CRC32,
     npm, Slack, PyPI), entropy gating, multiline reassembly, decode-through
     scanning for base64, JWT, k8s YAML.</p>
@@ -144,16 +135,16 @@
     outbound verification.</p>
   </a>
   <a href="daemon.html" class="card">
-    <h3>Warm daemon scans</h3>
-    <p>Keep the compiled detector corpus resident across invocations instead of
-    paying startup work on every scan. Built for pre-commit hooks and IDE save
-    handlers; measure the gain on the installed host.</p>
+    <h3>Daemon mode — 105× faster re-scan</h3>
+    <p>Amortize the ~3&nbsp;s compile across many invocations.
+    <code>keyhog scan --stdin --daemon</code> returns in ~7&nbsp;ms.
+    Perfect for pre-commit hooks and IDE save handlers.</p>
   </a>
   <a href="architecture.html" class="card">
     <h3>Built for scale</h3>
-    <p>Two-phase coalesced scanning narrows candidate detectors before full
-    extraction. Bounded windows, parallel source walking, and shared compiled
-    state keep large repositories operationally predictable.</p>
+    <p>Two-phase coalesced scan: phase&nbsp;1 Hyperscan NFA across all files
+    in parallel (95%+ pay zero cost), phase&nbsp;2 extraction on hits only.
+    Scales linearly to multi-GB monorepos.</p>
   </a>
 </div>
 

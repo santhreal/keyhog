@@ -4,7 +4,7 @@
 
 use crate::args::CalibrateArgs;
 use anyhow::{Context, Result};
-use keyhog_core::{BetaCounters, Calibration};
+use keyhog_core::Calibration;
 
 pub(crate) fn run(args: CalibrateArgs) -> Result<()> {
     let cache_path = args
@@ -36,6 +36,8 @@ pub(crate) fn run(args: CalibrateArgs) -> Result<()> {
         print_show(&calibration, &cache_path);
         return Ok(());
     }
+
+    validate_detector_ids(args.tp.iter().chain(args.fp.iter()))?;
 
     for detector_id in &args.tp {
         calibration.record_outcome(detector_id, true);
@@ -95,7 +97,7 @@ fn print_show(calibration: &Calibration, cache_path: &std::path::Path) {
         p.bold, "DETECTOR", "α", "β", "POSTERIOR", "OBS", p.reset
     );
     for (id, c) in entries {
-        let mean = posterior_mean(c);
+        let mean = c.posterior_mean();
         let bar = bar_for(mean);
         println!(
             "    {id:<40}  {green}{alpha:>5}{reset}  {green}{beta:>5}{reset}  {green}{mean:>6.3}{reset}  {green}{bar}{reset} {green}{obs:>4}{reset}",
@@ -104,27 +106,45 @@ fn print_show(calibration: &Calibration, cache_path: &std::path::Path) {
             beta = c.beta,
             mean = mean,
             bar = bar,
-            obs = observations(c),
+            obs = c.observations(),
             green = p.green,
             reset = p.reset,
         );
     }
 }
 
-fn posterior_mean(counters: BetaCounters) -> f64 {
-    let total = counters.alpha as f64 + counters.beta as f64;
-    if total == 0.0 {
-        0.5
-    } else {
-        counters.alpha as f64 / total
+/// Write-side twin of the loader's detector-id validation
+/// (`CalibrationLoadError::EmptyDetectorId`): reject empty/whitespace ids
+/// before they are persisted, and warn on ids not present in the embedded
+/// corpus. Unknown ids stay a warning, not an error, because operators can
+/// run custom detector TOMLs whose ids the embedded corpus has never heard
+/// of — but a typo'd `--tp strpe-secret-key` would otherwise silently seed a
+/// counter no detector ever reads.
+fn validate_detector_ids<'a>(ids: impl Iterator<Item = &'a String>) -> Result<()> {
+    let known: std::collections::HashSet<String> = keyhog_core::load_embedded_detectors_or_fail()
+        .context("loading the embedded detector corpus to validate detector ids")?
+        .into_iter()
+        .map(|d| d.id)
+        .collect();
+    for id in ids {
+        if id.trim().is_empty() {
+            anyhow::bail!(
+                "detector id must not be empty or whitespace. \
+                 Fix: pass the detector's id, e.g. `--tp stripe-secret-key` \
+                 (list ids with `keyhog detectors`). No calibration counters were changed."
+            );
+        }
+        if !known.contains(id.as_str()) {
+            let p = crate::style::for_stderr();
+            eprintln!(
+                "{} '{id}' is not an embedded detector id; recording anyway (custom \
+                 detectors keep their own ids). If this is a typo, no detector will \
+                 ever read the counter; check `keyhog detectors --search {id}`.",
+                crate::style::warn("WARN", &p),
+            );
+        }
     }
-}
-
-fn observations(counters: BetaCounters) -> u32 {
-    counters
-        .alpha
-        .saturating_sub(1)
-        .saturating_add(counters.beta.saturating_sub(1))
+    Ok(())
 }
 
 fn bar_for(mean: f64) -> String {

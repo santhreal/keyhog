@@ -1,7 +1,7 @@
 //! Integrity guard for the embedded detector corpus.
 //!
 //! `assemble_detector_load` collects every parsed spec into a `Vec` and sorts by
-//! id — it never checks that ids are UNIQUE or well-formed. With 908 detectors
+//! id — it never checks that ids are UNIQUE or well-formed. With 919 detectors
 //! authored across many sessions, a copy-pasted `id` would silently double-fire
 //! (or shadow the original in any id-keyed downstream map), and a malformed id
 //! breaks doc/registry cross-references — both invisible at scan time. These
@@ -33,13 +33,19 @@ fn is_kebab_case(id: &str) -> bool {
 
 #[test]
 fn embedded_corpus_loads() {
-    assert!(!corpus().is_empty(), "the embedded detector corpus must not be empty");
+    assert!(
+        !corpus().is_empty(),
+        "the embedded detector corpus must not be empty"
+    );
 }
 
 #[test]
 fn corpus_has_at_least_900_detectors() {
     let n = corpus().len();
-    assert!(n >= 900, "expected the full corpus (>=900 detectors), got {n}");
+    assert!(
+        n >= 900,
+        "expected the full corpus (>=900 detectors), got {n}"
+    );
 }
 
 // ── id uniqueness (the unguarded silent-shadow hazard) ──────────────────────
@@ -53,7 +59,10 @@ fn all_detector_ids_are_unique() {
         .filter(|d| !seen.insert(d.id.as_str()))
         .map(|d| d.id.as_str())
         .collect();
-    assert!(dups.is_empty(), "duplicate detector ids would shadow/double-fire: {dups:?}");
+    assert!(
+        dups.is_empty(),
+        "duplicate detector ids would shadow/double-fire: {dups:?}"
+    );
 }
 
 #[test]
@@ -87,7 +96,10 @@ fn all_detector_ids_are_kebab_case() {
         .filter(|d| !is_kebab_case(&d.id))
         .map(|d| d.id.clone())
         .collect();
-    assert!(bad.is_empty(), "ids must be clean kebab-case slugs; offenders: {bad:?}");
+    assert!(
+        bad.is_empty(),
+        "ids must be clean kebab-case slugs; offenders: {bad:?}"
+    );
 }
 
 #[test]
@@ -97,7 +109,10 @@ fn no_detector_id_contains_whitespace() {
         .filter(|d| d.id.chars().any(|c| c.is_whitespace()))
         .map(|d| d.id.clone())
         .collect();
-    assert!(bad.is_empty(), "detector ids must not contain whitespace: {bad:?}");
+    assert!(
+        bad.is_empty(),
+        "detector ids must not contain whitespace: {bad:?}"
+    );
 }
 
 // ── required string fields ──────────────────────────────────────────────────
@@ -109,7 +124,10 @@ fn all_detector_names_are_nonempty() {
         .filter(|d| d.name.trim().is_empty())
         .map(|d| d.id.clone())
         .collect();
-    assert!(bad.is_empty(), "detectors missing a human-readable name: {bad:?}");
+    assert!(
+        bad.is_empty(),
+        "detectors missing a human-readable name: {bad:?}"
+    );
 }
 
 #[test]
@@ -129,19 +147,30 @@ fn no_service_contains_whitespace() {
         .filter(|d| d.service.chars().any(|c| c.is_whitespace()))
         .map(|d| format!("{}={}", d.id, d.service))
         .collect();
-    assert!(bad.is_empty(), "service tags must be single tokens: {bad:?}");
+    assert!(
+        bad.is_empty(),
+        "service tags must be single tokens: {bad:?}"
+    );
 }
 
 // ── patterns ────────────────────────────────────────────────────────────────
 
 #[test]
 fn every_detector_has_at_least_one_pattern() {
+    // Phase-2 generic detectors (kind = "phase2-generic") intentionally carry NO
+    // regex pattern — a shapeless secret has no anchor, so they fire in phase 2 on
+    // keywords + entropy_floor. Every OTHER (phase-1 regex) detector must have a
+    // pattern or it can never fire.
     let bad: Vec<String> = corpus()
         .iter()
+        .filter(|d| d.kind != keyhog_core::DetectorKind::Phase2Generic)
         .filter(|d| d.patterns.is_empty())
         .map(|d| d.id.clone())
         .collect();
-    assert!(bad.is_empty(), "a detector with no pattern can never fire: {bad:?}");
+    assert!(
+        bad.is_empty(),
+        "a regex detector with no pattern can never fire: {bad:?}"
+    );
 }
 
 #[test]
@@ -162,11 +191,18 @@ fn pattern_capture_group_indices_are_sane() {
     // detector declares a double-digit capture group).
     let bad: Vec<String> = corpus()
         .iter()
-        .flat_map(|d| d.patterns.iter().filter_map(move |p| p.group.map(|g| (d.id.clone(), g))))
+        .flat_map(|d| {
+            d.patterns
+                .iter()
+                .filter_map(move |p| p.group.map(|g| (d.id.clone(), g)))
+        })
         .filter(|(_, g)| *g > 8)
         .map(|(id, g)| format!("{id} group={g}"))
         .collect();
-    assert!(bad.is_empty(), "implausible capture-group index (likely a typo): {bad:?}");
+    assert!(
+        bad.is_empty(),
+        "implausible capture-group index (likely a typo): {bad:?}"
+    );
 }
 
 // ── keywords ────────────────────────────────────────────────────────────────
@@ -178,7 +214,10 @@ fn no_keyword_is_empty() {
         .filter(|d| d.keywords.iter().any(|k| k.is_empty()))
         .map(|d| d.id.clone())
         .collect();
-    assert!(bad.is_empty(), "an empty-string keyword matches everything: {bad:?}");
+    assert!(
+        bad.is_empty(),
+        "an empty-string keyword matches everything: {bad:?}"
+    );
 }
 
 #[test]
@@ -195,7 +234,10 @@ fn no_keyword_has_edge_whitespace() {
                 .map(move |k| format!("{}:'{k}'", d.id))
         })
         .collect();
-    assert!(bad.is_empty(), "keywords must not carry edge whitespace: {bad:?}");
+    assert!(
+        bad.is_empty(),
+        "keywords must not carry edge whitespace: {bad:?}"
+    );
 }
 
 // ── self-declared confidence floor ──────────────────────────────────────────
@@ -208,5 +250,8 @@ fn min_confidence_is_within_unit_range() {
         .filter(|(_, mc)| !(0.0..=1.0).contains(mc))
         .map(|(id, mc)| format!("{id}={mc}"))
         .collect();
-    assert!(bad.is_empty(), "min_confidence must be within [0.0, 1.0]: {bad:?}");
+    assert!(
+        bad.is_empty(),
+        "min_confidence must be within [0.0, 1.0]: {bad:?}"
+    );
 }

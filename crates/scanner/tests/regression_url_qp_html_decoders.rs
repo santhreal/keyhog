@@ -213,14 +213,23 @@ fn url_percent_escapes_decode_wrapped_secret_to_exact_bytes() {
 }
 
 #[test]
-fn url_malformed_first_escape_emits_no_url_layer() {
-    // `%zz` is not a valid `%XX` escape; percent-decoding aborts at it, so NO
-    // url layer is emitted (exact count 0).
+fn url_malformed_first_escape_decodes_valid_neighbor_best_effort() {
+    // BEST-EFFORT decoder (decode/url.rs): a malformed `%zz` is copied through
+    // as a literal byte, NOT an abort. Because the candidate still contains a
+    // VALID `%41` escape, `url_decode` proceeds (it refuses only when NO valid
+    // `%XX` exists anywhere — see the HTML/QP negative twins) and emits exactly
+    // one url layer with `%41` decoded to 'A'. The old all-or-nothing contract
+    // (abort at the first malformed escape → zero layers) was deliberately
+    // replaced so a real secret next to a stray `%` is still recovered.
     let malformed = layers_for("token = \"%zz%41value\"", "url");
     assert_eq!(
         malformed.len(),
-        0,
-        "malformed leading percent-escape must yield zero url layers; got {malformed:?}"
+        1,
+        "one best-effort url layer (valid %41 decodes despite the malformed %zz); got {malformed:?}"
+    );
+    assert!(
+        malformed[0].contains("Avalue") && !malformed[0].contains("%41"),
+        "the valid %41 escape must decode to 'A' past the literal %zz; got {malformed:?}"
     );
     // Negative twin: the same shape with a valid first escape DOES decode.
     let valid = layers_for("token = \"%41%42%43value\"", "url");

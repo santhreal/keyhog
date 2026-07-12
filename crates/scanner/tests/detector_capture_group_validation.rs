@@ -141,9 +141,16 @@ fn error_is_the_capture_group_out_of_range_variant() {
 fn error_carries_the_declared_group_and_captures_len() {
     let err = compile_err(r"secret=(\w+)", Some(2));
     match err {
-        ScanError::CaptureGroupOutOfRange { group, captures_len, .. } => {
+        ScanError::CaptureGroupOutOfRange {
+            group,
+            captures_len,
+            ..
+        } => {
             assert_eq!(group, 2, "declared group must be reported verbatim");
-            assert_eq!(captures_len, 2, "one-group regex has captures_len 2 (group0 + group1)");
+            assert_eq!(
+                captures_len, 2,
+                "one-group regex has captures_len 2 (group0 + group1)"
+            );
         }
         other => panic!("wrong variant: {other:?}"),
     }
@@ -161,7 +168,10 @@ fn error_message_names_the_detector_id() {
 #[test]
 fn error_message_includes_a_fix_hint() {
     let err = compile_err(r"secret=(\w+)", Some(2));
-    assert!(err.to_string().contains("Fix:"), "error must include a Fix hint: {err}");
+    assert!(
+        err.to_string().contains("Fix:"),
+        "error must include a Fix hint: {err}"
+    );
 }
 
 // ── multi-pattern: the offending pattern index is reported ──────────────────
@@ -241,10 +251,15 @@ fn in_bounds_group_captures_the_group_value_not_the_whole_match() {
     assert!(
         matches.iter().any(|m| m.credential.as_ref() == value),
         "expected credential {value:?}, got {:?}",
-        matches.iter().map(|m| m.credential.as_ref()).collect::<Vec<_>>()
+        matches
+            .iter()
+            .map(|m| m.credential.as_ref())
+            .collect::<Vec<_>>()
     );
     assert!(
-        !matches.iter().any(|m| m.credential.as_ref().contains("secret =")),
+        !matches
+            .iter()
+            .any(|m| m.credential.as_ref().contains("secret =")),
         "credential must not include the keyword/separator (whole-match capture)"
     );
 }

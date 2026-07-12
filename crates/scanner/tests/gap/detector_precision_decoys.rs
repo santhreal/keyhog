@@ -799,3 +799,341 @@ fn real_credential_corpus_property_none_suppressed() {
         "these real credentials were wrongly suppressed: {dropped:?}"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin `is_dash_segmented_alnum_decoy` and
+// `looks_like_standard_base64_blob` at a handful of literals; these SWEEP the two
+// leaf predicates over their structural domains. Both invariants are traced to
+// source (no arithmetic mirror):
+//
+//  * `is_dash_segmented_alnum_decoy` (suppression/shape/canonical.rs:590): reject
+//    if no `-`, if any byte is not alnum-or-`-`, or if any dash group is empty;
+//    then `group_count >= 3 && all_len5_upperdigit` is a DETERMINISTIC accept
+//    (the 5×N serial family — it never consults token randomness), while the
+//    all-alpha branch does. So a `>=3` run of exactly-5 `[A-Z0-9]` groups is
+//    ALWAYS a decoy, a `<3`-group value never is, and any injected symbol /
+//    empty group / missing dash disqualifies unconditionally — all randomness-
+//    independent, so no flake.
+//  * `looks_like_standard_base64_blob` == `is_random_base64_blob(v, 40, 80, 32)`
+//    (decode_structure.rs:148): length outside [40,80] returns false BEFORE any
+//    shape parse (a content-independent universal); and an in-band, mult-of-4,
+//    standard-alphabet body carrying a `+` hits the `has_plus` admit (standard_
+//    base64_shape returns Some: no urlsafe byte, remainder 0) → always a blob.
+// No proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// >=3 groups of exactly-5 `[A-Z0-9]` chars joined by `-` ALWAYS hit the
+    /// deterministic branch-5 serial admit — independent of token randomness.
+    #[test]
+    fn five_by_n_upper_digit_serial_is_dash_decoy(
+        groups in prop::collection::vec("[A-Z0-9]{5}", 3..=8),
+    ) {
+        let value = groups.join("-");
+        prop_assert!(
+            is_dash_segmented_alnum_decoy(&value),
+            "{value:?} is a >=3-group 5x5 upper/digit serial"
+        );
+    }
+
+    /// Fewer than 3 groups can never be a dash-decoy: both accept branches
+    /// require `group_count >= 3` (a 1-group value has no dash at all → the
+    /// first guard rejects it; a 2-group value fails the count).
+    #[test]
+    fn under_three_serial_groups_is_not_dash_decoy(
+        groups in prop::collection::vec("[A-Z0-9]{5}", 1..=2),
+    ) {
+        let value = groups.join("-");
+        prop_assert!(!is_dash_segmented_alnum_decoy(&value));
+    }
+
+    /// A single injected non-alnum, non-dash byte trips the charset gate, so an
+    /// otherwise-perfect serial is never a dash-decoy.
+    #[test]
+    fn any_symbol_byte_disqualifies_dash_decoy(
+        groups in prop::collection::vec("[A-Z0-9]{5}", 3..=6),
+        sym in prop::sample::select(vec!['$', '*', '.', '_', '/', '!', '@', '%']),
+        pos in 0usize..17,
+    ) {
+        let mut value = groups.join("-");
+        let at = pos % value.len(); // all-ASCII ⇒ every byte index is a boundary
+        value.insert(at, sym);
+        prop_assert!(
+            !is_dash_segmented_alnum_decoy(&value),
+            "{value:?} carries a non-alnum, non-dash byte"
+        );
+    }
+
+    /// An empty dash group (leading / trailing / doubled dash) fails the
+    /// non-empty-group gate even around a perfect serial.
+    #[test]
+    fn empty_dash_group_disqualifies(
+        groups in prop::collection::vec("[A-Z0-9]{5}", 3..=6),
+        variant in 0u8..3,
+    ) {
+        let core = groups.join("-");
+        let value = match variant {
+            0 => format!("-{core}"),           // leading empty group
+            1 => format!("{core}-"),           // trailing empty group
+            _ => core.replacen('-', "--", 1),  // doubled dash → empty middle group
+        };
+        prop_assert!(!is_dash_segmented_alnum_decoy(&value));
+    }
+
+    /// No `-` at all → rejected by the first guard, for any alnum body.
+    #[test]
+    fn no_dash_is_not_dash_decoy(body in "[A-Za-z0-9]{1,40}") {
+        prop_assert!(!is_dash_segmented_alnum_decoy(&body));
+    }
+
+    /// In-band (mult-of-4, len∈[40,80]), standard-alphabet body carrying a `+`
+    /// hits the `has_plus` admit → always a standard-base64 blob.
+    #[test]
+    fn in_band_plus_bearing_body_is_base64_blob(
+        n in prop::sample::select(vec![40usize, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80]),
+        body in "[A-Za-z0-9]{120}",
+        plus_at in 0usize..40,
+    ) {
+        // Take n-1 standard-alphabet chars (no `-`/`_`/`=`), then insert one `+`
+        // ⇒ length n (mult-of-4, in band), has_plus, no urlsafe byte, no padding.
+        let mut v: String = body.chars().take(n - 1).collect();
+        let at = plus_at % v.len();
+        v.insert(at, '+');
+        prop_assert_eq!(v.len(), n);
+        prop_assert!(
+            looks_like_standard_base64_blob(&v),
+            "{v:?} (len {n}, has +) must classify as a standard-base64 blob"
+        );
+    }
+
+    /// A value shorter than the 40-char floor is never a blob — the length band
+    /// is checked before any shape parse, so this holds for any content.
+    #[test]
+    fn below_floor_is_never_base64_blob(v in "[A-Za-z0-9+/]{0,39}") {
+        prop_assert!(!looks_like_standard_base64_blob(&v));
+    }
+
+    /// A value longer than the 80-char ceiling is never a blob (same universal
+    /// band guard).
+    #[test]
+    fn above_ceiling_is_never_base64_blob(v in "[A-Za-z0-9+/]{81,140}") {
+        prop_assert!(!looks_like_standard_base64_blob(&v));
+    }
+}
+
+// ── Property tier: is_random_token fail-safe floors ──────────────────────────
+// `is_random_token` (suppression/token_randomness.rs — CLEAN source) is the
+// randomness discriminator that LIFTS the identifier-suppression gate: a false
+// `true` verdict recovers a code reference (`password = getUserName`) as a
+// credential (an FP). Its soundness rests on three fail-safe floors, each
+// provable from source WITHOUT re-implementing the English-bigram model — a value
+// is NEVER classified random when any floor is unmet, so the gate keeps
+// suppressing (precision-safe, "soundness over reach"):
+//   * < MIN_ALPHA(6) alphabetic chars   → mean_bigram_logprob None → false (:106)
+//   * pairs == 0 (no adjacent letters)  → mean_bigram_logprob None → false (:106)
+//   * < MIN_DISTINCT_LETTERS(3) letters → false regardless of bigram score (:131)
+// We deliberately do NOT sweep the reverse "random letters ⇒ random" (that IS
+// model-dependent — a random `[a-z]` run may read as pronounceable); only the
+// guaranteed fail-safe direction, which is the load-bearing safety contract.
+// No proptest for this predicate before.
+
+use keyhog_scanner::testing::entropy_isolated::is_random_token;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// Fewer than 6 alphabetic chars ⇒ the bigram statistic is None ⇒ never
+    /// random, for any digit padding around the (≤5) letters.
+    #[test]
+    fn under_min_alpha_is_never_random(
+        letters in "[a-z]{0,5}",
+        pad in "[0-9]{0,20}",
+    ) {
+        let value = format!("{pad}{letters}{pad}"); // total letters == letters.len() ≤ 5
+        prop_assert!(!is_random_token(&value), "{value:?} has <6 alphabetic chars");
+    }
+
+    /// Letters never adjacent (each separated by a digit) ⇒ pairs==0 ⇒ None ⇒
+    /// never random, even with many (>=6) alphabetic chars total.
+    #[test]
+    fn no_adjacent_letter_pair_is_never_random(
+        letters in prop::collection::vec("[a-z]", 6..=20),
+    ) {
+        let value = letters.join("7"); // single letters glued by a digit
+        prop_assert!(!is_random_token(&value), "{value:?} has no adjacent letter pair");
+    }
+
+    /// Fewer than 3 distinct letters ⇒ never random regardless of length or
+    /// bigram improbability (a repetitive / alternating MASK, not a random token).
+    #[test]
+    fn under_min_distinct_letters_is_never_random(
+        a in "[a-z]",
+        b in "[a-z]",
+        reps in 4usize..40,
+    ) {
+        let one = a.repeat(reps); // 1 distinct letter
+        prop_assert!(!is_random_token(&one), "{one:?} has 1 distinct letter");
+        let alt = format!("{a}{b}").repeat(reps); // ≤2 distinct letters
+        prop_assert!(!is_random_token(&alt), "{alt:?} has ≤2 distinct letters");
+    }
+}
+
+// ── Property tier: looks_like_english_prose structural floors ─────────────────
+// `looks_like_english_prose` (suppression/shape/prose.rs) — used to drop prose
+// captured under a weak anchor. Contract from source: len<16 → false; else an
+// ALL-lowercase run → true (branch 1); else `split_whitespace` needs >=2 all-
+// alphabetic tokens with a >=3-char lowercase word (branch 2). A WHITESPACE-FREE
+// value is a single token, so branch 2 (count>=2) can never fire ⇒ a single
+// token is prose IFF it is all-lowercase AND >=16 bytes. All three below encode
+// that characterization directly, no heuristic mirror. No proptest before.
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// Anything under the 16-byte floor is never prose, for any printable content.
+    #[test]
+    fn below_16_bytes_is_never_prose(v in "[ -~]{0,15}") {
+        prop_assert!(!looks_like_english_prose(&v));
+    }
+
+    /// An all-lowercase run of >=16 bytes is always prose (branch 1).
+    #[test]
+    fn all_lowercase_16plus_is_prose(v in "[a-z]{16,60}") {
+        prop_assert!(looks_like_english_prose(&v));
+    }
+
+    /// A single (whitespace-free) token carrying any uppercase or digit is never
+    /// prose: branch 1 needs all-lowercase, and branch 2 needs >=2 tokens which a
+    /// whitespace-free value can never have.
+    #[test]
+    fn whitespace_free_non_lowercase_token_is_not_prose(
+        lead in "[a-z]{8,20}",
+        marker in "[A-Z0-9]",
+        tail in "[a-z]{8,20}",
+    ) {
+        let v = format!("{lead}{marker}{tail}"); // >=17 bytes, no whitespace, not all-lowercase
+        prop_assert!(!looks_like_english_prose(&v), "{v:?} is a single non-lowercase token");
+    }
+}
+
+// ── Property tier: is_canonical_non_secret_shape hex-digest band ──────────────
+// `is_canonical_non_secret_shape` (entropy/scanner.rs → suppression/shape/
+// canonical.rs) = uuid OR canonical-hex-digest OR SRI-integrity OR 5x5-serial.
+// The hex-digest branch is crisp: `matches!(len, 32|40|64|128) && all
+// ascii_hexdigit`. So a hex string (mixed case ok) of a canonical digest length
+// is always a canonical non-secret shape (md5/sha1/sha256/sha512 lengths), and a
+// hex string of a NON-canonical length carrying no dash/sha-prefix hits none of
+// the four branches. Derived from source. No proptest for this predicate before.
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// A hex string (mixed case ok) of a canonical digest length (32/40/64/128)
+    /// is always a canonical non-secret shape.
+    #[test]
+    fn canonical_length_hex_is_non_secret_shape(
+        len in prop::sample::select(vec![32usize, 40, 64, 128]),
+        seed in "[0-9a-fA-F]{128}",
+    ) {
+        let v: String = seed.chars().take(len).collect();
+        prop_assert_eq!(v.len(), len);
+        prop_assert!(is_canonical_non_secret_shape(&v), "{v:?} (hex len {len})");
+    }
+
+    /// A hex string shorter than the smallest canonical digest length (32) — and
+    /// carrying no dash / sha-prefix — hits none of the four canonical branches.
+    #[test]
+    fn sub_canonical_hex_is_not_non_secret_shape(v in "[0-9a-f]{16,31}") {
+        prop_assert!(!is_canonical_non_secret_shape(&v), "{v:?} is sub-canonical hex");
+    }
+}
+
+// ── Property tier: looks_like_credential_colliding_punctuation lead gate ──────
+// `looks_like_credential_colliding_punctuation` (suppression/shape/mod.rs:530):
+// empty → false; first byte `!` or `/` → true; else a TS non-null identifier
+// (ends with `!`, len>=9, alnum/`_` body). So ANY non-empty value whose first
+// byte is `!` or `/` is colliding punctuation, and a value that neither leads
+// with `!`/`/` nor ends with `!` cannot be. Derived from source. No proptest
+// for this predicate before.
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// Any non-empty value whose first byte is `!` or `/` is colliding punctuation,
+    /// for any tail (the lead-byte check short-circuits before the identifier arm).
+    #[test]
+    fn leading_bang_or_slash_is_colliding_punctuation(
+        lead in prop::sample::select(vec!['!', '/']),
+        tail in "[ -~]{0,30}",
+    ) {
+        let v = format!("{lead}{tail}");
+        prop_assert!(
+            looks_like_credential_colliding_punctuation(&v),
+            "{v:?} leads with {lead}"
+        );
+    }
+
+    /// A value that neither leads with `!`/`/` nor ends with `!` is never colliding
+    /// punctuation (the TS-non-null arm requires a trailing `!`).
+    #[test]
+    fn no_lead_punct_no_trailing_bang_is_not_colliding(v in "[a-z][a-z0-9_]{4,20}") {
+        prop_assert!(!looks_like_credential_colliding_punctuation(&v), "{v:?}");
+    }
+}
+
+// ── Property tier: looks_like_syntactic_punctuation_marker sigil/flag arms ────
+// `looks_like_syntactic_punctuation_marker` (suppression/shape/mod.rs:468): a
+// leading `&`/`@`/`$`/`*` followed by a PURE-identifier tail (alnum/`_`) is a
+// grammar marker (C ptr / attribute / shell var / deref), and a `--X` with
+// X != `-` is a CLI flag. Both are early short-circuit accepts, so these
+// positive characterizations hold regardless of the predicate's later arms.
+// Derived from source. No proptest for this predicate before.
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// A leading `&`/`@`/`$`/`*` with a pure-identifier tail is a syntactic marker.
+    #[test]
+    fn sigil_prefixed_pure_identifier_is_marker(
+        sigil in prop::sample::select(vec!['&', '@', '$', '*']),
+        ident in "[A-Za-z0-9_]{1,20}",
+    ) {
+        let v = format!("{sigil}{ident}");
+        prop_assert!(looks_like_syntactic_punctuation_marker(&v), "{v:?}");
+    }
+
+    /// A `--X` CLI-flag shape (X not another dash) is a syntactic marker.
+    #[test]
+    fn double_dash_flag_is_marker(rest in "[A-Za-z0-9_][A-Za-z0-9_-]{1,18}") {
+        let v = format!("--{rest}");
+        prop_assert!(looks_like_syntactic_punctuation_marker(&v), "{v:?}");
+    }
+}
+
+// ── Property tier: strength gate ⇔ dash-segmented decoy (cross-predicate) ─────
+// The fixed vectors reject a few specific 5×5 serials in both contexts; this
+// SWEEPS the whole 5×N upper/digit serial family and COUPLES two predicates:
+// `passes_secret_strength_checks` routes through `is_dash_segmented_alnum_decoy`
+// (entropy/keywords.rs), so a value that is a dash-segmented decoy is rejected
+// by the strength gate REGARDLESS of credential context. A drift that let a 5×N
+// serial pass the strength gate (recall→FP) would break this coupling. No
+// proptest for this pairing before.
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1_000))]
+
+    /// A >=5-group 5×5 upper/digit serial is a dash-segmented decoy AND is
+    /// rejected by the strength gate in BOTH credential and non-credential context.
+    #[test]
+    fn dash_segmented_serial_fails_strength_in_both_contexts(
+        groups in prop::collection::vec("[A-Z0-9]{5}", 5..=8),
+    ) {
+        let v = groups.join("-");
+        prop_assert!(is_dash_segmented_alnum_decoy(&v), "{v:?} should be a dash decoy");
+        prop_assert!(!passes_secret_strength_checks(&v, true), "{v:?} in cred ctx");
+        prop_assert!(!passes_secret_strength_checks(&v, false), "{v:?} no anchor");
+    }
+}

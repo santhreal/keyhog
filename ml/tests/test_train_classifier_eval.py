@@ -274,6 +274,34 @@ def test_six_scanner_differential_rejects_missing_class(tmp_path):
         )
 
 
+def test_group_split_forces_contract_files_into_train():
+    # Contract fixtures (source_file="contract:<det>") must ALWAYS train and never
+    # enter the held-out — the contract gate tests all 920, so they are a
+    # memorization requirement, not a generalization target.
+    files = (
+        [f"repo/real_{i}.py" for i in range(10)]
+        + ["contract:generic-password", "contract:aws-access-key", "contract:github-pat"]
+    )
+    tr, va, te = train_classifier._group_split(files, seed=7)
+    contract_idx = {i for i, f in enumerate(files) if f.startswith("contract:")}
+    assert contract_idx <= set(tr.tolist())
+    assert not (contract_idx & set(va.tolist()))
+    assert not (contract_idx & set(te.tolist()))
+    # real files still populate a non-empty held-out (honest generalisation)
+    assert len(va) > 0 and len(te) > 0
+    # complete + disjoint partition over every record index
+    assert sorted(tr.tolist() + va.tolist() + te.tolist()) == list(range(len(files)))
+
+
+def test_group_split_is_noop_without_contracts():
+    # Backward-compat: with no contract files the split is the plain 70/15/15
+    # grouping (my contract-force change must not perturb ordinary training).
+    files = [f"repo/f_{i}.py" for i in range(20)]
+    tr, va, te = train_classifier._group_split(files, seed=3)
+    assert sorted(tr.tolist() + va.tolist() + te.tolist()) == list(range(20))
+    assert (len(tr), len(va), len(te)) == (14, 3, 3)
+
+
 def test_real_corpus_model_card_requires_six_scanner_differential(tmp_path):
     args = types.SimpleNamespace(
         write=False,

@@ -1,7 +1,14 @@
 import pathlib
 
 from bench.corpora.base import LabeledRecord
-from bench.score import overlap, score
+from bench.score import (
+    _build_file_index,
+    _resolve_finding_file,
+    _resolve_finding_file_candidates,
+    build_basename_index,
+    overlap,
+    score,
+)
 
 
 def _record(record_id: str, secret: str, label: bool, file_path: str, category: str = "api"):
@@ -80,6 +87,44 @@ def test_shortened_path_attribution_requires_unique_corpus_match(tmp_path: pathl
     assert ambiguous.per_category["unknown"].fp == 1
     assert ambiguous.per_category["left"].fn == 1
     assert ambiguous.per_category["right"].fn == 1
+
+
+def test_full_path_with_no_record_resolves_empty_not_same_basename(tmp_path: pathlib.Path):
+    """A finding path that carries directory structure but matches no record
+    must resolve to ZERO candidates (an unlabeled file → skip), NOT to every
+    record sharing its basename. The same-basename fallback returning the whole
+    basename set for a full path is what crashed `ml/harvest_corpus.py`'s
+    exact-path guard on CredData, where 60+ files share `b3356305.md` and one
+    lives in a snapshot whose other files ARE labeled — the finding on the
+    unlabeled file spuriously "matched 69 corpus files". Regression for the
+    harvest ambiguous-path crash."""
+    records = [
+        _record("a", "sa", True, "data/aaa/_/dup.md", "cat"),
+        _record("b", "sb", True, "data/bbb/_/dup.md", "cat"),
+        _record("c", "sc", True, "data/ccc/_/dup.md", "cat"),
+        _record("u", "su", True, "data/ddd/_/unique.md", "cat"),
+    ]
+    by_key, aliases = _build_file_index(records, tmp_path)
+    bi = build_basename_index(aliases)
+
+    # (1) full path (has "/") into an UNLABELED sibling → empty, not 3.
+    unlabeled = _resolve_finding_file_candidates("data/zzz/_/dup.md", aliases, bi)
+    assert unlabeled == set(), f"unlabeled full path must skip, got {len(unlabeled)}"
+    assert _resolve_finding_file("data/zzz/_/dup.md", aliases, bi) is None
+
+    # (2) an EXACT labeled full path still resolves to precisely its one record.
+    hit = _resolve_finding_file_candidates("data/bbb/_/dup.md", aliases, bi)
+    assert hit == {str(tmp_path / "data/bbb/_/dup.md")}
+
+    # (3) a partial "/"-anchored suffix that uniquely tails one record resolves.
+    suffix = _resolve_finding_file_candidates("ddd/_/unique.md", aliases, bi)
+    assert suffix == {str(tmp_path / "data/ddd/_/unique.md")}
+
+    # (4) a BARE basename (no "/") keeps the same-basename fallback so a
+    #     basename-only scanner still gets its ambiguity guard (3 dup.md records).
+    bare = _resolve_finding_file_candidates("dup.md", aliases, bi)
+    assert len(bare) == 3, f"bare-basename fallback must survive, got {len(bare)}"
+    assert _resolve_finding_file("dup.md", aliases, bi) is None  # ambiguous → None
 
 
 def test_per_category_tp_fn_split_and_conservation(tmp_path: pathlib.Path):

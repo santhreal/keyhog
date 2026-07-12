@@ -23,20 +23,13 @@
 //! is exercised). The detector tree is loaded from `CARGO_MANIFEST_DIR` so the
 //! suite is cwd-stable under `cargo test` / `nextest` / remote runners.
 
+mod support;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata, DetectorFile};
 use keyhog_scanner::CompiledScanner;
-
-/// Absolute path to the on-disk `detectors/` TOML tree (cwd-stable).
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 /// One inline self-test fixture extracted from a detector TOML.
 struct InlineCase {

@@ -21,6 +21,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 text = "GOOG=GOOG5EXAMPLEEXAMPLEHZPVO"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
 
+[[negative]]
+text = "GOOG=GOOG5I75PFW05MEV3YQS371MSJP945GAFH9WQLTHZPVOX"
+reason = "An overlong uppercase run must not be truncated into an HMAC access ID."
+
 [[evasion]]
 text = "# GOOG=GOOG5I75PFW05MEV3YQS371MSJP945GAFH9WQLTHZPVO"
 credential = "GOOG5I75PFW05MEV3YQS371MSJP945GAFH9WQLTHZPVO"

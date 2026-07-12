@@ -25,11 +25,13 @@ impl std::fmt::Display for GpuMatcherCacheDirError {
     }
 }
 
-/// On-disk cache for `GpuLiteralSet`. The compiled matcher is keyed by a
-/// SHA-256 of the literal set + the vyre wire version (which is bumped
-/// whenever the IR layout changes), so bumping vyre to a new minor
-/// version automatically invalidates the cache instead of silently
-/// loading a stale matcher. Lives at `$XDG_CACHE_HOME/keyhog/programs/`
+/// Local cache-format version mixed into every GPU matcher cache key. Bump
+/// this when Keyhog's literal-row derivation changes in a way that must
+/// invalidate on-disk matchers. It does NOT track Vyre's wire version: a
+/// Vyre wire-format change is caught on load by `GpuLiteralSet::from_bytes`
+/// (through `cached_load_or_compile`), which rejects and recompiles a blob
+/// whose envelope no longer matches, so a stale matcher is never loaded
+/// silently. Cache blobs live at `$XDG_CACHE_HOME/keyhog/programs/`
 /// (typically `~/.cache/keyhog/programs/`).
 const GPU_MATCHER_CACHE_VERSION: u32 = 1;
 
@@ -44,13 +46,21 @@ pub(crate) fn gpu_matcher_cache_dir_from_base(
         .ok_or(GpuMatcherCacheDirError::MissingUserCacheDir)?
         .join("keyhog")
         .join("programs");
-    if !dir.exists() {
-        std::fs::create_dir_all(&dir).map_err(|source| GpuMatcherCacheDirError::Create {
-            path: dir.clone(),
-            source,
-        })?;
-    }
+    // `create_dir_all` is idempotent (Ok when the dir already exists), so an
+    // explicit `exists()` pre-check would only add a redundant stat and a
+    // TOCTOU window.
+    std::fs::create_dir_all(&dir).map_err(|source| GpuMatcherCacheDirError::Create {
+        path: dir.clone(),
+        source,
+    })?;
     Ok(dir)
+}
+
+/// Canonical `"{prefix}-{hash}"` cache key for a GPU literal matcher. This is
+/// the single owner of the prefixed-key derivation shared by the runtime lazy
+/// compiler and the offline artifact compiler.
+pub(crate) fn gpu_matcher_cache_key_with_prefix(cache_prefix: &str, literals: &[&[u8]]) -> String {
+    format!("{cache_prefix}-{}", gpu_matcher_cache_key(literals))
 }
 
 pub(crate) fn gpu_matcher_cache_key(literals: &[&[u8]]) -> String {

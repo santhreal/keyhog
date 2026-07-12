@@ -17,11 +17,10 @@ mandatory), so the loader is shared.
 from __future__ import annotations
 
 import argparse
-import json
 import pathlib
 import sys
 
-from .base import Corpus, LabeledRecord
+from .base import Corpus, LabeledRecord, load_jsonl_manifest
 
 _THIS = pathlib.Path(__file__).resolve()
 _BENCH_ROOT = _THIS.parents[2]
@@ -66,7 +65,7 @@ class HomefieldCorpus(Corpus):
     def file_root(self) -> pathlib.Path:
         return self._scan_dir
 
-    def records(self) -> list[LabeledRecord]:
+    def _load_records(self) -> list[LabeledRecord]:
         man = self._home / "manifest.jsonl"
         if not man.exists():
             raise SystemExit(
@@ -76,23 +75,7 @@ class HomefieldCorpus(Corpus):
                 f"  then score with:  python -m bench leaderboard "
                 f"--corpus homefield-{self.turf}"
             )
-        out: list[LabeledRecord] = []
-        with open(man) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                r = json.loads(line)
-                out.append(LabeledRecord(
-                    id=r["id"],
-                    secret=r.get("secret", ""),
-                    label=bool(r.get("label")),
-                    category=r.get("category", "unknown"),
-                    file_path=r.get("on_disk_path") or r.get("file_path", ""),
-                    line_start=int(r.get("start_line", 0) or 0),
-                    line_end=int(r.get("end_line", 0) or 0),
-                ))
-        return out
+        return load_jsonl_manifest(man)
 
 
 def _main(argv: list[str] | None = None) -> int:

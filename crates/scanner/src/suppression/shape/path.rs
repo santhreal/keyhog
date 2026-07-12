@@ -38,15 +38,20 @@ pub(crate) fn looks_like_url_or_path_segment(value: &str) -> bool {
     if !value.contains('/') {
         return false;
     }
-    let segments: Vec<&str> = value.split('/').filter(|s| !s.is_empty()).collect();
-    if segments.len() < 2 {
-        return false;
-    }
-    segments.iter().all(|s| {
-        s.bytes()
+    let mut count = 0usize;
+    let mut all_ok = true;
+    for s in value.split('/').filter(|s| !s.is_empty()) {
+        count += 1;
+        let body_ok = s
+            .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.')
-            && s.bytes().any(|b| b.is_ascii_alphabetic())
-    })
+            && s.bytes().any(|b| b.is_ascii_alphabetic());
+        if !body_ok {
+            all_ok = false;
+            break;
+        }
+    }
+    count >= 2 && all_ok
 }
 
 pub(crate) fn looks_like_filename_reference(value: &str) -> bool {
@@ -75,4 +80,22 @@ pub(crate) fn looks_like_filename_reference(value: &str) -> bool {
     FILENAME_SUFFIXES
         .iter()
         .any(|s| crate::ascii_ci::ends_with_ignore_ascii_case(bytes, s))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::looks_like_url_or_path_segment;
+
+    #[test]
+    fn url_or_path_segment_single_pass_preserves_verdicts() {
+        // >=2 non-empty segments, each alnum-ish with a letter.
+        assert!(looks_like_url_or_path_segment("api/v1/users"));
+        assert!(looks_like_url_or_path_segment("a/b"));
+        // No slash → not a path.
+        assert!(!looks_like_url_or_path_segment("foobar"));
+        // Only empty segments after filtering → under the 2-segment floor.
+        assert!(!looks_like_url_or_path_segment("///"));
+        // Pure-digit segments carry no letter → rejected.
+        assert!(!looks_like_url_or_path_segment("12/34"));
+    }
 }

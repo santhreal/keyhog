@@ -110,3 +110,62 @@ fn json_scalar_literal_is_single_owner() {
         "the index_key render must delegate to json_scalar_literal"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin one string and one numeric index_key; these SWEEP the
+// shared `json_scalar_literal` rendering through the tfstate context: a STRING
+// index_key renders JSON-quoted (`["key"]`), a NUMERIC one renders bare (`[N]`),
+// for any key/value, with the extracted value and line preserved. The instance is
+// always laid out on line 7 so the reported line is deterministic. Traced against
+// `parse_tfstate` + `json_scalar_literal`. No proptest before.
+
+use proptest::prelude::*;
+
+/// Assemble a single-instance tfstate whose `password` attribute is ALWAYS on
+/// line 7, with the given raw JSON `index_key` value and string secret `val`.
+fn build_tfstate(index_key_json: &str, val: &str) -> String {
+    [
+        "{".to_string(),                                       // 1
+        "  \"resources\": [".to_string(),                      // 2
+        "    {".to_string(),                                   // 3
+        "      \"type\": \"aws_secret\",".to_string(),         // 4
+        "      \"name\": \"db\",".to_string(),                 // 5
+        "      \"instances\": [".to_string(),                  // 6
+        format!(
+            "        {{ \"index_key\": {index_key_json}, \"attributes\": {{ \"password\": \"{val}\" }} }}"
+        ), // 7
+        "      ]".to_string(),                                 // 8
+        "    }".to_string(),                                   // 9
+        "  ]".to_string(),                                     // 10
+        "}".to_string(),                                       // 11
+    ]
+    .join("\n")
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1_500))]
+
+    /// A string index_key renders JSON-quoted in the context anchor.
+    #[test]
+    fn string_index_key_renders_quoted(
+        key in "[a-zA-Z0-9]{1,12}",
+        val in "[a-zA-Z0-9_-]{1,20}",
+    ) {
+        let tfstate = build_tfstate(&format!("\"{key}\""), &val);
+        let pairs = keyhog_scanner::testing::parse_tfstate_tuples(&tfstate);
+        let expected = vec![(format!("aws_secret.db[\"{key}\"].password"), val, 7)];
+        prop_assert_eq!(pairs, expected);
+    }
+
+    /// A numeric index_key renders BARE (no quotes) in the context anchor.
+    #[test]
+    fn numeric_index_key_renders_bare(
+        n in 0u32..100_000,
+        val in "[a-zA-Z0-9_-]{1,20}",
+    ) {
+        let tfstate = build_tfstate(&n.to_string(), &val);
+        let pairs = keyhog_scanner::testing::parse_tfstate_tuples(&tfstate);
+        let expected = vec![(format!("aws_secret.db[{n}].password"), val, 7)];
+        prop_assert_eq!(pairs, expected);
+    }
+}

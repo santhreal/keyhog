@@ -32,7 +32,7 @@ fn git_source_chunk_has_path_metadata() {
         "single tracked file should emit exactly one Git chunk, got {chunks:?}"
     );
     let chunk = chunks[0];
-    assert_eq!(chunk.metadata.source_type, "git/head");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "git/head");
     assert_eq!(chunk.metadata.author.as_deref(), Some("LR1 A5"));
     assert_eq!(chunk.metadata.size_bytes, Some("X=1\n".len() as u64));
     let commit = chunk

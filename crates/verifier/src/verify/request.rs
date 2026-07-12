@@ -122,10 +122,7 @@ pub(crate) fn ssrf_check_url_with_resolved_addrs_for_test(
     addrs: &[std::net::SocketAddr],
     allow_private_ips: bool,
 ) -> std::result::Result<(), VerificationResult> {
-    let url = match reqwest::Url::parse(raw_url) {
-        Ok(url) => url,
-        Err(e) => return Err(VerificationResult::Error(invalid_url_error(e))),
-    };
+    let url = parse_target_url(raw_url)?;
     screen_target_url_and_addrs(&url, addrs, allow_private_ips)
 }
 
@@ -215,7 +212,9 @@ async fn resolve_direct_target_addrs(
         return Ok(Vec::new());
     }
 
-    let port = url.port_or_known_default().unwrap_or(443); // LAW10: no explicit port => scheme default (443); recall-irrelevant
+    let port = url
+        .port_or_known_default()
+        .unwrap_or(crate::DEFAULT_HTTPS_PORT); // LAW10: no explicit port => scheme default; recall-irrelevant
     let target = format!("{host}:{port}");
     match crate::ssrf::resolve_dns_cached(target.as_str()).await {
         Ok(addrs) if addrs.is_empty() => {
@@ -266,15 +265,56 @@ fn direct_target_client(
     pinned_client_for(host, pinned_addrs, timeout, insecure_tls)
 }
 
+/// Canonical, order-independent form of a pinned-address set. DNS routinely
+/// returns the same A/AAAA records in a DIFFERENT ORDER per query (round-robin),
+/// which made two logically-identical pins hash to different `PinnedClientKey`s
+/// and rebuild a fresh reqwest `Client` (TLS config + connection pool) on every
+/// request to a round-robin host — the cache never hit. Sorting keys the cache
+/// on the IP SET, not its arrival order, so those requests share one client.
+pub(crate) fn canonical_pinned_addrs(addrs: &[SocketAddr]) -> Vec<SocketAddr> {
+    let mut sorted = addrs.to_vec();
+    sorted.sort_unstable();
+    sorted
+}
+
+/// Test accessor: whether two client pins that share host/timeout/insecure_tls
+/// but differ in resolved-address ORDER or SET collapse to the SAME
+/// `PinnedClientKey` — the round-robin-DNS cache HIT that `canonical_pinned_addrs`
+/// exists to produce (equal keys) vs. the no-false-sharing MISS for a genuinely
+/// different IP set (distinct keys). Kept beside the key type so `PinnedClientKey`
+/// and its fields stay module-private while the re-homed cache-key tests
+/// (`tests/unit/pinned_client_key.rs`) exercise the real `Eq`/canonicalization
+/// through this one accessor (the `verify::request` no-inline-tests folder gate
+/// forbids testing it in place).
+pub(crate) fn pinned_keys_equal_for_test(
+    host: &str,
+    addrs_a: &[SocketAddr],
+    addrs_b: &[SocketAddr],
+    timeout: Duration,
+    insecure_tls: bool,
+) -> bool {
+    let key = |addrs: &[SocketAddr]| PinnedClientKey {
+        host: host.to_string(),
+        addrs: canonical_pinned_addrs(addrs),
+        timeout,
+        insecure_tls,
+    };
+    key(addrs_a) == key(addrs_b)
+}
+
 fn pinned_client_for(
     host: &str,
     pinned_addrs: &[SocketAddr],
     timeout: Duration,
     insecure_tls: bool,
 ) -> std::result::Result<Client, VerificationResult> {
+    // Key on the CANONICAL (sorted) address set so a DNS round-robin reorder is
+    // a cache hit, not a client rebuild. `build_pinned_client` below still
+    // receives the original `pinned_addrs` (the pin is a set; connection-attempt
+    // order is unchanged for the client actually built).
     let key = PinnedClientKey {
         host: host.to_string(),
-        addrs: pinned_addrs.to_vec(),
+        addrs: canonical_pinned_addrs(pinned_addrs),
         timeout,
         insecure_tls,
     };
@@ -287,7 +327,12 @@ fn pinned_client_for(
         cache.remove(&key);
     }
     if cache.len() >= PINNED_CLIENT_CACHE_MAX_ENTRIES {
-        cache.clear();
+        // Drop the oldest ~1/8 instead of wiping every still-valid pinned client.
+        crate::cache::evict_oldest_dashmap_entries(
+            cache,
+            crate::cache::oldest_eviction_batch(PINNED_CLIENT_CACHE_MAX_ENTRIES),
+            |client| client.inserted_at,
+        );
     }
     let client = build_pinned_client(host, pinned_addrs, timeout, insecure_tls)?;
     cache.insert(
@@ -334,27 +379,18 @@ fn build_pinned_client(
     timeout: Duration,
     insecure_tls: bool,
 ) -> std::result::Result<Client, VerificationResult> {
-    // The DNS-pinning rebuild MUST replicate the security-critical config baked
-    // into `base_client`; a build failure is a blocked verifier state, never a
+    // ONE owner for the pinned rebuild: `crate::build_pinned_verifier_client`
+    // carries the identical security-critical posture (hardened
+    // decompression/redirect + `no_proxy` + host→addr pin) baked into
+    // `base_client`. A build failure is a blocked verifier state, never a
     // license to use an unpinned client.
-    Client::builder()
-        .timeout(timeout)
-        .danger_accept_invalid_certs(insecure_tls)
-        .no_proxy()
-        .no_gzip()
-        .no_brotli()
-        .no_zstd()
-        .no_deflate()
-        .redirect(reqwest::redirect::Policy::none())
-        .resolve_to_addrs(host, pinned_addrs)
-        .build()
-        .map_err(|e| {
-            VerificationResult::Error(format!(
-                "blocked: DNS pin client build failed ({e}); refusing to \
-                 fall back to an unpinned client (would reopen the \
-                 DNS-rebinding window). Fix: report this verifier build"
-            ))
-        })
+    crate::build_pinned_verifier_client(host, pinned_addrs, timeout, insecure_tls).map_err(|e| {
+        VerificationResult::Error(format!(
+            "blocked: DNS pin client build failed ({e}); refusing to \
+             fall back to an unpinned client (would reopen the \
+             DNS-rebinding window). Fix: report this verifier build"
+        ))
+    })
 }
 
 pub(crate) async fn build_request_for_step(

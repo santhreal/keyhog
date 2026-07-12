@@ -514,12 +514,15 @@ fn config_and_no_config_flags_are_mutually_exclusive() {
 }
 
 // ---------------------------------------------------------------------------
-// ADVERSARIAL / CHARACTERIZATION: the range-validation asymmetry between the
-// CLI `--min-confidence` value_parser and the config `min_confidence` merge.
+// RANGE-VALIDATION SYMMETRY: the CLI `--min-confidence` value_parser and the
+// config `min_confidence` merge now share the SAME [0.0, 1.0] bound-checker
+// (`parse_min_confidence`), so the same over-range value fails closed on BOTH
+// surfaces. Previously the config path applied it un-validated and silently
+// zeroed recall — a Law-10 silent failure that this test now guards against.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn min_confidence_range_validation_differs_between_cli_and_config() {
+fn min_confidence_range_validation_matches_between_cli_and_config() {
     // The CLI value_parser (`parse_min_confidence`) enforces [0.0, 1.0]: an
     // out-of-range 5.0 is REJECTED as a clap usage error (exit 2) naming the
     // bound.
@@ -536,28 +539,264 @@ fn min_confidence_range_validation_differs_between_cli_and_config() {
         "CLI rejection must name the [0.0, 1.0] bound.\n--- stderr ---\n{stderr}"
     );
 
-    // The config merge, by contrast, applies `min_confidence = 5.0` WITHOUT a
-    // range check: it is silently accepted and, being above every possible
-    // confidence, zeroes recall (clean scan, exit 0). This documents a real
-    // validation gap — the same value that the CLI fails closed on is honored
-    // as a config value with no error — so a future fix that adds a config-side
-    // range check (making this exit 2 like the CLI) is an intentional change
-    // this test will flag, not a silent regression.
+    // The config merge now routes `min_confidence` through the SAME validator, so
+    // the identical over-range value fails closed as an invalid-config error
+    // (exit 2) instead of being silently honored and zeroing recall. A regression
+    // that drops this validation (silently accepting 5.0 → empty scan, exit 0)
+    // will flip this assertion.
     let (_cfg, cfg_path) = config_file("min_confidence = 5.0\n");
-    let (code, stdout, stderr) = scan(
+    let (code, _stdout, stderr) = scan(
         dir.path(),
         &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
     );
     assert_eq!(
         code,
-        Some(0),
-        "config min_confidence = 5.0 is currently accepted un-validated and \
-         suppresses every finding → exit 0.\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
+        Some(2),
+        "config min_confidence = 5.0 must fail closed with exit 2, matching the \
+         CLI.\n--- stderr ---\n{stderr}"
+    );
+    assert!(
+        stderr.contains("invalid .keyhog.toml configuration"),
+        "error must announce the invalid config.\n--- stderr ---\n{stderr}"
+    );
+    assert!(
+        stderr.contains("min_confidence must be between 0.0 and 1.0"),
+        "config rejection must name the SAME [0.0, 1.0] bound as the CLI.\n\
+         --- stderr ---\n{stderr}"
+    );
+}
+
+#[test]
+fn config_min_confidence_boundaries_and_scan_section_all_validate() {
+    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+
+    // Negative (below the floor) is rejected on the flat top-level key.
+    let (_cfg, cfg_path) = config_file("min_confidence = -0.5\n");
+    let (code, _stdout, stderr) = scan(
+        dir.path(),
+        &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
     );
     assert_eq!(
-        stdout.trim(),
-        "[]",
-        "the un-validated over-range floor zeroes recall (empty JSON array).\n\
-         --- stdout ---\n{stdout}"
+        code,
+        Some(2),
+        "flat min_confidence = -0.5 (below floor) must fail closed.\n--- stderr ---\n{stderr}"
     );
+    assert!(
+        stderr.contains("min_confidence must be between 0.0 and 1.0"),
+        "negative flat value must be rejected with the bound.\n--- stderr ---\n{stderr}"
+    );
+
+    // The nested `[scan]` table shares the SAME validator: an over-range value
+    // there is rejected identically (proving both apply sites route through
+    // `parse_config_min_confidence`, not just the flat one).
+    let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 2.0\n");
+    let (code, _stdout, stderr) = scan(
+        dir.path(),
+        &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
+    );
+    assert_eq!(
+        code,
+        Some(2),
+        "[scan].min_confidence = 2.0 must fail closed too.\n--- stderr ---\n{stderr}"
+    );
+    assert!(
+        stderr.contains("min_confidence must be between 0.0 and 1.0"),
+        "[scan] over-range value must be rejected with the bound.\n--- stderr ---\n{stderr}"
+    );
+
+    // In-range values (the inclusive boundaries and interior) must still be
+    // ACCEPTED — the validator narrows nothing that was already legal. 0.5 keeps
+    // the confidence-1.0 GitHub PAT finding (a clean scan that still reports),
+    // so the config load succeeds (no "invalid .keyhog.toml" error).
+    let (_cfg, cfg_path) = config_file("min_confidence = 0.5\n");
+    let (code, _stdout, stderr) = scan(
+        dir.path(),
+        &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
+    );
+    assert_ne!(
+        code,
+        Some(2),
+        "an in-range min_confidence = 0.5 must NOT be rejected as invalid config.\n\
+         --- stderr ---\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("invalid .keyhog.toml configuration"),
+        "in-range value must not raise a config error.\n--- stderr ---\n{stderr}"
+    );
+}
+
+#[test]
+fn ml_weight_range_validation_matches_between_cli_and_config() {
+    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+
+    // CLI --ml-weight now enforces [0.0, 1.0] (it was previously UNVALIDATED — a
+    // silent gap, unlike --min-confidence/--ml-threshold): an out-of-range 5.0 is
+    // a clap usage error (exit 2) naming the bound.
+    let (code, _stdout, stderr) = scan(dir.path(), &["--ml-weight", "5.0", "--format", "json"]);
+    assert_eq!(
+        code,
+        Some(2),
+        "CLI --ml-weight 5.0 must be rejected with exit 2.\n--- stderr ---\n{stderr}"
+    );
+    assert!(
+        stderr.contains("ml_weight must be between 0.0 and 1.0"),
+        "CLI rejection must name the [0.0, 1.0] bound.\n--- stderr ---\n{stderr}"
+    );
+
+    // The config merge routes ml_weight through the SAME validator, so the
+    // identical over-range value fails closed as an invalid-config error (exit 2)
+    // instead of being silently applied and over-weighting the model on every
+    // finding.
+    let (_cfg, cfg_path) = config_file("ml_weight = 5.0\n");
+    let (code, _stdout, stderr) = scan(
+        dir.path(),
+        &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
+    );
+    assert_eq!(
+        code,
+        Some(2),
+        "config ml_weight = 5.0 must fail closed with exit 2, matching the CLI.\n\
+         --- stderr ---\n{stderr}"
+    );
+    assert!(
+        stderr.contains("invalid .keyhog.toml configuration"),
+        "error must announce the invalid config.\n--- stderr ---\n{stderr}"
+    );
+    assert!(
+        stderr.contains("ml_weight must be between 0.0 and 1.0"),
+        "config rejection must name the SAME bound as the CLI.\n--- stderr ---\n{stderr}"
+    );
+
+    // An in-range value still loads (the validator narrows nothing already legal).
+    let (_cfg, cfg_path) = config_file("ml_weight = 0.75\n");
+    let (code, _stdout, stderr) = scan(
+        dir.path(),
+        &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
+    );
+    assert_ne!(
+        code,
+        Some(2),
+        "an in-range ml_weight = 0.75 must NOT be rejected as invalid config.\n\
+         --- stderr ---\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("invalid .keyhog.toml configuration"),
+        "in-range ml_weight must not raise a config error.\n--- stderr ---\n{stderr}"
+    );
+}
+
+#[test]
+fn config_threads_zero_is_rejected_matching_reader_threads_and_cli() {
+    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+
+    // CLI --threads 0 is rejected (parse_positive_thread_count: ">= 1").
+    let (code, _stdout, stderr) = scan(dir.path(), &["--threads", "0", "--format", "json"]);
+    assert_eq!(
+        code,
+        Some(2),
+        "CLI --threads 0 must be rejected with exit 2.\n--- stderr ---\n{stderr}"
+    );
+
+    // Flat config `threads = 0` now fails closed too. It was silently accepted
+    // while its sibling `reader_threads = 0` was already rejected — an intra-config
+    // inconsistency AND a divergence from the CLI's own >= 1 rule.
+    let (_cfg, cfg_path) = config_file("threads = 0\n");
+    let (code, _stdout, stderr) = scan(
+        dir.path(),
+        &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
+    );
+    assert_eq!(
+        code,
+        Some(2),
+        "config threads = 0 must fail closed with exit 2.\n--- stderr ---\n{stderr}"
+    );
+    assert!(
+        stderr.contains("invalid .keyhog.toml configuration")
+            && stderr.contains("threads = 0: use a positive integer"),
+        "config threads = 0 must name the positive-integer fix.\n--- stderr ---\n{stderr}"
+    );
+
+    // The nested [scan].threads shares the guard (proves both apply sites fixed).
+    let (_cfg, cfg_path) = config_file("[scan]\nthreads = 0\n");
+    let (code, _stdout, stderr) = scan(
+        dir.path(),
+        &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
+    );
+    assert_eq!(
+        code,
+        Some(2),
+        "[scan].threads = 0 must fail closed too.\n--- stderr ---\n{stderr}"
+    );
+    assert!(
+        stderr.contains("[scan].threads = 0: use a positive integer"),
+        "[scan].threads = 0 must name the positive-integer fix.\n--- stderr ---\n{stderr}"
+    );
+
+    // An in-range thread count still loads (validator narrows nothing legal).
+    let (_cfg, cfg_path) = config_file("threads = 2\n");
+    let (code, _stdout, stderr) = scan(
+        dir.path(),
+        &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
+    );
+    assert_ne!(
+        code,
+        Some(2),
+        "an in-range threads = 2 must NOT be rejected as invalid config.\n--- stderr ---\n{stderr}"
+    );
+}
+
+/// UNIFICATION LOCK for the `apply_positive_int_field` dedup: every
+/// positive-integer scan knob must reject `0` through the ONE shared guard on
+/// BOTH the flat and `[scan]` config forms. Before the dedup this reject-0 guard
+/// was pasted 12 times (6 fields × 2 surfaces) and a field could silently skip it
+/// — `threads` did exactly that (accepted `0` while its sibling `reader_threads`
+/// rejected it) until RECONCILE#14. This sweeps all six fields on both surfaces;
+/// if any field is ever un-wired from the shared helper (or a divergent second
+/// copy reappears that forgets the check), the missing rejection fails here. The
+/// exit-2 + exact-message assertions also pin that `per_chunk_timeout_ms = 0` and
+/// `min_secret_len = 0` are genuine errors, not silent "disable" sentinels.
+#[test]
+fn every_positive_int_config_knob_rejects_zero_on_both_surfaces() {
+    let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
+    for field in [
+        "threads",
+        "reader_threads",
+        "fused_batch",
+        "fused_depth",
+        "per_chunk_timeout_ms",
+        "min_secret_len",
+    ] {
+        // Flat form: `<field> = 0`.
+        let (_cfg, cfg_path) = config_file(&format!("{field} = 0\n"));
+        let (code, _out, stderr) = scan(
+            dir.path(),
+            &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
+        );
+        assert_eq!(
+            code,
+            Some(2),
+            "flat config `{field} = 0` must fail closed with exit 2.\n--- stderr ---\n{stderr}"
+        );
+        assert!(
+            stderr.contains(&format!("{field} = 0: use a positive integer")),
+            "flat `{field} = 0` must name the positive-integer fix.\n--- stderr ---\n{stderr}"
+        );
+
+        // Nested form: `[scan]\n<field> = 0` — the `[scan].`-prefixed label proves
+        // the OTHER apply site is wired to the same guard.
+        let (_cfg, cfg_path) = config_file(&format!("[scan]\n{field} = 0\n"));
+        let (code, _out, stderr) = scan(
+            dir.path(),
+            &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
+        );
+        assert_eq!(
+            code,
+            Some(2),
+            "[scan].{field} = 0 must fail closed with exit 2.\n--- stderr ---\n{stderr}"
+        );
+        assert!(
+            stderr.contains(&format!("[scan].{field} = 0: use a positive integer")),
+            "[scan].{field} = 0 must name the positive-integer fix.\n--- stderr ---\n{stderr}"
+        );
+    }
 }

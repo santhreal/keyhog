@@ -16,7 +16,7 @@
 //! tests drive the REAL public `S3Source::chunks()` production path so they
 //! exercise `parse_http_endpoint` end to end.
 //!
-//! Every SSRF-refused endpoint fails inside `build_base_url` -> `validate_endpoint`
+//! Every SSRF-refused endpoint fails inside `build_base_url` -> `validate_cloud_endpoint`
 //! -> `parse_http_endpoint` BEFORE any socket is opened, so the assertions are
 //! hermetic (no network, no mock server) and deterministic.
 
@@ -34,8 +34,10 @@ const BUCKET: &str = "keyhog-ssrf-bucket";
 /// error message string. An SSRF-refused endpoint yields exactly one error row
 /// (the source aborts before listing), so this asserts that shape too.
 fn single_endpoint_error(endpoint: &str) -> String {
+    // allow_private = false: this file tests the ACTIVE SSRF endpoint screen, so
+    // it must NOT use the loopback-mock builders that opt into private endpoints.
     let rows: Vec<_> = TestApi
-        .s3_source_with_endpoint(BUCKET, endpoint)
+        .s3_source_with_endpoint_allow_private(BUCKET, endpoint, false)
         .chunks()
         .collect();
     assert_eq!(
@@ -256,7 +258,7 @@ fn public_https_host_endpoint_is_accepted_by_the_ssrf_guard() {
     // an SSRF refusal or an invalid-endpoint rejection — proving a legitimate
     // public host passes the guard.
     let rows: Vec<_> = TestApi
-        .s3_source_with_endpoint(BUCKET, "https://objectstore.public.invalid")
+        .s3_source_with_endpoint_allow_private(BUCKET, "https://objectstore.public.invalid", false)
         .chunks()
         .collect();
     for row in &rows {

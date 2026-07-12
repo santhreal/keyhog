@@ -1,0 +1,17 @@
+# Tier-B data: error key names recognized inside a JSON response body.
+#
+# Schema:
+#   keys = ["key-name", ...]
+#
+# Semantics:
+# - Used by the verifier to recursively decide whether a JSON response body
+#   carries a populated error signal.
+# - Key comparisons are performed case-insensitively.
+
+keys = [
+  "error",
+  "errors",
+  "invalid",
+  "expired",
+  "revoked",
+]

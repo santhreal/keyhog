@@ -5,6 +5,36 @@
 
 use crate::ascii_ci::{ci_find, contains_path_segment, contains_path_segment_two};
 
+#[derive(serde::Deserialize)]
+struct PathFilterLists {
+    needles: Vec<String>,
+    vendored_js_prefixes: Vec<String>,
+}
+
+fn parse_path_filter_lists(raw: &str) -> Result<PathFilterLists, String> {
+    toml::from_str::<PathFilterLists>(raw).map_err(|error| error.to_string())
+}
+
+/// Single parse of the path-filter Tier-B list: both field statics below read
+/// one list each from this owner instead of re-`include_str!`'ing and re-parsing
+/// the whole file twice at startup. Fail-closed (Law 10): invalid bundled
+/// metadata panics loudly at first use.
+static PATH_FILTER_LISTS: std::sync::LazyLock<PathFilterLists> = std::sync::LazyLock::new(|| {
+    match parse_path_filter_lists(include_str!("../../../../rules/path-filter-lists.toml")) {
+        Ok(lists) => lists,
+        Err(error) => panic!(
+            "rules/path-filter-lists.toml is invalid: {error}. \
+             Fix the bundled Tier-B metadata file list."
+        ),
+    }
+});
+
+static NEEDLES: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| PATH_FILTER_LISTS.needles.clone());
+
+static VENDORED_JS_PREFIXES: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| PATH_FILTER_LISTS.vendored_js_prefixes.clone());
+
 /// True if the file at `path` is itself a secret-scanner source file.
 /// Such files contain detector regex patterns (`/AKIA[A-Z0-9]{16}/g`,
 /// `'(?:ASIA|AKIA)[A-Z2-7]{16}'`, `dn_[a-zA-Z0-9_-]{20,}`) that the engine
@@ -22,19 +52,7 @@ pub(crate) fn looks_like_secret_scanner_source(path: Option<&str>) -> bool {
     // raw path bytes against pre-lowered needles via `ci_find`. Same
     // ten-needle alternation, zero allocations.
     let bytes = p.as_bytes();
-    const NEEDLES: &[&[u8]] = &[
-        b"secretscanner",
-        b"secret-scanner",
-        b"secret_scanner",
-        b"credentialscanner",
-        b"credential-scanner",
-        b"credential_scanner",
-        b"trufflehog",
-        b"gitleaks",
-        b"detect-secrets",
-        b"detect_secrets",
-    ];
-    NEEDLES.iter().any(|n| ci_find(bytes, n))
+    NEEDLES.iter().any(|n| ci_find(bytes, n.as_bytes()))
 }
 
 /// True if `path` looks like a vendored 3rd-party JS/CSS/wasm bundle.
@@ -95,37 +113,10 @@ pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
     {
         let basename = crate::platform_compat::path_basename(p);
         let basename_bytes = basename.as_bytes();
-        const VENDORED_JS_PREFIXES: &[&[u8]] = &[
-            b"bootstrap",
-            b"jquery",
-            b"react.",
-            b"react-",
-            b"vue.",
-            b"vue-",
-            b"angular",
-            b"ember",
-            b"backbone",
-            b"lodash",
-            b"underscore",
-            b"moment",
-            b"alertify",
-            b"fullcalendar",
-            b"datatables",
-            b"highcharts",
-            b"chart.",
-            b"chart-",
-            b"select2",
-            b"tinymce",
-            b"ckeditor",
-            b"codemirror",
-            b"html5",
-            b"modernizr",
-            b"respond",
-        ];
         if VENDORED_JS_PREFIXES.iter().any(|prefix| {
             basename_bytes
                 .get(..prefix.len())
-                .is_some_and(|p| p.eq_ignore_ascii_case(prefix))
+                .is_some_and(|p| p.eq_ignore_ascii_case(prefix.as_bytes()))
         }) {
             return true;
         }

@@ -479,9 +479,10 @@ fn scan_keyword_free_candidates(
     let keyword_free_min_len = spec
         .and_then(|s| s.keyword_free_min_len)
         .unwrap_or(KEYWORD_FREE_MIN_LEN);
-    let generic_keyword_secret_min_len = get_spec(active_policy, crate::detector_ids::GENERIC_KEYWORD_SECRET)
-        .and_then(|s| s.keyword_free_min_len)
-        .unwrap_or(KEYWORD_FREE_MIN_LEN);
+    let generic_keyword_secret_min_len =
+        get_spec(active_policy, crate::detector_ids::GENERIC_KEYWORD_SECRET)
+            .and_then(|s| s.keyword_free_min_len)
+            .unwrap_or(KEYWORD_FREE_MIN_LEN);
     let keyword_free_context = KeywordContext {
         keyword: KEYWORD_FREE_LABEL.to_string(),
         threshold: effective_keyword_free_threshold,
@@ -492,10 +493,8 @@ fn scan_keyword_free_candidates(
         // regardless of model authority. The lift is anchor-gated.
         allow_canonical_shapes: false,
     };
-    let isolated_token_context = isolated_bare_keyword_context(
-        entropy_threshold,
-        generic_keyword_secret_min_len,
-    );
+    let isolated_token_context =
+        isolated_bare_keyword_context(entropy_threshold, generic_keyword_secret_min_len);
     let isolated_min_len = isolated_token_context.min_len;
     for (line_idx, line) in lines.iter().enumerate() {
         if let Some(skip) = skip_lines {
@@ -1142,7 +1141,10 @@ mod policy_owner_tests {
         spec
     }
 
-    fn scan_with_generic_keyword_min_len(secret: &str, generic_keyword_secret_min_len: usize) -> usize {
+    fn scan_with_generic_keyword_min_len(
+        secret: &str,
+        generic_keyword_secret_min_len: usize,
+    ) -> usize {
         let detectors = vec![
             detector("generic-secret", 20),
             detector("generic-keyword-secret", generic_keyword_secret_min_len),

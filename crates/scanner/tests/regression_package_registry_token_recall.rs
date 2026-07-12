@@ -32,7 +32,11 @@ fn gen(n: usize, seed: usize, charset: &[u8]) -> String {
         .collect()
 }
 fn alnum(n: usize, seed: usize) -> String {
-    gen(n, seed, b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
+    gen(
+        n,
+        seed,
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+    )
 }
 fn hex(n: usize, seed: usize) -> String {
     gen(n, seed, b"0123456789abcdef")
@@ -46,7 +50,11 @@ fn crc32(data: &[u8]) -> u32 {
         let mut crc = i as u32;
         let mut j = 0;
         while j < 8 {
-            crc = if crc & 1 != 0 { 0xEDB8_8320 ^ (crc >> 1) } else { crc >> 1 };
+            crc = if crc & 1 != 0 {
+                0xEDB8_8320 ^ (crc >> 1)
+            } else {
+                crc >> 1
+            };
             j += 1;
         }
         table[i] = crc;
@@ -99,7 +107,9 @@ fn scan(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 fn surfaces_under(text: &str, detector: &str, needle: &str) -> bool {
-    scan(text).iter().any(|(id, cred)| id == detector && cred.contains(needle))
+    scan(text)
+        .iter()
+        .any(|(id, cred)| id == detector && cred.contains(needle))
 }
 fn surfaces_any(text: &str, needle: &str) -> bool {
     scan(text).iter().any(|(_, cred)| cred.contains(needle))
@@ -113,20 +123,30 @@ fn fires(text: &str, detector: &str) -> bool {
 #[test]
 fn npm_valid_checksum_token_bare_surfaces() {
     let t = npm_token(1);
-    assert!(surfaces_under(&t, "npm-access-token", &t), "valid-checksum npm token must surface");
+    assert!(
+        surfaces_under(&t, "npm-access-token", &t),
+        "valid-checksum npm token must surface"
+    );
 }
 
 #[test]
 fn npm_valid_token_in_npmrc_authtoken_surfaces() {
     let t = npm_token(2);
     let text = format!("//registry.npmjs.org/:_authToken={t}\n");
-    assert!(surfaces_under(&text, "npm-access-token", &t), "npm token in .npmrc must surface");
+    assert!(
+        surfaces_under(&text, "npm-access-token", &t),
+        "npm token in .npmrc must surface"
+    );
 }
 
 #[test]
 fn npm_valid_token_env_anchor_surfaces() {
     let t = npm_token(3);
-    assert!(surfaces_under(&format!("NPM_TOKEN={t}"), "npm-access-token", &t));
+    assert!(surfaces_under(
+        &format!("NPM_TOKEN={t}"),
+        "npm-access-token",
+        &t
+    ));
 }
 
 #[test]
@@ -136,8 +156,15 @@ fn npm_invalid_checksum_token_does_not_fire() {
     let bad = format!("npm_{}", alnum(36, 4));
     // Guard: make sure the random fixture really is checksum-invalid (not a fluke).
     let entropy = &bad[4..34];
-    assert_ne!(base62_6(crc32(entropy.as_bytes())), bad[34..], "fixture must be checksum-invalid");
-    assert!(!fires(&bad, "npm-access-token"), "invalid-checksum npm token must be suppressed");
+    assert_ne!(
+        base62_6(crc32(entropy.as_bytes())),
+        bad[34..],
+        "fixture must be checksum-invalid"
+    );
+    assert!(
+        !fires(&bad, "npm-access-token"),
+        "invalid-checksum npm token must be suppressed"
+    );
 }
 
 #[test]
@@ -152,14 +179,20 @@ fn npm_token_35_chars_does_not_fire() {
 #[test]
 fn pypi_valid_token_bare_surfaces() {
     let t = pypi_token(112, 6); // 112 % 4 == 0 -> decodes to 84 bytes
-    assert!(surfaces_under(&t, "pypi-api-token", &t), "valid pypi- token must surface");
+    assert!(
+        surfaces_under(&t, "pypi-api-token", &t),
+        "valid pypi- token must surface"
+    );
 }
 
 #[test]
 fn pypi_valid_token_in_pypirc_password_surfaces() {
     let t = pypi_token(112, 7);
     let text = format!("[pypi]\nusername = __token__\npassword = {t}\n");
-    assert!(surfaces_under(&text, "pypi-api-token", &t), "pypi token in .pypirc must surface");
+    assert!(
+        surfaces_under(&text, "pypi-api-token", &t),
+        "pypi token in .pypirc must surface"
+    );
 }
 
 #[test]
@@ -185,7 +218,10 @@ fn pypi_non_decodable_length_does_not_fire() {
     // 101 % 4 == 1 is an invalid base64 (no-pad) length, so the structural decode
     // fails and the token is suppressed even though the regex shape matches.
     let t = pypi_token(101, 11);
-    assert!(!fires(&t, "pypi-api-token"), "a non-decodable pypi payload must be suppressed");
+    assert!(
+        !fires(&t, "pypi-api-token"),
+        "a non-decodable pypi payload must be suppressed"
+    );
 }
 
 // ── RubyGems (no checksum; plain 48-hex) ──────────────────────────────────────
@@ -193,19 +229,30 @@ fn pypi_non_decodable_length_does_not_fire() {
 #[test]
 fn rubygems_token_bare_surfaces() {
     let t = format!("rubygems_{}", hex(48, 12));
-    assert!(surfaces_under(&t, "rubygems-api-key", &t), "bare rubygems_ token must surface");
+    assert!(
+        surfaces_under(&t, "rubygems-api-key", &t),
+        "bare rubygems_ token must surface"
+    );
 }
 
 #[test]
 fn rubygems_token_anchored_surfaces() {
     let t = format!("rubygems_{}", hex(48, 13));
-    assert!(surfaces_under(&format!("RUBYGEMS_API_KEY={t}"), "rubygems-api-key", &t));
+    assert!(surfaces_under(
+        &format!("RUBYGEMS_API_KEY={t}"),
+        "rubygems-api-key",
+        &t
+    ));
 }
 
 #[test]
 fn rubygems_bare_hex_under_anchor_surfaces() {
     let h = hex(48, 14);
-    assert!(surfaces_under(&format!("RUBYGEMS_API_KEY={h}"), "rubygems-api-key", &h));
+    assert!(surfaces_under(
+        &format!("RUBYGEMS_API_KEY={h}"),
+        "rubygems-api-key",
+        &h
+    ));
 }
 
 #[test]
@@ -230,7 +277,10 @@ fn rubygems_non_hex_value_does_not_fire() {
 fn npm_valid_token_in_yaml_surfaces() {
     // A valid-checksum npm token also surfaces from a structured YAML value.
     let t = npm_token(18);
-    assert!(surfaces_any(&format!("npm:\n  token: {t}\n"), &t), "npm token in YAML must surface");
+    assert!(
+        surfaces_any(&format!("npm:\n  token: {t}\n"), &t),
+        "npm token in YAML must surface"
+    );
 }
 
 // ── cross-registry co-surfacing ───────────────────────────────────────────────
@@ -240,8 +290,14 @@ fn npm_and_pypi_tokens_cosurface() {
     let n = npm_token(19);
     let p = pypi_token(112, 20);
     let text = format!("NPM_TOKEN={n}\nTWINE_PASSWORD={p}\n");
-    assert!(surfaces_under(&text, "npm-access-token", &n), "npm surfaces alongside pypi");
-    assert!(surfaces_under(&text, "pypi-api-token", &p), "pypi surfaces alongside npm");
+    assert!(
+        surfaces_under(&text, "npm-access-token", &n),
+        "npm surfaces alongside pypi"
+    );
+    assert!(
+        surfaces_under(&text, "pypi-api-token", &p),
+        "pypi surfaces alongside npm"
+    );
 }
 
 #[test]

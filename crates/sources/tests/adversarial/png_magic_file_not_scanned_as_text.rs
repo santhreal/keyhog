@@ -21,13 +21,13 @@ fn png_magic_file_not_scanned_as_text() {
     assert!(
         chunks
             .iter()
-            .all(|chunk| chunk.metadata.source_type != "filesystem"),
+            .all(|chunk| chunk.metadata.source_type.as_ref() != "filesystem"),
         "PNG magic must not be decoded as ordinary filesystem text; chunks={chunks:?}"
     );
     assert!(
         chunks
             .iter()
-            .any(|chunk| chunk.metadata.source_type == "filesystem:binary-strings"),
+            .any(|chunk| chunk.metadata.source_type.as_ref() == "filesystem:binary-strings"),
         "PNG magic with printable payload should preserve recall through binary strings; chunks={chunks:?}"
     );
     assert!(

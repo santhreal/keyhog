@@ -1,7 +1,7 @@
 //! Detector-regex compiler fuzz.
 //!
 //! Goal: a malformed user-supplied regex in a detector TOML must
-//! return `Err`, never panic. The 888-detector set is user-extensible
+//! return `Err`, never panic. The detector set is user-extensible
 //! (drop a TOML into `detectors/` and keyhog picks it up), so any
 //! panic in the regex compile path is reachable from valid user
 //! input and counts as a release-blocking bug.
@@ -28,13 +28,8 @@ fuzz_target!(|data: &[u8]| {
         regex: regex.to_string(),
         description: None,
         group: None,
-        // `PatternSpec` carries a `client_safe` flag (added when
-        // detectors gained a per-pattern severity downgrade for
-        // intentionally-public keys). The struct is `#[serde(deny_unknown_fields)]`
-        // and NOT `#[non_exhaustive]`, so a struct literal MUST set every
-        // field or the fuzz target fails to compile. A fuzzed regex string
-        // has no client-safe semantics, so `false` (the `#[serde(default)]`
-        // value) is the correct, neutral choice for the compile fuzz.
+        // A fuzzed regex string has no client-safe semantics; `false` is
+        // the neutral `#[serde(default)]` value.
         client_safe: false,
     };
     // Any outcome is acceptable EXCEPT panic. The Result branch is

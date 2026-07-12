@@ -638,9 +638,10 @@ pub(crate) fn read_api_json<T: DeserializeOwned>(
         }
     }
 
-    let capacity_hint = response
-        .content_length()
-        .map(|len| len.min(max_response_bytes_u64).min(MAX_PREALLOCATED_READ_BYTES));
+    let capacity_hint = response.content_length().map(|len| {
+        len.min(max_response_bytes_u64)
+            .min(MAX_PREALLOCATED_READ_BYTES)
+    });
     let read = crate::capped_read::read_to_cap(response, max_response_bytes_u64, capacity_hint)
         .map_err(|error| api_unreadable_error(format!("failed to read {context}: {error}")))?;
     if read.truncated {
@@ -767,9 +768,9 @@ pub(crate) fn rewrite_chunk_path(
     chunk.metadata.source_type = source_type.into();
     chunk.metadata.path = Some(match namespace {
         Some(namespace) if !namespace.is_empty() => {
-            format!("{namespace}/{repo_display_path}/{relative_path}")
+            format!("{namespace}/{repo_display_path}/{relative_path}").into()
         }
-        _ => format!("{repo_display_path}/{relative_path}"),
+        _ => format!("{repo_display_path}/{relative_path}").into(),
     });
     chunk.metadata.commit = None;
     chunk.metadata.author = None;
@@ -812,13 +813,14 @@ fn clone_repo(
         &expected_prompt_host,
     )?;
 
-    let git_bin = keyhog_core::resolve_safe_bin("git").ok_or_else(|| {
-        SourceError::Other(
-            "git binary not found in trusted system bin dirs (refusing $PATH lookup)".into(),
-        )
-    })?;
-    let mut child = Command::new(&git_bin)
-        .env("GIT_TERMINAL_PROMPT", "0")
+    // ONE PLACE: build the clone via the hermetic git factory so it nulls
+    // GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM (a host `commit.gpgsign` /
+    // `credential.helper` / `core.hooksPath` cannot hook, sign, or block the
+    // clone on a prompt) and resolves the trusted git binary — the exact
+    // isolation every other git spawn uses. `git_command()`'s own doc requires
+    // that "every git spawn goes through here rather than Command::new(git_bin)";
+    // this clone was the one bypass. The auth-specific askpass is layered on top.
+    let mut child = crate::git::git_command()?
         .env("GIT_ASKPASS", &auth_material.askpass_path)
         .env("SSH_ASKPASS", &auth_material.askpass_path)
         .args(git_clone_args())

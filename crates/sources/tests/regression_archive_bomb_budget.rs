@@ -113,7 +113,10 @@ fn small_zip_extracts_exact_inner_secret() {
         1,
         "single-entry zip must emit exactly one chunk"
     );
-    assert_eq!(chunks[0].metadata.source_type, "filesystem/archive");
+    assert_eq!(
+        chunks[0].metadata.source_type.as_ref(),
+        "filesystem/archive"
+    );
     assert!(
         chunks[0]
             .metadata
@@ -543,7 +546,7 @@ fn gzip_small_stream_yields_exact_secret() {
         .iter()
         .find(|c| c.data.contains("sk_live_GZIPPOSITIVEmarker00"))
         .expect("the decompressed secret must be scanned");
-    assert_eq!(hit.metadata.source_type, "filesystem/compressed");
+    assert_eq!(hit.metadata.source_type.as_ref(), "filesystem/compressed");
 }
 
 #[test]

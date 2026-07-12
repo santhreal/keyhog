@@ -1,20 +1,12 @@
 //! Contract: twitch-client-id contract positive fires on canonical client id.
 
+use crate::support::paths::detector_dir;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
 
 const DETECTOR_ID: &str = "twitch-client-id";
 const TEXT: &str = "TWITCH client        _        - -    _        -   _   - - _   id::'=  '   \" ms2uvf52y6in49bdtvr079w81jvoa4";
 const CREDENTIAL: &str = "ms2uvf52y6in49bdtvr079w81jvoa4";
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 #[test]
 fn twitch_client_id_first_positive_fires() {

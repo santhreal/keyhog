@@ -59,15 +59,25 @@ pub(crate) fn base62_encode_u32(mut value: u32, width: usize) -> String {
     rev.into_iter().collect()
 }
 
-/// Validates GitHub classic personal access tokens.
+/// Validates GitHub classic personal access tokens AND the OAuth-family tokens
+/// that share the identical body (`gho_`/`ghu_`/`ghs_`/`ghr_`).
 ///
-/// Format: `ghp_` + 30-character entropy + 6-character base62 CRC32 checksum.
-/// The CRC32 is computed over the 30-character entropy portion only.
+/// Format: `{ghp_|gho_|ghu_|ghs_|ghr_}` + 30-character entropy + 6-character
+/// base62 CRC32 checksum. The CRC32 is computed over the 30-character entropy
+/// portion ONLY, so it is prefix-independent — the same validator serves all
+/// five families (their prefixes are single-sourced in `prefixes.rs`).
 pub(crate) struct GithubClassicPatValidator;
 
 impl ChecksumValidator for GithubClassicPatValidator {
     fn validate(&self, credential: &str) -> ChecksumResult {
-        let payload = match credential.strip_prefix("ghp_") {
+        // ghp_ (classic PAT) and the OAuth-family siblings (gho_/ghu_/ghs_/ghr_)
+        // share the identical `_`+30-entropy+6-CRC32-base62 body — the CRC is over
+        // the 30-char entropy only, so it is prefix-independent. Strip whichever
+        // of the five recognised prefixes matches.
+        let payload = std::iter::once(super::prefixes::GITHUB_CLASSIC_PAT)
+            .chain(super::prefixes::GITHUB_OAUTH_FAMILY_PREFIXES)
+            .find_map(|p| credential.strip_prefix(p));
+        let payload = match payload {
             Some(p) => p,
             None => return ChecksumResult::NotApplicable,
         };
@@ -129,7 +139,8 @@ fn split_fine_grained_payload(payload: &str) -> Option<(&str, &str)> {
 
 impl ChecksumValidator for GithubFineGrainedPatValidator {
     fn validate(&self, credential: &str) -> ChecksumResult {
-        let Some(payload) = credential.strip_prefix("github_pat_") else {
+        let Some(payload) = credential.strip_prefix(super::prefixes::GITHUB_PAT_FINE_GRAINED)
+        else {
             return ChecksumResult::NotApplicable;
         };
         let Some((left, right)) = split_fine_grained_payload(payload) else {

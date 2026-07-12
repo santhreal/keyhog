@@ -62,7 +62,7 @@ fn scan(
 fn archive_chunks(chunks: &[Chunk]) -> Vec<&Chunk> {
     chunks
         .iter()
-        .filter(|c| c.metadata.source_type == ARCHIVE_TYPE)
+        .filter(|c| c.metadata.source_type.as_ref() == ARCHIVE_TYPE)
         .collect()
 }
 
@@ -105,7 +105,7 @@ fn secret_in_tar_entry_surfaces_as_archive_chunk() {
         "a secret inside a .tar entry must surface as a `{ARCHIVE_TYPE}` chunk; got source_types {:?}",
         chunks
             .iter()
-            .map(|c| c.metadata.source_type.as_str())
+            .map(|c| c.metadata.source_type.as_ref())
             .collect::<Vec<_>>()
     );
 }
@@ -189,7 +189,7 @@ fn tar_entry_secret_arrives_only_via_archive_source_type() {
     let carriers: Vec<&str> = chunks
         .iter()
         .filter(|c| c.data.contains(SECRET_MARKER))
-        .map(|c| c.metadata.source_type.as_str())
+        .map(|c| c.metadata.source_type.as_ref())
         .collect();
     assert_eq!(
         carriers,

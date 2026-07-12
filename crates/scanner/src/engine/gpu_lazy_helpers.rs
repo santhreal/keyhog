@@ -18,16 +18,53 @@ Fix the OS user cache directory or set XDG_CACHE_HOME to a writable directory."
     }
 }
 
-pub(super) fn report_gpu_matcher_unavailable(error: &crate::error::ScanError, matcher_kind: &str) {
+/// Which lazily-compiled GPU literal matcher a warning refers to. Colocates the
+/// operator-facing label with its one-shot warned cell so the two cannot drift
+/// and there is no stringly-typed `_ =>` fallback that could silently misroute a
+/// new matcher kind onto the literal cell.
+#[derive(Clone, Copy)]
+#[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+pub(super) enum GpuMatcherKind {
+    Literal,
+}
+
+impl GpuMatcherKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Literal => "literal",
+        }
+    }
+
+    fn warned_cell(self) -> &'static std::sync::OnceLock<()> {
+        match self {
+            Self::Literal => &GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED,
+        }
+    }
+}
+
+/// Shared decode of a `catch_unwind` panic payload into an owned detail string.
+/// Single owner for the literal and artifact compile paths.
+pub(super) fn catch_unwind_panic_detail(panic: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = panic.downcast_ref::<String>() {
+        message.clone()
+    } else if let Some(message) = panic.downcast_ref::<&'static str>() {
+        (*message).to_string()
+    } else {
+        "non-string panic payload".to_string()
+    }
+}
+
+pub(super) fn report_gpu_matcher_unavailable(
+    error: &crate::error::ScanError,
+    kind: GpuMatcherKind,
+) {
+    let matcher_kind = kind.label();
     tracing::warn!(
         target: "keyhog::routing",
         %error,
         "GPU {matcher_kind} matcher unavailable; CPU/SIMD routes remain authoritative"
     );
-    let warned = match matcher_kind {
-        "literal" => &GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED,
-        _ => &GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED,
-    };
+    let warned = kind.warned_cell();
     if warned.set(()).is_ok() {
         eprintln!(
             "keyhog: GPU {matcher_kind} matcher unavailable ({error}); this scanner \
@@ -42,10 +79,8 @@ pub(super) fn compile_gpu_literal_set(
     cache_prefix: &str,
 ) -> crate::error::Result<vyre_libs::scan::GpuLiteralSet> {
     let literal_refs: Vec<&[u8]> = literals.iter().map(|v| v.as_slice()).collect();
-    let cache_key = format!(
-        "{cache_prefix}-{}",
-        super::gpu_cache::gpu_matcher_cache_key(&literal_refs)
-    );
+    let cache_key =
+        super::gpu_cache::gpu_matcher_cache_key_with_prefix(cache_prefix, &literal_refs);
     let started = std::time::Instant::now();
     let matcher = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         match super::gpu_cache::gpu_matcher_cache_dir() {
@@ -59,13 +94,7 @@ pub(super) fn compile_gpu_literal_set(
         }
     }))
     .map_err(|panic| {
-        let detail = if let Some(message) = panic.downcast_ref::<String>() {
-            message.as_str()
-        } else if let Some(message) = panic.downcast_ref::<&'static str>() {
-            message
-        } else {
-            "non-string panic payload"
-        };
+        let detail = catch_unwind_panic_detail(panic);
         crate::error::ScanError::Gpu(format!(
             "GPU literal-set compile panicked for cache prefix {cache_prefix} with {} patterns: {detail}. Fix: reduce literal rows, increase Vyre's DFA budget, or shard the literal set; matcher disabled for this scanner build.",
             literal_refs.len()

@@ -105,9 +105,13 @@ fn shared_loader_returns_every_embedded_detector() {
          indicates a malformed parse that slipped through"
     );
     assert!(
-        detectors.iter().all(|d| !d.patterns.is_empty()),
-        "every loaded detector must carry at least one pattern — a pattern-less \
-         spec would never match and signals a corrupt load"
+        detectors
+            .iter()
+            .all(|d| !d.patterns.is_empty() || !d.keywords.is_empty()),
+        "every loaded detector must be able to MATCH — via a regex pattern, OR \
+         (for keyword/entropy phase-2 detectors like generic-api-key / \
+         generic-secret / generic-keyword-secret, which carry NO regex by design) \
+         via a keyword. A spec with NEITHER would never fire and signals a corrupt load"
     );
 }
 

@@ -43,17 +43,28 @@ pub(crate) fn looks_like_entropy_canonical_non_secret_shape(value: &str) -> bool
 }
 
 pub(crate) fn looks_like_entropy_uuid_shape(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    value.len() == 36
-        && bytes[8] == b'-'
-        && bytes[13] == b'-'
-        && bytes[18] == b'-'
-        && bytes[23] == b'-'
-        && value.bytes().all(|b| b == b'-' || b.is_ascii_hexdigit())
+    // ONE UUID-shape owner: entropy generation and report-time suppression bind
+    // the SAME uniform-case predicate. A mixed-case UUID must not be a non-secret
+    // in one path and a candidate in the other (was: mixed-case hex here vs
+    // uniform-case in `is_uuid_v4_shape`) (DEDUP).
+    is_uuid_v4_shape(value)
+}
+
+/// The four canonical cryptographic hex-digest lengths in HEX CHARS: md5 = 32,
+/// sha1 = 40, sha256 = 64, sha512 = 128. Single owner — every shape gate that
+/// recognises a fixed-length hex digest consults [`is_canonical_hex_digest_length`]
+/// instead of re-listing the four widths inline, so a new digest width (or a
+/// correction) is made in exactly ONE place and two gates can never drift.
+pub(crate) const CANONICAL_HEX_DIGEST_LENGTHS: [usize; 4] = [32, 40, 64, 128];
+
+/// `true` iff `len` (in hex chars) is one of the [`CANONICAL_HEX_DIGEST_LENGTHS`].
+#[inline]
+pub(crate) fn is_canonical_hex_digest_length(len: usize) -> bool {
+    CANONICAL_HEX_DIGEST_LENGTHS.contains(&len)
 }
 
 pub(crate) fn looks_like_entropy_canonical_hex_digest(value: &str) -> bool {
-    matches!(value.len(), 32 | 40 | 64 | 128) && value.bytes().all(|b| b.is_ascii_hexdigit())
+    is_canonical_hex_digest_length(value.len()) && value.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// Exact dotted credential shapes the scanner may treat as real tokens.
@@ -71,7 +82,7 @@ pub(crate) fn is_structured_dotted_token(value: &str) -> bool {
         return false;
     };
     let segments = [first, second, third];
-    let is_jwt_like = first.starts_with("eyJ")
+    let is_jwt_like = crate::jwt::has_jwt_header_prefix(first)
         && segments.iter().all(|segment| {
             segment.len() >= 4 && segment.bytes().all(crate::decode::is_base64_candidate_byte)
         });
@@ -86,8 +97,25 @@ pub(crate) fn is_structured_dotted_token(value: &str) -> bool {
     is_jwt_like || is_discord_style
 }
 
+/// Canonical SRI/package-integrity hash-algo dash labels (`sha512-`, `sha384-`,
+/// `sha256-`). ONE owner for the integrity-body gates in this module and the
+/// decoded-labelled-hash gate in `decision.rs`, which previously pasted their own
+/// (diverging) subsets of this set (DEDUP). Distinct from `strip_hash_algo_prefix`'s
+/// broader label set, which also carries the colon forms and `sha1:`/`md5:`.
+pub(crate) const HASH_ALGO_INTEGRITY_LABELS: &[&str] = &["sha512-", "sha384-", "sha256-"];
+
+/// Canonical COLON-form hash-algo labels (docker/python/git-LFS hex digests:
+/// `sha256:`/`sha512:`/`sha1:`/`md5:`). SINGLE OWNER of this shared vocabulary,
+/// consumed BOTH by `strip_hash_algo_prefix` (suppression digest-shape strip)
+/// here AND by the entropy assignment-value gate (`entropy::keywords`), which
+/// previously hand-rolled a byte-identical copy free to drift. The entropy gate
+/// additionally recognizes `git-sha:` (git commit refs) — that stays a documented
+/// entropy-LOCAL extra, since colon-digest SUPPRESSION intentionally covers only
+/// the docker/python/git-LFS digest formats, not commit references.
+pub(crate) const HASH_ALGO_COLON_LABELS: &[&[u8]] = &[b"sha256:", b"sha512:", b"sha1:", b"md5:"];
+
 fn looks_like_entropy_integrity_digest(value: &str) -> bool {
-    for prefix in ["sha512-", "sha384-", "sha256-"] {
+    for &prefix in HASH_ALGO_INTEGRITY_LABELS {
         if let Some(body) = value.strip_prefix(prefix) {
             if !body.is_empty() && crate::decode::standard_base64_shape(body).is_some() {
                 return true;
@@ -127,23 +155,16 @@ fn is_five_by_five_dash_shape(value: &str, body_byte_ok: impl Fn(u8) -> bool) ->
 /// the ambiguous bare-hex arm (Algolia / New Relic / Redis Labs use
 /// 32/40/64-hex bodies) stays anchor-gated.
 pub(crate) fn looks_like_prefixed_hash_digest(credential: &str) -> bool {
-    if let Some(body) = strip_hash_algo_prefix(credential) {
-        // Stripped body must itself be a hash digest of the
-        // corresponding length OR a base64 blob (npm-style).
-        if body.len() == 64 && is_uniform_hex(body) {
-            return true;
-        }
-        if body.len() == 128 && is_uniform_hex(body) {
-            return true;
-        }
-        if body.len() == 40 && is_uniform_hex(body) {
-            return true;
-        }
-        if looks_like_base64_integrity_body(body) {
-            return true;
-        }
-    }
-    false
+    let Some(body) = strip_hash_algo_prefix(credential) else {
+        return false;
+    };
+    // Stripped body must itself be a fixed-length hash digest (md5 32, sha1 40,
+    // sha256 64, sha512 128 hex) OR a base64 package-integrity blob (npm-style).
+    // The 32-hex md5 length closes the `md5:`/`sha1:`-labelled-body gap: the
+    // label set includes `md5:` but the body-length set previously omitted 32,
+    // so `md5:<32-hex>` leaked back out as a false-positive credential.
+    (is_canonical_hex_digest_length(body.len()) && is_uniform_hex(body))
+        || looks_like_base64_integrity_body(body)
 }
 
 /// Bare uniform-hex digest arm. AMBIGUOUS
@@ -195,24 +216,32 @@ pub(crate) fn is_canonical_service_hex_key(credential: &str) -> bool {
     matches!(credential.len(), 32 | 40 | 48 | 64) && is_uniform_hex(credential)
 }
 
-pub(crate) fn looks_like_aws_iam_arn(value: &str) -> bool {
-    let Some(body) = ["arn:aws:iam::", "arn:aws-cn:iam::", "arn:aws-us-gov:iam::"]
-        .iter()
-        .find_map(|&prefix| value.strip_prefix(prefix))
-    else {
-        return false;
+/// The AWS partitions whose IAM ARNs this suppression recognizes. Single owner
+/// for both the full (`arn:<p>:iam::`) and trimmed (`<p>:iam::`) gates, so adding
+/// a future partition happens in exactly ONE place instead of two parallel lists.
+const AWS_IAM_ARN_PARTITIONS: [&str; 3] = ["aws", "aws-cn", "aws-us-gov"];
+
+/// Strip a `<partition>:iam::` prefix (using the single partition list) and return
+/// the ARN body. `require_arn` selects whether a literal `arn:` must lead (the full
+/// gate) or must be absent (the pre-trimmed gate) — preserving the two callers'
+/// original distinction while sharing one partition list. Zero-alloc.
+fn strip_aws_iam_arn_body(value: &str, require_arn: bool) -> Option<&str> {
+    let rest = match value.strip_prefix("arn:") {
+        Some(rest) if require_arn => rest,
+        None if !require_arn => value,
+        _ => return None,
     };
-    aws_iam_arn_body_has_resource_target(body)
+    AWS_IAM_ARN_PARTITIONS
+        .iter()
+        .find_map(|&partition| rest.strip_prefix(partition)?.strip_prefix(":iam::"))
+}
+
+pub(crate) fn looks_like_aws_iam_arn(value: &str) -> bool {
+    strip_aws_iam_arn_body(value, true).is_some_and(aws_iam_arn_body_has_resource_target)
 }
 
 pub(crate) fn looks_like_trimmed_aws_iam_arn(value: &str) -> bool {
-    let Some(body) = ["aws:iam::", "aws-cn:iam::", "aws-us-gov:iam::"]
-        .iter()
-        .find_map(|&prefix| value.strip_prefix(prefix))
-    else {
-        return false;
-    };
-    aws_iam_arn_body_has_resource_target(body)
+    strip_aws_iam_arn_body(value, false).is_some_and(aws_iam_arn_body_has_resource_target)
 }
 
 fn aws_iam_arn_body_has_resource_target(body: &str) -> bool {
@@ -228,15 +257,25 @@ fn aws_iam_arn_body_has_resource_target(body: &str) -> bool {
 }
 
 /// If `credential` begins with - OR contains - one of the well-known
-/// hash-algorithm labels (`sha256:`, `sha512:`, `sha512-`, `sha256-`,
-/// `sha1:`, `md5:`), return the body after the first such label. Otherwise
-/// None.
+/// hash-algorithm labels (colon forms `sha256:`, `sha512:`, `sha1:`, `md5:`
+/// plus the SRI dash forms `sha512-`, `sha384-`, `sha256-`), return the body
+/// after the first such label. Otherwise None.
 ///
 /// Substring match (not prefix-only) is intentional. Docker image
 /// digests are commonly written `nginx@sha256:<64-hex>`, python
 /// requirements as `--hash=sha256:<64-hex>`, both of which keyhog's
 /// value extractor surfaces as one credential string that doesn't
 /// START with the algo label.
+///
+/// The dash-form (SRI) labels are NOT hardcoded here: they come from the ONE
+/// owner [`HASH_ALGO_INTEGRITY_LABELS`], so this report-time strip and the
+/// entropy-generation (`looks_like_entropy_integrity_digest`) / decoded
+/// (`decision::decoded_looks_like_labelled_hash`) integrity gates can never
+/// disagree on the SRI label set. This list previously pasted a diverging
+/// `{sha512-, sha256-}` dash subset that DROPPED `sha384-`, so a raw `sha384-`
+/// SRI body (the recommended, most common SRI algorithm) was suppressed by the
+/// entropy/decoded paths yet leaked back out at report time (DEDUP: same-set-
+/// different-value latent bug).
 ///
 /// The label match is ASCII-case-insensitive: `ssh-keygen -lf` renders key
 /// fingerprints as upper-case `SHA256:<base64>`, and Windows `certutil
@@ -247,15 +286,24 @@ fn aws_iam_arn_body_has_resource_target(body: &str) -> bool {
 /// the stripped body is itself a fixed-length hex digest or base64 integrity
 /// blob before suppressing — the label alone never suppresses anything.
 fn strip_hash_algo_prefix(credential: &str) -> Option<&str> {
-    const LABELS: &[&[u8]] = &[
-        b"sha256:", b"sha512:", b"sha512-", b"sha256-", b"sha1:", b"md5:",
-    ];
+    // Colon-form algo labels (docker/python/git-LFS hex digests) — now the shared
+    // `HASH_ALGO_COLON_LABELS` owner above (was a fn-local copy the entropy gate
+    // duplicated). The SRI dash labels are chained in from
+    // `HASH_ALGO_INTEGRITY_LABELS` (single owner).
     let bytes = credential.as_bytes();
-    LABELS.iter().find_map(|label| {
-        // `label` is ASCII, so `idx + label.len()` is a UTF-8 char boundary and
-        // the slice cannot split a codepoint even for a multibyte body tail.
-        crate::ascii_ci::ci_find_at(bytes, label).map(|idx| &credential[idx + label.len()..])
-    })
+    HASH_ALGO_COLON_LABELS
+        .iter()
+        .copied()
+        .chain(
+            HASH_ALGO_INTEGRITY_LABELS
+                .iter()
+                .map(|label| label.as_bytes()),
+        )
+        .find_map(|label| {
+            // `label` is ASCII, so `idx + label.len()` is a UTF-8 char boundary
+            // and the slice cannot split a codepoint even for a multibyte tail.
+            crate::ascii_ci::ci_find_at(bytes, label).map(|idx| &credential[idx + label.len()..])
+        })
 }
 
 /// True if `s` looks like a base64-encoded package-integrity body after
@@ -264,7 +312,7 @@ fn strip_hash_algo_prefix(credential: &str) -> Option<&str> {
 /// integrity string without trailing `=`, and the algorithm label is the
 /// non-secret evidence. Conservative length floor of 40 chars avoids catching
 /// short base64-ish provider tokens.
-fn looks_like_base64_integrity_body(s: &str) -> bool {
+pub(crate) fn looks_like_base64_integrity_body(s: &str) -> bool {
     if s.len() < 40 {
         return false;
     }
@@ -462,21 +510,24 @@ pub(crate) fn looks_like_bracketed_template_placeholder(value: &str) -> bool {
 }
 
 /// Return true if the credential contains three or more consecutive identical characters.
-pub(crate) fn has_three_or_more_consecutive_identical(s: &str) -> bool {
-    let bytes = s.as_bytes();
+/// Iterate the maximal runs of identical bytes in `bytes` as `(byte, run_len)`.
+/// The single owner of the run-length scan shared by every masking/repetition
+/// suppressor below — previously each hand-rolled the same `while` loop.
+fn byte_runs(bytes: &[u8]) -> impl Iterator<Item = (u8, usize)> + '_ {
     let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
+    std::iter::from_fn(move || {
+        let b = *bytes.get(i)?;
         let mut run = 1usize;
         while i + run < bytes.len() && bytes[i + run] == b {
             run += 1;
         }
-        if run >= 3 {
-            return true;
-        }
         i += run;
-    }
-    false
+        Some((b, run))
+    })
+}
+
+pub(crate) fn has_three_or_more_consecutive_identical(s: &str) -> bool {
+    byte_runs(s.as_bytes()).any(|(_, run)| run >= 3)
 }
 
 pub(crate) fn looks_like_prefixed_masked_sequence(body: &str) -> bool {
@@ -507,26 +558,13 @@ pub(crate) fn looks_like_prefixed_masked_sequence(body: &str) -> bool {
 
 pub(crate) fn has_repeated_block_mask(s: &str) -> bool {
     let bytes = s.as_bytes();
-    let mut long_runs = 0usize;
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        let mut run = 1usize;
-        while i + run < bytes.len() && bytes[i + run] == b {
-            run += 1;
-        }
-        if run >= 4 && b.is_ascii_alphanumeric() {
-            long_runs += 1;
-            if long_runs >= 3 {
-                return true;
-            }
-        }
-        i += run;
-    }
-    if long_runs >= 3 {
-        return true;
-    }
-    has_repeated_full_block(bytes)
+    // Three or more long (>=4) alphanumeric runs is the mask signal; `take(3)`
+    // preserves the original early-return the moment the third run is seen.
+    let long_runs = byte_runs(bytes)
+        .filter(|&(b, run)| run >= 4 && b.is_ascii_alphanumeric())
+        .take(3)
+        .count();
+    long_runs >= 3 || has_repeated_full_block(bytes)
 }
 
 fn has_repeated_full_block(bytes: &[u8]) -> bool {
@@ -553,22 +591,9 @@ fn has_repeated_full_block(bytes: &[u8]) -> bool {
 }
 
 pub(crate) fn has_n_or_more_consecutive_identical(s: &str, n: usize) -> bool {
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        let mut run = 1usize;
-        while i + run < bytes.len() && bytes[i + run] == b {
-            run += 1;
-        }
-        // Dashes are legitimate delimiters in structured formats (PEM headers,
-        // UUIDs, JWT separators). Don't count them as repetitive masking.
-        if run >= n && b != b'-' {
-            return true;
-        }
-        i += run;
-    }
-    false
+    // Dashes are legitimate delimiters in structured formats (PEM headers,
+    // UUIDs, JWT separators). Don't count them as repetitive masking.
+    byte_runs(s.as_bytes()).any(|(b, run)| run >= n && b != b'-')
 }
 
 /// Heuristic for dash-segmented non-secret shapes. Matches fixed-width
@@ -593,42 +618,50 @@ pub(crate) fn is_dash_segmented_alnum_decoy_with_randomness(
     {
         return false;
     }
-    let mut groups = Vec::new();
+    // Single pass over dash groups (Law 7: per-candidate suppression predicate,
+    // no `Vec`). Tracks group count and the two all-group predicates together.
+    let mut group_count = 0usize;
+    let mut all_len5_upperdigit = true;
+    let mut all_alpha = true;
     for group in value.split('-') {
         if group.is_empty() {
             return false;
         }
-        groups.push(group);
+        group_count += 1;
+        if group.len() != 5
+            || !group
+                .bytes()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        {
+            all_len5_upperdigit = false;
+        }
+        if !group.bytes().all(|b| b.is_ascii_alphabetic()) {
+            all_alpha = false;
+        }
     }
 
-    let fixed_width_upper_serial = groups.len() >= 3
-        && groups.iter().all(|group| {
-            group.len() == 5
-                && group
-                    .bytes()
-                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
-        });
-    if fixed_width_upper_serial {
+    if group_count >= 3 && all_len5_upperdigit {
         return true;
     }
 
-    groups.len() >= 3
-        && groups
-            .iter()
-            .all(|group| group.bytes().all(|b| b.is_ascii_alphabetic()))
-        && !randomness.is_random_token(value)
+    group_count >= 3 && all_alpha && !randomness.is_random_token(value)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        generic_base64_candidate_is_ambiguous, is_structured_dotted_token, looks_like_aws_iam_arn,
-        looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
-        looks_like_entropy_canonical_non_secret_shape, looks_like_generic_random_base64_blob_decoy,
-        looks_like_prefixed_hash_digest, looks_like_prefixed_masked_sequence,
-        looks_like_random_byte_base64_blob, looks_like_trimmed_aws_iam_arn, strip_hash_algo_prefix,
-    };
+    use super::HASH_ALGO_INTEGRITY_LABELS;
     use super::TEMPLATE_PLACEHOLDER_MAX_LEN;
+    use super::{
+        generic_base64_candidate_is_ambiguous, is_dash_segmented_alnum_decoy,
+        is_structured_dotted_token, is_uuid_v4_shape, looks_like_aws_iam_arn,
+        looks_like_bare_hex_digest, looks_like_base64_integrity_body,
+        looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
+        looks_like_entropy_canonical_non_secret_shape, looks_like_entropy_uuid_shape,
+        looks_like_generic_random_base64_blob_decoy, looks_like_prefixed_hash_digest,
+        looks_like_prefixed_masked_sequence, looks_like_random_byte_base64_blob,
+        looks_like_trimmed_aws_iam_arn, strip_hash_algo_prefix,
+    };
+    use crate::suppression::decision::decoded_benign_text_reason;
     // Imported separately: rustfmt groups the UPPER_SNAKE const after the
     // lower-snake fn names in a `use` list, so keep it on its own line.
     use super::HIGH_ENTROPY_BASE64_CUTOFF;
@@ -842,9 +875,20 @@ mod tests {
     #[test]
     fn strip_hash_algo_prefix_returns_none_without_label() {
         assert_eq!(strip_hash_algo_prefix("randomtokenbody"), None);
-        // `sha:` and `sha384-` are NOT in the label set.
+        // `sha:` is NOT a label (bare algo family, no `256`/`512`/`384` digits).
         assert_eq!(strip_hash_algo_prefix("sha:foo"), None);
-        assert_eq!(strip_hash_algo_prefix("sha384-foo"), None);
+        // `sha224-` is deliberately absent from the SRI owner set too.
+        assert_eq!(strip_hash_algo_prefix("sha224-foo"), None);
+    }
+
+    #[test]
+    fn strip_hash_algo_prefix_strips_sha384_dash_both_cases() {
+        // THE FIX: `sha384-` is the recommended SRI algorithm and lives in the
+        // ONE owner `HASH_ALGO_INTEGRITY_LABELS`; the report-time strip now binds
+        // that owner instead of a diverging {sha512-,sha256-} subset that dropped
+        // it. Previously this returned None and leaked sha384 SRI at report time.
+        assert_eq!(strip_hash_algo_prefix("sha384-Zm9vYmFy"), Some("Zm9vYmFy"));
+        assert_eq!(strip_hash_algo_prefix("SHA384-Zm9vYmFy"), Some("Zm9vYmFy"));
     }
 
     #[test]
@@ -937,15 +981,34 @@ mod tests {
     #[test]
     fn prefixed_hash_digest_short_body_below_base64_floor_false() {
         // Bodies shorter than the 40-char base64-integrity floor that are also
-        // not a {40,64,128}-length hex digest are not suppressed by this shape.
+        // not a {32,40,64,128}-length hex digest are not suppressed by this shape.
         assert!(!looks_like_prefixed_hash_digest(&format!(
             "sha256:{}",
             "a".repeat(30)
         )));
-        // md5's 32-hex body is below the floor and not a hex digest length here.
-        assert!(!looks_like_prefixed_hash_digest(&format!(
+    }
+
+    #[test]
+    fn prefixed_hash_digest_md5_32hex_both_cases_true() {
+        // `md5:`/`sha1:` are in the label set; the 32-hex md5 body must suppress
+        // (previously omitted from the body-length set, leaking `md5:<32hex>`).
+        assert!(looks_like_prefixed_hash_digest(&format!(
             "md5:{}",
             "a".repeat(32)
+        )));
+        assert!(looks_like_prefixed_hash_digest(&format!(
+            "MD5:{}",
+            "A".repeat(32)
+        )));
+        // Embedded form the value extractor surfaces (`file@md5:<hex>`).
+        assert!(looks_like_prefixed_hash_digest(&format!(
+            "blob@md5:{}",
+            "d".repeat(32)
+        )));
+        // A 31-hex body is not a digest length and below the base64 floor.
+        assert!(!looks_like_prefixed_hash_digest(&format!(
+            "md5:{}",
+            "a".repeat(31)
         )));
     }
 
@@ -979,7 +1042,9 @@ mod tests {
     #[test]
     fn bracketed_template_placeholder_matches_brace_angle_and_dollar_forms() {
         assert!(looks_like_bracketed_template_placeholder("{placeholder}"));
-        assert!(looks_like_bracketed_template_placeholder("<your-token-here>"));
+        assert!(looks_like_bracketed_template_placeholder(
+            "<your-token-here>"
+        ));
         assert!(looks_like_bracketed_template_placeholder("${SECRET_TOKEN}"));
     }
 
@@ -1045,5 +1110,157 @@ mod tests {
             value,
             HIGH_ENTROPY_BASE64_CUTOFF
         ));
+    }
+
+    /// Single-pass rewrite of the dash-group scan must preserve both decoy
+    /// arms and the empty-group rejection.
+    #[test]
+    fn dash_segmented_alnum_decoy_arms_preserved() {
+        // Fixed-width upper/digit serial (>=3 groups, each exactly 5).
+        assert!(is_dash_segmented_alnum_decoy("ABCDE-12345-FG7HI"));
+        // Multi-part all-alpha, non-random identifier.
+        assert!(is_dash_segmented_alnum_decoy("alpha-beta-gamma"));
+        // Empty group (`foo--bar`) rejects regardless of the arms.
+        assert!(!is_dash_segmented_alnum_decoy("ABCDE--12345"));
+        // No dash → not a dash-segmented shape.
+        assert!(!is_dash_segmented_alnum_decoy("ABCDE12345FG7HI"));
+    }
+
+    // ---- sha384 SRI: ONE label owner, suppressed via BOTH entry points ----
+
+    #[test]
+    fn sha384_sri_suppressed_via_both_report_time_and_entropy_entry_points() {
+        // A `sha384-<base64 integrity body>` value. Before the strip/owner
+        // unification, the report-time `looks_like_prefixed_hash_digest` entry
+        // point dropped `sha384-` (its dash-label subset diverged from the SRI
+        // owner) and LEAKED this back out as a false positive, while the
+        // entropy-generation entry point suppressed it — a same-set/different-
+        // value split. Both must now agree.
+        let lower = format!("sha384-{NPM_SRI_BODY}");
+        let upper = format!("SHA384-{NPM_SRI_BODY}");
+
+        // Entry point 1: report-time bare-value suppression.
+        assert!(
+            looks_like_prefixed_hash_digest(&lower),
+            "sha384 SRI must suppress at report time (the leak this fix closes)"
+        );
+        assert!(
+            looks_like_prefixed_hash_digest(&upper),
+            "case-insensitive SHA384 label must also suppress at report time"
+        );
+
+        // Entry point 2: entropy-generation canonical-non-secret gate.
+        assert!(
+            looks_like_entropy_canonical_non_secret_shape(&lower),
+            "sha384 SRI must stay a canonical non-secret at entropy generation"
+        );
+
+        // The label owner really does carry sha384- (guards against a future
+        // edit silently dropping it from the ONE owner again).
+        assert!(HASH_ALGO_INTEGRITY_LABELS.contains(&"sha384-"));
+    }
+
+    #[test]
+    fn base64_integrity_body_floor_is_exactly_forty_for_both_gates() {
+        // The 40-char floor both integrity gates bind through the single owner
+        // `looks_like_base64_integrity_body`. Use pad-free slices of a valid
+        // base64 body so ONLY the length floor — not the base64 %4 shape rule —
+        // decides: 36 chars is a valid base64 shape (36 % 4 == 0) yet below the
+        // floor, 40 chars clears it.
+        let under_floor = &NPM_SRI_BODY[..36];
+        let at_floor = &NPM_SRI_BODY[..40];
+        assert_eq!(
+            under_floor.len() % 4,
+            0,
+            "isolate the floor, not the %4 rule"
+        );
+        assert!(
+            !looks_like_base64_integrity_body(under_floor),
+            "a valid-shaped 36-char base64 body is below the 40-char integrity floor"
+        );
+        assert!(
+            looks_like_base64_integrity_body(at_floor),
+            "exactly 40 chars clears the integrity floor"
+        );
+    }
+
+    // ---- decoded hash digest: the decoded path binds the SAME length owner ----
+
+    #[test]
+    fn decoded_bare_hex_digest_owner_covers_md5_and_sha1_lengths() {
+        // `looks_like_bare_hex_digest` is the ONE length owner the base64-decoded
+        // suppression path (`decision::decoded_benign_text_reason`) delegates to.
+        // The decoded path previously used a divergent {56,64,72,128} set that
+        // DROPPED md5 (32) and sha1 (40), leaking base64-wrapped digests. The
+        // owner must cover the full set both paths bind.
+        for len in [32usize, 40, 48, 56, 64, 72, 128] {
+            assert!(
+                looks_like_bare_hex_digest(&"a".repeat(len)),
+                "{len}-hex is a bare digest length in the unified owner set"
+            );
+        }
+        // Boundary twins just outside the set are NOT digests.
+        for len in [31usize, 33, 41, 47, 127] {
+            assert!(
+                !looks_like_bare_hex_digest(&"a".repeat(len)),
+                "{len}-hex is outside the unified digest length set"
+            );
+        }
+    }
+
+    #[test]
+    fn decoded_md5_and_sha1_are_suppressed_end_to_end() {
+        // base64("d41d8cd98f00b204e9800998ecf8427e") — the empty-string md5, a
+        // 32-hex digest. The decoded path must strip the base64 wrapper and
+        // suppress it as a bare hash digest (md5 32-hex was the leaking length).
+        assert_eq!(
+            decoded_benign_text_reason("ZDQxZDhjZDk4ZjAwYjIwNGU5ODAwOTk4ZWNmODQyN2U="),
+            Some("decoded_bare_hash_digest"),
+            "base64-wrapped md5 (32-hex) must suppress via the decoded digest arm"
+        );
+        // base64("da39a3ee5e6b4b0d3255bfef95601890afd80709") — empty-string sha1,
+        // a 40-hex digest (the other length the old decoded set dropped).
+        assert_eq!(
+            decoded_benign_text_reason("ZGEzOWEzZWU1ZTZiNGIwZDMyNTViZmVmOTU2MDE4OTBhZmQ4MDcwOQ=="),
+            Some("decoded_bare_hash_digest"),
+            "base64-wrapped sha1 (40-hex) must suppress via the decoded digest arm"
+        );
+        // Negative twin: base64 of a 39-hex string. 39 is OUTSIDE the unified
+        // digest length set, so the digest arm provably cannot fire — a real hex
+        // token of a non-digest length must not be swallowed by this arm.
+        assert_ne!(
+            decoded_benign_text_reason("M2Y4YTFjOWUyYjdkNDA1MTZhOGMzZTlmMWIyZDRhNmM4ZTBmMWEy"),
+            Some("decoded_bare_hash_digest"),
+            "a 39-hex decoded value is not a digest length and must not suppress here"
+        );
+    }
+
+    // ---- UUID shape: ONE case-uniform owner shared by both callers ----
+
+    #[test]
+    fn uuid_shape_owner_agrees_on_case_across_both_callers() {
+        // `looks_like_entropy_uuid_shape` delegates to `is_uuid_v4_shape`, so the
+        // two must return byte-identical verdicts for EVERY input — a mixed-case
+        // UUID must never be a non-secret in one path and a live candidate in the
+        // other (the divergence this unification closed).
+        let uniform_lower = "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+        let uniform_upper = "A1B2C3D4-5E6F-4A7B-8C9D-0E1F2A3B4C5D";
+        let evil_mixed = "a1b2c3d4-5e6f-4a7b-8C9d-0e1f2a3b4c5d";
+
+        for value in [uniform_lower, uniform_upper, evil_mixed] {
+            assert_eq!(
+                is_uuid_v4_shape(value),
+                looks_like_entropy_uuid_shape(value),
+                "both UUID callers must agree on {value:?} (one owner)"
+            );
+        }
+
+        // Uniform-case UUIDs ARE the canonical non-secret shape.
+        assert!(is_uuid_v4_shape(uniform_lower));
+        assert!(is_uuid_v4_shape(uniform_upper));
+        // Evil mixed-case UUID is rejected by BOTH (real digests/UUIDs are never
+        // emitted MiXeD-case), so it is not silently treated as a non-secret.
+        assert!(!is_uuid_v4_shape(evil_mixed));
+        assert!(!looks_like_entropy_uuid_shape(evil_mixed));
     }
 }

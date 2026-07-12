@@ -191,3 +191,22 @@ async fn daemon_client_reads_kernel_peer_uid() {
     assert_eq!(API.connected_peer_uid(&client_stream).unwrap(), current_uid);
     assert_eq!(API.connected_peer_uid(&server_stream).unwrap(), current_uid);
 }
+
+#[tokio::test]
+async fn daemon_server_accepts_same_uid_peer() {
+    let tmp = private_tempdir();
+    let socket = tmp.path().join("server.sock");
+    let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+    chmod(&socket, 0o600);
+
+    let client_connect = tokio::net::UnixStream::connect(&socket);
+    let accept = listener.accept();
+    let (client_stream, accepted) = tokio::join!(client_connect, accept);
+    let _client_stream = client_stream.unwrap();
+    let (server_stream, _) = accepted.unwrap();
+
+    // The daemon runs `verify_accepted_peer` on every accepted connection before
+    // reading a request; a same-uid peer (the only supported client) is accepted.
+    API.verify_accepted_peer(&server_stream)
+        .expect("same-uid peer must be accepted by the server-side peer-cred gate");
+}

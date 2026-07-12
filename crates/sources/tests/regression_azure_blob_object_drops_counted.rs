@@ -3,8 +3,8 @@
 mod support;
 
 use keyhog_core::Source;
+use keyhog_sources::skip_counts;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{skip_counts, AzureBlobSource};
 use std::sync::{Mutex, MutexGuard};
 use support::split_chunk_results;
 
@@ -12,13 +12,13 @@ static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 
 fn counter_guard() -> MutexGuard<'static, ()> {
     // These httpmock tests point the cloud endpoint at 127.0.0.1, which the
-    // default cloud SSRF endpoint screen now refuses. Opt into the loud,
-    // default-off allowance for the lifetime of this (separate) test binary —
-    // set while holding COUNTER_LOCK so it can never race a parallel test.
+    // default cloud SSRF endpoint screen refuses; the sources are built via
+    // `TestApi.azure_blob_source`, which opts into the loopback allowance through
+    // Tier-A config (`HttpClientConfig.allow_private_endpoint`), NOT a process-
+    // global env var. Hold COUNTER_LOCK so the global skip counters never race.
     let guard = COUNTER_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", "1");
     guard
 }
 
@@ -70,7 +70,8 @@ fn plain_text_blob_is_scanned_and_sas_query_is_preserved() {
             .body("aws_key=AKIAQYLPMN5HFIQR7XYA\n"); // keyhog:ignore detector=aws-access-key
     });
 
-    let ok: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let ok: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
@@ -124,7 +125,8 @@ fn octet_stream_text_blob_is_scanned() {
             .body("aws_key=AKIAQYLPMN5HFIQR7XYA\n"); // keyhog:ignore detector=aws-access-key
     });
 
-    let ok: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let ok: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
@@ -177,7 +179,8 @@ fn binary_extension_blob_is_counted_binary_without_get() {
         })
         .collect();
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     let (ok, errors) = split_chunk_results(&rows);
@@ -233,7 +236,8 @@ fn binary_listing_content_type_blob_emits_source_error_without_get() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     let (ok, errors) = split_chunk_results(&rows);
@@ -291,7 +295,8 @@ fn oversized_listed_blob_emits_source_error_without_get() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     let (ok, errors) = split_chunk_results(&rows);
@@ -344,7 +349,8 @@ fn non_success_get_is_counted_unreadable() {
         then.status(403).body("AuthorizationFailure");
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     assert_eq!(
@@ -393,7 +399,8 @@ fn non_utf8_text_labelled_blob_is_counted_unreadable() {
             .body(vec![0xFFu8, 0xFE, 0x00, 0x80]);
     });
 
-    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = TestApi
+        .azure_blob_source(container_url(&server))
         .chunks()
         .collect();
     assert_eq!(

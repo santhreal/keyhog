@@ -23,14 +23,17 @@ fn known_prefixes_is_nonempty() {
 #[test]
 fn known_prefixes_has_no_duplicates() {
     let mut seen = std::collections::BTreeSet::new();
-    for prefix in KNOWN_PREFIXES {
-        assert!(seen.insert(*prefix), "duplicate known prefix: {prefix:?}");
+    for prefix in &*KNOWN_PREFIXES {
+        assert!(
+            seen.insert(prefix.as_str()),
+            "duplicate known prefix: {prefix:?}"
+        );
     }
 }
 
 #[test]
 fn no_known_prefix_is_empty() {
-    for prefix in KNOWN_PREFIXES {
+    for prefix in &*KNOWN_PREFIXES {
         assert!(!prefix.is_empty(), "empty prefix in KNOWN_PREFIXES");
     }
 }
@@ -84,7 +87,7 @@ fn body_of_a_credential_equal_to_a_prefix_is_empty_not_none() {
 fn every_known_prefix_yields_a_body_for_a_token_built_from_it() {
     // For each prefix, prefix + "Z9x" must strip back to exactly the longest prefix
     // that matches; the body is never longer than the appended suffix.
-    for prefix in KNOWN_PREFIXES {
+    for prefix in &*KNOWN_PREFIXES {
         let token = format!("{prefix}Z9x");
         let body = known_prefix_body(&token)
             .unwrap_or_else(|| panic!("no body for token built from prefix {prefix:?}"));

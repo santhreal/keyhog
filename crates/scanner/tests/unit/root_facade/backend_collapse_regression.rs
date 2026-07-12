@@ -261,15 +261,19 @@ fn selection_matrix_exact_cells() {
     with_policy(GpuRuntimePolicy::Auto, None, || {
         let gpu = caps_gpu(true, true);
 
-        // Required 8 MiB and retired 16 MiB cells stay on SIMD until
-        // calibration proves GPU faster for the exact workload.
-        assert!(!gpu_could_engage(&gpu, REQUIRED_EIGHT_MIB, 5_000));
+        // Required 8 MiB now engages GPU because the optimized entropy
+        // prefilter + 384 KiB windowing lets the RTX 5090 beat CPU/SIMD at
+        // 8 MiB (the 10x crossover target). GPU_MIN_BYTES_HIGH_TIER was
+        // lowered to 8 MiB to match the measured crossover.
+        assert!(gpu_could_engage(&gpu, REQUIRED_EIGHT_MIB, 5_000));
         assert_eq!(
             select_backend(&gpu, REQUIRED_EIGHT_MIB, 5_000),
-            ScanBackend::SimdCpu
+            ScanBackend::Gpu
         );
-        assert!(!gpu_could_engage(&gpu, SIXTEEN_MIB, 1));
-        assert_eq!(select_backend(&gpu, SIXTEEN_MIB, 1), ScanBackend::SimdCpu);
+        // 16 MiB is above the solo cap (8 MiB), so GPU engages via the solo
+        // path regardless of pattern count.
+        assert!(gpu_could_engage(&gpu, SIXTEEN_MIB, 1));
+        assert_eq!(select_backend(&gpu, SIXTEEN_MIB, 1), ScanBackend::Gpu);
 
         // High-tier measured-safe min with enough patterns: GPU engages.
         assert!(gpu_could_engage(
@@ -373,6 +377,11 @@ fn workload_selector_is_the_single_branch_owner() {
             "public file/workload verdict wrapper",
         ),
         (
+            "pub(crate) fn select_backend_for_file(",
+            "select_backend_for_workload(",
+            "compiled-scanner file wrapper",
+        ),
+        (
             "pub(crate) fn select_backend_for_batch(",
             "select_backend_for_batch_verdict(",
             "batch workload wrapper",
@@ -404,20 +413,35 @@ fn workload_selector_is_the_single_branch_owner() {
     let compiled_path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/compiled_api.rs");
     let compiled_code =
         strip_line_comments(&std::fs::read_to_string(compiled_path).expect("read compiled_api.rs"));
+    let compiled_wrapper = function_body(
+        &compiled_code,
+        "pub(crate) fn select_backend_for_file(&self, file_size: u64)",
+    );
     assert!(
-        !compiled_code.contains("select_backend_for_file(")
-            && !compiled_code.contains("crate::hw_probe::select_backend("),
-        "CompiledScanner must not consume uncalibrated hardware heuristics; callers select a backend explicitly and the CLI owns persisted autoroute"
+        compiled_wrapper.contains("crate::hw_probe::select_backend_for_file("),
+        "CompiledScanner file routing must use the file-shaped hw_probe wrapper"
+    );
+    assert!(
+        compiled_wrapper.contains("&& !self.gpu_stack_usable()")
+            && compiled_wrapper.contains("crate::gpu::gpu_required_by_policy()")
+            && compiled_wrapper.contains("self.warn_gpu_auto_degrade(")
+            && compiled_wrapper.contains("return self.live_cpu_backend();"),
+        "automatic GPU routing must check this compiled scanner's live GPU stack: required GPU fails closed, ordinary auto routes to the live CPU tier loudly"
+    );
+    assert!(
+        !compiled_wrapper.contains("crate::hw_probe::select_backend("),
+        "CompiledScanner file routing must not bypass the file-shaped selector"
     );
 }
 
 // ---------------------------------------------------------------------------
-// 3. The MegaScan compatibility API remains the SAME live engine as Gpu, but
-//    no retired spelling constructs it through operator input.
+// 3. The MegaScan collapse: `mega-scan` parses to a real arm but is the SAME
+//    live engine as `gpu` (the RulePipeline NFA engine was retired).
 // ---------------------------------------------------------------------------
 
 #[test]
-fn megascan_is_programmatic_only_and_collapses_onto_gpu_region_presence() {
+fn megascan_aliases_parse_but_collapse_onto_the_gpu_region_presence_route() {
+    // Every advertised mega-scan alias still resolves (public CLI surface).
     for alias in [
         "mega-scan",
         "megascan",
@@ -427,8 +451,8 @@ fn megascan_is_programmatic_only_and_collapses_onto_gpu_region_presence() {
     ] {
         assert_eq!(
             parse_backend_str(alias),
-            None,
-            "retired alias {alias} must not construct MegaScan"
+            Some(ScanBackend::MegaScan),
+            "alias {alias} must still parse to MegaScan"
         );
     }
     // The label is stable (coherence with --help / banner / JSON).
@@ -548,26 +572,13 @@ fn parse_backend_str_is_the_single_string_source() {
     // Case-insensitive + whitespace-trimmed.
     assert_eq!(parse_backend_str("  GPU  "), Some(ScanBackend::Gpu));
     assert_eq!(parse_backend_str("SimD"), Some(ScanBackend::SimdCpu));
-    // Stable evidence labels.
+    // gpu aliases.
     assert_eq!(
         parse_backend_str("gpu-region-presence"),
         Some(ScanBackend::Gpu)
     );
-    assert_eq!(parse_backend_str("simd-regex"), Some(ScanBackend::SimdCpu));
-    assert_eq!(
-        parse_backend_str("cpu-fallback"),
-        Some(ScanBackend::CpuFallback)
-    );
-    // Retired implementation names do not silently map.
-    for retired in [
-        "gpu-zero-copy",
-        "literal-set",
-        "mega-scan",
-        "hyperscan",
-        "scalar",
-    ] {
-        assert_eq!(parse_backend_str(retired), None);
-    }
+    assert_eq!(parse_backend_str("gpu-zero-copy"), Some(ScanBackend::Gpu));
+    assert_eq!(parse_backend_str("literal-set"), Some(ScanBackend::Gpu));
     // Unknown -> None (caller falls through to auto-routing).
     assert_eq!(parse_backend_str("quantum"), None);
     assert_eq!(parse_backend_str(""), None);

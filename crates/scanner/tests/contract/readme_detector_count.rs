@@ -5,19 +5,11 @@
 //! internal invariant with no hardcoded number, so adding a detector never
 //! requires editing a literal here.
 
-use std::path::PathBuf;
-
-fn detectors_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
+use crate::support::paths::detector_dir;
 
 #[test]
 fn readme_detector_count_matches_disk() {
-    let dir = detectors_dir();
+    let dir = detector_dir();
     let disk_count = std::fs::read_dir(&dir)
         .expect("detectors/")
         .map(|entry| {

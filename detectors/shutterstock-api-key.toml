@@ -8,7 +8,9 @@ id = "shutterstock-api-key"
 name = "Shutterstock API Key"
 service = "shutterstock"
 severity = "high"
-keywords = ["SHUTTERSTOCK", "shutterstock", "consumer_key", "consumer_secret"]
+# "consumer_key", "consumer_secret" removed: over-broad generic prefilter(s) the regex does NOT need — every
+# pattern requires the service name as a leading anchor (kept). Recall-neutral.
+keywords = ["SHUTTERSTOCK", "shutterstock"]
 
 [[detector.patterns]]
 regex = '(?:SHUTTERSTOCK|shutterstock)[._-]?(?:CONSUMER|consumer)[._-]?(?:KEY|key)[=:\s""]+([a-zA-Z0-9_-]{32,})'

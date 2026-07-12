@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "travistoken=Xs8gOEXAMPLEEXAMPLEXfLDl"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# .travis.yml deploy secret: travis_token=Xs8gO3qN7uieSixzlXfLDl"
+credential = "Xs8gO3qN7uieSixzlXfLDl"
+reason = "Commented-out .travis.yml secret; the travis + token keyword pair and 22-char value are intact inside the comment."

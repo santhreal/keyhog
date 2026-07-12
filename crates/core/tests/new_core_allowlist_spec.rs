@@ -346,6 +346,8 @@ fn allowlist_future_expiry_entry_is_kept() {
 
 fn detector(id: &str, regex: &str, keywords: Vec<String>) -> DetectorSpec {
     DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         id: id.into(),
         name: id.into(),
         service: id.into(),

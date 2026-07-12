@@ -20,5 +20,18 @@ fn scan_format_sarif_has_schema() {
         .expect("spawn");
     let sarif: serde_json::Value =
         serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("sarif");
-    assert!(sarif.get("version").is_some(), "sarif must include version");
+    // Law 6: pin the actual contract values, not just key presence. SARIF
+    // consumers (GitHub code scanning, SIEMs) key off exactly these.
+    assert_eq!(
+        sarif["version"].as_str(),
+        Some("2.1.0"),
+        "sarif version must be exactly 2.1.0; got {sarif}"
+    );
+    let schema = sarif["$schema"]
+        .as_str()
+        .expect("sarif must include a $schema URL");
+    assert!(
+        schema.contains("sarif") && schema.contains("2.1.0"),
+        "$schema must reference the SARIF 2.1.0 schema; got {schema}"
+    );
 }

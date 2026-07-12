@@ -1,20 +1,12 @@
 //! Contract: stripe-secret-key env-var positive fires under its detector id.
 
+use crate::support::paths::detector_dir;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
 
 const DETECTOR_ID: &str = "stripe-secret-key";
 const TEXT: &str = "STRIPE_SECRET_KEY=sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD";
 const CREDENTIAL: &str = concat!("sk_li", "ve_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD");
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 #[test]
 fn stripe_secret_key_first_positive_fires() {

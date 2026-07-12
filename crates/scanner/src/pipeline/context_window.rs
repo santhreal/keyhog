@@ -19,6 +19,9 @@ pub(crate) fn local_context_window(text: &str, line: usize, radius: usize) -> &s
     let mut start = 0usize;
     for _ in 0..lines_before {
         match memchr::memchr(b'\n', &bytes[start..]) {
+            // SAFETY: start is 0 initially, then set to `prev_start + pos + 1`
+            // where pos is a memchr offset within &bytes[prev_start..].  After
+            // the None early-return below, start <= bytes.len() always holds.
             Some(pos) => start = start + pos + 1,
             // Fewer lines than the window asks for: clamp to end of text.
             None => return "",
@@ -31,10 +34,12 @@ pub(crate) fn local_context_window(text: &str, line: usize, radius: usize) -> &s
     // to the per-match ML feature/keyword scan made the scan quadratic (a
     // 164 KiB single-line file with 8 K matches took tens of seconds and
     // larger ones timed out). The features only need nearby context, so a few
-    // KiB is ample. Paired with the same cap in
-    // `context::inference::surrounding_line_window`.
-    const MAX_WINDOW_BYTES: usize = 8 * 1024;
-    let cap = (start + MAX_WINDOW_BYTES).min(bytes.len());
+    // KiB is ample. Sized INDEPENDENTLY from the tighter FP-heuristic window
+    // in `context::inference::surrounding_line_window` (2 KiB): that one only
+    // needs a single header line, this one feeds the ML feature/keyword scan
+    // and wants more neighbouring context. Same intent, different justified cap.
+    const ML_CONTEXT_WINDOW_BYTES: usize = 8 * 1024;
+    let cap = (start + ML_CONTEXT_WINDOW_BYTES).min(bytes.len());
     // Byte offset just past the last window line. Skip `(2*radius + 1)` line
     // terminators from `start`; the slice excludes the trailing newline so a
     // single-line window (radius 0) returns the bare line with no `\n`.
@@ -45,6 +50,9 @@ pub(crate) fn local_context_window(text: &str, line: usize, radius: usize) -> &s
             break;
         }
         match memchr::memchr(b'\n', &bytes[end..cap]) {
+            // SAFETY: end starts at `start` and grows only to `cap` via memchr
+            // results; cap = (start + ML_CONTEXT_WINDOW_BYTES).min(bytes.len())
+            // so end <= cap <= bytes.len() at all times.
             Some(pos) => {
                 // The terminator of the final window line is excluded; for
                 // earlier lines it is kept so neighbours stay `\n`-joined.
@@ -69,6 +77,10 @@ pub(crate) fn local_context_window(text: &str, line: usize, radius: usize) -> &s
     // at a `\n` or `bytes.len()` on the normal path; only the byte-cap path can
     // land mid-codepoint, so snap `end` down through the engine boundary owner.
     let end = crate::engine::floor_char_boundary(text, end);
+    // SAFETY: `start` is at a line boundary (offset 0 or just past a '\n')
+    // and is therefore UTF-8-aligned. `end` was just snapped to a char boundary
+    // by floor_char_boundary, which guarantees end <= text.len() and
+    // is_char_boundary(end).
     &text[start..end]
 }
 
@@ -206,7 +218,17 @@ pub(crate) fn find_companion(
             if e.saturating_sub(s) <= MAX_COMPANION_MATCH_BYTES {
                 if let Some(line) = preprocessed.line_for_offset(window_start + s) {
                     if line_range.contains(&line) {
-                        return Some(haystack[s..e].to_string());
+                        // LAW10: use .get(s..e) instead of haystack[s..e]:
+                        // the regex crate guarantees s..e are valid offsets
+                        // within haystack, but a defensive get() prevents
+                        // any panic from a future backend change or
+                        // attacker-induced offset skew.  A None result
+                        // means this capture is skipped (companion not
+                        // found) — recall-safe: we do not suppress the
+                        // primary match, we simply miss the companion value.
+                        if let Some(captured) = haystack.get(s..e) {
+                            return Some(captured.to_string());
+                        }
                     }
                 }
             }

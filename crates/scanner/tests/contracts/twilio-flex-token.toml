@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "twilioDflex :  \" ': : =  ':    \"\"   ==\"         :\" \"   \": ' :   'eyJ8SEXAMPLEEXAMPLE1tb5Y"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = '# clearance jwt, rotate: flex="eyJ8Sdnjlthi-XczKoljLbAYLECQBxxg7HTvLp0-qoCBrfR.eyJvOcBY7raPA9IwOEfZnL42ebCZEeIwhQQ5VuQXVx0VuoBR2vkocOacxfPTOjit3clhsu92beRjIWFKPKTvtD.5SGklxl0z3USPUl2DX3P7kDIIIW4Fbmpng61tb5Y"'
+credential = "eyJ8Sdnjlthi-XczKoljLbAYLECQBxxg7HTvLp0-qoCBrfR.eyJvOcBY7raPA9IwOEfZnL42ebCZEeIwhQQ5VuQXVx0VuoBR2vkocOacxfPTOjit3clhsu92beRjIWFKPKTvtD.5SGklxl0z3USPUl2DX3P7kDIIIW4Fbmpng61tb5Y"
+reason = "Commented-out JWT with the flex keyword and a quoted value; the twilio flex token surfaces from the comment."

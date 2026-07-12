@@ -33,6 +33,10 @@ SCANNERS = {
     "titus": TitusScanner,
 }
 
+# Canonical ordered scanner names — the single source the CLI defaults and the
+# leaderboard/gate scanner lists derive from (never re-typed inline).
+SCANNER_NAMES = tuple(SCANNERS)
+
 __all__ = [
     "BetterleaksScanner",
     "KeyhogScanner",
@@ -40,6 +44,7 @@ __all__ = [
     "NoseyparkerScanner",
     "RunStats",
     "SCANNERS",
+    "SCANNER_NAMES",
     "Scanner",
     "TitusScanner",
     "TrufflehogScanner",

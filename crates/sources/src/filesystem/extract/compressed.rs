@@ -242,7 +242,10 @@ pub(super) fn emit_tar_entries_with_state(
             continue;
         }
 
-        let entry_size = entry.header().size().unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
+        // Header size is a cap-check input and read pre-alloc hint only; a
+        // corrupt/absent header field => 0. The entry body is still read to
+        // `read_cap` below from the archive framing, so recall is unaffected.
+        let entry_size = entry.header().size().unwrap_or(0);
 
         if let Err(reason) = validate_scan_archive_entry_name(&entry_name) {
             tracing::warn!(

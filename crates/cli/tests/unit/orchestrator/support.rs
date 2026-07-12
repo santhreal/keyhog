@@ -39,6 +39,8 @@ pub fn make_chunk(text: &str, path: &str) -> Chunk {
 
 pub fn make_detector() -> DetectorSpec {
     DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "static-test".into(),
         name: "Static Test".into(),
@@ -52,6 +54,9 @@ pub fn make_detector() -> DetectorSpec {
         verify: None,
         keywords: vec!["STATIC_SECRET".into()],
         min_confidence: None,
+        // Robust to future DetectorSpec field additions (this exhaustive literal
+        // was already stale — missing allowlist_paths/values, entropy_high, etc.);
+        // fall through to Default for any field not set explicitly above.
         ..Default::default()
     }
 }

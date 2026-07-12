@@ -11,7 +11,7 @@
 //!    on my fixture?" without rebuilding with debug instrumentation.
 //!
 //! Single-process CLI scans use the process-global `OnceLock<Telemetry>` as
-//! the lightest container. Long-lived daemon workers use `ScanTelemetry`
+//! the lightest container. Long-lived daemon workers use [`ScanTelemetry`]
 //! scopes so concurrent client scans do not share counts/events.
 
 use serde::{Deserialize, Serialize};

@@ -1,4 +1,4 @@
-# KeyHog GitHub Action — drop-in secret scanning
+# KeyHog GitHub Action: drop-in secret scanning
 
 One step in your workflow. Findings fail the job, the report uploads to
 GitHub code-scanning, and a copy of the report attaches as a workflow

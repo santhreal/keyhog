@@ -53,12 +53,63 @@ pub(crate) use response::{
     body_indicates_error, evaluate_success, execute_and_read_response, extract_metadata,
 };
 
-const DEFAULT_SERVICE_CONCURRENCY: usize = 5;
+/// Single owner for the retryable-HTTP-status contract (rate-limit 429 plus the
+/// 500..=504 server-error band). Shared by single-step verify, multi-step
+/// verify, and the AWS STS classifier so the retry/cache decision can never
+/// diverge between paths.
+pub(crate) fn retryable_http_status(status: u16) -> bool {
+    status == 429 || (500..=504).contains(&status)
+}
+
+/// Whether a detector supplied a *meaningful* success contract (any matched
+/// condition, not the empty default). When true the contract is authoritative
+/// and the generic `body_indicates_error` backstop must not second-guess it.
+pub(crate) fn success_spec_is_explicit(spec: &keyhog_core::SuccessSpec) -> bool {
+    spec.status.is_some()
+        || spec.status_not.is_some()
+        || spec.body_contains.is_some()
+        || spec.body_not_contains.is_some()
+        || spec.json_path.is_some()
+}
+
+/// Final live verdict for the single-step path. An explicit success contract is
+/// authoritative: the generic `body_indicates_error` backstop runs ONLY when the
+/// detector supplied no meaningful success spec, so a matched contract is never
+/// flipped Live->Dead by a 200 body that merely embeds an error-named field.
+pub(crate) fn resolve_live_verdict(is_live: bool, success_is_explicit: bool, body: &str) -> bool {
+    is_live && (success_is_explicit || !body_indicates_error(body))
+}
+
+/// Loudly record that the inflight-dedup cap was hit and this (detector,
+/// credential) is being verified WITHOUT the single-in-flight guard. Surfacing
+/// (Law 10): a counter for every bypass plus a process-once warn — the silent
+/// `break None` degrade otherwise hid duplicate live-API probes / rate-limit
+/// bans with no operator-visible cause.
+static INFLIGHT_CAP_BYPASSES: AtomicUsize = AtomicUsize::new(0);
+static INFLIGHT_CAP_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+pub(crate) fn note_inflight_cap_bypass(max_inflight_keys: usize) -> usize {
+    let count = INFLIGHT_CAP_BYPASSES.fetch_add(1, Ordering::Relaxed) + 1;
+    if INFLIGHT_CAP_WARNED.set(()).is_ok() {
+        tracing::warn!(
+            max_inflight_keys,
+            "verifier inflight-dedup cap reached: verifying (detector, credential) pairs \
+             WITHOUT the single-in-flight guard, so concurrent duplicate probes can hit the \
+             live API (rate-limit bans). Raise max_inflight_keys to restore dedup."
+        );
+    }
+    count
+}
 
 #[derive(Clone)]
 struct VerifyTaskShared {
     global_semaphore: Arc<Semaphore>,
     service_semaphores: Arc<HashMap<Arc<str>, Arc<Semaphore>>>,
+    /// Fallback per-service concurrency for a group whose service is absent from
+    /// `service_semaphores`. Threaded from `VerifyConfig.max_concurrent_per_service`
+    /// so raising the configured cap also raises this fallback (single owner —
+    /// no second hardcoded default).
+    max_concurrent_per_service: usize,
     client: Client,
     detectors: Arc<HashMap<Arc<str>, keyhog_core::DetectorSpec>>,
     timeout: Duration,
@@ -133,10 +184,13 @@ async fn verify_group_task_safe(shared: VerifyTaskShared, group: DedupedMatch) -
         Err(e) => {
             // Law 10: verifier task panic is converted into an operator-visible verification error finding
             // Law 10: scanner-thread panic => LOUD tracing::error + SCANNER_PANICKED flag (results marked incomplete + surfaced); allowed loud+recorded degrade
-            let reason = e
-                .downcast_ref::<&str>()
-                .map(|s| format!("verification task panicked: {s}"))
-                .unwrap_or_else(|| "verification task panicked".to_string()); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+            let reason = if let Some(s) = e.downcast_ref::<&str>() {
+                format!("verification task panicked: {s}")
+            } else if let Some(s) = e.downcast_ref::<String>() {
+                format!("verification task panicked: {s}")
+            } else {
+                "verification task panicked".to_string() // LAW10: non-str/String payload => generic loud reason; recall-safe
+            };
             tracing::error!(reason);
             into_finding(
                 group_for_error,
@@ -223,7 +277,7 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
         .service_semaphores
         .get(&*group.service)
         .cloned()
-        .unwrap_or_else(|| Arc::new(Semaphore::new(DEFAULT_SERVICE_CONCURRENCY))); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
+        .unwrap_or_else(|| Arc::new(Semaphore::new(shared.max_concurrent_per_service))); // LAW10: absent from prebuilt map => configured max_concurrent_per_service (Tier-A knob), one owner
     let client = shared.client;
     let detector = shared.detectors.get(&*group.detector_id).cloned();
     let timeout = shared.timeout;
@@ -253,7 +307,9 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
     }
 
     let _inflight_guard = loop {
-        let notify_to_await: Option<Arc<Notify>> = {
+        // The Vacant arm always `break`s the loop, so this block only ever
+        // evaluates to a notify handle (Occupied) to wait on and retry.
+        let notify_to_await: Arc<Notify> = {
             // Inflight dedup via DashMap: per-shard locks instead of one
             // global parking_lot::Mutex held across HashMap operations in an
             // async context (anti-pattern that stalled the tokio runtime
@@ -266,9 +322,10 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
             }
 
             match inflight.entry(key.clone()) {
-                dashmap::mapref::entry::Entry::Occupied(entry) => Some(entry.get().clone()),
+                dashmap::mapref::entry::Entry::Occupied(entry) => entry.get().clone(),
                 dashmap::mapref::entry::Entry::Vacant(entry) => {
                     if !try_reserve_inflight_slot(&inflight_count, max_inflight_keys) {
+                        note_inflight_cap_bypass(max_inflight_keys);
                         break None;
                     }
                     let notify = Arc::new(Notify::new());
@@ -283,11 +340,7 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
             }
         };
 
-        if let Some(notify) = notify_to_await {
-            notify.notified().await;
-        } else {
-            break None;
-        }
+        notify_to_await.notified().await;
     };
 
     let (verification, metadata) =
@@ -356,29 +409,17 @@ impl VerificationEngine {
         detectors: &[keyhog_core::DetectorSpec],
         config: VerifyConfig,
     ) -> Result<Self, VerifyError> {
-        let mut builder = Client::builder()
-            .timeout(config.timeout)
-            // Cert validation: ON by default, escape hatch ONLY through the
-            // explicit `VerifyConfig.insecure_tls` knob (set by the `--insecure`
-            // flag or `.keyhog.toml`; no env var can flip it — config mandate).
-            // Production paths never flip this.
-            .danger_accept_invalid_certs(config.insecure_tls)
-            // Decompression-bomb defense-in-depth: the 1 MB streaming cap in
-            // `read_response_body` only measures REAL wire bytes if reqwest
-            // never inflates a `Content-Encoding: gzip|br|deflate` body before
-            // our cap counts a byte. The crate is already compiled without the
-            // `gzip`/`brotli`/`deflate` features (pinned by
-            // `verifier_reqwest_has_no_auto_decompression_feature`), so today
-            // these are no-ops — but calling them explicitly makes the
-            // guarantee load-bearing AT THE CALL SITE: if a future Cargo.toml
-            // edit turns a decompression feature on, auto-inflate stays OFF
-            // here and the cap keeps measuring wire bytes. Belt-and-suspenders,
-            // not a substitute for the feature pin.
-            .no_gzip()
-            .no_brotli()
-            .no_zstd()
-            .no_deflate()
-            .redirect(reqwest::redirect::Policy::none());
+        // Cert validation: ON by default, escape hatch ONLY through the
+        // explicit `VerifyConfig.insecure_tls` knob (set by the `--insecure`
+        // flag or `.keyhog.toml`; no env var can flip it — config mandate).
+        // Production paths never flip this. The decompression-bomb + redirect
+        // posture is applied by the single `harden_verifier_client_builder`
+        // owner shared with both DNS-pinned rebuild paths.
+        let mut builder = crate::harden_verifier_client_builder(
+            Client::builder()
+                .timeout(config.timeout)
+                .danger_accept_invalid_certs(config.insecure_tls),
+        );
         builder = crate::apply_proxy_config(builder, config.proxy.as_deref())
             .map_err(VerifyError::ProxyConfig)?;
         let client = builder.build().map_err(VerifyError::ClientBuild)?;
@@ -402,6 +443,7 @@ impl VerificationEngine {
             client,
             detectors: Arc::new(detector_map),
             service_semaphores: Arc::new(service_semaphores),
+            max_concurrent_per_service: config.max_concurrent_per_service.max(1),
             global_semaphore: Arc::new(Semaphore::new(config.max_concurrent_global.max(1))),
             timeout: config.timeout,
             cache: Arc::new(cache::VerificationCache::default_ttl()),
@@ -436,6 +478,7 @@ impl VerificationEngine {
         let shared = VerifyTaskShared {
             global_semaphore: self.global_semaphore.clone(),
             service_semaphores: self.service_semaphores.clone(),
+            max_concurrent_per_service: self.max_concurrent_per_service,
             client: self.client.clone(),
             detectors: self.detectors.clone(),
             timeout: self.timeout,

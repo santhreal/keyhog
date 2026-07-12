@@ -1,11 +1,7 @@
 //! KH-GAP-111: STANDARD README contract requires cargo-rdme status badge on every crate README.
 
-#[path = "support/mod.rs"]
-mod support;
-
-use support::spec_waiver::{repo_root, spec_waiver_active};
-
-const WAIVER_REL: &str = "tools/ci-operability/spec_waivers/cargo_rdme_readme_contract.toml";
+use super::support::spec_waiver::spec_waiver_active;
+use super::support::{repo_root, CARGO_RDME_WAIVER as WAIVER_REL};
 
 const CRATE_READMES: [&str; 5] = [
     "crates/core/README.md",

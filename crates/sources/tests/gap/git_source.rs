@@ -217,7 +217,7 @@ fn filesystem_text_map(repo: &Path) -> BTreeMap<String, String> {
     FilesystemSource::new(repo.to_path_buf())
         .chunks()
         .map(|result| result.expect("filesystem source must not error"))
-        .filter(|chunk| chunk.metadata.source_type == "filesystem")
+        .filter(|chunk| chunk.metadata.source_type.as_ref() == "filesystem")
         .map(|chunk| {
             let path = chunk
                 .metadata
@@ -235,7 +235,7 @@ fn git_head_text_map(repo: &Path) -> BTreeMap<String, String> {
         .with_max_commits(1)
         .chunks()
         .map(|result| result.expect("git source must not error"))
-        .filter(|chunk| chunk.metadata.source_type == "git/head")
+        .filter(|chunk| chunk.metadata.source_type.as_ref() == "git/head")
         .map(|chunk| {
             let path = chunk.metadata.path.clone().expect("git head chunk path");
             (path.replace('\\', "/"), chunk.data.to_string())
@@ -494,7 +494,8 @@ fn head_blob_is_labelled_git_head() {
     let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "live.env").expect("live.env present");
     assert_eq!(
-        c.metadata.source_type, "git/head",
+        c.metadata.source_type.as_ref(),
+        "git/head",
         "blob reachable from HEAD tree is labelled git/head"
     );
 }
@@ -520,7 +521,8 @@ fn removed_blob_is_labelled_git_history() {
         .find(|c| c.data.contains("ghp_removedFromHead0000000000001"))
         .expect("historical secret blob must still be surfaced");
     assert_eq!(
-        hist.metadata.source_type, "git/history",
+        hist.metadata.source_type.as_ref(),
+        "git/history",
         "a blob no longer in HEAD must be labelled git/history"
     );
     // The current (scrubbed) blob is in HEAD.
@@ -528,7 +530,7 @@ fn removed_blob_is_labelled_git_history() {
         .iter()
         .find(|c| c.data.contains("redacted"))
         .expect("current blob present");
-    assert_eq!(live.metadata.source_type, "git/head");
+    assert_eq!(live.metadata.source_type.as_ref(), "git/head");
 }
 
 #[test]
@@ -735,7 +737,7 @@ fn gitignore_file_itself_is_scanned() {
         c.data.contains("*.log"),
         "the .gitignore contents are scannable"
     );
-    assert_eq!(c.metadata.source_type, "git/head");
+    assert_eq!(c.metadata.source_type.as_ref(), "git/head");
 }
 
 #[test]
@@ -1089,8 +1091,12 @@ fn identical_blob_content_is_emitted_once_per_path() {
         .filter(|c| c.data.contains("ghp_sameContentTwoFiles01"))
         .map(|c| {
             (
-                c.metadata.path.clone().expect("duplicate path"),
-                c.metadata.source_type.clone(),
+                c.metadata
+                    .path
+                    .as_deref()
+                    .expect("duplicate path")
+                    .to_string(),
+                c.metadata.source_type.to_string(),
             )
         })
         .collect::<Vec<_>>();
@@ -1121,8 +1127,12 @@ fn renamed_blob_keeps_head_and_history_path_identity() {
         .filter(|c| c.data.contains("ghp_renamePathIdentity00000001"))
         .map(|c| {
             (
-                c.metadata.path.clone().expect("renamed path"),
-                c.metadata.source_type.clone(),
+                c.metadata
+                    .path
+                    .as_deref()
+                    .expect("renamed path")
+                    .to_string(),
+                c.metadata.source_type.to_string(),
             )
         })
         .collect::<Vec<_>>();
@@ -1190,7 +1200,8 @@ fn secret_only_on_feature_branch_is_found_via_all_refs() {
         .expect("feature-branch secret must be found via --all");
     // It is not in HEAD's (main) tree, so it is git/history.
     assert_eq!(
-        c.metadata.source_type, "git/history",
+        c.metadata.source_type.as_ref(),
+        "git/history",
         "a feature-branch-only blob is not in HEAD -> git/history"
     );
 }
@@ -1233,7 +1244,7 @@ fn secret_only_in_annotated_tag_message_is_found() {
         .iter()
         .find(|c| c.data.contains("ghp_annotatedTagMessageSecret00001"))
         .expect("annotated tag message must be scanned");
-    assert_eq!(c.metadata.source_type, "git/tag");
+    assert_eq!(c.metadata.source_type.as_ref(), "git/tag");
     assert_eq!(
         c.metadata.path.as_deref(),
         Some("refs/tags/release-with-secret")
@@ -1277,7 +1288,7 @@ fn secret_only_in_unreachable_annotated_tag_message_is_found() {
         .iter()
         .find(|c| c.data.contains("ghp_unreachableTagMessageSecret0001"))
         .expect("unreachable annotated tag message must be scanned");
-    assert_eq!(c.metadata.source_type, "git/unreachable");
+    assert_eq!(c.metadata.source_type.as_ref(), "git/unreachable");
     assert_eq!(
         c.metadata.path.as_deref(),
         Some(format!(".git/unreachable/{tag_oid}").as_str())
@@ -1326,7 +1337,7 @@ fn over_cap_annotated_tag_message_emits_source_error_without_dropping_siblings()
     assert!(
         chunks
             .iter()
-            .any(|chunk| chunk.metadata.source_type == "git/head"
+            .any(|chunk| chunk.metadata.source_type.as_ref() == "git/head"
                 && chunk.metadata.path.as_deref() == Some("main.txt")
                 && chunk.data.contains("base=1")),
         "safe sibling git/head chunk must be preserved when tag message is over cap; chunks={chunks:?}"
@@ -1394,7 +1405,7 @@ fn corrupt_reachable_git_blob_emits_source_error_without_dropping_siblings() {
 
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "git/head"
+            chunk.metadata.source_type.as_ref() == "git/head"
                 && chunk.metadata.path.as_deref() == Some("safe.txt")
                 && chunk.data.contains("base=1")
         }),
@@ -1456,7 +1467,8 @@ fn secret_only_in_deleted_branch_reflog_is_found() {
         .find(|c| c.data.contains("ghp_deletedBranchReflogSecret0001"))
         .expect("deleted-branch reflog commit must be scanned");
     assert_eq!(
-        c.metadata.source_type, "git/history",
+        c.metadata.source_type.as_ref(),
+        "git/history",
         "a deleted-branch reflog blob is not in HEAD -> git/history"
     );
 }
@@ -1522,7 +1534,7 @@ fn secret_only_in_unreachable_loose_blob_is_found() {
         .iter()
         .find(|c| c.data.contains("ghp_unreachableLooseBlobSecret0001"))
         .expect("git fsck unreachable blob enumeration must feed the blob scanner");
-    assert_eq!(c.metadata.source_type, "git/unreachable");
+    assert_eq!(c.metadata.source_type.as_ref(), "git/unreachable");
     assert_eq!(
         c.metadata.path.as_deref(),
         Some(format!(".git/unreachable/{oid}").as_str())
@@ -1603,7 +1615,7 @@ fn secret_in_unreachable_tree_keeps_tree_relative_path() {
                     == Some(format!(".git/unreachable/{tree_oid}/ghost.env").as_str())
         })
         .expect("git fsck unreachable tree enumeration must preserve tree-relative path");
-    assert_eq!(c.metadata.source_type, "git/unreachable");
+    assert_eq!(c.metadata.source_type.as_ref(), "git/unreachable");
     assert_eq!(c.metadata.commit, None, "unreachable tree is not a commit");
     assert_eq!(
         c.metadata.author, None,
@@ -1782,7 +1794,7 @@ fn parallel_blob_decode_preserves_tree_order_and_metadata() {
 
     for (i, path) in expected_paths.iter().enumerate() {
         let chunk = chunk_for(&chunks, path).expect("ordered chunk present");
-        assert_eq!(chunk.metadata.source_type, "git/head");
+        assert_eq!(chunk.metadata.source_type.as_ref(), "git/head");
         assert_eq!(chunk.metadata.commit.as_deref(), Some(commit.as_str()));
         assert_eq!(chunk.metadata.author.as_deref(), Some("Gap Author"));
         assert_eq!(
@@ -1905,7 +1917,7 @@ fn every_emitted_chunk_carries_path_and_commit() {
             c.metadata.size_bytes.is_some(),
             "every git chunk has size_bytes"
         );
-        match c.metadata.source_type.as_str() {
+        match c.metadata.source_type.as_ref() {
             "git/head" | "git/history" => {
                 assert!(
                     c.metadata.commit.is_some(),

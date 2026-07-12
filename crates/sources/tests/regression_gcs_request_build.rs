@@ -24,11 +24,11 @@
 //! BYTES of the request line and the auth header, plus key percent-encoding.
 //!
 //! HOST-INDEPENDENCE: no accelerator is touched. Every network-reading test uses
-//! a loopback httpmock endpoint and therefore holds `NET_LOCK` while it sets the
-//! loud, default-off `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` opt-in and the exact
-//! bearer-env state it needs, so a parallel test in this binary can never observe
-//! the wrong SSRF-allow / credential state. The bearer-refusal and malformed-
-//! bucket tests fail closed with NO socket opened.
+//! a loopback httpmock endpoint, built via the `TestApi.gcs_source_with_endpoint*`
+//! facade which sets the per-source `allow_private_endpoint` Tier-A config (not
+//! env); `NET_LOCK` still serializes the exact ambient bearer-env state each test
+//! needs so a parallel test can never observe the wrong credential state. The
+//! bearer-refusal and malformed-bucket tests fail closed with NO socket opened.
 
 #![cfg(feature = "gcs")]
 
@@ -45,10 +45,11 @@ use support::split_chunk_results;
 /// reaches endpoint validation / the listing + media request builders.
 const BUCKET: &str = "keyhog-gcs-req";
 
-/// Serializes every test whose code path READS the process-global env
-/// (`KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT`, `GOOGLE_OAUTH_ACCESS_TOKEN`,
-/// `GCS_BEARER_TOKEN`). Each guard sets the EXACT state it needs while holding
-/// the lock, so env observation is race-free within this binary.
+/// Serializes every test whose code path READS the process-global bearer-token
+/// env (`GOOGLE_OAUTH_ACCESS_TOKEN`, `GCS_BEARER_TOKEN`). Each guard sets the
+/// EXACT state it needs while holding the lock, so env observation is race-free
+/// within this binary. (The private-endpoint allowance is per-source config now,
+/// not env, so it needs no serialization.)
 static NET_LOCK: Mutex<()> = Mutex::new(());
 
 fn lock() -> MutexGuard<'static, ()> {
@@ -66,7 +67,6 @@ fn clear_bearer_env() {
 /// `Authorization` header.
 fn anon_guard() -> MutexGuard<'static, ()> {
     let guard = lock();
-    std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", "1");
     clear_bearer_env();
     guard
 }
@@ -74,7 +74,6 @@ fn anon_guard() -> MutexGuard<'static, ()> {
 /// Loopback allowed + a single `GCS_BEARER_TOKEN` set (no `GOOGLE_OAUTH…`).
 fn gcs_bearer_guard(token: &str) -> MutexGuard<'static, ()> {
     let guard = lock();
-    std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", "1");
     std::env::remove_var("GOOGLE_OAUTH_ACCESS_TOKEN");
     std::env::set_var("GCS_BEARER_TOKEN", token);
     guard
@@ -83,7 +82,6 @@ fn gcs_bearer_guard(token: &str) -> MutexGuard<'static, ()> {
 /// Loopback allowed + BOTH ambient token envs set (precedence probe).
 fn both_tokens_guard(oauth: &str, gcs: &str) -> MutexGuard<'static, ()> {
     let guard = lock();
-    std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", "1");
     std::env::set_var("GOOGLE_OAUTH_ACCESS_TOKEN", oauth);
     std::env::set_var("GCS_BEARER_TOKEN", gcs);
     guard
@@ -180,7 +178,7 @@ fn media_url_exact_path_and_alt_media_query() {
         chunks[0].metadata.path.as_deref(),
         Some("gs://keyhog-gcs-req/configs/prod/service.env")
     );
-    assert_eq!(chunks[0].metadata.source_type, "gcs");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "gcs");
     assert_eq!(chunks[0].metadata.size_bytes, Some(24));
     assert_eq!(
         obj.calls(),

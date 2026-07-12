@@ -6,14 +6,24 @@ use crate::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_
 /// 4 prefix features + 4 context features + 4 placeholder features +
 /// 4 structure features + 6 file-type one-hot features + 3 extra features
 /// (comment, assignment, test-file) = 37 base + 4 padding = 41, plus the
-/// decode-structure feature (#41) = 42.
+/// decode-structure feature (#41) and the service-context feature (#42) = 43.
 ///
 /// Feature 41 is keyhog's decode-through advantage fed to the model: 1.0 when
 /// the candidate base64/hex-decodes to an identifiable binary asset (magic
 /// bytes) or a full protobuf-wire message, else 0.0. Training showed it lifts
 /// held-out F1 0.924 -> 0.964 and drives the base64-of-binary false-flag rate
 /// from 18% to 0% with no recall loss (see ml/train_classifier.py).
-pub(crate) const NUM_FEATURES: usize = 42;
+///
+/// Feature 42 is the keyword-specificity signal (DET-1): 1.0 when the ML
+/// context window names a SPECIFIC service from the embedded detector corpus
+/// (codecov, grafana, …), else 0.0. Combined with feature 17 (generic
+/// credential word in context) it gives the model the split the shape features
+/// cannot see: service-keyword + UUID (real secret) vs generic-keyword + UUID
+/// (identifier) — the dominant CredData/mirror confusion. See `service_vocab`.
+///
+/// The value is owned once by `super::model_arch::INPUT_DIM` (the gate/expert
+/// input width). This name is the feature-extraction view of that same owner.
+pub(crate) const NUM_FEATURES: usize = super::model_arch::INPUT_DIM;
 
 /// Offset into the feature vector where the one-hot file-type encoding starts.
 const FILE_TYPE_OFFSET: usize = 32;
@@ -34,7 +44,14 @@ const MAX_NORMALIZED_ENTROPY: f32 = 8.0;
 /// Model-specific low-entropy bucket from the training corpus: 3.5 separates
 /// readable English from random-ish strings. The high and very-high buckets use
 /// the scanner's canonical entropy thresholds, not private ML copies.
-const ML_LOW_ENTROPY_FEATURE_THRESHOLD: f64 = 3.5;
+///
+/// This intentionally does NOT share an owner with
+/// `entropy::plausibility::SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR` (also 3.5): that is
+/// a hard recall floor on the deterministic path, this is a model INPUT bucket
+/// boundary retuned with each `weights.bin`. They coincide today by coincidence,
+/// not by contract — `entropy_feature_bucket_currently_matches_symbolic_floor`
+/// pins that coincidence so a retune of either is a conscious, reviewed change.
+pub(crate) const ML_LOW_ENTROPY_FEATURE_THRESHOLD: f64 = 3.5;
 
 const MAX_PREFIX_LENGTH: f32 = 10.0;
 const OPENAI_PREFIX: &str = "sk-";
@@ -49,7 +66,7 @@ const MAX_DASH_COUNT_NORMALIZATION: f32 = 10.0;
 /// `u64` words needed to hold a presence bit for every possible byte bigram:
 /// 256 * 256 = 65_536 distinct bigrams, packed 64 per word => 1024 words. Named
 /// so the bitset size stays tied to its derivation instead of a bare literal.
-const BIGRAM_BITSET_WORDS: usize = (256 * 256) / 64;
+pub(crate) const BIGRAM_BITSET_WORDS: usize = (256 * 256) / 64;
 const CONFIG_FILE_TYPE_INDEX: usize = 0;
 const SOURCE_FILE_TYPE_INDEX: usize = 1;
 const CI_FILE_TYPE_INDEX: usize = 2;
@@ -61,68 +78,57 @@ const ASSIGNMENT_OPERATOR_FEATURE_INDEX: usize = 39;
 const TEST_FILE_CONTEXT_FEATURE_INDEX: usize = 40;
 /// Decode-structure verdict: candidate decodes to identifiable binary / protobuf.
 const DECODE_STRUCTURE_FEATURE_INDEX: usize = 41;
+/// Keyword-specificity verdict: context names a specific service (DET-1).
+const SERVICE_CONTEXT_FEATURE_INDEX: usize = 42;
 
-const COMMENT_PREFIXES: &[&str] = &["#", "//", "/*", "--"];
-const BINARY_MARKERS: &[&str] = &[
-    "load:",
-    ".rodata",
-    "xref",
-    "lea rdi",
-    "go.string",
-    "core::str",
-    "alloc::string",
-    "objdump",
-    "strings:",
-    "symbol:",
-];
-const CI_MARKERS: &[&str] = &[
-    "jobs:",
-    "stages:",
-    "pipeline",
-    "jenkinsfile",
-    ".gitlab-ci",
-    "buildspec",
-    ".github/workflows",
-    ".github/actions",
-    "circleci",
-    ".travis.yml",
-    "azure-pipelines",
-    "bitbucket-pipelines",
-    "semaphore",
-    "concourse",
-    "tekton",
-    "argocd",
-];
-const INFRA_MARKERS: &[&str] = &[
-    "resource ",
-    "apiversion:",
-    ".tf",
-    ".tfvars",
-    "dockerfile",
-    "docker-compose",
-    "k8s",
-    "ansible",
-    "helm",
-    "kustomize",
-    "cloudformation",
-    "serverless.yml",
-    "wrangler.toml",
-    "pulumi",
-    "vagrant",
-];
-const SOURCE_MARKERS: &[&str] = &["const ", "let ", "var ", "def ", "fn "];
-const SOURCE_EXTENSIONS: &[&str] = &[
-    ".py", ".js", ".ts", ".go", ".rs", ".java", ".rb", ".php", ".swift", ".kt",
-];
-const CONFIG_MARKERS: &[&str] = &[
-    ".env",
-    ".yaml",
-    ".json",
-    ".toml",
-    ".properties",
-    ".cfg",
-    ".ini",
-];
+#[derive(Clone, serde::Deserialize)]
+struct MlFeatureMarkers {
+    comment_prefixes: Vec<String>,
+    binary_markers: Vec<String>,
+    ci_markers: Vec<String>,
+    infra_markers: Vec<String>,
+    source_markers: Vec<String>,
+    source_extensions: Vec<String>,
+    config_markers: Vec<String>,
+}
+
+/// Parse the bundled Tier-B ML-feature marker lists. Returns an error rather
+/// than panicking so the `ML_FEATURE_MARKERS` owner below is the single
+/// fail-closed site (the `no_unwrap_expect` gate bans `expect` in production).
+fn parse_ml_feature_markers(raw: &str) -> Result<MlFeatureMarkers, String> {
+    toml::from_str::<MlFeatureMarkers>(raw).map_err(|error| error.to_string())
+}
+
+static ML_FEATURE_MARKERS: std::sync::LazyLock<MlFeatureMarkers> = std::sync::LazyLock::new(|| {
+    match parse_ml_feature_markers(include_str!("../../../../rules/ml-feature-markers.toml")) {
+        Ok(parsed) => parsed,
+        Err(error) => panic!(
+            "rules/ml-feature-markers.toml is invalid: {error}. \
+                 Fix the bundled Tier-B metadata file list."
+        ),
+    }
+});
+
+static COMMENT_PREFIXES: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.comment_prefixes.clone());
+
+static BINARY_MARKERS: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.binary_markers.clone());
+
+static CI_MARKERS: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.ci_markers.clone());
+
+static INFRA_MARKERS: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.infra_markers.clone());
+
+static SOURCE_MARKERS: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.source_markers.clone());
+
+static SOURCE_EXTENSIONS: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.source_extensions.clone());
+
+static CONFIG_MARKERS: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.config_markers.clone());
 
 /// Entry point for feature-extraction unit tests.
 #[cfg(test)]
@@ -174,13 +180,14 @@ pub fn compute_features_with_config(
         text,
         text_bytes,
         len,
-        text_summary.unique_chars,
+        text_summary.unique_bytes,
         placeholder_keywords,
     );
     apply_structure_features(&mut f, &text_summary, text_bytes);
     apply_file_type_feature(&mut f, context, context_bytes);
     apply_extra_features(&mut f, context, context_bytes);
     apply_decode_structure_feature(&mut f, text);
+    apply_service_context_feature(&mut f, context_bytes);
     f
 }
 
@@ -193,6 +200,17 @@ pub fn compute_features_with_config(
 fn apply_decode_structure_feature(features: &mut [f32; NUM_FEATURES], text: &str) {
     features[DECODE_STRUCTURE_FEATURE_INDEX] =
         binary_feature(crate::decode_structure::evidence(text).is_binary_payload());
+}
+
+/// Feature 42: keyword specificity (DET-1). Fires when the ±5-line ML context
+/// window (or the `file:` path line) names a specific service from the
+/// detector-corpus-derived vocabulary. The model learns the interaction with
+/// the UUID/opaque-shape features: a service-named context makes an
+/// otherwise-generic value credible; a generic-role-word-only context
+/// (feature 17 without this one) marks it an identifier.
+fn apply_service_context_feature(features: &mut [f32; NUM_FEATURES], context_bytes: &[u8]) {
+    features[SERVICE_CONTEXT_FEATURE_INDEX] =
+        binary_feature(super::service_vocab::context_names_service(context_bytes));
 }
 
 /// File-context fragments that imply this match is in test/fixture code.
@@ -268,7 +286,7 @@ fn apply_placeholder_features(
     text: &str,
     text_bytes: &[u8],
     len: usize,
-    unique_chars: usize,
+    unique_bytes: usize,
     placeholder_keywords: &[String],
 ) {
     features[20] = binary_feature(contains_any_ascii_case_insensitive(
@@ -276,7 +294,7 @@ fn apply_placeholder_features(
         placeholder_keywords,
     ));
     features[21] =
-        binary_feature(len > MIN_LOW_VARIETY_LENGTH && unique_chars <= LOW_VARIETY_BYTE_THRESHOLD);
+        binary_feature(len > MIN_LOW_VARIETY_LENGTH && unique_bytes <= LOW_VARIETY_BYTE_THRESHOLD);
     features[22] = binary_feature(
         text_bytes.iter().all(|byte| byte.is_ascii_hexdigit()) && len > MIN_HEX_PLACEHOLDER_LENGTH,
     );
@@ -288,7 +306,7 @@ fn apply_structure_features(
     summary: &TextSummary,
     text_bytes: &[u8],
 ) {
-    features[24] = (summary.unique_chars as f32 / MAX_UNIQUE_CHAR_NORMALIZATION).min(1.0);
+    features[24] = (summary.unique_bytes as f32 / MAX_UNIQUE_CHAR_NORMALIZATION).min(1.0);
     let (unique_bigrams, bigram_count) = unique_bigram_stats(text_bytes);
     features[25] = normalized_ratio(unique_bigrams, bigram_count);
     features[26] = (summary.dot_count as f32 / MAX_DOT_COUNT_NORMALIZATION).min(1.0);
@@ -324,26 +342,25 @@ fn infer_file_type(context: &str, context_bytes: &[u8]) -> usize {
 }
 
 fn is_binary_context(context_bytes: &[u8]) -> bool {
-    contains_any_ascii_case_insensitive_static(context_bytes, BINARY_MARKERS)
+    contains_any_ascii_case_insensitive(context_bytes, &BINARY_MARKERS)
 }
 
 fn is_ci_context(context_bytes: &[u8]) -> bool {
-    contains_any_ascii_case_insensitive_static(context_bytes, CI_MARKERS)
+    contains_any_ascii_case_insensitive(context_bytes, &CI_MARKERS)
 }
 
 fn is_infra_context(context: &str, context_bytes: &[u8]) -> bool {
-    context.contains("from ")
-        || contains_any_ascii_case_insensitive_static(context_bytes, INFRA_MARKERS)
+    context.contains("from ") || contains_any_ascii_case_insensitive(context_bytes, &INFRA_MARKERS)
 }
 
 fn is_source_context(context: &str, context_bytes: &[u8]) -> bool {
-    contains_any(context, SOURCE_MARKERS)
-        || contains_any_ascii_case_insensitive_static(context_bytes, SOURCE_EXTENSIONS)
+    contains_any(context, &SOURCE_MARKERS)
+        || contains_any_ascii_case_insensitive(context_bytes, &SOURCE_EXTENSIONS)
 }
 
 fn is_config_context(context: &str, context_bytes: &[u8]) -> bool {
     has_unquoted_equals(context)
-        || contains_any_ascii_case_insensitive_static(context_bytes, CONFIG_MARKERS)
+        || contains_any_ascii_case_insensitive(context_bytes, &CONFIG_MARKERS)
 }
 
 fn has_unquoted_equals(value: &str) -> bool {
@@ -381,26 +398,54 @@ fn has_assignment_operator(value: &str) -> bool {
 fn context_starts_with_comment_prefix(context: &str) -> bool {
     COMMENT_PREFIXES
         .iter()
-        .any(|prefix| context.trim().starts_with(prefix))
+        .any(|prefix| context.trim().starts_with(prefix.as_str()))
 }
 
-fn unique_bigram_stats(bytes: &[u8]) -> (usize, usize) {
+/// Per-thread scratch for [`unique_bigram_stats`]: the 8 KiB presence bitset is
+/// allocated once per thread and reused, and only the words actually set are
+/// zeroed after each call (via `touched`), so a per-candidate call no longer
+/// memsets the whole 8 KiB. `seen` holds the invariant "all-zero between calls".
+struct BigramScratch {
+    seen: Box<[u64]>,
+    touched: Vec<usize>,
+}
+
+pub(crate) fn unique_bigram_stats(bytes: &[u8]) -> (usize, usize) {
     if bytes.len() < 2 {
         return (0, 0);
     }
 
-    let mut seen = [0u64; BIGRAM_BITSET_WORDS];
-    let mut unique = 0usize;
-    for window in bytes.windows(2) {
-        let idx = ((window[0] as usize) << 8) | window[1] as usize;
-        let word = idx / 64;
-        let bit = 1u64 << (idx % 64);
-        if seen[word] & bit == 0 {
-            seen[word] |= bit;
-            unique += 1;
-        }
+    thread_local! {
+        static SCRATCH: std::cell::RefCell<BigramScratch> =
+            std::cell::RefCell::new(BigramScratch {
+                seen: vec![0u64; BIGRAM_BITSET_WORDS].into_boxed_slice(),
+                touched: Vec::new(),
+            });
     }
-    (unique, bytes.len() - 1)
+
+    SCRATCH.with(|cell| {
+        let scratch = &mut *cell.borrow_mut();
+        let BigramScratch { seen, touched } = scratch;
+        touched.clear();
+        let mut unique = 0usize;
+        for window in bytes.windows(2) {
+            let idx = ((window[0] as usize) << 8) | window[1] as usize;
+            let word = idx / 64;
+            let bit = 1u64 << (idx % 64);
+            if seen[word] & bit == 0 {
+                if seen[word] == 0 {
+                    touched.push(word);
+                }
+                seen[word] |= bit;
+                unique += 1;
+            }
+        }
+        // Restore the all-zero invariant touching only the words we set.
+        for &word in touched.iter() {
+            seen[word] = 0;
+        }
+        (unique, bytes.len() - 1)
+    })
 }
 
 fn contains_any_ascii_case_insensitive(haystack: &[u8], needles: &[String]) -> bool {
@@ -409,14 +454,10 @@ fn contains_any_ascii_case_insensitive(haystack: &[u8], needles: &[String]) -> b
         .any(|needle| crate::ascii_ci::ci_find_nonempty(haystack, needle.as_bytes()))
 }
 
-fn contains_any_ascii_case_insensitive_static(haystack: &[u8], needles: &[&str]) -> bool {
+fn contains_any(haystack: &str, needles: &[String]) -> bool {
     needles
         .iter()
-        .any(|needle| crate::ascii_ci::ci_find_nonempty(haystack, needle.as_bytes()))
-}
-
-fn contains_any(haystack: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|needle| haystack.contains(needle))
+        .any(|needle| haystack.contains(needle.as_str()))
 }
 
 fn binary_feature(value: bool) -> f32 {
@@ -451,7 +492,7 @@ struct TextSummary {
     has_symbol: bool,
     dot_count: usize,
     dash_count: usize,
-    unique_chars: usize,
+    unique_bytes: usize,
 }
 
 fn summarize_text_bytes(text_bytes: &[u8]) -> TextSummary {
@@ -476,14 +517,6 @@ fn summarize_text_bytes(text_bytes: &[u8]) -> TextSummary {
         has_symbol,
         dot_count,
         dash_count,
-        unique_chars: unique_byte_count(text_bytes),
+        unique_bytes: unique_byte_count(text_bytes),
     }
 }
-
-#[cfg(test)]
-pub(crate) fn unique_bigram_stats_for_test(bytes: &[u8]) -> (usize, usize) {
-    unique_bigram_stats(bytes)
-}
-
-#[cfg(test)]
-pub(crate) const BIGRAM_BITSET_WORDS_FOR_TEST: usize = BIGRAM_BITSET_WORDS;

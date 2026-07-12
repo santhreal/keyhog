@@ -12,21 +12,22 @@ mod path;
 // (Feature matrix CI). It is a tiny pure string predicate, so always compiling
 // it costs nothing.
 mod prose;
-mod public;
-mod source;
+pub(crate) mod public;
+pub(crate) mod source;
 
 pub(crate) use canonical::{
     generic_base64_candidate_is_ambiguous, has_n_or_more_consecutive_identical,
     has_repeated_block_mask, has_three_or_more_consecutive_identical, is_canonical_service_hex_key,
     is_dash_segmented_alnum_decoy, is_structured_dotted_token, is_uuid_v4_shape,
-    looks_like_aws_iam_arn, looks_like_bare_hex_digest, looks_like_bracketed_template_placeholder,
-    looks_like_dashed_serial_key,
+    looks_like_aws_iam_arn, looks_like_bare_hex_digest, looks_like_base64_integrity_body,
+    looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
     looks_like_entropy_canonical_hex_digest, looks_like_entropy_canonical_non_secret_shape,
     looks_like_entropy_random_base64_blob_decoy, looks_like_entropy_uuid_shape,
     looks_like_generic_random_base64_blob_decoy, looks_like_prefixed_hash_digest,
     looks_like_prefixed_masked_sequence, looks_like_random_byte_base64_blob,
     looks_like_standard_base64_blob, looks_like_trimmed_aws_iam_arn,
-    looks_like_truncated_uuid_v4_suffix, HIGH_ENTROPY_BASE64_CUTOFF, RFC7519_EXAMPLE_JWT_PREFIX,
+    looks_like_truncated_uuid_v4_suffix, HASH_ALGO_COLON_LABELS, HASH_ALGO_INTEGRITY_LABELS,
+    HIGH_ENTROPY_BASE64_CUTOFF, RFC7519_EXAMPLE_JWT_PREFIX,
 };
 pub(crate) use path::{
     looks_like_filename_reference, looks_like_scheme_prefixed_uri, looks_like_url_or_path_segment,
@@ -161,30 +162,62 @@ pub(crate) fn looks_like_word_separated_identifier(value: &str) -> bool {
     if sep_count == 0 {
         return false;
     }
-    // Split on either separator. Real credentials use one consistent separator
-    // (or none); programmer identifiers can mix `_` and `-`.
-    let words: Vec<&str> = value.split(['_', '-']).collect();
-    // No empty words (rejects `--foo`, `foo--bar`, `_foo`, `foo_`)
-    if words.iter().any(|w| w.is_empty()) {
-        return false;
-    }
-    // Every word must contain at least one ASCII letter - pure-digit
-    // segments like `12345` are not identifier words.
-    if !words
-        .iter()
-        .all(|w| w.bytes().any(|b| b.is_ascii_alphabetic()))
-    {
-        return false;
-    }
-    // Max word length ≤ 10. Real credentials concentrate randomness in one
-    // long suffix (e.g. `sk_live_<24-char-base58>`); programmer identifiers
-    // are short dictionary fragments throughout.
-    let max_word_len = words.iter().map(|w| w.len()).max().unwrap_or(0); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
-    if max_word_len > 10 {
-        return false;
+    // Single pass over `_`/`-` separated words:
+    //   * reject empty words (`--foo`, `foo--bar`, `_foo`, `foo_`)
+    //   * every word must contain ≥1 ASCII letter (pure-digit `12345` is not a word)
+    //   * max word length ≤ 10 (real credentials concentrate randomness in one
+    //     long suffix; programmer identifiers are short dictionary fragments)
+    for w in value.split(['_', '-']) {
+        if w.is_empty() || w.len() > 10 || !w.bytes().any(|b| b.is_ascii_alphabetic()) {
+            return false;
+        }
     }
     true
 }
+
+#[derive(serde::Deserialize)]
+struct ProseConnectors {
+    connectors: Vec<String>,
+}
+
+fn parse_prose_connectors(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<ProseConnectors>(raw)
+        .map(|parsed| parsed.connectors)
+        .map_err(|error| error.to_string())
+}
+
+static PROSE_CONNECTORS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_prose_connectors(include_str!("../../../../../rules/prose-connectors.toml")) {
+        Ok(connectors) => connectors,
+        Err(error) => panic!(
+            "rules/prose-connectors.toml is invalid: {error}. \
+             Fix the bundled Tier-B prose connectors list."
+        ),
+    }
+});
+
+#[derive(serde::Deserialize)]
+struct RegexSigilSuffixes {
+    suffixes: Vec<String>,
+}
+
+fn parse_regex_sigil_suffixes(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<RegexSigilSuffixes>(raw)
+        .map(|parsed| parsed.suffixes)
+        .map_err(|error| error.to_string())
+}
+
+static REGEX_SIGIL_SUFFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_regex_sigil_suffixes(include_str!(
+        "../../../../../rules/regex-sigil-suffixes.toml"
+    )) {
+        Ok(suffixes) => suffixes,
+        Err(error) => panic!(
+            "rules/regex-sigil-suffixes.toml is invalid: {error}. \
+             Fix the bundled regex sigil suffixes list."
+        ),
+    }
+});
 
 /// True when a hyphen-separated value is policy/config prose rather than an
 /// opaque token. This targets long train-case status strings such as
@@ -199,9 +232,6 @@ pub(crate) fn looks_like_train_case_prose_identifier(value: &str) -> bool {
     if !bytes.iter().all(|&b| b.is_ascii_alphabetic() || b == b'-') {
         return false;
     }
-    const PROSE_CONNECTORS: &[&str] = &[
-        "and", "or", "to", "for", "from", "with", "without", "non", "only", "into",
-    ];
     let mut part_count = 0usize;
     let mut lower_parts = 0usize;
     let mut has_connector = false;
@@ -215,7 +245,7 @@ pub(crate) fn looks_like_train_case_prose_identifier(value: &str) -> bool {
         }
         if PROSE_CONNECTORS
             .iter()
-            .any(|connector| part.eq_ignore_ascii_case(connector))
+            .any(|connector| part.eq_ignore_ascii_case(connector.as_str()))
         {
             has_connector = true;
         }
@@ -343,12 +373,9 @@ fn looks_like_bang_led_opaque_secret(value: &str) -> bool {
 ///
 /// Real credentials don't end in regex sigils.
 pub(crate) fn looks_like_regex_literal_tail(value: &str) -> bool {
-    const REGEX_SIGIL_SUFFIXES: &[&str] = &[
-        ")/g", ")/g,", // JS object literal: `key: /pattern/g, ...`
-        ")/gi", ")/gi,", ")/i", ")/i,", ")/m", ")/m,", ")\\b", "})\\b", "})\\\\b", "]+", "]*",
-        "]?", "]+/", "]+\\b", "*/g", "+/g", "+/i", ")*", ")+", ")?", ")?$", ")$",
-    ];
-    REGEX_SIGIL_SUFFIXES.iter().any(|sig| value.ends_with(sig))
+    REGEX_SIGIL_SUFFIXES
+        .iter()
+        .any(|sig| value.ends_with(sig.as_str()))
 }
 
 /// True if `value` looks like an email address. Captures FP shapes where
@@ -404,19 +431,24 @@ pub(crate) fn contains_uuid_v4_substring(value: &str) -> bool {
     if bytes.len() < 36 {
         return false;
     }
-    let mut i = 0;
-    while i + 36 <= bytes.len() {
-        let slice = &bytes[i..i + 36];
-        if slice[8] == b'-' && slice[13] == b'-' && slice[18] == b'-' && slice[23] == b'-' {
-            let all_hex_or_dash = slice.iter().enumerate().all(|(j, &c)| match j {
+    // A UUID's first dash sits at relative offset 8. Anchor each '-' as that
+    // dash (memchr-skip to dash positions) rather than testing every offset:
+    // O(dashes·36) instead of O(n·36) on long captured values.
+    for dash in memchr::memchr_iter(b'-', bytes) {
+        if dash < 8 || dash + 28 > bytes.len() {
+            continue;
+        }
+        let slice = &bytes[dash - 8..dash + 28];
+        if slice[13] == b'-'
+            && slice[18] == b'-'
+            && slice[23] == b'-'
+            && slice.iter().enumerate().all(|(j, &c)| match j {
                 8 | 13 | 18 | 23 => c == b'-',
                 _ => c.is_ascii_hexdigit(),
-            });
-            if all_hex_or_dash {
-                return true;
-            }
+            })
+        {
+            return true;
         }
-        i += 1;
     }
     false
 }
@@ -503,6 +535,20 @@ pub(crate) fn looks_like_credential_colliding_punctuation(value: &str) -> bool {
     bytes[0] == b'!' || bytes[0] == b'/' || looks_like_ts_non_null_identifier(bytes)
 }
 
+/// Canonical credential-keyword needles (lowercased, for `ci_find`). ONE owner
+/// for the shape gates that scan a candidate for an embedded credential word;
+/// `looks_like_ts_non_null_identifier` here and `looks_like_dotted_source_identifier`
+/// in `source.rs` previously each pasted their own near-identical copy (DEDUP).
+pub(super) const CREDENTIAL_KEYWORD_NEEDLES: &[&[u8]] = &[
+    b"token",
+    b"secret",
+    b"key",
+    b"password",
+    b"passwd",
+    b"auth",
+    b"credential",
+];
+
 fn looks_like_ts_non_null_identifier(bytes: &[u8]) -> bool {
     if !bytes.ends_with(b"!") || bytes.len() < 9 {
         return false;
@@ -520,17 +566,9 @@ fn looks_like_ts_non_null_identifier(bytes: &[u8]) -> bool {
     if !has_camel_transition {
         return false;
     }
-    [
-        b"token".as_slice(),
-        b"secret".as_slice(),
-        b"key".as_slice(),
-        b"password".as_slice(),
-        b"passwd".as_slice(),
-        b"auth".as_slice(),
-        b"credential".as_slice(),
-    ]
-    .iter()
-    .any(|needle| crate::ascii_ci::ci_find(body, needle))
+    CREDENTIAL_KEYWORD_NEEDLES
+        .iter()
+        .any(|needle| crate::ascii_ci::ci_find(body, needle))
 }
 
 /// Combined Tier-A + body-collision punctuation filter. Retained for the
@@ -577,5 +615,49 @@ mod tests {
             &short,
             HIGH_ENTROPY_BASE64_CUTOFF
         ));
+    }
+
+    #[test]
+    fn uuid_v4_substring_matches_embedded_uuid_via_dash_anchor() {
+        // The memchr dash-anchored scan must still find a UUID embedded after a
+        // prefix (bat-go `TOKEN_LIST=<uuid>` case) at a non-zero offset.
+        assert!(contains_uuid_v4_substring(
+            "TOKEN_LIST=636765a9-1f92-4b40-ab0b-85ebd1e2c23d"
+        ));
+        // Bare UUID at offset 0.
+        assert!(contains_uuid_v4_substring(
+            "636765a9-1f92-4b40-ab0b-85ebd1e2c23d"
+        ));
+        // Trailing junk after the UUID.
+        assert!(contains_uuid_v4_substring(
+            "636765a9-1f92-4b40-ab0b-85ebd1e2c23d;more"
+        ));
+    }
+
+    #[test]
+    fn uuid_v4_substring_rejects_non_uuid_dash_shapes() {
+        // Dashes present but not at UUID offsets, and a near-miss with a
+        // non-hex byte where a hex digit is required.
+        assert!(!contains_uuid_v4_substring(
+            "not-a-uuid-value-here-at-all-x"
+        ));
+        assert!(!contains_uuid_v4_substring(
+            "636765a9-1f92-4b40-ab0b-85ebd1e2c23z"
+        ));
+        // Too short to contain a 36-byte UUID.
+        assert!(!contains_uuid_v4_substring("636765a9-1f92-4b40"));
+    }
+
+    #[test]
+    fn word_separated_identifier_rejects_long_word_single_pass() {
+        // `12345678901` is an 11-char word (> max 10) so the identifier gate
+        // stays closed; `s3_secret_access_key` is all short words → identifier.
+        assert!(looks_like_word_separated_identifier("s3_secret_access_key"));
+        assert!(!looks_like_word_separated_identifier(
+            "prefix_12345678901xx"
+        ));
+        // Empty word (`foo__bar`) and pure-digit word both reject.
+        assert!(!looks_like_word_separated_identifier("foo__bar_alpha"));
+        assert!(!looks_like_word_separated_identifier("alpha_12345_beta"));
     }
 }

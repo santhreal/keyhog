@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "tomtom.api.key ' :    'ddBdrEXAMPLEEXAMPLE2rNp2"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# tomtom.api.key = ddBdrdlALEHmnzSOzuOzYo3W9ZF9T6SF6UzGi4yO0Dp8ABXpW9BUl2rNp2"
+credential = "ddBdrdlALEHmnzSOzuOzYo3W9ZF9T6SF6UzGi4yO0Dp8ABXpW9BUl2rNp2"
+reason = "Commented dotted-key config line (tomtom.api.key = <value>); the dotted keyword anchor and value survive the comment prefix."

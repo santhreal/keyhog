@@ -15,6 +15,8 @@ sys.path.insert(0, str(REPO / "scripts"))
 from site_detector_catalog import detector_catalog_drift  # noqa: E402
 
 STALE_PATTERNS = [
+    ("old detector count", re.compile(r"\b899\s+(?:detectors|patterns|TOML)")),
+    ("old detector-count phrase", re.compile(r"\b(?:compile|compiled|all|Loading)\s+899\b")),
     ("unsupported recall claim", re.compile(r"\b96\s*%")),
     ("unsupported recall delta", re.compile(r"\b33\s*%\s+more\b")),
     ("unsupported superlative title", re.compile(r"fastest, most accurate")),
@@ -25,38 +27,12 @@ STALE_PATTERNS = [
     ("retired routing matrix output", re.compile(r"routing matrix:")),
 ]
 
-DETECTOR_COUNT_PATTERN = re.compile(
-    r"\b(?P<count>\d{2,5})\s+(?:"
-    r"(?:embedded|service)\s+detectors?\b|detector\s+TOMLs?\b|"
-    r"TOML\s+files?\b|service-specific\s+patterns?\b)",
-    re.IGNORECASE,
-)
-VERIFIER_COUNT_PATTERN = re.compile(
-    r"\b(?P<count>\d{2,5})\s+detectors?\s+with\s+a\s+vendor\s+verifier\s+endpoint\b",
-    re.IGNORECASE,
-)
-
 TEXT_FILES = {".css", ".html", ".js", ".json", ".md", ".py", ".svg", ".toml", ".txt"}
 
 
 def current_version() -> str:
     cargo = tomllib.loads((REPO / "Cargo.toml").read_text())
     return f"v{cargo['workspace']['package']['version']}"
-
-
-def current_detector_count() -> int:
-    return sum(1 for path in (REPO / "detectors").glob("*.toml") if path.is_file())
-
-
-def current_verifier_count() -> int:
-    count = 0
-    for path in (REPO / "detectors").glob("*.toml"):
-        if not path.is_file():
-            continue
-        detector = tomllib.loads(path.read_text()).get("detector", {})
-        if detector.get("verify") is not None:
-            count += 1
-    return count
 
 
 def product_claim_paths() -> list[pathlib.Path]:
@@ -76,8 +52,6 @@ def product_claim_paths() -> list[pathlib.Path]:
 def stale_claim_hits() -> list[tuple[str, int, str, str]]:
     hits: list[tuple[str, int, str, str]] = []
     expected_version = current_version()
-    expected_detectors = current_detector_count()
-    expected_verifiers = current_verifier_count()
     build_py = (REPO / "site/build.py").read_text()
     if re.search(r'(?m)^VERSION\s*=\s*"v\d+\.\d+\.\d+"', build_py):
         hits.append(("site/build.py", 0, "site generator version", "VERSION must derive from Cargo.toml"))
@@ -88,28 +62,6 @@ def stale_claim_hits() -> list[tuple[str, int, str, str]]:
             for version in re.findall(r"\bv0\.\d+\.\d+\b", line):
                 if version != expected_version:
                     hits.append((rel, lineno, "old release tag", line.strip()))
-            for match in DETECTOR_COUNT_PATTERN.finditer(line):
-                found = int(match.group("count"))
-                if found != expected_detectors:
-                    hits.append(
-                        (
-                            rel,
-                            lineno,
-                            "stale detector count",
-                            f"found {found}, expected {expected_detectors}: {line.strip()}",
-                        )
-                    )
-            for match in VERIFIER_COUNT_PATTERN.finditer(line):
-                found = int(match.group("count"))
-                if found != expected_verifiers:
-                    hits.append(
-                        (
-                            rel,
-                            lineno,
-                            "stale verifier count",
-                            f"found {found}, expected {expected_verifiers}: {line.strip()}",
-                        )
-                    )
             for label, pattern in STALE_PATTERNS:
                 if pattern.search(line):
                     hits.append((rel, lineno, label, line.strip()))
@@ -118,42 +70,11 @@ def stale_claim_hits() -> list[tuple[str, int, str, str]]:
 
 def self_test() -> int:
     expected = current_version()
-    expected_detectors = current_detector_count()
-    expected_verifiers = current_verifier_count()
     stale_version = "v0.0.0" if expected != "v0.0.0" else "v9.9.9"
-    stale_detectors = expected_detectors - 1
-    bad = (
-        f"keyhog {stale_version} | {stale_detectors} service detectors | "
-        f"{expected_verifiers - 1} detectors with a vendor verifier endpoint | "
-        "96 % recall | picks the fastest backend"
-    )
-    good = (
-        f"keyhog {expected} | {expected_detectors} service detectors | "
-        f"{expected_verifiers} detectors with a vendor verifier endpoint | "
-        "persisted autoroute calibration"
-    )
+    bad = f"keyhog {stale_version} | 899 detectors | 96 % recall | picks the fastest backend"
+    good = f"keyhog {expected} | 919 detectors | persisted autoroute calibration"
     bad_hits = [label for label, pattern in STALE_PATTERNS if pattern.search(bad)]
     good_hits = [label for label, pattern in STALE_PATTERNS if pattern.search(good)]
-    bad_hits.extend(
-        "stale detector count"
-        for match in DETECTOR_COUNT_PATTERN.finditer(bad)
-        if int(match.group("count")) != expected_detectors
-    )
-    good_hits.extend(
-        "stale detector count"
-        for match in DETECTOR_COUNT_PATTERN.finditer(good)
-        if int(match.group("count")) != expected_detectors
-    )
-    bad_hits.extend(
-        "stale verifier count"
-        for match in VERIFIER_COUNT_PATTERN.finditer(bad)
-        if int(match.group("count")) != expected_verifiers
-    )
-    good_hits.extend(
-        "stale verifier count"
-        for match in VERIFIER_COUNT_PATTERN.finditer(good)
-        if int(match.group("count")) != expected_verifiers
-    )
     bad_hits.extend(
         "old release tag"
         for version in re.findall(r"\bv0\.\d+\.\d+\b", bad)

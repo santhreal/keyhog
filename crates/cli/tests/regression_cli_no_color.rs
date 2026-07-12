@@ -74,9 +74,14 @@ struct Out {
 /// The `NO_COLOR` environment posture for a run.
 #[derive(Clone, Copy)]
 enum Color {
-    /// `NO_COLOR=1` — the operator explicitly disables color.
+    /// `NO_COLOR=1`: the operator explicitly disables color.
     NoColorOne,
-    /// `NO_COLOR=""` — present but empty (the convention keys on PRESENCE).
+    /// `NO_COLOR=""`: present but EMPTY. Per the no-color.org contract an empty
+    /// value does NOT opt out (color stays enabled on a TTY); the variable
+    /// disables color only when present AND non-empty. Under a pipe (as in these
+    /// tests) output is plain regardless, so this posture is byte-identical to
+    /// the others here; the empty-string rule itself lives in
+    /// `style::no_color_requested`.
     NoColorEmpty,
     /// `NO_COLOR` removed from the child env — the default/"colored" posture.
     Removed,
@@ -254,11 +259,16 @@ fn no_color_toggle_yields_byte_identical_text_stdout() {
     );
 }
 
-/// `NO_COLOR=""` (present but EMPTY) is still "no color" — the convention keys on
-/// PRESENCE, not value. Its captured text report is byte-identical to `NO_COLOR=1`
-/// and carries no escape byte.
+/// Under a pipe, `NO_COLOR=""` (present but EMPTY) yields a captured text report
+/// byte-identical to `NO_COLOR=1` and carries no escape byte. NOTE: this identity
+/// holds because color is TTY-gated OFF under a pipe for BOTH postures, not
+/// because an empty `NO_COLOR` opts out. Per no-color.org an empty value does NOT
+/// disable color on a TTY; that rule is enforced in `style::no_color_requested`
+/// (`is_some_and(|v| !v.is_empty())`). A subprocess harness cannot exercise the
+/// TTY branch, so this asserts only the pipe-level byte-identity it can honestly
+/// observe.
 #[test]
-fn no_color_empty_value_is_byte_identical_to_no_color_one() {
+fn no_color_empty_value_piped_is_byte_identical_to_no_color_one() {
     let home = cache_home();
     let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
 
@@ -274,7 +284,7 @@ fn no_color_empty_value_is_byte_identical_to_no_color_one() {
     );
     assert_eq!(
         one.stdout, empty.stdout,
-        "NO_COLOR presence (empty value) must behave exactly like NO_COLOR=1"
+        "under a pipe both postures are plain (TTY-gated), so stdout is byte-identical"
     );
 }
 

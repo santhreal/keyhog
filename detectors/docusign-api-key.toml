@@ -8,7 +8,9 @@ id = "docusign-api-key"
 name = "Docusign Integration Key"
 service = "docusign"
 severity = "critical"
-keywords = ["DOCUSIGN", "INTEGRATION_KEY", "ds_integration_key"]
+# "INTEGRATION_KEY" removed: over-broad generic prefilter(s) the regex does NOT need — every
+# pattern requires the service name as a leading anchor (kept). Recall-neutral.
+keywords = ["DOCUSIGN", "ds_integration_key"]
 
 [[detector.patterns]]
 regex = '''(?:DOCUSIGN|docusign)[._-]?(?:INTEGRATION|integration)[._-]?(?:KEY|key)[=:\s"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''

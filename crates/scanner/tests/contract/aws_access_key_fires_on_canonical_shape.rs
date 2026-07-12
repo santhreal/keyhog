@@ -1,21 +1,13 @@
 //! Contract: aws-access-key fires on canonical AKIA shape with exact
 //! credential bytes and detector id.
 
+use crate::support::paths::detector_dir;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
 
 const DETECTOR_ID: &str = "aws-access-key";
 const CANONICAL_TEXT: &str = concat!("AK", "IAQYLPMN5HFIQR7XYA");
 const CANONICAL_CREDENTIAL: &str = concat!("AK", "IAQYLPMN5HFIQR7XYA");
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 #[test]
 fn aws_access_key_fires_on_canonical_shape() {

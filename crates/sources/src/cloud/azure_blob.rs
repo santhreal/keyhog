@@ -41,12 +41,12 @@ impl AzureBlobSource {
     }
 
     pub(crate) fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
-        crate::gcs::set_optional(&mut self.prefix, prefix.into());
+        crate::cloud::set_optional(&mut self.prefix, prefix.into());
         self
     }
 
     pub(crate) fn with_max_objects(mut self, max_objects: usize) -> Self {
-        crate::gcs::set_optional(&mut self.max_objects, max_objects);
+        crate::cloud::set_optional(&mut self.max_objects, max_objects);
         self
     }
 }
@@ -133,7 +133,7 @@ fn collect_azure_blob_chunks(
     limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
-    let container_url = validate_container_url(container_url)?;
+    let container_url = validate_container_url(container_url, http.allow_private_endpoint)?;
     let client = crate::cloud::blocking_client("Azure Blob", http)?;
     let mut marker = None::<String>;
     let mut chunks = Vec::new();
@@ -325,7 +325,7 @@ fn fetch_azure_blob_chunk(
             base_offset: 0,
             base_line: 0,
             source_type: "azure_blob".into(),
-            path: Some(display_path),
+            path: Some(display_path.into()),
             commit: None,
             author: None,
             date: None,
@@ -410,8 +410,8 @@ fn azure_blob_display_path(
     Ok(format!("azblob://{host}/{container_path}/{name}"))
 }
 
-fn validate_container_url(raw: &str) -> Result<reqwest::Url, SourceError> {
-    let parsed = crate::cloud::parse_http_endpoint(raw, "Azure Blob container URL")?;
+fn validate_container_url(raw: &str, allow_private: bool) -> Result<reqwest::Url, SourceError> {
+    let parsed = crate::cloud::parse_http_endpoint(raw, "Azure Blob container URL", allow_private)?;
     if parsed.path().trim_matches('/').is_empty() {
         return Err(SourceError::Other(
             "invalid Azure Blob container URL: path must include the container".into(),

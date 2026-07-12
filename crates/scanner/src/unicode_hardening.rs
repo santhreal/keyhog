@@ -164,13 +164,13 @@ pub(crate) fn normalize_homoglyphs(text: &str) -> std::borrow::Cow<'_, str> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum NormalizedChar {
+pub(crate) enum NormalizedChar {
     Keep,
     Replace(char),
     Drop,
 }
 
-fn normalized_char(ch: char) -> NormalizedChar {
+pub(crate) fn normalized_char(ch: char) -> NormalizedChar {
     if let Some(latin) = cyrillic_to_latin(ch) {
         return NormalizedChar::Replace(latin);
     }
@@ -310,22 +310,33 @@ pub(crate) fn parse_evasion_anchors(raw: &str) -> Result<Vec<String>, String> {
 
 /// Single Aho-Corasick automaton over all anchors — one O(n) pass to find every
 /// prefix occurrence, instead of one search per anchor.
-static EVASION_ANCHOR_AC: std::sync::LazyLock<Option<aho_corasick::AhoCorasick>> =
+///
+/// LAW 10 (fail closed): the anchor set is embedded Tier-B data
+/// ([`EVASION_ANCHORS`], already validated non-empty at parse time), so this
+/// automaton is compiled from a fixed, in-binary literal set. If
+/// `AhoCorasick::new` cannot build it, that is a BUILD/data bug, not a runtime
+/// condition to degrade around — silently returning `None` here would disable
+/// split-credential evasion normalization for the whole process with no signal,
+/// exactly the invisible recall loss Law 10 bans. We panic instead: a broken
+/// build fails loud, a working build always has the automaton.
+static EVASION_ANCHOR_AC: std::sync::LazyLock<aho_corasick::AhoCorasick> =
     std::sync::LazyLock::new(|| {
         let anchors = &*EVASION_ANCHORS;
-        if anchors.is_empty() {
-            return None;
-        }
-        match aho_corasick::AhoCorasick::new(anchors) {
-            Ok(ac) => Some(ac),
-            Err(error) => {
-                crate::prefilter_degrade::warn_prefilter_disabled(
-                    "evasion-anchor Aho-Corasick (EVASION_ANCHOR_AC)",
-                    &error,
-                );
-                None
-            }
-        }
+        // `EVASION_ANCHORS` cannot be empty: `parse_evasion_anchors` errors (and
+        // the `EVASION_ANCHORS` init panics) on an empty set. Assert it so the
+        // invariant is checked at the point it is relied on.
+        assert!(
+            !anchors.is_empty(),
+            "EVASION_ANCHORS is empty; parse_evasion_anchors must reject empty anchor sets"
+        );
+        aho_corasick::AhoCorasick::new(anchors).unwrap_or_else(|error| {
+            panic!(
+                "failed to build the evasion-anchor Aho-Corasick automaton from \
+                 embedded Tier-B anchors: {error}. This is a build/data bug in \
+                 crates/scanner/data/evasion-anchors.toml; refusing to run with \
+                 split-credential evasion normalization silently disabled."
+            )
+        })
     });
 
 #[inline]
@@ -369,9 +380,9 @@ pub(crate) fn strip_interior_evasion_controls(text: &str) -> std::borrow::Cow<'_
     if !has_candidate {
         return std::borrow::Cow::Borrowed(text);
     }
-    let Some(ac) = &*EVASION_ANCHOR_AC else {
-        return std::borrow::Cow::Borrowed(text);
-    };
+    // Fail-closed automaton (see `EVASION_ANCHOR_AC`): always present in a working
+    // build, so there is no silent no-anchor fallback path here.
+    let ac = &*EVASION_ANCHOR_AC;
 
     // Body window cap: bounds the per-anchor walk so a pathological input can't
     // turn the strip into an O(n^2) scan.
@@ -446,7 +457,7 @@ fn is_ascii_evasion_control(ch: char) -> bool {
     ch.is_ascii() && is_ascii_evasion_control_byte(ch as u8)
 }
 
-fn cyrillic_to_latin(ch: char) -> Option<char> {
+pub(crate) fn cyrillic_to_latin(ch: char) -> Option<char> {
     match ch {
         // Lowercase Cyrillic lookalikes
         'а' => Some('a'), // U+0430
@@ -486,7 +497,7 @@ fn cyrillic_to_latin(ch: char) -> Option<char> {
 }
 
 /// Greek characters that look like Latin
-fn greek_to_latin(ch: char) -> Option<char> {
+pub(crate) fn greek_to_latin(ch: char) -> Option<char> {
     match ch {
         'α' => Some('a'), // U+03B1
         'β' => Some('b'), // U+03B2 (can look like B)
@@ -531,13 +542,13 @@ fn greek_to_latin(ch: char) -> Option<char> {
 /// credential charset (A–Z, a–z, 0–9, `_ + / = . -`) lives in U+FF01–FF5E, so
 /// narrowing to it preserves all credential normalization while keeping real
 /// CJK text on the zero-allocation fast path.
-fn is_fullwidth(ch: char) -> bool {
+pub(crate) fn is_fullwidth(ch: char) -> bool {
     matches!(ch, '\u{FF01}'..='\u{FF5E}')
 }
 
 /// Convert a fullwidth ASCII variant (U+FF01..=U+FF5E) to its ASCII twin;
 /// any other char is returned unchanged.
-fn fullwidth_to_ascii(ch: char) -> char {
+pub(crate) fn fullwidth_to_ascii(ch: char) -> char {
     if is_fullwidth(ch) {
         // Each fullwidth form sits exactly 0xFEE0 above its ASCII twin
         // (U+FF01 '!' = 0x21 + 0xFEE0 … U+FF5E '~' = 0x7E + 0xFEE0). `is_fullwidth`
@@ -566,7 +577,17 @@ pub(crate) fn is_evasion_char(ch: char) -> bool {
 /// codepoints that are genuinely invisible AND have no legitimate role inside a
 /// credential token belong here. (Variation selectors and other combining marks
 /// are `General_Category=Mark` and are handled by [`is_combining_mark`].)
-fn is_zero_width(ch: char) -> bool {
+///
+/// The set is derived from the Unicode `Default_Ignorable_Code_Point` property
+/// (DerivedCoreProperties) intersected with "renders to nothing AND has no
+/// legitimate role inside a credential token", MINUS the codepoints already
+/// owned by [`is_combining_mark`] (the `Mark`-category members: CGJ U+034F,
+/// variation selectors U+FE00–FE0F / U+E0100–E01EF, Khmer inherent vowels
+/// U+17B4–17B5) and [`is_rtl_override`] (bidi embeddings/overrides U+202A–202E).
+/// A few `Mark`-category Mongolian selectors are ALSO listed explicitly below —
+/// see the note there for why that intentional overlap is a robustness guard,
+/// not a duplication bug.
+pub(crate) fn is_zero_width(ch: char) -> bool {
     matches!(
         ch,
         '\u{200B}' | // Zero Width Space
@@ -574,7 +595,16 @@ fn is_zero_width(ch: char) -> bool {
         '\u{200D}' | // Zero Width Joiner
         '\u{FEFF}' | // Zero Width No-Break Space (BOM)
         '\u{2060}'..='\u{2064}' | // Word Joiner + invisible operators (function application/times/separator/plus)
-        '\u{180E}' | // Mongolian Vowel Separator
+        '\u{2065}' | // Reserved, Default_Ignorable (invisible; strip so an attacker can't splice it)
+        '\u{180E}' | // Mongolian Vowel Separator (Cf)
+        // Mongolian Free Variation Selectors 1–4. FVS1–3 (U+180B–180D) and FVS4
+        // (U+180F) are General_Category=Mn, so `is_combining_mark` also catches
+        // them WHEN the linked unicode-normalization tables are new enough (FVS4
+        // was added in Unicode 14.0). Listing them here makes the invisible-strip
+        // fail-safe against a crate lagging behind the Unicode version — an
+        // intentional, behavior-identical overlap, not a drifting second source.
+        '\u{180B}'..='\u{180D}' |
+        '\u{180F}' |
         '\u{061C}' | // Arabic Letter Mark (Bidi_Control, invisible directional mark)
         '\u{200E}' | // Left-to-Right Mark
         '\u{200F}' | // Right-to-Left Mark
@@ -583,6 +613,18 @@ fn is_zero_width(ch: char) -> bool {
         '\u{2067}' | // Right-to-Left Isolate
         '\u{2068}' | // First Strong Isolate
         '\u{2069}' | // Pop Directional Isolate
+        '\u{206A}'..='\u{206F}' | // Deprecated Cf: inhibit/activate symmetric swapping + Arabic form shaping + national/nominal digit shapes (invisible)
+        // Invisible fillers with General_Category=Lo (letters) — NOT combining
+        // marks and NOT Cf, so nothing else on the strip path catches them, yet
+        // they render as blank/zero-advance and are a classic "looks empty"
+        // splice vector.
+        '\u{115F}' | // Hangul Choseong Filler
+        '\u{1160}' | // Hangul Jungseong Filler
+        '\u{3164}' | // Hangul Filler
+        '\u{FFA0}' | // Halfwidth Hangul Filler
+        '\u{1BCA0}'..='\u{1BCA3}' | // Shorthand Format Controls (Cf): letter/word overlap + up/down step (invisible)
+        '\u{1D173}'..='\u{1D17A}' | // Musical symbol beam/tie/slur/phrase begin/end (Cf; invisible formatting)
+        '\u{FFF0}'..='\u{FFF8}' | // Reserved, Default_Ignorable (invisible)
         '\u{FFF9}'..='\u{FFFB}' | // Interlinear annotation anchor/separator/terminator (invisible)
         '\u{E0000}'..='\u{E007F}' // Tags block (language tag + tag chars + cancel-tag); invisible
     )
@@ -621,12 +663,12 @@ fn is_unicode_separator_evasion(ch: char) -> bool {
 /// mark, so the `is_ascii` guard skips the table lookup on the common byte
 /// range — the per-char cost on the slow (non-ASCII) path stays a perfect-hash
 /// lookup, a rounding error.
-fn is_combining_mark(ch: char) -> bool {
+pub(crate) fn is_combining_mark(ch: char) -> bool {
     !ch.is_ascii() && unicode_normalization::char::is_combining_mark(ch)
 }
 
 /// RTL override characters
-fn is_rtl_override(ch: char) -> bool {
+pub(crate) fn is_rtl_override(ch: char) -> bool {
     matches!(
         ch,
         '\u{202E}' | // Right-to-Left Override

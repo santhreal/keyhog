@@ -127,7 +127,7 @@ fn stream_added_lines(
     };
 
     // Run git diff to get unified diff output
-    let mut command = Command::new(super::git_bin()?);
+    let mut command = super::git_command()?;
     command.args([
         "-C",
         &repo_arg,
@@ -461,10 +461,10 @@ fn make_git_diff_chunk(
             base_offset: 0,
             base_line,
             source_type: "git-diff".into(),
-            path: Some(path.to_string()),
-            commit: Some(commit.to_string()),
-            author: Some(author.to_string()),
-            date: Some(date.to_string()),
+            path: Some(path.into()),
+            commit: Some(commit.into()),
+            author: Some(author.into()),
+            date: Some(date.into()),
             mtime_ns: None,
             size_bytes: None,
             decoded_span: None,
@@ -570,7 +570,7 @@ fn list_untracked_worktree_paths(
     repo_arg: &str,
     limits: crate::SourceLimits,
 ) -> Result<Vec<String>, SourceError> {
-    let mut command = Command::new(super::git_bin()?);
+    let mut command = super::git_command()?;
     command.args([
         "-C",
         repo_arg,
@@ -721,10 +721,10 @@ fn read_untracked_worktree_chunk(
             base_offset: 0,
             base_line: 0,
             source_type: "git-diff".into(),
-            path: Some(rel.to_string()),
-            commit: Some(metadata_commit.to_string()),
-            author: Some(author.to_string()),
-            date: Some(date.to_string()),
+            path: Some(rel.into()),
+            commit: Some(metadata_commit.into()),
+            author: Some(author.into()),
+            date: Some(date.into()),
             mtime_ns: None,
             size_bytes: Some(metadata.len()),
             decoded_span: None,

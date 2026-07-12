@@ -448,6 +448,20 @@ fn skip_path_prefixes_match_decoded_mount_targets() {
     assert_eq!(included.as_deref(), Some("/mnt/other disk/secrets"));
 }
 
+// A high-byte `\NNN` escape names a raw path byte; the two escapes for "é"
+// (UTF-8 0xC3 0xA9 == \303\251) must reconstruct the multi-byte scalar, not
+// mojibake it to Latin-1 "Ã©". The old `byte as char` decode produced the
+// wrong path here, silently sending scan-system to a path that would fail to
+// open -- a recall gap.
+#[cfg(target_os = "linux")]
+#[test]
+fn high_byte_mount_escapes_reconstruct_utf8_not_latin1() {
+    let decoded = API
+        .decoded_mount_target_if_included_for_test("/mnt/caf\\303\\251/secrets", Vec::new())
+        .expect("valid multi-byte octal mount target");
+    assert_eq!(decoded.as_deref(), Some("/mnt/café/secrets"));
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn malformed_mount_escape_is_loud() {

@@ -1,4 +1,5 @@
-//! Gate decode recursion ownership: screen-failing chunks move into the queue.
+//! Gate decode recursion ownership: screen-failing chunks move into the queue;
+//! screen-passing chunks share one `Arc<Chunk>` between queue and return vec.
 
 #[test]
 fn decode_pipeline_moves_screen_failures_without_clone() {
@@ -11,13 +12,13 @@ fn decode_pipeline_moves_screen_failures_without_clone() {
         .expect("screen handling body is extractable");
 
     assert!(
-        !body.contains(
-            "queue.push_back((decoded.clone(), depth + 1));\n                    if passes_screen"
-        ),
-        "screen-failing decoded chunks must not clone before discovering they are not returned"
+        !body.contains("decoded.clone()"),
+        "decoded chunks must not be cloned for BFS enqueue; use Arc sharing"
     );
     assert!(
-        body.contains("if passes_screen {\n                        queue.push_back((decoded.clone(), depth + 1));\n                        decoded_chunks.push(decoded);\n                    } else {\n                        queue.push_back((decoded, depth + 1));\n                    }"),
-        "screen-passing chunks need one clone for queue+return, while screen failures move into the queue"
+        body.contains(
+            "if passes_screen {\n                        let shared = Arc::new(decoded);\n                        queue.push_back((Arc::clone(&shared), depth + 1));\n                        decoded_chunks.push(shared);\n                    } else {\n                        queue.push_back((Arc::new(decoded), depth + 1));\n                    }"
+        ),
+        "screen-passing chunks share one Arc between queue and return vec; screen failures move into the queue"
     );
 }

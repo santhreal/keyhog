@@ -46,6 +46,7 @@ impl CompiledScanner {
 pub(crate) struct ConfirmedAnchorIndex {
     anchor_ac: AhoCorasick,
     anchor_first_bigram: FirstBigramSet,
+    anchor_literals: Vec<String>,
     literal_patterns: Vec<Vec<u32>>,
     eligible: Vec<bool>,
     anchored: Vec<Option<AnchoredRegex>>,
@@ -97,10 +98,20 @@ impl ConfirmedAnchorIndex {
         {
             Ok(ac) => ac,
             Err(error) => {
-                tracing::warn!(
-                    literals = literals.len(),
-                    %error,
-                    "confirmed shared-anchor Aho-Corasick build failed; confirmed localization disabled (recall preserved)"
+                // The literal set is derived from compile-time-constant detector
+                // prefixes, so an `AhoCorasick` build failure here is a
+                // build-invariant violation. Surface it on the SAME loud channel
+                // as the sibling prefilters (Law 10) — a bare `tracing::warn!`
+                // with no subscriber is silent, exactly the swallow the anchored
+                // verifier fail-closed sweep removed. Confirmed localization is a
+                // pure optimization with a whole-chunk fallback, so this stays a
+                // loud, recorded, recall-preserving degrade (not a panic).
+                crate::prefilter_degrade::warn_prefilter_disabled(
+                    &format!(
+                        "confirmed shared-anchor Aho-Corasick ({} literals)",
+                        literals.len()
+                    ),
+                    &error,
                 );
                 return None;
             }
@@ -109,6 +120,7 @@ impl ConfirmedAnchorIndex {
         Some(Self {
             anchor_ac,
             anchor_first_bigram,
+            anchor_literals: literals,
             literal_patterns,
             eligible,
             anchored,
@@ -118,6 +130,10 @@ impl ConfirmedAnchorIndex {
 
     pub(crate) fn eligible_count(&self) -> usize {
         self.eligible_count
+    }
+
+    pub(crate) fn anchor_literals(&self) -> &[String] {
+        &self.anchor_literals
     }
 
     #[cfg(test)]
@@ -132,7 +148,8 @@ impl ConfirmedAnchorIndex {
 
     pub(crate) fn anchored_regex(&self, ac_idx: usize) -> Option<&AnchoredRegex> {
         let anchored = self.anchored.get(ac_idx)?.as_ref()?;
-        anchored.get()?;
+        // The slot's presence IS eligibility; `AnchoredRegex::get()` is now
+        // fail-closed (compiles-or-panics, never None), so no compile pre-check.
         Some(anchored)
     }
 

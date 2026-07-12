@@ -1,0 +1,10 @@
+components = [
+  "example",
+  "examples",
+  "test",
+  "tests",
+  "fixture",
+  "fixtures",
+  "sample",
+  "samples",
+]

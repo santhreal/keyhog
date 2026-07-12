@@ -32,6 +32,15 @@ regex = 'slk_[a-fA-F0-9]{64}'
 description = "Sourcegraph license key (slk_<64 hex>)"
 group = 0
 
+[[detector.patterns]]
+# Keyword-assignment form (no sgp_ prefix): `sourcegraph: <40 hex>`. The `[:=]`
+# assignment anchor is REQUIRED so this does NOT fire on the 40-hex commit SHAs
+# embedded in `sourcegraph.com/.../commit/<sha>` URLs (there the char after
+# `sourcegraph` is `.`/`/`, never `:`/`=`).
+regex = '''(?i)sourcegraph['"\s]*[:=]['"\s]*([a-fA-F0-9]{40})'''
+description = "Sourcegraph access token in a sourcegraph= assignment"
+group = 1
+
 [[detector.tests]]
 test_positive = "SRC_ACCESS_TOKEN=sgp_210f1131b08e93adcfc3f05faa2d768ff883a61f"
 test_negative = "SRC_ENDPOINT=https://sourcegraph.example.com"

@@ -5,26 +5,26 @@
 //! The count is now rendered at runtime from `keyhog_core::embedded_detector_count()`
 //! (see the crates/cli/src/main.rs command builder), so a hardcoded expectation
 //! is itself the drift bug. This test derives the expected value from the
-//! binary's own `detectors --format json` output and asserts the help text agrees, so
+//! binary's own `detectors --json` output and asserts the help text agrees, so
 //! adding or removing a detector can never silently desync the advertised
 //! corpus size from the corpus actually compiled in.
 
 use crate::e2e::support::binary;
 use std::process::Command;
 
-/// Embedded detector count = number of objects in `keyhog detectors --format json`.
+/// Embedded detector count = number of objects in `keyhog detectors --json`.
 /// Counts the per-detector `"companions":` key (every detector object emits
 /// exactly one) to avoid pulling a JSON dependency into the test.
 fn embedded_count() -> usize {
     let out = Command::new(binary())
-        .args(["detectors", "--format", "json"])
+        .args(["detectors", "--json"])
         .output()
-        .expect("spawn detectors --format json");
+        .expect("spawn detectors --json");
     let json = String::from_utf8_lossy(&out.stdout);
     let trimmed = json.trim();
     assert!(
         trimmed.starts_with('['),
-        "detectors --format json must emit a JSON array; got first 80 bytes: {:?}",
+        "detectors --json must emit a JSON array; got first 80 bytes: {:?}",
         &trimmed[..trimmed.len().min(80)]
     );
     json.matches("\"companions\":").count()

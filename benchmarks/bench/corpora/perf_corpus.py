@@ -36,7 +36,7 @@ class KernelCorpus(Corpus):
     def root(self) -> pathlib.Path:
         return self._root
 
-    def records(self) -> list[LabeledRecord]:
+    def _load_records(self) -> list[LabeledRecord]:
         # Perf-only: no ground truth.
         return []
 

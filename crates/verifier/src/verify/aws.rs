@@ -37,12 +37,26 @@ pub(crate) async fn build_aws_probe(
     proxy_in_use: bool,
     insecure_tls: bool,
 ) -> super::request::RequestBuildResult {
-    let access_key = crate::interpolate::resolve_field(access_key, credential, companions);
-    let secret_key = crate::interpolate::resolve_field(secret_key, credential, companions);
+    // Sanitize+resolve every credential field the SigV4 probe signs. A captured
+    // value can carry a trailing newline / control byte (line-anchored capture),
+    // and `valid_aws_format` requires an EXACT 20-char all-alphanumeric access key,
+    // so an unsanitized `AKIA…\n` would be misreported `Dead` — a LIVE key silently
+    // missed. This mirrors the sibling `AuthSpec::Query` arm in `auth.rs`, which
+    // already resolves + `sanitize_raw_value`s its field. `region` is resolved the
+    // same way so a `companion.region` reference actually resolves instead of being
+    // fed verbatim to the region-format screen (which only ever rejects it).
+    let resolve = |field: &str| {
+        crate::interpolate::sanitize_raw_value(&crate::interpolate::resolve_field(
+            field, credential, companions,
+        ))
+    };
+    let access_key = resolve(access_key);
+    let secret_key = resolve(secret_key);
     let session_token = session_token_template
         .as_ref()
-        .map(|t| crate::interpolate::resolve_field(t, credential, companions))
-        .filter(|t| !t.is_empty());
+        .map(|template| resolve(template))
+        .filter(|token| !token.is_empty());
+    let region = resolve(region);
 
     // Canary short-circuit (fail-closed BEFORE any network egress): an access
     // key whose offline-decoded account belongs to a known canary issuer is a
@@ -91,7 +105,7 @@ pub(crate) async fn build_aws_probe(
         };
     }
 
-    if let Err(result) = validate_aws_region(region) {
+    if let Err(result) = validate_aws_region(&region) {
         return super::request::RequestBuildResult::Final {
             result,
             metadata: HashMap::new(),
@@ -131,7 +145,7 @@ pub(crate) async fn build_aws_probe(
         &access_key,
         &secret_key,
         session_token.as_deref(),
-        region,
+        &region,
         "sts",
         timeout,
     )
@@ -248,14 +262,10 @@ async fn build_sigv4_request(
         let metadata = match parse_aws_sts_success_metadata(&resp_body) {
             Ok(metadata) => metadata,
             Err(error) => {
-                eprintln!(
-                    "keyhog: AWS STS GetCallerIdentity returned HTTP 200 but identity metadata \
-                     could not be parsed ({error}); reporting the credential as live with \
-                     metadata_parse_error."
-                );
                 tracing::warn!(
                     %error,
-                    "AWS STS GetCallerIdentity success metadata could not be parsed"
+                    "AWS STS GetCallerIdentity returned HTTP 200 but identity metadata could \
+                     not be parsed; reporting the credential as live with metadata_parse_error"
                 );
                 HashMap::from([("metadata_parse_error".into(), error)])
             }

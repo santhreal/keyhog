@@ -24,11 +24,11 @@ pub(crate) const MAX_SCAN_CHUNK_BYTES: usize = 1024 * 1024;
 /// concatenated secrets with generous margin.
 pub(crate) const WINDOW_OVERLAP_BYTES: usize = 128 * 1024;
 
-/// Minimum AC literal prefix length. Shorter prefixes (e.g., "1", "x", "_")
-/// match too many positions and degrade Aho-Corasick throughput.
 pub(crate) const FIRST_CAPTURE_GROUP_INDEX: usize = 1;
 pub(crate) const FIRST_LINE_NUMBER: usize = 1;
 pub(crate) const PREVIOUS_LINE_DISTANCE: usize = 1;
+/// Minimum AC literal prefix length. Shorter prefixes (e.g., "1", "x", "_")
+/// match too many positions and degrade Aho-Corasick throughput.
 pub(crate) const MIN_LITERAL_PREFIX_CHARS: usize = 3;
 
 /// Default per-regex AST + lazy-DFA-cache size limit. 1 MiB is large enough for
@@ -84,7 +84,7 @@ pub fn set_regex_dfa_limit(bytes: usize) {
     REGEX_DFA_LIMIT_OVERRIDE.store(bytes, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// The compiled-default per-regex DFA size limit (`REGEX_SIZE_LIMIT_BYTES`):
+/// The compiled-default per-regex DFA size limit ([`REGEX_SIZE_LIMIT_BYTES`]):
 /// the cap that takes effect when no `--regex-dfa-limit` / `regex_dfa_limit`
 /// override is set. Exposed so `keyhog config --effective` can report the real
 /// active default instead of a misleading "off" - an unset limit is never truly
@@ -126,13 +126,16 @@ pub(crate) const ML_CONTEXT_RADIUS_LINES: usize = 5;
 // The ML/heuristic blend weight is NOT a compile-time constant: it is the
 // runtime-configurable `ScannerConfig::ml_weight` knob (default seeded from
 // `keyhog_core::ScanConfig`, overridable via `.keyhog.toml` and the
-// `--ml-weight` CLI flag, validated in [0,1] at input and scanner installation).
+// `--ml-weight` CLI flag, clamped to [0,1] in `ScannerConfig::sanitise`).
 // The blend at `apply_ml_batch_scores` reads `self.config.ml_weight` and
 // `(1.0 - self.config.ml_weight)`. The former `ML_WEIGHT`/`HEURISTIC_WEIGHT`
 // consts were a dead parallel source of truth (tuned!=shipped) and have been
 // removed so there is exactly one place the weight lives.
 
-#[cfg(not(feature = "multiline"))]
+/// The ONE always-compiled `LineMapping` owner. Previously duplicated field-for-field
+/// under `#[cfg(feature = "multiline")]` in `multiline/config.rs`; both the multiline
+/// and non-multiline `PreprocessedText` variants now share this single definition
+/// (re-exported as `crate::multiline::LineMapping` under the `multiline` feature).
 #[derive(Debug, Clone)]
 pub(crate) struct LineMapping {
     pub(crate) start_offset: usize,
@@ -203,8 +206,9 @@ impl<'a> PreprocessedText<'a> {
     }
 }
 
-#[cfg(not(feature = "multiline"))]
-fn source_offset_from_mapping(
+/// The ONE always-compiled owner (was duplicated identically in `multiline/config.rs`
+/// under `#[cfg(feature = "multiline")]`). Called by both `PreprocessedText` variants.
+pub(crate) fn source_offset_from_mapping(
     source: &str,
     mapping: &LineMapping,
     offset: usize,
@@ -230,8 +234,9 @@ fn source_offset_from_mapping(
     }
 }
 
-#[cfg(not(feature = "multiline"))]
-fn source_line_at(source: &str, start: usize) -> Option<&str> {
+/// The ONE always-compiled owner (was duplicated in `multiline/config.rs`; the code
+/// body was identical — only the comment wording differed).
+pub(crate) fn source_line_at(source: &str, start: usize) -> Option<&str> {
     if start >= source.len() {
         return None;
     }
@@ -441,8 +446,10 @@ impl LazyRegex {
     }
 
     /// Return the compiled regex seeded during scanner construction. Test-only
-    /// constructors may still compile here; a compile error is an invariant
-    /// breach and fails loud instead of returning a never-matching regex.
+    /// constructors may still compile here; a compile error is a build-invariant
+    /// breach (construction validation should have rejected the source), so it is
+    /// surfaced LOUDLY and fails closed to a never-matching sentinel for this one
+    /// pattern instead of panicking and aborting the whole scan.
     pub(crate) fn get(&self) -> &Regex {
         self.cell
             .get_or_init(|| {
@@ -458,19 +465,32 @@ impl LazyRegex {
                 match built {
                     Ok(rx) => rx,
                     Err(error) => {
-                        tracing::error!(
-                            pattern = %self.src,
-                            %error,
-                            "scanner regex reached first-use compilation after construction validation"
+                        crate::prefilter_degrade::warn_prefilter_disabled(
+                            &format!("detector regex first-use compile ({})", self.src),
+                            &error,
                         );
-                        unreachable!(
-                            "scanner regex reached first-use compilation after construction validation failed: {error}"
-                        )
+                        never_match_sentinel()
                     }
                 }
             })
             .as_ref()
     }
+}
+
+/// A process-wide never-matching regex used as the fail-closed sentinel when a
+/// `LazyRegex` source that passed construction validation nonetheless fails to
+/// compile on first use. `\b\B` requires a position to be simultaneously a word
+/// boundary and not one, which no position satisfies — so it matches nothing.
+/// The failing detector contributes zero matches (fail closed) while the rest of
+/// the scan proceeds; the failure is surfaced loudly via `warn_prefilter_disabled`.
+fn never_match_sentinel() -> Arc<Regex> {
+    static SENTINEL: std::sync::OnceLock<Arc<Regex>> = std::sync::OnceLock::new();
+    SENTINEL
+        .get_or_init(|| match Regex::new(r"\b\B") {
+            Ok(re) => Arc::new(re),
+            Err(error) => panic!("`\\b\\B` is a constant valid regex but failed to build: {error}"),
+        })
+        .clone()
 }
 
 /// A compiled entry: one pattern from one detector. Detector and generated
@@ -513,9 +533,7 @@ pub(crate) struct CompiledCompanion {
 #[cfg(any(feature = "entropy", feature = "simdsieve"))]
 pub(crate) use crate::scan_state::RawMatchPriority;
 pub(crate) use crate::scan_state::ScanState;
-pub use crate::scanner_config::{
-    ScannerConfig, ScannerConfigInstallError, ScannerTuningConfig,
-};
+pub use crate::scanner_config::{ScannerConfig, ScannerTuningConfig};
 // `MlPendingMatch` only exists with the `ml` feature (it is the batch-queue
 // record); re-export it under the same gate so the lean / `--no-default-features`
 // build resolves the import set instead of failing with E0432.

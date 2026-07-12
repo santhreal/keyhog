@@ -38,14 +38,10 @@ use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScannerConfig};
 use serde::Deserialize;
 
-/// Absolute path to the on-disk `detectors/` TOML tree (cwd-stable).
-pub fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
+// Single owner of the detector-dir path: `support.rs` re-mounts
+// `../support/paths.rs`, the tree-wide canonical `detector_dir()`.
+mod support;
+pub use support::paths::detector_dir;
 
 /// Absolute path to `tests/contracts/` (the canonical positive corpus).
 pub fn contracts_dir() -> PathBuf {

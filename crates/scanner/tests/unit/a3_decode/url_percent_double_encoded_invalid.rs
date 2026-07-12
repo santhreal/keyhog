@@ -40,23 +40,30 @@ fn url_percent_single_char_after_percent() {
 
 #[test]
 fn url_percent_valid_then_invalid() {
-    // `%41%2` - first triplet valid (`%41` = 'A'), second is truncated.
+    // `%41%2` - first triplet valid (`%41` = 'A'), second (`%2`) truncated at
+    // end of input. The decoder is deliberately BEST-EFFORT (decode/url.rs
+    // `percent_decode`): it decodes the valid `%41` -> 'A' and treats the
+    // truncated `%2` as a literal byte, instead of the old all-or-nothing `Err`
+    // that discarded the already-decoded 'A' (an escape-already-decoded recall
+    // loss - Law 10, matching the sibling octal/HTML decoders). So a url chunk
+    // IS produced, carrying the partial decode.
     let text = "key=%41%2";
     let chunk = Chunk {
         data: text.into(),
         metadata: Default::default(),
     };
     let decoded = decode_chunk(&chunk, 1, false, None, None);
-    // The decoder must try to decode but bail on the incomplete second triplet.
-    // The result should NOT contain a decoded chunk or should contain only the
-    // first byte ('A') on a best-effort basis (decoder returns Err on incomplete).
-    let has_url = decoded
+    let url_chunk = decoded
         .iter()
-        .any(|c| c.metadata.source_type.contains("url"));
-    // Most robust: bail on the entire candidate if it has a truncated triplet.
+        .find(|c| c.metadata.source_type.contains("url"))
+        .expect("a valid leading %41 escape must still yield a best-effort url decode");
+    // The input has NO literal 'A', so an 'A' in the output proves `%41` was
+    // decoded; the raw `%41` must be gone. This pins best-effort recovery
+    // (partial decode kept) rather than all-or-nothing rejection.
     assert!(
-        !has_url,
-        "percent-run with truncated final triplet must be rejected"
+        url_chunk.data.contains('A') && !url_chunk.data.contains("%41"),
+        "best-effort decode must recover 'A' from the valid %41 and not discard it, got {:?}",
+        url_chunk.data
     );
 }
 

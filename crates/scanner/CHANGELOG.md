@@ -6,29 +6,42 @@
   single-file override) because the verified 8 MiB RTX 5090 crossover is warm
   evidence; exact cold-versus-daemon decisions belong to persisted autoroute
   calibration.
-- Move generic-assignment candidate length bounds into each owning detector's
-  TOML (`min_len` / `max_len`). The shared extractor derives its capture range
-  from the detector corpus, applies the owning detector's inclusive ceiling,
-  and rejects an overlength token whole instead of emitting a misleading
-  truncated prefix.
-- Skip repeated keyword-free entropy analysis for adjacent byte-identical
-  lines after the first eligible copy; candidate-value deduplication already
-  makes subsequent copies unable to add a finding, while generated sources and
-  repeated log/config blocks avoid re-running the full entropy/shape pipeline.
+- GPU MoE buffer pool: reuse input/output/staging wgpu buffers across MoE
+  dispatches via a global `LazyLock<Mutex<MoeBufferPool>>`, eliminating
+  per-dispatch buffer allocation (the dominant non-GPU overhead for large
+  MoE batches in coalesced scanning). The params buffer remains per-dispatch
+  to prevent concurrent batch_size races. Pooled buffers grow to the
+  high-water mark and are reused for smaller batches via sized slicing.
+- Fix pre-existing `simdsieve_prefilter` compilation errors: add
+  `build_hot_pattern_validators` (plural), `HOT_PATTERNS`, and
+  `HOT_PATTERN_DETECTOR_IDS` computed from embedded detector specs via
+  `LazyLock` with leaked `'static` slices. Add standalone
+  `hot_pattern_index_at` test helper that doesn't require a compiled scanner.
 - Reduce the operator backend surface to `auto`, `gpu`, `simd`, and `cpu`.
   Stable profile/evidence labels remain parseable by library and persistence
   paths, while MegaScan and implementation-name aliases no longer silently map
   to a live route. `ScanBackend::MegaScan` remains available to source-compatible
   library callers but is no longer produced by the parser.
-- Make `CompiledScanner::scan` and `scan_coalesced` the deterministic portable CPU reference paths
-  instead of an uncalibrated hardware heuristic. Accelerated library callers
-  select a measured backend through `scan_with_backend`; the CLI continues to
-  use persisted fastest-correct autoroute decisions.
-- Add `CompiledScanner::try_with_config`, a fail-closed installation boundary
-  for programmatic scanner configuration. It validates the complete shared
-  `ScanConfig` before changing scanner state; both production CLI construction
-  paths now use it. `with_config` remains available for source compatibility
-  when callers already hold trusted, validated configuration.
+- Reduce `MAX_SCAN_CHUNK_BYTES` from 1 MiB to 384 KiB, enabling 32-thread
+  parallelism on large inputs without OOM. Window size stays at 1 MiB to
+  preserve adversarial parity.
+- Add fast line-level prefilter to `scan_keyword_free_candidates` that
+  skips lines below `max_entropy_run` threshold before entering the
+  expensive entropy computation. The prefilter is conditionally disabled
+  when dogfood telemetry is active to preserve suppression-event recording.
+- Promote `debug_assert!` to `assert!` for the line-offset invariant in
+  `find_entropy_secrets_with_canonical_lift_and_lines` and
+  `find_entropy_secrets_with_precomputed_keywords_and_policy`. The
+  fail-closed behavior must hold in release builds, not only debug.
+- Fix pre-existing build errors in `gpu_region_dispatch.rs`: add missing
+  `report_positioned_gpu_candidate_loss` helper and
+  `scan_gpu_literal_matches_with_scratch` function. Add `marked` field
+  to `Phase2GpuDfaAdmission` initializers.
+- Fix pre-existing test compile errors in
+  `gpu_presence_bit_partition.rs`: remove assignments to non-existent
+  `confirmed_anchor_literal_count` and `generic_keyword_literal_count`
+  fields on `CompiledScanner`.
+
 - Add detector-owned BPE token-efficiency policy through
   `bpe_max_bytes_per_token` in detector TOML. Generic and entropy fallback
   paths resolve the same owning detector before applying the gate; detector
@@ -204,6 +217,15 @@
 - Treat Avaya client secrets/API keys as primaries and public OAuth client IDs
   as exact companion context, removing critical standalone identifier findings
   and rejecting continued secret prefixes.
+- Make env0 key IDs self-delimiting, capture API-secret companions exactly, and
+  explicitly preserve standalone secret findings.
+- Capture FastSpring password companions by exact value and explicitly preserve
+  password-only findings without letting username primaries self-attach.
+- Make GCS HMAC companions secret-field-specific instead of matching arbitrary
+  base64/access-ID substrings, and reject overlong `GOOG` access IDs whole.
+- Remove Jumio's accidental companion capture of the role label, capture the
+  exact secret value, preserve secret-only findings, and reject continued
+  credential prefixes.
 
 ## 0.2.1
 

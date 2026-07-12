@@ -195,3 +195,30 @@ fn prose_mentioning_the_prefix_does_not_fire_jwt() {
         "prose mentioning the eyJ prefix without a real JWT must NOT fire jwt-token"
     );
 }
+
+/// DR-330 CONSOLIDATION GUARD — the JWT header marker `eyJ` (base64url of `{"`,
+/// the load-bearing anchor of the `jwt-token` detector pattern) is ALSO keyed off
+/// by the entropy plausibility gate (`entropy/plausibility.rs`) and the
+/// canonical-shape suppression check (`suppression/shape/canonical.rs`). Those
+/// were three bare `"eyJ"` literals free to drift; they now share the single
+/// owner `jwt::JWT_BASE64_HEADER_PREFIX` via `has_jwt_header_prefix`. This binds
+/// that const to its authoritative detector so it can never diverge from the
+/// pattern that surfaces a JWT. (Only the LITERAL is unified here — the full
+/// looks_like_jwt shape unification, which would tighten the plausibility gate,
+/// remains bench-gated per DR-330.)
+#[test]
+fn jwt_header_marker_is_backed_by_the_jwt_detector() {
+    let marker = keyhog_scanner::testing::jwt_header_prefix();
+    let path = std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../core/detectors/jwt-token.toml"
+    ));
+    let toml = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("read jwt-token detector {}: {e}", path.display()));
+    assert!(
+        toml.contains(marker),
+        "JWT header marker {marker:?} (jwt::JWT_BASE64_HEADER_PREFIX) is absent from its \
+         authoritative jwt-token.toml pattern — the single-owner const drifted from the \
+         detector that surfaces a JWT"
+    );
+}

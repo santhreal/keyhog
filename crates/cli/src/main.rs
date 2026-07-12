@@ -101,10 +101,12 @@ mod interrupt {
         append(&mut buf, &mut len, b" findings.\n");
         // SAFETY: async-signal-safe primitives only — `write(2)` over a valid
         // stack buffer + length, then `_exit` with the documented interrupt
-        // code (128 + SIGINT). No allocation, no locks, no Rust Drop glue.
+        // code (128 + SIGINT). The code is the compile-time `EXIT_INTERRUPTED`
+        // constant (an immediate value, no allocation/locks/Drop glue), so the
+        // ONE exit-code owner is honored without breaking signal-safety.
         unsafe {
             libc::write(2, buf.as_ptr().cast(), len);
-            libc::_exit(130);
+            libc::_exit(keyhog::exit_codes::EXIT_INTERRUPTED as libc::c_int);
         }
     }
 

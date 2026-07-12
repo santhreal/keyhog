@@ -8,7 +8,10 @@ id = "transpose-api-key"
 name = "Transpose API Key"
 service = "transpose"
 severity = "high"
-keywords = ["transpose", "TRANSPOSE", "api_key", "apikey"]
+# "api_key", "apikey" removed: over-broad generic prefilter the regex does NOT need — every
+# pattern self-anchors on the service name (kept), which is present in any real
+# match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.
+keywords = ["transpose", "TRANSPOSE"]
 
 [[detector.patterns]]
 # Anchor must be the literal `TRANSPOSE` token optionally followed by a

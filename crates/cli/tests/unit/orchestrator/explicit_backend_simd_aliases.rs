@@ -1,5 +1,10 @@
 use keyhog::testing::{CliTestApi as _, API};
+use keyhog_scanner::hw_probe::ScanBackend;
+
 #[test]
-fn retired_hyperscan_backend_alias_is_rejected() {
-    assert!(API.explicit_backend_override(Some("hyperscan")).is_err());
+fn explicit_backend_simd_aliases() {
+    assert_eq!(
+        API.explicit_backend_override(Some("hyperscan")).unwrap(),
+        Some(ScanBackend::SimdCpu)
+    );
 }

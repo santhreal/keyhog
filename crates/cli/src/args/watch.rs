@@ -17,8 +17,7 @@ pub struct WatchArgs {
     #[arg(long, value_name = "DIR")]
     pub cache_dir: Option<PathBuf>,
     /// Force a specific scan backend instead of using persisted autoroute.
-    /// Values: `auto`, `gpu`, `simd`, or `cpu`.
-    /// Without it (and without installer calibration for
+    /// Values: `auto`, `gpu`, `simd`, or `cpu`. Without it (and without installer calibration for
     /// this binary) every change scan fails closed with an autoroute-calibration
     /// error, exactly as `keyhog scan` does.
     #[arg(

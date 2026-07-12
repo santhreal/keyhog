@@ -8,7 +8,7 @@
 use keyhog_scanner::decode::hex::find_hex_strings;
 use keyhog_scanner::decode::{base64_decode, find_base64_strings, hex_decode, z85_decode};
 use keyhog_scanner::testing::decode_caesar::{
-    caesar_shift, candidate_shape_invariant, is_source_code_path, looks_credential_shaped,
+    caesar_credential_shape_gate, caesar_shift, candidate_shape_invariant, is_source_code_path,
     matched_caesar_shifts, MIN_CAESAR_LEN,
 };
 use keyhog_scanner::testing::{looks_reversible, reverse_str};
@@ -210,7 +210,7 @@ fn matched_shifts_is_superset_of_credential_shaped_brute_force() {
         let table = matched_caesar_shifts(cand);
         for k in 1..=25u8 {
             let decoded = caesar_shift(cand, k);
-            if looks_credential_shaped(&decoded) {
+            if caesar_credential_shape_gate(&decoded) {
                 assert!(
                     table[k as usize],
                     "shift {} is credential-shaped for {:?} but not in the matched table",
@@ -222,7 +222,7 @@ fn matched_shifts_is_superset_of_credential_shaped_brute_force() {
 }
 
 // ---------------------------------------------------------------------------
-// candidate_shape_invariant / looks_credential_shaped
+// candidate_shape_invariant / caesar_credential_shape_gate
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -238,13 +238,13 @@ fn shape_invariant_requires_digit_letter_and_run() {
 }
 
 #[test]
-fn looks_credential_shaped_needs_known_prefix() {
+fn caesar_credential_shape_gate_needs_known_prefix() {
     // ghp_ with digits and a long run -> shaped.
-    assert!(looks_credential_shaped(
+    assert!(caesar_credential_shape_gate(
         "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"
     ));
     // Long alnum run + digit but no known provider prefix -> NOT shaped.
-    assert!(!looks_credential_shaped("zzzzzzzzzz12345678"));
+    assert!(!caesar_credential_shape_gate("zzzzzzzzzz12345678"));
 }
 
 #[test]

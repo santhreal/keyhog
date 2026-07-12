@@ -1,4 +1,4 @@
-#[cfg(any(feature = "simd", feature = "gpu"))]
+#[cfg(any(feature = "simd", feature = "gpu", test))]
 use super::windowed_support::window_ranges;
 use super::windowed_support::{
     next_window_offset, record_window_match, window_chunk, window_end_offset,
@@ -17,7 +17,7 @@ impl CompiledScanner {
         if reject_oversized_window_chunk(chunk, chunk_text) {
             return Vec::new();
         }
-        let mut all_matches = Vec::with_capacity((chunk_text.len() / 4096).max(16));
+        let mut all_matches = Vec::with_capacity(estimate_window_match_capacity(chunk_text.len()));
         let mut seen = HashSet::new();
         let mut seen_order = VecDeque::new();
         let mut offset = 0usize;
@@ -61,7 +61,7 @@ impl CompiledScanner {
         all_matches
     }
 
-    #[cfg(any(feature = "simd", feature = "gpu"))]
+    #[cfg(any(feature = "simd", feature = "gpu", test))]
     pub(crate) fn scan_windowed_with_triggered(
         &self,
         chunk: &Chunk,
@@ -78,7 +78,7 @@ impl CompiledScanner {
         if reject_oversized_window_chunk(chunk, chunk_text) {
             return Vec::new();
         }
-        let mut all_matches = Vec::with_capacity((chunk_text.len() / 4096).max(16));
+        let mut all_matches = Vec::with_capacity(estimate_window_match_capacity(chunk_text.len()));
         let mut seen = HashSet::new();
         let mut seen_order = VecDeque::new();
         let line_offsets = crate::compute_line_offsets(chunk_text);
@@ -158,13 +158,28 @@ impl CompiledScanner {
     }
 }
 
-fn reject_oversized_window_chunk(chunk: &Chunk, chunk_text: &str) -> bool {
-    if chunk_text.len() <= 512 * 1024 * 1024 {
+/// Rough starting capacity for a chunk's match vec: ~1 per 4 KiB, floor 16.
+fn estimate_window_match_capacity(chunk_len: usize) -> usize {
+    (chunk_len / 4096).max(16)
+}
+
+/// Absolute OOM backstop for windowed scanning. `scan_windowed` already scans a
+/// chunk in bounded `MAX_SCAN_CHUNK_BYTES` slices, so a chunk below this ceiling
+/// is fully covered (windowed), NOT dropped — per-window memory stays bounded
+/// regardless of total chunk size. This hard skip therefore fires only for a
+/// pathological multi-GiB single chunk, where the resident buffer plus the line
+/// -offset table would themselves threaten OOM. Set far above any real input so
+/// the previous 512 MiB recall cliff no longer silently drops scannable data.
+pub(crate) const MAX_WINDOW_CHUNK_BYTES: usize = 4 * 1024 * 1024 * 1024;
+
+pub(crate) fn reject_oversized_window_chunk(chunk: &Chunk, chunk_text: &str) -> bool {
+    if chunk_text.len() <= MAX_WINDOW_CHUNK_BYTES {
         return false;
     }
     tracing::warn!(
-        "Chunk from {} exceeds 512MB limit ({} bytes), skipping to prevent OOM.",
+        "Chunk from {} exceeds {}MiB windowed-scan ceiling ({} bytes); skipping this chunk to prevent OOM. COVERAGE LOSS for this input.",
         chunk.metadata.path.as_deref().unwrap_or("unknown"), // LAW10: absent path/field => display placeholder; reporting-only, recall-safe
+        MAX_WINDOW_CHUNK_BYTES / (1024 * 1024),
         chunk_text.len()
     );
     true

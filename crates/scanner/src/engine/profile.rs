@@ -75,32 +75,16 @@ const NAMES: [&str; N] = [
     "decode",
 ];
 
-macro_rules! zeros {
-    () => {
-        [
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-            AtomicU64::new(0),
-        ]
-    };
-}
+/// One zeroed counter per leaf, sized off `N` so the array can never drift from
+/// the enum's variant count (the old hand-listed 13-element literal had to be
+/// hand-edited in lockstep with `P` — three copies to keep in sync).
+const ZEROS: [AtomicU64; N] = [const { AtomicU64::new(0) }; N];
 
-static NS: [AtomicU64; N] = zeros!();
-static CALLS: [AtomicU64; N] = zeros!();
+static NS: [AtomicU64; N] = ZEROS;
+static CALLS: [AtomicU64; N] = ZEROS;
 /// Subset of [`NS`] accumulated while inside a decode sub-chunk rescan, so the
 /// dump can report how much of each leaf is decode-recursion-driven.
-static NS_DECODE: [AtomicU64; N] = zeros!();
+static NS_DECODE: [AtomicU64; N] = ZEROS;
 static ROOT_BYTES: AtomicU64 = AtomicU64::new(0);
 static ROOT_FILES: AtomicU64 = AtomicU64::new(0);
 static PROFILE_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -142,6 +126,22 @@ thread_local! {
 #[cfg(feature = "decode")]
 pub(crate) fn set_in_decode(on: bool) -> bool {
     IN_DECODE.with(|c| c.replace(on))
+}
+
+/// True while this worker thread is rescanning a DECODED sub-chunk (base64/hex/
+/// url/… payload sliced out of an outer chunk). This is not merely a profiling
+/// marker: it is the single-owner scan-context signal that a caller (the phase-2
+/// prefilter) reads to widen the homoglyph-ASCII skip to ALL decoded content.
+/// Homoglyph prefix variants exist to catch unicode look-alikes in SOURCE text;
+/// inside a decoded payload a non-ASCII byte run is binary noise (base64/hex of
+/// binary), and any homoglyph-variant hit there is structurally a non-credential
+/// (a real secret is ASCII/UTF-8 text and is already covered by the base pattern
+/// in the lean DB), so the ~2.8k homoglyph NFAs can be skipped on decoded chunks
+/// regardless of `is_ascii()`. Always available (returns false without the
+/// `decode` feature, where `set_in_decode` never runs and the cell stays false).
+#[inline]
+pub(crate) fn in_decode() -> bool {
+    IN_DECODE.with(Cell::get)
 }
 
 /// RAII timing guard. Inert (no `Instant`) when profiling is disabled.

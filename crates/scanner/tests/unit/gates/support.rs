@@ -42,3 +42,42 @@ pub(crate) fn uncommented_code(src: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+/// Like [`uncommented_code`] but ALSO drops `#[cfg(...)]` attribute lines, for
+/// the one gate (`detector_id_owner`) that must not match a symbol appearing
+/// inside a `#[cfg]`-gated block.
+pub(crate) fn uncommented_code_strip_cfg(src: &str) -> String {
+    src.lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.starts_with("//") && !trimmed.starts_with("#[cfg")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// All whitespace removed. Canonical helper for source-substring gates that must
+/// survive `cargo fmt` re-wrapping a matched call across lines: normalize both
+/// the source and the needle with this, then `contains`. Pins the semantic call,
+/// not a particular line layout.
+pub(crate) fn source_without_whitespace(src: &str) -> String {
+    src.split_whitespace().collect()
+}
+
+/// Every production (non-comment, non-`#[cfg(test)]`) line in `src` that calls
+/// `.unwrap(` / `.expect(`, as `(1-based line number, full line)`. This is the
+/// shared scan behind the per-module `*_no_unwrap_expect` gates — each still
+/// owns its own source path and layers any documented allowlist on top of this
+/// (the contract stays per-module; only the identical byte-scan is shared).
+pub(crate) fn unwrap_expect_offenders(src: &str) -> Vec<(usize, &str)> {
+    src.lines()
+        .enumerate()
+        .filter_map(|(i, line)| {
+            let t = line.trim();
+            if t.starts_with("//") || t.contains("#[cfg(test)]") {
+                return None;
+            }
+            (t.contains(".unwrap(") || t.contains(".expect(")).then_some((i + 1, line))
+        })
+        .collect()
+}

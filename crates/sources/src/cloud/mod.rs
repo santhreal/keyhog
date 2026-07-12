@@ -46,7 +46,11 @@ pub(crate) fn blocking_client(
         .map_err(|error| SourceError::Other(format!("failed to build {source} client: {error}")))
 }
 
-pub(crate) fn parse_http_endpoint(raw: &str, source: &str) -> Result<reqwest::Url, SourceError> {
+pub(crate) fn parse_http_endpoint(
+    raw: &str,
+    source: &str,
+    allow_private: bool,
+) -> Result<reqwest::Url, SourceError> {
     let raw = raw.trim();
     let parsed = reqwest::Url::parse(raw)
         .map_err(|error| SourceError::Other(format!("invalid {source} endpoint: {error}")))?;
@@ -68,7 +72,7 @@ pub(crate) fn parse_http_endpoint(raw: &str, source: &str) -> Result<reqwest::Ur
     // non-http(s) URL is treated as private), so this only ever widens the
     // refusal set. It is the single owner of this policy, shared with the
     // WebSource and verifier SSRF gates.
-    if !private_cloud_endpoint_explicitly_allowed() {
+    if !allow_private {
         if keyhog_verifier::ssrf::is_private_url(parsed.as_str()) {
             return Err(SourceError::Other(format!(
                 "refusing {source} endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)"
@@ -91,6 +95,27 @@ pub(crate) fn parse_http_endpoint(raw: &str, source: &str) -> Result<reqwest::Ur
         screen_resolved_endpoint_host(&parsed, source)?;
     }
     Ok(parsed)
+}
+
+/// Validate + normalize a cloud object-store endpoint: run the shared SSRF/shape
+/// screen (`parse_http_endpoint`) then apply the object-store shape rules — a
+/// query string is never valid, and (for stores like GCS that address buckets by
+/// host, not path) the path must be empty/root. Returns the trailing-slash-trimmed
+/// endpoint string. This is the single owner of the per-provider skeleton S3 and
+/// GCS each hand-rolled as `validate_endpoint`; they diverged ONLY in whether the
+/// path had to be root (`require_root_path`), which is now an explicit parameter
+/// instead of a silent difference between two same-named copies.
+pub(crate) fn validate_cloud_endpoint(
+    endpoint: &str,
+    source: &str,
+    allow_private: bool,
+    require_root_path: bool,
+) -> Result<String, SourceError> {
+    let parsed = parse_http_endpoint(endpoint, source, allow_private)?;
+    if parsed.query().is_some() || (require_root_path && !matches!(parsed.path(), "" | "/")) {
+        return Err(SourceError::Other(format!("invalid {source} endpoint")));
+    }
+    Ok(parsed.to_string().trim_end_matches('/').to_string())
 }
 
 /// Resolve a cloud endpoint host and refuse it if ANY resolved address is one
@@ -135,25 +160,37 @@ fn screen_resolved_endpoint_host(parsed: &reqwest::Url, source: &str) -> Result<
     Ok(())
 }
 
-/// Loud operator opt-in for pointing a cloud source at a private / loopback /
-/// link-local endpoint — a legitimate need for self-hosted S3-compatible
-/// storage (MinIO / Ceph on `127.0.0.1` or an internal `10.x` gateway) and for
-/// loopback mock servers in integration tests.
-///
-/// Default is OFF: the SSRF host-screen in `parse_http_endpoint` is fully
-/// active and refuses every private endpoint. This is never a silent bypass
-/// (Law 10) — the operator must explicitly set
-/// `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` to a truthy value, mirroring the
-/// existing `KEYHOG_GCS_ALLOW_TOKEN_FORWARD` explicit-opt-in convention.
-fn private_cloud_endpoint_explicitly_allowed() -> bool {
-    matches!(
-        std::env::var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT").as_deref(),
-        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
-    )
-}
-
 pub(crate) fn credential_forward_allowed(allow_explicit: bool) -> bool {
     allow_explicit
+}
+
+/// Set a cloud-source builder's optional field to `Some(value)`.
+///
+/// Single owner for the byte-identical `with_prefix` / `with_max_objects`
+/// setter bodies shared by the S3, GCS, and Azure Blob sources: each setter
+/// delegates here so the "wrap in `Some`, overwriting any prior value" rule
+/// lives in exactly one place. Hosted in `cloud` (compiled for any of
+/// s3/gcs/azure) so a single-cloud-feature build never depends on `gcs`.
+pub(crate) fn set_optional<T>(slot: &mut Option<T>, value: T) {
+    *slot = Some(value);
+}
+
+/// Parse `endpoint` and test whether its host is `domain` or a subdomain of it,
+/// ASCII case-insensitively.
+///
+/// Single owner for the "parse endpoint URL -> extract host -> suffix-match a
+/// provider domain" predicate shared by the S3 (`amazonaws.com`) and GCS
+/// (`googleapis.com`) credential-forwarding gates. Fail-closed (Law 10): a
+/// malformed endpoint or one with no host returns `false`, so a bad endpoint is
+/// never classified as provider-owned and never receives forwarded credentials.
+pub(crate) fn endpoint_host_matches_domain(endpoint: &str, domain: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(endpoint) else {
+        return false;
+    };
+    let Some(host) = parsed.host_str() else {
+        return false;
+    };
+    host_matches_domain_ascii_ci(host, domain)
 }
 
 pub(crate) fn host_matches_domain_ascii_ci(host: &str, domain: &str) -> bool {
@@ -535,15 +572,35 @@ pub(crate) fn read_text_object_body(
     }
 }
 
+#[derive(serde::Deserialize)]
+struct BinaryObjectExtensions {
+    extensions: Vec<String>,
+}
+
+fn parse_binary_object_extensions(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<BinaryObjectExtensions>(raw)
+        .map(|parsed| parsed.extensions)
+        .map_err(|error| error.to_string())
+}
+
+static BINARY_OBJECT_EXTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_binary_object_extensions(include_str!(
+        "../../../../rules/binary-object-extensions.toml"
+    )) {
+        Ok(extensions) => extensions,
+        Err(error) => panic!(
+            "rules/binary-object-extensions.toml is invalid: {error}. \
+                 Fix the bundled Tier-B binary-object extensions list."
+        ),
+    }
+});
+
 pub(crate) fn is_probably_text_object_key(key: &str) -> bool {
-    const BINARY_OBJECT_EXTS: &[&str] = &[
-        "zip", "gz", "tgz", "tar", "7z", "rar", "pdf", "bz2", "xz", "zst", "lz4", "sz",
-    ];
     let Some(ext) = cloud_key_extension(key) else {
         return true;
     };
     !crate::filesystem::is_default_skip_extension(ext)
-        && !BINARY_OBJECT_EXTS
+        && !(&*BINARY_OBJECT_EXTS)
             .iter()
             .any(|candidate| ext.eq_ignore_ascii_case(candidate))
 }
@@ -558,6 +615,9 @@ fn cloud_key_extension(key: &str) -> Option<&str> {
 }
 
 pub(crate) fn is_binary_content_type(content_type: &str) -> bool {
+    // `media_type` now lives in the always-compiled `crate::http` module so the
+    // `web` feature (which also classifies Content-Type) can share it without
+    // pulling in a cloud provider feature.
     let media_type = crate::http::media_type(content_type);
     starts_with_ignore_ascii_case(media_type, "image/")
         || starts_with_ignore_ascii_case(media_type, "audio/")
@@ -621,6 +681,8 @@ pub(crate) fn record_source_truncated_once(
 #[cfg(test)]
 mod media_type_tests {
     use super::is_binary_content_type;
+    // `media_type` moved to the always-compiled `crate::http` (so `web` can
+    // share it without a cloud feature); these tests exercise it from there.
     use crate::http::media_type;
 
     #[test]
@@ -786,5 +848,113 @@ mod continuation_token_tests {
     #[test]
     fn unicode_line_separator_is_exhausted() {
         assert_eq!(meaningful_continuation_token(Some("\u{2028}")), None);
+    }
+}
+
+#[cfg(test)]
+mod endpoint_domain_gate_tests {
+    use super::{endpoint_host_matches_domain, set_optional};
+
+    // --- endpoint_host_matches_domain: single owner of the S3/GCS "is this
+    //     endpoint provider-owned?" credential-forwarding gate. ---
+
+    #[test]
+    fn exact_host_matches() {
+        assert!(endpoint_host_matches_domain(
+            "https://s3.amazonaws.com",
+            "amazonaws.com"
+        ));
+        assert!(endpoint_host_matches_domain(
+            "https://storage.googleapis.com",
+            "googleapis.com"
+        ));
+    }
+
+    #[test]
+    fn subdomain_matches() {
+        // A regional S3 host and a deep GCS host are still provider-owned.
+        assert!(endpoint_host_matches_domain(
+            "https://bucket.s3.us-west-2.amazonaws.com",
+            "amazonaws.com"
+        ));
+        assert!(endpoint_host_matches_domain(
+            "https://a.b.storage.googleapis.com",
+            "googleapis.com"
+        ));
+    }
+
+    #[test]
+    fn case_insensitive_host() {
+        assert!(endpoint_host_matches_domain(
+            "https://S3.AmazonAWS.CoM",
+            "amazonaws.com"
+        ));
+    }
+
+    // --- adversarial twins: suffix-confusion hosts must NOT match, or ambient
+    //     creds would be forwarded to an attacker-registered lookalike. ---
+
+    #[test]
+    fn suffix_confusion_does_not_match() {
+        // Attacker domain that merely *ends with* the brand string.
+        assert!(!endpoint_host_matches_domain(
+            "https://evil-amazonaws.com",
+            "amazonaws.com"
+        ));
+        assert!(!endpoint_host_matches_domain(
+            "https://notgoogleapis.com",
+            "googleapis.com"
+        ));
+        // Brand embedded as a subdomain label of an attacker apex.
+        assert!(!endpoint_host_matches_domain(
+            "https://amazonaws.com.attacker.io",
+            "amazonaws.com"
+        ));
+    }
+
+    #[test]
+    fn unrelated_host_does_not_match() {
+        assert!(!endpoint_host_matches_domain(
+            "https://minio.internal.corp",
+            "amazonaws.com"
+        ));
+    }
+
+    // --- fail-closed twins (Law 10): a malformed or host-less endpoint must
+    //     return false so it is never classified as provider-owned. ---
+
+    #[test]
+    fn malformed_endpoint_is_fail_closed() {
+        assert!(!endpoint_host_matches_domain("not a url", "amazonaws.com"));
+        assert!(!endpoint_host_matches_domain("", "googleapis.com"));
+    }
+
+    #[test]
+    fn hostless_url_is_fail_closed() {
+        // A scheme with no authority parses but has no host.
+        assert!(!endpoint_host_matches_domain(
+            "file:///etc/passwd",
+            "amazonaws.com"
+        ));
+        assert!(!endpoint_host_matches_domain(
+            "data:text/plain,x",
+            "googleapis.com"
+        ));
+    }
+
+    // --- set_optional: single owner of the cross-cloud builder setter body. ---
+
+    #[test]
+    fn set_optional_wraps_and_overwrites() {
+        let mut slot: Option<usize> = None;
+        set_optional(&mut slot, 7);
+        assert_eq!(slot, Some(7));
+        // Overwrites a prior Some rather than merging or ignoring.
+        set_optional(&mut slot, 42);
+        assert_eq!(slot, Some(42));
+
+        let mut text: Option<String> = Some("old".to_string());
+        set_optional(&mut text, "new".to_string());
+        assert_eq!(text.as_deref(), Some("new"));
     }
 }

@@ -17,4 +17,4 @@ your real project (the `app/.env.production` shape is intentional
 demo bait for screenshots).
 
 Run `keyhog scan demo` from the keyhog repo root to scan this
-directory — the text output the demo GIF (`demo.tape`) is based on.
+directory; the text output the demo GIF (`demo.tape`) is based on.

@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "VIRUSTOTAL=94006EXAMPLEEXAMPLEcbdc6"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# VIRUSTOTAL_API_KEY=94006201bd6c02ff2503b0a5791efdf15c370afd7e58806ee5633b46ce6cbdc6  # threat intel"
+credential = "94006201bd6c02ff2503b0a5791efdf15c370afd7e58806ee5633b46ce6cbdc6"
+reason = "Commented-out config; the = form surfaces the 64-hex key (keyword-anchored, so the hex-digest gate does not claim it as a bare SHA-256)."

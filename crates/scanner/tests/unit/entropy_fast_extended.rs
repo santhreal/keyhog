@@ -1,10 +1,10 @@
-/// Extended unit tests for `keyhog_scanner::testing::entropy_fast`.
+/// Extended unit tests for `keyhog_scanner::testing::entropy_fast::shannon_entropy_scalar`.
 ///
 /// Covers: empty slice, single byte, two bytes, exactly-2-byte all-same,
-/// uniform-256 distribution (max entropy = 8.0), power-of-2 distributions,
-/// has_high_entropy_fast with various thresholds, and the scalar/simd parity
-/// invariant.
-use keyhog_scanner::testing::entropy_fast::{has_high_entropy_fast, shannon_entropy_scalar};
+/// uniform-256 distribution (max entropy = 8.0), power-of-2 distributions, and
+/// remainder/large-slice histogram correctness. The scalar↔simd differential
+/// parity invariant lives in `sub_facade::sub_entropy` (`shannon_scalar_matches_simd_on_many_inputs`).
+use keyhog_scanner::testing::entropy_fast::shannon_entropy_scalar;
 
 // ── shannon_entropy_scalar: boundary values ────────────────────────────────────
 
@@ -88,139 +88,4 @@ fn entropy_large_slice_does_not_overflow() {
     let data: Vec<u8> = (0..=255u8).cycle().take(256 * 1024).collect();
     let e = shannon_entropy_scalar(&data);
     assert!((e - 8.0).abs() < 0.01, "large uniform-256 → H≈8.0, got {e}");
-}
-
-// ── has_high_entropy_fast ─────────────────────────────────────────────────────
-
-#[test]
-fn fast_check_rejects_single_symbol() {
-    let data = vec![0x42u8; 100];
-    assert!(!has_high_entropy_fast(&data, 3.5));
-}
-
-#[test]
-fn fast_check_accepts_high_entropy_data() {
-    // Cycle through all 256 values — H ≈ 8.0, well above any threshold < 8
-    let data: Vec<u8> = (0..=255u8).cycle().take(512).collect();
-    assert!(has_high_entropy_fast(&data, 4.0));
-    assert!(has_high_entropy_fast(&data, 5.0));
-    assert!(has_high_entropy_fast(&data, 7.5));
-}
-
-#[test]
-fn fast_check_threshold_zero_always_true() {
-    let data = vec![0x42u8; 100];
-    // Even a constant byte has H=0 which is ≥ 0 — but the fast check
-    // samples first and may return false for a constant. We test that
-    // threshold=0 still doesn't panic.
-    let _ = has_high_entropy_fast(&data, 0.0);
-}
-
-#[test]
-fn fast_check_short_data_falls_back_to_scalar() {
-    // < 8 bytes → the fast-path samples can't run → falls back to scalar
-    let data = &[0xAAu8, 0xBBu8, 0xCCu8]; // 3 bytes, 3 symbols → H = log2(3) ≈ 1.58
-    let e_fast = has_high_entropy_fast(data, 1.5);
-    assert!(e_fast, "3 distinct bytes → H > 1.5");
-}
-
-#[test]
-fn fast_check_exactly_eight_bytes_boundary() {
-    // At the 8-byte boundary the fast path switches to sampling
-    let data: Vec<u8> = [0u8, 1, 2, 3, 4, 5, 6, 7].to_vec(); // 8 distinct → H = 3.0
-    assert!(has_high_entropy_fast(&data, 2.5));
-}
-
-#[test]
-fn fast_and_scalar_agree_on_medium_entropy() {
-    // 16 distinct values repeated 64 times → H = 4.0
-    let data: Vec<u8> = (0..16u8).cycle().take(1024).collect();
-    let scalar = shannon_entropy_scalar(&data);
-    let fast = has_high_entropy_fast(&data, 3.9); // just below 4.0
-    assert!(fast, "fast check should agree that H=4.0 > 3.9 threshold");
-    assert!((scalar - 4.0).abs() < 0.01, "scalar H = {scalar}");
-}
-
-// ── Early-exit path (unique < 4, spread < 16, threshold >= 2.0) ──────
-
-#[test]
-fn early_exit_constant_data_high_threshold() {
-    // 1024 identical bytes: unique=1, spread=0.
-    // With threshold >= 2.0, the early-exit should fire and return false
-    // WITHOUT computing full entropy.
-    let data = vec![0x42u8; 1024];
-    assert!(!has_high_entropy_fast(&data, 3.5));
-    assert!(!has_high_entropy_fast(&data, 2.0));
-}
-
-#[test]
-fn early_exit_two_adjacent_values() {
-    // Alternating 0x40 and 0x41 → unique=2, spread=1, H≈1.0.
-    // Early-exit fires for threshold >= 2.0 because max entropy with
-    // 2 values from a 1-wide range is log2(2) = 1.0 < 2.0.
-    let data: Vec<u8> = [0x40, 0x41].iter().copied().cycle().take(1024).collect();
-    assert!(!has_high_entropy_fast(&data, 2.0));
-    // But with threshold < 2.0, the early-exit does NOT fire and we
-    // fall through to full computation — the actual H≈1.0 is >= 0.5.
-    assert!(has_high_entropy_fast(&data, 0.5));
-}
-
-#[test]
-fn early_exit_does_not_fire_on_wide_spread() {
-    // Three NON-NULL values: 0x01, 0x02, 0xFF → unique=3, spread=254.
-    // NB: the symbols are deliberately non-zero. `histogram_8way` skips
-    // all-zero 8-byte chunks as binary padding (KH-27), so a 0x00 run would be
-    // dropped from the active length and collapse this to a 2-symbol (H=1.0)
-    // distribution - masking the 3-symbol entropy this test means to measure.
-    // Spread >= 16, so the sample-based early-exit does NOT fire below 2.0 and
-    // the full computation runs.
-    let mut data = vec![0x01u8; 400];
-    data.extend_from_slice(&[0x02u8; 400]);
-    data.extend_from_slice(&[0xFFu8; 400]);
-    // H ≈ log2(3) ≈ 1.585, which is < 2.0
-    assert!(!has_high_entropy_fast(&data, 2.0));
-    // But H ≈ 1.585 >= 1.5
-    assert!(has_high_entropy_fast(&data, 1.5));
-}
-
-#[test]
-fn early_exit_does_not_fire_below_threshold_2() {
-    // Constant data with threshold=1.0 (< 2.0): early-exit is NOT sound
-    // below 2.0, so we fall through to full computation. H=0 < 1.0 → false.
-    let data = vec![0x42u8; 1024];
-    assert!(!has_high_entropy_fast(&data, 1.0));
-}
-
-#[test]
-fn early_exit_agreement_with_full_computation() {
-    // Verify that for every case where early-exit fires, the full
-    // computation would have returned the same answer.
-    let test_cases: Vec<(Vec<u8>, f64)> = vec![
-        (vec![0x42u8; 512], 3.5),
-        (vec![0x42u8; 512], 2.0),
-        (
-            [0x40, 0x41].iter().copied().cycle().take(512).collect(),
-            3.0,
-        ),
-        (
-            [0x10, 0x11, 0x12]
-                .iter()
-                .copied()
-                .cycle()
-                .take(512)
-                .collect(),
-            2.5,
-        ),
-    ];
-    for (data, threshold) in &test_cases {
-        let fast = has_high_entropy_fast(data, *threshold);
-        let exact = shannon_entropy_scalar(data) >= *threshold;
-        assert_eq!(
-            fast,
-            exact,
-            "early-exit disagreed with exact computation for threshold={threshold}, \
-             actual_entropy={}",
-            shannon_entropy_scalar(data),
-        );
-    }
 }

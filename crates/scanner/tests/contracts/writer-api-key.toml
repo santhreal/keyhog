@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "sk-8eEXAMPLEEXAMPLEe8683"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# writer key (rotate): sk-8e85a2fc-0787-9349-5f0b-0600feee8683"
+credential = "sk-8e85a2fc-0787-9349-5f0b-0600feee8683"
+reason = "Commented-out token; the sk-<uuid> writer key surfaces (distinct from openai sk- — the uuid-hyphen shape anchors writer-api-key)."

@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "tableauhost     = =   ::     : ' =   :':'\" '   \": :  '     :\"'  =\"  \" =   := ': httpsEXAMPLEEXAMPLE98.9p"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# tableau_host=https://bykdk.3g95t0-fowsha52wde-3d00ste1678p5eq98.9p  # bi"
+credential = "https://bykdk.3g95t0-fowsha52wde-3d00ste1678p5eq98.9p"
+reason = "Commented-out config; tableau_host keyword + server URL intact inside the comment."

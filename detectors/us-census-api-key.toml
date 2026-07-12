@@ -16,7 +16,7 @@ description = "US Census API key (40 hex chars) with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "&key=([a-f0-9]{40})(?:[^a-f0-9]|$)"
+regex = "census[a-zA-Z0-9._/?=&%-]{0,200}&key=([a-f0-9]{40})(?:[^a-f0-9]|$)"
 description = "US Census API key in URL query parameter"
 group = 1
 

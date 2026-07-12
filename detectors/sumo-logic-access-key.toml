@@ -11,7 +11,7 @@ severity = "high"
 keywords = ["SUMOLOGIC_ACCESSKEY", "SUMOLOGIC_ACCESS_KEY", "sumologic_access_key", "sumologic.com", "accessId", "accessKey"]
 
 [[detector.patterns]]
-regex = "(?:SUMOLOGIC_ACCESSKEY|SUMOLOGIC_ACCESS_KEY|sumologic_access_key|accessKey)[=:\\s\"']+([A-Za-z0-9+/]{64})"
+regex = "(?:SUMOLOGIC_ACCESSKEY|SUMOLOGIC_ACCESS_KEY|sumologic_access_key)[=:\\s\"']+([A-Za-z0-9+/]{64})"
 description = "Sumo Logic access key (64 chars base64-like) with context anchor"
 group = 1
 

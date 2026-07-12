@@ -336,8 +336,7 @@ fn config_without_effective_is_user_error_with_guidance() {
     // value with its standard diagnostic (which names the flag) before the
     // subcommand body runs — assert that exact behavior.
     assert!(
-        stderr.contains("required arguments were not provided")
-            && stderr.contains("--effective"),
+        stderr.contains("required arguments were not provided") && stderr.contains("--effective"),
         "stderr must state --effective is required; got:\n{stderr}"
     );
     assert!(

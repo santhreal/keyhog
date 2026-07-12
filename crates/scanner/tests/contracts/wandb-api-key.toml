@@ -17,6 +17,11 @@ text = "WANDB_API_KEY=\"034b1509e9cb1c6131ba5ee7dc30a6d542944a55\""
 credential = "034b1509e9cb1c6131ba5ee7dc30a6d542944a55"
 reason = "Quoted-value variant of the canonical positive."
 
+[[positive]]
+text = "wandb_api_key = 872ab943740b34157041da2529fb160d"
+credential = "872ab943740b34157041da2529fb160d"
+reason = "32-char hex form (betterleaks homefield ground-truth shape); locks the {40}|{32} capture widen."
+
 [[negative]]
 text = "WANDB_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
 reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
@@ -24,3 +29,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "WANDB_API_KEY=034b1EXAMPLEEXAMPLE44a55"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# WANDB_API_KEY=034b1509e9cb1c6131ba5ee7dc30a6d542944a55  # ml runs"
+credential = "034b1509e9cb1c6131ba5ee7dc30a6d542944a55"
+reason = "Commented-out config; the = form surfaces the 40-hex key (keyword-anchored, so the hex-digest gate does not claim it as a bare SHA-1)."

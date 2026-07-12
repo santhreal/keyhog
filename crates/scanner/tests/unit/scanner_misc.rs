@@ -3,7 +3,7 @@ use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::engine::CompiledScanner;
 use keyhog_scanner::telemetry::{
     drain_events, enable_dogfood, example_suppression_count, is_dogfood_enabled,
-    record_example_suppression, reset_for_scan, testing::reset,
+    record_example_suppression, reset_for_scan, testing::reset, DogfoodEvent,
 };
 use keyhog_scanner::testing::decode_chunk;
 use keyhog_scanner::testing::jwt::{analyze, looks_like_jwt};
@@ -49,8 +49,18 @@ fn build_compile_state_collects_literals_for_detector() {
         ..Default::default()
     }];
     let ac_literals = compile_state_ac_literals(&detectors).unwrap();
-    assert!(!ac_literals.is_empty());
-    assert_eq!(build_ac_pattern_set(&ac_literals).unwrap().is_some(), true);
+    assert!(ac_literals.iter().any(|l| l == "ghp_"));
+    let set = build_ac_pattern_set(&ac_literals)
+        .unwrap()
+        .expect("a non-empty literal set compiles to Some(AhoCorasick)");
+    assert!(
+        set.is_match("prefix ghp_token"),
+        "compiled AC set must match the ghp_ literal it was built from"
+    );
+    assert!(
+        !set.is_match("the quick brown fox"),
+        "compiled AC set must not match unrelated text"
+    );
 }
 
 #[test]
@@ -236,7 +246,28 @@ fn telemetry_records_example_suppression_when_dogfood_enabled() {
     enable_dogfood();
     record_example_suppression("demo", None, "ghp_EXAMPLE", "ends_with_EXAMPLE");
     let events = drain_events();
-    assert!(!events.is_empty());
+    assert_eq!(
+        events.len(),
+        1,
+        "exactly one suppression event must be recorded"
+    );
+    match &events[0] {
+        DogfoodEvent::ExampleSuppressed {
+            detector,
+            path,
+            credential_redacted,
+            reason,
+        } => {
+            assert_eq!(detector, "demo");
+            assert_eq!(path.as_deref(), None);
+            assert_eq!(
+                credential_redacted.as_str(),
+                keyhog_core::redact("ghp_EXAMPLE").as_ref()
+            );
+            assert_eq!(reason, "ends_with_EXAMPLE");
+        }
+        other => panic!("expected ExampleSuppressed event, got {other:?}"),
+    }
     reset();
 }
 

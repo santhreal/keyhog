@@ -143,7 +143,7 @@ fn jar_binary_entry_extracts_printable_strings() {
     );
     assert!(
         chunks.iter().any(|c| {
-            c.metadata.source_type == "filesystem/archive-binary"
+            c.metadata.source_type.as_ref() == "filesystem/archive-binary"
                 && c.data.contains(concat!("AK", "IAIOSFODNN7EXAMPLE"))
                 && c.metadata
                     .path

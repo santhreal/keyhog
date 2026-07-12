@@ -1,0 +1,6 @@
+directives = [
+  "keyhog:ignore",
+  "keyhog:allow",
+  "gitleaks:allow",
+  "betterleaks:allow",
+]

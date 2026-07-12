@@ -1,7 +1,8 @@
 //! Lazy compile and hot-loop dispatch scratch for the GPU literal-set matcher.
 //!
 //! This builds Keyhog's GPU literal-set primitive. The main matcher is the
-//! literal-presence phase-1 prefilter. It is not a final matcher:
+//! literal-presence phase-1 prefilter; the smaller positioned matcher feeds
+//! candidate positions to post-phase-1 accelerators. Neither is a final matcher:
 //! downstream phase-2 extraction confirms every candidate via its full regex.
 //! The retired per-rule megakernel catalog is not a production engine module.
 //!
@@ -17,7 +18,9 @@
 //!     [`super::rule_pipeline`].
 //! [`GpuLiteralSet`]: vyre_libs::scan::GpuLiteralSet
 
-use super::gpu_lazy_helpers::{compile_gpu_literal_set, report_gpu_matcher_unavailable};
+use super::gpu_lazy_helpers::{
+    compile_gpu_literal_set, report_gpu_matcher_unavailable, GpuMatcherKind,
+};
 use super::*;
 
 impl CompiledScanner {
@@ -37,12 +40,11 @@ impl CompiledScanner {
                 match compile_gpu_literal_set(literals, "lit") {
                     Ok(matcher) => Some(matcher),
                     Err(error) => {
-                        report_gpu_matcher_unavailable(&error, "literal");
+                        report_gpu_matcher_unavailable(&error, GpuMatcherKind::Literal);
                         None
                     }
                 }
             })
             .as_ref()
     }
-
 }

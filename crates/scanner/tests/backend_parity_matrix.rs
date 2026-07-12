@@ -49,7 +49,7 @@ struct Fixture {
     chunks: Vec<Chunk>,
 }
 
-/// Six synthetic corpora that each exercise a distinct engine path:
+/// Seven synthetic corpora that each exercise a distinct engine path:
 ///   1. Pure clean text (zero findings - backend must agree on "nothing")
 ///   2. AKIA + ghp_ literal-prefix path (the GPU literal-set hot path)
 ///   3. Stripe sk_live_ + ASIA mixed
@@ -57,6 +57,9 @@ struct Fixture {
 ///   5. Unicode + non-ASCII surrounding (tests byte-offset accounting)
 ///   6. False-prefix storm (many literal-prefix hits, few real matches -
 ///      catches GPU bitmap-vs-locations regressions)
+///   7. HS-only companion detector (`twilio-auth-token`, NO GPU literal prefix -
+///      the no-literal / regex-only class the GPU region-presence trigger path
+///      can under-admit vs SimdCpu's Hyperscan union; M-02 test-depth gap)
 fn build_fixtures() -> Vec<Fixture> {
     vec![
         Fixture {
@@ -139,6 +142,30 @@ fn build_fixtures() -> Vec<Fixture> {
                 "fixtures/storm.txt",
             )],
         },
+        Fixture {
+            // The `twilio-auth-token` detector has NO standalone literal prefix in
+            // the GPU literal set — it fires only once the regex confirms the
+            // 32-hex auth-token shape alongside its required `account_sid`
+            // companion (`AC` + 32 hex). It is one of the ~49 no-literal / HS-only
+            // detectors, the exact class the GPU region-presence trigger producer
+            // can under-admit relative to SimdCpu's Hyperscan trigger union
+            // (M-02). Every backend — Gpu and MegaScan included — must surface it
+            // identically to the SimdCpu reference, or the GPU path is silently
+            // dropping an HS-only vendor secret on its normal success path
+            // (Law 10). Chosen as the confidence-CLEAR-CUT vendor member of that
+            // class (an unambiguous companion-gated finding) rather than a
+            // borderline entropy detector, so any divergence this fixture surfaces
+            // is an unambiguous trigger-parity bug, not a confidence-float
+            // artifact. The token/companion shapes are the canonical pair from
+            // `regression_backend_trigger_parity` (proven to surface on both CPU
+            // backends); this fixture extends that contract across the GPU cells.
+            name: "hs_only_twilio_companion",
+            chunks: vec![make_chunk(
+                "TWILIO_ACCOUNT_SID=AC1b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\n\
+                 TWILIO_AUTH_TOKEN=4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f\n",
+                "fixtures/twilio_pair.env",
+            )],
+        },
     ]
 }
 
@@ -155,13 +182,10 @@ fn run_cell(
 
 #[test]
 fn backend_parity_matrix_all_fixtures_all_backends() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
+    // The on-disk detector directory is a required test asset: fail closed
+    // rather than let this backend-parity gate pass vacuously.
+    let detectors = keyhog_core::load_detectors(&detector_dir())
+        .expect("load detectors from the required on-disk detector directory");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
     let fixtures = build_fixtures();
 
@@ -223,13 +247,10 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
 /// hash-iteration-order leaks.
 #[test]
 fn determinism_each_backend_each_fixture_runs_twice_matches() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors directory unavailable: {e}");
-            return;
-        }
-    };
+    // The on-disk detector directory is a required test asset: fail closed
+    // rather than let this backend-parity gate pass vacuously.
+    let detectors = keyhog_core::load_detectors(&detector_dir())
+        .expect("load detectors from the required on-disk detector directory");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
     let fixtures = build_fixtures();
     let backends = [

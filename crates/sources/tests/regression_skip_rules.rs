@@ -537,7 +537,8 @@ fn normal_file_emits_chunk_with_filesystem_path_metadata() {
         .expect("normal file must emit a chunk carrying its secret");
 
     assert_eq!(
-        chunk.metadata.source_type, "filesystem",
+        chunk.metadata.source_type.as_ref(),
+        "filesystem",
         "filesystem chunk must be tagged with its source type"
     );
     let path = chunk

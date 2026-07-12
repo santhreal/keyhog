@@ -65,6 +65,7 @@ fn source_http_config(args: &ScanArgs, ua_suffix: &str) -> keyhog_sources::http:
     keyhog_sources::http::HttpClientConfig {
         proxy: args.proxy.clone(),
         insecure_tls: args.insecure,
+        allow_private_endpoint: args.allow_private_cloud_endpoint,
         ua_suffix: Some(ua_suffix.to_owned()),
         ..Default::default()
     }
@@ -658,7 +659,7 @@ fn get_staged_files(repo_path: Option<&std::path::Path>) -> Result<Vec<PathBuf>>
                 })
                 .unwrap_or_else(|| ".".to_string()); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
             anyhow::bail!(
-                "'{where_}' is not a git repository — `--git-staged` scans the git \
+                "'{where_}' is not a git repository: `--git-staged` scans the git \
                  staging area, which only exists inside a repo. Run keyhog from inside \
                  a git repository (or pass a repo path), or drop `--git-staged` to scan \
                  the working tree directly."

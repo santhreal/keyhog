@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "sk_acEXAMPLEEXAMPLEoyJp9"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# zapier nla (rotate): sk_ac_P8X0zoBwkHBwcsrYIXJ7KZkSG0y3WidORnWoyJp9"
+credential = "sk_ac_P8X0zoBwkHBwcsrYIXJ7KZkSG0y3WidORnWoyJp9"
+reason = "Commented-out token; the sk_ac_ prefix anchor surfaces it with no keyword=value assignment."

@@ -89,29 +89,17 @@ pub(crate) fn relative_to(path: &str, root: &std::path::Path) -> Option<String> 
         .map(|r| r.to_string_lossy().replace('\\', "/"))
 }
 
-/// Add the GitHub code-scanning rule properties that (a) map keyhog's severity
-/// to an alert band and (b) categorize the rule as a security finding.
-///
-/// `security-severity` (a "0.0".."10.0" string) is what code-scanning reads to
-/// set the alert's Critical/High/Medium/Low in the Security tab; without it
-/// every keyhog alert shows a flat default severity, breaking triage. The
-/// `security` tag files the rule under security alerts. GitHub bands:
-/// >=9.0 critical, 7.0-8.9 high, 4.0-6.9 medium, 0.1-3.9 low.
-pub(crate) fn apply_code_scanning_props(
-    props: &mut serde_json::Map<String, serde_json::Value>,
-    severity: crate::Severity,
-) {
-    let score = code_scanning_security_severity(severity);
-    props.insert(
-        "security-severity".to_string(),
-        serde_json::Value::String(score.to_string()),
-    );
-    props.insert(
-        "tags".to_string(),
-        serde_json::Value::Array(vec![serde_json::Value::String("security".to_string())]),
-    );
-}
+/// SINGLE OWNER of the SARIF rule tag that files a keyhog rule under GitHub
+/// code-scanning's security alerts. Consumed by the production reporter
+/// (`sarif::build_rule` via `SarifRuleProperties.tags`) so the literal lives in
+/// exactly one place.
+pub(crate) const CODE_SCANNING_SECURITY_TAG: &str = "security";
 
+/// Map keyhog's severity to the GitHub code-scanning `security-severity`
+/// (a "0.0".."10.0" string) that sets the alert's Critical/High/Medium/Low in
+/// the Security tab; without it every alert shows a flat default severity,
+/// breaking triage. GitHub bands: >=9.0 critical, 7.0-8.9 high, 4.0-6.9 medium,
+/// 0.1-3.9 low.
 pub(crate) fn code_scanning_security_severity(severity: crate::Severity) -> &'static str {
     use crate::Severity as S;
     match severity {

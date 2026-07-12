@@ -28,7 +28,7 @@ fn seven_zip_text_entry_is_unpacked_and_scanned_with_inner_path() {
     );
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/archive"
+            chunk.metadata.source_type.as_ref() == "filesystem/archive"
                 && chunk
                     .metadata
                     .path
@@ -60,7 +60,7 @@ fn seven_zip_binary_strings_entry_is_scanned() {
     );
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/archive-binary"
+            chunk.metadata.source_type.as_ref() == "filesystem/archive-binary"
                 && chunk
                     .data
                     .contains("KEYHOG_7Z_BINARY_STRING_SECRET_1234567890")

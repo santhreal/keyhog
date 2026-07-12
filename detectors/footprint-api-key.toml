@@ -8,7 +8,10 @@ id = "footprint-api-key"
 name = "Footprint Analytics API Key"
 service = "footprint"
 severity = "medium"
-keywords = ["footprint", "FOOTPRINT", "api_key", "apikey"]
+# "api_key", "apikey" removed: over-broad generic prefilter the regex does NOT need — every
+# pattern self-anchors on the service name (kept), which is present in any real
+# match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.
+keywords = ["footprint", "FOOTPRINT"]
 
 [[detector.patterns]]
 regex = "(?:FOOTPRINT|footprint)[_a-zA-Z0-9]*[=:\\s\"'']+([a-zA-Z0-9]{32})"

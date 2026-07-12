@@ -4,7 +4,7 @@
 //! This allows the scanner to detect secrets that are split across lines using various
 //! concatenation syntaxes.
 
-mod config;
+pub(crate) mod config;
 #[cfg(feature = "multiline")]
 mod preprocessor;
 mod string_extract;
@@ -12,14 +12,20 @@ mod string_extract;
 mod structural;
 
 #[cfg(feature = "multiline")]
-pub(crate) use config::{has_concatenation_indicators, has_function_concat_marker};
+pub(crate) use config::has_concatenation_indicators;
 pub use config::MultilineConfig;
 #[cfg(feature = "multiline")]
-pub(crate) use config::{LineMapping, PreprocessedText};
+pub(crate) use config::PreprocessedText;
+// `LineMapping` is the single always-compiled owner in `crate::types`; re-exported
+// here so `crate::multiline::LineMapping` still resolves for the multiline callers.
+#[cfg(feature = "multiline")]
+pub(crate) use crate::types::LineMapping;
 #[cfg(feature = "multiline")]
 pub(crate) use preprocessor::preprocess_multiline;
 #[cfg(feature = "multiline")]
-pub(crate) use string_extract::{extract_dot_concatenation, extract_plus_concatenation};
+pub(crate) use string_extract::{
+    extract_dot_concatenation, extract_plus_concatenation, filter_line_content,
+};
 pub(crate) use string_extract::{extract_prefix, fragment_assignment_name_is_credential_like};
 #[cfg(feature = "multiline")]
 pub(crate) use structural::resolve_template_reference;
@@ -41,7 +47,6 @@ pub(crate) fn collect_structural_fragments_for_test(
 
 #[cfg(feature = "multiline")]
 pub(crate) fn warm_runtime_regexes() {
-    config::warm_runtime_regexes();
     structural::warm_runtime_regexes();
 }
 

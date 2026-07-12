@@ -29,7 +29,6 @@ fn counter_guard() -> MutexGuard<'static, ()> {
     let guard = COUNTER_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", "1");
     guard
 }
 
@@ -592,7 +591,7 @@ fn all_text_objects_scanned_object_total_is_exact() {
 
     let paths: BTreeSet<String> = ok
         .iter()
-        .filter_map(|chunk| chunk.metadata.path.clone())
+        .filter_map(|chunk| chunk.metadata.path.as_deref().map(String::from))
         .collect();
     let expected: BTreeSet<String> = names
         .iter()
@@ -657,7 +656,7 @@ fn paginated_listing_scans_every_page_object_total_is_exact() {
 
     let paths: BTreeSet<String> = ok
         .iter()
-        .filter_map(|chunk| chunk.metadata.path.clone())
+        .filter_map(|chunk| chunk.metadata.path.as_deref().map(String::from))
         .collect();
     let expected: BTreeSet<String> = ["p1.txt", "p2.txt"]
         .iter()

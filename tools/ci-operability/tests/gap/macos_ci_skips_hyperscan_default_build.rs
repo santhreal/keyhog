@@ -1,17 +1,10 @@
 //! KH-GAP-075: macOS CI lane never exercises default-features Hyperscan path.
 
-use std::path::PathBuf;
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-}
+use super::support::read_workflow;
 
 #[test]
 fn macos_build_job_tests_default_features_with_hyperscan() {
-    let text =
-        std::fs::read_to_string(repo_root().join(".github/workflows/ci.yml")).expect("read ci.yml");
+    let text = read_workflow("ci.yml");
 
     let macos_block = text
         .split("macos-build:")

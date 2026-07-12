@@ -1,12 +1,12 @@
-# Leaderboard - mirror
+# Leaderboard - creddata
 
-Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner scored identically (SecretBench overlap rule); the answer-key manifest is excluded from the scan tree.
+Corpus: **creddata** - 65712 fixtures, 13918 labeled positives. Every scanner scored identically (SecretBench overlap rule); the answer-key manifest is excluded from the scan tree.
 
 | Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |
 |---|---|---|---|---|---|---|---|
-| 1 | **KeyHog** | **0.9258** | 0.9954 | 0.8653 | 2612 | 1.58s | 1543 MB |
-| 2 | TruffleHog | 0.5265 | 1.0000 | 0.3573 | 1072 | 1.45s | 322 MB |
-| 3 | Kingfisher | 0.4720 | 0.3912 | 0.5947 | 5241 | 3.81s | 502 MB |
-| 4 | Titus | 0.4127 | 0.3318 | 0.5457 | 5159 | 4.13s | 114 MB |
-| 5 | Nosey Parker | 0.4078 | 0.3414 | 0.5063 | 4532 | 0.82s | 534 MB |
-| 6 | BetterLeaks | 0.3585 | 0.2313 | 0.7967 | 10828 | 1.04s | 210 MB |
+| 1 | BetterLeaks | 0.5301 | 0.7292 | 0.4164 | 7912 | 2.83s | 252 MB |
+| 2 | **KeyHog** | **0.4816** | 0.7688 | 0.3506 | 8476 | 1.1m | 2506 MB |
+| 3 | Nosey Parker | 0.2694 | 0.4614 | 0.1903 | 5694 | 2.01s | 1523 MB |
+| 4 | Titus | 0.2645 | 0.4352 | 0.1900 | 6170 | 3.16s | 2024 MB |
+| 5 | Kingfisher | 0.1832 | 0.2901 | 0.1339 | 6782 | 7.60s | 627 MB |
+| 6 | TruffleHog | 0.0259 | 0.1364 | 0.0143 | 1496 | 32.12s | 711 MB |

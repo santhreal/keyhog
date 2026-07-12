@@ -182,31 +182,22 @@ impl ScanOrchestrator {
                 let mut src_chunks = 0usize;
                 let mut src_errored = false;
                 for chunk_result in source.chunks() {
-                    match chunk_result {
-                        Ok(c) if c.data.len() <= super::COALESCED_CHUNK_SCAN_CEILING_BYTES => {
-                            src_chunks += 1;
-                            batch.push(c);
-                            if batch.len() >= fused_batch {
-                                if tx.send(std::mem::take(&mut batch)).is_err() {
-                                    break 'sources;
-                                }
-                                batch = Vec::with_capacity(fused_batch);
-                            }
+                    let super::ClassifiedSourceChunk::Scan(c) = super::classify_source_chunk(
+                        chunk_result,
+                        &mut src_chunks,
+                        &mut src_errored,
+                    ) else {
+                        continue;
+                    };
+                    batch.push(c);
+                    if batch.len() >= fused_batch {
+                        if tx.send(std::mem::take(&mut batch)).is_err() {
+                            break 'sources;
                         }
-                        Ok(c) => {
-                            src_chunks += 1;
-                            super::record_oversized_coalesced_chunk_skip(&c);
-                        }
-                        Err(e) => {
-                            let _receipt = crate::record_source_error();
-                            src_errored = true;
-                            tracing::warn!("source: {e}");
-                        }
+                        batch = Vec::with_capacity(fused_batch);
                     }
                 }
-                if src_chunks == 0 && src_errored {
-                    let _receipt = crate::record_failed_source();
-                }
+                super::finalize_source_outcome(src_chunks, src_errored);
                 let source_skipped = super::filesystem_source_skipped_unchanged(source.as_ref());
                 if source_skipped > 0 {
                     drain_skipped_unchanged.fetch_add(source_skipped, Ordering::Relaxed);
@@ -295,6 +286,17 @@ impl ScanOrchestrator {
                     }
                 };
                 let scanned_count = batch.len();
+                // Snapshot the runtime GPU-degrade counter so GPU_SCANNED_CHUNKS
+                // reflects REAL GPU execution, not the router's CHOICE (Law 10): a
+                // batch routed to GPU that degrades mid-dispatch (loudly, via
+                // deny_silent_gpu_degrade) must not be counted as GPU-scanned. The
+                // increment moved BELOW the dispatch, gated on this snapshot.
+                let gpu_degrade_before = matches!(
+                    backend,
+                    keyhog_scanner::hw_probe::ScanBackend::Gpu
+                        | keyhog_scanner::hw_probe::ScanBackend::MegaScan
+                )
+                .then(|| scanner_ref.gpu_degrade_count());
                 let per_chunk = match backend {
                     keyhog_scanner::hw_probe::ScanBackend::Gpu
                     | keyhog_scanner::hw_probe::ScanBackend::MegaScan => {
@@ -305,7 +307,6 @@ impl ScanOrchestrator {
                             chunks = scanned_count,
                             "fused batch dispatched to GPU region presence",
                         );
-                        crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
                         scanner_ref.scan_chunks_with_backend(
                             &batch,
                             keyhog_scanner::hw_probe::ScanBackend::Gpu,
@@ -330,6 +331,14 @@ impl ScanOrchestrator {
                     }
                 };
                 crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                // Count as GPU-scanned only if routed to GPU AND no runtime degrade
+                // was recorded while dispatching this batch (see snapshot above) —
+                // a degraded batch actually ran on CPU/SIMD.
+                if gpu_degrade_before
+                    .is_some_and(|before| scanner_ref.gpu_degrade_count() == before)
+                {
+                    crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                }
 
                 let mut per_chunk = per_chunk;
                 crate::inline_suppression::attach_inline_suppression_context(

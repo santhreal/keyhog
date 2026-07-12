@@ -90,7 +90,7 @@ fn slack_message_with_secret_surfaces_exact_channel_and_ts_metadata() {
         "chunk path must be the channel URI",
     );
     assert_eq!(
-        chunk.metadata.source_type.as_str(),
+        chunk.metadata.source_type.as_ref(),
         "slack",
         "source_type tag"
     );

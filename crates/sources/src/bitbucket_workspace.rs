@@ -12,6 +12,13 @@ use crate::hosted_git::{self, HostedRepo};
 
 const DEFAULT_ENDPOINT: &str = "https://api.bitbucket.org/2.0";
 
+/// Single owner of the missing-required-field diagnostic. `source_from_params`
+/// reports the same shortfall from four branches (too few `\n`-separated fields,
+/// or any of workspace/username/token empty); one const keeps the operator-facing
+/// wording identical across every branch instead of pasting it inline four times.
+const MISSING_REQUIRED_FIELDS_ERROR: &str =
+    "bitbucket-workspace source requires workspace, username, and app password";
+
 pub(crate) struct BitbucketWorkspaceSource {
     workspace: String,
     username: String,
@@ -318,6 +325,97 @@ mod tests {
             .build()
             .expect("mock client")
     }
+
+    #[test]
+    fn validate_basic_auth_rejects_header_injection_vectors() {
+        use super::validate_basic_auth;
+
+        // A clean credential pair passes.
+        assert!(validate_basic_auth("alice", "app-password-value").is_ok());
+
+        // `:` in the USERNAME is banned: the Basic-auth pre-image is `user:pass`,
+        // so a colon in the username forges an extra field / ambiguous split. (A
+        // colon in the TOKEN is legal — everything after the first `:` is the
+        // password — so it must NOT be rejected.)
+        let colon = validate_basic_auth("al:ice", "tok").expect_err("colon username rejected");
+        assert!(
+            colon.to_string().contains("unsafe characters"),
+            "colon-username error must carry the shared 'unsafe characters' contract, got {colon}"
+        );
+        assert!(
+            validate_basic_auth("alice", "tok:with:colons").is_ok(),
+            "a colon inside the token is a legal password byte, not an injection"
+        );
+
+        // Control characters (CR/LF/NUL/TAB/DEL) in EITHER field are banned: raw
+        // bytes in the `Authorization: Basic …` header enable CRLF header/request
+        // splitting.
+        for bad in ["a\rb", "a\nb", "a\0b", "a\tb", "a\u{7f}b"] {
+            assert!(
+                validate_basic_auth(bad, "tok").is_err(),
+                "control char in username must be rejected: {bad:?}"
+            );
+            assert!(
+                validate_basic_auth("user", bad).is_err(),
+                "control char in token must be rejected: {bad:?}"
+            );
+        }
+
+        // Empty username or token is rejected (an unauthenticated pre-image).
+        assert!(
+            validate_basic_auth("", "tok").is_err(),
+            "empty username rejected"
+        );
+        assert!(
+            validate_basic_auth("user", "").is_err(),
+            "empty token rejected"
+        );
+    }
+
+    #[test]
+    fn source_from_params_requires_three_nonempty_fields() {
+        use super::source_from_params;
+        // `HttpClientConfig` moves into each call; build a fresh default per call
+        // rather than assume it is `Clone`. `SourceLimits` is `Copy`.
+        let cfg = || crate::http::HttpClientConfig::default();
+        let limits = crate::SourceLimits::default();
+
+        // Fewer than three newline-separated fields → error (missing app password).
+        assert!(
+            source_from_params("ws\nuser", cfg(), limits, true).is_err(),
+            "missing app-password line must be an error"
+        );
+        // Present-but-EMPTY fields hit the explicit empty-field guard → error.
+        assert!(
+            source_from_params("ws\n\ntoken", cfg(), limits, true).is_err(),
+            "empty username must be an error"
+        );
+        assert!(
+            source_from_params("\nuser\ntoken", cfg(), limits, true).is_err(),
+            "empty workspace must be an error"
+        );
+        // Three non-empty fields parse; endpoint defaults when absent, and a
+        // trailing empty 4th field falls back to the default endpoint (the
+        // `Some(_) if !empty` else-arm), not an error.
+        assert!(
+            source_from_params("ws\nuser\ntoken", cfg(), limits, true).is_ok(),
+            "three non-empty fields parse successfully"
+        );
+        assert!(
+            source_from_params("ws\nuser\ntoken\n", cfg(), limits, true).is_ok(),
+            "trailing empty endpoint line falls back to the default endpoint"
+        );
+        assert!(
+            source_from_params(
+                "ws\nuser\ntoken\nhttps://api.example.test/2.0",
+                cfg(),
+                limits,
+                true
+            )
+            .is_ok(),
+            "an explicit 4th endpoint field parses"
+        );
+    }
 }
 
 pub(crate) fn validate_workspace(workspace: &str) -> Result<(), SourceError> {
@@ -346,28 +444,20 @@ pub(crate) fn source_from_params(
 ) -> Result<BitbucketWorkspaceSource, SourceError> {
     let mut parts = params.splitn(4, '\n');
     let Some(workspace) = parts.next() else {
-        return Err(SourceError::Other(
-            "bitbucket-workspace source requires workspace, username, and app password".into(),
-        ));
+        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
     };
     let Some(username) = parts.next() else {
-        return Err(SourceError::Other(
-            "bitbucket-workspace source requires workspace, username, and app password".into(),
-        ));
+        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
     };
     let Some(token) = parts.next() else {
-        return Err(SourceError::Other(
-            "bitbucket-workspace source requires workspace, username, and app password".into(),
-        ));
+        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
     };
     let endpoint = match parts.next() {
         Some(endpoint) if !endpoint.is_empty() => endpoint,
         Some(_) | None => DEFAULT_ENDPOINT,
     };
     if workspace.is_empty() || username.is_empty() || token.is_empty() {
-        return Err(SourceError::Other(
-            "bitbucket-workspace source requires workspace, username, and app password".into(),
-        ));
+        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
     }
     Ok(BitbucketWorkspaceSource::new(
         workspace.to_string(),

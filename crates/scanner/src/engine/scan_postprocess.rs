@@ -57,13 +57,6 @@ impl CompiledScanner {
         #[cfg(feature = "decode")]
         if chunk.data.len() <= self.config.max_decode_bytes {
             let prof_decode = decode_prof_enabled();
-            // Dedup keys reuse the shared zeroizing credential from `RawMatch`
-            // instead of cloning to `String`. For 50+ pre-existing matches per
-            // chunk this saves ~10-30 µs of allocator pressure per call.
-            let mut seen: HashSet<(Arc<str>, SensitiveString)> = matches
-                .iter()
-                .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
-                .collect();
             let gen_start = prof_decode.then(std::time::Instant::now);
             let decoded_chunks = {
                 let _g = super::profile::span(super::profile::P::Decode);
@@ -85,115 +78,141 @@ impl CompiledScanner {
                     DECODE_SUBCHUNKS.fetch_add(decoded_chunks.len() as u64, Relaxed);
                 }
             }
-            // Buffer every surviving decoded match (after the per-sub-chunk
-            // example/reverse guards) before the (detector, credential) dedup.
-            // The SAME decoded credential can surface at more than one source
-            // offset: once from the original encoded run and once from the
-            // structured preprocessor's APPENDED copy (offset >= original_end+1,
-            // i.e. inside synthesized text that isn't in the real chunk). The
-            // dedup keeps only one alias, so WHICH offset wins must be the real,
-            // lowest one - not whichever the (cmp/scan-order-dependent) iteration
-            // happens to reach first. A higher synthetic-append offset is an
-            // invalid source coordinate (it can point past the real chunk).
-            // Sort offset-ascending so the dedup keeps the lowest source
-            // coordinate - the same primary-location rule dedup_cross_detector
-            // applies (Law 10: no order-dependent recall).
-            let mut decoded_candidates: Vec<RawMatch> = Vec::new();
-            for decoded_chunk in decoded_chunks {
-                if crate::deadline::expired(deadline) {
-                    break;
-                }
-                if decoded_chunk.data.len() > self.config.max_decode_bytes {
-                    crate::telemetry::record_decode_truncation();
-                    // LAW10: decode truncation is counted in scanner coverage
-                    // telemetry before this debug detail is emitted.
-                    tracing::debug!(
-                        path = ?chunk.metadata.path,
-                        decoded_len = decoded_chunk.data.len(),
-                        ceiling = self.config.max_decode_bytes,
-                        "decoded chunk exceeds max_decode_bytes; skipping"
-                    );
-                    continue;
-                }
-                if prof_decode {
-                    DECODE_SUBCHUNK_BYTES.fetch_add(decoded_chunk.data.len() as u64, Relaxed);
-                }
-                let scan_start = prof_decode.then(std::time::Instant::now);
-                // Mark the rescan so the phase-2 profiler can separate sub-chunk
-                // per-pass cost from parent-chunk cost (cheap thread-local swap).
-                let restore_rescan = super::profile::set_in_decode(true);
-                // Decoded rescans stay on the live CPU tier because GPU dispatch
-                // overhead dominates these derived buffers. Preserve that
-                // decision when a large decoded buffer needs scanner windows.
-                let decoded_backend = self.live_cpu_backend();
-                let decoded_matches = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
-                    self.scan_windowed(&decoded_chunk, decoded_backend, deadline)
-                } else {
-                    // Decoded sub-chunks are post-process recursion;
-                    // they're typically tiny (base64/hex/url payloads
-                    // sliced out of the outer chunk). NEVER route them
-                    // to the GPU literal-set: per-dispatch overhead
-                    // (driver init + queue submit + sync) is 10-100 ms,
-                    // and `--backend gpu` would otherwise force
-                    // every decoded chunk through that path. On a
-                    // 64 MiB chunk that decodes into 1 000 sub-chunks
-                    // that's a 50-second tax - exactly the wall-clock
-                    // delta keyhog used to show vs SIMD on messy
-                    // corpora. Force the live CPU-tier backend here
-                    // regardless of env override: `live_cpu_backend()`
-                    // returns SimdCpu ONLY when this scanner actually
-                    // built a Hyperscan prefilter, else CpuFallback, and
-                    // never GPU/MegaScan. Hardcoding SimdCpu crashed a
-                    // scanner whose patterns expose no anchorable literal
-                    // (an empty detector set, or `[a-z]{16}`-only) — its
-                    // `simd_prefilter` is None, so the SimdCpu trigger
-                    // collection fails closed through `backend_unavailable`
-                    // (process exit), aborting the whole scan on the
-                    // decode-through path.
-                    self.scan_inner(&decoded_chunk, decoded_backend, deadline)
-                };
-                super::profile::set_in_decode(restore_rescan);
-                if crate::deadline::expired(deadline) {
-                    break;
-                }
-                if let Some(t) = scan_start {
-                    DECODE_SCAN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
-                }
-                for m in decoded_matches {
-                    if crate::adjudicate::record_decoded_parent_example_suppression(
-                        &m,
-                        chunk.metadata.path.as_deref(),
-                        chunk.data.as_ref(),
-                    ) {
+            // No decodable payload (the common case for match-bearing plain
+            // source): the `seen` dedup set and decode rescan are dead work, so
+            // build neither. A match-bearing no-decode chunk pays nothing here.
+            if !decoded_chunks.is_empty() {
+                // Dedup keys reuse the shared zeroizing credential from `RawMatch`
+                // instead of cloning to `String`. For 50+ pre-existing matches per
+                // chunk this saves ~10-30 µs of allocator pressure per call. Built
+                // lazily above only when decode actually produced sub-chunks.
+                let mut seen: HashSet<(Arc<str>, SensitiveString)> = matches
+                    .iter()
+                    .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
+                    .collect();
+                // Buffer every surviving decoded match (after the per-sub-chunk
+                // example/reverse guards) before the (detector, credential) dedup.
+                // The SAME decoded credential can surface at more than one source
+                // offset: once from the original encoded run and once from the
+                // structured preprocessor's APPENDED copy (offset >= original_end+1,
+                // i.e. inside synthesized text that isn't in the real chunk). The
+                // dedup keeps only one alias, so WHICH offset wins must be the real,
+                // lowest one - not whichever the (cmp/scan-order-dependent) iteration
+                // happens to reach first. A higher synthetic-append offset is an
+                // invalid source coordinate (it can point past the real chunk).
+                // Sort offset-ascending so the dedup keeps the lowest source
+                // coordinate - the same primary-location rule dedup_cross_detector
+                // applies (Law 10: no order-dependent recall).
+                let mut decoded_candidates: Vec<RawMatch> = Vec::new();
+                for decoded_chunk in decoded_chunks {
+                    if crate::deadline::expired(deadline) {
+                        break;
+                    }
+                    if decoded_chunk.data.len() > self.config.max_decode_bytes {
+                        crate::telemetry::record_decode_truncation();
+                        // LAW10: decode truncation is counted in scanner coverage
+                        // telemetry before this debug detail is emitted.
+                        tracing::debug!(
+                            path = ?chunk.metadata.path,
+                            decoded_len = decoded_chunk.data.len(),
+                            ceiling = self.config.max_decode_bytes,
+                            "decoded chunk exceeds max_decode_bytes; skipping"
+                        );
                         continue;
                     }
-                    if crate::adjudicate::record_decoded_reverse_placeholder_suppression(
-                        &m,
-                        decoded_chunk
-                            .metadata
-                            .path
-                            .as_deref()
-                            .or(chunk.metadata.path.as_deref()),
-                        &decoded_chunk.metadata.source_type,
-                    ) {
-                        continue;
+                    if prof_decode {
+                        DECODE_SUBCHUNK_BYTES.fetch_add(decoded_chunk.data.len() as u64, Relaxed);
                     }
-                    decoded_candidates.push(m);
+                    let scan_start = prof_decode.then(std::time::Instant::now);
+                    // Mark the rescan so the phase-2 profiler can separate sub-chunk
+                    // per-pass cost from parent-chunk cost (cheap thread-local swap).
+                    let restore_rescan = super::profile::set_in_decode(true);
+                    // Decoded rescans deliberately stay on the live CPU tier:
+                    // GPU dispatch overhead dominates these derived buffers.
+                    // Pass that resolved backend through windowing too; selecting
+                    // again per window would silently discard this decision.
+                    let decoded_backend = self.live_cpu_backend();
+                    let decoded_matches = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
+                        self.scan_windowed(&decoded_chunk, decoded_backend, deadline)
+                    } else {
+                        // Decoded sub-chunks are post-process recursion;
+                        // they're typically tiny (base64/hex/url payloads
+                        // sliced out of the outer chunk). NEVER route them
+                        // to the GPU literal-set: per-dispatch overhead
+                        // (driver init + queue submit + sync) is 10-100 ms,
+                        // and `--backend gpu` would otherwise force
+                        // every decoded chunk through that path. On a
+                        // 64 MiB chunk that decodes into 1 000 sub-chunks
+                        // that's a 50-second tax - exactly the wall-clock
+                        // delta keyhog used to show vs SIMD on messy
+                        // corpora. Force the live CPU-tier backend here
+                        // regardless of env override: `live_cpu_backend()`
+                        // returns SimdCpu ONLY when this scanner actually
+                        // built a Hyperscan prefilter, else CpuFallback, and
+                        // never GPU/MegaScan. Hardcoding SimdCpu crashed a
+                        // scanner whose patterns expose no anchorable literal
+                        // (an empty detector set, or `[a-z]{16}`-only) — its
+                        // `simd_prefilter` is None, so the SimdCpu trigger
+                        // collection fails closed through `backend_unavailable`
+                        // (process exit), aborting the whole scan on the
+                        // decode-through path.
+                        self.scan_inner(&decoded_chunk, decoded_backend, deadline)
+                    };
+                    super::profile::set_in_decode(restore_rescan);
+                    if crate::deadline::expired(deadline) {
+                        break;
+                    }
+                    if let Some(t) = scan_start {
+                        DECODE_SCAN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
+                    }
+                    for m in decoded_matches {
+                        // Anchor decoded matches (KH-L-0404): a generic/entropy
+                        // detector firing on synthesized decoded bytes rests on
+                        // shape alone (decoding readable text yields token-shaped
+                        // fragments it spuriously claims — +264 FP / ~0 TP on
+                        // CredData). Only self-anchoring vendor/key detectors are
+                        // trustworthy on decoded content.
+                        if crate::adjudicate::record_decoded_generic_entropy_suppression(
+                            &m,
+                            chunk.metadata.path.as_deref(),
+                        ) {
+                            continue;
+                        }
+                        if crate::adjudicate::record_decoded_parent_example_suppression(
+                            &m,
+                            chunk.metadata.path.as_deref(),
+                            chunk.data.as_ref(),
+                        ) {
+                            continue;
+                        }
+                        if crate::adjudicate::record_decoded_reverse_placeholder_suppression(
+                            &m,
+                            decoded_chunk
+                                .metadata
+                                .path
+                                .as_deref()
+                                .or(chunk.metadata.path.as_deref()),
+                            &decoded_chunk.metadata.source_type,
+                        ) {
+                            continue;
+                        }
+                        decoded_candidates.push(m);
+                    }
                 }
-            }
-            // Prefer the lowest (real) source offset for each decoded
-            // (detector, credential): a stable offset-ascending sort puts the
-            // original encoded run ahead of any higher synthetic-append alias,
-            // and the first-wins `seen` dedup below then keeps the real one.
-            // Stable so equal-offset entries retain their (deterministic) scan
-            // order. `seen` is still seeded from the pre-decode `matches`, so a
-            // credential the base scan already reported suppresses every decoded
-            // alias as before.
-            decoded_candidates.sort_by_key(|m| m.location.offset);
-            for m in decoded_candidates {
-                let key = (Arc::clone(&m.detector_id), m.credential.clone());
-                if seen.insert(key) {
-                    matches.push(m);
+                // Prefer the lowest (real) source offset for each decoded
+                // (detector, credential): a stable offset-ascending sort puts the
+                // original encoded run ahead of any higher synthetic-append alias,
+                // and the first-wins `seen` dedup below then keeps the real one.
+                // Stable so equal-offset entries retain their (deterministic) scan
+                // order. `seen` is still seeded from the pre-decode `matches`, so a
+                // credential the base scan already reported suppresses every decoded
+                // alias as before.
+                decoded_candidates.sort_by_key(|m| m.location.offset);
+                for m in decoded_candidates {
+                    let key = (Arc::clone(&m.detector_id), m.credential.clone());
+                    if seen.insert(key) {
+                        matches.push(m);
+                    }
                 }
             }
         }

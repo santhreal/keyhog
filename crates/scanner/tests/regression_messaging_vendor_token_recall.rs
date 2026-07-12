@@ -78,14 +78,20 @@ fn fires(text: &str, detector: &str) -> bool {
 fn discord_bot_token_low_prefix_surfaces() {
     // `MTA` is a base64 snowflake prefix (a user id starting "10..").
     let t = discord_token("MTA", 6, 30, 1);
-    assert!(surfaces_under(&t, "discord-bot-token", &t), "MTA-prefixed token must surface");
+    assert!(
+        surfaces_under(&t, "discord-bot-token", &t),
+        "MTA-prefixed token must surface"
+    );
 }
 
 #[test]
 fn discord_bot_token_high_prefix_surfaces() {
     // `NzA` covers the 70-99 snowflake prefix range (pattern 2).
     let t = discord_token("NzA", 6, 30, 4);
-    assert!(surfaces_under(&t, "discord-bot-token", &t), "NzA-prefixed token must surface");
+    assert!(
+        surfaces_under(&t, "discord-bot-token", &t),
+        "NzA-prefixed token must surface"
+    );
 }
 
 #[test]
@@ -169,13 +175,20 @@ fn telegram_lowercase_anchor_surfaces() {
 #[test]
 fn telegram_8_digit_id_surfaces() {
     let t = format!("{}:{}", digits(8, 25), alnum(35, 26)); // 8 = minimum id
-    assert!(surfaces_under(&format!("TELEGRAM_TOKEN={t}"), "telegram-bot-token", &t));
+    assert!(surfaces_under(
+        &format!("TELEGRAM_TOKEN={t}"),
+        "telegram-bot-token",
+        &t
+    ));
 }
 
 #[test]
 fn telegram_34_char_token_does_not_fire() {
     let t = format!("{}:{}", digits(9, 27), alnum(34, 28)); // 34 < the required 35
-    assert!(!fires(&format!("TELEGRAM_BOT_TOKEN={t}"), "telegram-bot-token"));
+    assert!(!fires(
+        &format!("TELEGRAM_BOT_TOKEN={t}"),
+        "telegram-bot-token"
+    ));
 }
 
 // ── Pusher: app key 20-hex / app secret 32-hex ───────────────────────────────
@@ -183,7 +196,11 @@ fn telegram_34_char_token_does_not_fire() {
 #[test]
 fn pusher_app_key_surfaces() {
     let k = hex(20, 29);
-    assert!(surfaces_under(&format!("PUSHER_APP_KEY={k}"), "pusher-app-key", &k));
+    assert!(surfaces_under(
+        &format!("PUSHER_APP_KEY={k}"),
+        "pusher-app-key",
+        &k
+    ));
 }
 
 #[test]
@@ -205,7 +222,11 @@ fn pusher_app_secret_is_detected() {
 #[test]
 fn pusher_lowercase_anchor_surfaces() {
     let k = hex(20, 31);
-    assert!(surfaces_under(&format!("pusher_app_key={k}"), "pusher-app-key", &k));
+    assert!(surfaces_under(
+        &format!("pusher_app_key={k}"),
+        "pusher-app-key",
+        &k
+    ));
 }
 
 #[test]
@@ -219,13 +240,21 @@ fn pusher_19_hex_key_does_not_fire() {
 #[test]
 fn pushover_token_surfaces() {
     let k = lcnum(30, 33);
-    assert!(surfaces_under(&format!("PUSHOVER={k}"), "pushover-api-token", &k));
+    assert!(surfaces_under(
+        &format!("PUSHOVER={k}"),
+        "pushover-api-token",
+        &k
+    ));
 }
 
 #[test]
 fn pushover_colon_form_surfaces() {
     let k = lcnum(30, 34);
-    assert!(surfaces_under(&format!("PUSHOVER: {k}"), "pushover-api-token", &k));
+    assert!(surfaces_under(
+        &format!("PUSHOVER: {k}"),
+        "pushover-api-token",
+        &k
+    ));
 }
 
 #[test]

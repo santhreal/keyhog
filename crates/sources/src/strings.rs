@@ -2,6 +2,12 @@
 //! Shared by the filesystem source (auto-detection) and binary source (explicit).
 
 use keyhog_core::SensitiveString;
+
+/// ONE owner for the printable-run floor used by every `extract_printable_strings`
+/// caller — binary sections/literals, web WASM extraction, and filesystem
+/// archive/PDF strings. Tune the strings-scan recall floor here and nowhere else.
+pub(crate) const MIN_PRINTABLE_STRING_LEN: usize = 8;
+
 /// Extract printable ASCII strings of at least `min_len` from binary data.
 ///
 /// Covers two encodings: contiguous printable ASCII runs, and UTF-16LE "wide"

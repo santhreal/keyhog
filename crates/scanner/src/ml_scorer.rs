@@ -2,29 +2,39 @@
 //!
 //! Architecture: gate Linear(D,6) → Softmax plus 6 experts of
 //! Linear(D,32) → ReLU → Linear(32,16) → ReLU → Linear(16,1), then
-//! a weighted logit sum followed by Sigmoid, where `D = NUM_FEATURES` (42).
+//! a weighted logit sum followed by Sigmoid, where `D = NUM_FEATURES` (43).
 //! Model weights are embedded in `ml_weights.rs` as little-endian f32 values.
 //! Inference: typically under ~100μs per prediction on the test hardware
 //!
-//! The 42 input features capture everything our heuristics know: length,
+//! The 43 input features capture everything our heuristics know: length,
 //! entropy, char diversity, known prefixes, context keywords, placeholder
-//! patterns, structural signals, coarse file-type cues, and the decode-structure
-//! verdict (feature #41, base64/hex → magic-bytes/protobuf), the single feature
-//! that drove the base64-of-binary false-flag rate to 0%.
+//! patterns, structural signals, coarse file-type cues, the decode-structure
+//! verdict (feature #41, base64/hex → magic-bytes/protobuf) that drove the
+//! base64-of-binary false-flag rate to 0%, and the keyword-specificity signal
+//! (feature #42, context names a SPECIFIC service vs generic role words only —
+//! see `service_vocab`), which separates service-keyword+UUID real secrets
+//! from generic-keyword+UUID identifiers.
 
 // Submodules live in `ml_scorer/` (native path resolution), matching the
 // `foo.rs` + `foo/` layout used across the workspace (e.g. sources/filesystem).
+// `model_arch` is the single owner of every layer dimension/param/offset const;
+// `ml_weights` (buffer layout) and this module (forward pass) both import it.
 pub(crate) mod ml_weights;
+pub(crate) mod model_arch;
 
 use std::cell::RefCell;
 
-mod ml_features;
+pub(crate) mod ml_features;
+pub(crate) mod service_vocab;
 #[cfg(test)]
 pub(crate) use ml_features::compute_features_public;
-#[cfg(test)]
-pub(crate) use ml_features::{BIGRAM_BITSET_WORDS_FOR_TEST, unique_bigram_stats_for_test};
 pub use ml_features::compute_features_with_config;
 pub(crate) use ml_features::NUM_FEATURES;
+
+// Forward-pass dimensions + sigmoid clamp: imported from the single owner. The
+// re-export keeps `crate::ml_scorer::SIGMOID_SATURATION` stable for `testing.rs`.
+pub(crate) use model_arch::SIGMOID_SATURATION;
+use model_arch::{EXPERT_COUNT, EXPERT_FC1_OUT, EXPERT_FC2_OUT};
 
 /// Batch-size crossover for ML scoring. Below this, `batch_ml_inference` scores
 /// serially (a fused feature->score loop) because it already runs inside the
@@ -36,41 +46,16 @@ pub(crate) use ml_features::NUM_FEATURES;
 #[cfg(any(feature = "gpu", feature = "ml"))]
 pub(crate) const GPU_BATCH_THRESHOLD: usize = 64;
 
-/// Number of mixture-of-experts specialists. Each expert sees the same input
-/// but learns different aspects (one may specialize in cloud credentials,
-/// another in short API keys, etc.). 6 experts balance capacity vs. inference
-/// cost, trained via grid search over {4, 6, 8, 12}.
-const EXPERT_COUNT: usize = 6;
-const EXPERT_HIDDEN_LAYER_1: usize = 32;
-const EXPERT_HIDDEN_LAYER_2: usize = 16;
-
 /// Bounded per-thread score-cache capacity: the map is cleared wholesale once it
 /// reaches this many entries (see `util_hash::memoize_by_hash`). 256 covers the
 /// distinct matches of a single file's batch scoring. Single owner for the cap so
 /// the number in the code and the "256-entry bounded cache" prose cannot drift.
-const SCORE_CACHE_CAPACITY: usize = 256;
+pub(crate) const SCORE_CACHE_CAPACITY: usize = 256;
 
-/// Symmetric saturation bound for the fast rational sigmoid: outside
-/// `[-SIGMOID_SATURATION, SIGMOID_SATURATION]` the output is clamped to `0.0` /
-/// `1.0`. One owner so the lower and upper clamp points can never drift out of
-/// symmetry (the CPU forward pass is the parity reference for every confidence
-/// floor and the GPU shader).
-const SIGMOID_SATURATION: f32 = 6.0;
-
-// SINGLE-SOURCE-OF-TRUTH guard. These layer dimensions are mirrored from
-// `ml_weights` (their canonical home, where they also drive the `weights.bin`
-// buffer offsets) because the forward pass needs them as plain consts for
-// const-generic dense-layer sizing. If a retrain changes the architecture in
-// `ml_weights`/`weights.bin` but a mirror here is not updated, the forward pass
-// would slice the weight buffer with the wrong stride — silent wrong scores or
-// an out-of-bounds index in release, where the per-call `debug_assert`s vanish
-// and only `all_weights()`'s byte-length `assert` (which checks `weights.bin`
-// SIZE, not these strides) fires. These const assertions fail the BUILD on any
-// drift, before any test runs, at zero runtime cost.
-const _: () = assert!(NUM_FEATURES == ml_weights::INPUT_DIM);
-const _: () = assert!(EXPERT_COUNT == ml_weights::EXPERT_COUNT);
-const _: () = assert!(EXPERT_HIDDEN_LAYER_1 == ml_weights::EXPERT_FC1_OUT);
-const _: () = assert!(EXPERT_HIDDEN_LAYER_2 == ml_weights::EXPERT_FC2_OUT);
+// NUM_FEATURES is `model_arch::INPUT_DIM` (one owner), so the forward pass's
+// const-generic layer widths (EXPERT_FC1_OUT/EXPERT_FC2_OUT) and the buffer
+// strides in `ml_weights` are the SAME consts — a retrain cannot make them
+// disagree. `weights.bin`'s byte length is still checked at parse time.
 
 /// Score a candidate secret and its surrounding context using default (empty) heuristic lists.
 pub(crate) fn score(text: &str, context: &str) -> f64 {
@@ -277,12 +262,12 @@ fn compute_gate_logits(
 }
 
 fn expert_logit(expert: &ml_weights::ExpertWeights, input: &[f32; NUM_FEATURES]) -> f32 {
-    let h1 = dense_relu_layer_t::<NUM_FEATURES, EXPERT_HIDDEN_LAYER_1>(
+    let h1 = dense_relu_layer_t::<NUM_FEATURES, EXPERT_FC1_OUT>(
         expert.fc1_weight_t,
         expert.fc1_bias,
         input,
     );
-    let h2 = dense_relu_layer_t::<EXPERT_HIDDEN_LAYER_1, EXPERT_HIDDEN_LAYER_2>(
+    let h2 = dense_relu_layer_t::<EXPERT_FC1_OUT, EXPERT_FC2_OUT>(
         expert.fc2_weight_t,
         expert.fc2_bias,
         &h1,
@@ -353,7 +338,7 @@ fn dense_row<const INPUT: usize>(weights: &[f32], input: &[f32; INPUT], bias: f3
     sum
 }
 
-fn sigmoid(value: f32) -> f32 {
+pub(crate) fn sigmoid(value: f32) -> f32 {
     let x = value;
     if x <= -SIGMOID_SATURATION {
         0.0
@@ -380,14 +365,3 @@ fn softmax(logits: &[f32; EXPERT_COUNT]) -> [f32; EXPERT_COUNT] {
     }
     exps
 }
-
-#[cfg(test)]
-pub(crate) fn sigmoid_for_test(value: f32) -> f32 {
-    sigmoid(value)
-}
-
-#[cfg(test)]
-pub(crate) const SIGMOID_SATURATION_FOR_TEST: f32 = SIGMOID_SATURATION;
-
-#[cfg(test)]
-pub(crate) const SCORE_CACHE_CAPACITY_FOR_TEST: usize = SCORE_CACHE_CAPACITY;

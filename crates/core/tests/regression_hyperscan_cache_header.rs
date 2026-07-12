@@ -5,8 +5,9 @@
 //! emitter (`write_hyperscan_cache_header`) cannot silently drift apart.
 
 use keyhog_core::{
-    hyperscan_cache_header_is_valid, write_hyperscan_cache_header, HYPERSCAN_CACHE_FILE_BYTES,
-    HYPERSCAN_CACHE_HEADER_LEN, HYPERSCAN_CACHE_MAGIC, HYPERSCAN_CACHE_VERSION,
+    hyperscan_cache_filename, hyperscan_cache_header_is_valid, write_hyperscan_cache_header,
+    HYPERSCAN_CACHE_FILE_BYTES, HYPERSCAN_CACHE_HEADER_LEN, HYPERSCAN_CACHE_MAGIC,
+    HYPERSCAN_CACHE_VERSION,
 };
 
 /// The documented byte constants have their exact wire values.
@@ -140,4 +141,34 @@ fn all_zero_header_is_rejected() {
 fn hand_built_valid_header_accepts() {
     let good: [u8; 8] = [0x4B, 0x48, 0x48, 0x53, 0x02, 0x00, 0x00, 0x00];
     assert_eq!(hyperscan_cache_header_is_valid(&good), true);
+}
+
+/// The shard-cache FILENAME builder composes the exact `hs-<key>.db` form.
+/// This is the filename analog of the header contract above: it locks the
+/// scanner shard WRITER's on-disk name (`hyperscan_cache_filename`) against the
+/// `HYPERSCAN_CACHE_PREFIX`/`HYPERSCAN_CACHE_SUFFIX` affixes the `core::hardening`
+/// lockdown gate strips to RECOGNISE a trusted compiled-pattern cache, so writer
+/// and reader can never drift (the writer previously re-inlined `hs-`/`.db` in a
+/// `format!`, the exact drift this owner + test now prevent).
+#[test]
+fn cache_filename_composes_exact_prefix_and_suffix() {
+    assert_eq!(hyperscan_cache_filename("deadbeef"), "hs-deadbeef.db");
+    // A degenerate empty key still yields the bare affixes (no panic / no
+    // silent transformation of the key bytes).
+    assert_eq!(hyperscan_cache_filename(""), "hs-.db");
+    // A realistic sha256-shaped shard key round-trips: the writer name carries
+    // the hardening-recognised affixes, and stripping them recovers the key
+    // exactly — the property the lockdown gate relies on.
+    let key = "0a1b2c3d4e5f60718293a4b5c6d7e8f9";
+    let name = hyperscan_cache_filename(key);
+    assert!(
+        name.starts_with("hs-"),
+        "writer filename must carry the hardening-recognised prefix"
+    );
+    assert!(
+        name.ends_with(".db"),
+        "writer filename must carry the hardening-recognised suffix"
+    );
+    let stripped = name.strip_prefix("hs-").and_then(|s| s.strip_suffix(".db"));
+    assert_eq!(stripped, Some(key));
 }

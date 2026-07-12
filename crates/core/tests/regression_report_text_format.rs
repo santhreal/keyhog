@@ -223,6 +223,68 @@ fn text_confidence_bar_and_percent_for_high_confidence() {
     );
 }
 
+/// Adversarial: `confidence` is a public field, so a library-constructed finding
+/// can carry an OUT-OF-RANGE score. The reporter sanitizes into [0,1] so the bar
+/// and percent agree and never render ">100%". Derived from `report/text.rs`:
+/// `display_conf = clamp(0,1)`, `filled = (display_conf*6).min(6)`.
+#[test]
+fn text_confidence_over_one_clamps_to_full_bar_and_100_percent() {
+    let f = finding(
+        "aws-access-key",
+        "AWS Access Key",
+        "aws",
+        Severity::High,
+        "AKIA****",
+        VerificationResult::Unverifiable,
+        Some(7),
+        Some(1.5), // out of range via the public field
+    );
+    let text = render_text(&[f]);
+    assert!(
+        text.contains("■■■■■■"),
+        "over-range confidence must fill all 6 cells, got:\n{text}"
+    );
+    assert!(
+        text.contains("100%"),
+        "over-range confidence must clamp to '100%', got:\n{text}"
+    );
+    assert!(
+        !text.contains("150%") && !text.contains("101%"),
+        "no percentage above 100 may render, got:\n{text}"
+    );
+}
+
+/// Adversarial: a NaN confidence (public field, no scanner sanitize) renders as
+/// `0%` and an empty bar, never a `NaN` glyph — matching the scanner's
+/// `finalize_confidence` NaN -> minimum. `f64::clamp` alone does NOT sanitize
+/// NaN, so the reporter guards `is_finite()` explicitly.
+#[test]
+fn text_confidence_nan_renders_zero_percent_empty_bar() {
+    let f = finding(
+        "aws-access-key",
+        "AWS Access Key",
+        "aws",
+        Severity::High,
+        "AKIA****",
+        VerificationResult::Unverifiable,
+        Some(7),
+        Some(f64::NAN),
+    );
+    let text = render_text(&[f]);
+    assert!(
+        text.contains("□□□□□□"),
+        "NaN confidence must render a fully empty 6-cell bar, got:\n{text}"
+    );
+    assert!(
+        text.contains("0%"),
+        "NaN confidence must render '0%', got:\n{text}"
+    );
+    assert!(
+        !text.to_lowercase().contains("nan"),
+        "NaN must never leak into the rendered percent, got:\n{text}"
+    );
+}
+
 /// Boundary: absent confidence renders an empty bar and `0%` (LAW10: the
 /// finding is still printed with a display-only zeroed bar, never dropped).
 #[test]

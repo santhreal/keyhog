@@ -56,3 +56,95 @@ fn non_slack_prefix_is_not_applicable() {
         "not-applicable"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin one example per shape; these SWEEP the two anchored
+// regexes across their whole valid domain and the structural-reject boundaries.
+// Constructive positives generate strings that satisfy each regex (both bot
+// shapes, both user shapes) — a `letter`-anchored secret keeps the optional
+// numeric group from greedily consuming it, so the parse is unambiguous. Negatives
+// violate exactly ONE bound. Plus the prefix rule (only `xoxb-`/`xoxp-` are in
+// scope). Regexes traced from checksum/slack.rs:42/48. No proptest before.
+
+use keyhog_scanner::testing::slack_checksum_verdict_for_test as verdict;
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// Canonical 3-segment bot token: `xoxb-{10-15 d}-{10-15 d}-{15-40 alnum}`.
+    #[test]
+    fn bot_three_segment_is_valid(
+        n1 in "[0-9]{10,15}",
+        n2 in "[0-9]{10,15}",
+        secret in "[a-zA-Z][a-zA-Z0-9]{14,39}",
+    ) {
+        let tok = format!("xoxb-{n1}-{n2}-{secret}");
+        prop_assert_eq!(verdict(&tok), "valid");
+    }
+
+    /// Older 2-segment bot token: `xoxb-{10-15 d}-{15-40 alnum}` (numeric group
+    /// omitted).
+    #[test]
+    fn bot_two_segment_is_valid(
+        n1 in "[0-9]{10,15}",
+        secret in "[a-zA-Z][a-zA-Z0-9]{14,39}",
+    ) {
+        let tok = format!("xoxb-{n1}-{secret}");
+        prop_assert_eq!(verdict(&tok), "valid");
+    }
+
+    /// A first numeric segment shorter than 10 digits is a structural reject.
+    #[test]
+    fn bot_short_first_numeric_is_invalid(
+        n1 in "[0-9]{1,9}",
+        secret in "[a-zA-Z][a-zA-Z0-9]{14,39}",
+    ) {
+        let tok = format!("xoxb-{n1}-{secret}");
+        prop_assert_eq!(verdict(&tok), "invalid");
+    }
+
+    /// A secret shorter than 15 alnum is a structural reject.
+    #[test]
+    fn bot_short_secret_is_invalid(
+        n1 in "[0-9]{10,15}",
+        secret in "[a-zA-Z][a-zA-Z0-9]{0,13}",
+    ) {
+        let tok = format!("xoxb-{n1}-{secret}");
+        prop_assert_eq!(verdict(&tok), "invalid");
+    }
+
+    /// User token, 3-segment and 4-segment (optional third numeric):
+    /// `xoxp-{10-15 d}-{10-15 d}(-{10-13 d})?-{24-40 alnum}`.
+    #[test]
+    fn user_token_is_valid(
+        d1 in "[0-9]{10,15}",
+        d2 in "[0-9]{10,15}",
+        mid in prop::option::of("[0-9]{10,13}"),
+        secret in "[a-zA-Z][a-zA-Z0-9]{23,39}",
+    ) {
+        let tok = match &mid {
+            Some(m) => format!("xoxp-{d1}-{d2}-{m}-{secret}"),
+            None => format!("xoxp-{d1}-{d2}-{secret}"),
+        };
+        prop_assert_eq!(verdict(&tok), "valid");
+    }
+
+    /// A user token missing the required second numeric segment is a reject.
+    #[test]
+    fn user_missing_second_numeric_is_invalid(
+        d1 in "[0-9]{10,15}",
+        secret in "[a-zA-Z][a-zA-Z0-9]{23,39}",
+    ) {
+        let tok = format!("xoxp-{d1}-{secret}");
+        prop_assert_eq!(verdict(&tok), "invalid");
+    }
+
+    /// Only `xoxb-`/`xoxp-` prefixes are in scope; anything else is
+    /// not-applicable (the validator defers rather than rejecting).
+    #[test]
+    fn non_slack_prefix_is_not_applicable_sweep(cred in "(?s).{0,40}") {
+        prop_assume!(!cred.starts_with("xoxb-") && !cred.starts_with("xoxp-"));
+        prop_assert_eq!(verdict(&cred), "not-applicable");
+    }
+}

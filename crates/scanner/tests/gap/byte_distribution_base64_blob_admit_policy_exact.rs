@@ -66,3 +66,62 @@ fn unpadded_non_multiple_of_four_is_rejected() {
     let value = format!("{}+/", "A".repeat(41));
     assert!(!admits(&value, 40, 300));
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors sample single points of the admit/reject boundary; these
+// SWEEP the one-directional guarantees that keep this emit-DROP decoy gate from
+// eating real secrets. Each was confirmed against the source
+// (`is_byte_distribution_base64_blob`): a length-band pre-gate, then
+// `standard_base64_shape` (None on any url-safe char), then a structural
+// mult-4/padding pre-gate, then the `(+ && /) || (pad && (+ || /))` admit clause.
+// No proptest covered this before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4_000))]
+
+    /// PRECISION JEWEL: a pure base62 blob (`[A-Za-z0-9]`, no `+`/`/`, no padding)
+    /// carries NO byte-distribution signal, so it must NEVER be admitted — the
+    /// admit clause needs `+`&`/` or padding+one, none of which a base62 provider
+    /// token has. A regression here would silently DROP real base62-shaped keys.
+    /// Holds for any in-band length and either reject path (structural OR clause).
+    #[test]
+    fn pure_alphanumeric_blobs_are_never_admitted(
+        value in "[A-Za-z0-9]{20,80}",
+    ) {
+        prop_assert!(!admits(&value, 1, 1000));
+    }
+
+    /// A single url-safe char (`-`/`_`) makes `standard_base64_shape` return
+    /// `None` (`has_urlsafe` short-circuit), so the gate cannot fire on a
+    /// non-standard alphabet — a url-safe-encoded secret is never dropped here.
+    #[test]
+    fn url_safe_alphabet_blobs_are_never_admitted(
+        rest in "[A-Za-z0-9+/]{20,80}",
+    ) {
+        let value = format!("-{rest}");
+        prop_assert!(!admits(&value, 1, 1000));
+    }
+
+    /// LENGTH PRE-GATE: a value below the band floor is rejected before any shape
+    /// work, no matter how admitting its shape would otherwise be (`min = len+1`
+    /// forces `len < min`).
+    #[test]
+    fn below_band_floor_is_always_rejected(
+        value in "[A-Za-z0-9+/=]{0,80}",
+    ) {
+        let min = value.len() + 1;
+        prop_assert!(!admits(&value, min, min + 100));
+    }
+
+    /// The gate must never panic on arbitrary Unicode input or band bounds.
+    #[test]
+    fn admit_gate_never_panics(
+        value in "(?s).{0,60}",
+        min in 0usize..200,
+        span in 0usize..400,
+    ) {
+        let _ = admits(&value, min, min + span);
+    }
+}

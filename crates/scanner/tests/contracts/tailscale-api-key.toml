@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "tskeyEXAMPLEEXAMPLEr7U3l"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# key rotated 2024-09, safe to delete after audit: tskey-api-bHbEzy1zf6wCro8yiOZ8HEFGG742OVcXgVErdxjAWQUaHqRRfdcjvAe-UZ2bOS0aRNzaoiZNmL3QqvhSyYOPeMhhlFrr7U3l"
+credential = "tskey-api-bHbEzy1zf6wCro8yiOZ8HEFGG742OVcXgVErdxjAWQUaHqRRfdcjvAe-UZ2bOS0aRNzaoiZNmL3QqvhSyYOPeMhhlFrr7U3l"
+reason = "Commented-out rotated key left in a config; the `tskey-api-` prefix anchor fires with no keyword context, and the neutral `rotated`/`audit` comment words must not trip the placeholder gate."

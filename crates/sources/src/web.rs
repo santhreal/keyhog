@@ -39,9 +39,6 @@ pub(crate) use ssrf::{
     is_disallowed_web_host, redact_url, resolve_and_screen,
 };
 
-/// Minimum printable string length for WASM binary string extraction.
-const MIN_WASM_STRING_LEN: usize = 8;
-
 /// Web content source that fetches JavaScript, source maps, and WASM from URLs.
 ///
 /// URLs ending in `.wasm` are treated as binary and have strings extracted.
@@ -325,6 +322,19 @@ fn web_response_kind_from_content_type(
     }
 }
 
+/// Stable `host:port` identity a redirect client is pinned to. Two URLs share a
+/// client only when this matches, because the SSRF `resolve_to_addrs` pin is
+/// host:port-specific (a redirect that keeps the host but changes the port must
+/// be re-screened and re-pinned). `None` on an unparseable URL forces a rebuild
+/// so `build_web_client` surfaces the real parse error rather than silently
+/// reusing a stale client.
+pub(crate) fn redirect_pin_key(url: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    let host = parsed.host_str()?;
+    let port = parsed.port_or_known_default().unwrap_or(443);
+    Some(format!("{host}:{port}"))
+}
+
 fn send_with_pinned_redirects(
     http: &crate::http::HttpClientConfig,
     url: &str,
@@ -334,13 +344,40 @@ fn send_with_pinned_redirects(
     let mut current_url = url.to_string();
     let mut allow_current_calibration_url = allow_autoroute_loopback_calibration_url
         && is_autoroute_loopback_calibration_url(&current_url);
+    // Reuse one client (and its TLS config + connection pool) across hops whose
+    // pinned host:port and calibration flag are unchanged — a same-host redirect
+    // (only the path changes) is the common case. Rebuilding per hop paid a fresh
+    // TLS/connector setup up to REDIRECT_LIMIT+1 times per URL (Law 7). A client
+    // is only rebuilt when the target host:port differs, since the SSRF-screened
+    // `resolve_to_addrs` pin is host:port-specific. `Client` clones share the same
+    // inner Arc, so the cached clone reuses the live pool.
+    let mut cached_client: Option<(String, bool, reqwest::blocking::Client)> = None;
     for hop in 0..=crate::http::REDIRECT_LIMIT {
-        let client = build_web_client(
-            http,
-            &current_url,
-            proxy_in_use,
-            allow_current_calibration_url,
-        )?;
+        let pin_key = redirect_pin_key(&current_url);
+        let reused = match cached_client.as_ref() {
+            Some((key, cal, client))
+                if pin_key.as_deref() == Some(key.as_str())
+                    && *cal == allow_current_calibration_url =>
+            {
+                Some(client.clone())
+            }
+            _ => None,
+        };
+        let client = match reused {
+            Some(client) => client,
+            None => {
+                let client = build_web_client(
+                    http,
+                    &current_url,
+                    proxy_in_use,
+                    allow_current_calibration_url,
+                )?;
+                if let Some(key) = pin_key {
+                    cached_client = Some((key, allow_current_calibration_url, client.clone()));
+                }
+                client
+            }
+        };
         let resp = client.get(&current_url).send().map_err(|e| {
             let safe_url = redact_url(&current_url);
             web_unreadable_error(format!("failed to fetch {safe_url}: {e}"))
@@ -432,10 +469,13 @@ fn handle_json(
         Ok(body) => body,
         Err(e) => return vec![Err(e)],
     };
-    if is_sourcemap_shaped_json(&body) {
-        expand_sourcemap_body(body, url)
-    } else {
-        vec![Ok(web_text_chunk(body, url))]
+    // Parse the JSON body ONCE: if it is source-map-shaped, expand it from the
+    // already-parsed value; otherwise scan it as text. Previously the body was
+    // parsed twice here — once by `is_sourcemap_shaped_json` to classify it and
+    // again inside `expand_sourcemap_body` to walk it.
+    match serde_json::from_str::<serde_json::Value>(&body) {
+        Ok(value) if is_sourcemap_shaped_value(&value) => expand_sourcemap_value(value, body, url),
+        _ => vec![Ok(web_text_chunk(body, url))],
     }
 }
 
@@ -445,8 +485,8 @@ fn web_text_chunk(body: String, url: &str) -> Chunk {
         metadata: ChunkMetadata {
             base_offset: 0,
             base_line: 0,
-            source_type: "web:js".to_string(),
-            path: Some(url.to_string()),
+            source_type: "web:js".into(),
+            path: Some(url.into()),
             commit: None,
             author: None,
             date: None,
@@ -472,7 +512,7 @@ fn handle_sourcemap(
 }
 
 fn expand_sourcemap_body(body: String, url: &str) -> Vec<Result<Chunk, SourceError>> {
-    let mut map: serde_json::Value = match serde_json::from_str(&body) {
+    let map: serde_json::Value = match serde_json::from_str(&body) {
         Ok(v) => v,
         Err(e) => {
             let _event =
@@ -481,7 +521,19 @@ fn expand_sourcemap_body(body: String, url: &str) -> Vec<Result<Chunk, SourceErr
             return vec![Ok(sourcemap_raw_chunk(body, url))];
         }
     };
+    expand_sourcemap_value(map, body, url)
+}
 
+/// Expand an ALREADY-PARSED source map value into per-`sourcesContent` chunks
+/// (plus the raw map when there is no embedded content or some entries are
+/// malformed). Split out of [`expand_sourcemap_body`] so `handle_json` — which
+/// must parse the body anyway to decide it is source-map-shaped — reuses that
+/// single parse instead of re-parsing the same JSON.
+fn expand_sourcemap_value(
+    mut map: serde_json::Value,
+    body: String,
+    url: &str,
+) -> Vec<Result<Chunk, SourceError>> {
     let mut malformed_sources = false;
     let mut sources: Vec<Option<String>> = match map.get("sources") {
         Some(value) => match value.as_array() {
@@ -563,8 +615,8 @@ fn expand_sourcemap_body(body: String, url: &str) -> Vec<Result<Chunk, SourceErr
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     base_line: 0,
-                    source_type: "web:sourcemap".to_string(),
-                    path: Some(format!("{url}!{source_name}")),
+                    source_type: "web:sourcemap".into(),
+                    path: Some(format!("{url}!{source_name}").into()),
                     commit: None,
                     author: None,
                     date: None,
@@ -585,10 +637,7 @@ fn expand_sourcemap_body(body: String, url: &str) -> Vec<Result<Chunk, SourceErr
     chunks
 }
 
-fn is_sourcemap_shaped_json(body: &str) -> bool {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
-        return false;
-    };
+fn is_sourcemap_shaped_value(value: &serde_json::Value) -> bool {
     value.get("sourcesContent").is_some()
         || (value.get("version").is_some()
             && value.get("sources").is_some()
@@ -601,8 +650,8 @@ fn sourcemap_raw_chunk(body: String, url: &str) -> Chunk {
         metadata: ChunkMetadata {
             base_offset: 0,
             base_line: 0,
-            source_type: "web:sourcemap:raw".to_string(),
-            path: Some(url.to_string()),
+            source_type: "web:sourcemap:raw".into(),
+            path: Some(url.into()),
             commit: None,
             author: None,
             date: None,
@@ -633,7 +682,8 @@ fn handle_wasm(
         )))];
     }
 
-    let strings = crate::strings::extract_printable_strings(&bytes, MIN_WASM_STRING_LEN);
+    let strings =
+        crate::strings::extract_printable_strings(&bytes, crate::strings::MIN_PRINTABLE_STRING_LEN);
     if strings.is_empty() {
         let safe_url = redact_url(url);
         tracing::warn!(
@@ -651,8 +701,8 @@ fn handle_wasm(
         metadata: ChunkMetadata {
             base_offset: 0,
             base_line: 0,
-            source_type: "web:wasm".to_string(),
-            path: Some(url.to_string()),
+            source_type: "web:wasm".into(),
+            path: Some(url.into()),
             commit: None,
             author: None,
             date: None,

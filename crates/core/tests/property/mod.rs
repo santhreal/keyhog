@@ -1,3 +1,10 @@
+pub mod allowlist_glob_contract;
+pub mod credential_contract;
+pub mod cross_detector_dedup_contract;
+pub mod dedup_contract;
+pub mod hyperscan_cache_contract;
 pub mod raw_match_ordering_contract;
+pub mod redaction_contract;
+pub mod report_injection_contract;
 pub mod sarif_dedup;
 pub mod serialization;

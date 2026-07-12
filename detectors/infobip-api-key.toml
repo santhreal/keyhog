@@ -8,7 +8,11 @@ id = "infobip-api-key"
 name = "Infobip API Key"
 service = "infobip"
 severity = "critical"
-keywords = ["infobip", "INFOBIP", "authorization", "app"]
+# "app" removed: an over-trigger (application/apple/happen/…) that no regex
+# requires — the two patterns anchor on `infobip` and `Authorization` (both
+# still keywords). The `(?:App|APP)?` in the auth regex is optional and gated by
+# the `Authorization` trigger, not by an "app" keyword. Recall-neutral.
+keywords = ["infobip", "INFOBIP", "authorization"]
 
 [[detector.patterns]]
 regex = '''(?:infobip|INFOBIP)[_.-]?(?:api|API)?[_.-]?(?:key|KEY)?[=:\s"\' ]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''

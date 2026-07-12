@@ -90,7 +90,7 @@ mod git_metadata {
     fn with_source_type<'a>(chunks: &'a [Chunk], source_type: &str) -> Vec<&'a Chunk> {
         chunks
             .iter()
-            .filter(|c| c.metadata.source_type == source_type)
+            .filter(|c| c.metadata.source_type.as_ref() == source_type)
             .collect()
     }
 
@@ -124,7 +124,7 @@ mod git_metadata {
             .iter()
             .find(|c| c.data.contains(FILE_SECRET))
             .expect("a git/head chunk must carry the committed file secret");
-        assert_eq!(chunk.metadata.source_type, "git/head");
+        assert_eq!(chunk.metadata.source_type.as_ref(), "git/head");
         assert_eq!(chunk.metadata.path.as_deref(), Some("config.env"));
         assert!(
             chunk.data.contains(FILE_SECRET),
@@ -340,7 +340,7 @@ mod git_metadata {
             .iter()
             .find(|c| c.data.contains(HISTORY_SECRET))
             .expect("removed-from-HEAD secret must surface as a git/history chunk");
-        assert_eq!(chunk.metadata.source_type, "git/history");
+        assert_eq!(chunk.metadata.source_type.as_ref(), "git/history");
         assert_eq!(chunk.metadata.path.as_deref(), Some("config.txt"));
         assert_eq!(
             chunk.metadata.commit.as_deref().map(str::len),
@@ -413,7 +413,7 @@ mod git_metadata {
         commit(&repo, "readme.txt", "hello world\n", "init");
         let chunks = git_chunks(&repo);
         assert_eq!(chunks.len(), 1, "one committed file => exactly one chunk");
-        assert_eq!(chunks[0].metadata.source_type, "git/head");
+        assert_eq!(chunks[0].metadata.source_type.as_ref(), "git/head");
         assert_eq!(chunks[0].metadata.path.as_deref(), Some("readme.txt"));
         assert!(chunks[0].data.contains("hello world"));
     }
@@ -456,7 +456,7 @@ mod git_metadata {
         let chunks = history_chunks(&repo);
         let chunk = chunk_containing(&chunks, FILE_SECRET)
             .expect("git-history must surface the added file secret");
-        assert_eq!(chunk.metadata.source_type, "git-history");
+        assert_eq!(chunk.metadata.source_type.as_ref(), "git-history");
         assert_eq!(chunk.metadata.path.as_deref(), Some("creds.txt"));
         let commit_id = chunk.metadata.commit.as_deref().expect("commit id");
         assert_eq!(commit_id.len(), 40, "full SHA-1 commit id");

@@ -2,6 +2,42 @@ use super::{documentation::documentation_line_flags, CodeContext};
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
+#[derive(serde::Deserialize)]
+struct InferenceMarkers {
+    comment_prefixes: Vec<String>,
+    encrypted_prefixes: Vec<String>,
+    encrypted_substrings: Vec<String>,
+    rust_test_attribute_prefixes: Vec<String>,
+    rust_test_attribute_exact: Vec<String>,
+    test_function_prefixes: Vec<String>,
+    attribute_or_doc_prefixes: Vec<String>,
+    assignment_operators: Vec<String>,
+}
+
+const INFERENCE_MARKERS_TOML: &str = include_str!("../../../../rules/inference-markers.toml");
+
+/// Parse the bundled Tier-B inference-marker lists. Returns an error rather than
+/// panicking so the single `INFERENCE_MARKERS` owner below is the one fail-closed
+/// site (the `no_unwrap_expect` gate bans `expect` in production source).
+fn parse_inference_markers(raw: &str) -> Result<InferenceMarkers, String> {
+    toml::from_str(raw).map_err(|error| format!("invalid rules/inference-markers.toml: {error}"))
+}
+
+/// Single owner for every inference-marker list: the embedded Tier-B TOML is
+/// parsed exactly ONCE here and each classifier below reads its field, instead
+/// of the previous eight statics that each re-`include_str!`'d and re-parsed the
+/// whole file at first use (8x redundant startup parse + eight `expect` sites).
+/// Fail-closed (Law 10): invalid bundled metadata panics loudly at first use —
+/// the scanner refuses to run without credential-context classification truth.
+static INFERENCE_MARKERS: LazyLock<InferenceMarkers> =
+    LazyLock::new(|| match parse_inference_markers(INFERENCE_MARKERS_TOML) {
+        Ok(markers) => markers,
+        Err(error) => panic!(
+            "{error}. Fix the bundled Tier-B inference-marker file; refusing to run \
+             without credential-context classification truth."
+        ),
+    });
+
 const ENCRYPTED_BLOCK_LOOKBACK_LINES: usize = 10;
 // 100 lines covers large Go/Java test functions with extensive setup.
 // The previous 30-line limit caused test fixtures to be reported as findings.
@@ -19,6 +55,13 @@ const ATTR_BLOCK_LOOKBACK: usize = 32;
 /// `is_rust_test_attribute`) that recognise it; keeping it in one place stops
 /// the two sites from silently drifting apart.
 const CFG_TEST_ATTR: &str = concat!("#[cfg(", "test)]");
+
+/// Canonical comment-opener markers for the context module — the single owner
+/// shared by `strip_comment_prefix` here and the disclaimer scan in
+/// `false_positive.rs`. `--` opens a comment only when it is not the `---`
+/// document separator (each consumer applies that exception).
+pub(crate) const COMMENT_MARKERS: &[&str] =
+    &["//", "#", "--", "/*", "<!--", "<#", "* ", "rem ", "REM "];
 
 #[derive(serde::Deserialize)]
 struct TestPathRuleFile {
@@ -60,12 +103,14 @@ pub fn infer_context(lines: &[&str], line_idx: usize, file_path: Option<&str>) -
 }
 
 fn is_encrypted_marker_line(trimmed: &str) -> bool {
-    trimmed.starts_with("$ANSIBLE_VAULT")
-        || trimmed.starts_with("ENC[")
-        || memchr::memmem::find(trimmed.as_bytes(), b"sops:").is_some()
-        || memchr::memmem::find(trimmed.as_bytes(), b"sealed-secrets").is_some()
-        || trimmed.starts_with("-----BEGIN PGP MESSAGE-----")
-        || trimmed.starts_with("-----BEGIN AGE ENCRYPTED")
+    INFERENCE_MARKERS
+        .encrypted_prefixes
+        .iter()
+        .any(|prefix| trimmed.starts_with(prefix.as_str()))
+        || INFERENCE_MARKERS
+            .encrypted_substrings
+            .iter()
+            .any(|sub| memchr::memmem::find(trimmed.as_bytes(), sub.as_bytes()).is_some())
 }
 
 /// Infer context when documentation-line flags have already been computed.
@@ -117,7 +162,9 @@ fn is_test_file(path: &str) -> bool {
     let stem = filename.split('.').next().unwrap_or(filename); // LAW10: split yields >=1 element; unwrap_or is the never-taken total default, recall-safe
 
     rules.filename_prefixes.iter().any(|prefix| {
-        stem.len() > prefix.len()
+        // `>=`, not `>`: a filename whose stem IS the prefix exactly (e.g.
+        // `test_.py` -> stem `test_`, prefix `test_`) is still a test file.
+        stem.len() >= prefix.len()
             && stem
                 .as_bytes()
                 .get(..prefix.len())
@@ -211,16 +258,11 @@ fn infer_default_context(trimmed: &str) -> CodeContext {
 }
 
 fn is_comment_line(trimmed: &str) -> bool {
-    trimmed.starts_with("//")
-        || trimmed.starts_with('#')
-        || (trimmed.starts_with("--") && !trimmed.starts_with("---"))
-        || trimmed.starts_with("/*")
-        || trimmed.starts_with("<!--")
-        || trimmed.starts_with("<#")
-        || trimmed.starts_with("* ")
-        || trimmed.starts_with("*/")
-        || trimmed.starts_with("rem ")
-        || trimmed.starts_with("REM ")
+    (trimmed.starts_with("--") && !trimmed.starts_with("---"))
+        || INFERENCE_MARKERS
+            .comment_prefixes
+            .iter()
+            .any(|prefix| trimmed.starts_with(prefix.as_str()))
 }
 
 fn is_commented_assignment_line(trimmed: &str) -> bool {
@@ -235,26 +277,16 @@ fn is_commented_assignment_line(trimmed: &str) -> bool {
     has_assignment_operator(body) || has_yaml_mapping(body)
 }
 
-fn strip_comment_prefix(trimmed: &str) -> Option<&str> {
-    if let Some(rest) = trimmed.strip_prefix("//") {
-        Some(rest)
-    } else if let Some(rest) = trimmed.strip_prefix('#') {
-        Some(rest)
-    } else if trimmed.starts_with("--") && !trimmed.starts_with("---") {
-        trimmed.strip_prefix("--")
-    } else if let Some(rest) = trimmed.strip_prefix("/*") {
-        Some(rest)
-    } else if let Some(rest) = trimmed.strip_prefix("<!--") {
-        Some(rest)
-    } else if let Some(rest) = trimmed.strip_prefix("<#") {
-        Some(rest)
-    } else if let Some(rest) = trimmed.strip_prefix("* ") {
-        Some(rest)
-    } else if let Some(rest) = trimmed.strip_prefix("rem ") {
-        Some(rest)
-    } else {
-        trimmed.strip_prefix("REM ")
+pub(crate) fn strip_comment_prefix(trimmed: &str) -> Option<&str> {
+    for &marker in COMMENT_MARKERS {
+        if marker == "--" && trimmed.starts_with("---") {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix(marker) {
+            return Some(rest);
+        }
     }
+    None
 }
 
 fn is_assignment_line(trimmed: &str) -> bool {
@@ -262,9 +294,10 @@ fn is_assignment_line(trimmed: &str) -> bool {
 }
 
 pub(crate) fn has_assignment_operator(trimmed: &str) -> bool {
-    for operator in [":=", "->", "="] {
-        if let Some(pos) = trimmed.find(operator) {
-            if !is_comparison_operator(trimmed, pos, operator) {
+    for operator in &INFERENCE_MARKERS.assignment_operators {
+        let op_str = operator.as_str();
+        if let Some(pos) = trimmed.find(op_str) {
+            if !is_comparison_operator(trimmed, pos, op_str) {
                 return true;
             }
         }
@@ -287,29 +320,28 @@ fn is_comparison_operator(trimmed: &str, pos: usize, operator: &str) -> bool {
 }
 
 fn is_in_encrypted_block(lines: &[&str], line_idx: usize) -> bool {
-    let start = line_idx.saturating_sub(ENCRYPTED_BLOCK_LOOKBACK_LINES);
-    lines
+    // Slice the exact lookback window instead of `.take(line_idx+1).skip(start)`
+    // (which walks from line 0, O(line_idx)); the slice is O(window). Bounds
+    // clamped so a `line_idx` past the end can't panic.
+    let end = (line_idx + 1).min(lines.len());
+    let start = line_idx
+        .saturating_sub(ENCRYPTED_BLOCK_LOOKBACK_LINES)
+        .min(end);
+    lines[start..end]
         .iter()
-        .take(line_idx + 1)
-        .skip(start)
         .any(|line| is_encrypted_marker_line(line.trim()))
 }
 
-fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
+pub(crate) fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
     let start = line_idx.saturating_sub(TEST_FUNCTION_LOOKBACK_LINES);
     for candidate_line_idx in (start..line_idx).rev() {
         let trimmed = lines[candidate_line_idx].trim();
 
-        if trimmed.starts_with("def test_")
-            || trimmed.starts_with("class Test")
-            || trimmed.starts_with("it(")
-            || trimmed.starts_with("describe(")
-            || trimmed.starts_with("test(")
-            || trimmed == "#[test]"
-            || trimmed == CFG_TEST_ATTR
-            || trimmed.starts_with("#[tokio::test")
-            || trimmed.starts_with("func Test")
-            || trimmed == "@Test"
+        if INFERENCE_MARKERS
+            .test_function_prefixes
+            .iter()
+            .any(|prefix| trimmed.starts_with(prefix.as_str()))
+            || is_rust_test_attribute(trimmed)
         {
             return true;
         }
@@ -329,12 +361,7 @@ fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
             return false;
         }
 
-        if (trimmed.starts_with("fn ")
-            || trimmed.starts_with("pub fn ")
-            || trimmed.starts_with("async fn ")
-            || trimmed.starts_with("pub async fn "))
-            && !trimmed.contains("fn test_")
-        {
+        if is_rust_fn_signature(trimmed) && !trimmed.contains("fn test_") {
             // A Rust test fn has an arbitrary name and is marked by a
             // `#[test]`-family attribute. That attribute can sit several
             // attribute / doc-comment lines above the signature
@@ -370,14 +397,67 @@ fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
     false
 }
 
+/// True if `trimmed` opens a Rust `fn` signature, tolerating the full leading
+/// qualifier run — visibility (`pub`, `pub(crate)`, `pub(super)`, `pub(in …)`),
+/// `const`, `unsafe`, `async`, `default`, and `extern "…"` — in any order before
+/// the `fn` keyword. The look-back boundary check only knew `fn`/`pub fn`/
+/// `async fn`/`pub async fn`, so a `pub(crate) fn` / `const fn` / `unsafe fn`
+/// between a match and a test marker was skipped, mis-classifying real code as
+/// TestCode and hard-suppressing a live secret (recall loss).
+pub(crate) fn is_rust_fn_signature(trimmed: &str) -> bool {
+    let mut rest = trimmed;
+    loop {
+        if let Some(after) = rest.strip_prefix("pub") {
+            let after = after.trim_start();
+            if let Some(paren) = after.strip_prefix('(') {
+                match paren.find(')') {
+                    Some(close) => {
+                        rest = paren[close + 1..].trim_start();
+                        continue;
+                    }
+                    None => return false,
+                }
+            }
+            rest = after;
+            continue;
+        }
+        if let Some(after) = rest.strip_prefix("extern") {
+            let after = after.trim_start();
+            if let Some(quoted) = after.strip_prefix('"') {
+                match quoted.find('"') {
+                    Some(close) => {
+                        rest = quoted[close + 1..].trim_start();
+                        continue;
+                    }
+                    None => return false,
+                }
+            }
+            rest = after;
+            continue;
+        }
+        let stripped = ["const ", "unsafe ", "async ", "default "]
+            .iter()
+            .find_map(|kw| rest.strip_prefix(kw));
+        match stripped {
+            Some(after) => rest = after.trim_start(),
+            None => break,
+        }
+    }
+    rest.starts_with("fn ")
+}
+
 /// A `#[test]`-family attribute (or the Java `@Test` annotation) that marks the
 /// following item as test code.
 fn is_rust_test_attribute(trimmed: &str) -> bool {
-    trimmed == "#[test]"
-        || trimmed == CFG_TEST_ATTR
-        || trimmed.starts_with("#[tokio::test")
-        || trimmed.starts_with("#[test")
-        || trimmed == "@Test"
+    trimmed == CFG_TEST_ATTR
+        || INFERENCE_MARKERS
+            .rust_test_attribute_exact
+            .iter()
+            .any(|attr| trimmed == attr.as_str())
+        || INFERENCE_MARKERS
+            .rust_test_attribute_prefixes
+            .iter()
+            .any(|prefix| trimmed.starts_with(prefix.as_str()))
 }
 
 /// A line that belongs to the attribute / doc-comment block that may sit between
@@ -386,12 +466,11 @@ fn is_rust_test_attribute(trimmed: &str) -> bool {
 /// comment fragment (`/* … */`, ` * …`). A blank line or anything else ends the
 /// block, so the walk never adopts an attribute from an unrelated item.
 fn is_attribute_or_doc_line(trimmed: &str) -> bool {
-    trimmed.starts_with("#[")
-        || trimmed.starts_with("#![")
-        || trimmed.starts_with("//")
-        || trimmed.starts_with("/*")
-        || trimmed.starts_with('*')
-        || trimmed.ends_with("*/")
+    trimmed.ends_with("*/")
+        || INFERENCE_MARKERS
+            .attribute_or_doc_prefixes
+            .iter()
+            .any(|prefix| trimmed.starts_with(prefix.as_str()))
 }
 
 pub(crate) fn surrounding_line_window(text: &str, offset: usize, radius: usize) -> &str {
@@ -415,11 +494,11 @@ pub(crate) fn surrounding_line_window(text: &str, offset: usize, radius: usize) 
     // 2 KiB each side covers any real header line while keeping the per-match
     // substring scans cheap (this also speeds ordinary minified-bundle scans,
     // whose lines are routinely tens of KiB).
-    const MAX_WINDOW_BYTES: usize = 2 * 1024;
+    const FP_HEURISTIC_WINDOW_BYTES: usize = 2 * 1024;
 
     let mut start = safe_offset;
     let mut found_lines = 0;
-    while start > 0 && found_lines <= radius && safe_offset - start < MAX_WINDOW_BYTES {
+    while start > 0 && found_lines <= radius && safe_offset - start < FP_HEURISTIC_WINDOW_BYTES {
         start -= 1;
         if bytes[start] == b'\n' {
             found_lines += 1;
@@ -431,7 +510,10 @@ pub(crate) fn surrounding_line_window(text: &str, offset: usize, radius: usize) 
 
     let mut end = safe_offset;
     let mut found_lines = 0;
-    while end < bytes.len() && found_lines <= radius && end - safe_offset < MAX_WINDOW_BYTES {
+    while end < bytes.len()
+        && found_lines <= radius
+        && end - safe_offset < FP_HEURISTIC_WINDOW_BYTES
+    {
         if bytes[end] == b'\n' {
             found_lines += 1;
         }

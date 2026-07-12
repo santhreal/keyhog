@@ -28,9 +28,10 @@
 //! here forces `ScanBackend::CpuFallback`, so the confidence — and therefore the
 //! floor decision — is identical on every host, GPU or not.
 
+mod support;
 use keyhog_core::{load_detectors, Chunk, DetectorSpec, RawMatch, ScanConfig};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
-use std::path::PathBuf;
+use support::paths::detector_dir;
 
 /// Detector whose shipped per-detector `min_confidence` (0.2) undercuts the
 /// global 0.40 default.
@@ -43,15 +44,6 @@ const SGP_TOKEN: &str = "sgp_210f1131b08e93adcfc3f05faa2d768ff883a61f";
 /// is the shape the contract harness fires on; under that context the observed
 /// confidence is ~0.70 (above the 0.40 global default).
 const CHUNK_TEXT: &str = "SRC_ACCESS_TOKEN=sgp_210f1131b08e93adcfc3f05faa2d768ff883a61f\n";
-
-/// `crates/scanner/../../detectors` — the on-disk Tier-B detector directory.
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop(); // crates/scanner -> crates
-    d.pop(); // crates         -> repo root
-    d.push("detectors");
-    d
-}
 
 /// The full shipped detector corpus, loaded once.
 fn load_base() -> Vec<DetectorSpec> {

@@ -634,13 +634,13 @@ fn nonexistent_first_path_exits_2_no_report_on_stdout() {
         !stdout.contains(SLACK_ID),
         "no partial report may leak the surviving root's finding; stdout:\n{stdout}"
     );
-    // stdout must not be a non-empty findings array either.
-    let parsed = serde_json::from_str::<serde_json::Value>(stdout.trim())
-        .ok()
-        .and_then(|v| v.as_array().map(|a| a.len()));
-    assert_ne!(
-        parsed,
-        Some(1),
+    // stdout must not be a non-empty findings array either. A non-JSON / empty
+    // stdout is the desired fail-closed outcome, so a parse error means "not a
+    // findings array" (pass); only a single-element findings array is the leak.
+    let stdout_is_findings_array = serde_json::from_str::<serde_json::Value>(stdout.trim())
+        .is_ok_and(|value| value.as_array().is_some_and(|array| array.len() == 1));
+    assert!(
+        !stdout_is_findings_array,
         "a fail-closed run must not emit a findings report on stdout; stdout:\n{stdout}"
     );
 }

@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "zenrows=M4konEXAMPLEEXAMPLEp4STn"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# zenrows=M4konqTT3I7XgZ2O6ii284W8pAcp4STn  # scraper"
+credential = "M4konqTT3I7XgZ2O6ii284W8pAcp4STn"
+reason = "Commented-out config; zenrows keyword + 32-char key intact inside the comment."

@@ -1,17 +1,9 @@
+use crate::support::paths::detector_dir;
 use keyhog_core::{dedup_matches, Chunk, ChunkMetadata, DedupScope};
 use keyhog_scanner::CompiledScanner;
-use std::path::PathBuf;
 
 const EC_KEY_ONE: &str = "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIOm3mXvR6x1N8z4Gq9nV0lQaB7yZpC2sTdUf5hJkLmNo\n-----END EC PRIVATE KEY-----";
 const EC_KEY_TWO: &str = "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEINx7qMb2vL4pR9sAe3TyK0hCu8WdF6gJzQnVp5kXyZaB\n-----END EC PRIVATE KEY-----";
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn scan_fixture(text: &str) -> Vec<keyhog_core::RawMatch> {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");

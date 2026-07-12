@@ -4,6 +4,47 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [Unreleased]
 
+### Added
+
+- **`keyhog scan --quiet` and `--no-color`.** `--quiet` suppresses the banner,
+  progress, and summary vanity while keeping findings and errors (the flag CI
+  logs want without `--format json`); `--no-color` disables ANSI styling even
+  on a TTY and is honored by every output path (progress, findings, reports),
+  equivalent to setting `NO_COLOR`. Both are first-class documented flags on
+  `scan`; `--quiet` conflicts with `--progress`.
+- **`keyhog calibrate` validates detector ids.** An empty/whitespace id is
+  rejected before any counter is written, and an id that matches no embedded
+  detector gets a loud warning (custom-detector ids still record); a typo'd
+  `--tp strpe-secret-key` previously seeded a counter no detector would ever
+  read, silently.
+- **Confidence-calibration reference page.** `docs/src/reference/confidence-calibration.md`
+  documents the Bayesian Beta(α,β) scoring subsystem (opt-in, deterministic,
+  fail-closed cache), and both it and the autoroute-calibration page now carry
+  disambiguation banners: the two "calibration" subsystems are unrelated and
+  the docs now say so in both directions.
+
+### Changed
+
+- **Severity labels render identically everywhere.** Scan findings, `--stream`
+  previews, and watch-mode events all render severity through the one
+  canonical `Severity::as_str()` (uppercased at the display edge), fixing the
+  `--stream` drift where `ClientSafe` printed via `Debug` casing. The Bayesian
+  posterior-mean/observation math is likewise now a single public
+  `BetaCounters` API in `keyhog-core` instead of three private copies.
+- **`keyhog backend` labels its routing matrix as heuristic.** The
+  decision-matrix table now states in the output itself that it is a fixed
+  hardware-heuristic reference; a real `scan --backend auto` routes from the
+  persisted autoroute calibration cache (`keyhog backend --autoroute`), never
+  from that table.
+- **Autoroute requires exact workload evidence.** Normal auto scans no longer
+  interpolate between agreeing CPU buckets or clamp below the measured floor.
+  The core calibration ladder now represents every stable plain-file size bucket
+  from 512 bytes through 32 MiB across all four scan policies; any other missing
+  workload key fails closed with recalibration guidance.
+
+- **Moved path-filter lists to TOML.** Inline suppression lists `NEEDLES` and `VENDORED_JS_PREFIXES` in `crates/scanner/src/suppression/path_filter.rs` are moved to a Tier-B data file `rules/path-filter-lists.toml` using `LazyLock` loading.
+- **Moved ML feature markers to TOML.** Inline marker lists `COMMENT_PREFIXES`, `BINARY_MARKERS`, `CI_MARKERS`, `INFRA_MARKERS`, `SOURCE_MARKERS`, `SOURCE_EXTENSIONS`, and `CONFIG_MARKERS` in `crates/scanner/src/ml_scorer/ml_features.rs` are moved to a Tier-B data file `rules/ml-feature-markers.toml` using `LazyLock` loading.
+
 ### Removed
 
 - **Duplicate backend aliases and the retired MegaScan CLI route.** `--backend`
@@ -26,40 +67,51 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   `crossterm` dependencies) is removed in full. It was an interactive frontend
   over the in-process scanner that duplicated `keyhog scan`'s detection path
   while carrying its own render/worker code, a terminal dep closure, and a
-  PTY-driven dogfood lane — surface that never paid for its maintenance cost.
+  PTY-driven dogfood lane: surface that never paid for its maintenance cost.
   Headless scanning (`keyhog scan`, `keyhog watch`, `keyhog daemon`) is the
   supported interactive/automatable path and is unaffected. The synthetic
   `demo/` tree and `demo.tape` recording now drive `keyhog scan demo`.
 
 ### Fixed
 
+- Autoroute host and cache identity now query GPU/SIMD compile support from the
+  scanner dependency that owns those feature gates. Workspace feature unification
+  could previously compile a GPU-capable scanner under a CLI build whose local
+  `gpu` feature was false, allowing GPU calibration evidence to omit the GPU
+  device/runtime/driver identity and survive a hardware change. Such caches now
+  carry the actual backend feature set and invalidate correctly.
+- The end-of-scan completion summary now pluralizes correctly: a single finding reads "Found 1 secret in ...", not the ungrammatical "Found 1 secrets" (the stdout `Results` footer already pluralized; the stderr summary did not). Singular/plural nouns now come from one shared `secret_noun`/`finding_noun` owner, so the completion summary and all three progress tickers agree.
+- The human-report confidence line can no longer render a percentage above 100% or a `NaN%`. The bar fill was clamped but the percentage was not, so a finding carrying an out-of-range or NaN `confidence` (reachable through the public `VerifiedFinding` field) could show a full bar labelled "150%", or a garbage percent. The bar and percent now derive from one sanitized value (clamped to `[0,1]`, NaN treated as 0, matching the scanner's `finalize_confidence`).
+- The scan progress ticker no longer flashes ">100%" or an over-total ratio (for example "1001/1000") when the scanned-chunk and total-chunk counters are read a moment apart; the displayed count is clamped to the total while the underlying rate still uses the true value.
+- `keyhog doctor`'s "on PATH" check no longer reports a false "no" when the install directory appears in `PATH` with a trailing slash, as a symlink, or in a non-canonical form; both sides are canonicalized before comparison, matching the shadow check and the installer.
+- `NO_COLOR` now follows the [no-color.org](https://no-color.org) contract exactly: an empty `NO_COLOR=` no longer disables color (only a present, non-empty value does), so a wrapper that clears the variable by emptying it keeps color on a terminal.
 - Network sources (`--github-org`, `--url`, `--s3-bucket`, Slack) no longer abort the process (SIGABRT, "Cannot drop a runtime in a context where blocking is not allowed") when their request fails. The CLI runs under `#[tokio::main]`, and these sources use `reqwest::blocking`, whose internal runtime panics if dropped inside an async context. Each source now runs its (already eager) collection on a scoped `std::thread` with no ambient tokio runtime, so the blocking client builds, fetches, and drops safely; a fetch failure (bad token, unreachable endpoint) surfaces as a normal error the orchestrator turns into a non-zero exit instead of a crash. `--github-org` with an invalid token now exits 2 cleanly.
-- A requested scan source that fails *entirely* — produces zero chunks and errors (e.g. `--git-history` / `--git-diff` on a non-repository or bad ref, `--github-org` with a bad token, an unreachable `--url`) — no longer prints "No secrets found. Your code is clean." and exits 0. A failed scan reporting *clean + success* told CI gates the tree was clean when nothing was actually scanned (KH-GAP-096). It now fails closed (exit 2) with a diagnostic, tracked per source so it fires even when a co-requested filesystem source scanned cleanly. A partial failure — some files unreadable in a tree that still produced chunks — is unaffected: that source produced data, so the scan reports what it read.
+- A requested scan source that fails *entirely* (produces zero chunks and errors, e.g. `--git-history` / `--git-diff` on a non-repository or bad ref, `--github-org` with a bad token, an unreachable `--url`) no longer prints "No secrets found. Your code is clean." and exits 0. A failed scan reporting *clean + success* told CI gates the tree was clean when nothing was actually scanned (KH-GAP-096). It now fails closed (exit 2) with a diagnostic, tracked per source so it fires even when a co-requested filesystem source scanned cleanly. A partial failure (some files unreadable in a tree that still produced chunks) is unaffected: that source produced data, so the scan reports what it read.
 
 ### Robustness / Performance
 
-- `keyhog scan --stdin` now lossy-decodes its input (matching the filesystem source) instead of rejecting non-UTF-8 bytes. `cat binaryfile | keyhog scan --stdin` previously errored — and, under the new fail-closed, exited 2 — while `keyhog scan binaryfile` happily lossy-scanned the same bytes. stdin now scans the text it can extract (real secrets live in otherwise-binary inputs); the size cap still bounds memory.
-- Byte-cap the per-match context windows (ML context 8 KiB, false-positive context 2 KiB). A line with no newline for kilobytes (minified bundles, or a file that is one long run of credential-shaped tokens) previously made each candidate's context O(line length), turning a many-match scan quadratic. Behavior-preserving for ordinary source (a short line hits its newline before the cap) — mirror-corpus findings byte-identical — and faster on real minified-bundle scans.
+- `keyhog scan --stdin` now lossy-decodes its input (matching the filesystem source) instead of rejecting non-UTF-8 bytes. `cat binaryfile | keyhog scan --stdin` previously errored (and, under the new fail-closed, exited 2) while `keyhog scan binaryfile` happily lossy-scanned the same bytes. stdin now scans the text it can extract (real secrets live in otherwise-binary inputs); the size cap still bounds memory.
+- Byte-cap the per-match context windows (ML context 8 KiB, false-positive context 2 KiB). A line with no newline for kilobytes (minified bundles, or a file that is one long run of credential-shaped tokens) previously made each candidate's context O(line length), turning a many-match scan quadratic. Behavior-preserving for ordinary source (a short line hits its newline before the cap, mirror-corpus findings byte-identical) and faster on real minified-bundle scans.
 
 ## 0.5.39 - 2026-06-04
 
 ### Added
 
-- Square (payments platform) access-token detector (`sq0atp-` personal access tokens, `sq0csp-` OAuth application secrets) — keyhog previously shipped only a Squarespace detector, which had even mislabelled `sq0atp`/`sq0csp` (Square, not Squarespace) in its keyword list. Surfaced by a differential against the mirror corpus; the `EAAA…` OAuth-access shape is deliberately omitted (4-char prefix + base64url collides with ordinary data, costing precision). Detector count 899 → 900; precision held at 0.9953 with recall +0.0007 (F1 0.9164 → 0.9167) on the mirror corpus.
+- Square (payments platform) access-token detector (`sq0atp-` personal access tokens, `sq0csp-` OAuth application secrets). keyhog previously shipped only a Squarespace detector, which had even mislabelled `sq0atp`/`sq0csp` (Square, not Squarespace) in its keyword list. Surfaced by a differential against the mirror corpus; the `EAAA…` OAuth-access shape is deliberately omitted (4-char prefix + base64url collides with ordinary data, costing precision). Detector count 899 → 900; precision held at 0.9953 with recall +0.0007 (F1 0.9164 → 0.9167) on the mirror corpus.
 
 ### Performance
 
-- Use mimalloc as the CLI binary's global allocator (default/`portable`/`full` profiles; drop with `--no-default-features`). The scan hot path runs one Rayon worker per core, each allocating regex DFA-cache scratch and per-match strings; glibc's arena lock serialised those allocations. Measured on a 70 MiB / 13,976-file corpus (RTX 5090 host, 32 cores): single-thread scan 10.0 s → 8.0 s (~20%), with no regression at high thread counts. Libraries stay allocator-agnostic — the binary owns the choice. (The remaining multi-core ceiling is the `regex` crate's shared `Pool<Cache>` mutex, not the allocator: 16-thread scaling sits at ~41% efficiency, a separate optimization.)
+- Use mimalloc as the CLI binary's global allocator (default/`portable`/`full` profiles; drop with `--no-default-features`). The scan hot path runs one Rayon worker per core, each allocating regex DFA-cache scratch and per-match strings; glibc's arena lock serialised those allocations. Measured on a 70 MiB / 13,976-file corpus (RTX 5090 host, 32 cores): single-thread scan 10.0 s → 8.0 s (~20%), with no regression at high thread counts. Libraries stay allocator-agnostic; the binary owns the choice. (The remaining multi-core ceiling is the `regex` crate's shared `Pool<Cache>` mutex, not the allocator: 16-thread scaling sits at ~41% efficiency, a separate optimization.)
 
 ## 0.5.38 - 2026-06-04
 
 ### Fixed
 
-- **Absolute line numbers for windowed and patch-based scans.** Findings in files past the 1 MiB window size (`filesystem/windowed`), and findings from `--git-diff` / `--git-history`, reported the per-window / per-hunk line instead of the absolute file line — a secret on line 584307 of a 70 MiB file was reported at line ~2, and every diff/history finding landed on line 1. Root cause: byte offsets were made absolute (`+ base_offset`) but line numbers had no equivalent base. Added `ChunkMetadata::base_line`, populated per-window by the filesystem source and per-hunk by the git diff/history sources (now `-U0`, `base_line = new_start - 1` via shared `git::parse_hunk_new_start`), and applied at every line emit site. All output formats (text/json/jsonl/sarif/csv/html/junit) and source backends now report the correct line. Regressioned across the cli, scanner, and sources suites.
+- **Absolute line numbers for windowed and patch-based scans.** Findings in files past the 1 MiB window size (`filesystem/windowed`), and findings from `--git-diff` / `--git-history`, reported the per-window / per-hunk line instead of the absolute file line: a secret on line 584307 of a 70 MiB file was reported at line ~2, and every diff/history finding landed on line 1. Root cause: byte offsets were made absolute (`+ base_offset`) but line numbers had no equivalent base. Added `ChunkMetadata::base_line`, populated per-window by the filesystem source and per-hunk by the git diff/history sources (now `-U0`, `base_line = new_start - 1` via shared `git::parse_hunk_new_start`), and applied at every line emit site. All output formats (text/json/jsonl/sarif/csv/html/junit) and source backends now report the correct line. Regressioned across the cli, scanner, and sources suites.
 
 ### Performance
 
-- Window the decode-splice context to ±512 B around each decoded blob instead of copying the entire parent chunk per candidate. A candidate-dense source file (every quoted string / `key=value` / hex-or-base64 run is a candidate) previously spawned one parent-sized decoded chunk *per candidate*, each rescanned and recursively re-decoded — an O(candidates × file_size) blowup that pinned a single 156 KB Linux driver at ~15 s. Full Linux-kernel scan (94,825 files) drops from ~85 s to ~7 s; the worst single file from ~15 s to ~0.2 s; decode-through recall unchanged.
+- Window the decode-splice context to ±512 B around each decoded blob instead of copying the entire parent chunk per candidate. A candidate-dense source file (every quoted string / `key=value` / hex-or-base64 run is a candidate) previously spawned one parent-sized decoded chunk *per candidate*, each rescanned and recursively re-decoded, an O(candidates × file_size) blowup that pinned a single 156 KB Linux driver at ~15 s. Full Linux-kernel scan (94,825 files) drops from ~85 s to ~7 s; the worst single file from ~15 s to ~0.2 s; decode-through recall unchanged.
 - Bound the GPU AC prefilter's per-shard readback and reroute dense literal-prefix batches through the SIMD coalesced scanner before CPU phase 2 explodes. Forced-GPU CredData now completes in ~5.0 s instead of timing out at 45 s / 5.1 GB RSS, with byte-stable detector/hash/file/offset parity against the current SIMD run.
 - Reuse the batch ML feature vectors for small-batch CPU fallback instead of recomputing text/context features after the GPU crossover gate declines the batch. This removes a redundant feature-extraction pass on scanner chunks that emit fewer than 64 ML candidates while keeping scalar MoE scores byte-identical.
 - Route CPU/SIMD filesystem scans through the fused read+scan pipeline so source walking and coalesced scanning overlap across the Rayon pool. `--batch-pipeline` or `[system].batch_pipeline = true` remains available for A/B verification against the coalesced batch path; CredData SIMD `--no-daemon` keeps byte-identical 2,263-finding JSON output and drops from 5.14 s to 3.57 s on the measured RTX 5090 host.
@@ -91,16 +143,16 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Document the macOS GPU caveat: the shipped macOS binary is built `--features portable` (no GPU) and is unaffected, but an explicit `--features gpu` build on Apple Silicon hit a fatal wgpu abort because the Metal backend advertises `PIPELINE_CACHE` yet rejects pipeline-cache creation. The vendored vyre wgpu driver now only requests `PIPELINE_CACHE` on backends that implement it (Vulkan/DX12); the fix lands in keyhog when the vendored vyre is published/re-pinned.
 - Make dedup primary/additional location selection deterministic when overlapping filesystem windows report the same credential at the same byte offset with different line metadata.
 - Make the `hw_probe` GPU-routing unit tests host-independent. Six assertions drove `select_backend()` with synthetic `HardwareCaps { gpu_available: true, .. }` and expected `ScanBackend::Gpu`, but `select_backend` first short-circuits through the runtime `gpu::env_no_gpu()` probe (true on a GPU-less host), so they were green on a GPU dev box and red on a GPU-less CI runner. They now assert the side-effect-free `gpu_could_engage()` crossover predicate (newly re-exported from `hw_probe`), which depends only on the passed caps. `KEYHOG_NO_GPU=1` reproduces the CI routing locally.
-- De-flake `contracts_runner::every_contract_perf_budget_holds`. A single wall-clock sample on a shared CI runner occasionally tripped the 15 ms per-detector budget by 1–3% (`azure-blob-sas-token`, `jwt-token`) while steady-state sat well under. The budget now measures best-of-N — re-measuring only an over-budget contract and keeping the minimum — so a catastrophically slow regex still blows every pass while a one-off scheduler stall is discarded; contracts already under budget still pay for a single scan.
+- De-flake `contracts_runner::every_contract_perf_budget_holds`. A single wall-clock sample on a shared CI runner occasionally tripped the 15 ms per-detector budget by 1-3% (`azure-blob-sas-token`, `jwt-token`) while steady-state sat well under. The budget now measures best-of-N (re-measuring only an over-budget contract and keeping the minimum) so a catastrophically slow regex still blows every pass while a one-off scheduler stall is discarded; contracts already under budget still pay for a single scan.
 - Reconcile `GAP_FINDINGS.toml` with the `findings_registry_integrity` gate. Fourteen findings pointed their `test` path into the gitignored `coordination/` tree (absent in a clean checkout), so the registry gate failed in CI on the first one. Promote the three that hold against the committed repo (KH-GAP-076/077/179) into `crates/scanner/tests/gap/` and repoint them; de-scope the eleven open or design-conflicting `ci-operability` findings whose claims contradict the deliberate CI design (e.g. the 4-runner PR strict subset) or depend on uncommitted coordination infra (registry 162 → 151 findings).
 
 ### Install / packaging
 
-- `install.sh --from-file=PATH` (and `KEYHOG_FROM_FILE`): install a pre-built or pre-downloaded keyhog binary instead of fetching a release — for offline/air-gapped installs and for CI to prove a freshly-built binary. Reuses the full install machine (backup, atomic same-dir swap, `verify_install`/`keyhog doctor`, rollback) and verifies a sibling `PATH.sha256` if present; `install.ps1 -FromFile` is the Windows equivalent.
-- Harden release downloads against transient CDN drops. A connection dropped mid-transfer ("The connection was closed unexpectedly") was failing the Windows — and intermittently the Linux — install-from-scratch smoke even though the asset was present and correctly named. `install.sh` curl now passes `--retry 5 --retry-delay 2 --retry-connrefused`; `install.ps1`'s `Invoke-WebRequest` retries up to 5 times with linear backoff.
+- `install.sh --from-file=PATH` (and `KEYHOG_FROM_FILE`): install a pre-built or pre-downloaded keyhog binary instead of fetching a release, for offline/air-gapped installs and for CI to prove a freshly-built binary. Reuses the full install machine (backup, atomic same-dir swap, `verify_install`/`keyhog doctor`, rollback) and verifies a sibling `PATH.sha256` if present; `install.ps1 -FromFile` is the Windows equivalent.
+- Harden release downloads against transient CDN drops. A connection dropped mid-transfer ("The connection was closed unexpectedly") was failing the Windows (and intermittently the Linux) install-from-scratch smoke even though the asset was present and correctly named. `install.sh` curl now passes `--retry 5 --retry-delay 2 --retry-connrefused`; `install.ps1`'s `Invoke-WebRequest` retries up to 5 times with linear backoff.
 - Normalise a bare-semver `--version` / `-Version` to the v-prefixed release tag. keyhog tags are all `vX.Y.Z`, so `--version=0.5.37` built a download URL against a non-existent `0.5.37` tag and 404'd; the retry above (which surfaced the repeated 404 instead of one ambiguous "connection closed") exposed it on the Windows smoke. Both installers now prepend `v` to a digit-leading version and leave an explicit `v…`, branch, or sha untouched. Covered by `edge_cases.sh` 2.9/2.10 and the corrected 14.2 (bare `2.0.0` → tag `v2.0.0`).
-- Add `tests/install/install_from_local_build.sh` and wire it into the macOS Build and Build Release CI jobs: prove current-source → install (via `--from-file`) → working binary on every push — `keyhog doctor` self-test, seeded scan (exit 1 + findings), SARIF, the local-checksum gate (good vs tampered), and the premium interactive wizard (driven through a PTY when `expect` is present). The mocked detection scenarios never touch a real binary and integration-smoke is manual + installs a published release; this closes that gap.
-- Add a dogfood self-scan gate to Build Release (`keyhog scan .` must exit 0 on keyhog's own tree). Path-suppress `benchmarks/baselines/` and `benchmarks/generators/` in `.keyhogignore` — the committed differential/leaderboard reports quote the credential *shapes* each scanner surfaced on the test corpus (documentation about findings, not live secrets), and the mirror generators assemble synthetic credentials at runtime to build the fixtures (templates for fake test data); same rationale as the existing `CHANGELOG.md` / analysis-doc suppressions.
+- Add `tests/install/install_from_local_build.sh` and wire it into the macOS Build and Build Release CI jobs: prove current-source → install (via `--from-file`) → working binary on every push: `keyhog doctor` self-test, seeded scan (exit 1 + findings), SARIF, the local-checksum gate (good vs tampered), and the premium interactive wizard (driven through a PTY when `expect` is present). The mocked detection scenarios never touch a real binary and integration-smoke is manual + installs a published release; this closes that gap.
+- Add a dogfood self-scan gate to Build Release (`keyhog scan .` must exit 0 on keyhog's own tree). Path-suppress `benchmarks/baselines/` and `benchmarks/generators/` in `.keyhogignore`: the committed differential/leaderboard reports quote the credential *shapes* each scanner surfaced on the test corpus (documentation about findings, not live secrets), and the mirror generators assemble synthetic credentials at runtime to build the fixtures (templates for fake test data); same rationale as the existing `CHANGELOG.md` / analysis-doc suppressions.
 - Smoke harness: `keyhog backend | head -30` SIGPIPE'd keyhog (exit 141 under the runner's `bash -o pipefail`) when the routing matrix printed more than 30 lines, spuriously failing the `integration-smoke` Backend-probe step on Ubuntu. The step now runs `keyhog backend` to completion (its real exit code is the gate) before capping the display, so a genuine backend failure still fails the step.
 
 ### Benchmarks
@@ -108,7 +160,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Unify the three benchmark systems into one. `benchmarks/bench` is now the single source of accuracy truth: the retired `tools/secretbench/scoring/` scorer and the retired `tools/diff_bench` differential runner are both replaced by `bench`'s canonical scorer + scanner adapters, and the mirror corpus generator plus the competitor home-turf harvesters move under `benchmarks/generators/`. Committed scoreboard anchors move to `benchmarks/baselines/`. The `bench-nightly` (renamed from `secretbench-nightly`) and `differential-bench` workflows now drive `python -m bench`.
 - Add `python -m bench gate`: the single regression + differential gate. It exits non-zero unless keyhog leads every available competitor on F1 *strictly* and clears the asserted `--min-f1` / `--min-precision` / `--min-recall` floors and/or a committed `--baseline` (within `--epsilon`); exit 2 if keyhog produced no usable result. It replaces the per-fixture `diff_bench` F1 gate and is the forcing function for the continuous-improvement loop.
 - Add the production continuous-improvement loop: `make -C benchmarks loop` runs the whole cycle (scorer self-tests → corpus → leaderboard → calibrate → render → gate) in one command, and a committed regression anchor (`benchmarks/baselines/mirror-keyhog-baseline.json`, keyhog F1=0.9131) lets the `differential-bench` workflow fail red on an F1 regression below the anchor, not only on a competitor overtaking keyhog. `loop` never `--inject`s the README, so a partial-scanner run can't degrade the published leaderboard.
-- Add the cross-device bench harness (`benchmarks/cross_device.sh` + `python -m bench.cross_compare`): rsync the current tree to a device, install keyhog via its per-OS build (Linux Hyperscan SIMD; macOS `--features portable`, the system-lib-free vyre CPU path), bench the device-local corpus, and pull per-host results into `results-cross-device/<device>/` (kept out of the README-feeding `results/`). Fixes a Python-3.9 portability bug the macOS run surfaced (`bench/runner.py` used `datetime.UTC`, which is 3.11+). First cross-device snapshot (`benchmarks/reports/cross-device.md`): keyhog mirror F1 = 0.9131 on Linux (Ryzen 9950X, Hyperscan) vs 0.8996 on macOS (M4 Pro, portable/vyre) — a ~0.013 recall delta in the vyre CPU path.
+- Add the cross-device bench harness (`benchmarks/cross_device.sh` + `python -m bench.cross_compare`): rsync the current tree to a device, install keyhog via its per-OS build (Linux Hyperscan SIMD; macOS `--features portable`, the system-lib-free vyre CPU path), bench the device-local corpus, and pull per-host results into `results-cross-device/<device>/` (kept out of the README-feeding `results/`). Fixes a Python-3.9 portability bug the macOS run surfaced (`bench/runner.py` used `datetime.UTC`, which is 3.11+). First cross-device snapshot (`benchmarks/reports/cross-device.md`): keyhog mirror F1 = 0.9131 on Linux (Ryzen 9950X, Hyperscan) vs 0.8996 on macOS (M4 Pro, portable/vyre): a ~0.013 recall delta in the vyre CPU path.
 
 ### CI / GitHub Action
 
@@ -2296,7 +2348,7 @@ auto-routing across every supported OS. Build is green, scanner test suite
 - Sharded `DashMap` for verifier `VerificationCache`, `RateLimiter`, and
   in-flight map (no more global RwLock contention) (`d3b6721`).
 - Concurrent rayon-parallel S3 / GitHub-org / Slack source backends
-  (8–16 in-flight) (`d3b6721`).
+  (8-16 in-flight) (`d3b6721`).
 - Shared `Arc<Regex>` compile cache via `shared_regex()` - same regex across
   detectors compiles once (`a38e79c`).
 - Pre-built `index_set` once on `Baseline::load` via `OnceLock` (`d3b6721`).

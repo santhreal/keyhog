@@ -33,7 +33,7 @@ fn gzip_chunk_source_type_compressed() {
         "single gzip member must emit exactly one chunk, got {chunks:?}"
     );
     let chunk = chunks[0];
-    assert_eq!(chunk.metadata.source_type, "filesystem/compressed");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "filesystem/compressed");
     assert!(
         chunk
             .metadata

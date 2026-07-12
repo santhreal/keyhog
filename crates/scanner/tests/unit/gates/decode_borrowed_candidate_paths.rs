@@ -75,7 +75,7 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
     let looks_reversible_body = impl_body(
         &reverse,
         "pub(crate) fn looks_reversible",
-        "REVERSED_KNOWN_PREFIXES",
+        "REVERSED_PREFIX_AC",
     );
     assert!(
         !looks_reversible_body.contains("reverse_str(candidate)"),

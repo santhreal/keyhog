@@ -7,16 +7,12 @@
 //! on the lane that can run it.
 #![cfg(feature = "gpu")]
 
+#[path = "../support/mod.rs"]
+mod support;
+
+use crate::support::paths::detector_dir;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-
-fn detector_dir() -> std::path::PathBuf {
-    let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn chunk(text: &str) -> Chunk {
     Chunk {

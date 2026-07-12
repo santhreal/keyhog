@@ -50,3 +50,54 @@ fn leading_non_key_byte_yields_none() {
     assert_eq!(key(" key=v"), None); // leading space => zero key bytes
     assert_eq!(key(""), None); // empty input
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin the accepted terminators and the None boundaries; these
+// SWEEP the whole extractor against a full independent re-derivation. Key bytes
+// are ASCII (`[A-Za-z0-9_.-]`), so `end` always lands on a char boundary — the
+// slice is panic-free even when a multibyte char follows the key. No proptest
+// before.
+
+use proptest::prelude::*;
+
+/// Source key-byte predicate: ASCII alphanumeric plus `_`/`-`/`.`.
+fn is_key_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.')
+}
+
+/// Independent oracle for `leading_assignment_key`: scan leading key bytes;
+/// `None` if zero key bytes or the whole string is key bytes (no terminator);
+/// else `Some(key)` iff the next byte is `=`/`:`/`~`.
+fn oracle_key(candidate: &str) -> Option<String> {
+    let bytes = candidate.as_bytes();
+    let mut end = 0usize;
+    while end < bytes.len() && is_key_byte(bytes[end]) {
+        end += 1;
+    }
+    if end == 0 || end == bytes.len() {
+        return None;
+    }
+    matches!(bytes[end], b'=' | b':' | b'~').then(|| candidate[..end].to_string())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4_000))]
+
+    /// FULL differential over an assignment-rich alphabet (key bytes + the three
+    /// terminators + space): naturally produces valid `key=value` extractions,
+    /// bad-terminator `None`s, no-terminator `None`s, and leading-non-key `None`s.
+    #[test]
+    fn key_matches_oracle_over_assignment_alphabet(
+        candidate in r"[A-Za-z0-9_.=:~ \-]{0,40}",
+    ) {
+        prop_assert_eq!(key(&candidate), oracle_key(&candidate));
+    }
+
+    /// The same differential over ARBITRARY Unicode — locks that a multibyte char
+    /// following (or interrupting) the key stops the ASCII key-byte scan at a char
+    /// boundary, so the slice never panics and still matches the oracle.
+    #[test]
+    fn key_matches_oracle_over_arbitrary_unicode(candidate in "(?s).{0,40}") {
+        prop_assert_eq!(key(&candidate), oracle_key(&candidate));
+    }
+}

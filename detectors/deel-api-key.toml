@@ -19,11 +19,6 @@ keywords = ["organization_", "org_", "DEEL_API_KEY", "deel_token"]
 [[detector.patterns]]
 regex = "organization_[a-zA-Z0-9]{30,}"
 description = "Deel organization token with organization_ prefix (base62 body)"
-
-[[detector.patterns]]
-regex = "org_[a-zA-Z0-9]{30,}"
-description = "Deel organization token with org_ prefix (base62 body)"
-
 [[detector.patterns]]
 regex = "(?:DEEL_API_KEY|DEEL_TOKEN|deel_api_key|deel_token)[=:\\s\"'']+([a-zA-Z0-9_-]{30,})"
 description = "Deel API key with context anchor"

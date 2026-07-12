@@ -226,6 +226,7 @@ impl Phase2GpuDfaCatalog {
                 admitted: vec![false; chunk_count],
                 complete: true,
                 matches_seen: 0,
+                marked: vec![Vec::new(); chunk_count],
             });
         }
         with_phase2_gpu_dfa_scratch(|scratch| {
@@ -259,18 +260,35 @@ impl Phase2GpuDfaCatalog {
         let mut admitted = vec![false; chunk_count];
         let mut complete = self.uncovered_patterns == 0;
         let mut matches_seen = 0usize;
+        // Step-1 marking accumulator: per-region (== per-chunk in the coalesced
+        // batch) phase-2 pattern indices the GPU regex-DFA matched, unioned across
+        // shards. Only meaningful when `complete` (GPU covered every always-active
+        // pattern) — then the caller can substitute this for the CPU RegexSet mark.
+        let mut marked: Vec<Vec<usize>> = vec![Vec::new(); chunk_count];
         for shard in &self.shards {
-            let shard_incomplete =
-                shard.scan_admission_into(backend, scratch, haystack_len, &mut admitted)?;
+            let shard_incomplete = shard.scan_admission_into(
+                backend,
+                scratch,
+                haystack_len,
+                &mut admitted,
+                Some(&mut marked),
+            )?;
             matches_seen = matches_seen.saturating_add(scratch.matches.len());
             if shard_incomplete {
                 complete = false;
             }
         }
+        // Dedup each region's marks (a pattern can match multiple times per region;
+        // the active set is a membership set, mirroring `scratch.mark`'s idempotence).
+        for region in &mut marked {
+            region.sort_unstable();
+            region.dedup();
+        }
         Ok(Phase2GpuDfaAdmission {
             admitted,
             complete,
             matches_seen,
+            marked,
         })
     }
 }
@@ -326,20 +344,26 @@ mod tests {
     fn replay_catalog_admission(
         catalog: &Phase2GpuDfaCatalog,
         chunks: &[keyhog_core::Chunk],
-    ) -> Vec<bool> {
+    ) -> (Vec<bool>, Vec<Vec<usize>>) {
         let mut scratch = Phase2GpuDfaScratch::default();
         build_packed_region_batch(chunks, &mut scratch).expect("region batch");
         let mut admitted = vec![false; chunks.len()];
+        let mut marked: Vec<Vec<usize>> = vec![Vec::new(); chunks.len()];
         for shard in &catalog.shards {
-            replay_shard_admission(shard, &scratch, &mut admitted);
+            replay_shard_admission(shard, &scratch, &mut admitted, &mut marked);
         }
-        admitted
+        for region in &mut marked {
+            region.sort_unstable();
+            region.dedup();
+        }
+        (admitted, marked)
     }
 
     fn replay_shard_admission(
         shard: &Phase2GpuDfaShard,
         scratch: &Phase2GpuDfaScratch,
         admitted: &mut [bool],
+        marked: &mut [Vec<usize>],
     ) {
         let dfa = &shard.pipeline.dfa;
         let mut state = 0u32;
@@ -368,6 +392,14 @@ mod tests {
                 ) {
                     if let Some(slot) = admitted.get_mut(region) {
                         *slot = true;
+                    }
+                    // Mirror the live path (`scan_admission_into`): record the
+                    // phase-2 index that hit in this region, so a GPU-less replay
+                    // test can verify the marking's index-mapping/attribution.
+                    if let Some(&phase2_index) = shard.phase2_indices.get(pattern_id as usize) {
+                        if let Some(region_marks) = marked.get_mut(region) {
+                            region_marks.push(phase2_index);
+                        }
                     }
                 }
             }
@@ -551,7 +583,7 @@ mod tests {
             keyhog_core::Chunk::from("prefix abc34 suffix"),
             keyhog_core::Chunk::from("prefix xyz99 suffix"),
         ];
-        let gpu_admitted = replay_catalog_admission(&catalog, &chunks);
+        let (gpu_admitted, gpu_marked) = replay_catalog_admission(&catalog, &chunks);
         let cpu_admitted: Vec<bool> = chunks
             .iter()
             .map(|chunk| patterns[0].0.regex.get().is_match(&chunk.data))
@@ -562,6 +594,9 @@ mod tests {
             "GPU regex-DFA admission must mirror the detector LazyRegex case policy"
         );
         assert_eq!(gpu_admitted, vec![true, true, false]);
+        // Marking (step-1a): each admitted region records the phase-2 index (0) that
+        // matched — the active set that will replace the CPU always-active RegexSet.
+        assert_eq!(gpu_marked, vec![vec![0usize], vec![0usize], vec![]]);
     }
 
     #[test]
@@ -578,7 +613,7 @@ mod tests {
             keyhog_core::Chunk::from("prefix ABC12 suffix"),
             keyhog_core::Chunk::from("prefix abc34 suffix"),
         ];
-        let gpu_admitted = replay_catalog_admission(&catalog, &chunks);
+        let (gpu_admitted, gpu_marked) = replay_catalog_admission(&catalog, &chunks);
         let cpu_admitted: Vec<bool> = chunks
             .iter()
             .map(|chunk| patterns[0].0.regex.get().is_match(&chunk.data))
@@ -589,6 +624,8 @@ mod tests {
             "plain phase-2 variants must not become case-insensitive in the GPU DFA catalog"
         );
         assert_eq!(gpu_admitted, vec![false, true]);
+        // Marking mirrors admission: only the matched region records the phase-2 index.
+        assert_eq!(gpu_marked, vec![vec![], vec![0usize]]);
     }
 
     #[test]

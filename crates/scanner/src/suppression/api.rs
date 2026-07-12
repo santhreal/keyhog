@@ -145,6 +145,27 @@ pub(crate) fn suppress_named_detector_finding_stage(
     let randomness = TokenRandomness::for_candidate(credential);
     let shape_stage = |reason| Some(crate::adjudicate::StageId::ShapeGate(reason));
 
+    // Operator overrides (allowlisted path / value) win over every shape gate,
+    // so they run FIRST. The broad per-detector STOPWORD substring heuristic is
+    // the least-specific reason and runs LAST (just before `suppression_stage_inner`)
+    // so a precise structural gate claims the drop with its own reason.
+    if let Some(stage_id) = suppress_per_detector_allowlist(detector_id, path, credential) {
+        return Some(stage_id);
+    }
+
+    // Tier A - universal exact-placeholder gate. A value that IS EXACTLY a
+    // placeholder word (`password`, `secret`, `default`, `null`, `none`,
+    // `undefined`, `empty`) is never a real credential on ANY detector. The
+    // entropy/generic path drops these via `bytes_contain_entropy_placeholder_marker`
+    // (Category 5), but NAMED/vendor detectors (e.g. `rabbitmq-management-credentials`
+    // capturing `RABBITMQ_PASSWORD=password`) bypass that path, so apply the SAME
+    // whole-value exact gate here through the shared `is_exact_entropy_placeholder`
+    // owner. Whole-value only: a real credential that merely CONTAINS such a word
+    // (`mysecretkey123`) is untouched.
+    if crate::placeholder_words::is_exact_entropy_placeholder(credential.as_bytes()) {
+        return shape_stage("exact_placeholder_value");
+    }
+
     // Shape filters split into two tiers based on whether the shape
     // can legitimately appear as the body of a real service-anchored
     // credential.
@@ -208,14 +229,15 @@ pub(crate) fn suppress_named_detector_finding_stage(
         }
     }
 
-    if apply_tier_b && source_type.is_some_and(|source| source.contains("/caesar")) {
-        crate::adjudicate::record_example_suppression(
-            "pipeline",
-            path,
-            credential,
-            "caesar_generic_fallback",
-        );
-        return shape_stage("caesar_generic_fallback");
+    // A GENERIC / weak-anchor match on an evasion decoder's output (`/caesar`,
+    // `/reverse`) is coincidental noise. Both decoders share ONE owner so this
+    // gate can never diverge from the decision tree's set (was `/caesar`-only,
+    // silently leaking `/reverse` generic-fallback noise).
+    if apply_tier_b {
+        if let Some(reason) = super::decision::evasion_decoder_reason(source_type) {
+            crate::adjudicate::record_example_suppression("pipeline", path, credential, reason);
+            return shape_stage(reason);
+        }
     }
 
     if apply_tier_b {
@@ -408,6 +430,18 @@ pub(crate) fn suppress_named_detector_finding_stage(
         );
         return shape_stage("regex_literal_tail");
     }
+    // Per-detector STOPWORD substring heuristic runs LAST among the shape gates:
+    // every structural gate above (email, exact placeholder, uuid, url segment,
+    // …) yields a MORE specific reason, so a value that is really one of those
+    // claims that reason instead of a coincidental `stopwords` hit. Set-preserving
+    // vs. the old top-of-pipeline placement (a value a stopword would drop is
+    // dropped here just the same, only later), except the randomness guard inside
+    // deliberately RECOVERS random credentials that merely embed a stopword.
+    if let Some(stage_id) =
+        suppress_per_detector_stopwords(detector_id, path, credential, &randomness)
+    {
+        return Some(stage_id);
+    }
     // Generic detectors (generic-secret, generic-api-key, entropy-*)
     // never use this bypass - their anchor is keyword-class, not
     // service-specific, and shape gates are load-bearing for them.
@@ -466,7 +500,9 @@ fn is_generic_or_entropy(detector_id: &str, weak_anchor: bool) -> bool {
 /// the internal design notes: a `[a-zA-Z0-9_-]`-style capture with a small
 /// minimum length that matches any short identifier) is derived here; the
 /// pure-hex class, which is shape-indistinguishable from real hex keys, is
-/// declared by the owning detector's `weak_anchor` field.
+/// declared per-detector as `DetectorSpec::weak_anchor = true` in each such
+/// detector's own TOML (DET-0; was the `rules/detector-classification.toml`
+/// `weak_anchor` id list).
 pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> Result<bool, String> {
     Ok(match detector_weak_anchor_base(spec)? {
         WeakAnchorBase::Always => true,
@@ -490,7 +526,7 @@ pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> Result<b
 /// specific pattern that matched.
 ///
 /// `weak_anchor` keeps the Tier-B shape gates engaged for collision-prone
-/// captures. The detector-owned residual pure-hex class,
+/// captures. The per-detector `DetectorSpec::weak_anchor` pure-hex class (DET-0),
 /// the generic/entropy/private-key carve-outs, and a detector-level explicit
 /// `min_confidence` are all DETECTOR-wide. Only the broad-identifier class is
 /// inherently per-pattern: a detector like `servicenow-api-key` mixes a strong
@@ -522,6 +558,8 @@ pub(crate) fn detector_weak_anchor_base(
         return Ok(WeakAnchorBase::Never);
     }
     if spec.weak_anchor {
+        // Per-detector `DetectorSpec::weak_anchor` (was the centralized
+        // `rules/detector-classification.toml` `weak_anchor` id list — DET-0).
         return Ok(WeakAnchorBase::Always);
     }
     if spec.min_confidence.is_some() {
@@ -548,8 +586,12 @@ pub(crate) fn pattern_has_broad_identifier_capture(regex: &str) -> bool {
 /// fixed-shape keys and are deliberately NOT flagged.
 fn has_broad_identifier_capture(regex: &str) -> bool {
     let mut search_from = 0;
-    while let Some(rel) = regex[search_from..].find("([") {
-        let class_open = search_from + rel + 1; // index of '['
+    while let Some(rel) = regex[search_from..].find('[') {
+        let class_open = search_from + rel; // index of '['
+        search_from = class_open + 1;
+        if !class_opens_a_capture_group(regex, class_open) {
+            continue;
+        }
         let Some(rel_close) = regex[class_open..].find(']') else {
             break;
         };
@@ -560,23 +602,56 @@ fn has_broad_identifier_capture(regex: &str) -> bool {
                 return true;
             }
         }
-        search_from = class_close + 1;
     }
     false
 }
 
-/// If `after` (the slice immediately following a class's closing `]`) is a
-/// quantifier that closes the capture group right after it, return the
-/// quantifier's minimum repeat count. `Some` only when the group is exactly
-/// `([class]<quant>)`.
+/// True when the `[` at `class_open` is the first atom of a capturing group —
+/// either a bare `([`, or a NAMED capture `(?P<name>[` / `(?<name>[`. Lookbehind
+/// (`(?<=` / `(?<!`) ends in `=`/`!`, never `>`, so it is never mistaken for a
+/// named capture.
+fn class_opens_a_capture_group(regex: &str, class_open: usize) -> bool {
+    let before = &regex[..class_open];
+    if before.ends_with('(') {
+        return true;
+    }
+    if let Some(name_head) = before.strip_suffix('>') {
+        if let Some(lt) = name_head.rfind('<') {
+            let opener = &name_head[..lt];
+            return opener.ends_with("(?P") || opener.ends_with("(?");
+        }
+    }
+    false
+}
+
+/// If `after` (the slice immediately following a class's closing `]`) closes the
+/// capture group right after it, return the class's minimum repeat count. `Some`
+/// only when the group is exactly `([class]<quant>)` where `<quant>` is empty
+/// (`([class])` ⇒ min 1), `?` (min 0), `+`/`*`, or `{n,..}` — an optional lazy
+/// `?` before the group close is accepted. A bare `([class])` and an optional
+/// `([class]?)` are broad captures (min ≤ 1) that were previously missed
+/// (returned `None`), so their weak-anchor detectors kept their shape gates
+/// wrongly bypassed.
 fn group_capture_min_len(after: &str) -> Option<usize> {
     let bytes = after.as_bytes();
+    // The group must close at `idx`, allowing an optional lazy `?` first.
+    let closes_at = |idx: usize| match bytes.get(idx) {
+        Some(b')') => true,
+        Some(b'?') => bytes.get(idx + 1) == Some(&b')'),
+        _ => false,
+    };
     match bytes.first()? {
-        b'+' if bytes.get(1) == Some(&b')') => Some(1),
-        b'*' if bytes.get(1) == Some(&b')') => Some(0),
+        b')' => Some(1),                 // ([class]) — matches exactly once
+        b'?' if closes_at(1) => Some(0), // ([class]?) — zero or one
+        b'+' if closes_at(1) => Some(1), // ([class]+) / lazy ([class]+?)
+        b'*' if closes_at(1) => Some(0), // ([class]*) / lazy ([class]*?)
         b'{' => {
             let close = after.find('}')?;
-            if after.as_bytes().get(close + 1) != Some(&b')') {
+            let mut next = close + 1;
+            if bytes.get(next) == Some(&b'?') {
+                next += 1; // lazy `{n,m}?`
+            }
+            if bytes.get(next) != Some(&b')') {
                 return None;
             }
             after[1..close].split(',').next()?.parse::<usize>().ok() // LAW10: malformed input => None (fail-closed at the boundary; not a valid value), recall-safe
@@ -585,24 +660,350 @@ fn group_capture_min_len(after: &str) -> Option<usize> {
     }
 }
 
-/// True if `body` (a regex character-class body, without the brackets) is
-/// composed only of identifier range/literal tokens AND includes a full
-/// alphabetic range (`a-z`, `A-Z`, or `\w`). Hex-only classes (`a-f0-9`)
-/// return false because `a-f` is not an accepted token.
+#[derive(serde::Deserialize)]
+struct ApiSuppressionTokens {
+    tokens: Vec<String>,
+}
+
+fn parse_api_suppression_tokens(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<ApiSuppressionTokens>(raw)
+        .map(|parsed| parsed.tokens)
+        .map_err(|error| error.to_string())
+}
+
+static TOKENS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    match parse_api_suppression_tokens(include_str!(
+        "../../../../rules/api-suppression-tokens.toml"
+    )) {
+        Ok(tokens) => tokens,
+        Err(error) => panic!(
+            "rules/api-suppression-tokens.toml is invalid: {error}. \
+             Fix the bundled suppression tokens."
+        ),
+    }
+});
+
+/// True if `body` (a regex character-class body, without the brackets) includes
+/// a full alphabetic range (`a-z`, `A-Z`, or `\w`). Extra literal characters
+/// that only WIDEN the class (e.g. `.` in `[A-Za-z0-9._-]`) keep it broad — a
+/// superset of the identifier alphabet is at least as broad as the identifier
+/// alphabet itself, so it must not be mistaken for a strong fixed-shape anchor.
+/// Hex-only classes (`a-f0-9`) still return false: they contain no full-alpha
+/// range, only the narrowing `a-f`.
 fn is_full_alpha_identifier_class(body: &str) -> bool {
-    const TOKENS: &[&str] = &["a-z", "A-Z", "0-9", "\\w", "\\d", "_", "-"];
     let mut full_alpha = false;
     let mut rest = body;
     while !rest.is_empty() {
-        match TOKENS.iter().find(|t| rest.starts_with(**t)) {
+        match TOKENS.iter().find(|t| rest.starts_with(t.as_str())) {
             Some(t) => {
-                if *t == "a-z" || *t == "A-Z" || *t == "\\w" {
+                if t.as_str() == "a-z" || t.as_str() == "A-Z" || t.as_str() == "\\w" {
                     full_alpha = true;
                 }
                 rest = &rest[t.len()..];
             }
-            None => return false,
+            // An unrecognised token is a lone literal that only widens the
+            // class; skip one char and keep scanning for a full-alpha range.
+            None => {
+                let ch_len = rest.chars().next().map_or(1, char::len_utf8);
+                rest = &rest[ch_len..];
+            }
         }
     }
     full_alpha
+}
+
+struct CompiledDetectorSuppressionRules {
+    allowlist_paths: Vec<regex::Regex>,
+    allowlist_values: Vec<regex::Regex>,
+    stopwords: Vec<String>,
+}
+
+static DETECTOR_SUPPRESSIONS: std::sync::LazyLock<
+    std::collections::HashMap<String, CompiledDetectorSuppressionRules>,
+> = std::sync::LazyLock::new(|| {
+    let mut map = std::collections::HashMap::new();
+
+    #[cfg(test)]
+    {
+        map.insert(
+            "test-detector".to_string(),
+            CompiledDetectorSuppressionRules {
+                allowlist_paths: vec![regex::Regex::new(".*allowlisted_path.*").unwrap()],
+                allowlist_values: vec![regex::Regex::new("^allowlisted_value_.*").unwrap()],
+                stopwords: vec!["stopword_here".to_string()],
+            },
+        );
+    }
+
+    let specs = keyhog_core::load_embedded_detectors_or_fail().unwrap_or_else(|error| {
+        panic!("failed to load embedded detectors for allowlist/stopword suppression: {error}")
+    });
+    for spec in specs {
+        let allowlist_paths = spec
+            .allowlist_paths
+            .iter()
+            .map(|pat| {
+                regex::Regex::new(pat).unwrap_or_else(|err| {
+                    panic!(
+                        "detector '{}' has invalid allowlist_path regex '{}': {}",
+                        spec.id, pat, err
+                    )
+                })
+            })
+            .collect();
+        let allowlist_values = spec
+            .allowlist_values
+            .iter()
+            .map(|pat| {
+                regex::Regex::new(pat).unwrap_or_else(|err| {
+                    panic!(
+                        "detector '{}' has invalid allowlist_value regex '{}': {}",
+                        spec.id, pat, err
+                    )
+                })
+            })
+            .collect();
+        map.insert(
+            spec.id.clone(),
+            CompiledDetectorSuppressionRules {
+                allowlist_paths,
+                allowlist_values,
+                stopwords: spec.stopwords.clone(),
+            },
+        );
+    }
+    map
+});
+
+/// Operator OVERRIDE gate: a detector's configured `allowlist_paths` /
+/// `allowlist_values` are explicit "never flag this" declarations, so they win
+/// over every shape/structure gate and run FIRST. Kept separate from the broad
+/// stopword heuristic ([`suppress_per_detector_stopwords`]), which is the
+/// least-specific reason and must run LAST so a precise structural gate
+/// (`email_address`, `exact_placeholder_value`, …) claims the drop with its own
+/// informative reason instead of a coincidental substring hit.
+fn suppress_per_detector_allowlist(
+    detector_id: &str,
+    path: Option<&str>,
+    credential: &str,
+) -> Option<crate::adjudicate::StageId> {
+    let rules = DETECTOR_SUPPRESSIONS.get(detector_id)?;
+    let shape_stage = |reason| Some(crate::adjudicate::StageId::ShapeGate(reason));
+
+    if let Some(p) = path {
+        for re in &rules.allowlist_paths {
+            if re.is_match(p) {
+                crate::adjudicate::record_example_suppression(
+                    "pipeline",
+                    path,
+                    credential,
+                    "allowlist_paths",
+                );
+                return shape_stage("allowlist_paths");
+            }
+        }
+    }
+    for re in &rules.allowlist_values {
+        if re.is_match(credential) {
+            crate::adjudicate::record_example_suppression(
+                "pipeline",
+                path,
+                credential,
+                "allowlist_values",
+            );
+            return shape_stage("allowlist_values");
+        }
+    }
+    None
+}
+
+/// Per-detector STOPWORD gate: a broad case-insensitive SUBSTRING heuristic for
+/// placeholder captures (`example`, `test`, `demo`, `changeme`). It is the
+/// least-specific suppression reason, so it runs AFTER every structural gate
+/// (see [`suppress_per_detector_allowlist`] for why order matters): a value that
+/// is really an email or an exact placeholder gets that precise reason, not a
+/// coincidental `stopwords` hit.
+///
+/// Randomness guard: when the capture is a genuine RANDOM token the stopword is
+/// a coincidental fragment of the entropy body — `sk_test_4eC39HqLyjWDarjtT1zdp7dc`
+/// is a real Stripe test key that merely CONTAINS `test`, not a placeholder — so
+/// a random credential BYPASSES stopword suppression. This wraps the SAME shared
+/// `is_random_token` model the identifier / word-separated gates use (ONE
+/// discriminator, no second copy): a low-entropy dictionary value
+/// (`contains_stopword_here_secret`) still suppresses; a high-entropy credential
+/// that happens to embed a stopword is recovered.
+fn suppress_per_detector_stopwords(
+    detector_id: &str,
+    path: Option<&str>,
+    credential: &str,
+    randomness: &TokenRandomness<'_>,
+) -> Option<crate::adjudicate::StageId> {
+    let rules = DETECTOR_SUPPRESSIONS.get(detector_id)?;
+    if rules.stopwords.is_empty() || randomness.is_random_token(credential) {
+        return None;
+    }
+    for word in &rules.stopwords {
+        if keyhog_core::contains_ignore_ascii_case(credential, word) {
+            crate::adjudicate::record_example_suppression(
+                "pipeline",
+                path,
+                credential,
+                "stopwords",
+            );
+            return Some(crate::adjudicate::StageId::ShapeGate("stopwords"));
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod weak_anchor_shape_tests {
+    use super::{has_broad_identifier_capture, is_full_alpha_identifier_class};
+
+    #[test]
+    fn named_and_optional_name_captures_are_broad() {
+        for regex in [
+            "token=([A-Za-z0-9_-]+)",
+            "token=(?P<v>[A-Za-z0-9_-]+)",
+            "token=(?<v>[A-Za-z0-9_-]+)",
+            "token=([A-Za-z0-9_-]*)",
+        ] {
+            assert!(
+                has_broad_identifier_capture(regex),
+                "broad identifier capture missed: {regex:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookbehind_and_fixed_shape_are_not_broad() {
+        // Lookbehind opens no capture; a fixed high min-length is a real key shape.
+        assert!(!has_broad_identifier_capture("(?<=[A-Za-z]+)foo"));
+        assert!(!has_broad_identifier_capture("key=([A-Za-z0-9_-]{16})"));
+        assert!(!has_broad_identifier_capture("key=([a-f0-9]+)"));
+    }
+
+    #[test]
+    fn bare_optional_and_lazy_captures_are_broad() {
+        // No quantifier: `([class])` matches exactly once (min 1 ≤ 1) — broad.
+        assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-])"));
+        // Optional: `([class]?)` matches zero-or-one (min 0) — broad.
+        assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-]?)"));
+        // Lazy quantifiers close the group after a `?`; still min ≤ 1 — broad.
+        assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-]+?)"));
+        assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-]*?)"));
+        assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-]{1,}?)"));
+        // A fixed high lazy min-length is still a real key shape, not broad.
+        assert!(!has_broad_identifier_capture("key=([A-Za-z0-9_-]{16}?)"));
+    }
+
+    #[test]
+    fn superset_of_identifier_alphabet_is_broad() {
+        // A class strictly BROADER than the identifier alphabet (extra `.`) must
+        // still count as a full-alpha (broad) class, not a strong anchor.
+        assert!(is_full_alpha_identifier_class("A-Za-z0-9._-"));
+        assert!(has_broad_identifier_capture("token=([A-Za-z0-9._-]+)"));
+        // Hex-only stays narrow (no full-alpha range).
+        assert!(!is_full_alpha_identifier_class("a-f0-9"));
+    }
+
+    #[test]
+    fn test_per_detector_allowlist_and_stopwords() {
+        use super::{suppress_named_detector_finding_stage, NamedDetectorSuppressionCtx};
+        use crate::context::CodeContext;
+
+        let ctx_allowlisted_path = NamedDetectorSuppressionCtx::with_weak_anchor(
+            Some("src/allowlisted_path/file.rs"),
+            CodeContext::Unknown,
+            Some("filesystem"),
+            "test-detector",
+            false,
+            false,
+        );
+        let res = suppress_named_detector_finding_stage("some_secret", ctx_allowlisted_path);
+        assert_eq!(
+            res,
+            Some(crate::adjudicate::StageId::ShapeGate("allowlist_paths"))
+        );
+
+        let ctx_normal_path = NamedDetectorSuppressionCtx::with_weak_anchor(
+            Some("src/other_path/file.rs"),
+            CodeContext::Unknown,
+            Some("filesystem"),
+            "test-detector",
+            false,
+            false,
+        );
+        let res = suppress_named_detector_finding_stage("allowlisted_value_12345", ctx_normal_path);
+        assert_eq!(
+            res,
+            Some(crate::adjudicate::StageId::ShapeGate("allowlist_values"))
+        );
+
+        let res =
+            suppress_named_detector_finding_stage("contains_stopword_here_secret", ctx_normal_path);
+        assert_eq!(
+            res,
+            Some(crate::adjudicate::StageId::ShapeGate("stopwords"))
+        );
+
+        let res =
+            suppress_named_detector_finding_stage("contains_STOPWORD_HERE_secret", ctx_normal_path);
+        assert_eq!(
+            res,
+            Some(crate::adjudicate::StageId::ShapeGate("stopwords"))
+        );
+
+        let res = suppress_named_detector_finding_stage("normal_secret", ctx_normal_path);
+        assert_eq!(res, None);
+    }
+
+    #[test]
+    fn exact_placeholder_value_is_suppressed_for_named_detectors() {
+        use super::{suppress_named_detector_finding_stage, NamedDetectorSuppressionCtx};
+        use crate::adjudicate::StageId;
+        use crate::context::CodeContext;
+
+        // A real vendor detector (no configured allowlist/stopwords) so the
+        // universal Tier-A exact-placeholder gate is what decides — this is the
+        // `rabbitmq-management-credentials` FP class: `RABBITMQ_PASSWORD=password`
+        // captured the bare word, which the entropy path drops but named
+        // detectors previously bypassed.
+        let ctx = NamedDetectorSuppressionCtx::with_weak_anchor(
+            Some("config/rabbitmq.env"),
+            CodeContext::Unknown,
+            Some("filesystem"),
+            "rabbitmq-management-credentials",
+            false,
+            false,
+        );
+        let exact = Some(StageId::ShapeGate("exact_placeholder_value"));
+        for placeholder in [
+            "password",
+            "secret",
+            "default",
+            "null",
+            "none",
+            "undefined",
+            "empty",
+        ] {
+            assert_eq!(
+                suppress_named_detector_finding_stage(placeholder, ctx),
+                exact,
+                "named value {placeholder:?} must be suppressed as an exact placeholder",
+            );
+        }
+        // Whole-value only: a strong credential is untouched, and a value that
+        // merely starts with a placeholder word is NOT an exact match.
+        assert_eq!(
+            suppress_named_detector_finding_stage("xK9mP2qR7wZ4nBvT8", ctx),
+            None,
+            "a strong random credential must survive the exact-placeholder gate",
+        );
+        assert_ne!(
+            suppress_named_detector_finding_stage("passwordX9mP2qR7wZ4", ctx),
+            exact,
+            "a value merely CONTAINING a placeholder word is not an exact match",
+        );
+    }
 }

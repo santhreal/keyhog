@@ -21,7 +21,7 @@ decode-through (base64/hex/url/protobuf), confidence scoring, SARIF output,
 zero runtime configuration. Default `keyhog scan .` works out of the box.
 
 <p align="center">
-  <img src="demo/keyhog-scan.gif" alt="keyhog scan — boxed findings with severity, confidence, file:line, and remediation, then a results summary and an honest coverage-gap line" width="860" />
+  <img src="demo/keyhog-scan.gif" alt="keyhog scan: boxed findings with severity, confidence, file:line, and remediation, then a results summary and an honest coverage-gap line" width="860" />
 </p>
 
 ### Add it to your CI (one workflow file)
@@ -115,14 +115,14 @@ or rerun `install.sh --calibrate` / `install.ps1 -Calibrate` to replace the
 persisted calibration at install time. Explicit `--backend` overrides are for
 diagnostics and benchmarking, not evidence that autoroute is correct.
 
-A single-backend build — one compiled without Hyperscan (`simd`) or the GPU stack,
-such as the portable/static release — has no backend *choice* to route, so it
+A single-backend build (one compiled without Hyperscan (`simd`) or the GPU stack,
+such as the portable/static release) has no backend *choice* to route, so it
 resolves its lone CPU backend directly and never requires calibration (and never
 fails closed). Autoroute engages only when a build compiled more than one backend.
 
 The visible calibration phase measures every real workload class on your
-hardware — stdin, small/large files, many-file trees, decode-heavy input, git
-history/blobs/diff, a loopback web URL, and a live container image — timing each
+hardware: stdin, small/large files, many-file trees, decode-heavy input, git
+history/blobs/diff, a loopback web URL, and a live container image, timing each
 backend per class and persisting only a route it can prove fastest (or the sound
 lowest-overhead tie-break when two routes are statistically tied). The install
 refuses to finish unless every class calibrates.
@@ -153,7 +153,7 @@ how you see what *is* calibrated and recalibrate the gap. Add `--json` for a
 stable, scriptable shape.
 
 <p align="center">
-  <img src="demo/keyhog-backend.gif" alt="keyhog backend — hardware probe (RTX 5090, AVX-512, io_uring) and the size-driven autoroute decision matrix: simd-regex for small inputs, gpu-region-presence once per-tier byte thresholds are met" width="860" />
+  <img src="demo/keyhog-backend.gif" alt="keyhog backend: hardware probe (RTX 5090, AVX-512, io_uring) and the size-driven autoroute decision matrix: simd-regex for small inputs, gpu-region-presence once per-tier byte thresholds are met" width="860" />
 </p>
 
 The `simdsieve` prefilter is a performance layer, not a separate detector: a
@@ -169,6 +169,11 @@ v0.5.40 · secret scanner · 922 detectors
 ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 922 detectors (6061 patterns) | backend=simd-regex
 ```
 
+Banner **patterns** is the compiled pattern count shown in the startup banner above
+(here 6061). The detector corpus has 922 TOML files (four generic catch-alls -
+`generic-api-key`, `generic-keyword-secret`, `generic-password`, `generic-secret`
+- plus vendor-specific rules) with ~1697 `[[detector.patterns]]` rows in total.
+
 **Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, exit codes, env vars, contributing. Source under `docs/`.
 
 ---
@@ -182,12 +187,12 @@ curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.s
 # Windows (PowerShell)
 iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -useb | iex
 
-# From source — Linux (default = Hyperscan SIMD; needs libhyperscan-dev + pkg-config)
+# From source - Linux (default = Hyperscan SIMD; needs libhyperscan-dev + pkg-config)
 git clone https://github.com/santhsecurity/keyhog.git
 cd keyhog && cargo build --release -p keyhog
 
-# From source / crates.io — macOS, Windows, or any host without Hyperscan
-# (the system-lib-free vyre CPU build — no pkg-config, no GPU stack)
+# From source / crates.io - macOS, Windows, or any host without Hyperscan
+# (the system-lib-free vyre CPU build - no pkg-config, no GPU stack)
 cargo install keyhog --no-default-features --features portable
 ```
 
@@ -196,7 +201,7 @@ cargo install keyhog --no-default-features --features portable
 > versus a ~3-minute source build. For a source build, note that the **default**
 > features link Hyperscan (a system lib available on Linux x86_64); on **macOS**
 > (incl. Apple Silicon) and any host without the Hyperscan dev libraries, build
-> with `--no-default-features --features portable` — the vyre CPU path, every
+> with `--no-default-features --features portable` - the vyre CPU path, every
 > detection feature, no system-lib or pkg-config dependency.
 
 Works on **Linux**, **macOS** (Intel + Apple Silicon), **Windows**. Zero
@@ -264,10 +269,10 @@ keyhog repair                # reinstall a known-good binary if the self-test fa
 keyhog uninstall             # remove the binary (dry run; pass --yes to actually delete)
 ```
 
-`keyhog doctor` — host probe, install/PATH resolution, and a four-way self-test (scan engine end-to-end, GPU scan path, GPU literal set, GPU MoE shader vs CPU reference). It never reports healthy unless the GPU path proves itself on this host:
+`keyhog doctor`: host probe, install/PATH resolution, and a four-way self-test (scan engine end-to-end, GPU scan path, GPU literal set, GPU MoE shader vs CPU reference). It never reports healthy unless the GPU path proves itself on this host:
 
 <p align="center">
-  <img src="demo/keyhog-doctor.gif" alt="keyhog doctor — host probe (RTX 5090, AVX-512, Hyperscan), one keyhog on PATH, 922 embedded detectors, and a four-way self-test (scan engine, GPU scan path, GPU literal set, GPU MoE shader vs CPU reference) all reporting PASS, then 'keyhog is healthy'" width="860" />
+  <img src="demo/keyhog-doctor.gif" alt="keyhog doctor: host probe (RTX 5090, AVX-512, Hyperscan), one keyhog on PATH, 922 embedded detectors, and a four-way self-test (scan engine, GPU scan path, GPU literal set, GPU MoE shader vs CPU reference) all reporting PASS, then 'keyhog is healthy'" width="860" />
 </p>
 
 `keyhog doctor` reuses the scanner's own hardware probe and runs a real
@@ -313,13 +318,13 @@ keyhog scan . --create-baseline .keyhog-baseline.json
 keyhog scan . --baseline .keyhog-baseline.json # only NEW findings vs snapshot
 keyhog scan . --fast                           # pre-commit speed (skip ML + decode)
 keyhog scan . --deep                           # max detection depth
-keyhog scan . --incremental                    # BLAKE3 Merkle skip → 10–100× CI loop
+keyhog scan . --incremental                    # BLAKE3 Merkle skip → 10-100× CI loop
 ```
 
-One scan, every CI/SIEM dialect — `text · json · jsonl · sarif · csv · html · junit · github · gitlab`, all from the same engine:
+One scan, every CI/SIEM dialect: `text · json · jsonl · sarif · csv · html · junit · github · gitlab`, all from the same engine:
 
 <p align="center">
-  <img src="demo/keyhog-formats.gif" alt="keyhog emitting the same findings as text, JSON, and SARIF — machine-readable surfaces for pipelines and code scanning" width="860" />
+  <img src="demo/keyhog-formats.gif" alt="keyhog emitting the same findings as text, JSON, and SARIF: machine-readable surfaces for pipelines and code scanning" width="860" />
 </p>
 
 Exit codes: `0` clean, `1` findings above the severity floor, `2` user error
@@ -357,15 +362,15 @@ unavailable, `13` requested source failed or input coverage was incomplete. Matc
 
 Each detector ships as a [TOML file](./detectors/) (data, not code):
 service metadata, regex patterns, keywords, companion fields,
-verification handler. Adding a new detector is 5–10 lines of TOML;
+verification handler. Adding a new detector is 5-10 lines of TOML;
 the [contributor guide](./CONTRIBUTING.md) walks through it.
 
-`keyhog explain <id>` dumps any detector's full spec — patterns, keywords,
-verification endpoint — plus a service-keyed rotation and step-by-step
+`keyhog explain <id>` dumps any detector's full spec: patterns, keywords,
+verification endpoint, plus a service-keyed rotation and step-by-step
 remediation guide, so a finding is never a black box:
 
 <p align="center">
-  <img src="demo/keyhog-explain.gif" alt="keyhog explain github-classic-pat — detector spec dump (pattern ghp_[A-Za-z0-9]{36}, keyword, verification URL) followed by the github rotation guide and step-by-step remediation" width="860" />
+  <img src="demo/keyhog-explain.gif" alt="keyhog explain github-classic-pat: detector spec dump (pattern ghp_[A-Za-z0-9]{36}, keyword, verification URL) followed by the github rotation guide and step-by-step remediation" width="860" />
 </p>
 
 Browse the full catalog at [`/site/detectors.html`](./site/detectors.html) -
@@ -404,7 +409,7 @@ Titus, scored identically by the reproducible harness in
 [`benchmarks/`](benchmarks/): the SecretBench containment rule, with the
 ground-truth manifest **excluded from every scanner's scan tree** so no tool
 is ever shown the answer key. The tables below are generated by
-`make -C benchmarks report` — **do not edit them by hand.**
+`make -C benchmarks report`: **do not edit them by hand.**
 
 ### Detection leaderboard
 
@@ -699,7 +704,7 @@ Precedence (rightmost wins): compiled defaults → `.keyhog.toml`
 [`docs/src/reference/configuration.md`](./docs/src/reference/configuration.md).
 
 `keyhog config --effective <path>` prints the exact resolved configuration that
-would reach the scanner — without scanning — so the precedence chain is provable
+would reach the scanner (without scanning), so the precedence chain is provable
 (here a CLI `--min-confidence 0.6` overrides the compiled `0.40` default):
 
 <p align="center">
@@ -731,7 +736,7 @@ approval to be renewed or removed before the scan can proceed.
 ## Architecture
 
 > **Contributor map:** [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) is the
-> one-page guide to the whole repo — every top-level directory, the crate
+> one-page guide to the whole repo: every top-level directory, the crate
 > layering, and the bytes→finding pipeline with each stage pointing at the
 > module that owns it. Start there to navigate the code.
 

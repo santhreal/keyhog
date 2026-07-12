@@ -533,13 +533,22 @@ fn decode_z85_extractor_only_strips_whitespace_when_needed() {
 
 // ── crates/scanner/src/decode/caesar.rs ───────────────────────────────
 #[test]
-fn decode_caesar_happy() {
-    let chunk = demo_chunk("ROT13=uryyb");
+fn decode_caesar_rot13_recovers_encoded_akia_credential() {
+    // A credential-shaped plaintext carrying the `AKIA` known prefix (>= digit +
+    // 8-char alnum run, >= MIN_CAESAR_LEN=16), ROT13-encoded. The caesar decoder
+    // must select the recovering shift and emit the exact decoded plaintext.
+    let plain = "AKIA1234567890ABCDEFGH";
+    let encoded = keyhog_scanner::testing::decode_caesar::caesar_shift(plain, 13);
+    let chunk = demo_chunk(&format!("token = {encoded}"));
     let out = keyhog_scanner::testing::decode_chunk(&chunk, 2, false, None, None);
-    assert!(!out.is_empty() || chunk.data.contains("uryyb"));
+    assert!(
+        out.iter().any(|c| c.data.contains(plain)),
+        "caesar decoder must recover the ROT13-encoded AKIA credential {plain:?}; got {:?}",
+        out.iter().map(|c| c.data.as_ref()).collect::<Vec<&str>>()
+    );
 }
 #[test]
-fn decode_caesar_error() {
+fn decode_caesar_emits_nothing_for_unencoded_text() {
     let chunk = demo_chunk("no-encoding-here");
     assert!(keyhog_scanner::testing::decode_chunk(&chunk, 1, false, None, None).is_empty());
 }
@@ -590,9 +599,29 @@ fn decode_json_error() {
 // ── crates/scanner/src/decode/mod.rs ──────────────────────────────────
 #[test]
 fn decode_mod_happy() {
+    // A FREESTANDING base64 run must reach MIN_B64_BLOCK_LEN (16) chars to be
+    // kept — the shortest that can carry a credential-length payload; shorter
+    // alphanumeric runs (e.g. bare "c2s=") are ordinary identifiers/words and are
+    // deliberately dropped as noise. The `min_length` arg is a SECONDARY floor
+    // that can only raise this cutoff, never lower it. Use a 20-char run so the
+    // extractor surfaces it.
+    let b64 = "c2VjcmV0dmFsdWUxMjM0"; // base64("secretvalue1234"), 20 chars, no padding
     assert!(
-        keyhog_scanner::decode::find_base64_strings("c2s=", 2).is_empty()
-            || !keyhog_scanner::decode::find_base64_strings("c2s=", 2).is_empty()
+        keyhog_scanner::decode::find_base64_strings(b64, 2)
+            .iter()
+            .any(|s| s.value.contains(b64)),
+        "base64 candidate extractor must surface a credential-length base64 run"
+    );
+}
+
+#[test]
+fn decode_mod_rejects_short_freestanding_base64() {
+    // The precision half of the MIN_B64_BLOCK_LEN contract: a sub-16-char
+    // freestanding run is NOT a decode candidate even at min_length=2, so short
+    // base64-looking words never flood the decode-through pipeline.
+    assert!(
+        keyhog_scanner::decode::find_base64_strings("c2s=", 2).is_empty(),
+        "a short freestanding base64 run must be dropped below MIN_B64_BLOCK_LEN"
     );
 }
 #[test]
@@ -639,7 +668,10 @@ fn decode_unicode_escape_error() {
 fn decode_url_happy() {
     let chunk = demo_chunk("token=%73%6b");
     let out = keyhog_scanner::testing::decode_chunk(&chunk, 2, false, None, None);
-    assert!(out.iter().any(|c| c.data.contains("sk")) || chunk.data.contains("%73"));
+    assert!(
+        out.iter().any(|c| c.data.contains("sk")),
+        "url decoder must recover sk from %73%6b"
+    );
 }
 #[test]
 fn decode_url_error() {
@@ -1172,19 +1204,43 @@ fn gpu_small_batch_cpu_fallback_matches_configured_moe() {
 }
 
 #[test]
-fn gpu_error() {
-    let (_avail, _name, _vram) = gpu_probe();
-    assert!(!gpu_available() || gpu_available());
+fn gpu_probe_availability_coheres_with_gpu_available_and_vram() {
+    // Host-independent invariant: the probe's availability flag must agree with
+    // `gpu_available()`, and VRAM is zero iff no GPU is available.
+    let (avail, _name, vram) = gpu_probe();
+    assert_eq!(
+        avail,
+        gpu_available(),
+        "gpu_probe availability must agree with gpu_available()"
+    );
+    if avail {
+        assert!(
+            vram.is_some_and(|v| v > 0),
+            "an available GPU must report nonzero VRAM"
+        );
+    } else {
+        assert_eq!(vram, None, "an unavailable GPU must report no VRAM");
+    }
 }
 
-// ── crates/scanner/src/homoglyph.rs ───────────────────────────────────
+// ── crates/scanner/src/unicode_hardening.rs ───────────────────────────
 #[test]
-fn homoglyph_happy() {
-    let normalized = normalize_chunk_data("gh\u{043E}p_token");
-    assert!(normalized.as_ref().contains('o') || normalized.as_ref().contains('\u{043E}'));
+fn homoglyph_normalizes_cyrillic_o_to_ascii_o() {
+    // Homoglyph FOLDING (lookalike → ASCII) lives on the credential-VALUE scan
+    // path, `unicode_hardening::normalize_homoglyphs`. It is deliberately NOT on
+    // `normalize_chunk_data`, which only strips zero-width/RTL evasion chars for
+    // context-window text — folding lookalikes in ordinary prose would distort
+    // the keyword/comment context features (see `normalize_chunk_data`'s docs).
+    let normalized =
+        keyhog_scanner::testing::unicode_hardening::normalize_homoglyphs("gh\u{043E}p_token");
+    assert_eq!(normalized.as_ref(), "ghop_token");
+    assert!(
+        !normalized.as_ref().contains('\u{043E}'),
+        "Cyrillic о (U+043E) must be folded to ASCII o on the credential-value path"
+    );
 }
 #[test]
-fn homoglyph_error() {
+fn homoglyph_leaves_pure_ascii_unchanged() {
     assert_eq!(normalize_chunk_data("ascii_only").as_ref(), "ascii_only");
 }
 
@@ -1436,12 +1492,23 @@ fn ml_features_error() {
 
 // ── crates/scanner/src/ml_scorer.rs ───────────────────────────────────
 #[test]
-fn ml_scorer_happy() {
+fn ml_scorer_gives_real_token_nonzero_deterministic_probability() {
+    let token = concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789");
+    let scored = score(token, "export TOKEN=");
     assert!(
-        score(
-            concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"),
-            "export TOKEN="
-        ) >= 0.0
+        (0.0..=1.0).contains(&scored),
+        "score must be a probability in [0,1], got {scored}"
+    );
+    // A real ghp_ token in assignment context must lift above the empty-input
+    // floor (`score("","")` is defined to return exactly 0.0).
+    assert!(
+        scored > score("", ""),
+        "a real ghp_ token must score above the empty-input floor, got {scored}"
+    );
+    assert_eq!(
+        scored,
+        score(token, "export TOKEN="),
+        "score must be deterministic for identical inputs"
     );
 }
 #[test]
@@ -1453,12 +1520,21 @@ fn ml_scorer_error() {
 
 // ── crates/scanner/src/ml_scorer/ml_weights.rs ──────────────────────────────────
 #[test]
-fn ml_weights_happy() {
+fn ml_weights_rank_real_token_above_low_signal_prose() {
+    // The compiled weights must discriminate: a canonical ghp_ token in
+    // assignment context outscores an unstructured English-prose line.
+    let token_score = score(
+        concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"),
+        "TOKEN=",
+    );
+    let prose_score = score("the quick brown fox jumped", "a plain sentence of prose");
     assert!(
-        score(
-            concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"),
-            "TOKEN="
-        ) >= 0.0
+        (0.0..=1.0).contains(&token_score) && (0.0..=1.0).contains(&prose_score),
+        "scores must be probabilities, got token={token_score} prose={prose_score}"
+    );
+    assert!(
+        token_score > prose_score,
+        "weights must rank a real token above low-signal prose, got token={token_score} prose={prose_score}"
     );
 }
 #[test]

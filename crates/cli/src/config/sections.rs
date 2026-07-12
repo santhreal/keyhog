@@ -149,6 +149,11 @@ pub(super) fn apply_http_section(args: &mut ScanArgs, http: Option<&HttpSection>
                 args.insecure = insecure_tls;
             }
         }
+        if let Some(allow_private_endpoint) = http.allow_private_endpoint {
+            if !args.allow_private_cloud_endpoint {
+                args.allow_private_cloud_endpoint = allow_private_endpoint;
+            }
+        }
     }
 }
 
@@ -175,6 +180,12 @@ pub(super) fn apply_http_section(
         if http.insecure_tls.is_some() {
             config_errors.push(
                 "- [http].insecure_tls: this key requires an HTTP-capable keyhog build".to_string(),
+            );
+        }
+        if http.allow_private_endpoint.is_some() {
+            config_errors.push(
+                "- [http].allow_private_endpoint: this key requires an HTTP-capable keyhog build"
+                    .to_string(),
             );
         }
     }

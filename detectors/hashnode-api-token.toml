@@ -8,7 +8,10 @@ id = "hashnode-api-token"
 name = "Hashnode Personal Access Token"
 service = "hashnode"
 severity = "medium"
-keywords = ["hashnode", "HASHNODE", "pat", "personal_access_token"]
+# "pat" removed: over-broad (path/pattern/patch/compatible contain it) and
+# redundant — the regex self-anchors on hashnode/personal_access_token (both
+# still keywords), never on a bare "pat". Recall-neutral.
+keywords = ["hashnode", "HASHNODE", "personal_access_token"]
 
 [[detector.patterns]]
 regex = '''(?:hashnode|HASHNODE|personal[_-]?access[_-]?token|HASHNODE[_-]?TOKEN)[=:\s"\']+([a-f0-9]{32,})'''

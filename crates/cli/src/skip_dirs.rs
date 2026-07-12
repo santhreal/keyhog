@@ -4,7 +4,30 @@ use anyhow::{Context, Result};
 use std::collections::BTreeSet;
 
 const BUNDLED_SKIP_DIRS: &str = include_str!("../data/path_skip_dirs.toml");
-const GIT_DISCOVERY_KEEP_COMPONENTS: &[&str] = &[".git"];
+
+#[derive(serde::Deserialize)]
+struct GitDiscoveryKeepComponents {
+    components: Vec<String>,
+}
+
+fn parse_git_discovery_keep_components(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<GitDiscoveryKeepComponents>(raw)
+        .map(|parsed| parsed.components)
+        .map_err(|error| error.to_string())
+}
+
+static GIT_DISCOVERY_KEEP_COMPONENTS: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| {
+        match parse_git_discovery_keep_components(include_str!(
+            "../../../rules/git-discovery-keep-components.toml"
+        )) {
+            Ok(components) => components,
+            Err(error) => panic!(
+                "rules/git-discovery-keep-components.toml is invalid: {error}. \
+                 Fix the bundled Tier-B git-discovery keep-components list."
+            ),
+        }
+    });
 
 #[derive(Debug, Clone)]
 pub(crate) struct SkipDirPolicy {
@@ -90,7 +113,7 @@ impl SkipDirPolicy {
                 ("base", &section.base),
                 ("git_discovery_extra", &section.git_discovery_extra),
             ],
-            GIT_DISCOVERY_KEEP_COMPONENTS,
+            &*GIT_DISCOVERY_KEEP_COMPONENTS,
         )?;
         Ok(Self {
             watch,
@@ -128,7 +151,7 @@ fn contains_component(policy: &[String], component: &str) -> bool {
 fn merge_lists(
     name: &str,
     lists: &[(&str, &[String])],
-    keep_components: &[&str],
+    keep_components: &[String],
 ) -> std::result::Result<Vec<String>, String> {
     let capacity = lists.iter().map(|(_, list)| list.len()).sum();
     let mut merged = Vec::with_capacity(capacity);
@@ -137,7 +160,7 @@ fn merge_lists(
         for value in *list {
             if keep_components
                 .iter()
-                .any(|keep| value.eq_ignore_ascii_case(keep))
+                .any(|keep| value.eq_ignore_ascii_case(keep.as_str()))
             {
                 continue;
             }

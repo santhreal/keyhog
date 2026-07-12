@@ -37,7 +37,10 @@ fn secret_zip(entry: &str) -> Vec<u8> {
 
 /// Write `bytes` to `pkg.<ext>` in a fresh tempdir and scan that dir; returns the
 /// owned (chunks, errors) split so callers can assert without borrow gymnastics.
-fn scan_named(ext: &str, bytes: &[u8]) -> (tempfile::TempDir, Vec<keyhog_core::Chunk>, Vec<String>) {
+fn scan_named(
+    ext: &str,
+    bytes: &[u8],
+) -> (tempfile::TempDir, Vec<keyhog_core::Chunk>, Vec<String>) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join(format!("pkg.{ext}")), bytes).unwrap();
     let source = FilesystemSource::new(dir.path().to_path_buf());
@@ -52,14 +55,20 @@ fn scan_named(ext: &str, bytes: &[u8]) -> (tempfile::TempDir, Vec<keyhog_core::C
 /// `filesystem/archive` chunk whose path is `<artifact>//<entry>` carries it.
 fn assert_artifact_unpacked(ext: &str) {
     let (_dir, chunks, errors) = scan_named(ext, &secret_zip(ENTRY));
-    assert!(errors.is_empty(), ".{ext} artifact must not emit errors; got {errors:?}");
+    assert!(
+        errors.is_empty(),
+        ".{ext} artifact must not emit errors; got {errors:?}"
+    );
     let archive_chunk = chunks
         .iter()
-        .find(|c| c.metadata.source_type == "filesystem/archive")
+        .find(|c| c.metadata.source_type.as_ref() == "filesystem/archive")
         .unwrap_or_else(|| {
             panic!(
                 ".{ext} must be UNPACKED (a filesystem/archive chunk); got source_types {:?}",
-                chunks.iter().map(|c| c.metadata.source_type.as_str()).collect::<Vec<_>>()
+                chunks
+                    .iter()
+                    .map(|c| c.metadata.source_type.as_ref())
+                    .collect::<Vec<_>>()
             )
         });
     assert!(
@@ -138,8 +147,10 @@ fn artifact_extension_match_is_case_insensitive() {
     // is_openpack_archive_ext folds case, so an uppercase `.WHL` must route too.
     let (_dir, chunks, _errors) = scan_named("WHL", &secret_zip(ENTRY));
     assert!(
-        chunks.iter().any(|c| c.metadata.source_type == "filesystem/archive"
-            && c.data.contains(SECRET)),
+        chunks
+            .iter()
+            .any(|c| c.metadata.source_type.as_ref() == "filesystem/archive"
+                && c.data.contains(SECRET)),
         "an uppercase .WHL extension must still route to the archive extractor"
     );
 }
@@ -149,7 +160,7 @@ fn whl_chunk_path_uses_archive_double_slash_separator() {
     let (_dir, chunks, _errors) = scan_named("whl", &secret_zip("META-INF/MANIFEST.MF"));
     let chunk = chunks
         .iter()
-        .find(|c| c.metadata.source_type == "filesystem/archive")
+        .find(|c| c.metadata.source_type.as_ref() == "filesystem/archive")
         .expect("whl unpacked");
     assert!(
         chunk
@@ -166,7 +177,10 @@ fn whl_chunk_path_uses_archive_double_slash_separator() {
 fn war_with_multiple_entries_all_surface() {
     let secret2 = "KEYHOG_WAR_SECOND_SENTINEL_b71d";
     let zip = zip_with_entries(&[
-        ("WEB-INF/web.xml", format!("<db-pass>{SECRET}</db-pass>").as_bytes()),
+        (
+            "WEB-INF/web.xml",
+            format!("<db-pass>{SECRET}</db-pass>").as_bytes(),
+        ),
         (
             "WEB-INF/classes/application.properties",
             format!("token={secret2}").as_bytes(),
@@ -175,11 +189,17 @@ fn war_with_multiple_entries_all_surface() {
     let (_dir, chunks, _errors) = scan_named("war", &zip);
     let archive: String = chunks
         .iter()
-        .filter(|c| c.metadata.source_type == "filesystem/archive")
+        .filter(|c| c.metadata.source_type.as_ref() == "filesystem/archive")
         .map(|c| c.data.to_string())
         .collect();
-    assert!(archive.contains(SECRET), "first WAR entry secret must surface");
-    assert!(archive.contains(secret2), "second WAR entry secret must surface");
+    assert!(
+        archive.contains(SECRET),
+        "first WAR entry secret must surface"
+    );
+    assert!(
+        archive.contains(secret2),
+        "second WAR entry secret must surface"
+    );
 }
 
 #[test]
@@ -188,11 +208,15 @@ fn deeply_nested_war_entry_path_surfaces() {
     let (_dir, chunks, _errors) = scan_named("war", &secret_zip(entry));
     let chunk = chunks
         .iter()
-        .find(|c| c.metadata.source_type == "filesystem/archive")
+        .find(|c| c.metadata.source_type.as_ref() == "filesystem/archive")
         .expect("war unpacked");
     assert!(chunk.data.contains(SECRET));
     assert!(
-        chunk.metadata.path.as_deref().is_some_and(|p| p.contains(entry)),
+        chunk
+            .metadata
+            .path
+            .as_deref()
+            .is_some_and(|p| p.contains(entry)),
         "a deep entry path must be preserved; got {:?}",
         chunk.metadata.path
     );
@@ -206,7 +230,7 @@ fn whl_secret_is_archive_chunk_not_raw_binary() {
     let carriers: Vec<&str> = chunks
         .iter()
         .filter(|c| c.data.contains(SECRET))
-        .map(|c| c.metadata.source_type.as_str())
+        .map(|c| c.metadata.source_type.as_ref())
         .collect();
     assert!(!carriers.is_empty(), "the secret must be found at all");
     assert!(
@@ -225,11 +249,16 @@ fn binary_entry_in_whl_surfaces_as_archive_binary() {
     let zip = zip_with_entries(&[("native/lib.so", &body)]);
     let (_dir, chunks, _errors) = scan_named("whl", &zip);
     assert!(
-        chunks.iter().any(|c| c.metadata.source_type == "filesystem/archive-binary"
-            && c.data.contains(SECRET)),
+        chunks.iter().any(
+            |c| c.metadata.source_type.as_ref() == "filesystem/archive-binary"
+                && c.data.contains(SECRET)
+        ),
         "a binary entry's printable secret must surface as filesystem/archive-binary; \
          got source_types {:?}",
-        chunks.iter().map(|c| c.metadata.source_type.as_str()).collect::<Vec<_>>()
+        chunks
+            .iter()
+            .map(|c| c.metadata.source_type.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -240,8 +269,10 @@ fn realistic_nupkg_appsettings_secret_surfaces() {
     let zip = zip_with_entries(&[(entry, body.as_bytes())]);
     let (_dir, chunks, _errors) = scan_named("nupkg", &zip);
     assert!(
-        chunks.iter().any(|c| c.metadata.source_type == "filesystem/archive"
-            && c.data.contains(SECRET)),
+        chunks
+            .iter()
+            .any(|c| c.metadata.source_type.as_ref() == "filesystem/archive"
+                && c.data.contains(SECRET)),
         "a NuGet appsettings.json secret must surface from the unpacked package"
     );
 }
@@ -256,9 +287,14 @@ fn non_zip_named_whl_produces_no_archive_chunk() {
     let junk: Vec<u8> = (0u8..=255).cycle().take(2048).collect();
     let (_dir, chunks, _errors) = scan_named("whl", &junk);
     assert!(
-        chunks.iter().all(|c| c.metadata.source_type != "filesystem/archive"),
+        chunks
+            .iter()
+            .all(|c| c.metadata.source_type.as_ref() != "filesystem/archive"),
         "a non-zip .whl must not yield a filesystem/archive chunk; got {:?}",
-        chunks.iter().map(|c| c.metadata.source_type.as_str()).collect::<Vec<_>>()
+        chunks
+            .iter()
+            .map(|c| c.metadata.source_type.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -274,7 +310,9 @@ fn non_zip_named_whl_does_not_panic_and_completes() {
 fn empty_text_named_whl_yields_no_archive_chunk() {
     let (_dir, chunks, _errors) = scan_named("whl", b"");
     assert!(
-        chunks.iter().all(|c| c.metadata.source_type != "filesystem/archive"),
+        chunks
+            .iter()
+            .all(|c| c.metadata.source_type.as_ref() != "filesystem/archive"),
         "an empty .whl is not a valid zip and must not produce an archive chunk"
     );
 }

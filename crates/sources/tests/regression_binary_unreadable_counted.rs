@@ -136,7 +136,7 @@ fn capped_binary_read_surfaces_truncation_error_and_scans_prefix() {
     );
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "binary:strings"
+            chunk.metadata.source_type.as_ref() == "binary:strings"
                 && chunk
                     .data
                     .contains("KEYHOG_BINARY_TRUNCATED_PREFIX_SECRET_1234567890")

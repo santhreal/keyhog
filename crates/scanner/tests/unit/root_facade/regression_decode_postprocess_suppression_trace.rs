@@ -22,7 +22,8 @@ impl Decoder for ReversePlaceholderDecoder {
         vec![Chunk {
             data: SensitiveString::from(format!("decoded = \"{REVERSED_EXAMPLE_CREDENTIAL}\"")),
             metadata: ChunkMetadata {
-                source_type: format!("{}/postprocess-reverse/reverse", chunk.metadata.source_type),
+                source_type: format!("{}/postprocess-reverse/reverse", chunk.metadata.source_type)
+                    .into(),
                 path: chunk.metadata.path.clone(),
                 ..Default::default()
             },

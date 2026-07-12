@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "CENSUS_API_KEY=f009fEXAMPLEEXAMPLE8028e"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# CENSUS_API_KEY=f009f7236f6fb315ba5bcbffbb3a884b68b8028e  # gov"
+credential = "f009f7236f6fb315ba5bcbffbb3a884b68b8028e"
+reason = "Commented-out config; the = form surfaces the 40-hex key (keyword-anchored, unlike a bare hex-digest which the digest gate would drop)."

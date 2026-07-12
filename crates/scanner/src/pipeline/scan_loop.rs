@@ -4,6 +4,9 @@ pub(crate) fn is_within_hex_context(data: &str, match_start: usize, match_end: u
     if !valid_match_bounds(data, match_start, match_end) {
         return false;
     }
+    // SAFETY: valid_match_bounds() on line 4 checks match_end > match_start,
+    // is_char_boundary(match_start), and is_char_boundary(match_end), so this
+    // slice is guaranteed in-bounds and UTF-8-aligned.
     let matched = &data[match_start..match_end];
     // Cheap rejects FIRST. The earlier flow always walked the
     // matched-string to count hex digits before checking the length
@@ -59,6 +62,11 @@ fn surrounding_hex_context(data: &str, match_start: usize, match_end: usize) -> 
         crate::engine::ceil_char_boundary(data, end)
     };
     (
+        // SAFETY: context_start = floor_char_boundary(data, ...) <= match_start
+        // (floor never exceeds its input); match_start is char-boundary-checked
+        // by valid_match_bounds before surrounding_hex_context is reached.
+        // context_end = ceil_char_boundary(data, min(match_end + R, data.len()))
+        // so context_end <= data.len() and is_char_boundary(context_end).
         &data[context_start..match_start],
         &data[match_end..context_end],
     )

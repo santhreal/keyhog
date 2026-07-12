@@ -19,6 +19,8 @@ import platform
 import re
 import shutil
 import subprocess
+from dataclasses import replace
+from functools import lru_cache
 
 from .schema import Host
 
@@ -104,8 +106,12 @@ def _gpu() -> tuple[str, int]:
     return (name, vram)
 
 
-def capture() -> Host:
-    """Probe the current host into a :class:`Host`. Never raises."""
+@lru_cache(maxsize=1)
+def _capture() -> Host:
+    """Probe the current host ONCE per process. Host hardware is invariant, but
+    the probes spawn nvidia-smi (10s timeout) + sysctl and re-read /proc, and a
+    perf-tier matrix asks for the host for every RunResult (build_result,
+    _unavailable_result, results_dir) — dozens of redundant probes without this."""
     gpu_name, gpu_vram = _gpu()
     return Host(
         hostname_hash=_hostname_hash(),
@@ -117,6 +123,12 @@ def capture() -> Host:
         gpu=gpu_name,
         gpu_vram_mb=gpu_vram,
     )
+
+
+def capture() -> Host:
+    """Probe the current host into a :class:`Host`. Never raises. Returns a fresh
+    copy of the cached probe so a caller mutating its Host can't poison others."""
+    return replace(_capture())
 
 
 if __name__ == "__main__":

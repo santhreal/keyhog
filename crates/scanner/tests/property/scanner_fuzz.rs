@@ -33,6 +33,8 @@ use std::sync::LazyLock;
 fn fuzz_detectors() -> Vec<DetectorSpec> {
     vec![
         DetectorSpec {
+            kind: Default::default(),
+            entropy_floor: Vec::new(),
             tests: Vec::new(),
             id: "fuzz-grouped".into(),
             name: "Fuzz Grouped".into(),
@@ -51,6 +53,8 @@ fn fuzz_detectors() -> Vec<DetectorSpec> {
             ..Default::default()
         },
         DetectorSpec {
+            kind: Default::default(),
+            entropy_floor: Vec::new(),
             tests: Vec::new(),
             id: "fuzz-plain".into(),
             name: "Fuzz Plain".into(),

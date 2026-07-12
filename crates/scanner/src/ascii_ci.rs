@@ -293,17 +293,145 @@ pub(crate) fn ci_find_at(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if n == 0 || haystack.len() < n {
         return None;
     }
-    let first_lower = needle[0].to_ascii_lowercase();
-    let first_upper = needle[0].to_ascii_uppercase();
-    for start in memchr::memchr2_iter(first_lower, first_upper, haystack) {
-        if start + n > haystack.len() {
-            break;
+    // Take the first (lowest-offset) match from the shared rare-byte-anchored
+    // scan. Anchoring the SIMD skim on the needle's RAREST byte (not `needle[0]`)
+    // is the O(n·m) first-byte-DoS defense: a 1 MiB run of `a` against needle
+    // `api_key` would otherwise make EVERY offset a candidate (~170ms observed
+    // in the multiline keyword gate). One loop owner in [`ci_find_iter`].
+    ci_find_iter(haystack, needle).next()
+}
+
+/// Index of the needle's statistically rarest byte, used to anchor the
+/// case-insensitive `memchr2` skim on a byte uncommon in real text so a
+/// repetitive/adversarial haystack yields few candidate windows (the O(n·m)
+/// first-byte-anchor DoS defense — see [`ci_find_at`]). Case is folded (`x`/`X`
+/// share a rank) because the skim matches both. Ties resolve to the earliest
+/// index for determinism. Non-empty needle is a precondition (callers check).
+#[inline]
+fn rarest_byte_index(needle: &[u8]) -> usize {
+    let mut best = 0usize;
+    let mut best_rank = u16::MAX;
+    let mut i = 0usize;
+    while i < needle.len() {
+        let rank = ascii_ci_frequency_rank(needle[i]);
+        if rank < best_rank {
+            best_rank = rank;
+            best = i;
         }
-        if haystack[start..start + n].eq_ignore_ascii_case(needle) {
-            return Some(start);
-        }
+        i += 1;
     }
-    None
+    best
+}
+
+/// Coarse text+source byte-frequency rank: HIGHER = more common, so the
+/// rarest-byte anchor in [`rarest_byte_index`] picks the LOWEST-ranked needle
+/// byte. Case-folded. Only the ORDER matters (separators/digits/rare letters
+/// must rank below common letters), not the exact values, so an anchor lands
+/// on a byte a repetitive buffer is unlikely to carry. ONE owner for the
+/// ordering so the two callers cannot drift.
+#[inline]
+const fn ascii_ci_frequency_rank(b: u8) -> u16 {
+    match b.to_ascii_lowercase() {
+        b' ' => 255,
+        b'e' => 200,
+        b't' => 190,
+        b'a' => 180,
+        b'o' => 175,
+        b'i' => 170,
+        b'n' => 165,
+        b's' => 160,
+        b'r' => 155,
+        b'h' => 150,
+        b'l' => 145,
+        b'd' => 140,
+        b'c' => 135,
+        b'u' => 130,
+        b'm' => 125,
+        b'f' => 120,
+        b'p' => 115,
+        b'g' => 110,
+        b'w' => 105,
+        b'y' => 100,
+        b'b' => 95,
+        b'v' => 90,
+        b'k' => 60,
+        b'x' => 45,
+        b'j' => 40,
+        b'q' => 35,
+        b'z' => 30,
+        b'0'..=b'9' => 50,
+        // Underscore, dash, dot, braces, and every other separator/punctuation
+        // byte: the rarest class, so a keyword like `api_key` anchors on `_`.
+        _ => 10,
+    }
+}
+
+/// Iterator over EVERY start offset where `needle` occurs case-insensitively in
+/// `haystack`, in ascending order, sharing [`ci_find_at`]'s rarest-byte
+/// `memchr2` anchor so a repetitive/adversarial haystack cannot force the
+/// O(n·m) first-byte-anchor blowup. Windows may overlap; an empty needle (or a
+/// needle longer than the haystack) yields nothing. This is the ONE owner of
+/// the case-insensitive scan loop — [`ci_find_at`] takes its first element.
+#[inline]
+pub(crate) fn ci_find_iter<'h, 'n>(haystack: &'h [u8], needle: &'n [u8]) -> CiMatches<'h, 'n> {
+    let anchor = if needle.is_empty() {
+        0
+    } else {
+        rarest_byte_index(needle)
+    };
+    let (a_lower, a_upper) = needle
+        .get(anchor)
+        .map(|&b| (b.to_ascii_lowercase(), b.to_ascii_uppercase()))
+        .unwrap_or((0, 0));
+    CiMatches {
+        haystack,
+        needle,
+        anchor,
+        a_lower,
+        a_upper,
+        pos: 0,
+    }
+}
+
+/// Rare-byte-anchored case-insensitive match iterator; see [`ci_find_iter`].
+pub(crate) struct CiMatches<'h, 'n> {
+    haystack: &'h [u8],
+    needle: &'n [u8],
+    anchor: usize,
+    a_lower: u8,
+    a_upper: u8,
+    pos: usize,
+}
+
+impl Iterator for CiMatches<'_, '_> {
+    type Item = usize;
+
+    #[inline]
+    fn next(&mut self) -> Option<usize> {
+        let n = self.needle.len();
+        if n == 0 || self.haystack.len() < n {
+            return None;
+        }
+        while self.pos <= self.haystack.len() {
+            let rel = memchr::memchr2(self.a_lower, self.a_upper, &self.haystack[self.pos..])?;
+            let hit = self.pos + rel;
+            // Advance past this anchor byte so the next call resumes after it —
+            // consecutive/overlapping matches each surface their own anchor hit.
+            self.pos = hit + 1;
+            let Some(start) = hit.checked_sub(self.anchor) else {
+                // Anchor hit too near the buffer start to form a full window.
+                continue;
+            };
+            if start + n > self.haystack.len() {
+                // Window runs past the end; anchor hits only grow, so we are done.
+                return None;
+            }
+            if self.haystack[start..start + n].eq_ignore_ascii_case(self.needle) {
+                return Some(start);
+            }
+        }
+        None
+    }
 }
 
 /// True when `path` (POSIX or Windows shape) contains the path segment

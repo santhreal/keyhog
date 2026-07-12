@@ -50,17 +50,11 @@ pub(crate) fn terminal_clear_line_prefix(is_tty: bool) -> &'static str {
 }
 
 pub(crate) fn for_stdout() -> Palette {
-    terminal_palette(
-        std::io::stdout().is_terminal(),
-        std::env::var_os("NO_COLOR").is_some(),
-    )
+    terminal_palette(std::io::stdout().is_terminal(), no_color_requested())
 }
 
 pub(crate) fn for_stderr() -> Palette {
-    terminal_palette(
-        std::io::stderr().is_terminal(),
-        std::env::var_os("NO_COLOR").is_some(),
-    )
+    terminal_palette(std::io::stderr().is_terminal(), no_color_requested())
 }
 
 pub(crate) fn pass(label: &str, palette: &Palette) -> String {
@@ -110,10 +104,22 @@ pub(crate) fn paint(text: String, color_code: &str, color: bool) -> String {
 }
 
 /// Whether the operator requested no color via the `NO_COLOR` convention.
-/// Centralized here (an env-read-allowlisted file) so call sites — e.g. the
-/// orchestrator progress ticker — never read the environment directly.
+/// Centralized here (an env-read-allowlisted file) so call sites, e.g. the
+/// orchestrator progress ticker, never read the environment directly.
+///
+/// Follows the [no-color.org](https://no-color.org) contract exactly: the
+/// variable disables color only when it is present AND non-empty. An empty
+/// `NO_COLOR=` (how a wrapper commonly clears an inherited value) must NOT
+/// suppress color; `is_some()` alone would wrongly treat that as opt-out.
 pub(crate) fn no_color_requested() -> bool {
-    std::env::var_os("NO_COLOR").is_some()
+    no_color_from_env(std::env::var_os("NO_COLOR").as_deref())
+}
+
+/// Pure no-color decision over a raw `NO_COLOR` value, split out so the
+/// spec rule is unit-testable without mutating the process-global environment:
+/// disable color iff the variable is present AND non-empty.
+pub(crate) fn no_color_from_env(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some_and(|value| !value.is_empty())
 }
 
 /// Unified console finding output formatting for diagnostic/interactive CLI subcommands.
@@ -158,9 +164,24 @@ pub(crate) fn write_diagnostic_finding<W: std::io::Write>(
         Some(confidence) => format!(" ({confidence:.2})"),
         None => String::new(),
     };
+    // Severity text comes from the one canonical table (`Severity::as_str`),
+    // uppercased so watch / stream / scan all render severity identically.
+    // `{:?}` here diverged for `ClientSafe` ("ClientSafe" vs "CLIENT-SAFE").
     writeln!(
         w,
-        "{} {} {}{} {:?}{}  {}",
-        prefix, detector_id, file_path, line_str, severity, conf_str, credential_redacted
+        "{} {} {}{} {}{}  {}",
+        prefix,
+        detector_id,
+        file_path,
+        line_str,
+        severity.as_str().to_uppercase(),
+        conf_str,
+        credential_redacted
     )
 }
+
+// Unit tests for this module live in `crates/cli/tests/unit/style.rs`, which
+// white-box-includes this file via `#[path]` and can reach its private items
+// (e.g. `no_color_from_env`, `ANSI`, `PLAIN`). No inline `#[cfg(test)] mod`
+// block here: the `#[path]` include would try to resolve it as a source file
+// and break, and the KH-GAP-004 gate forbids inline test blocks in src anyway.

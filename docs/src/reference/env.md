@@ -8,7 +8,7 @@ every other knob come from exactly two places:
 2. a single `.keyhog.toml` (see [Configuration](./configuration.md)),
 
 with **CLI flags** as the per-invocation override on top. There is no
-`KEYHOG_*` behavior knob and no environment override tier — so the same repo
+`KEYHOG_*` behavior knob and no environment override tier, so the same repo
 scans identically on every machine, regardless of shell profile or CI
 environment. A CI gate (`production_env_reads_stay_on_the_allowlist`) fails the
 build if shipped code reads any environment variable outside the small allowlist
@@ -33,8 +33,8 @@ These are read by the installer, not by the scanner.
 |-------------------|---------------|--------|
 | `NO_COLOR`        | (unset)       | Honored per [no-color.org](https://no-color.org): if set, all ANSI styling is disabled. |
 | `TERM`, `COLORTERM` | (set by terminal) | Read only to detect terminal color capability for the human reporter. |
-| `PATH`            | (OS)          | Used when locating trusted system binaries (KeyHog never trusts a bare `PATH` lookup for credential-handling tools — see the safe-binary resolver). |
-| `XDG_RUNTIME_DIR` | (login session) | Preferred daemon socket location: `$XDG_RUNTIME_DIR/keyhog.sock` (falls back to `~/.cache/keyhog/server.sock`). The exact path is overridable per-process with the `daemon start/stop/status --socket` and `scan --daemon-socket` CLI flags — there is no `KEYHOG_*` socket env var. |
+| `PATH`            | (OS)          | Used when locating trusted system binaries (KeyHog never trusts a bare `PATH` lookup for credential-handling tools; see the safe-binary resolver). |
+| `XDG_RUNTIME_DIR` | (login session) | Preferred daemon socket location: `$XDG_RUNTIME_DIR/keyhog.sock` (falls back to `~/.cache/keyhog/server.sock`). The exact path is overridable per-process with the `daemon start/stop/status --socket` and `scan --daemon-socket` CLI flags; there is no `KEYHOG_*` socket env var. |
 | `RUST_LOG`        | `keyhog=warn` | Tracing filter. `keyhog=debug` for verbose detector/suppression telemetry; `keyhog::routing=trace` for per-chunk backend selection. |
 | `RUST_BACKTRACE`  | (unset)       | Standard Rust backtrace control on panic (`1` short, `full` full). |
 
@@ -50,7 +50,7 @@ custom endpoint without an explicit opt-in flag.
 | `GOOGLE_OAUTH_ACCESS_TOKEN`, `GCS_BEARER_TOKEN` | Bearer token for `--gcs-bucket` JSON-API listing/downloads (the Google token wins when both are set). |
 
 Repository-collection tokens (GitHub / GitLab / Bitbucket) and the scan target
-itself are **CLI-only** — `--github-token`, `--gitlab-token`, `--bitbucket-token`,
+itself are **CLI-only**: `--github-token`, `--gitlab-token`, `--bitbucket-token`,
 `--source`, `--s3-bucket`, `--gcs-bucket`, etc. KeyHog does not register sources
 or read forge tokens from ambient environment.
 
@@ -90,7 +90,7 @@ For any setting, the highest source present wins:
 2. `.keyhog.toml` (discovered at the scan root, or `--config <path>`)
 3. compiled default
 
-Environment variables are **not** in this list for behavior — by design.
+Environment variables are **not** in this list for behavior, by design.
 
 ## What KeyHog deliberately does NOT read
 
@@ -103,6 +103,6 @@ Environment variables are **not** in this list for behavior — by design.
   ignored. Use `--proxy`, `[http] proxy`, `--insecure`, or
   `[http] insecure_tls` explicitly.
 - Ambient forge tokens or source-selecting variables (`SLACK_TOKEN`,
-  `S3_BUCKET`, …) — sources and their credentials are explicit CLI flags.
+  `S3_BUCKET`, …): sources and their credentials are explicit CLI flags.
 - Anything named `KEYHOG_API_KEY` / `KEYHOG_TOKEN` / `KEYHOG_TELEMETRY_*`. There
   is no telemetry and no service to authenticate to; findings stay local.

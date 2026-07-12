@@ -101,7 +101,6 @@ fn validate_simdsieve_prefixes(spec: &DetectorSpec, issues: &mut Vec<QualityIssu
 fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     for (name, value) in [
         ("min_len", spec.min_len),
-        ("max_len", spec.max_len),
         ("keyword_free_min_len", spec.keyword_free_min_len),
     ] {
         if value == Some(0) {
@@ -109,19 +108,6 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 "{name} must be greater than 0 when present; use omission to inherit the path default"
             )));
         }
-    }
-    if let (Some(minimum), Some(maximum)) = (spec.min_len, spec.max_len) {
-        if minimum > maximum {
-            issues.push(QualityIssue::Error(format!(
-                "min_len {minimum} must not exceed max_len {maximum}"
-            )));
-        }
-    }
-    if spec.max_len.is_some() && spec.kind != DetectorKind::Phase2Generic {
-        issues.push(QualityIssue::Error(
-            "max_len currently applies only to kind = \"phase2-generic\"; put a regex-backed detector's ceiling in its pattern repetition bound"
-                .to_string(),
-        ));
     }
     if let Some(mc) = spec.min_confidence {
         if !(0.0..=1.0).contains(&mc) {

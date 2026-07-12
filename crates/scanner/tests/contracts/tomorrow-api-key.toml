@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "tomorrow      _     _   _     _              _      _    KEY '   \"' :'='       \"'     ' 4n3FhEXAMPLEEXAMPLER1e9S"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# TOMORROW_API_KEY=4n3FhslpA2JoPccqUu2r5DQNogrUqgGidmASlLTHuAR1e9S  # weather"
+credential = "4n3FhslpA2JoPccqUu2r5DQNogrUqgGidmASlLTHuAR1e9S"
+reason = "Commented-out config key; TOMORROW_API_KEY keyword + value intact inside the comment."

@@ -31,7 +31,9 @@ fn surfaces(text: &str, token: &str) -> bool {
     let s = shared();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "gitlab.env");
-    s.scan(&chunk).into_iter().any(|m| m.credential.to_string().contains(token))
+    s.scan(&chunk)
+        .into_iter()
+        .any(|m| m.credential.to_string().contains(token))
 }
 
 /// Detector ids of every finding produced for `text` (unfiltered).
@@ -39,7 +41,10 @@ fn fired_ids(text: &str) -> Vec<String> {
     let s = shared();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "gitlab.env");
-    s.scan(&chunk).into_iter().map(|m| m.detector_id.to_string()).collect()
+    s.scan(&chunk)
+        .into_iter()
+        .map(|m| m.detector_id.to_string())
+        .collect()
 }
 
 // ── new prefixes: the token surfaces ─────────────────────────────────────────
@@ -127,7 +132,9 @@ fn glagent_attributes_to_agent_detector() {
 #[test]
 fn gloas_attributes_to_oauth_secret_detector() {
     let t = "gloas-Jb3Mn7Pq2Rs8Tv5Wx1Yz4Ac6D";
-    assert!(fired_ids(t).iter().any(|id| id == "gitlab-oauth-application-secret"));
+    assert!(fired_ids(t)
+        .iter()
+        .any(|id| id == "gitlab-oauth-application-secret"));
 }
 
 #[test]
@@ -139,13 +146,17 @@ fn glsoat_attributes_to_scim_detector() {
 #[test]
 fn glimt_attributes_to_incoming_mail_detector() {
     let t = "glimt-Ld5Pp9Rs4Tu1Vx7Za3Yc6Ce8F";
-    assert!(fired_ids(t).iter().any(|id| id == "gitlab-incoming-mail-token"));
+    assert!(fired_ids(t)
+        .iter()
+        .any(|id| id == "gitlab-incoming-mail-token"));
 }
 
 #[test]
 fn glffct_attributes_to_feature_flags_detector() {
     let t = "glffct-Me6Qq1St5Uv2Wy8Ab4Zd7Df9G";
-    assert!(fired_ids(t).iter().any(|id| id == "gitlab-feature-flags-client-token"));
+    assert!(fired_ids(t)
+        .iter()
+        .any(|id| id == "gitlab-feature-flags-client-token"));
 }
 
 #[test]
@@ -180,7 +191,8 @@ fn glffct_token_does_not_misattribute_to_feed_detector() {
     let t = "glffct-Me6Qq1St5Uv2Wy8Ab4Zd7Df9G";
     let ids = fired_ids(t);
     assert!(
-        ids.iter().any(|id| id == "gitlab-feature-flags-client-token"),
+        ids.iter()
+            .any(|id| id == "gitlab-feature-flags-client-token"),
         "glffct- must fire its own detector; got {ids:?}"
     );
     assert!(
@@ -192,8 +204,14 @@ fn glffct_token_does_not_misattribute_to_feed_detector() {
 #[test]
 fn bare_gitlab_word_fires_no_gitlab_token_detector() {
     let ids = fired_ids("gitlab is a great platform for devops pipelines");
-    let gl = ["gitlab-agent-token", "gitlab-oauth-application-secret", "gitlab-scim-token",
-              "gitlab-incoming-mail-token", "gitlab-feature-flags-client-token", "gitlab-feed-token"];
+    let gl = [
+        "gitlab-agent-token",
+        "gitlab-oauth-application-secret",
+        "gitlab-scim-token",
+        "gitlab-incoming-mail-token",
+        "gitlab-feature-flags-client-token",
+        "gitlab-feed-token",
+    ];
     assert!(
         !ids.iter().any(|id| gl.contains(&id.as_str())),
         "a bare 'gitlab' mention must not fire any new GitLab token detector; got {ids:?}"

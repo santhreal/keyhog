@@ -157,15 +157,23 @@ fn valid_escape_at_value_end_decodes_boundary() {
 }
 
 #[test]
-fn trailing_bare_percent_after_valid_escape_emits_no_url_layer() {
+fn trailing_bare_percent_after_valid_escape_decodes_valid_keeps_literal_percent() {
     // `%41%` = a valid escape ('A') then a bare, truncated trailing `%`. The
-    // strict decoder aborts the WHOLE candidate at the truncated `%` (returns
-    // Err), so no url layer is emitted for this all-or-nothing failure.
+    // decoder is BEST-EFFORT, NOT all-or-nothing: a `%` without two following
+    // hex digits is copied through as a LITERAL byte, not treated as an abort
+    // (decode/url.rs lines 264-266 / 293-298 — earlier code returned Err here
+    // and discarded the WHOLE candidate, losing any real secret it carried;
+    // that all-or-nothing behavior was deliberately replaced so `%41` still
+    // recovers 'A'). `url_decode` only refuses a candidate with NO valid `%XX`
+    // escape anywhere (see `all_non_hex_percent_escape_emits_no_url_layer`).
+    // So `%41` → 'A' and the trailing bare `%` survives verbatim: exactly one
+    // url layer whose bytes are `token = "A%"`.
     let layers = url_layers("token = \"%41%\"");
     assert_eq!(
-        layers.len(),
-        0,
-        "a truncated trailing '%' must abort the decode (zero url layers); got {layers:?}"
+        layers,
+        vec!["token = \"A%\"".to_string()],
+        "best-effort decode: valid %41 -> 'A', trailing bare '%' preserved as a literal byte \
+         (one url layer, not an abort); got {layers:?}"
     );
 }
 

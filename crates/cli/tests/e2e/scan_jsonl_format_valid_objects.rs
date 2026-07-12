@@ -23,10 +23,22 @@ fn scan_jsonl_format_valid_objects() {
         .expect("spawn");
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let line = stdout.lines().next().expect("one line");
-    let obj = serde_json::from_str::<serde_json::Value>(line).expect("json object");
+    // Law 6: pin the actual detector_id VALUE across the emitted lines, not just
+    // that the key is present. The planted AWS key must surface as aws-access-key.
+    let ids: Vec<String> = stdout
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| {
+            serde_json::from_str::<serde_json::Value>(l)
+                .expect("each jsonl line must be a json object")
+                .get("detector_id")
+                .and_then(|v| v.as_str())
+                .expect("each jsonl object must have a detector_id")
+                .to_string()
+        })
+        .collect();
     assert!(
-        obj.get("detector_id").is_some(),
-        "jsonl object must have detector_id: {obj}"
+        ids.iter().any(|id| id == "aws-access-key"),
+        "planted AWS key must surface as aws-access-key; got {ids:?}"
     );
 }

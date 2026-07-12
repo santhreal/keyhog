@@ -4,8 +4,26 @@
 //! reassembled same-path candidate, stamping the trigger fragment's real
 //! source line+offset. `pub(crate)` so `post_process_matches_inner` (still in
 //! `scan_postprocess.rs`) can call it across the module boundary. Pure move.
-use super::CompiledScanner;
+use super::{absolute_line, CompiledScanner};
 use keyhog_core::{Chunk, RawMatch};
+
+/// Minimum Shannon entropy and byte length a reassembled cross-chunk candidate
+/// must clear before it is worth a synthetic re-scan. ONE owner shared with the
+/// no-phase-1-hit reassembly path (`scan_no_hit_reassembly.rs`) so the two
+/// reassembly admission gates can never drift to different floors.
+pub(crate) const REASSEMBLY_MIN_ENTROPY: f64 = 3.0;
+pub(crate) const REASSEMBLY_MIN_VALUE_LEN: usize = 16;
+
+/// Wrap a reassembled credential value in the synthetic assignment the scanner
+/// re-scans (`reassembled_key = "<value>"`). ONE owner for the probe shape and
+/// its buffer sizing, shared with `scan_no_hit_reassembly.rs`.
+pub(crate) fn reassembly_probe_data(value: &str) -> String {
+    let mut data = String::with_capacity(value.len() + 24);
+    data.push_str("reassembled_key = \"");
+    data.push_str(value);
+    data.push('"');
+    data
+}
 
 impl CompiledScanner {
     pub(crate) fn scan_cross_chunk_fragments(
@@ -21,9 +39,7 @@ impl CompiledScanner {
             return;
         }
 
-        let Some(assign_re) = crate::shared_regexes::ASSIGN_RE.as_ref() else {
-            return;
-        };
+        let assign_re = &*crate::shared_regexes::ASSIGN_RE;
 
         for (line_idx, line) in chunk.data.lines().enumerate() {
             if crate::deadline::expired(deadline) {
@@ -42,7 +58,7 @@ impl CompiledScanner {
                     continue;
                 }
 
-                let fragment_line = chunk.metadata.base_line.saturating_add(line_idx + 1);
+                let fragment_line = absolute_line(chunk.metadata.base_line, line_idx + 1);
                 // Compute the trigger value's byte offset within chunk.data.
                 // `line` borrows from chunk.data so pointer arithmetic gives
                 // the line's offset; value_match.start() is offset within
@@ -66,11 +82,7 @@ impl CompiledScanner {
                 // trigger fragment produces. Captured before the move below
                 // so the reassembled finding's `file_path` can be stamped
                 // from it instead of inherited from `chunk.metadata.clone()`.
-                let fragment_path: Option<std::sync::Arc<str>> = chunk
-                    .metadata
-                    .path
-                    .as_ref()
-                    .map(|p| std::sync::Arc::from(p.as_str()));
+                let fragment_path: Option<std::sync::Arc<str>> = chunk.metadata.path.clone();
                 let fragment = crate::fragment_cache::SecretFragment {
                     prefix: crate::multiline::extract_prefix(var_name_match.as_str()),
                     var_name: var_name_match.as_str().to_string(),
@@ -86,14 +98,13 @@ impl CompiledScanner {
                     }
                     // `candidate` is `Zeroizing<String>` (kimi-wave1 fix).
                     let entropy = crate::pipeline::match_entropy(candidate.as_str().as_bytes());
-                    if entropy < 3.0 || candidate.len() < 16 {
+                    if entropy < REASSEMBLY_MIN_ENTROPY
+                        || candidate.len() < REASSEMBLY_MIN_VALUE_LEN
+                    {
                         continue;
                     }
 
-                    let mut synthetic_data = String::with_capacity(candidate.len() + 24);
-                    synthetic_data.push_str("reassembled_key = \"");
-                    synthetic_data.push_str(candidate.as_str());
-                    synthetic_data.push('"');
+                    let synthetic_data = reassembly_probe_data(candidate.as_str());
                     let synthetic_chunk = Chunk {
                         data: synthetic_data.into(),
                         metadata: chunk.metadata.clone(),
@@ -176,5 +187,55 @@ impl CompiledScanner {
         let has_assignment = memchr::memchr2(b'=', b':', data).is_some();
         let has_quote = memchr::memchr3(b'"', b'\'', b'`', data).is_some();
         has_assignment && has_quote
+    }
+}
+
+#[cfg(test)]
+mod reassembly_owner_tests {
+    use super::{reassembly_probe_data, REASSEMBLY_MIN_ENTROPY, REASSEMBLY_MIN_VALUE_LEN};
+
+    #[test]
+    fn floors_and_probe_shape_have_exact_values() {
+        // The single-owner floors. Both reassembly paths gate on these; if a future
+        // edit drifts one, this pins the intended values so the drift is caught.
+        assert_eq!(REASSEMBLY_MIN_ENTROPY, 3.0);
+        assert_eq!(REASSEMBLY_MIN_VALUE_LEN, 16);
+        // The synthetic probe wraps the value in the exact assignment the scanner
+        // re-scans — byte-for-byte, including an empty value (no panic).
+        assert_eq!(
+            reassembly_probe_data("AKIAIOSFODNN7EXAMPLE"),
+            "reassembled_key = \"AKIAIOSFODNN7EXAMPLE\""
+        );
+        assert_eq!(reassembly_probe_data(""), "reassembled_key = \"\"");
+        assert_eq!(
+            reassembly_probe_data("a b\tc"),
+            "reassembled_key = \"a b\tc\"",
+            "value is embedded verbatim, no escaping/trimming"
+        );
+    }
+
+    #[test]
+    fn no_hit_reassembly_path_reuses_the_single_owner() {
+        // ONE owner lock: the no-phase-1-hit reassembly path MUST import the shared
+        // floors + probe builder, never re-hardcode `3.0` / `< 16` / the probe
+        // string. Re-open-coding any of them here is exactly the drift Law "ONE
+        // PLACE" forbids, so this source-grep fails closed if a copy reappears.
+        let src = crate::testing::read_crate_source("src/engine/scan_no_hit_reassembly.rs");
+        assert!(
+            src.contains("REASSEMBLY_MIN_ENTROPY") && src.contains("REASSEMBLY_MIN_VALUE_LEN"),
+            "no-hit reassembly must gate on the shared floor constants"
+        );
+        assert!(
+            src.contains("reassembly_probe_data"),
+            "no-hit reassembly must build the probe via the shared owner"
+        );
+        assert!(
+            !src.contains("< 3.0") && !src.contains("entropy < 3.0") && !src.contains("len() < 16"),
+            "no-hit reassembly must not re-hardcode the entropy/length floors"
+        );
+        assert!(
+            !src.contains("reassembled_key = \\\""),
+            "no-hit reassembly must not re-open-code the synthetic probe string"
+        );
     }
 }

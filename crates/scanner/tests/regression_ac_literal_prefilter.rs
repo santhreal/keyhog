@@ -92,11 +92,11 @@ fn union_admits_aws_only_and_github_only_chunks() {
     // AWS keyword bytes AND a chunk carrying only the GitHub keyword bytes.
     let screen = AlphabetScreen::new(&union_targets());
     // Only 'K' (from AKIA) present, none of g/h/p/_.
-    assert_eq!(screen.screen(b"zzzKzzz"), true);
+    assert!(screen.screen(b"zzzKzzz"));
     // Only '_' and 'g'/'h'/'p' (from ghp_) present, no A/K/I.
-    assert_eq!(screen.screen(b"log_path"), true);
+    assert!(screen.screen(b"log_path"));
     // Disjoint chunk: 'w','o','r','d',' ','0','1' — none in the union alphabet.
-    assert_eq!(screen.screen(b"word 01"), false);
+    assert!(!(screen.screen(b"word 01")));
 }
 
 #[test]
@@ -104,9 +104,9 @@ fn chunk_with_no_detector_literal_bytes_is_screened_out() {
     // A clean, secret-free line whose bytes avoid the union alphabet entirely.
     let screen = AlphabetScreen::new(&union_targets());
     // 'z' (0x7A) filler and digits only.
-    assert_eq!(screen.screen(b"zzzzzz 1234567890 zzzzzz"), false);
+    assert!(!(screen.screen(b"zzzzzz 1234567890 zzzzzz")));
     // Uppercase near-miss of AKIA using non-member letters B,L,O,B.
-    assert_eq!(screen.screen(b"BLOB"), false);
+    assert!(!(screen.screen(b"BLOB")));
     // Cross-checked host-independent verdict.
     assert_eq!(
         assert_alphabet_prefilter_backend_parity(&union_targets(), b"zzzzzz 1234567890 zzzzzz"),
@@ -139,11 +139,11 @@ fn host_independent_reject_matches_scalar_cpu_fallback() {
 fn single_byte_target_and_non_target_bytes() {
     let screen = AlphabetScreen::new(&union_targets());
     // Single literal byte from a keyword -> admit.
-    assert_eq!(screen.screen(b"K"), true); // AKIA
-    assert_eq!(screen.screen(b"_"), true); // ghp_
-                                           // Single non-member byte -> reject.
-    assert_eq!(screen.screen(b"z"), false);
-    assert_eq!(screen.screen(b"0"), false);
+    assert!(screen.screen(b"K")); // AKIA
+    assert!(screen.screen(b"_")); // ghp_
+                                  // Single non-member byte -> reject.
+    assert!(!(screen.screen(b"z")));
+    assert!(!(screen.screen(b"0")));
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn screen_is_recall_safe_superset_of_case_sensitive_regex() {
         "{AWS_ACCESS_KEY}: folded lowercase twin must still be admitted"
     );
     // And the uppercase real prefix is likewise admitted.
-    assert_eq!(screen.screen(b"AKIA"), true);
+    assert!(screen.screen(b"AKIA"));
 }
 
 #[test]
@@ -167,9 +167,9 @@ fn asia_variant_keyword_admitted_and_disjoint_rejected() {
     // `aws-access-key` also anchors on the `ASIA` (temporary credential) keyword.
     let screen = AlphabetScreen::new(&["ASIA".to_string()]);
     // 'S' is unique to ASIA vs AKIA — must be admitted.
-    assert_eq!(screen.screen(b"xxSxx"), true);
+    assert!(screen.screen(b"xxSxx"));
     // A chunk with none of {A a S s I i} -> reject.
-    assert_eq!(screen.screen(b"grpht bdo 09"), false);
+    assert!(!(screen.screen(b"grpht bdo 09")));
 }
 
 #[test]
@@ -180,10 +180,10 @@ fn github_underscore_in_avx2_remainder_tail_admitted() {
     let screen = AlphabetScreen::new(&github_targets());
     let mut data = vec![b'z'; 40]; // 'z' is outside the ghp_ alphabet
     data[37] = b'_';
-    assert_eq!(screen.screen(&data), true);
+    assert!(screen.screen(&data));
     // Same length, no literal byte anywhere -> reject.
     let clean = vec![b'z'; 40];
-    assert_eq!(screen.screen(&clean), false);
+    assert!(!(screen.screen(&clean)));
     // Host-independent for the tail-admit case.
     assert_eq!(
         assert_alphabet_prefilter_backend_parity(&github_targets(), &data),
@@ -197,11 +197,11 @@ fn boundary_exactly_32_bytes_clean_rejected_hit_admitted() {
     let screen = AlphabetScreen::new(&union_targets());
     let clean = vec![b'z'; 32];
     assert_eq!(clean.len(), 32);
-    assert_eq!(screen.screen(&clean), false);
+    assert!(!(screen.screen(&clean)));
     // Literal byte 'A' (AKIA) at the final index of the 32-byte block -> admit.
     let mut hit = vec![b'z'; 32];
     hit[31] = b'A';
-    assert_eq!(screen.screen(&hit), true);
+    assert!(screen.screen(&hit));
 }
 
 #[test]
@@ -228,14 +228,14 @@ fn whitespace_and_digit_only_line_rejected() {
     // Space 0x20, tab 0x09, LF 0x0A, CR 0x0D and digits — none in the union
     // alphabet {A a K k I i G g H h P p _}.
     let screen = AlphabetScreen::new(&union_targets());
-    assert_eq!(screen.screen(b"   \t\n\r 1234567890  "), false);
+    assert!(!(screen.screen(b"   \t\n\r 1234567890  ")));
 }
 
 #[test]
 fn empty_chunk_is_rejected_on_every_backend() {
     let screen = AlphabetScreen::new(&union_targets());
-    assert_eq!(screen.screen(b""), false);
-    assert_eq!(screen.screen(&[]), false);
+    assert!(!(screen.screen(b"")));
+    assert!(!(screen.screen(&[])));
     // Backend-independent: empty short-circuits to `false` everywhere.
     assert_eq!(
         assert_alphabet_prefilter_backend_parity(&union_targets(), b""),
@@ -248,7 +248,7 @@ fn underscore_membership_exact_del_not_folded() {
     // `_` (0x5F) is a non-letter, so ONLY 0x5F is set for `github-classic-pat`;
     // its 0x20-flip 0x7F (DEL) must NOT be admitted — non-letters are never folded.
     let screen = AlphabetScreen::new(&github_targets());
-    assert_eq!(screen.screen(b"_"), true);
+    assert!(screen.screen(b"_"));
     assert_eq!(
         screen.screen(&[0x7Fu8]),
         false,

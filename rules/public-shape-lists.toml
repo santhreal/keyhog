@@ -1,0 +1,46 @@
+algorithms = [
+  "argon2",
+  "argon2d",
+  "argon2i",
+  "argon2id",
+  "bcrypt",
+  "scrypt",
+  "pbkdf2",
+]
+
+extensions = [
+  ".rs",
+  ".md",
+  ".json",
+  ".toml",
+  ".yaml",
+  ".yml",
+  ".c",
+  ".h",
+  ".hpp",
+  ".cpp",
+  ".py",
+  ".go",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".sh",
+  ".lock",
+  ".log",
+]
+
+html_events = [
+  "onblur",
+  "onchange",
+  "onclick",
+  "onerror",
+  "onfocus",
+  "oninput",
+  "onkeydown",
+  "onkeypress",
+  "onkeyup",
+  "onload",
+  "onmouseover",
+  "onsubmit",
+]

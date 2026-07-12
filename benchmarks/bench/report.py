@@ -68,11 +68,17 @@ def load_results(results_dir: pathlib.Path) -> list[RunResult]:
 
 
 def _default_config_id(scanner_name: str) -> str | None:
+    from .scanners import resolve_scanner
+
+    # Only an UNKNOWN scanner (a result file for an adapter no longer
+    # registered) legitimately has no resolvable default — tolerate that by
+    # returning None. Any other failure (a real bug in default_config) must
+    # propagate, never be swallowed into an arbitrary/tuned config pick.
     try:
-        from .scanners import resolve_scanner
-        return resolve_scanner(scanner_name).default_config().config_id
-    except Exception:
+        scanner = resolve_scanner(scanner_name)
+    except SystemExit:
         return None
+    return scanner.default_config().config_id
 
 
 def canonical_leaderboard(results: list[RunResult], corpus: str) -> list[RunResult]:
@@ -294,6 +300,90 @@ def render_gaps(results: list[RunResult], corpus: str) -> str:
     return render_recall_gap(results, corpus)
 
 
+# -- category recall (collapsed primary axis) ---------------------------
+
+
+def primary_category(raw: str) -> str:
+    """Collapse a CredData composite category label to its primary axis.
+
+    CredData labels a positive with a colon-joined multi-label
+    (``API:Anthropic API Key:Key``, ``Token:UUID``). Keying per_category on the
+    full string fragments the taxonomy into ~190 near-empty cells that hide
+    WHERE recall actually bleeds. The base credential class is the LAST atom by
+    CredData convention (``…:Key`` is a key, ``…:UUID`` a uuid), so that is the
+    single axis this dashboard groups on. One owner for the collapse so score,
+    report, and the gate never disagree on what "the Key bucket" means.
+    """
+    atom = (raw or "unknown").split(":")[-1].strip()
+    return atom or "unknown"
+
+
+def collapse_per_category(per_category: dict) -> dict[str, Outcome]:
+    """Sum every composite cell into its `primary_category` bucket."""
+    out: dict[str, Outcome] = {}
+    for raw, outcome in per_category.items():
+        prim = primary_category(raw)
+        acc = out.get(prim)
+        if acc is None:
+            out[prim] = Outcome(tp=outcome.tp, fp=outcome.fp, fn=outcome.fn)
+        else:
+            acc.tp += outcome.tp
+            acc.fp += outcome.fp
+            acc.fn += outcome.fn
+    return out
+
+
+def render_category_recall(results: list[RunResult], corpus: str) -> str:
+    """KeyHog recall per collapsed primary category, ranked by misses (FN).
+
+    The headline F1 hides that a few generic shapes carry almost all of the
+    misses. This table names them: for every primary CredData category it shows
+    KeyHog TP/FN and recall next to the best competitor's recall on the SAME
+    category, ordered by KeyHog's raw miss count so the biggest recall holes sit
+    at the top. This is the "where is recall actually lost" view.
+    """
+    rows = canonical_leaderboard(results, corpus)
+    by_scanner = {r.scanner.name: r for r in rows if r.available}
+    kh = by_scanner.get("keyhog")
+    if kh is None or not kh.detection.per_category:
+        return "_No keyhog per-category result for this corpus yet._"
+
+    kh_cats = collapse_per_category(kh.detection.per_category)
+    comp_cats = {
+        name: collapse_per_category(r.detection.per_category)
+        for name, r in by_scanner.items()
+        if name != "keyhog"
+    }
+
+    def best_competitor_recall(cat: str) -> tuple[str, float]:
+        best_name, best_rec = "", 0.0
+        for name, cats in comp_cats.items():
+            o = cats.get(cat)
+            if o is None:
+                continue
+            rec = o.recall()
+            if rec > best_rec:
+                best_name, best_rec = name, rec
+        return best_name, best_rec
+
+    ordered = sorted(kh_cats.items(), key=lambda kv: kv[1].fn, reverse=True)
+    out_lines = [
+        "| Category | KeyHog TP/FN | KeyHog recall | Best competitor recall | Miss share |",
+        "|---|---|---|---|---|",
+    ]
+    total_fn = sum(o.fn for o in kh_cats.values()) or 1
+    for cat, o in ordered:
+        if o.tp + o.fn == 0:
+            continue
+        bname, brec = best_competitor_recall(cat)
+        best_cell = f"{_name(bname)} {brec:.3f}" if bname else "—"
+        out_lines.append(
+            f"| `{cat}` | {o.tp}/{o.fn} | {o.recall():.3f} | {best_cell} | "
+            f"{o.fn / total_fn * 100:.1f}% |"
+        )
+    return "\n".join(out_lines)
+
+
 # -- per-detector calibration -------------------------------------------
 
 
@@ -384,10 +474,27 @@ def _markers(section: str) -> tuple[str, str]:
     return (f"<!-- BENCH:{section}:start -->", f"<!-- BENCH:{section}:end -->")
 
 
+def has_markers(text: str, section: str) -> bool:
+    """True iff both markers for ``section`` are present and well-ordered."""
+    start, end = _markers(section)
+    si = text.find(start)
+    ei = text.find(end)
+    return si != -1 and ei != -1 and ei >= si
+
+
+def missing_marker_sections(text: str, sections: list[str]) -> list[str]:
+    """Sections whose BENCH markers are absent from ``text`` (a README that
+    lost them). Under ``--check`` this is a hard error, not a silent pass: an
+    injection whose markers vanished would otherwise leave the text unchanged
+    and be reported as "already current"."""
+    return [s for s in sections if not has_markers(text, s)]
+
+
 def inject(text: str, section: str, body: str) -> str:
     """Replace content between the section's markers. If the markers are
-    absent, returns the text unchanged (caller decides whether that's an
-    error). Idempotent: same body -> identical output."""
+    absent, returns the text unchanged (caller must use
+    :func:`missing_marker_sections` to detect and reject that). Idempotent:
+    same body -> identical output."""
     start, end = _markers(section)
     si = text.find(start)
     ei = text.find(end)
@@ -405,16 +512,27 @@ def build_sections(results: list[RunResult], corpus: str) -> dict[str, str]:
     }
 
 
-def write_reports(results: list[RunResult], corpus: str,
-                  reports_dir: pathlib.Path) -> None:
+def report_files(results: list[RunResult], corpus: str) -> dict[str, str]:
+    """The canonical {filename: full markdown body} set the bench renders under
+    `reports/`. Single owner: `write_reports` (which writes them) and
+    `stale_report_paths` (the `--check` gate that asserts they're current) both
+    consume THIS, so the on-disk rollups and the staleness check can never
+    diverge — a byte-identical second dict was the exact drift risk this removes.
+    """
     sections = build_sections(results, corpus)
-    reports = {
+    return {
         "leaderboard.md": f"# Leaderboard - {corpus}\n\n{sections['leaderboard']}\n",
         "perf.md": f"# Performance\n\n{sections['perf']}\n",
         "recall-gap.md": f"# Recall gap dashboard - {corpus}\n\n{sections['gaps']}\n",
+        "category-recall.md": f"# Category recall dashboard - {corpus}\n\n"
+        f"{render_category_recall(results, corpus)}\n",
     }
+
+
+def write_reports(results: list[RunResult], corpus: str,
+                  reports_dir: pathlib.Path) -> None:
     reports_dir.mkdir(parents=True, exist_ok=True)
-    for name, body in reports.items():
+    for name, body in report_files(results, corpus).items():
         (reports_dir / name).write_text(body)
 
 
@@ -423,12 +541,7 @@ def stale_report_paths(
     corpus: str,
     reports_dir: pathlib.Path,
 ) -> list[pathlib.Path]:
-    sections = build_sections(results, corpus)
-    expected = {
-        "leaderboard.md": f"# Leaderboard - {corpus}\n\n{sections['leaderboard']}\n",
-        "perf.md": f"# Performance\n\n{sections['perf']}\n",
-        "recall-gap.md": f"# Recall gap dashboard - {corpus}\n\n{sections['gaps']}\n",
-    }
+    expected = report_files(results, corpus)
     stale = []
     for name, body in expected.items():
         path = reports_dir / name
@@ -461,6 +574,15 @@ def _main(argv: list[str] | None = None) -> int:
     if args.inject or args.check:
         readme = pathlib.Path(args.readme)
         original = readme.read_text() if readme.exists() else ""
+        if args.check:
+            absent = missing_marker_sections(original, list(sections))
+            if absent:
+                print(
+                    f"README is missing BENCH markers for: {', '.join(absent)} "
+                    f"(injection cannot run — restore the <!-- BENCH:*:start/end --> markers).",
+                    file=sys.stderr,
+                )
+                return 1
         updated = original
         for name, body in sections.items():
             updated = inject(updated, name, body)

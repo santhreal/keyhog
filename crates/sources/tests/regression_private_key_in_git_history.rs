@@ -49,7 +49,10 @@ Private-MAC: 8a1b2c3d4e5f60718293a4b5c6d7e8f901234567
         let source = GitHistorySource::new(repo.to_path_buf()).with_max_commits(10);
         let rows: Vec<_> = source.chunks().collect();
         let (chunk_refs, errors) = split_chunk_results(&rows);
-        assert!(errors.is_empty(), "fixture repo must not emit SourceError rows: {errors:?}");
+        assert!(
+            errors.is_empty(),
+            "fixture repo must not emit SourceError rows: {errors:?}"
+        );
         chunk_refs.into_iter().cloned().collect()
     }
 
@@ -57,7 +60,7 @@ Private-MAC: 8a1b2c3d4e5f60718293a4b5c6d7e8f901234567
     fn chunk_with<'a>(chunks: &'a [Chunk], needle: &str) -> Option<&'a Chunk> {
         chunks
             .iter()
-            .find(|c| c.metadata.source_type == "git-history" && c.data.contains(needle))
+            .find(|c| c.metadata.source_type.as_ref() == "git-history" && c.data.contains(needle))
     }
 
     #[test]
@@ -68,8 +71,14 @@ Private-MAC: 8a1b2c3d4e5f60718293a4b5c6d7e8f901234567
         let chunk = chunk_with(&chunks, "-----BEGIN RSA PRIVATE KEY-----")
             .expect("a git-history chunk must carry the committed PEM");
         // begin + interior + end all in the SAME chunk => detectable as one block.
-        assert!(chunk.data.contains(PEM_INTERIOR_SENTINEL), "interior key line present in the block");
-        assert!(chunk.data.contains("-----END RSA PRIVATE KEY-----"), "end marker present in the block");
+        assert!(
+            chunk.data.contains(PEM_INTERIOR_SENTINEL),
+            "interior key line present in the block"
+        );
+        assert!(
+            chunk.data.contains("-----END RSA PRIVATE KEY-----"),
+            "end marker present in the block"
+        );
     }
 
     #[test]
@@ -77,7 +86,11 @@ Private-MAC: 8a1b2c3d4e5f60718293a4b5c6d7e8f901234567
         let (_g, repo) = init_repo();
         commit(&repo, "id_rsa.pem", PEM_KEY, "add key");
         let chunks = history_chunks(&repo);
-        let text: String = chunks.iter().map(|c| c.data.to_string()).collect::<Vec<_>>().join("\n");
+        let text: String = chunks
+            .iter()
+            .map(|c| c.data.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(
             text.contains(PEM_KEY.trim_end()),
             "the multi-line PEM block (newlines preserved) must survive history reconstruction"
@@ -107,10 +120,17 @@ Private-MAC: 8a1b2c3d4e5f60718293a4b5c6d7e8f901234567
         let chunk = chunk_with(&chunks, PEM_INTERIOR_SENTINEL).expect("pem chunk");
         let commit_id = chunk.metadata.commit.as_deref().expect("commit id present");
         assert_eq!(commit_id.len(), 40, "full SHA-1 commit id");
-        assert!(commit_id.chars().all(|c| c.is_ascii_hexdigit()), "commit id is hex");
+        assert!(
+            commit_id.chars().all(|c| c.is_ascii_hexdigit()),
+            "commit id is hex"
+        );
         assert!(chunk.metadata.date.is_some(), "commit date present");
         assert!(
-            chunk.metadata.path.as_deref().is_some_and(|p| p.ends_with("id_rsa.pem")),
+            chunk
+                .metadata
+                .path
+                .as_deref()
+                .is_some_and(|p| p.ends_with("id_rsa.pem")),
             "history chunk carries the file path; got {:?}",
             chunk.metadata.path
         );
@@ -134,7 +154,12 @@ Private-MAC: 8a1b2c3d4e5f60718293a4b5c6d7e8f901234567
         // remains in the patch history and must still be found.
         let (_g, repo) = init_repo();
         commit(&repo, "id_rsa.pem", PEM_KEY, "add key");
-        commit(&repo, "id_rsa.pem", "# rotated, key removed\n", "remove key");
+        commit(
+            &repo,
+            "id_rsa.pem",
+            "# rotated, key removed\n",
+            "remove key",
+        );
         let chunks = history_chunks(&repo);
         assert!(
             chunk_with(&chunks, PEM_INTERIOR_SENTINEL).is_some(),
@@ -159,26 +184,51 @@ Private-MAC: 8a1b2c3d4e5f60718293a4b5c6d7e8f901234567
         commit(&repo, "deploy.ppk", PPK_KEY, "add ppk");
         let chunks = history_chunks(&repo);
         let chunk = chunk_with(&chunks, "PuTTY-User-Key-File-2:").expect("ppk chunk");
-        assert!(chunk.data.contains("Private-Lines:"), "Private-Lines body marker present");
-        assert!(chunk.data.contains(&format!("Private-MAC: {PPK_MAC}")), "trailing MAC present");
+        assert!(
+            chunk.data.contains("Private-Lines:"),
+            "Private-Lines body marker present"
+        );
+        assert!(
+            chunk.data.contains(&format!("Private-MAC: {PPK_MAC}")),
+            "trailing MAC present"
+        );
     }
 
     #[test]
     fn two_keys_across_commits_both_surface() {
-        let second = PEM_KEY.replace(PEM_INTERIOR_SENTINEL, "SECONDgitKEYsentinel987654321ZYXwvut");
+        let second = PEM_KEY.replace(
+            PEM_INTERIOR_SENTINEL,
+            "SECONDgitKEYsentinel987654321ZYXwvut",
+        );
         let (_g, repo) = init_repo();
         commit(&repo, "a.pem", PEM_KEY, "first key");
         commit(&repo, "b.pem", &second, "second key");
         let chunks = history_chunks(&repo);
-        assert!(chunk_with(&chunks, PEM_INTERIOR_SENTINEL).is_some(), "first key surfaces");
-        assert!(chunk_with(&chunks, "SECONDgitKEYsentinel987654321ZYXwvut").is_some(), "second key surfaces");
+        assert!(
+            chunk_with(&chunks, PEM_INTERIOR_SENTINEL).is_some(),
+            "first key surfaces"
+        );
+        assert!(
+            chunk_with(&chunks, "SECONDgitKEYsentinel987654321ZYXwvut").is_some(),
+            "second key surfaces"
+        );
     }
 
     #[test]
     fn benign_history_has_no_private_key_marker() {
         let (_g, repo) = init_repo();
-        commit(&repo, "README.md", "# project\nnothing secret here\n", "init");
-        commit(&repo, "main.rs", "fn main() { println!(\"hi\"); }\n", "code");
+        commit(
+            &repo,
+            "README.md",
+            "# project\nnothing secret here\n",
+            "init",
+        );
+        commit(
+            &repo,
+            "main.rs",
+            "fn main() { println!(\"hi\"); }\n",
+            "code",
+        );
         let chunks = history_chunks(&repo);
         assert!(
             chunk_with(&chunks, "-----BEGIN RSA PRIVATE KEY-----").is_none(),
@@ -191,7 +241,12 @@ Private-MAC: 8a1b2c3d4e5f60718293a4b5c6d7e8f901234567
         let (_g, repo) = init_repo();
         commit(&repo, "id_rsa.pem", PEM_KEY, "add key (oldest)");
         for n in 0..3 {
-            commit(&repo, "app.conf", &format!("rev={n}\n"), &format!("change {n}"));
+            commit(
+                &repo,
+                "app.conf",
+                &format!("rev={n}\n"),
+                &format!("change {n}"),
+            );
         }
         // Only the most recent commit is scanned, so the older key commit is excluded.
         let source = GitHistorySource::new(repo.clone()).with_max_commits(1);
@@ -208,5 +263,8 @@ Private-MAC: 8a1b2c3d4e5f60718293a4b5c6d7e8f901234567
 #[cfg(not(feature = "git"))]
 #[test]
 fn git_history_private_key_lock_requires_git_feature() {
-    assert!(!cfg!(feature = "git"), "this lock only runs with the git feature");
+    assert!(
+        !cfg!(feature = "git"),
+        "this lock only runs with the git feature"
+    );
 }

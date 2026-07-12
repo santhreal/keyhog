@@ -24,7 +24,6 @@ pub mod git_history_non_repo_no_clean_summary;
 pub mod git_staged_non_repo_clean_error;
 pub mod hook_install_no_daemon_readme_phantom_flag;
 pub mod inline_test_offenders_detectors_subcommand;
-pub mod inline_test_offenders_orchestrator;
 pub mod inline_test_offenders_value_parsers;
 pub mod load_rs_phantom_detectors_list_in_warn;
 pub mod macro_e2e_binaries_not_in_all_tests_harness;

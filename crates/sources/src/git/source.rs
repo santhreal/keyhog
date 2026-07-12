@@ -2,7 +2,6 @@
 //! `gix`, stopping once the in-memory byte cap is reached.
 
 use std::collections::{HashSet, VecDeque};
-use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::{ChildStdout, Command};
 
@@ -143,7 +142,7 @@ enum GitBlobSkip {
 /// ```
 pub struct GitSource {
     repo_path: PathBuf,
-    max_commits: Option<usize>,
+    pub(crate) max_commits: Option<usize>,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
 }
@@ -154,7 +153,7 @@ pub struct GitSource {
 /// byte-identical setters from drifting and gives any future clamp/normalize
 /// policy exactly one place to live. `history.rs` delegates via
 /// `super::source::max_commits_limit`.
-pub(super) fn max_commits_limit(n: usize) -> Option<usize> {
+pub(crate) fn max_commits_limit(n: usize) -> Option<usize> {
     Some(n)
 }
 
@@ -235,7 +234,14 @@ struct GitCommitEnumerator {
     repo_arg: String,
     max_commits: Option<usize>,
     log_child: super::GitChild,
-    log_lines: std::io::Lines<std::io::BufReader<ChildStdout>>,
+    // Capped line reader over `git log` stdout: `read_capped_line` bounds each
+    // line at `GIT_PLUMBING_LINE_BYTES` so a hostile repo emitting a
+    // multi-gigabyte single line (no `\n`) cannot exhaust memory — a real
+    // commit-id line is ~40-64 bytes, and an over-cap line is a loud truncation
+    // error, not a silent OOM (the std `BufRead::lines()` this replaced buffered
+    // the whole line unbounded).
+    log_reader: std::io::BufReader<ChildStdout>,
+    log_line_buf: Vec<u8>,
     log_done: bool,
     unreachable_loaded: bool,
     unreachable_truncated: bool,
@@ -255,7 +261,7 @@ impl GitCommitEnumerator {
         // Get commit hashes from refs plus reflogs. `--all` alone misses deleted
         // branch reflog commits on current Git, and it also misses refs/stash on
         // some versions, so stash is added explicitly when present.
-        let mut log_cmd = Command::new(super::git_bin()?);
+        let mut log_cmd = super::git_command()?;
         log_cmd.args([
             "-C",
             &repo_arg,
@@ -280,13 +286,14 @@ impl GitCommitEnumerator {
         let log_stdout = log_child
             .take_stdout()
             .ok_or_else(|| SourceError::Io(std::io::Error::other("missing log stdout")))?;
-        let log_lines = std::io::BufReader::new(log_stdout).lines();
+        let log_reader = std::io::BufReader::new(log_stdout);
 
         Ok(Self {
             repo_arg,
             max_commits,
             log_child,
-            log_lines,
+            log_reader,
+            log_line_buf: Vec::new(),
             log_done: false,
             unreachable_loaded: false,
             unreachable_truncated: false,
@@ -304,24 +311,39 @@ impl GitCommitEnumerator {
                 return Ok(Some(id));
             }
             if !self.log_done {
-                match self.log_lines.next() {
-                    Some(Ok(line)) => {
-                        if let Some(id) = parse_git_object_id_line(&line, "commit") {
-                            return Ok(Some(id));
-                        }
-                        continue;
-                    }
-                    Some(Err(error)) => return Err(SourceError::Io(error)),
-                    None => {
-                        self.log_done = true;
-                        super::wait_for_git_child(
-                            &mut self.log_child,
-                            "git log",
-                            "enumerating git commits",
-                        )?;
-                        continue;
-                    }
+                let consumed = super::read_capped_line(
+                    &mut self.log_reader,
+                    &mut self.log_line_buf,
+                    super::GIT_PLUMBING_LINE_BYTES,
+                )
+                .map_err(SourceError::Io)?;
+                if consumed == 0 {
+                    self.log_done = true;
+                    super::wait_for_git_child(
+                        &mut self.log_child,
+                        "git log",
+                        "enumerating git commits",
+                    )?;
+                    continue;
                 }
+                // A commit-id line over the plumbing cap is corrupt/hostile git
+                // output (a real object-id line is tiny) — fail LOUDLY, never
+                // silently scan a truncated id (Law 10), matching the sibling
+                // tag-message and fsck plumbing readers.
+                if consumed > super::GIT_PLUMBING_LINE_BYTES {
+                    return Err(super::git_output_line_truncated_error(
+                        "git log source",
+                        "commit id line",
+                        super::GIT_PLUMBING_LINE_BYTES,
+                        consumed,
+                    ));
+                }
+                let line = String::from_utf8_lossy(&self.log_line_buf);
+                let line = line.trim_end_matches('\n').trim_end_matches('\r');
+                if let Some(id) = parse_git_object_id_line(line, "commit") {
+                    return Ok(Some(id));
+                }
+                continue;
             }
             if !self.unreachable_loaded {
                 self.unreachable_loaded = true;
@@ -763,9 +785,9 @@ impl GitBlobChunkDecoder<'_> {
                 base_offset: 0,
                 base_line: 0,
                 source_type: source_type.into(),
-                path: Some(path),
-                commit,
-                author,
+                path: Some(path.into()),
+                commit: commit.map(Into::into),
+                author: author.map(Into::into),
                 date: None,
                 mtime_ns: None,
                 size_bytes: Some(decoded_blob.size_bytes),
@@ -995,7 +1017,7 @@ fn decode_git_blob(data: &[u8]) -> Option<String> {
 }
 
 fn git_ref_exists(repo_arg: &str, ref_name: &str) -> Result<bool, SourceError> {
-    let output = Command::new(super::git_bin()?)
+    let output = super::git_command()?
         .args([
             "-C",
             repo_arg,
@@ -1043,7 +1065,7 @@ fn collect_unreachable_objects(
     remaining_commits: Option<usize>,
     limits: crate::SourceLimits,
 ) -> Result<UnreachableGitObjects, SourceError> {
-    let mut command = Command::new(super::git_bin()?);
+    let mut command = super::git_command()?;
     command.args([
         "-C",
         repo_arg,
@@ -1443,29 +1465,5 @@ impl super::GitTreeVisitor for HeadBlobPathCollector<'_> {
         Err(SourceError::Git(format!(
             "git HEAD subtree object is not a tree while collecting live blob set: {error}"
         )))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn git_source_with_max_commits_routes_through_the_shared_owner() {
-        // The shared owner stores the requested cap verbatim as `Some(n)`, and
-        // the GitSource builder must route through it (no divergent copy).
-        assert_eq!(max_commits_limit(7), Some(7));
-        let source = GitSource::new(PathBuf::from(".")).with_max_commits(5);
-        assert_eq!(source.max_commits, Some(5));
-        assert_eq!(source.max_commits, max_commits_limit(5));
-    }
-
-    #[test]
-    fn max_commits_limit_zero_is_an_explicit_cap_not_clamped_away() {
-        // Zero is a valid explicit "scan no commits" cap (git log --max-count 0),
-        // not "unlimited" (None): it must survive as Some(0), never be clamped.
-        assert_eq!(max_commits_limit(0), Some(0));
-        let source = GitSource::new(PathBuf::from(".")).with_max_commits(0);
-        assert_eq!(source.max_commits, Some(0));
     }
 }

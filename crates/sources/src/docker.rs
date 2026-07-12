@@ -15,10 +15,29 @@ mod metadata;
 // `pub(crate)` so the testing facade can reach `oci::descriptor_points_to_index_for_test`
 // from the crate root (the OCI classification coverage lives in `tests/`).
 pub(crate) mod oci;
+use codewalk::{CodeWalker, WalkConfig};
 use metadata::{
     archive_metadata_chunks as find_archive_metadata_chunks,
     manifest_config_chunks as find_manifest_config_chunks,
 };
+
+/// Build a [`CodeWalker`] that traverses EVERY entry under a docker image
+/// archive's unpacked tree with no filtering — no gitignore, no hidden/binary
+/// skipping, no size cap. Both the layer-archive discovery (`layer`) and the
+/// metadata-less config-JSON fallback (`metadata`) need this identical
+/// exhaustive walk; keeping the [`WalkConfig`] in ONE place stops the two sites
+/// from silently drifting (e.g. one gaining a size cap the other lacks).
+pub(super) fn exhaustive_archive_walker(root_path: &Path) -> CodeWalker {
+    CodeWalker::new(
+        root_path,
+        WalkConfig::default()
+            .follow_symlinks(false)
+            .respect_gitignore(false)
+            .skip_hidden(false)
+            .skip_binary(false)
+            .max_file_size(0),
+    )
+}
 
 /// Scan a Docker image by saving it as a tar archive and unpacking each layer.
 ///
@@ -190,6 +209,10 @@ fn export_docker_image_archive(
     let mut child = Command::new(docker_bin)
         .args(["image", "save", "-o"])
         .arg(archive_path)
+        // `--` terminates docker's option parsing so an image reference that
+        // begins with `-` (or otherwise looks like a flag) is always taken as
+        // the positional image argument, never mis-parsed as a `save` option.
+        .arg("--")
         .arg(image)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

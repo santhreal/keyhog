@@ -34,7 +34,7 @@ fn scan_skips_target_directory_by_default() {
         1,
         "only the root file should be scanned; got {chunks:?}"
     );
-    assert_eq!(chunks[0].metadata.source_type, "filesystem");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "filesystem");
     assert!(
         chunks[0]
             .metadata

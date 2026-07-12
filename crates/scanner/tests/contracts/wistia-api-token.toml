@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "wistiaapi_token=f58baEXAMPLEEXAMPLE8e5e4"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# wistia_api_token=f58ba8284e74e6b6500bd0ddecb8e5e4  # video"
+credential = "f58ba8284e74e6b6500bd0ddecb8e5e4"
+reason = "Commented-out config; wistia_api_token keyword + 32-hex token intact inside the comment."

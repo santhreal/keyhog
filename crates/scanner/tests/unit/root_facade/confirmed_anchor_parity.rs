@@ -118,6 +118,8 @@ fn boundary_scanner() -> CompiledScanner {
     config.ml_enabled = false;
     config.min_confidence = 0.0;
     CompiledScanner::compile(vec![DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         id: "boundary-detector".to_string(),
         name: "Boundary Detector".to_string(),
         service: "boundary".to_string(),

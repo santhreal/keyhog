@@ -35,7 +35,7 @@ fn jar_chunk_source_type_archive() {
         "single JAR text entry must emit exactly one chunk, got {chunks:?}"
     );
     let chunk = chunks[0];
-    assert_eq!(chunk.metadata.source_type, "filesystem/archive");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "filesystem/archive");
     assert!(
         chunk
             .metadata

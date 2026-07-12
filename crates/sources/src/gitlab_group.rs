@@ -10,6 +10,12 @@ use serde::Deserialize;
 use crate::hosted_git::{self, HostedRepo};
 
 const DEFAULT_ENDPOINT: &str = "https://gitlab.com";
+
+/// Single owner of the missing-required-field diagnostic. `source_from_params`
+/// reports the same shortfall from three branches (too few `\n`-separated fields,
+/// or either of group/token empty); one const keeps the operator-facing wording
+/// identical across every branch instead of pasting it inline three times.
+const MISSING_REQUIRED_FIELDS_ERROR: &str = "gitlab-group source requires group and token";
 const PRIVATE_TOKEN: HeaderName = HeaderName::from_static("private-token");
 
 pub(crate) struct GitLabGroupSource {
@@ -251,23 +257,17 @@ pub(crate) fn source_from_params(
 ) -> Result<GitLabGroupSource, SourceError> {
     let mut parts = params.splitn(3, '\n');
     let Some(group) = parts.next() else {
-        return Err(SourceError::Other(
-            "gitlab-group source requires group and token".into(),
-        ));
+        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
     };
     let Some(token) = parts.next() else {
-        return Err(SourceError::Other(
-            "gitlab-group source requires group and token".into(),
-        ));
+        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
     };
     let endpoint = match parts.next() {
         Some(endpoint) if !endpoint.is_empty() => endpoint,
         Some(_) | None => DEFAULT_ENDPOINT,
     };
     if group.is_empty() || token.is_empty() {
-        return Err(SourceError::Other(
-            "gitlab-group source requires group and token".into(),
-        ));
+        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
     }
     Ok(GitLabGroupSource::new(group.to_string(), token.to_string())
         .with_endpoint(endpoint.to_string())
@@ -282,4 +282,73 @@ pub(crate) fn listing_truncated_error_for_test(
     max_pages: usize,
 ) -> SourceError {
     hosted_git::listing_truncated_error("GitLab", "group", group, repo_count, max_pages)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{source_from_params, validate_token};
+
+    #[test]
+    fn validate_token_rejects_control_chars_and_empty() {
+        // A clean PAT passes (a benign non-credential-shaped value — never a
+        // `glpat-`-prefixed literal, which self-scan would flag).
+        assert!(validate_token("clean-token-value").is_ok());
+
+        // Control characters (CR/LF/NUL/TAB/DEL) are banned: raw bytes injected
+        // into the `PRIVATE-TOKEN: …` request header enable CRLF header/request
+        // splitting. Every reject carries the shared 'unsafe characters' contract.
+        for bad in ["a\rb", "a\nb", "a\0b", "a\tb", "a\u{7f}b"] {
+            let err = validate_token(bad).expect_err("control char rejected");
+            assert!(
+                err.to_string().contains("unsafe characters"),
+                "gitlab token control-char error must carry the shared contract, got {err}"
+            );
+        }
+
+        // Empty token is rejected (an unauthenticated request pre-image).
+        assert!(validate_token("").is_err(), "empty token rejected");
+    }
+
+    #[test]
+    fn source_from_params_requires_group_and_token() {
+        // `HttpClientConfig` moves into each call; build a fresh default per call.
+        // `SourceLimits` is `Copy`.
+        let cfg = || crate::http::HttpClientConfig::default();
+        let limits = crate::SourceLimits::default();
+
+        // Fewer than two newline-separated fields → error (missing token).
+        assert!(
+            source_from_params("acme", cfg(), limits, true).is_err(),
+            "missing token line must be an error"
+        );
+        // Present-but-EMPTY fields hit the explicit empty-field guard → error.
+        assert!(
+            source_from_params("acme\n", cfg(), limits, true).is_err(),
+            "empty token must be an error"
+        );
+        assert!(
+            source_from_params("\ntok", cfg(), limits, true).is_err(),
+            "empty group must be an error"
+        );
+        // Two non-empty fields parse; endpoint defaults when the 3rd field is
+        // absent OR present-but-empty (the `Some(_) if !empty` else-arm), not error.
+        assert!(
+            source_from_params("acme\ntok", cfg(), limits, true).is_ok(),
+            "group + token parse successfully"
+        );
+        assert!(
+            source_from_params("acme\ntok\n", cfg(), limits, true).is_ok(),
+            "trailing empty endpoint line falls back to the default endpoint"
+        );
+        assert!(
+            source_from_params(
+                "acme\ntok\nhttps://gitlab.example.test",
+                cfg(),
+                limits,
+                true
+            )
+            .is_ok(),
+            "an explicit 3rd endpoint field parses"
+        );
+    }
 }

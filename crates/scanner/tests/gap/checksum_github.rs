@@ -536,3 +536,47 @@ fn checksum_result_variants_are_distinct() {
     assert_ne!(ChecksumResult::Invalid, ChecksumResult::NotApplicable);
     assert_eq!(ChecksumResult::Valid, ChecksumResult::Valid);
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed tests validate a handful of golden tokens; this SWEEPS the
+// GENERATOR↔VALIDATOR round-trip: for any 30-char base62 body, the mint helper
+// `github_classic_pat_with_checksum` must produce a 40-char `ghp_` token whose
+// checksum the in-test reference algorithm reproduces AND which both the classic
+// validator and the registry accept as `Valid`. A drift between the mint helper
+// and the validator would silently invalidate every fabricated fixture in the
+// suite (and every `_with_checksum` fixture elsewhere). No proptest before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// Any 30-char base62 body mints a well-formed, self-consistent classic PAT:
+    /// 40 chars, `ghp_` prefix, checksum == the reference CRC32/base62, and both
+    /// the classic validator and the registry accept it as `Valid`.
+    #[test]
+    fn minted_classic_pat_round_trips_through_validator(body in "[A-Za-z0-9]{30}") {
+        let tok = valid_token(&body);
+        prop_assert_eq!(tok.len(), 40);
+        prop_assert!(tok.starts_with("ghp_"), "{tok:?}");
+        // Mint helper uses the same CRC32/base62 as the in-test reference oracle.
+        let expected = format!("ghp_{body}{}", checksum_for(&body));
+        prop_assert!(tok == expected, "minted {tok:?} != reference {expected:?}");
+        // Generator↔validator round-trip: the minted token is always accepted.
+        prop_assert_eq!(classic().validate(&tok), ChecksumResult::Valid);
+        prop_assert_eq!(validate_checksum(&tok), ChecksumResult::Valid);
+    }
+
+    /// Corrupting a single checksum char makes the classic validator reject it —
+    /// the checksum genuinely discriminates the fabricated body (there is exactly
+    /// one valid 6-char checksum per body).
+    #[test]
+    fn corrupted_checksum_is_rejected(body in "[A-Za-z0-9]{30}") {
+        let mut bytes = valid_token(&body).into_bytes();
+        let last = bytes.len() - 1;
+        // Flip the trailing checksum digit to a definitely-different base62 char.
+        bytes[last] = if bytes[last] == b'A' { b'B' } else { b'A' };
+        let corrupted = String::from_utf8(bytes).expect("ascii");
+        prop_assert_eq!(classic().validate(&corrupted), ChecksumResult::Invalid);
+    }
+}

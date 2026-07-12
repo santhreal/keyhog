@@ -1,12 +1,6 @@
 //! KH-GAP-074: fuzz targets are not invoked by any CI workflow.
 
-use std::path::PathBuf;
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-}
+use super::support::repo_root;
 
 #[test]
 fn ci_workflows_invoke_fuzz_targets_or_cargo_fuzz() {

@@ -212,10 +212,19 @@ def _group_split(files, seed, fracs=(0.70, 0.15, 0.15)):
     rng = np.random.default_rng(seed)
     uniq = sorted(set(files))
     rng.shuffle(uniq)
-    n = len(uniq)
+    # Contract fixtures (source_file="contract:<det>") are a FIXED known-positive
+    # set the scanner MUST catch — the standalone contract gate tests all 920, so
+    # they are a memorization requirement, NOT a generalization target. They
+    # always train and never enter the held-out; only real-distribution
+    # (CredData/homefield) files are split, keeping the held-out recall gate an
+    # honest unseen-file generalization measure. No-op when no contracts present.
+    contract_f = {f for f in uniq if f.startswith("contract:")}
+    splittable = [f for f in uniq if f not in contract_f]
+    n = len(splittable)
     a = int(n * fracs[0])
     b = a + int(n * fracs[1])
-    train_f, val_f, test_f = set(uniq[:a]), set(uniq[a:b]), set(uniq[b:])
+    train_f = set(splittable[:a]) | contract_f
+    val_f, test_f = set(splittable[a:b]), set(splittable[b:])
     tr = np.array([i for i, f in enumerate(files) if f in train_f], dtype=np.int64)
     va = np.array([i for i, f in enumerate(files) if f in val_f], dtype=np.int64)
     te = np.array([i for i, f in enumerate(files) if f in test_f], dtype=np.int64)
@@ -549,7 +558,7 @@ def main() -> int:
     ap.add_argument("--out", default="crates/scanner/src/weights.bin")
     ap.add_argument("--model-card", default=CURRENT_MODEL_CARD,
                     help="model-card JSON to update with --write; must match weights.bin")
-    ap.add_argument("--features", type=int, default=42, choices=[41, 42])
+    ap.add_argument("--features", type=int, default=43, choices=[41, 42, 43])
     ap.add_argument("--epochs", type=int, default=60)
     ap.add_argument("--seed", type=int, default=20260529)
     ap.add_argument("--compare", action="store_true", help="also train 41-feat baseline")

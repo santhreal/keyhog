@@ -32,7 +32,11 @@ fn digits(n: usize, seed: usize) -> String {
     gen(n, seed, b"0123456789")
 }
 fn alnum(n: usize, seed: usize) -> String {
-    gen(n, seed, b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
+    gen(
+        n,
+        seed,
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+    )
 }
 fn hex(n: usize, seed: usize) -> String {
     gen(n, seed, b"0123456789abcdef")
@@ -49,7 +53,9 @@ fn scan(text: &str) -> Vec<(String, String)> {
 }
 
 fn surfaces_under(text: &str, detector: &str, token: &str) -> bool {
-    scan(text).iter().any(|(id, cred)| id == detector && cred.contains(token))
+    scan(text)
+        .iter()
+        .any(|(id, cred)| id == detector && cred.contains(token))
 }
 
 fn surfaces_any(text: &str, token: &str) -> bool {
@@ -62,7 +68,12 @@ fn fires(text: &str, detector: &str) -> bool {
 
 // token builders
 fn xoxb_4seg(seed: usize) -> String {
-    format!("xoxb-{}-{}-{}", digits(12, seed), digits(12, seed + 1), alnum(28, seed + 2))
+    format!(
+        "xoxb-{}-{}-{}",
+        digits(12, seed),
+        digits(12, seed + 1),
+        alnum(28, seed + 2)
+    )
 }
 fn xoxb_3seg(seed: usize) -> String {
     format!("xoxb-{}-{}", digits(12, seed), alnum(24, seed + 1))
@@ -77,10 +88,20 @@ fn xoxp_5seg(seed: usize) -> String {
     )
 }
 fn xoxp_4seg(seed: usize) -> String {
-    format!("xoxp-{}-{}-{}", digits(12, seed), digits(12, seed + 1), alnum(28, seed + 2))
+    format!(
+        "xoxp-{}-{}-{}",
+        digits(12, seed),
+        digits(12, seed + 1),
+        alnum(28, seed + 2)
+    )
 }
 fn xapp(seed: usize) -> String {
-    format!("xapp-1-{}-{}-{}", gen(9, seed, b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"), digits(10, seed + 1), hex(32, seed + 2))
+    format!(
+        "xapp-1-{}-{}-{}",
+        gen(9, seed, b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
+        digits(10, seed + 1),
+        hex(32, seed + 2)
+    )
 }
 
 // ── positives: both pattern variants per token + context forms ────────────────
@@ -88,43 +109,66 @@ fn xapp(seed: usize) -> String {
 #[test]
 fn slack_bot_token_4_segment_surfaces() {
     let t = xoxb_4seg(1);
-    assert!(surfaces_under(&t, "slack-bot-token", &t), "xoxb 4-segment must surface");
+    assert!(
+        surfaces_under(&t, "slack-bot-token", &t),
+        "xoxb 4-segment must surface"
+    );
 }
 
 #[test]
 fn slack_bot_token_3_segment_surfaces() {
     let t = xoxb_3seg(2);
-    assert!(surfaces_under(&t, "slack-bot-token", &t), "xoxb 3-segment short form must surface");
+    assert!(
+        surfaces_under(&t, "slack-bot-token", &t),
+        "xoxb 3-segment short form must surface"
+    );
 }
 
 #[test]
 fn slack_user_token_5_segment_hex_surfaces() {
     let t = xoxp_5seg(3);
-    assert!(surfaces_under(&t, "slack-user-token", &t), "xoxp 5-segment hex form must surface");
+    assert!(
+        surfaces_under(&t, "slack-user-token", &t),
+        "xoxp 5-segment hex form must surface"
+    );
 }
 
 #[test]
 fn slack_user_token_4_segment_surfaces() {
     let t = xoxp_4seg(4);
-    assert!(surfaces_under(&t, "slack-user-token", &t), "xoxp 4-segment form must surface");
+    assert!(
+        surfaces_under(&t, "slack-user-token", &t),
+        "xoxp 4-segment form must surface"
+    );
 }
 
 #[test]
 fn slack_app_token_surfaces() {
     let t = xapp(5);
-    assert!(surfaces_under(&t, "slack-app-token", &t), "xapp app-level token must surface");
+    assert!(
+        surfaces_under(&t, "slack-app-token", &t),
+        "xapp app-level token must surface"
+    );
 }
 
 #[test]
 fn slack_bot_token_env_anchor_surfaces() {
     let t = xoxb_4seg(6);
-    assert!(surfaces_under(&format!("SLACK_BOT_TOKEN={t}"), "slack-bot-token", &t));
+    assert!(surfaces_under(
+        &format!("SLACK_BOT_TOKEN={t}"),
+        "slack-bot-token",
+        &t
+    ));
 }
 
 #[test]
 fn slack_app_token_env_anchor_surfaces() {
     let t = xapp(7);
-    assert!(surfaces_under(&format!("SLACK_APP_TOKEN={t}"), "slack-app-token", &t));
+    assert!(surfaces_under(
+        &format!("SLACK_APP_TOKEN={t}"),
+        "slack-app-token",
+        &t
+    ));
 }
 
 #[test]
@@ -150,13 +194,23 @@ fn slack_bot_token_bare_prefix_surfaces() {
 
 #[test]
 fn slack_bot_token_24char_final_min_surfaces() {
-    let t = format!("xoxb-{}-{}-{}", digits(10, 11), digits(10, 12), alnum(24, 13)); // final = 24 (min)
+    let t = format!(
+        "xoxb-{}-{}-{}",
+        digits(10, 11),
+        digits(10, 12),
+        alnum(24, 13)
+    ); // final = 24 (min)
     assert!(surfaces_under(&t, "slack-bot-token", &t));
 }
 
 #[test]
 fn slack_bot_token_32char_final_max_surfaces() {
-    let t = format!("xoxb-{}-{}-{}", digits(13, 14), digits(13, 15), alnum(32, 16)); // final = 32 (max)
+    let t = format!(
+        "xoxb-{}-{}-{}",
+        digits(13, 14),
+        digits(13, 15),
+        alnum(32, 16)
+    ); // final = 32 (max)
     assert!(surfaces_under(&t, "slack-bot-token", &t));
 }
 
@@ -164,7 +218,12 @@ fn slack_bot_token_32char_final_max_surfaces() {
 
 #[test]
 fn slack_wrong_prefix_xoxz_does_not_fire() {
-    let t = format!("xoxz-{}-{}-{}", digits(12, 17), digits(12, 18), alnum(28, 19));
+    let t = format!(
+        "xoxz-{}-{}-{}",
+        digits(12, 17),
+        digits(12, 18),
+        alnum(28, 19)
+    );
     assert!(!fires(&t, "slack-bot-token") && !fires(&t, "slack-user-token"));
 }
 
@@ -172,7 +231,10 @@ fn slack_wrong_prefix_xoxz_does_not_fire() {
 fn slack_bot_prose_mention_does_not_fire() {
     // The literal `xoxb` keyword may trigger the prefilter, but with no token shape
     // present the regex must not produce a finding.
-    assert!(!fires("Set your xoxb bot token in the Slack admin console.", "slack-bot-token"));
+    assert!(!fires(
+        "Set your xoxb bot token in the Slack admin console.",
+        "slack-bot-token"
+    ));
 }
 
 #[test]
@@ -186,7 +248,12 @@ fn slack_bot_letter_in_numeric_id_does_not_fire() {
 fn slack_bot_short_final_segment_does_not_fire() {
     // 23-char final is one below the 24 minimum of the 4-segment pattern, and the
     // middle `-` prevents the 3-segment pattern from rescuing it.
-    let t = format!("xoxb-{}-{}-{}", digits(12, 22), digits(12, 23), alnum(23, 24));
+    let t = format!(
+        "xoxb-{}-{}-{}",
+        digits(12, 22),
+        digits(12, 23),
+        alnum(23, 24)
+    );
     assert!(!fires(&t, "slack-bot-token"));
 }
 
@@ -201,7 +268,13 @@ fn slack_user_non_hex_5seg_suffix_does_not_fire() {
     // out-of-hex letters (and the leading `-` blocking the 4-seg fallback) must
     // not fire.
     let suffix = format!("ZZ{}", hex(30, 25)); // 32 chars but starts with non-hex Z
-    let t = format!("xoxp-{}-{}-{}-{}", digits(12, 26), digits(12, 27), digits(12, 28), suffix);
+    let t = format!(
+        "xoxp-{}-{}-{}-{}",
+        digits(12, 26),
+        digits(12, 27),
+        digits(12, 28),
+        suffix
+    );
     assert!(!fires(&t, "slack-user-token"));
 }
 
@@ -212,8 +285,14 @@ fn slack_bot_and_user_tokens_cosurface() {
     let b = xoxb_4seg(30);
     let u = xoxp_5seg(31);
     let text = format!("SLACK_BOT_TOKEN={b}\nSLACK_USER_TOKEN={u}\n");
-    assert!(surfaces_under(&text, "slack-bot-token", &b), "bot token surfaces alongside user");
-    assert!(surfaces_under(&text, "slack-user-token", &u), "user token surfaces alongside bot");
+    assert!(
+        surfaces_under(&text, "slack-bot-token", &b),
+        "bot token surfaces alongside user"
+    );
+    assert!(
+        surfaces_under(&text, "slack-user-token", &u),
+        "user token surfaces alongside bot"
+    );
 }
 
 #[test]

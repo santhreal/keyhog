@@ -52,3 +52,63 @@ fn newline_count_is_exact() {
     assert_eq!(count_newlines(b""), 0);
     assert_eq!(count_newlines(b"\n\n\n"), 3);
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin one example each; these SWEEP them. `bytecount_newlines`
+// (memchr SIMD) must EXACTLY equal the naive `\n` count for any bytes — a
+// DIFFERENTIAL that keeps the SIMD path behavior-identical to the old scalar loop.
+// `splice_decoded_payload_at` gets a raw-decoder splice round-trip in a small
+// parent (window covers it, so decoded replaces the span with context preserved)
+// and out-of-bounds rejection. Traced against the two functions. No proptest before.
+
+use proptest::prelude::*;
+
+fn naive_newlines(data: &[u8]) -> usize {
+    data.iter().filter(|&&b| b == b'\n').count()
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4_000))]
+
+    /// SIMD newline count equals the naive count over arbitrary bytes.
+    #[test]
+    fn newline_count_matches_naive_arbitrary(data in prop::collection::vec(any::<u8>(), 0..128)) {
+        prop_assert_eq!(count_newlines(&data), naive_newlines(&data));
+    }
+
+    /// The same differential over a newline-rich alphabet.
+    #[test]
+    fn newline_count_matches_naive_rich(idxs in prop::collection::vec(0usize..3, 0..60)) {
+        let data: Vec<u8> = idxs.iter().map(|&i| [b'a', b'\n', b'b'][i]).collect();
+        prop_assert_eq!(count_newlines(&data), naive_newlines(&data));
+    }
+
+    /// A raw-decoder splice in a small parent (fully inside the context window)
+    /// replaces `[start, end)` with the decoded text, preserving both sides — the
+    /// window starts at 0 and the decoded sits at `start`.
+    #[test]
+    fn raw_splice_replaces_span_in_small_parent(
+        prefix in "[a-zA-Z0-9]{0,8}",
+        mid in "[a-zA-Z0-9]{1,8}",
+        suffix in "[a-zA-Z0-9]{0,8}",
+        decoded in "[a-zA-Z0-9]{1,10}",
+    ) {
+        let parent = format!("{prefix}{mid}{suffix}");
+        let start = prefix.len();
+        let end = start + mid.len();
+        let expected = format!("{prefix}{decoded}{suffix}");
+        let got = splice_at(&parent, start, end, &decoded, "raw");
+        prop_assert_eq!(got, Some((0, expected, start)));
+    }
+
+    /// An out-of-bounds span (end past the parent, or start > end) is rejected with
+    /// `None`, never a panic.
+    #[test]
+    fn out_of_bounds_span_yields_none_sweep(
+        parent in "[a-zA-Z0-9]{0,20}",
+        decoded in "[a-zA-Z0-9]{1,8}",
+    ) {
+        prop_assert!(splice_at(&parent, 0, parent.len() + 1, &decoded, "raw").is_none());
+        prop_assert!(splice_at(&parent, parent.len() + 2, parent.len() + 1, &decoded, "raw").is_none());
+    }
+}

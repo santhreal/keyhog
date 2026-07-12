@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "twitter  -_ - -  _-_     -----_     _     _   __   __   - API-        _       - _ __   _          - -            _    _     -  -    -        --_    -     _ KEY =  ::\" :==\"\"     =    :='\"      ==  = \" \" =' '   \" \"= === \"=\"\"=  =  := :     \" '\" G3tqEEXAMPLEEXAMPLEIVvp0"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# twitter_api_key=G3tqEig6CnktLXcpgyRhIVvp0  # social"
+credential = "G3tqEig6CnktLXcpgyRhIVvp0"
+reason = "Commented-out config; twitter_api_key keyword + 25-char consumer key intact inside the comment."

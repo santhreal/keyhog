@@ -210,7 +210,7 @@ fn collect_chunks(
             base_offset: 0,
             base_line: 0,
             source_type: "filesystem".into(),
-            path: Some(path.display().to_string()),
+            path: Some(path.display().to_string().into()),
             commit: None,
             author: None,
             date: None,

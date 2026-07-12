@@ -121,11 +121,27 @@ impl FragmentCache {
         }
     }
 
-    /// Record a fragment and return a list of "complete" candidates if any.
-    /// The returned `Zeroizing<String>` lets the caller scope the
-    /// reassembled credential's lifetime tightly - drop it (or pass it
-    /// to a scan that consumes by reference) and the heap copy is zeroed.
-    pub(crate) fn record_and_reassemble(&self, fragment: SecretFragment) -> Vec<Zeroizing<String>> {
+    /// Shared core of both reassembly entry points: record `fragment` into its
+    /// `(prefix, scope)` cluster (dedup + deterministic eviction), then emit
+    /// `make(f1, f2)` for every ORDERED near pair — same path and
+    /// `abs_diff(line) < 100`. `record_and_reassemble` and its stamped variant
+    /// differ ONLY in the per-pair output type and the final canonical sort, so
+    /// this record/cluster/near-gate logic lives here in ONE owner (was two
+    /// near-identical nested-loop copies — DEDUP).
+    ///
+    /// Reassembly is SAME-FILE only, within a 100-line window. Cross-file /
+    /// distant joins were observed to cannibalize standalone findings: a
+    /// cross-file `:reassembled` candidate replaces the legitimate singleton
+    /// during downstream resolution and mis-attributes it to a sibling-file path
+    /// (investigator evidence: mirror-pos-0000091.yaml AKIA glued to a sibling
+    /// klaviyo `sk_`). The same-path + `abs_diff<100` gate preserves the
+    /// file-boundary split case (chunked 1MB+ files) without manufacturing
+    /// cross-file glue.
+    fn record_and_collect<T>(
+        &self,
+        fragment: SecretFragment,
+        make: impl Fn(&SecretFragment, &SecretFragment) -> T,
+    ) -> Vec<T> {
         let scope = fragment.path.as_deref().unwrap_or(""); // LAW10: absent path/field => display placeholder; reporting-only, recall-safe
                                                             // Shard index is derived from the (prefix, scope) bytes directly via
                                                             // `shard_index_of`, so the joined key `String` no longer has to be
@@ -151,23 +167,8 @@ impl FragmentCache {
             }
         }
 
-        // Reassembly is SAME-FILE only. Cross-file joins (every AKIA/AIza
-        // assignment in dir X paired with every other matching assignment
-        // in dir X siblings) were observed to cannibalize the standalone
-        // findings: the cross-file `:reassembled` candidate replaces the
-        // legitimate singleton during downstream resolution, and the
-        // synthesized credential gets attributed to a sibling-file path.
-        // Investigator evidence (mirror-pos-0000091.yaml AKIA glued to a
-        // sibling klaviyo sk_) confirmed the singleton was lost.
-        //
-        // Real split-credential patterns (AWS_ACCESS_KEY in one .env paired
-        // with AWS_SECRET in another) are NOT in the corpus and the loss
-        // they cause is concrete: the standalone finding is dropped.
-        // Restrict reassembly to same-path fragments within 100 lines of
-        // each other; preserves the file-boundary split case (chunked
-        // 1MB+ files) without manufacturing cross-file glue.
+        let mut candidates = Vec::new();
         if cluster.len() >= 2 {
-            let mut candidates = Vec::new();
             for i in 0..cluster.len() {
                 for j in 0..cluster.len() {
                     if i == j {
@@ -176,34 +177,36 @@ impl FragmentCache {
                     let f1 = &cluster[i];
                     let f2 = &cluster[j];
 
-                    let near =
-                        f1.path == f2.path && (f1.line as isize - f2.line as isize).abs() < 100;
-
-                    if near {
-                        let mut joined =
-                            Zeroizing::new(String::with_capacity(f1.value.len() + f2.value.len()));
-                        joined.push_str(f1.value.as_str());
-                        joined.push_str(f2.value.as_str());
-                        candidates.push(joined);
+                    // `abs_diff` on usize: the absolute line distance directly,
+                    // no signed cast (which could overflow / panic in `abs()` on
+                    // `isize::MIN` for pathological line numbers).
+                    if f1.path == f2.path && f1.line.abs_diff(f2.line) < 100 {
+                        candidates.push(make(f1, f2));
                     }
                 }
             }
-            // Determinism: the `cluster` Vec is ordered by fragment
-            // *arrival*, and under a parallel (rayon) scan the order in
-            // which sibling chunks win the per-shard mutex is a thread
-            // race - so the (i, j) pair enumeration above emits the same
-            // *set* of joins in a run-to-run-varying order. That order
-            // then leaks downstream (synthesized match order, and via the
-            // stamped variant the anchor line attached to each glue), so
-            // identical input produced non-deterministic scan output.
-            // Canonicalize on the glued bytes - content-derived, so it is
-            // independent of arrival order - before returning. Join
-            // semantics (which pairs are produced) are untouched.
-            candidates.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
-            candidates
-        } else {
-            Vec::new()
         }
+        candidates
+    }
+
+    /// Record a fragment and return a list of "complete" candidates if any.
+    /// The returned `Zeroizing<String>` lets the caller scope the
+    /// reassembled credential's lifetime tightly - drop it (or pass it
+    /// to a scan that consumes by reference) and the heap copy is zeroed.
+    pub(crate) fn record_and_reassemble(&self, fragment: SecretFragment) -> Vec<Zeroizing<String>> {
+        let mut candidates = self.record_and_collect(fragment, |f1, f2| {
+            let mut joined = Zeroizing::new(String::with_capacity(f1.value.len() + f2.value.len()));
+            joined.push_str(f1.value.as_str());
+            joined.push_str(f2.value.as_str());
+            joined
+        });
+        // Determinism: the pair enumeration above emits the same *set* of joins
+        // in a run-to-run-varying order under a parallel (rayon) scan (the
+        // `cluster` Vec is in race-dependent arrival order), and that order then
+        // leaks downstream. Canonicalize on the glued bytes - content-derived, so
+        // it is independent of arrival order. Join semantics are untouched.
+        candidates.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+        candidates
     }
 
     /// Path/line-stamped variant of [`record_and_reassemble`]. Returns
@@ -219,77 +222,33 @@ impl FragmentCache {
         &self,
         fragment: SecretFragment,
     ) -> Vec<ReassembledCandidate> {
-        let scope = fragment.path.as_deref().unwrap_or(""); // LAW10: absent path/field => display placeholder; reporting-only, recall-safe
-                                                            // Same as `record_and_reassemble`: shard from the (prefix, scope)
-                                                            // bytes, allocate the owned key only at the insert point.
-        let shard_idx = shard_index_of(&fragment.prefix, scope);
-        let mut lock = self.shards[shard_idx].lock();
-
-        let cluster = with_scoped_key(&fragment.prefix, scope, |key| {
-            lock.get_or_insert_mut_ref(key, Vec::new)
+        let mut candidates = self.record_and_collect(fragment, |f1, f2| {
+            let mut joined = Zeroizing::new(String::with_capacity(f1.value.len() + f2.value.len()));
+            joined.push_str(f1.value.as_str());
+            joined.push_str(f2.value.as_str());
+            // f1 is the prefix fragment - the anchor we stamp the finding with.
+            // Cross-file pairs are impossible here (same key + f1.path==f2.path).
+            ReassembledCandidate {
+                value: joined,
+                path: f1.path.clone(),
+                line: f1.line,
+            }
         });
-
-        if !cluster.iter().any(|f| {
-            f.path == fragment.path && f.line == fragment.line && **f.value == **fragment.value
-        }) {
-            cluster.push(fragment);
-            if cluster.len() > MAX_FRAGMENTS_PER_SCOPE {
-                // Deterministic eviction (see `evict_one`).
-                evict_one(cluster);
-            }
-        }
-
-        if cluster.len() >= 2 {
-            let mut candidates = Vec::new();
-            for i in 0..cluster.len() {
-                for j in 0..cluster.len() {
-                    if i == j {
-                        continue;
-                    }
-                    let f1 = &cluster[i];
-                    let f2 = &cluster[j];
-
-                    let near =
-                        f1.path == f2.path && (f1.line as isize - f2.line as isize).abs() < 100;
-
-                    if near {
-                        let mut joined =
-                            Zeroizing::new(String::with_capacity(f1.value.len() + f2.value.len()));
-                        joined.push_str(f1.value.as_str());
-                        joined.push_str(f2.value.as_str());
-                        candidates.push(ReassembledCandidate {
-                            value: joined,
-                            // f1 is the prefix fragment - the anchor we
-                            // stamp the finding with. Cross-file pairs
-                            // are already impossible here (same key +
-                            // f1.path == f2.path), so f1.path == f2.path
-                            // by construction.
-                            path: f1.path.clone(),
-                            line: f1.line,
-                        });
-                    }
-                }
-            }
-            // Determinism (see `record_and_reassemble`): `cluster` is in
-            // race-dependent arrival order under a parallel scan, so the
-            // anchor (`line`) stamped onto each glue - and the emission
-            // order - varied run to run for identical input. A symmetric
-            // pair yields two distinct candidates (`A+B` anchored at A's
-            // line, `B+A` at B's line), so the sort key must be the full
-            // (glued bytes, anchor line) tuple, not the bytes alone, to
-            // give a total content-derived order. Within one full-path
-            // key every fragment shares a `path`, so `path` need not enter
-            // the key.
-            candidates.sort_unstable_by(|a, b| {
-                a.value
-                    .as_bytes()
-                    .cmp(b.value.as_bytes())
-                    .then_with(|| a.line.cmp(&b.line))
-            });
-            candidates
-        } else {
-            Vec::new()
-        }
+        // Determinism (see `record_and_reassemble`): `cluster` is in
+        // race-dependent arrival order under a parallel scan, so the anchor
+        // (`line`) stamped onto each glue - and the emission order - varied run
+        // to run for identical input. A symmetric pair yields two distinct
+        // candidates (`A+B` anchored at A's line, `B+A` at B's line), so the sort
+        // key must be the full (glued bytes, anchor line) tuple, not the bytes
+        // alone. Within one full-path key every fragment shares a `path`, so
+        // `path` need not enter the key.
+        candidates.sort_unstable_by(|a, b| {
+            a.value
+                .as_bytes()
+                .cmp(b.value.as_bytes())
+                .then_with(|| a.line.cmp(&b.line))
+        });
+        candidates
     }
 
     pub(crate) fn clear(&self) {

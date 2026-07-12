@@ -42,8 +42,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     };
 
-    let entries = read_detector_entries(detectors_dir)?;
-    if entries.is_empty() {
+    let toml_paths = detector_toml_paths(detectors_dir)?;
+    if toml_paths.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
@@ -53,6 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
+    let entries = read_detector_entries(&toml_paths)?;
 
     // Build provenance: stamp the digest of the EXACT detector set that is
     // about to be baked into the binary. The CLI surfaces this so the
@@ -76,7 +77,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // baked into the binary until `cargo clean`. Emit one
     // `rerun-if-changed` line per .toml so any individual edit triggers
     // a rebuild.
-    let toml_paths = detector_toml_paths(detectors_dir)?;
     for path in &toml_paths {
         println!("cargo:rerun-if-changed={}", path.display());
     }
@@ -91,22 +91,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Sorted `.toml` paths in `detectors_dir` — the single directory walk both
+/// the embedded table and the per-file `rerun-if-changed` lines derive from.
+/// Sorting by path equals sorting by file name (shared parent), so the
+/// embedded detector order is stable across platforms.
 fn detector_toml_paths(detectors_dir: &Path) -> io::Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
-    for entry in fs::read_dir(detectors_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "toml") {
-            paths.push(path);
-        }
-    }
-    paths.sort();
-    Ok(paths)
-}
-
-fn read_detector_entries(detectors_dir: &Path) -> io::Result<Vec<(String, String)>> {
-    let mut entries = Vec::new();
-    for entry in fs::read_dir(detectors_dir).map_err(|error| {
+    let read_dir = fs::read_dir(detectors_dir).map_err(|error| {
         io::Error::new(
             error.kind(),
             format!(
@@ -115,7 +106,8 @@ fn read_detector_entries(detectors_dir: &Path) -> io::Result<Vec<(String, String
                 error
             ),
         )
-    })? {
+    })?;
+    for entry in read_dir {
         let entry = entry.map_err(|error| {
             io::Error::new(
                 error.kind(),
@@ -128,25 +120,33 @@ fn read_detector_entries(detectors_dir: &Path) -> io::Result<Vec<(String, String
         })?;
         let path = entry.path();
         if path.extension().is_some_and(|ext| ext == "toml") {
-            let name = file_name(&path)?;
-            let content = fs::read_to_string(&path).map_err(|error| {
-                io::Error::new(
-                    error.kind(),
-                    format!(
-                        "failed to read detector '{}': {}. Fix: check file permissions and TOML encoding",
-                        path.display(),
-                        error
-                    ),
-                )
-            })?;
-            entries.push((name, content));
+            paths.push(path);
         }
     }
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    paths.sort();
+    Ok(paths)
+}
+
+fn read_detector_entries(toml_paths: &[PathBuf]) -> io::Result<Vec<(String, String)>> {
+    let mut entries = Vec::with_capacity(toml_paths.len());
+    for path in toml_paths {
+        let name = file_name(path)?;
+        let content = fs::read_to_string(path).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "failed to read detector '{}': {}. Fix: check file permissions and TOML encoding",
+                    path.display(),
+                    error
+                ),
+            )
+        })?;
+        entries.push((name, content));
+    }
     Ok(entries)
 }
 
-fn write_embedded_detectors(output_path: &PathBuf, entries: &[(String, String)]) -> io::Result<()> {
+fn write_embedded_detectors(output_path: &Path, entries: &[(String, String)]) -> io::Result<()> {
     let mut code = String::from("pub const EMBEDDED_DETECTORS: &[(&str, &str)] = &[\n");
     for (name, content) in entries {
         code.push_str(&format!("    ({name:?}, {content:?}),\n"));

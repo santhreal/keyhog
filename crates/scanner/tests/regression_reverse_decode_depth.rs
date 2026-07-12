@@ -32,8 +32,8 @@ fn chunk_with(data: &str, source_type: &str) -> Chunk {
     Chunk {
         data: data.to_string().into(),
         metadata: ChunkMetadata {
-            source_type: source_type.to_string(),
-            path: Some("reverse-depth.txt".to_string()),
+            source_type: source_type.into(),
+            path: Some("reverse-depth.txt".into()),
             ..Default::default()
         },
     }
@@ -117,7 +117,7 @@ fn decode_chunk_recovers_reversed_secret_with_exact_spliced_bytes() {
         "expected one /reverse chunk, got source_types={:?}",
         decoded
             .iter()
-            .map(|c| c.metadata.source_type.as_str())
+            .map(|c| c.metadata.source_type.as_ref())
             .collect::<Vec<_>>(),
     );
     // The decoded text is the parent line with the reversed blob replaced by the
@@ -128,7 +128,7 @@ fn decode_chunk_recovers_reversed_secret_with_exact_spliced_bytes() {
     // The reversed form is gone — it was decoded, not merely copied through.
     assert!(!recovered.contains(AWS_REVERSED));
     // Provenance records the reverse decoder.
-    assert_eq!(rev[0].metadata.source_type, "regr/reverse");
+    assert_eq!(rev[0].metadata.source_type.as_ref(), "regr/reverse");
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn decode_chunk_reverse_guard_blocks_when_root_already_reverse_sourced() {
         "guarded input must yield no reverse output, got source_types={:?}",
         decoded
             .iter()
-            .map(|c| c.metadata.source_type.as_str())
+            .map(|c| c.metadata.source_type.as_ref())
             .collect::<Vec<_>>(),
     );
 }

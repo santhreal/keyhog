@@ -65,6 +65,12 @@ pub fn decode_standard_base64(input: &str) -> Result<Vec<u8>, String> {
     let first_pad = bytes.iter().position(|&c| c == b'=');
     let stripped: &[u8] = match first_pad {
         Some(idx) => {
+            if idx == 0 {
+                // Pad-only input (`"="`, `"=="`) carries zero data bytes: it is
+                // malformed base64, not an empty-string encoding. Reject loudly
+                // instead of returning Ok(vec![]) (silent-accept, Law 10).
+                return Err("invalid base64: padding '=' with no preceding data".to_string());
+            }
             if bytes[idx..].iter().any(|&c| c != b'=') {
                 return Err(
                     "invalid base64: data after padding '=' (padding may only appear at the end)"

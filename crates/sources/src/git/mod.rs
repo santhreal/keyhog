@@ -27,11 +27,33 @@ pub(crate) fn git_bin() -> Result<PathBuf, SourceError> {
     })
 }
 
+/// Build a `git` [`Command`] with the resolved safe binary AND a hermetic
+/// environment. Global/system config are nulled and terminal prompts disabled,
+/// so a host `commit.gpgsign=true`, a `credential.helper`, or a `core.hooksPath`
+/// cannot make a git invocation block on a passphrase / credential / hook prompt
+/// (a latent CI hang; Testing-Contract HOST-INDEPENDENCE). ONE PLACE: every git
+/// spawn goes through here rather than `Command::new(git_bin()?)`, so the
+/// isolation set cannot drift per call site.
+pub(crate) fn git_command() -> Result<Command, SourceError> {
+    // Nulling the config paths disables ALL global/system config (gpgsign,
+    // credential.helper, hooksPath, ...). The null device differs by platform;
+    // both Git for Windows and POSIX git treat a config path pointing at it as
+    // "no config".
+    let null_config = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    let mut command = Command::new(git_bin()?);
+    command
+        .env("GIT_CONFIG_GLOBAL", null_config)
+        .env("GIT_CONFIG_SYSTEM", null_config)
+        .env("GIT_TERMINAL_PROMPT", "0");
+    Ok(command)
+}
+
 pub use diff::GitDiffSource;
 pub use history::GitHistorySource;
 pub use source::GitSource;
 
 pub(crate) use diff_parser::{trim_diff_line_bytes, UnifiedDiffEvent, UnifiedDiffParser};
+pub(crate) use source::max_commits_limit;
 
 /// Byte cap for a single line of git plumbing output read through
 /// [`read_capped_line`].
@@ -468,6 +490,54 @@ mod capped_line_tests {
 }
 
 #[cfg(test)]
+mod git_command_isolation_tests {
+    use super::git_command;
+    use std::process::Command;
+
+    fn env_value(cmd: &Command, key: &str) -> Option<String> {
+        cmd.get_envs()
+            .find(|(k, _)| k.to_string_lossy() == key)
+            .and_then(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
+    }
+
+    /// Every git spawn must run with a hermetic environment so a host
+    /// `commit.gpgsign=true`, a `credential.helper`, or a `core.hooksPath`
+    /// cannot make git block on a passphrase / credential / hook prompt (a
+    /// latent CI hang; Testing-Contract HOST-INDEPENDENCE). This pins the exact
+    /// isolation set on the shared `git_command()` builder so no future edit can
+    /// silently drop it, and so every call site inherits it via ONE PLACE.
+    #[test]
+    fn git_command_sets_hermetic_environment() {
+        let command = match git_command() {
+            Ok(c) => c,
+            // git not resolvable in a trusted bin dir on this host: the whole
+            // git source layer is unusable here, so there is nothing to isolate.
+            // Announce the skip loudly rather than pass silently.
+            Err(e) => {
+                eprintln!("SKIP git_command_sets_hermetic_environment: git not resolvable ({e})");
+                return;
+            }
+        };
+        let expected_null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+        assert_eq!(
+            env_value(&command, "GIT_CONFIG_GLOBAL").as_deref(),
+            Some(expected_null),
+            "global git config must be nulled to neutralize gpgsign/credential.helper/hooksPath"
+        );
+        assert_eq!(
+            env_value(&command, "GIT_CONFIG_SYSTEM").as_deref(),
+            Some(expected_null),
+            "system git config must be nulled"
+        );
+        assert_eq!(
+            env_value(&command, "GIT_TERMINAL_PROMPT").as_deref(),
+            Some("0"),
+            "terminal prompts must be disabled so git never blocks on a prompt"
+        );
+    }
+}
+
+#[cfg(test)]
 mod git_child_tests {
     use super::{spawn_git_child, wait_for_git_child};
     use std::io::{Read, Write};
@@ -638,7 +708,7 @@ pub(crate) fn validate_repo_path(repo_path: &Path) -> Result<String, SourceError
     // pre-check and error display. A non-UTF-8 path defaulting to "." here cannot
     // bypass the real gate: line below canonicalizes the ORIGINAL `repo_path`
     // (not `raw`) and refuses anything not pointing at a real `.git`.
-    let raw = repo_path.to_str().unwrap_or("."); // LAW10: absent name/label => display default; reporting-only, recall-safe
+    let raw = repo_path.to_str().unwrap_or(".");
     if raw.starts_with('-') || raw.chars().any(char::is_control) {
         return Err(SourceError::Other(
             "repository path contains unsafe characters".into(),
@@ -704,7 +774,7 @@ pub(crate) struct CommitMetadata {
 }
 
 pub(crate) fn resolve_commit_hash(repo_path: &str, ref_name: &str) -> Result<String, SourceError> {
-    let output = Command::new(&git_bin()?)
+    let output = git_command()?
         .args(["-C", repo_path, "rev-parse", "--verify", "--end-of-options"])
         .arg(format!("{ref_name}^{{commit}}"))
         .output()
@@ -724,7 +794,7 @@ pub(crate) fn get_commit_metadata(
     repo_path: &str,
     ref_name: &str,
 ) -> Result<CommitMetadata, SourceError> {
-    let output = Command::new(&git_bin()?)
+    let output = git_command()?
         .args([
             "-C",
             repo_path,

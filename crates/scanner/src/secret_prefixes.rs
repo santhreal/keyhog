@@ -47,8 +47,9 @@ pub(crate) fn multiline_secret_prefixes() -> &'static [String] {
 /// Parse and validate the multiline secret-prefix list from raw TOML: ASCII with
 /// optional `_`/`-`/`.` separators, no empties, no duplicates, non-empty overall,
 /// order and CASE preserved (the consumer's Aho-Corasick is case-sensitive, so the
-/// exact vendor casing must survive verbatim — unlike
-/// [`crate::assignment_keywords::parse_assignment_keywords`], this does NOT lowercase).
+/// exact vendor casing must survive verbatim — unlike the case-folded generic
+/// assignment-keyword vocab, this passes `require_lowercase: false` and does NOT
+/// lowercase).
 pub(crate) fn parse_multiline_secret_prefixes(raw: &str) -> Result<Vec<String>, String> {
     let parsed: MultilineSecretPrefixFile = toml::from_str(raw)
         .map_err(|error| format!("invalid multiline_secret_prefixes.toml: {error}"))?;

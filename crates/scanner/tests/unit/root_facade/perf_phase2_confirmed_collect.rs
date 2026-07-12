@@ -504,7 +504,7 @@ fn coalesced_and_per_chunk_findings_match() {
             data: body.into(),
             metadata: ChunkMetadata {
                 source_type: "filesystem".into(),
-                path: Some(format!("file_{i}.env")),
+                path: Some(format!("file_{i}.env").into()),
                 ..Default::default()
             },
         });

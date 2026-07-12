@@ -66,7 +66,7 @@ fn xlsx_shared_strings_secret_is_scanned() {
     let chunks = extracted_chunks(dir.path());
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/archive"
+            chunk.metadata.source_type.as_ref() == "filesystem/archive"
                 && chunk
                     .metadata
                     .path
@@ -100,7 +100,7 @@ fn docx_document_xml_secret_is_scanned() {
     let chunks = extracted_chunks(dir.path());
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/archive"
+            chunk.metadata.source_type.as_ref() == "filesystem/archive"
                 && chunk
                     .metadata
                     .path
@@ -130,7 +130,7 @@ fn ods_content_xml_secret_is_scanned() {
     let chunks = extracted_chunks(dir.path());
     assert!(
         chunks.iter().any(|chunk| {
-            chunk.metadata.source_type == "filesystem/archive"
+            chunk.metadata.source_type.as_ref() == "filesystem/archive"
                 && chunk
                     .metadata
                     .path

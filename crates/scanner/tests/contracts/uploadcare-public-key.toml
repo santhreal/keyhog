@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "UPLOADCAREKEY=acbb7EXAMPLEEXAMPLE83acb"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# uploadcare_key=acbb7763f9b872d8aec7e11cbd083acb  # cdn"
+credential = "acbb7763f9b872d8aec7e11cbd083acb"
+reason = "Commented-out config key (optional PUB segment omitted); uploadcare key keyword + 32-hex value intact inside the comment."

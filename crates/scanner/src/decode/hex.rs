@@ -27,6 +27,8 @@ impl Decoder for HexDecoder {
     }
 }
 
+/// Find every hex substring of at least `min_length` bytes in `text`, returned
+/// as decodable [`EncodedString`] spans.
 pub fn find_hex_strings(text: &str, min_length: usize) -> Vec<EncodedString> {
     find_hex_string_spans(text, min_length)
         .into_iter()
@@ -69,6 +71,9 @@ fn is_hex_candidate(candidate: &ExtractedValue, min_length: usize) -> bool {
 /// Maximum hex input length we'll decode (prevents OOM from malicious input).
 const MAX_HEX_INPUT_LEN: usize = 32 * 1024 * 1024; // 32 MB -> 16 MB decoded
 
+/// Decode a hex string (optionally `_`-separated), bounded to
+/// `MAX_HEX_INPUT_LEN` bytes for DoS safety. `Err(())` on odd length or
+/// non-hex input.
 #[allow(clippy::result_unit_err)]
 pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {
     if !input.as_bytes().contains(&b'_') {

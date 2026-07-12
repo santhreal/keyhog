@@ -62,6 +62,7 @@ struct DefaultExcludeRules {
     suffixes: Vec<String>,
     filenames: Vec<String>,
     filename_prefix_suffixes: Vec<PrefixSuffixRule>,
+    infixes: Vec<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -76,6 +77,7 @@ struct DefaultExcludeSection {
     suffixes: Vec<String>,
     filenames: Vec<String>,
     filename_prefix_suffixes: Vec<PrefixSuffixRule>,
+    infixes: Vec<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -94,6 +96,7 @@ fn parse_default_excludes(raw: &str) -> Result<DefaultExcludeRules, String> {
     let suffixes = normalize_rule_list("suffixes", section.suffixes, RuleListKind::Suffix)?;
     let filenames = normalize_rule_list("filenames", section.filenames, RuleListKind::Filename)?;
     let filename_prefix_suffixes = normalize_prefix_suffix_rules(section.filename_prefix_suffixes)?;
+    let infixes = normalize_rule_list("infixes", section.infixes, RuleListKind::Infix)?;
 
     Ok(DefaultExcludeRules {
         extensions,
@@ -101,18 +104,20 @@ fn parse_default_excludes(raw: &str) -> Result<DefaultExcludeRules, String> {
         suffixes,
         filenames,
         filename_prefix_suffixes,
+        infixes,
     })
 }
 
 #[derive(Clone, Copy)]
-enum RuleListKind {
+pub(crate) enum RuleListKind {
     Extension,
     PathSegment,
     Suffix,
     Filename,
+    Infix,
 }
 
-fn normalize_rule_list(
+pub(crate) fn normalize_rule_list(
     name: &str,
     values: Vec<String>,
     kind: RuleListKind,
@@ -137,8 +142,19 @@ fn normalize_rule_list(
     Ok(out)
 }
 
-fn validate_rule_value(name: &str, value: &str, kind: RuleListKind) -> Result<(), String> {
-    if value.is_empty() {
+pub(crate) fn validate_rule_value(
+    name: &str,
+    value: &str,
+    kind: RuleListKind,
+) -> Result<(), String> {
+    // Reject whitespace-only values, not just the empty string. Production callers
+    // (`normalize_rule_list`, `normalize_prefix_suffix_rules`) pre-trim, so for them
+    // `value.trim() == value` and this is byte-identical; but it ALSO fails closed
+    // when `validate_rule_value` is called directly on an untrimmed value — a
+    // spaces-only entry slips past the other guards (a space is not a control char
+    // and lowercases to itself, so only the emptiness check can catch it). The
+    // boundary guard must not depend on the caller having trimmed first.
+    if value.trim().is_empty() {
         return Err(format!("default_excludes.{name} entries must not be empty"));
     }
     if value != value.to_ascii_lowercase() {
@@ -170,6 +186,17 @@ fn validate_rule_value(name: &str, value: &str, kind: RuleListKind) -> Result<()
             if !value.starts_with('.') || value.contains('/') || value.contains('\\') {
                 return Err(format!(
                     "default_excludes.suffixes entry {value:?} must start with dot and contain no path separators"
+                ));
+            }
+        }
+        RuleListKind::Infix => {
+            if !value.starts_with('.')
+                || !value.ends_with('.')
+                || value.contains('/')
+                || value.contains('\\')
+            {
+                return Err(format!(
+                    "default_excludes.infixes entry {value:?} must start and end with a dot and contain no path separators"
                 ));
             }
         }
@@ -255,6 +282,20 @@ pub(super) fn is_default_excluded_bytes(bytes: &[u8]) -> bool {
         .iter()
         .any(|name| filename.eq_ignore_ascii_case(name.as_bytes()))
     {
+        return true;
+    }
+
+    // Infix (case-insensitive substring on the basename): minified/bundled
+    // markers like `.min.` / `.bundle.` that sit before the extension anywhere in
+    // the filename (`app.min.js`, `vendor.bundle.css`).
+    if rules.infixes.iter().any(|infix| {
+        let needle = infix.as_bytes();
+        !needle.is_empty()
+            && filename.len() >= needle.len()
+            && filename
+                .windows(needle.len())
+                .any(|window| window.eq_ignore_ascii_case(needle))
+    }) {
         return true;
     }
 

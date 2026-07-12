@@ -1,5 +1,5 @@
 use super::pipeline::push_decoded_text_chunk_spliced;
-use super::util::take_hex_digits;
+use super::util::{resolve_escaped_codepoint, take_hex_digits};
 use super::Decoder;
 use keyhog_core::Chunk;
 
@@ -42,6 +42,9 @@ impl Decoder for JsonDecoder {
 /// allocating a `String` for every ordinary JSON value and borrows only the
 /// escaped spans that can produce a distinct decoded chunk.
 fn extract_escaped_json_strings(text: &str) -> Vec<&str> {
+    // Shortest escaped JSON string worth a distinct decoded chunk: below 4 chars
+    // an unescaped body cannot carry a credential-length value.
+    const MIN_ESCAPED_JSON_STRING_LEN: usize = 4;
     let mut strings = Vec::new();
     let bytes = text.as_bytes();
     let mut index = 0;
@@ -78,7 +81,9 @@ fn extract_escaped_json_strings(text: &str) -> Vec<&str> {
                     let content_end = index;
                     index += 1;
                     closed = true;
-                    if saw_escape && content_end.saturating_sub(content_start) >= 4 {
+                    if saw_escape
+                        && content_end.saturating_sub(content_start) >= MIN_ESCAPED_JSON_STRING_LEN
+                    {
                         strings.push(&text[content_start..content_end]);
                     }
                     break;
@@ -127,34 +132,13 @@ fn json_unescape(input: &str) -> Result<String, ()> {
             Some('t') => decoded.push('\t'),
             Some('u') => {
                 let code = take_hex_digits(&mut chars, 4)?;
-                decoded.push(json_escape_codepoint(code, &mut chars)?);
+                // Shared surrogate-pair resolution (see `util`): reads a
+                // following `\u` low-surrogate code unit from `chars` itself.
+                decoded.push(resolve_escaped_codepoint(code, &mut chars)?);
             }
             _ => return Err(()),
         }
     }
 
     Ok(decoded)
-}
-
-fn json_escape_codepoint(
-    code: u32,
-    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
-) -> Result<char, ()> {
-    if (0xD800..=0xDBFF).contains(&code) {
-        match (chars.next(), chars.next()) {
-            (Some('\\'), Some('u')) => {}
-            _ => return Err(()),
-        }
-        let low = take_hex_digits(chars, 4)?;
-        if !(0xDC00..=0xDFFF).contains(&low) {
-            return Err(());
-        }
-        return super::util::surrogate_pair_to_char(code, low).ok_or(());
-    }
-
-    if (0xDC00..=0xDFFF).contains(&code) {
-        return Err(());
-    }
-
-    char::from_u32(code).ok_or(())
 }

@@ -12,8 +12,9 @@ pub(crate) fn parse_tfstate(text: &str, decode_derived: bool) -> Vec<ExtractedPa
             // Law 10: a `.tfstate` file that won't parse loses its structured
             // decode-through (the `value` fields never become scannable lines).
             // Count + warn only at depth 0; on a decode-derived buffer the parse
-            // failure is expected and loses nothing (see `structured_gap_is_real`).
-            if super::structured_gap_is_real(decode_derived) {
+            // failure is expected and loses nothing (see `gap_is_real`).
+            if super::gap_is_real(decode_derived) {
+                super::record_structured_gap();
                 tracing::warn!(target: "keyhog::structured", %error, "tfstate JSON parse failed; value fields will not be decoded-through");
             } else {
                 tracing::debug!(target: "keyhog::structured", %error, "decode-derived buffer is not valid tfstate JSON; nothing lost");
@@ -58,19 +59,44 @@ fn extract_tfstate_output_values(
         serde_json::Value::Object(map) => {
             if let Some(v) = map.get("value") {
                 if let Some(val_str) = scalar_value_text(v) {
+                    // A genuine direct output entry (`{"value": <scalar>, ...}`).
                     pending.push(PendingExtractedPair::value_anchor("tfstate-value", val_str));
+                    return;
                 }
-                return;
+                // `value` present but not a scalar: this is an outputs COLLECTION
+                // that merely contains an output literally named `value`. Fall
+                // through to the loop so sibling outputs are not dropped (a bare
+                // `return` here silently lost every other output).
             }
             for (key, output) in map {
+                let context = if key.is_empty() {
+                    "tfstate-value".to_string()
+                } else {
+                    format!("tfstate-output.{key}")
+                };
                 if let Some(v) = output.get("value") {
                     if let Some(val_str) = scalar_value_text(v) {
-                        let context = if key.is_empty() {
-                            "tfstate-value".to_string()
-                        } else {
-                            format!("tfstate-output.{key}")
-                        };
                         pending.push(PendingExtractedPair::value_anchor(context, val_str));
+                    } else {
+                        // The output's `value` is a COMPLEX type (a nested map or
+                        // array — a Terraform output can be `object({...})`,
+                        // `map(string)`, `list(string)`, `tuple(...)`, etc.). The
+                        // old code only handled the scalar arm and dropped every
+                        // secret nested inside a complex output value on the floor
+                        // (Law 10: a whole decode-through surface silently lost —
+                        // e.g. `outputs.credentials.value = { api_key = "AKIA…" }`).
+                        // Walk it for EVERY nested scalar with the same
+                        // arbitrary-JSON scalar extractor the resource-attribute
+                        // path uses, anchored under this output's context so a
+                        // finding reports `tfstate-output.<name>.<path>`.
+                        extract_tfstate_attribute_scalars(
+                            v,
+                            pending,
+                            &context,
+                            "",
+                            None,
+                            depth + 1,
+                        );
                     }
                 } else {
                     extract_tfstate_output_values(output, pending, depth + 1);
@@ -268,7 +294,8 @@ pub(crate) fn parse_jupyter(text: &str, decode_derived: bool) -> Vec<ExtractedPa
             // decode-through (secrets pasted into notebook cells never become
             // scannable lines). Count + warn only at depth 0; on a decode-derived
             // buffer the failure is expected and loses nothing.
-            if super::structured_gap_is_real(decode_derived) {
+            if super::gap_is_real(decode_derived) {
+                super::record_structured_gap();
                 tracing::warn!(target: "keyhog::structured", %error, "Jupyter notebook JSON parse failed; code cells will not be decoded-through");
             } else {
                 tracing::debug!(target: "keyhog::structured", %error, "decode-derived buffer is not valid Jupyter JSON; nothing lost");
@@ -281,6 +308,11 @@ pub(crate) fn parse_jupyter(text: &str, decode_derived: bool) -> Vec<ExtractedPa
         _ => return Vec::new(),
     };
     let mut pending = Vec::new();
+    // File-level decode-through gap flag: individual malformed cell fragments
+    // set this and log their own per-fragment `debug!` detail, but the file-
+    // level telemetry counter (which counts FILES, not fragments) is recorded at
+    // most ONCE below - a notebook with N bad fragments must not count N times.
+    let mut gap_seen = false;
     for (idx, cell) in cells.iter().enumerate() {
         let cell_type = match cell.get("cell_type").and_then(|c| c.as_str()) {
             Some(cell_type) => cell_type,
@@ -290,9 +322,17 @@ pub(crate) fn parse_jupyter(text: &str, decode_derived: bool) -> Vec<ExtractedPa
             continue;
         }
         if let Some(source) = cell.get("source") {
-            extract_jupyter_source(source, idx, &mut pending, decode_derived);
+            extract_jupyter_source(source, idx, &mut pending, &mut gap_seen);
         }
-        extract_jupyter_outputs(cell, idx, &mut pending, decode_derived);
+        extract_jupyter_outputs(cell, idx, &mut pending, &mut gap_seen);
+    }
+    if gap_seen && super::gap_is_real(decode_derived) {
+        super::record_structured_gap();
+        tracing::warn!(
+            target: "keyhog::structured",
+            "Jupyter notebook has code-cell fragments that could not be decoded-through; \
+             see debug logs for per-cell detail"
+        );
     }
     finalize_pending_pairs(text, pending)
 }
@@ -301,7 +341,7 @@ fn extract_jupyter_source(
     source: &serde_json::Value,
     idx: usize,
     pending: &mut Vec<PendingExtractedPair>,
-    decode_derived: bool,
+    gap_seen: &mut bool,
 ) {
     match source {
         serde_json::Value::String(s) => {
@@ -314,8 +354,9 @@ fn extract_jupyter_source(
         }
         serde_json::Value::Array(arr) => {
             let (joined, anchor, malformed) = jupyter_join_text_fragments(arr);
-            if malformed && super::structured_gap_is_real(decode_derived) {
-                tracing::warn!(
+            if malformed {
+                *gap_seen = true;
+                tracing::debug!(
                     target: "keyhog::structured",
                     cell = idx,
                     "Jupyter notebook code cell source array contains a non-string fragment; valid fragments will be decoded-through"
@@ -324,13 +365,12 @@ fn extract_jupyter_source(
             push_jupyter_text_pair(pending, format!("jupyter-cell-{idx}"), joined, anchor);
         }
         _ => {
-            if super::structured_gap_is_real(decode_derived) {
-                tracing::warn!(
-                    target: "keyhog::structured",
-                    cell = idx,
-                    "Jupyter notebook code cell source has unsupported shape; code cell will not be decoded-through"
-                );
-            }
+            *gap_seen = true;
+            tracing::debug!(
+                target: "keyhog::structured",
+                cell = idx,
+                "Jupyter notebook code cell source has unsupported shape; code cell will not be decoded-through"
+            );
         }
     }
 }
@@ -339,23 +379,22 @@ fn extract_jupyter_outputs(
     cell: &serde_json::Value,
     idx: usize,
     pending: &mut Vec<PendingExtractedPair>,
-    decode_derived: bool,
+    gap_seen: &mut bool,
 ) {
     let Some(outputs) = cell.get("outputs") else {
         return;
     };
     let serde_json::Value::Array(outputs) = outputs else {
-        if super::structured_gap_is_real(decode_derived) {
-            tracing::warn!(
-                target: "keyhog::structured",
-                cell = idx,
-                "Jupyter notebook code cell outputs field has unsupported shape; outputs will not be decoded-through"
-            );
-        }
+        *gap_seen = true;
+        tracing::debug!(
+            target: "keyhog::structured",
+            cell = idx,
+            "Jupyter notebook code cell outputs field has unsupported shape; outputs will not be decoded-through"
+        );
         return;
     };
     for (output_idx, output) in outputs.iter().enumerate() {
-        extract_jupyter_output(output, idx, output_idx, pending, decode_derived);
+        extract_jupyter_output(output, idx, output_idx, pending, gap_seen);
     }
 }
 
@@ -369,38 +408,52 @@ fn extract_jupyter_outputs(
 /// (JSON string-array fragmentation breaks the token). Binary MIME payloads
 /// (`image/png`, `image/jpeg`, …) are base64 blobs handled by the decode-through
 /// pipeline, not here, so they are deliberately excluded.
-const JUPYTER_TEXT_OUTPUT_MIME_TYPES: &[&str] = &[
-    "text/plain",
-    "text/html",
-    "text/markdown",
-    "text/latex",
-    "application/json",
-    "application/javascript",
-    "image/svg+xml",
-];
+#[derive(serde::Deserialize)]
+struct JupyterMimeTypes {
+    mime_types: Vec<String>,
+}
+
+/// Parse the bundled Tier-B jupyter-mime-type list. Returns an error rather than
+/// panicking so the static owner below is the single fail-closed site (the
+/// `no_unwrap_expect` gate bans `expect` in production source).
+fn parse_jupyter_mime_types(raw: &str) -> Result<Vec<String>, String> {
+    toml::from_str::<JupyterMimeTypes>(raw)
+        .map(|parsed| parsed.mime_types)
+        .map_err(|error| error.to_string())
+}
+
+static JUPYTER_TEXT_OUTPUT_MIME_TYPES: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| {
+        // `include_str!` embeds the file at compile time; attacker-controlled input
+        // cannot reach this parse. A panic here indicates a build-time defect in the
+        // bundled `rules/jupyter-mime-types.toml`, not a runtime hostile-input risk —
+        // fail-closed (Law 10), naming the file so the build owner knows what to fix.
+        match parse_jupyter_mime_types(include_str!("../../../../../rules/jupyter-mime-types.toml"))
+        {
+            Ok(mime_types) => mime_types,
+            Err(error) => panic!(
+                "rules/jupyter-mime-types.toml is invalid: {error}. \
+                 Fix the bundled Tier-B metadata file list."
+            ),
+        }
+    });
 
 fn extract_jupyter_output(
     output: &serde_json::Value,
     cell_idx: usize,
     output_idx: usize,
     pending: &mut Vec<PendingExtractedPair>,
-    decode_derived: bool,
+    gap_seen: &mut bool,
 ) {
     let context = format!("jupyter-cell-{cell_idx}-output-{output_idx}");
     if let Some(text) = output.get("text") {
         extract_jupyter_output_text(
-            text,
-            &context,
-            pending,
-            cell_idx,
-            output_idx,
-            "text",
-            decode_derived,
+            text, &context, pending, cell_idx, output_idx, "text", gap_seen,
         );
     }
     if let Some(data) = output.get("data") {
-        for &mime in JUPYTER_TEXT_OUTPUT_MIME_TYPES {
-            let Some(payload) = data.get(mime) else {
+        for mime in &*JUPYTER_TEXT_OUTPUT_MIME_TYPES {
+            let Some(payload) = data.get(mime.as_str()) else {
                 continue;
             };
             extract_jupyter_output_text(
@@ -410,7 +463,7 @@ fn extract_jupyter_output(
                 cell_idx,
                 output_idx,
                 mime,
-                decode_derived,
+                gap_seen,
             );
         }
     }
@@ -422,7 +475,7 @@ fn extract_jupyter_output(
             cell_idx,
             output_idx,
             "traceback",
-            decode_derived,
+            gap_seen,
         );
     }
 }
@@ -434,8 +487,8 @@ fn extract_jupyter_output_text(
     pending: &mut Vec<PendingExtractedPair>,
     cell_idx: usize,
     output_idx: usize,
-    surface: &'static str,
-    decode_derived: bool,
+    surface: &str,
+    gap_seen: &mut bool,
 ) {
     match value {
         serde_json::Value::String(s) => {
@@ -443,8 +496,9 @@ fn extract_jupyter_output_text(
         }
         serde_json::Value::Array(arr) => {
             let (joined, anchor, malformed) = jupyter_join_text_fragments(arr);
-            if malformed && super::structured_gap_is_real(decode_derived) {
-                tracing::warn!(
+            if malformed {
+                *gap_seen = true;
+                tracing::debug!(
                     target: "keyhog::structured",
                     cell = cell_idx,
                     output = output_idx,
@@ -455,15 +509,14 @@ fn extract_jupyter_output_text(
             push_jupyter_text_pair(pending, context.to_string(), joined, anchor);
         }
         _ => {
-            if super::structured_gap_is_real(decode_derived) {
-                tracing::warn!(
-                    target: "keyhog::structured",
-                    cell = cell_idx,
-                    output = output_idx,
-                    surface,
-                    "Jupyter notebook output text has unsupported shape; output will not be decoded-through"
-                );
-            }
+            *gap_seen = true;
+            tracing::debug!(
+                target: "keyhog::structured",
+                cell = cell_idx,
+                output = output_idx,
+                surface,
+                "Jupyter notebook output text has unsupported shape; output will not be decoded-through"
+            );
         }
     }
 }

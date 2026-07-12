@@ -39,7 +39,9 @@ fn surfaces_in(path: &str, text: &str, needle: &str) -> bool {
     let s = shared();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", path);
-    s.scan(&chunk).into_iter().any(|m| m.credential.to_string().contains(needle))
+    s.scan(&chunk)
+        .into_iter()
+        .any(|m| m.credential.to_string().contains(needle))
 }
 
 fn surfaces(text: &str, needle: &str) -> bool {
@@ -93,7 +95,10 @@ fn tfvars_pwd_variant_surfaces() {
 #[test]
 fn terraform_provider_block_password_surfaces() {
     let pw = body(16, 8);
-    assert!(surfaces(&format!("provider \"mysql\" {{\n  password = \"{pw}\"\n}}\n"), &pw));
+    assert!(surfaces(
+        &format!("provider \"mysql\" {{\n  password = \"{pw}\"\n}}\n"),
+        &pw
+    ));
 }
 
 #[test]
@@ -107,7 +112,11 @@ fn terraform_var_db_password_env_surfaces() {
 #[test]
 fn helm_values_top_level_password_surfaces() {
     let pw = body(16, 10);
-    assert!(surfaces_in("values.yaml", &format!("password: {pw}\n"), &pw));
+    assert!(surfaces_in(
+        "values.yaml",
+        &format!("password: {pw}\n"),
+        &pw
+    ));
 }
 
 #[test]
@@ -133,19 +142,31 @@ fn helm_values_quoted_postgresql_password_surfaces() {
 #[test]
 fn helm_values_redis_password_surfaces() {
     let pw = body(16, 13);
-    assert!(surfaces_in("values.yaml", &format!("redis:\n  password: {pw}\n"), &pw));
+    assert!(surfaces_in(
+        "values.yaml",
+        &format!("redis:\n  password: {pw}\n"),
+        &pw
+    ));
 }
 
 #[test]
 fn ansible_become_password_surfaces() {
     let pw = body(16, 14);
-    assert!(surfaces_in("playbook.yml", &format!("ansible_become_password: {pw}\n"), &pw));
+    assert!(surfaces_in(
+        "playbook.yml",
+        &format!("ansible_become_password: {pw}\n"),
+        &pw
+    ));
 }
 
 #[test]
 fn ansible_vars_mysql_password_surfaces() {
     let pw = body(16, 15);
-    assert!(surfaces_in("group_vars/all.yml", &format!("mysql_root_password: \"{pw}\"\n"), &pw));
+    assert!(surfaces_in(
+        "group_vars/all.yml",
+        &format!("mysql_root_password: \"{pw}\"\n"),
+        &pw
+    ));
 }
 
 #[test]
@@ -153,7 +174,11 @@ fn ansible_vault_named_var_password_surfaces() {
     // A var merely NAMED with a `vault_` prefix (not an encrypted vault blob) is
     // an ordinary plaintext password assignment and must surface.
     let pw = body(16, 16);
-    assert!(surfaces_in("group_vars/all.yml", &format!("vault_db_password: \"{pw}\"\n"), &pw));
+    assert!(surfaces_in(
+        "group_vars/all.yml",
+        &format!("vault_db_password: \"{pw}\"\n"),
+        &pw
+    ));
 }
 
 // ── precision / negatives ─────────────────────────────────────────────────────

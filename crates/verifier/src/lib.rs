@@ -60,6 +60,10 @@ pub struct VerificationEngine {
     detectors: Arc<HashMap<Arc<str>, DetectorSpec>>,
     /// Per-service concurrency limit to avoid hammering APIs.
     service_semaphores: Arc<HashMap<Arc<str>, Arc<Semaphore>>>,
+    /// Configured per-service concurrency, reused as the fallback bound when a
+    /// group's service is absent from `service_semaphores`. Single owner for the
+    /// value — no second hardcoded default that could silently diverge.
+    pub(crate) max_concurrent_per_service: usize,
     /// Global concurrency limit.
     global_semaphore: Arc<Semaphore>,
     timeout: Duration,
@@ -217,6 +221,49 @@ pub fn proxy_is_active(explicit: Option<&str>) -> bool {
     matches!(resolve_proxy_mode(explicit), ProxyMode::Explicit(_))
 }
 
+/// Scheme default reused wherever a verifier/OOB URL is resolved to a
+/// `host:port` for DNS screening. ONE owner for the `.unwrap_or(443)` that was
+/// pasted at every `port_or_known_default()` call site.
+pub(crate) const DEFAULT_HTTPS_PORT: u16 = 443;
+
+/// Apply the security-critical decompression + redirect posture EVERY verifier
+/// and OOB reqwest client must carry, from ONE definitional home. Decompression
+/// is disabled so the streaming body cap measures real wire bytes
+/// (decompression-bomb defense); redirects are refused so a public host cannot
+/// 302 to a private IP past the pre-connect SSRF screen. Shared by the base
+/// verifier client, the DNS-pinned per-request rebuild, and the OOB collector
+/// client so the posture can never diverge between them.
+pub(crate) fn harden_verifier_client_builder(
+    builder: reqwest::ClientBuilder,
+) -> reqwest::ClientBuilder {
+    builder
+        .no_gzip()
+        .no_brotli()
+        .no_zstd()
+        .no_deflate()
+        .redirect(reqwest::redirect::Policy::none())
+}
+
+/// Build a DNS-pinned reqwest client carrying the full verifier posture
+/// (hardened decompression/redirect + `no_proxy` + host→addr pin). ONE owner for
+/// the two byte-identical pinned rebuilds (per-request verify + OOB collector);
+/// each caller maps the reqwest build error into its own fail-closed refusal.
+pub(crate) fn build_pinned_verifier_client(
+    host: &str,
+    pinned_addrs: &[std::net::SocketAddr],
+    timeout: std::time::Duration,
+    insecure_tls: bool,
+) -> Result<reqwest::Client, reqwest::Error> {
+    harden_verifier_client_builder(
+        reqwest::Client::builder()
+            .timeout(timeout)
+            .danger_accept_invalid_certs(insecure_tls)
+            .no_proxy(),
+    )
+    .resolve_to_addrs(host, pinned_addrs)
+    .build()
+}
+
 /// Convert a [`DedupedMatch`] into a [`VerifiedFinding`] with the given verification result.
 pub(crate) fn into_finding(
     group: DedupedMatch,
@@ -259,13 +306,105 @@ pub mod testing {
     use std::sync::Arc;
     use std::time::Duration;
 
+    pub use crate::cache::oldest_eviction_batch;
+    pub use crate::interpolate::{missing_companion_refs, MAX_TEMPLATE_TOKENS};
     pub use crate::oob::redact_interactsh_error;
+
+    /// Exercise the real `cache::evict_oldest_dashmap_entries` primitive (the
+    /// shared oldest-first bounded-cache eviction used by the DNS-resolution and
+    /// pinned-client caches) on an internally-built age-stamped map and return the
+    /// surviving keys, sorted ascending. Each key doubles as its age-in-seconds
+    /// (entry `k` is stamped `base + k`s, so key `0` is the oldest), making the
+    /// survivor set directly observable. Kept here — rather than in the
+    /// integration-test crate — so `dashmap` stays out of the test crate's
+    /// dependency set while the exact production eviction path is what runs.
+    pub fn evict_oldest_dashmap_survivors_for_test(ages_secs: &[u64], count: usize) -> Vec<u64> {
+        let base = std::time::Instant::now();
+        let cache: dashmap::DashMap<u64, (std::time::Instant, ())> = dashmap::DashMap::new();
+        for &s in ages_secs {
+            cache.insert(s, (base + std::time::Duration::from_secs(s), ()));
+        }
+        crate::cache::evict_oldest_dashmap_entries(&cache, count, |(t, _)| *t);
+        let mut survivors: Vec<u64> = cache.iter().map(|e| *e.key()).collect();
+        survivors.sort_unstable();
+        survivors
+    }
     pub use crate::verify::aws::INVALID_AWS_REGION_ERROR;
     pub use crate::verify::credential::MAX_RETRIES_ERROR;
     pub use crate::verify::request::{
         invalid_url_error, CONNECTION_FAILED_ERROR, DNS_NO_ADDRESSES_ERROR, HTTPS_ONLY_ERROR,
         PRIVATE_URL_ERROR, REDIRECT_LIMIT_ERROR, REQUEST_FAILED_ERROR, TIMEOUT_ERROR,
     };
+
+    // Pinned-client cache-key seams (request.rs `canonical_pinned_addrs` /
+    // `pinned_keys_equal_for_test` are `pub(crate)`, so they cannot be re-exported
+    // with `pub use` — wrap them in `pub fn`s here, like the other `_for_test`
+    // accessors, so `tests/unit/pinned_client_key.rs` reaches them without widening
+    // the crate's public API).
+    pub fn canonical_pinned_addrs(addrs: &[std::net::SocketAddr]) -> Vec<std::net::SocketAddr> {
+        crate::verify::request::canonical_pinned_addrs(addrs)
+    }
+    pub fn pinned_keys_equal_for_test(
+        host: &str,
+        addrs_a: &[std::net::SocketAddr],
+        addrs_b: &[std::net::SocketAddr],
+        timeout: std::time::Duration,
+        insecure_tls: bool,
+    ) -> bool {
+        crate::verify::request::pinned_keys_equal_for_test(
+            host,
+            addrs_a,
+            addrs_b,
+            timeout,
+            insecure_tls,
+        )
+    }
+
+    // OOB poller-degradation decision seams, surfaced for the re-homed
+    // `tests/unit/oob_poller_degradation.rs` (the `oob::session` no-inline-tests
+    // gate forbids testing the private `poller_is_degraded` / `elapsed_verdict` /
+    // threshold in place). `pub fn` wrappers, not `pub use`, because the helpers
+    // are `pub(crate)`.
+    pub fn oob_poller_is_degraded(consecutive_errors: u32) -> bool {
+        crate::oob::poller_is_degraded(consecutive_errors)
+    }
+    pub fn oob_elapsed_verdict(poller_degraded: bool) -> crate::oob::OobObservation {
+        crate::oob::elapsed_verdict(poller_degraded)
+    }
+    pub fn oob_degraded_error_threshold() -> u32 {
+        crate::oob::OOB_DEGRADED_ERROR_THRESHOLD
+    }
+
+    // SigV4 canonical-URI encoding seams (re-homed `sigv4::uri_encode_tests`).
+    pub fn aws_uri_encode(input: &str) -> String {
+        crate::sigv4::aws_uri_encode(input)
+    }
+    pub fn canonical_query_string(pairs: &[(String, String)]) -> String {
+        crate::sigv4::canonical_query_string(pairs)
+    }
+
+    // OOB combined-verdict policy-matrix seam (re-homed
+    // `verify::credential::oob_verdict_tests`).
+    pub fn oob_combined_verdict(
+        policy: keyhog_core::OobPolicy,
+        http_only_result: keyhog_core::VerificationResult,
+        http_live: bool,
+        observed: bool,
+    ) -> keyhog_core::VerificationResult {
+        crate::verify::credential::oob_combined_verdict(
+            policy,
+            http_only_result,
+            http_live,
+            observed,
+        )
+    }
+
+    // Response body-capacity DoS-guard seams (re-homed
+    // `verify::response::body_capacity_tests`).
+    pub fn body_capacity_hint(content_length: Option<u64>) -> usize {
+        crate::verify::response::body_capacity_hint(content_length)
+    }
+    pub const MAX_RESPONSE_BODY_BYTES: usize = crate::verify::response::MAX_RESPONSE_BODY_BYTES;
     pub use crate::verify::response::{
         BODY_NOT_UTF8_ERROR, BODY_READ_FAILED_ERROR, RESPONSE_TOO_LARGE_ERROR,
     };
@@ -496,6 +635,15 @@ pub mod testing {
         );
         fn oob_session_mint(&self, session: &crate::oob::OobSession) -> TestMintedUrl;
         fn oob_session_default_timeout(&self, session: &crate::oob::OobSession) -> Duration;
+        /// Force the degraded flag so the re-homed
+        /// `tests/unit/oob_poller_degradation.rs` can assert a `wait_for` timeout
+        /// on an unreachable collector fails closed (`Disabled`) instead of a
+        /// false `NotObserved`.
+        fn oob_session_set_degraded_for_test(
+            &self,
+            session: &crate::oob::OobSession,
+            degraded: bool,
+        );
         fn oob_session_store_and_notify(
             &self,
             session: &crate::oob::OobSession,
@@ -514,6 +662,22 @@ pub mod testing {
             server: &str,
             resolved: std::io::Result<Vec<std::net::SocketAddr>>,
         ) -> Result<(), crate::oob::InteractshError>;
+        /// `Ok(true)` = plan reuses the proxy client, `Ok(false)` = pins a
+        /// direct client, `Err` = the resolved-IP screen rejected the host.
+        /// Proves the proxied path screens resolved IPs (proxy-SSRF fix).
+        fn oob_collector_reuses_proxy_client(
+            &self,
+            server: &str,
+            proxy_in_use: bool,
+            resolved: std::io::Result<Vec<std::net::SocketAddr>>,
+        ) -> Result<bool, crate::oob::InteractshError>;
+        /// The freshly-created rate-limit slot's initial `last_request`,
+        /// clamped with `checked_sub` so a low-uptime host cannot panic.
+        fn rate_limiter_initial_last_request(
+            &self,
+            now: std::time::Instant,
+            interval: Duration,
+        ) -> std::time::Instant;
         fn retry_loop_preserves_metadata_on_exhaustion(
             &self,
         ) -> impl std::future::Future<
@@ -538,6 +702,20 @@ pub mod testing {
             body: &str,
         ) -> Result<bool, String>;
         fn body_indicates_error_for_test(&self, body: &str) -> bool;
+        fn extract_metadata_for_test(
+            &self,
+            specs: &[keyhog_core::MetadataSpec],
+            body: &str,
+        ) -> HashMap<String, String>;
+        fn retryable_http_status_for_test(&self, status: u16) -> bool;
+        fn success_spec_is_explicit_for_test(&self, spec: &keyhog_core::SuccessSpec) -> bool;
+        fn resolve_live_verdict_for_test(
+            &self,
+            is_live: bool,
+            success_is_explicit: bool,
+            body: &str,
+        ) -> bool;
+        fn record_inflight_cap_bypass_for_test(&self, max_inflight_keys: usize) -> usize;
         fn verification_result_is_cacheable_for_test(
             &self,
             result: &keyhog_core::VerificationResult,
@@ -850,6 +1028,14 @@ pub mod testing {
             session.config_default_timeout()
         }
 
+        fn oob_session_set_degraded_for_test(
+            &self,
+            session: &crate::oob::OobSession,
+            degraded: bool,
+        ) {
+            session.set_degraded_for_test(degraded);
+        }
+
         fn oob_session_store_and_notify(
             &self,
             session: &crate::oob::OobSession,
@@ -884,6 +1070,23 @@ pub mod testing {
             resolved: std::io::Result<Vec<std::net::SocketAddr>>,
         ) -> Result<(), crate::oob::InteractshError> {
             crate::oob::ssrf_check_collector_dns_result_for_test(server, resolved)
+        }
+
+        fn oob_collector_reuses_proxy_client(
+            &self,
+            server: &str,
+            proxy_in_use: bool,
+            resolved: std::io::Result<Vec<std::net::SocketAddr>>,
+        ) -> Result<bool, crate::oob::InteractshError> {
+            crate::oob::collector_reuses_proxy_client_for_test(server, proxy_in_use, resolved)
+        }
+
+        fn rate_limiter_initial_last_request(
+            &self,
+            now: std::time::Instant,
+            interval: Duration,
+        ) -> std::time::Instant {
+            crate::rate_limit::initial_last_request(now, interval)
         }
 
         async fn retry_loop_preserves_metadata_on_exhaustion(
@@ -925,6 +1128,35 @@ pub mod testing {
 
         fn body_indicates_error_for_test(&self, body: &str) -> bool {
             crate::verify::body_indicates_error(body)
+        }
+
+        fn extract_metadata_for_test(
+            &self,
+            specs: &[keyhog_core::MetadataSpec],
+            body: &str,
+        ) -> HashMap<String, String> {
+            crate::verify::extract_metadata(specs, body)
+        }
+
+        fn retryable_http_status_for_test(&self, status: u16) -> bool {
+            crate::verify::retryable_http_status(status)
+        }
+
+        fn success_spec_is_explicit_for_test(&self, spec: &keyhog_core::SuccessSpec) -> bool {
+            crate::verify::success_spec_is_explicit(spec)
+        }
+
+        fn resolve_live_verdict_for_test(
+            &self,
+            is_live: bool,
+            success_is_explicit: bool,
+            body: &str,
+        ) -> bool {
+            crate::verify::resolve_live_verdict(is_live, success_is_explicit, body)
+        }
+
+        fn record_inflight_cap_bypass_for_test(&self, max_inflight_keys: usize) -> usize {
+            crate::verify::note_inflight_cap_bypass(max_inflight_keys)
         }
 
         fn verification_result_is_cacheable_for_test(

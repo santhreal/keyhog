@@ -10,8 +10,11 @@ service = "anthropic"
 severity = "critical"
 keywords = ["sk-ant-", "anthropic"]
 
-# This constraint owns the legacy api03 family only. Other sk-ant- forms pass
-# through because body bounds apply only when the declared prefix matches.
+# Credential shape: the `sk-ant-api03-` key form carries an 80..=120 byte body
+# after the prefix. A `sk-ant-api03-…` candidate whose body is out of that range
+# is a placeholder/truncation and is suppressed by the shape gate; differently
+# shaped `sk-ant-` tokens are not owned by this rule and pass. Per-detector
+# (DetectorSpec::credential_shape; was rules/detector-credential-shapes.toml).
 [detector.credential_shape]
 prefix = "sk-ant-api03-"
 body_min_length = 80

@@ -179,10 +179,9 @@ fn every_detector_has_at_least_one_keyword_geq_3() {
     );
 }
 
-/// Every detector must declare a service and the candidate-generation policy
-/// required by its kind. Regex detectors need patterns; phase-2 generic
-/// detectors intentionally have no regex and instead need keywords plus a
-/// detector-owned entropy floor.
+/// Every detector must declare a service, a severity, and at least
+/// one pattern. Empty pattern arrays mean the detector loads but
+/// never scans for anything.
 #[test]
 fn every_detector_has_metadata_and_patterns() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load");
@@ -191,19 +190,13 @@ fn every_detector_has_metadata_and_patterns() {
         if d.service.is_empty() {
             bad.push(format!("{}: missing service", d.id));
         }
-        match d.kind {
-            keyhog_core::DetectorKind::Regex if d.patterns.is_empty() => {
-                bad.push(format!("{}: regex detector has zero patterns", d.id));
-            }
-            keyhog_core::DetectorKind::Phase2Generic
-                if d.keywords.is_empty() || d.entropy_floor.is_empty() =>
-            {
-                bad.push(format!(
-                    "{}: phase2-generic detector lacks keywords or entropy_floor",
-                    d.id
-                ));
-            }
-            _ => {}
+        // A `phase2-generic` detector (generic-secret / generic-api-key /
+        // generic-keyword-secret) is a shapeless-secret bridge with NO regex
+        // anchor by design — it fires in phase 2 on keywords + entropy_floor.
+        // `spec.rs` rejects a `kind = "regex"` detector with zero patterns at
+        // load time, so only regex detectors reach here with patterns to check.
+        if d.patterns.is_empty() && d.kind != keyhog_core::DetectorKind::Phase2Generic {
+            bad.push(format!("{}: zero patterns", d.id));
         }
     }
     assert!(

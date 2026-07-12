@@ -89,7 +89,7 @@ fn walks_and_delivers_file_content() {
     // source_type is the filesystem tag.
     assert!(chunks
         .iter()
-        .all(|c| c.metadata.source_type == "filesystem"));
+        .all(|c| c.metadata.source_type.as_ref() == "filesystem"));
 }
 
 #[test]

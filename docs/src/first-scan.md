@@ -42,20 +42,29 @@ by santh
 
 ⚡ 16 cores | GPU: NVIDIA GeForce RTX 5090 | SIMD: AVX-512 | Hyperscan | 922 detectors (6061 patterns) io_uring | backend=simd-regex | gpu=none
 
-src/config/staging.env:14:12  HIGH  stripe-secret-key
-                              sk_live_4eC39H…Tcd3Hc (redacted, last 6)
-                              entropy 5.21 │ confidence 0.999 │ unverified
+  ┌    CRITICAL ─── Stripe Secret Key
+  │ Secret:     sk_l...p7dc
+  │ Location:   src/config/staging.env:14
+  │ Confidence: ■■■■■■ 100%
+  │ Action:     Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.
+  │ Docs:       https://docs.stripe.com/keys#roll-api-key
+  └─────────────────────────────────────────────
 
-scanned 12,841 files in 1.4 s
-1 finding · 0 verified live · 1041 example fixtures suppressed
+  ━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1 secret found · 1 unverified
+
+  1. Revoke active secrets in the provider's dashboard.
 ```
 
-The banner tells you the binary version and detector count. With
-`--progress`, the capability line also shows the current host's CPU/GPU
-labels, scanner engine, compiled pattern count, selected backend, and GPU
-engagement result. The body lists each finding with its location,
-severity, detector, redacted credential, and confidence. The footer
-summarizes counts and runtime.
+The banner (on stderr, only when it is a terminal) tells you the binary
+version and detector count. With `--progress`, the capability line also
+shows the current host's CPU/GPU labels, scanner engine, compiled pattern
+count, selected backend, and GPU engagement result. Each finding renders
+as a severity-colored box: header severity + detector, then `Secret:`
+(redacted to its first and last few characters), `Location:`, a
+`Confidence:` bar, and an `Action:`/`Docs:` remediation hint. The
+`Results` footer joins the counts with ` · ` and lists the numbered next
+steps.
 
 ## Default suppressions
 
@@ -89,7 +98,7 @@ schema being stable):
   "detector_name":      "Stripe Secret Key",
   "service":            "stripe",
   "severity":           "critical",
-  "credential_redacted": "sk_live_4e…3Hc",
+  "credential_redacted": "sk_l...p7dc",
   "credential_hash":     "sha256-hex",
   "location": {
     "source":    "filesystem",
@@ -103,7 +112,12 @@ schema being stable):
   "verification": "skipped",
   "metadata": {},
   "additional_locations": [],
-  "confidence": 0.999
+  "confidence": 1.0,
+  "remediation": {
+    "action":     "Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.",
+    "revoke_url":  "https://docs.stripe.com/keys#roll-api-key",
+    "docs_url":    "https://docs.stripe.com/keys"
+  }
 }
 ```
 
@@ -122,7 +136,7 @@ keyhog scan . --exclude-paths 'docs/*'  # exclude a glob
 Common patterns the default walk **already** skips: `.git/`,
 `node_modules/`, `__pycache__/`, `vendor/`, `dist/`, `build/`, `out/`,
 `.min.js`, `.min.css`, `.bak`, `.swp`. To see the full list, look at
-`is_default_excluded` in `crates/sources/src/filesystem.rs`.
+`is_default_excluded_path` in `crates/sources/src/filesystem.rs`.
 
 ## Going further
 

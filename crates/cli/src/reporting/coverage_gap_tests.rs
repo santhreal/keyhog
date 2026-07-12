@@ -450,7 +450,7 @@ fn every_kind_is_nonzero_on_all_ones() {
     for kind in CoverageGapKind::ALL {
         assert!(
             kind.count(&counts) > 0,
-            "{kind:?} has a zero count when every counter is set — its field is unwired"
+            "{kind:?} has a zero count when every counter is set: its field is unwired"
         );
     }
 }

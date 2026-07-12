@@ -54,7 +54,7 @@ fn request_authorization_header_secret_surfaces_with_exact_metadata() {
     assert_eq!(rows.len(), 2, "one request + one response chunk per entry");
 
     let request = expect_ok(&rows[0]);
-    assert_eq!(request.metadata.source_type, "wire:har:request");
+    assert_eq!(request.metadata.source_type.as_ref(), "wire:har:request");
     assert_eq!(
         request.metadata.path.as_deref(),
         Some("capture.har#https://api.example.test/v1/login"),
@@ -67,7 +67,7 @@ fn request_authorization_header_secret_surfaces_with_exact_metadata() {
     );
 
     let response = expect_ok(&rows[1]);
-    assert_eq!(response.metadata.source_type, "wire:har:response");
+    assert_eq!(response.metadata.source_type.as_ref(), "wire:har:response");
     assert_eq!(
         response.metadata.path.as_deref(),
         Some("capture.har#https://api.example.test/v1/login"),
@@ -90,7 +90,7 @@ fn response_json_body_secret_surfaces_in_response_chunk() {
     assert_eq!(&*request.data, "GET https://api.example.test/token\n");
 
     let response = expect_ok(&rows[1]);
-    assert_eq!(response.metadata.source_type, "wire:har:response");
+    assert_eq!(response.metadata.source_type.as_ref(), "wire:har:response");
     assert_eq!(
         response.metadata.path.as_deref(),
         Some("capture.har#https://api.example.test/token")
@@ -110,7 +110,7 @@ fn base64_declared_response_body_is_decoded_before_scanning() {
     assert_eq!(rows.len(), 2);
 
     let response = expect_ok(&rows[1]);
-    assert_eq!(response.metadata.source_type, "wire:har:response");
+    assert_eq!(response.metadata.source_type.as_ref(), "wire:har:response");
     assert_eq!(
         &*response.data, "200\n\nclient_secret=ghp_A1b2C3d4E5f6G7h8I9j0K",
         "declared-base64 body must be decoded so the plaintext secret is what gets scanned"
@@ -182,7 +182,7 @@ fn multiple_entries_emit_request_response_pairs_in_order() {
 
     let types: Vec<&str> = rows
         .iter()
-        .map(|row| expect_ok(row).metadata.source_type.as_str())
+        .map(|row| expect_ok(row).metadata.source_type.as_ref())
         .collect();
     assert_eq!(
         types,
@@ -315,7 +315,7 @@ fn budget_overrun_after_request_emits_request_then_exact_truncation_error() {
     );
 
     let request = expect_ok(&rows[0]);
-    assert_eq!(request.metadata.source_type, "wire:har:request");
+    assert_eq!(request.metadata.source_type.as_ref(), "wire:har:request");
     assert_eq!(&*request.data, "GET https://a.test/x\n");
 
     let message = expect_truncation(&rows[1]);
@@ -339,7 +339,7 @@ fn utf16le_bom_har_takes_the_structured_path() {
     assert_eq!(rows.len(), 2);
 
     let request = expect_ok(&rows[0]);
-    assert_eq!(request.metadata.source_type, "wire:har:request");
+    assert_eq!(request.metadata.source_type.as_ref(), "wire:har:request");
     assert_eq!(
         request.metadata.path.as_deref(),
         Some("wide.har#https://u16.test/a")

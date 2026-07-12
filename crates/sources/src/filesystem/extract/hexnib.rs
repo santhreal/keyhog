@@ -53,4 +53,25 @@ mod tests {
         assert_eq!(hex_value(0x00), None);
         assert_eq!(hex_value(0xFF), None);
     }
+
+    #[test]
+    fn matches_std_hex_oracle_over_the_entire_byte_domain() {
+        // COMPLETE-DOMAIN differential: for every one of the 256 possible bytes,
+        // `hex_value` must agree with an INDEPENDENT std oracle. `byte as char` is
+        // lossless for 0..=255 (each byte maps to its Latin-1 scalar), and
+        // `char::to_digit(16)` accepts exactly `0-9`/`a-f`/`A-F` → 0..=15 and
+        // rejects everything else (all of 0x80..=0xFF are non-ASCII, hence None) —
+        // so this is `hex_value`'s exact contract computed a different way. It
+        // subsumes the point examples above and locks the three ranges against any
+        // future off-by-one drift (Law 6: truth via an independent oracle, over the
+        // whole input space rather than six hand-picked boundaries).
+        for byte in 0u8..=u8::MAX {
+            let oracle = (byte as char).to_digit(16).map(|v| v as u8);
+            assert_eq!(
+                hex_value(byte),
+                oracle,
+                "hex_value(0x{byte:02X}) disagrees with the std hex oracle"
+            );
+        }
+    }
 }

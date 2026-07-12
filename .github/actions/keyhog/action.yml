@@ -153,6 +153,19 @@ runs:
         sudo apt-get install -y --no-install-recommends libhyperscan5 || \
           sudo apt-get install -y --no-install-recommends libhyperscan-dev
 
+    # Verification model: this step checks the release asset against its
+    # published SHA-256 only. That is deliberately weaker than install.sh /
+    # install.ps1 (which also verify a minisign signature against a pinned
+    # public key): the checksum lives next to the asset, so it proves
+    # download integrity but would not catch a fully compromised GitHub
+    # release. The trade-off is accepted here because (a) the action already
+    # trusts github.com for its own composite source via the action ref,
+    # (b) installing minisign portably on all three runner OSes adds its own
+    # unpinned supply-chain dependency, and (c) failure stays closed — a
+    # missing or mismatched checksum on a required release errors out, never
+    # falls back silently. If GitHub-release compromise is in your threat
+    # model, install with install.sh (full signature verification) and run
+    # `keyhog` directly instead of this action.
     - name: Try downloading prebuilt binary
       id: download
       shell: bash

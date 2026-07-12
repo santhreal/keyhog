@@ -38,6 +38,8 @@ use keyhog_core::{
 /// keyword. `validate_detector` should return an empty issue vec for this.
 fn clean_detector(id: &str) -> DetectorSpec {
     DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         id: id.into(),
         name: "Demo".into(),
         service: "demo".into(),
@@ -190,10 +192,13 @@ fn missing_severity_field_is_parse_error() {
 }
 
 #[test]
-fn missing_patterns_field_is_parse_error() {
-    // `patterns: Vec<PatternSpec>` is NOT `#[serde(default)]`, so omitting the
-    // entire [[detector.patterns]] table is a hard parse error (not just a
-    // quality-gate error).
+fn missing_patterns_is_a_quality_error_not_a_parse_error() {
+    // `patterns` IS `#[serde(default)]` (spec.rs), so omitting the
+    // [[detector.patterns]] table PARSES cleanly — the recall-safety requirement
+    // (a regex detector must carry at least one anchor, or it ships zero recall)
+    // is enforced by the quality gate `validate_patterns_present`, NOT at parse
+    // time. This lets `kind = "phase2-generic"` keyword detectors omit patterns
+    // by design. Pin both halves so the layering can't silently regress.
     let toml = r#"
 [detector]
 id = "demo-key"
@@ -202,13 +207,22 @@ service = "demo"
 severity = "high"
 keywords = ["demo_"]
 "#;
+    let detectors = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .expect("omitting patterns must PARSE: patterns is #[serde(default)]");
+
+    // Default kind is Regex; a regex detector with no patterns is a hard quality
+    // Error at validation time (a dead anchor that would silently ship no recall).
+    let issues = keyhog_core::validate_detector(&detectors[0]);
     assert!(
-        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
-            &keyhog_core::testing::TestApi,
-            toml
-        )
-        .is_err(),
-        "patterns is required (no serde default) => parse error when omitted"
+        issues.iter().any(|i| matches!(
+            i,
+            keyhog_core::QualityIssue::Error(m) if m.contains("no patterns defined")
+        )),
+        "a regex-kind detector with no patterns must be a 'no patterns defined' quality \
+         Error; got {issues:?}"
     );
 }
 
@@ -1326,28 +1340,48 @@ fn spec_hash_ignores_service_field() {
 }
 
 #[test]
-fn spec_hash_ignores_min_confidence_field() {
+fn spec_hash_binds_min_confidence_field() {
+    // MIGRATION 2026-07-07: `min_confidence` is now a HASHED per-detector knob
+    // (merkle_spec_hash emits `mc:{id}:{bits}` when non-default). It overrides a
+    // per-detector suppression threshold, so changing it changes WHICH findings a
+    // scan emits — the exact staleness the merkle cache must notice before it
+    // trusts a "skip this file" (Law 10 silent staleness, same class as the
+    // severity/`client_safe` keys). So changing it MUST change the digest. The
+    // sibling macro test `spec_hash_binds_min_confidence` in
+    // `regression_compute_spec_hash.rs` pins the same contract via a different
+    // construction; this differential a-vs-b form is the complementary check.
     let a = clean_detector("mc");
     let mut b = a.clone();
     b.min_confidence = Some(0.99);
-    assert_eq!(
+    assert_ne!(
         compute_spec_hash(&[a]),
         compute_spec_hash(&[b]),
-        "min_confidence is not hashed; changing it must NOT change the digest"
+        "min_confidence is a hashed recall/precision knob; changing it MUST change the digest"
     );
 }
 
 #[test]
-fn spec_hash_ignores_pattern_description_and_client_safe() {
-    // Neither description nor client_safe appears in the per-pattern key.
+fn spec_hash_ignores_description_but_binds_client_safe() {
+    // `description` is cosmetic and NOT in the per-pattern key → changing it must
+    // NOT change the digest. `client_safe` IS folded in (`cs:` in merkle_spec_hash)
+    // because toggling it downgrades every match of the pattern to ClientSafe under
+    // `--hide-client-safe` — a material output change that MUST invalidate the cache.
     let a = clean_detector("pdesc");
-    let mut b = a.clone();
-    b.patterns[0].description = Some("a fresh description".into());
-    b.patterns[0].client_safe = true;
+
+    let mut desc_only = a.clone();
+    desc_only.patterns[0].description = Some("a fresh description".into());
     assert_eq!(
-        compute_spec_hash(&[a]),
-        compute_spec_hash(&[b]),
-        "pattern description/client_safe are not hashed; must NOT change the digest"
+        compute_spec_hash(std::slice::from_ref(&a)),
+        compute_spec_hash(&[desc_only]),
+        "pattern description is not hashed; must NOT change the digest"
+    );
+
+    let mut toggled = a.clone();
+    toggled.patterns[0].client_safe = !a.patterns[0].client_safe;
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&a)),
+        compute_spec_hash(&[toggled]),
+        "client_safe is a material output change; toggling it MUST change the digest"
     );
 }
 
@@ -1563,6 +1597,8 @@ regex = "rt_[A-Z0-9]{8}"
     )
     .expect("rt toml parses");
     let hand = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         id: "rt-key".into(),
         name: "A Different Name".into(),     // not hashed
         service: "different-service".into(), // not hashed
@@ -1574,7 +1610,13 @@ regex = "rt_[A-Z0-9]{8}"
         companions: Vec::new(),
         verify: None,
         keywords: vec!["rt_".into()],
-        min_confidence: Some(0.5), // not hashed
+        // `min_confidence` is now a HASHED knob (migration 2026-07-07), so the
+        // hand-built detector must AGREE with the TOML-loaded one, which omits
+        // `min_confidence` (=> None). A non-None here would emit an `mc:` key the
+        // TOML side lacks and diverge the digest — that divergence is CORRECT
+        // (the field is bound), so this test keeps proving equality only across
+        // the genuinely non-hashed fields (name/service).
+        min_confidence: None,
         tests: Vec::new(),
         ..Default::default()
     };

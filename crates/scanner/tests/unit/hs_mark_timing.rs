@@ -158,5 +158,8 @@ fn format_dropped_dominant_case_is_legible() {
     // The shape that would justify a dropped-loop RegexSet batch.
     let line = format_hs_mark_split(&split(100_000_000, 900_000_000));
     assert!(line.contains("scan=100.0 ms (10.0%)"), "{line}");
-    assert!(line.contains("dropped-host-loop=900.0 ms (90.0%)"), "{line}");
+    assert!(
+        line.contains("dropped-host-loop=900.0 ms (90.0%)"),
+        "{line}"
+    );
 }

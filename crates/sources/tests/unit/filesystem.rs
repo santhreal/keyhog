@@ -42,7 +42,7 @@ fn filesystem_source_does_not_skip_extensionless_text_with_single_nul() {
         1,
         "an extensionless text file with one embedded NUL must not be pre-skipped as binary"
     );
-    assert_eq!(chunks[0].metadata.source_type, "filesystem");
+    assert_eq!(chunks[0].metadata.source_type.as_ref(), "filesystem");
     assert!(
         chunks[0].data.contains("API_KEY=abc\0def"),
         "NUL-bearing text must reach the scanner unchanged; chunk={:?}",

@@ -73,7 +73,11 @@ fn cloudflare_api_token_env_surfaces() {
 #[test]
 fn cloudflare_cf_api_token_surfaces() {
     let k = alnum(40, 2);
-    assert!(surfaces_under(&format!("CF_API_TOKEN={k}"), "cloudflare-api-token", &k));
+    assert!(surfaces_under(
+        &format!("CF_API_TOKEN={k}"),
+        "cloudflare-api-token",
+        &k
+    ));
 }
 
 #[test]
@@ -109,7 +113,10 @@ fn cloudflare_lowercase_anchor_surfaces() {
 #[test]
 fn cloudflare_api_token_39_char_does_not_fire() {
     let k = alnum(39, 6); // 39 < the required 40
-    assert!(!fires(&format!("CLOUDFLARE_API_TOKEN={k}"), "cloudflare-api-token"));
+    assert!(!fires(
+        &format!("CLOUDFLARE_API_TOKEN={k}"),
+        "cloudflare-api-token"
+    ));
 }
 
 // ── Cloudflare global API key: 37 hex ────────────────────────────────────────
@@ -137,7 +144,10 @@ fn cloudflare_global_x_auth_key_header_surfaces() {
 #[test]
 fn cloudflare_global_36_hex_does_not_fire() {
     let k = hex(36, 9); // 36 < the required 37
-    assert!(!fires(&format!("CLOUDFLARE_API_KEY={k}"), "cloudflare-global-api-key"));
+    assert!(!fires(
+        &format!("CLOUDFLARE_API_KEY={k}"),
+        "cloudflare-global-api-key"
+    ));
 }
 
 // ── Cloudflare Workers API token: 40 char ────────────────────────────────────
@@ -157,13 +167,21 @@ fn cloudflare_workers_api_token_surfaces() {
 #[test]
 fn vercel_token_surfaces() {
     let k = alnum(24, 11);
-    assert!(surfaces_under(&format!("VERCEL_TOKEN={k}"), "vercel-token", &k));
+    assert!(surfaces_under(
+        &format!("VERCEL_TOKEN={k}"),
+        "vercel-token",
+        &k
+    ));
 }
 
 #[test]
 fn vercel_token_lowercase_anchor_surfaces() {
     let k = alnum(24, 12);
-    assert!(surfaces_under(&format!("vercel_token={k}"), "vercel-token", &k));
+    assert!(surfaces_under(
+        &format!("vercel_token={k}"),
+        "vercel-token",
+        &k
+    ));
 }
 
 #[test]
@@ -177,7 +195,10 @@ fn vercel_token_23_char_does_not_fire() {
 #[test]
 fn vercel_v2_api_token_surfaces() {
     let k = format!("vercel_v2_{}", alnum(24, 14));
-    assert!(surfaces_under(&k, "vercel-api-token-v2", &k), "vercel_v2_ token must surface");
+    assert!(
+        surfaces_under(&k, "vercel-api-token-v2", &k),
+        "vercel_v2_ token must surface"
+    );
 }
 
 #[test]
@@ -201,7 +222,11 @@ fn vercel_blob_read_write_token_surfaces() {
 #[test]
 fn vercel_blob_token_surfaces() {
     let k = alnum(44, 17);
-    assert!(surfaces_under(&format!("BLOB_TOKEN={k}"), "vercel-blob-credentials", &k));
+    assert!(surfaces_under(
+        &format!("BLOB_TOKEN={k}"),
+        "vercel-blob-credentials",
+        &k
+    ));
 }
 
 // ── Vercel edge-config token: ecfg_<64> bare prefix ──────────────────────────
@@ -209,7 +234,10 @@ fn vercel_blob_token_surfaces() {
 #[test]
 fn vercel_edge_config_token_surfaces() {
     let k = format!("ecfg_{}", alnum(64, 18));
-    assert!(surfaces_under(&k, "vercel-edge-config-token", &k), "ecfg_ token must surface");
+    assert!(
+        surfaces_under(&k, "vercel-edge-config-token", &k),
+        "ecfg_ token must surface"
+    );
 }
 
 #[test]
@@ -230,7 +258,11 @@ fn multiple_cloudflare_tokens_cosurface() {
     );
     assert!(surfaces_under(&text, "cloudflare-api-token", &api));
     assert!(surfaces_under(&text, "cloudflare-global-api-key", &global));
-    assert!(surfaces_under(&text, "cloudflare-workers-api-token", &workers));
+    assert!(surfaces_under(
+        &text,
+        "cloudflare-workers-api-token",
+        &workers
+    ));
 }
 
 #[test]

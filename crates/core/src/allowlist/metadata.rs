@@ -22,17 +22,45 @@ pub(super) fn parse_inline_metadata(s: &str) -> InlineMetadata {
             continue;
         };
         let key = token[..eq].trim();
-        let value = unquote_metadata_value(token[eq + 1..].trim()).to_string();
+        let value = unquote_metadata_value(token[eq + 1..].trim());
         match key {
-            "reason" => meta.reason = Some(value),
-            "expires" => meta.expires = Some(value),
-            "approved_by" => meta.approved_by = Some(value),
+            "reason" => {
+                assign_unique_field(&mut meta.reason, key, value, &mut meta.malformed_tokens)
+            }
+            "expires" => {
+                assign_unique_field(&mut meta.expires, key, value, &mut meta.malformed_tokens)
+            }
+            "approved_by" => assign_unique_field(
+                &mut meta.approved_by,
+                key,
+                value,
+                &mut meta.malformed_tokens,
+            ),
             _ => {
                 meta.unknown_keys.push(key.to_string());
             }
         }
     }
     meta
+}
+
+/// Assign a metadata field, refusing a silent override on a repeated key
+/// (Law 10). A duplicate is recorded as a malformed token so `load` fails the
+/// scan closed rather than quietly keeping whichever `reason`/`expires`/
+/// `approved_by` happened to come last.
+fn assign_unique_field(
+    field: &mut Option<String>,
+    key: &str,
+    value: String,
+    malformed: &mut Vec<String>,
+) {
+    if field.is_some() {
+        malformed.push(format!(
+            "duplicate metadata key `{key}`; specify it at most once per entry"
+        ));
+    } else {
+        *field = Some(value);
+    }
 }
 
 struct MetadataTokens<'a> {
@@ -71,16 +99,37 @@ fn metadata_tokens(s: &str) -> MetadataTokens<'_> {
     }
 }
 
-fn unquote_metadata_value(value: &str) -> &str {
+/// Strip one layer of matching quotes and unescape the `\"`, `\'`, `\\`
+/// sequences that `metadata_tokens` honored while splitting, so a quoted
+/// `reason="a\"b"` yields `a"b` rather than the literal `a\"b`. Backslashes
+/// before any other character stay literal (shell-style), matching the
+/// tokenizer's escape rule.
+fn unquote_metadata_value(value: &str) -> String {
     let bytes = value.as_bytes();
-    if bytes.len() >= 2
+    let quoted = bytes.len() >= 2
         && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
-            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''))
-    {
-        &value[1..value.len() - 1]
-    } else {
-        value
+            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''));
+    if !quoted {
+        return value.to_string();
     }
+    let inner = &value[1..value.len() - 1];
+    let mut out = String::with_capacity(inner.len());
+    let mut chars = inner.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.next() {
+                Some(escaped @ ('"' | '\'' | '\\')) => out.push(escaped),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 pub(super) fn log_metadata_audit(kind: &str, entry: &str, meta: &InlineMetadata) {
@@ -140,7 +189,10 @@ pub(super) fn parse_yyyy_mm_dd_days(input: &str) -> Option<i64> {
     if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
         return None;
     }
-    let year = parse_fixed_i64(&bytes[0..4])?;
+    // 4-digit year is always in `0..=9999`, so it shares the `u32` digit
+    // accumulator with month/day (one owner) and widens to `i64` for the civil
+    // arithmetic below.
+    let year = i64::from(parse_fixed_u32(&bytes[0..4])?);
     let month = parse_fixed_u32(&bytes[5..7])?;
     let day = parse_fixed_u32(&bytes[8..10])?;
     if !(1..=12).contains(&month) {
@@ -150,17 +202,6 @@ pub(super) fn parse_yyyy_mm_dd_days(input: &str) -> Option<i64> {
         return None;
     }
     Some(days_from_civil(year, month, day))
-}
-
-fn parse_fixed_i64(bytes: &[u8]) -> Option<i64> {
-    let mut value = 0i64;
-    for &byte in bytes {
-        if !byte.is_ascii_digit() {
-            return None;
-        }
-        value = value * 10 + i64::from(byte - b'0');
-    }
-    Some(value)
 }
 
 fn parse_fixed_u32(bytes: &[u8]) -> Option<u32> {

@@ -8,7 +8,12 @@ id = "azure-blob-sas-token"
 name = "Azure Blob SAS Token"
 service = "azure"
 severity = "high"
-keywords = ["sig=", "sv=", "se=", "sp=", "srt=", "blob.core.windows.net"]
+# "se=", "sp=", "srt=" removed: over-broad SAS query-param prefilters (se= fires on
+# case=/response=, sp= on resp=/disp=) that no regex references. Every matchable SAS
+# token carries sv= AND sig= (pattern 1 requires both); the connection-string and
+# env-var forms carry blob.core.windows.net / sv=. So sv=/sig=/host cover both the
+# trigger and the keyword_nearby signal — the three params are redundant. Recall-neutral.
+keywords = ["sig=", "sv=", "blob.core.windows.net"]
 
 [[detector.patterns]]
 regex = "(\\?sv=\\d{4}-\\d{2}-\\d{2}&[^\\s\"'']*sig=[a-zA-Z0-9%]{20,})"

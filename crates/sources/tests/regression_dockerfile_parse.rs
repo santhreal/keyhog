@@ -80,7 +80,7 @@ fn env_secret_line_surfaces_with_exact_chunk_metadata() {
         Some("keyhog:test:manifest[0]:config.json"),
         "config chunk must carry the image:manifest[idx]:config label"
     );
-    assert_eq!(chunk.metadata.source_type, "docker");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "docker");
     assert!(
         chunk.data.contains("API_SECRET=s3cr3t-value-xyz789"),
         "the ENV secret must surface verbatim in the serialized config chunk, got {:?}",
@@ -375,7 +375,7 @@ fn manifest_json_metadata_chunk_carries_exact_label() {
         chunk.metadata.path.as_deref(),
         Some("keyhog:test:metadata:manifest.json")
     );
-    assert_eq!(chunk.metadata.source_type, "docker");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "docker");
     assert_eq!(chunk.metadata.size_bytes, Some(chunk.data.len() as u64));
     assert!(
         chunk.data.contains("myrepo/app:v1.2.3"),

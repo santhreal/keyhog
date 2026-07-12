@@ -210,7 +210,8 @@ fn parse_variable_header(line: &str) -> Option<String> {
 }
 
 fn parse_hcl_default(line: &str) -> Option<HclValue> {
-    let trimmed = strip_hcl_line_comment(line).trim_start();
+    let stripped = strip_hcl_line_comment(line);
+    let trimmed = stripped.trim_start();
     let rest = trimmed.strip_prefix("default")?;
     let rest = rest.trim_start();
     let rest = rest.strip_prefix('=')?.trim_start();
@@ -242,7 +243,8 @@ fn parse_hcl_default_in_fragment(fragment: &str) -> Option<HclValue> {
 }
 
 fn parse_hcl_assignment(line: &str) -> Option<(String, HclValue)> {
-    let line = strip_hcl_line_comment(line).trim();
+    let stripped = strip_hcl_line_comment(line);
+    let line = stripped.trim();
     if line.starts_with('#') || line.starts_with("//") || !line.contains('=') {
         return None;
     }
@@ -289,37 +291,41 @@ fn parse_heredoc_marker(s: &str) -> Option<String> {
     Some(marker.to_string())
 }
 
-fn strip_hcl_line_comment(line: &str) -> &str {
-    let bytes = line.as_bytes();
-    let mut quote = None;
-    let mut escaped = false;
-    let mut index = 0usize;
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if let Some(active_quote) = quote {
-            if escaped {
-                escaped = false;
-            } else if byte == b'\\' {
-                escaped = true;
-            } else if byte == active_quote {
-                quote = None;
-            }
-            index += 1;
-            continue;
-        }
-        match byte {
-            b'"' | b'\'' | b'`' => quote = Some(byte),
-            b'#' => return &line[..index],
-            b'/' if bytes.get(index + 1) == Some(&b'/') => return &line[..index],
-            b'/' if bytes.get(index + 1) == Some(&b'*') => return &line[..index],
-            _ => {}
-        }
-        index += 1;
-    }
-    line
+/// Strip `#` / `//` line comments AND inline `/* … */` block comments from a
+/// SINGLE HCL line, returning the code with every comment span removed.
+///
+/// This is a thin single-line driver over the ONE comment-stripping owner
+/// (`strip_hcl_comments`), invoked with a throwaway block-comment flag. Running
+/// the shared state machine is what makes an inline block comment that opens AND
+/// closes on the same line parse correctly: `a = 1 /* note */ b = 2` yields
+/// `a = 1  b = 2`, preserving `b = 2`.
+///
+/// The previous hand-rolled body duplicated the `#`/`//`/quote logic but DIVERGED
+/// on `/*`: it returned `&line[..index]`, truncating the whole line at the block
+/// comment's open and silently dropping every assignment after it. Two comment
+/// parsers that disagree on one token is a ONE-PLACE violation and a latent
+/// recall bug (it was masked only because every current caller happens to receive
+/// input already stripped by `strip_hcl_comments` upstream — a future raw-input
+/// caller would have lost data). Routing through the single owner removes the
+/// divergence outright: there is now exactly one HCL comment grammar.
+///
+/// Returns `String` (not `&str`) because correct inline-block stripping deletes
+/// interior bytes, which no single sub-slice of the input can express.
+///
+/// `pub(crate)` (like [`parse_hcl`]) so `structured_hcl_parser_contract.rs` can
+/// drive it directly through its `include!` of this source and lock that it never
+/// re-diverges from [`strip_hcl_comments`].
+pub(crate) fn strip_hcl_line_comment(line: &str) -> String {
+    let mut in_block_comment = false;
+    strip_hcl_comments(line, &mut in_block_comment)
 }
 
-fn strip_hcl_comments(line: &str, in_block_comment: &mut bool) -> String {
+/// The ONE HCL comment-stripping owner: removes `#` / `//` line comments and
+/// `/* … */` block comments (tracking block state across lines via
+/// `in_block_comment`), quote-aware so comment tokens inside strings are kept.
+/// `pub(crate)` so the parser-contract test can differentially lock the
+/// single-line driver [`strip_hcl_line_comment`] against it.
+pub(crate) fn strip_hcl_comments(line: &str, in_block_comment: &mut bool) -> String {
     let bytes = line.as_bytes();
     let mut out = String::new();
     let mut quote = None;

@@ -349,12 +349,6 @@ impl CompiledScanner {
             crate::generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
         let generic_owning_detector =
             crate::generic_keyword_owner::GenericOwningDetectorIndex::build(&detectors);
-        let generic_assignment = phase2_generic::GenericAssignmentPolicy::compile(&detectors)
-            .map_err(|error| {
-                crate::error::ScanError::Config(format!(
-                    "cannot compile detector-owned generic assignment policy: {error}"
-                ))
-            })?;
 
         let stripe_hot_confirmed_prefixes =
             crate::detector_classification::stripe_hot_confirmed_prefixes()
@@ -431,7 +425,6 @@ impl CompiledScanner {
             detector_weak_anchor_base_by_index,
             generic_named_assignment_keywords,
             generic_owning_detector,
-            generic_assignment,
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,
             suffix_gate_ac,
@@ -479,38 +472,6 @@ impl CompiledScanner {
         profile::set_perf_trace_enabled(config.perf_trace);
         self.config = config;
         self
-    }
-
-    /// Validate and apply a custom configuration.
-    ///
-    /// Operator-facing and other user-influenced boundaries should prefer this
-    /// result-returning form: invalid entropy, BPE, probability, depth, or
-    /// resource-limit values are rejected instead of reaching scan semantics.
-    /// [`Self::with_config`] remains the source-compatible builder for callers
-    /// that already validated or constructed a trusted [`ScannerConfig`].
-    pub fn try_with_config(
-        mut self,
-        config: ScannerConfig,
-    ) -> std::result::Result<Self, crate::scanner_config::ScannerConfigInstallError> {
-        config.validate()?;
-        if config.per_chunk_timeout_ms == Some(0) {
-            return Err(crate::scanner_config::ScannerConfigInstallError::ZeroPerChunkTimeout);
-        }
-        if config.max_matches_per_chunk == 0 {
-            return Err(crate::scanner_config::ScannerConfigInstallError::ZeroMaxMatchesPerChunk);
-        }
-        if config.max_matches_per_chunk > crate::scanner_config::MAX_MATCHES_PER_CHUNK_LIMIT {
-            return Err(
-                crate::scanner_config::ScannerConfigInstallError::MaxMatchesPerChunkTooHigh {
-                    found: config.max_matches_per_chunk,
-                    max: crate::scanner_config::MAX_MATCHES_PER_CHUNK_LIMIT,
-                },
-            );
-        }
-        profile::set_profile_enabled(config.profile);
-        profile::set_perf_trace_enabled(config.perf_trace);
-        self.config = config;
-        Ok(self)
     }
 
     /// Apply explicit performance-route tuning to this compiled scanner.

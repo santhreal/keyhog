@@ -41,8 +41,17 @@ const AWS_KEY_ID_PREFIXES: [&str; 2] = ["AKIA", "ASIA"];
 /// the encoded account bits begin.
 const AWS_KEY_ID_PREFIX_LEN: usize = 4;
 
+/// The base32 body of an access-key ID: 16 chars after the prefix, encoding
+/// the 80-bit account+discriminator payload.
+const AWS_KEY_ID_BODY_LEN: usize = 16;
+
+/// Number of leading base32 chars that carry the 48 account bits we need
+/// (10 * 5 = 50 bits; we keep the top 48). Single owner so the decode loop and
+/// the length math cannot disagree.
+const ACCOUNT_BASE32_CHARS: usize = 10;
+
 /// Length of a canonical AWS access-key ID: 4-char prefix + 16 base32 chars.
-const AWS_KEY_ID_LEN: usize = AWS_KEY_ID_PREFIX_LEN + 16;
+const AWS_KEY_ID_LEN: usize = AWS_KEY_ID_PREFIX_LEN + AWS_KEY_ID_BODY_LEN;
 
 /// The 48-bit mask + 7-bit right shift that extracts the account number from
 /// the leading 6 decoded bytes. Documented by trufflesecurity; the low 7 bits
@@ -95,7 +104,7 @@ pub(crate) fn aws_account_from_key_id(key_id: &str) -> Option<String> {
     // chars (10 * 5 = 50 bits). Accumulate those 50 bits, then keep the top 48.
     let body = &key_id.as_bytes()[AWS_KEY_ID_PREFIX_LEN..];
     let mut acc: u64 = 0;
-    for &c in &body[..10] {
+    for &c in &body[..ACCOUNT_BASE32_CHARS] {
         let v = base32_value(c)?;
         acc = (acc << 5) | u64::from(v);
     }
@@ -165,6 +174,25 @@ struct CanaryTable {
     accounts: Vec<String>,
 }
 
+/// Validate one raw canary account string and insert the trimmed 12-digit id
+/// into `set`. Single owner for the "trim + reject empty + require 12 ASCII
+/// digits" contract shared by the embedded baseline parser and the
+/// `.keyhog.toml` config parser, so the two can never disagree on what a valid
+/// AWS account id is.
+fn insert_validated_account(set: &mut HashSet<String>, raw_account: &str) -> Result<(), String> {
+    let account = raw_account.trim();
+    if account.is_empty() {
+        return Err("canary account entries must not be empty".to_string());
+    }
+    if account.len() != 12 || !account.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(format!(
+            "canary account {account:?} must be a 12-digit AWS account id"
+        ));
+    }
+    set.insert(account.to_string());
+    Ok(())
+}
+
 /// Parse one canary TOML document. Trims each account so whitespace in a
 /// hand-edited data file never silently misses.
 pub(crate) fn parse_canary_accounts(raw: &str) -> Result<HashSet<String>, String> {
@@ -177,16 +205,7 @@ pub(crate) fn parse_canary_accounts(raw: &str) -> Result<HashSet<String>, String
         .into_iter()
         .chain(parsed.knockoff.accounts)
     {
-        let account = raw_account.trim();
-        if account.is_empty() {
-            return Err("canary account entries must not be empty".to_string());
-        }
-        if account.len() != 12 || !account.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err(format!(
-                "canary account {account:?} must be a 12-digit AWS account id"
-            ));
-        }
-        set.insert(account.to_string());
+        insert_validated_account(&mut set, &raw_account)?;
     }
     Ok(set)
 }
@@ -199,16 +218,7 @@ where
 {
     let mut set = HashSet::new();
     for raw_account in accounts {
-        let account = raw_account.as_ref().trim();
-        if account.is_empty() {
-            return Err("canary account entries must not be empty".to_string());
-        }
-        if account.len() != 12 || !account.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err(format!(
-                "canary account {account:?} must be a 12-digit AWS account id"
-            ));
-        }
-        set.insert(account.to_string());
+        insert_validated_account(&mut set, raw_account.as_ref())?;
     }
     Ok(set)
 }

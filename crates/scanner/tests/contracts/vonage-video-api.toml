@@ -32,3 +32,12 @@ fixture_bytes = 1048576
 min_findings = 1
 max_seconds = 2.0
 note = "1 MiB filler + planted Vonage Video API key."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = """# vonage video creds, rotate:
+#   VONAGE_API_KEY=54689afc
+#   VONAGE_API_SECRET=0123456789abcdef"""
+credential = "54689afc"
+reason = "Commented-out config dump; VONAGE_API_KEY keyword + 8-hex key intact inside the comment (the SECRET companion boosts but is not required)."

@@ -204,7 +204,9 @@ fn base64_of_benign_prose_surfaces_no_private_key() {
     let benign = "the quick brown fox jumps over the lazy dog, nothing secret here at all";
     let matches = scan_embedded(&b64(benign));
     assert!(
-        !matches.iter().any(|m| m.detector_id.as_ref() == "private-key"),
+        !matches
+            .iter()
+            .any(|m| m.detector_id.as_ref() == "private-key"),
         "benign decoded prose must not trip private-key"
     );
 }
@@ -212,7 +214,9 @@ fn base64_of_benign_prose_surfaces_no_private_key() {
 fn hex_of_benign_prose_surfaces_no_netrc() {
     let benign = "machine readable documentation describing the login flow in prose form only";
     let matches = scan_embedded(&hexenc(benign));
-    assert!(!matches.iter().any(|m| m.detector_id.as_ref() == "netrc-password"));
+    assert!(!matches
+        .iter()
+        .any(|m| m.detector_id.as_ref() == "netrc-password"));
 }
 
 // ── identity: the recovered credential is attributed to the right detector ──

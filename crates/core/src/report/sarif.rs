@@ -89,14 +89,12 @@ impl<W: Write + Send> SarifReporter<W> {
             return Ok(());
         }
         // Manual JSON: serde won't help us here because we want to write
-        // results streamed BEFORE we know the rule set. We use
-        // `serde_json::to_string` for value escaping.
-        let version = env!("CARGO_PKG_VERSION");
+        // results streamed BEFORE we know the rule set. The tool version is
+        // emitted separately in `finish` via `tool.driver.version`.
         write!(
             self.writer,
             r#"{{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{{"results":["#
         )?;
-        let _ = version; // LAW10: unused-binding marker; no runtime effect, not a fallback
         self.prefix_written = true;
         Ok(())
     }
@@ -138,22 +136,21 @@ impl<W: Write + Send> SarifReporter<W> {
         // pointing at the same span). Dedup by the canonical
         // (file_path, line, offset) tuple - that's what makes two
         // locations "the same finding" for UI purposes.
-        let mut seen_related: std::collections::HashSet<(String, Option<usize>, usize)> =
-            std::collections::HashSet::new();
-        let related_locations: Vec<SarifLocation> = finding
+        // Key on a cloned `Arc<str>` (a pointer/refcount bump, not a fresh
+        // allocation) rather than `to_string()`; `Arc<str>` hashes/compares by
+        // content, so dedup is unchanged while the per-location String alloc is
+        // gone.
+        let mut seen_related: std::collections::HashSet<(
+            Option<std::sync::Arc<str>>,
+            Option<usize>,
+            usize,
+        )> = std::collections::HashSet::new();
+        finding
             .additional_locations
             .iter()
-            .filter(|loc| {
-                let key = (
-                    loc.file_path.clone().unwrap_or_default().to_string(), // LAW10: dedup-key formatting of an optional path; finding still emitted
-                    loc.line,
-                    loc.offset,
-                );
-                seen_related.insert(key)
-            })
+            .filter(|loc| seen_related.insert((loc.file_path.clone(), loc.line, loc.offset)))
             .map(Self::location_to_sarif)
-            .collect();
-        related_locations
+            .collect()
     }
 
     fn result_properties(finding: &VerifiedFinding) -> SarifResultProperties {
@@ -279,7 +276,7 @@ impl<W: Write + Send> SarifReporter<W> {
                 security_severity: super::sarif_uri::code_scanning_security_severity(
                     finding.severity,
                 ),
-                tags: ["security"],
+                tags: [super::sarif_uri::CODE_SCANNING_SECURITY_TAG],
             }),
         }
     }

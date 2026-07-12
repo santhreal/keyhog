@@ -36,6 +36,10 @@ pub mod gates;
 pub mod git_diff;
 pub mod git_diff_head_worktree;
 pub mod git_history;
+#[cfg(feature = "git")]
+pub mod git_max_commits_shared_owner;
+#[cfg(feature = "github")]
+pub mod github_org_pagination;
 pub mod har;
 pub mod http;
 pub mod internal_contracts;
@@ -49,6 +53,9 @@ pub mod lib;
 ))]
 pub mod process_excerpt;
 pub mod src_inline_skip_counter_isolation;
+pub mod strings_extract;
 pub mod timeouts;
 #[cfg(feature = "web")]
 pub mod web_redact_url_userinfo_boundary;
+#[cfg(feature = "web")]
+pub mod web_redirect_pin_key;

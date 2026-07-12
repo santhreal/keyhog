@@ -81,3 +81,52 @@ fn hcl_identifier_check_is_single_owner() {
         "the identifier char-class must be inlined only inside is_hcl_identifier"
     );
 }
+
+// ── Property tier ────────────────────────────────────────────────────────────
+// The fixed vectors pin one multi-form document; these SWEEP the flat-assignment
+// path (which routes through the shared `is_hcl_identifier`) over N distinct
+// entries, plus the reject direction. Contract traced to parsers/hcl.rs + the
+// fixed tests: a top-level `key = "value"` with an identifier-class key
+// (alnum/`_`/`-`) surfaces as (key, value, its 1-based line) in document order;
+// a key carrying a non-identifier char (`.`) is rejected and yields no tuple.
+// Distinct `K{i}` keys keep each line unique; `v_<rand>` quoted values carry no
+// quote/escape chars. Source parsers/hcl.rs is FOREIGN-DIRTY — this round-trip
+// asserts the current observable contract as a regression signal. No proptest
+// before.
+
+use proptest::prelude::*;
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1_000))]
+
+    /// N distinct top-level `K{i} = "v_<rand>"` assignments parse to EXACTLY those
+    /// (key, value, line) tuples in document order; entry i is on line i+1.
+    #[test]
+    fn hcl_flat_assignment_round_trips(
+        vals in prop::collection::vec("[a-z0-9]{4,12}", 2..=8),
+    ) {
+        let mut doc = String::new();
+        let mut expected: Vec<(String, String, usize)> = Vec::new();
+        for (i, r) in vals.iter().enumerate() {
+            let key = format!("K{i}");
+            let value = format!("v_{r}");
+            doc.push_str(&format!("{key} = \"{value}\"\n"));
+            expected.push((key, value, i + 1));
+        }
+        let got = keyhog_scanner::testing::parse_hcl_tuples(&doc);
+        prop_assert_eq!(got, expected);
+    }
+
+    /// A key carrying a `.` (outside the identifier char-class) is rejected by
+    /// the shared `is_hcl_identifier` gate ⇒ no tuple, for any surrounding shape.
+    #[test]
+    fn hcl_dotted_key_assignment_is_rejected(
+        a in "[a-z]{1,6}",
+        b in "[a-z]{1,6}",
+        val in "[a-z0-9]{4,10}",
+    ) {
+        let doc = format!("{a}.{b} = \"v_{val}\"\n");
+        let got = keyhog_scanner::testing::parse_hcl_tuples(&doc);
+        prop_assert!(got.is_empty(), "dotted (non-identifier) key must be rejected, got {got:?}");
+    }
+}

@@ -11,6 +11,7 @@ mod gpu_min_bytes_low_tier_512mb;
 mod gpu_min_bytes_mid_tier_256mb;
 mod gpu_pattern_breakeven_high_100;
 mod gpu_solo_bytes_high_tier_256mb;
+mod gpu_tier_thresholds_are_monotonic;
 mod scan_backend_label_cpu_fallback;
 mod scan_backend_label_gpu;
 mod scan_backend_label_megascan;

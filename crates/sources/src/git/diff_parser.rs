@@ -280,14 +280,18 @@ fn normalize_git_relative_path(path: &str) -> Option<String> {
         return None;
     }
 
-    let mut normalized = Vec::new();
+    // Borrow the path components (`&str` into `path`) rather than heap-allocating
+    // a `String` per component — the only reducible allocation on the `+++ ` header
+    // path (the per-content-line hot path is already zero-alloc: it borrows via
+    // `UnifiedDiffEvent<'a>`). One `join` allocation for the result, not N+1.
+    let mut normalized: Vec<&str> = Vec::new();
     for component in path.split('/') {
         match component {
             "" | "." => {}
             ".." => {
                 normalized.pop()?;
             }
-            part => normalized.push(part.to_string()),
+            part => normalized.push(part),
         }
     }
 
@@ -310,7 +314,11 @@ fn trim_ascii_whitespace(mut bytes: &[u8]) -> &[u8] {
 
 #[cfg(test)]
 mod tests {
-    use super::{sanitize_path_bytes, trim_diff_line_bytes, UnifiedDiffEvent, UnifiedDiffParser};
+    use super::{
+        sanitize_path_bytes, trim_diff_line_bytes, unescape_quoted_git_path_body, UnifiedDiffEvent,
+        UnifiedDiffParser,
+    };
+    use proptest::prelude::*;
 
     #[test]
     fn parser_emits_added_lines_only_inside_hunks() {
@@ -481,5 +489,57 @@ mod tests {
         assert_eq!(trim_diff_line_bytes(b"+a\r\n"), b"+a");
         assert_eq!(trim_diff_line_bytes(b"+a\n"), b"+a");
         assert_eq!(trim_diff_line_bytes(b"+a\r"), b"+a");
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(4000))]
+
+        /// `git diff` output is UNTRUSTED — a malicious repository controls it. The
+        /// stateful line parser must NEVER panic on any byte sequence across any
+        /// parser state (the `@@` hunk-header math, the `+++`/quoted-path branch,
+        /// the octal unescape) — it may only return `Ok(event)` or `Err`.
+        #[test]
+        fn parse_line_is_total_on_arbitrary_diff_bytes(
+            lines in prop::collection::vec(prop::collection::vec(any::<u8>(), 0..48usize), 0..8usize),
+        ) {
+            let mut parser = UnifiedDiffParser::new();
+            for line in &lines {
+                // Panicking here (index-OOB, subtract-overflow, non-char-boundary
+                // slice) is the failure; both Ok and Err are acceptable outcomes.
+                let _ = parser.parse_line(line, "git diff");
+            }
+        }
+
+        /// SECURITY INVARIANT: the path sanitizer feeds a write/scan path derived
+        /// from an attacker-controlled `+++ b/…` header. Any `Some(path)` it emits
+        /// MUST stay inside the repo — never absolute, never carrying a surviving
+        /// `..` traversal component, never empty. (A crafted `+++ b/../../etc/passwd`
+        /// or `+++ b//abs` must sanitize to `None`, not to an escaping path.)
+        #[test]
+        fn sanitize_path_bytes_never_yields_an_escaping_path(
+            raw in prop::collection::vec(any::<u8>(), 0..64usize),
+        ) {
+            if let Some(path) = sanitize_path_bytes(&raw) {
+                prop_assert!(!path.is_empty(), "sanitized path is empty for {raw:?}");
+                prop_assert!(
+                    !path.starts_with('/'),
+                    "sanitized path is absolute: {path:?} from {raw:?}"
+                );
+                prop_assert!(
+                    !path.split('/').any(|component| component == ".."),
+                    "sanitized path retains a `..` traversal component: {path:?} from {raw:?}"
+                );
+            }
+        }
+
+        /// The quoted-git-path octal/backslash unescaper does index arithmetic
+        /// (`body.get(index)?`, 3-digit octal accumulation) over attacker bytes — it
+        /// must be total (no panic) on any input.
+        #[test]
+        fn unescape_quoted_git_path_body_is_total(
+            body in prop::collection::vec(any::<u8>(), 0..48usize),
+        ) {
+            let _ = unescape_quoted_git_path_body(&body);
+        }
     }
 }

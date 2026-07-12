@@ -49,7 +49,9 @@ fn surfaces_under(text: &str, detector_id: &str, credential: &str) -> bool {
 fn nothing_surfaces(text: &str, credential: &str) -> bool {
     let s = scanner();
     let chunk = make_chunk(text, "source", "probe.conf");
-    !matches(&s, &chunk).iter().any(|(_, cred)| cred == credential)
+    !matches(&s, &chunk)
+        .iter()
+        .any(|(_, cred)| cred == credential)
 }
 
 /// True iff the `url-credentials` detector produced no match at all.
@@ -133,8 +135,7 @@ fn percent_encoded_password_surfaces() {
 #[test]
 fn mysql_url_password_surfaces() {
     // a9d11eea.js:19 shape.
-    let text =
-        "'mysql://root:nxruoapftabufvcsa@localhost:23306/?charset=utf8&connectTimeout=500',";
+    let text = "'mysql://root:nxruoapftabufvcsa@localhost:23306/?charset=utf8&connectTimeout=500',";
     assert!(
         surfaces_under(text, "url-credentials", "nxruoapftabufvcsa"),
         "mysql userinfo password must surface as the bare value under url-credentials"

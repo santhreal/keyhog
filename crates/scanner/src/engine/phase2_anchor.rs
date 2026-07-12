@@ -395,7 +395,8 @@ impl Phase2AnchorIndex {
     /// each candidate position.
     pub(crate) fn anchored_regex(&self, phase2_idx: usize) -> Option<&AnchoredRegex> {
         let anchored = self.anchored.get(phase2_idx)?.as_ref()?;
-        anchored.get()?;
+        // The slot's presence IS eligibility; `AnchoredRegex::get()` is now
+        // fail-closed (compiles-or-panics, never None), so no compile pre-check.
         Some(anchored)
     }
 

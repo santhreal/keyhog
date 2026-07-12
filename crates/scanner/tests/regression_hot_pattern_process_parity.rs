@@ -173,3 +173,45 @@ fn hot_path_duplicate_identity_does_not_consume_capped_heap_slot() {
         "a hot-path duplicate identity must not consume the second capped heap slot before the generic finding can enter; matches={matches:?}"
     );
 }
+
+/// DR-322 CONSOLIDATION GUARD — the SIMD prefilter's hot-pattern prefix bytes
+/// (`ghp_`, `AKIA`, `sk_live_`, …) are a re-encoding of detection signal that
+/// ALSO lives verbatim in each family's `detectors/<id>.toml` pattern. The table
+/// is recall-load-bearing (see the SIMD-trigger-union invariant): a prefilter
+/// prefix that silently drifts from its detector pattern is a whole detector
+/// class the SIMD fast path stops triggering — an invisible recall hole no
+/// output test would catch. This binds every prefix to its authoritative
+/// detector so the detector TOML is the source of truth for the table. It
+/// ASSERTS the existing table (detector ids are already single-owned via
+/// `crate::detector_ids`) — it does not change the recall-load-bearing set.
+#[test]
+fn hot_pattern_prefixes_are_backed_by_their_detector() {
+    let dir = detector_dir();
+    let bindings = keyhog_scanner::testing::simdsieve_hot_pattern_bindings();
+    assert!(
+        bindings.len() >= 12,
+        "expected the full SIMD hot-pattern table (>=12 prefixes); got {}",
+        bindings.len()
+    );
+    let mut drifted: Vec<String> = Vec::new();
+    for (prefix, detector_id) in bindings {
+        let prefix_str = std::str::from_utf8(prefix)
+            .unwrap_or_else(|_| panic!("hot-pattern prefix {prefix:?} is not UTF-8"));
+        let path = dir.join(format!("{detector_id}.toml"));
+        let toml = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read hot-pattern detector {}: {e}", path.display()));
+        if !toml.contains(prefix_str) {
+            drifted.push(format!(
+                "SIMD hot-pattern prefix {prefix_str:?} is absent from its detector \
+                 {detector_id}.toml — the prefilter literal drifted from the detection \
+                 pattern that surfaces the credential"
+            ));
+        }
+    }
+    assert!(
+        drifted.is_empty(),
+        "SIMD hot-pattern prefix(es) drifted from their authoritative detector \
+         (detector is the source of truth):\n  - {}",
+        drifted.join("\n  - ")
+    );
+}

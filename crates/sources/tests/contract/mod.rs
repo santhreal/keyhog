@@ -1,9 +1,12 @@
 pub mod binary_strings_chunk_source_type;
+pub mod create_source_missing_required_params_error;
 pub mod create_source_slack_requires_token;
 pub mod create_source_unknown_plugin_errors;
+pub mod default_excludes_rule_validation;
 pub mod filesystem_chunk_has_path_metadata;
 pub mod gzip_chunk_source_type_compressed;
 pub mod jar_chunk_source_type_archive;
+pub mod magic_byte_signatures;
 pub mod reset_skipped_counter_clears;
 pub mod source_names_stable;
 pub mod stdin_source_type_metadata;

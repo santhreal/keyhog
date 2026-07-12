@@ -32,9 +32,9 @@ pub(crate) fn classify_entropy_detector_index(keyword: &str) -> usize {
     // first-byte candidates with memchr2 and allocates nothing (Law 7).
     use crate::ascii_ci::ci_find;
     let bytes = keyword.as_bytes();
-    if keyword == "none (high-entropy)" {
+    if keyword == crate::entropy::KEYWORD_FREE_LABEL {
         0
-    } else if ci_find(bytes, b"password") || ci_find(bytes, b"pwd") {
+    } else if crate::entropy::keywords::keyword_is_password_family(keyword) {
         1
     } else if ci_find(bytes, b"token") {
         2
@@ -51,11 +51,11 @@ pub(crate) fn classify_entropy_detector_index(keyword: &str) -> usize {
 /// longer the deciding signal - the keyword anchor IS positive evidence
 /// the value is a credential.
 ///
-/// `keyword == "none (high-entropy)"` is the no-keyword path (very-high
+/// `keyword == KEYWORD_FREE_LABEL` is the no-keyword path (very-high
 /// entropy threshold was used); it is NOT a credential anchor.
 #[cfg(feature = "entropy")]
 pub(crate) fn keyword_is_credential_anchor(keyword: &str) -> bool {
-    if keyword == "none (high-entropy)" {
+    if keyword == crate::entropy::KEYWORD_FREE_LABEL {
         return false;
     }
     // The normalized-keyword path is checked first and reads `keyword`

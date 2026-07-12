@@ -1,6 +1,6 @@
 //! KH-GAP-076: nightly job exports every multiplier strict env var.
 
-use std::path::PathBuf;
+use super::support::read_workflow;
 
 const STRICT_ENV_VARS: [&str; 11] = [
     "KEYHOG_ADVERSARIAL_STRICT",
@@ -16,16 +16,9 @@ const STRICT_ENV_VARS: [&str; 11] = [
     "KEYHOG_COMMENT_STRICT",
 ];
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-}
-
 #[test]
 fn runners_nightly_exports_all_multiplier_strict_env_vars() {
-    let text = std::fs::read_to_string(repo_root().join(".github/workflows/runners-nightly.yml"))
-        .expect("read runners-nightly.yml");
+    let text = read_workflow("runners-nightly.yml");
 
     let missing: Vec<&str> = STRICT_ENV_VARS
         .iter()

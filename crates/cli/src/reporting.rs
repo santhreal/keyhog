@@ -85,13 +85,11 @@ pub(crate) fn report_findings_with_metadata(
         Ok(())
     } else {
         let w = io::BufWriter::new(io::stdout());
-        report_with(
-            w,
-            &args.format,
-            io::stdout().is_terminal(),
-            findings,
-            metadata,
-        )
+        // Color when stdout is a TTY and the operator did not force plain output
+        // via `--no-color`. (The `NO_COLOR` env convention is honored in the
+        // orchestrator, which sets the flag-equivalent before reporting.)
+        let color = io::stdout().is_terminal() && !args.no_color;
+        report_with(w, &args.format, color, findings, metadata)
     }
 }
 
@@ -399,7 +397,7 @@ impl CoverageGapKind {
                 "archive duplicate-entry detection unavailable (zip64 or malformed central directory; shadow entries may be missed)"
             }
             Self::GitLfsPointer => {
-                "Git-LFS pointer (pointer text scanned; referenced blob is in LFS storage, not on disk — run `git lfs pull` then rescan)"
+                "Git-LFS pointer (pointer text scanned; referenced blob is in LFS storage, not on disk; run `git lfs pull` then rescan)"
             }
             Self::BinaryDegraded => {
                 "binary deep analysis degraded to strings-only (Ghidra failed or output too large)"

@@ -1,4 +1,30 @@
+use std::sync::LazyLock;
+
 use super::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD};
+
+/// Tier-B "universal rejection" value prefixes — the single owner
+/// (`rules/universal-rejection-prefixes.toml`; were inline `starts_with` terms in
+/// [`matches_universal_rejection`]). A value beginning with any of these is a
+/// structural non-secret or an encrypted/wrapped blob, never a plaintext secret.
+/// Fails closed on an invalid/empty list.
+static UNIVERSAL_REJECTION_PREFIXES: LazyLock<Vec<String>> = LazyLock::new(|| {
+    #[derive(serde::Deserialize)]
+    struct Prefixes {
+        prefixes: Vec<String>,
+    }
+    let raw = include_str!("../../../../rules/universal-rejection-prefixes.toml");
+    match toml::from_str::<Prefixes>(raw) {
+        Ok(parsed) if !parsed.prefixes.is_empty() => parsed.prefixes,
+        Ok(_) => panic!(
+            "rules/universal-rejection-prefixes.toml is empty; it must list the \
+             universal-rejection value prefixes."
+        ),
+        Err(error) => panic!(
+            "rules/universal-rejection-prefixes.toml is invalid: {error}. \
+             Fix the bundled Tier-B universal-rejection prefix list."
+        ),
+    }
+});
 
 /// Relaxed Shannon floor for a symbolic (non-alphanumeric-bearing) value that
 /// ALSO carries a strong credential-keyword anchor. The blanket
@@ -108,33 +134,23 @@ fn passes_plausibility_checks(
 }
 
 pub(crate) fn matches_universal_rejection(value: &str) -> bool {
+    // Prefix rejections live in the Tier-B list (order-independent: any match
+    // rejects, exactly as the former `||` chain). Compound rejections that need
+    // more than a prefix stay in code below.
+    if UNIVERSAL_REJECTION_PREFIXES
+        .iter()
+        .any(|prefix| value.starts_with(prefix.as_str()))
+    {
+        return true;
+    }
     value.contains("://")
-        || value.starts_with('/')
-        || value.starts_with("./")
-        || value.starts_with("../")
-        || value.starts_with("${{")
-        || value.starts_with("{{")
-        || value.starts_with("${")
-        || value.starts_with("(?")
-        || value.starts_with('^')
-        || value.starts_with("ssh-")
-        || value.starts_with("ecdsa-")
-        || (value.starts_with("eyJ") && value.matches('.').count() == 2)
-        || value.starts_with("$ANSIBLE_VAULT")
-        || value.starts_with("ENC[")
-        || value.starts_with("-----BEGIN")
+        || (crate::jwt::has_jwt_header_prefix(value) && crate::jwt::looks_like_jwt(value))
+        || crate::credential_shapes::is_pem_block(value)
         || (value.starts_with("Ag") && value.len() > 40)
-        || value.starts_with("age1")
-        || value.starts_with("vault:")
-        || value.starts_with("AQI")
-        || value.starts_with("CiQ")
         || (value.len() > 2
             && value.as_bytes()[1] == b':'
             && value.as_bytes()[0].is_ascii_alphabetic()
             && (value.as_bytes()[2] == b'\\' || value.as_bytes()[2] == b'/'))
-        || value.starts_with("```")
-        || value.starts_with("---")
-        || value.starts_with("===")
 }
 
 pub(crate) fn has_low_alnum_ratio(value: &str) -> bool {
@@ -146,11 +162,19 @@ pub(crate) fn has_low_alnum_ratio(value: &str) -> bool {
     // letters. ASCII values are unaffected (char count == byte count there).
     // The integer comparison `alnum * 2 < total` avoids a float division on this
     // hot plausibility gate; an empty value has no alphanumerics and stays low.
-    let total = value.chars().count();
+    // Single pass over the chars (was two: one for the total, one filtered for
+    // the alnum count) — the two counters are derived from the same iteration.
+    let mut total = 0usize;
+    let mut alnum = 0usize;
+    for ch in value.chars() {
+        total += 1;
+        if ch.is_alphanumeric() {
+            alnum += 1;
+        }
+    }
     if total == 0 {
         return true;
     }
-    let alnum = value.chars().filter(|ch| ch.is_alphanumeric()).count();
     alnum * 2 < total
 }
 
@@ -181,9 +205,16 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
         return true;
     }
     if context.is_credential_context {
-        let has_alpha = value.bytes().any(|b| b.is_ascii_alphabetic());
-        let has_digit = value.bytes().any(|b| b.is_ascii_digit());
-        let has_symbol = value.bytes().any(|b| !b.is_ascii_alphanumeric());
+        // Single pass over the bytes (was three independent `.any()` scans) — the
+        // three character-class flags are folded from one iteration.
+        let mut has_alpha = false;
+        let mut has_digit = false;
+        let mut has_symbol = false;
+        for b in value.bytes() {
+            has_alpha |= b.is_ascii_alphabetic();
+            has_digit |= b.is_ascii_digit();
+            has_symbol |= !b.is_ascii_alphanumeric();
+        }
         if has_symbol && entropy >= SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR {
             return true;
         }
@@ -216,7 +247,7 @@ pub(crate) fn is_isolated_bare_secret_plausible(
         {
             return true;
         }
-        if value.starts_with("eyJ") {
+        if crate::jwt::has_jwt_header_prefix(value) {
             return false;
         }
         if crate::suppression::shape::looks_like_dotted_source_identifier(value) {
@@ -389,3 +420,9 @@ fn is_placeholder_ci(value: &str, placeholder_keywords: &[String]) -> bool {
         Some(shannon_entropy(bytes)),
     ) || crate::placeholder_words::bytes_contain_entropy_placeholder_marker(bytes)
 }
+
+// Tests for this module live in `crates/scanner/tests/unit/entropy.rs`
+// (`generic_detectors_declare_valid_per_detector_entropy_floors`). The
+// `entropy_plausibility_no_inline_tests` folder contract forbids inline
+// `#[cfg(test)]` here; external tests exercise the active-spec policy through the
+// scanner testing facade without widening this module's production API.

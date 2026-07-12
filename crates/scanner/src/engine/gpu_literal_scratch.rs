@@ -23,11 +23,17 @@ impl<'a> ZeroGpuLiteralScratch<'a> {
 
 impl Drop for ZeroGpuLiteralScratch<'_> {
     fn drop(&mut self) {
-        zero_gpu_literal_scratch(self.scratch);
+        zero_scan_dispatch_scratch(self.scratch);
     }
 }
 
-fn zero_gpu_literal_scratch(scratch: &mut vyre_libs::scan::dispatch_io::ScanDispatchScratch) {
+/// Single owner for zeroing-then-clearing a Vyre `ScanDispatchScratch`'s
+/// upload/readback buffers before it is released back to its thread-local.
+/// Shared by every GPU dispatch scratch guard so the zeroed-field set cannot
+/// drift between owners.
+pub(in crate::engine) fn zero_scan_dispatch_scratch(
+    scratch: &mut vyre_libs::scan::dispatch_io::ScanDispatchScratch,
+) {
     scratch.haystack_bytes.fill(0);
     scratch.haystack_bytes.clear();
     scratch.hit_bytes.fill(0);

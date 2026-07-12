@@ -38,7 +38,7 @@ fn scan_pdf(bytes: Vec<u8>) -> Vec<Chunk> {
 fn pdf_has(chunks: &[Chunk], marker: &str) -> bool {
     chunks
         .iter()
-        .any(|c| c.metadata.source_type == "filesystem/pdf" && c.data.contains(marker))
+        .any(|c| c.metadata.source_type.as_ref() == "filesystem/pdf" && c.data.contains(marker))
 }
 
 /// True when ANY emitted chunk (pdf or fallback) carries `marker` — used to
@@ -283,7 +283,7 @@ fn pdf_metadata_chunk_is_tagged_filesystem_pdf() {
     assert!(
         chunks
             .iter()
-            .all(|c| c.metadata.source_type != "filesystem"),
+            .all(|c| c.metadata.source_type.as_ref() != "filesystem"),
         "PDF metadata bytes must not be decoded as a plain filesystem text file"
     );
 }

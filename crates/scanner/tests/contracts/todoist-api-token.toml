@@ -24,3 +24,10 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "TODOIST_API_TOKEN=065b8EXAMPLEEXAMPLEd7284"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+# ---- EVASION (adversarial) -----------------------------------------
+
+[[evasion]]
+text = 'export TODOIST_API_TOKEN="065b8384121873a0aa2b71dc527b6f5a296d7284"  # ci runner secret'
+credential = "065b8384121873a0aa2b71dc527b6f5a296d7284"
+reason = "Shell export with a double-quoted value and trailing comment; the TODOIST_API_TOKEN keyword and 40-hex value are preserved through the quoting."

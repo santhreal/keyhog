@@ -54,42 +54,49 @@ pub(super) fn fix_single_brace_in_verify_blocks(toml_text: &str) -> (String, usi
 /// unquoted regions (so regex quantifiers in unkeyed positions don't
 /// get touched) and skips already-doubled `{{var}}` patterns.
 pub(super) fn rewrite_braces_in_string_literals(line: &str) -> (String, usize) {
+    // Operate on `char`s, not bytes: the structural tokens we match (quotes,
+    // backslash, braces, identifier chars) are all ASCII, but a verify-block
+    // string value may carry non-ASCII UTF-8 (`body = "héllo {name}"`). The
+    // previous byte-walk did `byte as char`, which reinterprets each UTF-8
+    // continuation byte as a separate Latin-1 scalar and corrupts the value into
+    // mojibake. Char-indexing keeps multi-byte scalars intact; on pure-ASCII
+    // input the output is byte-identical to the old path.
+    let chars: Vec<char> = line.chars().collect();
     let mut out = String::with_capacity(line.len());
     let mut count = 0usize;
-    let bytes = line.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if b == b'"' || b == b'\'' {
-            let quote = b;
-            out.push(quote as char);
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '"' || ch == '\'' {
+            let quote = ch;
+            out.push(quote);
             let mut j = i + 1;
             let mut literal = String::new();
-            while j < bytes.len() {
-                let c = bytes[j];
-                if quote == b'"' && c == b'\\' && j + 1 < bytes.len() {
-                    literal.push(c as char);
-                    literal.push(bytes[j + 1] as char);
+            while j < chars.len() {
+                let c = chars[j];
+                if quote == '"' && c == '\\' && j + 1 < chars.len() {
+                    literal.push(c);
+                    literal.push(chars[j + 1]);
                     j += 2;
                     continue;
                 }
                 if c == quote {
                     break;
                 }
-                literal.push(c as char);
+                literal.push(c);
                 j += 1;
             }
             let (rewritten_literal, c) = rewrite_braces(&literal);
             count += c;
             out.push_str(&rewritten_literal);
-            if j < bytes.len() {
-                out.push(quote as char);
+            if j < chars.len() {
+                out.push(quote);
                 i = j + 1;
             } else {
                 i = j;
             }
         } else {
-            out.push(b as char);
+            out.push(ch);
             i += 1;
         }
     }
@@ -100,31 +107,35 @@ pub(super) fn rewrite_braces_in_string_literals(line: &str) -> (String, usize) {
 /// `[A-Za-z_][A-Za-z0-9_.]*`. Leaves already-doubled `{{name}}` alone
 /// and ignores braces that don't open an identifier.
 pub(super) fn rewrite_braces(s: &str) -> (String, usize) {
-    let bytes = s.as_bytes();
+    // Char-indexed for the same UTF-8 reason as `rewrite_braces_in_string_literals`
+    // (a literal may contain non-ASCII); the identifier charset `[A-Za-z0-9_.]`
+    // is ASCII, so the matched name still slices correctly. Byte-identical to the
+    // old byte-walk on pure-ASCII input.
+    let chars: Vec<char> = s.chars().collect();
     let mut out = String::with_capacity(s.len());
     let mut count = 0usize;
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'{' {
-            if i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+    while i < chars.len() {
+        if chars[i] == '{' {
+            if i + 1 < chars.len() && chars[i + 1] == '{' {
                 out.push('{');
                 out.push('{');
                 i += 2;
                 continue;
             }
             let start = i + 1;
-            if start < bytes.len() && (bytes[start].is_ascii_alphabetic() || bytes[start] == b'_') {
+            if start < chars.len() && (chars[start].is_ascii_alphabetic() || chars[start] == '_') {
                 let mut end = start + 1;
-                while end < bytes.len()
-                    && (bytes[end].is_ascii_alphanumeric()
-                        || bytes[end] == b'_'
-                        || bytes[end] == b'.')
+                while end < chars.len()
+                    && (chars[end].is_ascii_alphanumeric()
+                        || chars[end] == '_'
+                        || chars[end] == '.')
                 {
                     end += 1;
                 }
-                if end < bytes.len() && bytes[end] == b'}' {
+                if end < chars.len() && chars[end] == '}' {
                     out.push_str("{{");
-                    out.push_str(&s[start..end]);
+                    out.extend(chars[start..end].iter());
                     out.push_str("}}");
                     count += 1;
                     i = end + 1;
@@ -134,7 +145,7 @@ pub(super) fn rewrite_braces(s: &str) -> (String, usize) {
             out.push('{');
             i += 1;
         } else {
-            out.push(bytes[i] as char);
+            out.push(chars[i]);
             i += 1;
         }
     }

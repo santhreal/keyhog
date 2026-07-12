@@ -1,0 +1,29 @@
+# Decoder names that the scanner appends to a chunk's `source_type` as
+# `{parent}/{decoder_name}` when it emits a decoded chunk
+# (crates/scanner/src/decode/pipeline/splice.rs). Match dedup uses these to
+# recognize that a decoded-source match and its raw-source twin are the SAME
+# credential (a decoder alias) and collapse them into one finding instead of
+# reporting a duplicate.
+#
+# This list MUST stay in lockstep with the default decoder registry
+# (crates/scanner/src/decode/pipeline/registry.rs, pinned by
+# crates/scanner/tests/regression_decode_registry_names.rs). A name present in
+# the registry but absent here means that decoder's aliases are NOT collapsed
+# and surface as duplicate findings. `keyhog-core` sits below `keyhog-scanner`
+# in the crate graph and cannot import the registry, so this Tier-B file is the
+# shared owner both sides read.
+decoder_names = [
+  "base64",
+  "hex",
+  "url",
+  "quoted-printable",
+  "html-named-entity",
+  "html-numeric-entity",
+  "octal-escape",
+  "mime-encoded-word",
+  "json",
+  "unicode-escape",
+  "z85",
+  "reverse",
+  "caesar",
+]

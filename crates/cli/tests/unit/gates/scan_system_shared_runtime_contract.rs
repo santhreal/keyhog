@@ -21,7 +21,7 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
         "fn compile_default_scan_runtime(",
         "fn setup_default_scan_runtime(",
         "load_detectors_or_embedded(detectors_path)",
-        "detector_compile_failed(subcommand_name, detectors_path, e)",
+        "crate::orchestrator_config::detector_compile_failed(",
         "fn scan_chunk(&self, chunk: &Chunk)",
         ".choose(self.backend_override, std::slice::from_ref(chunk))",
         "self.scanner.scan_with_backend(chunk, backend)",

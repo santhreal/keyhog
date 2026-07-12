@@ -436,7 +436,9 @@ mod open_safety {
 
     /// `duplicate_central_zip_entries` (open site #1) — returns Ok(has_dups)/Err.
     fn dup_central(path: PathBuf) -> Result<bool, String> {
-        within_timeout(move || duplicates::duplicate_central_zip_entries(&path).map(|o| o.is_some()))
+        within_timeout(move || {
+            duplicates::duplicate_central_zip_entries(&path).map(|o| o.is_some())
+        })
     }
 
     /// `extract_zip_archive_from_central_entries` (open site #2) — (chunks, errors).
@@ -468,20 +470,13 @@ mod open_safety {
         within_timeout(move || {
             let mut chunks = 0usize;
             let mut errors = Vec::new();
-            extract_zip_archive(
-                &path,
-                "archive.zip",
-                u64::MAX,
-                u64::MAX,
-                true,
-                &mut |row| {
-                    match row {
-                        Ok(_) => chunks += 1,
-                        Err(error) => errors.push(error.to_string()),
-                    }
-                    true
-                },
-            );
+            extract_zip_archive(&path, "archive.zip", u64::MAX, u64::MAX, true, &mut |row| {
+                match row {
+                    Ok(_) => chunks += 1,
+                    Err(error) => errors.push(error.to_string()),
+                }
+                true
+            });
             (chunks, errors)
         })
     }
@@ -494,14 +489,20 @@ mod open_safety {
         let target = dir.path().join("real.bin");
         std::fs::write(&target, b"not a zip").unwrap();
         let link = symlink_to(dir.path(), "a.zip", &target);
-        assert!(dup_central(link).is_err(), "a symlinked zip must not be followed");
+        assert!(
+            dup_central(link).is_err(),
+            "a symlinked zip must not be followed"
+        );
     }
 
     #[test]
     fn dup_central_refuses_fifo_without_hanging() {
         let dir = tempfile::tempdir().unwrap();
         let fifo = make_fifo(dir.path(), "a.zip");
-        assert!(dup_central(fifo).is_err(), "a FIFO at a zip path must be refused");
+        assert!(
+            dup_central(fifo).is_err(),
+            "a FIFO at a zip path must be refused"
+        );
     }
 
     #[test]
@@ -549,7 +550,10 @@ mod open_safety {
         let link = symlink_to(dir.path(), "a.zip", &target);
         let (chunks, errors) = from_central(link);
         assert_eq!(chunks, 0, "a symlinked zip must yield no chunks");
-        assert!(!errors.is_empty(), "the refusal must be surfaced loudly (Law 10)");
+        assert!(
+            !errors.is_empty(),
+            "the refusal must be surfaced loudly (Law 10)"
+        );
     }
 
     #[test]
@@ -582,7 +586,10 @@ mod open_safety {
         std::fs::write(&target, b"not a zip").unwrap();
         let link = symlink_to(dir.path(), "a.zip", &target);
         let (chunks, _errors) = extract(link);
-        assert_eq!(chunks, 0, "a symlinked zip must not be followed into chunks");
+        assert_eq!(
+            chunks, 0,
+            "a symlinked zip must not be followed into chunks"
+        );
     }
 
     #[test]
@@ -592,7 +599,10 @@ mod open_safety {
         std::fs::write(&target, b"not a zip").unwrap();
         let link = symlink_to(dir.path(), "a.zip", &target);
         let (_chunks, errors) = extract(link);
-        assert!(!errors.is_empty(), "refusing a symlinked zip must be loud, never silent");
+        assert!(
+            !errors.is_empty(),
+            "refusing a symlinked zip must be loud, never silent"
+        );
     }
 
     #[test]
@@ -600,7 +610,10 @@ mod open_safety {
         let dir = tempfile::tempdir().unwrap();
         let fifo = make_fifo(dir.path(), "a.zip");
         let (chunks, _errors) = extract(fifo);
-        assert_eq!(chunks, 0, "a FIFO at a zip path must yield no chunks and not hang");
+        assert_eq!(
+            chunks, 0,
+            "a FIFO at a zip path must yield no chunks and not hang"
+        );
     }
 
     #[test]
@@ -608,7 +621,10 @@ mod open_safety {
         let dir = tempfile::tempdir().unwrap();
         let fifo = make_fifo(dir.path(), "a.zip");
         let (_chunks, errors) = extract(fifo);
-        assert!(!errors.is_empty(), "refusing a FIFO zip must be surfaced loudly");
+        assert!(
+            !errors.is_empty(),
+            "refusing a FIFO zip must be surfaced loudly"
+        );
     }
 
     #[test]
@@ -639,7 +655,10 @@ mod open_safety {
         let path = dir.path().join("junk.zip");
         std::fs::write(&path, b"definitely not a zip").unwrap();
         let (chunks, _errors) = extract(path);
-        assert_eq!(chunks, 0, "a non-zip regular file yields no chunks and must not hang");
+        assert_eq!(
+            chunks, 0,
+            "a non-zip regular file yields no chunks and must not hang"
+        );
     }
 
     #[test]
@@ -647,7 +666,10 @@ mod open_safety {
         let dir = tempfile::tempdir().unwrap();
         let (chunks, errors) = extract(dir.path().join("missing.zip"));
         assert_eq!(chunks, 0);
-        assert!(!errors.is_empty(), "a missing archive must surface an error");
+        assert!(
+            !errors.is_empty(),
+            "a missing archive must surface an error"
+        );
     }
 
     #[test]

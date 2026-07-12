@@ -15,6 +15,7 @@
 //! - We never log credentials, public keys, or decrypted payloads. Errors
 //!   carry stable strings - useful for support, opaque to leaks.
 
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
@@ -124,16 +125,30 @@ pub struct InteractshClient {
     suffix_len: usize,
 }
 
+/// One shared 2048-bit RSA key for every `for_test` client. Generated ONCE
+/// (lazily, on first test use) and cloned into each instance, so the many test
+/// callers of [`InteractshClient::for_test`] pay a SINGLE 2048-bit keygen
+/// instead of one per call — full weak-crypto hygiene (NIST-minimum modulus)
+/// without the per-test keygen cost that a naive `RsaPrivateKey::new(_, 2048)`
+/// in the constructor would impose. Never initialized in a production build
+/// (`for_test` is test-only), so it costs nothing there.
+static TEST_RSA_KEY: LazyLock<Result<RsaPrivateKey, String>> =
+    LazyLock::new(|| RsaPrivateKey::new(&mut OsRng, 2048).map_err(|e| e.to_string()));
+
 impl InteractshClient {
     /// Test-only constructor without network registration. Returns
-    /// `Err` if the RSA keygen RNG fails - which never happens on a
+    /// `Err` if the shared test RSA keygen failed - which never happens on a
     /// healthy platform, but propagating the error keeps this constructor
     /// off the no-panic-in-production gate and matches the rest of the
     /// `InteractshError` surface. Test callers wrap with `.unwrap()` at
     /// the test boundary.
     pub(crate) fn for_test(server: &str) -> Result<Self, InteractshError> {
-        let private_key = RsaPrivateKey::new(&mut OsRng, 1024)
-            .map_err(|e| InteractshError::KeyGen(e.to_string()))?;
+        // Clone the shared 2048-bit key (see `TEST_RSA_KEY`): NIST-minimum
+        // modulus, one keygen amortized across every test caller.
+        let private_key = TEST_RSA_KEY
+            .as_ref()
+            .map_err(|e| InteractshError::KeyGen(e.clone()))?
+            .clone();
         Ok(Self {
             http: Client::new(),
             server: normalize_server(server),
@@ -500,53 +515,90 @@ async fn collector_http_client(
     proxy_in_use: bool,
     insecure_tls: bool,
 ) -> Result<Client, InteractshError> {
+    // String-level block first: refuse a private/loopback/link-local *literal*
+    // (or an unparseable/non-http(s)) collector URL before spending a DNS
+    // lookup on it.
     if crate::ssrf::is_private_url(server) {
         return Err(InteractshError::BlockedCollector(format!(
             "{server} resolves to a private/loopback/link-local address"
         )));
     }
 
-    if proxy_in_use {
-        return Ok(base_client.clone());
-    }
-
+    // Resolve, then screen the collector's IPs on BOTH the direct and proxied
+    // paths via the ONE decision owner below. Previously the proxied path
+    // returned the caller's client BEFORE any DNS screen, so a collector host
+    // that resolved to an internal address slipped past the string block and
+    // the proxy forwarded the session secret to it (proxy-SSRF / DNS
+    // rebinding). `collector_client_plan` screens first, then decides.
     let (host, host_port) = collector_host_and_port(server)?;
-    let addrs = crate::ssrf::resolve_dns_cached(&host_port)
-        .await
-        .map_err(|error| collector_dns_failure(server, error))?;
-    check_collector_resolved_addrs(server, &addrs)?;
-    let pinned_addrs = addrs;
+    let resolved = crate::ssrf::resolve_dns_cached(&host_port).await;
 
-    Client::builder()
-        .timeout(timeout)
-        .danger_accept_invalid_certs(insecure_tls)
-        .no_proxy()
-        .no_gzip()
-        .no_brotli()
-        .no_zstd()
-        .no_deflate()
-        .redirect(reqwest::redirect::Policy::none())
-        .resolve_to_addrs(&host, &pinned_addrs)
-        .build()
-        .map_err(|error| {
-            InteractshError::BlockedCollector(format!(
-                "{server} DNS pin client build failed ({error}); refusing an unpinned collector client"
-            ))
-        })
+    match collector_client_plan(server, proxy_in_use, resolved)? {
+        // DNS belongs to the proxy, so we cannot pin addresses into a proxied
+        // client; the local screen above already rejected an internal resolve.
+        // Keep the caller's proxy client after the screen.
+        CollectorClientPlan::UseProxy => Ok(base_client.clone()),
+        // ONE owner for the pinned rebuild — identical posture to the per-request
+        // verify client; see `crate::build_pinned_verifier_client`.
+        CollectorClientPlan::Pin(pinned_addrs) => {
+            crate::build_pinned_verifier_client(&host, &pinned_addrs, timeout, insecure_tls)
+                .map_err(|error| {
+                    InteractshError::BlockedCollector(format!(
+                        "{server} DNS pin client build failed ({error}); refusing an unpinned collector client"
+                    ))
+                })
+        }
+    }
+}
+
+/// Which client the OOB collector policy permits, after the resolved-IP screen.
+enum CollectorClientPlan {
+    /// Proxy in use: screen passed; reuse the caller's proxy client (DNS is the
+    /// proxy's job; we cannot pin addresses into a proxied client).
+    UseProxy,
+    /// Direct connection: screen passed; pin these screened addresses.
+    Pin(Vec<std::net::SocketAddr>),
+}
+
+/// ONE owner for the collector resolved-IP screen + client decision, applied
+/// identically on the direct and proxied paths so neither can forward the
+/// session secret to a host that resolved to an internal address.
+fn collector_client_plan(
+    server: &str,
+    proxy_in_use: bool,
+    resolved: std::io::Result<Vec<std::net::SocketAddr>>,
+) -> Result<CollectorClientPlan, InteractshError> {
+    let addrs = resolved.map_err(|error| collector_dns_failure(server, error))?;
+    check_collector_resolved_addrs(server, &addrs)?;
+    if proxy_in_use {
+        Ok(CollectorClientPlan::UseProxy)
+    } else {
+        Ok(CollectorClientPlan::Pin(addrs))
+    }
 }
 
 pub(crate) fn ssrf_check_collector_dns_result_for_test(
     server: &str,
     resolved: std::io::Result<Vec<std::net::SocketAddr>>,
 ) -> Result<(), InteractshError> {
-    let _host_port = collector_host_port(server)?;
-    let addrs = resolved.map_err(|error| collector_dns_failure(server, error))?;
-    check_collector_resolved_addrs(server, &addrs)
+    let _host_port = collector_host_and_port(server)?;
+    collector_client_plan(server, false, resolved).map(|_plan| ())
 }
 
-fn collector_host_port(server: &str) -> Result<String, InteractshError> {
-    let (_host, host_port) = collector_host_and_port(server)?;
-    Ok(host_port)
+/// Test seam for the proxy-aware screen decision: returns `true` when the plan
+/// reuses the proxy client, `false` when it pins a direct client, and `Err`
+/// when the screen rejects the resolved addresses. Proves the proxied path
+/// screens resolved IPs (a rebinding host resolving to an internal address is
+/// rejected even with `proxy_in_use = true`).
+pub(crate) fn collector_reuses_proxy_client_for_test(
+    server: &str,
+    proxy_in_use: bool,
+    resolved: std::io::Result<Vec<std::net::SocketAddr>>,
+) -> Result<bool, InteractshError> {
+    match collector_client_plan(server, proxy_in_use, resolved)? {
+        CollectorClientPlan::UseProxy => Ok(true),
+        CollectorClientPlan::Pin(_) => Ok(false),
+    }
 }
 
 fn collector_host_and_port(server: &str) -> Result<(String, String), InteractshError> {
@@ -556,7 +608,9 @@ fn collector_host_and_port(server: &str) -> Result<(String, String), InteractshE
     let host = url.host_str().ok_or_else(|| {
         InteractshError::BlockedCollector(format!("{server} has no collector host"))
     })?;
-    let port = url.port_or_known_default().unwrap_or(443); // LAW10: no explicit port => scheme default (443); recall-irrelevant
+    let port = url
+        .port_or_known_default()
+        .unwrap_or(crate::DEFAULT_HTTPS_PORT); // LAW10: no explicit port => scheme default; recall-irrelevant
     Ok((host.to_string(), format!("{host}:{port}")))
 }
 
@@ -587,17 +641,41 @@ fn check_collector_resolved_addrs(
 }
 
 /// Accept `oast.fun`, `oast.fun/`, `https://oast.fun`, `https://oast.fun/`.
-/// Always return `https://<host>` with no trailing slash. HTTP-only is
-/// rejected because the AES key flowing back must travel TLS-wrapped.
+/// Always return `https://<host>[:<port>]` with scheme/host/port ONLY. HTTP-only
+/// is force-upgraded because the AES key flowing back must travel TLS-wrapped.
+///
+/// Keeping only scheme/host/port is load-bearing for host safety: a collector
+/// string carrying a path (`oast.fun/evil`) or userinfo (`oast.fun@internal`)
+/// would otherwise survive into `server_host()` and mint a malformed
+/// `<id>.oast.fun/evil` callback host, or — worse — let the userinfo `@`
+/// redirect the real connect target. We re-serialize from a parsed URL so the
+/// stored `server` is exactly `https://<host>[:<port>]`.
+///
+/// An unparseable / hostless input is returned scheme-forced but otherwise
+/// untouched; it is not silently "cleaned" into something connectable — the
+/// downstream `is_private_url` / `collector_host_and_port` screens then reject
+/// it (fail closed).
 fn normalize_server(s: &str) -> String {
-    let s = s.trim().trim_end_matches('/');
-    if let Some(rest) = s.strip_prefix("http://") {
-        // Force-upgrade. We never speak plaintext to a collector - the
-        // wrapped AES key would leak otherwise.
+    let s = s.trim();
+    // Force a scheme so `url::Url::parse` can split host/port; force https so we
+    // never speak plaintext to a collector (the wrapped AES key would leak).
+    let with_scheme = if let Some(rest) = s.strip_prefix("http://") {
         format!("https://{rest}")
     } else if s.starts_with("https://") {
         s.to_string()
     } else {
         format!("https://{s}")
+    };
+    match url::Url::parse(&with_scheme) {
+        Ok(url) => match url.host_str() {
+            // `host_str()` already excludes userinfo/path; `port()` is `None`
+            // for the scheme default (443), which we then omit.
+            Some(host) => match url.port() {
+                Some(port) => format!("https://{host}:{port}"),
+                None => format!("https://{host}"),
+            },
+            None => with_scheme.trim_end_matches('/').to_string(),
+        },
+        Err(_) => with_scheme.trim_end_matches('/').to_string(),
     }
 }

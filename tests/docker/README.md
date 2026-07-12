@@ -10,9 +10,9 @@ missing system libs, piped/non-TTY output).
 
 | File | Role |
 |------|------|
-| `Dockerfile.glibc` | Debian builder + runtime; `--no-default-features --features ci-lean` (Hyperscan ON, GPU stack OFF). Exercises the Hyperscan-accelerated glibc runtime path — the C lib that links on glibc but not musl. (Full default features pull the wgpu/vyre/cuda graph, which exceeds the 45-min runner cap; GPU build validation lives in release-build + runners-nightly.) |
+| `Dockerfile.glibc` | Debian builder + runtime; `--no-default-features --features ci-lean` (Hyperscan ON, GPU stack OFF). Exercises the Hyperscan-accelerated glibc runtime path: the C lib that links on glibc but not musl. (Full default features pull the wgpu/vyre/cuda graph, which exceeds the 45-min runner cap; GPU build validation lives in release-build + runners-nightly.) |
 | `Dockerfile.musl`  | Alpine builder + runtime; `--no-default-features --features portable` against musl. Tests the macOS/Windows/static-Alpine feature set and musl-vs-glibc differences. |
-| `corpus/`          | Small committed scan inputs baked into the image at `/data/corpus` (a neutral, non-`test/` path so `--precision`'s test-path penalty does not suppress the planted key — the matrix asserts the AWS key is found under *every* profile). |
+| `corpus/`          | Small committed scan inputs baked into the image at `/data/corpus` (a neutral, non-`test/` path so `--precision`'s test-path penalty does not suppress the planted key; the matrix asserts the AWS key is found under *every* profile). |
 | `scenarios.sh`     | The battery. One data-table row = one integration test; `(image × row)` is the matrix. |
 | `run.sh`           | Builds the image(s) and runs `scenarios.sh` against each. CI + local entry point. |
 
@@ -35,12 +35,12 @@ Append one row to `SCENARIOS` in `scenarios.sh`:
 name | env | args | want_exit | grep_contains | grep_forbids
 ```
 
-- `env` — space-separated `KEY=VAL` spoof vars (for supported env-only test toggles), or
+- `env`: space-separated `KEY=VAL` spoof vars (for supported env-only test toggles), or
   `-`. GPU policy is an explicit scan argument (`--no-gpu` /
   `--require-gpu`) or `.keyhog.toml` `[system].gpu`.
-- `args` — arguments passed to `keyhog` in the container.
-- `want_exit` — expected process exit code.
-- `grep_contains` / `grep_forbids` — substrings that must / must not appear in
+- `args`: arguments passed to `keyhog` in the container.
+- `want_exit`: expected process exit code.
+- `grep_contains` / `grep_forbids`: substrings that must / must not appear in
   stdout+stderr, or `-`.
 
 The row runs against every image automatically, so a single line adds N tests.

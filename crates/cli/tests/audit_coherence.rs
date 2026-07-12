@@ -44,7 +44,7 @@ fn run(args: &[&str]) -> (String, String, Option<i32>) {
     )
 }
 
-/// Count top-level JSON objects in `keyhog detectors --format json` output without a
+/// Count top-level JSON objects in `keyhog detectors --json` output without a
 /// serde dependency: every detector object opens with the canonical first key
 /// `"companions"` (the detectors subcommand serialises keys in a fixed order,
 /// `companions` first). This is robust to the array growing/shrinking and to
@@ -56,7 +56,7 @@ fn embedded_detector_count(json: &str) -> usize {
     let trimmed = json.trim();
     assert!(
         trimmed.starts_with('[') && trimmed.ends_with(']'),
-        "`detectors --format json` must emit a JSON array; got first 80 bytes: {:?}",
+        "`detectors --json` must emit a JSON array; got first 80 bytes: {:?}",
         &trimmed.chars().take(80).collect::<String>()
     );
     // Each detector object is rendered with `"companions"` as its first field.
@@ -67,7 +67,7 @@ fn embedded_detector_count(json: &str) -> usize {
 ///
 /// FINDING: The detector count is 899 everywhere it is computed at runtime:
 ///   - `detectors/*.toml` on disk: 899 files
-///   - `keyhog detectors --format json` array length: 899
+///   - `keyhog detectors --json` array length: 899
 ///   - `keyhog detectors` summary header: "Loaded 899 detectors"
 ///   - tests/docker/scenarios.sh:95 expects "Loaded 899 detectors"
 ///   - README.md:19/50/60/80 say "899 detectors"
@@ -111,13 +111,13 @@ fn detectors_help_count_matches_embedded_json_count() {
             panic!("could not find a `<N>-strong` corpus count in detectors --help:\n{help}")
         });
 
-    let (json, _e2, _c2) = run(&["detectors", "--format", "json"]);
+    let (json, _e2, _c2) = run(&["detectors", "--json"]);
     let actual = embedded_detector_count(&json);
 
     assert_eq!(
         cited, actual,
         "detectors --help cites a {cited}-strong corpus, but the binary actually \
-         loads and lists {actual} detectors (`detectors --format json` length). The help \
+         loads and lists {actual} detectors (`detectors --json` length). The help \
          text is stale; make it track the real count. Evidence: \
          crates/cli/src/args.rs:372."
     );

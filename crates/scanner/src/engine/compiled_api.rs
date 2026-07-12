@@ -2,6 +2,26 @@ use super::*;
 use crate::hw_probe::ScanBackend;
 
 static SIMD_AUTO_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+static GPU_AUTO_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+/// Family + homoglyph breakdown of the always-active (`phase2_always_active_indices`)
+/// pool, used to pin the true composition behind the F3 perf floor.
+///
+/// The distinction that matters: `*_homoglyph` patterns are ASCII-fold-skippable —
+/// on a pure-ASCII chunk (the CredData common case) they are SKIPPED by
+/// `homoglyph_ascii_skip` and contribute NOTHING to the ASCII prefilter cost. So
+/// the pool that actually runs the 84.3%-of-scan HS pass on ASCII source is the
+/// `*_real` (non-homoglyph) subset. Splitting these apart is what tells whether the
+/// ASCII prefilter cost is generic/entropy-bound or vendor-bound.
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct Phase2PoolBreakdown {
+    pub(crate) generic_entropy_real: usize,
+    pub(crate) generic_entropy_homoglyph: usize,
+    pub(crate) vendor_real: usize,
+    pub(crate) vendor_homoglyph: usize,
+    pub(crate) vendor_real_ids: Vec<String>,
+}
 
 impl CompiledScanner {
     /// Whether a SIMD (Hyperscan/Vectorscan) prefilter is compiled in and live.
@@ -50,13 +70,50 @@ Forced --backend simd is rejected instead of silently running another backend."
         );
     }
 
+    pub(crate) fn warn_gpu_auto_degrade(&self, selected_backend: ScanBackend, context: &str) {
+        if GPU_AUTO_DEGRADE_WARNED.set(()).is_ok() {
+            eprintln!(
+                "keyhog: {} auto-selected but this scanner has no live GPU stack ({context}); \
+routing this automatic scan through {}. Forced GPU backends still fail closed.",
+                selected_backend.label(),
+                self.live_cpu_backend().label()
+            );
+        }
+        tracing::warn!(
+            target: "keyhog::routing",
+            backend = selected_backend.label(),
+            fallback = self.live_cpu_backend().label(),
+            %context,
+            "GPU backend auto-selected but scanner GPU stack is unavailable; automatic route changed to live CPU tier"
+        );
+    }
+
+    fn resolve_backend_for_scan(
+        &self,
+        requested_backend: Option<ScanBackend>,
+        chunk_bytes: u64,
+    ) -> ScanBackend {
+        let selected_backend = match requested_backend {
+            Some(backend) => backend,
+            None => self.select_backend_for_file(chunk_bytes),
+        };
+        if selected_backend == ScanBackend::SimdCpu && !self.simd_backend_usable() {
+            crate::process_exit::backend_unavailable(
+                "simd-regex selected but the SIMD/Hyperscan prefilter is unavailable; \
+silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or choose \
+`--backend cpu` explicitly.",
+            );
+        }
+        selected_backend
+    }
+
     /// Exit before a caller-selected backend can silently run a different path.
     pub(crate) fn deny_silent_selected_backend_degrade(&self, backend: ScanBackend) {
         if backend == ScanBackend::SimdCpu && !self.simd_backend_usable() {
             crate::process_exit::backend_unavailable(
                 "simd-regex selected but the SIMD/Hyperscan prefilter is unavailable; \
 silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or choose \
-`--backend cpu` explicitly.",
+`--backend cpu-fallback` explicitly.",
             );
         }
         gpu_forced::deny_silent_gpu_degrade(self, backend);
@@ -160,6 +217,91 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         elapsed_ns / n_calls as f64
     }
 
+    /// F3 perf experiment: time the always-active HS `mark` on `haystack` with the
+    /// FULL always-active DB vs a lean DB that EXCLUDES homoglyph variants.
+    ///
+    /// On a pure-ASCII chunk the homoglyph variants (99.9% of the pool) cannot
+    /// match — their prefixes are unicode look-alikes absent from ASCII bytes, and
+    /// the base ASCII prefix is already covered by the AC/confirmed path (the same
+    /// invariant `homoglyph_ascii_skip` relies on). The RegexSet path already skips
+    /// them on ASCII; the HS path does NOT. This measures whether that missing skip
+    /// costs real time or whether HS's own literal prefilter (Teddy/FDR) already
+    /// gates the unicode-prefixed patterns for free. Returns
+    /// `(full_ns_per_call, lean_ns_per_call, full_pattern_count, lean_pattern_count)`.
+    #[cfg(all(test, feature = "simd"))]
+    pub(crate) fn bench_hs_homoglyph_skip(
+        &self,
+        haystack: &str,
+        n_calls: u32,
+    ) -> (f64, f64, usize, usize) {
+        use super::phase2::ActivePatternsScratch;
+        use super::phase2_hs::Phase2HsEngine;
+        let all: Vec<usize> = self.phase2_always_active_indices.clone();
+        let lean_n = all
+            .iter()
+            .filter(|&&i| !self.phase2_patterns[i].0.homoglyph_variant)
+            .count();
+        // ONE engine — the production object, which now holds both the full DB and
+        // the lean ASCII sub-DB. Time the two routes exactly as the hot path selects
+        // them (`skip_homoglyph_ascii` false vs true).
+        let engine = Phase2HsEngine::build(&self.phase2_patterns, &all).expect("HS engine");
+        let mut scratch = ActivePatternsScratch::new();
+        let mut time_one = |skip_homoglyph_ascii: bool| -> f64 {
+            scratch.begin(self.phase2_patterns.len());
+            let _ = engine.mark(haystack, &mut scratch, skip_homoglyph_ascii);
+            let t0 = std::time::Instant::now();
+            for _ in 0..n_calls {
+                scratch.begin(self.phase2_patterns.len());
+                let _ = engine.mark(haystack, &mut scratch, skip_homoglyph_ascii);
+            }
+            t0.elapsed().as_nanos() as f64 / n_calls as f64
+        };
+        let full_ns = time_one(false);
+        let lean_ns = time_one(true);
+        (full_ns, lean_ns, all.len(), lean_n)
+    }
+
+    /// Recall-neutrality proof for the HS homoglyph-ASCII skip: on `ascii_text`,
+    /// mark once with the full DB and once with the lean ASCII DB, and return
+    /// `(full_marked, lean_marked, non_homoglyph_dropped, lean_extra)`:
+    ///   * `non_homoglyph_dropped` — patterns the full DB marked that the lean DB
+    ///     did NOT, which are NOT homoglyph variants. MUST be empty: the lean DB may
+    ///     only ever drop homoglyph variants (whose ASCII matches the base AC path
+    ///     already covers), never a real pattern.
+    ///   * `lean_extra` — patterns the lean DB marked that the full DB did not. MUST
+    ///     be empty: lean is a strict subset, so it can never over-mark.
+    /// Both empty ⇒ the lean DB differs from the full DB by EXACTLY the homoglyph
+    /// variants, so on ASCII (base covers homoglyph) findings are unchanged.
+    #[cfg(all(test, feature = "simd"))]
+    pub(crate) fn hs_mark_full_vs_lean_diff(
+        &self,
+        ascii_text: &str,
+    ) -> (usize, usize, Vec<usize>, Vec<usize>) {
+        use super::phase2::ActivePatternsScratch;
+        use super::phase2_hs::Phase2HsEngine;
+        use std::collections::HashSet;
+        let all: Vec<usize> = self.phase2_always_active_indices.clone();
+        let engine = Phase2HsEngine::build(&self.phase2_patterns, &all).expect("HS engine");
+        let mut scratch = ActivePatternsScratch::new();
+        scratch.begin(self.phase2_patterns.len());
+        engine
+            .mark(ascii_text, &mut scratch, false)
+            .expect("full mark");
+        let full: HashSet<usize> = scratch.active.iter().copied().collect();
+        scratch.begin(self.phase2_patterns.len());
+        engine
+            .mark(ascii_text, &mut scratch, true)
+            .expect("lean mark");
+        let lean: HashSet<usize> = scratch.active.iter().copied().collect();
+        let non_homoglyph_dropped: Vec<usize> = full
+            .iter()
+            .copied()
+            .filter(|i| !lean.contains(i) && !self.phase2_patterns[*i].0.homoglyph_variant)
+            .collect();
+        let lean_extra: Vec<usize> = lean.iter().copied().filter(|i| !full.contains(i)).collect();
+        (full.len(), lean.len(), non_homoglyph_dropped, lean_extra)
+    }
+
     /// Diagnostic: `(regex_source, keywords)` for every keyword-gated phase-2
     /// pattern, in phase-2 order. These are the no-literal-prefix detectors
     /// that `scan_phase2_patterns` runs over the whole chunk once their
@@ -174,10 +316,47 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             .collect()
     }
 
+    /// Diagnostic: family composition of the always-active (`phase2_n`) pool —
+    /// `(generic_entropy_count, other_count, distinct_other_ids)`.
+    ///
+    /// The recall-neutral decode-path perf lever (F3) rests on what `other_count`
+    /// is. On decoded sub-chunks the adjudicator's decode-guard
+    /// (`record_decoded_generic_entropy_suppression`) UNCONDITIONALLY suppresses
+    /// every `is_generic_or_entropy_detector` finding, so marking that subset of
+    /// the always-active pool during a decode rescan is pure discarded work
+    /// (Law 7). If `other_count == 0`, the ENTIRE `phase2_n` prefilter can be
+    /// skipped on the decode path with zero recall change; if `other_count > 0`,
+    /// the skip must exclude ONLY the generic/entropy subset so the no-keyword
+    /// vendor patterns (which the decode-guard KEEPS) still run. This diagnostic
+    /// is the durable proof of which case holds. Diagnostic only — not on the
+    /// scan path.
+    #[cfg(test)]
+    pub(crate) fn phase2_always_active_family_breakdown(&self) -> Phase2PoolBreakdown {
+        let mut b = Phase2PoolBreakdown::default();
+        for &idx in &self.phase2_always_active_indices {
+            let pattern = &self.phase2_patterns[idx].0;
+            let id = self.metadata_by_index[pattern.detector_index].0.as_ref();
+            let generic_entropy = crate::detector_ids::is_generic_or_entropy_detector(id);
+            let homoglyph = pattern.homoglyph_variant;
+            match (generic_entropy, homoglyph) {
+                (true, false) => b.generic_entropy_real += 1,
+                (true, true) => b.generic_entropy_homoglyph += 1,
+                (false, false) => {
+                    b.vendor_real += 1;
+                    if !b.vendor_real_ids.iter().any(|existing| existing == id) {
+                        b.vendor_real_ids.push(id.to_string());
+                    }
+                }
+                (false, true) => b.vendor_homoglyph += 1,
+            }
+        }
+        b
+    }
+
     /// Warm regex transition caches in parallel before scanning.
     ///
     /// Detector regexes are already builder-validated and seeded during scanner
-    /// construction (see `crate::types::LazyRegex`), so this is now mostly
+    /// construction (see [`crate::types::LazyRegex`]), so this is now mostly
     /// DFA/transition-cache first-touch work plus generated/plain fallback
     /// regexes. For a LONG-lived or LARGE scan - the daemon, `watch`,
     /// `scan-system`, or a big repo where a detector fires across thousands of
@@ -207,6 +386,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             let _ = p.regex.get().find(WARM_SAMPLE); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
         });
         crate::shared_regexes::warm_runtime_regexes();
+        phase2_generic::warm_generic_assignment_runtime();
         crate::multiline::warm_runtime_regexes();
         crate::checksum::warm_runtime_regexes();
     }
@@ -238,9 +418,12 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     }
 
     /// Cumulative count of runtime GPU dispatch degrades recorded by this
-    /// scanner. This relaxed atomic load lets benchmarks and dispatch reporting
-    /// distinguish real GPU execution from a loud CPU degradation without
-    /// rebuilding the full runtime-status digest.
+    /// scanner (via `record_gpu_degrade`). Cheap (one relaxed atomic load) so the
+    /// per-batch dispatch loop can snapshot it before/after a GPU arm and tell
+    /// whether THAT batch actually ran on the GPU or degraded to CPU/SIMD — the
+    /// completion summary's "chunks on GPU" must reflect real execution, not the
+    /// router's CHOICE (Law 10 telemetry truth). `runtime_status()` also carries
+    /// this value but recomputes digests, so it is too heavy to poll per batch.
     pub fn gpu_degrade_count(&self) -> u64 {
         self.gpu_degrade_count
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -279,6 +462,50 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         u64::from_le_bytes(bytes)
     }
 
+    /// Return the preferred backend for a file of the given size.
+    #[must_use]
+    pub(crate) fn select_backend_for_file(&self, file_size: u64) -> crate::hw_probe::ScanBackend {
+        let selected = crate::hw_probe::select_backend_for_file(
+            crate::hw_probe::probe_hardware(),
+            file_size,
+            self.pattern_count(),
+        );
+        if matches!(
+            selected,
+            crate::hw_probe::ScanBackend::Gpu | crate::hw_probe::ScanBackend::MegaScan
+        ) && !self.gpu_stack_usable()
+        {
+            if crate::gpu::gpu_required_by_policy() {
+                crate::process_exit::require_gpu_unmet(format!(
+                    "{} auto-selected under required GPU policy, but this scanner has no live GPU stack \
+(gpu_literals={}, gpu_backend={}, gpu_matcher={}); refusing to run on CPU/SIMD.",
+                    selected.label(),
+                    self.gpu_literals.is_some(),
+                    self.gpu_backend.is_some(),
+                    self.gpu_matcher().is_some()
+                ));
+            }
+            self.warn_gpu_auto_degrade(
+                selected,
+                "auto route selected GPU without acquired scanner GPU stack",
+            );
+            return self.live_cpu_backend();
+        }
+        // The hardware probe can pick SimdCpu from host capability + pattern count
+        // alone, but THIS scanner may have built no Hyperscan prefilter — e.g. a
+        // detector set whose patterns expose no anchorable literal (`[a-z]{16}`), so
+        // `simd_prefilter` is None. Auto-route such a scan to the live CPU backend
+        // (CpuFallback) instead of returning a SimdCpu the scan path cannot honor:
+        // `resolve_backend_for_scan`'s fail-closed abort is reserved for an EXPLICIT
+        // `--backend simd-regex` request, not for auto-selection, which must always
+        // resolve to a backend this scanner can actually run (Law 10: no silent — and
+        // here, no fatal — degrade on the auto path).
+        if selected == crate::hw_probe::ScanBackend::SimdCpu && !self.simd_backend_usable() {
+            return self.live_cpu_backend();
+        }
+        selected
+    }
+
     /// Identifier of the GPU backend acquired at compile time, or
     /// None if scanning routes to CPU/SIMD only. Mirrors
     /// `VyreBackend::id()` which returns "cuda", "wgpu", or the
@@ -305,7 +532,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     /// Return the steady-state backend label used for startup reporting.
     #[must_use]
     pub(crate) fn preferred_backend_label(&self) -> &'static str {
-        ScanBackend::CpuFallback.label()
+        self.select_backend_for_file(0).label()
     }
 
     /// Warm backend resources that are initialized lazily during scanning.
@@ -322,19 +549,23 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             crate::hw_probe::ScanBackend::SimdCpu => self.simd_backend_usable(),
             crate::hw_probe::ScanBackend::CpuFallback => true,
         };
-        if !ready {
-            gpu_forced::deny_silent_gpu_degrade(self, backend);
-        }
+        // Warming is a PROBE with an in-band `bool` channel: report readiness
+        // honestly (`false` when a forced GPU/MegaScan stack is unusable) instead
+        // of hard-stopping the process. This is NOT a silent fallback (Law 10) —
+        // the caller receives the `false` and decides. The no-silent-fallback
+        // hard-stop lives where it MUST: `--require-gpu` is caught by the CLI
+        // preflight (`gpu::require_gpu_preflight`) before any scan, and a forced
+        // backend that reaches GPU dispatch fails closed via
+        // `deny_silent_selected_backend_degrade` inside `scan_with_backend`
+        // (the `par_iter` closure with no `Result` channel — the ONLY place the
+        // M12 process-exit is justified). Exiting here instead broke the `-> bool`
+        // contract and killed the whole process (exit 12) on any GPU-less warm.
         ready
     }
 
-    /// Scan through the deterministic portable CPU reference backend.
-    ///
-    /// This compatibility entrypoint never guesses an accelerated route.
-    /// Call [`Self::scan_with_backend`] after explicit measurement, or use the
-    /// CLI's persisted fastest-correct autorouter, for accelerated execution.
+    /// Scan a chunk of text and return all raw credential matches.
     pub fn scan(&self, chunk: &Chunk) -> Vec<RawMatch> {
-        self.scan_with_backend(chunk, crate::hw_probe::ScanBackend::CpuFallback)
+        self.scan_with_deadline(chunk, self.config.per_chunk_deadline())
     }
 
     /// Scan a chunk using a caller-selected backend.
@@ -343,7 +574,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         chunk: &Chunk,
         backend: crate::hw_probe::ScanBackend,
     ) -> Vec<RawMatch> {
-        self.scan_with_deadline_and_backend(chunk, self.config.per_chunk_deadline(), backend)
+        self.scan_with_deadline_and_backend(chunk, self.config.per_chunk_deadline(), Some(backend))
     }
 
     /// Scan multiple chunks using a caller-selected backend.
@@ -364,29 +595,26 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     }
 
     /// Scan a chunk of text against all compiled detectors.
-    #[cfg(test)]
     pub(crate) fn scan_with_deadline(
         &self,
         chunk: &Chunk,
         deadline: Option<std::time::Instant>,
     ) -> Vec<RawMatch> {
-        self.scan_with_deadline_and_backend(
-            chunk,
-            deadline,
-            crate::hw_probe::ScanBackend::CpuFallback,
-        )
+        self.scan_with_deadline_and_backend(chunk, deadline, None)
     }
 
     pub(crate) fn scan_with_deadline_and_backend(
         &self,
         chunk: &Chunk,
         deadline: Option<std::time::Instant>,
-        selected_backend: crate::hw_probe::ScanBackend,
+        backend: Option<crate::hw_probe::ScanBackend>,
     ) -> Vec<RawMatch> {
         if crate::deadline::expired(deadline) {
             return Vec::new();
         }
-        self.deny_silent_selected_backend_degrade(selected_backend);
+        if let Some(selected_backend) = backend {
+            self.deny_silent_selected_backend_degrade(selected_backend);
+        }
         // Direct-match prefilters: skip chunks that carry none of any
         // detector's literal bytes (`AlphabetScreen`) or bigrams (bloom). A
         // FULLY-ENCODED secret carries none of those - its plaintext prefix
@@ -454,11 +682,13 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             return Vec::new();
         }
 
+        let selected_backend = self.resolve_backend_for_scan(backend, chunk.data.len() as u64); // LAW10: operator-visible — the automatic CPU-tier choice is relabeled to the backend that actually runs; not a silent degrade
+        gpu_forced::deny_silent_gpu_degrade(self, selected_backend);
         tracing::trace!(
             target: "keyhog::routing",
             backend = selected_backend.label(),
             chunk_bytes = chunk.data.len(),
-            source_type = chunk.metadata.source_type.as_str(),
+            source_type = chunk.metadata.source_type.as_ref(),
             "scan dispatch"
         );
         let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {

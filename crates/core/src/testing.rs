@@ -7,7 +7,6 @@ use crate::calibration::{BetaCounters, Calibration};
 use crate::config::ScanConfig;
 use crate::credential::Credential;
 use crate::merkle_index::{MerkleIndex, MerkleLoadReport};
-use crate::registry::{CustomVerifier, SourceRegistry, VerifierRegistry};
 use crate::{
     CredentialHash, DetectorSpec, RawMatch, RawMatchDedupKey, RuleSuppressor, RuleSuppressorError,
     Severity, SpecError, VerifiedFinding,
@@ -59,6 +58,7 @@ pub trait CoreTestApi {
     fn credential_expose_str<'a>(&self, credential: &'a Credential) -> Option<&'a str>;
     fn encode_standard_base64(&self, input: &[u8]) -> String;
     fn calibration_load_tolerant(&self, path: &Path) -> Calibration;
+    fn read_capped(&self, path: &Path, cap: u64, kind: &str) -> std::io::Result<Vec<u8>>;
     fn calibration_record_true_positive(&self, calibration: &Calibration, detector_id: &str);
     fn calibration_record_false_positive(&self, calibration: &Calibration, detector_id: &str);
     fn load_detectors_with_gate(
@@ -130,19 +130,6 @@ pub trait CoreTestApi {
     fn dedup_lost_singleton_load(&self, ordering: std::sync::atomic::Ordering) -> u64;
     fn scan_config_validate(&self, config: &ScanConfig) -> Result<(), String>;
     fn max_decode_depth_limit(&self) -> usize;
-    fn source_registry_registered_name(
-        &self,
-        source: std::sync::Arc<dyn crate::Source + Send + Sync>,
-        name: &str,
-    ) -> Option<String>;
-    fn source_registry_missing(&self, name: &str) -> bool;
-    fn source_registry_register_twice_has(
-        &self,
-        first: std::sync::Arc<dyn crate::Source + Send + Sync>,
-        second: std::sync::Arc<dyn crate::Source + Send + Sync>,
-        name: &str,
-    ) -> bool;
-    fn verifier_registry_registered_name(&self, name: &str) -> Option<String>;
     fn auto_fix_env_var_name_for_service(&self, service: &str) -> String;
     fn auto_fix_replacement_text(&self, service: &str) -> String;
     fn remediation_action_for(
@@ -226,6 +213,9 @@ impl CoreTestApi for TestApi {
 
     fn calibration_load_tolerant(&self, path: &Path) -> Calibration {
         Calibration::load(path)
+    }
+    fn read_capped(&self, path: &Path, cap: u64, kind: &str) -> std::io::Result<Vec<u8>> {
+        crate::state_file::read_capped(path, cap, kind)
     }
 
     fn calibration_record_true_positive(&self, calibration: &Calibration, detector_id: &str) {
@@ -424,43 +414,6 @@ impl CoreTestApi for TestApi {
         crate::config::MAX_DECODE_DEPTH_LIMIT
     }
 
-    fn source_registry_registered_name(
-        &self,
-        source: std::sync::Arc<dyn crate::Source + Send + Sync>,
-        name: &str,
-    ) -> Option<String> {
-        let registry = SourceRegistry::new();
-        registry.register(source);
-        registry.get(name).map(|source| source.name().to_string())
-    }
-
-    fn source_registry_missing(&self, name: &str) -> bool {
-        SourceRegistry::new().get(name).is_none()
-    }
-
-    fn source_registry_register_twice_has(
-        &self,
-        first: std::sync::Arc<dyn crate::Source + Send + Sync>,
-        second: std::sync::Arc<dyn crate::Source + Send + Sync>,
-        name: &str,
-    ) -> bool {
-        let registry = SourceRegistry::new();
-        registry.register(first);
-        registry.register(second);
-        registry.get(name).is_some()
-    }
-
-    fn verifier_registry_registered_name(&self, name: &str) -> Option<String> {
-        let registry = VerifierRegistry::new();
-        let verifier = std::sync::Arc::new(NamedVerifier {
-            name: name.to_string(),
-        });
-        registry.register(verifier);
-        registry
-            .get(name)
-            .map(|verifier| verifier.name().to_string())
-    }
-
     fn auto_fix_env_var_name_for_service(&self, service: &str) -> String {
         crate::auto_fix::env_var_name_for_service(service)
     }
@@ -515,7 +468,18 @@ impl CoreTestApi for TestApi {
         props: &mut serde_json::Map<String, serde_json::Value>,
         severity: Severity,
     ) {
-        crate::report::sarif_uri::apply_code_scanning_props(props, severity);
+        props.insert(
+            "security-severity".to_string(),
+            serde_json::Value::String(
+                crate::report::sarif_uri::code_scanning_security_severity(severity).to_string(),
+            ),
+        );
+        props.insert(
+            "tags".to_string(),
+            serde_json::Value::Array(vec![serde_json::Value::String(
+                crate::report::sarif_uri::CODE_SCANNING_SECURITY_TAG.to_string(),
+            )]),
+        );
     }
 
     fn credential_fingerprints(
@@ -545,12 +509,67 @@ impl CoreTestApi for TestApi {
     }
 }
 
-struct NamedVerifier {
-    name: String,
+// ── report::escape security-sanitizer facades (property-test surface) ──
+// The `report::escape` sanitizers are `pub(crate)` and reached today only
+// through the report FORMATTERS with fixed crafted inputs. These facades expose
+// them directly so an integration proptest can pin the SECURITY INVARIANTS that
+// must hold for ALL inputs (never just the sampled ones): no CDATA-terminator
+// survives `escape_cdata`, no raw XML metacharacter survives `escape_xml_attr`,
+// the sanitizers strip their whole control class, clean input is BORROWED (no
+// alloc), and every sanitizer is idempotent. Each returns an owned `String` so
+// tests need not thread `Cow` lifetimes; the `*_borrows` variants report whether
+// the zero-copy `Cow::Borrowed` fast path was taken.
+
+/// Escape a value for an XML attribute (`report::escape::escape_xml_attr`).
+pub fn escape_xml_attr_for_test(value: &str) -> String {
+    crate::report::escape::escape_xml_attr(value).into_owned()
 }
 
-impl CustomVerifier for NamedVerifier {
-    fn name(&self) -> &str {
-        &self.name
-    }
+/// Whether `escape_xml_attr` took the zero-copy borrowed path for `value`.
+pub fn escape_xml_attr_borrows_for_test(value: &str) -> bool {
+    matches!(
+        crate::report::escape::escape_xml_attr(value),
+        std::borrow::Cow::Borrowed(_)
+    )
+}
+
+/// Neutralize a value for a `<![CDATA[…]]>` body (`report::escape::escape_cdata`).
+pub fn escape_cdata_for_test(value: &str) -> String {
+    crate::report::escape::escape_cdata(value).into_owned()
+}
+
+/// Replace XML-1.0-illegal control bytes (`report::escape::sanitize_xml`).
+pub fn sanitize_xml_for_test(value: &str) -> String {
+    crate::report::escape::sanitize_xml(value).into_owned()
+}
+
+/// Whether `sanitize_xml` took the zero-copy borrowed path for `value`.
+pub fn sanitize_xml_borrows_for_test(value: &str) -> bool {
+    matches!(
+        crate::report::escape::sanitize_xml(value),
+        std::borrow::Cow::Borrowed(_)
+    )
+}
+
+/// Replace terminal-control bytes (`report::escape::sanitize_terminal`).
+pub fn sanitize_terminal_for_test(value: &str) -> String {
+    crate::report::escape::sanitize_terminal(value).into_owned()
+}
+
+/// Whether `sanitize_terminal` took the zero-copy borrowed path for `value`.
+pub fn sanitize_terminal_borrows_for_test(value: &str) -> bool {
+    matches!(
+        crate::report::escape::sanitize_terminal(value),
+        std::borrow::Cow::Borrowed(_)
+    )
+}
+
+/// Escape a value for a CSV field (`report::escape::escape_csv`).
+pub fn escape_csv_for_test(value: &str) -> String {
+    crate::report::escape::escape_csv(value).into_owned()
+}
+
+/// The terminal-control predicate (`report::escape::is_terminal_control`).
+pub fn is_terminal_control_for_test(c: char) -> bool {
+    crate::report::escape::is_terminal_control(c)
 }

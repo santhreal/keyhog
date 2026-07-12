@@ -162,13 +162,6 @@ pub struct DetectorSpec {
     /// `None` → no detector-specific length floor beyond the path-wide default.
     #[serde(default)]
     pub min_len: Option<usize>,
-    /// Per-detector maximum generic-assignment candidate length. Extraction uses
-    /// the largest active ceiling for candidate generation, then applies the
-    /// owning detector's ceiling exactly. Regex-backed detector patterns retain
-    /// their own explicit repetition bounds. `None` inherits the generic bridge's
-    /// compatibility ceiling.
-    #[serde(default)]
-    pub max_len: Option<usize>,
     /// Per-detector path-exclusion regexes (betterleaks-style allowlist): a match
     /// whose FILE PATH matches any of these is suppressed. Owned per detector.
     #[serde(default)]

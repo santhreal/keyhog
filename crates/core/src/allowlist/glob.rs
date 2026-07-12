@@ -16,6 +16,16 @@ use std::path::Path;
 pub(super) const MAX_GLOB_SEGMENTS: usize = 256;
 pub(super) const MAX_GLOB_SEGMENT_LEN: usize = 1024;
 
+/// The one oversize fail-safe predicate, shared by the pattern side (`build`)
+/// and the path side (`matches`) so the two verdicts can never drift. Too many
+/// segments or a single over-long segment is refused rather than matched.
+fn segments_oversize<S: AsRef<str>>(segments: &[S]) -> bool {
+    segments.len() > MAX_GLOB_SEGMENTS
+        || segments
+            .iter()
+            .any(|s| s.as_ref().len() > MAX_GLOB_SEGMENT_LEN)
+}
+
 /// One precompiled ignored-path glob: its normalized segments computed ONCE at
 /// parse time, plus the oversize verdict that `glob_match_normalized` used to
 /// recompute per finding. `anchor` records how the pattern's first segment can
@@ -86,8 +96,7 @@ impl PathGlobIndex {
                 .collect();
             // Mirror the pattern half of the original oversize fail-safe: an
             // oversize pattern can never match (it returned false before).
-            let oversize = segments.len() > MAX_GLOB_SEGMENTS
-                || segments.iter().any(|s| s.len() > MAX_GLOB_SEGMENT_LEN);
+            let oversize = segments_oversize(&segments);
             let glob = CompiledGlob { segments, oversize };
 
             match glob.segments.first() {
@@ -122,9 +131,7 @@ impl PathGlobIndex {
         let path_segments = split_segments(normalized_path);
 
         // Path-side oversize fail-safe (was recomputed per pattern before).
-        let path_oversize = path_segments.len() > MAX_GLOB_SEGMENTS
-            || path_segments.iter().any(|s| s.len() > MAX_GLOB_SEGMENT_LEN);
-        if path_oversize {
+        if segments_oversize(&path_segments) {
             tracing::warn!(
                 "skipping oversized allowlist path match ({} segments). Fix: shorten the path",
                 path_segments.len()
@@ -167,12 +174,16 @@ pub(super) fn split_segments(path: &str) -> Vec<&str> {
 /// byte-for-byte the original automaton - only the pattern element type was
 /// generalized, so suppression decisions are identical.
 fn glob_match_segments<S: AsRef<str>>(pattern: &[S], path: &[&str]) -> bool {
+    // Two reusable state rows swapped per segment - the previous code allocated
+    // a fresh `next` Vec for every pattern segment (O(pattern) heap allocs per
+    // finding); reusing two buffers makes it two allocations total.
     let mut states = vec![false; path.len() + 1];
+    let mut next = vec![false; path.len() + 1];
     states[0] = true;
 
     for segment in pattern {
         let segment = segment.as_ref();
-        let mut next = vec![false; path.len() + 1];
+        next.iter_mut().for_each(|slot| *slot = false);
         if segment == "**" {
             let mut reachable = false;
             for idx in 0..=path.len() {
@@ -186,7 +197,7 @@ fn glob_match_segments<S: AsRef<str>>(pattern: &[S], path: &[&str]) -> bool {
                 }
             }
         }
-        states = next;
+        std::mem::swap(&mut states, &mut next);
     }
 
     states[path.len()]

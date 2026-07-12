@@ -28,7 +28,9 @@ fn scan(text: &str) -> Vec<RawMatch> {
 }
 
 fn ssh2(text: &str) -> Option<RawMatch> {
-    scan(text).into_iter().find(|m| m.detector_id.as_ref() == ID)
+    scan(text)
+        .into_iter()
+        .find(|m| m.detector_id.as_ref() == ID)
 }
 fn fires(text: &str) -> bool {
     ssh2(text).is_some()
@@ -141,8 +143,12 @@ fn two_distinct_blocks_yield_two_findings() {
         .filter(|m| m.detector_id.as_ref() == ID)
         .collect();
     assert_eq!(hits.len(), 2);
-    assert!(hits.iter().any(|m| m.credential.as_ref().contains("FIRSTAA")));
-    assert!(hits.iter().any(|m| m.credential.as_ref().contains("SECNDBB")));
+    assert!(hits
+        .iter()
+        .any(|m| m.credential.as_ref().contains("FIRSTAA")));
+    assert!(hits
+        .iter()
+        .any(|m| m.credential.as_ref().contains("SECNDBB")));
 }
 #[test]
 fn two_encrypted_blocks_distinct_captures() {
@@ -196,7 +202,8 @@ fn three_dash_framing_does_not_fire() {
 fn pem_five_dash_block_does_not_fire_ssh2() {
     // PEM framing (5 dashes, NO space) is owned by private-key/ssh-private-key,
     // not the SSH2 4-dash-spaced detector.
-    let pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKnotssh2notssh2\n-----END RSA PRIVATE KEY-----";
+    let pem =
+        "-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKnotssh2notssh2\n-----END RSA PRIVATE KEY-----";
     assert!(!fires(pem));
 }
 

@@ -22,9 +22,10 @@
 //! object -> metadata) and `regression_gcs_listing_counters.rs`.
 //!
 //! HOST-INDEPENDENCE: no accelerator is touched. httpmock binds 127.0.0.1,
-//! which the cloud SSRF endpoint screen refuses by default, so each test opts
-//! into the loud, default-off `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` allowance
-//! while holding `COUNTER_LOCK` — the same var/lock discipline the sibling
+//! which the cloud SSRF endpoint screen refuses by default, so each test builds
+//! its source via the `TestApi.gcs_source_with_endpoint*` facade, which sets the
+//! per-source `allow_private_endpoint` Tier-A config (not env); `COUNTER_LOCK`
+//! still serializes the global skip counters, the same discipline the sibling
 //! `regression_s3_listing_pagination.rs` uses so a parallel test can never
 //! observe the wrong SSRF-allow state or a polluted skip counter.
 
@@ -56,7 +57,6 @@ fn loopback_guard() -> MutexGuard<'static, ()> {
     let guard = COUNTER_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    std::env::set_var("KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT", "1");
     guard
 }
 

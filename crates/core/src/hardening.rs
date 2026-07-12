@@ -29,8 +29,7 @@ use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-const HYPERSCAN_CACHE_PREFIX: &str = "hs-";
-const HYPERSCAN_CACHE_SUFFIX: &str = ".db";
+use crate::hyperscan_cache::{HYPERSCAN_CACHE_PREFIX, HYPERSCAN_CACHE_SUFFIX};
 
 /// Outcome of a hardening attempt - collected so callers can log which
 /// protections actually took.
@@ -128,12 +127,17 @@ fn apply_default_protections() -> HardeningReport {
 
     #[cfg(target_os = "windows")]
     {
-        // SetProcessMitigationPolicy with ProcessSystemCallDisablePolicy
-        // would deny dynamic loading of the Win32k subsystem; in practice
-        // it's enough that we set DEP/CFG/etc which are default-on for
-        // 64-bit binaries anyway. Mark as already-protected by platform.
-        report.no_core_dumps = true;
-        report.no_ptrace = true;
+        // No syscall is wired here: SetProcessMitigationPolicy and WER
+        // dump-suppression need Win32 FFI this crate does not link. DEP/CFG are
+        // default-on for 64-bit images, but core-dump (WER) suppression and the
+        // ptrace-equivalent denial are NOT applied. Leave both flags false (their
+        // default) and record the gap so a caller logging the process posture is
+        // never told a protection took that didn't (Law 10).
+        report.failures.push(
+            "process mitigation policy not applied on Windows \
+             (SetProcessMitigationPolicy unwired); WER may still write a crash dump"
+                .to_string(),
+        );
     }
 
     report
@@ -224,10 +228,19 @@ fn apply_lockdown_protections() -> HardeningReport {
 
     #[cfg(not(target_os = "linux"))]
     {
-        // mlockall isn't standardized on non-Linux Unix and Windows uses
-        // VirtualLock + DEP. Mark mlocked as best-effort handled by the
-        // platform's default protections.
+        // Lockdown's swap guarantee (credentials never reach a swap partition) is
+        // implemented via mlockall, which is Linux-only: macOS lacks mlockall and
+        // Windows needs per-region VirtualLock with a raised working-set quota,
+        // neither of which is wired. Fail closed (Law 10) instead of reporting a
+        // lock that never happened — push a failures entry so the lockdown caller
+        // (which treats any failure as hard) surfaces that memory pinning is
+        // unavailable on this platform rather than silently claiming success.
         report.mlocked = false;
+        report.failures.push(format!(
+            "memory locking (mlockall) is unavailable on {}; lockdown cannot \
+             keep credentials out of swap on this platform",
+            std::env::consts::OS
+        ));
     }
 
     report
@@ -264,8 +277,7 @@ where
     P: AsRef<Path>,
 {
     let mut hits = Vec::new();
-    if let Some(cache_root) = dirs::cache_dir() {
-        let keyhog_root = cache_root.join("keyhog");
+    if let Some(keyhog_root) = crate::keyhog_cache_root() {
         let has_findings_cache = match std::fs::read_dir(&keyhog_root) {
             Ok(entries) => keyhog_cache_contains_findings(&keyhog_root, entries),
             // The cache dir simply not existing is the genuinely-clean case:

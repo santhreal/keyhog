@@ -20,13 +20,20 @@ const SONAR: &[&str] = &["sonarcloud-token", "sonarqube-token"];
 #[test]
 fn jfrog_api_key_surfaces() {
     let k = format!("AKCp8{}", alnum(40, 1));
-    assert!(surfaces_under(&k, "jfrog-api-key", &k), "AKCp8 key must surface");
+    assert!(
+        surfaces_under(&k, "jfrog-api-key", &k),
+        "AKCp8 key must surface"
+    );
 }
 
 #[test]
 fn jfrog_api_key_env_anchor_surfaces() {
     let k = format!("AKCp8{}", alnum(40, 2));
-    assert!(surfaces_under(&format!("JFROG_API_KEY={k}"), "jfrog-api-key", &k));
+    assert!(surfaces_under(
+        &format!("JFROG_API_KEY={k}"),
+        "jfrog-api-key",
+        &k
+    ));
 }
 
 #[test]
@@ -46,19 +53,31 @@ fn jfrog_api_key_31_body_does_not_fire() {
 #[test]
 fn snyk_token_surfaces() {
     let u = uuid(5);
-    assert!(surfaces_under(&format!("SNYK_TOKEN={u}"), "snyk-api-token", &u));
+    assert!(surfaces_under(
+        &format!("SNYK_TOKEN={u}"),
+        "snyk-api-token",
+        &u
+    ));
 }
 
 #[test]
 fn snyk_api_token_variant_surfaces() {
     let u = uuid(6);
-    assert!(surfaces_under(&format!("SNYK_API_TOKEN={u}"), "snyk-api-token", &u));
+    assert!(surfaces_under(
+        &format!("SNYK_API_TOKEN={u}"),
+        "snyk-api-token",
+        &u
+    ));
 }
 
 #[test]
 fn snyk_lowercase_anchor_surfaces() {
     let u = uuid(7);
-    assert!(surfaces_under(&format!("snyk_token={u}"), "snyk-api-token", &u));
+    assert!(surfaces_under(
+        &format!("snyk_token={u}"),
+        "snyk-api-token",
+        &u
+    ));
 }
 
 #[test]
@@ -82,7 +101,11 @@ fn sonarcloud_token_surfaces() {
 #[test]
 fn sonarqube_token_surfaces() {
     let k = hex(40, 10);
-    assert!(surfaces_under(&format!("SONARQUBE_TOKEN={k}"), "sonarqube-token", &k));
+    assert!(surfaces_under(
+        &format!("SONARQUBE_TOKEN={k}"),
+        "sonarqube-token",
+        &k
+    ));
 }
 
 #[test]
@@ -95,7 +118,10 @@ fn bare_sonar_token_surfaces_under_either_label() {
 #[test]
 fn sonarcloud_39_hex_does_not_fire() {
     let k = hex(39, 12); // 39 < the required 40
-    assert!(!fires(&format!("SONAR_CLOUD_TOKEN={k}"), "sonarcloud-token"));
+    assert!(!fires(
+        &format!("SONAR_CLOUD_TOKEN={k}"),
+        "sonarcloud-token"
+    ));
 }
 
 // ── Terraform Cloud: <14>.atlasv1.<67+> ──────────────────────────────────────
@@ -109,7 +135,11 @@ fn terraform_cloud_token_surfaces() {
 #[test]
 fn terraform_cloud_tfe_anchor_surfaces() {
     let t = format!("{}.atlasv1.{}", alnum(14, 15), alnum(70, 16));
-    assert!(surfaces_under(&format!("TFE_TOKEN={t}"), "terraform-cloud-api-token", &t));
+    assert!(surfaces_under(
+        &format!("TFE_TOKEN={t}"),
+        "terraform-cloud-api-token",
+        &t
+    ));
 }
 
 #[test]
@@ -129,13 +159,20 @@ fn terraform_cloud_66_tail_does_not_fire() {
 #[test]
 fn dockerhub_pat_surfaces() {
     let k = format!("dckr_pat_{}", alnum(40, 21));
-    assert!(surfaces_under(&k, "dockerhub-pat", &k), "dckr_pat_ token must surface");
+    assert!(
+        surfaces_under(&k, "dockerhub-pat", &k),
+        "dckr_pat_ token must surface"
+    );
 }
 
 #[test]
 fn dockerhub_pat_env_anchor_surfaces() {
     let k = format!("dckr_pat_{}", alnum(40, 22));
-    assert!(surfaces_under(&format!("DOCKER_PAT={k}"), "dockerhub-pat", &k));
+    assert!(surfaces_under(
+        &format!("DOCKER_PAT={k}"),
+        "dockerhub-pat",
+        &k
+    ));
 }
 
 #[test]

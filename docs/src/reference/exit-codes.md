@@ -8,7 +8,7 @@ consumers (CI gates, pre-commit hooks, IDE plugins) can rely on them.
 | `0`  | Scan completed, zero findings.                                     |
 | `1`  | Findings present, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked). |
 | `2`  | User error (bad input/config): unknown CLI flag, `.keyhog.toml` parse failure, a missing path or invalid `--baseline` file, a detector TOML that failed to load, or missing/stale/incomplete autoroute calibration for `--backend auto`. Also any not-found / permission-denied I/O error. |
-| `3`  | System error: the local environment failed in a way no flag change fixes — a low-level I/O failure that is *not* not-found / permission-denied, or a hardware / GPU **init** failure. Retry or route differently from `2`. |
+| `3`  | System error: the local environment failed in a way no flag change fixes: a low-level I/O failure that is *not* not-found / permission-denied, or a hardware / GPU **init** failure. Retry or route differently from `2`. |
 | `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed. |
 | `10` | **LIVE credentials confirmed** (a `--verify` scan where the vendor API accepted a found secret) - the highest-severity gate. Also returned by `keyhog update --check` when a newer release exists. |
 | `11` | Scanner thread panicked. The finding count is NOT trustworthy - investigate, don't ship. Distinct from `2`/`3` so CI can tell a code bug from a config error. |

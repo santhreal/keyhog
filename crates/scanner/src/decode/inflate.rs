@@ -19,11 +19,11 @@ use std::io::Read;
 /// Per-blob inflate output ceiling. A gzip/zlib stream that would expand past
 /// this is truncated at the cap (the leading window is still rescanned — a
 /// credential in the first 16 MiB is recovered; a bomb can't OOM us).
-const MAX_INFLATE_BYTES: u64 = 16 * 1024 * 1024;
+pub(crate) const MAX_INFLATE_BYTES: u64 = 16 * 1024 * 1024;
 
 /// True iff `bytes` begins with a gzip member magic (`1f 8b`).
 #[must_use]
-pub(crate) fn is_gzip_magic(bytes: &[u8]) -> bool {
+fn is_gzip_magic(bytes: &[u8]) -> bool {
     bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b
 }
 
@@ -32,19 +32,25 @@ pub(crate) fn is_gzip_magic(bytes: &[u8]) -> bool {
 /// `78 9c` (default), and `78 da` (best). Restricting to these avoids treating
 /// arbitrary `0x78` ('x') text as a zlib stream.
 #[must_use]
-pub(crate) fn is_zlib_magic(bytes: &[u8]) -> bool {
+fn is_zlib_magic(bytes: &[u8]) -> bool {
     bytes.len() >= 2 && bytes[0] == 0x78 && matches!(bytes[1], 0x01 | 0x9c | 0xda)
 }
 
 /// Inflate `bytes` if it is a gzip or zlib stream and the inflated output is
-/// valid UTF-8; otherwise `None`. Output is bounded to [`MAX_INFLATE_BYTES`].
+/// non-empty valid UTF-8; otherwise `None`. Output is bounded to
+/// [`MAX_INFLATE_BYTES`].
 ///
-/// Returns `None` (not an error) for non-container bytes, malformed streams, and
-/// binary (non-UTF-8) inflate output — every path is recall-preserving: the
-/// caller falls back to its normal handling of the un-inflated bytes.
+/// Returns `None` (not an error) for non-container bytes, malformed streams,
+/// binary (non-UTF-8) inflate output, AND streams that inflate to nothing (an
+/// empty result has no credential to rescan) — every path is recall-preserving:
+/// the caller falls back to its normal handling of the un-inflated bytes.
 #[must_use]
 pub(crate) fn try_inflate_to_text(bytes: &[u8]) -> Option<String> {
-    let mut out = Vec::new();
+    // Preallocate the compressed length: a small but non-trivial floor that skips
+    // the initial `Vec` doubling reallocs for the common (small) case. Bomb-safe —
+    // the compressed input is tiny even when it would inflate to the cap, and
+    // `read_to_end` grows from here only up to `MAX_INFLATE_BYTES`.
+    let mut out = Vec::with_capacity(bytes.len());
     if is_gzip_magic(bytes) {
         flate2::read::GzDecoder::new(bytes)
             .take(MAX_INFLATE_BYTES)
@@ -58,5 +64,13 @@ pub(crate) fn try_inflate_to_text(bytes: &[u8]) -> Option<String> {
     } else {
         return None;
     }
-    String::from_utf8(out).ok()
+    // An empty inflate (e.g. a degenerate stored block, or the compression of an
+    // empty payload) has nothing to rescan — return `None` so the caller emits no
+    // empty sub-chunk, consistent with the non-container / malformed / non-UTF-8
+    // `None` paths. Recall-neutral: empty text can hold no credential.
+    let text = String::from_utf8(out).ok()?;
+    if text.is_empty() {
+        return None;
+    }
+    Some(text)
 }

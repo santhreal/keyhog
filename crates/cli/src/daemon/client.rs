@@ -96,7 +96,7 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
             if require_same_version && keyhog_version != CLIENT_KEYHOG_VERSION {
                 bail!(
                     "daemon version mismatch: this keyhog is {CLIENT_KEYHOG_VERSION} but the \
-                     daemon at {} is running {keyhog_version} — it holds an OLDER detector \
+                     daemon at {} is running {keyhog_version}: it holds an OLDER detector \
                      corpus in memory and would return stale scan results. Restart it with \
                      `keyhog daemon stop && keyhog daemon start`, or pass `--no-daemon` to \
                      scan in-process.",

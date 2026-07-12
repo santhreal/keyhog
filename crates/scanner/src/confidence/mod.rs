@@ -6,7 +6,8 @@ pub(crate) mod policy;
 mod prefixes;
 mod signals;
 
-pub(crate) use prefixes::{known_prefix_body, known_prefix_confidence_floor, KNOWN_PREFIXES};
+pub use prefixes::KNOWN_PREFIXES;
+pub(crate) use prefixes::{known_prefix_body, known_prefix_confidence_floor};
 pub(crate) use signals::ConfidenceSignals;
 
 use crate::entropy::{HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD};
@@ -25,6 +26,12 @@ const LITERAL_PREFIX_WEIGHT: f64 = 0.35;
 const CONTEXT_ANCHOR_WEIGHT: f64 = 0.20;
 const ENTROPY_WEIGHT: f64 = 0.20;
 const HIGH_ENTROPY_PARTIAL_WEIGHT: f64 = 0.12;
+/// Confidence-scoring "moderate entropy" tier: at/above this Shannon entropy a
+/// finding earns [`MODERATE_ENTROPY_WEIGHT`]. Its `3.0` value coincides with the
+/// entropy *detection* floor [`crate::entropy::LOW_ENTROPY_THRESHOLD`] but is a
+/// deliberately independent scoring knob (same rationale as
+/// [`LOW_ENTROPY_PENALTY_FLOOR`] below) — retuning the detection floor must NOT
+/// silently drag this scoring tier with it, so it stays a named local owner.
 const MODERATE_ENTROPY_THRESHOLD: f64 = 3.0;
 const MODERATE_ENTROPY_WEIGHT: f64 = 0.05;
 /// Confidence-scoring floor: below this Shannon entropy (with a long-enough
@@ -48,6 +55,20 @@ const COMPANION_WEIGHT: f64 = 0.05;
 /// floor the config cannot move.
 const VERY_HIGH_ENTROPY_MARGIN: f64 = VERY_HIGH_ENTROPY_THRESHOLD - HIGH_ENTROPY_THRESHOLD;
 
+/// Sum of every earnable signal weight — the denominator that normalizes the
+/// weighted signal sum into `0.0..=1.0`. Computed once at compile time from the
+/// weight constants above (ONE place to tune weights), replacing the per-call
+/// accumulation the scorer previously ran on the hot path. Only [`ENTROPY_WEIGHT`]
+/// (the maximum entropy contribution) participates; the partial/moderate entropy
+/// tiers are mutually exclusive sub-cases of it.
+const MAX_POSSIBLE_SCORE: f64 = LITERAL_PREFIX_WEIGHT
+    + CONTEXT_ANCHOR_WEIGHT
+    + ENTROPY_WEIGHT
+    + KEYWORD_NEARBY_WEIGHT
+    + SENSITIVE_FILE_WEIGHT
+    + COMPANION_WEIGHT;
+const _: () = assert!(MAX_POSSIBLE_SCORE > 0.0);
+
 /// Compute a confidence score from `0.0` to `1.0` using the default,
 /// compiled-in entropy floor ([`HIGH_ENTROPY_THRESHOLD`]).
 ///
@@ -68,21 +89,17 @@ pub(crate) fn compute_confidence_with_threshold(
     entropy_threshold: f64,
 ) -> f64 {
     let mut score = SCORE_ZERO;
-    let mut max_possible = SCORE_ZERO;
 
-    max_possible += LITERAL_PREFIX_WEIGHT;
     if signals.has_literal_prefix {
         score += LITERAL_PREFIX_WEIGHT;
     }
 
-    max_possible += CONTEXT_ANCHOR_WEIGHT;
     if signals.has_context_anchor {
         score += CONTEXT_ANCHOR_WEIGHT;
     }
 
     let high_entropy_tier = entropy_threshold;
     let very_high_entropy_tier = entropy_threshold + VERY_HIGH_ENTROPY_MARGIN;
-    max_possible += ENTROPY_WEIGHT;
     if signals.entropy >= very_high_entropy_tier {
         score += ENTROPY_WEIGHT;
     } else if signals.entropy >= high_entropy_tier {
@@ -98,24 +115,18 @@ pub(crate) fn compute_confidence_with_threshold(
         CONFIDENCE_MAX
     };
 
-    max_possible += KEYWORD_NEARBY_WEIGHT;
     if signals.keyword_nearby {
         score += KEYWORD_NEARBY_WEIGHT;
     }
 
-    max_possible += SENSITIVE_FILE_WEIGHT;
     if signals.sensitive_file {
         score += SENSITIVE_FILE_WEIGHT;
     }
 
-    max_possible += COMPANION_WEIGHT;
     if signals.has_companion {
         score += COMPANION_WEIGHT;
     }
 
-    if max_possible == SCORE_ZERO {
-        return SCORE_ZERO;
-    }
-    let normalized_score = (score / max_possible) * low_entropy_penalty;
+    let normalized_score = (score / MAX_POSSIBLE_SCORE) * low_entropy_penalty;
     normalized_score.clamp(CONFIDENCE_MIN, CONFIDENCE_MAX)
 }

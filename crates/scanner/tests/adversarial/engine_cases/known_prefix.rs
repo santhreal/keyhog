@@ -7,6 +7,8 @@ fn known_prefix_credential_always_detected_despite_low_confidence_context() {
     // Stripe secret key in a comment context - normally heavily suppressed.
     let stripe_credential = concat!("sk_li", "ve_51H7xKjGf0a1b2c3d4e5f6g7h");
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "stripe-secret-key".into(),
         name: "Stripe Secret Key".into(),
@@ -110,6 +112,8 @@ fn known_prefix_survives_ml_and_context_penalties() {
     // the repeat-run body still exercises the post-ML penalty path under test.
     let credential = concat!("gh", "p_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1yLcDB");
     let detector = DetectorSpec {
+        kind: Default::default(),
+        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "github-classic-pat".into(),
         name: "GitHub Classic PAT".into(),

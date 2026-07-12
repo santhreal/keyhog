@@ -1,12 +1,6 @@
 //! KH-GAP-133: STANDARD Cargo.toml contract — authors email + license SPDX.
 
-use std::path::PathBuf;
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-}
+use super::support::repo_root;
 
 #[test]
 fn workspace_package_metadata_matches_standard_contract() {

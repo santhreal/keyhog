@@ -1014,7 +1014,57 @@ mod special_files {
     fn open_file_safe_accepts_regular_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = regular(dir.path(), "ok.txt", b"hello");
-        assert!(open_file_safe(&path).is_ok());
+        let mut file = open_file_safe(&path).expect("regular file must open");
+        let mut s = String::new();
+        file.read_to_string(&mut s).unwrap();
+        assert_eq!(s, "hello");
+    }
+
+    /// The advisory-flock DoS / torn-write guard is enforced by `open_file_safe`
+    /// (`LOCK_SH | LOCK_NB` fails closed when another owner holds the file
+    /// exclusively). That is the SINGLE owner of the guard: the per-read-path
+    /// re-flocks are redundant, because a `LOCK_SH` already held by
+    /// `open_file_safe` blocks any new `LOCK_EX`, so a re-request can catch
+    /// nothing new. Pin the behavior at the owner AND through `read_file_mmap`
+    /// so removing the redundant re-flock can never silently drop the skip.
+    #[cfg(unix)]
+    #[test]
+    fn externally_exclusive_locked_file_is_refused_by_open_and_mmap() {
+        use std::os::unix::io::AsRawFd;
+        let dir = tempfile::tempdir().unwrap();
+        let path = regular(dir.path(), "locked.txt", b"aws_secret = hunter2longvalue");
+        // A SEPARATE open file description holds an exclusive advisory lock —
+        // exactly how a second process (or a torn writer) would. flock treats
+        // distinct OFDs independently, so this conflicts even in-process.
+        let holder = std::fs::File::open(&path).unwrap();
+        assert_eq!(
+            unsafe { libc::flock(holder.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+            0,
+            "test setup must acquire the exclusive lock"
+        );
+
+        // Owner refuses to open (fail closed, not a torn-write scan).
+        assert!(
+            open_file_safe(&path).is_err(),
+            "open_file_safe must refuse a file another owner holds exclusively locked"
+        );
+        // The mmap read path opens via `open_file_safe`, so it must skip too —
+        // this directly guards the removal of raw.rs's redundant re-flock.
+        assert!(
+            read_file_mmap(&path).is_none(),
+            "read_file_mmap must skip an exclusively-locked file via open_file_safe's lock"
+        );
+
+        // Releasing the exclusive lock lets both succeed again.
+        drop(holder);
+        assert!(
+            open_file_safe(&path).is_ok(),
+            "file opens once the exclusive lock is released"
+        );
+        assert!(
+            read_file_mmap(&path).is_some(),
+            "mmap read succeeds once the exclusive lock is released"
+        );
     }
 
     #[test]
@@ -1046,17 +1096,26 @@ mod special_files {
     }
 
     #[test]
-    fn read_file_mmap_regular_file_returns_some() {
+    fn read_file_mmap_regular_file_returns_exact_text() {
+        use crate::filesystem::read::raw::BufferedFileRead;
         let dir = tempfile::tempdir().unwrap();
         let path = regular(dir.path(), "ok.txt", b"password = hunter2longvalue");
-        assert!(read_file_mmap(&path).is_some());
+        match read_file_mmap(&path).expect("regular file must map") {
+            BufferedFileRead::Text(text) => assert_eq!(text, "password = hunter2longvalue"),
+            BufferedFileRead::Bytes(_) | BufferedFileRead::Mmap(_) => {
+                panic!("small ASCII file must decode to Text")
+            }
+        }
     }
 
     #[test]
     fn open_file_safe_accepts_empty_regular_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = regular(dir.path(), "empty.txt", b"");
-        assert!(open_file_safe(&path).is_ok());
+        let mut file = open_file_safe(&path).expect("empty regular file must open");
+        let mut s = String::new();
+        file.read_to_string(&mut s).unwrap();
+        assert_eq!(s, "");
     }
 
     #[test]
@@ -1124,10 +1183,16 @@ mod higher_read_path_special_files {
     }
 
     #[test]
-    fn buffered_regular_file_returns_some() {
+    fn buffered_regular_file_returns_exact_text() {
+        use crate::filesystem::read::raw::BufferedFileRead;
         let dir = tempfile::tempdir().unwrap();
         let path = write_regular(dir.path(), "ok.txt", b"token = ghp_example");
-        assert!(read_file_buffered(&path, 0).is_some());
+        match read_file_buffered(&path, 0).expect("regular file must read") {
+            BufferedFileRead::Text(text) => assert_eq!(text, "token = ghp_example"),
+            BufferedFileRead::Bytes(_) | BufferedFileRead::Mmap(_) => {
+                panic!("small ASCII file must decode to Text")
+            }
+        }
     }
 
     // ── read_file_for_compressed_input (7z / rar / gz / xz / pdf path) ───
@@ -1243,10 +1308,10 @@ mod higher_read_path_special_files {
     }
 
     #[test]
-    fn mmap_regular_text_file_returns_some() {
+    fn mmap_regular_text_file_returns_exact_text() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_regular(dir.path(), "ok.txt", b"AKIAIOSFODNN7EXAMPLE\n");
-        assert!(mmap_text(&path).is_some());
+        assert_eq!(mmap_text(&path).as_deref(), Some("AKIAIOSFODNN7EXAMPLE\n"));
     }
 
     // ── read_file_safe_capped ───────────────────────────────────────────

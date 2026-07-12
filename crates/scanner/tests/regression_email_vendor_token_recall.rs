@@ -53,7 +53,9 @@ fn scan(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 fn surfaces_under(text: &str, detector: &str, needle: &str) -> bool {
-    scan(text).iter().any(|(id, cred)| id == detector && cred.contains(needle))
+    scan(text)
+        .iter()
+        .any(|(id, cred)| id == detector && cred.contains(needle))
 }
 fn surfaces_any(text: &str, needle: &str) -> bool {
     scan(text).iter().any(|(_, cred)| cred.contains(needle))
@@ -84,13 +86,21 @@ fn mailchimp_env_anchor_us_surfaces() {
 #[test]
 fn mailchimp_env_anchor_eu_surfaces() {
     let k = format!("{}-eu{}", hex(32, 3), digits(2, 4));
-    assert!(surfaces_under(&format!("MAILCHIMP_API_KEY={k}"), "mailchimp-api-key", &k));
+    assert!(surfaces_under(
+        &format!("MAILCHIMP_API_KEY={k}"),
+        "mailchimp-api-key",
+        &k
+    ));
 }
 
 #[test]
 fn mailchimp_env_anchor_uk_surfaces() {
     let k = format!("{}-uk{}", hex(32, 5), digits(2, 6));
-    assert!(surfaces_under(&format!("MAILCHIMP_API_KEY={k}"), "mailchimp-api-key", &k));
+    assert!(surfaces_under(
+        &format!("MAILCHIMP_API_KEY={k}"),
+        "mailchimp-api-key",
+        &k
+    ));
 }
 
 #[test]
@@ -145,33 +155,52 @@ fn mailchimp_context_31_hex_does_not_fire() {
 #[test]
 fn postmark_server_token_env_surfaces() {
     let u = uuid(15);
-    assert!(surfaces_under(&format!("POSTMARK_SERVER_TOKEN={u}"), "postmark-server-token", &u));
+    assert!(surfaces_under(
+        &format!("POSTMARK_SERVER_TOKEN={u}"),
+        "postmark-server-token",
+        &u
+    ));
 }
 
 #[test]
 fn postmark_header_form_surfaces() {
     let u = uuid(16);
-    assert!(surfaces_under(&format!("X-Postmark-Server-Token: {u}"), "postmark-server-token", &u));
+    assert!(surfaces_under(
+        &format!("X-Postmark-Server-Token: {u}"),
+        "postmark-server-token",
+        &u
+    ));
 }
 
 #[test]
 fn postmark_lowercase_server_token_anchor_surfaces() {
     let u = uuid(17);
-    assert!(surfaces_under(&format!("postmark_server_token={u}"), "postmark-server-token", &u));
+    assert!(surfaces_under(
+        &format!("postmark_server_token={u}"),
+        "postmark-server-token",
+        &u
+    ));
 }
 
 #[test]
 fn postmark_non_uuid_value_does_not_fire() {
     // A bare 32-hex (no UUID hyphen grouping) is not the server-token shape.
     let bad = hex(32, 18);
-    assert!(!fires(&format!("POSTMARK_SERVER_TOKEN={bad}"), "postmark-server-token"));
+    assert!(!fires(
+        &format!("POSTMARK_SERVER_TOKEN={bad}"),
+        "postmark-server-token"
+    ));
 }
 
 #[test]
 fn postmark_uppercase_uuid_surfaces() {
     // Detector regexes compile case-insensitively, so an uppercase UUID matches.
     let u = uuid(19).to_uppercase();
-    assert!(surfaces_under(&format!("POSTMARK_SERVER_TOKEN={u}"), "postmark-server-token", &u));
+    assert!(surfaces_under(
+        &format!("POSTMARK_SERVER_TOKEN={u}"),
+        "postmark-server-token",
+        &u
+    ));
 }
 
 // ── SparkPost: context-anchored 32-hex ────────────────────────────────────────
@@ -179,13 +208,21 @@ fn postmark_uppercase_uuid_surfaces() {
 #[test]
 fn sparkpost_api_key_env_surfaces() {
     let h = hex(32, 20);
-    assert!(surfaces_under(&format!("SPARKPOST_API_KEY={h}"), "sparkpost-api-key", &h));
+    assert!(surfaces_under(
+        &format!("SPARKPOST_API_KEY={h}"),
+        "sparkpost-api-key",
+        &h
+    ));
 }
 
 #[test]
 fn sparkpost_api_key_lowercase_anchor_surfaces() {
     let h = hex(32, 21);
-    assert!(surfaces_under(&format!("sparkpost_api_key={h}"), "sparkpost-api-key", &h));
+    assert!(surfaces_under(
+        &format!("sparkpost_api_key={h}"),
+        "sparkpost-api-key",
+        &h
+    ));
 }
 
 #[test]
@@ -197,7 +234,10 @@ fn sparkpost_api_key_in_yaml_surfaces() {
 #[test]
 fn sparkpost_31_hex_does_not_fire() {
     let h = hex(31, 23); // 31 < 32
-    assert!(!fires(&format!("SPARKPOST_API_KEY={h}"), "sparkpost-api-key"));
+    assert!(!fires(
+        &format!("SPARKPOST_API_KEY={h}"),
+        "sparkpost-api-key"
+    ));
 }
 
 // ── Mailgun: key- + 32 hex ────────────────────────────────────────────────────
@@ -205,13 +245,20 @@ fn sparkpost_31_hex_does_not_fire() {
 #[test]
 fn mailgun_key_prefix_surfaces() {
     let k = format!("key-{}", hex(32, 24));
-    assert!(surfaces_under(&k, "mailgun-api-key", &k), "mailgun key- token must surface");
+    assert!(
+        surfaces_under(&k, "mailgun-api-key", &k),
+        "mailgun key- token must surface"
+    );
 }
 
 #[test]
 fn mailgun_key_env_anchor_surfaces() {
     let k = format!("key-{}", hex(32, 25));
-    assert!(surfaces_under(&format!("MAILGUN_API_KEY={k}"), "mailgun-api-key", &k));
+    assert!(surfaces_under(
+        &format!("MAILGUN_API_KEY={k}"),
+        "mailgun-api-key",
+        &k
+    ));
 }
 
 #[test]
@@ -227,7 +274,8 @@ fn multiple_email_vendor_keys_cosurface() {
     let mc = format!("{}-us{}", hex(32, 27), digits(2, 28));
     let pm = uuid(29);
     let mg = format!("key-{}", hex(32, 30));
-    let text = format!("MAILCHIMP_API_KEY={mc}\nPOSTMARK_SERVER_TOKEN={pm}\nMAILGUN_API_KEY={mg}\n");
+    let text =
+        format!("MAILCHIMP_API_KEY={mc}\nPOSTMARK_SERVER_TOKEN={pm}\nMAILGUN_API_KEY={mg}\n");
     assert!(surfaces_under(&text, "mailchimp-api-key", &mc));
     assert!(surfaces_under(&text, "postmark-server-token", &pm));
     assert!(surfaces_under(&text, "mailgun-api-key", &mg));

@@ -4,6 +4,11 @@ pub(crate) struct Phase2GpuDfaAdmission {
     pub(crate) admitted: Vec<bool>,
     pub(crate) complete: bool,
     pub(crate) matches_seen: usize,
+    /// Per-region (index-aligned with `admitted`) the deduped phase-2 pattern
+    /// indices the GPU regex-DFA matched. Authoritative as the always-active
+    /// active set ONLY when `complete` (GPU covered every always-active pattern);
+    /// otherwise the CPU RegexSet remains authoritative and this is advisory.
+    pub(crate) marked: Vec<Vec<usize>>,
 }
 
 pub(in crate::engine) enum Phase2GpuAdmissionWorkload<'a> {
@@ -101,12 +106,20 @@ pub(in crate::engine) fn expand_phase2_gpu_admission(
     full_len: usize,
 ) -> Phase2GpuDfaAdmission {
     let mut admitted = vec![false; full_len];
+    let mut marked: Vec<Vec<usize>> = vec![Vec::new(); full_len];
     let length_mismatch = subset.admitted.len() != workload_indices.len();
     for (&is_admitted, &full_idx) in subset.admitted.iter().zip(workload_indices.iter()) {
         if is_admitted {
             if let Some(slot) = admitted.get_mut(full_idx) {
                 *slot = true;
             }
+        }
+    }
+    // Remap the subset's per-region marks onto their full-batch region indices,
+    // index-aligned with `admitted` above (same subset→full mapping).
+    for (region_marks, &full_idx) in subset.marked.into_iter().zip(workload_indices.iter()) {
+        if let Some(slot) = marked.get_mut(full_idx) {
+            *slot = region_marks;
         }
     }
     if length_mismatch {
@@ -121,5 +134,6 @@ pub(in crate::engine) fn expand_phase2_gpu_admission(
         admitted,
         complete: subset.complete && !length_mismatch,
         matches_seen: subset.matches_seen,
+        marked,
     }
 }

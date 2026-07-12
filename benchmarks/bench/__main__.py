@@ -8,11 +8,14 @@ import pathlib
 
 from . import hardware
 from .analyze import analyze as analyze_examples, print_report
+from .gate import DEFAULT_DETECTOR_FP_ABS, DEFAULT_DETECTOR_FP_REL
 from .leaderboard import run_leaderboard
+from .scanners import SCANNER_NAMES
 from .report import (
     build_sections,
     inject,
     load_results,
+    missing_marker_sections,
     render_calibration,
     write_calibration_reports,
     write_reports,
@@ -71,8 +74,18 @@ def _report(args: argparse.Namespace) -> int:
         return 0
     readme = pathlib.Path(args.readme)
     original = readme.read_text() if readme.exists() else ""
+    sections = build_sections(results, args.corpus)
+    if args.check:
+        absent = missing_marker_sections(original, list(sections))
+        if absent:
+            print(
+                f"README is missing BENCH markers for: {', '.join(absent)} "
+                f"(injection cannot run — restore the <!-- BENCH:*:start/end --> markers).",
+                file=sys.stderr,
+            )
+            return 1
     updated = original
-    for name, body in build_sections(results, args.corpus).items():
+    for name, body in sections.items():
         updated = inject(updated, name, body)
     if args.check:
         if updated != original:
@@ -155,6 +168,9 @@ def _gate(args: argparse.Namespace) -> int:
         baseline=args.baseline,
         epsilon=args.epsilon,
         corpus_root=args.corpus_root,
+        detector_fp_regression=not args.no_detector_fp_regression,
+        max_detector_fp_abs=args.max_detector_fp_abs,
+        max_detector_fp_rel=args.max_detector_fp_rel,
         required_competitors={s.strip() for s in args.require_competitors.split(",") if s.strip()} or None,
     )
 
@@ -198,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
 
     leaderboard = sub.add_parser("leaderboard", help="Run a scanner leaderboard matrix.")
     leaderboard.add_argument("--corpus", default="mirror")
-    leaderboard.add_argument("--scanners", default="keyhog,betterleaks,kingfisher,noseyparker,trufflehog,titus")
+    leaderboard.add_argument("--scanners", default=",".join(SCANNER_NAMES))
     leaderboard.add_argument("--tier", choices=("quick", "perf"), default="quick")
     leaderboard.add_argument("--matrix", default=None)
     leaderboard.add_argument("--corpus-root", default=None)
@@ -239,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
              "and clear F1/P/R floors (exit 1 on violation, 2 if undecidable).")
     gate.add_argument("--corpus", default="mirror")
     gate.add_argument("--scanners",
-                      default="keyhog,betterleaks,kingfisher,noseyparker,trufflehog,titus")
+                      default=",".join(SCANNER_NAMES))
     gate.add_argument("--results", type=pathlib.Path, default=None,
                       help="consume existing RunResult JSONs instead of a fresh run")
     gate.add_argument("--corpus-root", default=None)
@@ -252,6 +268,16 @@ def main(argv: list[str] | None = None) -> int:
     gate.add_argument("--epsilon", type=float, default=0.0)
     gate.add_argument("--no-beat-competitors", action="store_true",
                       help="regression-only gate (skip the beat-competitors check)")
+    gate.add_argument("--no-detector-fp-regression", action="store_true",
+                      help="skip the per-detector FP-regression check against the "
+                           "--baseline (the check the aggregate-F1 gate can't make)")
+    gate.add_argument("--max-detector-fp-abs", type=int,
+                      default=DEFAULT_DETECTOR_FP_ABS,
+                      help="absolute per-detector FP increase tolerated vs baseline")
+    gate.add_argument("--max-detector-fp-rel", type=float,
+                      default=DEFAULT_DETECTOR_FP_REL,
+                      help="relative per-detector FP increase (fraction of baseline) "
+                           "tolerated vs baseline; a spike must clear BOTH to fail")
     gate.add_argument("--require-competitors", default="",
                       help="comma-separated competitor names that must produce usable results")
 

@@ -20,7 +20,7 @@ use std::process::Command;
 /// ```
 pub struct GitHistorySource {
     repo_path: PathBuf,
-    max_commits: Option<usize>,
+    pub(crate) max_commits: Option<usize>,
     limits: crate::SourceLimits,
     respect_default_excludes: bool,
 }
@@ -108,7 +108,7 @@ fn stream_git_history_chunks(
     respect_default_excludes: bool,
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let repo_arg = super::validate_repo_path(repo_path)?;
-    let mut command = Command::new(super::git_bin()?);
+    let mut command = super::git_command()?;
     command.args([
         "-C",
         &repo_arg,
@@ -432,25 +432,6 @@ fn stream_git_history_chunks(
     }))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn git_history_with_max_commits_delegates_to_the_shared_owner() {
-        // GitHistorySource must not keep its own copy of the cap conversion; it
-        // routes through the single owner in `source.rs` so the two builders
-        // stay in lockstep. Assert the concrete stored value and that it equals
-        // the shared owner's output for the same request.
-        let source = GitHistorySource::new(PathBuf::from(".")).with_max_commits(4);
-        assert_eq!(source.max_commits, Some(4));
-        assert_eq!(source.max_commits, super::super::source::max_commits_limit(4));
-        // Zero is an explicit cap here too, never clamped to None.
-        let zero = GitHistorySource::new(PathBuf::from(".")).with_max_commits(0);
-        assert_eq!(zero.max_commits, Some(0));
-    }
-}
-
 fn make_git_history_chunk(
     content: String,
     base_line: usize,
@@ -469,10 +450,10 @@ fn make_git_history_chunk(
             base_offset: 0,
             base_line,
             source_type: "git-history".into(),
-            path: Some(path.to_string()),
-            commit: Some(commit.to_string()),
-            author: Some(author.to_string()),
-            date: Some(date.to_string()),
+            path: Some(path.into()),
+            commit: Some(commit.into()),
+            author: Some(author.into()),
+            date: Some(date.into()),
             mtime_ns: None,
             size_bytes: None,
             decoded_span: None,

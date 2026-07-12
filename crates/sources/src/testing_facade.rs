@@ -5,6 +5,100 @@ pub mod testing {
 
     pub struct TestApi;
 
+    // ── magic byte-signature classifiers (src/magic.rs) ──────────────────────
+    // Free `for_test` wrappers over the `pub(crate)` binary-format detectors that
+    // drive `filesystem/read/decode.rs`'s binary-vs-text classification. The
+    // `src` no-inline-tests contract keeps unit coverage out of `src`, so these
+    // expose the pure functions to `tests/` without widening their visibility.
+
+    /// [`crate::magic::has_unambiguous_binary_prefix`].
+    pub fn has_unambiguous_binary_prefix_for_test(bytes: &[u8]) -> bool {
+        crate::magic::has_unambiguous_binary_prefix(bytes)
+    }
+    /// [`crate::magic::has_bmp_header`].
+    pub fn has_bmp_header_for_test(bytes: &[u8]) -> bool {
+        crate::magic::has_bmp_header(bytes)
+    }
+    /// [`crate::magic::has_pe_header`].
+    pub fn has_pe_header_for_test(bytes: &[u8]) -> bool {
+        crate::magic::has_pe_header(bytes)
+    }
+    /// [`crate::magic::has_bzip2_header`].
+    pub fn has_bzip2_header_for_test(bytes: &[u8]) -> bool {
+        crate::magic::has_bzip2_header(bytes)
+    }
+    /// [`crate::magic::starts_with_pdf`].
+    pub fn starts_with_pdf_for_test(bytes: &[u8]) -> bool {
+        crate::magic::starts_with_pdf(bytes)
+    }
+    /// [`crate::magic::starts_with_zip_container_prefix`].
+    pub fn starts_with_zip_container_prefix_for_test(bytes: &[u8]) -> bool {
+        crate::magic::starts_with_zip_container_prefix(bytes)
+    }
+    /// [`crate::magic::starts_with_python_pickle_protocol2`].
+    pub fn starts_with_python_pickle_protocol2_for_test(bytes: &[u8]) -> bool {
+        crate::magic::starts_with_python_pickle_protocol2(bytes)
+    }
+    /// [`crate::magic::starts_with_wasm_module`] (web feature).
+    #[cfg(feature = "web")]
+    pub fn starts_with_wasm_module_for_test(bytes: &[u8]) -> bool {
+        crate::magic::starts_with_wasm_module(bytes)
+    }
+
+    /// Drive [`crate::blocking_thread::collect_on_blocking_thread`] with a closure
+    /// that PANICS, returning the surfaced error message (or `None` if it somehow
+    /// succeeded). Pins the panic-safety contract: a fetch thread panic must be
+    /// converted to a counted `SourceError::Other("… fetch thread panicked")`,
+    /// never unwind into / abort the caller.
+    pub fn blocking_thread_panic_error_message_for_test(source: &'static str) -> Option<String> {
+        match crate::blocking_thread::collect_on_blocking_thread::<(), _>(source, || {
+            panic!("simulated fetch-thread panic for the panic-safety test")
+        }) {
+            Ok(()) => None,
+            Err(err) => Some(err.to_string()),
+        }
+    }
+
+    // ── default-excludes rule-list validation (src/filesystem/filter.rs) ──────
+    // The `filter.rs` normalizers reject malformed `default_excludes` config
+    // (empty, non-lowercase, control chars, wrong dot/separator shape per kind,
+    // duplicates). Kind is named by a label so the private `RuleListKind` enum
+    // stays crate-internal while `tests/` can exercise every branch.
+
+    fn rule_list_kind_from_label(label: &str) -> crate::filesystem::filter::RuleListKind {
+        use crate::filesystem::filter::RuleListKind;
+        match label {
+            "extension" => RuleListKind::Extension,
+            "path_segment" => RuleListKind::PathSegment,
+            "suffix" => RuleListKind::Suffix,
+            "filename" => RuleListKind::Filename,
+            "infix" => RuleListKind::Infix,
+            other => panic!("unknown RuleListKind label {other:?} in test helper"),
+        }
+    }
+
+    /// [`crate::filesystem::filter::validate_rule_value`] for the named kind.
+    /// `kind` is one of `extension` / `path_segment` / `suffix` / `filename` /
+    /// `infix`. Returns `Ok(())` for an acceptable entry, else the refusal reason.
+    pub fn validate_rule_value_for_test(name: &str, value: &str, kind: &str) -> Result<(), String> {
+        crate::filesystem::filter::validate_rule_value(name, value, rule_list_kind_from_label(kind))
+    }
+
+    /// [`crate::filesystem::filter::normalize_rule_list`] for the named kind —
+    /// trims, validates every entry, and rejects duplicates, returning the
+    /// normalized list or the first refusal reason.
+    pub fn normalize_rule_list_for_test(
+        name: &str,
+        values: Vec<String>,
+        kind: &str,
+    ) -> Result<Vec<String>, String> {
+        crate::filesystem::filter::normalize_rule_list(
+            name,
+            values,
+            rule_list_kind_from_label(kind),
+        )
+    }
+
     pub trait SourceTestApi {
         /// Enter an exclusive scan scope for a counter-asserting test. Held for
         /// the whole `reset → scan → read skip_counts()` window, it serializes
@@ -22,6 +116,13 @@ pub mod testing {
         /// `tests/docker_oci_classification.rs`).
         #[cfg(feature = "docker")]
         fn oci_descriptor_points_to_index(&self, media_type: Option<&str>, body: &[u8]) -> bool;
+        /// OCI blob sha256 verification through the crate's safe opener
+        /// (O_NOFOLLOW): returns whether the blob at `path` matches `digest`.
+        /// Critically REFUSES a symlink blob a raw `File::open` would follow (test
+        /// accessor so the `src/docker/**` no-inline-tests contract holds; coverage
+        /// lives in `tests/regression_docker_oci_safe_open.rs`).
+        #[cfg(feature = "docker")]
+        fn verify_oci_blob_sha256_ok(&self, path: &std::path::Path, digest: &str) -> bool;
         fn set_skip_counts(&self, counts: crate::SkipCounts);
         fn reset_skip_counters(&self);
         fn bump_skipped_over_max_size(&self, delta: usize);
@@ -231,6 +332,15 @@ pub mod testing {
         fn s3_endpoint_is_aws(&self, endpoint: &str) -> bool;
         #[cfg(feature = "s3")]
         fn s3_credential_forward_allowed(&self, allow_explicit: bool) -> bool;
+        /// Build an `S3Source` at a custom (typically loopback httpmock) endpoint.
+        ///
+        /// SECURITY NOTE: every `*_with_endpoint*` loopback-mock builder OPTS INTO
+        /// private endpoints (`allow_private_endpoint = true`) so the mock at
+        /// `127.0.0.1` is reachable — i.e. it DISABLES the cloud SSRF endpoint
+        /// screen. A test that must exercise the ACTIVE screen (private/metadata
+        /// refusal, public-host acceptance) MUST instead use
+        /// `s3_source_with_endpoint_allow_private(bucket, endpoint, false)`, or it
+        /// silently passes with the screen off.
         #[cfg(feature = "s3")]
         fn s3_source_with_endpoint<B, E>(&self, bucket: B, endpoint: E) -> crate::S3Source
         where
@@ -256,6 +366,38 @@ pub mod testing {
         where
             B: Into<String>,
             E: Into<String>;
+        /// Build an S3 source whose SSRF endpoint screen is either default-on
+        /// (`allow_private = false`) or opted-out (`true`) — the config-flag
+        /// replacement for the retired `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` env,
+        /// used by the SSRF-refusal regression tests to drive both paths.
+        #[cfg(feature = "s3")]
+        fn s3_source_with_endpoint_allow_private<B, E>(
+            &self,
+            bucket: B,
+            endpoint: E,
+            allow_private: bool,
+        ) -> crate::S3Source
+        where
+            B: Into<String>,
+            E: Into<String>;
+        /// GCS counterpart of [`s3_source_with_endpoint_allow_private`].
+        #[cfg(feature = "gcs")]
+        fn gcs_source_with_endpoint_allow_private<B, E>(
+            &self,
+            bucket: B,
+            endpoint: E,
+            allow_private: bool,
+        ) -> crate::GcsSource
+        where
+            B: Into<String>,
+            E: Into<String>;
+        /// Build an Azure Blob source whose container URL is permitted to be a
+        /// private / loopback endpoint (httpmock binds 127.0.0.1) — the loopback
+        /// config-flag replacement used by the azure listing/drop regressions.
+        #[cfg(feature = "azure")]
+        fn azure_blob_source<U>(&self, container_url: U) -> crate::AzureBlobSource
+        where
+            U: Into<String>;
         #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
         fn git_clone_timeout(&self) -> std::time::Duration;
         #[cfg(feature = "binary")]
@@ -425,8 +567,32 @@ pub mod testing {
         where
             U: Into<String>;
 
+        fn extract_printable_strings(
+            &self,
+            bytes: &[u8],
+            min_len: usize,
+        ) -> Vec<keyhog_core::SensitiveString>;
+        fn join_sensitive_strings(
+            &self,
+            parts: &[keyhog_core::SensitiveString],
+            sep: &str,
+        ) -> keyhog_core::SensitiveString;
+        #[cfg(feature = "git")]
+        fn git_max_commits_limit(&self, cap: usize) -> Option<usize>;
+        #[cfg(feature = "git")]
+        fn git_source_configured_max_commits(&self, cap: usize) -> Option<usize>;
+        #[cfg(feature = "git")]
+        fn git_history_source_configured_max_commits(&self, cap: usize) -> Option<usize>;
         #[cfg(feature = "web")]
         fn redact_url(&self, url: &str) -> String;
+        #[cfg(feature = "web")]
+        fn redirect_pin_key(&self, url: &str) -> Option<String>;
+        #[cfg(feature = "github")]
+        fn github_rate_limit_backoff_secs(&self, retry_after: Option<u64>, attempt: usize) -> u64;
+        #[cfg(feature = "github")]
+        fn github_max_backoff_secs(&self) -> u64;
+        #[cfg(feature = "github")]
+        fn github_repos_per_page(&self) -> usize;
         #[cfg(feature = "web")]
         fn is_disallowed_web_host(&self, url: &str) -> bool;
         #[cfg(feature = "web")]
@@ -508,6 +674,11 @@ pub mod testing {
         #[cfg(feature = "docker")]
         fn oci_descriptor_points_to_index(&self, media_type: Option<&str>, body: &[u8]) -> bool {
             crate::docker::oci::descriptor_points_to_index_for_test(media_type, body)
+        }
+
+        #[cfg(feature = "docker")]
+        fn verify_oci_blob_sha256_ok(&self, path: &std::path::Path, digest: &str) -> bool {
+            crate::docker::oci::verify_oci_blob_sha256(path, digest).is_ok()
         }
 
         fn set_skip_counts(&self, counts: crate::SkipCounts) {
@@ -847,7 +1018,9 @@ pub mod testing {
             B: Into<String>,
             E: Into<String>,
         {
-            crate::GcsSource::new(bucket).with_endpoint(endpoint)
+            crate::GcsSource::new(bucket)
+                .with_endpoint(endpoint)
+                .with_http_config(crate::http::HttpClientConfig::allowing_private_endpoint())
         }
 
         #[cfg(feature = "gcs")]
@@ -864,6 +1037,7 @@ pub mod testing {
             crate::GcsSource::new(bucket)
                 .with_endpoint(endpoint)
                 .with_limits(limits)
+                .with_http_config(crate::http::HttpClientConfig::allowing_private_endpoint())
         }
 
         #[cfg(feature = "gcs")]
@@ -880,6 +1054,7 @@ pub mod testing {
             crate::GcsSource::new(bucket)
                 .with_endpoint(endpoint)
                 .with_max_objects(max_objects)
+                .with_http_config(crate::http::HttpClientConfig::allowing_private_endpoint())
         }
 
         #[cfg(feature = "s3")]
@@ -898,7 +1073,9 @@ pub mod testing {
             B: Into<String>,
             E: Into<String>,
         {
-            crate::S3Source::new(bucket).with_endpoint(endpoint)
+            crate::S3Source::new(bucket)
+                .with_endpoint(endpoint)
+                .with_http_config(crate::http::HttpClientConfig::allowing_private_endpoint())
         }
 
         #[cfg(feature = "s3")]
@@ -915,6 +1092,7 @@ pub mod testing {
             crate::S3Source::new(bucket)
                 .with_endpoint(endpoint)
                 .with_limits(limits)
+                .with_http_config(crate::http::HttpClientConfig::allowing_private_endpoint())
         }
 
         #[cfg(feature = "s3")]
@@ -931,6 +1109,54 @@ pub mod testing {
             crate::S3Source::new(bucket)
                 .with_endpoint(endpoint)
                 .with_max_objects(max_objects)
+                .with_http_config(crate::http::HttpClientConfig::allowing_private_endpoint())
+        }
+
+        #[cfg(feature = "s3")]
+        fn s3_source_with_endpoint_allow_private<B, E>(
+            &self,
+            bucket: B,
+            endpoint: E,
+            allow_private: bool,
+        ) -> crate::S3Source
+        where
+            B: Into<String>,
+            E: Into<String>,
+        {
+            crate::S3Source::new(bucket)
+                .with_endpoint(endpoint)
+                .with_http_config(crate::http::HttpClientConfig {
+                    allow_private_endpoint: allow_private,
+                    ..Default::default()
+                })
+        }
+
+        #[cfg(feature = "gcs")]
+        fn gcs_source_with_endpoint_allow_private<B, E>(
+            &self,
+            bucket: B,
+            endpoint: E,
+            allow_private: bool,
+        ) -> crate::GcsSource
+        where
+            B: Into<String>,
+            E: Into<String>,
+        {
+            crate::GcsSource::new(bucket)
+                .with_endpoint(endpoint)
+                .with_http_config(crate::http::HttpClientConfig {
+                    allow_private_endpoint: allow_private,
+                    ..Default::default()
+                })
+        }
+
+        #[cfg(feature = "azure")]
+        fn azure_blob_source<U>(&self, container_url: U) -> crate::AzureBlobSource
+        where
+            U: Into<String>,
+        {
+            crate::AzureBlobSource::new(container_url)
+                .with_http_config(crate::http::HttpClientConfig::allowing_private_endpoint())
         }
 
         #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
@@ -1193,7 +1419,9 @@ pub mod testing {
         where
             U: Into<String>,
         {
-            crate::AzureBlobSource::new(container_url).with_max_objects(max_objects)
+            crate::AzureBlobSource::new(container_url)
+                .with_max_objects(max_objects)
+                .with_http_config(crate::http::HttpClientConfig::allowing_private_endpoint())
         }
 
         #[cfg(feature = "azure")]
@@ -1205,12 +1433,69 @@ pub mod testing {
         where
             U: Into<String>,
         {
-            crate::AzureBlobSource::new(container_url).with_limits(limits)
+            crate::AzureBlobSource::new(container_url)
+                .with_limits(limits)
+                .with_http_config(crate::http::HttpClientConfig::allowing_private_endpoint())
+        }
+
+        fn extract_printable_strings(
+            &self,
+            bytes: &[u8],
+            min_len: usize,
+        ) -> Vec<keyhog_core::SensitiveString> {
+            crate::strings::extract_printable_strings(bytes, min_len)
+        }
+
+        fn join_sensitive_strings(
+            &self,
+            parts: &[keyhog_core::SensitiveString],
+            sep: &str,
+        ) -> keyhog_core::SensitiveString {
+            crate::strings::join_sensitive_strings(parts, sep)
+        }
+
+        #[cfg(feature = "git")]
+        fn git_max_commits_limit(&self, cap: usize) -> Option<usize> {
+            crate::git::max_commits_limit(cap)
+        }
+
+        #[cfg(feature = "git")]
+        fn git_source_configured_max_commits(&self, cap: usize) -> Option<usize> {
+            crate::git::GitSource::new(std::path::PathBuf::from("."))
+                .with_max_commits(cap)
+                .max_commits
+        }
+
+        #[cfg(feature = "git")]
+        fn git_history_source_configured_max_commits(&self, cap: usize) -> Option<usize> {
+            crate::git::GitHistorySource::new(std::path::PathBuf::from("."))
+                .with_max_commits(cap)
+                .max_commits
         }
 
         #[cfg(feature = "web")]
         fn redact_url(&self, url: &str) -> String {
             crate::web::redact_url(url).into_owned()
+        }
+
+        #[cfg(feature = "web")]
+        fn redirect_pin_key(&self, url: &str) -> Option<String> {
+            crate::web::redirect_pin_key(url)
+        }
+
+        #[cfg(feature = "github")]
+        fn github_rate_limit_backoff_secs(&self, retry_after: Option<u64>, attempt: usize) -> u64 {
+            crate::github_org::rate_limit_backoff_secs(retry_after, attempt)
+        }
+
+        #[cfg(feature = "github")]
+        fn github_max_backoff_secs(&self) -> u64 {
+            crate::github_org::MAX_BACKOFF_SECS
+        }
+
+        #[cfg(feature = "github")]
+        fn github_repos_per_page(&self) -> usize {
+            crate::github_org::REPOS_PER_PAGE
         }
 
         #[cfg(feature = "web")]

@@ -103,9 +103,8 @@ fn assert_forward_kernel_shape() {
     assert!(
         scorer.contains("let model = ml_weights::model();")
             && scorer.contains("forward_pass_impl(model, input)")
-            && scorer.contains("dense_relu_layer_t::<NUM_FEATURES, EXPERT_HIDDEN_LAYER_1>")
-            && scorer
-                .contains("dense_relu_layer_t::<EXPERT_HIDDEN_LAYER_1, EXPERT_HIDDEN_LAYER_2>"),
+            && scorer.contains("dense_relu_layer_t::<NUM_FEATURES, EXPERT_FC1_OUT>")
+            && scorer.contains("dense_relu_layer_t::<EXPERT_FC1_OUT, EXPERT_FC2_OUT>"),
         "ML scorer must keep the hoisted model and output-stationary dense layers"
     );
     assert!(
