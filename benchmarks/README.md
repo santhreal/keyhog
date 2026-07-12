@@ -18,12 +18,16 @@ make bench      # run every scanner on the mirror -> results/<host>/
 make report     # render reports/ + inject the leaderboard into ../README.md
 make analyze    # print top FP/FN examples for detector tuning
 make test       # pytest the package (scorer truth, loaders, injection idempotence)
+make targets    # execute aspirational recall/competitor target specs (expected worklist)
 ```
 
 The release keyhog binary is resolved from `$KEYHOG_BIN`, else the cargo
 target-dir in `$CARGO_TARGET_DIR`, else `~/.cargo/config.toml`, else the repo
 target dir, else `keyhog` on `PATH`. Build it first:
 `make keyhog` or `cargo build --release -p keyhog`.
+The default test/release gate excludes tests marked `target_spec`; those are
+executable product targets, not claims that the current release already meets.
+Run them explicitly with `make targets`.
 
 ## What it measures
 

@@ -1,7 +1,7 @@
 //! Shared clone-and-scan machinery for hosted Git repository collections.
 
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Child, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 

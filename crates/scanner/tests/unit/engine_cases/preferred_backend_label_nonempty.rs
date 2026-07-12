@@ -1,7 +1,7 @@
 use keyhog_core::{DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::CompiledScanner;
 #[test]
-fn preferred_backend_label_nonempty() {
+fn no_backend_library_status_names_the_portable_reference() {
     let d = DetectorSpec {
         tests: Vec::new(),
         id: "a".into(),
@@ -21,5 +21,5 @@ fn preferred_backend_label_nonempty() {
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
-    assert!(!s.runtime_status().preferred_backend.is_empty());
+    assert_eq!(s.runtime_status().preferred_backend, "cpu-fallback");
 }

@@ -10,12 +10,19 @@ output ordering.
 | Backend | What it does | Typical cost profile |
 |---|---|---|
 | `cpu` (`cpu-fallback`) | Pure-Rust literal and regex execution | Portable and cheap to start; useful when native accelerators are unavailable. |
-| `simd` (`simd-regex`) | Hyperscan/Vectorscan trigger matching plus the shared extraction and policy pipeline | Fast CPU throughput after compiled databases are loaded; the default Linux reference path. |
+| `simd` (`simd-regex`) | Hyperscan/Vectorscan trigger matching plus the shared extraction and policy pipeline | Fast CPU throughput after compiled databases are loaded; the calibration reference for accelerated builds. |
 | `gpu` (`gpu-region-presence`) | VYRE GPU region-presence matching feeding the shared confirmation pipeline | Higher initialization/dispatch cost; can win on large or persistent workloads. |
 | `auto` | Exact lookup in a persisted, parity-checked calibration table | Default. It is a selector over all eligible engines, not a fallback order. |
 
 `--backend` is an explicit diagnostic or benchmark override. It bypasses
 autoroute; it does not prove that the chosen engine is fastest for the input.
+
+The Rust library deliberately has a different default contract. Calling
+`CompiledScanner::scan` or `scan_coalesced` without a backend uses the portable
+`cpu-fallback` reference, so identical library code does not change execution
+with host hardware or local calibration files. Library callers that want
+acceleration choose `scan_with_backend`/`scan_coalesced_with_backend`; the CLI
+is the owner of persisted automatic routing.
 
 ## What “same results” means
 

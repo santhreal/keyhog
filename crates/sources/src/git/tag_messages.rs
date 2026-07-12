@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::process::Command;
 
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 

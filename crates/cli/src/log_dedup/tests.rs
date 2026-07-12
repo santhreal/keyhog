@@ -31,3 +31,24 @@ fn warn_callsite_suppressed_after_shown_budget_and_counted() {
         "test must exercise the suppressed regime"
     );
 }
+
+#[test]
+fn dependency_warning_targets_do_not_create_hidden_summaries() {
+    use tracing_subscriber::layer::SubscriberExt;
+    let layer = tracing_subscriber::fmt::layer().with_writer(std::io::sink);
+    let filtered = tracing_subscriber::Layer::with_filter(layer, WarnRepeatLimit);
+    let subscriber = tracing_subscriber::registry().with(filtered);
+    tracing::subscriber::with_default(subscriber, || {
+        for idx in 0..10u64 {
+            tracing::warn!(target: "wgpu_hal::vulkan::instance", idx, "dependency warning");
+        }
+    });
+    let state = WARN_REPEATS.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(
+        state
+            .counts
+            .values()
+            .all(|count| count.target != "wgpu_hal::vulkan::instance"),
+        "filtered dependency warnings must not be summarized"
+    );
+}

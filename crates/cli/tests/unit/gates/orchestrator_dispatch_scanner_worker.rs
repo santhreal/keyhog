@@ -63,7 +63,7 @@ fn selected_simd_backend_uses_fail_loud_coalesced_boundary() {
         scanner.contains("pub fn scan_coalesced_with_backend(")
             && scanner.contains("self.deny_silent_selected_backend_degrade(backend);")
             && scanner.contains("backend == crate::hw_probe::ScanBackend::SimdCpu")
-            && scanner.contains("return self.scan_coalesced(chunks);"),
+            && scanner.contains("return self.scan_coalesced_simd(chunks);"),
         "scanner must expose one coalesced selected-backend boundary that guards before preserving the SIMD coalesced path"
     );
     assert!(

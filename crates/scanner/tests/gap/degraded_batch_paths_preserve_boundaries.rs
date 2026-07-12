@@ -14,8 +14,7 @@ fn forced_simd_backend_without_prefilter_is_not_cpu_fallback() {
     let triggered = scanner_source("engine/backend_triggered.rs");
     let no_hit_reassembly = scanner_source("engine/scan_no_hit_reassembly.rs");
     assert!(
-        source.contains("fn resolve_backend_for_scan(")
-            && source.contains("requested_backend: Option<ScanBackend>")
+        source.contains("selected_backend: crate::hw_probe::ScanBackend")
             && source.contains("crate::process_exit::backend_unavailable"),
         "forced SimdCpu must fail loudly when the SIMD prefilter is absent"
     );
@@ -30,8 +29,7 @@ fn forced_simd_backend_without_prefilter_is_not_cpu_fallback() {
         .and_then(|tail| tail.split("// Direct-match prefilters").next())
         .expect("scan entry prefilter guard block extractable");
     assert!(
-        scan_entry.contains("if let Some(selected_backend) = backend")
-            && scan_entry.contains("self.deny_silent_selected_backend_degrade(selected_backend);"),
+        scan_entry.contains("self.deny_silent_selected_backend_degrade(selected_backend);"),
         "explicit selected backends must be validated before prefilter skip/no-hit branches can return"
     );
     let simd_trigger_collector = triggered

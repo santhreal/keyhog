@@ -34,6 +34,7 @@ struct WarnRepeatState {
 
 struct CallsiteCount {
     seen: u64,
+    target: String,
     /// `file:line` of the warn callsite, for the summary line.
     location: String,
 }
@@ -50,12 +51,22 @@ impl<S: Subscriber> Filter<S> for WarnRepeatLimit {
         if !meta.is_event() || *meta.level() != Level::WARN {
             return true;
         }
+        // The default EnvFilter exposes KeyHog warnings, not dependency
+        // diagnostics. Layer filters can be queried before that global filter,
+        // so counting every target produced summaries for hidden wgpu/Vulkan
+        // warnings ("first 3 shown" when none were visible). Only summarize
+        // warnings in the product namespace; dependency logs explicitly enabled
+        // through RUST_LOG remain owned by that dependency's stream.
+        if !meta.target().starts_with("keyhog") {
+            return true;
+        }
         let mut state = WARN_REPEATS.lock().unwrap_or_else(|e| e.into_inner());
         let entry = state
             .counts
             .entry(meta.callsite())
             .or_insert_with(|| CallsiteCount {
                 seen: 0,
+                target: meta.target().to_string(),
                 location: match (meta.file(), meta.line()) {
                     (Some(file), Some(line)) => format!("{file}:{line}"),
                     _ => meta.target().to_string(),
@@ -77,8 +88,9 @@ impl Drop for WarnDedupSummaryGuard {
         for count in state.counts.values() {
             if count.seen > WARN_REPEATS_SHOWN {
                 eprintln!(
-                    "keyhog: warning at {} repeated {} more times (first {} shown)",
+                    "keyhog: warning at {} ({}) repeated {} more times (first {} shown)",
                     count.location,
+                    count.target,
                     count.seen - WARN_REPEATS_SHOWN,
                     WARN_REPEATS_SHOWN,
                 );

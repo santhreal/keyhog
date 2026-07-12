@@ -71,8 +71,10 @@ jobs:
       - name: Install bench test deps
         run: python3 -m pip install pytest
 
-      - name: Scorer self-tests (no scanners needed)
-        run: cd benchmarks && python3 -m pytest -q bench/tests
+      - name: Benchmark regression tests
+        env:
+          KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
+        run: cd benchmarks && python3 -m pytest -q -m 'not target_spec' bench/tests
 
       - name: Generate mirror corpus
         env:

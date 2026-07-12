@@ -28,17 +28,9 @@
 // unchanged; only the files moved (and gpu_moe_backend.rs/gpu_env.rs were
 // renamed to match their module names).
 #[cfg(feature = "gpu")]
-pub(crate) mod gpu_shader;
-// Re-exported for the arch-consistency gate (tests/unit/gates) to validate the
-// generated shader against `model_arch` without reaching into a private module.
-// Test-only AND gpu-only: `gpu_shader` itself is `#[cfg(feature = "gpu")]`, so a
-// bare `#[cfg(test)]` here fails to resolve under ci-lean (no gpu) — the gate
-// module that consumes it is likewise `#[cfg(feature = "gpu")]`.
-#[cfg(all(test, feature = "gpu"))]
-pub(crate) use gpu_shader::moe_shader;
-
-#[cfg(feature = "gpu")]
 mod backend;
+#[cfg(feature = "gpu")]
+pub(crate) mod gpu_shader;
 
 mod policy;
 pub use policy::*;

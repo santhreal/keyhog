@@ -35,8 +35,6 @@ import os
 import pytest
 
 from bench.corpora.creddata import CredDataCorpus
-from bench.scanners.keyhog import KeyhogScanner, resolve_keyhog_binary
-from bench.schema import ScannerConfig
 from bench.score import score
 
 # ── corpus load (collection time) ─────────────────────────────────────
@@ -67,27 +65,11 @@ def _floor() -> float:
 
 
 @pytest.fixture(scope="session")
-def detection():
+def detection(creddata_simd_findings):
     """Run keyhog ONCE over CredData and return the scored ``Detection``. A
     missing binary or a zero-finding scan is a harness failure that fails LOUD
     — it must never masquerade as a recall regression."""
-    binary = resolve_keyhog_binary()
-    if binary is None:
-        pytest.fail(
-            "no keyhog binary found (set KEYHOG_BIN, or build a release binary "
-            "with `cargo build --release`); refusing to report a 0.0 recall "
-            "floor breach off a binary that never ran")
-
-    cfg = ScannerConfig(backend="simd", cache="off", daemon="off", mode="full")
-    findings, _stats = KeyhogScanner(binary=binary).run(_CORPUS.scan_root, cfg)
-
-    if not findings:
-        pytest.fail(
-            f"keyhog ({binary}) produced ZERO findings over CredData — a harness "
-            f"failure (wrong binary / corpus path / scan error), not a recall "
-            f"result. scan_root={_CORPUS.scan_root}")
-
-    return score(_RECORDS, findings, _CORPUS.file_root)
+    return score(_RECORDS, creddata_simd_findings, _CORPUS.file_root)
 
 
 @pytest.mark.skipif(

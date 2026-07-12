@@ -5,7 +5,6 @@ use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use std::collections::VecDeque;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 
 /// Scans only the ADDED lines between two git refs.
 /// Uses `git diff` unified diff output and extracts lines starting with '+'.

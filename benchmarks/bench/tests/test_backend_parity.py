@@ -92,18 +92,15 @@ def _scan(
 
 
 @pytest.fixture(scope="session")
-def backend_findings():
+def backend_findings(creddata_simd_findings):
     """Scan the corpus once per backend. Deterministic backends are required;
     accelerated ones are best-effort and recorded as None when unavailable
     (printed loudly, never silently dropped)."""
     binary = _current_keyhog_binary()
 
-    out: dict[str, set | None] = {}
-    for b in _DETERMINISTIC:
-        out[b] = _scan(binary, b, _CORPUS.scan_root)
-        if not out[b]:
-            pytest.fail(f"backend {b!r} produced ZERO findings over CredData — a "
-                        f"harness failure (binary/feature/corpus), not a parity result")
+    out: dict[str, set | None] = {
+        _DETERMINISTIC[0]: _finding_keys(creddata_simd_findings)
+    }
 
     ref = out[_DETERMINISTIC[0]]
     for b in _ACCELERATED:

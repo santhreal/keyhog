@@ -11,6 +11,10 @@
 - Stop prewarming an automatic backend from a zero-byte heuristic before the
   persisted workload-specific autoroute decision is known; explicit diagnostic
   backend overrides still prewarm directly.
+- Report the configured backend policy at startup instead of claiming that a
+  backend was selected before the persisted per-workload decision exists.
+- Do not print end-of-run repeat summaries for dependency warnings hidden by
+  the default log filter; summaries now describe only visible KeyHog warnings.
 - Record the actual first GPU dispatch as autoroute cold-start evidence instead
   of discarding it and mislabelling an already-warm second dispatch as cold.
 - Distinguish one-shot and persistent-daemon autorouting: one-shot scans include

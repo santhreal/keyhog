@@ -348,10 +348,12 @@ fn resolve_persisted_backend(
     cache_path: &Option<PathBuf>,
     cache_load_error: &Option<String>,
 ) -> Result<ScanBackend, AutorouteRoutingError> {
-    let backend = decisions.get(&key).and_then(|decision| match runtime_class {
-        AutorouteRuntimeClass::OneShot => decision.backend(),
-        AutorouteRuntimeClass::PersistentDaemon => decision.resolved_persistent_backend(),
-    });
+    let backend = decisions
+        .get(&key)
+        .and_then(|decision| match runtime_class {
+            AutorouteRuntimeClass::OneShot => decision.backend(),
+            AutorouteRuntimeClass::PersistentDaemon => decision.resolved_persistent_backend(),
+        });
     match backend {
         Some(backend) => Ok(backend),
         None => Err(AutorouteRoutingError::missing_decision(

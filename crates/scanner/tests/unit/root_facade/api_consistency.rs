@@ -2,10 +2,10 @@
 //! produce equivalent findings for the same input.
 //!
 //! CompiledScanner exposes four scan APIs:
-//!   * `scan(chunk)` - single chunk, auto-routed backend, no deadline.
+//!   * `scan(chunk)` - single chunk, portable CPU reference, no deadline.
 //!   * `scan_with_backend(chunk, backend)` - single chunk, caller-
 //!     selected backend.
-//!   * `scan_with_deadline(chunk, deadline)` - single chunk, auto-routed,
+//!   * `scan_with_deadline(chunk, deadline)` - single chunk, CPU reference,
 //!     with timeout.
 //!   * `scan_chunks_with_backend(chunks, backend)` - multi-chunk, caller-
 //!     selected backend, returns one Vec<RawMatch> per input chunk.

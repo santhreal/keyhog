@@ -331,9 +331,12 @@ fn boundary_context_for_pair(
 }
 
 fn scan_boundary_chunk_whole(scanner: &CompiledScanner, chunk: &Chunk) -> Vec<RawMatch> {
-    let backend = scanner.select_backend_for_file(chunk.data.len() as u64);
-    super::gpu_forced::deny_silent_gpu_degrade(scanner, backend);
-    let mut matches = scanner.scan_inner(chunk, backend, None);
+    // Boundary reassembly is a shared correctness tail, not a second routing
+    // decision. Choosing from live hardware here let an explicit batch backend
+    // silently change at the seam and made results depend on host state. Keep
+    // the small synthetic buffer on the deterministic reference backend; the
+    // CLI's persisted router remains the sole owner of workload routing.
+    let mut matches = scanner.scan_inner(chunk, crate::hw_probe::ScanBackend::CpuFallback, None);
     scanner.post_process_matches(chunk, &mut matches, None);
     matches
 }

@@ -123,7 +123,7 @@ fn cpu_tier_backend_is_the_single_simd_vs_scalar_source() {
     // only: an accelerated ISA without Hyperscan does NOT prove the simd-regex
     // backend exists, so it must resolve to the scalar `CpuFallback` rather than
     // auto-select a SimdCpu the scan path cannot honor (its `simd_prefilter`
-    // would be absent and `resolve_backend_for_scan` would fail closed).
+    // would be absent and the selected-backend guard would fail closed).
 
     // Hyperscan compiled in -> SimdCpu, independent of ISA flags.
     assert_eq!(
@@ -377,11 +377,6 @@ fn workload_selector_is_the_single_branch_owner() {
             "public file/workload verdict wrapper",
         ),
         (
-            "pub(crate) fn select_backend_for_file(",
-            "select_backend_for_workload(",
-            "compiled-scanner file wrapper",
-        ),
-        (
             "pub(crate) fn select_backend_for_batch(",
             "select_backend_for_batch_verdict(",
             "batch workload wrapper",
@@ -409,29 +404,6 @@ fn workload_selector_is_the_single_branch_owner() {
             );
         }
     }
-
-    let compiled_path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/compiled_api.rs");
-    let compiled_code =
-        strip_line_comments(&std::fs::read_to_string(compiled_path).expect("read compiled_api.rs"));
-    let compiled_wrapper = function_body(
-        &compiled_code,
-        "pub(crate) fn select_backend_for_file(&self, file_size: u64)",
-    );
-    assert!(
-        compiled_wrapper.contains("crate::hw_probe::select_backend_for_file("),
-        "CompiledScanner file routing must use the file-shaped hw_probe wrapper"
-    );
-    assert!(
-        compiled_wrapper.contains("&& !self.gpu_stack_usable()")
-            && compiled_wrapper.contains("crate::gpu::gpu_required_by_policy()")
-            && compiled_wrapper.contains("self.warn_gpu_auto_degrade(")
-            && compiled_wrapper.contains("return self.live_cpu_backend();"),
-        "automatic GPU routing must check this compiled scanner's live GPU stack: required GPU fails closed, ordinary auto routes to the live CPU tier loudly"
-    );
-    assert!(
-        !compiled_wrapper.contains("crate::hw_probe::select_backend("),
-        "CompiledScanner file routing must not bypass the file-shaped selector"
-    );
 }
 
 // ---------------------------------------------------------------------------

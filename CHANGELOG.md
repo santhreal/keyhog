@@ -25,6 +25,13 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- **Library defaults are deterministic; CLI routing stays measured.** The
+  no-backend `CompiledScanner::scan` and `scan_coalesced` APIs now use the
+  portable CPU reference instead of a host-size heuristic. Accelerated library
+  execution is explicit, while CLI `auto` remains an exact persisted
+  fastest-correct lookup. Cross-chunk reassembly no longer makes an independent
+  backend choice, and the startup banner reports policy until a real workload
+  decision exists.
 - **Severity labels render identically everywhere.** Scan findings, `--stream`
   previews, and watch-mode events all render severity through the one
   canonical `Severity::as_str()` (uppercased at the display edge), fixing the
@@ -74,6 +81,18 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- **Prerelease benchmarks now prove the candidate artifact.** The gate builds
+  and pins the current binary before scanner-backed pytest, and benchmark
+  freshness validates the exact Git commit and embedded detector-set digest in
+  addition to semver. Executable aspirational recall targets use an explicit
+  `target_spec` lane instead of making the green regression suite permanently
+  fail by construction. CredData release gates also share one candidate SIMD
+  scan instead of independently rescanning the full corpus.
+- Keep benchmark `--min-confidence` arguments in concise round-trippable float
+  form and remove obsolete direct-`Command` imports after Git spawning was
+  centralized behind the guarded process boundary.
+- Stop successful GPU scans from ending with a misleading repeat-warning
+  summary for wgpu/Vulkan events that the default log filter never displayed.
 - Autoroute host and cache identity now query GPU/SIMD compile support from the
   scanner dependency that owns those feature gates. Workspace feature unification
   could previously compile a GPU-capable scanner under a CLI build whose local

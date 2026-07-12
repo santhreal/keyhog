@@ -237,9 +237,7 @@ impl DefaultScanRuntime {
         let gpu_expected = keyhog_scanner::hw_probe::gpu_backend_compiled()
             && hw.gpu_available
             && !hw.gpu_is_software;
-        let gpu_ready = self
-            .scanner
-            .warm_backend(keyhog_scanner::ScanBackend::Gpu);
+        let gpu_ready = self.scanner.warm_backend(keyhog_scanner::ScanBackend::Gpu);
         if gpu_expected && !gpu_ready {
             anyhow::bail!(
                 "daemon GPU initialization failed on a host with an eligible physical GPU; \
@@ -269,7 +267,12 @@ impl DefaultScanRuntime {
                 );
             }
         }
-        tracing::info!(simd_ready, gpu_ready, gpu_expected, "persistent daemon backends initialized");
+        tracing::info!(
+            simd_ready,
+            gpu_ready,
+            gpu_expected,
+            "persistent daemon backends initialized"
+        );
         self.router = self.router.for_persistent_daemon();
         Ok(self)
     }

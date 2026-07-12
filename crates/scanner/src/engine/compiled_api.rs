@@ -2,7 +2,6 @@ use super::*;
 use crate::hw_probe::ScanBackend;
 
 static SIMD_AUTO_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-static GPU_AUTO_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
 /// Family + homoglyph breakdown of the always-active (`phase2_always_active_indices`)
 /// pool, used to pin the true composition behind the F3 perf floor.
@@ -68,43 +67,6 @@ Forced --backend simd is rejected instead of silently running another backend."
             %context,
             "SIMD backend unavailable; automatic CPU-tier route changed to cpu-fallback"
         );
-    }
-
-    pub(crate) fn warn_gpu_auto_degrade(&self, selected_backend: ScanBackend, context: &str) {
-        if GPU_AUTO_DEGRADE_WARNED.set(()).is_ok() {
-            eprintln!(
-                "keyhog: {} auto-selected but this scanner has no live GPU stack ({context}); \
-routing this automatic scan through {}. Forced GPU backends still fail closed.",
-                selected_backend.label(),
-                self.live_cpu_backend().label()
-            );
-        }
-        tracing::warn!(
-            target: "keyhog::routing",
-            backend = selected_backend.label(),
-            fallback = self.live_cpu_backend().label(),
-            %context,
-            "GPU backend auto-selected but scanner GPU stack is unavailable; automatic route changed to live CPU tier"
-        );
-    }
-
-    fn resolve_backend_for_scan(
-        &self,
-        requested_backend: Option<ScanBackend>,
-        chunk_bytes: u64,
-    ) -> ScanBackend {
-        let selected_backend = match requested_backend {
-            Some(backend) => backend,
-            None => self.select_backend_for_file(chunk_bytes),
-        };
-        if selected_backend == ScanBackend::SimdCpu && !self.simd_backend_usable() {
-            crate::process_exit::backend_unavailable(
-                "simd-regex selected but the SIMD/Hyperscan prefilter is unavailable; \
-silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or choose \
-`--backend cpu` explicitly.",
-            );
-        }
-        selected_backend
     }
 
     /// Exit before a caller-selected backend can silently run a different path.
@@ -462,50 +424,6 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         u64::from_le_bytes(bytes)
     }
 
-    /// Return the preferred backend for a file of the given size.
-    #[must_use]
-    pub(crate) fn select_backend_for_file(&self, file_size: u64) -> crate::hw_probe::ScanBackend {
-        let selected = crate::hw_probe::select_backend_for_file(
-            crate::hw_probe::probe_hardware(),
-            file_size,
-            self.pattern_count(),
-        );
-        if matches!(
-            selected,
-            crate::hw_probe::ScanBackend::Gpu | crate::hw_probe::ScanBackend::MegaScan
-        ) && !self.gpu_stack_usable()
-        {
-            if crate::gpu::gpu_required_by_policy() {
-                crate::process_exit::require_gpu_unmet(format!(
-                    "{} auto-selected under required GPU policy, but this scanner has no live GPU stack \
-(gpu_literals={}, gpu_backend={}, gpu_matcher={}); refusing to run on CPU/SIMD.",
-                    selected.label(),
-                    self.gpu_literals.is_some(),
-                    self.gpu_backend.is_some(),
-                    self.gpu_matcher().is_some()
-                ));
-            }
-            self.warn_gpu_auto_degrade(
-                selected,
-                "auto route selected GPU without acquired scanner GPU stack",
-            );
-            return self.live_cpu_backend();
-        }
-        // The hardware probe can pick SimdCpu from host capability + pattern count
-        // alone, but THIS scanner may have built no Hyperscan prefilter — e.g. a
-        // detector set whose patterns expose no anchorable literal (`[a-z]{16}`), so
-        // `simd_prefilter` is None. Auto-route such a scan to the live CPU backend
-        // (CpuFallback) instead of returning a SimdCpu the scan path cannot honor:
-        // `resolve_backend_for_scan`'s fail-closed abort is reserved for an EXPLICIT
-        // `--backend simd-regex` request, not for auto-selection, which must always
-        // resolve to a backend this scanner can actually run (Law 10: no silent — and
-        // here, no fatal — degrade on the auto path).
-        if selected == crate::hw_probe::ScanBackend::SimdCpu && !self.simd_backend_usable() {
-            return self.live_cpu_backend();
-        }
-        selected
-    }
-
     /// Identifier of the GPU backend acquired at compile time, or
     /// None if scanning routes to CPU/SIMD only. Mirrors
     /// `VyreBackend::id()` which returns "cuda", "wgpu", or the
@@ -529,10 +447,10 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             .and_then(|guard| guard.clone())
     }
 
-    /// Return the steady-state backend label used for startup reporting.
+    /// Return the backend used by no-backend library scan APIs.
     #[must_use]
     pub(crate) fn preferred_backend_label(&self) -> &'static str {
-        self.select_backend_for_file(0).label()
+        crate::hw_probe::ScanBackend::CpuFallback.label()
     }
 
     /// Warm backend resources that are initialized lazily during scanning.
@@ -574,7 +492,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         chunk: &Chunk,
         backend: crate::hw_probe::ScanBackend,
     ) -> Vec<RawMatch> {
-        self.scan_with_deadline_and_backend(chunk, self.config.per_chunk_deadline(), Some(backend))
+        self.scan_with_deadline_and_backend(chunk, self.config.per_chunk_deadline(), backend)
     }
 
     /// Scan multiple chunks using a caller-selected backend.
@@ -600,21 +518,27 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         chunk: &Chunk,
         deadline: Option<std::time::Instant>,
     ) -> Vec<RawMatch> {
-        self.scan_with_deadline_and_backend(chunk, deadline, None)
+        // The library default is the deterministic portable reference. Hardware
+        // acceleration requires an explicit backend or the CLI's persisted
+        // fastest-correct router; a library call must not invent a heuristic
+        // route from host state and input size.
+        self.scan_with_deadline_and_backend(
+            chunk,
+            deadline,
+            crate::hw_probe::ScanBackend::CpuFallback,
+        )
     }
 
     pub(crate) fn scan_with_deadline_and_backend(
         &self,
         chunk: &Chunk,
         deadline: Option<std::time::Instant>,
-        backend: Option<crate::hw_probe::ScanBackend>,
+        selected_backend: crate::hw_probe::ScanBackend,
     ) -> Vec<RawMatch> {
         if crate::deadline::expired(deadline) {
             return Vec::new();
         }
-        if let Some(selected_backend) = backend {
-            self.deny_silent_selected_backend_degrade(selected_backend);
-        }
+        self.deny_silent_selected_backend_degrade(selected_backend);
         // Direct-match prefilters: skip chunks that carry none of any
         // detector's literal bytes (`AlphabetScreen`) or bigrams (bloom). A
         // FULLY-ENCODED secret carries none of those - its plaintext prefix
@@ -635,23 +559,17 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             #[cfg(feature = "simd")]
             if self.should_scan_no_hit_chunk(chunk) {
                 let prepared = self.prepare_chunk(chunk);
-                let live_backend = self.live_cpu_backend();
-                if live_backend == crate::hw_probe::ScanBackend::CpuFallback {
-                    self.warn_simd_auto_degrade(
-                        "decode-shaped no-hit chunk had no live SIMD prefilter",
-                    );
-                }
                 let triggered = if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
                     Vec::new()
                 } else {
                     self.collect_triggered_patterns_for_backend(
                         &prepared.preprocessed.text,
-                        live_backend,
+                        selected_backend,
                     )
                 };
                 let mut matches = self.scan_prepared_with_triggered(
                     prepared,
-                    live_backend,
+                    selected_backend,
                     &triggered,
                     deadline,
                     None,
@@ -682,8 +600,6 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             return Vec::new();
         }
 
-        let selected_backend = self.resolve_backend_for_scan(backend, chunk.data.len() as u64); // LAW10: operator-visible — the automatic CPU-tier choice is relabeled to the backend that actually runs; not a silent degrade
-        gpu_forced::deny_silent_gpu_degrade(self, selected_backend);
         tracing::trace!(
             target: "keyhog::routing",
             backend = selected_backend.label(),

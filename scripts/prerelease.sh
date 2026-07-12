@@ -113,9 +113,32 @@ PY
 CUR="$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
 step "keyhog prerelease — current ${CUR}${BUMP:+ → ${BUMP}} (profile=$PROFILE, skip_rust=$SKIP_RUST)"
 
-# ── 1. bench gates (fast, no cargo) ──────────────────────────────────────────
+# ── 1. candidate + bench gates ───────────────────────────────────────────────
+# Bench integration tests must execute the source tree being released. Resolving
+# an arbitrary same-semver binary from a shared Cargo target can load an older
+# detector schema and turn one stale-artifact error into thousands of recall
+# failures. Build once, then pin every benchmark invocation to this artifact.
+step "candidate: build benchmark binary"
+CANDIDATE="$CARGO_TARGET_DIR/$PROFILE/keyhog"
+CANDIDATE_READY=0
+if cargo build -p keyhog --bin keyhog --profile "$PROFILE"; then
+  export KEYHOG_BIN="$CANDIDATE"
+  CANDIDATE_READY=1
+  printf '  \033[32mPASS\033[0m candidate build (%s)\n' "$KEYHOG_BIN"
+else
+  printf '  \033[31mFAIL\033[0m candidate build\n'
+  fail=1
+  FAILED+=("candidate build")
+fi
+
 step "bench: scorer/gate unit tests"
-check "bench pytest" bash -c 'cd benchmarks && python3 -m pytest -q bench/tests'
+if [ "$CANDIDATE_READY" = "1" ]; then
+  check "bench pytest" bash -c "cd benchmarks && python3 -m pytest -q -m 'not target_spec' bench/tests"
+else
+  echo "  FAIL bench pytest — candidate binary is unavailable"
+  fail=1
+  FAILED+=("bench pytest prerequisite")
+fi
 
 step "bench: mirror corpus"
 check "mirror corpus available" make -C benchmarks mirror

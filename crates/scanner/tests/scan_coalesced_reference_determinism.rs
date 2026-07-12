@@ -1,15 +1,12 @@
-//! Reference-backend determinism: `scan_coalesced` must return a byte-identical
+//! Calibration-reference determinism: explicit `SimdCpu` coalesced scans must
+//! return a byte-identical
 //! canonical match set on every call over the SAME fixed chunk set.
 //!
-//! This is the contract autoroute calibration relies on (`measure_reference_simd`
-//! runs `scan_coalesced` over a fixed sample for `AUTOROUTE_CALIBRATION_TRIALS`
-//! and aborts the whole routing decision if any trial's `canonical_matches`
-//! differ — "reference backend produced inconsistent calibration results"). On a
-//! high-core host that abort broke `install.sh --calibrate`. A single-threaded
-//! re-run test (`backend_parity_determinism_fixed_corpus`) cannot catch it
-//! because the instability is a CONCURRENCY artifact in the rayon-parallel
-//! coalesced path, so it only surfaces over many trials on a real corpus with
-//! enough chunks to saturate the worker pool.
+//! This is the contract autoroute calibration relies on: it measures an
+//! explicit `SimdCpu` backend and rejects inconsistent reference trials.
+//! Repeated parallel scans matter because Hyperscan scratch, fragment
+//! reassembly, and per-chunk scanning share concurrent state on high-core
+//! hosts.
 //!
 //! On mismatch the test prints the symmetric difference of the canonical record
 //! sets (which `(detector, credential_hash, file, line, offset)` tuples appeared
@@ -129,18 +126,21 @@ fn scan_coalesced_is_deterministic_across_trials() {
     let scanner = support::compile_full_detector_scanner();
     let chunks = fixed_chunks();
 
-    // Enough trials to make a per-chunk scratch/scheduling race overwhelmingly
-    // likely to surface at least once (calibration uses far fewer and still hit
-    // it). clear_fragment_cache() between trials mirrors the calibration exactly,
-    // so a fragment-cache bleed cannot mask OR fake the instability.
+    // Enough trials to make a per-chunk scratch/scheduling race likely to
+    // surface. Clearing the fragment cache isolates each invocation so cache
+    // bleed cannot mask or fake the instability.
     const TRIALS: usize = 40;
 
     scanner.clear_fragment_cache();
-    let reference = canonical(&scanner.scan_coalesced(&chunks));
+    let reference = canonical(
+        &scanner.scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::SimdCpu),
+    );
 
     for trial in 1..TRIALS {
         scanner.clear_fragment_cache();
-        let got = canonical(&scanner.scan_coalesced(&chunks));
+        let got = canonical(
+            &scanner.scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::SimdCpu),
+        );
         if got != reference {
             let only_ref: Vec<&Record> = reference.difference(&got).collect();
             let only_got: Vec<&Record> = got.difference(&reference).collect();

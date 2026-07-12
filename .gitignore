@@ -73,6 +73,7 @@ detectors/.keyhog-cache.json
 /test_memmem
 /test_tokio_id.rs
 /wp.pid
+/test_out.log
 /-
 
 # Bazel scaffolding — currently a PoC stub (every per-crate BUILD.bazel

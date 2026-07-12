@@ -396,17 +396,13 @@ fn low_entropy_repeated_value_no_entropy_finding_both_backends() {
 }
 
 // ----------------------------------------------------------------------------
-// 3. scan() default-backend == explicit SimdCpu/CpuFallback (auto-route parity)
+// 3. scan() is the deterministic CpuFallback library reference
 // ----------------------------------------------------------------------------
 
 #[test]
 fn default_scan_matches_a_cpu_backend() {
-    // `scan()` auto-routes via `select_backend`. On a no-GPU host (CI default)
-    // it lands on SimdCpu or CpuFallback. Whichever it picks, the finding set
-    // must equal one of the explicit CPU backends - i.e. auto-routing never
-    // invents or drops findings relative to the path it chose.
-    // Bare `scan()` has no explicit backend override here. Tiny chunks never
-    // clear the GPU byte floor, so it deterministically picks SimdCpu.
+    // `scan()` is deliberately host-independent. Hardware acceleration is an
+    // explicit library choice; the CLI owns persisted fastest-correct routing.
     let c = chunk(
         &format!("aws=\"{AWS_KEY}\"\nstripe=\"{STRIPE_LIVE}\"\n"),
         "auto.env",
@@ -415,11 +411,12 @@ fn default_scan_matches_a_cpu_backend() {
     let auto = key_set(&scanner().scan(&c));
     let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
     let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
-    // simd and cpu are already proven equal elsewhere; auto must match them.
+    // SIMD/CPU parity is proven elsewhere; the default must be the portable
+    // reference specifically, not whichever backend happens to exist locally.
     assert_eq!(simd, cpu, "precondition: CPU backends already diverge");
     assert_eq!(
-        auto, simd,
-        "scan() auto-route must match the explicit CPU backend finding set"
+        auto, cpu,
+        "scan() must match the explicit CpuFallback reference finding set"
     );
 }
 
@@ -445,10 +442,9 @@ fn idempotent_rescans_same_backend_same_set() {
 
 #[test]
 fn coalesced_equals_sum_of_per_chunk_scans() {
-    // `scan_coalesced` runs the HS phase-1 prefilter then phase-2 extraction;
-    // a plain `scan()` on each chunk takes the non-coalesced path. The UNION
-    // of findings must be identical (the coalesced path exists purely as a
-    // throughput optimisation, not a behaviour change).
+    // Both no-backend APIs use the portable reference. The batched entry also
+    // owns cross-chunk reassembly; for independent chunks its UNION must match
+    // per-chunk scans exactly.
     let chunks = vec![
         chunk(&format!("a=\"{AWS_KEY}\"\n"), "a.env", 0),
         chunk("// nothing to see here\n", "b.rs", 0),

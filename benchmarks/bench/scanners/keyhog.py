@@ -233,7 +233,7 @@ class KeyhogScanner(Scanner):
             # Fixed decimal, never repr(): repr(0.00001) == '1e-05', which the
             # CLI's numeric flag parser rejects — and the harvest path sets this
             # floor deliberately low.
-            cmd += ["--min-confidence", format(float(cfg.min_confidence), "f")]
+            cmd += ["--min-confidence", str(float(cfg.min_confidence))]
         cmd += ["--daemon"] if cfg.daemon == "on" else ["--no-daemon"]
         if cfg.mode == "fast":
             cmd.append("--fast")

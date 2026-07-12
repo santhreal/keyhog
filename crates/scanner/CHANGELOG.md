@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Remove detector-ID constants used only by their own tests; runtime-specific
+  identifiers remain centralized only where production scanner behavior
+  consumes them, while detector membership stays in detector TOML.
+- Remove the unused test-only MoE shader re-export; GPU tests consume the
+  existing testing facade and the backend imports the shader owner directly.
+- Make the no-backend library APIs `scan` and `scan_coalesced` deterministic
+  portable CPU references; Hyperscan/GPU execution now requires an explicit
+  backend or the CLI's persisted fastest-correct autorouter.
+- Keep cross-chunk boundary reassembly on the shared portable correctness tail
+  instead of making a second hardware-heuristic routing decision.
 - Keep fixed high-tier GPU routing conservative at 128 MiB (256 MiB for a
   single-file override) because the verified 8 MiB RTX 5090 crossover is warm
   evidence; exact cold-versus-daemon decisions belong to persisted autoroute

@@ -3,7 +3,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::process::{ChildStdout, Command};
+use std::process::ChildStdout;
 
 use gix::objs::Kind;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};

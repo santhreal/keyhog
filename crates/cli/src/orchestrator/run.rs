@@ -129,16 +129,22 @@ impl ScanOrchestrator {
 
         let hw = keyhog_scanner::hw_probe::probe_hardware();
         let scanner_status = self.scanner.runtime_status();
-        let preferred_backend = scanner_status.preferred_backend;
+        let backend_policy = if self.effective_config.autoroute_calibration {
+            "calibrate"
+        } else if let Some(backend) = self.effective_config.backend_override {
+            backend.label()
+        } else {
+            "auto:persisted-per-workload"
+        };
         tracing::info!(
-            backend = preferred_backend,
+            backend_policy,
             gpu_available = hw.gpu_available,
             gpu_software = hw.gpu_is_software,
             hyperscan = hw.hyperscan_available,
             avx512 = hw.has_avx512,
             avx2 = hw.has_avx2,
             neon = hw.has_neon,
-            "scan backend selected"
+            "scan backend policy configured"
         );
         if show_progress {
             if let Err(error) = crate::write_banner(
@@ -151,7 +157,7 @@ impl ScanOrchestrator {
             }
             let gpu_label = scanner_status.gpu_backend.unwrap_or("none"); // LAW10: absent name/label => display default; reporting-only, recall-safe
             eprintln!(
-                "⚡ {} | backend={preferred_backend} | gpu={gpu_label}",
+                "⚡ {} | backend={backend_policy} | gpu={gpu_label}",
                 keyhog_scanner::hw_probe::startup_banner(
                     hw,
                     self.detectors.len(),

@@ -47,6 +47,8 @@ import re
 
 import pytest
 
+pytestmark = pytest.mark.target_spec
+
 from bench.corpora.creddata import CredDataCorpus
 from bench.scanners.keyhog import KeyhogScanner, resolve_keyhog_binary
 from bench.schema import ScannerConfig

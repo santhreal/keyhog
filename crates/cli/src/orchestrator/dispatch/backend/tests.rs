@@ -2667,10 +2667,10 @@ fn persisted_router_rejects_agreeing_neighbours_without_exact_evidence() {
 
 #[test]
 fn persistent_daemon_route_uses_warm_gpu_evidence_but_one_shot_uses_cold_cost() {
-    let simd = BackendTimingEvidence::from_trial_ns(vec![10_000_000; 7])
-        .expect("SIMD timing evidence");
-    let cpu = BackendTimingEvidence::from_trial_ns(vec![20_000_000; 7])
-        .expect("CPU timing evidence");
+    let simd =
+        BackendTimingEvidence::from_trial_ns(vec![10_000_000; 7]).expect("SIMD timing evidence");
+    let cpu =
+        BackendTimingEvidence::from_trial_ns(vec![20_000_000; 7]).expect("CPU timing evidence");
     let mut gpu_trials = vec![100_000_000];
     gpu_trials.extend(std::iter::repeat_n(1_000_000, 6));
     let gpu = BackendTimingEvidence::from_trial_ns(gpu_trials).expect("GPU timing evidence");

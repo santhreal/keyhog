@@ -23,9 +23,9 @@
 //!
 //! There is exactly ONE production on-GPU trigger producer: the region-presence
 //! dispatch in [`gpu_region_dispatch`]. Selecting a GPU backend (`--backend gpu`)
-//! routes the batch path through it;
-//! the default backend is the CPU Hyperscan path. The GPU path degrades LOUDLY
-//! to CPU on any failure (never a silent empty result — Law 10).
+//! routes the batch path through it. The no-backend library API is the portable
+//! CPU reference; the CLI passes its persisted fastest-correct route explicitly.
+//! A requested GPU path never turns failure into an empty successful result.
 //!
 //! # Where each method lives (the `CompiledScanner` god-object is split by job)
 //!
@@ -367,6 +367,8 @@ pub struct CompiledScannerRuntime {
     pub detector_count: usize,
     pub pattern_count: usize,
     pub detector_digest: u64,
+    /// Backend used by the no-backend library APIs. CLI autorouting is a
+    /// separate persisted per-workload decision and is never inferred here.
     pub preferred_backend: &'static str,
     pub gpu_backend: Option<&'static str>,
     pub gpu_degrade_count: u64,

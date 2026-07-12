@@ -20,7 +20,6 @@ pub(crate) const ENTROPY_API_KEY: &str = "entropy-api-key";
 
 pub(crate) const PRIVATE_KEY: &str = "private-key";
 
-pub(crate) const AWS_ACCESS_KEY: &str = "aws-access-key";
 pub(crate) const GITHUB_CLASSIC_PAT: &str = "github-classic-pat";
 // Names the real `detectors/github-pat-fine-grained.toml` id. (Superseded the
 // phantom `github-fine-grained-pat` const value, which matched NO detector.)
@@ -31,10 +30,6 @@ pub(crate) const GITHUB_PAT_FINE_GRAINED: &str = "github-pat-fine-grained";
 pub(crate) const GITLAB_PERSONAL_ACCESS_TOKEN: &str = "gitlab-personal-access-token";
 pub(crate) const NPM_ACCESS_TOKEN: &str = "npm-access-token";
 pub(crate) const PYPI_API_TOKEN: &str = "pypi-api-token";
-#[cfg(feature = "simdsieve")]
-pub(crate) const OPENAI_API_KEY: &str = "openai-api-key";
-#[cfg(feature = "simdsieve")]
-pub(crate) const SENDGRID_API_KEY: &str = "sendgrid-api-key";
 // Always compiled (NOT `simdsieve`-gated): `crate::testing::checksum` — an
 // always-built public support surface — labels the Slack checksum gate with
 // this real detector id, so the const must resolve in every feature set.
@@ -42,10 +37,6 @@ pub(crate) const SENDGRID_API_KEY: &str = "sendgrid-api-key";
 // embedded detector; the xoxb-/xoxp- validator's own docs make
 // `slack-bot-token` its source-of-truth detector.)
 pub(crate) const SLACK_BOT_TOKEN: &str = "slack-bot-token";
-#[cfg(feature = "simdsieve")]
-pub(crate) const SLACK_USER_TOKEN: &str = "slack-user-token";
-#[cfg(feature = "simdsieve")]
-pub(crate) const SQUARE_ACCESS_TOKEN: &str = "square-access-token";
 pub(crate) const STRIPE_SECRET_KEY: &str = "stripe-secret-key";
 // The structural-password-slot detector ids (url-credentials, sql-password,
 // cli-password-flag, bearer-authorization) are NO LONGER named as consts here:
@@ -151,7 +142,6 @@ mod detector_id_corpus_guard {
             ("GENERIC_API_KEY", GENERIC_API_KEY),
             ("GENERIC_PASSWORD", GENERIC_PASSWORD),
             ("PRIVATE_KEY", PRIVATE_KEY),
-            ("AWS_ACCESS_KEY", AWS_ACCESS_KEY),
             ("GITHUB_CLASSIC_PAT", GITHUB_CLASSIC_PAT),
             ("GITHUB_PAT_FINE_GRAINED", GITHUB_PAT_FINE_GRAINED),
             ("GITLAB_PERSONAL_ACCESS_TOKEN", GITLAB_PERSONAL_ACCESS_TOKEN),
@@ -160,13 +150,6 @@ mod detector_id_corpus_guard {
             ("SLACK_BOT_TOKEN", SLACK_BOT_TOKEN),
             ("STRIPE_SECRET_KEY", STRIPE_SECRET_KEY),
         ];
-        #[cfg(feature = "simdsieve")]
-        {
-            v.push(("OPENAI_API_KEY", OPENAI_API_KEY));
-            v.push(("SENDGRID_API_KEY", SENDGRID_API_KEY));
-            v.push(("SLACK_USER_TOKEN", SLACK_USER_TOKEN));
-            v.push(("SQUARE_ACCESS_TOKEN", SQUARE_ACCESS_TOKEN));
-        }
         v
     }
 
@@ -275,17 +258,17 @@ mod detector_id_corpus_guard {
         // Generic
         assert!(is_generic_detector(GENERIC_SECRET));
         assert!(is_generic_detector(GENERIC_PASSWORD));
-        assert!(!is_generic_detector(AWS_ACCESS_KEY));
+        assert!(!is_generic_detector(GITHUB_CLASSIC_PAT));
         assert!(!is_generic_detector(STRIPE_SECRET_KEY));
 
         // Entropy (ENTROPY is always compiled; the "entropy-" family via prefix)
         assert!(is_entropy_detector(ENTROPY));
         assert!(is_entropy_detector("entropy-generic"));
         assert!(!is_entropy_detector(GENERIC_SECRET));
-        assert!(!is_entropy_detector(AWS_ACCESS_KEY));
+        assert!(!is_entropy_detector(GITHUB_CLASSIC_PAT));
 
         // Service-anchored: real services yes; generic/entropy/private-key no.
-        assert!(is_service_anchored_detector(AWS_ACCESS_KEY));
+        assert!(is_service_anchored_detector(GITHUB_CLASSIC_PAT));
         assert!(is_service_anchored_detector(STRIPE_SECRET_KEY));
         assert!(is_service_anchored_detector(SLACK_BOT_TOKEN));
         assert!(is_service_anchored_detector(GITLAB_PERSONAL_ACCESS_TOKEN));
@@ -295,12 +278,12 @@ mod detector_id_corpus_guard {
 
         // Private-key fallback
         assert!(is_private_key_fallback(PRIVATE_KEY));
-        assert!(!is_private_key_fallback(AWS_ACCESS_KEY));
+        assert!(!is_private_key_fallback(GITHUB_CLASSIC_PAT));
 
         // Structural password slot family: a service-anchored / generic detector
         // is never a member (membership itself is corpus-declared, pinned by
         // `structural_password_slot_family_is_toml_declared`).
-        assert!(!is_structural_password_slot_detector(AWS_ACCESS_KEY));
+        assert!(!is_structural_password_slot_detector(GITHUB_CLASSIC_PAT));
         assert!(!is_structural_password_slot_detector(GENERIC_SECRET));
     }
 

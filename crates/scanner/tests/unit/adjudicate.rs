@@ -55,14 +55,7 @@ fn process_stage_preserves_aws_length_before_hex_context_order() {
     let shape = crate::credential_shapes::CredentialShapeRule::exact_length_for_test(20);
 
     assert_eq!(
-        adjudicate_process_signal(
-            crate::detector_ids::AWS_ACCESS_KEY,
-            Some(&shape),
-            credential,
-            data,
-            8,
-            24
-        ),
+        adjudicate_process_signal("aws-access-key", Some(&shape), credential, data, 8, 24),
         Verdict::Suppressed(StageId::DetectorCredentialShapeInvalid)
     );
 }
@@ -192,7 +185,7 @@ fn process_stage_reports_service_anchored_candidate() {
 
     assert_eq!(
         adjudicate_process_signal(
-            crate::detector_ids::AWS_ACCESS_KEY,
+            "aws-access-key",
             Some(&shape),
             credential,
             credential,
@@ -355,7 +348,7 @@ fn explicit_stage_reports_shape_gate_reason() {
 fn final_emit_stage_prefers_hard_context_before_floor() {
     assert_eq!(
         adjudicate_final_emit(
-            crate::detector_ids::AWS_ACCESS_KEY,
+            "aws-access-key",
             "AKIAIOSFODNN7EXAMPLE",
             CodeContext::Documentation,
             0.40,

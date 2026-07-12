@@ -641,6 +641,11 @@ let findings = scanner.scan(&Chunk {
 });
 ```
 
+The no-backend library methods are deterministic portable CPU references; they
+do not consult host heuristics or the CLI's calibration cache. Use
+`scan_with_backend` or `scan_coalesced_with_backend` for an explicit
+Hyperscan/GPU engine. The `keyhog` CLI owns persisted fastest-correct autoroute.
+
 Mix shipped + custom detectors by concatenating before compile. The
 scanner is `Send + Sync`; share one across rayon workers. Streaming
 source helpers in `keyhog-sources` (file-system, git, stdin, Docker,

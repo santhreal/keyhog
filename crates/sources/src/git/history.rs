@@ -4,7 +4,6 @@
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// Scans git history commit-by-commit using patch output and extracts added lines.
 ///
