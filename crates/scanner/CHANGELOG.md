@@ -191,6 +191,15 @@
 - Treat Tawk.to API keys as primaries and public site/property IDs as exact
   companion context, so API keys cannot self-attach and continued key prefixes
   are rejected whole.
+- Preserve standalone Exoscale API-secret findings explicitly while keeping API
+  keys self-delimiting, so fixed-length key prefixes cannot be truncated from
+  longer tokens.
+- Make BigCommerce store hashes exact public companion context for `bbc_` access
+  tokens, remove store hashes as critical standalone findings, and reject token
+  continuations whole.
+- Treat Avaya client secrets/API keys as primaries and public OAuth client IDs
+  as exact companion context, removing critical standalone identifier findings
+  and rejecting continued secret prefixes.
 
 ## 0.2.1
 
