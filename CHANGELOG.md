@@ -25,6 +25,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- **Release dependencies clear all fixable RustSec advisories.** `quick-xml`
+  moves to 0.41.0, `crossbeam-epoch` to 0.9.20, and `anyhow` to 1.0.103. The
+  remaining accepted advisories are pinned, usage-audited, and documented in
+  `SECURITY.md`; the release audit wrapper exits clean.
 - **Generic phase-2 length policy is detector-owned.** The three shapeless
   generic detector TOMLs now declare their historical eight-byte assignment
   floor explicitly; the engine consumes that compiled policy instead of making
@@ -89,6 +93,13 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- Strongly anchored printable base64 values such as `K8S_FULL_SECRET=...` now
+  survive generic entropy/BPE gates, and an ML-pending named candidate can no
+  longer suppress the generic fallback before its own verdict is known.
+- The Azure subscription-key detector now accepts its documented
+  `azure_subscription_key` environment spelling through detector-owned TOML.
+- Every top-level scanner, core, and verifier regression target is wired into
+  the aggregate CI suites; the release gate now reports zero orphan tests.
 - Compressed decode failures and non-UTF-8 inflate output now emit bounded,
   secret-free warnings while preserving the original encoded scan input.
 - Embedded detector/rule loaders, GPU artifact header parsing, terminal flushes,
