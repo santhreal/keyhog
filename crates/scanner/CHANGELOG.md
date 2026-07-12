@@ -115,6 +115,9 @@
   detector TOMLs while preserving case-insensitive environment-key anchors,
   preventing lowercase identifiers from satisfying documented uppercase
   credential alphabets.
+- Apply the canonical Octopus Deploy key alphabet to assignment and header
+  patterns too, so context cannot admit lowercase keys or pure documentation
+  words that the bare-key pattern correctly rejects.
 
 ## 0.2.1
 

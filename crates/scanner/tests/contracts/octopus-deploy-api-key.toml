@@ -13,6 +13,16 @@ text = "API-7X68S9206QLQW4S2FVP=\"API-7X68S9206QLQW4S2FVP\""
 credential = "API-7X68S9206QLQW4S2FVP"
 reason = "Quoted-value variant of the canonical positive."
 
+[[positive]]
+text = "OCTOPUS_API_KEY=API-7X68S9206QLQW4S2FVP"
+credential = "API-7X68S9206QLQW4S2FVP"
+reason = "Assignment context preserves the canonical key alphabet."
+
+[[positive]]
+text = "X-Octopus-ApiKey: API-7X68S9206QLQW4S2FVP"
+credential = "API-7X68S9206QLQW4S2FVP"
+reason = "HTTP header context preserves the canonical key alphabet."
+
 [[negative]]
 text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
 reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
@@ -20,6 +30,14 @@ reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER pref
 [[negative]]
 text = "API-7EXAMPLEEXAMPLES2FVP"
 reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[negative]]
+text = "OCTOPUS_API_KEY=api-7x68s9206qlqw4s2fvp"
+reason = "Context must not make the documented uppercase API- prefix and body case-insensitive."
+
+[[negative]]
+text = "X-Octopus-ApiKey=API-DOCUMENTATIONABCD"
+reason = "Context must not bypass the canonical digit requirement for an Octopus API key body."
 
 [[evasion]]
 text = "Authorization: Bearer API-7X68S9206QLQW4S2FVP"

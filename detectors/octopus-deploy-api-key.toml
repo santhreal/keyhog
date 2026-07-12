@@ -22,15 +22,15 @@ regex = "(?-i)API-[A-Z0-9]{0,15}[0-9][A-Z0-9]{15,}"
 description = "Octopus Deploy API key with API- prefix"
 
 [[detector.patterns]]
-regex = "(?:OCTOPUS[_-]API[_-]KEY|OCTOPUS[_-]KEY)[=:\\s\"'']+(API-[A-Z0-9]{16,})"
+regex = "(?:OCTOPUS[_-]API[_-]KEY|OCTOPUS[_-]KEY)[=:\\s\"'']+((?-i:API-[A-Z0-9]{0,15}[0-9][A-Z0-9]{15,}))"
 description = "Octopus Deploy API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "X-Octopus-ApiKey[=:\\s\"'']+(API-[A-Z0-9]{16,})"
+regex = "X-Octopus-ApiKey[=:\\s\"'']+((?-i:API-[A-Z0-9]{0,15}[0-9][A-Z0-9]{15,}))"
 description = "Octopus Deploy X-Octopus-ApiKey header"
 group = 1
 
 [[detector.tests]]
 test_positive = "API-7X68S9206QLQW4S2FVP"
-test_negative = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+test_negative = "OCTOPUS_API_KEY=api-7x68s9206qlqw4s2fvp"
