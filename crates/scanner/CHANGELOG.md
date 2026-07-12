@@ -140,6 +140,9 @@
 - Make LiveKit's companion secret-specific so long API keys cannot self-attach
   as secrets, deduplicate caseless primary regexes, and let companion contracts
   explicitly declare when a companion shape is also a valid standalone primary.
+- Make Ceph access keys self-delimiting so 40-character secret values cannot be
+  truncated into 20-character access-key findings, while preserving Ceph's
+  valid user-defined mixed-case access keys and correcting the contract prose.
 
 ## 0.2.1
 
