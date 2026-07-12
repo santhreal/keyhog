@@ -506,7 +506,7 @@ mod tests {
             for line in &lines {
                 // Panicking here (index-OOB, subtract-overflow, non-char-boundary
                 // slice) is the failure; both Ok and Err are acceptable outcomes.
-                let _ = parser.parse_line(line, "git diff");
+                drop(parser.parse_line(line, "git diff"));
             }
         }
 
@@ -539,7 +539,7 @@ mod tests {
         fn unescape_quoted_git_path_body_is_total(
             body in prop::collection::vec(any::<u8>(), 0..48usize),
         ) {
-            let _ = unescape_quoted_git_path_body(&body);
+            drop(unescape_quoted_git_path_body(&body));
         }
     }
 }

@@ -43,11 +43,13 @@ fn parse_credential_context_keywords(raw: &str) -> Result<Vec<String>, String> {
     )
 }
 
-static CREDENTIAL_CONTEXT_KEYWORDS: LazyLock<Vec<String>> = LazyLock::new(|| {
-    parse_credential_context_keywords(CREDENTIAL_CONTEXT_KEYWORDS_TOML).unwrap_or_else(|error| {
-        panic!("bundled credential_context_keywords.toml is invalid: {error}")
-    })
-});
+static CREDENTIAL_CONTEXT_KEYWORDS: LazyLock<Vec<String>> =
+    LazyLock::new(
+        || match parse_credential_context_keywords(CREDENTIAL_CONTEXT_KEYWORDS_TOML) {
+            Ok(keywords) => keywords,
+            Err(error) => panic!("bundled credential_context_keywords.toml is invalid: {error}"),
+        },
+    );
 
 /// Credential-context keywords, matched case-insensitively as substrings by the
 /// entropy scanner. Fail-closed (Law 10): invalid embedded data panics at first

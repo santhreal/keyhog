@@ -29,19 +29,21 @@ static ASSIGNMENT_KEYWORDS: LazyLock<Vec<String>> = LazyLock::new(|| {
     // Law 10: the detector corpus is baked into the binary by `build.rs`; a parse
     // failure is a BUILD/SOURCE bug, never a runtime condition an operator can act
     // on, so fail closed (panic) rather than ship a silently-narrowed prefilter.
-    let detectors = keyhog_core::load_embedded_detectors_or_fail().unwrap_or_else(|error| {
-        panic!(
+    let detectors = match keyhog_core::load_embedded_detectors_or_fail() {
+        Ok(detectors) => detectors,
+        Err(error) => panic!(
             "embedded detector corpus is corrupt: {error}. The generic assignment-keyword \
              prefilter is derived from it; refusing to run without the generic-credential \
              prefilter truth."
-        )
-    });
-    derive_assignment_keywords(&detectors).unwrap_or_else(|error| {
-        panic!(
+        ),
+    };
+    match derive_assignment_keywords(&detectors) {
+        Ok(keywords) => keywords,
+        Err(error) => panic!(
             "cannot derive the generic assignment-keyword vocabulary: {error}. Fix the bundled \
              generic phase-2 detector specs (the single home for this vocabulary)."
-        )
-    })
+        ),
+    }
 });
 
 /// The generic credential-assignment keywords (lowercase, first-seen order). All

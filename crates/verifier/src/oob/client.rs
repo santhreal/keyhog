@@ -676,6 +676,6 @@ fn normalize_server(s: &str) -> String {
             },
             None => with_scheme.trim_end_matches('/').to_string(),
         },
-        Err(_) => with_scheme.trim_end_matches('/').to_string(),
+        Err(_invalid_collector) => with_scheme.trim_end_matches('/').to_string(),
     }
 }

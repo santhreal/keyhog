@@ -19,7 +19,9 @@ use std::time::Duration;
 pub(crate) fn within_timeout<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let _ = tx.send(f());
+        if tx.send(f()).is_err() {
+            eprintln!("special-file watchdog receiver closed before the worker completed");
+        }
     });
     rx.recv_timeout(Duration::from_secs(10))
         .expect("a read entry point must NOT block on a special file (missing O_NONBLOCK?)")

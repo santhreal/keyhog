@@ -79,7 +79,7 @@ pub(crate) async fn execute_and_read_response(
 pub(crate) fn body_capacity_hint(content_length: Option<u64>) -> usize {
     content_length
         .map(|len| len.min(MAX_RESPONSE_BODY_BYTES as u64) as usize)
-        .unwrap_or(0)
+        .map_or(0, |capacity| capacity)
 }
 
 pub(crate) async fn read_response_body(

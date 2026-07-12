@@ -329,14 +329,15 @@ static EVASION_ANCHOR_AC: std::sync::LazyLock<aho_corasick::AhoCorasick> =
             !anchors.is_empty(),
             "EVASION_ANCHORS is empty; parse_evasion_anchors must reject empty anchor sets"
         );
-        aho_corasick::AhoCorasick::new(anchors).unwrap_or_else(|error| {
-            panic!(
+        match aho_corasick::AhoCorasick::new(anchors) {
+            Ok(automaton) => automaton,
+            Err(error) => panic!(
                 "failed to build the evasion-anchor Aho-Corasick automaton from \
                  embedded Tier-B anchors: {error}. This is a build/data bug in \
                  crates/scanner/data/evasion-anchors.toml; refusing to run with \
                  split-credential evasion normalization silently disabled."
-            )
-        })
+            ),
+        }
     });
 
 #[inline]
@@ -556,7 +557,7 @@ pub(crate) fn fullwidth_to_ascii(ch: char) -> char {
         // valid scalar; `unwrap_or(ch)` keeps the identity on the impossible
         // failure rather than panicking (LAW10: recall-safe, never a silent drop).
         let code = ch as u32;
-        std::char::from_u32(code - 0xFEE0).unwrap_or(ch)
+        std::char::from_u32(code - 0xFEE0).map_or(ch, |ascii| ascii)
     } else {
         ch
     }

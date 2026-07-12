@@ -113,8 +113,10 @@ pub fn crate_source_path(rel: &str) -> std::path::PathBuf {
 /// in `rel` is an obvious failure rather than a silent empty string.
 pub fn read_crate_source(rel: &str) -> String {
     let path = crate_source_path(rel);
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read crate source {}: {e}", path.display()))
+    match std::fs::read_to_string(&path) {
+        Ok(source) => source,
+        Err(error) => panic!("read crate source {}: {error}", path.display()),
+    }
 }
 
 /// Resolver tie-break priority for a synthetic match. Exposes the private
@@ -235,7 +237,10 @@ pub fn reverse_str_for_test(s: &str) -> String {
 /// `None` when the decoded bytes are not valid UTF-8.
 #[cfg(feature = "decode")]
 pub fn quoted_printable_decode_for_test(input: &str) -> Option<String> {
-    crate::decode::quoted_printable_decode(input).ok()
+    match crate::decode::quoted_printable_decode(input) {
+        Ok(decoded) => Some(decoded),
+        Err(()) => None,
+    }
 }
 
 /// Test seam for the RFC2047 MIME encoded-word decoder (`=?charset?enc?text?=`,
@@ -247,7 +252,10 @@ pub fn quoted_printable_decode_for_test(input: &str) -> Option<String> {
 /// UTF-8. Lets a gap test pin the B/Q dispatch and boundary handling exactly.
 #[cfg(feature = "decode")]
 pub fn mime_encoded_word_decode_for_test(input: &str) -> Option<String> {
-    crate::decode::mime_encoded_word_decode(input).ok()
+    match crate::decode::mime_encoded_word_decode(input) {
+        Ok(decoded) => Some(decoded),
+        Err(()) => None,
+    }
 }
 
 /// Test seam for the C-style octal escape decoder (`\NNN`, 1–3 octal digits per
@@ -259,7 +267,10 @@ pub fn mime_encoded_word_decode_for_test(input: &str) -> Option<String> {
 /// and the mixed-escape recall behaviour exactly.
 #[cfg(feature = "decode")]
 pub fn octal_escape_decode_for_test(input: &str) -> Option<String> {
-    crate::decode::octal_escape_decode(input).ok()
+    match crate::decode::octal_escape_decode(input) {
+        Ok(decoded) => Some(decoded),
+        Err(()) => None,
+    }
 }
 
 /// Test seam for the bounded gzip/zlib inflate on the decode-through recall path
@@ -1319,7 +1330,7 @@ pub fn loop_deadline_from_none_is_none_for_test() -> bool {
 pub fn loop_deadline_expired_reached_for_test() -> bool {
     crate::deadline::LoopDeadline::from_deadline(Some(std::time::Instant::now()))
         .map(crate::deadline::LoopDeadline::expired)
-        .unwrap_or(false)
+        .map_or(false, |expired| expired)
 }
 
 /// `LoopDeadline::from_deadline(Some(now + 1h)).expired()` — a comfortably-future
@@ -1329,7 +1340,7 @@ pub fn loop_deadline_expired_far_future_for_test() -> bool {
     match std::time::Instant::now().checked_add(std::time::Duration::from_secs(3600)) {
         Some(future) => crate::deadline::LoopDeadline::from_deadline(Some(future))
             .map(crate::deadline::LoopDeadline::expired)
-            .unwrap_or(false),
+            .map_or(false, |expired| expired),
         None => false,
     }
 }
@@ -3479,6 +3490,50 @@ pub mod entropy_scanner {
 
     pub fn is_canonical_non_secret_shape(value: &str) -> bool {
         crate::entropy::scanner::is_canonical_non_secret_shape(value)
+    }
+
+    #[cfg(test)]
+    pub fn isolated_keyword_free_match_count_with_min_len(
+        secret: &str,
+        generic_keyword_secret_min_len: usize,
+    ) -> usize {
+        use crate::entropy::scanner::ActiveDetectorPolicy;
+        use crate::generic_keyword_owner::GenericOwningDetectorIndex;
+
+        fn detector(id: &str, keyword_free_min_len: usize) -> keyhog_core::DetectorSpec {
+            keyhog_core::DetectorSpec {
+                id: id.to_string(),
+                name: id.to_string(),
+                service: "generic".to_string(),
+                keyword_free_min_len: Some(keyword_free_min_len),
+                ..Default::default()
+            }
+        }
+
+        let detectors = vec![
+            detector("generic-secret", 20),
+            detector("generic-keyword-secret", generic_keyword_secret_min_len),
+        ];
+        let index = GenericOwningDetectorIndex::build(&detectors);
+        let policy = ActiveDetectorPolicy::new(&detectors, &index);
+        crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
+            &[secret],
+            &[0],
+            &[],
+            1,
+            1,
+            crate::entropy::HIGH_ENTROPY_THRESHOLD,
+            crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD,
+            &[],
+            &[],
+            &[],
+            None,
+            false,
+            Some(policy),
+        )
+        .into_iter()
+        .filter(|candidate| candidate.keyword == "none (isolated-token)")
+        .count()
     }
 }
 

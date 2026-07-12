@@ -596,6 +596,18 @@ impl MoeBufferPool {
 static MOE_BUFFER_POOL: std::sync::LazyLock<std::sync::Mutex<MoeBufferPool>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(MoeBufferPool::new()));
 
+fn return_moe_buffers(bufs: MoeBufferSet) {
+    match MOE_BUFFER_POOL.lock() {
+        Ok(mut pool) => pool.checkin(bufs),
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                "GPU MoE buffer pool is poisoned; dropping this reusable buffer set"
+            );
+        }
+    }
+}
+
 /// Raw GPU MoE dispatch: upload features, run the compute shader, read back and
 /// sanitize the per-candidate scores. Split out of [`batch_score_features`] so
 /// the parity self-test ([`gpu_moe_parity_max_divergence`]) can exercise the
@@ -722,7 +734,11 @@ fn dispatch_moe_batch(
     let slice = bufs.staging.slice(..output_size);
     let (sender, receiver) = std::sync::mpsc::channel();
     slice.map_async(wgpu::MapMode::Read, move |result| {
-        let _ = sender.send(result);
+        if sender.send(result).is_err() {
+            tracing::warn!(
+                "GPU MoE staging callback completed after its receiver closed; the caller already surfaced a readback failure"
+            );
+        }
     });
     let timeout = readback_timeout;
     let deadline = Instant::now() + timeout;
@@ -735,8 +751,9 @@ fn dispatch_moe_batch(
                     "GPU MoE staging-buffer callback disconnected; GPU MoE disabled and scoring uses CPU MoE for this scan"
                 );
                 moe_runtime_degrade("staging-buffer callback disconnected");
-                // Return buffers to pool even on failure.
-                let _ = MOE_BUFFER_POOL.lock().map(|mut p| p.checkin(bufs));
+                // Do not pool a staging buffer whose map lifecycle did not
+                // complete successfully; dropping the set prevents a later
+                // dispatch from reusing unknown mapping state.
                 return None;
             }
             Err(TryRecvError::Empty) => {}
@@ -748,7 +765,8 @@ fn dispatch_moe_batch(
                 "GPU MoE staging-buffer readback timed out; GPU MoE disabled and scoring uses CPU MoE for this scan"
             );
             moe_runtime_degrade("staging-buffer readback timed out");
-            let _ = MOE_BUFFER_POOL.lock().map(|mut p| p.checkin(bufs));
+            // The callback may still complete after this deadline. Dropping the
+            // set is safe; pooling it while map_async is pending is not.
             return None;
         }
 
@@ -758,12 +776,19 @@ fn dispatch_moe_batch(
                 "GPU MoE device.poll() failed; GPU MoE disabled and scoring uses CPU MoE for this scan"
             );
             moe_runtime_degrade("device.poll() failed");
-            let _ = MOE_BUFFER_POOL.lock().map(|mut p| p.checkin(bufs));
             return None;
         }
 
-        if let Ok(result) = receiver.try_recv() {
-            break result;
+        match receiver.try_recv() {
+            Ok(result) => break result,
+            Err(TryRecvError::Disconnected) => {
+                tracing::warn!(
+                    "GPU MoE staging-buffer callback disconnected after device polling; GPU MoE disabled and scoring uses CPU MoE for this scan"
+                );
+                moe_runtime_degrade("staging-buffer callback disconnected after device poll");
+                return None;
+            }
+            Err(TryRecvError::Empty) => {}
         }
 
         backoff.wait(deadline.saturating_duration_since(Instant::now()));
@@ -774,7 +799,6 @@ fn dispatch_moe_batch(
             "GPU MoE staging-buffer map_async failed; GPU MoE disabled and scoring uses CPU MoE for this scan"
         );
         moe_runtime_degrade("staging-buffer map_async failed");
-        let _ = MOE_BUFFER_POOL.lock().map(|mut p| p.checkin(bufs));
         return None;
     }
     let data = slice.get_mapped_range();
@@ -788,7 +812,7 @@ fn dispatch_moe_batch(
         moe_runtime_degrade("score count mismatch");
         drop(data);
         bufs.staging.unmap();
-        let _ = MOE_BUFFER_POOL.lock().map(|mut p| p.checkin(bufs));
+        return_moe_buffers(bufs);
         return None;
     }
     let mut nonfinite = 0usize;
@@ -808,7 +832,7 @@ fn dispatch_moe_batch(
     bufs.staging.unmap();
 
     // Return buffers to pool for reuse by the next dispatch.
-    let _ = MOE_BUFFER_POOL.lock().map(|mut p| p.checkin(bufs));
+    return_moe_buffers(bufs);
 
     if nonfinite > 0 {
         moe_nonfinite_degrade(nonfinite, result.len());

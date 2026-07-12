@@ -205,7 +205,7 @@ impl ScanOrchestrator {
         } else {
             tracing::debug!(
                 target: "keyhog::routing",
-                "automatic backend prewarm skipped until persisted workload decision resolves"
+                "automatic backend prewarm awaits the persisted workload decision"
             );
         }
 

@@ -68,7 +68,7 @@ impl CompiledScanner {
             .generic_keyword_secret_index()
             .and_then(|index| self.detectors.get(index))
             .and_then(|spec| spec.keyword_free_min_len)
-            .unwrap_or(crate::entropy::KEYWORD_FREE_MIN_LEN);
+            .map_or(crate::entropy::KEYWORD_FREE_MIN_LEN, |min_len| min_len);
         let isolated_bare_candidate = !path_entropy_appropriate
             && crate::entropy::scanner::has_isolated_bare_secret_candidate_with_lines(
                 &entropy_lines,

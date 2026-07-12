@@ -60,10 +60,10 @@ pub(crate) fn read_capped(path: &Path, cap: u64, kind: &str) -> std::io::Result<
 /// to the current directory so a bare `calibration.json` filename saves cleanly
 /// instead of failing `create_dir_all("")`.
 pub(crate) fn write_atomically(path: &Path, prefix: &str, bytes: &[u8]) -> std::io::Result<()> {
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+    let parent = match path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        Some(parent) => parent,
+        None => Path::new("."),
+    };
     std::fs::create_dir_all(parent)?;
     let mut tmp = tempfile::Builder::new()
         .prefix(prefix)
@@ -101,7 +101,7 @@ pub(crate) fn sweep_stale_tmp_siblings(
             // Best-effort maintenance: a failed dir-entry read drops no scan
             // coverage, so skip the entry rather than aborting the sweep.
             Err(error) => {
-                tracing::debug!(dir = %parent.display(), %error, "skip unreadable tmp dir entry");
+                tracing::warn!(dir = %parent.display(), %error, "stale-state sweep skipped an unreadable directory entry");
                 continue;
             }
         };

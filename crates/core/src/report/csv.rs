@@ -31,10 +31,10 @@ impl<W: Write + Send> Reporter for CsvReporter<W> {
         // Numeric fields (line, offset) and the `0.0..=1.0` confidence never
         // contain a CSV metacharacter, so they are written straight through
         // without `escape_csv` and without an intermediate `String`.
-        let file_path_str = finding.location.file_path.as_deref().unwrap_or_default();
-        let commit_str = finding.location.commit.as_deref().unwrap_or_default();
-        let author_str = finding.location.author.as_deref().unwrap_or_default();
-        let date_str = finding.location.date.as_deref().unwrap_or_default();
+        let file_path_str = finding.location.file_path.as_deref().map_or("", |v| v);
+        let commit_str = finding.location.commit.as_deref().map_or("", |v| v);
+        let author_str = finding.location.author.as_deref().map_or("", |v| v);
+        let date_str = finding.location.date.as_deref().map_or("", |v| v);
         let verification = super::style::verification_token(&finding.verification);
 
         let w = &mut self.writer;

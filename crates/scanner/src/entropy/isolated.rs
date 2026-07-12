@@ -78,7 +78,8 @@ fn line_has_isolated_bare_secret_candidate(
 /// `> HIGH` override decision, shared with `scanner::keyword_context` — the two
 /// sites used to inline divergent copies of the same test.
 fn isolated_bare_entropy_threshold(entropy_threshold: f64) -> f64 {
-    operator_entropy_override(entropy_threshold).unwrap_or(MIXED_ALNUM_TOKEN_THRESHOLD)
+    operator_entropy_override(entropy_threshold)
+        .map_or(MIXED_ALNUM_TOKEN_THRESHOLD, |threshold| threshold)
 }
 
 fn isolated_bare_entropy_floor_met(candidate: &str, entropy: f64, threshold: f64) -> bool {

@@ -81,7 +81,10 @@ fn is_generic_family(detector_id: &str) -> bool {
 /// `gitlab`. Groups sibling detectors of one service so per-service keyword
 /// reuse is not mistaken for cross-vendor genericity.
 fn detector_id_stem(detector_id: &str) -> &str {
-    detector_id.split('-').next().unwrap_or(detector_id)
+    detector_id
+        .split('-')
+        .next()
+        .map_or(detector_id, |stem| stem)
 }
 
 /// Pure vocabulary builder over an explicit spec slice (unit-testable without
@@ -136,15 +139,16 @@ pub(crate) fn service_vocabulary() -> &'static [String] {
 /// context window. Build failure is a build-time-data defect (the corpus is
 /// compiled in), so it fails closed like every other embedded-corpus consumer.
 static SERVICE_AC: LazyLock<aho_corasick::AhoCorasick> = LazyLock::new(|| {
-    aho_corasick::AhoCorasick::builder()
+    match aho_corasick::AhoCorasick::builder()
         .ascii_case_insensitive(true)
         .build(service_vocabulary())
-        .unwrap_or_else(|error| {
-            panic!(
-                "service-vocabulary Aho-Corasick failed to build: {error}. The vocabulary \
+    {
+        Ok(automaton) => automaton,
+        Err(error) => panic!(
+            "service-vocabulary Aho-Corasick failed to build: {error}. The vocabulary \
                  derives from the embedded detector corpus; refusing to run without it."
-            )
-        })
+        ),
+    }
 });
 
 /// Feature-42 probe: does the ML context window (±5 lines + `file:` path)

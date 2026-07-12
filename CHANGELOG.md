@@ -25,6 +25,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- **Generic phase-2 length policy is detector-owned.** The three shapeless
+  generic detector TOMLs now declare their historical eight-byte assignment
+  floor explicitly; the engine consumes that compiled policy instead of making
+  the shipped value discoverable only as a Rust literal.
 - **GPU buffer sizing no longer carries retired MegaScan terminology.** The
   canonical CLI/config/API names are `--gpu-batch-input-limit`,
   `gpu_batch_input_limit`, and `gpu_batch_input_limit()`. The previous CLI,
@@ -85,6 +89,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- Compressed decode failures and non-UTF-8 inflate output now emit bounded,
+  secret-free warnings while preserving the original encoded scan input.
+- Embedded detector/rule loaders, GPU artifact header parsing, terminal flushes,
+  and warning-dedup poison recovery now take explicit fail-closed or visible
+  error paths instead of relying on silent-discard idioms.
 - Release regression gates now distinguish public resource identifiers from
   credential categories and resolve the cross-device driver independently of
   the caller's working directory.

@@ -729,12 +729,22 @@ impl Source for FilesystemSource {
                 // (see `har_symlink_target_is_not_followed_via_include`).
                 // The expandable-extension set mirrors the archive/compressed
                 // branches in `extract.rs::process_entry`.
-                // stat failure => treat as non-symlink: the file is still
-                // included via the canonicalize branch below, so recall is
-                // unaffected; only the archive-symlink refusal is skipped.
-                let is_link = std::fs::symlink_metadata(p)
-                    .map(|m| m.file_type().is_symlink())
-                    .unwrap_or(false);
+                let is_link = match std::fs::symlink_metadata(p) {
+                    Ok(metadata) => metadata.file_type().is_symlink(),
+                    Err(error) => {
+                        tracing::warn!(
+                            path = %p.display(),
+                            %error,
+                            "failed to classify explicitly included path without following links; refusing the include"
+                        );
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        source_errors.push(SourceError::Other(format!(
+                            "failed to inspect explicitly included path '{}': {error}; path was not scanned",
+                            p.display()
+                        )));
+                        continue;
+                    }
+                };
                 if !is_link {
                     allowed.push(p.canonicalize().unwrap_or_else(|_| p.clone())); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
                     continue;

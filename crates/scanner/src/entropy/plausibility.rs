@@ -200,7 +200,9 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
     // are copied into `PlausibilityContext` at extraction, so custom corpora and
     // operator-composed specs override the blanket high-entropy / mixed-alnum
     // floors without any embedded-registry read here.
-    let entropy_high = context.entropy_high.unwrap_or(HIGH_ENTROPY_THRESHOLD);
+    let entropy_high = context
+        .entropy_high
+        .map_or(HIGH_ENTROPY_THRESHOLD, |threshold| threshold);
     if entropy >= entropy_high {
         return true;
     }
@@ -220,7 +222,7 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
         }
         let mixed_alnum_floor = context
             .mixed_alnum_floor
-            .unwrap_or(MIXED_ALNUM_TOKEN_THRESHOLD);
+            .map_or(MIXED_ALNUM_TOKEN_THRESHOLD, |threshold| threshold);
         if !has_symbol
             && has_alpha
             && has_digit

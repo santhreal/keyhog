@@ -176,9 +176,10 @@ pub fn is_private_url(url_str: &str) -> bool {
                 //   - hex/octal leading field: http://0x7f.1 / http://0177.1
                 // In inet_aton semantics the final field packs into the trailing
                 // low bytes; `canonicalize_short_form_ipv4` reproduces that.
-                d.parse::<Ipv4Addr>()
-                    .ok()
-                    .or_else(|| canonicalize_short_form_ipv4(d))
+                match d.parse::<Ipv4Addr>() {
+                    Ok(address) => Some(address),
+                    Err(_not_standard_ipv4) => canonicalize_short_form_ipv4(d),
+                }
             } else if let Some(hex) = d.strip_prefix("0x").or_else(|| d.strip_prefix("0X")) {
                 // Law 10: a `None` here is NOT a swallowed block-decision — it
                 // only means "this token is not a parseable hex integer-IP",

@@ -39,8 +39,10 @@ pub fn crate_source_path(rel: &str) -> PathBuf {
 /// in `rel` is an obvious failure rather than a silent empty string.
 pub fn read_crate_source(rel: &str) -> String {
     let path = crate_source_path(rel);
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read crate source {}: {e}", path.display()))
+    match std::fs::read_to_string(&path) {
+        Ok(source) => source,
+        Err(error) => panic!("read crate source {}: {error}", path.display()),
+    }
 }
 
 pub struct TestApi;

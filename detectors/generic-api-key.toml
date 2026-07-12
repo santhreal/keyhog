@@ -19,6 +19,7 @@ mixed_alnum_floor = 4.0
 # bytes/token under cl100k_base. A 2.3 ceiling admits it while remaining well
 # below the shipped word-like FP taxonomy (3.8+ bytes/token).
 bpe_max_bytes_per_token = 2.3
+min_len = 8
 keyword_free_min_len = 20
 stopwords = ["example", "sample", "test", "dummy", "placeholder", "changeme", "xxxxxxxx", "your_key_here", "000000"]
 

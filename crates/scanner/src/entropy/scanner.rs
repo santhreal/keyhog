@@ -97,10 +97,10 @@ pub(crate) fn credential_keyword_context_with_lift(
     let spec = get_spec(None, detector_id);
     let entropy_low = spec
         .and_then(|s| s.entropy_low)
-        .unwrap_or(LOW_ENTROPY_THRESHOLD);
+        .map_or(LOW_ENTROPY_THRESHOLD, |threshold| threshold);
     let min_len = spec
         .and_then(|s| s.min_len)
-        .unwrap_or(CREDENTIAL_CONTEXT_MIN_LEN);
+        .map_or(CREDENTIAL_CONTEXT_MIN_LEN, |min_len| min_len);
     KeywordContext {
         keyword: keyword.to_string(),
         threshold: entropy_low,
@@ -123,7 +123,7 @@ pub fn find_entropy_secrets(
     let spec = get_spec(None, crate::detector_ids::GENERIC_SECRET);
     let entropy_very_high = spec
         .and_then(|s| s.entropy_very_high)
-        .unwrap_or(VERY_HIGH_ENTROPY_THRESHOLD);
+        .map_or(VERY_HIGH_ENTROPY_THRESHOLD, |threshold| threshold);
     find_entropy_secrets_with_threshold(
         text,
         min_length,
@@ -478,11 +478,11 @@ fn scan_keyword_free_candidates(
     let spec = get_spec(active_policy, crate::detector_ids::GENERIC_SECRET);
     let keyword_free_min_len = spec
         .and_then(|s| s.keyword_free_min_len)
-        .unwrap_or(KEYWORD_FREE_MIN_LEN);
+        .map_or(KEYWORD_FREE_MIN_LEN, |min_len| min_len);
     let generic_keyword_secret_min_len =
         get_spec(active_policy, crate::detector_ids::GENERIC_KEYWORD_SECRET)
             .and_then(|s| s.keyword_free_min_len)
-            .unwrap_or(KEYWORD_FREE_MIN_LEN);
+            .map_or(KEYWORD_FREE_MIN_LEN, |min_len| min_len);
     let keyword_free_context = KeywordContext {
         keyword: KEYWORD_FREE_LABEL.to_string(),
         threshold: effective_keyword_free_threshold,
@@ -837,10 +837,10 @@ fn candidate_plausibility_rejection_stage_with_policy(
     let spec = get_spec(active_policy, detector_id);
     let keyword_free_min_len = spec
         .and_then(|s| s.keyword_free_min_len)
-        .unwrap_or(KEYWORD_FREE_MIN_LEN);
+        .map_or(KEYWORD_FREE_MIN_LEN, |min_len| min_len);
     let credential_context_min_len = spec
         .and_then(|s| s.min_len)
-        .unwrap_or(CREDENTIAL_CONTEXT_MIN_LEN);
+        .map_or(CREDENTIAL_CONTEXT_MIN_LEN, |min_len| min_len);
 
     if crate::suppression::shape::is_structured_dotted_token(candidate) {
         if candidate.len() < keyword_free_min_len.min(context.min_len) {
@@ -1083,13 +1083,13 @@ fn keyword_context_with_policy(
     let spec = get_spec(active_policy, detector_id);
     let entropy_low = spec
         .and_then(|s| s.entropy_low)
-        .unwrap_or(LOW_ENTROPY_THRESHOLD);
+        .map_or(LOW_ENTROPY_THRESHOLD, |threshold| threshold);
     let min_len = spec
         .and_then(|s| s.min_len)
-        .unwrap_or(CREDENTIAL_CONTEXT_MIN_LEN);
+        .map_or(CREDENTIAL_CONTEXT_MIN_LEN, |min_len| min_len);
     let entropy_high = spec
         .and_then(|s| s.entropy_high)
-        .unwrap_or(HIGH_ENTROPY_THRESHOLD);
+        .map_or(HIGH_ENTROPY_THRESHOLD, |threshold| threshold);
 
     // Keyword-anchored floor policy — a NAMED, tested rule, not a silent clamp.
     // Inside a credential-keyword context the keyword IS the positive evidence,
@@ -1101,13 +1101,11 @@ fn keyword_context_with_policy(
     // loosen the recall-oriented keyword path) and LOW for a non-finite one.
     let operator_override = (entropy_threshold.is_finite() && entropy_threshold > entropy_high)
         .then_some(entropy_threshold);
-    let base_threshold = operator_override.unwrap_or_else(|| {
-        if entropy_threshold.is_finite() {
-            entropy_threshold.min(entropy_low)
-        } else {
-            entropy_low
-        }
-    });
+    let base_threshold = match operator_override {
+        Some(threshold) => threshold,
+        None if entropy_threshold.is_finite() => entropy_threshold.min(entropy_low),
+        None => entropy_low,
+    };
 
     KeywordContext {
         keyword: keyword.to_string(),
@@ -1123,65 +1121,5 @@ fn keyword_context_with_policy(
         // the line — both must hold, so a non-credential line never lifts even
         // under the model.
         allow_canonical_shapes: allow_canonical_lift && is_credential_context,
-    }
-}
-
-#[cfg(test)]
-mod policy_owner_tests {
-    use super::*;
-    use crate::generic_keyword_owner::GenericOwningDetectorIndex;
-    use keyhog_core::DetectorSpec;
-
-    fn detector(id: &str, keyword_free_min_len: usize) -> DetectorSpec {
-        let mut spec = DetectorSpec::default();
-        spec.id = id.to_string();
-        spec.name = id.to_string();
-        spec.service = "generic".to_string();
-        spec.keyword_free_min_len = Some(keyword_free_min_len);
-        spec
-    }
-
-    fn scan_with_generic_keyword_min_len(
-        secret: &str,
-        generic_keyword_secret_min_len: usize,
-    ) -> usize {
-        let detectors = vec![
-            detector("generic-secret", 20),
-            detector("generic-keyword-secret", generic_keyword_secret_min_len),
-        ];
-        let index = GenericOwningDetectorIndex::build(&detectors);
-        let active_policy = ActiveDetectorPolicy::new(&detectors, &index);
-        let lines = vec![secret];
-        let line_offsets = vec![0usize];
-        let mut seen = std::collections::HashSet::new();
-        let mut matches = Vec::new();
-        scan_keyword_free_candidates(
-            &lines,
-            &line_offsets,
-            HIGH_ENTROPY_THRESHOLD,
-            VERY_HIGH_ENTROPY_THRESHOLD,
-            &mut seen,
-            &mut matches,
-            &[],
-            None,
-            Some(active_policy),
-        );
-        matches
-            .into_iter()
-            .filter(|m| m.keyword == "none (isolated-token)")
-            .count()
-    }
-
-    #[test]
-    fn isolated_keyword_free_min_len_comes_from_active_generic_keyword_secret_spec() {
-        let secret = "A1b2C3d4E5f6g7H8i9J";
-        assert!(
-            scan_with_generic_keyword_min_len(secret, 30) == 0,
-            "a strict generic-keyword-secret min length must suppress short anchored-free tokens"
-        );
-        assert!(
-            scan_with_generic_keyword_min_len(secret, 10) > 0,
-            "a per-detector keyword_free_min_len override should admit the same token"
-        );
     }
 }

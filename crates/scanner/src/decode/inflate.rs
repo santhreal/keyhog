@@ -51,24 +51,45 @@ pub(crate) fn try_inflate_to_text(bytes: &[u8]) -> Option<String> {
     // the compressed input is tiny even when it would inflate to the cap, and
     // `read_to_end` grows from here only up to `MAX_INFLATE_BYTES`.
     let mut out = Vec::with_capacity(bytes.len());
-    if is_gzip_magic(bytes) {
+    let inflate_result = if is_gzip_magic(bytes) {
         flate2::read::GzDecoder::new(bytes)
             .take(MAX_INFLATE_BYTES)
             .read_to_end(&mut out)
-            .ok()?;
+            .map(|_| "gzip")
     } else if is_zlib_magic(bytes) {
         flate2::read::ZlibDecoder::new(bytes)
             .take(MAX_INFLATE_BYTES)
             .read_to_end(&mut out)
-            .ok()?;
+            .map(|_| "zlib")
     } else {
         return None;
-    }
+    };
+    let container = match inflate_result {
+        Ok(container) => container,
+        Err(error) => {
+            tracing::warn!(
+                compressed_bytes = bytes.len(),
+                %error,
+                "compressed decode failed; original encoded bytes remain in the scan"
+            );
+            return None;
+        }
+    };
     // An empty inflate (e.g. a degenerate stored block, or the compression of an
     // empty payload) has nothing to rescan — return `None` so the caller emits no
     // empty sub-chunk, consistent with the non-container / malformed / non-UTF-8
     // `None` paths. Recall-neutral: empty text can hold no credential.
-    let text = String::from_utf8(out).ok()?;
+    let text = match String::from_utf8(out) {
+        Ok(text) => text,
+        Err(error) => {
+            tracing::warn!(
+                container,
+                inflated_bytes = error.as_bytes().len(),
+                "compressed decode produced non-UTF-8 bytes; original encoded bytes remain in the scan"
+            );
+            return None;
+        }
+    };
     if text.is_empty() {
         return None;
     }

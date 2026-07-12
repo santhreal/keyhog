@@ -79,7 +79,7 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     "ef:{}:{}:{}:{:016x}",
                     d.id,
                     i,
-                    b.max_len.map(|m| m.to_string()).unwrap_or_default(),
+                    b.max_len.map_or_else(String::new, |m| m.to_string()),
                     b.floor.to_bits()
                 ));
             }

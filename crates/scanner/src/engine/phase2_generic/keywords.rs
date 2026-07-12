@@ -225,16 +225,16 @@ pub(crate) fn strong_hex_key_anchors() -> &'static [String] {
 }
 
 static STRONG_HEX_KEY_ANCHORS: LazyLock<Vec<String>> = LazyLock::new(|| {
-    parse_strong_hex_key_anchors(include_str!(
+    match parse_strong_hex_key_anchors(include_str!(
         "../../../../../rules/strong-hex-key-anchors.toml"
-    ))
-    .unwrap_or_else(|error| {
-        panic!(
+    )) {
+        Ok(anchors) => anchors,
+        Err(error) => panic!(
             "rules/strong-hex-key-anchors.toml is invalid: {error}. Fix the bundled Tier-B \
              strong-hex-key anchor vocabulary; refusing to run without the strong-key hex \
              classifier truth."
-        )
-    })
+        ),
+    }
 });
 
 #[derive(serde::Deserialize)]
@@ -288,16 +288,16 @@ pub(crate) fn encoded_text_secret_anchors() -> &'static [String] {
 }
 
 static ENCODED_TEXT_SECRET_ANCHORS: LazyLock<Vec<String>> = LazyLock::new(|| {
-    parse_encoded_text_secret_anchors(include_str!(
+    match parse_encoded_text_secret_anchors(include_str!(
         "../../../../../rules/encoded-text-secret-anchors.toml"
-    ))
-    .unwrap_or_else(|error| {
-        panic!(
+    )) {
+        Ok(anchors) => anchors,
+        Err(error) => panic!(
             "rules/encoded-text-secret-anchors.toml is invalid: {error}. Fix the bundled Tier-B \
              encoded-text secret-anchor vocabulary; refusing to run without the encoded-text \
              classifier truth."
-        )
-    })
+        ),
+    }
 });
 
 /// Shared section shape for the compact-anchor Tier-B files.

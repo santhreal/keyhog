@@ -304,7 +304,7 @@ pub(crate) const MAX_BACKOFF_SECS: u64 = 60;
 /// to `MAX_BACKOFF_SECS` so an untrusted header can never wedge the thread.
 pub(crate) fn rate_limit_backoff_secs(retry_after: Option<u64>, attempt: usize) -> u64 {
     retry_after
-        .unwrap_or((attempt + 1) as u64)
+        .map_or((attempt + 1) as u64, |seconds| seconds)
         .min(MAX_BACKOFF_SECS)
 }
 

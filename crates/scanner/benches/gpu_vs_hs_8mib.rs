@@ -142,7 +142,7 @@ fn time_backend(
                 .iter()
                 .zip(&warm)
                 .position(|(actual, expected)| actual != expected)
-                .unwrap_or_else(|| r.len().min(warm.len()));
+                .map_or_else(|| r.len().min(warm.len()), |index| index);
             let actual = r.get(chunk_index);
             let expected = warm.get(chunk_index);
             panic!(
@@ -256,7 +256,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         size / MIB,
         chunks.len(),
         n_det,
-        status.gpu_backend.unwrap_or("none"),
+        status.gpu_backend.map_or("none", |backend| backend),
         std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get),
         iters,
         iters

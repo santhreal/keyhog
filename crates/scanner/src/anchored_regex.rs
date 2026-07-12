@@ -98,7 +98,7 @@ mod fail_closed_tests {
         // returned `None`, which the anchored-scan consumer swallowed into a silent
         // early `return`, dropping every match for this pattern.
         let ar = AnchoredRegex::new(")unbalanced", false);
-        let _ = ar.get();
+        ar.get();
     }
 
     #[test]
@@ -107,7 +107,7 @@ mod fail_closed_tests {
         // The left-context variant (`\A(?s:.)(?:<src>)`) fails closed identically:
         // no path is allowed to swallow the compile failure into silent recall loss.
         let ar = AnchoredRegex::new(")unbalanced", false);
-        let _ = ar.get_with_left_context();
+        ar.get_with_left_context();
     }
 
     // ── CRLF/case-flag parity with the two-branch base compile ──────────────

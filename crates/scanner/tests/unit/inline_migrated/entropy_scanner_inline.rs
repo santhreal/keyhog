@@ -8,7 +8,22 @@
 use keyhog_scanner::entropy::shannon_entropy;
 use keyhog_scanner::testing::entropy_scanner::{
     candidate_is_plausible, credential_keyword_context, is_canonical_non_secret_shape,
+    isolated_keyword_free_match_count_with_min_len,
 };
+
+#[test]
+fn isolated_keyword_free_min_len_comes_from_active_generic_keyword_secret_spec() {
+    let secret = "A1b2C3d4E5f6g7H8i9J";
+    assert_eq!(
+        isolated_keyword_free_match_count_with_min_len(secret, 30),
+        0,
+        "a strict detector-owned minimum must suppress the shorter isolated token"
+    );
+    assert!(
+        isolated_keyword_free_match_count_with_min_len(secret, 10) > 0,
+        "a looser detector-owned minimum must admit the same isolated token"
+    );
+}
 
 #[test]
 fn sha256_hex_dropped_under_token_anchor() {

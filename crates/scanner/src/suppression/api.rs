@@ -735,32 +735,33 @@ static DETECTOR_SUPPRESSIONS: std::sync::LazyLock<
         );
     }
 
-    let specs = keyhog_core::load_embedded_detectors_or_fail().unwrap_or_else(|error| {
-        panic!("failed to load embedded detectors for allowlist/stopword suppression: {error}")
-    });
+    let specs = match keyhog_core::load_embedded_detectors_or_fail() {
+        Ok(specs) => specs,
+        Err(error) => {
+            panic!("failed to load embedded detectors for allowlist/stopword suppression: {error}")
+        }
+    };
     for spec in specs {
         let allowlist_paths = spec
             .allowlist_paths
             .iter()
-            .map(|pat| {
-                regex::Regex::new(pat).unwrap_or_else(|err| {
-                    panic!(
-                        "detector '{}' has invalid allowlist_path regex '{}': {}",
-                        spec.id, pat, err
-                    )
-                })
+            .map(|pat| match regex::Regex::new(pat) {
+                Ok(regex) => regex,
+                Err(err) => panic!(
+                    "detector '{}' has invalid allowlist_path regex '{}': {}",
+                    spec.id, pat, err
+                ),
             })
             .collect();
         let allowlist_values = spec
             .allowlist_values
             .iter()
-            .map(|pat| {
-                regex::Regex::new(pat).unwrap_or_else(|err| {
-                    panic!(
-                        "detector '{}' has invalid allowlist_value regex '{}': {}",
-                        spec.id, pat, err
-                    )
-                })
+            .map(|pat| match regex::Regex::new(pat) {
+                Ok(regex) => regex,
+                Err(err) => panic!(
+                    "detector '{}' has invalid allowlist_value regex '{}': {}",
+                    spec.id, pat, err
+                ),
             })
             .collect();
         map.insert(

@@ -210,13 +210,14 @@ mod tests {
     fn live_credential_shapes_are_declared_per_detector() {
         let specs = keyhog_core::load_embedded_detectors_or_fail().expect("embedded corpus loads");
         let by_id = |id: &str| {
-            specs
-                .iter()
-                .find(|s| s.id == id)
-                .unwrap_or_else(|| panic!("{id} must be embedded"))
-                .credential_shape
-                .clone()
-                .unwrap_or_else(|| panic!("{id} must declare [detector.credential_shape]"))
+            let spec = match specs.iter().find(|s| s.id == id) {
+                Some(spec) => spec,
+                None => panic!("{id} must be embedded"),
+            };
+            match spec.credential_shape.clone() {
+                Some(shape) => shape,
+                None => panic!("{id} must declare [detector.credential_shape]"),
+            }
         };
 
         let aws = by_id(&aws_access_key_id());

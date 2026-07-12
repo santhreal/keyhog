@@ -171,14 +171,14 @@ pub fn load_embedded_detectors_or_fail() -> Result<Vec<DetectorSpec>, SpecError>
 /// corpus: a bundled TOML that will not parse is a build/source defect, never a
 /// silent empty set (Law 10).
 pub fn embedded_detector_specs() -> &'static [DetectorSpec] {
-    static SPECS: std::sync::LazyLock<Vec<DetectorSpec>> = std::sync::LazyLock::new(|| {
-        load_embedded_detectors_or_fail().unwrap_or_else(|error| {
-            panic!(
+    static SPECS: std::sync::LazyLock<Vec<DetectorSpec>> =
+        std::sync::LazyLock::new(|| match load_embedded_detectors_or_fail() {
+            Ok(specs) => specs,
+            Err(error) => panic!(
                 "embedded detector corpus failed to load: {error}. The detector \
                  specifications live in the bundled TOMLs; refusing to run without them."
-            )
-        })
-    });
+            ),
+        });
     &SPECS
 }
 

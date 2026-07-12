@@ -196,8 +196,8 @@ fn serialize_literal_rows(
 /// 8-byte header (Vyre always writes it, so `None` signals a corrupt/truncated
 /// serialization the caller surfaces loudly rather than defaulting).
 fn literal_set_wire_header(bytes: &[u8]) -> Option<([u8; 4], u32)> {
-    let header: [u8; 8] = bytes.get(..8)?.try_into().ok()?;
-    let magic: [u8; 4] = header[0..4].try_into().ok()?;
+    let header = bytes.get(..8)?;
+    let magic = [header[0], header[1], header[2], header[3]];
     let version = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
     Some((magic, version))
 }

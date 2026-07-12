@@ -276,7 +276,7 @@ pub(crate) fn generic_entropy_floor(
 
     let threshold_val = detector
         .and_then(|s| s.entropy_high)
-        .unwrap_or(DEFAULT_GENERIC_ENTROPY_THRESHOLD);
+        .map_or(DEFAULT_GENERIC_ENTROPY_THRESHOLD, |threshold| threshold);
 
     if entropy_threshold.is_finite() && entropy_threshold > threshold_val {
         base.max(entropy_threshold)
@@ -336,7 +336,9 @@ pub(crate) fn generic_secret_shape_floors(
     generic_secret: Option<&keyhog_core::DetectorSpec>,
 ) -> GenericSecretShapeFloors {
     GenericSecretShapeFloors {
-        min_len: generic_secret.and_then(|s| s.min_len).unwrap_or(8),
+        min_len: generic_secret
+            .and_then(|s| s.min_len)
+            .map_or(8, |min_len| min_len),
     }
 }
 
@@ -766,7 +768,7 @@ pub(crate) fn is_hex_digest_fragment(
     end: usize,
     credential: &str,
 ) -> bool {
-    let min_len = detector_min_len.unwrap_or(16);
+    let min_len = detector_min_len.map_or(16, |min_len| min_len);
     if credential.len() < min_len || !credential.bytes().all(|b| b.is_ascii_hexdigit()) {
         return false;
     }

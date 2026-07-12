@@ -442,7 +442,7 @@ fn metadata_priority_rank(key: &str) -> usize {
     PRIORITY_METADATA_KEYS
         .iter()
         .position(|k| *k == key)
-        .unwrap_or(PRIORITY_METADATA_KEYS.len())
+        .map_or(PRIORITY_METADATA_KEYS.len(), |rank| rank)
 }
 
 fn sanitize_metadata(metadata: HashMap<String, String>) -> HashMap<String, String> {

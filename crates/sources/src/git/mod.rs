@@ -704,11 +704,9 @@ pub(crate) fn validate_repo_path(repo_path: &Path) -> Result<String, SourceError
     // a repo. We now canonicalize the path (resolves `..` and symlinks) and
     // require it to point at an actual `.git` directory or a worktree
     // containing one. Anything else is refused.
-    // Law 10: security-safe — `raw` is used ONLY for the `-`/control-char
-    // pre-check and error display. A non-UTF-8 path defaulting to "." here cannot
-    // bypass the real gate: line below canonicalizes the ORIGINAL `repo_path`
-    // (not `raw`) and refuses anything not pointing at a real `.git`.
-    let raw = repo_path.to_str().unwrap_or(".");
+    // Use a lossy rendering only for validation/diagnostics; canonicalization
+    // below still consumes the original OS path bytes.
+    let raw = repo_path.to_string_lossy();
     if raw.starts_with('-') || raw.chars().any(char::is_control) {
         return Err(SourceError::Other(
             "repository path contains unsafe characters".into(),

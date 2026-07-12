@@ -382,7 +382,7 @@ pub(crate) fn ci_find_iter<'h, 'n>(haystack: &'h [u8], needle: &'n [u8]) -> CiMa
     let (a_lower, a_upper) = needle
         .get(anchor)
         .map(|&b| (b.to_ascii_lowercase(), b.to_ascii_uppercase()))
-        .unwrap_or((0, 0));
+        .map_or((0, 0), |pair| pair);
     CiMatches {
         haystack,
         needle,

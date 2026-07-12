@@ -102,7 +102,7 @@ pub(crate) fn redact_url(url: &str) -> Cow<'_, str> {
     let rest = &after_scheme[authority_end..];
     let redacted_query = rest.find('?').and_then(|q| {
         let after_q = &rest[q + 1..];
-        let query_len = after_q.find('#').unwrap_or(after_q.len());
+        let query_len = after_q.find('#').map_or(after_q.len(), |index| index);
         redact_query_params(&after_q[..query_len]).map(|masked| (q + 1, query_len, masked))
     });
 

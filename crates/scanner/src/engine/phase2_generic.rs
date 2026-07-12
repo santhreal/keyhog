@@ -81,15 +81,16 @@ pub(crate) static GENERIC_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
     // recall surface) — an invisible recall hole. There is no recall-preserving
     // alternative, so panic: the build/CI must catch it, and we refuse to ship a
     // scanner with its generic bridge gone dark.
-    build_generic_re().unwrap_or_else(|error| {
-        panic!(
+    match build_generic_re() {
+        Ok(regex) => regex,
+        Err(error) => panic!(
             "GENERIC_RE failed to compile: {error}. It is built from a hardcoded assignment \
              grammar and the derived generic-keyword vocabulary \
              (crate::assignment_keywords::assignment_keywords()); a compile failure is a build \
              defect, not a runtime condition. Refusing to run with the generic-secret value \
              bridge disabled."
-        )
-    })
+        ),
+    }
 });
 
 pub(crate) fn warm_generic_assignment_runtime() {
@@ -340,22 +341,26 @@ impl CompiledScanner {
                     .owning_index(keyword)
                     .map(|index| &self.detectors[index]);
 
-                let owning_detector_min_len = owning_detector.and_then(|d| d.min_len).unwrap_or(8);
+                let owning_detector_min_len = owning_detector
+                    .and_then(|d| d.min_len)
+                    .map_or(8, |min_len| min_len);
                 let owning_detector_entropy_high = owning_detector
                     .and_then(|d| d.entropy_high)
-                    .unwrap_or(crate::entropy::HIGH_ENTROPY_THRESHOLD);
+                    .map_or(crate::entropy::HIGH_ENTROPY_THRESHOLD, |threshold| {
+                        threshold
+                    });
                 let owning_detector_id = owning_detector
                     .map(|d| d.id.as_str())
-                    .unwrap_or(crate::detector_ids::GENERIC_SECRET);
+                    .map_or(crate::detector_ids::GENERIC_SECRET, |id| id);
                 let owning_detector_name = owning_detector
                     .map(|d| d.name.as_str())
-                    .unwrap_or("Generic Secret (Key=Value)");
+                    .map_or("Generic Secret (Key=Value)", |name| name);
                 let owning_detector_service = owning_detector
                     .map(|d| d.service.as_str())
-                    .unwrap_or("generic");
+                    .map_or("generic", |service| service);
                 let owning_detector_severity = owning_detector
                     .map(|d| d.severity)
-                    .unwrap_or(keyhog_core::Severity::Medium);
+                    .map_or(keyhog_core::Severity::Medium, |severity| severity);
 
                 let entropy_threshold = if self.config.entropy_threshold.is_finite()
                     && self.config.entropy_threshold > crate::entropy::HIGH_ENTROPY_THRESHOLD

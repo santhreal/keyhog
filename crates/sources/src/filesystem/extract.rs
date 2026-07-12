@@ -47,7 +47,7 @@ fn file_is_git_lfs_pointer(path: &Path) -> bool {
     let mut buf = [0u8; GIT_LFS_POINTER_MAX_BYTES];
     match read::read_file_prefix_safe(path, &mut buf) {
         Ok(n) => keyhog_core::git_lfs::is_git_lfs_pointer(&buf[..n]),
-        Err(_) => false,
+        Err(_read_error) => false,
     }
 }
 
@@ -92,7 +92,7 @@ fn is_symlink(path: &Path) -> bool {
     // stat failure => treated as non-symlink (the file is still walked/read).
     std::fs::symlink_metadata(path)
         .map(|m| m.file_type().is_symlink())
-        .unwrap_or(false)
+        .map_or(false, |is_link| is_link)
 }
 
 /// True when `path` begins with a UTF-16 byte-order mark (`FF FE` LE / `FE FF`
@@ -904,7 +904,7 @@ fn file_live_metadata(path: &Path) -> Option<FileLiveMetadata> {
             let nanos = dur.as_secs() as u128 * 1_000_000_000 + dur.subsec_nanos() as u128;
             // mtime is a Merkle cache key only; saturating past u64::MAX ns
             // (unreachable before year 2554) cannot affect scan recall.
-            u64::try_from(nanos).unwrap_or(u64::MAX)
+            u64::try_from(nanos).map_or(u64::MAX, |nanos| nanos)
         });
     Some(FileLiveMetadata {
         mtime_ns,

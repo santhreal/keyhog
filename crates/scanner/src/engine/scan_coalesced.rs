@@ -251,7 +251,7 @@ impl CompiledScanner {
             .generic_keyword_secret_index()
             .and_then(|index| self.detectors.get(index))
             .and_then(|spec| spec.keyword_free_min_len)
-            .unwrap_or(crate::entropy::KEYWORD_FREE_MIN_LEN);
+            .map_or(crate::entropy::KEYWORD_FREE_MIN_LEN, |min_len| min_len);
         #[cfg(feature = "multiline")]
         if crate::multiline::has_concatenation_indicators(text) {
             if has_generic_assignment_keyword(data) || has_secret_keyword_fast(data) {

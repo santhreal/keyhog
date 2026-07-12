@@ -43,11 +43,9 @@ fn canonical(results: &[Vec<keyhog_core::RawMatch>]) -> BTreeSet<Record> {
 }
 
 /// Build a fixed chunk set from the committed `demo/` tree — the exact corpus
-/// whose calibration aborted — padded out with a bounded mirror-corpus sample
-/// when present so there are enough chunks to saturate the rayon pool and
-/// surface a concurrency race without turning the default suite into an
-/// unbounded corpus benchmark. Falls back to demo-only if the mirror tree is
-/// absent.
+/// whose calibration aborted. The committed files are repeated only as needed
+/// to saturate the rayon pool, so concurrency coverage does not depend on a
+/// private mirror corpus or turn this correctness gate into a scale benchmark.
 fn fixed_chunks() -> Vec<Chunk> {
     let mut chunks = Vec::new();
     let mut push_file = |path: std::path::PathBuf| {
@@ -99,34 +97,24 @@ fn fixed_chunks() -> Vec<Chunk> {
         }
     }
 
-    if let Some(root) = support::paths::corpus_dir() {
-        // One non-empty chunk per logical worker exercises concurrent scratch
-        // ownership without multiplying this correctness gate into a corpus
-        // benchmark. Bound extreme CI hosts so the test remains a gate, not a
-        // scale run.
-        let worker_chunks = std::thread::available_parallelism()
-            .map_or(32, std::num::NonZeroUsize::get)
-            .clamp(8, 64);
-        for (label, bytes) in support::paths::corpus_files_with_paths(&root, worker_chunks) {
-            if bytes.is_empty() {
-                continue;
-            }
-            let text = String::from_utf8_lossy(&bytes).into_owned();
-            chunks.push(Chunk {
-                data: text.into(),
-                metadata: ChunkMetadata {
-                    source_type: "ref-determinism".into(),
-                    path: Some(label.into()),
-                    ..Default::default()
-                },
-            });
-        }
-    }
-
     assert!(
         !chunks.is_empty(),
         "fixed chunk set is empty — demo/ corpus missing"
     );
+    // Eight deterministic real files provide varied syntax and findings; the
+    // repetition below supplies concurrency. Scanning the entire demo tree on
+    // every one of eight debug-profile trials made this correctness test
+    // dominate the workspace despite adding no additional scheduling pressure.
+    chunks.sort_by(|a, b| a.metadata.path.as_deref().cmp(&b.metadata.path.as_deref()));
+    chunks.truncate(8);
+    let worker_chunks = std::thread::available_parallelism()
+        .map_or(32, std::num::NonZeroUsize::get)
+        .clamp(8, 64);
+    let seed = chunks.clone();
+    while chunks.len() < worker_chunks {
+        let remaining = worker_chunks - chunks.len();
+        chunks.extend(seed.iter().take(remaining).cloned());
+    }
     chunks
 }
 
@@ -144,6 +132,10 @@ fn scan_coalesced_is_deterministic_across_trials() {
     scanner.clear_fragment_cache();
     let reference = canonical(
         &scanner.scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::SimdCpu),
+    );
+    assert!(
+        !reference.is_empty(),
+        "determinism corpus must exercise real findings, not only empty scans"
     );
 
     for trial in 1..TRIALS {

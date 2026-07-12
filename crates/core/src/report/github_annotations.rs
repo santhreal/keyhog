@@ -86,7 +86,9 @@ fn message(finding: &VerifiedFinding) -> String {
     );
     if let Some(confidence) = finding.confidence {
         use std::fmt::Write;
-        let _ = write!(text, " confidence={confidence:.3}");
+        if write!(text, " confidence={confidence:.3}").is_err() {
+            unreachable!("formatting into a String cannot fail");
+        }
     }
     text
 }

@@ -160,14 +160,14 @@ impl RateLimiter {
             limit.interval = limit
                 .interval
                 .checked_mul(RATE_LIMIT_BACKOFF_MULTIPLIER)
-                .unwrap_or(ceiling)
+                .map_or(ceiling, |interval| interval)
                 .min(ceiling);
         } else {
             let default = self.default_interval();
             let ceiling = RATE_LIMIT_MAX_INTERVAL.max(default);
             let interval = default
                 .checked_mul(RATE_LIMIT_BACKOFF_MULTIPLIER)
-                .unwrap_or(ceiling)
+                .map_or(ceiling, |interval| interval)
                 .min(ceiling);
             self.services.entry(service.to_string()).or_insert_with(|| {
                 Mutex::new(ServiceLimit {
@@ -212,7 +212,7 @@ impl RateLimiter {
 /// interval — a one-off politeness delay, never a correctness or security
 /// regression, and never a panic.
 pub(crate) fn initial_last_request(now: Instant, interval: Duration) -> Instant {
-    now.checked_sub(interval).unwrap_or(now)
+    now.checked_sub(interval).map_or(now, |instant| instant)
 }
 
 fn reserve_service_slot(limit: &mut ServiceLimit, now: Instant) -> Option<Duration> {

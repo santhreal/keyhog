@@ -712,7 +712,7 @@ fn is_loopback_http_host(url: &str) -> bool {
     let authority = after_scheme
         .split(['/', '?', '#'])
         .next()
-        .unwrap_or(after_scheme);
+        .map_or(after_scheme, |authority| authority);
     let host_port = authority
         .rsplit_once('@')
         .map_or(authority, |(_, host)| host);
@@ -723,7 +723,7 @@ fn is_loopback_http_host(url: &str) -> bool {
             None => return false,
         }
     } else {
-        host_port.split(':').next().unwrap_or(host_port)
+        host_port.split(':').next().map_or(host_port, |host| host)
     };
     matches!(host, "localhost" | "127.0.0.1" | "::1")
 }

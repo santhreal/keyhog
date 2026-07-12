@@ -100,7 +100,7 @@ pub(crate) fn preprocess<'a>(
             tracing::warn!(
                 bytes = text.len(),
                 cap = MAX_STRUCTURED_PARSE_BYTES,
-                path = path.unwrap_or("<unknown>"),
+                path = path.map_or("<unknown>", |path| path),
                 "structured decode-through skipped: file exceeds the structured-parse \
                  size cap, so base64-encoded values (e.g. a k8s `data:` block) were NOT \
                  decoded; the raw text was still scanned"
@@ -243,7 +243,7 @@ fn synthesize_preprocessed(text: &str, pairs: Vec<ExtractedPair>) -> (String, Ve
         let end = source_line_offsets
             .get(line_idx + 1)
             .copied()
-            .unwrap_or(original_end)
+            .map_or(original_end, |end| end)
             .min(original_end);
         mappings.push(SynthMapping {
             line_number: line_idx + 1,

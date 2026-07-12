@@ -143,7 +143,7 @@ fn screen_resolved_endpoint_host(parsed: &reqwest::Url, source: &str) -> Result<
     };
     // `port_or_known_default` yields 80/443 for http/https (both already the
     // only permitted schemes), so this never falls back to a wrong port.
-    let port = parsed.port_or_known_default().unwrap_or(443);
+    let port = parsed.port_or_known_default().map_or(443, |port| port);
     let Ok(addrs) = (host, port).to_socket_addrs() else {
         // Resolution failed: no address to attack. reqwest will re-resolve and
         // surface the same failure at connect time — never an SSRF pivot.

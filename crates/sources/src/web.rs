@@ -329,9 +329,12 @@ fn web_response_kind_from_content_type(
 /// so `build_web_client` surfaces the real parse error rather than silently
 /// reusing a stale client.
 pub(crate) fn redirect_pin_key(url: &str) -> Option<String> {
-    let parsed = reqwest::Url::parse(url).ok()?;
+    let parsed = match reqwest::Url::parse(url) {
+        Ok(parsed) => parsed,
+        Err(_invalid_url) => return None,
+    };
     let host = parsed.host_str()?;
-    let port = parsed.port_or_known_default().unwrap_or(443);
+    let port = parsed.port_or_known_default().map_or(443, |port| port);
     Some(format!("{host}:{port}"))
 }
 

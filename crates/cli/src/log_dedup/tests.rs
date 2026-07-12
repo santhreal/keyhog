@@ -16,7 +16,10 @@ fn warn_callsite_suppressed_after_shown_budget_and_counted() {
             tracing::warn!(idx, "dedup-test repeated warning");
         }
     });
-    let state = WARN_REPEATS.lock().unwrap_or_else(|e| e.into_inner());
+    let state = match WARN_REPEATS.lock() {
+        Ok(state) => state,
+        Err(poisoned) => panic!("warning-dedup mutex poisoned during isolated test: {poisoned}"),
+    };
     let entry = state
         .counts
         .values()
@@ -43,7 +46,10 @@ fn dependency_warning_targets_do_not_create_hidden_summaries() {
             tracing::warn!(target: "wgpu_hal::vulkan::instance", idx, "dependency warning");
         }
     });
-    let state = WARN_REPEATS.lock().unwrap_or_else(|e| e.into_inner());
+    let state = match WARN_REPEATS.lock() {
+        Ok(state) => state,
+        Err(poisoned) => panic!("warning-dedup mutex poisoned during isolated test: {poisoned}"),
+    };
     assert!(
         state
             .counts

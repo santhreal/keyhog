@@ -60,7 +60,15 @@ impl<S: Subscriber> Filter<S> for WarnRepeatLimit {
         if !meta.target().starts_with("keyhog") {
             return true;
         }
-        let mut state = WARN_REPEATS.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = match WARN_REPEATS.lock() {
+            Ok(state) => state,
+            Err(poisoned) => {
+                eprintln!(
+                    "keyhog: warning-dedup state was poisoned by a prior panic; recovering its counted warnings"
+                );
+                poisoned.into_inner()
+            }
+        };
         let entry = state
             .counts
             .entry(meta.callsite())
@@ -84,7 +92,15 @@ pub(crate) struct WarnDedupSummaryGuard;
 
 impl Drop for WarnDedupSummaryGuard {
     fn drop(&mut self) {
-        let state = WARN_REPEATS.lock().unwrap_or_else(|e| e.into_inner());
+        let state = match WARN_REPEATS.lock() {
+            Ok(state) => state,
+            Err(poisoned) => {
+                eprintln!(
+                    "keyhog: warning-dedup state was poisoned by a prior panic; reporting its recovered summary"
+                );
+                poisoned.into_inner()
+            }
+        };
         for count in state.counts.values() {
             if count.seen > WARN_REPEATS_SHOWN {
                 eprintln!(

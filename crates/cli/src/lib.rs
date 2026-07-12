@@ -215,7 +215,11 @@ pub(crate) fn write_banner<W: Write>(
 /// down cleanly, so it keeps the normal `ExitCode` return.
 fn exit_now(code: u8) -> ! {
     use std::io::Write;
-    let _ = std::io::stdout().flush();
+    if let Err(error) = std::io::stdout().flush() {
+        eprintln!("keyhog: stdout flush failed before immediate exit: {error}");
+    }
+    // LAW10: stderr is the final diagnostic channel; after this last flush
+    // fails there is no truthful in-process surface left before `_exit`.
     let _ = std::io::stderr().flush();
     // SAFETY: `_exit` is async-signal-safe and terminates immediately. All
     // operator-visible output has already been produced and flushed above.

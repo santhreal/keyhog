@@ -143,7 +143,7 @@ pub(crate) fn try_expand_har(
 /// OOB / hang on ANY bytes.
 #[cfg(fuzzing)]
 pub fn fuzz_try_expand_har(bytes: &[u8], max_size: u64) {
-    let _ = try_expand_har(bytes, "fuzz.har", max_size);
+    drop(try_expand_har(bytes, "fuzz.har", max_size));
 }
 
 fn har_text(bytes: &[u8]) -> Option<Cow<'_, str>> {

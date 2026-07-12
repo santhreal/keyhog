@@ -177,7 +177,10 @@ pub(crate) fn decode_chunk(
 fn unwrap_decoded_chunks(chunks: Vec<Arc<Chunk>>) -> Vec<Chunk> {
     chunks
         .into_iter()
-        .map(|arc| Arc::try_unwrap(arc).unwrap_or_else(|shared| (*shared).clone()))
+        .map(|arc| match Arc::try_unwrap(arc) {
+            Ok(chunk) => chunk,
+            Err(shared) => (*shared).clone(),
+        })
         .collect()
 }
 

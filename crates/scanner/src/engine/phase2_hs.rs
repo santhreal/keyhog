@@ -213,7 +213,7 @@ impl Phase2HsEngine {
     #[inline]
     fn engine_for(&self, skip_homoglyph_ascii: bool) -> &HsSubEngine {
         if skip_homoglyph_ascii {
-            self.ascii_lean.as_ref().unwrap_or(&self.full)
+            self.ascii_lean.as_ref().map_or(&self.full, |engine| engine)
         } else {
             &self.full
         }

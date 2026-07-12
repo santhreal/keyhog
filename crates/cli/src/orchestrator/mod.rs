@@ -255,10 +255,10 @@ impl DefaultScanRuntime {
             };
             let degrade_before = self.scanner.gpu_degrade_count();
             self.scanner.clear_fragment_cache();
-            let _ = self.scanner.scan_chunks_with_backend(
+            drop(self.scanner.scan_chunks_with_backend(
                 std::slice::from_ref(&warmup),
                 keyhog_scanner::ScanBackend::Gpu,
-            );
+            ));
             self.scanner.clear_fragment_cache();
             if self.scanner.gpu_degrade_count() != degrade_before {
                 anyhow::bail!(

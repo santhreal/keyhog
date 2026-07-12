@@ -43,8 +43,11 @@ impl AutorouteHostProfile {
         // `require_exact_identity` rejects the failed probe. Collapsing it to
         // `None` would be indistinguishable from genuinely absent hardware and
         // could trust calibration across an unknown device/driver change.
-        let gpu_device_identity = (gpu_supported_by_build && caps.gpu_available)
-            .then(|| caps.gpu_name.clone().unwrap_or_default());
+        let gpu_device_identity =
+            (gpu_supported_by_build && caps.gpu_available).then(|| match &caps.gpu_name {
+                Some(name) => name.clone(),
+                None => String::new(),
+            });
         let hardware_gpu_present = gpu_device_identity
             .as_deref()
             .map(str::trim)

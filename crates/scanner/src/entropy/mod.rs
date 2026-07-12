@@ -537,17 +537,14 @@ mod tests {
     /// for byte.
     #[test]
     fn anchored_floor_sites_compose_the_shared_override() {
-        let keyword_floor = |t: f64| {
-            operator_entropy_override(t).unwrap_or_else(|| {
-                if t.is_finite() {
-                    t.min(LOW_ENTROPY_THRESHOLD)
-                } else {
-                    LOW_ENTROPY_THRESHOLD
-                }
-            })
+        let keyword_floor = |t: f64| match operator_entropy_override(t) {
+            Some(threshold) => threshold,
+            None if t.is_finite() => t.min(LOW_ENTROPY_THRESHOLD),
+            None => LOW_ENTROPY_THRESHOLD,
         };
-        let isolated_floor =
-            |t: f64| operator_entropy_override(t).unwrap_or(MIXED_ALNUM_TOKEN_THRESHOLD);
+        let isolated_floor = |t: f64| {
+            operator_entropy_override(t).map_or(MIXED_ALNUM_TOKEN_THRESHOLD, |threshold| threshold)
+        };
 
         // Default 4.5: keyword path floors to LOW (3.0), isolated to MIXED (4.0).
         assert_eq!(keyword_floor(4.5), LOW_ENTROPY_THRESHOLD);

@@ -289,8 +289,8 @@ fn percent_decode(input: &str) -> Result<String, ()> {
 }
 
 fn url_decode(input: &str) -> Result<String, ()> {
-    // kimi-decode audit: bail before doing any work when there is no
-    // valid `%XX` percent-escape in the candidate. The previous flow
+    // Bail before doing any work when there is no valid `%XX` percent-escape
+    // in the candidate. The previous flow
     // copied trailing bare `%` or `%X` (one-char-short) unchanged and
     // returned the identical string - wasted decode work that the
     // `seen` dedup later dropped. Refuse the candidate earlier.
@@ -394,11 +394,12 @@ static HTML_NAMED_ENTITIES: std::sync::LazyLock<std::collections::HashMap<String
             .into_iter()
             .map(|(name, replacement)| {
                 let mut chars = replacement.chars();
-                let first = chars.next().unwrap_or_else(|| {
-                    panic!(
+                let first = match chars.next() {
+                    Some(first) => first,
+                    None => panic!(
                         "rules/html-named-entities.toml: entity `{name}` has an empty replacement."
-                    )
-                });
+                    ),
+                };
                 assert!(
                     chars.next().is_none(),
                     "rules/html-named-entities.toml: entity `{name}` replacement must be exactly \
@@ -535,10 +536,11 @@ fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
         // A numeric entity whose value overflows `u32` or is not a valid Unicode
         // scalar (surrogate / above U+10FFFF) is preserved literally rather than
         // dropping the whole candidate via `?`.
-        match u32::from_str_radix(&digits, radix)
-            .ok()
-            .and_then(char::from_u32)
-        {
+        let replacement = match u32::from_str_radix(&digits, radix) {
+            Ok(codepoint) => char::from_u32(codepoint),
+            Err(_invalid_digits) => None,
+        };
+        match replacement {
             Some(replacement) => {
                 lazy_decoded_prefix(&mut decoded, input, idx).push(replacement);
                 changed = true;

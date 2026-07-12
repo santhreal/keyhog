@@ -210,11 +210,15 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         let mut scratch = ActivePatternsScratch::new();
         let mut time_one = |skip_homoglyph_ascii: bool| -> f64 {
             scratch.begin(self.phase2_patterns.len());
-            let _ = engine.mark(haystack, &mut scratch, skip_homoglyph_ascii);
+            if let Err(error) = engine.mark(haystack, &mut scratch, skip_homoglyph_ascii) {
+                panic!("HS benchmark warmup failed: {error}");
+            }
             let t0 = std::time::Instant::now();
             for _ in 0..n_calls {
                 scratch.begin(self.phase2_patterns.len());
-                let _ = engine.mark(haystack, &mut scratch, skip_homoglyph_ascii);
+                if let Err(error) = engine.mark(haystack, &mut scratch, skip_homoglyph_ascii) {
+                    panic!("HS benchmark trial failed: {error}");
+                }
             }
             t0.elapsed().as_nanos() as f64 / n_calls as f64
         };
