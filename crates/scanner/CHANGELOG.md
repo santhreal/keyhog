@@ -143,6 +143,9 @@
 - Make Ceph access keys self-delimiting so 40-character secret values cannot be
   truncated into 20-character access-key findings, while preserving Ceph's
   valid user-defined mixed-case access keys and correcting the contract prose.
+- Model Five9 API secrets as intentional standalone primaries in the companion
+  corpus, while proving API-key-only findings cannot fabricate the nearby
+  secret required for credential-pair verification.
 
 ## 0.2.1
 
