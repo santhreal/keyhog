@@ -102,6 +102,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   `azure_subscription_key` environment spelling through detector-owned TOML.
 - Every top-level scanner, core, and verifier regression target is wired into
   the aggregate CI suites; the release gate now reports zero orphan tests.
+- `keyhog-core` now packages its decoder-alias Tier-B rule inside the crate, so
+  the published tarball compiles independently of the workspace root.
 - Compressed decode failures and non-UTF-8 inflate output now emit bounded,
   secret-free warnings while preserving the original encoded scan input.
 - Embedded detector/rule loaders, GPU artifact header parsing, terminal flushes,

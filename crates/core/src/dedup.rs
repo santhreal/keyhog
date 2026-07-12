@@ -326,7 +326,7 @@ static DECODER_SUFFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock:
     struct DecoderNames {
         decoder_names: Vec<String>,
     }
-    let raw = include_str!("../../../rules/decoder-source-suffixes.toml");
+    let raw = include_str!("../rules/decoder-source-suffixes.toml");
     match toml::from_str::<DecoderNames>(raw) {
         Ok(parsed) if !parsed.decoder_names.is_empty() => parsed
             .decoder_names
