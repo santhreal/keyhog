@@ -4,6 +4,11 @@
 documented verification endpoint with the captured credential.
 The response tells you if the credential is live.
 
+`--timeout <SECONDS>` (or `.keyhog.toml` `timeout`) sets the HTTP timeout for
+each verification request; the default is five seconds. It is not a whole-scan
+deadline. `--per-chunk-timeout-ms` is the separate optional scanner deadline,
+and `--oob-timeout` controls callback observation waits.
+
 The text reporter renders each finding as a bordered box. With
 `--verify`, the verification verdict is appended to the `Confidence:`
 line in parentheses: `(LIVE)` for an active credential, `(dead)` for

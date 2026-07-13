@@ -553,7 +553,9 @@ pub struct ScanArgs {
     #[arg(short, long)]
     pub output: Option<PathBuf>,
 
-    /// Verification timeout in seconds
+    /// Per-request HTTP verification timeout in seconds (default: 5). This does
+    /// not impose a deadline on scanning; use `--per-chunk-timeout-ms` for the
+    /// scanner's optional chunk deadline.
     #[cfg(feature = "verify")]
     #[arg(long)]
     pub timeout: Option<u64>,

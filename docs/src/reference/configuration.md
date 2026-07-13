@@ -67,6 +67,7 @@ Each row is the same knob across all three layers. Defaults are
 | Fused depth | worker-count-derived | `fused_depth` | `--fused-depth` | Bounded channel depth for fused filesystem batches. |
 | Per-chunk timeout | off | `per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |
 | Dedup scope | `credential` | `dedup` | `--dedup` | `credential` / `file` / `none`. |
+| HTTP verification timeout | `5` seconds | `timeout` | `--timeout` | Per-request verifier deadline; it does not bound scanning. Use `per_chunk_timeout_ms` for the optional scanner chunk deadline. |
 | Max file size | 100 MiB | `max_file_size` | `--max-file-size` | Walker skips files larger than this. |
 | GPU batch input limit | VRAM-adaptive (128 MiB–1 GiB) | `[scan] gpu_batch_input_limit` | `--gpu-batch-input-limit` | Caps bytes admitted to one GPU region-presence batch. Retired MegaScan spellings are rejected; this one name owns CLI, config, effective-config output, and the Rust API. |
 | Severity floor | (all) | `severity` | `--severity` | Minimum severity to report: info/low/medium/high/critical. |

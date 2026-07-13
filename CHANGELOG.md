@@ -12,6 +12,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   explicitly instead of producing a split-source request. Library consumers
   that read `ScanArgs::input` directly should use `ScanArgs::scan_roots()`;
   `input` now stores the complete ordered positional vector.
+- CLI help and reference documentation now identify `--timeout` as the
+  five-second-default per-request verification timeout, not a whole-scan
+  deadline, and point scanner deadlines to `--per-chunk-timeout-ms`.
 - Documentation and CLI help now distinguish the foreground `watch` process
   from the independently started Unix-socket daemon and describe `--backend
   auto` as persisted routing rather than a forced backend. The scan reference

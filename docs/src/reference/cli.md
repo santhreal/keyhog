@@ -48,6 +48,7 @@ incomplete.
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
 | `--verify`                    | Call each detector's verify endpoint.          |
+| `--timeout <SECONDS>`         | Set the per-request HTTP verification timeout (default `5`). This is not a scan deadline. |
 | `--proxy <URL>`               | Route verifier traffic through a proxy (`http://burp:8080`, `socks5://...`). `off` disables all proxying. |
 | `--insecure`                  | Skip TLS cert verification on verifier traffic (don't use outside a lab). |
 | `--verify-rate <RPS>`         | Cap steady-state verification calls per service (default `5`). |
@@ -64,7 +65,6 @@ incomplete.
 | `--daemon`                    | Force daemon route for eligible stdin/single-file scans. Unix only; fails if the request needs the in-process pipeline. |
 | `--daemon=auto`               | On Unix, use a reachable compatible daemon when it can honor the exact request; with no socket, run in process, and report failures that occur after selecting the daemon before retrying in process. This is also the absent-flag policy, except that explicit `auto` is rejected on platforms with no daemon transport. |
 | `--daemon=off`                | Force in-process scan even if daemon is up.    |
-| `--timeout <SECONDS>`         | Hard per-scan deadline.                        |
 | `--profile`                   | Emit the scanner-owned hierarchical profile report to stderr at scan end. |
 | `--perf-trace`                | Emit low-level scan/GPU phase timing traces to stderr. |
 
