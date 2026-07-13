@@ -129,6 +129,61 @@ def test_keyhog_normalizer_scores_additional_locations_as_findings():
     ]
 
 
+def _keyhog_finding(**overrides):
+    finding = {
+        "detector_id": "github-classic-pat",
+        "credential_redacted": "ghp_secret",
+        "confidence": 0.87,
+        "location": {"file_path": "secret.env", "line": 4},
+    }
+    finding.update(overrides)
+    return finding
+
+
+@pytest.mark.parametrize(
+    "data, message",
+    [
+        ({"findings": {}}, "findings.*array"),
+        ([_keyhog_finding(), "unexpected"], "finding 1 must be an object"),
+        ([_keyhog_finding(location=None)], "location must be an object"),
+        ([_keyhog_finding(location={"line": 4})], "no non-empty file path"),
+        ([_keyhog_finding(confidence="high")], "finite number in"),
+        (
+            [_keyhog_finding(additional_locations=["unexpected"])],
+            "additional location 0 must be an object",
+        ),
+        (
+            [_keyhog_finding(additional_locations={})],
+            "additional_locations must be an array",
+        ),
+    ],
+)
+def test_keyhog_normalizer_rejects_malformed_finding_shapes(data, message):
+    with pytest.raises(RuntimeError, match=message):
+        scanners._normalize_keyhog(data)
+
+
+def test_keyhog_normalizer_dedup_keeps_max_confidence_independent_of_order():
+    low = _keyhog_finding(confidence=0.2)
+    high = _keyhog_finding(confidence=0.9)
+
+    forward = scanners._normalize_keyhog([low, high])
+    reverse = scanners._normalize_keyhog([high, low])
+
+    assert forward == reverse
+    assert forward[0]["confidence"] == 0.9
+
+
+def test_keyhog_parser_rejects_empty_success_artifact_but_accepts_json_array(tmp_path):
+    output = tmp_path / "keyhog.json"
+    output.write_text("")
+    with pytest.raises(RuntimeError, match="empty output artifact"):
+        scanners.KeyhogScanner._parse(output, config_id="deep")
+
+    output.write_text("[]")
+    assert scanners.KeyhogScanner._parse(output, config_id="deep") == []
+
+
 def test_betterleaks_normalizer_reads_gitleaks_json_shape():
     data = [{"File": "a.env", "StartLine": 2, "Secret": "sekret", "RuleID": "aws"}]
 

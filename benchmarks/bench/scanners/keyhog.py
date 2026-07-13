@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import math
 import os
 import pathlib
 import re
@@ -120,26 +121,71 @@ def _normalize_keyhog(data: object) -> list[Finding]:
         raise RuntimeError(
             f"keyhog JSON is neither list nor object (got {type(data).__name__})"
         )
+    if not isinstance(records, list):
+        raise RuntimeError(
+            "keyhog JSON 'findings' must be an array "
+            f"(got {type(records).__name__})"
+        )
     norm: list[Finding] = []
-    seen: set[tuple[str, int, str, str]] = set()
-    for finding in records or []:
+    output_index: dict[tuple[str, int, int, str, str], int] = {}
+    for finding_index, finding in enumerate(records):
         if not isinstance(finding, dict):
-            continue
+            raise RuntimeError(
+                f"keyhog finding {finding_index} must be an object "
+                f"(got {type(finding).__name__})"
+            )
         value = finding.get("credential_redacted") or finding.get("credential") or ""
         detector = finding.get("detector_id") or finding.get("detector_name") or ""
         confidence = finding.get("confidence")
+        if not isinstance(value, str) or not value:
+            raise RuntimeError(
+                f"keyhog finding {finding_index} has no non-empty credential value"
+            )
+        if not isinstance(detector, str) or not detector:
+            raise RuntimeError(
+                f"keyhog finding {finding_index} has no non-empty detector identity"
+            )
+        if confidence is not None:
+            if (
+                isinstance(confidence, bool)
+                or not isinstance(confidence, (int, float))
+                or not math.isfinite(confidence)
+                or not 0.0 <= confidence <= 1.0
+            ):
+                raise RuntimeError(
+                    f"keyhog finding {finding_index} confidence must be null or a finite number in [0, 1]"
+                )
 
-        locations = []
+        locations: list[dict] = []
         loc = finding.get("location")
-        if isinstance(loc, dict):
-            locations.append(loc)
+        if not isinstance(loc, dict):
+            raise RuntimeError(
+                f"keyhog finding {finding_index} location must be an object"
+            )
+        locations.append(loc)
         additional = finding.get("additional_locations")
-        if isinstance(additional, list):
-            locations.extend(loc for loc in additional if isinstance(loc, dict))
+        if additional is not None:
+            if not isinstance(additional, list):
+                raise RuntimeError(
+                    f"keyhog finding {finding_index} additional_locations must be an array"
+                )
+            for location_index, additional_loc in enumerate(additional):
+                if not isinstance(additional_loc, dict):
+                    raise RuntimeError(
+                        "keyhog finding "
+                        f"{finding_index} additional location {location_index} must be an object"
+                    )
+                locations.append(additional_loc)
 
-        for loc in locations:
+        for location_index, loc in enumerate(locations):
+            path = loc.get("file_path") or loc.get("file")
+            if not isinstance(path, str) or not path:
+                label = "location" if location_index == 0 else "additional location"
+                raise RuntimeError(
+                    f"keyhog finding {finding_index} {label} has no non-empty file path"
+                )
             normalized = {
-                "file": loc.get("file_path") or loc.get("file") or "",
+                "file": path,
                 "line": _line(loc.get("line")),
                 "offset": _line(loc.get("offset")),
                 "value": value,
@@ -153,9 +199,15 @@ def _normalize_keyhog(data: object) -> list[Finding]:
                 normalized["value"],
                 normalized["detector"],
             )
-            if key in seen:
+            if key in output_index:
+                existing = norm[output_index[key]]
+                if confidence is not None and (
+                    existing["confidence"] is None
+                    or confidence > existing["confidence"]
+                ):
+                    existing["confidence"] = confidence
                 continue
-            seen.add(key)
+            output_index[key] = len(norm)
             norm.append(normalized)
     return norm
 
@@ -318,8 +370,8 @@ class KeyhogScanner(Scanner):
     def _parse(output: pathlib.Path, config_id: str = "") -> list[Finding]:
         # The exit code already confirmed success here, so a read/parse failure
         # is NOT "zero findings", it is corrupt output that would silently score
-        # recall 0. Fail closed loudly (Law 10) rather than swallow it; only a
-        # genuinely empty valid file yields [].
+        # recall 0. Fail closed loudly (Law 10) rather than swallow it. An
+        # explicit JSON [] is the only valid zero-finding artifact.
         try:
             text = output.read_text().strip()
         except OSError as exc:
@@ -327,7 +379,10 @@ class KeyhogScanner(Scanner):
                 f"keyhog output unreadable for {config_id or output}: {exc}"
             ) from exc
         if not text:
-            return []
+            raise RuntimeError(
+                f"keyhog wrote an empty output artifact for {config_id or output} "
+                "after a success exit; expected explicit JSON []"
+            )
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
