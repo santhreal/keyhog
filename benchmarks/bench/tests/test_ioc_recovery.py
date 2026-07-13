@@ -13,6 +13,7 @@ from bench.generator_checksums import (
     crc32_base62,
     crc32_iso_hdlc,
 )
+from generators.ioc_recovery import generate as ioc_generator
 
 _BENCH_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _GENERATOR = _BENCH_ROOT / "generators" / "ioc_recovery" / "generate.py"
@@ -123,3 +124,20 @@ def test_ioc_recovery_adapter_excludes_answer_key_and_loads_exact_records(tmp_pa
     reloaded = IocRecoveryCorpus(corpus_dir=home)
     with pytest.raises(SystemExit, match="scan-tree digest mismatch"):
         reloaded.records()
+
+
+def test_ioc_recovery_generator_times_out_node_and_removes_staging(
+    monkeypatch, tmp_path
+):
+    fake_node = tmp_path / "node"
+    fake_node.write_text("#!/bin/sh\nsleep 30\n")
+    fake_node.chmod(0o755)
+    output = tmp_path / "recovery"
+
+    monkeypatch.setattr(ioc_generator.shutil, "which", lambda _name: str(fake_node))
+    monkeypatch.setattr(ioc_generator, "NODE_AES_TIMEOUT_SECONDS", 0.05)
+    with pytest.raises(SystemExit, match=r"exceeded 0.05s and was terminated"):
+        ioc_generator.generate(output, samples=1, seed=17)
+
+    assert not output.exists()
+    assert list(tmp_path.glob(".recovery-*")) == []

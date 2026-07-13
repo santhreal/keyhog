@@ -1,8 +1,10 @@
 import json
 import os
+import pathlib
 import sqlite3
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -299,8 +301,10 @@ def test_keyhog_gpu_benchmark_rows_use_explicit_gpu_policy(tmp_path):
     )
 
     assert "--require-gpu" in gpu_cmd
-    assert "--no-gpu" in auto_cmd
+    assert "--no-gpu" not in auto_cmd
     assert "--no-gpu" in simd_cmd
+    detector_index = auto_cmd.index("--detectors")
+    assert pathlib.Path(auto_cmd[detector_index + 1]) == keyhog_adapter._DETECTOR_CORPUS
     assert scanner._env(ScannerConfig(backend="gpu")) == {}
 
 
@@ -336,6 +340,80 @@ def test_keyhog_scanner_reports_timeout_as_timeout(monkeypatch, tmp_path):
         )
 
     assert "last scanner diagnostic" in str(exc.value)
+
+
+def test_keyhog_warmup_failure_stops_before_timed_scan_and_cleans_artifacts(
+    monkeypatch, tmp_path
+):
+    scanner = scanners.KeyhogScanner(binary="/unused/keyhog")
+    calls = []
+
+    def fail_warmup(cmd, **kwargs):
+        calls.append(cmd)
+        return "", "warmup failed", base.RunStats(exit_code=2)
+
+    monkeypatch.setattr(keyhog_adapter, "run_measured", fail_warmup)
+    with pytest.raises(RuntimeError, match=r"warmup exited 2"):
+        scanner.run(tmp_path, ScannerConfig(backend="simd", cache="on"))
+
+    assert len(calls) == 1
+    warm_output = pathlib.Path(calls[0][calls[0].index("--output") + 1])
+    incremental = pathlib.Path(
+        calls[0][calls[0].index("--incremental-cache") + 1]
+    )
+    assert not warm_output.parent.exists()
+    assert warm_output.parent == incremental.parent
+
+
+def test_keyhog_owned_plaintext_output_is_cleaned_after_parse_failure(
+    monkeypatch, tmp_path
+):
+    scanner = scanners.KeyhogScanner(binary="/unused/keyhog")
+    output_paths = []
+
+    def malformed_output(cmd, **kwargs):
+        output = pathlib.Path(cmd[cmd.index("--output") + 1])
+        output_paths.append(output)
+        output.write_text("not json")
+        return "", "", base.RunStats(exit_code=0)
+
+    monkeypatch.setattr(keyhog_adapter, "run_measured", malformed_output)
+    with pytest.raises(RuntimeError, match=r"invalid JSON"):
+        scanner.run(tmp_path, ScannerConfig(backend="simd"))
+
+    assert len(output_paths) == 1
+    assert not output_paths[0].parent.exists()
+
+
+def test_keyhog_warm_runs_are_private_under_concurrency_and_ignore_old_paths(
+    monkeypatch, tmp_path
+):
+    scanner = scanners.KeyhogScanner(binary="/unused/keyhog")
+    cfg = ScannerConfig(backend="simd", cache="on")
+    output_parents = []
+
+    old_warm = tmp_path / f"keyhog-bench-warm-{cfg.config_id}.json"
+    sentinel = tmp_path / "sentinel"
+    sentinel.write_text("unchanged")
+    old_warm.symlink_to(sentinel)
+    monkeypatch.setattr(keyhog_adapter.tempfile, "tempdir", str(tmp_path))
+
+    def successful_scan(cmd, **kwargs):
+        output = pathlib.Path(cmd[cmd.index("--output") + 1])
+        output_parents.append(output.parent)
+        output.write_text("[]")
+        return "", "", base.RunStats(exit_code=0)
+
+    monkeypatch.setattr(keyhog_adapter, "run_measured", successful_scan)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: scanner.run(tmp_path, cfg), range(2)))
+
+    assert [findings for findings, _stats in results] == [[], []]
+    run_dirs = set(output_parents)
+    assert len(run_dirs) == 2
+    assert all(not run_dir.exists() for run_dir in run_dirs)
+    assert old_warm.is_symlink()
+    assert sentinel.read_text() == "unchanged"
 
 
 def test_keyhog_min_confidence_floor_is_harvest_only(tmp_path):

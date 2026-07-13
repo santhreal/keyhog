@@ -21,6 +21,7 @@ import json
 import os
 import pathlib
 import random
+import signal
 import shutil
 import subprocess
 import sys
@@ -46,6 +47,8 @@ PHASES: tuple[tuple[int, str], ...] = (
     (11, "xor-structural-obfuscation"),
     (12, "aes-structural-obfuscation"),
 )
+
+NODE_AES_TIMEOUT_SECONDS = 30
 
 PAPER_TITLE = (
     "Benchmarking Large Language Models for IoC Recovery under Adversarial "
@@ -126,18 +129,35 @@ def _aes_materials(seed: int, secrets: list[str]) -> list[tuple[str, str, str]]:
         iv = _digest(seed, sample, "aes-iv")[:16].hex()
         rows.append({"plaintext": secret, "key": key, "iv": iv})
         keys.append((key, iv))
-    completed = subprocess.run(
+    process = subprocess.Popen(
         [node, "-e", _NODE_AES],
-        input=json.dumps(rows),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        capture_output=True,
-        check=False,
+        start_new_session=os.name == "posix",
     )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
+    try:
+        stdout, stderr = process.communicate(
+            json.dumps(rows), timeout=NODE_AES_TIMEOUT_SECONDS
+        )
+    except subprocess.TimeoutExpired as exc:
+        try:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+        except ProcessLookupError:
+            pass
+        process.communicate()
+        raise SystemExit(
+            f"Node AES generation exceeded {NODE_AES_TIMEOUT_SECONDS}s and was terminated"
+        ) from exc
+    if process.returncode != 0:
+        detail = stderr.strip() or stdout.strip()
         raise SystemExit(f"Node AES generation failed: {detail}")
     try:
-        ciphertexts = json.loads(completed.stdout)
+        ciphertexts = json.loads(stdout)
     except json.JSONDecodeError as exc:
         raise SystemExit(f"Node AES generation returned invalid JSON: {exc}") from exc
     if len(ciphertexts) != len(secrets):

@@ -12,6 +12,22 @@ from bench.score import score
 
 pytestmark = pytest.mark.target_spec
 
+EXPECTED_RECOVERY_CATEGORIES = {
+    "recovery/p00-plaintext",
+    "recovery/p01-base64",
+    "recovery/p02-identifier-obfuscation",
+    "recovery/p03-dead-code",
+    "recovery/p04-structural-obfuscation",
+    "recovery/p05-xor",
+    "recovery/p06-aes-256-cbc",
+    "recovery/p07-xor-simple-obfuscation",
+    "recovery/p08-aes-simple-obfuscation",
+    "recovery/p09-xor-dead-code",
+    "recovery/p10-aes-dead-code",
+    "recovery/p11-xor-structural-obfuscation",
+    "recovery/p12-aes-structural-obfuscation",
+}
+
 
 @pytest.fixture(scope="session")
 def deep_recovery_detection() -> Detection:
@@ -53,7 +69,7 @@ def test_deep_mode_recovers_every_plaintext_exactly(
 def test_deep_mode_has_no_blind_recovery_phase(
     deep_recovery_detection: Detection,
 ):
-    assert len(deep_recovery_detection.per_category) == 13
+    assert set(deep_recovery_detection.per_category) == EXPECTED_RECOVERY_CATEGORIES
     failures = {
         category: (outcome.tp, outcome.fp, outcome.fn)
         for category, outcome in deep_recovery_detection.per_category.items()
@@ -66,12 +82,29 @@ def test_deep_recovery_target_rejects_one_extra_finding():
     detection = Detection(
         overall=Outcome(tp=4_368, fp=1, fn=0),
         per_category={
-            f"P{phase}": Outcome(tp=336, fp=int(phase == 7), fn=0)
-            for phase in range(13)
+            category: Outcome(tp=336, fp=int("p07-" in category), fn=0)
+            for category in EXPECTED_RECOVERY_CATEGORIES
         },
     )
 
     with pytest.raises(AssertionError, match=r"FP=1"):
         test_deep_mode_recovers_every_plaintext_exactly(detection)
-    with pytest.raises(AssertionError, match=r"P7.*336, 1, 0"):
+    with pytest.raises(AssertionError, match=r"p07.*336, 1, 0"):
+        test_deep_mode_has_no_blind_recovery_phase(detection)
+
+
+def test_deep_recovery_target_rejects_renamed_phase():
+    renamed = {
+        category: Outcome(tp=336, fp=0, fn=0)
+        for category in EXPECTED_RECOVERY_CATEGORIES
+    }
+    renamed["recovery/p07-renamed"] = renamed.pop(
+        "recovery/p07-xor-simple-obfuscation"
+    )
+    detection = Detection(
+        overall=Outcome(tp=4_368, fp=0, fn=0),
+        per_category=renamed,
+    )
+
+    with pytest.raises(AssertionError):
         test_deep_mode_has_no_blind_recovery_phase(detection)

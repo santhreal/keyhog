@@ -2,10 +2,10 @@
 
 Maps a :class:`ScannerConfig` to keyhog CLI flags:
 
-* **backend** -> ``--backend {simd,cpu,gpu,auto}``. ``simd``/``cpu``/
-  ``auto`` pass ``--no-gpu`` for the bit-deterministic filesystem path the
-  leaderboard is scored on; ``gpu`` passes ``--require-gpu`` so it fails
-  instead of timing a CPU fallback.
+* **backend** -> ``--backend {simd,cpu,gpu,auto}``. ``simd``/``cpu`` pass
+  ``--no-gpu`` for their bit-deterministic filesystem paths. ``auto`` keeps
+  every eligible calibrated backend in competition. ``gpu`` passes
+  ``--require-gpu`` so it fails instead of timing a CPU fallback.
 * **cache** -> ``--incremental`` (merkle skip-cache). ``on`` measures the
   *warm* re-run: the adapter populates the index once, then times the second
   pass: that's the 10-100x monorepo-re-run speedup, measured honestly.
@@ -14,10 +14,10 @@ Maps a :class:`ScannerConfig` to keyhog CLI flags:
   pipeline otherwise.
 
 Scoring parity flags are always present:
-``--format json --show-secrets --no-suppress-test-fixtures --no-config``.
-``--no-config`` makes the run hermetic, the compiled shipped defaults are
-scored, never a stray ``.keyhog.toml`` on a corpus ancestor (MC-07). Findings
-are written to ``--output`` so GNU time's RSS report never crosses the JSON.
+``--format json --show-secrets --no-suppress-test-fixtures --no-config`` plus
+an explicit repository detector corpus. ``--no-config`` blocks ancestor config
+discovery, while ``--detectors`` blocks installed-corpus discovery. Findings are
+written to ``--output`` so GNU time's RSS report never crosses the JSON.
 
 The default config (``variants()[0]``) is ``simd-nocache-nodaemon-full`` 
 the deterministic build the README leaderboard cites.
@@ -38,10 +38,11 @@ from ..schema import ScannerConfig
 from .base import Finding, RunStats, Scanner, _line, run_measured
 
 _BACKENDS = ("simd", "cpu", "gpu", "auto")
-_DETERMINISTIC_BACKENDS = {"simd", "cpu", "auto"}
+_DETERMINISTIC_BACKENDS = {"simd", "cpu"}
 _REQUIRE_GPU_BACKENDS = {"gpu"}
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+_DETECTOR_CORPUS = _REPO_ROOT / "detectors"
 
 
 def _cargo_target_dir() -> pathlib.Path | None:
@@ -276,6 +277,7 @@ class KeyhogScanner(Scanner):
                # `--no-config` skips the walk-up discovery so the benched config
                # is the shipped default by design, not by accident (MC-07).
                "--no-config",
+               "--detectors", str(_DETECTOR_CORPUS),
                "--backend", cfg.backend,
                "--output", str(output)]
         # Optional report-floor override. None (every leaderboard config) means
@@ -316,55 +318,69 @@ class KeyhogScanner(Scanner):
             extra_env: dict[str, str] | None = None,
             extra_args: list[str] | None = None,
             timeout: int = 3600) -> tuple[list[Finding], RunStats]:
-        tmp_out = None
-        if output is None:
-            tmp_out = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
-            tmp_out.close()
-            output = pathlib.Path(tmp_out.name)
-
         env = self._env(cfg)
         if extra_env:
             env.update(extra_env)
-        inc_cache = None
-        if cfg.cache == "on":
-            # Dedicated index per config so concurrent matrix rows don't share
-            # state; warm it once (unmeasured) so the timed pass is the re-run.
-            inc_cache = pathlib.Path(tempfile.gettempdir()) / \
-                f"keyhog-bench-merkle-{cfg.config_id}.idx"
-            warm_out = pathlib.Path(tempfile.gettempdir()) / \
-                f"keyhog-bench-warm-{cfg.config_id}.json"
-            run_measured(self._cmd(root, cfg, warm_out, inc_cache),
-                         env=env, timeout=timeout)
-            try:
-                warm_out.unlink()
-            except OSError:
-                pass
 
-        cmd = self._cmd(root, cfg, output, inc_cache)
-        if extra_args:
-            cmd = [*cmd[:-1], *extra_args, cmd[-1]]
-        stdout, stderr, stats = run_measured(cmd, env=env, timeout=timeout)
-        if not self.exit_success(stats.exit_code):
-            detail = (stderr or stdout or "").strip()
-            if len(detail) > 1200:
-                detail = detail[-1200:]
-            if stats.timed_out:
-                raise TimeoutError(
-                    f"keyhog timed out after {timeout}s for {cfg.config_id}; "
-                    "the scan was terminated and produced no parity result"
-                    + (f": {detail}" if detail else "")
+        # KeyHog writes plaintext credentials for benchmark scoring. Keep every
+        # adapter-owned artifact in one private, unique directory and let the
+        # context manager remove it on success, timeout, scanner failure, or
+        # parse/schema failure. Caller-owned output remains caller-owned.
+        with tempfile.TemporaryDirectory(prefix="keyhog-bench-") as run_dir_raw:
+            run_dir = pathlib.Path(run_dir_raw)
+            result_output = output or run_dir / "result.json"
+            inc_cache = None
+            if cfg.cache == "on":
+                # Warmup and timed pass share only this run's private index.
+                inc_cache = run_dir / "merkle.idx"
+                warm_out = run_dir / "warm.json"
+                warm_stdout, warm_stderr, warm_stats = run_measured(
+                    self._cmd(root, cfg, warm_out, inc_cache),
+                    env=env,
+                    timeout=timeout,
                 )
-            raise RuntimeError(
-                f"keyhog exited {stats.exit_code} for {cfg.config_id}: {detail}"
-            )
+                self._require_success(
+                    warm_stdout,
+                    warm_stderr,
+                    warm_stats,
+                    cfg,
+                    timeout,
+                    phase="warmup",
+                )
+                self._parse(warm_out, config_id=f"{cfg.config_id} warmup")
 
-        findings = self._parse(output, config_id=cfg.config_id)
-        if tmp_out is not None:
-            try:
-                output.unlink()
-            except OSError:
-                pass
-        return findings, stats
+            cmd = self._cmd(root, cfg, result_output, inc_cache)
+            if extra_args:
+                cmd = [*cmd[:-1], *extra_args, cmd[-1]]
+            stdout, stderr, stats = run_measured(cmd, env=env, timeout=timeout)
+            self._require_success(stdout, stderr, stats, cfg, timeout, phase="timed scan")
+            findings = self._parse(result_output, config_id=cfg.config_id)
+            return findings, stats
+
+    def _require_success(
+        self,
+        stdout: str,
+        stderr: str,
+        stats: RunStats,
+        cfg: ScannerConfig,
+        timeout: int,
+        *,
+        phase: str,
+    ) -> None:
+        if self.exit_success(stats.exit_code):
+            return
+        detail = (stderr or stdout or "").strip()
+        if len(detail) > 1200:
+            detail = detail[-1200:]
+        if stats.timed_out:
+            raise TimeoutError(
+                f"keyhog {phase} timed out after {timeout}s for {cfg.config_id}; "
+                "the scan was terminated and produced no parity result"
+                + (f": {detail}" if detail else "")
+            )
+        raise RuntimeError(
+            f"keyhog {phase} exited {stats.exit_code} for {cfg.config_id}: {detail}"
+        )
 
     @staticmethod
     def _parse(output: pathlib.Path, config_id: str = "") -> list[Finding]:
