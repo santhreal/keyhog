@@ -164,6 +164,10 @@ pub(crate) struct DefaultScanRuntime {
     scanner: Arc<CompiledScanner>,
     router: CachedBackendRouter,
     detector_count: usize,
+    /// Actual global Rayon worker count after runtime configuration. This can
+    /// differ from the request when another owner initialized Rayon first, so
+    /// status surfaces report the observed pool instead of repeating intent.
+    worker_threads: usize,
     /// Explicit backend forced by the caller (e.g. `keyhog watch --backend cpu`).
     /// `None` => use the persisted autoroute decision (which requires
     /// calibration). When `Some`, the per-file scan never consults the autoroute
@@ -182,6 +186,7 @@ impl DefaultScanRuntime {
             scanner,
             router,
             detector_count: detectors.len(),
+            worker_threads: rayon::current_num_threads(),
             backend_override: None,
             filter: None,
         }
@@ -235,6 +240,10 @@ impl DefaultScanRuntime {
 
     pub(crate) fn detector_count(&self) -> usize {
         self.detector_count
+    }
+
+    pub(crate) fn worker_threads(&self) -> usize {
+        self.worker_threads
     }
 
     pub(crate) fn warm(&self) {
@@ -378,7 +387,7 @@ pub(crate) fn setup_default_scan_runtime(
     let effective_config = resolve_scan_config(&mut synthetic)?;
 
     let hw = keyhog_scanner::hw_probe::probe_hardware();
-    configure_threads(threads, hw.physical_cores);
+    configure_threads(effective_config.threads, hw.physical_cores);
 
     let mut detectors = crate::orchestrator_config::load_detectors_or_embedded(detectors_path)?;
 

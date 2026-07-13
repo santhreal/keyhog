@@ -336,6 +336,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         style::info("INFO", &palette),
         scan_runtime.detector_count()
     );
+    eprintln!("{} workers", scan_runtime.worker_threads());
 
     let mounts = enumerate_mounts(args.include_network)?;
     eprintln!("💾 will scan {} mount(s):", mounts.len());

@@ -94,6 +94,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
             "\u{1F441}  keyhog watch (\u{2630} {} detectors compiled)",
             detector_count
         );
+        eprintln!("    workers: {}", scan_runtime.worker_threads());
         // One status line per watched root so the operator can confirm every
         // tree the watcher is actually monitoring, not just the first.
         for root in &watch_roots {

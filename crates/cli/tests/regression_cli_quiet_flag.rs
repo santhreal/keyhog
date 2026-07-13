@@ -530,3 +530,22 @@ fn quiet_watch_reports_real_line_number() {
         "line number must not collapse to 1; stdout=\n{stdout}"
     );
 }
+
+/// The shared watch/scan-system runtime must configure Rayon from the resolved
+/// TOML value, not the pre-merge subcommand argument. Watch has no `--threads`
+/// flag, so this subprocess proves the value reached the production pool.
+#[test]
+fn watch_uses_toml_worker_count() {
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(dir.path().join(".keyhog.toml"), "[scan]\nthreads = 2\n").expect("write config");
+
+    let (mut child, _out, err) = spawn_watch(dir.path(), false);
+    let ready = wait_until_contains(&err, &["workers: 2"], Duration::from_secs(20));
+    kill(&mut child);
+
+    assert!(
+        ready,
+        "watch must configure and surface the TOML worker count; stderr=\n{}",
+        snapshot(&err)
+    );
+}
