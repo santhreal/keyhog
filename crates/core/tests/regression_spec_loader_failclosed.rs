@@ -293,6 +293,44 @@ fn dir_with_single_valid_detector_loads_one_with_exact_fields() {
     assert_eq!(specs[0].severity, Severity::High);
 }
 
+#[test]
+fn invalid_detector_ids_fail_closed_with_file_and_field_context() {
+    for (case, id, expected_reason) in [
+        ("empty", "", "must not be empty"),
+        ("whitespace", "   ", "leading or trailing whitespace"),
+        ("leading", " demo", "leading or trailing whitespace"),
+        ("trailing", "demo ", "leading or trailing whitespace"),
+    ] {
+        let body = VALID_DETECTOR_TOML.replace("id = \"demo\"", &format!("id = {id:?}"));
+        let dir = tempfile::tempdir().expect("tempdir");
+        let filename = format!("invalid-{case}.toml");
+        write_toml(dir.path(), &filename, &body);
+
+        let error = load_detectors(dir.path()).expect_err("invalid identity must fail closed");
+        let detail = match error {
+            SpecError::DetectorCorpusRejected { detail, .. } => detail,
+            other => panic!("expected DetectorCorpusRejected, got {other:?}"),
+        };
+        assert!(
+            detail.contains(&filename)
+                && detail.contains("detector.id")
+                && detail.contains(expected_reason),
+            "identity error must name its file, field, and fix: {detail}"
+        );
+    }
+}
+
+#[test]
+fn valid_detector_id_is_preserved_exactly() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let body = VALID_DETECTOR_TOML.replace("id = \"demo\"", "id = \"vendor-api-v2\"");
+    write_toml(dir.path(), "vendor-api-v2.toml", &body);
+
+    let specs = load_detectors(dir.path()).expect("canonical detector id must load");
+    assert_eq!(specs.len(), 1);
+    assert_eq!(specs[0].id.as_bytes(), b"vendor-api-v2");
+}
+
 /// A directory whose only detector file is malformed rejects the WHOLE corpus
 /// with `DetectorCorpusRejected`, naming the offending file, not a silent skip
 /// that returns an empty (recall-zero) set.

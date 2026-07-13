@@ -57,6 +57,7 @@ pub enum QualityIssue {
 pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     let mut issues = Vec::new();
     let mut regex_cache = RegexAstCache::default();
+    validate_identity(spec, &mut issues);
     validate_patterns_present(spec, &mut issues);
     validate_regexes(spec, &mut issues, &mut regex_cache);
     validate_pattern_groups(spec, &mut issues, &mut regex_cache);
@@ -72,6 +73,19 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_credential_shape(spec, &mut issues);
     validate_detector_allowlists(spec, &mut issues);
     issues
+}
+
+fn validate_identity(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    if spec.id.is_empty() {
+        issues.push(QualityIssue::Error(
+            "detector.id must not be empty; assign a stable detector identifier".to_string(),
+        ));
+    } else if spec.id.trim() != spec.id {
+        issues.push(QualityIssue::Error(
+            "detector.id must not contain leading or trailing whitespace; remove the padding"
+                .to_string(),
+        ));
+    }
 }
 
 fn validate_decoded_hex_key_material_lengths(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {

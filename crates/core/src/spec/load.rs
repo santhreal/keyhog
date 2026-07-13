@@ -186,9 +186,10 @@ fn assemble_detector_load(
 
     for outcome in parsed {
         match outcome {
-            ReadDetectorOutcome::Loaded(spec) => {
+            ReadDetectorOutcome::Loaded { path, spec } => {
                 if should_reject_detector(
                     &spec,
+                    &path,
                     enforce_gate,
                     &mut load_state.gate_rejected,
                     &mut load_state.gate_errors,
@@ -299,8 +300,13 @@ fn log_load_summary(state: &DetectorLoadState) {
 }
 
 enum ReadDetectorOutcome {
-    Loaded(Box<DetectorSpec>),
-    Skipped { message: String },
+    Loaded {
+        path: PathBuf,
+        spec: Box<DetectorSpec>,
+    },
+    Skipped {
+        message: String,
+    },
 }
 
 fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
@@ -324,7 +330,10 @@ fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
     };
 
     match toml::from_str::<DetectorFile>(&contents) {
-        Ok(file) => ReadDetectorOutcome::Loaded(Box::new(file.detector)),
+        Ok(file) => ReadDetectorOutcome::Loaded {
+            path: path.to_path_buf(),
+            spec: Box::new(file.detector),
+        },
         Err(error) => {
             // Same rationale: a TOML parse error (line + column
             // included by the toml crate's Display impl) needs to
@@ -346,6 +355,7 @@ fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
 
 fn should_reject_detector(
     spec: &DetectorSpec,
+    path: &Path,
     enforce_gate: bool,
     gate_rejected: &mut usize,
     gate_errors: &mut Vec<String>,
@@ -360,7 +370,7 @@ fn should_reject_detector(
                 // authoring feedback (see the aggregate at debug! in
                 // `log_load_summary`), so keep it at debug! to stay out of
                 // user-facing command output; errors below stay loud (Law 10).
-                tracing::debug!("quality: {} - {}", spec.id, warning);
+                tracing::debug!(detector_path = %path.display(), "quality: {} - {}", spec.id, warning);
                 *total_warnings += 1;
             }
             QualityIssue::Error(error) => {
@@ -368,8 +378,13 @@ fn should_reject_detector(
                 // silently loaded. The warning names the detector and the
                 // issue so the author can fix it; when enforce_gate is true
                 // the detector is rejected below.
-                tracing::warn!("detector quality error: {}: {}", spec.id, error);
-                detector_errors.push(format!("{}: {}", spec.id, error));
+                tracing::warn!(
+                    detector_path = %path.display(),
+                    "detector quality error: {}: {}",
+                    spec.id,
+                    error
+                );
+                detector_errors.push(format!("{}: {}: {}", path.display(), spec.id, error));
                 has_errors = true;
             }
         }
