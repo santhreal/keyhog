@@ -887,11 +887,13 @@ pub struct ScanArgs {
     /// UUID-v4, bare-hex digest, base64 blob, dashed serial, or repetitive
     /// run (`kind: shape_suppressed`, `reason` names the gate), plus bounded
     /// static-recovery expressions rejected as malformed
-    /// (`kind: static_recovery_rejected`). Credentials are redacted (prefix
-    /// only), and recovery rejections contain no source bytes. Useful when
-    /// keyhog reports zero findings and you want to know whether a match was
-    /// made and silenced, recovery rejected an expression, or the candidate
-    /// never reached the engine.
+    /// (`kind: static_recovery_rejected`). Detail events are bounded; exact
+    /// aggregate rejection counts and `detail_events_dropped` remain visible
+    /// after the bound is reached. Credentials are redacted (prefix only), and
+    /// recovery rejections contain no source bytes. Useful when keyhog reports
+    /// zero findings and you want to know whether a match was made and
+    /// silenced, recovery rejected an expression, or the candidate never
+    /// reached the engine.
     #[arg(long)]
     pub dogfood: bool,
 

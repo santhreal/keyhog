@@ -7,6 +7,7 @@ use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::telemetry::{self, DogfoodEvent, ScanTelemetry};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 use std::collections::BTreeSet;
+use std::ops::Deref;
 use std::sync::Arc;
 
 const SECRET: &str = concat!("ghp_", "69121b4cdeeff121c88dffac1f9dbc2giIjE");
@@ -17,7 +18,21 @@ fn scanner() -> CompiledScanner {
         .with_config(ScannerConfig::thorough())
 }
 
-fn scan_with_trace(source: &str) -> (Vec<RawMatch>, Vec<DogfoodEvent>) {
+#[derive(Debug)]
+struct Trace {
+    events: Vec<DogfoodEvent>,
+    static_recovery_rejections: std::collections::BTreeMap<String, u64>,
+}
+
+impl Deref for Trace {
+    type Target = [DogfoodEvent];
+
+    fn deref(&self) -> &Self::Target {
+        &self.events
+    }
+}
+
+fn scan_with_trace(source: &str) -> (Vec<RawMatch>, Trace) {
     let trace = Arc::new(ScanTelemetry::new());
     trace.enable_dogfood();
     let chunk = Chunk {
@@ -35,7 +50,14 @@ fn scan_with_trace(source: &str) -> (Vec<RawMatch>, Vec<DogfoodEvent>) {
             .flatten()
             .collect()
     });
-    (matches, trace.drain().dogfood_events)
+    let snapshot = trace.drain();
+    (
+        matches,
+        Trace {
+            events: snapshot.dogfood_events,
+            static_recovery_rejections: snapshot.static_recovery_rejections,
+        },
+    )
 }
 
 fn rejection_reasons(events: &[DogfoodEvent]) -> BTreeSet<&str> {
@@ -156,7 +178,7 @@ fn unreferenced_malformed_bindings_do_not_emit_rejections() {
 }
 
 #[test]
-fn repeated_rejections_are_deduplicated_per_path_and_reason() {
+fn distinct_rejected_expressions_have_exact_counts_and_offsets() {
     let source = concat!(
         "const bad1 = [256]; const key1 = [1]; ",
         "String.fromCharCode(...bad1.map((b, i) => b ^ key1[i % key1.length])); ",
@@ -168,11 +190,27 @@ fn repeated_rejections_are_deduplicated_per_path_and_reason() {
         .iter()
         .filter(|event| matches!(event, DogfoodEvent::StaticRecoveryRejected { .. }))
         .count();
-    assert_eq!(static_events, 1, "duplicate events: {events:?}");
+    assert_eq!(static_events, 2, "expression details: {events:?}");
+    assert_eq!(
+        events
+            .static_recovery_rejections
+            .get("literal_byte_array_element"),
+        Some(&2)
+    );
     assert_eq!(
         rejection_reasons(&events),
         BTreeSet::from(["literal_byte_array_element"])
     );
+    let offsets: BTreeSet<usize> = events
+        .iter()
+        .filter_map(|event| match event {
+            DogfoodEvent::StaticRecoveryRejected {
+                expression_offset, ..
+            } => Some(*expression_offset),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(offsets.len(), 2, "expression offsets must be distinct");
 }
 
 #[test]

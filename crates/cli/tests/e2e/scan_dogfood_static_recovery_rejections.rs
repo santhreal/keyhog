@@ -40,6 +40,7 @@ fn dogfood_reports_typed_static_recovery_rejections_without_source_bytes() {
         Some(1),
         "typed rejection counter missing: {stderr}"
     );
+    assert_eq!(trace["dogfood"]["detail_events_dropped"].as_u64(), Some(0));
     let event = trace["dogfood"]["events"]
         .as_array()
         .expect("dogfood events array")
@@ -49,6 +50,7 @@ fn dogfood_reports_typed_static_recovery_rejections_without_source_bytes() {
     assert_eq!(event["kind"].as_str(), Some("static_recovery_rejected"));
     assert_eq!(event["decoder"].as_str(), Some("javascript-static"));
     assert_eq!(event["reason"].as_str(), Some("literal_byte_array_element"));
+    assert!(event["expression_offset"].as_u64().is_some());
     assert!(event.get("credential").is_none());
     assert!(event.get("source").is_none());
 }

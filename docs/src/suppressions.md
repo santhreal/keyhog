@@ -266,9 +266,15 @@ about, that is a bug worth reporting.
 
 ## Telemetry: what got suppressed
 
-`--dogfood` prints a single JSON object to **stderr** (separate from the
-findings report on stdout): `{"dogfood": {"example_suppressions_total": N,
-"events": [...]}}`. Capture stderr to inspect it:
+`--dogfood` prints one JSON object to **stderr**, separate from the findings
+report on stdout. It includes exact example and static-recovery aggregates, a
+bounded detail list, and `detail_events_dropped` when that list fills:
+
+```json
+{"dogfood":{"example_suppressions_total":0,"static_recovery_rejections":{},"detail_events_dropped":0,"events":[]}}
+```
+
+Capture stderr to inspect it:
 
 ```sh
 keyhog scan . --dogfood 2>&1 >/dev/null | jq '.dogfood.events[]'
@@ -278,10 +284,11 @@ keyhog scan . --dogfood 2>&1 >/dev/null | jq '.dogfood.events[]'
 the normal report (stdout). `--dogfood` is independent of `--format`, so the
 report format does not matter here.
 
-Each event carries the suppressor name (`test_fixture_suppression`,
-`pure_identifier_no_digit`, `vendored_minified_path`, …), the path, the redacted
-credential, and the rule that fired: the answer to "is the scanner being too
-aggressive on my code?".
+Suppression events carry the path, redacted credential, and rule that fired.
+`static_recovery_rejected` events carry the decoder, reason, path, and absolute
+expression byte offset. They never contain source or recovered bytes. Detail
+retention is capped at 1,024 events per scan. Aggregate rejection counts remain
+exact after the cap, and `detail_events_dropped` reports every omitted detail.
 
 ## Adding a suppression for an FP cluster
 

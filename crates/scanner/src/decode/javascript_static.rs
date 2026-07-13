@@ -73,11 +73,12 @@ impl Decoder for JavaScriptStaticDecoder {
         let mut decoded_chunks = Vec::new();
         let mut emitted = BTreeSet::new();
         let path = chunk.metadata.path.as_deref();
+        let base_offset = chunk.metadata.base_offset;
         if has_xor_expression {
-            recover_xor_plaintexts(&chunk.data, path, &mut emitted);
+            recover_xor_plaintexts(&chunk.data, path, base_offset, &mut emitted);
         }
         if has_aes_expression {
-            aes::recover_plaintexts(&chunk.data, path, &mut emitted);
+            aes::recover_plaintexts(&chunk.data, path, base_offset, &mut emitted);
         }
         for plaintext in emitted {
             push_decoded_text_chunk(&mut decoded_chunks, chunk, plaintext, self.name());
@@ -86,7 +87,12 @@ impl Decoder for JavaScriptStaticDecoder {
     }
 }
 
-fn recover_xor_plaintexts(source: &str, path: Option<&str>, emitted: &mut BTreeSet<String>) {
+fn recover_xor_plaintexts(
+    source: &str,
+    path: Option<&str>,
+    base_offset: usize,
+    emitted: &mut BTreeSet<String>,
+) {
     let bindings = collect_byte_array_bindings(source);
     if bindings.len() < 2 {
         return;
@@ -108,6 +114,8 @@ fn recover_xor_plaintexts(source: &str, path: Option<&str>, emitted: &mut BTreeS
         else {
             continue;
         };
+        let expression_offset =
+            base_offset.saturating_add(captures.get(0).map_or(0, |matched| matched.start()));
         if byte_parameter != byte_use || index_parameter != index_use || key_name != key_length_use
         {
             continue;
@@ -124,14 +132,14 @@ fn recover_xor_plaintexts(source: &str, path: Option<&str>, emitted: &mut BTreeS
         let data = match data {
             Ok(data) => data,
             Err(reason) => {
-                record_static_recovery_rejection(path, *reason);
+                record_static_recovery_rejection(path, expression_offset, *reason);
                 continue;
             }
         };
         let key = match key {
             Ok(key) => key,
             Err(reason) => {
-                record_static_recovery_rejection(path, *reason);
+                record_static_recovery_rejection(path, expression_offset, *reason);
                 continue;
             }
         };
@@ -147,7 +155,11 @@ fn recover_xor_plaintexts(source: &str, path: Option<&str>, emitted: &mut BTreeS
             Ok(plaintext) => plaintext,
             // LAW10: the typed dogfood event records this rejected expression without source bytes.
             Err(_) => {
-                record_static_recovery_rejection(path, StaticRecoveryRejection::XorPlaintextUtf8);
+                record_static_recovery_rejection(
+                    path,
+                    expression_offset,
+                    StaticRecoveryRejection::XorPlaintextUtf8,
+                );
                 continue;
             }
         };

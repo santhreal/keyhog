@@ -40,7 +40,12 @@ static AES_INLINE_BUFFER_RE: LazyLock<Regex> = LazyLock::new(|| {
     )
 });
 
-pub(super) fn recover_plaintexts(source: &str, path: Option<&str>, emitted: &mut BTreeSet<String>) {
+pub(super) fn recover_plaintexts(
+    source: &str,
+    path: Option<&str>,
+    base_offset: usize,
+    emitted: &mut BTreeSet<String>,
+) {
     let buffers = collect_buffer_bindings(source);
     for (expression_index, captures) in AES_BOUND_RE.captures_iter(source).enumerate() {
         if expression_index >= MAX_STATIC_EXPRESSIONS {
@@ -50,6 +55,8 @@ pub(super) fn recover_plaintexts(source: &str, path: Option<&str>, emitted: &mut
         let Some(decipher) = captures.get(1).map(|value| value.as_str()) else {
             continue;
         };
+        let expression_offset =
+            base_offset.saturating_add(captures.get(0).map_or(0, |matched| matched.start()));
         let Some(key_name) = captures.get(2).map(|value| value.as_str()) else {
             continue;
         };
@@ -83,14 +90,28 @@ pub(super) fn recover_plaintexts(source: &str, path: Option<&str>, emitted: &mut
         ) else {
             continue;
         };
-        let (Some(key), Some(iv), Some(ciphertext)) = (
-            resolve_binding(key, path),
-            resolve_binding(iv, path),
-            resolve_binding(ciphertext, path),
-        ) else {
-            continue;
+        let key = match resolve_binding(key) {
+            Ok(key) => key,
+            Err(reason) => {
+                record_static_recovery_rejection(path, expression_offset, reason);
+                continue;
+            }
         };
-        if let Some(plaintext) = decrypt_aes_256_cbc(key, iv, ciphertext, path) {
+        let iv = match resolve_binding(iv) {
+            Ok(iv) => iv,
+            Err(reason) => {
+                record_static_recovery_rejection(path, expression_offset, reason);
+                continue;
+            }
+        };
+        let ciphertext = match resolve_binding(ciphertext) {
+            Ok(ciphertext) => ciphertext,
+            Err(reason) => {
+                record_static_recovery_rejection(path, expression_offset, reason);
+                continue;
+            }
+        };
+        if let Some(plaintext) = decrypt_aes_256_cbc(key, iv, ciphertext, path, expression_offset) {
             emitted.insert(plaintext);
         }
     }
@@ -104,6 +125,8 @@ pub(super) fn recover_plaintexts(source: &str, path: Option<&str>, emitted: &mut
         let Some(decipher) = captures.get(1).map(|value| value.as_str()) else {
             continue;
         };
+        let expression_offset =
+            base_offset.saturating_add(captures.get(0).map_or(0, |matched| matched.start()));
         let Some(key_name) = captures.get(2).map(|value| value.as_str()) else {
             continue;
         };
@@ -134,11 +157,19 @@ pub(super) fn recover_plaintexts(source: &str, path: Option<&str>, emitted: &mut
         else {
             continue;
         };
-        let (Some(key_hex), Some(payload_base64)) = (
-            resolve_binding(key_hex, path),
-            resolve_binding(payload_base64, path),
-        ) else {
-            continue;
+        let key_hex = match resolve_binding(key_hex) {
+            Ok(key_hex) => key_hex,
+            Err(reason) => {
+                record_static_recovery_rejection(path, expression_offset, reason);
+                continue;
+            }
+        };
+        let payload_base64 = match resolve_binding(payload_base64) {
+            Ok(payload) => payload,
+            Err(reason) => {
+                record_static_recovery_rejection(path, expression_offset, reason);
+                continue;
+            }
         };
         let Some(iv_hex) = unquote_static_string(iv_hex) else {
             continue;
@@ -147,7 +178,11 @@ pub(super) fn recover_plaintexts(source: &str, path: Option<&str>, emitted: &mut
             Ok(key) => key,
             // LAW10: the typed dogfood event records the malformed literal without source bytes.
             Err(_) => {
-                record_static_recovery_rejection(path, StaticRecoveryRejection::BufferHex);
+                record_static_recovery_rejection(
+                    path,
+                    expression_offset,
+                    StaticRecoveryRejection::BufferHex,
+                );
                 continue;
             }
         };
@@ -155,18 +190,28 @@ pub(super) fn recover_plaintexts(source: &str, path: Option<&str>, emitted: &mut
             Ok(iv) => iv,
             // LAW10: the typed dogfood event records the malformed literal without source bytes.
             Err(_) => {
-                record_static_recovery_rejection(path, StaticRecoveryRejection::BufferHex);
+                record_static_recovery_rejection(
+                    path,
+                    expression_offset,
+                    StaticRecoveryRejection::BufferHex,
+                );
                 continue;
             }
         };
         let ciphertext = match crate::decode::base64_decode(payload_base64) {
             Ok(ciphertext) => ciphertext,
             Err(()) => {
-                record_static_recovery_rejection(path, StaticRecoveryRejection::BufferBase64);
+                record_static_recovery_rejection(
+                    path,
+                    expression_offset,
+                    StaticRecoveryRejection::BufferBase64,
+                );
                 continue;
             }
         };
-        if let Some(plaintext) = decrypt_aes_256_cbc(&key, &iv, &ciphertext, path) {
+        if let Some(plaintext) =
+            decrypt_aes_256_cbc(&key, &iv, &ciphertext, path, expression_offset)
+        {
             emitted.insert(plaintext);
         }
     }
@@ -249,16 +294,12 @@ fn collect_static_string_bindings(
     bindings
 }
 
-fn resolve_binding<'a, T>(
-    binding: &'a Result<T, StaticRecoveryRejection>,
-    path: Option<&str>,
-) -> Option<&'a T> {
+fn resolve_binding<T>(
+    binding: &Result<T, StaticRecoveryRejection>,
+) -> Result<&T, StaticRecoveryRejection> {
     match binding {
-        Ok(value) => Some(value),
-        Err(reason) => {
-            record_static_recovery_rejection(path, *reason);
-            None
-        }
+        Ok(value) => Ok(value),
+        Err(reason) => Err(*reason),
     }
 }
 
@@ -267,12 +308,17 @@ fn decrypt_aes_256_cbc(
     iv: &[u8],
     ciphertext: &[u8],
     path: Option<&str>,
+    expression_offset: usize,
 ) -> Option<String> {
     let key: &[u8; 32] = match key.try_into() {
         Ok(key) => key,
         // LAW10: the typed dogfood event records the invalid key shape without key bytes.
         Err(_) => {
-            record_static_recovery_rejection(path, StaticRecoveryRejection::AesKeyLength);
+            record_static_recovery_rejection(
+                path,
+                expression_offset,
+                StaticRecoveryRejection::AesKeyLength,
+            );
             return None;
         }
     };
@@ -280,12 +326,20 @@ fn decrypt_aes_256_cbc(
         Ok(iv) => iv,
         // LAW10: the typed dogfood event records the invalid IV shape without IV bytes.
         Err(_) => {
-            record_static_recovery_rejection(path, StaticRecoveryRejection::AesIvLength);
+            record_static_recovery_rejection(
+                path,
+                expression_offset,
+                StaticRecoveryRejection::AesIvLength,
+            );
             return None;
         }
     };
     if ciphertext.is_empty() {
-        record_static_recovery_rejection(path, StaticRecoveryRejection::AesCiphertextBlockLength);
+        record_static_recovery_rejection(
+            path,
+            expression_offset,
+            StaticRecoveryRejection::AesCiphertextBlockLength,
+        );
         return None;
     }
     if ciphertext.len() > MAX_BYTE_ARRAY_LEN {
@@ -293,7 +347,11 @@ fn decrypt_aes_256_cbc(
         return None;
     }
     if !ciphertext.len().is_multiple_of(16) {
-        record_static_recovery_rejection(path, StaticRecoveryRejection::AesCiphertextBlockLength);
+        record_static_recovery_rejection(
+            path,
+            expression_offset,
+            StaticRecoveryRejection::AesCiphertextBlockLength,
+        );
         return None;
     }
 
@@ -315,7 +373,11 @@ fn decrypt_aes_256_cbc(
             .iter()
             .all(|byte| usize::from(*byte) == padding)
     {
-        record_static_recovery_rejection(path, StaticRecoveryRejection::AesPadding);
+        record_static_recovery_rejection(
+            path,
+            expression_offset,
+            StaticRecoveryRejection::AesPadding,
+        );
         return None;
     }
     plaintext.truncate(plaintext.len() - padding);
@@ -323,7 +385,11 @@ fn decrypt_aes_256_cbc(
         Ok(plaintext) => Some(plaintext),
         // LAW10: the typed dogfood event records non-UTF8 output without plaintext bytes.
         Err(_) => {
-            record_static_recovery_rejection(path, StaticRecoveryRejection::AesPlaintextUtf8);
+            record_static_recovery_rejection(
+                path,
+                expression_offset,
+                StaticRecoveryRejection::AesPlaintextUtf8,
+            );
             None
         }
     }
