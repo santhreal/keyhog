@@ -7,6 +7,7 @@ import hashlib
 import os
 import pathlib
 import shutil
+import sys
 import tempfile
 import types
 from dataclasses import dataclass
@@ -39,6 +40,11 @@ def _sha256_handle(handle: BinaryIO) -> str:
 
 
 def _stable_posix_launch_path(descriptor: int) -> pathlib.Path:
+    if sys.platform == "darwin":
+        raise RuntimeError(
+            "immutable benchmark execution is not yet proven for Darwin: /dev/fd "
+            "does not establish stable current_exe and @executable_path semantics"
+        )
     for root in (pathlib.Path("/proc/self/fd"), pathlib.Path("/dev/fd")):
         candidate = root / str(descriptor)
         if candidate.exists():

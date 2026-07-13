@@ -603,6 +603,19 @@ def test_keyhog_binary_snapshot_reports_protected_install_remedy(
             pytest.fail("a failed snapshot must not execute")
 
 
+def test_keyhog_binary_snapshot_fails_closed_on_unproven_darwin_launch(
+    monkeypatch, tmp_path
+):
+    source = tmp_path / "keyhog"
+    source.write_bytes(b"executable bytes")
+    source.chmod(0o700)
+    monkeypatch.setattr(executable_snapshot.sys, "platform", "darwin")
+
+    with pytest.raises(RuntimeError, match="not yet proven for Darwin"):
+        with executable_snapshot.sibling_executable_snapshot(str(source)):
+            pytest.fail("Darwin must not emit unproven executable evidence")
+
+
 def test_keyhog_binary_snapshot_rejects_mutation_and_still_cleans_up(tmp_path):
     source = tmp_path / ("keyhog.exe" if os.name == "nt" else "keyhog")
     source.write_bytes(b"executable bytes")

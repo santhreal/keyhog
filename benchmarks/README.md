@@ -52,10 +52,12 @@ Run them explicitly with `make targets`.
   and records the SHA-256 of its exact detector TOML filenames and bytes. The
   gate rejects results whose digest does not match the workspace corpus.
 - **Executable provenance:** every warmup and measured KeyHog command runs the
-  same held-inode byte snapshot beside the resolved runtime. POSIX launches use
+  same held-inode byte snapshot beside the resolved runtime. Linux launches use
   the inherited descriptor, so path replacement cannot change executed bytes.
-  Results record its SHA-256 and version. The gate requires an exact match with
-  the current candidate binary.
+  Windows holds the snapshot handle through measurement. Darwin fails closed
+  until equivalent `current_exe` and loader semantics are proven. Results record
+  the snapshot SHA-256 and version. The gate requires an exact match with the
+  current candidate binary.
 - **Source freshness:** current-source evidence requires a clean tracked Git
   tree and an exact recorded HEAD commit. KeyHog validates the snapshot before
   scanning, and result-only gates check workspace identity before scoring.
