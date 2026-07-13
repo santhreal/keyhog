@@ -23,7 +23,8 @@ PATTERNS = [
     "EXECUTION_PLAN",
     "BACKLOG.md",
     "planning/vyre-acceleration",
-    "docs/legendary",
+    "docs/depth",
+    "docs/\x6cegendary",
     "GPU_DETECTION_REWRITE",
     "ALL_VECTORS_GAPS",
     "RECALL_GAP",
@@ -149,7 +150,8 @@ def collect() -> list[tuple[str, int, str, str]]:
 
 def self_test() -> int:
     samples = {
-        "see docs/legendary/20_detection.md": True,
+        "see docs/depth/20_detection.md": True,
+        "see docs/\x6cegendary/20_detection.md": True,
         "open GAP_FINDINGS.toml": True,
         "write coordination/rounds/R5.md": True,
         "see TESTING_PROGRAM.md section 3": True,

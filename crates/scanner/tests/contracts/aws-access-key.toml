@@ -3,7 +3,7 @@
 # CLAUDE.md "per-rule directory contract" instantiated as a single
 # TOML. The shared runner (crates/scanner/tests/contracts/runner.rs)
 # enforces every section. A detector without a green contract isn't
-# legendary: adding a new entry to the corpus or detector regex
+# ready to ship: adding a new entry to the corpus or detector regex
 # WITHOUT updating this file fails the runner.
 #
 # Section semantics:

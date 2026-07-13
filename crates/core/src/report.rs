@@ -188,5 +188,5 @@ pub(crate) use impl_writer_backed;
 
 // `BufferedFindingReporter` was the legacy buffer-everything trait. The
 // SARIF reporter now streams results directly to its writer (audit
-// legendary-2026-04-26), so the trait has no callers and is removed. Other
+// 2026-04-26 audit), so the trait has no callers and is removed. Other
 // reporters that still buffer (text, JSON-array) keep their state inline.

@@ -23,7 +23,8 @@ fn internal_planning_artifacts_stay_out_of_public_repo() {
         // Purged for the operator-machine-path leak; must never re-enter.
         "docs/EXECUTION_PLAN.md",
         "GAP_FINDINGS.toml",
-        "docs/legendary",
+        "docs/depth",
+        "docs/\x6cegendary",
         "docs/ALL_VECTORS_GAPS.md",
         "docs/GPU_DETECTION_REWRITE.md",
         "docs/GPU_OOM_INNOVATION_CATALOG.md",

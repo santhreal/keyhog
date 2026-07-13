@@ -45,14 +45,14 @@ signal. BetterLeaks calls the approach
 KeyHog uses the same broad BPE idea while keeping its own detector schema,
 thresholds, pipeline, and behavioral evidence.
 
-Terminology matters here: BetterLeaks' current source calls the predicate
-[`failsTokenEfficiency`](https://github.com/betterleaks/betterleaks/blob/0b4063d7990e0ab6366a5b4eb58789584af5f945/internal/exprruntime/bindings_filter.go#L111-L139),
-not “BPD.” It uses `cl100k_base`, a byte-length/token ratio, word-list checks,
-and short-value threshold branches. KeyHog names its related mechanism **BPE
-token efficiency**, measures UTF-8 bytes per token, and resolves the ceiling per
-detector. If “BPD” is being used informally to mean a bits/byte or bytes/token
-density, do not treat it as a third implemented score: Shannon entropy and BPE
-token efficiency are the two separate signals documented here.
+Terminology matters here: BetterLeaks' public documentation names the feature
+**Token Efficiency** and describes BPE tokenization as a natural-language false
+positive filter; it does not present “BPD” as a separate score. KeyHog names its
+related mechanism **BPE token efficiency**, uses `cl100k_base`, measures UTF-8
+bytes per token, and resolves the ceiling per detector. If “BPD” is being used
+informally to mean a bits/byte or bytes/token density, do not treat it as a
+third implemented score: Shannon entropy and BPE token efficiency are the two
+separate signals documented here.
 
 ## Detector-owned tuning: what each setting changes
 

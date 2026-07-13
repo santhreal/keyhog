@@ -185,8 +185,9 @@ The available per-detector tuning fields are:
     ceiling, or compose both gates when byte-distribution and language-likeness
     each reject different noise. It is not a candidate generator: the
     detector's regex or phase-2 assignment/entropy discovery path must first
-    produce a candidate. Betterleaks' current source calls this Token Efficiency,
-    not BPD; KeyHog uses `bpe_...` field names to keep that distinction explicit.
+    produce a candidate. BetterLeaks' public documentation calls this Token
+    Efficiency, not BPD; KeyHog uses `bpe_...` field names to keep that
+    distinction explicit.
 
 ### Candidate Lengths
 *   **`keyword_free_min_len`** (integer, optional): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Falls back to `KEYWORD_FREE_MIN_LEN` (20) if unset.

@@ -586,7 +586,7 @@ fn contracts_cover_at_least_one_detector() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "contracts/ directory has no TOMLs - the per-rule contract is the legendary bar; \
+        "contracts/ directory has no TOMLs - per-rule behavior contracts are required; \
          ship at least one"
     );
     // Also assert each loaded contract has *some* test material -

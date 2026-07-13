@@ -313,7 +313,7 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
             // Inflight dedup via DashMap: per-shard locks instead of one
             // global parking_lot::Mutex held across HashMap operations in an
             // async context (anti-pattern that stalled the tokio runtime
-            // under high concurrency - see legendary-2026-04-26).
+            // under high concurrency - see the 2026-04-26 audit).
             let key = (group.detector_id.clone(), group.credential.clone());
             if let Some((cached_result, cached_meta)) =
                 cache.get(&group.credential, &group.detector_id)

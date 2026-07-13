@@ -52,7 +52,7 @@ fn symlink_loops_are_not_followed() {
     let dir = tempfile::tempdir().unwrap();
     let nested = dir.path().join("nested");
     fs::create_dir_all(&nested).unwrap();
-    fs::write(nested.join("config.env"), "LEGENDARY_LOOP=present").unwrap();
+    fs::write(nested.join("config.env"), "DEPTH_LOOP=present").unwrap();
     symlink(dir.path(), nested.join("loop")).unwrap();
 
     let chunks: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
@@ -61,7 +61,7 @@ fn symlink_loops_are_not_followed() {
         .unwrap();
 
     assert_eq!(chunks.len(), 1);
-    assert!(chunks[0].data.contains("LEGENDARY_LOOP"));
+    assert!(chunks[0].data.contains("DEPTH_LOOP"));
 }
 
 #[test]

@@ -26,3 +26,7 @@
 
 - Keep work on the main branch.
 - Maintain alignment with `AGENTS.md` and global workspace instructions.
+
+## Documentation style
+
+- Follow the canonical documentation-style rules in `AGENTS.md`; do not duplicate them here.
