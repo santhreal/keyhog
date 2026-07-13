@@ -58,6 +58,11 @@ parity-checked, to the autoroute cache
 (`$XDG_CACHE_HOME/keyhog/autoroute.json` by default; override with
 `--autoroute-cache <path>` or `[system].autoroute_cache`).
 
+Calibration saves take an exclusive sibling-file lock across the complete
+read/merge/atomic-write cycle. Separate calibration processes therefore
+accumulate their config and workload decisions without a last-writer-wins
+loss; the operating system releases the lock if a writer exits or crashes.
+
 ## What a decision covers
 
 A decision is tied to your exact binary, host, detector corpus, **and resolved
@@ -71,7 +76,6 @@ calibration, even when they do not change which backend is fastest:
   instruction support, and—when the scanner can use a physical GPU—the GPU
   device, runtime backend, and driver/runtime identity. A missing or changed
   required field invalidates the evidence and requires recalibration.
-
 - Each scan preset (default, `--fast`, `--deep`, `--precision`) is calibrated
   separately.
 - Flags hashed into the scan config (for example `--threads` or

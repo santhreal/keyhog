@@ -6,6 +6,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Serialized autoroute cache read/merge/write cycles with the shared state-file
+  lock primitive, preventing concurrent calibration processes from silently
+  losing one another's config or workload decisions. Autoroute, the Merkle
+  index, and transactional GPU-artifact maintenance now use that same single
+  lock implementation.
 - Hardened self-update and repair release resolution with strict SemVer
   precedence, stable-only implicit selection, complete per-host signed-bundle
   admission, bounded streaming downloads, and explicit connection/request

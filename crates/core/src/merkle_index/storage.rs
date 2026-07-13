@@ -5,11 +5,8 @@
 //! persistence.
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsString;
-use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -338,7 +335,7 @@ impl MerkleIndex {
     }
 
     fn save_inner(&self, path: &Path, spec_hash: Option<&[u8; 32]>) -> std::io::Result<()> {
-        let _save_lock = CacheWriteLock::acquire(path)?;
+        let _save_lock = state_file::StateFileWriteLock::acquire(path)?;
         let mut merged = self.load_merge_base(path, spec_hash);
         let in_memory_paths = self.overlay_in_memory_entries(&mut merged);
         self.enforce_persisted_cap(&mut merged, &in_memory_paths);
@@ -507,44 +504,4 @@ fn flatten_shards(index: &MerkleIndex) -> HashMap<CacheKey, CacheEntry> {
 
 fn persist_atomically(path: &Path, serialized: &[u8]) -> std::io::Result<()> {
     state_file::write_atomically(path, MERKLE_TMP_PREFIX, serialized)
-}
-
-struct CacheWriteLock {
-    file: File,
-}
-
-impl CacheWriteLock {
-    fn acquire(cache_path: &Path) -> std::io::Result<Self> {
-        let lock_path = cache_lock_path(cache_path)?;
-        let parent = lock_path.parent().unwrap_or_else(|| Path::new(".")); // LAW10: deterministic cwd parent for bare lock filename; no recall impact
-        std::fs::create_dir_all(parent)?;
-        let file = OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .open(&lock_path)?;
-        file.lock_exclusive()?;
-        Ok(Self { file })
-    }
-}
-
-impl Drop for CacheWriteLock {
-    fn drop(&mut self) {
-        let _ = self.file.unlock(); // LAW10: File drop releases the OS lock; explicit unlock failure has no recall impact
-    }
-}
-
-fn cache_lock_path(cache_path: &Path) -> std::io::Result<PathBuf> {
-    let Some(base_name) = cache_path.file_name() else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!(
-                "merkle cache path '{}' has no file name",
-                cache_path.display()
-            ),
-        ));
-    };
-    let mut file_name = OsString::from(base_name);
-    file_name.push(".lock");
-    Ok(cache_path.with_file_name(file_name))
 }

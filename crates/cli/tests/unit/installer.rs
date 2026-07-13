@@ -291,7 +291,7 @@ fn gpu_literal_cache_transaction_commits_or_restores_exact_bytes() {
     .expect("stage transaction then roll back");
     assert_eq!(std::fs::read(&existing).unwrap(), b"old");
     assert!(!dir.path().join("added.bin").exists());
-    assert!(!dir.path().join(".keyhog-maintenance.lock").exists());
+    assert!(dir.path().join(".keyhog-maintenance.lock").exists());
 
     API.install_gpu_literal_files_in_dir(
         dir.path(),
@@ -304,7 +304,7 @@ fn gpu_literal_cache_transaction_commits_or_restores_exact_bytes() {
         std::fs::read(dir.path().join("added.bin")).unwrap(),
         b"added"
     );
-    assert!(!dir.path().join(".keyhog-maintenance.lock").exists());
+    assert!(dir.path().join(".keyhog-maintenance.lock").exists());
 }
 
 // ── Moved from src/installer.rs (#[cfg(test)] mod rename_away_tests) per the

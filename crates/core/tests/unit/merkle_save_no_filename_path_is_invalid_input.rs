@@ -1,4 +1,4 @@
-//! `save`/`save_with_spec` acquire a sibling `.lock` file via `cache_lock_path`,
+//! `save`/`save_with_spec` acquire a sibling `.lock` file via the shared state-file lock,
 //! which rejects a cache path with no final component (`/`, or a `..`-terminated
 //! path) with `ErrorKind::InvalidInput` — there is nowhere to place the lock.
 //! Crucially the check is the FIRST thing `save_inner` does, before any

@@ -93,11 +93,12 @@ fn persisted_cache_entries_are_sorted_by_cache_key() {
 #[test]
 fn save_lock_and_cap_source_contract() {
     let storage_source = keyhog_core::testing::read_crate_source("src/merkle_index/storage.rs");
+    let state_source = keyhog_core::testing::read_crate_source("src/state_file.rs");
 
-    assert!(storage_source.contains("use fs2::FileExt;"));
-    assert!(storage_source.contains("struct CacheWriteLock"));
-    assert!(storage_source.contains(".lock_exclusive()?"));
-    assert!(storage_source.contains("fn cache_lock_path("));
+    assert!(state_source.contains("use fs2::FileExt;"));
+    assert!(state_source.contains("pub struct StateFileWriteLock"));
+    assert!(state_source.contains("file.lock_exclusive()?"));
+    assert!(state_source.contains("pub fn state_file_lock_path("));
     assert!(storage_source.contains("fn cache_file_fingerprint("));
     assert!(storage_source.contains("cache_file_changed_since_load_or_save(path)"));
     assert!(storage_source.contains("remember_cache_file_fingerprint(path)"));
@@ -112,7 +113,7 @@ fn save_lock_and_cap_source_contract() {
         .next()
         .expect("save_inner boundary");
     let lock_pos = save_inner
-        .find("let _save_lock = CacheWriteLock::acquire(path)?;")
+        .find("let _save_lock = state_file::StateFileWriteLock::acquire(path)?;")
         .expect("save lock acquisition");
     let merge_pos = save_inner
         .find("let mut merged = self.load_merge_base(path, spec_hash);")

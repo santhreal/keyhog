@@ -737,6 +737,10 @@ pub(super) fn save_autoroute_cache(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    // Hold one cross-process lock across the entire read/merge/write cycle.
+    // Atomic rename prevents torn files but cannot prevent two calibration
+    // processes from reading the same base and losing one another's decisions.
+    let _write_lock = keyhog_core::StateFileWriteLock::acquire(path)?;
 
     // Merge, do not overwrite. Preserve every other resolved-config entry from a
     // compatible on-disk cache so presets accumulate, and UNION this config's

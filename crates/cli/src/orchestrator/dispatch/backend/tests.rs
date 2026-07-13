@@ -694,6 +694,65 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
 }
 
 #[test]
+fn concurrent_autoroute_calibrations_preserve_every_config() {
+    const WRITERS: usize = 16;
+    let dir = tempfile::tempdir().expect("autoroute cache tempdir");
+    let path = dir.path().join("autoroute.json");
+    let host = test_host(None);
+    let detector_digest = 0x1234_5678_9ABC_DEF0u64;
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(WRITERS));
+
+    let writers = (0..WRITERS)
+        .map(|index| {
+            let path = path.clone();
+            let host = host.clone();
+            let barrier = std::sync::Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                let mut decisions = HashMap::new();
+                decisions.insert(
+                    WorkloadKey {
+                        bytes_bucket: index as u8,
+                        ..test_workload_key()
+                    },
+                    cpu_decision(ScanBackend::SimdCpu),
+                );
+                barrier.wait();
+                save_autoroute_cache(
+                    &path,
+                    detector_digest,
+                    test_rules_digest(),
+                    0xCA11_0000 + index as u64,
+                    &host,
+                    &decisions,
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    for writer in writers {
+        writer
+            .join()
+            .expect("calibration writer thread")
+            .expect("calibration cache save");
+    }
+
+    let bytes = std::fs::read(&path).expect("merged autoroute cache");
+    let cache: AutorouteCache = serde_json::from_slice(&bytes).expect("valid autoroute cache JSON");
+    let configs = cache
+        .configs
+        .iter()
+        .map(|config| config.config_digest)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        configs.len(),
+        WRITERS,
+        "concurrent calibration processes must not lose one another's read/merge/write updates"
+    );
+    for index in 0..WRITERS {
+        assert!(configs.contains(&(0xCA11_0000 + index as u64)));
+    }
+}
+
+#[test]
 fn multi_config_cache_accumulates_buckets_across_sequential_saves() {
     // Keystone regression. Each install-time calibration probe runs as a
     // SEPARATE process persisting one workload bucket. With the old overwrite

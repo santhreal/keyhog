@@ -1,8 +1,56 @@
 //! Bounded reads for on-disk KeyHog state artifacts (calibration cache,
 //! merkle index, etc.).
 
+use fs2::FileExt;
+use std::ffi::OsString;
+use std::fs::{File, OpenOptions};
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Exclusive advisory lock held across a state file's read/merge/write cycle.
+///
+/// The sibling `<filename>.lock` file is stable; the operating-system lock is
+/// released automatically when this value is dropped, including after a panic
+/// or process exit. Keeping one implementation here prevents state caches from
+/// independently reintroducing lost-update races.
+pub struct StateFileWriteLock {
+    file: File,
+}
+
+impl StateFileWriteLock {
+    /// Acquire the canonical sibling lock for `state_path`.
+    pub fn acquire(state_path: &Path) -> std::io::Result<Self> {
+        let lock_path = state_file_lock_path(state_path)?;
+        let parent = lock_path.parent().unwrap_or_else(|| Path::new("."));
+        std::fs::create_dir_all(parent)?;
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(lock_path)?;
+        file.lock_exclusive()?;
+        Ok(Self { file })
+    }
+}
+
+impl Drop for StateFileWriteLock {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.file);
+    }
+}
+
+/// Canonical sibling lock filename for a KeyHog state artifact.
+pub fn state_file_lock_path(state_path: &Path) -> std::io::Result<PathBuf> {
+    let Some(base_name) = state_path.file_name() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("state path '{}' has no file name", state_path.display()),
+        ));
+    };
+    let mut file_name = OsString::from(base_name);
+    file_name.push(".lock");
+    Ok(state_path.with_file_name(file_name))
+}
 
 /// Maximum on-disk calibration cache (`calibration.json`) size.
 ///

@@ -194,7 +194,7 @@ pub(crate) fn parse_gpu_literal_sidecar(
 
 pub(crate) struct GpuArtifactInstallTransaction {
     cache_dir: PathBuf,
-    lock_path: PathBuf,
+    _write_lock: keyhog_core::StateFileWriteLock,
     installed: Vec<PathBuf>,
     backups: Vec<(PathBuf, PathBuf)>,
     committed: bool,
@@ -232,10 +232,6 @@ impl Drop for GpuArtifactInstallTransaction {
                 }
             }
         }
-        super::remove_installer_artifact_best_effort(
-            &self.lock_path,
-            "GPU literal artifact install lock cleanup",
-        );
     }
 }
 
@@ -257,11 +253,16 @@ pub(crate) fn install_gpu_literal_files_in_dir(
             cache_dir.display()
         )
     })?;
-    let lock_path = cache_dir.join(".keyhog-maintenance.lock");
-    acquire_cache_lock(&lock_path)?;
+    let lock_target = cache_dir.join(".keyhog-maintenance");
+    let write_lock = keyhog_core::StateFileWriteLock::acquire(&lock_target).with_context(|| {
+        format!(
+            "acquire GPU literal cache maintenance lock beside {}",
+            lock_target.display()
+        )
+    })?;
     let mut transaction = GpuArtifactInstallTransaction {
         cache_dir: cache_dir.to_path_buf(),
-        lock_path,
+        _write_lock: write_lock,
         installed: Vec::new(),
         backups: Vec::new(),
         committed: false,
@@ -312,45 +313,4 @@ pub(crate) fn install_gpu_literal_files_in_dir(
     }
 
     Ok(transaction)
-}
-
-fn acquire_cache_lock(lock_path: &Path) -> Result<()> {
-    use std::fs::OpenOptions;
-
-    for _ in 0..2 {
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(lock_path)
-        {
-            Ok(mut lock) => {
-                writeln!(lock, "{}", std::process::id()).context("write GPU cache lock PID")?;
-                lock.sync_all().context("sync GPU cache lock")?;
-                return Ok(());
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                let owner = std::fs::read_to_string(lock_path)
-                    .ok()
-                    .and_then(|value| value.trim().parse::<u32>().ok());
-                if owner.is_some_and(super::process_is_running) {
-                    anyhow::bail!(
-                        "another keyhog maintenance process (PID {}) owns GPU cache lock {}",
-                        owner.unwrap_or_default(),
-                        lock_path.display()
-                    );
-                }
-                std::fs::remove_file(lock_path).with_context(|| {
-                    format!("remove stale GPU cache lock {}", lock_path.display())
-                })?;
-            }
-            Err(error) => {
-                return Err(error)
-                    .with_context(|| format!("acquire GPU cache lock {}", lock_path.display()));
-            }
-        }
-    }
-    Err(anyhow!(
-        "could not acquire GPU cache lock {}",
-        lock_path.display()
-    ))
 }
