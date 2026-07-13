@@ -6,8 +6,8 @@ is one source of truth per fact. Read this first; then jump to the cited module.
 
 - New contributor? Read [Repository layout](#repository-layout) →
   [The pipeline](#the-pipeline-bytes--finding) → the "[where do I find X?](#where-do-i-find-x)" table.
-- Touching detection? The detector format is data, not code; see
-  [`detectors/`](#detectors--data-not-code).
+- Touching detection? The detector format is data, not code; see the
+  [detector reference](./detectors.md).
 - Touching the scan engine? Its own header doc is the deepest map:
   [`crates/scanner/src/engine/mod.rs`](../../crates/scanner/src/engine/mod.rs)
   ("# The one flow" + "# Where each method lives").
@@ -22,7 +22,7 @@ everything else is data, tooling, docs, or eval harness.
 | Dir | Role |
 |-----|------|
 | `crates/` | Rust workspace: runtime code only (five crates; see [below](#the-crates-and-their-layering)). |
-| `detectors/` | Embedded detector TOMLs (data, not code). One file = one secret type; drop a file to add a detector without rewriting detection logic. The generated catalog owns the current count. See [detectors](#detectors--data-not-code). |
+| `detectors/` | Embedded detector TOMLs (data, not code). One file = one secret type; drop a file to add a detector without rewriting detection logic. The generated catalog owns the current count. See the [detector reference](./detectors.md). |
 | `rules/` | Tier-B data (e.g. `aws-canary-accounts.toml`); same drop-in model as `detectors/`. |
 | `ml/` | Python pipeline for embedded `weights.bin`: harvest → blend → train → gate (`retrain_loop.sh`). Trains; `crates/scanner` serves. |
 | `benchmarks/` | Eval harness (`bench/`): corpora, scanner adapters, scorer, regression/differential `gate`, README leaderboard. |

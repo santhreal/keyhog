@@ -7,7 +7,9 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
+import urllib.parse
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 DOCS = REPO / "docs" / "src"
@@ -22,6 +24,87 @@ STALE_PATTERNS = [
     ("retired routing output", re.compile(r"routing matrix:")),
     ("duplicate website path", re.compile(r"(?:^|[(`\s])/?site/")),
 ]
+
+MARKDOWN_LINK = re.compile(
+    r"!?\[[^\]]*\]\((?:<([^>]+)>|([^\s)]+))(?:\s+['\"][^)]*['\"])?\)"
+)
+HEADING = re.compile(r"^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$")
+EXPLICIT_ANCHOR = re.compile(
+    r"<(?:a\s+(?:[^>]*\s)?(?:id|name)|[^>]+\s+id)=[\"']([^\"']+)[\"']", re.I
+)
+
+
+def prose_lines(text: str):
+    """Yield non-fenced Markdown lines with their one-based line numbers."""
+    fence: str | None = None
+    for lineno, line in enumerate(text.splitlines(), 1):
+        stripped = line.lstrip()
+        marker = stripped[:3]
+        if marker in {"```", "~~~"}:
+            if fence is None:
+                fence = marker
+            elif marker == fence:
+                fence = None
+            continue
+        if fence is None:
+            yield lineno, line
+
+
+def heading_slug(heading: str) -> str:
+    """Match mdBook's lowercase, punctuation-stripping heading id shape."""
+    text = re.sub(r"<[^>]+>", "", heading)
+    text = re.sub(r"!?\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = text.replace("`", "").replace("*", "")
+    return "".join(
+        char.lower() if char.isalnum() or char in "_-" else "-" if char.isspace() else ""
+        for char in text
+    )
+
+
+def page_anchors(path: pathlib.Path) -> set[str]:
+    anchors: set[str] = set()
+    occurrences: dict[str, int] = {}
+    for _, line in prose_lines(path.read_text(errors="replace")):
+        if match := HEADING.match(line):
+            base = heading_slug(match.group(1))
+            occurrence = occurrences.get(base, 0)
+            occurrences[base] = occurrence + 1
+            anchors.add(base if occurrence == 0 else f"{base}-{occurrence}")
+        anchors.update(EXPLICIT_ANCHOR.findall(line))
+    return anchors
+
+
+def navigation_issues(paths: list[pathlib.Path]) -> list[str]:
+    """Validate local Markdown targets and mdBook heading fragments."""
+    issues: list[str] = []
+    anchor_cache: dict[pathlib.Path, set[str]] = {}
+    for source in paths:
+        if source.suffix.lower() != ".md":
+            continue
+        for lineno, line in prose_lines(source.read_text(errors="replace")):
+            for match in MARKDOWN_LINK.finditer(line):
+                raw = match.group(1) or match.group(2)
+                if not raw or raw.startswith(("http://", "https://", "mailto:", "data:")):
+                    continue
+                parsed = urllib.parse.urlsplit(raw)
+                if parsed.scheme or parsed.netloc:
+                    continue
+                target = source if not parsed.path else (
+                    source.parent / urllib.parse.unquote(parsed.path)
+                ).resolve()
+                rel = source.relative_to(REPO).as_posix()
+                if not target.exists():
+                    issues.append(f"{rel}:{lineno}: broken local link target {raw}")
+                    continue
+                fragment = urllib.parse.unquote(parsed.fragment)
+                if fragment and target.suffix.lower() == ".md":
+                    anchors = anchor_cache.setdefault(target, page_anchors(target))
+                    if fragment not in anchors:
+                        issues.append(
+                            f"{rel}:{lineno}: missing anchor #{fragment} in "
+                            f"{target.relative_to(REPO).as_posix()}"
+                        )
+    return issues
 
 
 def workspace_version() -> str:
@@ -87,6 +170,7 @@ def truth_issues() -> list[str]:
     ).stdout.splitlines()
     for path in tracked:
         issues.append(f"{path}: duplicate/generated documentation must not be tracked")
+    issues.extend(navigation_issues(canonical_paths()))
     return issues
 
 
@@ -94,12 +178,36 @@ def self_test() -> int:
     expected = workspace_version()
     count = detector_count()
     bad = f"site/config.html keyhog v0.0.0 with {count + 1} detectors picks the fastest backend"
-    detected = (
+    stale_detected = (
         bool(STALE_PATTERNS[-1][1].search(bad))
         and bool(STALE_PATTERNS[4][1].search(bad))
         and "v0.0.0" != expected
         and count + 1 != count
     )
+    slug_detected = all(
+        (
+            heading_slug("The pipeline: bytes → finding")
+            == "the-pipeline-bytes--finding",
+            heading_slug("Stage 4 - post-process") == "stage-4---post-process",
+            heading_slug("Combining with `--verify`") == "combining-with---verify",
+        )
+    )
+    with tempfile.TemporaryDirectory(prefix=".docs-truth-selftest-", dir=REPO) as raw:
+        root = pathlib.Path(raw)
+        source = root / "index.md"
+        target = root / "target.md"
+        source.write_text(
+            "[valid](target.md#present) [missing](absent.md) "
+            "[bad anchor](target.md#absent)\n"
+        )
+        target.write_text("# Present\n")
+        navigation = navigation_issues([source, target])
+    navigation_detected = (
+        len(navigation) == 2
+        and any("broken local link target absent.md" in issue for issue in navigation)
+        and any("missing anchor #absent" in issue for issue in navigation)
+    )
+    detected = stale_detected and slug_detected and navigation_detected
     print("self-test PASS" if detected else "self-test FAIL", file=sys.stderr)
     return 0 if detected else 1
 

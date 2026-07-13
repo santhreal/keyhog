@@ -38,7 +38,7 @@ labels. The machine-readable `--format json` value is the lowercase
 `VerificationResult` variant instead: `"live"`, `"dead"`,
 `"revoked"`, `"rate_limited"`, `"unverifiable"`, `"skipped"`, or an
 `{"error": "..."}` object; never the `verified-live`/`verified-dead`
-strings. See [Output formats](./output-formats.md#combining-with-verify).
+strings. See [Output formats](./output-formats.md#combining-with---verify).
 
 ## What "live" means
 

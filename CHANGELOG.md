@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Extended the canonical documentation truth gate to reject broken relative
+  targets and mdBook anchors, and repaired five navigation links the normal
+  book build had accepted despite pointing nowhere.
 - Corrected backend inspection UX so the diagnostic hardware heuristic matrix
   is never presented as the proof-backed `scan --backend auto` decision, and
   aligned the CLI reference with actual root options, detector maintenance,

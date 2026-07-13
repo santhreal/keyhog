@@ -9,7 +9,7 @@ reported finding. KeyHog has **two kinds**:
 - **Always-on shape/path heuristics**: built-in precision filters that drop
   shapes that are universally not credentials. You cannot turn these off; they
   are summarised at the bottom and detailed in
-  [How detection works](./detection.md#stage-4-post-process).
+  [How detection works](./detection.md#stage-4---post-process).
 
 > **There is no `.keyhog.toml [suppress]` table.** Older docs showed a
 > `[suppress] hashes = […] / paths = […] / detectors = […]` block. It never
@@ -215,7 +215,7 @@ List-independent heuristics about credential shape that are universally true.
 
 For generic-only / entropy-only / weakly-anchored detectors, additional shape
 gates apply (pure-identifier, scheme-URI, UUID, base64-blob, …). See
-[How detection works](./detection.md#stage-4-post-process) for the full list and
+[How detection works](./detection.md#stage-4---post-process) for the full list and
 rationale.
 
 ### Path-based
