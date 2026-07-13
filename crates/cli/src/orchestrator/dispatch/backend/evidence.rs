@@ -34,7 +34,7 @@ pub(super) fn gpu_cold_warm_route_evidence(
     gpu_timing: &BackendTimingEvidence,
 ) -> Option<(u128, BackendTimingEvidence, u128)> {
     let (&cold_ns, warm_trials) = gpu_timing.trials_ns.split_first()?;
-    if warm_trials.len() < AUTOROUTE_GPU_WARM_TRIALS {
+    if warm_trials.len() != AUTOROUTE_GPU_WARM_TRIALS {
         return None;
     }
     let warm_timing = BackendTimingEvidence::from_trial_ns(warm_trials.to_vec())?;

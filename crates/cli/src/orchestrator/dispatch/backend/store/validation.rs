@@ -107,8 +107,12 @@ pub(super) fn validate_decision_route_evidence(
         )
         .into());
     }
-    if decision.trials < AUTOROUTE_CALIBRATION_TRIALS {
-        return Err("cache was produced with insufficient calibration trials".into());
+    if decision.trials != AUTOROUTE_CALIBRATION_TRIALS {
+        return Err(format!(
+            "cache decision records {} calibration trials; expected exactly {AUTOROUTE_CALIBRATION_TRIALS}",
+            decision.trials
+        )
+        .into());
     }
     if decision.calibrated_at_unix_ms == 0 {
         return Err("cache decision is missing a calibration timestamp".into());

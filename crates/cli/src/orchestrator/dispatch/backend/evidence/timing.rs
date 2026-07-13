@@ -50,8 +50,8 @@ impl BackendTimingEvidence {
         TimingConfidenceInterval::from_trials(&self.trials_ns)
     }
 
-    pub(crate) fn is_valid_for_trials(&self, min_trials: usize) -> bool {
-        self.trials_ns.len() >= min_trials && self.trials_ns.iter().all(|&trial| trial > 0)
+    pub(crate) fn is_valid_for_trials(&self, expected_trials: usize) -> bool {
+        self.trials_ns.len() == expected_trials && self.trials_ns.iter().all(|&trial| trial > 0)
     }
 }
 

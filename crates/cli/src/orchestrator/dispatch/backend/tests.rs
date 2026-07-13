@@ -2341,6 +2341,100 @@ fn autoroute_cache_rejects_zero_duration_timing_evidence() {
 }
 
 #[test]
+fn autoroute_cache_rejects_noncanonical_trial_count_on_load_and_inspection() {
+    let dir = tempfile::TempDir::new().expect("autoroute trial-count tempdir");
+    let path = dir.path().join("autoroute.json");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+    let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
+    bad.trials = AUTOROUTE_CALIBRATION_TRIALS + 1;
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key,
+        bad,
+        "expected exactly 7",
+    );
+
+    let inspection = inspect_autoroute_cache(Some(&path));
+    assert!(
+        inspection
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("expected exactly 7")),
+        "inspection must reject a noncanonical decision count: {inspection:?}"
+    );
+    let error = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+        .expect_err("load must reject a noncanonical decision count")
+        .to_string();
+    assert!(error.contains("expected exactly 7"), "load error: {error}");
+}
+
+#[test]
+fn autoroute_cache_rejects_extra_backend_trials_on_load_and_inspection() {
+    let dir = tempfile::TempDir::new().expect("autoroute extra-trials tempdir");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+    let base = AutorouteDecision::new(
+        ScanBackend::SimdCpu,
+        8 * 1024 * 1024,
+        1,
+        12,
+        Some(20),
+        Some(30),
+    );
+    let mut simd = base.clone();
+    simd.simd_timing.trials_ns.push(10_000_000);
+    let mut cpu = base.clone();
+    cpu.cpu_timing
+        .as_mut()
+        .expect("CPU evidence")
+        .trials_ns
+        .push(20_000_000);
+    let mut gpu = base;
+    gpu.gpu_timing
+        .as_mut()
+        .expect("GPU evidence")
+        .trials_ns
+        .push(30_000_000);
+
+    for (label, bad, expected_error) in [
+        ("simd", simd, "invalid SIMD timing evidence"),
+        ("cpu", cpu, "invalid CPU timing evidence"),
+        ("gpu", gpu, "invalid GPU timing evidence"),
+    ] {
+        let path = dir.path().join(format!("{label}.json"));
+        write_tampered_decision_cache(
+            &path,
+            digest,
+            config_digest,
+            &host,
+            key,
+            bad,
+            expected_error,
+        );
+        let inspection = inspect_autoroute_cache(Some(&path));
+        assert!(
+            inspection
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains(expected_error)),
+            "inspection must reject extra {label} trials: {inspection:?}"
+        );
+        let error = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+            .expect_err("load must reject extra backend trials")
+            .to_string();
+        assert!(error.contains(expected_error), "load error: {error}");
+    }
+}
+
+#[test]
 fn autoroute_cache_rejects_non_primary_timing_summary_fields() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_fabricated_timing_summary_{}.json",
