@@ -258,8 +258,8 @@ fn entropy_suppressed_when_named_on_same_line() {
 
 #[test]
 fn entropy_suppressed_on_adjacent_line_within_window() {
-    // Named detector fires on line 5; entropy on line 6 (distance = 1, within
-    // ADJACENT_LINE_DISTANCE=2) → entropy must be suppressed.
+    // The same source span is attributed to adjacent lines by two detector
+    // paths. Overlapping occurrence evidence makes this one duplicate.
     let named = make_match_at(
         "stripe-key",
         "sk_test_FAKEKEYVALUE000000000000",
@@ -275,11 +275,21 @@ fn entropy_suppressed_on_adjacent_line_within_window() {
         6,
     );
     let resolved = resolve_matches(vec![named, entropy]);
-    // entropy should be suppressed since it's within the adjacency window
     assert!(
         resolved.iter().all(|m| m.detector_id.as_ref() != "entropy"),
-        "entropy should be suppressed near named detector"
+        "overlapping entropy evidence should be suppressed near the named detector"
     );
+}
+
+#[test]
+fn repeated_credential_on_adjacent_lines_remains_two_occurrences() {
+    let credential = "sk_test_REPEATED000000000000000000";
+    let named = make_match_at_offset("stripe-key", credential, Some(0.8), "a.py", 5, 100);
+    let entropy = make_match_at_offset("entropy", credential, Some(0.95), "a.py", 6, 200);
+
+    let resolved = resolve_matches(vec![named, entropy]);
+
+    assert_eq!(resolved.len(), 2);
 }
 
 #[test]
@@ -305,6 +315,98 @@ fn entropy_on_distant_line_not_suppressed() {
         resolved.iter().any(|m| m.detector_id.as_ref() == "entropy"),
         "entropy on distant line with different credential should survive"
     );
+}
+
+#[test]
+fn unrelated_entropy_on_named_line_is_not_suppressed() {
+    let named = make_match_at_offset(
+        "stripe-key",
+        "sk_test_FAKEVALUE0000000000000000",
+        Some(0.8),
+        "a.py",
+        5,
+        0,
+    );
+    let entropy = make_match_at_offset(
+        "entropy",
+        "unrelated-high-entropy-value-4QaxS6lotTs9Li9",
+        Some(0.95),
+        "a.py",
+        5,
+        128,
+    );
+
+    let resolved = resolve_matches(vec![named, entropy]);
+
+    assert_eq!(resolved.len(), 2);
+    assert!(resolved
+        .iter()
+        .any(|matched| matched.detector_id.as_ref() == "entropy"));
+}
+
+#[test]
+fn nested_entropy_duplicate_on_named_line_is_suppressed() {
+    let url = "postgres://user:leFamejio5QaxS6lotTs9Li9@example.org/db";
+    let password = "leFamejio5QaxS6lotTs9Li9";
+    let named = make_match_at_offset(
+        "postgresql-connection-string",
+        url,
+        Some(0.8),
+        "a.py",
+        5,
+        64,
+    );
+    let entropy = make_match_at_offset(
+        "entropy",
+        password,
+        Some(0.95),
+        "a.py",
+        5,
+        64 + url.find(password).unwrap(),
+    );
+
+    let resolved = resolve_matches(vec![named, entropy]);
+
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(
+        resolved[0].detector_id.as_ref(),
+        "postgresql-connection-string"
+    );
+}
+
+#[test]
+fn touching_named_and_entropy_spans_both_survive() {
+    let named_credential = "sk_test_TOUCHING00000000000000000";
+    let named = make_match_at_offset("stripe-key", named_credential, Some(0.8), "a.py", 5, 64);
+    let entropy = make_match_at_offset(
+        "entropy",
+        "unrelated-high-entropy-value",
+        Some(0.95),
+        "a.py",
+        5,
+        64 + named_credential.len(),
+    );
+
+    let resolved = resolve_matches(vec![named, entropy]);
+
+    assert_eq!(resolved.len(), 2);
+}
+
+#[test]
+fn empty_named_span_does_not_suppress_enclosing_entropy() {
+    let named = make_match_at_offset("stripe-key", "", Some(0.8), "a.py", 5, 80);
+    let entropy = make_match_at_offset(
+        "entropy",
+        "unrelated-high-entropy-value",
+        Some(0.95),
+        "a.py",
+        5,
+        64,
+    );
+
+    let resolved = resolve_matches(vec![named, entropy]);
+
+    assert_eq!(resolved.len(), 2);
 }
 
 #[test]
@@ -364,7 +466,7 @@ fn private_key_block_retains_parent_over_decoded_child_match() {
         1,
         block_offset,
     );
-    let child = make_match_at_offset(
+    let mut child = make_match_at_offset(
         "google-api-key",
         child_credential,
         Some(0.95),
@@ -372,6 +474,7 @@ fn private_key_block_retains_parent_over_decoded_child_match() {
         1,
         child_offset,
     );
+    child.location.source = Arc::from("test/base64/caesar");
 
     let resolved = resolve_matches(vec![child, parent]);
 
@@ -471,6 +574,200 @@ fn different_files_not_cross_suppressed() {
     let entropy = make_match_at("entropy", "AKIAFAKE00000000000X", Some(0.9), "file2.env", 1);
     let resolved = resolve_matches(vec![named, entropy]);
     // Both should survive because they're in different files
+    assert_eq!(resolved.len(), 2);
+}
+
+#[test]
+fn same_coordinates_from_different_source_backends_do_not_compete() {
+    let mut filesystem = make_match_at_offset(
+        "stripe-key",
+        "sk_test_FILESYSTEM000000000000000",
+        Some(0.95),
+        "shared.env",
+        1,
+        16,
+    );
+    filesystem.location.source = Arc::from("filesystem");
+    let mut git = make_match_at_offset(
+        "npm-token",
+        "npm_GIT0000000000000000000000000000000000",
+        Some(0.40),
+        "shared.env",
+        1,
+        16,
+    );
+    git.location.source = Arc::from("git");
+
+    let forward = resolve_matches(vec![filesystem.clone(), git.clone()]);
+    let reverse = resolve_matches(vec![git, filesystem]);
+
+    assert_eq!(forward, reverse);
+    assert_eq!(forward.len(), 2);
+}
+
+#[test]
+fn slash_bearing_source_namespaces_do_not_share_an_implicit_root() {
+    let mut first = make_match_at_offset(
+        "stripe-key",
+        "sk_test_PROVIDERA00000000000000000",
+        Some(0.95),
+        "shared.env",
+        1,
+        16,
+    );
+    first.location.source = Arc::from("provider/a");
+    let mut second = make_match_at_offset(
+        "npm-token",
+        "npm_PROVIDERB000000000000000000000000000",
+        Some(0.40),
+        "shared.env",
+        1,
+        16,
+    );
+    second.location.source = Arc::from("provider/b");
+
+    let resolved = resolve_matches(vec![first, second]);
+
+    assert_eq!(resolved.len(), 2);
+}
+
+#[test]
+fn git_tag_and_unreachable_namespaces_do_not_compete() {
+    let mut tag = make_match_at_offset(
+        "stripe-key",
+        "sk_test_TAG000000000000000000000000",
+        Some(0.95),
+        ".git/message",
+        1,
+        16,
+    );
+    tag.location.source = Arc::from("git/tag");
+    let mut unreachable = make_match_at_offset(
+        "npm-token",
+        "npm_UNREACHABLE000000000000000000000000",
+        Some(0.40),
+        ".git/message",
+        1,
+        16,
+    );
+    unreachable.location.source = Arc::from("git/unreachable");
+
+    let resolved = resolve_matches(vec![tag, unreachable]);
+
+    assert_eq!(resolved.len(), 2);
+}
+
+#[test]
+fn entropy_overlap_from_different_source_backend_is_not_suppressed() {
+    let mut named = make_match_at_offset(
+        "stripe-key",
+        "sk_test_SHARED0000000000000000000",
+        Some(0.95),
+        "shared.env",
+        1,
+        16,
+    );
+    named.location.source = Arc::from("filesystem");
+    let mut entropy = make_match_at_offset(
+        "entropy",
+        "sk_test_SHARED0000000000000000000",
+        Some(0.40),
+        "shared.env",
+        1,
+        16,
+    );
+    entropy.location.source = Arc::from("git");
+
+    let resolved = resolve_matches(vec![named, entropy]);
+
+    assert_eq!(resolved.len(), 2);
+}
+
+#[test]
+fn same_coordinates_from_different_commits_do_not_compete() {
+    let mut earlier = make_match_at_offset(
+        "stripe-key",
+        "sk_test_EARLIER0000000000000000000",
+        Some(0.95),
+        "shared.env",
+        1,
+        16,
+    );
+    earlier.location.source = Arc::from("git");
+    earlier.location.commit = Some(Arc::from("commit-a"));
+    let mut later = make_match_at_offset(
+        "entropy",
+        "different-high-entropy-value-from-later-commit",
+        Some(0.40),
+        "shared.env",
+        1,
+        16,
+    );
+    later.location.source = Arc::from("git");
+    later.location.commit = Some(Arc::from("commit-b"));
+
+    let forward = resolve_matches(vec![earlier.clone(), later.clone()]);
+    let reverse = resolve_matches(vec![later, earlier]);
+
+    assert_eq!(forward, reverse);
+    assert_eq!(forward.len(), 2);
+}
+
+#[test]
+fn private_key_span_does_not_suppress_match_from_another_commit() {
+    let private_key =
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\nopaque-bytes\n-----END PGP PRIVATE KEY BLOCK-----";
+    let mut parent =
+        make_match_at_offset("private-key", private_key, Some(0.8), "shared.pem", 1, 100);
+    parent.location.source = Arc::from("git");
+    parent.location.commit = Some(Arc::from("commit-a"));
+    let mut child = make_match_at_offset(
+        "google-api-key",
+        "AIzaJBPI2n5UC64198Pt4qMGLqLHKvwsPonI4Lb",
+        Some(0.95),
+        "shared.pem",
+        1,
+        120,
+    );
+    child.location.source = Arc::from("git");
+    child.location.commit = Some(Arc::from("commit-b"));
+
+    let resolved = resolve_matches(vec![parent, child]);
+
+    assert_eq!(resolved.len(), 2);
+}
+
+#[test]
+fn private_key_span_does_not_suppress_match_from_another_source_backend() {
+    let private_key =
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\nopaque-bytes\n-----END PGP PRIVATE KEY BLOCK-----";
+    let mut parent =
+        make_match_at_offset("private-key", private_key, Some(0.8), "shared.pem", 1, 100);
+    parent.location.source = Arc::from("filesystem");
+    let mut child = make_match_at_offset(
+        "google-api-key",
+        "AIzaJBPI2n5UC64198Pt4qMGLqLHKvwsPonI4Lb",
+        Some(0.95),
+        "shared.pem",
+        1,
+        120,
+    );
+    child.location.source = Arc::from("git");
+
+    let resolved = resolve_matches(vec![parent, child]);
+
+    assert_eq!(resolved.len(), 2);
+}
+
+#[test]
+fn private_key_span_does_not_suppress_empty_child_capture() {
+    let private_key =
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\nopaque-bytes\n-----END PGP PRIVATE KEY BLOCK-----";
+    let parent = make_match_at_offset("private-key", private_key, Some(0.8), "shared.pem", 1, 100);
+    let child = make_match_at_offset("google-api-key", "", Some(0.95), "shared.pem", 1, 120);
+
+    let resolved = resolve_matches(vec![parent, child]);
+
     assert_eq!(resolved.len(), 2);
 }
 
