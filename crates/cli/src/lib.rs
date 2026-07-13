@@ -149,22 +149,8 @@ pub(crate) fn reset_scan_runtime_state() {
 pub(crate) fn write_banner<W: Write>(
     w: &mut W,
     colors: bool,
-    ascii: bool,
     detector_count: usize,
 ) -> std::io::Result<()> {
-    if ascii {
-        let banner = r"
-    ⠀⣠⣶⣿⣿⣿⣿⣶⣄⠀
-    ⠀⣿⣿⠉⠛⠛⠉⣿⣿⠀
-    ⠀⢿⣿⣶⣿⣿⣶⣿⡿⠀
-    ⠀⠀⠙⣿⣦⣴⣿⠋⠀⠀
-    ⠀⠀⠀⢸⣿⣿⡇⠀⠀⠀
-    ⠀⠀⠀⣼⣿⣿⣧⠀⠀⠀
-";
-        let palette = style::terminal_palette(colors, false);
-        writeln!(w, "{}{}{}", palette.yellow, banner, palette.reset)?;
-    }
-
     let palette = style::terminal_palette(colors, false);
     if colors {
         writeln!(w, "    {}K E Y H O G{}", palette.bold, palette.reset)?;

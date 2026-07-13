@@ -52,7 +52,6 @@ fn allowed_env_read(rel: &str, name: &str) -> bool {
                 | "crates/cli/src/style.rs"
                 | "crates/cli/src/orchestrator/run.rs"
         ),
-        "TERM" | "COLORTERM" => rel == "crates/core/src/report/banner.rs",
         "XDG_RUNTIME_DIR" => rel == "crates/cli/src/daemon/server.rs",
         "AWS_ACCESS_KEY_ID"
         | "AWS_SECRET_ACCESS_KEY"
@@ -112,14 +111,6 @@ fn env_policy_allowlist_is_path_scoped() {
     assert!(!allowed_env_read(
         "crates/sources/src/http.rs",
         "AWS_ACCESS_KEY_ID"
-    ));
-    assert!(allowed_env_read(
-        "crates/core/src/report/banner.rs",
-        "COLORTERM"
-    ));
-    assert!(!allowed_env_read(
-        "crates/cli/src/orchestrator/run.rs",
-        "COLORTERM"
     ));
 }
 

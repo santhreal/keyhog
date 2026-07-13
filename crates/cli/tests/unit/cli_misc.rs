@@ -7,6 +7,25 @@ fn startup_summary_includes_detector_count() {
     assert!(!API.format_gpu_summary().is_empty());
 }
 
+#[test]
+fn startup_banner_is_the_wordmark_without_icon_art() {
+    let plain = API.write_banner(false, 922).expect("plain banner");
+    let expected = format!(
+        "    K E Y H O G\n    ───────────\n    v{} · secret scanner · 922 detectors\n    by santh\n\n",
+        env!("CARGO_PKG_VERSION")
+    );
+    assert_eq!(plain, expected.as_bytes());
+
+    let colored = API.write_banner(true, 922).expect("colored banner");
+    let colored = String::from_utf8(colored).expect("banner is UTF-8");
+    assert!(colored.contains("K E Y H O G"));
+    assert!(colored.contains("922 detectors"));
+    assert!(
+        colored.contains("\u{1b}["),
+        "colored banner must emit ANSI styling"
+    );
+}
+
 // Both the verify (`verify_findings`) and non-verify (`skipped_findings_from_deduped`)
 // skip paths render a finding's credential through this one owner, so `--show-secrets`
 // can never yield plaintext on one path and redacted on the other.

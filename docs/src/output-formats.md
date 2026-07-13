@@ -154,7 +154,7 @@ keyhog scan . --format json
 The `text` format does print a footer summary (counts + any skip
 summary) to stdout alongside the findings; if you want findings only,
 choose `json`/`jsonl`/`sarif`/`csv`/`github-annotations`/`gitlab-sast` instead. The
-animated banner is TTY-gated and never reaches a pipe or a file. Exit code
+interactive banner is TTY-gated and never reaches a pipe or a file. Exit code
 semantics are unchanged by the format choice (see
 [exit codes](./reference/exit-codes.md)).
 

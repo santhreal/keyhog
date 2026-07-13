@@ -14,8 +14,6 @@ pub(crate) mod text;
 #[path = "report/sarif_uri.rs"]
 pub(crate) mod sarif_uri;
 
-pub(crate) mod banner;
-
 use std::io::Write;
 
 use crate::VerifiedFinding;

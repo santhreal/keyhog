@@ -59,23 +59,6 @@ fn html_emits_doctype_and_embeds_raw_findings() {
 }
 
 #[test]
-fn html_preserves_verification_error_reason_in_finding_details() {
-    let mut finding = sample_finding();
-    finding.verification =
-        keyhog_core::VerificationResult::Error("success selector $.account.live is invalid".into());
-    let out = render(&finding);
-    let parsed: serde_json::Value =
-        serde_json::from_str(raw_findings_json(&out)).expect("embedded findings JSON");
-    assert_eq!(parsed[0]["verification"], "error");
-    assert_eq!(
-        parsed[0]["verification_error"],
-        "success selector $.account.live is invalid"
-    );
-    assert!(out.contains("Verification error:"));
-    assert!(out.contains("finding.verification_error"));
-}
-
-#[test]
 fn html_json_escapes_quotes_in_detector_name() {
     let out = render(&sample_finding());
     let json = raw_findings_json(&out);

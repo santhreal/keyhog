@@ -596,6 +596,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/core/src/json_selector.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/core/src/merkle_index.rs"
 error = true
 adversarial = true
@@ -622,11 +627,6 @@ adversarial = true
 
 [[module]]
 path = "crates/core/src/report.rs"
-error = true
-adversarial = true
-
-[[module]]
-path = "crates/core/src/report/banner.rs"
 error = true
 adversarial = true
 

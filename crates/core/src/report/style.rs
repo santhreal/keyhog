@@ -1,7 +1,5 @@
 //! Status styling helpers for human-facing reports.
 
-use std::io::Write;
-
 use crate::{Severity, VerificationResult};
 
 const BOLD: &str = "1";
@@ -22,20 +20,6 @@ pub(crate) fn paint(text: &str, ansi: &str, color: bool) -> String {
     } else {
         text.to_string()
     }
-}
-
-pub(crate) fn write_rgb_fg<W: Write>(
-    writer: &mut W,
-    ch: char,
-    r: u8,
-    g: u8,
-    b: u8,
-) -> std::io::Result<()> {
-    write!(writer, "\x1b[38;2;{r};{g};{b}m{ch}\x1b[0m")
-}
-
-pub(crate) fn write_ansi256_fg<W: Write>(writer: &mut W, ch: char, idx: u8) -> std::io::Result<()> {
-    write!(writer, "\x1b[38;5;{idx}m{ch}\x1b[0m")
 }
 
 pub(crate) fn highlight(text: &str, color: bool) -> String {

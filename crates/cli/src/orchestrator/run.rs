@@ -147,12 +147,9 @@ impl ScanOrchestrator {
             "scan backend policy configured"
         );
         if show_progress {
-            if let Err(error) = crate::write_banner(
-                &mut std::io::stderr(),
-                progress_ansi,
-                true,
-                self.detectors.len(),
-            ) {
+            if let Err(error) =
+                crate::write_banner(&mut std::io::stderr(), progress_ansi, self.detectors.len())
+            {
                 tracing::debug!(%error, "banner write error");
             }
             let gpu_label = scanner_status.gpu_backend.unwrap_or("none"); // LAW10: absent name/label => display default; reporting-only, recall-safe

@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::allowlist::Allowlist;
@@ -152,13 +151,6 @@ pub trait CoreTestApi {
         severity: Severity,
     ) -> Option<String>;
     fn parse_remediation_file_for_test(&self, raw: &str) -> Result<(), String>;
-    fn report_banner<W: Write>(
-        &self,
-        writer: &mut W,
-        color: bool,
-        art: bool,
-        detector_count: usize,
-    ) -> std::io::Result<()>;
     fn file_path_to_sarif_uri(&self, path: &str) -> String;
     fn sarif_relative_to(&self, path: &str, root: &Path) -> Option<String>;
     fn apply_code_scanning_props(
@@ -458,16 +450,6 @@ impl CoreTestApi for TestApi {
 
     fn parse_remediation_file_for_test(&self, raw: &str) -> Result<(), String> {
         crate::auto_fix::validate_remediation_file_for_test(raw)
-    }
-
-    fn report_banner<W: Write>(
-        &self,
-        writer: &mut W,
-        color: bool,
-        art: bool,
-        detector_count: usize,
-    ) -> std::io::Result<()> {
-        crate::report::banner::print_banner(writer, color, art, detector_count)
     }
 
     fn file_path_to_sarif_uri(&self, path: &str) -> String {

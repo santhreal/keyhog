@@ -173,23 +173,10 @@ header {
   border-bottom: 1px solid var(--border);
 }
 
-/* Brand lockup: the real braille-hog mark (as in the CLI banner / README) +
-   the keyhog wordmark. No emoji, no split-colour wordmark. */
+/* One wordmark across terminal, README, and HTML reports. */
 .logo-lockup {
   display: flex;
   align-items: center;
-  gap: 14px;
-}
-.logo-hog {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  line-height: 1.04;
-  letter-spacing: 0;
-  color: var(--accent-primary);
-  white-space: pre;
-  text-shadow: 0 0 10px rgba(255, 214, 10, 0.45);
-  user-select: none;
 }
 .logo-word {
   display: flex;
@@ -778,10 +765,6 @@ thead th.sortable:hover { color: var(--text); }
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0); }
   50%      { box-shadow: 0 0 11px 0 rgba(255, 77, 77, 0.5); }
 }
-@keyframes kh-logo-glow {
-  0%, 100% { filter: drop-shadow(0 0 5px var(--accent-soft)); }
-  50%      { filter: drop-shadow(0 0 13px var(--accent-line)); }
-}
 @keyframes kh-scanline {
   0%   { transform: translateY(-2px); opacity: 0.85; }
   92%  { opacity: 0.85; }
@@ -822,7 +805,6 @@ thead th.sortable:hover { color: var(--text); }
     animation: kh-expand-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
-  .logo-hog { animation: kh-logo-glow 3.6s ease-in-out infinite; }
   .dot-live { animation: kh-pulse-live 1.8s ease-in-out infinite; }
   .badge-critical { animation: kh-pulse-critical 2.4s ease-in-out infinite; }
 
