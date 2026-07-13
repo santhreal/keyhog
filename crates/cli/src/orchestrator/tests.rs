@@ -4,8 +4,8 @@
 //! parent module's private constants via `use super::*`.
 
 use super::{
-    daemon_requires_gpu, LOW_RAM_HOST_THRESHOLD_MB, LOW_RAM_MAX_DECODE_BYTES,
-    LOW_RAM_MAX_MATCHES_PER_CHUNK,
+    daemon_requires_gpu, setup_default_scan_runtime, LOW_RAM_HOST_THRESHOLD_MB,
+    LOW_RAM_MAX_DECODE_BYTES, LOW_RAM_MAX_MATCHES_PER_CHUNK,
 };
 
 /// Pin the OOM-guard thresholds and the 256-KiB decode-window derivation, so
@@ -44,4 +44,49 @@ fn daemon_gpu_warmup_follows_the_selected_routing_mode() {
     assert!(daemon_requires_gpu(Some(ScanBackend::Gpu), false).expect("gpu policy"));
     assert!(!daemon_requires_gpu(Some(ScanBackend::SimdCpu), true).expect("simd policy"));
     assert!(!daemon_requires_gpu(Some(ScanBackend::CpuFallback), true).expect("cpu policy"));
+}
+
+#[cfg(feature = "simd")]
+#[test]
+fn persistent_runtime_uses_configured_autoroute_cache_path() {
+    use keyhog_core::{Chunk, ChunkMetadata};
+
+    let root = tempfile::tempdir().expect("tempdir");
+    let cache_path = root.path().join("custom-autoroute.json");
+    std::fs::write(
+        root.path().join(".keyhog.toml"),
+        format!(
+            "[system]\nautoroute_cache = {:?}\n",
+            cache_path.display().to_string()
+        ),
+    )
+    .expect("write config");
+
+    let runtime = setup_default_scan_runtime(
+        std::path::Path::new("detectors"),
+        None,
+        None,
+        "keyhog watch",
+        false,
+        Some(root.path()),
+    )
+    .expect("build persistent runtime");
+    let chunk = Chunk {
+        data: "plain text".into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            size_bytes: Some(10),
+            ..ChunkMetadata::default()
+        },
+    };
+    let error = runtime
+        .scan_chunk(&chunk)
+        .expect_err("an uncalibrated multi-backend runtime must fail closed");
+
+    assert!(
+        error
+            .to_string()
+            .contains(&cache_path.display().to_string()),
+        "routing error must name the configured cache path; got {error}"
+    );
 }

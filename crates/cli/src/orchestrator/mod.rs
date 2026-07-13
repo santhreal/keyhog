@@ -96,17 +96,30 @@ pub(crate) fn cached_autoroute_router_for_default_config(
     scanner: &CompiledScanner,
     detectors: &[DetectorSpec],
 ) -> CachedBackendRouter {
-    let hw_caps = keyhog_scanner::hw_probe::probe_hardware().clone();
-    let pattern_count = scanner.runtime_status().pattern_count;
     let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(detectors));
     let resolved = resolved_scan_config_for_scanner(keyhog_scanner::ScannerConfig::default());
-    let config_digest = autoroute_config_digest(&resolved);
+    cached_autoroute_router(
+        scanner,
+        rules_digest,
+        autoroute_config_digest(&resolved),
+        crate::autoroute_cache_path::resolve_autoroute_cache_path(None),
+    )
+}
+
+fn cached_autoroute_router(
+    scanner: &CompiledScanner,
+    rules_digest: String,
+    config_digest: u64,
+    autoroute_cache_path: Result<Option<std::path::PathBuf>, String>,
+) -> CachedBackendRouter {
+    let hw_caps = keyhog_scanner::hw_probe::probe_hardware().clone();
+    let pattern_count = scanner.runtime_status().pattern_count;
     CachedBackendRouter::new(
         hw_caps,
         pattern_count,
         rules_digest,
         config_digest,
-        crate::autoroute_cache_path::resolve_autoroute_cache_path(None),
+        autoroute_cache_path,
         scanner,
     )
 }
@@ -182,6 +195,14 @@ pub(crate) struct DefaultScanRuntime {
 impl DefaultScanRuntime {
     pub(crate) fn new(scanner: Arc<CompiledScanner>, detectors: &[DetectorSpec]) -> Self {
         let router = cached_autoroute_router_for_default_config(&scanner, detectors);
+        Self::new_with_router(scanner, detectors, router)
+    }
+
+    fn new_with_router(
+        scanner: Arc<CompiledScanner>,
+        detectors: &[DetectorSpec],
+        router: CachedBackendRouter,
+    ) -> Self {
         Self {
             scanner,
             router,
@@ -406,6 +427,11 @@ pub(crate) fn setup_default_scan_runtime(
         }
     }
 
+    // Performance identity describes the active corpus before per-invocation
+    // confidence floors are composed. The effective config digest below owns
+    // those overrides, keeping detector identity stable across scan profiles.
+    let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+
     // Compose detector TOML defaults and operator overrides BEFORE compilation.
     // `watch` and `scan-system` use this runtime; compiling first would let the
     // engine irreversibly drop a finding under the old floor before the shared
@@ -439,7 +465,13 @@ pub(crate) fn setup_default_scan_runtime(
             .with_tuning_config(effective_config.scanner_tuning.clone()),
     );
 
-    let mut scan_runtime = DefaultScanRuntime::new(scanner, &detectors);
+    let router = cached_autoroute_router(
+        &scanner,
+        rules_digest,
+        autoroute_config_digest(&effective_config),
+        Ok(effective_config.autoroute_cache_path.clone()),
+    );
+    let mut scan_runtime = DefaultScanRuntime::new_with_router(scanner, &detectors, router);
 
     if let Some(root) = filter_root {
         let signatures: std::collections::HashSet<Arc<str>> = detectors
