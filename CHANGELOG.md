@@ -6,6 +6,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Refined autoroute byte, chunk-count, and maximum-file classification from
+  paired powers of two to one power-of-two band per key, bumped the cache schema
+  to v22 to prevent old numeric-key aliasing, and expanded the Rust, Unix, and
+  PowerShell calibration ladders across every band from 512 B through 32 MiB.
+  The measured 8 MiB GPU/Hyperscan crossover now has its own exact band.
 - Bumped the daemon wire handshake to v3 and bound scan connections to package,
   Git build, and canonical detector-rules identity. Same-version daemons started
   with another detector corpus now fail closed; diagnostic status/stop remain

@@ -47,10 +47,10 @@ const DECODE_HEAVY_SEED: &str = "apiVersion:v1 kind:Secret data token:QUtJQUlPU0
 enum Workload {
     /// Pipe `bytes` of plain content over stdin (`bytes == 0` is the empty case).
     Stdin { label: &'static str, bytes: usize },
-    /// A single file of `kib` KiB; `decode_heavy` selects the base64-dense block.
+    /// A single file of exactly `bytes`; `decode_heavy` selects the base64-dense block.
     File {
         label: &'static str,
-        kib: usize,
+        bytes: usize,
         decode_heavy: bool,
     },
     /// A directory of `files` files, each `kib` KiB of plain content.
@@ -86,53 +86,93 @@ fn core_workload_plan() -> Vec<Workload> {
             bytes: 64 * 1024,
         },
         Workload::File {
+            label: "512 B workload",
+            bytes: 512,
+            decode_heavy: false,
+        },
+        Workload::File {
             label: "1 KiB workload",
-            kib: 1,
+            bytes: 1024,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "2 KiB workload",
+            bytes: 2 * 1024,
             decode_heavy: false,
         },
         Workload::File {
             label: "4 KiB workload",
-            kib: 4,
+            bytes: 4 * 1024,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "8 KiB workload",
+            bytes: 8 * 1024,
             decode_heavy: false,
         },
         Workload::File {
             label: "16 KiB workload",
-            kib: 16,
+            bytes: 16 * 1024,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "32 KiB workload",
+            bytes: 32 * 1024,
             decode_heavy: false,
         },
         Workload::File {
             label: "64 KiB workload",
-            kib: 64,
+            bytes: 64 * 1024,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "128 KiB workload",
+            bytes: 128 * 1024,
             decode_heavy: false,
         },
         Workload::File {
             label: "256 KiB workload",
-            kib: 256,
+            bytes: 256 * 1024,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "512 KiB workload",
+            bytes: 512 * 1024,
             decode_heavy: false,
         },
         Workload::File {
             label: "1 MiB workload",
-            kib: 1024,
+            bytes: 1024 * 1024,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "2 MiB workload",
+            bytes: 2 * 1024 * 1024,
             decode_heavy: false,
         },
         Workload::File {
             label: "4 MiB workload",
-            kib: 4 * 1024,
+            bytes: 4 * 1024 * 1024,
             decode_heavy: false,
         },
         Workload::File {
             label: "8 MiB workload",
-            kib: 8 * 1024,
+            bytes: 8 * 1024 * 1024,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "16 MiB workload",
+            bytes: 16 * 1024 * 1024,
             decode_heavy: false,
         },
         Workload::File {
             label: "32 MiB workload",
-            kib: 32 * 1024,
+            bytes: 32 * 1024 * 1024,
             decode_heavy: false,
         },
         Workload::File {
             label: "decode-heavy 256 KiB workload",
-            kib: 256,
+            bytes: 256 * 1024,
             decode_heavy: true,
         },
         Workload::Tree {
@@ -378,7 +418,9 @@ fn materialize_probe(
             Ok(Some(file))
         }
         Workload::File {
-            kib, decode_heavy, ..
+            bytes,
+            decode_heavy,
+            ..
         } => {
             let path = workspace.join(format!("file-{idx}.txt"));
             let seed = if *decode_heavy {
@@ -386,7 +428,7 @@ fn materialize_probe(
             } else {
                 PLAIN_SEED
             };
-            std::fs::write(&path, calibration_bytes(seed, kib * 1024))
+            std::fs::write(&path, calibration_bytes(seed, *bytes))
                 .with_context(|| format!("writing file probe {}", path.display()))?;
             cmd.arg(&path);
             Ok(None)

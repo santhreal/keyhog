@@ -76,7 +76,7 @@ pub(super) fn workload_key(
 }
 
 pub(super) fn autoroute_stable_bucket(value: u64) -> u8 {
-    log2_bucket(value) / 2
+    log2_bucket(value)
 }
 
 pub(super) fn autoroute_stable_density_bucket(raw_bucket: u8) -> u8 {

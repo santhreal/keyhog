@@ -15,12 +15,12 @@
 //! field (works on every platform's cache-dir convention).
 //!
 //! Pinned facts (read from source, asserted exactly):
-//!   * `AUTOROUTE_CACHE_VERSION = 21` (backend.rs:58) — the schema version an
+//!   * `AUTOROUTE_CACHE_VERSION = 22` (backend.rs) — the schema version an
 //!     inspected valid cache reports and an incompatible one is rejected against.
 //!   * `AUTOROUTE_CACHE_FILE_BYTES = 8 * 1024 * 1024` (store.rs:16) — the read
 //!     cap; a file one byte over is reported "unreadable".
-//!   * `calibrate-autoroute` sweeps 15 workloads × 4 scan policies (default +
-//!     `--fast`/`--deep`/`--precision`) = 60 probes, and each policy resolves a
+//!   * `calibrate-autoroute` sweeps 23 workloads × 4 scan policies (default +
+//!     `--fast`/`--deep`/`--precision`) = 92 probes, and each policy resolves a
 //!     DISTINCT config digest, so the primed cache holds exactly 4 configs.
 
 use std::path::{Path, PathBuf};
@@ -28,7 +28,7 @@ use std::process::Command;
 use tempfile::TempDir;
 
 /// Schema version this build's cache reports / requires (backend.rs:58).
-const EXPECTED_CACHE_VERSION: u64 = 21;
+const EXPECTED_CACHE_VERSION: u64 = 22;
 /// Read cap for the cache file (store.rs:16).
 const CACHE_FILE_CAP_BYTES: usize = 8 * 1024 * 1024;
 
@@ -429,10 +429,10 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
         String::from_utf8_lossy(&calibrate.stderr)
     );
     let cal_stdout = String::from_utf8_lossy(&calibrate.stdout);
-    // 15 workloads × 4 policies = 60 probes across 4 scan policies.
+    // 23 workloads × 4 policies = 92 probes across 4 scan policies.
     assert!(
-        cal_stdout.contains("60 workload buckets"),
-        "summary reports the exact 60-probe sweep; stdout={cal_stdout}"
+        cal_stdout.contains("92 core workload probes"),
+        "summary reports the exact 92-probe sweep; stdout={cal_stdout}"
     );
     assert!(
         cal_stdout.contains("4 scan policies"),

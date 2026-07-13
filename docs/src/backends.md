@@ -42,8 +42,9 @@ before both the reporting-floor decision and serialized output.
 ## Why size alone is insufficient
 
 Two inputs with the same byte count can have different winners. Autoroute also
-keys evidence by stable logarithmic ranges for bytes, chunk count, largest
-source size, and decode density, plus detector/pattern shape, source family,
+keys evidence by one-power-of-two logarithmic ranges for bytes, chunk count,
+and largest source size, plus a jitter-resistant decode-density range,
+detector/pattern shape, source family,
 resolved configuration, build features, and host identity. It does not
 interpolate from a neighbouring range key; a measured key nevertheless covers
 the values grouped into that range.

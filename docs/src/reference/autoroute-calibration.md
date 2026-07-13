@@ -46,8 +46,8 @@ keyhog calibrate-autoroute
 ```
 
 This drives the core stdin + filesystem workload ladder across every scan
-preset. Plain single-file probes cover every stable size bucket from 512 bytes
-through 32 MiB (represented by 1/4/16/64/256 KiB and 1/4/8/32 MiB files), plus
+preset. Plain single-file probes cover every power-of-two size band from 512 bytes
+through 32 MiB (512 B, then every power of two from 1 KiB through 32 MiB), plus
 decode-heavy and many-file shapes. It does **not**
 cover the git / docker / web source probes; those need environment orchestration
 (a repo, a running daemon, a served URL) that only the installer's
@@ -98,7 +98,8 @@ this identity; pair it with `keyhog backend --autoroute --json` to verify that a
 setting change in `ScanConfig` produced a new `config_digest` row.
 
 Every lookup is exact at the complete workload-key level. Size, chunk-count,
-maximum-file, and decode-density dimensions use stable logarithmic ranges; the
+maximum-file dimensions use one-power-of-two logarithmic ranges; decode density
+uses paired logarithmic ranges to resist content-sample jitter. The
 decision proves the measured representative for that full range key, not every
 individual byte length inside it. A neighbouring range is not evidence for this
 one. Uncalibrated keys fail closed; KeyHog never interpolates or clamps them to

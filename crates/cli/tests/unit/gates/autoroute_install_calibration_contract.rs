@@ -217,7 +217,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("source_class_hash")
             && backend.contains("StableHasher::new(\"autoroute-source-class\")")
             && backend.contains("StableHasher::new(\"autoroute-correctness-digest\")")
-            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 21")
+            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 22")
             && backend.contains("AUTOROUTE_CALIBRATION_TRIALS: usize = 7")
             && backend.contains("trials"),
         "autoroute cache must persist binary identity, build feature identity, exact host identity, and measured calibration evidence"
@@ -356,8 +356,9 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
                 "Modes:  (default) install/upgrade   --repair   --diagnose   --calibrate   --uninstall"
             )
             && install_sh.contains("Autoroute calibration")
-            && install_sh.contains("kib_sizes=\"4 64\"")
-            && install_sh.contains("mib_sizes=\"1 8 32\"")
+            && install_sh.contains("byte_sizes=\"512\"")
+            && install_sh.contains("kib_sizes=\"1 2 4 8 16 32 64 128 256 512\"")
+            && install_sh.contains("mib_sizes=\"1 2 4 8 16 32\"")
             && install_sh.contains("many_file_counts=\"4 16 32\"")
             && install_sh.contains("elapsed_ms_since")
             && install_sh.contains("PASS %s (%sms)")
@@ -430,8 +431,9 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && install_ps1.contains("TotalMilliseconds")
             && install_ps1.contains("PASS {0} ({1}ms)")
             && install_ps1.contains("FAIL {0} ({1}ms)")
-            && install_ps1.contains("@(4, 64)")
-            && install_ps1.contains("@(1, 8, 32)")
+            && install_ps1.contains("New-CalibrationProbeBytes -Path $probe512 -Bytes 512")
+            && install_ps1.contains("@(1, 2, 4, 8, 16, 32, 64, 128, 256, 512)")
+            && install_ps1.contains("@(1, 2, 4, 8, 16, 32)")
             && install_ps1.contains("@(4, 16, 32)")
             && install_ps1.contains("empty stdin workload")
             && install_ps1.contains("stdin 64 KiB workload")

@@ -19,8 +19,9 @@ fn plain_block_is_exactly_one_kib() {
 }
 
 #[test]
-fn calibration_bytes_are_whole_kib_runs() {
+fn calibration_bytes_are_exact_block_prefix_runs() {
     assert!(calibration_bytes(PLAIN_SEED, 0).is_empty());
+    assert_eq!(calibration_bytes(PLAIN_SEED, 512).len(), 512);
     assert_eq!(calibration_bytes(PLAIN_SEED, 4 * 1024).len(), 4 * 1024);
     assert_eq!(calibration_bytes(PLAIN_SEED, 64 * 1024).len(), 64 * 1024);
     // The first 1024 bytes equal one block (probes are block runs, not noise).
@@ -31,8 +32,8 @@ fn calibration_bytes_are_whole_kib_runs() {
 #[test]
 fn workload_plan_matches_the_installer_ladder() {
     let plan = core_workload_plan();
-    // 2 stdin + 10 single-file (incl. decode-heavy) + 3 file-tree workloads.
-    assert_eq!(plan.len(), 15);
+    // 2 stdin + 18 single-file (incl. decode-heavy) + 3 file-tree workloads.
+    assert_eq!(plan.len(), 23);
     let labels: Vec<&str> = plan.iter().map(Workload::label).collect();
     assert!(labels.contains(&"empty stdin workload"));
     assert!(labels.contains(&"1 KiB workload"));
@@ -43,21 +44,39 @@ fn workload_plan_matches_the_installer_ladder() {
     assert!(labels.contains(&"32 MiB workload"));
     assert!(labels.contains(&"32 x 4 KiB files workload"));
 
-    let plain_file_kib: Vec<usize> = plan
+    let plain_file_bytes: Vec<usize> = plan
         .iter()
         .filter_map(|workload| match workload {
             Workload::File {
-                kib,
+                bytes,
                 decode_heavy: false,
                 ..
-            } => Some(*kib),
+            } => Some(*bytes),
             _ => None,
         })
         .collect();
     assert_eq!(
-        plain_file_kib,
-        [1, 4, 16, 64, 256, 1024, 4096, 8192, 32768],
-        "plain probes must represent every stable file-size bucket through 32 MiB"
+        plain_file_bytes,
+        [
+            512,
+            1024,
+            2 * 1024,
+            4 * 1024,
+            8 * 1024,
+            16 * 1024,
+            32 * 1024,
+            64 * 1024,
+            128 * 1024,
+            256 * 1024,
+            512 * 1024,
+            1024 * 1024,
+            2 * 1024 * 1024,
+            4 * 1024 * 1024,
+            8 * 1024 * 1024,
+            16 * 1024 * 1024,
+            32 * 1024 * 1024,
+        ],
+        "plain probes must represent every power-of-two file-size band through 32 MiB"
     );
 }
 

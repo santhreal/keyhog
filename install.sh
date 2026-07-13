@@ -1356,10 +1356,11 @@ prime_autoroute_cache() {
         fi
     fi
 
-    # One representative for every stable file-size bucket from 512 B through
-    # 32 MiB. Autoroute no longer interpolates across unmeasured buckets.
-    kib_sizes="1 4 16 64 256"
-    mib_sizes="1 4 8 32"
+    # One representative for every power-of-two file-size band from 512 B
+    # through 32 MiB. Autoroute never interpolates an unmeasured band.
+    byte_sizes="512"
+    kib_sizes="1 2 4 8 16 32 64 128 256 512"
+    mib_sizes="1 2 4 8 16 32"
     many_file_counts="4 16 32"
     # The stdin + filesystem "core" probes run once per scan-policy preset
     # (default + each supported preset); the external-source probes
@@ -1367,6 +1368,9 @@ prime_autoroute_cache() {
     core_total=0
     core_total=$((core_total + 1)) # empty stdin
     core_total=$((core_total + 1)) # stdin 64 KiB
+    for _bytes in $byte_sizes; do
+        core_total=$((core_total + 1))
+    done
     for _kib in $kib_sizes; do
         core_total=$((core_total + 1))
     done
@@ -1418,6 +1422,23 @@ prime_autoroute_cache() {
     elif ! run_autoroute_stdin_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
         failed=1
     fi
+
+    for bytes in $byte_sizes; do
+        idx=$((idx + 1))
+        probe="$tmpdir/probe-${bytes}b.txt"
+        out="$tmpdir/out-${bytes}b.json"
+        err="$tmpdir/err-${bytes}b.txt"
+        label="${bytes} B workload"
+        if ! make_calibration_probe_bytes "$probe" "$bytes"; then
+            printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
+            err "Could not create ${bytes} B autoroute calibration probe at $probe."
+            failed=1
+            continue
+        fi
+        if ! run_autoroute_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
+            failed=1
+        fi
+    done
 
     for kib in $kib_sizes; do
         idx=$((idx + 1))
@@ -1883,6 +1904,13 @@ make_calibration_probe_kib() {
     kib="$2"
     block="$(plain_calibration_block)" || return 1
     awk -v block="$block" -v kib="$kib" 'BEGIN { for (i = 0; i < kib; i++) printf "%s", block }' > "$path"
+}
+
+make_calibration_probe_bytes() {
+    path="$1"
+    bytes="$2"
+    block="$(plain_calibration_block)" || return 1
+    printf '%.*s' "$bytes" "$block" > "$path"
 }
 
 plain_calibration_block() {

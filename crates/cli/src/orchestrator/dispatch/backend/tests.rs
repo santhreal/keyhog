@@ -377,14 +377,23 @@ fn workload_key_coalesces_parallel_reader_adjacent_bucket_jitter() {
     );
     assert_ne!(
         autoroute_stable_bucket(1_u64 << 26),
-        autoroute_stable_bucket(1_u64 << 28),
-        "materially different scan sizes still need distinct autoroute buckets"
+        autoroute_stable_bucket(1_u64 << 27),
+        "the next power-of-two scan band needs distinct autoroute evidence"
     );
     assert_eq!(
         autoroute_stable_density_bucket(7),
         autoroute_stable_density_bucket(8),
         "adjacent decode-density sample jitter must not invalidate calibration"
     );
+}
+
+#[test]
+fn eight_mib_crossover_has_an_exact_power_of_two_band() {
+    const MIB: u64 = 1024 * 1024;
+    let crossover = autoroute_stable_bucket(8 * MIB);
+    assert_ne!(autoroute_stable_bucket(8 * MIB - 1), crossover);
+    assert_eq!(autoroute_stable_bucket(16 * MIB - 1), crossover);
+    assert_ne!(autoroute_stable_bucket(16 * MIB), crossover);
 }
 
 #[test]

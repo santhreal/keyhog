@@ -51,6 +51,9 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 
+// v22: one-power-of-two workload bands replace the old paired bands. Numeric
+// bucket ids changed meaning, so v21 caches must be rejected rather than risk a
+// small new workload aliasing a much larger old calibration row.
 // v21: primary-evidence-only decision schema — `AutorouteDecision` persists just
 // the measured timing evidence (simd/cpu/gpu) plus backend/sample/digest; every
 // derived value (per-backend ms, GPU cold/warm/route, selected margin) is computed
@@ -62,7 +65,7 @@ use std::path::PathBuf;
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 21;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 22;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 

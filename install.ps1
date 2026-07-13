@@ -1092,9 +1092,19 @@ function Invoke-AutorouteCalibration {
                 Stdout = Join-Path $tmpDir 'stdout-stdin-64kib.txt'
                 Stderr = Join-Path $tmpDir 'stderr-stdin-64kib.txt'
             }
-            # One representative for every stable file-size bucket from 512 B
-            # through 32 MiB. Autoroute never interpolates an unmeasured bucket.
-            foreach ($kib in @(1, 4, 16, 64, 256)) {
+            # One representative for every power-of-two file-size band from
+            # 512 B through 32 MiB. Autoroute never interpolates an unmeasured band.
+            $probe512 = Join-Path $tmpDir 'probe-512b.txt'
+            New-CalibrationProbeBytes -Path $probe512 -Bytes 512
+            $workloads += [pscustomobject]@{
+                Label = '512 B workload'
+                Target = $probe512
+                Mode = 'path'
+                Out = Join-Path $tmpDir 'out-512b.json'
+                Stdout = Join-Path $tmpDir 'stdout-512b.txt'
+                Stderr = Join-Path $tmpDir 'stderr-512b.txt'
+            }
+            foreach ($kib in @(1, 2, 4, 8, 16, 32, 64, 128, 256, 512)) {
                 $probe = Join-Path $tmpDir "probe-${kib}kib.txt"
                 New-CalibrationProbeKiB -Path $probe -KiB $kib
                 $workloads += [pscustomobject]@{
@@ -1106,7 +1116,7 @@ function Invoke-AutorouteCalibration {
                     Stderr = Join-Path $tmpDir "stderr-${kib}kib.txt"
                 }
             }
-            foreach ($mib in @(1, 4, 8, 32)) {
+            foreach ($mib in @(1, 2, 4, 8, 16, 32)) {
                 $probe = Join-Path $tmpDir "probe-${mib}mib.txt"
                 New-CalibrationProbe -Path $probe -MiB $mib
                 $workloads += [pscustomobject]@{
@@ -1349,6 +1359,19 @@ function New-CalibrationProbeKiB {
     } finally {
         $writer.Dispose()
     }
+}
+
+function New-CalibrationProbeBytes {
+    param([string]$Path, [int]$Bytes)
+    $chunk = New-PlainCalibrationBlock
+    if ($Bytes -lt 0 -or $Bytes -gt $chunk.Length) {
+        throw "Calibration byte probe size must be between 0 and $($chunk.Length); got $Bytes."
+    }
+    [System.IO.File]::WriteAllText(
+        $Path,
+        $chunk.Substring(0, $Bytes),
+        [System.Text.Encoding]::ASCII
+    )
 }
 
 function New-DecodeHeavyCalibrationProbeKiB {
