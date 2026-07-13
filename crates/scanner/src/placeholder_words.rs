@@ -270,7 +270,7 @@ fn looks_like_high_entropy_marker_collision(credential: &str, entropy_hint: Opti
 
 /// Back-compat wrapper: parse only the placeholder-word list. Kept so the
 /// `parse_placeholder_words_for_test` facade and its callers (which pass
-/// `[placeholder_words]`-only TOMLs) keep working unchanged (Law 3). Test-only 
+/// `[placeholder_words]`-only TOMLs) keep working unchanged (Law 3). Test-only
 /// production parses the full vocab via `parse_vocab`, so this is `#[cfg(test)]`
 /// to stay dead-code-warning-clean in the lib build (its sole callers are the
 /// `#[cfg(test)]` facade + the inline parse tests).
@@ -675,7 +675,7 @@ mod tests {
                 "{exact:?} is an exact placeholder and must match",
             );
         }
-        // A value that merely CONTAINS a placeholder word is NOT an exact match 
+        // A value that merely CONTAINS a placeholder word is NOT an exact match
         // this is what keeps a real credential like `mysecretkey123` alive.
         assert!(!is_exact_entropy_placeholder(b"password123"));
         assert!(!is_exact_entropy_placeholder(b"mysecretkey123"));

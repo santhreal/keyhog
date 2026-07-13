@@ -11,7 +11,7 @@
 //! the suppression pipeline skips the Tier-B randomness floor (`apply_tier_b
 //! == false`), so those random values surface, while precision against
 //! placeholders is held by three orthogonal gates that do NOT penalise a short
-//! random password 
+//! random password
 //!   * the `{6,128}` value floor drops the short placeholders (`pass`, `admin`);
 //!   * the `dictionary_word_placeholder` gate drops a value the English bigram
 //!     model is CONFIDENT is a real word (`password`, `secret`, `welcome`);

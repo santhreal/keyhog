@@ -7,7 +7,7 @@
 //! this predicate to decide which dotted values to TRUST, so it must be a tight
 //! shape allowlist: exactly three dot-separated segments matching either the
 //! JWT shape (first segment `eyJ…`, every segment >= 4 base64 chars) or the
-//! Discord length profile (23-28 . 6-8 . 27-38, alnum/`-`/`_`). Anything else 
+//! Discord length profile (23-28 . 6-8 . 27-38, alnum/`-`/`_`). Anything else
 //! including a two- or four-segment string (is NOT a structured token).
 
 use keyhog_scanner::testing::is_structured_dotted_token_for_test;

@@ -115,7 +115,7 @@ impl AutorouteHostProfile {
     }
 }
 
-/// True when an optional identity field is `Some` with non-blank content 
+/// True when an optional identity field is `Some` with non-blank content
 /// the ONE definition of "this probe field actually resolved" shared by every
 /// `require_exact_identity` check (a `Some("")` is a probe bug, not identity).
 fn field_is_present_nonblank(field: &Option<String>) -> bool {

@@ -33,7 +33,7 @@ const MIN_ALNUM_RUN: usize = 8;
 
 /// Minimum accumulated base64 run (in chars) before [`encoded_private_key_payload_spans`]
 /// attempts a decode to look for a PEM `-----BEGIN … PRIVATE KEY-----` envelope.
-/// 128 base64 chars decode to ~96 bytes, enough to hold the framing markers 
+/// 128 base64 chars decode to ~96 bytes, enough to hold the framing markers
 /// so shorter runs cannot be a wrapped private key and are skipped rather than
 /// decoded on every short base64-ish config line.
 const MIN_ENCODED_PRIVATE_KEY_B64_LEN: usize = 128;
@@ -79,7 +79,7 @@ static ROTATED_PREFIX_AC: LazyLock<AhoCorasick> = LazyLock::new(|| {
         }
     }
     // Law 10 (build-bug ⇒ fail closed): the needle set is derived ENTIRELY from
-    // the compiled-in `KNOWN_PREFIXES` constant, no attacker input reaches it 
+    // the compiled-in `KNOWN_PREFIXES` constant, no attacker input reaches it
     // so an `AhoCorasick::new` failure is an invariant violation in the bundled
     // data / this construction, not a runtime hostile-input condition. The old
     // path warned + returned `None`, degrading `matched_caesar_shifts` to an

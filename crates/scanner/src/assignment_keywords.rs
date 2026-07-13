@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn bare_key_stem_is_not_in_the_base_list() {
-        // `key` is added by `generic_keyword_prefilter_stems`, NOT the base vocab 
+        // `key` is added by `generic_keyword_prefilter_stems`, NOT the base vocab
         // pin that so a future edit does not silently widen the AC.
         assert!(
             !assignment_keywords().iter().any(|k| k == "key"),

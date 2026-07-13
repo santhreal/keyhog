@@ -12,9 +12,9 @@
 //! deterministically on the path-less stdin chunk.
 //!
 //! Control-byte truth (proven here, not asserted from memory): the scan path
-//! STRIPS non-whitespace C0 control bytes (0x08 backspace, 0x0C form-feed) 
+//! STRIPS non-whitespace C0 control bytes (0x08 backspace, 0x0C form-feed)
 //! so a leading 0x0C leaves the token at offset 0 and a 0x08 spliced INTO the
-//! token rejoins it to the exact same value/hash (an evasion that fails) 
+//! token rejoins it to the exact same value/hash (an evasion that fails)
 //! while it PRESERVES the whitespace controls (0x09 tab, 0x0D carriage
 //! return), which shift the token to offset 1.
 //!

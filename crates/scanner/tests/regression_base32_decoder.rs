@@ -72,7 +72,7 @@ fn all_a_body_decodes_to_zero_account() {
 #[test]
 fn all_sevens_body_yields_thirteen_digit_account_at_boundary() {
     // Base32 '7' == value 31 (top of the 2..=7 range). An all-'7' body drives the
-    // masked u48 to its maximum 0xFFFFFFFFFF after the >>7, i.e. 1099511627775 
+    // masked u48 to its maximum 0xFFFFFFFFFF after the >>7, i.e. 1099511627775
     // which is THIRTEEN decimal digits, not twelve. This pins the true arithmetic
     // upper bound of the decoder and shows the `{:012}` rendering does not (and
     // cannot) truncate an over-max value.
@@ -299,7 +299,7 @@ fn parse_canary_account_ids_accepts_valid_rejects_malformed() {
 
 #[test]
 fn baseline_canary_accounts_validate_ok() {
-    // The embedded Tier-B canary baseline must parse into a non-corrupt set 
+    // The embedded Tier-B canary baseline must parse into a non-corrupt set
     // validate_canary_accounts returns Ok(()) on the shipped data file.
     assert_eq!(
         validate_canary_accounts(),

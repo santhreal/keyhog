@@ -6,7 +6,7 @@
 //!
 //! The two legs scan the SAME `.zst` file and differ only in `max_file_size`
 //! (which sets the 4× decompression budget, and hence the window cap):
-//!   * control (budget ≫ window): the frame decodes and the secret is found 
+//!   * control (budget ≫ window): the frame decodes and the secret is found
 //!     proving the cap never rejects a legitimately-sized frame;
 //!   * guard   (budget < window): the frame is refused and the secret is NOT
 //!     found (proving the oversize window is rejected rather than allocated).

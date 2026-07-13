@@ -2,7 +2,7 @@
 //! canonical predicate, not an independent recomputation.
 //!
 //! `resolution::is_service_specific_detector` used to compute
-//! `!entropy && !(generic || private_key_fallback)` through local wrappers 
+//! `!entropy && !(generic || private_key_fallback)` through local wrappers
 //! algebraically identical to `detector_ids::is_service_anchored_detector`'s
 //! `!generic && !entropy && !private_key_fallback`, i.e. a duplicated predicate
 //! and a silent-drift hazard. It now delegates to the canonical owner. Pin both

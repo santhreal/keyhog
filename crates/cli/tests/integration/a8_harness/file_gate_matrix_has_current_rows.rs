@@ -16,7 +16,7 @@ fn file_gate_matrix_has_current_rows() {
     );
     // 444 = the current module inventory. The count had drifted stale (docker
     // and other module rows were added without bumping this contract), and the
-    // orchestrator inline-test migration adds five sibling `tests.rs` rows 
+    // orchestrator inline-test migration adds five sibling `tests.rs` rows
     // `orchestrator/tests.rs`, `orchestrator/dispatch/tests.rs`,
     // `orchestrator/reporting/tests.rs`, `subcommands/backend/tests.rs`, and
     // `subcommands/watch/tests.rs`, each a real cli/src file that

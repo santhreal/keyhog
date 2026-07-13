@@ -2,7 +2,7 @@
 //!
 //! The reassembly loop glues each near same-path fragment pair via a
 //! `Zeroizing<String>`. That string is now built with
-//! `String::with_capacity(f1.len + f2.len)` instead of growing from empty 
+//! `String::with_capacity(f1.len + f2.len)` instead of growing from empty
 //! a Law-7 single-allocation fix that also avoids an intermediate realloc
 //! leaving an un-zeroed plaintext copy of the first fragment on the heap. The
 //! glued content and sorted emission order must be byte-for-byte unchanged,

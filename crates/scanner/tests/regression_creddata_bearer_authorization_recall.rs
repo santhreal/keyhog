@@ -11,7 +11,7 @@
 //! pipeline
 //! skips the Tier-B randomness/digest floor (`apply_tier_b == false`), so those
 //! bare tokens surface, while precision against placeholders is held by three
-//! orthogonal gates that do NOT penalise a random token 
+//! orthogonal gates that do NOT penalise a random token
 //!   * the `{16,}` value floor drops the short scheme words (`token`, `secret`);
 //!   * the regex excludes `<` `>` `$` (templates and shell vars);
 //!   * the `dictionary_word_placeholder` gate drops a value the English bigram

@@ -1,4 +1,4 @@
-//! LANE sources-deep regression: the GCS JSON-API *request-building* contract 
+//! LANE sources-deep regression: the GCS JSON-API *request-building* contract
 //! the EXACT list URL, the EXACT per-object media URL (including percent-encoding
 //! of object keys via `encode_object_key_path`), the ambient-bearer auth policy
 //! (anonymous requests carry NO `Authorization` header; a bearer env on a

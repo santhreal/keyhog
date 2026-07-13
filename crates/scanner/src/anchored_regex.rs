@@ -114,7 +114,7 @@ mod fail_closed_tests {
     // The anchored verifier couples BOTH `case_insensitive` and `crlf` to the
     // detector's `case_insensitive` bit. This is NOT a copy-paste of crlf<-ci:
     // the base detector regex (`LazyRegex::get`) is itself compiled on two
-    // branches that pair the flags exactly the same way 
+    // branches that pair the flags exactly the same way
     //   ci detector  -> `shared_regex`  => case_insensitive(true)  + crlf(true)
     //   non-ci       -> `Regex::new`    => case_insensitive(false) + crlf(false)
     // The anchored verifier's whole purpose is whole-chunk-equivalence with that

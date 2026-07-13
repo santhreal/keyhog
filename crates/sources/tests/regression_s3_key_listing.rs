@@ -421,7 +421,7 @@ fn continuation_token_with_url_special_chars_threaded_verbatim() {
 }
 
 /// Adversarial: a NON-truncated (`IsTruncated=false`) page that nonetheless
-/// carries a stray `NextContinuationToken` must NOT trigger a second listing 
+/// carries a stray `NextContinuationToken` must NOT trigger a second listing
 /// pagination is gated on `IsTruncated`, not on token presence. A page-2 probe
 /// matching ANY continuation token must record zero calls, and the single page
 /// object is still scanned.

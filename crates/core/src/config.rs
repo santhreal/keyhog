@@ -26,7 +26,7 @@ pub const DEFAULT_ENTROPY_THRESHOLD: f64 = 4.5;
 /// `ScanConfig::default().entropy_bpe_max_bytes_per_token` knob). An entropy /
 /// generic candidate whose `cl100k_base` bytes-per-token is STRICTLY GREATER
 /// than this compresses into few common subword tokens, word-like (a probable
-/// false positive: dotted API paths, prose, XML) rather than a random secret 
+/// false positive: dotted API paths, prose, XML) rather than a random secret
 /// and is suppressed. `2.2` is the empirical CredData F1 peak (see
 /// `keyhog_scanner::entropy::bpe`; the offline A/B lifted F1 0.368→0.424).
 ///

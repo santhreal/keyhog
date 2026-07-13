@@ -3,7 +3,7 @@
 //! These tests pin the compiled-in detector corpus to CONCRETE expected values
 //! through the public `keyhog_core` loaders (`load_embedded_detectors_or_fail`,
 //! `embedded_detector_count`, `detector_digest`). They also prove that the
-//! `GENERIC_PASSWORD` detector-id constant an over-eager dead-code lint flags 
+//! `GENERIC_PASSWORD` detector-id constant an over-eager dead-code lint flags
 //! in `crates/scanner/src/detector_ids.rs`: is NOT phantom: `generic-password`
 //! backs a real embedded detector AND a real entropy-floor family, so removing
 //! the const would orphan a detector TOML's floor family and break the

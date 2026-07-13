@@ -62,7 +62,7 @@ fn word_separated_acronym_identifier_stays_suppressed() {
     // multi-segment programmer identifiers built from acronym fragments score as
     // "random" (`d2i_PKCS7_bio` −7.88, `curlx_memdup0` −7.09, both below the
     // −6.85 threshold) even though they are code, NOT secrets. KH-L-0414
-    // therefore leaves `looks_like_word_separated_identifier` UNCONDITIONAL 
+    // therefore leaves `looks_like_word_separated_identifier` UNCONDITIONAL
     // these must stay suppressed despite the misleading randomness score.
     for val in ["d2i_PKCS7_bio", "curlx_memdup0", "s3_secret_access_key"] {
         assert!(

@@ -5,7 +5,7 @@
 //! This is DISTINCT from `regression_binary_strings_minlen` (which exercises
 //! the goblin string-extraction min-length floor) and from the density/NUL
 //! boundary cases already pinned in `regression_skip_rules`: here every case
-//! targets a specific arm of the classifier that those files do NOT cover 
+//! targets a specific arm of the classifier that those files do NOT cover
 //! the magic-header short-circuit (ELF / PNG / Python-pickle-protocol-2), the
 //! UTF-8-BOM-is-text vs UTF-16-BOM-is-binary asymmetry, embedded-vs-scattered
 //! NUL runs, the exact 5%-control density threshold, the whitespace-exempt vs

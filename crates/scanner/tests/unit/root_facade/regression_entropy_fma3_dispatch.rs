@@ -5,7 +5,7 @@
 //! Root cause (the bug this locks against): the AVX2 entropy reduction in
 //! `entropy::fast_x86::shannon_entropy_avx2` is compiled with
 //! `#[target_feature(enable = "avx2,fma")]`. Enabling `fma` LICENSES the
-//! compiler to emit FMA3 instructions (VFMADD231PD) anywhere in that function 
+//! compiler to emit FMA3 instructions (VFMADD231PD) anywhere in that function
 //! historically via an explicit `_mm256_fmadd_pd` in a vectorized
 //! polynomial-log2, and still today via contraction of the reduction's float
 //! mul-adds. The earlier dispatch in `entropy::fast::shannon_entropy_simd`

@@ -8,10 +8,10 @@
 //! dominated by 2,730 per-scan phase-2 regexes, now collapsed to one RegexSet
 //! pass). This test re-measures the crossover so the thresholds track data.
 //!
-//! **Why two payload regimes.** The GPU backend accelerates only *phase 1* 
+//! **Why two payload regimes.** The GPU backend accelerates only *phase 1*
 //! the literal/Aho-Corasick prefilter scan. *Phase 2* (regex capture, entropy,
 //! ML confidence) runs on the CPU regardless of backend. So:
-//!   * **benign-sparse** input (mostly code, rare secrets) is phase-1-bound 
+//!   * **benign-sparse** input (mostly code, rare secrets) is phase-1-bound
 //!     the GPU's parallel scan can beat serial CPU matching at large sizes.
 //!     This is the common real-world repo and the regime that sets the floor.
 //!   * **hit-dense** input (a credential dump; or keyhog's own secret-corpus)

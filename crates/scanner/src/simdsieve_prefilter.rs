@@ -39,7 +39,7 @@ pub(crate) fn hot_pattern_index_at(
 pub(crate) struct HotPatternSlot {
     pub(crate) prefix: Box<[u8]>,
     /// Precise-regex validator (anchored at the candidate start) every
-    /// literal-prefix candidate for this slot must satisfy before emission 
+    /// literal-prefix candidate for this slot must satisfy before emission
     /// restores AC+regex parity so the fast path can't surface a token the
     /// detector's own regex rejects (the length floor alone let
     /// `ghp_…_…`/`xoxp-123-456-789-abc` through).

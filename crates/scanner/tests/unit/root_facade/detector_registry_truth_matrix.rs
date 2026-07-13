@@ -244,7 +244,7 @@ fn the_whole_on_disk_corpus_compiles_into_one_scanner() {
     // The end-to-end production compile path: every detector's patterns,
     // companions, and keywords must fuse into one `CompiledScanner` without
     // error. This is what the binary does at startup; a regex the literal-set/
-    // NFA compiler rejects surfaces here, not in the field. Use the GATED set 
+    // NFA compiler rejects surfaces here, not in the field. Use the GATED set
     // the exact population `load_detectors -> CompiledScanner::compile` feeds the
     // scanner in production (a quality-Error detector is dropped before compile,
     // and is independently caught by the quality-gate test above).
@@ -344,7 +344,7 @@ fn embedded_set_matches_the_on_disk_toml_tree() {
 
     // The compiled-in corpus must match the shipped `detectors/` .toml tree
     // exactly (build.rs embeds every .toml, ungated). A drift means a stale
-    // embed: the binary scans with a different rule set than the repo claims 
+    // embed: the binary scans with a different rule set than the repo claims
     // the exact failure mode that hid a broken detector in a benched release
     // (see core lib.rs docs on load_embedded_detectors_or_fail).
     assert_eq!(

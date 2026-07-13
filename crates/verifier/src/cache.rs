@@ -327,7 +327,7 @@ impl VerificationCache {
         let mut queue = self.queue.lock();
         while let Some((key, generation)) = queue.pop_front() {
             // A generation mismatch is a STALE marker: the key was refreshed by
-            // a later put and its current marker sits further back. Skip it 
+            // a later put and its current marker sits further back. Skip it
             // evicting here would drop the freshest entry first.
             if self
                 .entries

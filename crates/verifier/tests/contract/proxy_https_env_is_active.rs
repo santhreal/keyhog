@@ -1,4 +1,4 @@
-//! Contract: an ambient HTTPS_PROXY does NOT mark the verifier proxy active 
+//! Contract: an ambient HTTPS_PROXY does NOT mark the verifier proxy active
 //! it is ignored and neutralized via `.no_proxy()` (config-policy mandate +
 //! security: an ambient proxy must never silently reroute secret-bearing
 //! traffic).

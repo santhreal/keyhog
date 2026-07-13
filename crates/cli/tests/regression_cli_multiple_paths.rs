@@ -254,7 +254,7 @@ fn github_finding_exact_identity_fields() {
     );
 }
 
-/// The slack finding (from the OTHER root) carries its own exact identity 
+/// The slack finding (from the OTHER root) carries its own exact identity
 /// proving neither root's fields bleed into the other.
 #[test]
 fn slack_finding_exact_identity_fields() {

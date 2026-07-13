@@ -44,7 +44,7 @@
 //!    which must keep its own (often unbounded) semantics. Only the presence of
 //!    `_`/`-` makes a class an *unambiguous* keyword separator.
 //! 2. **It is corpus-verified.** Auditing the complete shipped corpus, every class
-//!    matching this oracle sits between keyword words or alternation groups 
+//!    matching this oracle sits between keyword words or alternation groups
 //!    never inside a token body or a value-assignment run. A class carrying any
 //!    other byte (a letter range, a digit, `=`/`:`/quote) fails the subset test
 //!    and is copied verbatim. The companion `keyword_separator_canonical` audit

@@ -1,4 +1,4 @@
-//! #131 UX lock (batch 2): the two remaining bare verifier reasons 
+//! #131 UX lock (batch 2): the two remaining bare verifier reasons
 //! `max retries exceeded` and `invalid AWS region`: now carry context + an
 //! actionable fix, and a family-wide contract gate covers ALL SIX actionable
 //! verification reasons so a future edit can't reintroduce a bare token. Each

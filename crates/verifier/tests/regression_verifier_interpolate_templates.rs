@@ -3,7 +3,7 @@
 //!
 //! Distinct from `new_verifier_interpolate.rs` (which pins the per-context
 //! encoding of a single token) and from the iter3 allowlist tests: this file
-//! nails the *structural* expansion contract 
+//! nails the *structural* expansion contract
 //!   * multiple / adjacent / repeated `{{var}}` tokens expand independently,
 //!   * an empty-VALUE companion expands to the empty string (not the token),
 //!   * an UNDEFINED / unrecognized token is preserved VERBATIM (recall-safe;

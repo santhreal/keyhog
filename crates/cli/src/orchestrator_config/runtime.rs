@@ -74,7 +74,7 @@ pub(crate) fn gpu_runtime_policy_from_args(
 /// (`--backend cpu`/`--backend simd`). Such a scan never acquires the GPU, so
 /// the resolved policy is `Disabled`: this keeps `gpu_probe()` from creating a
 /// wgpu/Vulkan instance the scan would never use. Beyond skipping a pointless
-/// (and slow) Vulkan init on the CPU path (Law 7), it prevents a real crash 
+/// (and slow) Vulkan init on the CPU path (Law 7), it prevents a real crash
 /// the probe spawns a mesa driver worker thread that SIGSEGVs during teardown
 /// if the process exits fast on an early error (expired `.keyhogignore`,
 /// missing scan path) before the driver finishes initialising, turning a clean

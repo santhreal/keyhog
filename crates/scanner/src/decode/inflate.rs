@@ -47,7 +47,7 @@ fn is_zlib_magic(bytes: &[u8]) -> bool {
 #[must_use]
 pub(crate) fn try_inflate_to_text(bytes: &[u8]) -> Option<String> {
     // Preallocate the compressed length: a small but non-trivial floor that skips
-    // the initial `Vec` doubling reallocs for the common (small) case. Bomb-safe 
+    // the initial `Vec` doubling reallocs for the common (small) case. Bomb-safe
     // the compressed input is tiny even when it would inflate to the cap, and
     // `read_to_end` grows from here only up to `MAX_INFLATE_BYTES`.
     let mut out = Vec::with_capacity(bytes.len());

@@ -195,7 +195,7 @@ fn sarif_is_structurally_complete_2_1_0_with_every_ruleid_resolving() {
         );
     }
 
-    // The PAT result must carry the exact credential hash in its fingerprint 
+    // The PAT result must carry the exact credential hash in its fingerprint
     // this is the value the self-scan suppression dedups on (project memory).
     let pat_result = results
         .iter()

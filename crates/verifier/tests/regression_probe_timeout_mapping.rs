@@ -128,7 +128,7 @@ fn error_verdict_roundtrips_and_preserves_exact_reason() {
     }
 }
 
-/// Deserialization of the snake_case tags recovers the exact unit verdicts 
+/// Deserialization of the snake_case tags recovers the exact unit verdicts
 /// the input side of the wire contract, exercised as a negative twin to the
 /// serialize tests above.
 #[test]

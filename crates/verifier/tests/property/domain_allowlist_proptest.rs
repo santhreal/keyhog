@@ -131,7 +131,7 @@ fn suffix_without_dot_boundary_is_not_confused_for_subdomain() {
 fn shared_tenant_suffix_allows_only_apex_never_subdomain() {
     // The anti-cross-tenant-exfil guard: a shared-tenant suffix (`myshopify.com`)
     // is a platform apex whose subdomains belong to UNRELATED tenants. The apex
-    // itself is allowed, but no `{store}.myshopify.com` subdomain ever is 
+    // itself is allowed, but no `{store}.myshopify.com` subdomain ever is
     // otherwise one store's credential could be verified against another's.
     let mut state = 0x5A7E_0007;
     let shared = "myshopify.com".to_string();

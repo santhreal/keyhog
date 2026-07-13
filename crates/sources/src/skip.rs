@@ -48,7 +48,7 @@ static SKIPPED_ARCHIVE_TRUNCATED: AtomicUsize = AtomicUsize::new(0);
 /// corrupt/truncated strtab in a malformed binary. The previous code substituted
 /// an empty name (`unwrap_or("")`) and then silently dropped the section because
 /// `""` is never in the high-value target list: a `.rodata`/`.data` section whose
-/// name lookup failed vanished from the scan with no trace (Law 10 false-clean 
+/// name lookup failed vanished from the scan with no trace (Law 10 false-clean
 /// embedded secrets in that section were never scanned). Bumped once per section
 /// whose name lookup fails; surfaced so the operator knows the binary parse was
 /// partial. Reset via `reset_skip_counters`.

@@ -190,7 +190,7 @@ fn sql_random_password_still_surfaces() {
 
 #[test]
 fn cli_low_alpha_password_still_surfaces() {
-    // `i8cr1w!` has 4 distinct letters (i,c,r,w), clears the diversity floor 
+    // `i8cr1w!` has 4 distinct letters (i,c,r,w), clears the diversity floor
     // and < 6 alpha (the bigram model returns None), so it is neither a confident
     // dictionary word nor a low-diversity mask: the recovery the fix must preserve.
     assert!(

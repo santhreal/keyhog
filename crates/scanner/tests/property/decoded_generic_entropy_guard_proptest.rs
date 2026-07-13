@@ -3,7 +3,7 @@
 //! for ARBITRARY high-entropy tokens, not just the fixed regression fixtures.
 //!
 //! For any high-entropy token `T`, base64-encoding `secret=T` and scanning the
-//! blob with decode-through recovers `secret=T` as SYNTHESIZED decoded content 
+//! blob with decode-through recovers `secret=T` as SYNTHESIZED decoded content
 //! where a generic/entropy detector would fire on shape/entropy ALONE, with no
 //! anchor in the decoded bytes. The guard must gate EVERY such decoded
 //! generic/entropy match. This proptest sweeps the token space and asserts that

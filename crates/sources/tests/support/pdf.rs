@@ -12,7 +12,7 @@ pub fn minimal_pdf(stream_dict: &str, stream: &[u8]) -> Vec<u8> {
     pdf
 }
 
-/// Build a stream-less PDF whose body carries an arbitrary raw object segment 
+/// Build a stream-less PDF whose body carries an arbitrary raw object segment
 /// e.g. an Info dictionary holding metadata literal/hex strings
 /// (`/Author`, `/Title`, `/Keywords`, `/Producer`). Exercises the "strings
 /// outside streams" extraction path (`append_pdf_strings_outside_streams`),

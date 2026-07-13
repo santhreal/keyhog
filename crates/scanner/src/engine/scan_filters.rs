@@ -184,7 +184,7 @@ pub(super) fn looks_like_variable_name(s: &str) -> bool {
 /// Shared by `extract_grouped_matches` (whole-chunk walk) and `extract_anchored`
 /// (phase-2 anchored verification) so this detection-load-bearing heuristic has
 /// exactly one definition instead of two copies that could drift apart. Offsets
-/// are relative to `text`, which each caller supplies as its own search base 
+/// are relative to `text`, which each caller supplies as its own search base
 /// the full preprocessed text for the whole-chunk walk, or the anchored `slice`
 /// for the phase-2 path (so the returned range re-slices correctly on either).
 pub(crate) fn resolve_value_shaped_group(

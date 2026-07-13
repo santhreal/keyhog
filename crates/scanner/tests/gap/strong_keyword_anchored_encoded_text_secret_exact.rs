@@ -6,7 +6,7 @@
 //!   - a value containing `.` or shorter than 24 bytes is rejected up front;
 //!   - the keyword must normalize and be a strong anchor: either it carries a
 //!     secret suffix, OR it is one of the encoded-text-secret anchors
-//!     (`password`/`passwd`/`pwd`/`passphrase`/`token`/`secret`/`credential`) 
+//!     (`password`/`passwd`/`pwd`/`passphrase`/`token`/`secret`/`credential`)
 //!     and `credential`/`passphrase` reach ownership ONLY through that second
 //!     disjunct, since they do not match the secret-suffix family;
 //!   - and the value must decode to printable text (a binary base64 payload is

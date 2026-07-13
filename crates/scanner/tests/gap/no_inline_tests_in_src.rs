@@ -157,7 +157,7 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     "suppression/shape/canonical.rs",
     // Sibling `suppression/shape/*` predicate modules with the SAME white-box
     // justification as `canonical.rs`: each pins one `pub(crate)` shape predicate
-    // whose exact single-pass boundary is recall-load-bearing 
+    // whose exact single-pass boundary is recall-load-bearing
     // `looks_like_url_or_path_segment` (path), `looks_like_english_prose` (prose),
     // `looks_like_public_artifact_reference_with_randomness` (public). They are
     // crate-internal (not reachable from `tests/unit/`), so co-locating the
@@ -169,7 +169,7 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // `suppression/shape/source.rs` pins the `pub(crate)`
     // `looks_like_dotted_source_identifier` predicate and, critically, the
     // `CREDENTIAL_KEYWORD_NEEDLES` unification intent (a camel-cased dotted
-    // candidate carrying a canonical `passwd` segment IS a source identifier) 
+    // candidate carrying a canonical `passwd` segment IS a source identifier)
     // the same crate-internal shape-boundary justification as `canonical.rs`.
     "suppression/shape/source.rs",
     // `suppression/shape/mod.rs` co-locates `#[cfg(test)] pub(crate)` test seams

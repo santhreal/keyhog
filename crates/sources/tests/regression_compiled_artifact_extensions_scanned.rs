@@ -241,7 +241,7 @@ fn whl_secret_is_archive_chunk_not_raw_binary() {
 
 #[test]
 fn binary_entry_in_whl_surfaces_as_archive_binary() {
-    // A non-text (binary) entry with an embedded printable run is still scanned 
+    // A non-text (binary) entry with an embedded printable run is still scanned
     // as a `filesystem/archive-binary` chunk via printable-strings extraction.
     let mut body = vec![0x00u8, 0x01, 0x02, 0xff];
     body.extend_from_slice(format!("embedded_{SECRET}_run").as_bytes());

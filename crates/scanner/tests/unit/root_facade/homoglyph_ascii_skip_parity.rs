@@ -204,7 +204,7 @@ fn report(on: &[Key], off: &[Key], input: &[u8]) -> String {
 // The SOUNDNESS gate for the `homoglyph_ascii_skip` optimization (now default ON).
 // It PASSES: closing the base-AC coverage gap, phase-1 marks triggers with
 // OVERLAPPING AC matching, so a detector whose base literal is shadowed by a
-// longer literal (e.g. `secret` inside `client_secret`) is still AC-confirmed 
+// longer literal (e.g. `secret` inside `client_secret`) is still AC-confirmed
 // made skip ≡ fold at the raw-match level on every ASCII chunk. This gate now
 // guards that the skip stays recall-neutral: a divergence means a NEW shadow
 // case the overlapping triggers don't cover, i.e. a real coverage regression,

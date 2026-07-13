@@ -15,7 +15,7 @@ fn workspace_vyre_pin(manifest: &str) -> String {
     //   * inline table (carrying a path override during a vyre migration):
     //                           vyre = { version = "=0.6.1", path = "..." }
     // Both embed the exact pin as the `"=<version>"` literal, so locate the
-    // `vyre =` line and extract the version after `"=` regardless of layout 
+    // `vyre =` line and extract the version after `"=` regardless of layout
     // the previous `strip_prefix("vyre = \"=")` only matched the bare-string
     // form and panicked on the inline-table form the workspace actually uses.
     manifest

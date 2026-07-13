@@ -231,7 +231,7 @@ fn every_critical_severity_detector_has_a_positive_contract_fixture() {
 /// Every regex the scanner stores MUST re-parse cleanly through the SAME
 /// `regex` builder + flags the scanner uses internally (`case_insensitive(true)`,
 /// the canonical detector build flag). DETERMINISTIC + EXHAUSTIVE over the full
-/// corpus (~900 regexes, ~2s): 100% coverage with no random-sampling gaps 
+/// corpus (~900 regexes, ~2s): 100% coverage with no random-sampling gaps
 /// strictly better than a sampled proptest for a finite enumerable set (which
 /// both left holes at 1k and cost 18s at 10k). Failure modes caught:
 ///   * a detector whose TOML regex passed `regex_syntax` parse at compile-time

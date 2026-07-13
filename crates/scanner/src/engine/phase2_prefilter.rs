@@ -576,7 +576,7 @@ impl Phase2AlwaysActivePrefilter {
     /// `localize_plain`: the caller (the shared-anchor path) handles the plain
     /// (homoglyph) patterns on pure-ASCII chunks via the localized AC, so they
     /// are SKIPPED here (no whole-chunk RegexSet pass). When false, plain
-    /// batches run their ASCII-folded alternate (the order-preserving fold) 
+    /// batches run their ASCII-folded alternate (the order-preserving fold)
     /// the safety-net path that is always recall-correct.
     pub(crate) fn mark_matches(
         &self,

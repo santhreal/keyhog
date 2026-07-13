@@ -46,7 +46,7 @@ static X86_ENTROPY_TIER: OnceLock<X86EntropyTier> = OnceLock::new();
 /// Detect the entropy SIMD tier once, record the choice loudly, and cache it.
 ///
 /// SAFETY (dispatch soundness): the runtime probe for a tier MUST be a SUPERSET
-/// of every feature the dispatched function's `#[target_feature]` enables 
+/// of every feature the dispatched function's `#[target_feature]` enables
 /// entering a `target_feature` fn on a CPU lacking those features is UB/SIGILL
 /// (the compiler assumes them throughout the body):
 ///  - the AVX-512 reduction (`entropy::avx512::calculate_shannon_entropy`)

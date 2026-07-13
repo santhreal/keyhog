@@ -284,7 +284,7 @@ fn uppercase_keyword_bridges_case_insensitively() {
 
 #[test]
 fn constant_repeated_char_value_is_rejected_by_the_low_entropy_floor() {
-    // Entropy 0.0: a single repeated symbol. Far below the 1.5 keyword floor 
+    // Entropy 0.0: a single repeated symbol. Far below the 1.5 keyword floor
     // dropped even though `password=` is a valid credential anchor.
     let value = "aaaaaaaa";
     assert_eq!(

@@ -4,7 +4,7 @@
 //! suppresses; since the no-ml path is strictly MORE permissive than the ml path
 //! (ml only removes candidates), a negative that holds here holds under `ml` too.
 //! Run without `ml` while the embedded weights are mid-retrain. (The one classic
-//! that DOES slip through the heuristic path, a semver build-metadata string 
+//! that DOES slip through the heuristic path, a semver build-metadata string
 //! is tracked as the entropy-token-semver-FP finding, not asserted here.)
 
 use keyhog_core::{Chunk, ChunkMetadata};

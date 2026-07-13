@@ -2,7 +2,7 @@
 //! parameter must reject its absence with a NAMED, fix-carrying error (the
 //! Engineering-Standard "error messages include context and the fix"), and the
 //! shared `parse_bool_source_param` validator must reject a non-boolean value and
-//! echo the offending token. The `docker` / `s3` match arms are UNCONDITIONAL 
+//! echo the offending token. The `docker` / `s3` match arms are UNCONDITIONAL
 //! their required-param error fires in the default `git`+`web` feature set,
 //! BEFORE any feature-gated backend construction, so the contract holds even
 //! where those backends are not compiled. Sibling of
@@ -59,7 +59,7 @@ fn create_source_web_rejects_non_boolean_calibration_flag() {
 }
 
 /// Positive twin: a VALID boolean calibration flag (`true`) on its own
-/// newline-delimited field, followed by a real URL, builds the web source 
+/// newline-delimited field, followed by a real URL, builds the web source
 /// proving the validator ADMITS legitimate values and the flag field is consumed
 /// (not mistaken for a URL). Guards against a reject-everything regression a
 /// negative-only test would miss. (Params are `\n`-delimited per

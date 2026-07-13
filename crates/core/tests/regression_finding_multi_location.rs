@@ -3,7 +3,7 @@
 //! owned by `keyhog_core` (`core::dedup`). Distinct from the sibling
 //! `regression_finding_dedup.rs` / `regression_finding_dedup_merge.rs` /
 //! `new_core_finding_dedup.rs` files, which pin group counts and cross-detector
-//! companion folding: THIS file pins ONLY the `additional_locations` vector 
+//! companion folding: THIS file pins ONLY the `additional_locations` vector
 //! how the same credential seen at N places records exactly one primary plus
 //! the deduped remainder, with each recorded location's exact
 //! source/file/line/offset asserted.

@@ -186,7 +186,7 @@ fn base58_is_absent() {
 
 #[test]
 fn z85_is_present_at_index_ten() {
-    // z85 is the ONLY member of the ascii85/z85 family that ships by default 
+    // z85 is the ONLY member of the ascii85/z85 family that ships by default
     // this pins that it is present (and where) so a swap for base32/base58 is caught.
     let names = default_decoder_names_for_test();
     assert_eq!(

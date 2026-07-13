@@ -1,4 +1,4 @@
-//! Decode-through must report a finding at its REAL, in-bounds source offset 
+//! Decode-through must report a finding at its REAL, in-bounds source offset
 //! never the structured preprocessor's appended synthetic copy.
 //!
 //! `build_preprocessed_text` appends a copy of an assignment's value after the

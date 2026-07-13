@@ -14,7 +14,7 @@
 //! recall regression fails loudly here.
 //!
 //! Each variant is asserted three ways: the detector FIRES (a `private-key`
-//! RawMatch exists), the capture INCLUDES the PEM body (not just the header 
+//! RawMatch exists), the capture INCLUDES the PEM body (not just the header
 //! header-only captures collapse under credential dedup), and the header-only
 //! marker (no `END`) does NOT produce a finding (the regex requires a closed
 //! BEGIN/END block, so a bare header is not a credential).
@@ -213,7 +213,7 @@ fn two_distinct_rsa_blocks_yield_two_findings() {
 #[test]
 fn mismatched_begin_end_labels_still_match_lenient_recall() {
     // The BEGIN and END label groups are independent in the regex, so a
-    // corrupted/mismatched block (BEGIN RSA … END PRIVATE KEY) is still caught 
+    // corrupted/mismatched block (BEGIN RSA … END PRIVATE KEY) is still caught
     // a leaked key with a mangled footer must not slip through.
     let text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEMISMATCHEDBODYQ7\n-----END PRIVATE KEY-----";
     let capture = private_key_capture(text).expect("mismatched block must still fire");

@@ -6,7 +6,7 @@
 //! may differ (HS marks a superset; extraction filters), but the
 //! `(detector, credential, offset)` set the scanner emits must be byte-identical.
 //!
-//! This scans the real mirror corpus twice on the SAME compiled scanner 
+//! This scans the real mirror corpus twice on the SAME compiled scanner
 //! `keyhog_scanner::testing::set_phase2_hs(&scanner, Some(true))` (SIMD path) and `Some(false)`
 //! (RegexSet reference), and asserts the finding sets are identical per file. A mismatch
 //! is a recall/precision regression (Law 6/Law 10) and fails the gate.

@@ -4,7 +4,7 @@
 //! # What this feature separates
 //!
 //! The CredData/mirror analysis showed the MoE's dominant confusion is
-//! UUID/opaque-token shapes: `CODECOV_TOKEN = "7b3e5d8c-…"` (a real credential 
+//! UUID/opaque-token shapes: `CODECOV_TOKEN = "7b3e5d8c-…"` (a real credential
 //! 171 contract positives across 62 detectors carry exactly this shape) versus
 //! `SESSION_ID = "50bcba48-…"` / `API_KEY = "<uuid>"` (an identifier, mirror
 //! labels these negative, and they are 68-76% of the CredData FP flood). The

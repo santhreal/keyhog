@@ -4,7 +4,7 @@
 //!
 //! Pins the OCI blob-open SECURITY behaviour of `verify_oci_blob_sha256`: it
 //! routes through the crate's safe opener (O_NONBLOCK + O_NOFOLLOW), so it
-//! verifies a regular blob's sha256, rejects a wrong digest, and, critically 
+//! verifies a regular blob's sha256, rejects a wrong digest, and, critically
 //! REFUSES a symlink blob that a raw `File::open` would have followed. A
 //! malicious OCI layout could place a symlink where a blob belongs, pointing
 //! outside the layout; the no-follow open closes that. Exercised through the

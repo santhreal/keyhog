@@ -125,7 +125,7 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
     // Fail closed on any non-regular file. fstat the OPENED fd (the same object
     // the O_NONBLOCK open returned) so a FIFO/socket/device cannot reach the read
     // path: a FIFO read would hang, a device (`/dev/zero`) would stream until the
-    // read cap, and neither is a scan target. Checking the fd, not the path 
+    // read cap, and neither is a scan target. Checking the fd, not the path
     // also closes the regular-file→FIFO TOCTOU swap. `is_file()` is true ONLY for
     // a regular file on every platform, so this one check covers all special
     // types (and a directory, which never reaches a content read anyway).

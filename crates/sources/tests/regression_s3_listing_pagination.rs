@@ -77,7 +77,7 @@ fn truncated_page_with_token(objects: &str, token: &str) -> String {
     )
 }
 
-/// A truncated page whose `NextContinuationToken` element is present but empty 
+/// A truncated page whose `NextContinuationToken` element is present but empty
 /// the S3-compatible "final page echoed an empty cursor" shape that
 /// `meaningful_continuation_token` normalizes to "exhausted".
 fn truncated_page_empty_token(objects: &str) -> String {

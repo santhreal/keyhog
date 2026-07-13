@@ -88,7 +88,7 @@ fn no_new_duplicate_primary_regex_detectors() {
 
     // Group detector ids by their PRIMARY (patterns[0]) regex. Detectors with no
     // patterns (kind = "phase2-generic": shapeless secrets driven by keywords +
-    // entropy_floor, no regex anchor) have no primary regex and are excluded 
+    // entropy_floor, no regex anchor) have no primary regex and are excluded
     // they cannot collide on a regex string.
     let mut by_regex: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for det in &detectors {

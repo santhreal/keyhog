@@ -213,7 +213,7 @@ fn describe_feature_list(features: &[String]) -> String {
 
 /// How a raw cache read failed to parse into a trusted [`AutorouteCache`].
 /// The ONE parse pipeline (envelope version gate BEFORE the full payload
-/// deserialize) shared by the reader, the inspection view, and the merge-save 
+/// deserialize) shared by the reader, the inspection view, and the merge-save
 /// three call sites, three POLICIES, one parse.
 enum CacheParseError {
     /// The bytes are not JSON with the version envelope shape at all.
@@ -664,7 +664,7 @@ fn validate_decision_route_evidence(
         return Err("selected backend timing evidence is invalid".into());
     }
     // Soundness gate. The persisted backend must equal the deterministic
-    // resolution of the persisted timing evidence (`resolved_routing_backend`) 
+    // resolution of the persisted timing evidence (`resolved_routing_backend`)
     // the SAME confidence-interval logic calibration used to select it, so a
     // tampered or non-deterministic cache that names any other backend is
     // rejected. Routing is decided from 95% CIs, never a single `best_ns` trial.

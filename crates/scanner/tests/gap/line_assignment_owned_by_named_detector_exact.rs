@@ -98,7 +98,7 @@ proptest! {
         prop_assert_eq!(line_owned(&refs, &line), oracle(&refs, &line));
     }
 
-    /// RECALL: a line keyed on an owned credential keyword (`key=value`) is owned 
+    /// RECALL: a line keyed on an owned credential keyword (`key=value`) is owned
     /// pins the real extractor returns the key unchanged and membership hits.
     #[test]
     fn a_line_keyed_on_an_owned_credential_keyword_is_owned(

@@ -34,7 +34,7 @@ pub mod regression_ml_threshold_wired_to_confidence_floor;
 pub mod regression_scan_system_mount_filters_tier_b;
 pub mod regression_value_parser_fix_guidance;
 // NOTE: `target_spec_org_contracts` is deliberately NOT aggregated yet. Running
-// it (it was a CI-orphan) surfaces 9 REAL organizational-contract violations 
+// it (it was a CI-orphan) surfaces 9 REAL organizational-contract violations
 // `keyhog-core` exposes 120 reachable `pub` items (budget 90), `keyhog-verifier`
 // is over its `pub` budget, and `keyhog-sources` has 5 top-level `pub use` lines
 // (target <= 3). Wiring the guard before pruning that surface would turn CI red,

@@ -27,7 +27,7 @@ fn parse_inference_markers(raw: &str) -> Result<InferenceMarkers, String> {
 /// parsed exactly ONCE here and each classifier below reads its field, instead
 /// of the previous eight statics that each re-`include_str!`'d and re-parsed the
 /// whole file at first use (8x redundant startup parse + eight `expect` sites).
-/// Fail-closed (Law 10): invalid bundled metadata panics loudly at first use 
+/// Fail-closed (Law 10): invalid bundled metadata panics loudly at first use
 /// the scanner refuses to run without credential-context classification truth.
 static INFERENCE_MARKERS: LazyLock<InferenceMarkers> =
     LazyLock::new(|| match parse_inference_markers(INFERENCE_MARKERS_TOML) {

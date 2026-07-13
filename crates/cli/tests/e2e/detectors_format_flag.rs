@@ -13,7 +13,7 @@
 //! 1. `detectors --format json` is accepted and emits the structured array.
 //! 2. `detectors --format text` is accepted and is NOT JSON (human summary).
 //! 3. The narrow format set is enforced: a findings-report-only format
-//!    (`sarif`) is rejected for `detectors` rather than silently accepted 
+//!    (`sarif`) is rejected for `detectors` rather than silently accepted
 //!    the `detectors` surface intentionally offers only text|json.
 //! 4. The retired `--json` duplicate is rejected instead of silently choosing
 //!    a second path to the same behavior.

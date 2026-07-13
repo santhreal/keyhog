@@ -299,7 +299,7 @@ mod sequential_placeholder_tests {
     /// SCOPING PROOF: the monotonic gate is ENTROPY-only. The UNIVERSAL
     /// is_known_example_credential (used by strong vendor detectors) must NOT
     /// suppress a monotonic value, so a vendor contract fixture whose filler token
-    /// is the alphabet (`sdk_key="abcdefghijklmnopqrstuvwx…"`) still surfaces 
+    /// is the alphabet (`sdk_key="abcdefghijklmnopqrstuvwx…"`) still surfaces
     /// while the entropy path (which calls is_monotonic_sequence_placeholder) does
     /// suppress it. This is the fix for the contract regression the universal
     /// wiring caused.

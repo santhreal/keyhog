@@ -1,7 +1,7 @@
 //! Regression coverage for core PATH NORMALIZATION semantics.
 //!
 //! Two ONE-PLACE surfaces are exercised here:
-//!   1. `keyhog_core::winpath::{has_windows_drive_prefix, is_windows_absolute}` 
+//!   1. `keyhog_core::winpath::{has_windows_drive_prefix, is_windows_absolute}`
 //!      the BROAD (drive-prefix) vs STRICT (root-anchored) same-name-divergence
 //!      predicates. This file asserts the RELATIONSHIP between the two and a set
 //!      of boundary bools that are DISTINCT from `tests/unit/winpath.rs` (bare

@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn dedup_is_byte_exact_not_case_folded() {
-        // With case preserved, `AB` and `ab` are distinct tokens and both survive 
+        // With case preserved, `AB` and `ab` are distinct tokens and both survive
         // dedup is exact-string, never case-folded.
         let out = parse_token_list(owned(&["AB", "ab"]), &preserve("prefix")).unwrap();
         assert_eq!(out, vec!["AB", "ab"]);

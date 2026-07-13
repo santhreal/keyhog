@@ -3,7 +3,7 @@
 //!
 //! An IAM ARN (`arn:aws:iam::123456789012:role/Name`) is an identifier, not a
 //! secret, and its long random-looking tail otherwise trips generic gates. Two
-//! predicates recognise it, split by a deliberate, and easily-missed 
+//! predicates recognise it, split by a deliberate, and easily-missed
 //! distinction this suite pins:
 //!   • `looks_like_aws_iam_arn` requires the literal `arn:` lead (the full ARN).
 //!   • `looks_like_trimmed_aws_iam_arn` requires the `arn:` lead to be ABSENT (a

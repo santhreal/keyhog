@@ -8,7 +8,7 @@
 //!     secrets collapse to one `Arc` in a `HashMap`/`HashSet`), a `Hash`/`Eq`
 //!     inconsistency silently corrupts dedup, so it must hold for EVERY input;
 //!   * their `serde` round-trip had a real corruption bug (kimi-wave2
-//!     §Critical: a UTF-8 value like `b64:SGVsbG8=` was re-decoded as base64) 
+//!     §Critical: a UTF-8 value like `b64:SGVsbG8=` was re-decoded as base64)
 //!     the property `deserialize(serialize(c)) == c` over arbitrary bytes
 //!     exercises BOTH the `text` and `b64` serialization branches and is the
 //!     durable guard against that whole class;

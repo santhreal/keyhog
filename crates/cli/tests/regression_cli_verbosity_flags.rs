@@ -265,7 +265,7 @@ fn detectors_search_no_match_prints_nothing() {
     assert_eq!(text(&out.stdout), "", "no-match search must print nothing");
 }
 
-/// The JSON surface for a no-match search is the empty array `[]\n` exactly 
+/// The JSON surface for a no-match search is the empty array `[]\n` exactly
 /// the machine-readable "quiet" shape (no banner chatter, exit 0, no escapes).
 #[test]
 fn detectors_json_no_match_is_empty_array() {

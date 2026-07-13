@@ -16,7 +16,7 @@
 //!   * the nonexistent `--include` flag is a clap usage error (exit 2).
 //!
 //! Two DISTINCT valid GitHub classic PATs are planted (identical values would
-//! be deduped into one finding with an extra `additional_locations` entry 
+//! be deduped into one finding with an extra `additional_locations` entry
 //! test #11 pins exactly that), so which file survived a filter is provable by
 //! the surviving finding's file path AND its `credential_hash`.
 //!

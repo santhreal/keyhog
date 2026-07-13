@@ -29,7 +29,7 @@
 //!   * ROBUSTNESS (never panics on arbitrary bytes; empty in ⇔ empty out).
 //!
 //! `window_size > overlap` is the slicer's own hard precondition (it asserts
-//! otherwise), so every generated `(window_size, overlap)` pair honours it 
+//! otherwise), so every generated `(window_size, overlap)` pair honours it
 //! feeding an inverted pair would test the panic, not the arithmetic.
 //! Base build: the slicer facade needs no cargo feature.
 

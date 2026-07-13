@@ -12,7 +12,7 @@
 //! (keywords include `sk-`), so it fires on the scalar/AC-literal path with no
 //! Hyperscan/SIMD/GPU present. Every assertion below is therefore true on a
 //! bare CI runner, not only on an accelerated host. The `.env` structured pass
-//! is purely additive context, the raw byte scan already recovers each value 
+//! is purely additive context, the raw byte scan already recovers each value
 //! so these contracts hold whether or not the structured preprocessor runs,
 //! which is exactly the recall-safe, no-silent-degrade behaviour we want to
 //! lock.

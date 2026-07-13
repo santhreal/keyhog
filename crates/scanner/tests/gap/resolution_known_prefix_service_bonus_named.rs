@@ -60,7 +60,7 @@ fn generic_detector_does_not_receive_the_known_prefix_bonus() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin the bonus at one confidence; these SWEEP it. Every
 // weighted term besides the known-prefix bonus is a function of detector_id,
-// confidence, or credential LENGTH, all identical between the two 16-byte creds 
+// confidence, or credential LENGTH, all identical between the two 16-byte creds
 // so their difference is EXACTLY the bonus for ANY confidence: 5.0 for a
 // service-anchored detector, 0 for a generic one. A third property pins that the
 // confidence term is positive (priority strictly increases with confidence).

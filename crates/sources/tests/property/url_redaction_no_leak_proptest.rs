@@ -1,4 +1,4 @@
-//! Property tier for `redact_url` (reached via the `SourceTestApi` web facade) 
+//! Property tier for `redact_url` (reached via the `SourceTestApi` web facade)
 //! the ONE credential-masking gate every WebSource / cloud / DNS error message
 //! routes through before it is logged (`url_redaction.rs`; called at each SSRF
 //! refusal site in `web/ssrf.rs`). A leak here is a real secret-disclosure bug:

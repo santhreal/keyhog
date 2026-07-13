@@ -39,7 +39,7 @@ fn severity_of(i: u8) -> Severity {
     }
 }
 
-/// `(detector_idx, credential_idx, severity_idx, confidence, offset, line)` 
+/// `(detector_idx, credential_idx, severity_idx, confidence, offset, line)`
 /// small universes so distinct matches frequently tie on a prefix of the sort
 /// key and exercise the tiebreak cascade.
 type Spec = (u8, u8, u8, Option<f64>, u32, u32);

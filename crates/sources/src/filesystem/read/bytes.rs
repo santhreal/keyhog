@@ -13,7 +13,7 @@ use super::raw::open_file_safe;
 /// Buffered read bounded at `cap` bytes, routed through the same
 /// already-open descriptor the mmap attempt used. Replaces the bare whole-file
 /// `fs` read fallbacks, which (a) FOLLOWED symlinks, re-opening the path with
-/// the libc default, undoing the no-follow guard the mmap open just applied 
+/// the libc default, undoing the no-follow guard the mmap open just applied
 /// and (b) were UNBOUNDED, so a compressed file grown past its stat between the
 /// size check and the fallback read (a TOCTOU race) was slurped whole into a
 /// `Vec`. Reading the existing descriptor preserves the no-follow open and

@@ -107,7 +107,7 @@ struct VerifyTaskShared {
     service_semaphores: Arc<HashMap<Arc<str>, Arc<Semaphore>>>,
     /// Fallback per-service concurrency for a group whose service is absent from
     /// `service_semaphores`. Threaded from `VerifyConfig.max_concurrent_per_service`
-    /// so raising the configured cap also raises this fallback (single owner 
+    /// so raising the configured cap also raises this fallback (single owner
     /// no second hardcoded default).
     max_concurrent_per_service: usize,
     client: Client,

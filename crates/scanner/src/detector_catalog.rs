@@ -3,7 +3,7 @@
 //! detector-id const/predicate names a real embedded detector.
 //!
 //! This is TEST-ONLY (`#[cfg(test)]`). It once also hosted
-//! `validate_rule_detector_ids`: a Tier-B rule-file detector-id-list validator 
+//! `validate_rule_detector_ids`: a Tier-B rule-file detector-id-list validator
 //! but the DET-0 migration moved every per-detector property onto the detector's
 //! OWN spec (`weak_anchor` / `private_key_block` / `credential_shape`), so no rule
 //! file carries a detector-id list anymore and the validator had no production

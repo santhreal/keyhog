@@ -145,7 +145,7 @@ fn tied_match(offset: usize) -> RawMatch {
 /// chunks may not even overflow the cap). When a chunk produces more than
 /// `max_matches_per_chunk` matches, `ScanState::push_match` keeps the top-N by
 /// `RawMatch::Ord` in a bounded heap. If two candidates ever compared Equal at the
-/// survival boundary, eviction among them would fall back to INSERTION ORDER 
+/// survival boundary, eviction among them would fall back to INSERTION ORDER
 /// which is the phase-2 extraction order the diagnostic test perturbs, and is
 /// HashMap-/thread-nondeterministic in production. These 24 candidates tie on every
 /// primary key and differ only by offset, so only the total-order `(offset, line)`

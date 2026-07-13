@@ -213,7 +213,7 @@ pub fn git_hash() -> &'static str {
 /// Digest identifying the EXACT embedded detector set compiled into this binary
 /// (`<count>-<fnv1a_hex>`). Stamped by `build.rs` via
 /// `cargo:rustc-env=KEYHOG_DETECTOR_DIGEST`. Lets the benchmark and `--version`
-/// assert the running binary's detectors match the on-disk `detectors/` tree 
+/// assert the running binary's detectors match the on-disk `detectors/` tree
 /// the authoritative answer to "what got compiled in" when cargo's
 /// `rerun-if-changed` can't be trusted across in-place TOML edits.
 #[inline]

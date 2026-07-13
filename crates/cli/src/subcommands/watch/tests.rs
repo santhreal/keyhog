@@ -90,7 +90,7 @@ fn watch_honors_inline_ignore_suppression() {
 #[test]
 fn watch_honors_disabled_detector_config() {
     // `.keyhog.toml` `[detector.<id>] enabled = false` must be resolved by
-    // `setup_default_scan_runtime` and drop the detector before it ever fires 
+    // `setup_default_scan_runtime` and drop the detector before it ever fires
     // proving the config is no longer silently ignored by the watch runtime.
     let dir = tempfile::TempDir::new().expect("tempdir");
     std::fs::write(

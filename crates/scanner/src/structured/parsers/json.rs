@@ -83,7 +83,7 @@ fn extract_tfstate_output_values(
                         // `map(string)`, `list(string)`, `tuple(...)`, etc.). The
                         // old code only handled the scalar arm and dropped every
                         // secret nested inside a complex output value on the floor
-                        // (Law 10: a whole decode-through surface silently lost 
+                        // (Law 10: a whole decode-through surface silently lost
                         // e.g. `outputs.credentials.value = { api_key = "AKIA…" }`).
                         // Walk it for EVERY nested scalar with the same
                         // arbitrary-JSON scalar extractor the resource-attribute
@@ -426,7 +426,7 @@ static JUPYTER_TEXT_OUTPUT_MIME_TYPES: std::sync::LazyLock<Vec<String>> =
     std::sync::LazyLock::new(|| {
         // `include_str!` embeds the file at compile time; attacker-controlled input
         // cannot reach this parse. A panic here indicates a build-time defect in the
-        // bundled `rules/jupyter-mime-types.toml`, not a runtime hostile-input risk 
+        // bundled `rules/jupyter-mime-types.toml`, not a runtime hostile-input risk
         // fail-closed (Law 10), naming the file so the build owner knows what to fix.
         match parse_jupyter_mime_types(include_str!("../../../../../rules/jupyter-mime-types.toml"))
         {

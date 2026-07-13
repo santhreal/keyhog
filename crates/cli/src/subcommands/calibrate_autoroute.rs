@@ -11,7 +11,7 @@
 //! not own (Screwdriver Principle: one job, the core workload sweep, done
 //! precisely).
 //!
-//! Each probe is a real child `keyhog scan --autoroute-calibrate` process 
+//! Each probe is a real child `keyhog scan --autoroute-calibrate` process
 //! the same invocation the installer spawned, so calibration behavior is
 //! unchanged byte for byte; only the loop moved from shell into Rust. Because
 //! it runs in the same build whose presets it sweeps, every preset flag below

@@ -1,6 +1,6 @@
 //! Law 10 guard: the per-chunk GPU trigger path (`collect_triggered_patterns_gpu`,
 //! the `scan_inner` entry) must never SILENTLY swap to SIMD/CPU. Every path off the
-//! GPU, missing matcher, missing backend handle, or a failed presence dispatch 
+//! GPU, missing matcher, missing backend handle, or a failed presence dispatch
 //! must record a concrete reason in `gpu_last_degrade_reason` AND route through
 //! `deny_silent_gpu_degrade_with_reason` (which hard-fails under forced backend
 //! or require-GPU policy and otherwise emits the one-shot warning).

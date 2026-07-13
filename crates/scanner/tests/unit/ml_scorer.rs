@@ -277,7 +277,7 @@ fn structured_nonsecret_battery() -> Vec<(&'static str, String, &'static str)> {
 /// `score_with_config` at runtime for generic/entropy candidates. These are the
 /// exact lists `ml/probe_entropy_separation.py` scores with (its
 /// `config_lists.DEFAULT_LISTS` mirror `ScanConfig::default()`), so this test is
-/// a faithful CI mirror of that oracle. No list is duplicated into the test 
+/// a faithful CI mirror of that oracle. No list is duplicated into the test
 /// it reads the canonical config.
 fn battery_score(value: &str, context: &str) -> f64 {
     let cfg = ScanConfig::default();

@@ -207,7 +207,7 @@ fn fingerprint_is_64_lowercase_hex_chars() {
     );
 }
 
-/// The fingerprint object contains EXACTLY one key, the versioned identity 
+/// The fingerprint object contains EXACTLY one key, the versioned identity
 /// and nothing else. Guards against accidental extra fingerprints that would
 /// change code-scanning's dedup grouping.
 #[test]

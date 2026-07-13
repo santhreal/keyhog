@@ -55,7 +55,7 @@ fn invalid_length_and_padding_positions_are_rejected() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin one example of each rule; these SWEEP them. The core is a
 // UNIVERSAL CONSISTENCY invariant: whenever `shape` admits a candidate, every
-// field is pinned to an exact independent computation (no mirror-oracle) 
+// field is pinned to an exact independent computation (no mirror-oracle)
 // `distinct_alnum` equals the count of distinct ASCII-alnum byte VALUES,
 // `has_plus`/`has_slash`/`has_padding` mirror the candidate's bytes, and a Some
 // result never carries a url-safe byte. Then CONSTRUCTIVE positives (plain quad,

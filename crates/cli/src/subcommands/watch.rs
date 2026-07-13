@@ -534,7 +534,7 @@ pub(crate) mod testing {
         let file_path = root.join(file_name);
         std::fs::write(&file_path, body)?;
         // Pass the DEFAULT `detectors` sentinel, the ONLY non-existent path the
-        // scan-config validator whitelists (`validate_detector_path_for_scan`) 
+        // scan-config validator whitelists (`validate_detector_path_for_scan`)
         // so this resolves to the EMBEDDED corpus exactly as `keyhog watch` does
         // with no `--detectors` and no `detectors/` dir present (the cli crate
         // has none). A made-up non-existent path is (correctly) rejected as an

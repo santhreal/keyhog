@@ -4,7 +4,7 @@
 //! asserts the OWNER exists (source-shape: `contains("fn path_basename(")`), it
 //! never exercises the mixed-separator behavior. Since keyhog scans repos that
 //! carry BOTH `/` (POSIX) and `\` (Windows-authored) paths, sometimes MIXED in
-//! one string (e.g. a Windows path embedded in a POSIX-checked-out repo) 
+//! one string (e.g. a Windows path embedded in a POSIX-checked-out repo)
 //! getting the last component wrong misattributes a finding to the wrong file or
 //! defeats a filename-based suppression. These pin the actual extraction.
 

@@ -180,7 +180,7 @@ fn credential_sufficient_secrets_survive_whitespace_variants() {
     }
 
     // Companion-required corpus context, counted ONCE at baseline. Their
-    // per-variant survival is a bench-owned RATE, never computed here (T-01) 
+    // per-variant survival is a bench-owned RATE, never computed here (T-01)
     // matching `line_length_runner`'s baseline-only companion treatment.
     let mut companion_runs = 0usize;
     let mut companion_hits = 0usize;

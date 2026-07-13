@@ -1164,7 +1164,7 @@ mod tests {
     fn base64_integrity_body_floor_is_exactly_forty_for_both_gates() {
         // The 40-char floor both integrity gates bind through the single owner
         // `looks_like_base64_integrity_body`. Use pad-free slices of a valid
-        // base64 body so ONLY the length floor, not the base64 %4 shape rule 
+        // base64 body so ONLY the length floor, not the base64 %4 shape rule
         // decides: 36 chars is a valid base64 shape (36 % 4 == 0) yet below the
         // floor, 40 chars clears it.
         let under_floor = &NPM_SRI_BODY[..36];

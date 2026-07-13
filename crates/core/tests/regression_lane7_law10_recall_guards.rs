@@ -122,7 +122,7 @@ fn many_distinct_singletons_all_survive() {
     );
 }
 
-/// Two detectors sharing one credential (same hash) collapse to ONE finding 
+/// Two detectors sharing one credential (same hash) collapse to ONE finding
 /// this exercises the `len() > 1` arm, not the singleton arm, and still emits
 /// exactly one finding with the loser folded into companions.
 #[test]

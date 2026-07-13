@@ -115,7 +115,7 @@ fn dogfood_captures_redacted_event() {
     // (`keyhog_core::redact`), which scales the retained edge to credential length
     // (`(len/8).clamp(1,4)`): the 20-char AWS EXAMPLE key keeps 2 leading + 2
     // trailing bytes around an ellipsis (`AK...LE`), NOT a fixed 4+4 prefix. Pin
-    // to the canonical redaction of the credential this test planted so that 
+    // to the canonical redaction of the credential this test planted so that
     // even if another test's EXAMPLE suppression interleaves in the process-global
     // buffer under parallel execution (we assert against our own event).
     let planted = concat!("AK", "IAIOSFODNN7EXAMPLE");

@@ -76,7 +76,7 @@ proptest! {
         prop_assert!(!suppresses(COLLISION_CANDIDATE, "EXAMPLE", Some(e)));
     }
 
-    /// A match bounded on BOTH sides always suppresses, regardless of entropy 
+    /// A match bounded on BOTH sides always suppresses, regardless of entropy
     /// the entropy collision gate is only consulted for one-sided matches.
     #[test]
     fn both_sided_boundary_suppresses_regardless_of_entropy(e in 0.0f64..9.0) {

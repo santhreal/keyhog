@@ -102,7 +102,7 @@ fn punctuation_adjacent_to_specials_resets_run() {
 
 #[test]
 fn escape_introducer_bytes_are_not_base64_run_bytes() {
-    // '%' opens a `%XX` url-escape and '\\' opens a `\u`/`\x` string-escape 
+    // '%' opens a `%XX` url-escape and '\\' opens a `\u`/`\x` string-escape
     // both are handled by the gate's DEDICATED counters, never the base64 run,
     // so the alphabet predicate must reject them (a `true` here would merge the
     // two counting regimes and corrupt the 24-run boundary).
@@ -250,7 +250,7 @@ fn prose_without_encoded_shape_never_surfaces_the_needle() {
 
 #[test]
 fn sub_threshold_base64_run_cannot_carry_the_needle() {
-    // Boundary twin of the positive: a base64 blob whose contiguous run is 23 
+    // Boundary twin of the positive: a base64 blob whose contiguous run is 23
     // one byte UNDER MIN_DECODABLE_RUN (24). 23 base64 chars decode to at most
     // 17 bytes, which cannot contain the 25-char needle regardless of whether
     // the gate admits it, so the needle is provably absent. This pins the

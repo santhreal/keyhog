@@ -3,7 +3,7 @@
 //! `%XX` escape edge cases.
 //!
 //! The percent decoder in this crate is a STRICT RFC-3986 percent decoder: it
-//! ONLY rewrites `%XX` escapes and copies every other byte, including `+` 
+//! ONLY rewrites `%XX` escapes and copies every other byte, including `+`
 //! through unchanged. It is deliberately NOT an
 //! `application/x-www-form-urlencoded` decoder, so `+` is a literal `+`, never a
 //! space; a real space is only produced by the `%20` escape. Every assertion

@@ -40,7 +40,7 @@ struct InlineCase {
 }
 
 /// Read every `detectors/*.toml`, returning the id + inline `[[detector.tests]]`
-/// fixtures for the detectors that ship them. Fails LOUDLY on a parse error 
+/// fixtures for the detectors that ship them. Fails LOUDLY on a parse error
 /// a malformed detector TOML is a source bug, never a silently-skipped file
 /// (Law 10).
 fn load_inline_cases() -> Vec<InlineCase> {

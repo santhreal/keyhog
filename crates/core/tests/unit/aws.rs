@@ -233,7 +233,7 @@ proptest! {
     /// acceptance the set stores that trimmed form. The generator `[0-9a ]{0,16}`
     /// is dense in every boundary the hand-written example tests pin only pointwise
     ///: exactly-12 (accept), 11/13 digits (length reject), a non-digit among 12
-    /// chars (charset reject), and leading/trailing spaces (trim then re-check) 
+    /// chars (charset reject), and leading/trailing spaces (trim then re-check)
     /// so no edge can let a malformed account into the canary set (which would
     /// silently mis-classify a real credential's canary status) or drop a valid one.
     #[test]

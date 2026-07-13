@@ -384,7 +384,7 @@ fn lockdown_with_show_secrets_fails_closed_exit_2() {
     );
 }
 
-/// `--show-secrets` sarif: the reveal flag applies uniformly across formats 
+/// `--show-secrets` sarif: the reveal flag applies uniformly across formats
 /// the full plaintext token appears in the SARIF document, and it is the SAME
 /// single result (ruleId unchanged) as the redacted run.
 #[test]

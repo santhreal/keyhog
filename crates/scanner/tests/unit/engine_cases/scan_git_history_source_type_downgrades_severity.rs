@@ -65,7 +65,7 @@ fn git_history_hyphen_source_type_downgrades_severity() {
 
 /// `location.source` Arcs for a single scanner scanning two identical chunks of
 /// `source_type`. A scanner-wide static interner is cloned per scan but built
-/// once per scanner, while the per-scan metadata interner is rebuilt per chunk 
+/// once per scanner, while the per-scan metadata interner is rebuilt per chunk
 /// so a PRE-SEEDED source_type resolves to the same shared `Arc<str>` across both
 /// chunk buckets, whereas an un-seeded one allocates a fresh Arc per chunk.
 fn source_arcs_over_two_chunks(source_type: &str) -> (Arc<str>, Arc<str>) {

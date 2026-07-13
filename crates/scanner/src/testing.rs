@@ -100,7 +100,7 @@ pub fn crate_source_path(rel: &str) -> std::path::PathBuf {
 /// relative path against the *process* CWD, which only equals the package root
 /// under a plain `cargo test`. That makes the read break when the test binary
 /// is run directly, under `cargo-nextest` (which sets CWD to the workspace
-/// root, not the package), or whenever a sibling test mutates the global CWD 
+/// root, not the package), or whenever a sibling test mutates the global CWD
 /// turning a deterministic structural check into a parallel-load `NotFound`
 /// flake. Anchoring to [`crate_source_path`] (compile-time `CARGO_MANIFEST_DIR`)
 /// makes the read deterministic from any CWD and under any runner.
@@ -297,7 +297,7 @@ pub fn inflate_output_cap_for_test() -> usize {
 }
 
 /// Build a gzip container (`1f 8b …`) wrapping `data`, for use as an inflate
-/// fixture. Uses the scanner's own `flate2` dep so the integration-test binary 
+/// fixture. Uses the scanner's own `flate2` dep so the integration-test binary
 /// which cannot link `flate2` directly, can still construct a decompression
 /// bomb (compress a huge run of one byte into a tiny blob) and feed it to
 /// [`try_inflate_to_text_for_test`]. Deterministic; no I/O.
@@ -683,7 +683,7 @@ pub fn leading_assignment_key_for_test(candidate: &str) -> Option<String> {
     crate::generic_keyword_owner::leading_assignment_key(candidate).map(str::to_owned)
 }
 
-/// The assignment-keyword normalizer (`engine::phase2_generic::keywords`) 
+/// The assignment-keyword normalizer (`engine::phase2_generic::keywords`)
 /// folds `SEGMENT_WRITE_KEY` / `segment-write-key` / `segment.write.key` into
 /// one comparable `segment_write_key` token. Lets a gap test pin the exact
 /// normalized string (case-fold, separator collapse, leading/trailing-separator
@@ -1072,7 +1072,7 @@ pub fn keyword_is_crypto_key_material_for_test(keyword: &str) -> bool {
     crate::entropy::scanner::keyword_is_crypto_key_material(keyword)
 }
 
-/// The resolved entropy threshold that `keyword_context` derives for a line 
+/// The resolved entropy threshold that `keyword_context` derives for a line
 /// the observable half of the shared `operator_entropy_override` owner (returned
 /// as a bare `f64` so the private `KeywordContext` stays crate-internal).
 pub fn keyword_context_threshold_for_test(
@@ -1540,7 +1540,7 @@ pub fn simdsieve_hot_pattern_bindings() -> Vec<(&'static [u8], &'static str)> {
 }
 
 /// The single-owner PEM armor marker (`crate::credential_shapes::PEM_BEGIN_MARKER`),
-/// exposed so a guard can bind it to its authoritative private-key detector TOML 
+/// exposed so a guard can bind it to its authoritative private-key detector TOML
 /// proving the suppression carve-out and the entropy plausibility gate key off the
 /// exact literal the detector uses to surface a PEM key (no bare-literal drift).
 pub fn pem_begin_marker() -> &'static str {
@@ -2243,7 +2243,7 @@ pub mod multiline {
 
     /// Test seam for the structural template-interpolation resolver. Resolves a
     /// `` `${a}${b}` `` / `` `${"lit"}` `` template RHS against the given
-    /// `(name, value)` variable bindings, returning the concatenated literal 
+    /// `(name, value)` variable bindings, returning the concatenated literal
     /// or `None` if any interpolation is an unresolved reference (so a partial
     /// candidate is never emitted). Lets a gap test pin the exact reassembly.
     pub fn resolve_template_reference_for_test(
@@ -2518,7 +2518,7 @@ pub fn resolve_value_shaped_group_for_test(
 }
 /// Compile a detector pattern (or companion) regex through the engine's EXACT
 /// builder (`compiler_compile::shared_regex_compile`: case-insensitive, CRLF,
-/// the engine's size / DFA limits) and return its capture-group count 
+/// the engine's size / DFA limits) and return its capture-group count
 /// `Regex::captures_len()`, i.e. the implicit whole-match group 0 plus every
 /// explicit capture group.
 ///
@@ -3571,7 +3571,7 @@ pub mod entropy_isolated {
     }
 
     /// The randomness gate the contiguous floor depends on, exposed so a boundary
-    /// test can self-validate its positive/negative candidates' precondition 
+    /// test can self-validate its positive/negative candidates' precondition
     /// if the English-bigram model ever reclassifies a fixture, the precondition
     /// assert fails loudly instead of the floor test passing for the wrong reason.
     pub fn is_random_token(value: &str) -> bool {

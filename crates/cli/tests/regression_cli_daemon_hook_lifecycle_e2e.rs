@@ -40,7 +40,7 @@ const EXPECTED_HOOK_CONTENT: &str = concat!(
 );
 
 /// Create a real git repository at `dir` so `keyhog hook install` (which runs
-/// `git rev-parse --git-dir`) accepts it. A bare `mkdir .git` is NOT enough 
+/// `git rev-parse --git-dir`) accepts it. A bare `mkdir .git` is NOT enough
 /// git only recognizes a directory initialized by `git init`.
 fn init_git_repo(dir: &Path) {
     let out = Command::new("git")

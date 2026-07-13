@@ -185,7 +185,7 @@ thread_local! {
 ///
 /// SOUNDNESS: each set entry is built with the EXACT flags of the pattern's
 /// own regex: `shared_regex` (case-insensitive + CRLF + size/DFA limits) for
-/// `detector` patterns, `Regex::new` defaults for `plain` homoglyph variants 
+/// `detector` patterns, `Regex::new` defaults for `plain` homoglyph variants
 /// so the set reports a pattern iff that pattern's regex matches. No real match
 /// is ever skipped (recall-preserving); only dead work is removed. It MUST run
 /// over the same text the extraction uses (`preprocessed.text`).

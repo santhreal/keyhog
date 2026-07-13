@@ -1033,7 +1033,7 @@ mod special_files {
         use std::os::unix::io::AsRawFd;
         let dir = tempfile::tempdir().unwrap();
         let path = regular(dir.path(), "locked.txt", b"aws_secret = hunter2longvalue");
-        // A SEPARATE open file description holds an exclusive advisory lock 
+        // A SEPARATE open file description holds an exclusive advisory lock
         // exactly how a second process (or a torn writer) would. flock treats
         // distinct OFDs independently, so this conflicts even in-process.
         let holder = std::fs::File::open(&path).unwrap();
@@ -1048,7 +1048,7 @@ mod special_files {
             open_file_safe(&path).is_err(),
             "open_file_safe must refuse a file another owner holds exclusively locked"
         );
-        // The mmap read path opens via `open_file_safe`, so it must skip too 
+        // The mmap read path opens via `open_file_safe`, so it must skip too
         // this directly guards the removal of raw.rs's redundant re-flock.
         assert!(
             read_file_mmap(&path).is_none(),

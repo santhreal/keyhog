@@ -7,7 +7,7 @@
 //! ## Why this is recall-critical
 //!
 //! When keyhog scans a compiled binary, the `binary` backend recovers candidate
-//! strings from the decompiler / `strings`-style output as C source fragments 
+//! strings from the decompiler / `strings`-style output as C source fragments
 //! e.g. `"AKIA\x41QYLPM..."`. Those fragments still carry C escape sequences.
 //! [`extract_string_literals`] must decode each escape to the exact byte the
 //! compiler originally emitted *before* the detectors run, because the detector

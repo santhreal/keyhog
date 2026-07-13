@@ -25,7 +25,7 @@ fn scan_jsonl_one_line_per_finding() {
     let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
     assert!(!lines.is_empty(), "jsonl must emit at least one line");
     // Law 6: every jsonl line is a real finding object carrying a detector_id,
-    // and the planted AWS key must surface specifically as `aws-access-key` 
+    // and the planted AWS key must surface specifically as `aws-access-key`
     // not merely "some line that parses".
     let detector_ids: Vec<String> = lines
         .iter()

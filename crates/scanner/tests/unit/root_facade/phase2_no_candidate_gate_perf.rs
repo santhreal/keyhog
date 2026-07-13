@@ -25,7 +25,7 @@ use super::support;
 use support::paths::detector_dir;
 
 /// Isolated `mark_matches` gate path cost ceiling. The pre-fix always-active HS
-/// scan cost 30931 ns/call. The first-bigram+AC gate must be at least 10x cheaper 
+/// scan cost 30931 ns/call. The first-bigram+AC gate must be at least 10x cheaper
 /// this ceiling is 3000 ns, leaving 10x headroom below the pre-fix baseline.
 /// On Zen 4 / warm L1d the gate typically costs 100-600 ns for ~200-byte
 /// no-candidate text.

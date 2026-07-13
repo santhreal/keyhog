@@ -125,7 +125,7 @@ proptest! {
         }
     }
 
-    /// A token is produced IFF the input carries at least one ASCII alphanumeric 
+    /// A token is produced IFF the input carries at least one ASCII alphanumeric
     /// separators/other bytes alone normalize to nothing.
     #[test]
     fn normalize_is_some_iff_input_has_an_alphanumeric(keyword in "(?s).{0,40}") {

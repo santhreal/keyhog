@@ -26,7 +26,7 @@ fn utf16le_with_bom(s: &str) -> Vec<u8> {
     out
 }
 
-/// The NUL-interleaved form a raw-byte decode would have left the marker in 
+/// The NUL-interleaved form a raw-byte decode would have left the marker in
 /// asserting its ABSENCE proves the canonical decoder ran.
 fn nul_interleaved(s: &str) -> String {
     s.chars().flat_map(|c| [c, '\u{0}']).collect()

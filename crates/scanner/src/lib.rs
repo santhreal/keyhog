@@ -12,15 +12,15 @@
 //!
 //! - **Config / state / shared types**: [`scanner_config`], [`scan_state`],
 //!   [`types`], [`hw_probe`] (hardware routing), [`error`].
-//! - **Phase 1 · prefilter** (cheap "could a detector fire here?") 
+//! - **Phase 1 · prefilter** (cheap "could a detector fire here?")
 //!   [`alphabet_filter`], [`bigram_bloom`], [`prefix_trie`], `ascii_ci`,
 //!   `simd` / `simdsieve_prefilter` (feature-gated), `prefilter_degrade`
 //!   (loud Law-10 fallback).
 //! - **Compile** (detectors → matchers): [`compiler`], `shared_regexes`,
 //!   [`static_intern`].
-//! - **Scan engine** (phase 1 triggers + phase 2 extraction; CPU or GPU) 
+//! - **Scan engine** (phase 1 triggers + phase 2 extraction; CPU or GPU)
 //!   [`engine`] (start at its header doc), [`pipeline`], [`gpu`].
-//! - **Decode-through** (nested base64/hex/url/unicode, recursive) 
+//! - **Decode-through** (nested base64/hex/url/unicode, recursive)
 //!   [`decode`], [`decode_structure`].
 //! - **Entropy**: [`entropy`] is now the single home for all of it: the
 //!   keyword/scanner detection logic plus the fast Shannon-entropy primitive
@@ -29,7 +29,7 @@
 //! - **Confidence / ML**: [`ml_scorer`] (serves the embedded `weights.bin`;
 //!   trained out-of-band by the repo's `ml/`), [`confidence`],
 //!   `probabilistic_gate`.
-//! - **Context, fragment reassembly, multiline, suppression, resolution** 
+//! - **Context, fragment reassembly, multiline, suppression, resolution**
 //!   [`context`], `fragment_cache`, [`multiline`], `suppression`,
 //!   [`resolution`], `structured`.
 //! - **Specialized validators**: [`checksum`], [`jwt`], [`aws`],

@@ -96,7 +96,7 @@ pub struct DetectorSpec {
     /// `key_<64hex>`) is high-confidence by virtue of the prefix even when the
     /// body is low-entropy hex that the generic confidence model scores below
     /// the global floor; the detector author declares that here so the
-    /// detector ships working out of the box. Costs nothing at scan time 
+    /// detector ships working out of the box. Costs nothing at scan time
     /// it is a single O(1) map lookup at the post-scan floor gate, on an
     /// already-compiled corpus. An operator `.keyhog.toml`
     /// `[detector.<id>] min_confidence` still overrides this self-declared

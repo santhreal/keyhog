@@ -9,8 +9,8 @@
 //!   * which forge a URL binds to (GitHub clone origin = `github.com:443`,
 //!     rejecting the OTHER two forges' hosts as cross-origin token-forwarding
 //!     gadgets), asserted through the crate's `#[doc(hidden)]` testing facade;
-//!   * the exact API base each forge composes its listing request under 
-//!     GitLab's idempotent `/api/v4` suffix and Bitbucket's `/2.0` base 
+//!   * the exact API base each forge composes its listing request under
+//!     GitLab's idempotent `/api/v4` suffix and Bitbucket's `/2.0` base
 //!     asserted by driving the real `create_source` factory against a loopback
 //!     `httpmock` server and checking the exact request path;
 //!   * that a private / loopback / metadata / integer-encoded / malformed host

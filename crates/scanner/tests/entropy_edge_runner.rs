@@ -9,7 +9,7 @@
 //!
 //! Why `#[ignore]` and not a gate (T-01)
 //! -------------------------------------
-//! Swapping the credential for a synthetic body MEASURES the entropy gate 
+//! Swapping the credential for a synthetic body MEASURES the entropy gate
 //! that is a recall RATE over a corpus, and detection-accuracy rates are owned
 //! by the differential bench (`benchmarks/bench`), never asserted in
 //! `cargo test` (see the internal design notes T-01). It is also not a sound

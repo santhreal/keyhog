@@ -252,7 +252,7 @@ fn full_scan_finds_forward_aws_key_directly() {
 #[test]
 fn full_scan_surfaces_reversed_aws_key_as_forward_credential() {
     // Reverse-evasion: the on-disk text holds the REVERSED key; the decode
-    // pipeline must recover it so the scanner reports the FORWARD credential 
+    // pipeline must recover it so the scanner reports the FORWARD credential
     // and never the reversed literal.
     let scanner = compile_scanner();
     let chunk = chunk_with(&format!("token = \"{AWS_REVERSED}\""), "evasion");

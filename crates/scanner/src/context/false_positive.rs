@@ -576,7 +576,7 @@ fn nearby_lines_contain(
 ) -> bool {
     // Slice the exact lookback window `[start, line_idx]` instead of
     // `.take(line_idx+1).skip(start)`, which (because `Take` defeats
-    // `slice::Iter`'s O(1) `nth`) walks from line 0 and discards `start` lines 
+    // `slice::Iter`'s O(1) `nth`) walks from line 0 and discards `start` lines
     // O(line_idx) for a line deep in a file. The slice is O(window). Bounds are
     // clamped so a `line_idx` past the end can never panic (matches the old
     // iterator's saturating behavior).

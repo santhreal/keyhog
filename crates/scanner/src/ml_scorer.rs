@@ -11,7 +11,7 @@
 //! patterns, structural signals, coarse file-type cues, the decode-structure
 //! verdict (feature #41, base64/hex → magic-bytes/protobuf) that drove the
 //! base64-of-binary false-flag rate to 0%, and the keyword-specificity signal
-//! (feature #42, context names a SPECIFIC service vs generic role words only 
+//! (feature #42, context names a SPECIFIC service vs generic role words only
 //! see `service_vocab`), which separates service-keyword+UUID real secrets
 //! from generic-keyword+UUID identifiers.
 

@@ -585,7 +585,7 @@ pub(crate) fn is_evasion_char(ch: char) -> bool {
 /// owned by [`is_combining_mark`] (the `Mark`-category members: CGJ U+034F,
 /// variation selectors U+FE00–FE0F / U+E0100–E01EF, Khmer inherent vowels
 /// U+17B4–17B5) and [`is_rtl_override`] (bidi embeddings/overrides U+202A–202E).
-/// A few `Mark`-category Mongolian selectors are ALSO listed explicitly below 
+/// A few `Mark`-category Mongolian selectors are ALSO listed explicitly below
 /// see the note there for why that intentional overlap is a robustness guard,
 /// not a duplication bug.
 pub(crate) fn is_zero_width(ch: char) -> bool {

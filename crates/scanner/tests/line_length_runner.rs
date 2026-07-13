@@ -188,7 +188,7 @@ fn credential_sufficient_secrets_survive_long_line_offsets() {
     }
 
     // Companion-required corpus context, counted ONCE at baseline. Their text
-    // (which carries the keyword anchor) is inlined; this is informational 
+    // (which carries the keyword anchor) is inlined; this is informational
     // their per-offset survival is a bench-owned RATE, never gated here.
     let mut companion_runs = 0usize;
     let mut companion_hits = 0usize;

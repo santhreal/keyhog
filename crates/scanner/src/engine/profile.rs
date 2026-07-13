@@ -11,7 +11,7 @@
 //! [`dump`].
 //! Leaf passes never nest within each other (decode recursion re-enters as fresh
 //! leaf recordings that aggregate into the same leaves), so the totals are the
-//! elapsed time per pass summed across all rayon workers and all decode depths 
+//! elapsed time per pass summed across all rayon workers and all decode depths
 //! no double-counting, no per-span stack needed. Accelerator dispatch contributes
 //! the host-observed elapsed wait for that pass. Totals can exceed wall-clock
 //! because the scan is parallel; read them as proportions.

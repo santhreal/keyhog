@@ -8,7 +8,7 @@
 //!
 //!   * `tool.driver.{name,version,informationUri}`: the driver identity, with
 //!     version/informationUri sourced from the crate manifest (never hardcoded).
-//!   * `rules[i].{shortDescription,fullDescription,help.text,help.markdown}` 
+//!   * `rules[i].{shortDescription,fullDescription,help.text,help.markdown}`
 //!     the composed human-facing rule copy.
 //!   * `rules[i].helpUri`: prefers the detector `revoke_url`, falls back to
 //!     `docs_url`, and is ABSENT when the remediation has neither.
@@ -303,7 +303,7 @@ fn rule_help_uri_absent_for_severity_fallback_remediation() {
 // ---- rule.properties (service / severity / security-severity / tags) --------
 
 /// `rules[0].properties` carries service, kebab severity, the GitHub
-/// code-scanning `security-severity` score, and the single `security` tag 
+/// code-scanning `security-severity` score, and the single `security` tag
 /// exact values for a High aws finding.
 #[test]
 fn rule_properties_service_severity_security_severity_and_tags() {

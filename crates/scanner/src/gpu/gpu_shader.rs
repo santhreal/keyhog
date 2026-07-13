@@ -65,7 +65,7 @@ pub(crate) fn moe_shader() -> String {
     format!("{header}{MOE_SHADER_BODY}")
 }
 
-/// The MoE shader body. References ONLY the named consts the header defines 
+/// The MoE shader body. References ONLY the named consts the header defines
 /// no free numeric architecture literal lives here, so the layout can only be
 /// changed in `model_arch`. WGSL admits module-scope const expressions as array
 /// sizes (`array<f32, HIDDEN1>`), so even the scratch buffers derive from the

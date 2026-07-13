@@ -103,7 +103,7 @@ pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
 /// Membership is DECLARED PER-DETECTOR via `DetectorSpec::private_key_block =
 /// true` in each detector's own TOML (DET-0; was the centralized
 /// `rules/detector-classification.toml` `private_key_block` id list). This reads
-/// that single-owner flag. The `Result` is retained for caller compatibility 
+/// that single-owner flag. The `Result` is retained for caller compatibility
 /// reading an embedded spec field is infallible, so it is always `Ok`.
 #[inline]
 pub(crate) fn is_private_key_block_detector(detector_id: &str) -> Result<bool, String> {
@@ -291,7 +291,7 @@ mod detector_id_corpus_guard {
     /// The structural-password-slot family membership is DECLARED in the detector
     /// TOMLs (`structural_password_slot = true`), read back through
     /// `DetectorSpec::structural_password_slot`. This pins the EXACT member set
-    /// against the embedded corpus, so adding/removing the flag on any detector 
+    /// against the embedded corpus, so adding/removing the flag on any detector
     /// or a typo'd id, fails loudly here. The four ids are the whole family; they
     /// are intentionally NOT scanner-code consts (no scanner path names them
     /// individually), so the list lives once, here, as the guard's expectation.

@@ -239,7 +239,7 @@ fn init_gpu() -> Result<GpuContext, GpuInitError> {
     // A real adapter was acquired. Prove it can actually BIND the MoE weights as
     // a storage buffer before returning a context whose first dispatch would trip
     // a `max_storage_buffer_binding_size` validation error deep in a live scan.
-    // A constrained adapter (downlevel/mobile limits) is "present but unusable" 
+    // A constrained adapter (downlevel/mobile limits) is "present but unusable"
     // fail closed loudly here, not with a mid-scan wgpu panic.
     let all_weights = crate::ml_scorer::ml_weights::all_weights_slice();
     let weights_bytes = std::mem::size_of_val(all_weights) as u64;

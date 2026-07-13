@@ -262,7 +262,7 @@ fn krbykalt_just_below_generic_floor_flips_with_the_toggle() {
 
 #[test]
 fn value_above_generic_floor_surfaces_regardless_of_toggle() {
-    // Entropy 3.5 clears BOTH floors, so the keyword toggle must not change it 
+    // Entropy 3.5 clears BOTH floors, so the keyword toggle must not change it
     // proves the toggle only governs the [1.5, 2.8) band, not all generic values.
     let body = "password = \"ufnlbbavawsdeecn\"\n";
     assert!(

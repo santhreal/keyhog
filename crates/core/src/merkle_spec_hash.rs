@@ -14,7 +14,7 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             // Bind severity to the detector id: an un-bound `sev:{severity}` key
             // makes swapping severities between two detectors produce the same
             // sorted multiset (identical digest), so the merkle cache would keep
-            // a stale skip after severity, and severity-threshold suppression 
+            // a stale skip after severity, and severity-threshold suppression
             // changed (Law 10 silent staleness).
             entries.push(format!("sev:{}:{:?}", d.id, d.severity));
             for (index, p) in d.patterns.iter().enumerate() {
@@ -59,7 +59,7 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             //
             // DELIBERATELY EXCLUDED (like the cosmetic `name`/`service` and
             // `PatternSpec.description`, whose exclusion `spec_hash_ignores_
-            // cosmetic_name_field` pins): `verify` (live-verification config 
+            // cosmetic_name_field` pins): `verify` (live-verification config
             // changing it alters a finding's post-scan verdict, not the scanned
             // finding SET/severity/suppression the merkle cache reuses) and
             // `tests` (self-test fixtures, ignored at scan time). Hashing either

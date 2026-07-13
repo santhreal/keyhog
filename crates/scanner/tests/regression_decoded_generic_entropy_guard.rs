@@ -5,7 +5,7 @@
 //! real file. A generic/entropy detector fires on shape/entropy ALONE, so on
 //! decoded content its match rests on nothing but the decoded bytes happening to
 //! look token-shaped. Decoding ordinary readable text routinely produces exactly
-//! that (`InvalidNextTokenException"}`, `max-age...;includeSubdomains`, prose) 
+//! that (`InvalidNextTokenException"}`, `max-age...;includeSubdomains`, prose)
 //! on the full CredData tree, decode-through surfaced +264 such generic/entropy
 //! hits that are ALL non-secrets, for ~0 real TP (pure precision loss). The guard
 //! (`adjudicate::record_decoded_generic_entropy_suppression`, wired into
@@ -125,7 +125,7 @@ fn decoded_generic_entropy_is_gated_while_vendor_key_survives() {
     );
 }
 
-/// Scope proof at top level: the SAME token surfaces normally when NOT decoded 
+/// Scope proof at top level: the SAME token surfaces normally when NOT decoded
 /// the guard is confined to the decode path and never touches real file context.
 #[test]
 fn top_level_generic_entropy_is_untouched_by_the_decode_guard() {

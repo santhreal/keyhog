@@ -761,7 +761,7 @@ fn explicit_format_text_does_not_emit_json() {
 /// weaker token would be the one the opt-in lifts above the floor.)
 #[test]
 fn scan_comments_flag_surfaces_credentials_in_comments() {
-    // A genuine-shape AWS access key, exactly 20 chars (`AKIA` + 16) 
+    // A genuine-shape AWS access key, exactly 20 chars (`AKIA` + 16)
     // inside a `//`-style comment. The length is load-bearing: the
     // aws-access-key detector requires the canonical 20-char form, so a
     // longer `AKIA…` string is correctly rejected as malformed and would

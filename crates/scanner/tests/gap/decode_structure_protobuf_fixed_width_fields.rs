@@ -60,7 +60,7 @@ use proptest::prelude::*;
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(3_000))]
 
-    /// A fully-consumed stream of ≥4 single-byte-varint (wire-0) fields parses 
+    /// A fully-consumed stream of ≥4 single-byte-varint (wire-0) fields parses
     /// ≥4 fields is ≥8 bytes (the length floor) and ≥3 fields (the count floor).
     #[test]
     fn wire0_fields_stream_parses(

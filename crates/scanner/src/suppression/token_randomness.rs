@@ -246,7 +246,7 @@ pub(crate) fn keep_identifier_gate_with_randomness(
 /// WORD-SEPARATED identifier gate (KH-L-0414). The randomness model is an
 /// ENGLISH-WORD model, and a multi-segment programmer identifier with embedded
 /// digits / uppercase splits into SHORT acronym fragments (`d2i_PKCS7_bio` →
-/// `pkcs`, `curlx_memdup0` → `memdup`) that the model mis-scores as random 
+/// `pkcs`, `curlx_memdup0` → `memdup`) that the model mis-scores as random
 /// so `is_random_token` alone is unsound here. Real CredData word-separated
 /// passwords are uniformly all-lowercase letters + `_`/`-` separators
 /// (`abxnj_gjvpuqzo`, `aapqhgn-qhuuc-trnmf`); requiring that shape BEFORE

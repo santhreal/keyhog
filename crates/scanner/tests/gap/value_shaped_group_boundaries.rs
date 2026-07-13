@@ -3,7 +3,7 @@
 //!
 //! `value_shaped_group_shared_heuristic.rs` pins the four canonical behaviours
 //! (fall back, leave-unchanged, short-sibling-kept, <=2-groups-short-circuit).
-//! This file pins the EDGES that a future tweak could silently slide across 
+//! This file pins the EDGES that a future tweak could silently slide across
 //! each one a recall/precision drift hazard because the heuristic is shared by
 //! the whole-chunk walk (`extract_grouped_matches`) and the phase-2 anchored
 //! path (`extract_anchored`), so a boundary that moves in one definition moves

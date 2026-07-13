@@ -5,7 +5,7 @@
 //! it registers, polls, and deregisters against a collector over HTTPS, and
 //! every failure is funnelled into exactly one [`InteractshError`] variant. That
 //! error is then run through [`redact_interactsh_error`] before it is ever
-//! logged, because a raw `reqwest::Error`'s `Display` bakes in the poll URL 
+//! logged, because a raw `reqwest::Error`'s `Display` bakes in the poll URL
 //! and the poll URL embeds the session correlation secret. The redaction policy
 //! is deliberately **variant-scoped**:
 //!
@@ -197,7 +197,7 @@ fn register_deregister_poll_stay_phase_distinct_at_same_status_and_body() {
     assert_eq!(set.len(), 3, "phase word must keep the three distinct");
 }
 
-/// Every non-transport variant must redact to a distinct operator string 
+/// Every non-transport variant must redact to a distinct operator string
 /// an operator has to be able to tell a keygen failure from a decrypt failure
 /// from an SSRF refusal. A collision here is a real diagnostics bug.
 #[test]

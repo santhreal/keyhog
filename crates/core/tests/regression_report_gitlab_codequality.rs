@@ -402,7 +402,7 @@ fn missing_file_path_fails_closed() {
     );
 }
 
-/// Adversarial twin: an empty-string file path is treated the same as absent 
+/// Adversarial twin: an empty-string file path is treated the same as absent
 /// fail closed, not emit `location.file == ""`.
 #[test]
 fn empty_file_path_fails_closed() {

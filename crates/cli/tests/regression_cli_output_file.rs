@@ -32,7 +32,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
 
-/// A planted GitHub classic PAT (`ghp_` + 36 alnum) with a valid CRC32 tail 
+/// A planted GitHub classic PAT (`ghp_` + 36 alnum) with a valid CRC32 tail
 /// the canonical token from the format/backend parity e2e. Fires exactly one
 /// detector, `github-classic-pat` (severity critical, service github).
 const PLANTED: &str = "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";

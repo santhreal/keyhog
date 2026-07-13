@@ -103,7 +103,7 @@ fn gpu_literal_set_throughput_vs_cpu() {
     let gpu_count_ms = t.elapsed().as_secs_f64() * 1000.0;
     let gpu_count_mbps = mb / (gpu_count_ms / 1e3);
 
-    // (5) GPU scan on a SPARSE haystack (random-ish bytes, ~no literal hits) 
+    // (5) GPU scan on a SPARSE haystack (random-ish bytes, ~no literal hits)
     // the GPU's scan ceiling with negligible match output.
     let mut sparse = vec![0u8; big.len()];
     for (i, b) in sparse.iter_mut().enumerate() {

@@ -14,7 +14,7 @@ fn rate_limit_rps_to_nanos_clamps_invalid() {
 }
 
 /// VALID-input overflow branch (distinct from the invalid-clamp above): a tiny
-/// but *positive, finite* rps passes the `rps.is_finite() && rps > 0.0` guard 
+/// but *positive, finite* rps passes the `rps.is_finite() && rps > 0.0` guard
 /// so it is NOT sent through the 1.0 fallback, and then the interval it implies
 /// (`1e9 / 1e-20 = 1e29` ns) exceeds `u64::MAX`. `rps_to_nanos` must take its
 /// final `else` arm and return exactly one second, never wrap/panic on the

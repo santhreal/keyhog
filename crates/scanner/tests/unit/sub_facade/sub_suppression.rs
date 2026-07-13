@@ -4,7 +4,7 @@
 //! These predicates decide whether a captured value is a grammar token /
 //! decorated identifier rather than a real credential body. Tests assert the
 //! exact true/false verdict for each documented FP family AND the negative
-//! twin (a real credential of similar surface shape must NOT be suppressed) 
+//! twin (a real credential of similar surface shape must NOT be suppressed)
 //! never `is_empty`/single-direction decoration.
 
 use keyhog_scanner::testing::shape::{

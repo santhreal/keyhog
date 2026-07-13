@@ -22,7 +22,7 @@ proptest! {
         let _ = validate_rule_value_for_test("field", &value, KINDS[which]);
     }
 
-    /// An accepted entry is ALWAYS lowercase, non-empty, and control-char-free 
+    /// An accepted entry is ALWAYS lowercase, non-empty, and control-char-free
     /// these three guards apply before any kind-specific shape check, so no
     /// accepted value may violate them regardless of kind.
     #[test]

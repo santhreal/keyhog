@@ -202,7 +202,7 @@ fn parse_k8s_secret_non_secret_kind_returns_empty() {
     let text = "apiVersion: v1\nkind: ConfigMap\ndata:\n  key: value\n";
     let pairs = parse_k8s_secret(text);
     // A ConfigMap is not a Secret: its `data` is plaintext configuration, not
-    // credential material, so the Secret-specific parser must extract nothing 
+    // credential material, so the Secret-specific parser must extract nothing
     // extracting a ConfigMap value would be a false-positive source.
     assert!(
         pairs.is_empty(),
@@ -275,7 +275,7 @@ fn parse_jupyter_code_cell_with_assignment_extracted() {
   }]
 }"#;
     let pairs = parse_jupyter(text);
-    // The assignment inside the code cell must be extracted with its value 
+    // The assignment inside the code cell must be extracted with its value
     // UNCONDITIONALLY (the previous `if !pairs.is_empty()` guard passed even when
     // the parser extracted nothing).
     assert!(

@@ -83,7 +83,7 @@ fn collect_regex_stats(ast: &Ast, stats: &mut RegexComplexityStats) {
                 // `{n,m}` expands to up to `m` copies, and nesting multiplies
                 // (`(?:X{500}){3}` -> 1500 copies). An UNBOUNDED repeat (`*`,
                 // `+`, `{n,}`) is a self-loop on keyhog's linear engines, never a
-                // finite unrolling, so it must NOT multiply into this product 
+                // finite unrolling, so it must NOT multiply into this product
                 // otherwise a cheap separator `[_\-\s]*` nested in a `(?:…){1,3}`
                 // anchor (deepnote) scores a fictitious 3 x 1000 = 3000 and the
                 // whole corpus is rejected. Catastrophic BACKTRACKING from

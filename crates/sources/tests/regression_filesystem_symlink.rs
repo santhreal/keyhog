@@ -93,7 +93,7 @@ fn generic_archive_refusals(errors: &[SourceError]) -> usize {
 fn walk_plain_symlink_escaping_root_is_neither_read_nor_flagged() {
     // A non-archive `.txt` symlink at the scan root points at a real file that
     // lives OUTSIDE the root. Following it would read an off-tree secret (the
-    // link-swap class). The walker must NOT scan the target's content, and 
+    // link-swap class). The walker must NOT scan the target's content, and
     // because the link is not archive-named/-targeted, it must NOT raise the
     // archive-symlink refusal either. A real in-root sibling still scans, so a
     // refused link never turns the walk into a no-op.

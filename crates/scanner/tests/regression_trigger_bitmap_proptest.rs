@@ -23,7 +23,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4000))]
 
     /// Round-trip: for any set of pattern indices in `[0, n)`, marking them in a
-    /// fresh `n`-pattern bitmap and walking it recovers EXACTLY those indices 
+    /// fresh `n`-pattern bitmap and walking it recovers EXACTLY those indices
     /// no miss, no duplicate, strictly ascending (the confirmed pass relies on
     /// each triggered pattern being visited once).
     #[test]

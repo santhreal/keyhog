@@ -144,7 +144,7 @@ async fn real_account_key_passes_canary_gate_and_reaches_region_error() {
 #[tokio::test]
 async fn real_account_empty_secret_is_unverifiable_but_not_a_canary() {
     // Adversarial collision: an empty secret ALSO yields Unverifiable, exactly
-    // like a canary. The decisions must be distinguishable by their reason 
+    // like a canary. The decisions must be distinguishable by their reason
     // the canary carries is_canary metadata, the empty-secret path is bare.
     let (result, metadata, transient) = VerifierApi
         .build_aws_probe_final_for_test(REAL_KEY, "", "us-east-1")

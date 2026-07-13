@@ -114,7 +114,7 @@ fn chunk_cap_returns_exactly_1000_on_high_fanout() {
 #[test]
 fn chunk_cap_bounds_total_bytes_far_under_byte_cap() {
     // The SAME high-fan-out input: because each decoded chunk is small (a
-    // bounded ±512B splice window around a ~18-byte plaintext), the CHUNK cap 
+    // bounded ±512B splice window around a ~18-byte plaintext), the CHUNK cap
     // not the 64 MiB byte cap, is the binding limit here. The returned bytes
     // stay far under 64 MiB (a few MiB at most for 1000 small chunks).
     let text = quoted_b64_lines((0..1300).map(|i| format!("SECRETPAYLOAD{i:05}")));

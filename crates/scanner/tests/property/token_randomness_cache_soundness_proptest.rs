@@ -95,7 +95,7 @@ proptest! {
         );
     }
 
-    /// A value is NEVER both a random token and a confident dictionary word 
+    /// A value is NEVER both a random token and a confident dictionary word
     /// they split on the SAME log-prob threshold.
     #[test]
     fn random_and_dictionary_are_mutually_exclusive(v in "[a-zA-Z0-9_-]{0,24}") {

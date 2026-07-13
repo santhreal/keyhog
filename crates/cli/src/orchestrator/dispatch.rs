@@ -59,7 +59,7 @@ pub(super) fn record_oversized_coalesced_chunk_skip(chunk: &Chunk) {
 pub(super) enum ClassifiedSourceChunk {
     /// Within the scan-size ceiling: the caller must batch/scan it.
     Scan(Chunk),
-    /// Oversized (warned + receipted) or a read error (warned + receipted) 
+    /// Oversized (warned + receipted) or a read error (warned + receipted)
     /// already fully accounted; the caller does nothing further.
     Skip,
 }

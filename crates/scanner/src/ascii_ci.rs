@@ -415,7 +415,7 @@ impl Iterator for CiMatches<'_, '_> {
         while self.pos <= self.haystack.len() {
             let rel = memchr::memchr2(self.a_lower, self.a_upper, &self.haystack[self.pos..])?;
             let hit = self.pos + rel;
-            // Advance past this anchor byte so the next call resumes after it 
+            // Advance past this anchor byte so the next call resumes after it
             // consecutive/overlapping matches each surface their own anchor hit.
             self.pos = hit + 1;
             let Some(start) = hit.checked_sub(self.anchor) else {

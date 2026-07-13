@@ -25,7 +25,7 @@ const READ_ENTRY_POINTS: &[&str] = &["read_to_string(", "File::open(", "fs::read
 /// crate source (a temp path, a fixture, an absolute path, …).
 ///
 /// In scope: `src/...` and `crates/...` (this crate / the workspace), plus
-/// `../.../src/...` (a sibling crate's source read from a parent-relative path 
+/// `../.../src/...` (a sibling crate's source read from a parent-relative path
 /// e.g. a core test introspecting `../cli/src/...`). Out of scope: `./`,
 /// `tests/`, absolute, and any non-`/src/` parent path, runtime data, not
 /// crate-source introspection.

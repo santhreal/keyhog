@@ -203,14 +203,14 @@ pub(crate) fn write_banner<W: Write>(
 /// An autoroute hardware probe (`probe_hardware()` → `gpu_probe()`) leaks a
 /// wgpu/Vulkan instance whose mesa driver worker thread stays alive for the
 /// process lifetime. On a FAST error exit, an early setup error (missing path,
-/// expired `.keyhogignore`) or a fail-closed `autoroute calibration required` 
+/// expired `.keyhogignore`) or a fail-closed `autoroute calibration required`
 /// that thread has not finished initialising, and the ordinary shutdown
 /// (unwind + libc `exit`/`atexit`) lets it run mid-teardown, where it SIGSEGVs
 /// and turns a clean fail-closed exit code into a signal death (exit 139). A
 /// security control that crashes instead of returning its documented code is
 /// untrustworthy. `_exit` skips atexit and all thread teardown, so no driver
 /// thread can run during shutdown; it also skips Rust's buffered-stdout flush,
-/// so we flush both streams first. Only the FAST error/panic exits route here 
+/// so we flush both streams first. Only the FAST error/panic exits route here
 /// a successful scan runs long enough for the driver to initialise and tear
 /// down cleanly, so it keeps the normal `ExitCode` return.
 fn exit_now(code: u8) -> ! {

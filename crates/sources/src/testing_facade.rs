@@ -84,7 +84,7 @@ pub mod testing {
         crate::filesystem::filter::validate_rule_value(name, value, rule_list_kind_from_label(kind))
     }
 
-    /// [`crate::filesystem::filter::normalize_rule_list`] for the named kind 
+    /// [`crate::filesystem::filter::normalize_rule_list`] for the named kind
     /// trims, validates every entry, and rejects duplicates, returning the
     /// normalized list or the first refusal reason.
     pub fn normalize_rule_list_for_test(

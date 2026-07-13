@@ -4,7 +4,7 @@
 //! `orchestrator::scan_exit_code` live-vs-not-live decision and pins the live
 //! path (exit 10) e2e. This suite is the complementary half: it drives the
 //! REAL binary through every *documented, always-reachable* exit class and
-//! asserts the exact process code 
+//! asserts the exact process code
 //!
 //!   * clean scan            -> 0   (`EXIT_SUCCESS`)
 //!   * unverified findings   -> 1   (`EXIT_FINDINGS`, never 10 without `--verify`)

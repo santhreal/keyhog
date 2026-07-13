@@ -1,5 +1,5 @@
-//! Law 10 regression: an explicitly `--include`'d path that cannot be read 
-//! it does not exist, is neither a file nor a directory, or its `stat` fails 
+//! Law 10 regression: an explicitly `--include`'d path that cannot be read
+//! it does not exist, is neither a file nor a directory, or its `stat` fails
 //! must be COUNTED as unreadable and surfaced as a source error, never silently
 //! dropped. Before this fix the include walk returned an empty iterator for
 //! such a path, so the file vanished from the scan set while the run still

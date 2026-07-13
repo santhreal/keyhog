@@ -235,7 +235,7 @@ fn json_array_length_equals_planted_count() {
     );
 }
 
-/// The text roll-up count and the json array length AGREE for the same scan 
+/// The text roll-up count and the json array length AGREE for the same scan
 /// a serializer that drops a finding on one path (recall hole) fails here.
 #[test]
 fn text_and_json_counts_agree() {

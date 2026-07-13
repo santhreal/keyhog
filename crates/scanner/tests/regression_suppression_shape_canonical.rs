@@ -129,7 +129,7 @@ fn redacted_marker_inside_ghp_token_suppresses_as_doc_marker_substring() {
 }
 
 /// The `notareal` marker (no separators) is a doc-marker substring; `secret` in
-/// the same value is deliberately NOT a placeholder word, so the substring arm 
+/// the same value is deliberately NOT a placeholder word, so the substring arm
 /// not the placeholder-word arm (is the one that fires).
 #[test]
 fn notareal_marker_suppresses_as_doc_marker_substring() {

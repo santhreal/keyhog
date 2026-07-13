@@ -68,7 +68,7 @@ fn keyword_credential_anchor_outputs_unchanged_by_lazy_lowercase() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin a handful of anchors/rejects; these SWEEP the behavioral
 // contract. The lazy-lowercase is only correct if the decision is CASE-INSENSITIVE
-// for every non-sentinel keyword (normalize case-folds; the fallback lowercases) 
+// for every non-sentinel keyword (normalize case-folds; the fallback lowercases)
 // swept over `[A-Za-z0-9_]` inputs, which can never be the spaces/parens sentinel.
 // Plus: the fixed credential keywords admit in any case, and any keyword containing
 // `bearer` (any case) admits via the explicit substring branch. Traced against

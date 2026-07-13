@@ -14,7 +14,7 @@ static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 fn counter_guard() -> MutexGuard<'static, ()> {
     // These httpmock tests point the cloud endpoint at 127.0.0.1, which the
     // default cloud SSRF endpoint screen now refuses. Opt into the loud,
-    // default-off allowance for the lifetime of this (separate) test binary 
+    // default-off allowance for the lifetime of this (separate) test binary
     // set while holding COUNTER_LOCK so it can never race a parallel test.
     let guard = COUNTER_LOCK
         .lock()

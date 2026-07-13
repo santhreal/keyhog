@@ -4,7 +4,7 @@
 //! decides whether a normalized assignment key is already owned by a loaded
 //! named detector, so the broad generic `KEY=value` bridge does not second-guess
 //! it. It is a `binary_search` over a sorted, deduped `&[Arc<str>]` (the real
-//! builder collects through a `BTreeSet`), so ownership is EXACT membership 
+//! builder collects through a `BTreeSet`), so ownership is EXACT membership
 //! never a prefix, superstring, or substring, and case-sensitive.
 //!
 //! The helper had no direct coverage. The facade sorts/dedups the supplied

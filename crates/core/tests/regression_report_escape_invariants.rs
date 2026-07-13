@@ -72,7 +72,7 @@ fn arb_hostile_string() -> impl Strategy<Value = String> {
 
 /// Decode a run of concatenated `<![CDATA[...]]>` sections back to raw text, the
 /// way an XML parser would (section content is literal; adjacent sections
-/// concatenate). Returns `None` if the input is not a clean run of sections 
+/// concatenate). Returns `None` if the input is not a clean run of sections
 /// which for an escaped body would itself be an escaping bug. This is the oracle
 /// that proves `escape_cdata` round-trips: the correct invariant is NOT "output
 /// has no `]]>`" (the canonical `]]]]><![CDATA[>` escape intentionally emits

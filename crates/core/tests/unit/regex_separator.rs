@@ -10,7 +10,7 @@ fn canon(s: &str) -> String {
 
 #[test]
 fn every_corpus_separator_form_collapses_to_canonical() {
-    // The 17 resolved forms enumerated across the shipped detector corpus 
+    // The 17 resolved forms enumerated across the shipped detector corpus
     // clean and buggy alike (must all become exactly the one canonical class).
     let want = format!("api{CANONICAL_SEPARATOR}key");
     for form in [

@@ -1,5 +1,5 @@
 //! Regression: `collect_propagation` moves `descendant_indices` into the last
-//! pattern slot at each trie node instead of cloning for every pattern (Law 7 
+//! pattern slot at each trie node instead of cloning for every pattern (Law 7
 //! the common single-pattern node now does zero clones), and the move changes no
 //! output (Law 6).
 //!

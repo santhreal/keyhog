@@ -21,7 +21,7 @@ use support::contracts::{make_chunk, scanner};
 use keyhog_core::Chunk;
 use keyhog_scanner::CompiledScanner;
 
-/// Deterministic high-entropy string of length `n` over `charset` (seeded LCG) 
+/// Deterministic high-entropy string of length `n` over `charset` (seeded LCG)
 /// avoids dictionary/low-entropy suppression that would mask a real recall gap.
 fn gen(n: usize, seed: usize, charset: &[u8]) -> String {
     let m = charset.len() as u64;

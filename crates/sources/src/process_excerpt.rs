@@ -110,7 +110,7 @@ mod tests {
         assert!(out.contains("ok"), "valid bytes survive the lossy decode");
     }
 
-    /// Yields an `Interrupted` (EINTR) error once, then a data chunk, then EOF 
+    /// Yields an `Interrupted` (EINTR) error once, then a data chunk, then EOF
     /// proving the read loop RETRIES EINTR rather than aborting the capture.
     struct InterruptOnceThenData {
         interrupted: bool,

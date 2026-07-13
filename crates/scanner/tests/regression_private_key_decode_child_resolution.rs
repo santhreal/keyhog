@@ -12,7 +12,7 @@ const DECODED_CHILD_GOOGLE_KEY: &str = "aIzaJBPI2n5UC64198Pt4qMGLqLHKvwsPonI4Lb"
 /// mirror corpus is gitignored and local-only, so `include_str!` made the whole
 /// standalone test binary fail to COMPILE in CI (the Integration-test-aggregators
 /// job builds every test target). Reading at runtime keeps full fidelity where
-/// the corpus is checked out and degrades to a LOUD skip where it is absent 
+/// the corpus is checked out and degrades to a LOUD skip where it is absent
 /// never a silent pass, never a compile error that takes the binary down.
 fn mirror_corpus_or_skip(rel: &str) -> Option<String> {
     let path = format!("{}/../../{rel}", env!("CARGO_MANIFEST_DIR"));

@@ -336,7 +336,7 @@ fn bug_spec_hash_must_change_when_two_detectors_swap_severity() {
     // regardless of WHICH detector owns which severity. Swapping the two
     // severities (A->Low, B->High) yields the identical sorted key stream and
     // therefore the identical digest. The merkle cache would keep a stale skip
-    // even though every finding's severity, and severity-threshold suppression 
+    // even though every finding's severity, and severity-threshold suppression
     // just changed (Law 10 silent staleness). Correct behaviour: the digest MUST
     // change. Fix: bind severity to id, e.g. `format!("sev:{}:{:?}", d.id, ..)`.
     let original = compute_spec_hash(&[

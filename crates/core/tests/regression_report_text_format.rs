@@ -184,7 +184,7 @@ fn text_location_file_and_line_exact() {
     );
 }
 
-/// Boundary: when the line number is unknown the location is the bare path 
+/// Boundary: when the line number is unknown the location is the bare path
 /// no trailing `:` and no fabricated line number.
 #[test]
 fn text_location_path_only_when_line_unknown() {

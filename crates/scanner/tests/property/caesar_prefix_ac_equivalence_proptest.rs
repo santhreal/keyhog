@@ -59,7 +59,7 @@ proptest! {
     }
 
     /// The AC gate agrees with the naive scan on input built from the credential
-    /// alphabet (letters/digits/`_`/`-`), where real prefixes actually live 
+    /// alphabet (letters/digits/`_`/`-`), where real prefixes actually live
     /// this stresses genuine overlaps, not just random Unicode that never hits a
     /// prefix.
     #[test]

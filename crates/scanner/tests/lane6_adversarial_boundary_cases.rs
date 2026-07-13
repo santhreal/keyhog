@@ -6,7 +6,7 @@
 //!   * the scan RETURNS (no panic / OOB / overflow),
 //!   * it finishes in BOUNDED time (a generous wall-clock budget that still
 //!     fails loud on an O(n^2) blow-up or an unbounded decode/alloc), and
-//!   * where a known-shape secret is planted, it is STILL surfaced (recall) 
+//!   * where a known-shape secret is planted, it is STILL surfaced (recall)
 //!     and where no secret exists, NOTHING is surfaced (no phantom).
 //!
 //! The adversarial-shape table is DATA-DRIVEN (`adversarial_inputs()`), so the

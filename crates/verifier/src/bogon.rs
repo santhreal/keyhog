@@ -202,7 +202,7 @@ pub(crate) fn ip_addr_is_bogon(ip: IpAddr) -> bool {
 /// two standardized NAT64 prefixes. Single owner for the NAT64 → IPv4
 /// decomposition (RFC 6052 §2.2 embedding format).
 ///
-/// - **Well-Known Prefix** `64:ff9b::/96` (RFC 6052 §2.1): /96 embedding only 
+/// - **Well-Known Prefix** `64:ff9b::/96` (RFC 6052 §2.1): /96 embedding only
 ///   the IPv4 occupies the low 32 bits (`segs[6..8]`).
 /// - **Local-Use Prefix** `64:ff9b:1::/48` (RFC 8215): /48 embedding, the IPv4
 ///   occupies bits 48-63 (`segs[3]`) and 72-87 (`segs[4]` low byte, `segs[5]`

@@ -16,7 +16,7 @@
 //! all-or-nothing, across every noise size and kind. Companion-required
 //! positives (no standalone fire) legitimately depend on context the padding
 //! pushes away; their survival is an accuracy RATE owned by the differential
-//! bench (`benchmarks/bench`), recorded here for visibility but never gated 
+//! bench (`benchmarks/bench`), recorded here for visibility but never gated
 //! asserting that rate in `cargo test` is the exact T-01 violation this rewrite
 //! removes.
 //!

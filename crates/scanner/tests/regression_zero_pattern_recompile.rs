@@ -9,7 +9,7 @@
 //! regexes (multiline / decode / generic-assignment / shared) compile at most
 //! once on first touch. `testing::lazy_regex_compile_events()` counts only those
 //! real first-use compilations. The gate primes a chunk (one scan, which may
-//! compile that chunk's lazy paths once), snapshots the counter, then re-scans 
+//! compile that chunk's lazy paths once), snapshots the counter, then re-scans
 //! and asserts the counter does not move. Run `--test-threads=1` so the global
 //! counter's deltas are not perturbed by another test compiling concurrently.
 

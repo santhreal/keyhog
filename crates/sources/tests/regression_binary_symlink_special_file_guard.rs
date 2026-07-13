@@ -287,7 +287,7 @@ fn binary_socket_refusal_counts_one_unreadable() {
 fn binary_dev_zero_is_refused_as_unreadable_not_streamed() {
     // The key NEW behavior: /dev/zero (a char device) is refused as a non-regular
     // file (unreadable), NOT read as an endless zero stream. On the old raw-open
-    // path it read cap bytes of zeros and counted a binary GAP, never unreadable 
+    // path it read cap bytes of zeros and counted a binary GAP, never unreadable
     // so this `binary_unreadable() == 1` assertion is the crisp lock on the fix.
     let _g = guarded();
     let zero = PathBuf::from("/dev/zero");

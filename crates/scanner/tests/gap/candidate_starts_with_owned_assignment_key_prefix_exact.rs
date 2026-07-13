@@ -59,7 +59,7 @@ fn a_non_prefix_match_or_empty_set_or_unnormalizable_candidate_is_not_owned() {
 
 use proptest::prelude::*;
 
-/// Owned keys already in normalized form that carry a real credential suffix 
+/// Owned keys already in normalized form that carry a real credential suffix
 /// each MUST own any strictly-longer candidate that begins with it.
 const SUFFIXED: &[&str] = &[
     "api_key",

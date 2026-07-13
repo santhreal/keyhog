@@ -41,7 +41,7 @@ fn scan_cpu(path: &std::path::Path) -> Output {
         .expect("spawn keyhog scan")
 }
 
-/// Run `keyhog scan --daemon=off <path>` with the DEFAULT (autoroute) backend 
+/// Run `keyhog scan --daemon=off <path>` with the DEFAULT (autoroute) backend
 /// the backend a user gets when they do not pass `--backend`. Autoroute probes
 /// the GPU, so this exercises the path where the probe is NOT disabled: the
 /// early scan-path validation must still make a missing path exit cleanly.
@@ -276,7 +276,7 @@ fn nonexistent_extra_path_exits_by_code_not_signal() {
 fn default_backend_valid_dir_exits_by_code_not_signal() {
     // A real directory on the autoroute backend must exit with a CODE, never a
     // signal. The autoroute probe creates the leaked Vulkan instance, so this is
-    // the case that previously SIGSEGV'd whenever the scan then failed fast 
+    // the case that previously SIGSEGV'd whenever the scan then failed fast
     // e.g. `autoroute calibration required` on a host with no persisted decision
     // (exit 2), which is the default on an uncalibrated box (as in CI). Exit
     // code is host-dependent (2 uncalibrated; 0/1 once calibrated), so this pins

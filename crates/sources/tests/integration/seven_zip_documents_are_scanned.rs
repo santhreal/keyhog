@@ -45,7 +45,7 @@ fn seven_zip_binary_strings_entry_is_scanned() {
     // The member must be GENUINELY binary so the canonical entry decoder
     // (`decode_text_file_owned_or_bytes`, shared with the plain filesystem read
     // path) classifies it as binary and falls back to printable-strings rather
-    // than lossy text. A real binary carries a NUL run / high control density 
+    // than lossy text. A real binary carries a NUL run / high control density
     // a couple of stray high bytes around clean ASCII decode as lossy *text*
     // (and would still surface the secret, just tagged `filesystem/archive`).
     // The 4+ NUL run here trips `has_repeated_nul_run`, the same binary signal a

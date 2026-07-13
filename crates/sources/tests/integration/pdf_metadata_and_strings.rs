@@ -1,5 +1,5 @@
 //! Recall + coherence: a PDF carries secrets in TWO places the content-stream
-//! fixtures never reach 
+//! fixtures never reach
 //!   1. **Document metadata** (the Info dictionary: `/Author`, `/Title`,
 //!      `/Keywords`, `/Producer`, `/Subject`) rendered as literal `(...)` or hex
 //!      `<...>` strings OUTSIDE any stream. A credential pasted into a

@@ -1,6 +1,6 @@
 //! Gap test: the structural template-interpolation resolver.
 //!
-//! A credential split across template-literal interpolation 
+//! A credential split across template-literal interpolation
 //! `const a = "xoxb-"; const b = "..."; token = `${a}${b}`;`: reassembles only
 //! when every `${ident}` / `${"lit"}` in the template RHS resolves to a recorded
 //! literal. `resolve_template_reference` does that join: each `${ident}` becomes

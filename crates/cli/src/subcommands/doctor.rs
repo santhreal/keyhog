@@ -82,7 +82,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
         } else {
             // Law 10: surface the reduced coverage, don't dim it. Keyword-anchored
             // detection is fully preserved (the keyword-gated regex fallback runs on
-            // every chunk regardless of Hyperscan), but BARE context-less tokens 
+            // every chunk regardless of Hyperscan), but BARE context-less tokens
             // e.g. a standalone Twilio AccountSid `AC…` with no nearby keyword, fire
             // only via Hyperscan's full-regex scan, so their coverage is reduced on
             // this build. Verified empirically: TWILIO_AUTH_TOKEN / DATADOG_API_KEY
@@ -190,7 +190,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
 
     // ── Autoroute calibration coverage ────────────────────────────────
     // The default `keyhog scan` resolves a backend from the persisted autoroute
-    // cache and FAILS CLOSED (exit 2) on a workload it has no decision for 
+    // cache and FAILS CLOSED (exit 2) on a workload it has no decision for
     // Law 10: never guess a substitute. Surface whether this binary+host is
     // calibrated so a user understands an "autoroute calibration required" scan
     // error. This is informational and never marks the install unhealthy: an

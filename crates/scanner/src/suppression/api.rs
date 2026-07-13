@@ -456,7 +456,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // placeholder arms only (every decoy gate still runs). Strong-anchor
     // detectors already skip those via `bypass_shape_gates`; this is the
     // weak_anchor pure-hex case (alchemy / carbon-black / crowdin / …) whose
-    // `min_confidence = 0.2` already declares the keyword anchor authoritative 
+    // `min_confidence = 0.2` already declares the keyword anchor authoritative
     // the shape gate firing ahead of confidence was defeating that intent.
     let allow_canonical_hex_key = crate::detector_ids::is_service_anchored_detector(detector_id)
         && super::shape::is_canonical_service_hex_key(credential);
@@ -606,7 +606,7 @@ fn has_broad_identifier_capture(regex: &str) -> bool {
     false
 }
 
-/// True when the `[` at `class_open` is the first atom of a capturing group 
+/// True when the `[` at `class_open` is the first atom of a capturing group
 /// either a bare `([`, or a NAMED capture `(?P<name>[` / `(?<name>[`. Lookbehind
 /// (`(?<=` / `(?<!`) ends in `=`/`!`, never `>`, so it is never mistaken for a
 /// named capture.

@@ -56,7 +56,7 @@ impl CompiledScanner {
         }
 
         // Generic-secret min length comes from adjudicate, which owns the
-        // `GENERIC_SECRET` identity selection (this leaf never names the id 
+        // `GENERIC_SECRET` identity selection (this leaf never names the id
         // see suppression_named_detector_ctx_owner gate). The base64-shape gates
         // below take the RAW `entropy`: their boundary is the base64-blob shape
         // constant `HIGH_ENTROPY_BASE64_CUTOFF` (owned once inside the decoy

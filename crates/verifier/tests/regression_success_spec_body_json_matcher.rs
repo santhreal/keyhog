@@ -36,7 +36,7 @@ fn body_contains_requires_the_substring_present() {
         "substring absent => not success"
     );
     assert!(!eval(&spec, 200, ""), "empty body can't contain the needle");
-    // Substring (not word/JSON) semantics: an embedded match still counts 
+    // Substring (not word/JSON) semantics: an embedded match still counts
     // "inactive" contains the substring "active" (in‑active), so it passes;
     // note "deactivated" does NOT (…activ-A-ted), a genuine substring subtlety.
     assert!(eval(&spec, 200, "inactive"));

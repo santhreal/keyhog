@@ -26,7 +26,7 @@ const READ_ENTRY_POINTS: &[&str] = &["read_to_string(", "File::open(", "fs::read
 ///
 /// In scope: `src/...` and `crates/...` (this crate / the workspace), plus
 /// `../.../src/...` (a sibling crate's source read from a parent-relative path).
-/// Out of scope: `./`, `tests/`, absolute, and any non-`/src/` parent path 
+/// Out of scope: `./`, `tests/`, absolute, and any non-`/src/` parent path
 /// those are runtime data, not crate-source introspection.
 fn crate_source_prefix(body: &str) -> Option<&'static str> {
     if body.starts_with("src/") {

@@ -281,7 +281,7 @@ fn multiple_escaped_values_each_surface_with_exact_credential() {
     // carries a JSON-escaped backslash `\\3`: the JSON-decoded form
     // `Zx9Qw\3...` (15 chars, one backslash) AND the raw literal form
     // `Zx9Qw\\3...` (16 chars, two backslashes) are BOTH valid netrc-password
-    // strings, so that anchor legitimately surfaces two DISTINCT credentials 
+    // strings, so that anchor legitimately surfaces two DISTINCT credentials
     // assert the decoded secret is present with its exact bytes (not `only`).
     let json = "{\"a\":\"//registry.npmjs.org/:_authT\\u006Fken=s0meL3gacyT0kenValue12345\",\
 \"b\":\"machine api.example.com login deploy passw\\u006Frd Zx9Qw\\\\3Rt7Lp2Mk\"}";

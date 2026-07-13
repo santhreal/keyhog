@@ -140,7 +140,7 @@ pub(super) fn record_default_excluded_archive_entry(archive_display: &str, entry
 ///   * `Some(Ok(text chunk))` tagged `text_source_type`;
 ///   * `Some(Ok(printable-strings chunk))` tagged `binary_source_type` when the
 ///     entry is genuine binary yet holds >=8-char printable runs;
-///   * `None` for an empty entry, or for a binary entry with no printable run 
+///   * `None` for an empty entry, or for a binary entry with no printable run
 ///     the latter recorded as a binary coverage skip so it is never a silent
 ///     clean (LAW10).
 ///

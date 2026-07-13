@@ -38,7 +38,7 @@ use regex::Regex;
 ///   detector that declares companions (twilio-auth-token, etc.), so on an
 ///   L-line file with N companion-bearing matches the cost is O(N*L).
 ///
-///   The mappings are stored in `line_number`-monotonic, contiguous order 
+///   The mappings are stored in `line_number`-monotonic, contiguous order
 ///   the SAME invariant the sibling `PreprocessedText::line_for_offset`
 ///   (crates/scanner/src/multiline/config.rs:50 and src/types.rs:133)
 ///   already relies on to resolve its lookup with `partition_point` in

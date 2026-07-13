@@ -264,7 +264,7 @@ pub(crate) fn find_companion(
 /// # The fix: binary-search the monotonic prefix, linear-scan only the tail
 ///
 /// The identity prefix is `line_number`-monotonic, so the first/last lookups
-/// inside it resolve with two `partition_point` searches in `O(log L)` 
+/// inside it resolve with two `partition_point` searches in `O(log L)`
 /// replacing the old `O(L)` walk over every line of the file. The structural
 /// tail (number of join-chains, bounded and tiny relative to `L`) is folded in
 /// with a short linear pass that respects vec order: a tail hit on the START

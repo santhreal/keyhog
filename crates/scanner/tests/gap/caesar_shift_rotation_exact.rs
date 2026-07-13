@@ -62,7 +62,7 @@ use proptest::prelude::*;
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
-    /// GROUP LAW: rotations compose additively mod 26 
+    /// GROUP LAW: rotations compose additively mod 26
     /// `shift(shift(s, a), b) == shift(s, (a + b) % 26)`. This single invariant
     /// subsumes ROT13 self-inverse (a=b=13 ⇒ 0 ⇒ identity), the forward and
     /// wrap-past-Z cases, and every round-trip. Over arbitrary Unicode `s`

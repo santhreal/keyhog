@@ -6,7 +6,7 @@ static SIMD_AUTO_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::
 /// Family + homoglyph breakdown of the always-active (`phase2_always_active_indices`)
 /// pool, used to pin the true composition behind the F3 perf floor.
 ///
-/// The distinction that matters: `*_homoglyph` patterns are ASCII-fold-skippable 
+/// The distinction that matters: `*_homoglyph` patterns are ASCII-fold-skippable
 /// on a pure-ASCII chunk (the CredData common case) they are SKIPPED by
 /// `homoglyph_ascii_skip` and contribute NOTHING to the ASCII prefilter cost. So
 /// the pool that actually runs the 84.3%-of-scan HS pass on ASCII source is the
@@ -135,7 +135,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         &self.tuning
     }
 
-    /// Diagnostic: `(phase2_total, always_active, always_active_eligible)` 
+    /// Diagnostic: `(phase2_total, always_active, always_active_eligible)`
     /// how much the shared-anchor index shrinks the RegexSet prefilter. The
     /// prefilter cost scales with `always_active - always_active_eligible`.
     #[cfg(test)]
@@ -282,7 +282,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             .collect()
     }
 
-    /// Diagnostic: family composition of the always-active (`phase2_n`) pool 
+    /// Diagnostic: family composition of the always-active (`phase2_n`) pool
     /// `(generic_entropy_count, other_count, distinct_other_ids)`.
     ///
     /// The recall-neutral decode-path perf lever (F3) rests on what `other_count`
@@ -471,7 +471,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         };
         // Warming is a PROBE with an in-band `bool` channel: report readiness
         // honestly (`false` when a forced GPU stack is unusable) instead
-        // of hard-stopping the process. This is NOT a silent fallback (Law 10) 
+        // of hard-stopping the process. This is NOT a silent fallback (Law 10)
         // the caller receives the `false` and decides. The no-silent-fallback
         // hard-stop lives where it MUST: `--require-gpu` is caught by the CLI
         // preflight (`gpu::require_gpu_preflight`) before any scan, and a forced

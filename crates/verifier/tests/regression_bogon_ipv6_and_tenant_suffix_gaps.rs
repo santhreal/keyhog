@@ -2,7 +2,7 @@
 //! `bogon.rs:{146,189,232}` + `domain_allowlist.rs:{115,158}`). Each asserts a
 //! concrete security decision that was code-present but uncovered:
 //!
-//!   * an IPv4-mapped IPv6 wrapper of a bogon (`::ffff:127.0.0.1`) is a bogon 
+//!   * an IPv4-mapped IPv6 wrapper of a bogon (`::ffff:127.0.0.1`) is a bogon
 //!     the mapped-decompose branch (`bogon.rs:146`); an SSRF guard that missed
 //!     it would let a loopback target through in mapped form;
 //!   * deprecated site-local `fec0::/10` is a bogon (`bogon.rs:189`);

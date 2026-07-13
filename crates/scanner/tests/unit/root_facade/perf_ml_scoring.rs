@@ -9,7 +9,7 @@
 //! This file once demanded `forward/feature < 0.3x` and `forward-pass < 0.35 µs`
 //! on the theory that the MoE (~11,484 MACs/candidate) should run at 8-16
 //! MACs/cycle. That throughput is only reachable by REASSOCIATING each output's
-//! f32 reduction (SIMD-lane tree sums) and/or FUSING the multiply-add (FMA) 
+//! f32 reduction (SIMD-lane tree sums) and/or FUSING the multiply-add (FMA)
 //! both of which change the result sub-ULP. An AVX2+FMA forward pass was tried
 //! and REVERTED: the sub-ULP drift pushed borderline ML-gated detectors
 //! (twilio-auth-token, africastalking-api-key, …) across their `min_confidence`
@@ -39,7 +39,7 @@
 //!   * (A) the per-(text,context) FNV score cache makes a repeated score
 //!     essentially free vs. a cache-missing distinct score, guards the caching
 //!     hot-path optimization with an order-of-magnitude margin; and
-//!   * (B) the forward-pass marginal stays under a GENEROUS absolute ceiling 
+//!   * (B) the forward-pass marginal stays under a GENEROUS absolute ceiling
 //!     a catastrophic-regression backstop (e.g. re-introducing per-candidate
 //!     weight re-parsing or an accidental quadratic), NOT the refuted µs target.
 //!

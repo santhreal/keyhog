@@ -22,7 +22,7 @@
 //! A detector whose credential does NOT fire standalone is
 //! companion-REQUIRED: a bare UUID, or a low-entropy generic body
 //! that needs an `api`/`secret`/`credentials` anchor. Dense
-//! co-location legitimately perturbs that companion attribution 
+//! co-location legitimately perturbs that companion attribution
 //! how well it survives is evasion ACCURACY owned by the bench, so
 //! those positives are recorded for visibility but never gated.
 //! (Forcing them to 100% would assert an accuracy rate in

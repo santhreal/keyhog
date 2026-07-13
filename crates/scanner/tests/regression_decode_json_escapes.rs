@@ -33,7 +33,7 @@
 //!
 //! HOST-INDEPENDENCE: every scan runs on `ScanBackend::CpuFallback`. `private-key`
 //! (keywords `BEGIN`/`PRIVATE KEY`) and `generic-password` (keyword `password`)
-//! are literal-anchored detectors, so their identity is the same on every host 
+//! are literal-anchored detectors, so their identity is the same on every host
 //! no assertion depends on Hyperscan/SIMD/GPU being present.
 
 mod support;

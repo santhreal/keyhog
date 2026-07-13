@@ -1,6 +1,6 @@
 //! Gap coverage: grouped-detector credential extraction integrity.
 //!
-//! Coverage area: `crates/scanner/src/engine/scan_filters.rs` 
+//! Coverage area: `crates/scanner/src/engine/scan_filters.rs`
 //! `extend_known_prefix_credential` + `extend_base64_padding`, exercised
 //! through the public `CompiledScanner::scan` API on REAL detectors.
 //!

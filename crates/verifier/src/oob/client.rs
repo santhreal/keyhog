@@ -79,7 +79,7 @@ pub enum InteractionProtocol {
 impl InteractionProtocol {
     // `#[doc(hidden)] pub` rather than `pub(super)`: the OOB protocol-string
     // parser is exercised directly by the boundary test
-    // `oob_interaction_protocol_parse_exact`. Hidden from the rendered API 
+    // `oob_interaction_protocol_parse_exact`. Hidden from the rendered API
     // it is an internal categorizer, not a semver-covered surface.
     #[doc(hidden)]
     pub fn parse(s: &str) -> Self {

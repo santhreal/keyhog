@@ -5,7 +5,7 @@
 //! textual copy of INPUT_DIM / EXPERT_COUNT / HIDDEN1 / HIDDEN2 and the derived
 //! weight-layout offsets. A drift between the two (e.g. a model retrain widening
 //! a hidden layer, or DET-1 bumping INPUT_DIM 42→43, updated on the Rust side
-//! only) would make the GPU MoE read the weight buffer with the WRONG layout 
+//! only) would make the GPU MoE read the weight buffer with the WRONG layout
 //! silently wrong scores, not a compile error.
 //!
 //! The shader is now GENERATED from `model_arch` by

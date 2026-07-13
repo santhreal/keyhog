@@ -550,7 +550,7 @@ fn spawn_poller(session: Arc<OobSession>) -> JoinHandle<()> {
             // GC at the TOP of every iteration so retention stays bounded even
             // while polls are FAILING. The error arm below `continue`s straight
             // back here, so a GC placed after the poll (where it used to live)
-            // was skipped for the entire duration of a collector outage 
+            // was skipped for the entire duration of a collector outage
             // `observations` grew unbounded exactly when the poller could no
             // longer drain it.
             if Instant::now() >= next_gc {

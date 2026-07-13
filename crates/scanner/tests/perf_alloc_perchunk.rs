@@ -64,7 +64,7 @@
 //! ## Measured on the current tree (dev box)
 //!
 //! With N = 256 KiB the passthrough copy makes `growth` track the body size:
-//! growth ~= N (>= 262_144 bytes). The FLOOR is set at N/2 (131_072 bytes) 
+//! growth ~= N (>= 262_144 bytes). The FLOOR is set at N/2 (131_072 bytes)
 //! the real defect overshoots it by ~2x while leaving generous headroom so
 //! incidental per-scan allocations never trip it. After the borrow fix,
 //! `growth` is a few KiB of line-mapping bookkeeping (well under N/2), so the

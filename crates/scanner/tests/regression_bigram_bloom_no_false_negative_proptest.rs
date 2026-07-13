@@ -8,7 +8,7 @@
 //! The existing coverage (`unit/bigram_bloom::no_false_negatives_for_inserted_patterns`
 //! and `sub_facade::sub_bigram_bloom::unrolled_agrees_with_scalar_reference`) is
 //! EXAMPLE-based over a handful of fixed chunks. `maybe_overlaps` processes four
-//! windows per group (`while i + 4 <= last_start + 1`) then a scalar tail loop 
+//! windows per group (`while i + 4 <= last_start + 1`) then a scalar tail loop
 //! index arithmetic whose off-by-one failure modes only surface at specific
 //! chunk-length-mod-4 classes with the sole present bigram sitting in the TAIL
 //! region. This proptest sweeps thousands of (table, chunk, position) tuples so

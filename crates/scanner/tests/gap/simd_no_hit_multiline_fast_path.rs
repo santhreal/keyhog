@@ -12,7 +12,7 @@ fn simd_no_hit_multiline_branch_does_not_reenter_full_scan() {
     // trigger but was admitted by `should_scan_no_hit_chunk`. The old code had
     // two separate branches (a "Multiline fallback" branch + a "Task #69
     // follow-up" branch); they were unified into one no-hit path that scans the
-    // (possibly drifted) preprocessed text directly via the triggered path 
+    // (possibly drifted) preprocessed text directly via the triggered path
     // which also covers the multiline-concatenation / decode-append case. The
     // invariant this gate protects is unchanged: that path must NOT re-enter
     // `self.scan(chunk)` (which would re-run preprocessing + decode recursion and

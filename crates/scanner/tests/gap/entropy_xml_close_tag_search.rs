@@ -45,7 +45,7 @@ fn xml_close_tag_search_matches_formatted_needle() {
 // `xml_assignment_value` = parse `<tag>value</tag>` → `normalize_assignment_keyword`
 // → gate on `normalized_assignment_keyword_is_credential`. The FIRST property is a
 // cross-facade DIFFERENTIAL: for any well-formed element with a clean identifier
-// tag (normalize is identity), the value is returned iff the tag is credential 
+// tag (normalize is identity), the value is returned iff the tag is credential
 // decided by the tested `is_cred` facade, so it covers positive AND negative, and
 // both the `_`-suffix path and the compact path, without hardcoding the tag set.
 // The other three pin the close-tag search: no close → None, mismatched close →

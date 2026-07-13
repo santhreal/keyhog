@@ -129,7 +129,7 @@ proptest! {
     }
 
     /// The KH-28 small-input branch (`active_len <= 255`, table-lookup formula)
-    /// is the regime most likely to diverge from a naive per-symbol SIMD sum 
+    /// is the regime most likely to diverge from a naive per-symbol SIMD sum
     /// sweep it densely.
     #[test]
     fn simd_matches_scalar_on_small_inputs(bytes in prop::collection::vec(any::<u8>(), 0..=255)) {

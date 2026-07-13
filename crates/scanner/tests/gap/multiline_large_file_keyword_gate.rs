@@ -70,7 +70,7 @@ proptest! {
         prop_assert!(has_concat(&text));
     }
 
-    /// The same shape padded past the gate with keyword-free filler is gated OFF 
+    /// The same shape padded past the gate with keyword-free filler is gated OFF
     /// a large non-secret blob with incidental concat shape is skipped.
     #[test]
     fn large_keyword_free_blob_is_gated_off(

@@ -34,7 +34,7 @@
 //!   KEYHOG_BIGTREE_TIMEOUT_SECS watchdog deadline    (default 300)
 //! The default catches gross regressions on any multicore CI box; nightly /
 //! strict runners crank `KEYHOG_BIGTREE_FILES` to ~94_000 for the full-scale
-//! stress. The backend is pinned to SIMD (`--no-gpu`) for determinism 
+//! stress. The backend is pinned to SIMD (`--no-gpu`) for determinism
 //! PERF-01 reproduced under BOTH backends, so the channel-topology guard is
 //! backend-independent and SIMD keeps the test runnable on GPU-less CI.
 

@@ -576,7 +576,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && serialized.contains("\"trials_ns\"")
             && serialized.contains("\"confidence_interval_95_ns\""),
         // v21 persists PRIMARY evidence only: the per-backend ms, GPU
-        // cold/warm/route, and selected-margin keys are gone from the JSON 
+        // cold/warm/route, and selected-margin keys are gone from the JSON
         // they are DERIVED from the timing evidence on load, never stored.
         "cache JSON must persist route timing evidence, not only the selected backend"
     );
@@ -3029,7 +3029,7 @@ fn bucket_resolution_does_not_clamp_below_a_gpu_floor() {
 #[test]
 fn bucket_resolution_does_not_clamp_an_uncalibrated_class() {
     // No calibrated bucket shares the request's non-size dimensions: the workload
-    // CLASS itself was never calibrated, so there is no floor to clamp under 
+    // CLASS itself was never calibrated, so there is no floor to clamp under
     // fail closed rather than invent one.
     let base = test_workload_key();
     let mut decisions = HashMap::new();

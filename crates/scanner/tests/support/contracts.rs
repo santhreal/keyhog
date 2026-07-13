@@ -164,7 +164,7 @@ pub fn surfaces(scanner: &CompiledScanner, chunk: &Chunk, credential: &str) -> b
 /// character *run*, which is intrinsically context-dependent: the SAME credential
 /// bytes that form a clean high-entropy run in isolation dilute below the entropy
 /// gate once embedded in a longer run (e.g. `rediss://default:<cred>@host…`,
-/// `teams api key=<cred>`), where a service-anchored detector, not entropy 
+/// `teams api key=<cred>`), where a service-anchored detector, not entropy
 /// surfaces the secret. Gating an entropy-only credential all-or-nothing would
 /// therefore assert survival of a context-dependent firing the moment any
 /// transform perturbs the surrounding run (whitespace injected between an anchor

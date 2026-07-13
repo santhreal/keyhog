@@ -6,7 +6,7 @@
 //!
 //! Distinct from `adversarial/docker_oci_manifest_layers.rs` (end-to-end unpack
 //! of a single OCI blob layer) and `docker_oci_classification.rs` (two happy-path
-//! media-type cases): this file drives the *adversarial* classification edges 
+//! media-type cases): this file drives the *adversarial* classification edges
 //! media-type-vs-body precedence, hybrid/empty/unparseable bodies, decoy
 //! filenames, unreferenced non-layer blobs, and asserts the exact digest label
 //! that ends up on the rewritten chunk.

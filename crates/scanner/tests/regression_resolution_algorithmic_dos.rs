@@ -15,7 +15,7 @@
 //! and answers each containment query with one binary search. O((M+P) log P).
 //!
 //! This suite is the regression guard. It pins (1) the exact containment
-//! semantics across every boundary the prefix-max index has to get right 
+//! semantics across every boundary the prefix-max index has to get right
 //! inclusive bounds, off-by-one rejects, overlapping spans, the wide-early-span
 //! case a naive "last span with start ≤ q" check gets WRONG, cross-file
 //! isolation, and (2) the DoS bound itself: 40 000 spans + 40 000 nested
