@@ -47,9 +47,14 @@ impl CompiledScanner {
         backend: ScanBackend,
     ) -> Vec<Vec<RawMatch>> {
         use rayon::prelude::*;
+        let telemetry = crate::telemetry::capture_scan_telemetry();
         let mut results: Vec<Vec<RawMatch>> = chunks
             .par_iter()
-            .map(|chunk| self.scan_with_backend(chunk, backend))
+            .map(|chunk| {
+                crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
+                    self.scan_with_backend(chunk, backend)
+                })
+            })
             .collect();
         super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
         results

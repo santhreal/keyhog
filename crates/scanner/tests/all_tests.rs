@@ -191,6 +191,10 @@ pub mod regression_iac_secret_recall;
 pub mod regression_infra_vendor_token_recall;
 #[path = "regression_into_matches_dedup_order_invariant.rs"]
 pub mod regression_into_matches_dedup_order_invariant;
+#[path = "regression_javascript_static_recovery.rs"]
+pub mod regression_javascript_static_recovery;
+#[path = "regression_javascript_static_recovery_rejections.rs"]
+pub mod regression_javascript_static_recovery_rejections;
 #[path = "regression_json_decoder_through.rs"]
 pub mod regression_json_decoder_through;
 #[path = "regression_jwt_header_field_order_recall.rs"]
@@ -299,6 +303,8 @@ pub mod regression_reverse_decoy_suppress;
 pub mod regression_reverse_integrity_decoy_suppression;
 #[path = "regression_saas_platform_token_recall.rs"]
 pub mod regression_saas_platform_token_recall;
+#[path = "regression_scan_telemetry_rayon_scope.rs"]
+pub mod regression_scan_telemetry_rayon_scope;
 #[path = "regression_shannon_entropy.rs"]
 pub mod regression_shannon_entropy;
 #[path = "regression_shape_collision_recall_carveout.rs"]

@@ -48,9 +48,10 @@ fn suppress_and_first_reason(credential: &str) -> (bool, Option<String>) {
         .drain()
         .dogfood_events
         .into_iter()
-        .map(|event| match event {
+        .filter_map(|event| match event {
             DogfoodEvent::ShapeSuppressed { reason, .. }
-            | DogfoodEvent::ExampleSuppressed { reason, .. } => reason.into_owned(),
+            | DogfoodEvent::ExampleSuppressed { reason, .. } => Some(reason.into_owned()),
+            DogfoodEvent::StaticRecoveryRejected { .. } => None,
         })
         .next();
     (suppressed, first)

@@ -715,9 +715,20 @@ pub(crate) fn dump_dogfood_trace() {
     }
     let events = keyhog_scanner::telemetry::drain_events();
     let suppressed = keyhog_scanner::telemetry::example_suppression_count();
+    let mut static_recovery_rejections = std::collections::BTreeMap::new();
+    for event in &events {
+        if let keyhog_scanner::telemetry::DogfoodEvent::StaticRecoveryRejected { reason, .. } =
+            event
+        {
+            *static_recovery_rejections
+                .entry(reason.to_string())
+                .or_insert(0usize) += 1;
+        }
+    }
     let payload = serde_json::json!({
         "dogfood": {
             "example_suppressions_total": suppressed,
+            "static_recovery_rejections": static_recovery_rejections,
             "events": events,
         }
     });

@@ -10,6 +10,8 @@ use regex::Regex;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
 
+use crate::telemetry::{record_static_recovery_rejection, StaticRecoveryRejection};
+
 static BUFFER_BINDING_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
         r#"(?m)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*Buffer\s*\.\s*from\s*\(\s*(["'][A-Za-z0-9+/=_-]+["'])\s*,\s*(["'](?:hex|base64)["'])\s*\)"#,
@@ -38,7 +40,7 @@ static AES_INLINE_BUFFER_RE: LazyLock<Regex> = LazyLock::new(|| {
     )
 });
 
-pub(super) fn recover_plaintexts(source: &str, emitted: &mut BTreeSet<String>) {
+pub(super) fn recover_plaintexts(source: &str, path: Option<&str>, emitted: &mut BTreeSet<String>) {
     let buffers = collect_buffer_bindings(source);
     for (expression_index, captures) in AES_BOUND_RE.captures_iter(source).enumerate() {
         if expression_index >= MAX_STATIC_EXPRESSIONS {
@@ -81,7 +83,14 @@ pub(super) fn recover_plaintexts(source: &str, emitted: &mut BTreeSet<String>) {
         ) else {
             continue;
         };
-        if let Some(plaintext) = decrypt_aes_256_cbc(key, iv, ciphertext) {
+        let (Some(key), Some(iv), Some(ciphertext)) = (
+            resolve_binding(key, path),
+            resolve_binding(iv, path),
+            resolve_binding(ciphertext, path),
+        ) else {
+            continue;
+        };
+        if let Some(plaintext) = decrypt_aes_256_cbc(key, iv, ciphertext, path) {
             emitted.insert(plaintext);
         }
     }
@@ -125,23 +134,47 @@ pub(super) fn recover_plaintexts(source: &str, emitted: &mut BTreeSet<String>) {
         else {
             continue;
         };
-        let Some(iv_hex) = unquote_static_string(iv_hex) else {
-            continue;
-        };
-        let (Ok(key), Ok(iv), Ok(ciphertext)) = (
-            hex::decode(key_hex),
-            hex::decode(iv_hex),
-            crate::decode::base64_decode(payload_base64),
+        let (Some(key_hex), Some(payload_base64)) = (
+            resolve_binding(key_hex, path),
+            resolve_binding(payload_base64, path),
         ) else {
             continue;
         };
-        if let Some(plaintext) = decrypt_aes_256_cbc(&key, &iv, &ciphertext) {
+        let Some(iv_hex) = unquote_static_string(iv_hex) else {
+            continue;
+        };
+        let key = match hex::decode(key_hex) {
+            Ok(key) => key,
+            // LAW10: the typed dogfood event records the malformed literal without source bytes.
+            Err(_) => {
+                record_static_recovery_rejection(path, StaticRecoveryRejection::BufferHex);
+                continue;
+            }
+        };
+        let iv = match hex::decode(iv_hex) {
+            Ok(iv) => iv,
+            // LAW10: the typed dogfood event records the malformed literal without source bytes.
+            Err(_) => {
+                record_static_recovery_rejection(path, StaticRecoveryRejection::BufferHex);
+                continue;
+            }
+        };
+        let ciphertext = match crate::decode::base64_decode(payload_base64) {
+            Ok(ciphertext) => ciphertext,
+            Err(()) => {
+                record_static_recovery_rejection(path, StaticRecoveryRejection::BufferBase64);
+                continue;
+            }
+        };
+        if let Some(plaintext) = decrypt_aes_256_cbc(&key, &iv, &ciphertext, path) {
             emitted.insert(plaintext);
         }
     }
 }
 
-fn collect_buffer_bindings(source: &str) -> HashMap<String, Vec<u8>> {
+fn collect_buffer_bindings(
+    source: &str,
+) -> HashMap<String, Result<Vec<u8>, StaticRecoveryRejection>> {
     let mut bindings = HashMap::new();
     for (binding_index, captures) in BUFFER_BINDING_RE.captures_iter(source).enumerate() {
         if binding_index >= MAX_ARRAY_BINDINGS {
@@ -160,22 +193,33 @@ fn collect_buffer_bindings(source: &str) -> HashMap<String, Vec<u8>> {
             continue;
         };
         let decoded = match format {
-            "hex" => hex::decode(value).ok(),
-            "base64" => crate::decode::base64_decode(value).ok(),
+            "hex" => match hex::decode(value) {
+                Ok(decoded) => Some(Ok(decoded)),
+                Err(_) => Some(Err(StaticRecoveryRejection::BufferHex)), // LAW10: a referenced binding emits a recorded dogfood event; no source bytes are retained.
+            },
+            "base64" => match crate::decode::base64_decode(value) {
+                Ok(decoded) => Some(Ok(decoded)),
+                Err(()) => Some(Err(StaticRecoveryRejection::BufferBase64)),
+            },
             _ => None,
         };
-        if let Some(decoded) = decoded {
-            if decoded.len() > MAX_BYTE_ARRAY_LEN {
+        if let Some(binding) = decoded {
+            if binding
+                .as_ref()
+                .is_ok_and(|decoded| decoded.len() > MAX_BYTE_ARRAY_LEN)
+            {
                 record_static_limit("buffer byte ceiling");
                 continue;
             }
-            bindings.insert(name.as_str().to_owned(), decoded);
+            bindings.insert(name.as_str().to_owned(), binding);
         }
     }
     bindings
 }
 
-fn collect_static_string_bindings(source: &str) -> HashMap<String, String> {
+fn collect_static_string_bindings(
+    source: &str,
+) -> HashMap<String, Result<String, StaticRecoveryRejection>> {
     let mut bindings = HashMap::new();
     for (binding_index, captures) in STRING_JOIN_BINDING_RE.captures_iter(source).enumerate() {
         if binding_index >= MAX_ARRAY_BINDINGS {
@@ -185,23 +229,63 @@ fn collect_static_string_bindings(source: &str) -> HashMap<String, String> {
         let (Some(name), Some(array)) = (captures.get(1), captures.get(2)) else {
             continue;
         };
-        let Ok(parts) = serde_json::from_str::<Vec<String>>(array.as_str()) else {
-            continue;
+        let parts = match serde_json::from_str::<Vec<String>>(array.as_str()) {
+            Ok(parts) => Ok(parts),
+            Err(_) => Err(StaticRecoveryRejection::StringJoinJson), // LAW10: a referenced binding emits a recorded dogfood event; no source bytes are retained.
         };
-        let total_len = parts.iter().map(String::len).sum::<usize>();
-        if parts.is_empty() || total_len > MAX_BYTE_ARRAY_LEN {
+        let total_len = parts
+            .as_ref()
+            .map(|parts| parts.iter().map(String::len).sum::<usize>())
+            .unwrap_or(0); // LAW10: the typed error is recorded when referenced; scan findings are unchanged.
+        let parts_empty = parts.as_ref().is_ok_and(Vec::is_empty);
+        if parts_empty || total_len > MAX_BYTE_ARRAY_LEN {
             if total_len > MAX_BYTE_ARRAY_LEN {
                 record_static_limit("joined string byte ceiling");
             }
             continue;
         }
-        bindings.insert(name.as_str().to_owned(), parts.concat());
+        bindings.insert(name.as_str().to_owned(), parts.map(|parts| parts.concat()));
     }
     bindings
 }
 
-fn decrypt_aes_256_cbc(key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Option<String> {
-    if key.len() != 32 || iv.len() != 16 || ciphertext.is_empty() {
+fn resolve_binding<'a, T>(
+    binding: &'a Result<T, StaticRecoveryRejection>,
+    path: Option<&str>,
+) -> Option<&'a T> {
+    match binding {
+        Ok(value) => Some(value),
+        Err(reason) => {
+            record_static_recovery_rejection(path, *reason);
+            None
+        }
+    }
+}
+
+fn decrypt_aes_256_cbc(
+    key: &[u8],
+    iv: &[u8],
+    ciphertext: &[u8],
+    path: Option<&str>,
+) -> Option<String> {
+    let key: &[u8; 32] = match key.try_into() {
+        Ok(key) => key,
+        // LAW10: the typed dogfood event records the invalid key shape without key bytes.
+        Err(_) => {
+            record_static_recovery_rejection(path, StaticRecoveryRejection::AesKeyLength);
+            return None;
+        }
+    };
+    let mut previous: [u8; 16] = match iv.try_into() {
+        Ok(iv) => iv,
+        // LAW10: the typed dogfood event records the invalid IV shape without IV bytes.
+        Err(_) => {
+            record_static_recovery_rejection(path, StaticRecoveryRejection::AesIvLength);
+            return None;
+        }
+    };
+    if ciphertext.is_empty() {
+        record_static_recovery_rejection(path, StaticRecoveryRejection::AesCiphertextBlockLength);
         return None;
     }
     if ciphertext.len() > MAX_BYTE_ARRAY_LEN {
@@ -209,14 +293,15 @@ fn decrypt_aes_256_cbc(key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Option<Strin
         return None;
     }
     if !ciphertext.len().is_multiple_of(16) {
+        record_static_recovery_rejection(path, StaticRecoveryRejection::AesCiphertextBlockLength);
         return None;
     }
 
-    let cipher = Aes256::new_from_slice(key).ok()?;
-    let mut previous = <[u8; 16]>::try_from(iv).ok()?;
+    let cipher = Aes256::new(key.into());
     let mut plaintext = Vec::with_capacity(ciphertext.len());
     for encrypted in ciphertext.chunks_exact(16) {
-        let encrypted_block = <[u8; 16]>::try_from(encrypted).ok()?;
+        let mut encrypted_block = [0u8; 16];
+        encrypted_block.copy_from_slice(encrypted);
         let mut block = aes::Block::clone_from_slice(encrypted);
         cipher.decrypt_block(&mut block);
         plaintext.extend(block.iter().zip(previous).map(|(byte, prior)| byte ^ prior));
@@ -230,8 +315,16 @@ fn decrypt_aes_256_cbc(key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Option<Strin
             .iter()
             .all(|byte| usize::from(*byte) == padding)
     {
+        record_static_recovery_rejection(path, StaticRecoveryRejection::AesPadding);
         return None;
     }
     plaintext.truncate(plaintext.len() - padding);
-    String::from_utf8(plaintext).ok()
+    match String::from_utf8(plaintext) {
+        Ok(plaintext) => Some(plaintext),
+        // LAW10: the typed dogfood event records non-UTF8 output without plaintext bytes.
+        Err(_) => {
+            record_static_recovery_rejection(path, StaticRecoveryRejection::AesPlaintextUtf8);
+            None
+        }
+    }
 }

@@ -885,10 +885,13 @@ pub struct ScanArgs {
     /// reason, both example/test/placeholder markers
     /// (`kind: example_suppressed`) AND shape/heuristic gates such as
     /// UUID-v4, bare-hex digest, base64 blob, dashed serial, or repetitive
-    /// run (`kind: shape_suppressed`, `reason` names the gate). Credentials
-    /// are redacted (prefix only). Useful when keyhog reports zero findings
-    /// and you want to know whether a match was made and silenced (and by
-    /// which gate), or never reached the engine at all.
+    /// run (`kind: shape_suppressed`, `reason` names the gate), plus bounded
+    /// static-recovery expressions rejected as malformed
+    /// (`kind: static_recovery_rejected`). Credentials are redacted (prefix
+    /// only), and recovery rejections contain no source bytes. Useful when
+    /// keyhog reports zero findings and you want to know whether a match was
+    /// made and silenced, recovery rejected an expression, or the candidate
+    /// never reached the engine.
     #[arg(long)]
     pub dogfood: bool,
 

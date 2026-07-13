@@ -43,9 +43,10 @@ fn suppressed_with_reasons(credential: &str) -> (bool, Vec<String>) {
         .drain()
         .dogfood_events
         .into_iter()
-        .map(|event| match event {
+        .filter_map(|event| match event {
             DogfoodEvent::ShapeSuppressed { reason, .. }
-            | DogfoodEvent::ExampleSuppressed { reason, .. } => reason.into_owned(),
+            | DogfoodEvent::ExampleSuppressed { reason, .. } => Some(reason.into_owned()),
+            DogfoodEvent::StaticRecoveryRejected { .. } => None,
         })
         .collect();
     (suppressed, reasons)

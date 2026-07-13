@@ -132,9 +132,14 @@ impl CompiledScanner {
 
         #[cfg(not(feature = "simd"))]
         {
+            let telemetry = crate::telemetry::capture_scan_telemetry();
             let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
                 .par_iter()
-                .map(|c| self.scan_with_backend(c, crate::hw_probe::ScanBackend::CpuFallback))
+                .map(|c| {
+                    crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
+                        self.scan_with_backend(c, crate::hw_probe::ScanBackend::CpuFallback)
+                    })
+                })
                 .collect();
             super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
             return results;
@@ -144,9 +149,14 @@ impl CompiledScanner {
         {
             let Some(scanner) = &self.simd_prefilter else {
                 self.warn_simd_auto_degrade("coalesced scan had no live SIMD prefilter");
+                let telemetry = crate::telemetry::capture_scan_telemetry();
                 let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
                     .par_iter()
-                    .map(|c| self.scan_with_backend(c, crate::hw_probe::ScanBackend::CpuFallback))
+                    .map(|c| {
+                        crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
+                            self.scan_with_backend(c, crate::hw_probe::ScanBackend::CpuFallback)
+                        })
+                    })
                     .collect();
                 super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
                 return results;
@@ -361,92 +371,96 @@ impl CompiledScanner {
 
         let triggers = self.normalize_coalesced_phase2_triggers(chunks, triggers);
         let phase2_start = std::time::Instant::now();
+        let telemetry = crate::telemetry::capture_scan_telemetry();
         let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
             .par_iter()
             .zip(triggers.into_par_iter())
             .enumerate()
             .map(|(chunk_index, (chunk, triggered_opt))| {
-                let keyword_hints = phase2_keyword_hints
-                    .and_then(|rows| rows.get(chunk_index))
-                    .map(Vec::as_slice);
-                let always_anchor_present =
-                    phase2_always_anchor_presence.and_then(|rows| rows.get(chunk_index).copied());
-                let confirmed_anchor_matches = confirmed_anchor_literal_matches
-                    .and_then(|rows| rows.get(chunk_index))
-                    .map(Vec::as_slice);
-                let generic_keyword_positions = generic_keyword_positions
-                    .and_then(|rows| rows.get(chunk_index))
-                    .map(Vec::as_slice);
-                if let Some(triggered) = triggered_opt {
-                    let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
-                        self.scan_windowed_with_triggered(
-                            chunk,
-                            &triggered,
-                            None,
-                            keyword_hints,
-                            always_anchor_present,
-                            confirmed_anchor_matches,
-                            generic_keyword_positions,
-                        )
-                    } else {
-                        let prepared = self.prepare_chunk(chunk);
-                        self.scan_prepared_with_triggered(
-                            prepared,
-                            ScanBackend::SimdCpu,
-                            &triggered,
-                            None,
-                            keyword_hints,
-                            always_anchor_present,
-                            confirmed_anchor_matches,
-                            generic_keyword_positions,
-                        )
-                    };
-                    self.post_process_coalesced_matches(chunk, &mut matches);
-                    return matches;
-                }
-                let admitted_by_phase2_gpu =
-                    match phase2_admission.and_then(|admission| admission.get(chunk_index)) {
-                        Some(&admitted) => admitted,
-                        None => false, // LAW10: recall_preserving; absent GPU admission never skips CPU admission.
-                    };
-                let admitted_by_phase2_keyword_hint =
-                    keyword_hints.is_some_and(|hints| !hints.is_empty());
-                let admitted_by_phase2_always_anchor = always_anchor_present.unwrap_or(false); // LAW10: absent GPU row does not skip; CPU no-hit admission remains authoritative.
-                let admitted_by_generic_keyword_hint =
-                    generic_keyword_positions.is_some_and(|positions| !positions.is_empty());
-                if !admitted_by_phase2_gpu
-                    && !admitted_by_phase2_keyword_hint
-                    && !admitted_by_phase2_always_anchor
-                    && !admitted_by_generic_keyword_hint
-                    && !self.should_scan_no_hit_chunk(chunk)
-                {
-                    if let Some(matches) = self.decode_only_coalesced_matches(chunk) {
+                crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
+                    let keyword_hints = phase2_keyword_hints
+                        .and_then(|rows| rows.get(chunk_index))
+                        .map(Vec::as_slice);
+                    let always_anchor_present = phase2_always_anchor_presence
+                        .and_then(|rows| rows.get(chunk_index).copied());
+                    let confirmed_anchor_matches = confirmed_anchor_literal_matches
+                        .and_then(|rows| rows.get(chunk_index))
+                        .map(Vec::as_slice);
+                    let generic_keyword_positions = generic_keyword_positions
+                        .and_then(|rows| rows.get(chunk_index))
+                        .map(Vec::as_slice);
+                    if let Some(triggered) = triggered_opt {
+                        let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
+                            self.scan_windowed_with_triggered(
+                                chunk,
+                                &triggered,
+                                None,
+                                keyword_hints,
+                                always_anchor_present,
+                                confirmed_anchor_matches,
+                                generic_keyword_positions,
+                            )
+                        } else {
+                            let prepared = self.prepare_chunk(chunk);
+                            self.scan_prepared_with_triggered(
+                                prepared,
+                                ScanBackend::SimdCpu,
+                                &triggered,
+                                None,
+                                keyword_hints,
+                                always_anchor_present,
+                                confirmed_anchor_matches,
+                                generic_keyword_positions,
+                            )
+                        };
+                        self.post_process_coalesced_matches(chunk, &mut matches);
                         return matches;
                     }
-                    return Vec::new();
-                }
+                    let admitted_by_phase2_gpu =
+                        match phase2_admission.and_then(|admission| admission.get(chunk_index)) {
+                            Some(&admitted) => admitted,
+                            None => false, // LAW10: recall_preserving; absent GPU admission never skips CPU admission.
+                        };
+                    let admitted_by_phase2_keyword_hint =
+                        keyword_hints.is_some_and(|hints| !hints.is_empty());
+                    let admitted_by_phase2_always_anchor = always_anchor_present.unwrap_or(false); // LAW10: absent GPU row does not skip; CPU no-hit admission remains authoritative.
+                    let admitted_by_generic_keyword_hint =
+                        generic_keyword_positions.is_some_and(|positions| !positions.is_empty());
+                    if !admitted_by_phase2_gpu
+                        && !admitted_by_phase2_keyword_hint
+                        && !admitted_by_phase2_always_anchor
+                        && !admitted_by_generic_keyword_hint
+                        && !self.should_scan_no_hit_chunk(chunk)
+                    {
+                        if let Some(matches) = self.decode_only_coalesced_matches(chunk) {
+                            return matches;
+                        }
+                        return Vec::new();
+                    }
 
-                let prepared = self.prepare_chunk(chunk);
-                let triggered = if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
-                    Vec::new()
-                } else {
-                    self.collect_triggered_patterns_for_backend(
-                        &prepared.preprocessed.text,
+                    let prepared = self.prepare_chunk(chunk);
+                    let triggered =
+                        if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
+                            Vec::new()
+                        } else {
+                            self.collect_triggered_patterns_for_backend(
+                                &prepared.preprocessed.text,
+                                ScanBackend::SimdCpu,
+                            )
+                        };
+                    let mut matches = self.scan_prepared_with_triggered(
+                        prepared,
                         ScanBackend::SimdCpu,
-                    )
-                };
-                let mut matches = self.scan_prepared_with_triggered(
-                    prepared,
-                    ScanBackend::SimdCpu,
-                    &triggered,
-                    None,
-                    keyword_hints,
-                    always_anchor_present,
-                    confirmed_anchor_matches,
-                    generic_keyword_positions,
-                );
-                self.post_process_coalesced_matches(chunk, &mut matches);
-                matches
+                        &triggered,
+                        None,
+                        keyword_hints,
+                        always_anchor_present,
+                        confirmed_anchor_matches,
+                        generic_keyword_positions,
+                    );
+                    self.post_process_coalesced_matches(chunk, &mut matches);
+                    matches
+                })
             })
             .collect();
 

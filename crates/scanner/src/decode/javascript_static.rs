@@ -17,6 +17,8 @@ use regex::Regex;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
 
+use crate::telemetry::{record_static_recovery_rejection, StaticRecoveryRejection};
+
 mod aes;
 
 const MAX_STATIC_SOURCE_BYTES: usize = 1024 * 1024;
@@ -70,11 +72,12 @@ impl Decoder for JavaScriptStaticDecoder {
 
         let mut decoded_chunks = Vec::new();
         let mut emitted = BTreeSet::new();
+        let path = chunk.metadata.path.as_deref();
         if has_xor_expression {
-            recover_xor_plaintexts(&chunk.data, &mut emitted);
+            recover_xor_plaintexts(&chunk.data, path, &mut emitted);
         }
         if has_aes_expression {
-            aes::recover_plaintexts(&chunk.data, &mut emitted);
+            aes::recover_plaintexts(&chunk.data, path, &mut emitted);
         }
         for plaintext in emitted {
             push_decoded_text_chunk(&mut decoded_chunks, chunk, plaintext, self.name());
@@ -83,7 +86,7 @@ impl Decoder for JavaScriptStaticDecoder {
     }
 }
 
-fn recover_xor_plaintexts(source: &str, emitted: &mut BTreeSet<String>) {
+fn recover_xor_plaintexts(source: &str, path: Option<&str>, emitted: &mut BTreeSet<String>) {
     let bindings = collect_byte_array_bindings(source);
     if bindings.len() < 2 {
         return;
@@ -118,6 +121,20 @@ fn recover_xor_plaintexts(source: &str, emitted: &mut BTreeSet<String>) {
         let (Some(data), Some(key)) = (bindings.get(data_name), bindings.get(key_name)) else {
             continue;
         };
+        let data = match data {
+            Ok(data) => data,
+            Err(reason) => {
+                record_static_recovery_rejection(path, *reason);
+                continue;
+            }
+        };
+        let key = match key {
+            Ok(key) => key,
+            Err(reason) => {
+                record_static_recovery_rejection(path, *reason);
+                continue;
+            }
+        };
         if data.is_empty() || key.is_empty() || data.len() > MAX_BYTE_ARRAY_LEN {
             continue;
         }
@@ -126,8 +143,13 @@ fn recover_xor_plaintexts(source: &str, emitted: &mut BTreeSet<String>) {
             .zip(key.iter().cycle())
             .map(|(byte, key_byte)| byte ^ key_byte)
             .collect();
-        let Ok(plaintext) = String::from_utf8(plaintext) else {
-            continue;
+        let plaintext = match String::from_utf8(plaintext) {
+            Ok(plaintext) => plaintext,
+            // LAW10: the typed dogfood event records this rejected expression without source bytes.
+            Err(_) => {
+                record_static_recovery_rejection(path, StaticRecoveryRejection::XorPlaintextUtf8);
+                continue;
+            }
         };
         emitted.insert(plaintext);
     }
@@ -142,7 +164,9 @@ fn compile_static_regex(pattern: &str, label: &str) -> Regex {
     }
 }
 
-fn collect_byte_array_bindings(source: &str) -> HashMap<String, Vec<u8>> {
+fn collect_byte_array_bindings(
+    source: &str,
+) -> HashMap<String, Result<Vec<u8>, StaticRecoveryRejection>> {
     let mut bindings = HashMap::new();
     for (binding_index, captures) in LITERAL_ARRAY_RE.captures_iter(source).enumerate() {
         if binding_index >= MAX_ARRAY_BINDINGS {
@@ -152,8 +176,8 @@ fn collect_byte_array_bindings(source: &str) -> HashMap<String, Vec<u8>> {
         let (Some(name), Some(body)) = (captures.get(1), captures.get(2)) else {
             continue;
         };
-        if let Some(bytes) = parse_byte_array(body.as_str()) {
-            bindings.insert(name.as_str().to_owned(), bytes);
+        if let Some(binding) = parse_byte_array(body.as_str()) {
+            bindings.insert(name.as_str().to_owned(), binding);
         }
     }
 
@@ -168,25 +192,41 @@ fn collect_byte_array_bindings(source: &str) -> HashMap<String, Vec<u8>> {
         let Some(encoded) = unquote_static_string(encoded.as_str()) else {
             continue;
         };
-        let Ok(decoded) = super::base64_decode(encoded) else {
-            continue;
+        let decoded = match super::base64_decode(encoded) {
+            Ok(decoded) => Ok(decoded),
+            Err(()) => Err(StaticRecoveryRejection::JsonBase64),
+        };
+        let decoded = match decoded {
+            Ok(decoded) => decoded,
+            Err(reason) => {
+                bindings.insert(name.as_str().to_owned(), Err(reason));
+                continue;
+            }
         };
         if decoded.len() > MAX_BYTE_ARRAY_LEN.saturating_mul(4) {
             record_static_limit("encoded JSON byte ceiling");
             continue;
         }
-        let Ok(text) = std::str::from_utf8(&decoded) else {
+        let text = match std::str::from_utf8(&decoded) {
+            Ok(text) => Ok(text),
+            Err(_) => Err(StaticRecoveryRejection::JsonUtf8), // LAW10: a referenced binding emits a recorded dogfood event; no source bytes are retained.
+        };
+        let text = match text {
+            Ok(text) => text,
+            Err(reason) => {
+                bindings.insert(name.as_str().to_owned(), Err(reason));
+                continue;
+            }
+        };
+        let Some(binding) = parse_json_byte_array(text) else {
             continue;
         };
-        let Some(bytes) = parse_json_byte_array(text) else {
-            continue;
-        };
-        bindings.insert(name.as_str().to_owned(), bytes);
+        bindings.insert(name.as_str().to_owned(), binding);
     }
     bindings
 }
 
-fn parse_byte_array(body: &str) -> Option<Vec<u8>> {
+fn parse_byte_array(body: &str) -> Option<Result<Vec<u8>, StaticRecoveryRejection>> {
     let mut bytes = Vec::new();
     for value in body.split(',') {
         let value = value.trim();
@@ -197,18 +237,24 @@ fn parse_byte_array(body: &str) -> Option<Vec<u8>> {
             record_static_limit("literal byte-array element ceiling");
             return None;
         }
-        bytes.push(value.parse::<u8>().ok()?);
+        match value.parse::<u8>() {
+            Ok(value) => bytes.push(value),
+            Err(_) => return Some(Err(StaticRecoveryRejection::LiteralByteArrayElement)), // LAW10: a referenced binding emits a recorded dogfood event; no source bytes are retained.
+        }
     }
-    (!bytes.is_empty()).then_some(bytes)
+    (!bytes.is_empty()).then_some(Ok(bytes))
 }
 
-fn parse_json_byte_array(text: &str) -> Option<Vec<u8>> {
-    let values: Vec<u8> = serde_json::from_str(text).ok()?;
+fn parse_json_byte_array(text: &str) -> Option<Result<Vec<u8>, StaticRecoveryRejection>> {
+    let values: Vec<u8> = match serde_json::from_str(text) {
+        Ok(values) => values,
+        Err(_) => return Some(Err(StaticRecoveryRejection::JsonByteArray)), // LAW10: a referenced binding emits a recorded dogfood event; no source bytes are retained.
+    };
     if values.len() > MAX_BYTE_ARRAY_LEN {
         record_static_limit("decoded JSON array element ceiling");
         return None;
     }
-    (!values.is_empty()).then_some(values)
+    (!values.is_empty()).then_some(Ok(values))
 }
 
 fn record_static_limit(limit: &'static str) {

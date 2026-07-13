@@ -57,6 +57,53 @@ pub enum DogfoodEvent {
         credential_redacted: String,
         reason: Cow<'static, str>,
     },
+    /// A bounded static-recovery grammar recognized a candidate expression but
+    /// rejected malformed or unsupported literal data. The original source is
+    /// still scanned. No source bytes are retained in this event.
+    StaticRecoveryRejected {
+        path: Option<String>,
+        decoder: Cow<'static, str>,
+        reason: Cow<'static, str>,
+    },
+}
+
+/// Typed reasons emitted when bounded static recovery cannot evaluate a
+/// recognized JavaScript literal expression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StaticRecoveryRejection {
+    LiteralByteArrayElement,
+    JsonBase64,
+    JsonUtf8,
+    JsonByteArray,
+    XorPlaintextUtf8,
+    StringJoinJson,
+    BufferBase64,
+    BufferHex,
+    AesKeyLength,
+    AesIvLength,
+    AesCiphertextBlockLength,
+    AesPadding,
+    AesPlaintextUtf8,
+}
+
+impl StaticRecoveryRejection {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::LiteralByteArrayElement => "literal_byte_array_element",
+            Self::JsonBase64 => "json_base64",
+            Self::JsonUtf8 => "json_utf8",
+            Self::JsonByteArray => "json_byte_array",
+            Self::XorPlaintextUtf8 => "xor_plaintext_utf8",
+            Self::StringJoinJson => "string_join_json",
+            Self::BufferBase64 => "buffer_base64",
+            Self::BufferHex => "buffer_hex",
+            Self::AesKeyLength => "aes_key_length",
+            Self::AesIvLength => "aes_iv_length",
+            Self::AesCiphertextBlockLength => "aes_ciphertext_block_length",
+            Self::AesPadding => "aes_padding",
+            Self::AesPlaintextUtf8 => "aes_plaintext_utf8",
+        }
+    }
 }
 
 #[derive(Default)]
@@ -64,8 +111,8 @@ struct Telemetry {
     dogfood_enabled: AtomicBool,
     example_suppressions: AtomicUsize,
     events: Mutex<Vec<DogfoodEvent>>,
-    /// One key (`path\0credential_hash`) per credential the trace has ALREADY
-    /// emitted a suppression EVENT for, across BOTH the example and shape paths.
+    /// Namespaced keys for events already emitted by this trace. Suppression
+    /// events key by credential hash. Static recovery keys by path and reason.
     /// The same credential is adjudicated by several pipeline stages (the
     /// example-token gate AND a shape/weak-anchor gate can both drop the same
     /// `AKIA…EXAMPLE` key), so without this the `--dogfood` trace emitted one
@@ -156,6 +203,24 @@ pub fn with_scan_telemetry<R>(telemetry: &Arc<ScanTelemetry>, f: impl FnOnce() -
 
 fn current_scan_telemetry() -> Option<Arc<ScanTelemetry>> {
     CURRENT_SCAN_TELEMETRY.with(|slot| slot.borrow().clone())
+}
+
+/// Capture the request-scoped telemetry owner before dispatching work to a
+/// thread pool. Rayon workers do not inherit thread-local state automatically.
+pub(crate) fn capture_scan_telemetry() -> Option<Arc<ScanTelemetry>> {
+    current_scan_telemetry()
+}
+
+/// Install a captured request scope for one worker closure. When no request
+/// scope exists, execute directly so normal CLI scans retain the global path.
+pub(crate) fn with_captured_scan_telemetry<R>(
+    telemetry: Option<&Arc<ScanTelemetry>>,
+    f: impl FnOnce() -> R,
+) -> R {
+    match telemetry {
+        Some(telemetry) => with_scan_telemetry(telemetry, f),
+        None => f(),
+    }
 }
 
 fn current_scan_dogfood_enabled() -> Option<bool> {
@@ -414,6 +479,59 @@ pub(crate) fn record_shape_suppression(path: Option<&str>, credential: &str, rea
         credential,
         reason,
     );
+}
+
+/// Record a static-recovery rejection in the dogfood trace. Deduplication keeps
+/// repeated references to the same rejected expression from producing noise.
+pub(crate) fn record_static_recovery_rejection(
+    path: Option<&str>,
+    reason: StaticRecoveryRejection,
+) {
+    if !is_dogfood_enabled() {
+        return;
+    }
+    if let Some(t) = current_scan_telemetry() {
+        if !mark_static_recovery_event_emitted(&t.emitted_suppression_events, path, reason) {
+            return;
+        }
+        if let Ok(mut events) = t.events.lock() {
+            // LAW10: a poisoned lock loses one telemetry event only; scan findings are unchanged.
+            events.push(static_recovery_event(path, reason));
+        }
+        return;
+    }
+    let t = cell();
+    if !mark_static_recovery_event_emitted(&t.emitted_suppression_events, path, reason) {
+        return;
+    }
+    if let Ok(mut events) = t.events.lock() {
+        // LAW10: a poisoned lock loses one telemetry event only; scan findings are unchanged.
+        events.push(static_recovery_event(path, reason));
+    }
+}
+
+fn static_recovery_event(path: Option<&str>, reason: StaticRecoveryRejection) -> DogfoodEvent {
+    DogfoodEvent::StaticRecoveryRejected {
+        path: path.map(str::to_owned),
+        decoder: Cow::Borrowed("javascript-static"),
+        reason: Cow::Borrowed(reason.as_str()),
+    }
+}
+
+fn mark_static_recovery_event_emitted(
+    emitted_events: &Mutex<HashSet<String>>,
+    path: Option<&str>,
+    reason: StaticRecoveryRejection,
+) -> bool {
+    let path = match path {
+        Some(path) => path,
+        None => "<unknown>",
+    };
+    let key = format!("static-recovery\0{}\0{}", path, reason.as_str());
+    match emitted_events.lock() {
+        Ok(mut emitted) => emitted.insert(key),
+        Err(_) => true, // LAW10: poisoned diagnostic dedup fails toward a visible telemetry event; scan findings are unchanged.
+    }
 }
 
 fn record_shape_suppression_in(

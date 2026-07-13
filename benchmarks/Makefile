@@ -26,6 +26,7 @@
 BENCH_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 REPO_ROOT := $(abspath $(BENCH_DIR)/..)
 PY        ?= python3
+export PYTHONDONTWRITEBYTECODE := 1
 
 # Optional explicit binary override. If unset, the KeyHog adapter resolves the
 # freshly built release binary from CARGO_TARGET_DIR, cargo config, repo target,

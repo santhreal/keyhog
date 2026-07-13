@@ -83,57 +83,60 @@ impl CompiledScanner {
         let mut seen_order = VecDeque::new();
         let line_offsets = crate::compute_line_offsets(chunk_text);
         let ranges = window_ranges(chunk_text, MAX_SCAN_CHUNK_BYTES, WINDOW_OVERLAP_BYTES);
+        let telemetry = crate::telemetry::capture_scan_telemetry();
 
         let window_matches: Vec<(usize, usize, Vec<RawMatch>)> = ranges
             .par_iter()
             .map(|&(offset, end)| {
-                let window_len = end - offset;
-                if let Some(deadline) = deadline {
-                    if std::time::Instant::now() > deadline {
-                        return (offset, window_len, Vec::new());
+                crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
+                    let window_len = end - offset;
+                    if let Some(deadline) = deadline {
+                        if std::time::Instant::now() > deadline {
+                            return (offset, window_len, Vec::new());
+                        }
                     }
-                }
-                let window_chunk = window_chunk(chunk, offset, end);
-                let prepared = self.prepare_chunk(&window_chunk);
-                let window_confirmed_anchor_matches;
-                let confirmed_anchor_matches =
-                    if let Some(matches) = confirmed_anchor_literal_matches {
-                        window_confirmed_anchor_matches = matches
+                    let window_chunk = window_chunk(chunk, offset, end);
+                    let prepared = self.prepare_chunk(&window_chunk);
+                    let window_confirmed_anchor_matches;
+                    let confirmed_anchor_matches =
+                        if let Some(matches) = confirmed_anchor_literal_matches {
+                            window_confirmed_anchor_matches = matches
+                                .iter()
+                                .filter_map(|&(literal_idx, pos)| {
+                                    let pos = pos as usize;
+                                    (pos >= offset && pos < end)
+                                        .then(|| (literal_idx, (pos - offset) as u32))
+                                })
+                                .collect::<Vec<_>>();
+                            Some(window_confirmed_anchor_matches.as_slice())
+                        } else {
+                            None
+                        };
+                    let window_generic_keyword_positions;
+                    let generic_positions = if let Some(positions) = generic_keyword_positions {
+                        window_generic_keyword_positions = positions
                             .iter()
-                            .filter_map(|&(literal_idx, pos)| {
+                            .filter_map(|&pos| {
                                 let pos = pos as usize;
-                                (pos >= offset && pos < end)
-                                    .then(|| (literal_idx, (pos - offset) as u32))
+                                (pos >= offset && pos < end).then(|| (pos - offset) as u32)
                             })
                             .collect::<Vec<_>>();
-                        Some(window_confirmed_anchor_matches.as_slice())
+                        Some(window_generic_keyword_positions.as_slice())
                     } else {
                         None
                     };
-                let window_generic_keyword_positions;
-                let generic_positions = if let Some(positions) = generic_keyword_positions {
-                    window_generic_keyword_positions = positions
-                        .iter()
-                        .filter_map(|&pos| {
-                            let pos = pos as usize;
-                            (pos >= offset && pos < end).then(|| (pos - offset) as u32)
-                        })
-                        .collect::<Vec<_>>();
-                    Some(window_generic_keyword_positions.as_slice())
-                } else {
-                    None
-                };
-                let matches = self.scan_prepared_with_triggered(
-                    prepared,
-                    crate::hw_probe::ScanBackend::SimdCpu,
-                    triggered_patterns,
-                    deadline,
-                    phase2_keyword_hints,
-                    phase2_always_anchor_present,
-                    confirmed_anchor_matches,
-                    generic_positions,
-                );
-                (offset, window_len, matches)
+                    let matches = self.scan_prepared_with_triggered(
+                        prepared,
+                        crate::hw_probe::ScanBackend::SimdCpu,
+                        triggered_patterns,
+                        deadline,
+                        phase2_keyword_hints,
+                        phase2_always_anchor_present,
+                        confirmed_anchor_matches,
+                        generic_positions,
+                    );
+                    (offset, window_len, matches)
+                })
             })
             .collect();
 

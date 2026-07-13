@@ -27,9 +27,10 @@ fn drain_reasons(trace: &ScanTelemetry) -> Vec<String> {
         .drain()
         .dogfood_events
         .into_iter()
-        .map(|e| match e {
+        .filter_map(|e| match e {
             DogfoodEvent::ShapeSuppressed { reason, .. }
-            | DogfoodEvent::ExampleSuppressed { reason, .. } => reason.into_owned(),
+            | DogfoodEvent::ExampleSuppressed { reason, .. } => Some(reason.into_owned()),
+            DogfoodEvent::StaticRecoveryRejected { .. } => None,
         })
         .collect()
 }
