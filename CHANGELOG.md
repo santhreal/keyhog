@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Daemon wire-v3 scan results now require suppression, dogfood, and coverage
+  fields instead of silently defaulting fields inherited from rejected v1/v2
+  peers; malformed same-version frames fail closed.
 - Windows now rejects explicit `scan --daemon=auto|on` instead of silently
   replacing the requested daemon-capable policy with in-process execution;
   an absent flag and portable `--daemon=off` continue to run in process.

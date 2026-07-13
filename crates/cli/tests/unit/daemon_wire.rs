@@ -102,18 +102,36 @@ async fn daemon_scan_text_roundtrip_carries_matches() {
 }
 
 #[test]
-fn daemon_scan_results_source_coverage_gaps_are_defaulted_and_serialized() {
-    let legacy: Response =
-        serde_json::from_str(r#"{"kind":"scan_results","path":null,"matches":[]}"#)
-            .expect("legacy scan results deserialize");
-    match legacy {
-        Response::ScanResults {
-            source_coverage_gaps,
-            ..
-        } => assert!(source_coverage_gaps.is_empty()),
-        other => panic!("expected legacy ScanResults, got {other:?}"),
+fn daemon_wire_v3_requires_every_scan_result_integrity_field() {
+    for (json, missing) in [
+        (
+            r#"{"kind":"scan_results","path":null,"matches":[]}"#,
+            "engine_example_suppressions",
+        ),
+        (
+            r#"{"kind":"scan_results","path":null,"matches":[],"engine_example_suppressions":0}"#,
+            "dogfood_events",
+        ),
+        (
+            r#"{"kind":"scan_results","path":null,"matches":[],"engine_example_suppressions":0,"dogfood_events":[]}"#,
+            "source_coverage_gaps",
+        ),
+        (
+            r#"{"kind":"scan_results","path":null,"matches":[],"engine_example_suppressions":0,"dogfood_events":[],"source_coverage_gaps":{}}"#,
+            "over_max_size",
+        ),
+    ] {
+        let error = serde_json::from_str::<Response>(json)
+            .expect_err("wire-v3 ScanResults must reject omitted integrity fields");
+        assert!(
+            error.to_string().contains(missing),
+            "missing {missing} must be named in the frame error: {error}"
+        );
     }
+}
 
+#[test]
+fn daemon_scan_results_source_coverage_gaps_roundtrip_exactly() {
     let response = Response::ScanResults {
         path: None,
         matches: vec![],

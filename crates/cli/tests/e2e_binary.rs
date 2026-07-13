@@ -1213,7 +1213,7 @@ fn daemon_wire_scan_stdin_finds_planted_secret() {
     );
 }
 
-/// Wire-v2 telemetry over the real socket on the ScanText/stdin route.
+/// Daemon telemetry over the real socket on the ScanText/stdin route.
 ///
 /// `daemon/protocol.rs` bumped the wire to v2 specifically so
 /// `ScanResults` could carry `engine_example_suppressions` (and
@@ -1237,7 +1237,7 @@ fn daemon_wire_stdin_example_suppression_summary_propagates() {
     let (runtime, mut daemon) = start_daemon();
 
     // AWS-published EXAMPLE credential: matched then suppressed as a
-    // known example on the daemon side, so the wire-v2 suppression
+    // known example on the daemon side, so the daemon suppression
     // count - not a finding - is what must reach the client.
     let fixture = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n";
     let mut child = Command::new(binary())
@@ -1263,14 +1263,14 @@ fn daemon_wire_stdin_example_suppression_summary_propagates() {
     let stdout = String::from_utf8_lossy(&scan.stdout);
     assert!(
         stdout.contains("example/test key") && stdout.contains("suppressed"),
-        "wire-v2 engine_example_suppressions must propagate over the real \
+        "engine_example_suppressions must propagate over the real daemon \
          socket so the daemon client distinguishes suppressed-example from a \
          clean repo. Got stdout: {stdout}"
     );
     assert!(
         !stdout.contains("Your code is clean."),
         "the clean-repo summary must NOT fire when the daemon suppressed an \
-         example credential and reported a non-zero wire-v2 count. \
+         example credential and reported a non-zero daemon count. \
          Got stdout: {stdout}"
     );
 }

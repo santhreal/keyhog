@@ -64,7 +64,9 @@ status` and `daemon stop` intentionally tolerate an identity mismatch so the
 operator can inspect and terminate it; `status` prints the exact mismatch and
 the strict scan route refuses it. In `--daemon=auto` that refusal is visible on
 stderr before the identical request runs in process. In `--daemon=on` it is an
-error.
+error. Wire-v3 scan results require suppression telemetry, dogfood telemetry,
+and source-coverage fields on every frame; missing fields are a malformed frame,
+not permission to synthesize zeroes that could hide incomplete scanning.
 
 ## Autoroute semantics
 

@@ -667,9 +667,9 @@ fn unwrap_scan_results(resp: Response) -> Result<(Vec<RawMatch>, SourceCoverageG
             // counters. The reporter and `dump_dogfood_trace()` both
             // read these, so without the merge the count would stay
             // at 0 (the OnceLock cell here is distinct from the
-            // daemon's). Wire v2 is what makes this field non-zero;
-            // a v1 daemon returns the serde defaults and the merge
-            // is a no-op.
+            // daemon's). Wire v3 requires this telemetry on every
+            // ScanResults frame; the Hello handshake rejects older
+            // peers before a scan request is sent.
             if engine_example_suppressions > 0 {
                 keyhog_scanner::telemetry::add_example_suppressions(
                     engine_example_suppressions as usize,

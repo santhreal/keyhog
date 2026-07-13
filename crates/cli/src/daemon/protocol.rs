@@ -26,10 +26,12 @@ use serde::{Deserialize, Serialize};
 ///   client's telemetry counter stayed at 0 because telemetry lives
 ///   in process-local OnceLock cells and the daemon scanner never
 ///   propagated its own counts back).
-/// * v2 extension - `ScanResults` carries serde-defaulted source
-///   coverage gaps so daemon-side skipped input cannot report clean.
+/// * v2 extension - `ScanResults` gained source coverage gaps so
+///   daemon-side skipped input cannot report clean.
 /// * v3 - `Hello` binds the daemon to its Git build and canonical detector
-///   rules digest, not merely the package version.
+///   rules digest, not merely the package version. All suppression, dogfood,
+///   and coverage fields are required; malformed frames cannot synthesize
+///   clean-looking zero values.
 pub const WIRE_VERSION: u32 = 3;
 
 /// Maximum length of a single framed message body. 64 MiB ceiling
@@ -105,19 +107,17 @@ pub enum Response {
         /// under that 0600 guarantee - never trust this field to be
         /// redacted on the wire.
         matches: Vec<RawMatch>,
-        /// Wire-v2: scanner-side example suppression count. Defaults
-        /// to 0 for back-compat with v1 servers (serde default).
-        #[serde(default)]
+        /// Scanner-side example suppression count. Required by wire v3; the
+        /// strict Hello handshake rejects older peers before scan traffic.
         engine_example_suppressions: u64,
-        /// Wire-v2: per-decision dogfood events captured on the daemon side.
+        /// Per-decision dogfood events captured on the daemon side. Required by
+        /// wire v3 even though the current request policy leaves it empty.
         /// Empty until the protocol has an explicit per-request dogfood field.
-        #[serde(default)]
         dogfood_events: Vec<DogfoodEvent>,
-        /// Wire-v2 extension: source coverage gaps recorded inside the daemon
+        /// Source coverage gaps recorded inside the daemon
         /// while expanding a `ScanPath` request. The client process cannot read
         /// the daemon's process-local counters directly, so missing this field
         /// used to let binary/unreadable/truncated daemon input exit clean.
-        #[serde(default)]
         source_coverage_gaps: SourceCoverageGaps,
     },
     Health {
@@ -136,25 +136,15 @@ pub enum Response {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceCoverageGaps {
-    #[serde(default)]
     pub over_max_size: usize,
-    #[serde(default)]
     pub binary: usize,
-    #[serde(default)]
     pub unreadable: usize,
-    #[serde(default)]
     pub git_object_unreadable: usize,
-    #[serde(default)]
     pub archive_truncated: usize,
-    #[serde(default)]
     pub binary_section_name_unresolved: usize,
-    #[serde(default)]
     pub source_truncated: usize,
-    #[serde(default)]
     pub structured_source_parse_failures: usize,
-    #[serde(default)]
     pub archive_duplicate_scan_unavailable: usize,
-    #[serde(default)]
     pub git_lfs_pointer: usize,
 }
 
