@@ -1,11 +1,11 @@
 #![cfg(feature = "gpu")]
-//! Smoke coverage for Vyre's retired per-rule megakernel primitive.
+//! Smoke coverage for VYRE's retired per-rule megakernel primitive.
 //!
-//! This is deliberately not a keyhog engine test. Production scanning routes
+//! This is deliberately not a KeyHog engine test. Production scanning routes
 //! through region-presence plus GPU regex-DFA admission, and the live-route
-//! contracts live under `gpu_*` tests. This file only proves the vendored Vyre
-//! primitive still links, packs a small rule catalog, and can dispatch on a
-//! live adapter when explicitly requested.
+//! contracts live under `gpu_*` tests. This file only proves the pinned VYRE
+//! registry primitive still links, packs a small rule catalog, and can dispatch
+//! on a live adapter when explicitly requested.
 
 use std::time::Duration;
 
@@ -41,14 +41,14 @@ const CASES: &[(&str, &str, &str)] = &[
 
 fn build_rule(idx: usize, regex: &str) -> BatchRuleProgram {
     let pipe = build_regex_dfa_unanchored(&[regex], MAX_MATCHES, MAX_DFA_STATES)
-        .unwrap_or_else(|err| panic!("Vyre DFA build failed for {regex:?}: {err:?}"));
+        .unwrap_or_else(|err| panic!("VYRE DFA build failed for {regex:?}: {err:?}"));
     BatchRuleProgram::new(
         idx as u32,
         pipe.dfa.transitions,
         pipe.dfa.accept,
         pipe.dfa.state_count,
     )
-    .unwrap_or_else(|err| panic!("Vyre BatchRuleProgram build failed for {regex:?}: {err:?}"))
+    .unwrap_or_else(|err| panic!("VYRE BatchRuleProgram build failed for {regex:?}: {err:?}"))
 }
 
 fn smoke_rules() -> Vec<BatchRuleProgram> {
@@ -62,7 +62,7 @@ fn smoke_rules() -> Vec<BatchRuleProgram> {
 #[test]
 fn vyre_megakernel_rule_catalog_packs_smoke_patterns() {
     let rules = smoke_rules();
-    let packed = pack_rule_catalog(&rules).expect("Vyre megakernel catalog must pack");
+    let packed = pack_rule_catalog(&rules).expect("VYRE megakernel catalog must pack");
 
     assert_eq!(
         rules.len(),
@@ -75,14 +75,14 @@ fn vyre_megakernel_rule_catalog_packs_smoke_patterns() {
     );
     assert!(
         packed.rejected_rules.is_empty(),
-        "smoke rules must fit the Vyre primitive catalog"
+        "smoke rules must fit the VYRE primitive catalog"
     );
 }
 
 #[test]
-#[ignore = "live-adapter Vyre primitive smoke; production GPU route is tested elsewhere"]
+#[ignore = "live-adapter VYRE primitive smoke; production GPU route is tested elsewhere"]
 fn vyre_megakernel_dispatches_smoke_patterns_on_live_adapter() {
-    let backend = WgpuBackend::new().expect("live WGPU adapter required for Vyre primitive smoke");
+    let backend = WgpuBackend::new().expect("live WGPU adapter required for VYRE primitive smoke");
     let rules = smoke_rules();
 
     let mut files: Vec<BatchFile> = CASES
@@ -109,7 +109,7 @@ fn vyre_megakernel_dispatches_smoke_patterns_on_live_adapter() {
         rules.len() as u32,
         HIT_CAPACITY,
     )
-    .expect("Vyre FileBatch upload must succeed");
+    .expect("VYRE FileBatch upload must succeed");
     let config = BatchDispatchConfig {
         workgroup_size_x: 64,
         worker_groups: 8,
@@ -118,12 +118,12 @@ fn vyre_megakernel_dispatches_smoke_patterns_on_live_adapter() {
         ..Default::default()
     };
     let mut dispatcher =
-        BatchDispatcher::new(backend, config).expect("Vyre BatchDispatcher must compile");
+        BatchDispatcher::new(backend, config).expect("VYRE BatchDispatcher must compile");
 
     let mut hits: Vec<HitRecord> = Vec::with_capacity(256);
     let report = dispatcher
         .dispatch_into(&batch, &rules, &mut hits)
-        .expect("Vyre megakernel dispatch must complete");
+        .expect("VYRE megakernel dispatch must complete");
 
     assert!(
         report.items_processed > 0,

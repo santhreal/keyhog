@@ -196,7 +196,7 @@ def _main(argv: list[str] | None = None) -> int:
     ap.add_argument("--corpus", default="mirror")
     ap.add_argument("--scanner", default=None, help="filter to one scanner (e.g. keyhog)")
     ap.add_argument("--dominance-gate", action="store_true",
-                    help="fail unless keyhog is 10x faster than BetterLeaks and Kingfisher on every required OS")
+                    help="fail unless keyhog is 10x faster than Betterleaks and Kingfisher on every required OS")
     ap.add_argument("--factor", type=float, default=10.0)
     ap.add_argument("--required-oses", default="linux,macos,windows")
     args = ap.parse_args(argv)

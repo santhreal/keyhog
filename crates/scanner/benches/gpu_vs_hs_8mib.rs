@@ -5,12 +5,12 @@
 //! `scan_chunks_with_backend` entry. The layout lets the Hyperscan path use its
 //! real Rayon parallelism instead of handicapping it behind one oversized
 //! sequential chunk. `SimdCpu`
-//! runs the Hyperscan literal prefilter; `Gpu` routes the batch through Vyre
+//! runs the Hyperscan literal prefilter; `Gpu` routes the batch through VYRE
 //! `GpuLiteralSet::scan_presence_by_region_with_scratch`. Timing includes each
 //! backend's production batching, scheduling, phase 2, and post-processing.
 //!
 //! Pass `-- --perf-trace` to get the region-presence phase breakdown
-//! (matcher / coalesce / dispatch / floor / phase2_gpu / phase2) and Vyre
+//! (matcher / coalesce / dispatch / floor / phase2_gpu / phase2) and VYRE
 //! dispatch telemetry on stderr. Trace instrumentation is intentionally not a
 //! crossover measurement: it adds GPU-specific timers and counters, so the
 //! speed gate is enforced only by the normal untraced run. Full-result parity
@@ -282,7 +282,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     report("SimdCpu (Hyperscan)", hs, size, hs_hits);
 
     // GPU region-presence path. --perf-trace prints the internal phase
-    // breakdown plus Vyre dispatch telemetry.
+    // breakdown plus VYRE dispatch telemetry.
     #[cfg(feature = "gpu")]
     {
         let degrade_before = scanner.gpu_degrade_count();

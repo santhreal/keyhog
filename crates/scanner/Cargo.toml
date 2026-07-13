@@ -37,8 +37,8 @@ decode = []
 multiline = []
 simd = ["dep:hyperscan"]  # Vectorscan/Hyperscan SIMD regex compilation (builds HS database)
 simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (50 GB/s)
-# GPU dispatch stack: wgpu cross-platform driver (+ pollster/bytemuck), Vyre's
-# GPU literal-set region-presence runtime, and on Linux the Vyre CUDA driver.
+# GPU dispatch stack: wgpu cross-platform driver (+ pollster/bytemuck), VYRE's
+# GPU literal-set region-presence runtime, and on Linux the VYRE CUDA driver.
 # cudarc still loads libcuda/libnvrtc DYNAMICALLY at runtime, while GPU
 # availability and any CPU degradation are reported by the engine/autoroute
 # result path instead of being hidden at feature selection time. Turning the
@@ -59,7 +59,7 @@ gpu = [
     "dep:vyre-driver-wgpu",
     "dep:vyre-runtime",
     "dep:vyre-driver-cuda",
-    # Vyre's batch GPU ABI is exposed under this feature name. KeyHog's
+    # VYRE's batch GPU ABI is exposed under this feature name. KeyHog's
     # production route uses the literal-set region-presence API, not the retired
     # per-rule route (see the internal design notes).
     "vyre-driver-wgpu/megakernel-batch",

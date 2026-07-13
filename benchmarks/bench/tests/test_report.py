@@ -25,7 +25,7 @@ def test_report_renders_keyhog_leaderboard_row():
     )
 
     assert "**KeyHog**" in text
-    assert "BetterLeaks" in text
+    assert "Betterleaks" in text
     assert "Corpus: **mirror**" in text
 
 
@@ -110,7 +110,7 @@ def test_gap_report_shows_category_recall_gap_dashboard():
 
     assert "KeyHog P/R/F1" in text
     assert "Recall gap" in text
-    assert "| `generic` | 1.000 / 0.333 / 0.500 | 1/2 | BetterLeaks 0.750 / 1.000 / 0.857 | +0.667 |" in text
+    assert "| `generic` | 1.000 / 0.333 / 0.500 | 1/2 | Betterleaks 0.750 / 1.000 / 0.857 | +0.667 |" in text
 
 
 def test_primary_category_collapses_composite_labels_to_last_atom():
@@ -154,9 +154,10 @@ def test_category_recall_dashboard_ranks_by_miss_count():
     # Key has the most misses, so it must rank first; UUID second.
     assert lines[0].startswith("| `Key` |")
     assert lines[1].startswith("| `UUID` |")
-    assert "| `Key` | 80/3700 | 0.021 | BetterLeaks 0.868 |" in text
-    # UUID has no competitor cell -> em dash, not a fabricated 0.000 winner.
-    assert "| `UUID` | 7/2260 | 0.003 | |" in text
+    assert "| `Key` | 80/3700 | 0.021 | Betterleaks 0.868 |" in text
+    # UUID has no competitor cell: say so explicitly instead of fabricating a
+    # zero-recall winner or emitting punctuation that looks like corruption.
+    assert "| `UUID` | 7/2260 | 0.003 | N/A |" in text
 
 
 def test_class_recall_differential_requires_full_scanner_set():

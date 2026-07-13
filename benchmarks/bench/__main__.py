@@ -289,7 +289,7 @@ def main(argv: list[str] | None = None) -> int:
     cross_device.add_argument("--corpus", default="mirror")
     cross_device.add_argument("--scanner", default=None)
     cross_device.add_argument("--dominance-gate", action="store_true",
-                              help="require keyhog to beat BetterLeaks and Kingfisher fastest paths by the configured factor on every required OS")
+                              help="require keyhog to beat Betterleaks and Kingfisher fastest paths by the configured factor on every required OS")
     cross_device.add_argument("--factor", type=float, default=10.0)
     cross_device.add_argument("--required-oses", default="linux,macos,windows")
 

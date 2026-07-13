@@ -1,7 +1,7 @@
 # RSA PRIVATE KEY block shape exactly as it appears in real
 # Kubernetes test-certificate files (cmd/kube-apiserver/app/testing/
 # testdata/*.key, the same shape gitleaks and trufflehog catch
-# universally on these paths). Keyhog correctly suppresses these in
+# universally on these paths). KeyHog correctly suppresses these in
 # test-fixture paths, but the underlying regex MUST still fire when
 # the same PEM block appears in non-test code (e.g. a YAML config
 # file accidentally committed alongside a key).

@@ -72,7 +72,7 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
     );
     assert!(
         dispatch_src.contains("scan_gpu_literal_presence_by_region_with_scratch"),
-        "region dispatch must use Vyre's batched region-presence scratch API"
+        "region dispatch must use VYRE's batched region-presence scratch API"
     );
     let helper_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),

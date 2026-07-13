@@ -69,7 +69,7 @@ fn no_hit_admission_consults_active_phase2_set() {
         gpu_lowering.contains("build_regex_dfa_unanchored")
             && gpu_candidates.contains("gate_prefix_literals")
             && gpu_dfa.contains("CPU admission remains authoritative"),
-        "phase-2 GPU admission must be a real Vyre regex-DFA path for prefixless \
+        "phase-2 GPU admission must be a real VYRE regex-DFA path for prefixless \
          always-active patterns, with CPU admission authoritative for uncovered/error cases"
     );
 }

@@ -30,7 +30,7 @@ _REPO_ROOT = _BENCH_ROOT.parent
 # Scanner display order / friendly names for the tables.
 _DISPLAY = {
     "keyhog": "KeyHog",
-    "betterleaks": "BetterLeaks",
+    "betterleaks": "Betterleaks",
     "kingfisher": "Kingfisher",
     "trufflehog": "TruffleHog",
     "titus": "Titus",
@@ -376,7 +376,7 @@ def render_category_recall(results: list[RunResult], corpus: str) -> str:
         if o.tp + o.fn == 0:
             continue
         bname, brec = best_competitor_recall(cat)
-        best_cell = f"{_name(bname)} {brec:.3f}" if bname else ". "
+        best_cell = f"{_name(bname)} {brec:.3f}" if bname else "N/A"
         out_lines.append(
             f"| `{cat}` | {o.tp}/{o.fn} | {o.recall():.3f} | {best_cell} | "
             f"{o.fn / total_fn * 100:.1f}% |"

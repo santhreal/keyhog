@@ -17,7 +17,7 @@
 #   make report-check      # CI gate: fail if the README tables are stale
 #   make org-audit         # fail on stale claims and generated organization bloat
 #   make gate              # regression + differential gate (keyhog must lead + not regress)
-#   make cross-device-gate # require 10x speed dominance vs BetterLeaks/Kingfisher on every OS
+#   make cross-device-gate # require 10x speed dominance vs Betterleaks/Kingfisher on every OS
 #   make loop              # full improvement loop: corpus->leaderboard->calibrate->report->gate
 #   make keyhog            # build the release binary (run in background; cargo is slow)
 
@@ -25,7 +25,7 @@ BENCH_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 REPO_ROOT := $(abspath $(BENCH_DIR)/..)
 PY        ?= python3
 
-# Optional explicit binary override. If unset, the Keyhog adapter resolves the
+# Optional explicit binary override. If unset, the KeyHog adapter resolves the
 # freshly built release binary from CARGO_TARGET_DIR, cargo config, repo target,
 # then PATH.
 SCANNER          ?= keyhog

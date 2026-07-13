@@ -48,7 +48,7 @@ fn vyre_integration_doc_matches_workspace_pin() {
         "VYRE integration reference must state the workspace pin v{version}"
     );
     assert!(
-        !doc.contains("Vyre is not on crates.io"),
+        !doc.contains("VYRE is not on crates.io"),
         "VYRE integration reference must not claim VYRE is unpublished"
     );
     assert!(

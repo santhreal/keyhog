@@ -1,6 +1,6 @@
 //! Massive, handwritten, deep adversarial integration test suite.
 //!
-//! Every test in this suite is fully handwritten to validate Keyhog's secret
+//! Every test in this suite is fully handwritten to validate KeyHog's secret
 //! scanning, pre-filtering, and ML scoring capabilities against hostile inputs,
 //! evasion methods, and edge cases.
 

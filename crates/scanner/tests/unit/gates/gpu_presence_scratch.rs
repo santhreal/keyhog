@@ -17,7 +17,7 @@ fn per_chunk_gpu_presence_reuses_and_zeroes_scratch() {
     );
     assert!(
         scratch_src.contains("scan_presence_with_scratch"),
-        "GPU literal trigger production must call Vyre's scratch-reuse presence API"
+        "GPU literal trigger production must call VYRE's scratch-reuse presence API"
     );
     assert!(
         !triggered_src.contains("matcher.scan_presence(&**gpu_backend, text.as_bytes())"),
@@ -64,7 +64,7 @@ fn coalesced_gpu_uses_region_presence_not_per_rule_catalog() {
 
     assert!(
         dispatch_src.contains("scan_gpu_literal_presence_by_region_with_scratch"),
-        "coalesced GPU trigger production must use Vyre's batched region-presence API"
+        "coalesced GPU trigger production must use VYRE's batched region-presence API"
     );
     assert!(
         !dispatch_src.contains("catalog.scan(") && !dispatch_src.contains("megakernel_catalog("),

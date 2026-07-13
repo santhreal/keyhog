@@ -1,4 +1,4 @@
-"""Keyhog benchmark version freshness checks.
+"""KeyHog benchmark version freshness checks.
 
 Benchmark gates may consume existing result JSONs or resolve a release binary
 from the cargo target directory. Both are useful only when they match the

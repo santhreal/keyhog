@@ -36,7 +36,7 @@ from alphabets import B62, B64, B64URL, HEX  # noqa: E402
 
 # Tokens for several detector families (github classic/fine-grained PATs,
 # npm access tokens) embed a CRC32-over-entropy checksum encoded as
-# base62. Keyhog rejects fixtures with invalid checksums at the
+# base62. KeyHog rejects fixtures with invalid checksums at the
 # named-detector emit path (`scan.rs:723`), which is correct behavior
 # for production scans but artificially floors bench recall on these
 # families. Generate real checksums so the bench measures detector

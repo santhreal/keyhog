@@ -76,7 +76,7 @@ def scan_result(creddata_simd_findings):
 # 2-positive category recalling 0 is noise, not a blind class).
 
 _CATEGORY_MIN_POSITIVES = 25
-# These CredData labels identify public resources, not credentials. Keyhog may
+# These CredData labels identify public resources, not credentials. KeyHog may
 # use them as context around a secret, but treating their absence as secret
 # recall blindness would reward noisy detectors that report ordinary domains
 # and bucket names as findings.

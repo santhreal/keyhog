@@ -58,11 +58,11 @@ fn gpu_literal_artifacts_round_trip_through_vyre_bytes() {
     assert_eq!(literal.wire_version, GpuLiteralSet::WIRE_VERSION);
     assert!(
         literal.bytes.len() >= GpuLiteralSet::WIRE_MAGIC.len(),
-        "main artifact bytes must include Vyre wire header"
+        "main artifact bytes must include VYRE wire header"
     );
     assert_eq!(&literal.bytes[..4], &GpuLiteralSet::WIRE_MAGIC);
     GpuLiteralSet::from_bytes(&literal.bytes)
-        .expect("main GPU artifact bytes must reload through Vyre");
+        .expect("main GPU artifact bytes must reload through VYRE");
 
     let positioned = artifacts
         .positioned_literal
@@ -77,11 +77,11 @@ fn gpu_literal_artifacts_round_trip_through_vyre_bytes() {
     assert_eq!(positioned.wire_version, GpuLiteralSet::WIRE_VERSION);
     assert!(
         positioned.bytes.len() >= GpuLiteralSet::WIRE_MAGIC.len(),
-        "positioned artifact bytes must include Vyre wire header"
+        "positioned artifact bytes must include VYRE wire header"
     );
     assert_eq!(&positioned.bytes[..4], &GpuLiteralSet::WIRE_MAGIC);
     GpuLiteralSet::from_bytes(&positioned.bytes)
-        .expect("positioned GPU artifact bytes must reload through Vyre");
+        .expect("positioned GPU artifact bytes must reload through VYRE");
 
     assert!(
         literal.pattern_count >= detectors.len(),

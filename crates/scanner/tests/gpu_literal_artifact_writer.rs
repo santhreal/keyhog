@@ -61,12 +61,12 @@ description = "Artifact writer smoke token"
         let bytes = std::fs::read(out.path().join(file_name)).expect("artifact bytes readable");
         assert!(
             bytes.len() >= GpuLiteralSet::WIRE_MAGIC.len(),
-            "artifact {file_name} must include a Vyre literal-set wire header"
+            "artifact {file_name} must include a VYRE literal-set wire header"
         );
         assert_eq!(
             &bytes[..GpuLiteralSet::WIRE_MAGIC.len()],
             &GpuLiteralSet::WIRE_MAGIC,
-            "artifact {file_name} must carry Vyre literal-set wire magic"
+            "artifact {file_name} must carry VYRE literal-set wire magic"
         );
         GpuLiteralSet::from_bytes(&bytes)
             .unwrap_or_else(|error| panic!("artifact {file_name} must deserialize: {error}"));

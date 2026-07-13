@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Gate - VYRE PIN CONSISTENCY.
 
-Keyhog consumes Vyre as five runtime crates from crates.io:
+KeyHog consumes VYRE as five runtime crates from crates.io:
 `vyre`, `vyre-libs`, `vyre-driver-wgpu`, `vyre-driver-cuda`, and
 `vyre-runtime`.
 
@@ -14,7 +14,7 @@ that made the old setup brittle:
   4. the repository has no `vendor/` source tree;
   5. no Cargo manifest resolves a dependency through `vendor/`;
   6. no Cargo manifest reintroduces the retired `third_party/vyre` mirror;
-  7. the key Vyre docs agree that the active build uses crates.io pins.
+  7. the key VYRE docs agree that the active build uses crates.io pins.
 
 Run: python3 scripts/gates/vyre_pin_consistency.py
 """
@@ -144,8 +144,8 @@ def check() -> list[str]:
     if vendor_dirs:
         found = ", ".join(path.relative_to(REPO).as_posix() for path in vendor_dirs)
         violations.append(
-            f"vendor/ source tree must not exist (found: {found}). Keyhog consumes "
-            "Vyre from crates.io pins and must not carry vendored source snapshots."
+            f"vendor/ source tree must not exist (found: {found}). KeyHog consumes "
+            "VYRE from crates.io pins and must not carry vendored source snapshots."
         )
 
     exclude = ws.get("exclude", [])
@@ -180,8 +180,8 @@ def check() -> list[str]:
 
         if path is not None:
             violations.append(
-                f"vyre dep '{key}' still has path override '{path}'. Keyhog must "
-                "consume Vyre from crates.io exact pins only."
+                f"vyre dep '{key}' still has path override '{path}'. KeyHog must "
+                "consume VYRE from crates.io exact pins only."
             )
 
     distinct = set(versions.values())
@@ -197,17 +197,17 @@ def check() -> list[str]:
         path_values = [value.replace("\\", "/") for value in _manifest_path_values(text)]
         if any(_path_has_component(value, "vendor") for value in path_values):
             violations.append(
-                f"{rel} declares a Cargo path dependency into vendor/. Keyhog "
+                f"{rel} declares a Cargo path dependency into vendor/. KeyHog "
                 "must not resolve dependencies from repository vendored snapshots."
             )
         if any("third_party/vyre" in value for value in path_values):
             violations.append(
                 f"{rel} declares a Cargo path dependency into retired third_party/vyre. "
-                f"Use the crates.io `={REQUIRED_VERSION}` Vyre pins."
+                f"Use the crates.io `={REQUIRED_VERSION}` VYRE pins."
             )
         if any("libs/performance/matching/vyre" in value for value in path_values):
             violations.append(
-                f"{rel} declares a Cargo path dependency into the Santh live Vyre tree. "
+                f"{rel} declares a Cargo path dependency into the Santh live VYRE tree. "
                 "That breaks source ships on hosts without the mounted share."
             )
 
@@ -220,7 +220,7 @@ def check() -> list[str]:
         (
             "PUBLISHING.md",
             "path override",
-            "PUBLISHING.md still describes Vyre path overrides as active.",
+            "PUBLISHING.md still describes VYRE path overrides as active.",
         ),
         (
             "docs/src/reference/vyre-integration.md",

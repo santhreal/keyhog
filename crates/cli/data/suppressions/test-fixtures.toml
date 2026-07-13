@@ -38,7 +38,7 @@ service = "slack"
 source = "https://api.slack.com/authentication/token-types"
 
 [[exact]]
-# Keyhog's own v0.4.0 cross-chunk-boundary test secret. Self-
+# KeyHog's own v0.4.0 cross-chunk-boundary test secret. Self-
 # suppressed so a recursive `keyhog scan keyhog/` doesn't fire
 # on the fixture line itself.
 credential = "XX_FAKE_v040BOUNDARYTESTSECRET67890XYZ"

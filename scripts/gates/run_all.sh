@@ -132,7 +132,7 @@ run "Gate #4: surface coverage (every subcommand spawned)" \
   python3 scripts/gates/surface_coverage.py
 run "Gate #5: complexity budget (engine lane/backend/file growth)" \
   python3 scripts/gates/complexity_budget.py
-run "Vyre pin consistency: 5 crates lockstep, registry pins, no vendor build-path" \
+run "VYRE pin consistency: 5 crates lockstep, registry pins, no vendor build-path" \
   python3 scripts/gates/vyre_pin_consistency.py
 run "Org audit unit tests: Markdown section parser stays code-fence aware" \
   python3 -m unittest scripts.tests.test_org_audit -v
