@@ -32,7 +32,11 @@ import pathlib
 import sys
 import tempfile
 
-from .keyhog_version import KeyhogVersionError, assert_version_matches_workspace
+from .keyhog_version import (
+    KeyhogVersionError,
+    assert_version_matches_workspace,
+    workspace_detector_corpus_sha256,
+)
 from .report import canonical_leaderboard, load_results
 from .scanners import SCANNER_NAMES
 from .schema import DetectorStat, RunResult
@@ -68,6 +72,7 @@ def _assert_keyhog_results_current(rows: list[RunResult]) -> None:
     useful only if they came from the same keyhog version as the workspace being
     gated; otherwise an old leaderboard can make a new tree look green.
     """
+    expected_digest: str | None = None
     for row in rows:
         if row.scanner.name != "keyhog":
             continue
@@ -78,6 +83,20 @@ def _assert_keyhog_results_current(rows: list[RunResult]) -> None:
             )
         except KeyhogVersionError as exc:
             raise GateError(f"{exc}; rerun `make leaderboard` with the current binary") from exc
+        if expected_digest is None:
+            try:
+                expected_digest = workspace_detector_corpus_sha256()
+            except KeyhogVersionError as exc:
+                raise GateError(
+                    f"cannot validate benchmark detector provenance: {exc}; "
+                    "repair the workspace detector corpus before rerunning the gate"
+                ) from exc
+        if row.scanner.detector_corpus_sha256 != expected_digest:
+            observed = row.scanner.detector_corpus_sha256 or "missing"
+            raise GateError(
+                "stale keyhog benchmark result: detector corpus SHA-256 "
+                f"is {observed}, workspace={expected_digest}; rerun `make leaderboard`"
+            )
 
 
 def _baseline_keyhog_row(baseline: pathlib.Path, corpus: str) -> RunResult:

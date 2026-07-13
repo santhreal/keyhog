@@ -20,6 +20,9 @@ def test_leaderboard_run_one_marks_unexpected_exit_as_error(monkeypatch, tmp_pat
         def version(self):
             return "fake 1"
 
+        def detector_corpus_sha256(self):
+            return "c" * 64
+
         def default_config(self):
             return ScannerConfig()
 
@@ -44,3 +47,4 @@ def test_leaderboard_run_one_marks_unexpected_exit_as_error(monkeypatch, tmp_pat
     assert result.available is False
     assert result.exit_code == 7
     assert result.error == "scanner exited 7"
+    assert result.scanner.detector_corpus_sha256 == "c" * 64

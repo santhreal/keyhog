@@ -11,12 +11,15 @@ from bench.schema import ScannerConfig
 
 def _row(scanner: str, tp: int, fp: int, fn: int, *, available: bool = True,
          error: str = "", per_detector: dict[str, int] | None = None,
-         version: str = "test") -> RunResult:
+         version: str = "test", detector_corpus_sha256: str = "") -> RunResult:
     detectors = {
         det: DetectorStat(fp=fp_count) for det, fp_count in (per_detector or {}).items()
     }
     return RunResult(
-        scanner=ScannerRecord(name=scanner, version=version, config=ScannerConfig()),
+        scanner=ScannerRecord(
+            name=scanner, version=version, config=ScannerConfig(),
+            detector_corpus_sha256=detector_corpus_sha256,
+        ),
         corpus=CorpusInfo(name="mirror", fixture_count=10, labeled_positives=tp + fn),
         detection=Detection(overall=Outcome(tp=tp, fp=fp, fn=fn),
                             per_detector=detectors),
@@ -203,14 +206,17 @@ def test_run_gate_rejects_stale_keyhog_result_artifacts(tmp_path):
     assert rc == 2
 
 
-def test_run_gate_accepts_current_keyhog_result_artifacts(tmp_path):
+def test_run_gate_accepts_current_keyhog_result_artifacts(monkeypatch, tmp_path):
     current_version = workspace_keyhog_version()
+    digest = "d" * 64
+    monkeypatch.setattr(gate, "workspace_detector_corpus_sha256", lambda: digest)
     current = _row(
         "keyhog",
         tp=5,
         fp=0,
         fn=0,
         version=f"KeyHog v{current_version} Build Target: test",
+        detector_corpus_sha256=digest,
     )
     (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(current.to_json()))
 
@@ -222,3 +228,47 @@ def test_run_gate_accepts_current_keyhog_result_artifacts(tmp_path):
     )
 
     assert rc == 0
+
+
+@pytest.mark.parametrize("observed", ["", "e" * 64])
+def test_run_gate_rejects_missing_or_stale_detector_corpus_digest(
+    monkeypatch, tmp_path, observed
+):
+    current_version = workspace_keyhog_version()
+    expected = "f" * 64
+    monkeypatch.setattr(gate, "workspace_detector_corpus_sha256", lambda: expected)
+    current = _row(
+        "keyhog", tp=5, fp=0, fn=0,
+        version=f"KeyHog v{current_version} Build Target: test",
+        detector_corpus_sha256=observed,
+    )
+    (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(current.to_json()))
+
+    rc = gate.run_gate(
+        "mirror", ["keyhog"], results_dir=tmp_path, beat_competitors=False,
+    )
+
+    assert rc == 2
+
+
+def test_run_gate_reports_broken_workspace_detector_corpus(monkeypatch, tmp_path, capsys):
+    current_version = workspace_keyhog_version()
+    current = _row(
+        "keyhog", tp=5, fp=0, fn=0,
+        version=f"KeyHog v{current_version} Build Target: test",
+        detector_corpus_sha256="f" * 64,
+    )
+    (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(current.to_json()))
+    monkeypatch.setattr(
+        gate, "workspace_detector_corpus_sha256",
+        lambda: (_ for _ in ()).throw(gate.KeyhogVersionError("detectors are unreadable")),
+    )
+
+    rc = gate.run_gate(
+        "mirror", ["keyhog"], results_dir=tmp_path, beat_competitors=False,
+    )
+
+    assert rc == 2
+    error = capsys.readouterr().err
+    assert "repair the workspace detector corpus" in error
+    assert "rerun `make leaderboard`" not in error

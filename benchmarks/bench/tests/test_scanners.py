@@ -305,6 +305,9 @@ def test_keyhog_gpu_benchmark_rows_use_explicit_gpu_policy(tmp_path):
     assert "--no-gpu" in simd_cmd
     detector_index = auto_cmd.index("--detectors")
     assert pathlib.Path(auto_cmd[detector_index + 1]) == keyhog_adapter._DETECTOR_CORPUS
+    assert scanner.detector_corpus_sha256() == keyhog_adapter.compute_detector_corpus_sha256(
+        keyhog_adapter._DETECTOR_CORPUS
+    )
     assert scanner._env(ScannerConfig(backend="gpu")) == {}
 
 
@@ -385,20 +388,30 @@ def test_keyhog_owned_plaintext_output_is_cleaned_after_parse_failure(
     assert not output_paths[0].parent.exists()
 
 
-def test_keyhog_caller_output_without_cache_does_not_require_tempdir(
+def test_keyhog_caller_output_without_cache_allocates_only_detector_snapshot(
     monkeypatch, tmp_path
 ):
-    scanner = scanners.KeyhogScanner(binary="/unused/keyhog")
+    detector_corpus = tmp_path / "detectors"
+    detector_corpus.mkdir()
+    (detector_corpus / "one.toml").write_text("[detector]\nid = 'one'\n")
+    scanner = scanners.KeyhogScanner(
+        binary="/unused/keyhog", detector_corpus=detector_corpus,
+    )
     output = tmp_path / "caller-owned.json"
+    real_tempdir = keyhog_adapter.tempfile.TemporaryDirectory
+    prefixes = []
 
-    def forbid_tempdir(*args, **kwargs):
-        raise AssertionError("caller-owned non-cache run must not allocate a tempdir")
+    def detector_snapshot_only(*args, **kwargs):
+        prefixes.append(kwargs.get("prefix", args[0] if args else None))
+        return real_tempdir(*args, **kwargs)
 
     def successful_scan(cmd, **kwargs):
         pathlib.Path(cmd[cmd.index("--output") + 1]).write_text("[]")
         return "", "", base.RunStats(exit_code=0)
 
-    monkeypatch.setattr(keyhog_adapter.tempfile, "TemporaryDirectory", forbid_tempdir)
+    monkeypatch.setattr(
+        keyhog_adapter.tempfile, "TemporaryDirectory", detector_snapshot_only,
+    )
     monkeypatch.setattr(keyhog_adapter, "run_measured", successful_scan)
     findings, stats = scanner.run(
         tmp_path,
@@ -409,6 +422,43 @@ def test_keyhog_caller_output_without_cache_does_not_require_tempdir(
     assert findings == []
     assert stats.exit_code == 0
     assert output.read_text() == "[]"
+    assert prefixes == ["keyhog-bench-detectors-"]
+
+
+def test_keyhog_run_binds_digest_and_scan_to_immutable_detector_snapshot(
+    monkeypatch, tmp_path
+):
+    detector_corpus = tmp_path / "detectors"
+    detector_corpus.mkdir()
+    detector = detector_corpus / "one.toml"
+    initial = b"[detector]\nid = 'initial'\n"
+    detector.write_bytes(initial)
+    scanner = scanners.KeyhogScanner(
+        binary="/unused/keyhog", detector_corpus=detector_corpus,
+    )
+    scanned_detector_paths = []
+
+    def successful_scan(cmd, **kwargs):
+        selected = pathlib.Path(cmd[cmd.index("--detectors") + 1])
+        scanned_detector_paths.append(selected)
+        assert selected != detector_corpus
+        assert (selected / "one.toml").read_bytes() == initial
+        detector.write_bytes(b"[detector]\nid = 'transient'\n")
+        detector.write_bytes(initial)
+        pathlib.Path(cmd[cmd.index("--output") + 1]).write_text("[]")
+        return "", "", base.RunStats(exit_code=0)
+
+    monkeypatch.setattr(keyhog_adapter, "run_measured", successful_scan)
+
+    findings, stats, digest = scanner.run_with_provenance(
+        tmp_path, ScannerConfig(backend="simd"),
+    )
+
+    assert findings == []
+    assert stats.exit_code == 0
+    assert digest == keyhog_adapter.compute_detector_corpus_sha256(detector_corpus)
+    assert len(scanned_detector_paths) == 1
+    assert not scanned_detector_paths[0].exists()
 
 
 def test_keyhog_warm_runs_are_private_under_concurrency_and_ignore_old_paths(

@@ -273,19 +273,24 @@ class Scanner:
     name: str = ""
     version: str = ""
     config: ScannerConfig = field(default_factory=ScannerConfig)
+    detector_corpus_sha256: str = ""
 
     @property
     def config_id(self) -> str:
         return self.config.config_id
 
     def to_json(self) -> dict:
-        return {"name": self.name, "version": self.version,
-                "config_id": self.config_id, "config": self.config.to_json()}
+        value = {"name": self.name, "version": self.version,
+                 "config_id": self.config_id, "config": self.config.to_json()}
+        if self.detector_corpus_sha256:
+            value["detector_corpus_sha256"] = self.detector_corpus_sha256
+        return value
 
     @classmethod
     def from_json(cls, d: dict) -> "Scanner":
         return cls(name=d.get("name", ""), version=d.get("version", ""),
-                   config=ScannerConfig.from_json(d.get("config", {})))
+                   config=ScannerConfig.from_json(d.get("config", {})),
+                   detector_corpus_sha256=d.get("detector_corpus_sha256", ""))
 
 
 # ── corpus: which dataset + its size ──────────────────────────────────

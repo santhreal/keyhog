@@ -45,6 +45,9 @@ Run them explicitly with `make targets`.
   matrix.
 - **Config:** keyhog's `backend × cache × daemon × mode` axes; each competitor
   carries its own knob (kingfisher confidence, etc.) in the same `config_id`.
+- **Detector provenance:** every KeyHog run scans a private immutable snapshot
+  and records the SHA-256 of its exact detector TOML filenames and bytes. The
+  gate rejects results whose digest does not match the workspace corpus.
 
 ## Two fairness rules (baked into every corpus)
 

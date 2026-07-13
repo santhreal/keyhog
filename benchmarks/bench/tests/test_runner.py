@@ -1,5 +1,6 @@
 import json
 
+from bench import runner
 from bench.corpora.mirror import MirrorCorpus
 from bench.corpora.ioc_recovery import IocRecoveryCorpus
 from bench.corpora.perf_corpus import KernelCorpus
@@ -35,6 +36,7 @@ def test_build_result_scores_and_computes_throughput(tmp_path):
         corpus=corpus,
         findings=[{"file": str(tmp_path / "one.txt"), "line": 1, "value": "secret-one"}],
         stats=RunStats(wall_ms=500.0, peak_rss_kb=1234, exit_code=1),
+        detector_corpus_sha256="b" * 64,
     )
 
     assert result.detection.overall.tp == 1
@@ -44,6 +46,7 @@ def test_build_result_scores_and_computes_throughput(tmp_path):
     assert result.finding_count == 1
     assert result.exit_code == 1
     assert result.timed_out is False
+    assert result.scanner.detector_corpus_sha256 == "b" * 64
 
 
 def test_write_result_round_trips_json(tmp_path):
@@ -78,3 +81,123 @@ def test_resolve_corpus_with_root_maps_ioc_recovery_to_corpus_dir(tmp_path):
     assert isinstance(corpus, IocRecoveryCorpus)
     assert corpus.root == tmp_path
     assert corpus.scan_root == tmp_path / "corpus"
+
+
+def test_run_once_rejects_detector_corpus_mutation(monkeypatch, tmp_path):
+    digests = iter(["a" * 64, "b" * 64])
+
+    class FakeScanner:
+        name = "keyhog"
+
+        def version(self):
+            return "keyhog 0.test"
+
+        def detector_corpus_sha256(self):
+            return next(digests)
+
+        def available(self):
+            return True
+
+        def default_config(self):
+            return ScannerConfig()
+
+        def run(self, root, cfg, output=None, timeout=3600):
+            return [], RunStats(exit_code=0)
+
+        def exit_success(self, code):
+            return code == 0
+
+    monkeypatch.setattr(runner, "resolve_scanner", lambda *args, **kwargs: FakeScanner())
+    monkeypatch.setattr(
+        runner, "resolve_corpus_with_root",
+        lambda *args, **kwargs: KernelCorpus(root=tmp_path),
+    )
+
+    result = runner.run_once(scanner_name="keyhog", corpus_name="kernel")
+
+    assert result.available is False
+    assert result.scanner.detector_corpus_sha256 == "a" * 64
+    assert result.error == (
+        "detector corpus changed during the measured scan; "
+        "rerun against stable detector bytes"
+    )
+
+
+def test_run_once_uses_adapter_provenance_bound_scan(monkeypatch, tmp_path):
+    class FakeScanner:
+        name = "keyhog"
+
+        def version(self):
+            return "keyhog 0.test"
+
+        def detector_corpus_sha256(self):
+            return "a" * 64
+
+        def available(self):
+            return True
+
+        def default_config(self):
+            return ScannerConfig()
+
+        def run(self, root, cfg, output=None, timeout=3600):
+            raise AssertionError("unbound scan path must not run")
+
+        def run_with_provenance(self, root, cfg):
+            return [], RunStats(exit_code=0), "c" * 64
+
+        def exit_success(self, code):
+            return code == 0
+
+    monkeypatch.setattr(runner, "resolve_scanner", lambda *args, **kwargs: FakeScanner())
+    monkeypatch.setattr(
+        runner, "resolve_corpus_with_root",
+        lambda *args, **kwargs: KernelCorpus(root=tmp_path),
+    )
+
+    result = runner.run_once(scanner_name="keyhog", corpus_name="kernel")
+
+    assert result.available is True
+    assert result.scanner.detector_corpus_sha256 == "c" * 64
+
+
+def test_run_once_reports_post_scan_provenance_failure(monkeypatch, tmp_path):
+    calls = 0
+
+    class FakeScanner:
+        name = "keyhog"
+
+        def version(self):
+            return "keyhog 0.test"
+
+        def detector_corpus_sha256(self):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("detector storage disappeared")
+            return "a" * 64
+
+        def available(self):
+            return True
+
+        def default_config(self):
+            return ScannerConfig()
+
+        def run(self, root, cfg, output=None, timeout=3600):
+            return [], RunStats(exit_code=0)
+
+        def exit_success(self, code):
+            return code == 0
+
+    monkeypatch.setattr(runner, "resolve_scanner", lambda *args, **kwargs: FakeScanner())
+    monkeypatch.setattr(
+        runner, "resolve_corpus_with_root",
+        lambda *args, **kwargs: KernelCorpus(root=tmp_path),
+    )
+
+    result = runner.run_once(scanner_name="keyhog", corpus_name="kernel")
+
+    assert result.available is False
+    assert result.error == (
+        "detector provenance failed after scan: "
+        "OSError: detector storage disappeared"
+    )

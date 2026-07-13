@@ -22,7 +22,11 @@ import pathlib
 import sys
 
 from . import hardware
-from .runner import build_result, resolve_corpus_with_root, write_result
+from .runner import (
+    _run_resolved_scanner,
+    resolve_corpus_with_root,
+    write_result,
+)
 from .scanners import SCANNER_NAMES, resolve_scanner
 from .scanners.keyhog import KeyhogScanner
 from .schema import RunResult, ScannerConfig
@@ -54,27 +58,7 @@ def run_one(scanner_name: str, corpus_name: str, cfg: ScannerConfig,
     default) for the matrix."""
     scanner = resolve_scanner(scanner_name, binary=scanner_binary)
     corpus = resolve_corpus_with_root(corpus_name, corpus_root)
-    version = scanner.version()
-    if not scanner.available():
-        from .runner import _unavailable_result
-        return _unavailable_result(scanner, version, cfg, corpus, "scanner binary not found")
-    try:
-        findings, stats = scanner.run(corpus.scan_root, cfg)
-    except Exception as exc:  # noqa: BLE001 - record, never abort the matrix
-        from .runner import _unavailable_result
-        return _unavailable_result(scanner, version, cfg, corpus,
-                                   f"{type(exc).__name__}: {exc}")
-    result = build_result(scanner_name=scanner.name, scanner_version=version,
-                          cfg=cfg, corpus=corpus, findings=findings, stats=stats)
-    if stats.timed_out:
-        result.error = "scanner timed out"
-        result.available = False
-    elif not scanner.exit_success(stats.exit_code):
-        # A crashed scanner produced no usable result, mark it unavailable so a
-        # nonzero-exit competitor isn't ranked as a real low-recall entrant.
-        result.error = f"scanner exited {stats.exit_code}"
-        result.available = False
-    return result
+    return _run_resolved_scanner(scanner, scanner.version(), cfg, corpus)
 
 
 def run_leaderboard(corpus_name: str, scanners: list[str], *, tier: str = "quick",

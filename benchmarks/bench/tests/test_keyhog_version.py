@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,33 @@ def _version_output(*, commit: str, detector_digest: str) -> str:
         f"Detector Set: 1 ({detector_digest})\n"
         "Build Target: test-test\n"
     )
+
+
+def test_detector_corpus_sha256_binds_filenames_and_bytes(tmp_path):
+    first = tmp_path / "a.toml"
+    second = tmp_path / "b.toml"
+    first.write_text("[detector]\nid = 'a'\n", encoding="utf-8")
+    second.write_text("[detector]\nid = 'b'\n", encoding="utf-8")
+
+    initial = keyhog_version.detector_corpus_sha256(tmp_path)
+    assert len(initial) == 64
+
+    second.write_text("[detector]\nid = 'changed'\n", encoding="utf-8")
+    changed_bytes = keyhog_version.detector_corpus_sha256(tmp_path)
+    assert changed_bytes != initial
+
+    second.rename(tmp_path / "renamed.toml")
+    assert keyhog_version.detector_corpus_sha256(tmp_path) != changed_bytes
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permits non-UTF-8 filenames")
+def test_detector_corpus_sha256_accepts_non_utf8_filenames(tmp_path):
+    name = os.fsdecode(b"detector-\xff.toml")
+    (tmp_path / name).write_bytes(b"[detector]\nid = 'raw-name'\n")
+
+    digest = keyhog_version.detector_corpus_sha256(tmp_path)
+
+    assert len(digest) == 64
 
 
 def test_binary_freshness_rejects_same_version_from_an_older_commit(monkeypatch):

@@ -8,6 +8,8 @@ regression into a false green.
 
 from __future__ import annotations
 
+import hashlib
+import os
 import pathlib
 import re
 import subprocess
@@ -96,6 +98,33 @@ def workspace_detector_digest(repo_root: pathlib.Path = _REPO_ROOT) -> str:
             f"cannot compute the detector digest from {detector_dir}: {exc}"
         ) from exc
     return f"{len(paths)}-{value:016x}"
+
+
+def detector_corpus_sha256(detector_dir: pathlib.Path) -> str:
+    """Digest the exact detector filenames and bytes consumed by a run."""
+    try:
+        paths = sorted(detector_dir.glob("*.toml"), key=lambda path: os.fsencode(path.name))
+        if not paths:
+            raise KeyhogVersionError(
+                f"{detector_dir} contains no detector TOMLs; cannot bind benchmark provenance"
+            )
+        digest = hashlib.sha256()
+        for path in paths:
+            name = os.fsencode(path.name)
+            payload = path.read_bytes()
+            digest.update(len(name).to_bytes(8, "big"))
+            digest.update(name)
+            digest.update(len(payload).to_bytes(8, "big"))
+            digest.update(payload)
+    except OSError as exc:
+        raise KeyhogVersionError(
+            f"cannot compute the detector corpus SHA-256 from {detector_dir}: {exc}"
+        ) from exc
+    return digest.hexdigest()
+
+
+def workspace_detector_corpus_sha256(repo_root: pathlib.Path = _REPO_ROOT) -> str:
+    return detector_corpus_sha256(repo_root / "detectors")
 
 
 def assert_keyhog_binary_current(binary: str) -> None:

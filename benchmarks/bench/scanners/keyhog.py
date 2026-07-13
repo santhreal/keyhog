@@ -32,9 +32,11 @@ import math
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import tempfile
 
+from ..keyhog_version import detector_corpus_sha256 as compute_detector_corpus_sha256
 from ..schema import ScannerConfig
 from .base import Finding, RunStats, Scanner, _line, run_measured
 
@@ -220,12 +222,20 @@ class KeyhogScanner(Scanner):
     binary_env = "KEYHOG_BIN"
     success_exit_codes = (0, 1, 10)
 
+    def __init__(self, binary: str | None = None,
+                 detector_corpus: pathlib.Path = _DETECTOR_CORPUS):
+        super().__init__(binary)
+        self._detector_corpus = detector_corpus
+
     @property
     def binary(self) -> str:
         # ONE resolution order, the same locator the gate tests use, so the
         # bench and the tests can never drift. Falls back to a bare PATH lookup
         # only when no real binary is found.
         return resolve_keyhog_binary(self._binary) or self.binary_name
+
+    def detector_corpus_sha256(self) -> str:
+        return compute_detector_corpus_sha256(self._detector_corpus)
 
     # ── config matrix ──────────────────────────────────────────────────
 
@@ -268,7 +278,8 @@ class KeyhogScanner(Scanner):
     # ── flag mapping ───────────────────────────────────────────────────
 
     def _cmd(self, root: pathlib.Path, cfg: ScannerConfig,
-             output: pathlib.Path, incremental_cache: pathlib.Path | None) -> list[str]:
+             output: pathlib.Path, incremental_cache: pathlib.Path | None,
+             detector_corpus: pathlib.Path | None = None) -> list[str]:
         cmd = [self.binary, "scan",
                "--format", "json", "--show-secrets",
                "--no-suppress-test-fixtures",
@@ -278,7 +289,7 @@ class KeyhogScanner(Scanner):
                # `--no-config` skips the walk-up discovery so the benched config
                # is the shipped default by design, not by accident (MC-07).
                "--no-config",
-               "--detectors", str(_DETECTOR_CORPUS),
+               "--detectors", str(detector_corpus or self._detector_corpus),
                "--backend", cfg.backend,
                "--output", str(output)]
         # Optional report-floor override. None (every leaderboard config) means
@@ -319,6 +330,49 @@ class KeyhogScanner(Scanner):
             extra_env: dict[str, str] | None = None,
             extra_args: list[str] | None = None,
             timeout: int = 3600) -> tuple[list[Finding], RunStats]:
+        findings, stats, _digest = self.run_with_provenance(
+            root, cfg, output=output, extra_env=extra_env,
+            extra_args=extra_args, timeout=timeout,
+        )
+        return findings, stats
+
+    def run_with_provenance(
+        self, root: pathlib.Path, cfg: ScannerConfig,
+        output: pathlib.Path | None = None,
+        extra_env: dict[str, str] | None = None,
+        extra_args: list[str] | None = None,
+        timeout: int = 3600,
+    ) -> tuple[list[Finding], RunStats, str]:
+        """Scan one immutable detector snapshot and return its exact digest."""
+        with tempfile.TemporaryDirectory(prefix="keyhog-bench-detectors-") as raw_snapshot:
+            snapshot = pathlib.Path(raw_snapshot) / "detectors"
+            snapshot.mkdir(mode=0o700)
+            sources = sorted(
+                self._detector_corpus.glob("*.toml"),
+                key=lambda path: os.fsencode(path.name),
+            )
+            if not sources:
+                raise RuntimeError(
+                    f"{self._detector_corpus} contains no detector TOMLs; "
+                    "cannot run a provenance-bound benchmark"
+                )
+            for source in sources:
+                shutil.copyfile(source, snapshot / source.name)
+            digest = compute_detector_corpus_sha256(snapshot)
+            findings, stats = self._run_prepared(
+                root, cfg, snapshot, output=output, extra_env=extra_env,
+                extra_args=extra_args, timeout=timeout,
+            )
+            return findings, stats, digest
+
+    def _run_prepared(
+        self, root: pathlib.Path, cfg: ScannerConfig,
+        detector_corpus: pathlib.Path,
+        output: pathlib.Path | None = None,
+        extra_env: dict[str, str] | None = None,
+        extra_args: list[str] | None = None,
+        timeout: int = 3600,
+    ) -> tuple[list[Finding], RunStats]:
         env = self._env(cfg)
         if extra_env:
             env.update(extra_env)
@@ -343,7 +397,7 @@ class KeyhogScanner(Scanner):
                 inc_cache = run_dir / "merkle.idx"
                 warm_out = run_dir / "warm.json"
                 warm_stdout, warm_stderr, warm_stats = run_measured(
-                    self._cmd(root, cfg, warm_out, inc_cache),
+                    self._cmd(root, cfg, warm_out, inc_cache, detector_corpus),
                     env=env,
                     timeout=timeout,
                 )
@@ -357,7 +411,7 @@ class KeyhogScanner(Scanner):
                 )
                 self._parse(warm_out, config_id=f"{cfg.config_id} warmup")
 
-            cmd = self._cmd(root, cfg, result_output, inc_cache)
+            cmd = self._cmd(root, cfg, result_output, inc_cache, detector_corpus)
             if extra_args:
                 cmd = [*cmd[:-1], *extra_args, cmd[-1]]
             stdout, stderr, stats = run_measured(cmd, env=env, timeout=timeout)

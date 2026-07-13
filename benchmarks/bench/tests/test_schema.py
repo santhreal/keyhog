@@ -21,6 +21,7 @@ def test_run_result_round_trips_losslessly():
             name="keyhog",
             version="0.5.37",
             config=ScannerConfig(backend="simd", cache="off", daemon="off", mode="full"),
+            detector_corpus_sha256="a" * 64,
         ),
         corpus=CorpusInfo(name="mirror", fixture_count=3, labeled_positives=2, bytes=128),
         detection=Detection(overall=Outcome(tp=2, fp=1, fn=0)),
@@ -35,6 +36,7 @@ def test_run_result_round_trips_losslessly():
 
     assert decoded.to_json() == encoded
     assert decoded.scanner.config_id == "simd-nocache-nodaemon-full"
+    assert decoded.scanner.detector_corpus_sha256 == "a" * 64
     assert decoded.result_filename() == "mirror-keyhog-simd-nocache-nodaemon-full.json"
 
 
