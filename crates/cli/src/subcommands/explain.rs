@@ -9,6 +9,10 @@ use anyhow::Result;
 use keyhog_core::{contains_ignore_ascii_case, DetectorSpec};
 
 pub(crate) fn run(args: ExplainArgs) -> Result<()> {
+    crate::orchestrator_config::validate_explicit_detector_path(
+        &args.detectors,
+        args.detectors_cli_explicit,
+    )?;
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
 
     let requested = args.detector_id.as_str();

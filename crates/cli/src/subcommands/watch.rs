@@ -80,13 +80,14 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     // mirroring scan's single-root allowlist anchor).
     let scan_runtime = setup_default_scan_runtime(
         &args.detectors,
+        args.detectors_cli_explicit,
         args.cache_dir.clone(),
         None,
+        backend_override,
         "keyhog watch",
         false,
         watch_roots.first().map(PathBuf::as_path),
-    )?
-    .with_backend_override(backend_override);
+    )?;
     let detector_count = scan_runtime.detector_count();
 
     if !args.quiet {
@@ -543,13 +544,14 @@ pub(crate) mod testing {
         let embedded_sentinel = std::path::Path::new("detectors");
         let runtime = super::setup_default_scan_runtime(
             embedded_sentinel,
+            false,
             None,
             None,
+            Some(keyhog_scanner::ScanBackend::SimdCpu),
             "keyhog watch",
             false,
             Some(root),
-        )?
-        .with_backend_override(Some(keyhog_scanner::ScanBackend::SimdCpu));
+        )?;
         let chunk = Chunk {
             data: body.to_string().into(),
             metadata: ChunkMetadata {

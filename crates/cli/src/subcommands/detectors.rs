@@ -17,6 +17,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 pub(crate) fn run(args: DetectorArgs) -> Result<ExitCode> {
+    crate::orchestrator_config::validate_explicit_detector_path(
+        &args.detectors,
+        args.detectors_cli_explicit,
+    )?;
     if args.fix {
         return run_fix(&args);
     }

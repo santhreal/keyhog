@@ -10,10 +10,11 @@ mod streaming;
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
-    auto_discover_detectors, autoroute_config_digest, configure_threads,
-    gpu_runtime_policy_from_args, load_detectors_no_cache, load_detectors_with_cache,
-    parse_backend_override, resolve_scan_config, resolved_scan_config_for_scanner,
-    ResolvedScanConfig,
+    auto_discover_detectors, autoroute_config_digest, backend_override_cli_value,
+    configure_threads, gpu_runtime_policy_from_args, load_detectors_no_cache,
+    load_detectors_with_cache, parse_backend_override, resolve_scan_config,
+    resolved_scan_config_for_scanner, validate_explicit_detector_path,
+    ResolvedEngineRuntimeSettings, ResolvedScanConfig,
 };
 use crate::style;
 use anyhow::{Context, Result};
@@ -33,6 +34,58 @@ const LOW_RAM_MAX_MATCHES_PER_CHUNK: usize = 500;
 /// Low-RAM clamp for `max_decode_bytes` (256 KiB): the effective decode window
 /// is capped at (never raised to) this on a low-RAM host.
 const LOW_RAM_MAX_DECODE_BYTES: usize = 256 * 1024;
+
+#[derive(Debug)]
+pub(crate) struct GpuUnavailableError {
+    diagnostic: String,
+}
+
+impl GpuUnavailableError {
+    fn new(diagnostic: impl Into<String>) -> Self {
+        Self {
+            diagnostic: diagnostic.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for GpuUnavailableError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.diagnostic)
+    }
+}
+
+impl std::error::Error for GpuUnavailableError {}
+
+fn apply_host_runtime_limits(
+    effective_config: &mut ResolvedScanConfig,
+    hw: &keyhog_scanner::HardwareCaps,
+) {
+    effective_config.min_confidence = effective_config.scanner.min_confidence;
+    effective_config.ml_enabled = effective_config.scanner.ml_enabled;
+
+    let Some(mem_mb) = hw.total_memory_mb else {
+        return;
+    };
+    if mem_mb >= LOW_RAM_HOST_THRESHOLD_MB {
+        return;
+    }
+
+    let prev_matches = effective_config.scanner.max_matches_per_chunk;
+    let prev_decode = effective_config.scanner.max_decode_bytes;
+    let new_matches = prev_matches.min(LOW_RAM_MAX_MATCHES_PER_CHUNK);
+    let new_decode = prev_decode.min(LOW_RAM_MAX_DECODE_BYTES);
+    effective_config.scanner.max_matches_per_chunk = new_matches;
+    effective_config.scanner.max_decode_bytes = new_decode;
+
+    if new_matches != prev_matches || new_decode != prev_decode {
+        static LOW_RAM_CAP_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        if LOW_RAM_CAP_WARNED.set(()).is_ok() {
+            eprintln!(
+                "keyhog: low-RAM host ({mem_mb} MiB < {LOW_RAM_HOST_THRESHOLD_MB}): capping scan limits to avoid OOM: max_decode_bytes {prev_decode} -> {new_decode}, max_matches_per_chunk {prev_matches} -> {new_matches}. Reduce scan scope or use a host with more memory; run `keyhog config --effective` to inspect the configured limits."
+            );
+        }
+    }
+}
 
 fn daemon_requires_gpu(
     backend_override: Option<keyhog_scanner::ScanBackend>,
@@ -271,6 +324,45 @@ impl DefaultScanRuntime {
         self.scanner.warm();
     }
 
+    /// Reject an explicit backend before a long-running surface announces
+    /// readiness. Autoroute remains evidence-driven, while a diagnostic
+    /// override must prove that its requested engine is usable now.
+    fn validate_explicit_backend(&self, subcommand_name: &str) -> Result<()> {
+        match self.backend_override {
+            Some(keyhog_scanner::ScanBackend::Gpu) => {
+                let hw = keyhog_scanner::hw_probe::probe_hardware();
+                let eligible = keyhog_scanner::hw_probe::gpu_backend_compiled()
+                    && hw.gpu_available
+                    && !hw.gpu_is_software
+                    && self.scanner.warm_backend(keyhog_scanner::ScanBackend::Gpu);
+                if !eligible {
+                    return Err(GpuUnavailableError::new(format!(
+                        "{subcommand_name} --backend gpu cannot be honored on this host/build; no eligible physical GPU path is ready. Run `keyhog backend --self-test`, use `--backend simd`, or use `--backend cpu`"
+                    ))
+                    .into());
+                }
+            }
+            Some(keyhog_scanner::ScanBackend::SimdCpu) => {
+                if !self
+                    .scanner
+                    .warm_backend(keyhog_scanner::ScanBackend::SimdCpu)
+                {
+                    anyhow::bail!(
+                        "{subcommand_name} --backend simd cannot be honored because the Hyperscan/SIMD prefilter is unavailable. Run `keyhog backend --self-test` or choose --backend cpu"
+                    );
+                }
+            }
+            Some(keyhog_scanner::ScanBackend::CpuFallback) | None => {}
+            Some(backend) => {
+                anyhow::bail!(
+                    "{subcommand_name} cannot validate the requested backend `{}` in this build",
+                    backend.label()
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Prepare the compile-once runtime for daemon semantics. Autoroute and an
     /// explicit GPU daemon require a proven warm accelerator before accepting
     /// requests; explicit CPU/SIMD daemons do not acquire an unused GPU route.
@@ -383,15 +475,16 @@ pub(crate) fn compile_default_scan_runtime(
 /// design) but still gets the resolved detector/scanner config.
 pub(crate) fn setup_default_scan_runtime(
     detectors_path: &std::path::Path,
+    detectors_cli_explicit: bool,
     cache_dir: Option<std::path::PathBuf>,
     threads: Option<usize>,
+    backend_override: Option<keyhog_scanner::ScanBackend>,
     subcommand_name: &'static str,
     warm: bool,
     filter_root: Option<&std::path::Path>,
 ) -> Result<DefaultScanRuntime> {
     use clap::Parser;
     crate::runtime_preflight::validate_scan_runtime_config()?;
-    let detectors_path = auto_discover_detectors(detectors_path)?;
 
     // Resolve `.keyhog.toml` exactly as `keyhog scan` does. A synthetic default
     // `ScanArgs` carries only what this runtime can honor (detector dir, cache
@@ -402,14 +495,25 @@ pub(crate) fn setup_default_scan_runtime(
     let mut synthetic = ScanArgs::try_parse_from(["keyhog-scan"]).context(
         "internal: constructing default ScanArgs for watch/scan-system config resolution",
     )?;
-    synthetic.detectors = detectors_path.clone();
+    synthetic.detectors = detectors_path.to_path_buf();
+    synthetic.detectors_cli_explicit = detectors_cli_explicit;
     synthetic.cache_dir = cache_dir;
     synthetic.threads = threads;
+    synthetic.backend = backend_override.map(|backend| backend_override_cli_value(backend).into());
     synthetic.path = filter_root.map(std::path::Path::to_path_buf);
-    let effective_config = resolve_scan_config(&mut synthetic)?;
+    let mut effective_config = resolve_scan_config(&mut synthetic)?;
+    validate_explicit_detector_path(&synthetic.detectors, synthetic.detectors_cli_explicit)?;
+    let detectors_path = auto_discover_detectors(&synthetic.detectors)?;
+    ResolvedEngineRuntimeSettings::from(&effective_config).apply();
 
     let hw = keyhog_scanner::hw_probe::probe_hardware();
     configure_threads(effective_config.threads, hw.physical_cores);
+    apply_host_runtime_limits(&mut effective_config, &hw);
+    keyhog_scanner::gpu::require_gpu_preflight().map_err(|diagnostic| {
+        GpuUnavailableError::new(format!(
+            "cannot start `{subcommand_name}` with the resolved GPU policy: {diagnostic}"
+        ))
+    })?;
 
     let mut detectors = crate::orchestrator_config::load_detectors_or_embedded(&detectors_path)?;
 
@@ -453,17 +557,27 @@ pub(crate) fn setup_default_scan_runtime(
     // Compile WITH the resolved engine config + tuning so thresholds (decode
     // window, entropy, min-confidence, ml gate) take effect, not the bare
     // compiled defaults the raw `compile()` would leave.
+    let gpu_init_policy = gpu_init_policy_for_args(
+        &synthetic,
+        effective_config.autoroute_cache_path.as_deref(),
+        effective_config.autoroute_gpu,
+        effective_config.autoroute_calibration,
+    );
     let scanner = Arc::new(
-        CompiledScanner::compile(detectors.clone())
-            .map_err(|error| {
-                crate::orchestrator_config::detector_compile_failed(
-                    subcommand_name,
-                    &detectors_path,
-                    &error,
-                )
-            })?
-            .with_config(effective_config.scanner.clone())
-            .with_tuning_config(effective_config.scanner_tuning.clone()),
+        CompiledScanner::compile_with_gpu_policy_and_tuning(
+            detectors.clone(),
+            gpu_init_policy,
+            &effective_config.scanner_tuning,
+        )
+        .map_err(|error| {
+            crate::orchestrator_config::detector_compile_failed(
+                subcommand_name,
+                &detectors_path,
+                &error,
+            )
+        })?
+        .with_config(effective_config.scanner.clone())
+        .with_tuning_config(effective_config.scanner_tuning.clone()),
     );
 
     let router = cached_autoroute_router(
@@ -472,7 +586,9 @@ pub(crate) fn setup_default_scan_runtime(
         autoroute_config_digest(&effective_config),
         Ok(effective_config.autoroute_cache_path.clone()),
     );
-    let mut scan_runtime = DefaultScanRuntime::new_with_router(scanner, &detectors, router);
+    let mut scan_runtime = DefaultScanRuntime::new_with_router(scanner, &detectors, router)
+        .with_backend_override(effective_config.backend_override);
+    scan_runtime.validate_explicit_backend(subcommand_name)?;
 
     if let Some(root) = filter_root {
         let signatures: std::collections::HashSet<Arc<str>> = detectors
@@ -593,8 +709,8 @@ impl ScanOrchestrator {
         // death (exit 139). `--no-gpu`/`--backend cpu` never use the GPU, so
         // disabling the probe here both prevents that crash and skips a Vulkan
         // init the scan cannot use (Law 7). `resolve_scan_config` may refine the
-        // policy from `.keyhog.toml`; that refinement is re-applied at the
-        // `set_gpu_runtime_policy` call below once the effective config is known.
+        // policy from `.keyhog.toml`; the resolved engine-runtime settings
+        // object publishes that refinement once the effective config is known.
         keyhog_scanner::gpu::set_gpu_runtime_policy(gpu_runtime_policy_from_args(&args));
         // Grep/wc/curl convention: a positional `-` means "read from
         // stdin". Some users will try `keyhog scan - --stdin <<<...`
@@ -639,7 +755,7 @@ impl ScanOrchestrator {
             }
         }
         let mut effective_config = resolve_scan_config(&mut args)?;
-        keyhog_scanner::gpu::set_gpu_runtime_policy(effective_config.gpu_runtime_policy);
+        ResolvedEngineRuntimeSettings::from(&effective_config).apply();
         let disabled_detectors = effective_config.disabled_detectors.clone();
         // Operator `.keyhog.toml` `[detector.<id>] min_confidence` overrides;
         // detector self-declared floors (DetectorSpec::min_confidence, merged
@@ -658,22 +774,10 @@ impl ScanOrchestrator {
             );
         }
 
-        // Tier-A: per-regex lazy-DFA cache cap (default 1 MiB → .keyhog.toml →
-        // --regex-dfa-limit). Set the process-global BEFORE any detector regex
-        // compiles, so the cap takes effect on the per-worker DFA caches that
-        // dominate scan memory. 0 = use the compiled default.
-        keyhog_scanner::set_regex_dfa_limit(args.regex_dfa_limit.unwrap_or(0)); // LAW10: empty/absent => documented numeric default, recall-safe
-                                                                                // Tier-A: GPU batch-input buffer byte budget (VRAM-adaptive default →
-                                                                                // .keyhog.toml → --gpu-batch-input-limit). Set the process-global BEFORE the
-                                                                                // first GPU routing/cache-key read caches the value; 0 = keep the
-                                                                                // VRAM-adaptive default. Clamped into the sizing table's [128 MiB, 1 GiB].
-        keyhog_scanner::set_gpu_batch_input_limit(args.gpu_batch_input_limit.unwrap_or(0)); // LAW10: empty/absent => VRAM-adaptive default, recall-safe
-        keyhog_scanner::set_profile_enabled(effective_config.scanner.profile);
-        keyhog_scanner::set_perf_trace_enabled(effective_config.scanner.perf_trace);
-
         let hw = keyhog_scanner::hw_probe::probe_hardware();
         configure_threads(args.threads, hw.physical_cores);
 
+        validate_explicit_detector_path(&args.detectors, args.detectors_cli_explicit)?;
         let detectors_path = auto_discover_detectors(&args.detectors)?;
         let mut detectors = if args.lockdown {
             load_detectors_no_cache(&detectors_path)
@@ -726,39 +830,18 @@ impl ScanOrchestrator {
             }
         }
 
-        // Low-RAM host adaptation: shrink the decode window and per-chunk match
-        // cap on machines with < 4 GiB RAM so a deep-decode scan can't OOM. This
-        // DIVERGES from the configured/documented values, so per Law 10 it is
-        // surfaced LOUDLY (once per process) rather than silently applied, the
-        // operator must be able to see why their effective decode window is
-        // smaller than what they set. The capped values are also what the
-        // `keyhog config --effective` prints (this mutation lands in
-        // `effective_config` before it is handed to the orchestrator), so "what
-        // runs" stays a single auditable answer.
-        if let Some(mem_mb) = hw.total_memory_mb {
-            if mem_mb < LOW_RAM_HOST_THRESHOLD_MB {
-                let prev_matches = effective_config.scanner.max_matches_per_chunk;
-                let prev_decode = effective_config.scanner.max_decode_bytes;
-                let new_matches = prev_matches.min(LOW_RAM_MAX_MATCHES_PER_CHUNK);
-                let new_decode = prev_decode.min(LOW_RAM_MAX_DECODE_BYTES);
-                effective_config.scanner.max_matches_per_chunk = new_matches;
-                effective_config.scanner.max_decode_bytes = new_decode;
-                if new_matches != prev_matches || new_decode != prev_decode {
-                    static LOW_RAM_CAP_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-                    if LOW_RAM_CAP_WARNED.set(()).is_ok() {
-                        eprintln!(
-                            "keyhog: low-RAM host ({mem_mb} MiB < {LOW_RAM_HOST_THRESHOLD_MB}): capping scan limits to \
-                             avoid OOM: max_decode_bytes {prev_decode} → {new_decode}, \
-                             max_matches_per_chunk {prev_matches} → {new_matches}. Set these \
-                             explicitly in .keyhog.toml or via flags to override; run \
-                             `keyhog config --effective` to see the full resolved config."
-                        );
-                    }
-                }
-            }
-        }
-        effective_config.min_confidence = effective_config.scanner.min_confidence;
-        effective_config.ml_enabled = effective_config.scanner.ml_enabled;
+        // Autoroute's shared rules identity describes the active TOML corpus,
+        // before per-invocation confidence floors are composed into it. Those
+        // effective floors (including --precision clamping and operator
+        // overrides) already participate in `autoroute_config_digest`; folding
+        // them into this shared identity as well made calibrating one profile
+        // replace every previously calibrated profile in the multi-config
+        // cache. Disabled detectors remain part of corpus identity because they
+        // change the compiled pattern set and backend workload materially.
+        let detector_rules_digest =
+            keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+
+        apply_host_runtime_limits(&mut effective_config, &hw);
 
         // Compose detector TOML defaults before precision clamping so low
         // self-declared floors participate in the same high-precision bar as
@@ -787,8 +870,10 @@ impl ScanOrchestrator {
         detector_min_confidence =
             compose_detector_min_confidence(&mut detectors, detector_min_confidence);
 
+        // Incremental result reuse needs the fully effective spec hash: unlike
+        // autoroute performance identity, a confidence-floor change can alter
+        // emitted findings and must invalidate stored scan results.
         let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
-        let detector_rules_digest = keyhog_core::hex_encode(&detector_spec_hash);
 
         let gpu_init_policy = gpu_init_policy_for_args(
             &args,

@@ -58,6 +58,18 @@ pub(crate) fn backend_override_label(backend: Option<keyhog_scanner::ScanBackend
     backend.map_or("auto", keyhog_scanner::ScanBackend::label)
 }
 
+/// Canonical value accepted by the public `--backend` parser for a resolved
+/// backend. The engine's diagnostic label for the scalar CPU implementation is
+/// `cpu-fallback`, while the stable operator spelling is `cpu`.
+pub(crate) fn backend_override_cli_value(backend: keyhog_scanner::ScanBackend) -> &'static str {
+    match backend {
+        keyhog_scanner::ScanBackend::Gpu => "gpu",
+        keyhog_scanner::ScanBackend::SimdCpu => "simd",
+        keyhog_scanner::ScanBackend::CpuFallback => "cpu",
+        _ => backend.label(),
+    }
+}
+
 pub(crate) fn gpu_runtime_policy_from_args(
     args: &ScanArgs,
 ) -> keyhog_scanner::gpu::GpuRuntimePolicy {

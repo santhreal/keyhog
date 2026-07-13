@@ -6,6 +6,13 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Scan, watch, and scan-system now install the same resolved GPU policy,
+  regex-DFA cap, GPU batch cap, profiling state, and compile tuning before any
+  hardware probe or detector compilation. Watch applies explicit backend
+  overrides before setup and validates backend readiness before announcing it
+  is active. Persistent scans also honor config-selected detector corpora,
+  while an explicit missing `--detectors` path fails instead of silently using
+  embedded rules.
 - Verification response selectors now use one validated `$`-rooted grammar in
   detector TOMLs and runtime evaluation. Success checks and metadata extraction
   now agree on object keys, array indexes, and bounded parsing. Invalid

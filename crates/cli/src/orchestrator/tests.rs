@@ -4,8 +4,9 @@
 //! parent module's private constants via `use super::*`.
 
 use super::{
-    daemon_requires_gpu, setup_default_scan_runtime, LOW_RAM_HOST_THRESHOLD_MB,
-    LOW_RAM_MAX_DECODE_BYTES, LOW_RAM_MAX_MATCHES_PER_CHUNK,
+    apply_host_runtime_limits, daemon_requires_gpu, resolved_scan_config_for_scanner,
+    setup_default_scan_runtime, LOW_RAM_HOST_THRESHOLD_MB, LOW_RAM_MAX_DECODE_BYTES,
+    LOW_RAM_MAX_MATCHES_PER_CHUNK,
 };
 
 /// Pin the OOM-guard thresholds and the 256-KiB decode-window derivation, so
@@ -32,6 +33,37 @@ fn low_ram_caps_clamp_down_never_up() {
     // Below the cap: left untouched.
     assert_eq!(100usize.min(LOW_RAM_MAX_MATCHES_PER_CHUNK), 100);
     assert_eq!((64 * 1024usize).min(LOW_RAM_MAX_DECODE_BYTES), 64 * 1024);
+}
+
+#[test]
+fn low_ram_host_limits_mutate_the_resolved_config_shared_by_all_runtimes() {
+    let mut scanner = keyhog_scanner::ScannerConfig::default();
+    scanner.max_matches_per_chunk = LOW_RAM_MAX_MATCHES_PER_CHUNK * 2;
+    scanner.max_decode_bytes = LOW_RAM_MAX_DECODE_BYTES * 2;
+    let mut resolved = resolved_scan_config_for_scanner(scanner);
+    let hardware = keyhog_scanner::HardwareCaps {
+        physical_cores: 4,
+        logical_cores: 8,
+        has_avx2: false,
+        has_avx512: false,
+        has_neon: false,
+        gpu_available: false,
+        gpu_name: None,
+        gpu_vram_mb: None,
+        gpu_runtime_identity: None,
+        gpu_is_software: false,
+        total_memory_mb: Some(LOW_RAM_HOST_THRESHOLD_MB - 1),
+        io_uring_available: false,
+        hyperscan_available: false,
+    };
+
+    apply_host_runtime_limits(&mut resolved, &hardware);
+
+    assert_eq!(
+        resolved.scanner.max_matches_per_chunk,
+        LOW_RAM_MAX_MATCHES_PER_CHUNK
+    );
+    assert_eq!(resolved.scanner.max_decode_bytes, LOW_RAM_MAX_DECODE_BYTES);
 }
 
 #[test]
@@ -64,6 +96,8 @@ fn persistent_runtime_uses_configured_autoroute_cache_path() {
 
     let runtime = setup_default_scan_runtime(
         std::path::Path::new("detectors"),
+        false,
+        None,
         None,
         None,
         "keyhog watch",

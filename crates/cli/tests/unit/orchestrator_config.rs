@@ -240,6 +240,25 @@ fn explicit_cli_default_detectors_wins_over_toml() {
 }
 
 #[test]
+fn explicit_cpu_backend_wins_over_configured_required_gpu_policy() {
+    let args = args_for_config_with_extra("[system]\ngpu = \"required\"\n", &["--backend", "cpu"]);
+
+    assert_eq!(args.backend.as_deref(), Some("cpu"));
+    assert!(!args.require_gpu, "config must not override explicit CPU");
+}
+
+#[test]
+fn explicit_gpu_backend_wins_over_configured_disabled_gpu_policy() {
+    let args = args_for_config_with_extra("[system]\ngpu = \"off\"\n", &["--backend", "gpu"]);
+
+    assert_eq!(args.backend.as_deref(), Some("gpu"));
+    assert!(
+        !args.no_gpu,
+        "config must not disable an explicit GPU route"
+    );
+}
+
+#[test]
 fn config_top_level_generic_keyword_low_entropy_false_reaches_scan_args() {
     let args = args_for_config("generic_keyword_low_entropy = false\n");
     assert!(

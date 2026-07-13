@@ -186,17 +186,48 @@ where
 
 fn cli_from_matches(matches: &clap::ArgMatches) -> Result<Cli, clap::Error> {
     let mut cli = Cli::from_arg_matches(matches)?;
-    mark_scan_value_sources(&mut cli, matches);
+    mark_cli_value_sources(&mut cli, matches);
     Ok(cli)
 }
 
-fn mark_scan_value_sources(cli: &mut Cli, matches: &clap::ArgMatches) {
+fn mark_cli_value_sources(cli: &mut Cli, matches: &clap::ArgMatches) {
+    use clap::parser::ValueSource;
+
     match (&mut cli.command, matches.subcommand()) {
         (Some(Command::Scan(args)), Some(("scan", subcommand_matches))) => {
             args.mark_cli_value_sources(subcommand_matches);
         }
         (Some(Command::Config(args)), Some(("config", subcommand_matches))) => {
             args.scan.mark_cli_value_sources(subcommand_matches);
+        }
+        (Some(Command::Detectors(args)), Some(("detectors", subcommand_matches))) => {
+            args.detectors_cli_explicit =
+                subcommand_matches.value_source("detectors") == Some(ValueSource::CommandLine);
+        }
+        (Some(Command::Explain(args)), Some(("explain", subcommand_matches))) => {
+            args.detectors_cli_explicit =
+                subcommand_matches.value_source("detectors") == Some(ValueSource::CommandLine);
+        }
+        (Some(Command::Watch(args)), Some(("watch", subcommand_matches))) => {
+            args.detectors_cli_explicit =
+                subcommand_matches.value_source("detectors") == Some(ValueSource::CommandLine);
+        }
+        (Some(Command::ScanSystem(args)), Some(("scan-system", subcommand_matches))) => {
+            args.detectors_cli_explicit =
+                subcommand_matches.value_source("detectors") == Some(ValueSource::CommandLine);
+        }
+        (Some(Command::Daemon(DaemonArgs { action })), Some(("daemon", daemon_matches))) => {
+            if let (
+                DaemonAction::Start {
+                    detectors_cli_explicit,
+                    ..
+                },
+                Some(("start", start_matches)),
+            ) = (action, daemon_matches.subcommand())
+            {
+                *detectors_cli_explicit =
+                    start_matches.value_source("detectors") == Some(ValueSource::CommandLine);
+            }
         }
         _ => {}
     }

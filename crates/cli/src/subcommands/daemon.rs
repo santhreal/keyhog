@@ -18,10 +18,21 @@ pub(crate) async fn run(args: DaemonArgs) -> Result<ExitCode> {
         crate::args::DaemonAction::Start {
             socket,
             detectors,
+            detectors_cli_explicit,
             cache_dir,
             backend,
             request_timeout_secs,
-        } => start(socket, detectors, cache_dir, backend, request_timeout_secs).await,
+        } => {
+            start(
+                socket,
+                detectors,
+                detectors_cli_explicit,
+                cache_dir,
+                backend,
+                request_timeout_secs,
+            )
+            .await
+        }
         crate::args::DaemonAction::Stop { socket } => stop(socket).await,
         crate::args::DaemonAction::Status { socket } => status(socket).await,
     }
@@ -30,11 +41,16 @@ pub(crate) async fn run(args: DaemonArgs) -> Result<ExitCode> {
 async fn start(
     socket: Option<PathBuf>,
     detectors_dir: PathBuf,
+    detectors_cli_explicit: bool,
     cache_dir: Option<PathBuf>,
     backend: Option<String>,
     request_timeout_secs: u64,
 ) -> Result<ExitCode> {
     crate::runtime_preflight::validate_scan_runtime_config()?;
+    crate::orchestrator_config::validate_explicit_detector_path(
+        &detectors_dir,
+        detectors_cli_explicit,
+    )?;
     crate::orchestrator_config::configure_hyperscan_cache_dir(cache_dir)?;
     let backend_override = crate::orchestrator_config::parse_backend_override(backend.as_deref())?;
 

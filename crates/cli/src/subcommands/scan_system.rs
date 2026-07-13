@@ -324,8 +324,10 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     // resolved `.keyhog.toml` detector/scanner config applied inside setup.
     let scan_runtime = setup_default_scan_runtime(
         &args.detectors,
+        args.detectors_cli_explicit,
         args.cache_dir.clone(),
         args.threads,
+        None,
         "keyhog scan-system",
         true,
         None,

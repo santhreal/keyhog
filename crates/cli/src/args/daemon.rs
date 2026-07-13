@@ -28,6 +28,8 @@ pub enum DaemonAction {
         /// Detector directory (same default as `keyhog scan --detectors`).
         #[arg(long, default_value = "detectors")]
         detectors: PathBuf,
+        #[arg(skip)]
+        detectors_cli_explicit: bool,
         /// Override the Hyperscan compiled-database cache directory.
         #[arg(long, value_name = "DIR")]
         cache_dir: Option<PathBuf>,

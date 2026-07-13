@@ -8,8 +8,12 @@ pub struct ExplainArgs {
     /// Use `keyhog detectors` to list available IDs.
     pub detector_id: String,
 
-    /// Detector TOML directory; falls back to the embedded corpus when
-    /// missing. Same semantics as `keyhog detectors --detectors`.
+    /// Detector TOML directory. When omitted, KeyHog discovers an installed
+    /// corpus or uses the embedded corpus. An explicitly named missing path is
+    /// an error.
     #[arg(short, long, default_value = "detectors")]
     pub detectors: PathBuf,
+
+    #[arg(skip)]
+    pub(crate) detectors_cli_explicit: bool,
 }

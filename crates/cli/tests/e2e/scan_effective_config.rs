@@ -19,11 +19,29 @@ fn effective_config(args: &[&str]) -> (String, String, Option<i32>) {
 }
 
 fn effective_config_with_toml(toml: &str) -> (String, String, Option<i32>) {
+    effective_config_with_toml_and_args(toml, &[])
+}
+
+fn effective_config_with_toml_and_args(toml: &str, args: &[&str]) -> (String, String, Option<i32>) {
     let dir = TempDir::new().expect("tempdir");
     let config_path = dir.path().join(".keyhog.toml");
     std::fs::write(&config_path, toml).expect("write config");
     let config_path = config_path.to_string_lossy();
-    effective_config(&["--config", &config_path])
+    let mut command_args = vec!["--config", config_path.as_ref()];
+    command_args.extend_from_slice(args);
+    effective_config(&command_args)
+}
+
+#[test]
+fn explicit_backend_does_not_hide_an_invalid_configured_gpu_policy() {
+    let (_stdout, stderr, code) =
+        effective_config_with_toml_and_args("[system]\ngpu = \"bogus\"\n", &["--backend", "cpu"]);
+
+    assert_eq!(code, Some(2));
+    assert!(
+        stderr.contains("[system].gpu") && stderr.contains("expected auto, off, or required"),
+        "invalid config must remain visible under an explicit backend; stderr={stderr}"
+    );
 }
 
 fn home_temp_cache_dir(name: &str) -> (TempDir, String) {

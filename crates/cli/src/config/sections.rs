@@ -97,17 +97,20 @@ pub(super) fn apply_system_section(
     }
     if let Some(gpu_policy) = system.and_then(|section| section.gpu.as_deref()) {
         match parse_gpu_runtime_policy(gpu_policy) {
-            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Disabled) => {
-                if !args.no_gpu && !args.require_gpu {
-                    args.no_gpu = true;
+            Some(policy) if args.backend.is_none() => match policy {
+                keyhog_scanner::gpu::GpuRuntimePolicy::Disabled => {
+                    if !args.no_gpu && !args.require_gpu {
+                        args.no_gpu = true;
+                    }
                 }
-            }
-            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Required) => {
-                if !args.no_gpu && !args.require_gpu {
-                    args.require_gpu = true;
+                keyhog_scanner::gpu::GpuRuntimePolicy::Required => {
+                    if !args.no_gpu && !args.require_gpu {
+                        args.require_gpu = true;
+                    }
                 }
-            }
-            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Auto) => {}
+                keyhog_scanner::gpu::GpuRuntimePolicy::Auto => {}
+            },
+            Some(_) => {}
             None => config_errors.push(super::invalid_config_value(
                 "[system].gpu",
                 gpu_policy,

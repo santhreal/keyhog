@@ -371,6 +371,11 @@ pub async fn cli_main() -> ExitCode {
             eprintln!("error: {error:#}");
             let code = if SCANNER_PANICKED.load(Ordering::SeqCst) {
                 exit_codes::EXIT_SCANNER_PANIC
+            } else if error
+                .chain()
+                .any(|cause| cause.is::<orchestrator::GpuUnavailableError>())
+            {
+                exit_codes::EXIT_REQUIRE_GPU_UNMET
             } else if error.chain().any(is_user_io_error) {
                 exit_codes::EXIT_USER_ERROR
             } else if error.chain().any(|e| e.is::<std::io::Error>()) {

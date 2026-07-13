@@ -39,6 +39,9 @@ pub struct ScanSystemArgs {
     #[arg(long, default_value = "detectors")]
     pub detectors: PathBuf,
 
+    #[arg(skip)]
+    pub(crate) detectors_cli_explicit: bool,
+
     /// Override the Hyperscan compiled-database cache directory.
     #[arg(long, value_name = "DIR")]
     pub cache_dir: Option<PathBuf>,

@@ -596,3 +596,85 @@ group = 1
         snapshot(&err)
     );
 }
+
+fn write_watch_detector(directory: &std::path::Path, id: &str) {
+    std::fs::create_dir_all(directory).expect("create detector directory");
+    let keyword = id.replace('-', "_").to_ascii_uppercase();
+    std::fs::write(
+        directory.join(format!("{id}.toml")),
+        format!(
+            r#"[detector]
+id = "{id}"
+name = "{id}"
+service = "test"
+severity = "high"
+keywords = ["{keyword}"]
+
+[[detector.patterns]]
+regex = "{keyword}_(?P<secret>[A-Z0-9]{{20}})"
+description = "watch corpus precedence"
+group = 1
+"#
+        ),
+    )
+    .expect("write detector");
+}
+
+#[test]
+fn watch_resolves_configured_detector_corpus_and_cli_precedence() {
+    let root = TempDir::new().expect("watch tempdir");
+    let configured = root.path().join("configured-detectors");
+    let explicit = root.path().join("detectors");
+    write_watch_detector(&configured, "configured-only");
+    write_watch_detector(&explicit, "explicit-one");
+    write_watch_detector(&explicit, "explicit-two");
+    std::fs::write(
+        root.path().join(".keyhog.toml"),
+        format!("detectors = {:?}\n", configured.display().to_string()),
+    )
+    .expect("write config");
+
+    let spawn = |explicit_cli: bool| {
+        let mut command = Command::new(binary());
+        command
+            .arg("watch")
+            .arg(root.path())
+            .args(["--backend", "cpu"])
+            .current_dir(root.path())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if explicit_cli {
+            command.args(["--detectors", "detectors"]);
+        }
+        let mut child = command.spawn().expect("spawn keyhog watch");
+        let _out = drain_pipe(child.stdout.take().expect("stdout piped"));
+        let err = drain_pipe(child.stderr.take().expect("stderr piped"));
+        (child, err)
+    };
+
+    let (mut configured_child, configured_err) = spawn(false);
+    let configured_ready = wait_until_contains(
+        &configured_err,
+        &["1 detectors compiled"],
+        Duration::from_secs(60),
+    );
+    kill(&mut configured_child);
+    assert!(
+        configured_ready,
+        "watch must load the config-selected detector corpus; stderr=\n{}",
+        snapshot(&configured_err)
+    );
+
+    let (mut explicit_child, explicit_err) = spawn(true);
+    let explicit_ready = wait_until_contains(
+        &explicit_err,
+        &["2 detectors compiled"],
+        Duration::from_secs(60),
+    );
+    kill(&mut explicit_child);
+    assert!(
+        explicit_ready,
+        "an explicit --detectors value must win over config; stderr=\n{}",
+        snapshot(&explicit_err)
+    );
+}

@@ -203,6 +203,34 @@ fn autoroute_config_digest_includes_source_limits() {
 }
 
 #[test]
+fn autoroute_config_digest_includes_engine_resource_caps() {
+    with_route_policy_lock(|| {
+        let mut baseline = scan_args(&["scan", "--no-config", "--stdin"]);
+        let baseline_digest = API
+            .autoroute_config_digest_for_args(&mut baseline)
+            .expect("baseline resolved config digest");
+
+        let mut capped = scan_args(&[
+            "scan",
+            "--no-config",
+            "--stdin",
+            "--regex-dfa-limit",
+            "256KiB",
+            "--gpu-batch-input-limit",
+            "512MiB",
+        ]);
+        let capped_digest = API
+            .autoroute_config_digest_for_args(&mut capped)
+            .expect("capped resolved config digest");
+
+        assert_ne!(
+            baseline_digest, capped_digest,
+            "resource caps change compiled and routed work, so they must invalidate autoroute evidence"
+        );
+    });
+}
+
+#[test]
 fn autoroute_config_digest_includes_min_secret_len() {
     let mut default_len = scan_args(&["scan", "--no-config", "--stdin"]);
     let default_digest = API

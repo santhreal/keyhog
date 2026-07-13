@@ -6,6 +6,7 @@ use std::path::PathBuf;
 mod calibration;
 mod detectors;
 mod effective;
+mod engine_runtime;
 mod policy;
 mod runtime;
 mod scanner;
@@ -13,17 +14,18 @@ mod scanner;
 use calibration::load_explicit_scan_calibration;
 pub(crate) use detectors::{
     auto_discover_detectors, detector_compile_failed, load_detectors_no_cache,
-    load_detectors_or_embedded, load_detectors_with_cache,
+    load_detectors_or_embedded, load_detectors_with_cache, validate_explicit_detector_path,
 };
 pub(crate) use effective::{autoroute_config_digest, render_effective_config};
+pub(crate) use engine_runtime::ResolvedEngineRuntimeSettings;
 pub(crate) use policy::{ResolvedAllowlistConfig, ResolvedReportPolicy, ResolvedVerifyPolicy};
 #[cfg(feature = "git")]
 pub(crate) use runtime::MAX_COMMITS_DEFAULT;
 pub(crate) use runtime::{
-    backend_override_label, configure_hyperscan_cache_dir, configure_threads, fused_depth_default,
-    gpu_runtime_policy_from_args, parse_backend_override, ScanRuntimeInput, FUSED_BATCH_DEFAULT,
-    MAX_THREADS_CAP, ML_THRESHOLD_DEFAULT, VERIFY_MAX_CONCURRENT_DEFAULT,
-    VERIFY_TIMEOUT_DEFAULT_SECS,
+    backend_override_cli_value, backend_override_label, configure_hyperscan_cache_dir,
+    configure_threads, fused_depth_default, gpu_runtime_policy_from_args, parse_backend_override,
+    ScanRuntimeInput, FUSED_BATCH_DEFAULT, MAX_THREADS_CAP, ML_THRESHOLD_DEFAULT,
+    VERIFY_MAX_CONCURRENT_DEFAULT, VERIFY_TIMEOUT_DEFAULT_SECS,
 };
 pub(crate) use scanner::build_scanner_config;
 use scanner::{build_scanner_config_from_input, ScannerConfigInput};

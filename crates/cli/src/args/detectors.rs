@@ -7,6 +7,8 @@ pub struct DetectorArgs {
     /// Detector TOML directory
     #[arg(short, long, default_value = "detectors")]
     pub detectors: PathBuf,
+    #[arg(skip)]
+    pub(crate) detectors_cli_explicit: bool,
     /// Filter detectors by substring match (case-insensitive) against id,
     /// name, service, and keywords (e.g. `keyhog detectors --search aws`).
     ///

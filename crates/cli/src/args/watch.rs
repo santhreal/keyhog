@@ -10,9 +10,13 @@ pub struct WatchArgs {
     /// Each root must be a directory. Defaults to the current directory.
     #[arg(value_name = "PATH", default_value = ".")]
     pub paths: Vec<PathBuf>,
-    /// Detector TOML directory. Falls back to embedded corpus if missing.
+    /// Detector TOML directory. When omitted, KeyHog discovers an installed
+    /// corpus or uses the embedded corpus. An explicitly named missing path is
+    /// an error.
     #[arg(short, long, default_value = "detectors")]
     pub detectors: PathBuf,
+    #[arg(skip)]
+    pub(crate) detectors_cli_explicit: bool,
     /// Override the Hyperscan compiled-database cache directory.
     #[arg(long, value_name = "DIR")]
     pub cache_dir: Option<PathBuf>,

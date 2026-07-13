@@ -45,6 +45,22 @@ pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
     Ok(path.to_path_buf())
 }
 
+/// Reject an explicitly selected detector corpus before default-path discovery
+/// can interpret the literal `detectors` spelling as the embedded-corpus
+/// sentinel. The path spelling alone cannot distinguish `--detectors
+/// detectors` from an omitted flag; the caller owns that CLI/config provenance.
+pub(crate) fn validate_explicit_detector_path(path: &Path, explicit: bool) -> Result<()> {
+    if explicit && !path.exists() {
+        anyhow::bail!(
+            "explicit detectors directory '{}' does not exist. \
+             Fix: pass an existing detector directory, or omit --detectors to \
+             use the embedded corpus.",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn load_detectors_with_cache(path: &Path) -> Result<Vec<DetectorSpec>> {
     validate_detector_path_for_scan(path)?;
     if path.exists() && path.is_dir() {
