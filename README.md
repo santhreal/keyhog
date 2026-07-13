@@ -314,9 +314,10 @@ keyhog scan --docker-image registry/app:v1             # Docker image layers
 keyhog scan --s3-bucket logs-prod --s3-prefix /        # S3 objects (--s3-endpoint for non-AWS)
 keyhog scan --gcs-bucket logs-prod --gcs-prefix config/ # GCS objects (--gcs-endpoint for compatible APIs)
 keyhog scan --azure-container-url "$AZURE_CONTAINER_URL" --azure-prefix config/
-keyhog scan --github-org acme --github-token "$GH_PAT" # every repo in a GitHub org (PAT required)
-keyhog scan --gitlab-group acme --gitlab-token "$GL_PAT" # every project in a GitLab group
-keyhog scan --bitbucket-workspace acme --bitbucket-username "$BB_USER" --bitbucket-token "$BB_APP_PASSWORD"
+KEYHOG_GITHUB_TOKEN="$GH_PAT" keyhog scan --github-org acme # every repo in a GitHub org
+KEYHOG_GITLAB_TOKEN="$GL_PAT" keyhog scan --gitlab-group acme # every project in a GitLab group
+KEYHOG_BITBUCKET_USERNAME="$BB_USER" KEYHOG_BITBUCKET_TOKEN="$BB_APP_PASSWORD" \
+  keyhog scan --bitbucket-workspace acme
 keyhog scan-system --space 50G                         # walk every drive, every git history
 ```
 
@@ -837,9 +838,10 @@ Thanks to these projects and their contributors.
 
 ## License
 
-MIT. Use commercially, embed, fork, sell a hosted version. The
-detector TOMLs are also MIT; adding one is a five-line PR with zero
-legal friction.
+MIT OR Apache-2.0 ([MIT terms](./LICENSE-MIT),
+[Apache-2.0 terms](./LICENSE-APACHE)). This dual license covers the code and
+detector TOMLs. Commercial use, embedding, forks, and hosted services are
+permitted under either license.
 
 ---
 

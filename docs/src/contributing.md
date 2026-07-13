@@ -162,5 +162,6 @@ and cache warmth; command output is the timing evidence for that run.
 
 ## License
 
-MIT. By contributing, you agree that your contributions are licensed
-under the MIT license too.
+By contributing, you agree that your contributions are licensed under MIT OR Apache-2.0
+([MIT terms](../../LICENSE-MIT),
+[Apache-2.0 terms](../../LICENSE-APACHE)).

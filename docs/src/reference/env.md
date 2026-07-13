@@ -52,10 +52,12 @@ custom endpoint without an explicit opt-in flag.
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `AWS_DEFAULT_REGION` | SigV4 signing for S3 `ListObjectsV2` / object GET against AWS-owned endpoints. |
 | `GOOGLE_OAUTH_ACCESS_TOKEN`, `GCS_BEARER_TOKEN` | Bearer token for `--gcs-bucket` JSON-API listing/downloads (the Google token wins when both are set). |
 
-Repository-collection tokens (GitHub / GitLab / Bitbucket) and the scan target
-itself are **CLI-only**: `--github-token`, `--gitlab-token`, `--bitbucket-token`,
-`--source`, `--s3-bucket`, `--gcs-bucket`, etc. KeyHog does not register sources
-or read forge tokens from ambient environment.
+Repository-collection scope is CLI-only. The dedicated credential variables
+above authenticate only an explicitly selected `--github-org`, `--gitlab-group`,
+or `--bitbucket-workspace` source. They never register a source by themselves.
+Token flags remain available for controlled diagnostics, but CI and shell
+workflows should inject the dedicated variables through their secret store so
+credentials do not appear in process arguments.
 
 ## Removed behavior environment controls
 
@@ -105,7 +107,8 @@ Environment variables are **not** in this list for behavior, by design.
   and removed KeyHog-owned TLS/proxy controls such as `KEYHOG_INSECURE_TLS` are
   ignored. Use `--proxy`, `[http] proxy`, `--insecure`, or
   `[http] insecure_tls` explicitly.
-- Ambient forge tokens or source-selecting variables (`SLACK_TOKEN`,
-  `S3_BUCKET`, …): sources and their credentials are explicit CLI flags.
+- Unscoped forge tokens or source-selecting variables (`SLACK_TOKEN`,
+  `S3_BUCKET`, etc.). Hosted Git credentials use only the dedicated variables
+  listed above and only after the matching source flag is present.
 - Anything named `KEYHOG_API_KEY` / `KEYHOG_TOKEN` / `KEYHOG_TELEMETRY_*`. There
   is no telemetry and no service to authenticate to; findings stay local.

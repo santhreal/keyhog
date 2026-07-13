@@ -13,6 +13,7 @@ import urllib.parse
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 DOCS = REPO / "docs" / "src"
+LICENSE_DOCS = [REPO / "README.md", DOCS / "introduction.md", DOCS / "contributing.md"]
 
 STALE_PATTERNS = [
     ("unsupported recall claim", re.compile(r"\b96\s*%")),
@@ -32,6 +33,7 @@ HEADING = re.compile(r"^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$")
 EXPLICIT_ANCHOR = re.compile(
     r"<(?:a\s+(?:[^>]*\s)?(?:id|name)|[^>]+\s+id)=[\"']([^\"']+)[\"']", re.I
 )
+HOSTED_TOKEN_ARG = re.compile(r"--(?:github|gitlab|bitbucket)-token\b")
 
 
 def prose_lines(text: str):
@@ -47,6 +49,21 @@ def prose_lines(text: str):
                 fence = None
             continue
         if fence is None:
+            yield lineno, line
+
+
+def fenced_lines(text: str):
+    """Yield Markdown code-fence content with one-based line numbers."""
+    fence: str | None = None
+    for lineno, line in enumerate(text.splitlines(), 1):
+        marker = line.lstrip()[:3]
+        if marker in {"```", "~~~"}:
+            if fence is None:
+                fence = marker
+            elif marker == fence:
+                fence = None
+            continue
+        if fence is not None:
             yield lineno, line
 
 
@@ -112,6 +129,11 @@ def workspace_version() -> str:
     return f"v{cargo['workspace']['package']['version']}"
 
 
+def workspace_license() -> str:
+    cargo = tomllib.loads((REPO / "Cargo.toml").read_text())
+    return cargo["workspace"]["package"]["license"]
+
+
 def detector_count() -> int:
     return sum(1 for path in (REPO / "detectors").glob("*.toml") if path.is_file())
 
@@ -136,6 +158,7 @@ def truth_issues() -> list[str]:
     expected_version = workspace_version()
     keyhog_series = ".".join(expected_version.split(".")[:2]) + "."
     expected_count = detector_count()
+    expected_license = workspace_license()
     for path in canonical_paths():
         text = path.read_text(errors="replace")
         rel = path.relative_to(REPO).as_posix()
@@ -153,6 +176,22 @@ def truth_issues() -> list[str]:
             for label, pattern in STALE_PATTERNS:
                 if pattern.search(line):
                     issues.append(f"{rel}:{lineno}: {label}: {line.strip()}")
+        for lineno, line in fenced_lines(text):
+            if HOSTED_TOKEN_ARG.search(line):
+                issues.append(
+                    f"{rel}:{lineno}: hosted-source token must use its dedicated environment variable"
+                )
+
+    for path in LICENSE_DOCS:
+        text = path.read_text(errors="replace")
+        rel = path.relative_to(REPO).as_posix()
+        if expected_license not in text:
+            issues.append(f"{rel}: missing workspace license expression {expected_license}")
+        if re.search(r"(?im)^(?:license:\s*)?MIT\.", text):
+            issues.append(f"{rel}: MIT-only prose contradicts {expected_license}")
+    for name in ("LICENSE-MIT", "LICENSE-APACHE"):
+        if not (REPO / name).is_file():
+            issues.append(f"{name}: license file required by {expected_license} is missing")
 
     summary = summary_targets()
     for page in sorted(DOCS.rglob("*.md")):
@@ -207,7 +246,20 @@ def self_test() -> int:
         and any("broken local link target absent.md" in issue for issue in navigation)
         and any("missing anchor #absent" in issue for issue in navigation)
     )
-    detected = stale_detected and slug_detected and navigation_detected
+    license_detected = workspace_license() == "MIT OR Apache-2.0" and bool(
+        re.search(r"(?im)^(?:license:\s*)?MIT\.", "License: MIT.")
+    )
+    token_arg_detected = any(
+        HOSTED_TOKEN_ARG.search(line)
+        for _, line in fenced_lines("```bash\nkeyhog scan --github-token secret\n```\n")
+    )
+    detected = (
+        stale_detected
+        and slug_detected
+        and navigation_detected
+        and license_detected
+        and token_arg_detected
+    )
     print("self-test PASS" if detected else "self-test FAIL", file=sys.stderr)
     return 0 if detected else 1
 

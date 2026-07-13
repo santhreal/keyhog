@@ -285,10 +285,13 @@ the normal report (stdout). `--dogfood` is independent of `--format`, so the
 report format does not matter here.
 
 Suppression events carry the path, redacted credential, and rule that fired.
-`static_recovery_rejected` events carry the decoder, reason, path, and absolute
-expression byte offset. They never contain source or recovered bytes. Detail
-retention is capped at 1,024 events per scan. Aggregate rejection counts remain
-exact after the cap, and `detail_events_dropped` reports every omitted detail.
+`static_recovery_rejected` events carry the decoder, reason, source type, path,
+optional commit, and absolute expression byte offset. Source type plus commit
+keeps equal paths from separate history revisions distinct. The events never
+contain source or recovered bytes. Detail retention is capped at 1,024 events
+per scan. Aggregate rejection counts remain exact after the cap, and
+`detail_events_dropped` reports every omitted detail, including an unavailable
+detail buffer.
 
 ## Adding a suppression for an FP cluster
 
