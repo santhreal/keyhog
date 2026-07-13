@@ -292,13 +292,17 @@ keyhog completion powershell >> $PROFILE
 | Command | Effect |
 |---------|--------|
 | `keyhog doctor` | Report host and PATH state, detector corpus health, and end-to-end scanner/GPU self-tests. |
-| `keyhog update --check` | Check for a newer verified release; exits `10` when one is available. |
-| `keyhog update [--version <TAG>]` | Atomically install the latest or selected release and roll back if verification fails. |
-| `keyhog repair [--force] [--version <TAG>]` | Reinstall a verified binary; without `--force`, a healthy install is left intact. |
+| `keyhog update --check` | Check the newest complete stable release for this host; exits `10` when one is available. |
+| `keyhog update [--version <TAG>]` | Atomically install the newest complete stable release or an exact published tag and roll back if verification fails. |
+| `keyhog repair [--force] [--version <TAG>]` | Reinstall from the newest complete stable release or an exact published tag; without `--force`, a healthy install is left intact. |
 | `keyhog uninstall [--yes]` | Show what would be removed; `--yes` performs the uninstall. |
 
 Linux uses one GPU-capable artifact that probes CUDA and WGPU at runtime. These
 commands therefore have no backend or artifact-variant selector.
+Implicit resolution excludes drafts and prereleases and requires the binary,
+checksum, signature, GPU-literal sidecar, sidecar checksum, and sidecar
+signature. An explicit `--version` may select a published prerelease but never
+a draft.
 
 ## Global flags
 

@@ -135,6 +135,10 @@ fn is_newer_compares_correctly() {
     assert!(!API.is_newer("0.5.36", "v0.5.36"));
     assert!(!API.is_newer("0.5.36", "v0.5.35"));
     assert!(!API.is_newer("0.5.35", "garbage"));
+    assert!(API.is_newer("1.0.0-rc.1", "1.0.0"));
+    assert!(API.is_newer("1.0.0-rc.1", "1.0.0-rc.2"));
+    assert!(!API.is_newer("1.0.0", "1.0.0-rc.2"));
+    assert!(!API.is_newer("1.0.0+build.1", "1.0.0+build.2"));
 }
 
 #[test]

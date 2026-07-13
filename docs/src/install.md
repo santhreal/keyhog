@@ -113,6 +113,14 @@ signatures for both payloads. Matrix builds stage those files as private CI
 artifacts; a new GitHub Release remains a draft until the complete manifest is
 signed and validated, then becomes visible atomically.
 
+`keyhog update` and `keyhog repair` use strict semantic-version precedence.
+Their implicit latest-release lookup ignores drafts and prereleases and skips
+any release that lacks the complete signed binary and GPU-literal bundle for
+the current host. Use `--version <TAG>` to request an exact published tag,
+including a prerelease. Release metadata, payloads, and signatures have bounded
+downloads and connection/request deadlines; an oversized or stalled response
+fails without changing the installed binary.
+
 ### Runtime GPU controls
 
 | Control                  | Effect                                                                                                                                                                                                                                       |

@@ -6,6 +6,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Hardened self-update and repair release resolution with strict SemVer
+  precedence, stable-only implicit selection, complete per-host signed-bundle
+  admission, bounded streaming downloads, and explicit connection/request
+  deadlines. Draft releases are never installable; exact published prerelease
+  tags remain available through `--version`.
 - Consolidated user and contributor documentation into one canonical mdBook
   under `docs/src/`. Removed the duplicate hand-maintained HTML site, moved the
   architecture and integration references into the book, made orphan/duplicate

@@ -465,8 +465,8 @@ fn candidate_reported_version(exe: &Path) -> Result<String> {
     })
 }
 
-fn semver_tuple(label: &str, version: &str) -> Result<(u64, u64, u64)> {
-    release::parse_semver(version)
+fn semver_version(label: &str, version: &str) -> Result<semver::Version> {
+    release::parse_version(version)
         .ok_or_else(|| anyhow!("{label} `{version}` is not a parseable semver"))
 }
 
@@ -483,8 +483,8 @@ pub(crate) fn verify_candidate_release(
     verify_via_doctor_checked(exe)?;
 
     let observed_version = candidate_reported_version(exe)?;
-    let observed = semver_tuple("candidate binary version", &observed_version)?;
-    let expected = semver_tuple("release tag", expected_release_tag)?;
+    let observed = semver_version("candidate binary version", &observed_version)?;
+    let expected = semver_version("release tag", expected_release_tag)?;
     if observed != expected {
         return Err(anyhow!(
             "candidate binary version does not match release tag: binary reports v{} but release metadata resolved {}; refusing to install a mismatched signed binary",
@@ -494,8 +494,8 @@ pub(crate) fn verify_candidate_release(
     }
 
     if !allow_explicit_downgrade {
-        let current = semver_tuple("current binary version", current_version)?;
-        if observed < current {
+        let current = semver_version("current binary version", current_version)?;
+        if observed.cmp_precedence(&current).is_lt() {
             return Err(anyhow!(
                 "candidate binary reports v{} which is older than the running keyhog v{}; refusing implicit downgrade",
                 observed_version,

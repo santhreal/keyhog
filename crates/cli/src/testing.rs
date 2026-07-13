@@ -662,6 +662,8 @@ impl CliTestApi for TestApi {
     fn select_release_asset_name(&self, tag_name: &str, asset_names: &[&str]) -> Result<String> {
         let release = crate::installer::Release {
             tag_name: tag_name.to_string(),
+            draft: false,
+            prerelease: false,
             assets: asset_names
                 .iter()
                 .map(|name| crate::installer::Asset {

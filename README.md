@@ -264,7 +264,10 @@ keyhog repair                # reinstall a known-good binary if the self-test fa
 keyhog uninstall             # remove the binary (dry run; pass --yes to actually delete)
 ```
 
-`keyhog doctor`: host probe, install/PATH resolution, and a four-way self-test (scan engine end-to-end, GPU scan path, GPU literal set, GPU MoE shader vs CPU reference). It never reports healthy unless the GPU path proves itself on this host:
+`keyhog doctor`: host probe, install/PATH resolution, and an end-to-end scan
+self-test. On a usable physical-GPU host it additionally checks the production
+GPU scan path, GPU literal set, and GPU MoE shader against the CPU reference;
+those GPU checks are skipped on hosts without an eligible accelerator:
 
 <p align="center">
   <img src="demo/keyhog-doctor.gif" alt="keyhog doctor: host probe (RTX 5090, AVX-512, Hyperscan), one keyhog on PATH, 922 embedded detectors, and a four-way self-test (scan engine, GPU scan path, GPU literal set, GPU MoE shader vs CPU reference) all reporting PASS, then 'keyhog is healthy'" width="860" />
@@ -278,7 +281,10 @@ check (the installer runs it automatically after install). `update` and
 signature against keyhog's embedded public key, and atomically swap the
 running binary in place; a tampered or unsigned-mismatched binary is
 refused. On a healthy host `keyhog update` is the one-command upgrade
-path.
+path. Implicit update/repair resolution ignores drafts and prereleases and
+requires the complete signed host bundle; pass `--version <TAG>` to select an
+exact published tag, including a prerelease. Network responses are bounded and
+timed out before any installed file is changed.
 
 `keyhog backend --self-test --json` is the machine-readable GPU health
 gate for self-hosted runners. It exits `4` when the production GPU scan

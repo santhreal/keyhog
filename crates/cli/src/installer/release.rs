@@ -18,8 +18,15 @@ use anyhow::{anyhow, Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::{hw_probe::ScanBackend, CompiledScanner};
 use serde::Deserialize;
+use std::time::Duration;
 
 pub(crate) const REPO: &str = "santhsecurity/keyhog";
+const RELEASE_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const RELEASE_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+const MAX_RELEASE_METADATA_BYTES: usize = 8 * 1024 * 1024;
+const MAX_RELEASE_ASSET_BYTES: usize = 512 * 1024 * 1024;
+const MAX_RELEASE_SIGNATURE_BYTES: usize = 64 * 1024;
+const MAX_RESPONSE_PREALLOC_BYTES: usize = 64 * 1024;
 
 /// GitHub API base for update/repair release resolution.
 ///
@@ -60,6 +67,10 @@ pub(crate) fn verify_release_signature(data: &[u8], signature: &str) -> Result<(
 pub(crate) struct Release {
     pub tag_name: String,
     #[serde(default)]
+    pub draft: bool,
+    #[serde(default)]
+    pub prerelease: bool,
+    #[serde(default)]
     pub assets: Vec<Asset>,
 }
 
@@ -85,27 +96,25 @@ pub(crate) fn asset_name(os: &str, arch: &str) -> Option<String> {
     }
 }
 
-/// Parse a `vMAJOR.MINOR.PATCH` (or bare) tag; pre-release/build suffixes after
-/// the patch number are ignored.
+pub(crate) fn parse_version(tag: &str) -> Option<semver::Version> {
+    let trimmed = tag.trim();
+    let value = trimmed.strip_prefix('v').unwrap_or(trimmed);
+    semver::Version::parse(value).ok()
+}
+
+/// Parse the numeric core of a strict semantic version. Kept as the compact
+/// tuple facade used by existing diagnostics/tests; ordering uses
+/// [`parse_version`] so prerelease precedence is never discarded.
 pub(crate) fn parse_semver(tag: &str) -> Option<(u64, u64, u64)> {
-    let t = tag.trim().trim_start_matches('v');
-    let mut it = t.split('.');
-    let major = it.next()?.parse().ok()?; // LAW10: non-numeric segment ⇒ parse_semver returns None (propagated via ?), the function's honest "not a semver" — caller handles None, no silent default.
-    let minor = it.next()?.parse().ok()?; // LAW10: as above — fail-closed to None on a non-numeric minor segment.
-    let patch_field = it.next()?;
-    let patch_digits: String = patch_field
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    let patch = patch_digits.parse().ok()?; // LAW10: empty/overflow patch digits ⇒ None (propagated via ?); fail-closed at the function boundary, no silent default.
-    Some((major, minor, patch))
+    let version = parse_version(tag)?;
+    Some((version.major, version.minor, version.patch))
 }
 
 /// True if `latest` is a strictly newer semver than `current`. Unparseable
 /// versions compare as "not newer" (fail safe: never auto-install on garbage).
 pub(crate) fn is_newer(current: &str, latest: &str) -> bool {
-    match (parse_semver(current), parse_semver(latest)) {
-        (Some(c), Some(l)) => l > c,
+    match (parse_version(current), parse_version(latest)) {
+        (Some(c), Some(l)) => l.cmp_precedence(&c).is_gt(),
         _ => false,
     }
 }
@@ -140,6 +149,8 @@ pub(crate) fn looks_like_native_executable_for_os(bytes: &[u8], os: &str) -> boo
 pub(crate) fn http_client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .user_agent(format!("keyhog/{}", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(RELEASE_CONNECT_TIMEOUT)
+        .timeout(RELEASE_REQUEST_TIMEOUT)
         .build()
         .context("build HTTP client")
 }
@@ -155,32 +166,50 @@ pub(crate) async fn resolve_release(
     let api = release_api_base(release_api_base_override);
     if let Some(tag) = version {
         let url = format!("{api}/repos/{REPO}/releases/tags/{tag}");
-        return client
-            .get(&url)
-            .send()
-            .await
-            .context("query release tag")?
-            .error_for_status()
-            .with_context(|| format!("release tag {tag} not found"))?
-            .json()
-            .await
-            .context("parse release JSON");
+        let response = client.get(&url).send().await.context("query release tag")?;
+        let bytes = read_limited_response(
+            response,
+            MAX_RELEASE_METADATA_BYTES,
+            &format!("release tag {tag}"),
+        )
+        .await?;
+        let release: Release = serde_json::from_slice(&bytes).context("parse release JSON")?;
+        if release.draft {
+            anyhow::bail!("release tag {tag} is still a draft and cannot be installed");
+        }
+        return Ok(release);
     }
     let url = format!("{api}/repos/{REPO}/releases?per_page=10");
-    let releases: Vec<Release> = client
-        .get(&url)
-        .send()
-        .await
-        .context("query releases")?
-        .error_for_status()
-        .context("query releases (HTTP status)")?
-        .json()
-        .await
-        .context("parse releases JSON")?;
+    let response = client.get(&url).send().await.context("query releases")?;
+    let bytes = read_limited_response(response, MAX_RELEASE_METADATA_BYTES, "release list").await?;
+    let releases: Vec<Release> = serde_json::from_slice(&bytes).context("parse releases JSON")?;
     releases
         .into_iter()
-        .find(|r| !r.assets.is_empty())
-        .ok_or_else(|| anyhow!("no recent GitHub release has any assets uploaded; pass --version"))
+        .find(|release| {
+            !release.draft && !release.prerelease && release_has_complete_host_bundle(release)
+        })
+        .ok_or_else(|| {
+            anyhow!(
+                "no recent stable GitHub release has the complete signed asset bundle for this host; pass --version to diagnose an exact tag"
+            )
+        })
+}
+
+fn release_has_complete_host_bundle(release: &Release) -> bool {
+    let Some(binary) = asset_name(std::env::consts::OS, std::env::consts::ARCH) else {
+        return false;
+    };
+    let required = [
+        binary.clone(),
+        format!("{binary}.sha256"),
+        format!("{binary}.minisig"),
+        format!("{binary}.gpu-literals.tar.gz"),
+        format!("{binary}.gpu-literals.tar.gz.sha256"),
+        format!("{binary}.gpu-literals.tar.gz.minisig"),
+    ];
+    required
+        .iter()
+        .all(|name| release.assets.iter().any(|asset| asset.name == *name))
 }
 
 /// Pick the one platform asset for this host. Runtime accelerator selection is
@@ -212,16 +241,12 @@ pub(crate) async fn download_verified_asset(
     client: &reqwest::Client,
     asset: &Asset,
 ) -> Result<Vec<u8>> {
-    let bytes = client
+    let response = client
         .get(&asset.browser_download_url)
         .send()
         .await
-        .context("download asset")?
-        .error_for_status()
-        .context("download asset (HTTP status)")?
-        .bytes()
-        .await
-        .context("read asset body")?;
+        .context("download asset")?;
+    let bytes = read_limited_response(response, MAX_RELEASE_ASSET_BYTES, "release asset").await?;
     if !looks_like_native_executable(&bytes) {
         return Err(anyhow!(
             "downloaded asset is not a {} executable ({} bytes) - refusing to install. \
@@ -255,15 +280,44 @@ pub(crate) async fn download_verified_asset(
             asset.name
         ));
     }
-    let sig_text = sig_resp
-        .error_for_status()
-        .context("download release signature (HTTP status)")?
-        .text()
-        .await
-        .context("read release signature body")?;
+    let sig_bytes =
+        read_limited_response(sig_resp, MAX_RELEASE_SIGNATURE_BYTES, "release signature").await?;
+    let sig_text = std::str::from_utf8(&sig_bytes).context("release signature is not UTF-8")?;
     verify_release_signature(&bytes, &sig_text)
         .with_context(|| format!("verifying release asset {}", asset.name))?;
-    Ok(bytes.to_vec())
+    Ok(bytes)
+}
+
+async fn read_limited_response(
+    response: reqwest::Response,
+    max_bytes: usize,
+    label: &str,
+) -> Result<Vec<u8>> {
+    use futures_util::StreamExt as _;
+
+    let response = response
+        .error_for_status()
+        .with_context(|| format!("{label} HTTP status"))?;
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes as u64)
+    {
+        anyhow::bail!("{label} exceeds the {max_bytes}-byte download limit");
+    }
+    let capacity = response
+        .content_length()
+        .and_then(|length| usize::try_from(length).ok())
+        .map_or(0, |length| length.min(MAX_RESPONSE_PREALLOC_BYTES));
+    let mut body = Vec::with_capacity(capacity);
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.with_context(|| format!("read {label} body"))?;
+        if body.len().saturating_add(chunk.len()) > max_bytes {
+            anyhow::bail!("{label} exceeds the {max_bytes}-byte download limit");
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 /// End-to-end scan-engine self-test: compile a synthetic one-detector scanner,

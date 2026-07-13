@@ -21,14 +21,35 @@ use crate::reliability::harness::binary;
 /// A releases-list body whose newest tag is `tag`, carrying an asset for every
 /// supported platform so `select_asset` resolves regardless of test host.
 fn releases_body(tag: &str) -> String {
-    format!(
-        r#"[{{"tag_name":"{tag}","assets":[
-            {{"name":"keyhog-linux-x86_64","browser_download_url":"http://example.invalid/lin"}},
-            {{"name":"keyhog-macos-aarch64","browser_download_url":"http://example.invalid/mac-arm"}},
-            {{"name":"keyhog-macos-x86_64","browser_download_url":"http://example.invalid/mac-x86"}},
-            {{"name":"keyhog-windows-x86_64.exe","browser_download_url":"http://example.invalid/win"}}
-        ]}}]"#
-    )
+    let mut assets = Vec::new();
+    for base in [
+        "keyhog-linux-x86_64",
+        "keyhog-macos-aarch64",
+        "keyhog-macos-x86_64",
+        "keyhog-windows-x86_64.exe",
+    ] {
+        for suffix in [
+            "",
+            ".sha256",
+            ".minisig",
+            ".gpu-literals.tar.gz",
+            ".gpu-literals.tar.gz.sha256",
+            ".gpu-literals.tar.gz.minisig",
+        ] {
+            let name = format!("{base}{suffix}");
+            assets.push(serde_json::json!({
+                "name": name,
+                "browser_download_url": format!("http://example.invalid/{base}{suffix}"),
+            }));
+        }
+    }
+    serde_json::json!([{
+        "tag_name": tag,
+        "draft": false,
+        "prerelease": false,
+        "assets": assets,
+    }])
+    .to_string()
 }
 
 fn run_update(base: &str, extra: &[&str]) -> (Option<i32>, String, String) {
@@ -193,6 +214,55 @@ fn release_with_no_assets_fails_gracefully() {
     releases_mock(&server, 200, r#"[{"tag_name":"v99.0.0","assets":[]}]"#);
     let (code, out, err) = run_update(&server.base_url(), &["--check"]);
     assert_graceful(code, &out, &err, "asset-less release");
+}
+
+#[test]
+fn incomplete_newer_release_is_skipped_for_complete_stable_bundle() {
+    let server = MockServer::start();
+    let complete = serde_json::from_str::<serde_json::Value>(&releases_body("v99.0.0"))
+        .expect("complete release JSON");
+    let body = serde_json::json!([
+        {
+            "tag_name": "v100.0.0",
+            "assets": [{"name": "keyhog-linux-x86_64", "browser_download_url": "http://example.invalid/partial"}]
+        },
+        complete.as_array().expect("release array")[0].clone()
+    ]);
+    releases_mock(&server, 200, &body.to_string());
+    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
+    assert_graceful(code, &out, &err, "partial newest release");
+    assert_eq!(code, Some(10));
+    assert!(out.contains("v99.0.0") && !out.contains("v100.0.0"));
+}
+
+#[test]
+fn prerelease_is_not_selected_as_implicit_latest() {
+    let server = MockServer::start();
+    let mut prerelease = serde_json::from_str::<serde_json::Value>(&releases_body("v100.0.0-rc.1"))
+        .expect("prerelease JSON");
+    prerelease[0]["prerelease"] = serde_json::Value::Bool(true);
+    let stable =
+        serde_json::from_str::<serde_json::Value>(&releases_body("v99.0.0")).expect("stable JSON");
+    let body = serde_json::json!([
+        prerelease.as_array().expect("prerelease array")[0].clone(),
+        stable.as_array().expect("stable array")[0].clone()
+    ]);
+    releases_mock(&server, 200, &body.to_string());
+    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
+    assert_graceful(code, &out, &err, "implicit prerelease filtering");
+    assert_eq!(code, Some(10));
+    assert!(out.contains("v99.0.0") && !out.contains("v100.0.0-rc.1"));
+}
+
+#[test]
+fn oversized_release_metadata_is_rejected_before_parsing() {
+    let server = MockServer::start();
+    releases_mock(&server, 200, &"x".repeat(8 * 1024 * 1024 + 1));
+    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
+    assert_graceful(code, &out, &err, "oversized release metadata");
+    assert_ne!(code, Some(0));
+    assert_ne!(code, Some(10));
+    assert!(format!("{out}{err}").contains("download limit"));
 }
 
 #[test]
