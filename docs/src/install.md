@@ -1,7 +1,7 @@
 # Install
 
-The quickest paths first. Pick one - they all give you the same
-`keyhog` binary.
+The quickest paths first. Each installs the canonical release artifact for
+your supported host; platform feature differences are explicit below.
 
 ## One-liner: Linux / macOS
 
@@ -86,6 +86,11 @@ iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 `
 | `--from-file=/path/to/asset`            | Offline / air-gapped install from a pre-downloaded release asset (verified against its sibling `.sha256`, GPU sidecar included). |
 | `--calibrate`                           | Re-run only the post-install autoroute calibration phase on an already-installed binary. |
 | `--insecure`                            | Emergency-only: proceed when signature/checksum *proof is missing*. A present-but-wrong signature or checksum is always fatal, `--insecure` or not. |
+
+The table uses Unix spellings. The PowerShell equivalents are `-Version`,
+`-InstallDir`, `-Yes`, `-NoColor`, `-FromFile`, `-Calibrate`, and `-Insecure`;
+environment variables keep the same names. PowerShell also exposes the matching
+`-Diagnose`, `-Repair`, and `-Uninstall` modes.
 
 ### Download integrity
 
@@ -172,8 +177,9 @@ installer performs that outer-process cleanup for the normal uninstall flow.
 
 ## Direct binary download
 
-If you don't trust pipe-to-shell - fair - grab the binary by hand
-from the [releases page](https://github.com/santhsecurity/keyhog/releases/latest).
+If you do not trust pipe-to-shell, download and inspect the installer first, or
+obtain the complete host bundle from the
+[releases page](https://github.com/santhsecurity/keyhog/releases/latest).
 
 | Platform              | Asset name                       |
 |-----------------------|----------------------------------|
@@ -182,7 +188,34 @@ from the [releases page](https://github.com/santhsecurity/keyhog/releases/latest
 | macOS aarch64 (Apple) | `keyhog-macos-aarch64`           |
 | Windows x86_64        | `keyhog-windows-x86_64.exe`      |
 
-`chmod +x` the binary and put it somewhere on your `PATH`.
+For an asset named `<asset>`, the complete host bundle is:
+
+- `<asset>`, `<asset>.sha256`, and `<asset>.minisig`;
+- `<asset>.gpu-literals.tar.gz`, its `.sha256`, and its `.minisig`.
+
+Verify both payload signatures with minisign and both SHA-256 files before
+installing. The offline installer path then performs its own checksum checks,
+safe sidecar extraction, atomic replacement, health check, and rollback:
+
+```sh
+ASSET=/absolute/path/to/keyhog-linux-x86_64
+KEYHOG_MINISIGN_PUBLIC_KEY='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+minisign -Vm "$ASSET" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+minisign -Vm "$ASSET.gpu-literals.tar.gz" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "$(dirname "$ASSET")" && sha256sum -c "$(basename "$ASSET").sha256")
+  (cd "$(dirname "$ASSET")" && sha256sum -c "$(basename "$ASSET").gpu-literals.tar.gz.sha256")
+else
+  (cd "$(dirname "$ASSET")" && shasum -a 256 -c "$(basename "$ASSET").sha256")
+  (cd "$(dirname "$ASSET")" && shasum -a 256 -c "$(basename "$ASSET").gpu-literals.tar.gz.sha256")
+fi
+sh keyhog-install.sh --from-file="$ASSET"
+```
+
+On Windows, use
+`./keyhog-install.ps1 -FromFile C:\absolute\path\to\keyhog-windows-x86_64.exe`.
+Keep each payload's `.sha256` sibling beside it. Do not install only the binary
+and silently omit the release-bound GPU literal sidecar.
 
 ## Build from source
 

@@ -170,6 +170,11 @@ fn bootstrap_installers_verify_release_minisig_with_updater_key() {
             "{name} must refuse unsigned/unverified bootstrap assets by default"
         );
     }
+    let install_docs = include_str!("../../../docs/src/install.md");
+    assert!(
+        install_docs.contains(public_key),
+        "manual release verification docs must publish the same pinned minisign key as the Rust updater and both bootstrap installers"
+    );
 }
 
 #[test]

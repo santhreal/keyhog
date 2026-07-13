@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Corrected install guidance to distinguish host-specific release artifacts,
+  removed a stale Claude/Cursor hook claim, documented PowerShell flag parity,
+  and made manual installs use the exact signed binary plus GPU-sidecar bundle
+  with the same pinned minisign trust root as both installers and self-update.
 - Extended the canonical documentation truth gate to reject broken relative
   targets and mdBook anchors, and repaired five navigation links the normal
   book build had accepted despite pointing nowhere.

@@ -239,9 +239,9 @@ sh install.sh --repair      # re-download the platform asset for this host
 sh install.sh --uninstall   # remove the binary + installer-owned shell wiring
 ```
 
-For an interactive install (post-install wizard for
-PATH, shell completions, Claude Code / Cursor hook, git pre-commit
-hook), download the script first instead of piping into sh:
+For an interactive install (post-install wizard for PATH, shell completions,
+and a git pre-commit hook), download the script first instead of piping into
+`sh`:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh \
     -o keyhog-install.sh

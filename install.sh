@@ -5,8 +5,8 @@
 # Curl-pipe-sh quick install:
 #   curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
 #
-# Interactive install (recommended when you want to wire keyhog into your
-# shell + Claude Code + pre-commit):
+# Interactive install (recommended when you want PATH, shell completion, and
+# pre-commit setup):
 #   curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh -o keyhog-install.sh
 #   sh keyhog-install.sh
 #
