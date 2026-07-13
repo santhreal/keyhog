@@ -5,7 +5,7 @@ use crate::support::split_chunk_results;
 #[test]
 fn git_shallow_clone_single_commit_scanned() {
     use keyhog_core::Source;
-    use keyhog_sources::GitSource;
+    use keyhog_sources::{GitHistorySource, GitSource};
     use std::process::Command;
 
     let origin = tempfile::tempdir().expect("origin");
@@ -67,6 +67,23 @@ fn git_shallow_clone_single_commit_scanned() {
                     .as_deref()
                     .is_some_and(|path| path.ends_with("secret.env"))),
         "shallow clone must still surface tracked secrets with path metadata; got {chunks:?}"
+    );
+
+    let history_rows: Vec<_> = GitHistorySource::new(shallow.path().to_path_buf())
+        .chunks()
+        .collect();
+    let (history_chunks, history_errors) = split_chunk_results(&history_rows);
+    assert!(
+        history_errors.is_empty(),
+        "depth-one history must scan its available HEAD commit: {history_errors:?}"
+    );
+    assert!(
+        history_chunks.iter().any(|chunk| {
+            chunk.data.contains("SHALLOW=AKIA")
+                && chunk.metadata.source_type.as_ref() == "git-history"
+                && chunk.metadata.commit.is_some()
+        }),
+        "depth-one history must expose the HEAD added line with commit identity: {history_chunks:?}"
     );
 }
 

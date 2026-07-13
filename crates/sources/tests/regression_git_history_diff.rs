@@ -251,6 +251,53 @@ mod git_regression {
         );
     }
 
+    #[test]
+    fn history_walks_head_ancestry_without_unmerged_branch_commits() {
+        let (_g, repo) = init_repo();
+        commit(&repo, "base.txt", "main-base\n", "main base");
+        let branch_status = Command::new("git")
+            .args(["switch", "-c", "unmerged"])
+            .current_dir(&repo)
+            .status()
+            .expect("create unmerged branch");
+        assert!(branch_status.success());
+        commit(
+            &repo,
+            "branch.env",
+            &format!("secret={HISTORY_SECRET}\n"),
+            "branch secret",
+        );
+        let branch_secret_commit = rev_parse(&repo, "HEAD");
+        let main_status = Command::new("git")
+            .args(["switch", "main"])
+            .current_dir(&repo)
+            .status()
+            .expect("return to main");
+        assert!(main_status.success());
+
+        let main_chunks = collect_ok(&GitHistorySource::new(repo.clone()));
+        assert_eq!(
+            count_with(&main_chunks, HISTORY_SECRET),
+            0,
+            "an unmerged branch is outside main HEAD ancestry"
+        );
+        assert_eq!(count_with(&main_chunks, "main-base"), 1);
+
+        let branch_status = Command::new("git")
+            .args(["switch", "unmerged"])
+            .current_dir(&repo)
+            .status()
+            .expect("select unmerged branch");
+        assert!(branch_status.success());
+        let branch_chunks = collect_ok(&GitHistorySource::new(repo));
+        let branch_secret = chunk_with(&branch_chunks, HISTORY_SECRET)
+            .expect("the same commit is scanned when it enters HEAD ancestry");
+        assert_eq!(
+            branch_secret.metadata.commit.as_deref(),
+            Some(branch_secret_commit.as_str())
+        );
+    }
+
     // ---- diff: added-line-only, exact attribution -----------------------
 
     #[test]
