@@ -1022,9 +1022,9 @@ pub fn symbolic_credential_entropy_floor() -> f64 {
     crate::entropy::plausibility::SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR
 }
 
-/// The compiled generic-keyword bridge regex (GENERIC_RE) built from the derived
-/// assignment-keyword vocabulary; `Err` iff the derived alternation fails to
-/// compile (the fail-closed contract).
+/// The shipped detector-owned generic-keyword bridge regex, built from the
+/// derived assignment vocabulary and detector maximum; `Err` iff the resulting
+/// expression fails to compile.
 pub fn build_generic_re_for_test() -> Result<regex::Regex, regex::Error> {
     crate::engine::phase2_generic::build_generic_re()
 }
@@ -1036,7 +1036,7 @@ pub fn compile_generic_re_for_test(alternation: &str) -> Result<regex::Regex, re
     crate::engine::phase2_generic::compile_generic_re(alternation)
 }
 
-/// The group-1 keyword alternation string that GENERIC_RE is built from (derived
+/// The group-1 keyword alternation string that the generic bridge uses (derived
 /// vocabulary literals plus the appended vendor structural arm).
 pub fn generic_keyword_alternation_for_test() -> String {
     crate::engine::phase2_generic::generic_keyword_alternation()
@@ -1048,14 +1048,16 @@ pub fn generic_re_vendor_suffix_arm() -> &'static str {
     crate::engine::phase2_generic::GENERIC_RE_VENDOR_SUFFIX_ARM
 }
 
-/// Force the shipped `GENERIC_RE` LazyLock; panics (fail-closed) iff the bundled
-/// vocabulary does not compile. Returns once the regex is initialized.
+/// Compile the shipped detector-owned generic bridge; panics (fail-closed) iff
+/// the bundled detector vocabulary or maximum is invalid.
 pub fn force_generic_re() {
-    std::sync::LazyLock::force(&crate::engine::phase2_generic::GENERIC_RE);
+    if let Err(error) = crate::engine::phase2_generic::build_generic_re() {
+        panic!("shipped generic assignment bridge failed to compile: {error}");
+    }
 }
 
 /// The derived assignment-keyword vocabulary (single owner), so a test can prove
-/// the GENERIC_RE alternation equals exactly this set.
+/// the generic bridge alternation equals exactly this set.
 pub fn assignment_keywords_for_test() -> &'static [String] {
     crate::assignment_keywords::assignment_keywords()
 }

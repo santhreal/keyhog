@@ -25,6 +25,45 @@ fn detector_with_pattern(regex: &str) -> DetectorSpec {
 }
 
 #[test]
+fn phase2_generic_max_len_must_be_positive_and_not_below_min_len() {
+    let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
+    detector.kind = keyhog_core::DetectorKind::Phase2Generic;
+    detector.min_len = Some(16);
+    detector.max_len = Some(8);
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("min_len 16 exceeds max_len 8")
+    )));
+
+    detector.min_len = Some(1);
+    detector.max_len = Some(0);
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("max_len must be greater than 0")
+    )));
+
+    detector.max_len = Some(7);
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("generic assignment path minimum of 8")
+    )));
+}
+
+#[test]
+fn regex_detector_rejects_phase2_only_max_len() {
+    let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
+    detector.max_len = Some(80);
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("only valid for kind = \"phase2-generic\"")
+    )));
+}
+
+#[test]
 fn rejects_excessive_alternation_fanout() {
     let regex = (0..65)
         .map(|i| format!("opt{i}"))

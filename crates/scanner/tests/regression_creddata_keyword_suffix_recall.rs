@@ -3,7 +3,7 @@
 //! `=`/`:` delimiter, and must keep ignoring identifier/metadata suffixes that
 //! denote a non-secret.
 //!
-//! Root cause this locks against: `GENERIC_RE` (engine/phase2_generic.rs)
+//! Root cause this locks against: the generic assignment bridge (engine/phase2_generic.rs)
 //! required the credential keyword to sit IMMEDIATELY before `["'`]? [=:]`, so a
 //! suffixed keyword never bridged — `DJANGO_SECRET_KEY=` (the canonical
 //! Django/Flask/Rails secret), `secret_key_base=` (Rails), `credential_value:`,

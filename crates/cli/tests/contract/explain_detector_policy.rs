@@ -52,6 +52,7 @@ fn explain_generic_secret_prints_detector_owned_entropy_and_bpe_policy() {
         "entropy_high: 4.5 bits/byte".to_string(),
         "entropy_low: 3 bits/byte".to_string(),
         format!("bpe_max_bytes_per_token: {bpe_ceiling} UTF-8 bytes/token"),
+        "max_len: 512 bytes".to_string(),
         "entropy_floor: 2.8 bits/byte through 24 bytes".to_string(),
         "declared policy owner: [detector] in the loaded detector TOML".to_string(),
         "unset optional fields: field defaults or scan policy resolve at scan time; use `config --effective` for scan-fallback/scan-override".to_string(),

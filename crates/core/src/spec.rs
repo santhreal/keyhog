@@ -162,6 +162,12 @@ pub struct DetectorSpec {
     /// `None` → no detector-specific length floor beyond the path-wide default.
     #[serde(default)]
     pub min_len: Option<usize>,
+    /// Per-detector maximum byte length for phase-2 generic assignment values.
+    /// Values above this ceiling are rejected whole; they are never truncated
+    /// into an apparently valid credential. Omission retains the 128-byte
+    /// compatibility ceiling.
+    #[serde(default)]
+    pub max_len: Option<usize>,
     /// Per-detector path-exclusion regexes (betterleaks-style allowlist): a match
     /// whose FILE PATH matches any of these is suppressed. Owned per detector.
     #[serde(default)]

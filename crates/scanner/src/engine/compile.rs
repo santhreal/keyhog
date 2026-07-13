@@ -347,6 +347,34 @@ impl CompiledScanner {
             .map_err(crate::error::ScanError::Config)?;
         let generic_named_assignment_keywords =
             crate::generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
+        let generic_assignment_max_len = detectors
+            .iter()
+            .filter(|detector| detector.kind == keyhog_core::DetectorKind::Phase2Generic)
+            .map(|detector| {
+                detector
+                    .max_len
+                    .unwrap_or(crate::engine::phase2_generic::GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT)
+            })
+            .max();
+        let generic_assignment_re = if let Some(max_len) = generic_assignment_max_len {
+            let keywords = crate::assignment_keywords::derive_assignment_keywords(&detectors)
+                .map_err(crate::error::ScanError::Config)?;
+            let alternation =
+                crate::engine::phase2_generic::generic_keyword_alternation_from(&keywords);
+            Some(
+                crate::engine::phase2_generic::compile_generic_re_with_max(
+                    &alternation,
+                    max_len,
+                )
+                .map_err(|error| {
+                    crate::error::ScanError::Config(format!(
+                        "cannot compile the detector-owned generic assignment bridge: {error}. Fix the phase-2 generic detector keywords and max_len values"
+                    ))
+                })?,
+            )
+        } else {
+            None
+        };
         let generic_owning_detector =
             crate::generic_keyword_owner::GenericOwningDetectorIndex::build(&detectors);
 
@@ -424,6 +452,7 @@ impl CompiledScanner {
             metadata_by_index,
             detector_weak_anchor_base_by_index,
             generic_named_assignment_keywords,
+            generic_assignment_re,
             generic_owning_detector,
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,

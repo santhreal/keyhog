@@ -21,6 +21,9 @@ mixed_alnum_floor = 4.0
 # below the shipped word-like FP taxonomy (3.8+ bytes/token).
 bpe_max_bytes_per_token = 2.3
 min_len = 8
+# API/access keys are bounded tokens. Longer assignment payloads belong to a
+# structured/vendor detector and must not be truncated into a generic key.
+max_len = 512
 keyword_free_min_len = 20
 stopwords = ["example", "sample", "test", "dummy", "placeholder", "changeme", "xxxxxxxx", "your_key_here", "000000"]
 

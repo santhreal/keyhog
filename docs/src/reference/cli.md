@@ -146,7 +146,7 @@ Lists every detector in the embedded corpus.
 
 ```sh
 keyhog detectors                  # human-readable, grouped by service
-keyhog detectors --format json           # one JSON object per detector
+keyhog detectors --format json           # one JSON array of detector objects
 keyhog detectors --format json | jq length
 ```
 

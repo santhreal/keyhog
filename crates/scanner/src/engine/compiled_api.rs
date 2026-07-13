@@ -352,7 +352,9 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             let _ = p.regex.get().find(WARM_SAMPLE); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
         });
         crate::shared_regexes::warm_runtime_regexes();
-        phase2_generic::warm_generic_assignment_runtime();
+        if let Some(generic_assignment_re) = &self.generic_assignment_re {
+            let _ = generic_assignment_re.find(WARM_SAMPLE);
+        }
         crate::multiline::warm_runtime_regexes();
         crate::checksum::warm_runtime_regexes();
     }

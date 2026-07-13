@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Added detector-owned `max_len` for `phase2-generic` TOMLs, with schema
+  validation, detector-spec cache identity, named suppression telemetry, and
+  boundary-tested whole-value rejection. Shipped API-key/secret/passphrase
+  bridges now own their distinct ceilings in their detector files.
 - Refined autoroute byte, chunk-count, and maximum-file classification from
   paired powers of two to one power-of-two band per key, bumped the cache schema
   to v22 to prevent old numeric-key aliasing, and expanded the Rust, Unix, and

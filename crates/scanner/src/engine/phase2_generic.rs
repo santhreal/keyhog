@@ -1,6 +1,5 @@
 use super::*;
 use std::cell::RefCell;
-use std::sync::LazyLock;
 
 pub(crate) mod keywords;
 mod line_mapping;
@@ -14,35 +13,10 @@ use self::keywords::{
 use self::line_mapping::line_at_index;
 pub(crate) use self::metrics::{generic_profile_dump, generic_profile_reset};
 pub(crate) use self::pattern::{
-    build_generic_re, compile_generic_re, generic_keyword_alternation, GENERIC_RE_VENDOR_SUFFIX_ARM,
+    build_generic_re, compile_generic_re, compile_generic_re_with_max, generic_keyword_alternation,
+    generic_keyword_alternation_from, GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT,
+    GENERIC_RE_VENDOR_SUFFIX_ARM,
 };
-
-pub(crate) static GENERIC_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    // LAW 10 — FAIL CLOSED. This regex is built from a hardcoded assignment
-    // grammar plus the binary-baked derived keyword vocabulary. A compile failure
-    // is a BUILD/SOURCE defect, never a runtime condition an operator can act on.
-    // The previous code returned `None` on failure, which SILENTLY disabled the
-    // ENTIRE generic value bridge (the dominant CredData `*_PASS=` / `secret:`
-    // recall surface) — an invisible recall hole. There is no recall-preserving
-    // alternative, so panic: the build/CI must catch it, and we refuse to ship a
-    // scanner with its generic bridge gone dark.
-    match build_generic_re() {
-        Ok(regex) => regex,
-        Err(error) => panic!(
-            "GENERIC_RE failed to compile: {error}. It is built from a hardcoded assignment \
-             grammar and the derived generic-keyword vocabulary \
-             (crate::assignment_keywords::assignment_keywords()); a compile failure is a build \
-             defect, not a runtime condition. Refusing to run with the generic-secret value \
-             bridge disabled."
-        ),
-    }
-});
-
-pub(crate) fn warm_generic_assignment_runtime() {
-    // LAW10: eager init/warm-up. Also validates the fail-closed compile invariant
-    // up front (a broken vocabulary panics here, at warm-up, not mid-scan).
-    LazyLock::force(&GENERIC_RE);
-}
 
 thread_local! {
     /// Per-thread pool for the `lines_with_keyword` scratch buffer.
@@ -75,10 +49,9 @@ impl CompiledScanner {
         generic_keyword_positions: Option<&[u32]>,
         deadline: Option<std::time::Instant>,
     ) {
-        // LAW10 fail-closed: `GENERIC_RE` is an infallible `LazyLock<Regex>` — a
-        // compile failure panics at init (build defect), it never silently
-        // disables the bridge here.
-        let generic_re: &regex::Regex = &GENERIC_RE;
+        let Some(generic_re) = self.generic_assignment_re.as_ref() else {
+            return;
+        };
 
         // Lines already carrying finalized named findings do not need a generic
         // bridge echo. ML-pending candidates deliberately do NOT claim the line:
@@ -285,6 +258,9 @@ impl CompiledScanner {
                 let owning_detector_min_len = owning_detector
                     .and_then(|d| d.min_len)
                     .map_or(8, |min_len| min_len);
+                let owning_detector_max_len = owning_detector
+                    .and_then(|detector| detector.max_len)
+                    .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT);
                 let owning_detector_entropy_high = owning_detector
                     .and_then(|d| d.entropy_high)
                     .map_or(crate::entropy::HIGH_ENTROPY_THRESHOLD, |threshold| {
@@ -316,13 +292,17 @@ impl CompiledScanner {
                 // dropped generic-secret candidate is visible to `--dogfood`
                 // (Law-10), then continue. Zero-cost when dogfood is off (the
                 // `is_dogfood_enabled()` atomic short-circuits before any work).
-                let mut shape_rejected = self.generic_value_shape_rejected(
-                    value,
-                    entropy,
-                    chunk,
-                    allow_canonical_hex_key,
-                    allow_encoded_text_secret,
-                );
+                let mut shape_rejected = if value.len() > owning_detector_max_len {
+                    Some(crate::adjudicate::GenericValueShapeStage::ValueTooLong)
+                } else {
+                    self.generic_value_shape_rejected(
+                        value,
+                        entropy,
+                        chunk,
+                        allow_canonical_hex_key,
+                        allow_encoded_text_secret,
+                    )
+                };
 
                 // The `--keyword-low-entropy` knob relaxes the generic-bridge
                 // entropy floor to the GENERIC_KEYWORD_SECRET floor for EVERY

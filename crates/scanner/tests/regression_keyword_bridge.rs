@@ -36,7 +36,7 @@
 mod support;
 use support::paths::detector_dir;
 
-use keyhog_core::{Chunk, ChunkMetadata, RawMatch, Severity};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorKind, RawMatch, Severity};
 use keyhog_scanner::testing::entropy_fast::shannon_entropy_simd;
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 
@@ -90,6 +90,20 @@ fn default_scanner() -> CompiledScanner {
     );
     CompiledScanner::compile(detectors)
         .expect("compile scanner")
+        .with_config(cfg)
+}
+
+fn scanner_with_generic_max_len(max_len: usize) -> CompiledScanner {
+    let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
+    for detector in &mut detectors {
+        if detector.kind == DetectorKind::Phase2Generic {
+            detector.max_len = Some(max_len);
+        }
+    }
+    let mut cfg = ScannerConfig::default();
+    cfg.min_confidence = 0.0;
+    CompiledScanner::compile(detectors)
+        .expect("compile scanner with detector-owned maximum")
         .with_config(cfg)
 }
 
@@ -344,6 +358,23 @@ fn eight_byte_value_at_the_length_floor_bridges() {
     assert!(
         bridged(&matches, MID_ENTROPY_VALUE),
         "an 8-byte value above the entropy floor must bridge; matches: {matches:#?}"
+    );
+}
+
+#[test]
+fn detector_owned_max_len_accepts_boundary_and_rejects_whole_longer_value() {
+    let scanner = scanner_with_generic_max_len(HIGH_ENTROPY_VALUE.len());
+    let boundary = scan(&scanner, &format!("app_secret={HIGH_ENTROPY_VALUE}\n"));
+    assert!(
+        bridged(&boundary, HIGH_ENTROPY_VALUE),
+        "max_len is inclusive at the exact detector-owned boundary"
+    );
+
+    let over = format!("{HIGH_ENTROPY_VALUE}z");
+    let matches = scan(&scanner, &format!("app_secret={over}\n"));
+    assert!(
+        find(&matches, &over).is_none(),
+        "an over-ceiling assignment must be rejected whole, never truncated: {matches:#?}"
     );
 }
 

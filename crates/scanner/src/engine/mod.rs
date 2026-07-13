@@ -258,6 +258,11 @@ pub struct CompiledScanner {
     /// this to avoid emitting a weaker generic finding for an LHS that a loaded
     /// named detector explicitly owns.
     pub(crate) generic_named_assignment_keywords: Vec<Arc<str>>,
+    /// Generic assignment candidate generator compiled from this scanner's
+    /// detector corpus. Both its keyword vocabulary and capture ceiling are
+    /// detector-owned, so custom corpora cannot drift from the shipped global
+    /// defaults or truncate an overlength credential prefix.
+    pub(crate) generic_assignment_re: Option<regex::Regex>,
     /// Compiled generic-assignment keyword → owning generic `Phase2Generic`
     /// detector index. Replaces the per-candidate linear `detectors.iter()
     /// .find(...)` scan in the generic value-shape path with an O(1) lookup that

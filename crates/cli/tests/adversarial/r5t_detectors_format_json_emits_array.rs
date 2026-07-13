@@ -70,4 +70,13 @@ fn r5t_detectors_format_json_emits_corpus_and_policy() {
         password["policy"]["bpe_max_bytes_per_token"].is_null(),
         "disabled BPE policy must not retain a magic ceiling: {password}"
     );
+
+    let generic_secret = arr
+        .iter()
+        .find(|detector| detector["id"] == "generic-secret")
+        .expect("generic-secret policy in detector listing");
+    assert_eq!(
+        generic_secret["policy"]["max_len"], 512,
+        "detector JSON must expose the generic bridge ceiling from its owning TOML"
+    );
 }

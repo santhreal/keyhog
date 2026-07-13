@@ -2,7 +2,7 @@
 //! / `*_token` keyword-bridge generation arm (close-recall lane, task #24).
 //!
 //! ROOT GAP (measured on the shipped v0.5.40 release binary BEFORE this change):
-//! the generic keyword bridge (`engine::phase2_generic::GENERIC_RE` +
+//! the detector-owned generic keyword bridge (`engine::phase2_generic` +
 //! `KEYWORD_AC` prefilter) enumerated a FIXED stem list, so the dominant CredData
 //! "Key" anchor shape — a `<vendor>_<noun>_key`-style identifier whose stem is
 //! NOT one of the enumerated literals — never produced a candidate even on a

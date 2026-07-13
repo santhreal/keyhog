@@ -183,7 +183,11 @@ The available per-detector tuning fields are:
 ### Candidate Lengths
 *   **`keyword_free_min_len`** (integer, optional): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Falls back to `KEYWORD_FREE_MIN_LEN` (20) if unset.
 *   **`min_len`** (integer, optional): Per-detector minimum candidate length for any candidate this detector emits. Falls back to no detector-specific floor beyond the path-wide default if unset.
-*   **`max_len`** (integer, optional): Per-detector inclusive maximum for generic-assignment candidates. The bridge rejects the entire overlength token; it never reports a truncated prefix. Generic detectors inherit the compatibility ceiling of 128 when unset. Regex-backed patterns keep their own explicit repetition bounds.
+*   **`max_len`** (integer, optional; `kind = "phase2-generic"` only): Inclusive maximum byte length for one generic assignment value. The candidate generator is compiled from the largest ceiling in the loaded detector corpus, then the owning detector rejects an overlength value whole; it never reports a truncated prefix. It must be at least the generic path minimum of 8 and no smaller than `min_len`. An omitted value uses the compatibility ceiling of 128 bytes. Keep this in the owning generic detector TOML so API keys, passphrases, and generic payloads can use different ceilings. Regex-backed patterns keep their own explicit repetition bounds.
+
+The generic assignment bridge exists only when the loaded corpus contains at
+least one `phase2-generic` detector. A focused custom corpus without one compiles
+without that bridge; KeyHog does not silently inject the bundled generic rules.
 
 ### Allowlists & Exclusions
 *   **`allowlist_paths`** (array of strings, optional): Per-detector path-exclusion regexes (betterleaks-style allowlist). Any candidate match whose file path matches any of these regexes is suppressed.
@@ -221,7 +225,7 @@ hidden Rust-side family table to keep synchronized.
 
 ```sh
 keyhog detectors                  # human-readable list, grouped by service
-keyhog detectors --format json           # one JSON object per detector
+keyhog detectors --format json           # one JSON array of detector objects
 keyhog detectors --format json | jq length
 ```
 
@@ -246,7 +250,7 @@ keyhog explain stripe-secret-key
 Prints the loaded detector's keywords, patterns, companions, verification
 endpoint, and detector-local admission policy. For generic detectors that
 policy includes Shannon-entropy floors, BPE UTF-8 bytes/token ceilings, length
-floors, stopwords, and allowlists exactly as declared by the detector TOML:
+bounds, stopwords, and allowlists exactly as declared by the detector TOML:
 
 ```sh
 keyhog explain generic-secret

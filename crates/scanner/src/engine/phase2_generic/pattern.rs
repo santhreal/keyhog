@@ -1,10 +1,10 @@
 //! Construction of the generic assignment bridge regex.
 
-// The value/assignment tail of `GENERIC_RE`: assignment syntax, benign
-// secret-suffix hops, and the group-2 value shape. The static 8..128 envelope
-// belongs to this one global bridge; detector-specific admission floors remain
-// in each detector TOML and are applied after capture.
-const GENERIC_RE_ASSIGNMENT_TAIL: &str = r#"(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){0,2}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{0,31}\s*[=:]\s*)?|=\s*)["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#;
+/// Compatibility ceiling for custom phase-2 generic detectors that predate the
+/// detector-owned `max_len` field.
+pub(crate) const GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT: usize = 128;
+
+const GENERIC_VALUE_CHARS: &str = r"a-zA-Z0-9/+=_.:!@#$%^&*-";
 
 /// Structural group-1 arm for bounded vendor-prefixed key names.
 pub(crate) const GENERIC_RE_VENDOR_SUFFIX_ARM: &str =
@@ -12,10 +12,11 @@ pub(crate) const GENERIC_RE_VENDOR_SUFFIX_ARM: &str =
 
 /// Build group 1 from the single derived assignment-keyword vocabulary.
 pub(crate) fn generic_keyword_alternation() -> String {
-    let mut literals: Vec<&str> = crate::assignment_keywords::assignment_keywords()
-        .iter()
-        .map(String::as_str)
-        .collect();
+    generic_keyword_alternation_from(crate::assignment_keywords::assignment_keywords())
+}
+
+pub(crate) fn generic_keyword_alternation_from(keywords: &[String]) -> String {
+    let mut literals: Vec<&str> = keywords.iter().map(String::as_str).collect();
     literals.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
     let mut alternation = String::new();
     for literal in literals {
@@ -30,10 +31,36 @@ pub(crate) fn generic_keyword_alternation() -> String {
 pub(crate) fn compile_generic_re(
     alternation: &str,
 ) -> std::result::Result<regex::Regex, regex::Error> {
-    regex::Regex::new(&format!("(?i)({alternation}){GENERIC_RE_ASSIGNMENT_TAIL}"))
+    compile_generic_re_with_max(alternation, GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT)
+}
+
+pub(crate) fn compile_generic_re_with_max(
+    alternation: &str,
+    max_len: usize,
+) -> std::result::Result<regex::Regex, regex::Error> {
+    let assignment_tail = format!(
+        r#"(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){{0,2}}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{{0,31}}\s*[=:]\s*)?|=\s*)["'`]?([{GENERIC_VALUE_CHARS}]{{8,{max_len}}})(?:["'`]|$|[^{GENERIC_VALUE_CHARS}])"#
+    );
+    regex::Regex::new(&format!("(?i)({alternation}){assignment_tail}"))
 }
 
 /// Compile the bridge from the live derived vocabulary.
 pub(crate) fn build_generic_re() -> std::result::Result<regex::Regex, regex::Error> {
-    compile_generic_re(&generic_keyword_alternation())
+    let detectors = match keyhog_core::load_embedded_detectors_or_fail() {
+        Ok(detectors) => detectors,
+        Err(error) => panic!(
+            "embedded detector corpus is corrupt: {error}. Cannot compile the detector-owned generic assignment bridge"
+        ),
+    };
+    let max_len = detectors
+        .iter()
+        .filter(|detector| detector.kind == keyhog_core::DetectorKind::Phase2Generic)
+        .map(|detector| {
+            detector
+                .max_len
+                .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT)
+        })
+        .max()
+        .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT);
+    compile_generic_re_with_max(&generic_keyword_alternation(), max_len)
 }

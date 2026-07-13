@@ -321,6 +321,7 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
         "caesar_generic_fallback",
         "generic_entropy_below_floor",
         "value_too_short",
+        "value_too_long",
         "code_expression_chars",
         "source_code_expression",
         "source_symbol_identifier",

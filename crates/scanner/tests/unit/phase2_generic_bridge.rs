@@ -1,4 +1,4 @@
-//! GENERIC_RE generic-keyword bridge (`engine/phase2_generic.rs`), reached via the
+//! Detector-owned generic-keyword bridge (`engine/phase2_generic.rs`), reached via the
 //! `keyhog_scanner::testing` facade. Migrated from an inline `#[cfg(test)]` block
 //! to satisfy the `engine_phase2_generic_no_inline_tests` +
 //! `engine_phase2_generic_no_unwrap_expect` gates (the inline block's helper
@@ -90,6 +90,24 @@ fn every_derived_keyword_captures_its_assigned_value() {
 }
 
 #[test]
+fn shipped_detector_ceiling_captures_long_values_whole_without_prefix_truncation() {
+    let re = build_generic_re_for_test().expect("detector-owned generic bridge compiles");
+    let long_value = "aB3dE5fG7hJ9kL2m".repeat(16);
+    assert_eq!(long_value.len(), 256);
+    let line = format!("api_key={long_value}");
+    let captures = re
+        .captures(&line)
+        .expect("the shipped 512-byte API-key ceiling admits a 256-byte value");
+    assert_eq!(captures.get(2).expect("value capture").as_str(), long_value);
+
+    let over = "a".repeat(513);
+    assert!(
+        re.captures(&format!("api_key={over}")).is_none(),
+        "an over-ceiling token must not yield a truncated 512-byte prefix"
+    );
+}
+
+#[test]
 fn vendor_prefixed_key_bridges_via_the_structural_arm() {
     let re = build_generic_re_for_test().unwrap();
     // `stripe_publishable_key` is NOT a derived vocab literal, but the vendor
@@ -134,8 +152,8 @@ fn a_non_keyword_assignment_does_not_bridge() {
 // ── FAIL CLOSED: a broken pattern is a hard error, never a silent Ok ────
 
 #[test]
-fn real_vocabulary_compiles_so_the_lazylock_does_not_panic() {
-    // The shipped vocabulary compiles; forcing the LazyLock must not panic.
+fn real_vocabulary_and_detector_ceiling_compile_fail_closed() {
+    // The shipped vocabulary and detector-owned ceiling compile.
     force_generic_re();
     assert!(build_generic_re_for_test().is_ok());
 }

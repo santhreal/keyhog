@@ -107,6 +107,9 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             if let Some(v) = d.min_len {
                 entries.push(format!("ml:{}:{}", d.id, v));
             }
+            if let Some(v) = d.max_len {
+                entries.push(format!("maxl:{}:{}", d.id, v));
+            }
             // Allowlist/stopword lists are OR-any membership sets: order is NOT
             // semantic, so sort each (exactly like `keywords`) so a mere reorder
             // does not thrash the cache while any add/remove/edit still changes

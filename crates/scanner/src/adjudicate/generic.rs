@@ -90,8 +90,8 @@ pub(crate) fn bare_auth_value_allowed(value: &str) -> bool {
 pub(crate) enum GenericValueShapeStage {
     CaesarGenericFallback,
     EntropyBelowFloor,
-    // PER-DETECTOR-MIGRATION-BLOCKED: ValueTooShort length gate (value.len() < 8) resides in crates/scanner/src/engine/phase2_generic_shape.rs, which cannot be edited under this migration.
     ValueTooShort,
+    ValueTooLong,
     SharedShape(&'static str),
     CodeExpressionChars,
     SourceCodeExpression,
@@ -126,6 +126,7 @@ impl GenericValueShapeStage {
             Self::CaesarGenericFallback => "caesar_generic_fallback",
             Self::EntropyBelowFloor => "generic_entropy_below_floor",
             Self::ValueTooShort => "value_too_short",
+            Self::ValueTooLong => "value_too_long",
             Self::SharedShape(reason) => reason,
             Self::CodeExpressionChars => "code_expression_chars",
             Self::SourceCodeExpression => "source_code_expression",

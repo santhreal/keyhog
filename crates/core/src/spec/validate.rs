@@ -101,6 +101,7 @@ fn validate_simdsieve_prefixes(spec: &DetectorSpec, issues: &mut Vec<QualityIssu
 fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     for (name, value) in [
         ("min_len", spec.min_len),
+        ("max_len", spec.max_len),
         ("keyword_free_min_len", spec.keyword_free_min_len),
     ] {
         if value == Some(0) {
@@ -108,6 +109,23 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 "{name} must be greater than 0 when present; use omission to inherit the path default"
             )));
         }
+    }
+    if let (Some(min_len), Some(max_len)) = (spec.min_len, spec.max_len) {
+        if min_len > max_len {
+            issues.push(QualityIssue::Error(format!(
+                "min_len {min_len} exceeds max_len {max_len}"
+            )));
+        }
+    }
+    if spec.max_len.is_some_and(|max_len| max_len < 8) {
+        issues.push(QualityIssue::Error(
+            "max_len must be at least the generic assignment path minimum of 8".to_string(),
+        ));
+    }
+    if spec.max_len.is_some() && spec.kind != crate::DetectorKind::Phase2Generic {
+        issues.push(QualityIssue::Error(
+            "max_len is only valid for kind = \"phase2-generic\" detectors".to_string(),
+        ));
     }
     if let Some(mc) = spec.min_confidence {
         if !(0.0..=1.0).contains(&mc) {
