@@ -149,7 +149,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     // detector recall budget (max_matches_per_chunk) so the cost is small
     // compared to extract_matches and ML scoring. Cross-file scope keeps
     // the same group key so per-file primary selection picks the smallest
-    // offset per file independently. #16 regression: hot-github_pat
+    // offset per file independently. #16 regression: a GitHub PAT
     // primary at offset 79 in a 64-byte file.
     let mut matches = matches;
     let match_count = matches.len();

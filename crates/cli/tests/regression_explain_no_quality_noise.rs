@@ -24,7 +24,6 @@ fn binary() -> PathBuf {
 fn explain_does_not_emit_advisory_quality_warnings_at_default_level() {
     let output = Command::new(binary())
         .args(["explain", "github-classic-pat"])
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .expect("spawn keyhog explain");
 

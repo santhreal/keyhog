@@ -2,10 +2,9 @@
 //!
 //! The existing `backend_parity_*` suite proves CPU and GPU produce identical
 //! findings; it does NOT pin the routing *decision* functions themselves. These
-//! functions are pure (a function of their arguments, with no runtime-env or
-//! GPU-presence gating, unlike `select_backend`, which reads `KEYHOG_NO_GPU`
-//! and is host-dependent), so every assertion here is deterministic on any host,
-//! GPU or not. They assert concrete values (Law 6), never just shape.
+//! functions are pure functions of their arguments with no runtime device
+//! probing, so every assertion here is deterministic on any host, GPU or not.
+//! They assert concrete values (Law 6), never just shape.
 
 use keyhog_scanner::hw_probe::{gpu_routing_profile, gpu_routing_profiles, GpuRoutingProfile};
 

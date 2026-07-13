@@ -3,8 +3,9 @@ use super::evidence::{
 };
 use super::host::AutorouteHostProfile;
 use super::store::{
-    load_autoroute_cache, resolve_bucket, save_autoroute_cache, AutorouteBuildFeatures,
-    AutorouteCache, BucketResolution, AUTOROUTE_CACHE_FILE_BYTES,
+    inspect_autoroute_cache, load_autoroute_cache, resolve_bucket, save_autoroute_cache,
+    AutorouteBuildFeatures, AutorouteCache, AutorouteCacheSaveOutcome, BucketResolution,
+    AUTOROUTE_CACHE_FILE_BYTES,
 };
 use super::workload::{
     autoroute_stable_bucket, autoroute_stable_density_bucket, source_class_hash, workload_key,
@@ -597,6 +598,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && serialized.contains("\"scanner_features\"")
             && serialized.contains("\"sources_features\"")
             && serialized.contains("\"verifier_features\"")
+            && serialized.contains("\"executable_sha256\"")
             && serialized.contains("\"rules_digest\"")
             && serialized.contains("\"cpu_model\"")
             && serialized.contains("\"physical_cores\"")
@@ -609,10 +611,12 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && serialized.contains("\"calibrated_at_unix_ms\"")
             && serialized.contains("\"simd_timing\"")
             && serialized.contains("\"trials_ns\"")
-            && serialized.contains("\"confidence_interval_95_ns\""),
-        // v21 persists PRIMARY evidence only: the per-backend ms, GPU
-        // cold/warm/route, and selected-margin keys are gone from the JSON
-        // they are DERIVED from the timing evidence on load, never stored.
+            && !serialized.contains("\"confidence_interval_95_ns\"")
+            && !serialized.contains("\"best_ns\"")
+            && !serialized.contains("\"mean_ns\""),
+        // v24 persists PRIMARY evidence only: timing summaries, per-backend ms,
+        // GPU cold/warm/route, and selected-margin keys are derived from the
+        // trial vectors on load, never stored.
         "cache JSON must persist route timing evidence, not only the selected backend"
     );
     let loaded =
@@ -732,6 +736,25 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     assert!(
         wrong_cpu.is_err(),
         "cache must reject a different CPU model"
+    );
+
+    let mut tampered: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).expect("cache must remain readable"))
+            .expect("cache must remain JSON");
+    tampered["executable_sha256"] = serde_json::json!("00".repeat(32));
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&tampered).expect("tampered cache must serialize"),
+    )
+    .expect("tampered cache must write");
+    let wrong_artifact =
+        load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+            .expect_err("cache from another executable artifact must fail closed");
+    assert!(
+        wrong_artifact
+            .to_string()
+            .contains("executable digest mismatch"),
+        "artifact mismatch must be explicit: {wrong_artifact}"
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
@@ -1002,13 +1025,10 @@ fn multi_config_cache_upserts_same_bucket_without_duplicating() {
     );
 }
 
-// F2 regression: on a fast host the routes tie within measurement precision, so
-// no single backend is statistically separated. Calibration must still persist a
-// SOUND decision (route to the lowest-overhead tied backend) instead of failing
-// the whole phase and leaving auto routing with no cache. The selected backend
-// must equal `resolved_routing_backend()`; any other choice is rejected.
+// Exact measured equality is the only case where engagement overhead decides.
+// Confidence overlap with unequal medians is covered separately below.
 #[test]
-fn tied_calibration_persists_lowest_overhead_backend_not_an_empty_cache() {
+fn exact_median_tie_persists_lowest_overhead_backend() {
     let dir = tempfile::TempDir::new().expect("tempdir for tie calibration");
     let path = dir.path().join("tie-autoroute-cache.json");
     let digest = 0x0FF1_CE00_0FF1_CE00u64;
@@ -1016,9 +1036,8 @@ fn tied_calibration_persists_lowest_overhead_backend_not_an_empty_cache() {
     let host = test_host(Some("NVIDIA GeForce RTX 5090"));
     let key = test_workload_key();
 
-    // SimdCpu and the GPU route measure identically (20ms) -> overlapping 95%
-    // confidence intervals -> a statistical tie. The lowest-overhead member is
-    // SimdCpu, so that is the only sound persisted choice.
+    // SimdCpu and the GPU route measure identically (20ms). Their medians are
+    // exactly equal, so the lower-engagement SimdCpu route wins.
     let tie_to_simd =
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 20, None, Some(20));
     assert_eq!(
@@ -1036,7 +1055,7 @@ fn tied_calibration_persists_lowest_overhead_backend_not_an_empty_cache() {
         &host,
         &decisions,
     )
-    .expect("a statistically tied calibration must persist the tie-break, not an empty cache");
+    .expect("an exact measured tie must persist the engagement tie-break");
     let loaded =
         load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host).unwrap();
     assert_eq!(
@@ -1044,9 +1063,7 @@ fn tied_calibration_persists_lowest_overhead_backend_not_an_empty_cache() {
         "tied decision must round-trip through the cache"
     );
 
-    // The SAME tie naming the higher-overhead tied backend (GPU) is NOT the
-    // deterministic tie-break and must be rejected on write, a tampered or
-    // non-deterministic decision cannot pretend a tie favors the GPU.
+    // The same exact median tie naming the higher-overhead GPU must be rejected.
     let mut wrong = HashMap::new();
     wrong.insert(
         key,
@@ -1060,11 +1077,47 @@ fn tied_calibration_persists_lowest_overhead_backend_not_an_empty_cache() {
         &host,
         &wrong,
     )
-    .expect_err("a tie that names the higher-overhead backend must be rejected")
+    .expect_err("an exact tie that names the higher-overhead backend must be rejected")
     .to_string();
     assert!(
-        err.contains("deterministic tie-break among statistically tied routes"),
-        "tie-break rejection should name the contract, got {err:?}"
+        err.contains("does not match measured-median resolution"),
+        "median-resolution rejection should name the contract, got {err:?}"
+    );
+}
+
+#[test]
+fn overlapping_confidence_selects_fastest_measured_median_not_backend_rank() {
+    let simd_timing = BackendTimingEvidence::from_trial_ns(vec![
+        18_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000, 22_000_000,
+    ])
+    .expect("valid SIMD timing");
+    // First GPU trial is the real cold dispatch (19 ms); the six warm trials
+    // have an 18 ms median. Its one-shot representative is therefore 19 ms.
+    let gpu_timing = BackendTimingEvidence::from_trial_ns(vec![
+        19_000_000, 16_000_000, 18_000_000, 18_000_000, 18_000_000, 18_000_000, 20_000_000,
+    ])
+    .expect("valid GPU timing");
+    let decision = AutorouteDecision::from_timing_evidence(
+        ScanBackend::Gpu,
+        8 * 1024 * 1024,
+        1,
+        0xA11D_0B57_A11D_0B57,
+        1,
+        simd_timing,
+        None,
+        Some(gpu_timing),
+    );
+
+    assert!(
+        !decision.has_separated_fastest_route(),
+        "fixture must retain overlapping 95% confidence intervals"
+    );
+    assert_eq!(decision.simd_ms(), 20);
+    assert_eq!(decision.gpu_ms(), Some(19));
+    assert_eq!(
+        decision.resolved_routing_backend(),
+        Some(ScanBackend::Gpu),
+        "confidence overlap is inconclusive, not permission to prefer SIMD over the faster measured median"
     );
 }
 
@@ -1144,6 +1197,39 @@ fn autoroute_cache_rejects_outdated_schema_with_clear_version_error() {
         "version gate must fire BEFORE the full deserialize; a serde 'missing field' \
          error must not leak to the operator, got: {err:?}"
     );
+}
+
+#[test]
+fn autoroute_cache_save_reports_when_it_replaces_outdated_evidence() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_replace_outdated_{}.json",
+        std::process::id()
+    ));
+    std::fs::write(&path, br#"{"version":1}"#).expect("write outdated cache");
+
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        test_workload_key(),
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+    let outcome = save_autoroute_cache(
+        &path,
+        0x1234_5678_9ABC_DEF0,
+        test_rules_digest(),
+        0xA55A_D00D_CAFE_BEEF,
+        &test_host(None),
+        &decisions,
+    )
+    .expect("fresh calibration should replace outdated cache evidence");
+
+    match outcome {
+        AutorouteCacheSaveOutcome::Replaced { reason } => assert!(
+            reason.contains("schema 1") && reason.contains("schema 24"),
+            "replacement disposition must explain both schema identities: {reason}"
+        ),
+        _ => panic!("outdated cache replacement must be operator-visible"),
+    }
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 }
 
 #[test]
@@ -1254,6 +1340,62 @@ fn autoroute_cache_rejects_duplicate_workload_decisions() {
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn autoroute_cache_rejects_duplicate_config_digests_on_load_and_inspection() {
+    let dir = tempfile::TempDir::new().expect("autoroute duplicate-config tempdir");
+    let path = dir.path().join("autoroute.json");
+    let detector_digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        test_workload_key(),
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+    save_autoroute_cache(
+        &path,
+        detector_digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &decisions,
+    )
+    .expect("write valid cache before tampering");
+
+    let mut cache: AutorouteCache =
+        serde_json::from_slice(&std::fs::read(&path).expect("read valid autoroute cache"))
+            .expect("parse valid autoroute cache");
+    cache.configs.push(cache.configs[0].clone());
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&cache).expect("serialize duplicate config cache"),
+    )
+    .expect("write duplicate config cache");
+
+    let error = load_autoroute_cache(
+        &path,
+        detector_digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+    )
+    .expect_err("duplicate config digests must be rejected before route selection")
+    .to_string();
+    assert!(
+        error.contains("duplicate config digest"),
+        "load error must identify the ambiguous config identity: {error}"
+    );
+    let inspection = inspect_autoroute_cache(Some(&path));
+    assert!(
+        inspection
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("duplicate config digest")),
+        "inspection must reject the same ambiguous cache: {inspection:?}"
+    );
+    assert!(inspection.configs.is_empty());
 }
 
 #[test]
@@ -2199,7 +2341,7 @@ fn autoroute_cache_rejects_zero_duration_timing_evidence() {
 }
 
 #[test]
-fn autoroute_cache_rejects_fabricated_timing_summary_evidence() {
+fn autoroute_cache_rejects_non_primary_timing_summary_fields() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_fabricated_timing_summary_{}.json",
         std::process::id()
@@ -2208,29 +2350,37 @@ fn autoroute_cache_rejects_fabricated_timing_summary_evidence() {
     let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
     let host = test_host(None);
     let key = test_workload_key();
-    let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
-    bad.simd_timing.mean_ns = bad.simd_timing.mean_ns.saturating_add(1);
-    bad.simd_timing.confidence_interval_95_ns.high_ns = bad
-        .simd_timing
-        .confidence_interval_95_ns
-        .high_ns
-        .saturating_add(1);
-    write_tampered_decision_cache(
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+    save_autoroute_cache(
         &path,
         digest,
+        test_rules_digest(),
         config_digest,
         &host,
-        key,
-        bad,
-        "invalid SIMD timing evidence",
-    );
+        &decisions,
+    )
+    .expect("valid primary timing evidence must save");
+    let mut cache_json: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&path).expect("tampered cache fixture must be readable"),
+    )
+    .expect("tampered cache fixture must be JSON");
+    cache_json["configs"][0]["decisions"][0][1]["simd_timing"]["mean_ns"] = serde_json::json!(1);
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&cache_json).expect("tampered cache JSON must serialize"),
+    )
+    .expect("tampered cache fixture must be writable");
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
-            .expect_err("fabricated timing summary evidence must be rejected")
+            .expect_err("non-primary timing summary fields must be rejected")
             .to_string()
-            .contains("invalid SIMD timing evidence"),
-        "autoroute cache load must recompute timing summaries from trials instead of trusting persisted proof fields"
+            .contains("unknown field `mean_ns`"),
+        "autoroute cache load must reject summary fields instead of trusting persisted duplicates"
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
@@ -2441,6 +2591,110 @@ fn canonical_matches_equal_reference_preserves_duplicate_multiset_semantics() {
 }
 
 #[test]
+fn canonical_match_parity_covers_every_user_visible_raw_match_field() {
+    let base = canonical_test_match("detector-a", 0xA1, Some("src/a.rs"), Some(10), 100);
+    let reference = vec![vec![base.clone()]];
+    let reference_key = canonical_matches(&reference);
+    let mut variants = Vec::new();
+
+    let mut changed = base.clone();
+    changed.detector_id = "detector-b".into();
+    variants.push(("detector id", changed));
+    let mut changed = base.clone();
+    changed.detector_name = "Changed name".into();
+    variants.push(("detector name", changed));
+    let mut changed = base.clone();
+    changed.service = "changed-service".into();
+    variants.push(("service", changed));
+    let mut changed = base.clone();
+    changed.severity = keyhog_core::Severity::Critical;
+    variants.push(("severity", changed));
+    let mut changed = base.clone();
+    changed.credential = "changed-secret".into();
+    variants.push(("credential value", changed));
+    let mut changed = base.clone();
+    changed.credential_hash = [0xCC; 32].into();
+    variants.push(("stored credential hash", changed));
+    let mut changed = base.clone();
+    changed
+        .companions
+        .insert("account".to_string(), "sensitive-companion".to_string());
+    variants.push(("companions", changed));
+    let mut changed = base.clone();
+    changed.location.source = "git".into();
+    variants.push(("source", changed));
+    let mut changed = base.clone();
+    changed.location.file_path = Some("src/b.rs".into());
+    variants.push(("file path", changed));
+    let mut changed = base.clone();
+    changed.location.line = Some(11);
+    variants.push(("line", changed));
+    let mut changed = base.clone();
+    changed.location.offset = 101;
+    variants.push(("offset", changed));
+    let mut changed = base.clone();
+    changed.location.commit = Some("deadbeef".into());
+    variants.push(("commit", changed));
+    let mut changed = base.clone();
+    changed.location.author = Some("author@example.test".into());
+    variants.push(("author", changed));
+    let mut changed = base.clone();
+    changed.location.date = Some("2026-07-13T00:00:00Z".into());
+    variants.push(("date", changed));
+    let mut changed = base.clone();
+    changed.entropy = Some(4.3);
+    variants.push(("entropy", changed));
+    let mut changed = base.clone();
+    changed.confidence = Some(0.98);
+    variants.push(("confidence", changed));
+
+    for (field, changed) in variants {
+        let trial = vec![vec![changed]];
+        assert_canonical_reference_parity(&reference, &trial);
+        assert!(
+            !canonical_matches_equal_reference(&trial, &reference_key),
+            "autoroute parity must reject a backend that changes {field}"
+        );
+    }
+
+    let shifted_chunk = vec![Vec::new(), vec![base]];
+    assert_canonical_reference_parity(&reference, &shifted_chunk);
+    assert!(
+        !canonical_matches_equal_reference(&shifted_chunk, &reference_key),
+        "autoroute parity must retain chunk identity"
+    );
+}
+
+#[test]
+fn canonical_match_parity_large_path_preserves_full_multiset() {
+    let reference_matches: Vec<_> = (0..257)
+        .map(|offset| {
+            canonical_test_match(
+                "detector-large",
+                (offset % 251) as u8,
+                Some("src/large.rs"),
+                Some(offset + 1),
+                offset,
+            )
+        })
+        .collect();
+    let reference = vec![reference_matches.clone()];
+    let reference_key = canonical_matches(&reference);
+    let mut reordered = reference_matches;
+    reordered.reverse();
+    assert!(canonical_matches_equal_reference(
+        &[reordered.clone()],
+        &reference_key
+    ));
+
+    reordered[128].service = "divergent-service".into();
+    assert!(
+        !canonical_matches_equal_reference(&[reordered], &reference_key),
+        "the allocation-backed >256 path must compare full match semantics"
+    );
+}
+
+#[test]
 fn autoroute_candidate_rejection_aborts_calibration_contract() {
     let error = AutorouteRoutingError::candidate_backend_rejected(
         ScanBackend::Gpu,
@@ -2528,7 +2782,7 @@ fn derived_accessors_match_the_persisted_timing_evidence() {
         super::evidence::gpu_cold_warm_route_evidence(gpu_timing)
             .expect("gpu timing must be derivable");
     assert_eq!(decision.gpu_cold_ns(), Some(cold_ns));
-    assert_eq!(decision.gpu_warm_ms(), Some(warm_timing.best_ms()));
+    assert_eq!(decision.gpu_warm_ms(), Some(warm_timing.median_ms()));
     assert_eq!(decision.gpu_route_ns(), Some(route_ns));
 
     // With no GPU timing, every GPU-derived accessor is `None`: there is no
@@ -2573,7 +2827,7 @@ fn autoroute_cache_rejects_selected_backend_that_is_not_fastest() {
 }
 
 #[test]
-fn autoroute_cache_rejects_selected_backend_with_overlapping_confidence() {
+fn autoroute_cache_rejects_selected_backend_beaten_by_separated_confidence() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_selected_overlap_{}.json",
         std::process::id()
@@ -2613,6 +2867,21 @@ fn autoroute_cache_rejects_selected_backend_with_overlapping_confidence() {
         key,
         bad,
         "selected backend is not the fastest persisted timing evidence",
+    );
+    let inspection = inspect_autoroute_cache(Some(&path));
+    assert!(
+        inspection
+            .error
+            .as_deref()
+            .is_some_and(|error| {
+                error.contains("structurally invalid")
+                    && error.contains("not the fastest persisted timing evidence")
+            }),
+        "inspection must surface invalid route evidence instead of silently omitting its row: {inspection:?}"
+    );
+    assert!(
+        inspection.configs.is_empty(),
+        "inspection must not present a partially valid cache after one decision fails validation"
     );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
@@ -2754,6 +3023,20 @@ fn persistent_daemon_route_uses_warm_gpu_evidence_but_one_shot_uses_cold_cost() 
         decision.resolved_persistent_backend(),
         Some(ScanBackend::Gpu),
         "a preinitialized daemon must select from warm GPU evidence"
+    );
+    assert!(
+        decision.has_separated_fastest_route() && decision.has_separated_fastest_persistent_route(),
+        "the fixture must provide separated evidence for both runtime classes"
+    );
+    assert_eq!(
+        decision.selected_margin_ns(),
+        Some(10_000_000),
+        "one-shot SIMD beats the next one-shot candidate by 10 ms"
+    );
+    assert_eq!(
+        decision.persistent_selected_margin_ns(),
+        Some(9_000_000),
+        "warm GPU beats persistent SIMD by 9 ms"
     );
 }
 

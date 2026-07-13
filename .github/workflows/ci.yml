@@ -471,9 +471,21 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
       - name: portable (no system libs)
         run: cargo check -p keyhog --no-default-features --features portable
+      - name: portable runtime dogfood (scalar CPU, real exclusions)
+        run: |
+          cargo build --profile release-fast -p keyhog --no-default-features --features portable
+          tests/dogfood/repository_scan.sh ./target/release-fast/keyhog cpu json \
+            "$RUNNER_TEMP/keyhog-portable-dogfood.json"
+          tests/dogfood/product_matrix.sh ./target/release-fast/keyhog cpu
+      - name: CI profile runtime dogfood (documented system-library-free build)
+        run: |
+          cargo build --profile release-fast -p keyhog --no-default-features --features ci
+          tests/dogfood/repository_scan.sh ./target/release-fast/keyhog cpu json \
+            "$RUNNER_TEMP/keyhog-ci-profile-dogfood.json"
+          tests/dogfood/product_matrix.sh ./target/release-fast/keyhog cpu
       - name: default (full)
         run: cargo check -p keyhog
-      - name: full (everything except Ghidra/CUDA)
+      - name: default plus full source/decompiler and accelerator features
         run: cargo check -p keyhog --features full
       - name: minimal (no defaults, no features)
         run: cargo check -p keyhog --no-default-features
@@ -723,7 +735,8 @@ jobs:
           prefix="sk_$(printf live)"
           body="4eC39HqLyjWDarjtT1zdp7dc"
           printf 'API_KEY="%s_%s"\n' "$prefix" "$body" \
-            | ./target/release-fast/keyhog scan --stdin --min-confidence 0.0 \
+            | ./target/release-fast/keyhog scan --stdin --no-config \
+                --backend cpu --daemon=off --min-confidence 0.0 \
                 --no-suppress-test-fixtures
           test $? -eq 1  # exit 1 = findings detected (expected)
 
@@ -736,12 +749,27 @@ jobs:
           sudo apt-get install -y --no-install-recommends expect
           bash tests/install/linux/install_from_local_build.sh target/release-fast/keyhog
 
-      # Dogfood gate: keyhog must find nothing alarming on its OWN repo. The
-      # committed test/benchmark fixtures and credential-shape documentation are
-      # path-suppressed in .keyhogignore; a real leak (or a regression that
-      # un-suppresses one) turns this red.
-      - name: Dogfood self-scan (exit 0 = clean)
-        run: ./target/release-fast/keyhog scan . --dogfood
+      # Dogfood the installed product paths, not only scanner unit tests. Each
+      # repository route consumes the real committed .keyhogignore policy and
+      # proves complete raw-source coverage; the bounded product matrix proves
+      # decode-through, exclusions, baselines, stdin, and reporters without the
+      # repository's intentional decoder stress corpora exhausting safety caps.
+      # Explicit routes keep this independent of host-local autoroute state while
+      # the dedicated autoroute suites prove calibrated selection.
+      - name: Dogfood self-scan matrix (CPU, Hyperscan, presets, reporters)
+        run: |
+          set -euo pipefail
+          bin=./target/release-fast/keyhog
+
+          tests/dogfood/repository_scan.sh "$bin" cpu json \
+            "$RUNNER_TEMP/keyhog-dogfood-cpu-default.json"
+          tests/dogfood/repository_scan.sh "$bin" simd json \
+            "$RUNNER_TEMP/keyhog-dogfood-simd-default.json"
+          cmp "$RUNNER_TEMP/keyhog-dogfood-cpu-default.json" \
+            "$RUNNER_TEMP/keyhog-dogfood-simd-default.json"
+
+          tests/dogfood/product_matrix.sh "$bin" cpu
+          tests/dogfood/product_matrix.sh "$bin" simd
 
   publish:
     name: Publish to crates.io

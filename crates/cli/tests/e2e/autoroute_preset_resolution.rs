@@ -31,7 +31,6 @@ fn scan(
     let out = Command::new(binary())
         .args(&args)
         .env("XDG_CACHE_HOME", cache_home)
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .expect("spawn keyhog scan");
     if !matches!(out.status.code(), Some(0) | Some(1)) {

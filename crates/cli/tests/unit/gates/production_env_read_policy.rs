@@ -60,6 +60,10 @@ fn allowed_env_read(rel: &str, name: &str) -> bool {
         | "AWS_DEFAULT_REGION"
         | "AWS_SESSION_TOKEN" => rel.starts_with("crates/sources/src/s3/"),
         "GOOGLE_OAUTH_ACCESS_TOKEN" | "GCS_BEARER_TOKEN" => rel == "crates/sources/src/gcs.rs",
+        "KEYHOG_GITHUB_TOKEN"
+        | "KEYHOG_GITLAB_TOKEN"
+        | "KEYHOG_BITBUCKET_USERNAME"
+        | "KEYHOG_BITBUCKET_TOKEN" => rel == "crates/cli/src/sources.rs",
         _ => false,
     }
 }

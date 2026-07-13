@@ -8,23 +8,26 @@ path:debug.log
 path:demo/
 path:demo.env
 path:demo-secret.env
+# Reviewed non-text release assets. The default filesystem source does not scan
+# their bytes as text, so dogfood names them explicitly instead of reporting an
+# incomplete clean scan: two embedded model/data blobs and the docs banner SVG.
+path:crates/scanner/data/english_bigram_logprob.bin
+path:crates/scanner/src/weights.bin
+path:docs/assets/keyhog-banner.svg
 # CHANGELOG entries quote release notes that paste example credentials
 # verbatim - they are documentation about findings, not live secrets.
 path:CHANGELOG.md
 # Internal planning / analysis docs (gap writeups, perf notes) quote credential
 # shapes verbatim while documenting detector behavior - documentation about
-# findings, not live secrets (same rationale as CHANGELOG.md). The pinned
-# released v0.5.37 dogfood binary flags two: an octopus-deploy shape in prose
-# (performance.md) and a quoted EC private-key header marker (detection.md).
-# Current code already suppresses both. (NB: do not paste the literal credential
-# shapes into the comments below - this file is itself scanned, and the bare
-# EC private-key header marker is exactly what the v0.5.37 ssh detector fires on.)
+# findings, not live secrets (same rationale as CHANGELOG.md). Some documents
+# intentionally discuss deploy-token and private-key shapes in prose. (NB: do
+# not paste literal credential shapes into the comments below - this file is
+# itself scanned.)
 path:backlog/
 # Synthetic AWS split-credential reassembly fixture in the multiline fragment
 # cache (all-zero key id || all-placeholder body, no real key material). The
-# source carries an inline keyhog:ignore the current binary honors, but the
-# pinned released v0.5.37 dogfood binary re-emits it from the reassembled
-# fragment, so it is suppressed here by credential hash.
+# source carries an inline keyhog:ignore, while fragment reassembly can emit a
+# distinct derived match, so the derived value is suppressed here by hash.
 hash:57028a916a4ba4e7abfc8318ff8774852c5f4264ece9cfab01b97004ab56e3ae
 # Two fabricated AWS-access-key FIXTURES that are non-secrets by construction
 # (literal shapes deliberately NOT pasted here - this file is itself scanned;
@@ -32,9 +35,8 @@ hash:57028a916a4ba4e7abfc8318ff8774852c5f4264ece9cfab01b97004ab56e3ae
 # covers every source + test occurrence:
 #   * 3f0911f2... = the all-`X` synthetic placeholder driving the
 #     degenerate-repeat suppression unit tests + the doc-comment examples in
-#     confidence/penalties.rs + prefixes.rs. The CURRENT engine already drops it
-#     as a degenerate placeholder (that is the feature those examples document);
-#     the pinned v0.5.37 dogfood binary predates that fix, so it still fires.
+#     confidence/penalties.rs + prefixes.rs. It is retained as an explicit
+#     defense-in-depth suppression for dogfood across supported builds.
 #   * 0edfda19... = the fabricated known-positive key planted in the
 #     differential-bench smoke check ($tmp fixture, outside the repo - so this
 #     repo-local ignore does NOT affect that scan) and the prefix-floor tests.
@@ -50,8 +52,8 @@ hash:48d2a5bbcf422ccd1b69e2a82fb90bafb52384953e77e304bef856084be052b6
 # integration-smoke ships a base64-encoded seed of well-known AWS docs
 # examples + an `xoxb-` slack token shape + a `ghp_` GitHub PAT shape;
 # the workflow base64-decodes them on the runner so the scanner under
-# test can confirm it finds them. v0.5.37's decode-through composition
-# now follows the base64 in the workflow source too, surfacing those
+# test can confirm it finds them. Decode-through composition follows the base64
+# in the workflow source too, surfacing those
 # planted fixtures as findings on the dogfood scan.
 path:.github/workflows/integration-smoke.yml
 # Bundled test-fixture suppression list: the very purpose of the file
@@ -208,15 +210,14 @@ path:output.json
 path:react/
 path:ruff/
 path:run_decoder
-path:scripts/
 # Docs site: regenerated from detectors/*.toml on every build, embeds
 # the example/regex tokens from each detector definition. The example
 # tokens are by-design tutorial content, not live credentials.
 path:site/
 # Engine/parser source files that document detector regex shapes and
 # reverse-decoder fixtures inside /// doc-comments. They are documentation,
-# not credentials, but the hot-pattern fast path matches the shape every CI
-# run; suppress at the path level so the keyhog dog-food scan stays at 0.
+# not credentials, but detector extraction matches the shape every CI run;
+# suppress at the path level so the KeyHog dogfood scan stays at 0.
 # (path_filter.rs moved out of pipeline/postprocess/ - keep the path current.)
 path:crates/scanner/src/decode/reverse.rs
 path:crates/scanner/src/suppression/path_filter.rs
@@ -302,11 +303,11 @@ hash:e24897816e2d61526e61bf2041e4d1c6747cc5129ed1d52f00fb02167bfd0b0d
 hash:f4913b0dd2685cbdf7af5d2fb5c8b21c1389ff106f99f4f4296d3ae3b7ffda17
 hash:f6dc8f29e382dcc29478e74e5419e82c8d03453461b06224b9f8d573cc2bd79f
 hash:f9b149f9188fb49b28ee28794382c1d4bc655f6b5086e01da4d5308372fbb87e
-# Fabricated test/probe fixtures the pinned v0.5.37 dogfood binary surfaces from
+# Fabricated test/probe fixtures dogfood surfaces from
 # inline-test and ML-probe SOURCE. These three source files contain ONLY
 # fabricated detector-shape fixtures (no real credential ever belongs in them),
-# and because the self-scan walks full git history (`fetch-depth: 0`), each
-# finding is attributed with a value hash that varies by historical blob AND by
+# and because history-source dogfood may inspect older blobs, each finding can
+# be attributed with a value hash that varies by historical blob and by
 # detector match-extent - canonical.rs alone produced two different hashes for
 # the same fixture line across two runs. Value-hash suppression is therefore a
 # moving target here, so path-suppress them like the other engine/parser fixture
@@ -340,3 +341,52 @@ hash:26e4e47b31d8cefa746fc6bb298ad3f846e293c9c10243418d28b747155e1207
 # match-extent flap); suppress it by VALUE so any test that plants it stays green
 # without a per-file path entry.
 hash:7b85310a29300230c865bc48ca1836f15b81bd50ac85e8c0785e8145e98ff175
+# Current-tree dogfood fixtures reviewed by source location. These exact values
+# are synthetic detector/BPE/suppression examples, runtime smoke credentials,
+# redaction/read-boundary fixtures, documentation examples, or Caesar-derived
+# workflow text. Hash scope keeps their containing production files scanned and
+# makes any changed/new candidate fail the repository gate for fresh review.
+hash:0c0cb9fda9b0835561762d3bc89c82efc565dde3e99fb00394439f95a2df98c0
+hash:12c0013573f5fef77291889af9bdb2880ea46ad7f23206fba36296518c830eb3
+hash:13b3801bd2362517f9fc88b520c2d850bed1e8146fa8bae427260ad294d58143
+hash:14ef8ebda1d2b6fdd856faeaa9fd9dedf960d53c98e35d52944980e8789446b3
+hash:1721f440ed59437511c5c7fa6f20751cccddc4dbf43e3f1d09c4ead4aa05a1ea
+hash:2cafc0970149a84f3b9e62eaf169f36f59907a3b3e31f7b82e68c69cd27f7326
+hash:2e506c9614f448abbf31db9a752bf801f9aa51cfd476ea2cebbb8bdc71978c60
+hash:386de3e7c99e0ae3152c54d0a80c5d2d138255916a37810a4c8f7a093331fc9b
+hash:3bcba6dd69a4df503b7a555cd53620c567e3eca4ff4a4c9ab98df6d2d3620a73
+hash:40769d9505fadf9d959e05cee5c792f9fb2f8772e1aabfabe248d477e0421aa7
+hash:4d72588105763b14841eb916a556a251ed6d9e2f00ba7a86ac5673836a1bfc4e
+hash:6f8169ce863b18611278d066c95eb8d5b11cbeaf61fd1d6ad4b03ffef14f7481
+hash:71178fb38256667000368feb9847ea74f35140026f6c1dc788f2a77f15de1089
+hash:7e3d5eecdd34a230a81b2bee3bf4fad0cb002fef74c1929b05147efc0030382a
+hash:81475fe7907ae1818130c48c21a8d632f083a0337fed43e825e21b94566e38ba
+hash:81f1542c58b7019262f0eb6e7290d7d673eb56d2ab0afa8f11f636b98117cbf2
+hash:83eee1420adf36ee9cfe736087c997f6e83c1acea1541b9954d99b0544efe182
+hash:97f21a4b36cc122a3d2d98021f9e4a38fe4f03af188c58e3e0aead6765600c26
+hash:9e5ae7f2f2af222eb3c78a7226871124ed1af7ebd9804650e077c38d24f1a235
+hash:a1592ac7ce1a434b7274b09d15bd59e1c96e35ba02e80eb33182f4c353713e0b
+hash:a19b1850ae2a80da3f188c39027255deb23847f1bf69dd43c3815e39e4f182e1
+hash:a51d797583477da171e1f72779d93d00efebbb4455862d2085d2ffa6c13208bd
+hash:a62fc80a93aaa0f05793ce89eba434f3818c6e89fe0f58a286a00034d1879a7f
+hash:a911b3d25242bc1657a9f34c9666348e7fb3b99bf904e10d1ea868e857a3a3d3
+hash:af047096c2b37a7dcea19eff5cff7e29639a5e65be6142e43aa5fc7f537007f5
+hash:c52905f61f18f119d779b88900103e1bff9e37ef3e05a6ccbe276ca804bdef06
+hash:c574bfdbd2d3c6e0e358055e8f8b4be8c29f88de56d6999da50027b8833fc8e2
+hash:c80a9f703a14ccc6216836841d285800014d3f3506cffe16ecc41631dcc05c9b
+hash:c90f315ef13ef88951f5bb6426a7ea05b7974368374b0398bb0ed9e8840f0391
+hash:c92417ab6c54df83e568fc6a7c984ad9790331d9ddaa9322e728b135d110a668
+hash:d0e5167351768a459206fa4777f359436ca276599c31c5346e4d6264f7dfff4f
+hash:d25d7a1db0b9f58d4edc3041ab54ee40cc23b85ceda176ce6985a4f8e8d4b334
+hash:e26289a574efe798d93c2a89271bff4e245f2d5b1150a705085f9a3c91f550d8
+hash:e2bfc0d6de7a92f28c927aa59f4f9771201aa2f3ecad50e63fdf53a0119ec4ac
+hash:f4c43a6c7068bd38e340a2c533747aaffc22f31609aef6489a703cb58b8c34f7
+hash:f6f22bd2ff23e9a4c78d1d35c8600be4963214b02fa8aa3f4e833b22f1f68927
+# The optimized full-feature scanner can select a different enclosing generic
+# match extent for five of the reviewed fixtures above. Keep those exact
+# release-profile value identities explicit; CPU/SIMD parity must still agree.
+hash:2740fd3a1b7915193d321b03feaf37b30e1c17047c24a4792f01a2302993d407
+hash:3f8ec5354f76a97577c5d9df9c7416531ce180af7398c73835a032e9b45f3a35
+hash:51d2a659f0940c6e7dce3fc11c5df329aff93212408a5a4a2a47124df1964be0
+hash:66c3ea8e09ca94ad6b2ca29a345abdb1ab2a1e8169fd503dc3d4ccc240510c56
+hash:d6b553681259ec813fafc35b4a3536a6672d84cd1bec7688596f1f5b4c3b3570

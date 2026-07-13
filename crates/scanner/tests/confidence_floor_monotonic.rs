@@ -155,9 +155,7 @@ fn finding_set_is_nested_and_non_increasing_as_floor_rises() {
     // And the widest floor must find the high-confidence named tokens at all,
     // proving the corpus is live (not an empty-scan false pass).
     assert!(
-        widest
-            .iter()
-            .any(|(id, _, _)| id == "aws-access-key" || id == "hot-aws_key"),
+        widest.iter().any(|(id, _, _)| id == "aws-access-key"),
         "expected the planted AKIA token in the unfiltered (floor 0.0) finding set; got {widest:?}",
     );
 }

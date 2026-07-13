@@ -4,10 +4,8 @@
 //! `CompiledScanner` keyhog ships with against the `leaked_text`. The
 //! scanner MUST surface a finding whose `detector_id` is in the entry's
 //! `detectors` list OR whose extracted `credential` literally appears
-//! in `leaked_text`. The latter handles cross-detector dedup relabel:
-//! keyhog's dedup_cross_detector path can promote a finding to a
-//! related hot-pattern label, and either label is honest evidence the
-//! secret was caught.
+//! in `leaked_text`. The latter keeps overlapping detector ownership from
+//! making the replay brittle while all reported ids remain canonical.
 //!
 //! The replay corpus is a hard gate, not a vacuous directory walk:
 //! deleting fixtures, breaking the directory, or adding malformed

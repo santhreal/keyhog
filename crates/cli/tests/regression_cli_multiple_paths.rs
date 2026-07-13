@@ -12,9 +12,9 @@
 //! `ghp_`) and `slack-bot-token` (literal `xoxb-`), are literal-anchored, so
 //! they fire on the always-available CPU/aho-corasick path and do NOT depend on
 //! Hyperscan/SIMD/GPU. github maps to the SAME id (`github-classic-pat`) on both
-//! the named-detector and simdsieve hot-pattern paths, so no host-dependent
-//! `hot-*` variant appears. All runs force `--backend cpu --daemon=off` with
-//! `KEYHOG_NO_GPU=1`, so no accelerator is assumed.
+//! the named-detector and simdsieve accelerated paths, so no host-dependent
+//! `hot-*` variant appears. All runs force `--backend cpu --daemon=off`, so no
+//! accelerator is assumed.
 //!
 //! Every assertion pins a concrete value (exact exit code, detector id, service,
 //! severity, redaction bytes, sha256 hash, confidence f64, line/offset int,
@@ -69,7 +69,6 @@ fn scan_paths(paths: &[&Path], format: &str) -> (Option<i32>, String, String) {
     for p in paths {
         cmd.arg(p);
     }
-    cmd.env("KEYHOG_NO_GPU", "1");
     cmd.env("NO_COLOR", "1");
     cmd.env_remove("KEYHOG_BACKEND");
     let out = cmd.output().expect("spawn keyhog scan");

@@ -79,8 +79,10 @@ Findings on these are suppressed by default. Examples:
 
 To see what was suppressed, pass `--no-suppress-test-fixtures`. The
 list lives at `crates/cli/data/suppressions/test-fixtures.toml`
-inside the source tree, baked into the binary at build time, and is
-the ONLY built-in suppression list - there's no opaque allow-list.
+inside the source tree and is baked into the binary at build time. It is one
+visible suppression layer; detector-owned examples, structural/context gates,
+default path policy, `.keyhogignore`, and `.keyhogignore.toml` have distinct
+documented ownership. See [Suppressions](./suppressions.md) for the full order.
 
 ## JSON output
 
@@ -133,10 +135,10 @@ keyhog scan --stdin < staging.env       # from stdin (CI: cat | keyhog)
 keyhog scan . --exclude-paths 'docs/*'  # exclude a glob
 ```
 
-Common patterns the default walk **already** skips: `.git/`,
-`node_modules/`, `__pycache__/`, `vendor/`, `dist/`, `build/`, `out/`,
-`.min.js`, `.min.css`, `.bak`, `.swp`. To see the full list, look at
-`is_default_excluded_path` in `crates/sources/src/filesystem.rs`.
+Common patterns the default walk **already** skips include `.git/`,
+`node_modules/`, `__pycache__/`, vendored/build output, minified assets, and
+editor backup files. The canonical behavior and opt-out are documented under
+[path suppressions](./suppressions.md#path-based).
 
 ## Going further
 

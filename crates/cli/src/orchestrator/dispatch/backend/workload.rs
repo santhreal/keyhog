@@ -21,6 +21,21 @@ pub(super) struct WorkloadKey {
     pub(super) source_class_hash: u64,
 }
 
+/// Render a bucket identically in fail-closed routing errors and cache
+/// inspection, so operators can match a refused workload field-for-field.
+pub(super) fn render_workload_key(key: &WorkloadKey) -> String {
+    format!(
+        "bytes_log2={} chunks_log2={} max_file_log2={} patterns_log2={} \
+         decode_density_log2={} source_hash={:016x}",
+        key.bytes_bucket,
+        key.chunks_bucket,
+        key.max_file_bucket,
+        key.pattern_bucket,
+        key.decode_density_bucket,
+        key.source_class_hash
+    )
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct WorkloadClassificationError {
     source_type: String,

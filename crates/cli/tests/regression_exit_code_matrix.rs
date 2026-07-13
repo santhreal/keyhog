@@ -57,7 +57,6 @@ fn scan_with(backend: &str, path: &Path, extra: &[&str]) -> (Option<i32>, String
     cmd.args(extra);
     cmd.arg(path);
     cmd.env_remove("KEYHOG_BACKEND");
-    cmd.env_remove("KEYHOG_NO_GPU");
     cmd.env_remove("KEYHOG_REQUIRE_GPU");
     let out = cmd.output().expect("spawn keyhog scan");
     (

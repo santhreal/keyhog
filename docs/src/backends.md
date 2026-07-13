@@ -34,18 +34,26 @@ CPU methods do not acquire an accelerator.
 
 ## What “same results” means
 
-Calibration compares canonical match identity: chunk index, detector id,
-credential hash, file path, line, and byte offset. A candidate is rejected if
-that identity differs from the Hyperscan reference, if repeated reference trials
-are inconsistent, or if required GPU timing evidence is invalid. Normal
-automatic scans do not benchmark or silently replace a rejected backend.
+Calibration compares the complete redacted `RawMatch` identity: chunk index;
+detector id, name, service, and severity; hashes of the actual credential,
+stored credential hash, and companion names/values; source, file, line, offset,
+commit, author, and date; entropy and confidence. A candidate is rejected if
+any field or finding multiplicity differs from the Hyperscan reference, if
+repeated reference trials are inconsistent, or if required GPU timing evidence
+is invalid. Plain credentials and companion values never enter parity logs.
+Normal automatic scans do not benchmark or silently replace a rejected backend.
 
-This parity contract covers match bytes and offsets before the common
-suppression, confidence, verification, deduplication, and reporter stages. The
-same detector TOML corpus and resolved configuration digest identify every
-route. Report confidence is canonicalized to three decimal places at the shared
-policy boundary; this removes meaningless CPU-f64/GPU-f32 accumulator ULPs
-before both the reporting-floor decision and serialized output.
+Among parity-correct candidates, routing uses representative measured medians,
+never a lucky fastest trial. A fully separated 95% confidence interval is the
+strongest result. Overlapping intervals are disclosed as inconclusive rather
+than mislabeled as proof of equal performance; KeyHog then selects the lowest
+measured median among the non-dominated candidates, using engagement overhead
+only for an exact median tie. Autoroute inspection prints this selection basis.
+
+This parity contract runs before the common suppression, verification,
+deduplication, and reporter stages, but already proves every raw field those
+stages consume. The same detector TOML corpus and resolved configuration digest
+identify every route.
 
 ## Why size alone is insufficient
 

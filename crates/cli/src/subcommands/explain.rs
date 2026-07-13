@@ -12,12 +12,9 @@ pub(crate) fn run(args: ExplainArgs) -> Result<()> {
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
 
     let requested = args.detector_id.as_str();
-    // `hot-*` ids are the SIMD fast-path's FINDING labels (see the scanner's
-    // simdsieve_prefilter HOT_PATTERN_DETECTOR_IDS), NOT registry detector ids.
-    // A user who copies an id straight out of `scan` output (`hot-github_pat`)
-    // into `explain` would otherwise hit a bare "no such detector" - the two
-    // commands would silently disagree. Resolve to the canonical registry spec
-    // and tell them what happened.
+    // Historical releases emitted `hot-*` fast-path aliases. Accept the finite
+    // retired set as an explain-only migration aid; current scans emit only the
+    // canonical detector TOML id.
     let (needle, hot_origin) = match canonical_for_hot_id(requested) {
         Some(canon) => (canon, Some(requested)),
         None => (requested, None),
@@ -30,7 +27,7 @@ pub(crate) fn run(args: ExplainArgs) -> Result<()> {
 
     if let Some(hot) = hot_origin {
         println!(
-            "\u{2139} '{hot}' is keyhog's SIMD fast-path label; showing the \
+            "\u{2139} '{hot}' is a retired KeyHog fast-path alias; showing the \
              canonical detector '{needle}'.\n"
         );
     }
@@ -38,12 +35,9 @@ pub(crate) fn run(args: ExplainArgs) -> Result<()> {
     Ok(())
 }
 
-/// Map a `hot-<name>` fast-path finding id to its canonical registry detector.
-/// Index-aligned with the scanner's `HOT_PATTERN_DETECTOR_IDS`. Kept here (CLI
-/// side, un-feature-gated) so `explain` resolves these ids in every build,
-/// including `--no-default-features` portable binaries that compile the hot
-/// labels out of the scanner but can still be fed a `hot-*` id by hand or from
-/// a baseline produced on a SIMD build.
+/// Map a retired `hot-<name>` finding alias to its canonical registry detector.
+/// This finite explain-only map lets operators inspect historical reports; it
+/// is not a second detector namespace and current scans never emit these ids.
 ///
 fn canonical_for_hot_id(id: &str) -> Option<&'static str> {
     const HOT_IDS: &[(&str, &str)] = &[
@@ -61,9 +55,8 @@ fn canonical_for_hot_id(id: &str) -> Option<&'static str> {
         .find_map(|(hot, canonical)| id.eq_ignore_ascii_case(hot).then_some(*canonical))
 }
 
-/// Build the "not found" error, with a tailored branch for `hot-*` ids that
-/// have no canonical registry detector so the user learns it's a real fast-path
-/// pattern rather than chasing a typo.
+/// Build the "not found" error, including a tailored branch for an unknown
+/// retired-alias shape.
 fn explain_not_found(detectors: &[DetectorSpec], requested: &str, lowered: &str) -> anyhow::Error {
     if let Some(stripped) = strip_prefix_ignore_ascii_case(lowered, "hot-") {
         let svc = stripped.split('_').next().unwrap_or(stripped); // LAW10: split yields >=1 element; unwrap_or is the never-taken total default, recall-safe
@@ -78,14 +71,13 @@ fn explain_not_found(detectors: &[DetectorSpec], requested: &str, lowered: &str)
             .collect();
         return if related.is_empty() {
             anyhow::anyhow!(
-                "'{requested}' is a keyhog SIMD fast-path pattern with no standalone \
-                 registry detector yet - it still surfaces in scans, there is just no \
-                 separate spec to explain."
+                "'{requested}' is not a current detector id or a recognized retired \
+                 fast-path alias (use `keyhog detectors` to list canonical ids)."
             )
         } else {
             anyhow::anyhow!(
-                "'{requested}' is a keyhog SIMD fast-path label, not a registry detector id. \
-                 Related detectors you can explain: {}",
+                "'{requested}' resembles a retired fast-path alias, not a current detector id. \
+                 Related canonical detectors you can explain: {}",
                 related.join(", ")
             )
         };

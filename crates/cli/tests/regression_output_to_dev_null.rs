@@ -44,7 +44,6 @@ fn scan_output_to_dev_null_succeeds_and_reports_findings_exit_code() {
         ])
         .args(["--output", "/dev/null"])
         .arg(&leak)
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .expect("spawn keyhog scan");
 

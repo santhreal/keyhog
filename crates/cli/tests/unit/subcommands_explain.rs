@@ -1,4 +1,4 @@
-//! `keyhog explain` hot-id resolution.
+//! `keyhog explain` migration for retired hot-id aliases.
 //!
 //! Moved out of `src/subcommands/explain.rs` per the `no_inline_tests_in_src`
 //! gate (the inline module also carried a `.expect(...)`, which tripped
@@ -20,10 +20,8 @@ fn embedded() -> Vec<DetectorSpec> {
         .expect("embedded detector corpus must load")
 }
 
-/// Coherence: every `hot-*` id keyhog can print in a finding must resolve
-/// through `explain` to a registry detector that ACTUALLY EXISTS - the exact
-/// gap a user hits when they copy `hot-github_pat` from scan output into
-/// `keyhog explain`. A rename of any canonical detector fails this.
+/// Every retired alias retained for historical reports resolves to an existing
+/// canonical detector. Current scans emit only canonical TOML ids.
 #[test]
 fn hot_ids_resolve_to_real_detectors() {
     let detectors = embedded();

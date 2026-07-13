@@ -2,7 +2,7 @@
 //! contract that the sibling `regression_cli_output_file.rs` does NOT cover.
 //!
 //! Everything here drives the REAL shipped binary (`--daemon=off`, `--backend
-//! cpu`, `KEYHOG_NO_GPU=1` so NO accelerator is assumed, host-independent) and
+//! cpu`, so no accelerator is assumed and behavior is host-independent) and
 //! every assertion pins a CONCRETE value (exact bytes / JSON value / line count
 //! / substring / bool / exit code). No bare `!is_empty` / `is_ok`.
 //!
@@ -102,7 +102,7 @@ fn base_cmd(target: &Path, format: &str, out: Option<&Path>) -> Command {
     if let Some(o) = out {
         cmd.arg("--output").arg(o);
     }
-    cmd.arg(target).env("KEYHOG_NO_GPU", "1");
+    cmd.arg(target);
     cmd
 }
 

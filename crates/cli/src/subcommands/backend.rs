@@ -161,6 +161,9 @@ fn run_autoroute_inspection(json: bool) -> Result<ExitCode> {
     if let (Some(binary), Some(git)) = (&inspection.binary_version, &inspection.git_hash) {
         println!("  built for:       keyhog {binary} ({git})");
     }
+    if let Some(digest) = &inspection.executable_sha256 {
+        println!("  executable hash: sha256:{digest}");
+    }
     match inspection.identity_matches_build {
         Some(true) => println!(
             "  identity:        {}matches this build{} (host/detector/rules verified at scan time)",
@@ -209,15 +212,23 @@ fn run_autoroute_inspection(json: bool) -> Result<ExitCode> {
                 .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
             let gpu = decision
                 .gpu_ms
-                .map(|ms| format!(" gpu={ms}ms"))
+                .map(|ms| format!(" gpu-one-shot={ms}ms"))
+                .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
+            let gpu_warm = decision
+                .gpu_warm_ms
+                .map(|ms| format!(" gpu-warm={ms}ms"))
                 .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
             let margin = decision
                 .selected_margin_ns
                 .map(|ns| format!(" margin={}µs", ns / 1_000))
                 .unwrap_or_default(); // LAW10: display-only optional derived margin; recall-safe
+            let daemon_margin = decision
+                .daemon_selected_margin_ns
+                .map(|ns| format!(" margin={}µs", ns / 1_000))
+                .unwrap_or_default(); // LAW10: display-only optional derived margin; recall-safe
             println!("    {}", decision.workload);
             println!(
-                "        -> {}  {}[{} B / {} chunk(s); simd={}ms{}{}{}]{}",
+                "        one-shot -> {}  {}[{} B / {} chunk(s); simd={}ms{}{}{}{}; basis={}]{}",
                 decision.backend,
                 p.dim,
                 decision.sample_bytes,
@@ -225,7 +236,17 @@ fn run_autoroute_inspection(json: bool) -> Result<ExitCode> {
                 decision.simd_ms,
                 cpu,
                 gpu,
+                gpu_warm,
                 margin,
+                decision.selection_basis,
+                p.reset
+            );
+            println!(
+                "        daemon   -> {}  {}[warm GPU evidence{}; basis={}]{}",
+                decision.daemon_backend,
+                p.dim,
+                daemon_margin,
+                decision.daemon_selection_basis,
                 p.reset
             );
         }

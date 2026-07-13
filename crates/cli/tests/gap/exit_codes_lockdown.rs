@@ -47,7 +47,7 @@ fn binary() -> PathBuf {
 
 /// A live, real AWS access-key ID literal split so this source file is not
 /// itself a self-flagging leak. `AKIA` + 16 base32 chars = the canonical
-/// AWS_ACCESS_KEY_ID shape the `aws-access-key` / `hot-aws_key` detectors fire on.
+/// AWS_ACCESS_KEY_ID shape the canonical `aws-access-key` detector fires on.
 fn aws_key_line() -> String {
     concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n").to_string()
 }

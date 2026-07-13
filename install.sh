@@ -1311,14 +1311,11 @@ prime_autoroute_cache() {
         cfg_flag="--config"
         cfg_file="$tmpdir/empty-config.toml"
     fi
-    # Calibrate the SAME resolved-config digest a real scan requests. The
-    # autoroute config digest hashes routing/pipeline knobs (batch_pipeline,
-    # autoroute_gpu), so calibrating with `--batch-pipeline --autoroute-gpu` 
-    # which a plain `keyhog scan .` never uses (a filesystem auto scan cannot
-    # route GPU and does not force the coalesced batch pipeline), keyed the
-    # cache to a digest no real default scan ever looked up, and every auto scan
-    # failed closed (exit 2). Default calibration now matches the default scan
-    # path; GPU/coalesced calibration is a separate, explicit opt-in digest.
+    # Calibrate the SAME resolved-config digest a real scan requests.
+    # `--autoroute-gpu` controls candidate admission during calibration and is
+    # intentionally excluded from that digest, so the persisted winner is valid
+    # for a later normal auto scan that does not repeat the calibration flag.
+    # `--batch-pipeline` does change execution identity and remains absent.
     autoroute_scan_flags=""
     # Calibrate the documented scan-policy presets too. Each preset changes
     # scanner fields hashed into the autoroute config digest, so `keyhog scan .
@@ -1698,25 +1695,25 @@ run_autoroute_scan_probe() {
     # shellcheck disable=SC2086
     case "$mode" in
         path)
-            run_keyhog_calibration_scan scan --autoroute-calibrate "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --autoroute-gpu "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         stdin)
-            run_keyhog_calibration_scan scan --autoroute-calibrate --stdin $autoroute_scan_flags --format json -o "$out" < "$probe" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --autoroute-gpu --stdin $autoroute_scan_flags --format json -o "$out" < "$probe" >/dev/null 2>"$errfile" &
             ;;
         git-history)
-            run_keyhog_calibration_scan scan --autoroute-calibrate --git-history "$probe" --max-commits 1 $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --autoroute-gpu --git-history "$probe" --max-commits 1 $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         git-blobs)
-            run_keyhog_calibration_scan scan --autoroute-calibrate --git-blobs "$probe" --max-commits 2 $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --autoroute-gpu --git-blobs "$probe" --max-commits 2 $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         git-diff)
-            run_keyhog_calibration_scan scan --autoroute-calibrate --git-diff HEAD --git-diff-path "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --autoroute-gpu --git-diff HEAD --git-diff-path "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         url)
-            run_keyhog_calibration_scan scan --autoroute-calibrate --url "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --autoroute-gpu --url "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         docker-image)
-            run_keyhog_calibration_scan scan --autoroute-calibrate --docker-image "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --autoroute-gpu --docker-image "$probe" $autoroute_scan_flags --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         *)
             (

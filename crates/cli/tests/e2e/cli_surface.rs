@@ -131,7 +131,7 @@ fn scan_json_is_valid_array_with_detector_id() {
     let v: serde_json::Value =
         serde_json::from_str(&so).expect("scan --format json must emit valid JSON");
     let arr = v.as_array().expect("findings is a JSON array");
-    // The high-precision hot-pattern fast path (`hot-aws_key`) is what fires
+    // The high-precision accelerated path keeps the canonical detector id and fires
     // on an `AKIA…` key and shadows the TOML `aws-access-key` detector; assert
     // the id that actually fires, not the corpus twin.
     assert!(

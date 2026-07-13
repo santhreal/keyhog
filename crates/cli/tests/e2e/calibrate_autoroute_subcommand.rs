@@ -43,12 +43,10 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
 
     // One command calibrates the default policy + every preset across the whole
     // workload ladder. The child `keyhog scan --autoroute-calibrate` probes
-    // inherit XDG_CACHE_HOME + KEYHOG_NO_GPU, so they write to the isolated
-    // cache and route on CPU exactly like the verifying scans below.
+    // inherit XDG_CACHE_HOME, so they write to the isolated cache.
     let out = Command::new(binary())
         .arg("calibrate-autoroute")
         .env("XDG_CACHE_HOME", cache.path())
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .expect("spawn keyhog calibrate-autoroute");
     assert!(
@@ -83,7 +81,6 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
             let scan = Command::new(binary())
                 .args(&args)
                 .env("XDG_CACHE_HOME", cache.path())
-                .env("KEYHOG_NO_GPU", "1")
                 .output()
                 .expect("spawn keyhog scan");
             let code = scan.status.code();
@@ -105,7 +102,6 @@ fn calibrate_autoroute_rejects_cache_off_up_front() {
     // "did not persist a routing decision" failures (the original dogfood bug).
     let out = Command::new(binary())
         .args(["calibrate-autoroute", "--autoroute-cache", "off"])
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .expect("spawn keyhog calibrate-autoroute");
     assert!(

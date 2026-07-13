@@ -1045,16 +1045,11 @@ function Invoke-AutorouteCalibration {
                 New-Item -ItemType File -Force -Path $emptyConfig | Out-Null
                 @('--config', $emptyConfig)
             }
-            # Calibrate the SAME resolved-config digest a real scan requests. The
-            # autoroute config digest hashes routing/pipeline knobs (batch_pipeline,
-            # autoroute_gpu); forcing `--batch-pipeline --autoroute-gpu` here keyed the
-            # cache to a digest a plain `keyhog scan .` never looks up (a filesystem
-            # auto scan cannot route GPU and does not force the coalesced batch
-            # pipeline), so every default Windows scan failed closed (exit 2). The base
-            # calibration now matches the default scan path; GPU/coalesced routing is a
-            # separate, explicit opt-in digest, calibrated on first such scan. (Parity
-            # with install.sh, which made the same fix on Unix.)
-            $batchArgs = @('--autoroute-calibrate')
+            # Candidate admission is calibration-only identity: --autoroute-gpu is
+            # excluded from the resolved scan digest, so its winner is consumed by
+            # later normal auto scans. --batch-pipeline changes execution identity
+            # and remains absent. Keep this in parity with install.sh.
+            $batchArgs = @('--autoroute-calibrate', '--autoroute-gpu')
             # Calibrate the documented scan-policy presets too: each changes scanner
             # fields hashed into the config digest, so `keyhog scan . --fast` resolves a
             # DIFFERENT digest than the default and needs its own decisions or it fails

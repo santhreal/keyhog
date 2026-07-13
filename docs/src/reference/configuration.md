@@ -17,11 +17,11 @@ compiled defaults  →  .keyhog.toml  →  CLI flags
                         the scan path)
 ```
 
-- **Compiled defaults** live in one place: `ScanConfig::default()` in
-  `crates/core/src/config.rs`. They are the *tuned == benched == shipped*
-  values: the same numbers the SecretBench leaderboard is measured on. The
-  unit test `crates/core/tests/unit/config.rs` pins them, so a change to a
-  shipped default is a deliberate, test-gated decision.
+- **Compiled defaults** are typed at their owning boundary. Detection defaults
+  live in `ScanConfig::default()`; source limits, verifier policy, runtime
+  workers, and scanner tuning have their own typed defaults. The effective
+  resolver folds those owners into one `ResolvedScanConfig`, and behavioral
+  tests pin the operator-visible result.
 - **`.keyhog.toml`** is discovered by walking up from the scan path to the
   filesystem root (first one found wins). Copy
   [`.keyhog.toml.example`](https://github.com/santhsecurity/keyhog/blob/main/.keyhog.toml.example)
@@ -64,12 +64,14 @@ A dash means that layer intentionally has no surface.
 | Decode size limit | **512KB** | `decode_size_limit` | `--decode-size-limit` | Per-file ceiling for decode-through; larger files skip encoding detection. |
 | Entropy enabled | on | `no_entropy = true` disables | `--no-entropy` | Shannon-entropy detection for novel high-entropy strings. |
 | Entropy in source | off | `entropy_source_files` | `--entropy-source-files` | Run entropy inside `.py`/`.js`/`.go`/… (off by default to cut FPs). |
-| Entropy threshold | **4.5** | `[scan].entropy_threshold` | `--entropy-threshold` | Bits/byte cutoff (3.5 aggressive … 5.5 conservative). The byte-entropy domain is `[0.0, 8.0]`; non-finite and out-of-range requests fail closed instead of being silently clamped. |
-| BPE word-like bound | **2.2** | `[scan].entropy_bpe_max_bytes_per_token` | `--entropy-bpe-max-bytes-per-token` | With no explicit scan setting, detector TOML `bpe_max_bytes_per_token` wins over this compiled fallback. A `[scan]` value or the CLI flag becomes the visible Tier-A override for every eligible detector (CLI wins). Invalid, zero, negative, NaN, and infinite bounds fail closed. A surviving candidate above its resolved cl100k_base UTF-8 bytes-per-token ceiling is word-like and dropped. Lower = higher precision/lower recall. Detector families for which token efficiency is inappropriate declare `bpe_enabled = false` in their own TOML and skip tokenization. `config --effective` reports `entropy_bpe_policy = scan-override` for explicit scan values and `scan-fallback` otherwise. |
+| Entropy threshold | **4.5** | `[scan].entropy_threshold` | `--entropy-threshold` | Scan-wide Shannon-entropy control in bits/byte. It is not a blanket replacement for detector `entropy_low`/`entropy_high`/`entropy_very_high`/length-bucket floors: each detection path composes it with the owning detector's evidence band. The byte-entropy domain is `[0.0, 8.0]`; non-finite and out-of-range requests fail closed. |
+| BPE word-like bound | **2.2** | `[scan].entropy_bpe_max_bytes_per_token` | `--entropy-bpe-max-bytes-per-token` | With no explicit scan setting, detector TOML `bpe_max_bytes_per_token` wins over this compiled fallback. A `[scan]` value or the CLI flag becomes the visible Tier-A override for every BPE-enabled detector (CLI wins). Invalid, zero, negative, NaN, and infinite bounds fail closed. An eligible candidate above its resolved `cl100k_base` UTF-8 bytes-per-token ceiling is word-like and dropped; detector-owned canonical hex keys and encoded-text evidence bypass this language-likeness gate. Lower = higher precision/lower recall. Detectors for which token efficiency is inappropriate declare `bpe_enabled = false` and skip tokenization. `config --effective` reports `entropy_bpe_policy = scan-override` for explicit scan values and `scan-fallback` otherwise. |
 | Entropy min length | **16** | `[scan].min_secret_len` | `--min-secret-len` | Minimum credential length for entropy-discovery candidates. Named detectors keep their own shape-specific length gates. |
-| Keyword low-entropy | on | `generic_keyword_low_entropy` | `--no-keyword-low-entropy` | Admit credential-keyword-anchored values (`PASSWORD=`, `*_PASS=`, `secret:` …) on a low entropy floor; precision is carried by the ML model. Surfaces real-world config passwords. Disabling raises precision but drops real recall. |
-| ML enabled | on | `no_ml = true` disables | `--no-ml` | ML confidence gating. Disabling raises FPs and hurts recall. |
+| Keyword low-entropy | on | `generic_keyword_low_entropy` | `--no-keyword-low-entropy` | Admit credential-keyword-anchored values (`PASSWORD=`, `*_PASS=`, `secret:` …) on the `generic-keyword-secret` detector's lower floor. Shape/context policy and, when enabled, MoE scoring carry precision. Disabling restores the stricter `generic-secret` floor and can drop real low-randomness credentials. |
+| Entropy ML authority | on | `no_entropy_ml_scoring = true` disables | `--no-entropy-ml-scoring` | Score entropy-discovered candidates through the MoE instead of the bare entropy heuristic. No effect when entropy or ML is disabled. |
+| ML enabled | on | `no_ml = true` disables | `--no-ml` | Include the on-device MoE contribution in confidence policy. Disabling it changes which ambiguous candidates clear the resolved floor and makes entropy discovery use its non-ML scoring path. |
 | ML weight | **0.5** | `ml_weight` | `--ml-weight` | Blend weight of the ML score vs heuristics (0.0-1.0). |
+| Additional scan confidence floor | unset | `[scan].ml_threshold` | `--ml-threshold` | Despite its historical ML-oriented name, the live resolver composes this as `max(scan min_confidence, ml_threshold)`. It therefore tightens every finding that uses the global scan floor; a detector-specific floor still replaces that global floor. |
 | Unicode norm | on | `no_unicode_norm = true` disables | `--no-unicode-norm` | Normalise homoglyphs before matching (anti-evasion). |
 | Scan comments | off | - | `--scan-comments` | Treat secrets in code comments at full confidence (default downgrades them). |
 | Threads | #cores | `[scan].threads` | `--threads` | Parallel scan workers. |
@@ -100,6 +102,15 @@ A dash means that layer intentionally has no surface.
 | Test-context keywords | embedded scanner set | `test_keywords` | - | Replace the scan-wide test/mock context words used by confidence policy. Empty entries fail closed. |
 | Placeholder keywords | embedded scanner set | `placeholder_keywords` | - | Replace the scan-wide placeholder markers used by confidence policy. Empty entries fail closed. |
 | Backend | `auto` | - | `--backend` | `auto`/`gpu`/`simd`/`cpu`. Profiles and persisted evidence use the descriptive engine labels `gpu-region-presence`/`simd-regex`/`cpu-fallback`; retired MegaScan and implementation-name aliases are rejected. Auto uses a persisted installer-calibrated fastest-correct decision for the exact workload bucket; missing/stale/incomplete calibration is an error, not permission to substitute another backend. |
+
+Autoroute also distinguishes runtime lifetime. Each GPU calibration record
+contains the first real dispatch and warm trials. A normal one-shot scan derives
+a cold-aware winner; a ready daemon derives a persistent-runtime winner from
+the warm GPU evidence in the same record. These routes may select different
+backends without changing detector policy or canonical matches. Options that
+the daemon protocol cannot represent (custom detector/config policy, explicit
+backend/GPU controls, source modes, verification, and similar orchestration)
+stay in process under `--daemon=auto` and fail explicitly under `--daemon=on`.
 
 ## Source limits
 
@@ -137,8 +148,8 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 | Preset | TOML | CLI | What it does |
 |---|---|---|---|
 | Fast | `fast = true` | `--fast` | Disables decode recursion (`max_decode_depth = 0`), entropy discovery, and ML scoring. Named regex and multiline detection remain active. Refused under `--lockdown`. |
-| Deep | `deep = true` | `--deep` | Everything on, maximum recall. |
-| Precision | - | `--precision` | High-precision mass scanning: drops entropy-only/ML-speculative findings, raises the confidence floor to **0.85**, shallow decode. Stays fully offline and fast. |
+| Deep | `deep = true` | `--deep` | Enables entropy and ML and restores decode depth 10. It does not lower the canonical 0.40 confidence floor. |
+| Precision | `precision = true` | `--precision` | Disables entropy discovery and the relaxed keyword-low-entropy bridge, keeps ML enabled, sets decode depth 1, and clamps global and detector confidence floors to at least **0.85**. |
 
 `--fast`, `--deep`, and `--precision` are mutually exclusive and conflict with
 `--no-decode`/`--no-entropy`.
@@ -265,7 +276,9 @@ like `--require-gpu`. The resolved value is printed by
 `scan --autoroute-calibrate` diagnostics. The supported maintenance command,
 `keyhog calibrate-autoroute`, always supplies GPU candidate admission so every
 eligible backend is a peer. Normal scans do not hash or benchmark from this
-value; they consume persisted fastest-correct decisions.
+value; they consume persisted fastest-correct decisions. A direct calibration
+that explicitly excludes GPU is stored under a diagnostic-only config identity,
+so its incomplete candidate set cannot replace normal all-candidate evidence.
 
 `batch_pipeline` forces the coalesced batch pipeline. Leave it `false` for the
 default fused filesystem route; set it only for calibration, diagnostics, or
@@ -347,7 +360,7 @@ limit fail closed with an operator-visible config error. See
 
 ## Where the numbers live
 
-- Canonical scan defaults + tuning rationale: `crates/core/src/config.rs`
+- Canonical detection defaults: `crates/core/src/config.rs`
   (`ScanConfig::default`).
 - Scanner route tuning defaults: `crates/scanner/src/scanner_config.rs`
   (`ScannerTuningConfig`).
@@ -355,6 +368,6 @@ limit fail closed with an operator-visible config error. See
   (`ConfigFile`, `apply_config_file`).
 - The resolved struct the live scanner reads (defaults + file + flags folded
   into one): `crates/cli/src/orchestrator_config.rs`
-  (`resolve_scan_config` → `ResolvedScanConfig`). Reading this single struct
-  (rather than re-deriving floors from raw args) is what keeps
-  *tuned == benched == shipped* true on the live path.
+  (`resolve_scan_config` → `ResolvedScanConfig`). The scanner, router,
+  reporter, and verifier consume that resolved policy rather than independently
+  re-reading raw arguments.

@@ -1,19 +1,20 @@
 # Exit codes
 
-KeyHog uses exit codes to signal scan outcomes. Stable across versions;
-consumers (CI gates, pre-commit hooks, IDE plugins) can rely on them.
+KeyHog uses exit codes to signal scan and maintenance outcomes. The numeric
+contract is stable across versions; consumers (CI gates, pre-commit hooks, IDE
+plugins, and health checks) can rely on it.
 
 | Exit | Meaning                                                            |
 |------|--------------------------------------------------------------------|
-| `0`  | Scan completed, zero findings.                                     |
+| `0`  | Command succeeded; for a scan, zero reported findings and no clean-blocking coverage/cache failure. |
 | `1`  | Findings present, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked). |
-| `2`  | User error (bad input/config): unknown CLI flag, `.keyhog.toml` parse failure, a missing path or invalid `--baseline` file, a detector TOML that failed to load, or missing/stale/incomplete autoroute calibration for `--backend auto`. Also any not-found / permission-denied I/O error. |
-| `3`  | System error: the local environment failed in a way no flag change fixes: a low-level I/O failure other than not-found / permission-denied, or a hardware / GPU **init** failure. Retry or route differently from `2`. |
+| `2`  | User/operator error: bad input/config, missing or invalid scan state, an unavailable required daemon, or missing/stale/incomplete autoroute evidence. Also operator-correctable I/O such as not-found, permission-denied, connection-refused, invalid-input, or invalid-data. |
+| `3`  | System error: a lower-level operating-system I/O failure, incremental-cache failure, or explicitly selected non-GPU backend that cannot execute. |
 | `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed. |
 | `10` | **LIVE credentials confirmed** (a `--verify` scan where the vendor API accepted a found secret) - the highest-severity gate. Also returned by `keyhog update --check` when a newer release exists. |
 | `11` | Scanner thread panicked. The finding count is NOT trustworthy - investigate, don't ship. Distinct from `2`/`3` so CI can tell a code bug from a config error. |
 | `12` | Selected/required GPU unavailable: `--require-gpu`, an explicit GPU backend, or persisted autoroute selected GPU but the stack or dispatch could not honor it. CPU/SIMD is not substituted. |
-| `13` | A requested source failed before producing scan data, or input coverage was incomplete, so the scan did not prove the target clean. |
+| `13` | A requested source failed before producing scan data, or a zero-finding scan had incomplete input coverage, so KeyHog refuses to report clean. |
 | `130`| Interrupted (SIGINT / Ctrl-C).                                     |
 
 ## `0` (clean)
@@ -61,8 +62,18 @@ Things that exit `2`:
   the rest of the scan continues but exits 2 at the end).
 - `--baseline <FILE>` where FILE doesn't exist or isn't valid JSON.
 - Missing, stale, invalid, or incomplete autoroute calibration for an
-  automatic backend decision. Rerun `install.sh --calibrate` or
-  `install.ps1 -Calibrate`, or pass an explicit `--backend` for diagnostics.
+  automatic backend decision. Inspect it with `keyhog backend --autoroute`,
+  then rerun `keyhog calibrate-autoroute`, `install.sh --calibrate`, or
+  `install.ps1 -Calibrate`. An explicit `--backend` bypasses the table for that
+  diagnostic scan; it does not make the autoroute state valid.
+- `--daemon=on` (or bare `--daemon`) when no compatible daemon can honor the
+  request, `daemon status`/`stop` when no daemon is running, or a stale daemon
+  rejected by the required route. `--daemon=auto` instead reports a reachable
+  daemon failure and runs the eligible request in process; with no socket it
+  goes straight in process.
+- On Windows, explicit `--daemon=auto|on` and daemon subcommands, because the
+  Unix-domain-socket transport is unavailable. An omitted flag or
+  `--daemon=off` is the supported in-process path.
 - Network error during `--verify` is NOT a `2`; it's a `verification-error`
   marker per finding and the scan exits `1` if any unverified-live
   findings exist.
@@ -72,13 +83,15 @@ depending on where the error happened.
 
 ## `3` (system error)
 
-A failure the operator can't fix by correcting a flag: a low-level I/O
-error that is NOT not-found / permission-denied (those map to `2`), or a
-hardware / GPU **init** failure. A missing/garbage `--baseline` is *user*
-error and exits `2`; a requested source that produced no scan data (for
-example `--git-history` on a non-repo) exits `13`, not `3`. A detector TOML
-that fails to load is likewise `2`. Distinct from `2` so a pipeline can
-retry/route differently. Stderr carries the cause.
+A failure below the operator-input boundary: a low-level I/O error that is not
+one of the operator-correctable kinds mapped to `2`, an incremental-cache
+failure, or an explicitly selected SIMD/Hyperscan path that becomes
+unavailable. A selected or required GPU failure is `12`, not `3`. A
+missing/garbage `--baseline` is `2`; a requested source that produced no scan
+data (for example `--git-history` on a non-repo) is `13`; and a detector TOML
+load failure is `2`. Distinct codes let automation choose whether to correct
+configuration, repair a runner, or rescan uncovered input. Stderr carries the
+cause.
 
 ## `4` (health / self-test failure)
 
@@ -135,7 +148,10 @@ for example `--git-history` on a non-git directory, a bad git ref, a remote
 source that could not be read, an unreadable file, an oversized file skipped by
 `--max-file-size`, a truncated archive, or a decode/source expansion cap. This
 is distinct from clean `0` and generic user-error `2`; the scan did not prove
-the target clean because requested bytes were not scanned.
+the target clean because requested bytes were not scanned. If findings were
+reported from the covered portion, the findings outcome (`1`, or `10` when a
+credential was confirmed live) takes precedence while the coverage warning
+still remains visible on stderr.
 
 ## Composing in shell
 
@@ -154,6 +170,7 @@ case "$rc" in
   10)    echo "LIVE credentials -> block + page on-call" ;;
   2)     echo "user error (bad flag/config) -> failing build" ;;
   3)     echo "system error -> retry / investigate" ;;
+  4)     echo "health/self-test failure -> repair installation" ;;
   11)    echo "scanner panic -> paging on-call" ;;
   12)    echo "selected/required GPU unavailable -> repair runner or recalibrate" ;;
   13)    echo "source failed or coverage incomplete -> fix source/ref/token or rescan uncovered input" ;;

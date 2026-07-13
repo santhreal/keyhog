@@ -19,10 +19,7 @@ it. Pass `keyhog hook install --force` only when replacement is intentional;
 That writes a `.git/hooks/pre-commit` script that calls
 `keyhog scan --fast --git-staged --backend cpu` (the same command
 `.pre-commit-hooks.yaml` exposes for the pre-commit framework).
-If a `pre-commit` hook already exists in the repo, `keyhog hook
-install` refuses to overwrite it - remove it (or run
-`keyhog hook uninstall`) and re-install. The next `git commit`
-invokes the hook.
+The next `git commit` invokes the hook.
 
 If `keyhog` is missing from `PATH`, the hook blocks the commit because the
 security scan did not run. Install KeyHog, fix `PATH`, or remove
@@ -87,8 +84,8 @@ options:
 2. Replace it with a placeholder and load the real value from the environment
    at runtime.
 3. If it is a false positive, add its hash to `.keyhogignore` (see below) or a
-   predicate rule in `.keyhogignore.toml`, or re-run with `--no-suppress-test-fixtures` to
-   confirm it is a documented example.
+   narrowly scoped predicate rule in `.keyhogignore.toml`, with the reason and
+   ownership recorded beside the exception.
 
 ## When you really need to commit anyway
 

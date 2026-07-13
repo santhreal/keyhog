@@ -11,9 +11,9 @@ welcome.
 |-----------------------------------|---------------------------------------------------------|
 | Report a bug                      | [Open an issue](https://github.com/santhsecurity/keyhog/issues/new) with a minimal reproducer. |
 | Report a security issue           | Email `security@santh.dev` (PGP key in `SECURITY.md`). Don't open a public issue. |
-| Add a detector                    | Drop a TOML in `detectors/`, add a contract in `crates/scanner/tests/contracts/`. PR. |
+| Add a detector                    | Add one detector TOML with its inline truth pair, then add its adversarial contract. |
 | Fix an FP                         | Find the regex / shape gate that's firing. Tighten it. Add a negative test that would catch the regression. |
-| Document something undocumented   | Edit `docs/src/*.md`. The site rebuilds on push to `main`. |
+| Document something undocumented   | Edit the canonical page under `docs/src/`; the site rebuilds from that mdBook source. |
 
 ## Repo layout
 
@@ -25,7 +25,7 @@ keyhog/
     sources/          # Filesystem, git, web, docker, S3/GCS/Azure Blob, hosted-git backends
     verifier/         # Live credential verification
     cli/              # The `keyhog` binary, subcommand dispatch
-  detectors/          # 922 embedded detector TOMLs
+  detectors/          # Embedded detector TOMLs: one secret type per file
   crates/cli/data/
     suppressions/     # Test-fixture suppression list, baked into the binary
   docs/               # This documentation (mdBook source)
@@ -33,8 +33,9 @@ keyhog/
   install.ps1         # Windows install script
 ```
 
-The Rust workspace is at the root; each `crate/` member is a
-standalone crate with its own `Cargo.toml`.
+The Rust workspace is at the root; each `crates/` member is a standalone crate
+with its own `Cargo.toml`. See [Architecture](./architecture.md) for crate
+ownership and the end-to-end scan flow before moving code across boundaries.
 
 ## Building
 
@@ -54,14 +55,29 @@ cargo test -p keyhog-scanner --lib
 
 ## Adding a detector
 
-The contract gate enforces that every shipped detector catches what
-it claims to catch. The flow:
+Detector truth has two layers. The compact positive/negative pair lives beside
+the detector policy and protects every TOML edit. The separate contract adds
+multiple envelopes, evasions, performance, and scale coverage. Both are
+required; neither substitutes for the other.
 
 1. **Write the detector TOML** at `detectors/<service>-<thing>.toml`.
    Use an existing detector as a template; the schema is documented
    in [Detectors](./detectors.md).
 
-2. **Write the contract** at `crates/scanner/tests/contracts/<id>.toml`.
+2. **Add the inline truth pair** in that same TOML:
+
+   ```toml
+   [[detector.tests]]
+   test_positive = "SERVICE_API_KEY=<valid-shaped-test-value>"
+   test_negative = "SERVICE_API_KEY=YOUR_API_KEY_HERE"
+   ```
+
+   Use synthetic or vendor-published test material, never a live credential.
+   The positive must emit this detector's exact ID; the negative must remain
+   silent through the production scan path.
+
+3. **Write the adversarial contract** at
+   `crates/scanner/tests/contracts/<id>.toml`.
    At minimum, include:
    - 2 positives (env-var shape, quoted shape)
    - 2 negatives (placeholder, EXAMPLE token in the body)
@@ -71,16 +87,17 @@ it claims to catch. The flow:
    - A `scale` block with `fixture_bytes` + `min_findings` +
      `max_seconds`
 
-3. **Run the contract gate locally:**
+4. **Run the detector truth gates locally:**
 
    ```sh
+   cargo test -p keyhog-scanner --test detector_inline_test_truth
    cargo test -p keyhog-scanner --test contracts_runner
    ```
 
    Must pass before you push. CI re-runs it with strict env vars set,
    which exercise more aggressive adversarial corpus.
 
-4. **Open a PR.** A maintainer reviews the detector for:
+5. **Open a PR.** A maintainer reviews the detector for:
    - Service is real and not duplicated by an existing detector.
    - Keywords are short, distinctive, and unlikely to FP.
    - Regex captures the right group and rejects obvious placeholders.
@@ -96,16 +113,15 @@ suppressions. The flow:
 1. **Reproduce.** Get the FPs into a `.envseal`-sealed corpus or a
    public sanitized fixture you can commit.
 
-2. **Write the filter.** Add to `crates/scanner/src/pipeline/postprocess/suppression.rs`
-   alongside the existing `looks_like_*` functions. The function
-   takes `&str` (the credential) or `Option<&str>` (the path) and
-   returns `bool`.
+2. **Find the existing owner.** Search `crates/scanner/src/suppression/shape/`
+   for the same operation before adding a helper. Extend the narrowest existing
+   shape module; path, prose, public-identifier, canonical-shape, and randomness
+   policy already have separate owners.
 
-3. **Wire it up.** Decide if it's Tier A (universal) or Tier B
-   (generic / entropy only). See `should_suppress_named_detector_finding`
-   for the existing wiring. Tier A is rare; default to Tier B unless
-   the shape is structurally impossible for any service-anchored
-   credential.
+3. **Wire it through the shared policy boundary.** `suppression/api.rs` exposes
+   the composed shape decisions and `adjudicate/` owns the final suppression
+   verdict. Do not add an emission-path-only `looks_like_*` check: CPU, SIMD,
+   GPU, generic, entropy, and fast-prefix paths must reach the same decision.
 
 4. **Add a unit test.** Inputs that should trip the filter (5+
    variants), inputs that should not (3+ legitimate credentials).
@@ -117,9 +133,12 @@ suppressions. The flow:
 ## Style
 
 - Rust edition 2021, MSRV 1.89.
-- `cargo +stable fmt` + `cargo +stable clippy -- -D warnings`. CI
-  enforces both.
-- File-size cap: 500 lines per `.rs` file. Larger files get split.
+- Run `cargo +stable fmt -- --check` and the relevant package's clippy target.
+  Treat lints as bug leads; avoid behavior-free contortions for style-only
+  findings.
+- Split modules by responsibility, ownership, readability, and testability.
+  File length is a prompt to inspect cohesion, not an architecture rule by
+  itself.
 - No `#[ignore]` on tests. A flaky test gets fixed or deleted, not
   silenced.
 - No `todo!()` / `unimplemented!()` / `panic!("not implemented")` in
@@ -137,9 +156,9 @@ cargo test -p keyhog-scanner --test contracts_runner   # per-detector contract g
 cargo test -p keyhog-scanner property::scanner_fuzz    # proptest
 ```
 
-The first four run in under 30 s. The contracts and property suites
-take 1-2 minutes. CI runs all of them; locally, the first four are
-the usual feedback loop.
+Run the narrowest behavioral gate that proves the change, then the affected
+package suite. Runtime depends on build profile, host, corpus, enabled features,
+and cache warmth; command output is the timing evidence for that run.
 
 ## License
 

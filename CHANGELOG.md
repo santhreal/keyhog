@@ -6,6 +6,37 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Hosted Git mass scans can read GitHub, GitLab, and Bitbucket credentials from
+  dedicated `KEYHOG_*` environment variables after the operator explicitly
+  selects an organization, group, or workspace. Tokens no longer need to
+  appear in process arguments, while ambient credentials alone still cannot
+  create a scan target.
+- CI now dogfoods the shipped CLI across portable CPU, CI-profile CPU, default
+  CPU, Hyperscan/SIMD, precision SARIF, JSON/JSONL, stdin, baselines, and real
+  `.keyhogignore` exclusions and bounded decode-through. Shared behavioral
+  harnesses validate exact findings, redaction, report schemas, exclusion
+  boundaries, and dogfood coverage telemetry instead of treating a clean
+  repository exit alone as product proof.
+- Autoroute cache ownership is split into decision policy, statistical timing,
+  secret-safe parity identity, schema, build/artifact identity, bounded codec,
+  validation, inspection, and locked persistence modules. Replacing an
+  existing stale, incompatible, unreadable, or invalid cache now produces an
+  unconditional stderr warning with the cache path and reason.
+- Current scan, daemon, reporter, and suppression contracts now require the
+  canonical detector TOML id on accelerated paths instead of accepting the
+  retired `hot-*` finding namespace. `keyhog explain` retains a finite,
+  explain-only mapping so historical reports remain understandable.
+- Autoroute no longer treats overlapping timing confidence intervals as proof
+  that backends are equally fast and then prefers a fixed backend rank. It now
+  selects the lowest measured median among statistically non-dominated,
+  parity-correct routes, using engagement overhead only for an exact median
+  tie. Cache inspection exposes whether confidence was separated and the exact
+  selection basis in text and JSON.
+- Autoroute inspection now renders distinct cold-aware one-shot and warm-daemon
+  decisions with their own confidence basis and margins, rejects structurally
+  invalid caches instead of omitting bad rows, and lives in a dedicated cache
+  inspection module. Unix and PowerShell installer probes now admit every
+  eligible GPU peer without changing the normal scan-config identity.
 - Generic pure-hex key handling is now detector-owned. Phase-2 detector TOMLs
   declare exact direct-assignment keyword/length pairs and exact
   transport-decoded hex widths; those declarations participate in detector
@@ -136,7 +167,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   bridges now own their distinct ceilings in their detector files.
 - Refined autoroute byte, chunk-count, and maximum-file classification from
   paired powers of two to one power-of-two band per key, bumped the cache schema
-  to v22 to prevent old numeric-key aliasing, and expanded the Rust, Unix, and
+  through v24 to prevent old numeric-key aliasing, remove duplicated timing
+  summaries in favor of primary trial vectors, and bind evidence to the exact
+  running executable digest; expanded the Rust, Unix, and
   PowerShell calibration ladders across every byte band from 1 B through 32 MiB
   and every default-batch chunk-count band. The measured 8 MiB GPU/Hyperscan
   crossover now has its own exact band.

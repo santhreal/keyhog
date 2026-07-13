@@ -4,8 +4,7 @@
 //! actionable error (never a silent no-op, never a stray partial file).
 //!
 //! Contract pinned here, all via the REAL shipped binary (`--daemon=off`,
-//! `--backend cpu`, `KEYHOG_NO_GPU=1` for host-independence, no accelerator is
-//! assumed):
+//! `--backend cpu` for host-independence, so no accelerator is assumed):
 //!   * `--output f` writes the report to `f`; `f`'s bytes parse to the SAME JSON
 //!     value that the same scan prints to stdout with no `--output`.
 //!   * the file carries the exact planted detector id `github-classic-pat`.
@@ -83,7 +82,7 @@ fn run(target: &PathBuf, format: &str, out: Option<&PathBuf>) -> (Option<i32>, S
     if let Some(o) = out {
         cmd.arg("--output").arg(o);
     }
-    cmd.arg(target).env("KEYHOG_NO_GPU", "1");
+    cmd.arg(target);
     let output = cmd.output().expect("spawn keyhog scan");
     (
         output.status.code(),
@@ -300,7 +299,6 @@ fn short_o_flag_equivalent_to_long_output() {
         ])
         .arg(&short_file)
         .arg(&target)
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .map(|o| {
             (

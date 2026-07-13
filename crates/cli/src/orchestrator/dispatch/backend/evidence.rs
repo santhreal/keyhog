@@ -1,9 +1,16 @@
-//! Autoroute timing evidence, backend decisions, and correctness digests.
+//! Autoroute backend decisions derived from measured timing evidence.
 
-use keyhog_core::RawMatch;
 use keyhog_scanner::hw_probe::ScanBackend;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+
+mod match_identity;
+mod timing;
+
+pub(super) use match_identity::{
+    canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
+    render_canonical_match,
+};
+pub(super) use timing::{BackendTimingEvidence, TimingConfidenceInterval};
 
 use super::{AUTOROUTE_CALIBRATION_TRIALS, AUTOROUTE_GPU_WARM_TRIALS};
 
@@ -11,7 +18,7 @@ pub(super) fn selected_backend_margin_ns(
     selected: ScanBackend,
     candidates: &[(ScanBackend, u128)],
 ) -> Option<u128> {
-    let selected_best = candidates
+    let selected_time = candidates
         .iter()
         .find(|(backend, _)| *backend == selected)?
         .1;
@@ -20,7 +27,7 @@ pub(super) fn selected_backend_margin_ns(
         .filter(|(backend, _)| *backend != selected)
         .map(|(_, timing_ns)| *timing_ns)
         .min()
-        .map(|second_best| second_best.saturating_sub(selected_best))
+        .map(|next_time| next_time.saturating_sub(selected_time))
 }
 
 pub(super) fn gpu_cold_warm_route_evidence(
@@ -34,7 +41,10 @@ pub(super) fn gpu_cold_warm_route_evidence(
     if !warm_timing.is_valid_for_trials(AUTOROUTE_GPU_WARM_TRIALS) {
         return None;
     }
-    let route_ns = cold_ns.max(warm_timing.best_ns);
+    // A single lucky minimum is not representative routing evidence. Use the
+    // warm median, while retaining the real first dispatch as a lower bound for
+    // one-shot routing. The daemon path consumes the warm median directly.
+    let route_ns = cold_ns.max(warm_timing.median_ns());
     Some((cold_ns, warm_timing, route_ns))
 }
 
@@ -43,7 +53,7 @@ pub(super) fn gpu_cold_warm_route_evidence(
 /// PRIMARY EVIDENCE ONLY: the persisted state is the measured timing evidence
 /// (`simd_timing` / `cpu_timing` / `gpu_timing`) plus the resolved `backend`,
 /// calibration sample, digest, timestamp, and trial count. Every value that is a
-/// pure function of that evidence, per-backend best-ms (`simd_ms()`/…), the GPU
+/// pure function of that evidence, per-backend median-ms (`simd_ms()`/…), the GPU
 /// cold/warm/route triple (`gpu_cold_warm_route()`), and the selected-backend
 /// margin (`selected_margin_ns()`), is DERIVED on demand through the accessors
 /// below rather than stored a second time. This is the ONE-PLACE invariant: a
@@ -122,19 +132,22 @@ impl AutorouteDecision {
     // Each is a pure function of the persisted timing set, computed on demand so
     // no stored copy can drift. These replace the former denormalized fields.
 
-    /// Best (fastest-trial) SIMD backend time in ms.
+    /// Representative SIMD route time in ms (median of measured trials).
     pub(super) fn simd_ms(&self) -> u128 {
-        self.simd_timing.best_ms()
+        self.simd_timing.median_ms()
     }
 
-    /// Best CPU-fallback backend time in ms, if CPU was measured.
+    /// Representative CPU-fallback route time in ms, if CPU was measured.
     pub(super) fn cpu_ms(&self) -> Option<u128> {
-        self.cpu_timing.as_ref().map(BackendTimingEvidence::best_ms)
+        self.cpu_timing
+            .as_ref()
+            .map(BackendTimingEvidence::median_ms)
     }
 
-    /// Best GPU backend time in ms, if GPU was measured.
+    /// Representative one-shot GPU route time in ms, including the measured
+    /// first-dispatch lower bound.
     pub(super) fn gpu_ms(&self) -> Option<u128> {
-        self.gpu_timing.as_ref().map(BackendTimingEvidence::best_ms)
+        self.gpu_route_ns().map(|route_ns| route_ns / 1_000_000)
     }
 
     /// The GPU cold-start ns, warm timing evidence, and routing ns, all derived
@@ -152,10 +165,10 @@ impl AutorouteDecision {
         self.gpu_cold_warm_route().map(|(cold_ns, _, _)| cold_ns)
     }
 
-    /// GPU warm best-ms, derived.
+    /// GPU warm median-ms, derived.
     pub(super) fn gpu_warm_ms(&self) -> Option<u128> {
         self.gpu_cold_warm_route()
-            .map(|(_, warm_timing, _)| warm_timing.best_ms())
+            .map(|(_, warm_timing, _)| warm_timing.median_ms())
     }
 
     /// GPU routing ns (the cold-vs-warm route cost the router compares), derived.
@@ -171,6 +184,15 @@ impl AutorouteDecision {
     pub(super) fn selected_margin_ns(&self) -> Option<u128> {
         let backend = self.backend()?;
         let candidates = self.route_candidates();
+        selected_backend_margin_ns(backend, &candidates)
+    }
+
+    /// The ns margin by which the derived persistent-daemon route beat the next
+    /// candidate, using warm GPU evidence. `None` when no route or competitor
+    /// exists.
+    pub(super) fn persistent_selected_margin_ns(&self) -> Option<u128> {
+        let backend = self.resolved_persistent_backend()?;
+        let candidates = self.persistent_route_candidates();
         selected_backend_margin_ns(backend, &candidates)
     }
 
@@ -195,11 +217,29 @@ impl AutorouteDecision {
         )
     }
 
+    fn persistent_route_candidates(&self) -> Vec<(ScanBackend, u128)> {
+        route_candidates_with_gpu_backend(
+            &self.simd_timing,
+            self.cpu_timing.as_ref(),
+            self.gpu_cold_warm_route()
+                .map(|(_, warm_timing, _)| warm_timing.median_ns()),
+            ScanBackend::Gpu,
+        )
+    }
+
     pub(super) fn selected_backend_has_non_overlapping_confidence(
         &self,
         selected: ScanBackend,
     ) -> bool {
-        let intervals = self.route_confidence_intervals();
+        self.selected_backend_has_non_overlapping_confidence_for(selected, false)
+    }
+
+    fn selected_backend_has_non_overlapping_confidence_for(
+        &self,
+        selected: ScanBackend,
+        persistent_runtime: bool,
+    ) -> bool {
+        let intervals = self.route_confidence_intervals_for(persistent_runtime);
         let Some((_, selected_interval)) = intervals
             .iter()
             .find(|(backend, _)| *backend == selected)
@@ -222,21 +262,13 @@ impl AutorouteDecision {
     ///
     /// Policy:
     /// - If one backend is provably fastest (its 95% CI lies entirely below
-    ///   every competitor's), that backend wins (the strongest evidence).
-    /// - Otherwise the empirically-fastest backend is statistically TIED with
-    ///   one or more competitors within measurement precision. A tie is itself a
-    ///   *proven* conclusion that the tied-fastest routes are equivalent, so the
-    ///   lowest-overhead member of the tied-fastest set wins (SimdCpu before
-    ///   CpuFallback before Gpu): when GPU only ties, its launch/transfer cost
-    ///   buys nothing, so the CPU/SIMD path is the sound, not the guessed, route.
+    ///   every competitor's), that backend wins.
+    /// - Otherwise confidence overlap is explicitly inconclusive, not proof of
+    ///   equivalence. Choose the lowest measured median among the statistically
+    ///   non-dominated candidates. Engagement overhead breaks only an exact
+    ///   median tie, never an overlap whose measured medians differ.
     pub(super) fn resolved_routing_backend(&self) -> Option<ScanBackend> {
-        // Lowest-overhead member of the statistically-tied fastest set (SimdCpu <
-        // CpuFallback < Gpu). An empty winner set means no timing evidence, so
-        // `min_by_key` yields `None`, propagated to the caller as "no persisted
-        // route" (never silently defaulted to a backend).
-        self.fastest_winner_set(false)
-            .into_iter()
-            .min_by_key(|backend| backend_overhead_rank(*backend))
+        self.resolve_measured_backend(false)
     }
 
     /// Fastest-correct backend once a long-lived daemon has initialized its
@@ -244,29 +276,36 @@ impl AutorouteDecision {
     /// dispatch and the warm trials; daemon routing uses only the warm interval,
     /// while one-shot routing conservatively includes cold cost.
     pub(super) fn resolved_persistent_backend(&self) -> Option<ScanBackend> {
-        self.fastest_winner_set(true)
-            .into_iter()
-            .min_by_key(|backend| backend_overhead_rank(*backend))
+        self.resolve_measured_backend(true)
     }
 
     /// True iff exactly one route is provably fastest. Equivalently, the
     /// resolved winner is separated from every competitor, its 95% CI lies
-    /// entirely below theirs. When false, two or more routes tie within
-    /// measurement precision and routing falls to the lowest-overhead tie-break.
+    /// entirely below theirs. When false, confidence intervals overlap and the
+    /// measured-median selection rule is operator-visible as inconclusive.
     pub(super) fn has_separated_fastest_route(&self) -> bool {
         self.resolved_routing_backend()
             .is_some_and(|winner| self.selected_backend_has_non_overlapping_confidence(winner))
     }
 
-    /// The set of routes that are NOT provably beaten by any competitor (i.e).
-    /// no other route's 95% CI lies entirely below this route's CI. Routing is
+    /// Persistent-daemon counterpart of [`Self::has_separated_fastest_route`],
+    /// evaluated with warm GPU evidence.
+    pub(super) fn has_separated_fastest_persistent_route(&self) -> bool {
+        self.resolved_persistent_backend().is_some_and(|winner| {
+            self.selected_backend_has_non_overlapping_confidence_for(winner, true)
+        })
+    }
+
+    /// The set of routes that are not provably beaten by any competitor; that
+    /// is, no other route's 95% CI lies entirely below this route's CI.
+    /// Routing is
     /// decided from confidence intervals, never a single `best_ns` trial, so a
     /// lucky outlier on a noisy backend can never win over a steadily-faster one.
     ///
     /// - Exactly one member  → that route is provably fastest.
-    /// - Two or more members → they are mutually non-separated (a tie); the
-    ///   lowest-overhead member is the sound route.
-    fn fastest_winner_set(&self, persistent_runtime: bool) -> Vec<ScanBackend> {
+    /// - Two or more members → confidence is inconclusive; measured medians
+    ///   decide, with overhead used only for an exact median tie.
+    fn statistically_non_dominated_routes(&self, persistent_runtime: bool) -> Vec<ScanBackend> {
         let intervals = self.route_confidence_intervals_for(persistent_runtime);
         intervals
             .iter()
@@ -279,8 +318,34 @@ impl AutorouteDecision {
             .collect()
     }
 
-    fn route_confidence_intervals(&self) -> Vec<(ScanBackend, TimingConfidenceInterval)> {
-        self.route_confidence_intervals_for(false)
+    fn resolve_measured_backend(&self, persistent_runtime: bool) -> Option<ScanBackend> {
+        self.statistically_non_dominated_routes(persistent_runtime)
+            .into_iter()
+            .filter_map(|backend| {
+                self.route_median_ns(backend, persistent_runtime)
+                    .map(|median_ns| (backend, median_ns))
+            })
+            .min_by_key(|(backend, median_ns)| (*median_ns, backend_overhead_rank(*backend)))
+            .map(|(backend, _)| backend)
+    }
+
+    fn route_median_ns(&self, backend: ScanBackend, persistent_runtime: bool) -> Option<u128> {
+        match backend {
+            ScanBackend::SimdCpu => Some(self.simd_timing.median_ns()),
+            ScanBackend::CpuFallback => self
+                .cpu_timing
+                .as_ref()
+                .map(BackendTimingEvidence::median_ns),
+            ScanBackend::Gpu => {
+                let (_, warm_timing, one_shot_ns) = self.gpu_cold_warm_route()?;
+                Some(if persistent_runtime {
+                    warm_timing.median_ns()
+                } else {
+                    one_shot_ns
+                })
+            }
+            _ => None,
+        }
     }
 
     fn route_confidence_intervals_for(
@@ -289,16 +354,16 @@ impl AutorouteDecision {
     ) -> Vec<(ScanBackend, TimingConfidenceInterval)> {
         let mut intervals = vec![(
             ScanBackend::SimdCpu,
-            self.simd_timing.confidence_interval_95_ns,
+            self.simd_timing.confidence_interval_95_ns(),
         )];
         if let Some(cpu_timing) = self.cpu_timing.as_ref() {
             intervals.push((
                 ScanBackend::CpuFallback,
-                cpu_timing.confidence_interval_95_ns,
+                cpu_timing.confidence_interval_95_ns(),
             ));
         }
         if let Some((cold_ns, warm_timing, _route_ns)) = self.gpu_cold_warm_route() {
-            let warm_interval = warm_timing.confidence_interval_95_ns;
+            let warm_interval = warm_timing.confidence_interval_95_ns();
             intervals.push((
                 ScanBackend::Gpu,
                 if persistent_runtime {
@@ -321,9 +386,9 @@ fn route_candidates_with_gpu_backend(
     gpu_route_ns: Option<u128>,
     gpu_backend: ScanBackend,
 ) -> Vec<(ScanBackend, u128)> {
-    let mut candidates = vec![(ScanBackend::SimdCpu, simd_timing.best_ns)];
+    let mut candidates = vec![(ScanBackend::SimdCpu, simd_timing.median_ns())];
     if let Some(cpu_timing) = cpu_timing {
-        candidates.push((ScanBackend::CpuFallback, cpu_timing.best_ns));
+        candidates.push((ScanBackend::CpuFallback, cpu_timing.median_ns()));
     }
     if let Some(gpu_route_ns) = gpu_route_ns {
         candidates.push((gpu_backend, gpu_route_ns));
@@ -331,10 +396,8 @@ fn route_candidates_with_gpu_backend(
     candidates
 }
 
-/// Engagement-overhead rank used to break a statistical tie: lower wins. A tie
-/// means the routes are equally fast within measurement precision, so the
-/// cheapest-to-engage route is the sound choice. SimdCpu (reference, always
-/// available, no GPU launch/transfer) before CpuFallback before any GPU route.
+/// Engagement-overhead rank used only when representative measured medians are
+/// exactly equal. Confidence-interval overlap alone never invokes this ranking.
 fn backend_overhead_rank(backend: ScanBackend) -> u8 {
     match backend {
         ScanBackend::SimdCpu => 0,
@@ -342,256 +405,4 @@ fn backend_overhead_rank(backend: ScanBackend) -> u8 {
         ScanBackend::Gpu => 2,
         _ => 3,
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct BackendTimingEvidence {
-    pub(super) trials_ns: Vec<u128>,
-    pub(super) best_ns: u128,
-    pub(super) min_ns: u128,
-    pub(super) max_ns: u128,
-    pub(super) mean_ns: u128,
-    pub(super) confidence_interval_95_ns: TimingConfidenceInterval,
-}
-
-impl BackendTimingEvidence {
-    pub(super) fn from_durations(durations: Vec<Duration>) -> Option<Self> {
-        let trials_ns = durations.into_iter().map(|dur| dur.as_nanos()).collect();
-        Self::from_trial_ns(trials_ns)
-    }
-
-    #[cfg(test)]
-    pub(super) fn constant_ms(ms: u128, trials: usize) -> Self {
-        let trials_ns = vec![ms.saturating_mul(1_000_000); trials.max(1)];
-        match Self::from_trial_ns(trials_ns) {
-            Some(evidence) => evidence,
-            // `trials.max(1) >= 1` makes the trial set non-empty, so
-            // `from_trial_ns` (which only returns `None` for an empty set)
-            // cannot fail here.
-            None => unreachable!("a non-empty trial set always yields timing evidence"),
-        }
-    }
-
-    pub(super) fn from_trial_ns(trials_ns: Vec<u128>) -> Option<Self> {
-        if trials_ns.is_empty() {
-            return None;
-        }
-        let mut min_ns: Option<u128> = None;
-        let mut max_ns: Option<u128> = None;
-        let mut sum = 0u128;
-        for ns in trials_ns.iter().copied() {
-            min_ns = Some(min_ns.map_or(ns, |current| current.min(ns)));
-            max_ns = Some(max_ns.map_or(ns, |current| current.max(ns)));
-            sum = sum.saturating_add(ns);
-        }
-        let min_ns = match min_ns {
-            Some(ns) => ns,
-            None => 0,
-        };
-        let max_ns = match max_ns {
-            Some(ns) => ns,
-            None => 0,
-        };
-        let mean_ns = sum / trials_ns.len() as u128;
-        let confidence_interval_95_ns = TimingConfidenceInterval::from_trials(&trials_ns);
-        Some(Self {
-            trials_ns,
-            best_ns: min_ns,
-            min_ns,
-            max_ns,
-            mean_ns,
-            confidence_interval_95_ns,
-        })
-    }
-
-    pub(super) fn best_ms(&self) -> u128 {
-        self.best_ns / 1_000_000
-    }
-
-    pub(super) fn is_valid_for_trials(&self, min_trials: usize) -> bool {
-        if self.trials_ns.len() < min_trials || self.trials_ns.iter().any(|&trial| trial == 0) {
-            return false;
-        }
-        match Self::from_trial_ns(self.trials_ns.clone()) {
-            Some(expected) => self == &expected,
-            None => false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct TimingConfidenceInterval {
-    pub(super) low_ns: u128,
-    pub(super) high_ns: u128,
-}
-
-impl TimingConfidenceInterval {
-    fn from_trials(trials_ns: &[u128]) -> Self {
-        let count = trials_ns.len() as f64;
-        let mean = trials_ns.iter().map(|&ns| ns as f64).sum::<f64>() / count;
-        let variance = if trials_ns.len() > 1 {
-            trials_ns
-                .iter()
-                .map(|&ns| {
-                    let delta = ns as f64 - mean;
-                    delta * delta
-                })
-                .sum::<f64>()
-                / (count - 1.0)
-        } else {
-            0.0
-        };
-        let half_width =
-            two_sided_95_student_t_critical(trials_ns.len()) * variance.sqrt() / count.sqrt();
-        Self {
-            low_ns: (mean - half_width).max(0.0).floor() as u128,
-            high_ns: (mean + half_width).ceil() as u128,
-        }
-    }
-}
-
-fn two_sided_95_student_t_critical(sample_count: usize) -> f64 {
-    match sample_count {
-        0 | 1 => 0.0,
-        2 => 12.706_204_736,
-        3 => 4.302_652_73,
-        4 => 3.182_446_305,
-        5 => 2.776_445_105,
-        6 => 2.570_581_836,
-        7 => 2.446_911_851,
-        8 => 2.364_624_252,
-        9 => 2.306_004_135,
-        10 => 2.262_157_163,
-        11 => 2.228_138_852,
-        12 => 2.200_985_16,
-        13 => 2.178_812_83,
-        14 => 2.160_368_656,
-        15 => 2.144_786_688,
-        16 => 2.131_449_546,
-        17 => 2.119_905_299,
-        18 => 2.109_815_578,
-        19 => 2.100_922_04,
-        20 => 2.093_024_054,
-        21 => 2.085_963_447,
-        22 => 2.079_613_845,
-        23 => 2.073_873_068,
-        24 => 2.068_657_61,
-        25 => 2.063_898_562,
-        26 => 2.059_538_553,
-        27 => 2.055_529_439,
-        28 => 2.051_830_516,
-        29 => 2.048_407_142,
-        30 => 2.045_229_642,
-        31 => 2.042_272_456,
-        // For larger future trial counts, keep the interval conservative
-        // instead of silently reverting to the narrower normal 1.96 multiplier.
-        _ => 2.042_272_456,
-    }
-}
-
-pub(super) type CanonicalMatch<'a> = (
-    usize,
-    &'a str,
-    keyhog_core::CredentialHash,
-    Option<&'a str>,
-    Option<usize>,
-    usize,
-);
-
-pub(super) fn canonical_matches(matches: &[Vec<RawMatch>]) -> Vec<CanonicalMatch<'_>> {
-    let mut out = Vec::with_capacity(canonical_match_count(matches));
-    for (chunk_idx, chunk_matches) in matches.iter().enumerate() {
-        for m in chunk_matches {
-            out.push(canonical_match(chunk_idx, m));
-        }
-    }
-    out.sort_unstable();
-    out
-}
-
-pub(super) fn canonical_matches_equal_reference(
-    matches: &[Vec<RawMatch>],
-    reference: &[CanonicalMatch<'_>],
-) -> bool {
-    let match_count = canonical_match_count(matches);
-    if match_count != reference.len() {
-        return false;
-    }
-    if match_count == 0 {
-        return true;
-    }
-    if match_count > 256 {
-        return canonical_matches(matches) == reference;
-    }
-
-    let mut matched = [false; 256];
-    for (chunk_idx, chunk_matches) in matches.iter().enumerate() {
-        for m in chunk_matches {
-            let canonical = canonical_match(chunk_idx, m);
-            let Ok(mut idx) = reference.binary_search(&canonical) else {
-                return false;
-            };
-            while idx > 0 && reference[idx - 1] == canonical {
-                idx -= 1;
-            }
-            while idx < reference.len() && reference[idx] == canonical {
-                if !matched[idx] {
-                    matched[idx] = true;
-                    break;
-                }
-                idx += 1;
-            }
-            if idx == reference.len() || reference[idx] != canonical {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-fn canonical_match_count(matches: &[Vec<RawMatch>]) -> usize {
-    matches.iter().map(Vec::len).sum()
-}
-
-fn canonical_match(chunk_idx: usize, m: &RawMatch) -> CanonicalMatch<'_> {
-    (
-        chunk_idx,
-        m.detector_id.as_ref(),
-        m.credential_hash,
-        m.location.file_path.as_deref(),
-        m.location.line,
-        m.location.offset,
-    )
-}
-
-/// Render one canonical match identity for the reference-mismatch diff log.
-/// Derived from [`canonical_match`], the ONE owner of which fields make up a
-/// match's calibration identity, so the diff that *explains* an equality
-/// failure can never disagree with the equality itself about what was compared.
-pub(super) fn render_canonical_match(
-    (chunk_idx, detector_id, credential_hash, file_path, line, offset): &CanonicalMatch<'_>,
-) -> String {
-    let credential_hash_hex: String = credential_hash
-        .as_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    format!(
-        "chunk={chunk_idx} detector={detector_id} cred_hash={credential_hash_hex} \
-         file={file_path:?} line={line:?} offset={offset}"
-    )
-}
-
-pub(super) fn canonical_match_digest(matches: &[CanonicalMatch<'_>]) -> u64 {
-    let mut h = crate::stable_hash::StableHasher::new("autoroute-correctness-digest");
-    h.field_usize("matches.len", matches.len());
-    for (chunk_idx, detector_id, credential_hash, file_path, line, offset) in matches {
-        h.field_usize("match.chunk_idx", *chunk_idx);
-        h.field_str("match.detector_id", detector_id);
-        h.field_bytes("match.credential_hash", credential_hash.as_bytes());
-        h.field_option_str("match.file_path", *file_path);
-        h.field_option_usize("match.line", *line);
-        h.field_usize("match.offset", *offset);
-    }
-    h.finish_u64()
 }

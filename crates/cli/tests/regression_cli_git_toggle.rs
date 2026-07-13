@@ -102,16 +102,14 @@ fn scan(root: &Path, extra: &[&str]) -> (Vec<serde_json::Value>, Option<i32>) {
 }
 
 /// The findings attributable to the literal-anchored AWS access-key detector.
-/// An `AKIA…` key is caught by the named `aws-access-key` detector, or by the
-/// simdsieve fast path `hot-aws_key` when it engages, both are a correct AWS
-/// detection, so accept either id (matches the e2e_binary contract).
+/// Accelerated and portable routes keep the canonical `aws-access-key` id.
 fn aws_findings(findings: &[serde_json::Value]) -> Vec<&serde_json::Value> {
     findings
         .iter()
         .filter(|f| {
             matches!(
                 f.get("detector_id").and_then(|v| v.as_str()),
-                Some("aws-access-key" | "hot-aws_key")
+                Some("aws-access-key")
             )
         })
         .collect()

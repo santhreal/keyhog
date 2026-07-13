@@ -12,7 +12,7 @@
 //! path is forced regardless of any GPU/env state).
 //!
 //! Detector ids asserted here (`github`-family, `aws-bedrock-api-key`,
-//! `aws-access-key`/`hot-aws_key`) are the same concrete ids the shipped
+//! canonical `aws-access-key` id is the same concrete id the shipped
 //! `e2e_binary.rs` contract already pins for these literal fixtures.
 
 use std::path::Path;
@@ -35,7 +35,7 @@ fn binary() -> PathBuf {
 /// one file is clean. At least three findings are expected.
 fn build_corpus(dir: &Path) {
     // AWS long-term access key id -> `aws-access-key` (or the
-    // `hot-aws_key` simdsieve fast path); same literal as e2e_binary.rs.
+    // simdsieve accelerated path); same literal as e2e_binary.rs.
     std::fs::write(
         dir.join("a_aws.env"),
         concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n"),
@@ -356,11 +356,11 @@ fn corpus_fires_aws_access_key_detector_under_both_thread_counts() {
     // AKIA is caught by the named detector or the simdsieve fast path;
     // either is a correct AWS-access-key detection (see e2e_binary.rs).
     assert!(
-        has_detector(&f1, &["aws-access-key", "hot-aws_key"]),
+        has_detector(&f1, &["aws-access-key"]),
         "single-thread scan must fire an AWS access-key detector; got {f1:#?}"
     );
     assert!(
-        has_detector(&f4, &["aws-access-key", "hot-aws_key"]),
+        has_detector(&f4, &["aws-access-key"]),
         "four-thread scan must fire an AWS access-key detector; got {f4:#?}"
     );
 }

@@ -257,8 +257,7 @@ fn json_planted_finding_is_valid_array_with_contract_fields() {
 }
 
 /// The AKIA fixture surfaces as an AWS detection in JSON. AWS keys are
-/// caught by the named `aws-access-key` detector or the simdsieve fast
-/// path `hot-aws_key`; either is a correct AWS detection.
+/// caught under the canonical `aws-access-key` id on every backend.
 #[test]
 fn json_planted_finding_is_aws_detection() {
     let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "json");
@@ -267,7 +266,7 @@ fn json_planted_finding_is_aws_detection() {
     let aws = arr.iter().any(|f| {
         matches!(
             f.get("detector_id").and_then(|x| x.as_str()),
-            Some("aws-access-key" | "hot-aws_key")
+            Some("aws-access-key")
         )
     });
     assert!(aws, "expected an AWS detection in JSON output; got {arr:?}");
@@ -305,7 +304,7 @@ fn json_credential_is_redacted_not_plaintext() {
         .find(|f| {
             matches!(
                 f.get("detector_id").and_then(|x| x.as_str()),
-                Some("aws-access-key" | "hot-aws_key")
+                Some("aws-access-key")
             )
         })
         .expect("aws finding present");
@@ -621,10 +620,7 @@ fn csv_data_row_carries_aws_detector_and_redacted_credential() {
         .skip(1)
         .find(|r| {
             let cols: Vec<&str> = r.split(',').collect();
-            matches!(
-                cols.first().copied(),
-                Some("aws-access-key" | "hot-aws_key")
-            )
+            matches!(cols.first().copied(), Some("aws-access-key"))
         })
         .expect("a CSV data row for the AWS detection");
     let cols: Vec<&str> = row.split(',').collect();
@@ -712,7 +708,7 @@ fn html_planted_finding_inlines_nonempty_findings_array() {
         "planted finding must produce a non-empty rawFindings array"
     );
     assert!(
-        literal.contains("aws-access-key") || literal.contains("hot-aws_key"),
+        literal.contains("aws-access-key"),
         "rawFindings must reference the AWS detector id; got {literal}"
     );
 }

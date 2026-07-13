@@ -150,14 +150,11 @@ fn scan_finds_planted_aws_key_and_returns_exit_1() {
     let arr = findings.as_array().expect("findings JSON is an array");
     // Non-emptiness is proven by the exact AWS-detector assert below; a bare
     // shape assert here would pass on a single junk finding.
-    // An AKIA key is caught by the simdsieve fast path (`hot-aws_key`) when it
-    // engages, otherwise by the named `aws-access-key` detector. Both are a
-    // correct AWS detection - assert on either so the test does not break on a
-    // backend/size-dependent fast-path engagement decision.
+    // Accelerated and portable paths must keep the canonical TOML detector id.
     let aws = arr.iter().find(|f| {
         matches!(
             f.get("detector_id").and_then(|v| v.as_str()),
-            Some("aws-access-key" | "hot-aws_key")
+            Some("aws-access-key")
         )
     });
     assert!(aws.is_some(), "expected an AWS key finding; got: {arr:?}");
@@ -1145,7 +1142,7 @@ fn daemon_wire_scan_path_finds_planted_secret() {
     assert!(
         arr.iter().any(|f| matches!(
             f.get("detector_id").and_then(|v| v.as_str()),
-            Some("aws-access-key" | "hot-aws_key")
+            Some("aws-access-key")
         )),
         "daemon wire path must return an AWS finding; got {arr:?}"
     );
@@ -1207,7 +1204,7 @@ fn daemon_wire_scan_stdin_finds_planted_secret() {
     assert!(
         matches!(
             arr[0].get("detector_id").and_then(|v| v.as_str()),
-            Some("aws-access-key" | "hot-aws_key")
+            Some("aws-access-key")
         ),
         "daemon ScanText/stdin wire path must return the named AWS finding, not a generic entropy duplicate; got {arr:?}"
     );
@@ -1503,14 +1500,13 @@ fn config_detector_disable_drops_findings() {
     // `[detector.<id>] enabled = false` must actually drop the detector. This
     // README-documented toggle was parsed and SILENTLY IGNORED before being
     // wired, so a user disabling a noisy detector kept seeing it fire. The
-    // hot-pattern fast path (`hot-aws_key`) shadows the TOML `aws-access-key`
-    // detector, so both must be disabled to fully silence the AWS key.
+    // Accelerated and portable paths share the TOML `aws-access-key` id.
     let aws = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
     let (_o, _e, before) = scan_dir_with_config(aws, "", &[]);
     assert_eq!(before, Some(1), "baseline: the AWS key must be found");
     let (out, _e, code) = scan_dir_with_config(
         aws,
-        "[detector.hot-aws_key]\nenabled = false\n[detector.aws-access-key]\nenabled = false\n[detector.entropy-api-key]\nenabled = false\n",
+        "[detector.aws-access-key]\nenabled = false\n[detector.entropy-api-key]\nenabled = false\n",
         &[],
     );
     assert_eq!(

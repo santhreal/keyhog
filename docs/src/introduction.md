@@ -62,8 +62,9 @@ Three things, in order of how much they matter:
    teaches developers to ignore it. KeyHog suppresses example credentials
    (the Stripe docs key, the AWS sample key, the RFC 7519 specimen JWT),
    vendored bundles (minified jQuery, node_modules), and CI workflow
-   `${{ secrets.NAME }}` references by default. The 22-repo dogfood
-   corpus has 22 non-PEM findings, all true positives.
+   `${{ secrets.NAME }}` references by default. Repository dogfood and
+   detector-specific negative twins keep those decisions exercised through the
+   same scanner path users run.
 
 2. **Recall.** The detector corpus is built service-by-service. For every
    detector, the test suite carries positive shapes (env-var, JSON,

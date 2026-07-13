@@ -76,12 +76,13 @@ pub(super) fn calibrate_fastest_correct_backend(
 
     // Construct with the reference backend provisionally, then resolve the REAL
     // selection deterministically from the measured evidence: the provably-fastest
-    // route if one is statistically separated, otherwise the lowest-overhead
-    // member of the tied-fastest set. `resolved_routing_backend` is the SAME
+    // route if one is statistically separated, otherwise the lowest measured
+    // median among statistically non-dominated routes. Engagement overhead is
+    // consulted only for an exact median tie. `resolved_routing_backend` is the SAME
     // function `store::validate_decision_route_evidence` re-checks, so
     // calibration never persists a decision validation would reject, and a fast
-    // host where the routes tie within measurement noise still gets a usable,
-    // sound cache instead of an empty one that hard-errors every auto scan.
+    // host with overlapping intervals still gets a measured decision without
+    // pretending that overlap proves equivalence or applying a backend hierarchy.
     // The provisional backend/margin are ALWAYS overwritten below; only the
     // resolved pair is ever observable.
     let mut decision = AutorouteDecision::from_timing_evidence(

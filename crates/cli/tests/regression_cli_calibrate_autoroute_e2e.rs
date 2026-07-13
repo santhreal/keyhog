@@ -3,7 +3,7 @@
 //! `backend --autoroute [--json]` renders the persisted autoroute calibration
 //! cache read-only (`run_autoroute_inspection` in
 //! `crates/cli/src/subcommands/backend.rs`, backed by `inspect_autoroute_cache`
-//! in `crates/cli/src/orchestrator/dispatch/backend/store.rs`). It always exits
+//! in `crates/cli/src/orchestrator/dispatch/backend/store/codec.rs`). It always exits
 //! 0, even for a missing / corrupt / stale cache, because it is a diagnostic
 //! read, not a scan; the loud status text tells the operator what a real scan
 //! would fail closed on.
@@ -17,7 +17,7 @@
 //! Pinned facts (read from source, asserted exactly):
 //!   * `AUTOROUTE_CACHE_VERSION = 22` (backend.rs), the schema version an
 //!     inspected valid cache reports and an incompatible one is rejected against.
-//!   * `AUTOROUTE_CACHE_FILE_BYTES = 8 * 1024 * 1024` (store.rs:16), the read
+//!   * `AUTOROUTE_CACHE_FILE_BYTES = 8 * 1024 * 1024` in the cache codec, the read
 //!     cap; a file one byte over is reported "unreadable".
 //!   * `calibrate-autoroute` sweeps 34 workloads × 4 scan policies (default +
 //!     `--fast`/`--deep`/`--precision`) = 136 probes, and each policy resolves a
@@ -29,7 +29,7 @@ use tempfile::TempDir;
 
 /// Schema version this build's cache reports / requires (backend.rs:58).
 const EXPECTED_CACHE_VERSION: u64 = 22;
-/// Read cap for the cache file (store.rs:16).
+/// Read cap for the cache file (kept in sync with the cache codec).
 const CACHE_FILE_CAP_BYTES: usize = 8 * 1024 * 1024;
 
 fn binary() -> PathBuf {
@@ -523,6 +523,44 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
             count >= 1,
             "every primed policy config holds at least one workload decision; config={config}"
         );
+        for decision in config
+            .get("decisions")
+            .and_then(serde_json::Value::as_array)
+            .expect("decisions array")
+        {
+            assert!(
+                decision
+                    .get("backend")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some()
+                    && decision
+                        .get("daemon_backend")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some(),
+                "every decision exposes one-shot and daemon routes; decision={decision}"
+            );
+            assert!(
+                decision
+                    .get("confidence_separated")
+                    .and_then(serde_json::Value::as_bool)
+                    .is_some()
+                    && decision
+                        .get("daemon_confidence_separated")
+                        .and_then(serde_json::Value::as_bool)
+                        .is_some(),
+                "every decision exposes one-shot and daemon confidence state; decision={decision}"
+            );
+            for field in ["selection_basis", "daemon_selection_basis"] {
+                assert!(
+                    matches!(
+                        decision.get(field).and_then(serde_json::Value::as_str),
+                        Some("separated-95pct-confidence")
+                            | Some("lowest-measured-median-among-overlapping-confidence")
+                    ),
+                    "{field} must name the actual resolution rule; decision={decision}"
+                );
+            }
+        }
         total_decisions += count;
     }
     assert!(
@@ -548,5 +586,11 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
     assert!(
         human_stdout.contains("matches this build"),
         "human identity line confirms the cache matches this build; stdout={human_stdout}"
+    );
+    assert!(
+        human_stdout.contains("one-shot ->")
+            && human_stdout.contains("daemon   ->")
+            && human_stdout.contains("basis="),
+        "human inspection distinguishes runtime routes and their basis; stdout={human_stdout}"
     );
 }

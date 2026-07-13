@@ -414,13 +414,9 @@ fn every_contract_scale_gate_holds() {
         let matches = scanner.scan(&chunk);
         let elapsed = start.elapsed().as_secs_f64();
 
-        // Detector-agnostic: cross-detector dedup can relabel a
-        // finding (e.g. github-classic-pat → hot-github_pat on
-        // the fast-path), so the contract gates on "this
-        // credential string is surfaced under SOME detector,"
-        // not "the labelled detector fired." That's what the end
-        // user actually cares about - the credential is in the
-        // report.
+        // Detector-agnostic: overlapping detectors can identify the same
+        // credential, so this scale contract gates on the credential being
+        // surfaced rather than duplicating detector-selection assertions.
         let surfaced = matches
             .iter()
             .filter(|m| m.credential.as_ref().contains(&first.credential))

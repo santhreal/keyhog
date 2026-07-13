@@ -172,20 +172,22 @@ pub struct ScanArgs {
 
     /// Scan all repositories in a GitHub organization
     #[cfg(feature = "github")]
-    #[arg(long, requires = "github_token", value_name = "ORG")]
+    #[arg(long, value_name = "ORG")]
     pub github_org: Option<String>,
 
-    /// GitHub personal access token for --github-org
+    /// GitHub personal access token for --github-org. Prefer
+    /// KEYHOG_GITHUB_TOKEN so the token is not exposed in the process list.
     #[cfg(feature = "github")]
     #[arg(long, requires = "github_org", value_name = "PAT")]
     pub github_token: Option<String>,
 
     /// Scan all projects in a GitLab group, including subgroups
     #[cfg(feature = "gitlab")]
-    #[arg(long, requires = "gitlab_token", value_name = "GROUP")]
+    #[arg(long, value_name = "GROUP")]
     pub gitlab_group: Option<String>,
 
-    /// GitLab personal access token for --gitlab-group
+    /// GitLab personal access token for --gitlab-group. Prefer
+    /// KEYHOG_GITLAB_TOKEN so the token is not exposed in the process list.
     #[cfg(feature = "gitlab")]
     #[arg(long, requires = "gitlab_group", value_name = "PAT")]
     pub gitlab_token: Option<String>,
@@ -197,19 +199,17 @@ pub struct ScanArgs {
 
     /// Scan all repositories in a Bitbucket Cloud workspace
     #[cfg(feature = "bitbucket")]
-    #[arg(
-        long,
-        requires_all = ["bitbucket_username", "bitbucket_token"],
-        value_name = "WORKSPACE"
-    )]
+    #[arg(long, value_name = "WORKSPACE")]
     pub bitbucket_workspace: Option<String>,
 
-    /// Bitbucket username for --bitbucket-workspace
+    /// Bitbucket username for --bitbucket-workspace. May be supplied through
+    /// KEYHOG_BITBUCKET_USERNAME.
     #[cfg(feature = "bitbucket")]
     #[arg(long, requires = "bitbucket_workspace", value_name = "USERNAME")]
     pub bitbucket_username: Option<String>,
 
-    /// Bitbucket app password for --bitbucket-workspace
+    /// Bitbucket app password for --bitbucket-workspace. Prefer
+    /// KEYHOG_BITBUCKET_TOKEN so the token is not exposed in the process list.
     #[cfg(feature = "bitbucket")]
     #[arg(long, requires = "bitbucket_workspace", value_name = "APP_PASSWORD")]
     pub bitbucket_token: Option<String>,
@@ -688,13 +688,11 @@ pub struct ScanArgs {
     pub deep: bool,
 
     /// High-precision mode for mass scanning: minimise false positives at the
-    /// cost of some recall. Drops entropy-only and ML-speculative findings,
-    /// raises the confidence floor to 0.85 (so checksum-failing and weak-signal
-    /// matches are suppressed), and uses shallow decode. Stays fully offline
-    /// and fast. Use when triaging false positives across a huge corpus is
-    /// expensive. `--min-confidence` still overrides the floor on top. Entropy-
-    /// only knobs conflict because precision mode disables entropy, so accepting
-    /// them would create a no-op flag.
+    /// cost of some recall. Disables entropy discovery and the relaxed keyword
+    /// bridge, retains ML scoring for remaining candidates, raises the minimum
+    /// confidence floor to 0.85, and uses decode depth 1. Explicit confidence
+    /// flags may tighten but cannot lower that floor. Entropy-only knobs conflict
+    /// because precision mode disables entropy.
     #[arg(
         long,
         conflicts_with_all = [
@@ -737,21 +735,16 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_entropy_ml_scoring: bool,
 
-    /// Require high entropy even for credential-keyword-anchored values
-    /// (`PASSWORD=`, `*_PASS=`, `secret:`, `api_key=` ...). By default the
-    /// keyword key is treated as the evidence and the value is admitted on a far
-    /// lower entropy floor (precision carried by the MoE), which is what surfaces
-    /// real-world low-entropy config passwords. This opt-out restores the
-    /// high-entropy-only generic gate (higher precision, much lower recall on
-    /// real corpora). No effect unless the generic keyword bridge fires.
+    /// Disable the lower-floor `generic-keyword-secret` bridge for anchored
+    /// values (`PASSWORD=`, `*_PASS=`, `secret:`, `api_key=` ...). Anchored
+    /// candidates must then satisfy the stricter `generic-secret` policy. No
+    /// effect unless the generic keyword bridge would otherwise fire.
     #[arg(long)]
     pub no_keyword_low_entropy: bool,
 
-    /// Minimum ML confidence score for generic entropy secrets (0.0 to 1.0).
-    /// When present it tightens the bar a generic/entropy finding must clear
-    /// by composing with the resolved confidence floor via `.max()` in
-    /// `orchestrator_config::build_scanner_config`. Absence leaves the
-    /// canonical floor untouched.
+    /// Raise the resolved global confidence floor (0.0 to 1.0). A detector's
+    /// explicit `min_confidence` remains that detector's effective floor.
+    /// Absence leaves the canonical floor untouched.
     #[arg(
         long,
         value_name = "THRESHOLD",

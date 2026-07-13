@@ -222,6 +222,44 @@ fn autoroute_config_digest_includes_min_secret_len() {
     );
 }
 
+#[test]
+fn canonical_calibration_shares_normal_identity_but_gpu_exclusion_is_isolated() {
+    let mut normal = scan_args(&["scan", "--no-config", "--stdin"]);
+    let normal_digest = API
+        .autoroute_config_digest_for_args(&mut normal)
+        .expect("normal resolved config digest");
+
+    let mut canonical = scan_args(&[
+        "scan",
+        "--no-config",
+        "--stdin",
+        "--autoroute-calibrate",
+        "--autoroute-gpu",
+    ]);
+    let canonical_digest = API
+        .autoroute_config_digest_for_args(&mut canonical)
+        .expect("canonical calibration digest");
+    assert_eq!(
+        canonical_digest, normal_digest,
+        "all-candidate calibration must persist under the normal scan identity it serves"
+    );
+
+    let mut gpu_excluded = scan_args(&[
+        "scan",
+        "--no-config",
+        "--stdin",
+        "--autoroute-calibrate",
+        "--no-autoroute-gpu",
+    ]);
+    let gpu_excluded_digest = API
+        .autoroute_config_digest_for_args(&mut gpu_excluded)
+        .expect("GPU-excluded calibration digest");
+    assert_ne!(
+        gpu_excluded_digest, normal_digest,
+        "incomplete diagnostic calibration must not replace normal all-candidate evidence"
+    );
+}
+
 /// Coherence gate: every value the `--backend` flag ADVERTISES (clap
 /// `PossibleValuesParser`) must be RECOGNIZED by the canonical
 /// `parse_backend_str`, which both the gpu-init policy and the actual scan

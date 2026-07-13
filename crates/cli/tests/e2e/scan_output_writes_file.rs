@@ -35,7 +35,7 @@ fn scan_output_writes_file() {
     assert!(
         arr.iter().any(|f| matches!(
             f.get("detector_id").and_then(|v| v.as_str()),
-            Some("aws-access-key" | "hot-aws_key")
+            Some("aws-access-key")
         )),
         "--output file must contain the planted AWS finding; got {arr:?}"
     );

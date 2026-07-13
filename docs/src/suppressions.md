@@ -48,9 +48,9 @@ exact same set; there is no path that scans under a weaker suppression policy.
 
 ### `.keyhogignore`: line-based allowlist (opt-in, project-scoped)
 
-A `.keyhogignore` at your scan root, one rule per line. This is the zero-config
-allowlist: the format is deliberately a superset of `.gitignore`, so a copied
-`.gitignore` Just Works (every bare line is treated as a path glob).
+A `.keyhogignore` at your scan root, one rule per line. It accepts explicit
+`hash:`, `detector:`, and `path:` rules. A bare 64-hex line is a credential hash;
+other bare entries are path globs, so ordinary `.gitignore` entries work.
 
 ```text
 # Ignore a specific credential by SHA-256 of the captured value (64 hex chars).
@@ -78,9 +78,8 @@ to append from an existing run:
 keyhog scan . --format jsonl | jq -r '"hash:" + .credential_hash' >> .keyhogignore
 ```
 
-The `"hash:" +` prefix is required: a bare hex line with no prefix is a path
-glob, not a hash rule, so it would never match a credential. `.credential_hash`
-is already the bare 64-character SHA-256 hex the `hash:` entry expects.
+The `hash:` prefix is recommended for readability but optional for an exact
+64-hex digest. `.credential_hash` is already the SHA-256 hex the rule expects.
 
 **Governance metadata** (optional) trails an entry after `;`:
 

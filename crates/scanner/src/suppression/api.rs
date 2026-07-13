@@ -441,7 +441,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // in `)/g`, `)/g,`, `]+`, `})\\b`, etc. is a JS/Go/Python regex
     // pattern definition (often in another secret-scanner's own
     // source code), not a credential. claude-code's Feedback.tsx
-    // has 1 `hot-aws_key` finding on its own AWS regex definition
+    // produces an AWS access-key candidate from its own regex definition
     // `/AKIA[A-Z0-9]{16,17}/g,`.
     if looks_like_regex_literal_tail(credential) {
         crate::adjudicate::record_example_suppression(

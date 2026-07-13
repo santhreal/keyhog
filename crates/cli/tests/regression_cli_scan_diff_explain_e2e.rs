@@ -458,7 +458,7 @@ fn explain_unknown_detector_exits_two_and_names_the_id() {
     );
 }
 
-/// `explain hot-github_pat`: a SIMD fast-path FINDING label, not a registry
+/// `explain hot-github_pat`: a historical fast-path finding alias, not a registry
 /// id, resolves to the canonical `github-classic-pat` detector, exits 0, and
 /// tells the operator what happened rather than 404-ing.
 #[test]

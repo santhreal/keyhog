@@ -230,10 +230,9 @@ pub(crate) fn filter_and_resolve_matches(
             if filter.signatures.contains(cred) {
                 return false;
             }
-            // `.keyhog.toml` `[detector.<id>] enabled = false`. TOML
-            // detectors are already dropped at load; this also catches the
-            // hardcoded hot-pattern fast path (ids like `hot-aws_key`),
-            // which is not part of the loaded corpus.
+            // `.keyhog.toml` `[detector.<id>] enabled = false`. Detectors are
+            // already dropped at load; this exact-id guard keeps alternate
+            // runtime surfaces aligned with the compiled corpus.
             if !filter.disabled_detectors.is_empty()
                 && filter.disabled_detectors.contains(m.detector_id.as_ref())
             {

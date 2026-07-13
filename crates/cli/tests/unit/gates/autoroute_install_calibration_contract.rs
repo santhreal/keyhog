@@ -10,8 +10,17 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
     for file in [
         "calibration.rs",
         "evidence.rs",
+        "evidence/match_identity.rs",
+        "evidence/timing.rs",
         "host.rs",
         "store.rs",
+        "store/artifact_identity.rs",
+        "store/build_identity.rs",
+        "store/codec.rs",
+        "store/inspection.rs",
+        "store/persistence.rs",
+        "store/schema.rs",
+        "store/validation.rs",
         "workload.rs",
     ] {
         backend.push('\n');
@@ -135,11 +144,6 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
         "/../scanner/src/engine/gpu_region_dispatch.rs"
     ))
     .expect("scanner GPU region dispatch source readable");
-    let scanner_backend_triggered = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../scanner/src/engine/backend_triggered.rs"
-    ))
-    .expect("scanner backend-triggered source readable");
     let readme_text = readme.split_whitespace().collect::<Vec<_>>().join(" ");
     let env_ref_text = env_ref.split_whitespace().collect::<Vec<_>>().join(" ");
 
@@ -210,14 +214,16 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("confidence_interval_95_ns")
             && backend.contains("selected_backend_has_non_overlapping_confidence")
             && backend.contains("selected_margin_ns")
-            && backend.contains("trial == 0")
-            && backend.contains("from_trial_ns(self.trials_ns.clone())")
-            && backend.contains("Some(expected) => self == &expected")
+            && backend.contains("trial > 0")
+            && backend.contains("TimingConfidenceInterval::from_trials(&self.trials_ns)")
+            && backend.contains("#[serde(deny_unknown_fields)]")
             && backend.contains("config_digest")
             && backend.contains("source_class_hash")
             && backend.contains("StableHasher::new(\"autoroute-source-class\")")
             && backend.contains("StableHasher::new(\"autoroute-correctness-digest\")")
-            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 22")
+            && backend.contains("executable_sha256")
+            && backend.contains("current_executable_sha256")
+            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 24")
             && backend.contains("AUTOROUTE_CALIBRATION_TRIALS: usize = 7")
             && backend.contains("trials"),
         "autoroute cache must persist binary identity, build feature identity, exact host identity, and measured calibration evidence"
@@ -243,7 +249,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("selected backend is missing timing evidence")
             && backend.contains("selected backend is not the fastest persisted timing evidence")
             && backend.contains("resolved_routing_backend")
-            && backend.contains("deterministic tie-break among statistically tied routes")
+            && backend.contains("measured-median resolution among statistically non-dominated routes")
             // v21: the GPU cold/warm/route values are DERIVED on demand from
             // `gpu_timing` (single owner), never stored, so there is no copy to
             // "mismatch". The only remaining fail-closed invariant is that the
@@ -262,7 +268,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
         run.contains("backend prewarm skipped during autoroute calibration")
             && run.contains("autoroute_calibration")
             && backend.contains("gpu_route_ms")
-            && backend.contains("cold_ns.max(warm_timing.best_ns)")
+            && backend.contains("cold_ns.max(warm_timing.median_ns())")
             && backend.contains("route_candidates"),
         "autoroute calibration must preserve and validate GPU cold/warm state instead of selecting by warmed best timing only"
     );
@@ -270,8 +276,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
         scanner_engine.contains("gpu_degrade_count")
             && scanner_gpu_forced.contains("gpu_degrade_count")
             && scanner_gpu_forced.contains("fetch_add")
-            && scanner_gpu_region_dispatch.contains("record_gpu_degrade")
-            && scanner_backend_triggered.contains("record_gpu_degrade")
+            && scanner_gpu_region_dispatch.contains("record_gpu_runtime_fault")
             && backend.contains("scanner.runtime_status().gpu_degrade_count")
             && backend.contains("gpu_degrade_count_before")
             && backend.contains("gpu_degrade_count_after"),
@@ -368,7 +373,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && install_sh.contains("empty stdin workload")
             && install_sh.contains("stdin 64 KiB workload")
             && install_sh.contains("run_autoroute_stdin_probe")
-            && install_sh.contains("scan --autoroute-calibrate --stdin")
+            && install_sh.contains("scan --autoroute-calibrate --autoroute-gpu --stdin")
             && install_sh.contains("make_calibration_tree_kib")
             && install_sh.contains("for file_count in $many_file_counts")
             && install_sh.contains("${file_count} x 4 KiB files workload")
@@ -407,13 +412,12 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && install_sh.contains("Docker daemon is not responding")
             && install_sh.contains("--autoroute-calibrate")
             && !install_sh.contains("KEYHOG_AUTOROUTE_CALIBRATE")
-            // Calibration runs with the DEFAULT scan flags plus each documented
-            // scan-policy preset, parametrized through `autoroute_scan_flags` /
-            // `autoroute_presets`: NOT the spurious `--batch-pipeline
-            // --autoroute-gpu`, which hashed into a digest no real `keyhog
-            // scan .` ever requested and made every auto scan fail closed.
+            // Every install probe admits an eligible GPU peer. Candidate
+            // admission is intentionally excluded from scan identity, while the
+            // execution-changing --batch-pipeline flag remains absent.
             && install_sh.contains("autoroute_scan_flags")
             && install_sh.contains("autoroute_presets")
+            && install_sh.contains("--autoroute-calibrate --autoroute-gpu")
             && install_sh.contains("--fast")
             && !install_sh.contains("KEYHOG_BATCH_PIPELINE")
             && !install_sh.contains("KEYHOG_GPU_AUTOROUTE")
@@ -478,17 +482,14 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && install_ps1.contains("Docker daemon is not responding")
             && install_ps1.contains("'--autoroute-calibrate'")
             && !install_ps1.contains("KEYHOG_AUTOROUTE_CALIBRATE")
-            // Calibration runs the DEFAULT scan flags plus each documented
-            // scan-policy preset, parametrized through `$autoroutePresets` /
-            // `$presetPasses`: NOT the spurious `--batch-pipeline --autoroute-gpu`,
-            // which hashed into a digest no real `keyhog scan .` ever requested and
-            // made every default Windows scan fail closed (parity with install.sh).
+            // PowerShell uses the same GPU-peer admission and keeps the
+            // execution-changing --batch-pipeline flag absent.
             && install_ps1.contains("autoroutePresets")
             && install_ps1.contains("presetPasses")
             && install_ps1.contains("--fast")
             && !install_ps1.contains("'--batch-pipeline'")
             && !install_ps1.contains("KEYHOG_BATCH_PIPELINE")
-            && !install_ps1.contains("'--autoroute-gpu'")
+            && install_ps1.contains("@('--autoroute-calibrate', '--autoroute-gpu')")
             && !install_ps1.contains("KEYHOG_GPU_AUTOROUTE")
             && install_ps1.contains("$failed = $false")
             && install_ps1.contains("return $false")
@@ -507,7 +508,8 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && readme_text.contains("Invalid existing cache records are rejected")
             && readme_text.contains("resolved scan-config digest")
             && readme_text.contains("batch-pipeline route")
-            && readme_text.contains("explicit calibration controls")
+            && readme_text.contains("Canonical GPU admission")
+            && readme_text.contains("diagnostic-only calibration identity")
             && readme_text.contains("install.sh --calibrate")
             && readme_text.contains("install.ps1 -Calibrate")
             && env_ref_text.contains("visible calibration phase")

@@ -28,9 +28,9 @@ or coverage incomplete.
 | `--git-diff-path <PATH>`      | Select the repository used by `--git-diff` instead of the current directory. |
 | `--max-commits <N>`           | Bound the number of commits traversed by git-history scanning. |
 | `--docker-image <IMAGE>`      | Scan a saved Docker image archive.             |
-| `--github-org <ORG>`          | Clone and scan every repository in a GitHub organization. Requires `--github-token`. |
-| `--gitlab-group <GROUP>`      | Clone and scan every project in a GitLab group, including subgroups. Requires `--gitlab-token`; use `--gitlab-endpoint` for self-managed GitLab. |
-| `--bitbucket-workspace <WORKSPACE>` | Clone and scan every repository in a Bitbucket Cloud workspace. Requires `--bitbucket-username` and `--bitbucket-token` app password; `--bitbucket-endpoint` selects the API root. |
+| `--github-org <ORG>`          | Clone and scan every repository in a GitHub organization. Requires `KEYHOG_GITHUB_TOKEN` (recommended) or `--github-token`. |
+| `--gitlab-group <GROUP>`      | Clone and scan every project in a GitLab group, including subgroups. Requires `KEYHOG_GITLAB_TOKEN` (recommended) or `--gitlab-token`; use `--gitlab-endpoint` for self-managed GitLab. |
+| `--bitbucket-workspace <WORKSPACE>` | Clone and scan every repository in a Bitbucket Cloud workspace. Requires `KEYHOG_BITBUCKET_USERNAME` plus `KEYHOG_BITBUCKET_TOKEN` (recommended), or the corresponding flags; `--bitbucket-endpoint` selects the API root. |
 | `--s3-bucket <BUCKET>`        | Scan an S3 bucket. Use `--s3-prefix` to narrow and `--s3-endpoint` for an S3-compatible API. |
 | `--gcs-bucket <BUCKET>`       | Scan a Google Cloud Storage bucket. Use `--gcs-prefix` to narrow and `--gcs-endpoint` for a compatible API. |
 | `--azure-container-url <URL>` | Scan an Azure Blob container URL. Include a SAS query string for private containers; use `--azure-prefix` to narrow. |
@@ -74,7 +74,7 @@ or coverage incomplete.
 |-------------------------------|------------------------------------------------|
 | `--fast`                      | Disable entropy discovery, ML scoring, and decode recursion (`max_decode_depth = 0`). Named regex detectors remain loaded; the speedup and recall change are workload-dependent. |
 | `--deep`                      | Seed decode depth 10 with entropy and ML enabled; later compatible flags may tighten those defaults. |
-| `--precision`                 | Seed a high-precision policy: shallow decode, no speculative entropy/ML findings, and confidence floor `0.85`; later compatible flags may override the floor. |
+| `--precision`                 | Seed a high-precision policy: decode depth 1, entropy discovery and the relaxed keyword bridge off, ML scoring retained, and a minimum confidence floor of `0.85`. Explicit floors may tighten but not lower it. |
 | `--incremental`               | Skip files whose content hash matches the Merkle index, then update the index after a successful scan. |
 | `--incremental-cache <PATH>`  | Override the Merkle index used by `--incremental`. |
 | `--daemon`                    | Force daemon route for eligible stdin/single-file scans. Unix only; fails if the request needs the in-process pipeline. |
@@ -113,8 +113,8 @@ minus the `limit-` prefix and with dashes changed to underscores.
 | `--entropy-bpe-max-bytes-per-token <RATIO>` | Set the scan-wide BPE word-likeness ceiling; lower values suppress more word-like entropy candidates. |
 | `--min-secret-len <N>`        | Set the minimum length for entropy-discovery candidates; named detectors retain their shape-specific lengths. |
 | `--no-entropy-ml-scoring`     | Use the bare entropy heuristic rather than MoE scoring for entropy-discovery candidates. No effect when entropy or ML is disabled. |
-| `--no-keyword-low-entropy`    | Require the high-entropy gate even when a credential keyword anchors the value. |
-| `--ml-threshold <FLOAT>`      | Tighten the generic/entropy ML admission floor by composing it with the resolved confidence floor. |
+| `--no-keyword-low-entropy`    | Disable the lower-floor `generic-keyword-secret` bridge so anchored generic candidates must satisfy the stricter `generic-secret` policy. |
+| `--ml-threshold <FLOAT>`      | Raise the resolved global confidence floor. A detector-specific `min_confidence` remains that detector's effective floor. |
 | `--ml-weight <FLOAT>`         | Set the ML contribution to confidence scoring (`0.0..=1.0`). |
 | `--no-ml`                    | Disable ML-based confidence scoring. |
 | `--no-unicode-norm`          | Disable Unicode normalization; use only for parity diagnostics because it can reduce recall. |
@@ -137,7 +137,7 @@ minus the `limit-` prefix and with dashes changed to underscores.
 | `keyhog scan --require-gpu`           | Fail closed with exit `12` when GPU is unavailable before scanning or a selected GPU dispatch fails at runtime. |
 | `keyhog scan --autoroute-calibrate`   | Installer/maintenance mode: benchmark parity-checked autoroute candidates and persist fastest-correct decisions. Normal scans do not use this mode. |
 | `keyhog scan --autoroute-gpu`         | Low-level direct-calibration diagnostic: include eligible GPU candidates. `keyhog calibrate-autoroute` always includes every eligible backend. |
-| `keyhog scan --no-autoroute-gpu`      | Low-level direct-calibration diagnostic: exclude GPU despite TOML. This is not used by canonical calibration. |
+| `keyhog scan --no-autoroute-gpu`      | Low-level direct-calibration diagnostic: exclude GPU despite TOML. This is not used by canonical calibration, and its incomplete evidence is isolated from normal auto-scan identity. |
 | `keyhog scan --batch-pipeline` / `--no-batch-pipeline` | Explicitly select or reject the coalesced batch pipeline for this diagnostic/configuration identity. |
 | `keyhog scan --per-chunk-timeout-ms <MS>` | Attach an `Instant` deadline to every chunk scan. Default unset = no operator deadline; `[scan].per_chunk_timeout_ms` provides the persistent default. |
 | `keyhog scan --threads <N>`           | Pin the rayon worker count for this run. `.keyhog.toml` `[scan].threads` provides the persistent default. |
@@ -299,8 +299,10 @@ schema-incompatible cache files fail closed and are not overwritten.
 
 ## `keyhog calibrate-autoroute`
 
-Runs the complete scan-policy and workload-bucket sweep, verifies backend
-parity, and persists fastest-correct routing evidence for normal `auto` scans.
+Runs the local stdin/filesystem scan-policy and workload-bucket sweep, verifies
+backend parity, and persists fastest-correct routing evidence for those normal
+`auto` scans. Git, container, web, and other environment-backed source classes
+remain in the installer's calibration sweep.
 `--autoroute-cache <PATH>` selects the evidence file; `off` is rejected because
 calibration must persist its result. `--quiet` suppresses per-probe progress but
 still prints the final summary.
@@ -311,7 +313,8 @@ Prints hardware probe results and a diagnostic per-tier heuristic matrix:
 which SIMD ISA was detected and whether Hyperscan, CUDA, or wgpu initialized.
 The matrix is not the `scan --backend auto` decision; normal automatic scans
 use persisted fastest-correct calibration. Use `keyhog backend --autoroute`
-to inspect that evidence, and `--probe-bytes` only for heuristic what-if work.
+to inspect that evidence, including distinct cold-aware one-shot and warm-daemon
+routes, and `--probe-bytes` only for heuristic what-if work.
 
 ```sh
 keyhog backend

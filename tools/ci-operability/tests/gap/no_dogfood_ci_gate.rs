@@ -4,7 +4,8 @@ use super::support::repo_root;
 
 #[test]
 fn ci_workflows_include_dogfood_scan_gate() {
-    let workflows = repo_root().join(".github/workflows");
+    let root = repo_root();
+    let workflows = root.join(".github/workflows");
     let mut combined = String::new();
     for entry in std::fs::read_dir(&workflows).expect("workflows dir") {
         let entry = entry.expect("dir entry");
@@ -13,8 +14,13 @@ fn ci_workflows_include_dogfood_scan_gate() {
             combined.push('\n');
         }
     }
-    assert!(
-        combined.contains("--dogfood"),
-        "STANDARD dogfood requires CI to run `keyhog scan --dogfood` (or equivalent persona gate)"
-    );
+    let direct = combined.contains("--dogfood");
+    let harness_path = root.join("tests/dogfood/repository_scan.sh");
+    let harness = std::fs::read_to_string(&harness_path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", harness_path.display()));
+    let delegated = combined.contains("tests/dogfood/repository_scan.sh")
+        && harness.contains(" scan . ")
+        && harness.contains("--dogfood");
+
+    assert!(direct || delegated, "STANDARD dogfood requires CI to run `keyhog scan --dogfood` directly or through the owned repository-scan harness");
 }

@@ -1,12 +1,11 @@
-//! e2e: the GPU is NOT auto-selected without `--autoroute-gpu`
-//! (TESTING vector 12, lane 9) (the MEASURED-FACT contract, end to end).
+//! E2E: calibration controls never turn a normal scan into an implicit probe.
 //!
-//! MEASURED FACT (2026-06-19, RTX 5090): the live region-presence GPU route
-//! still did not beat best CPU/SIMD through 64 MiB, including the required
-//! 8 MiB cell. So auto-routing must never pick GPU from a fixed heuristic; it
-//! must consume install-time calibration evidence. The operator opts GPU into
-//! calibration with `--autoroute-gpu`, and `--backend gpu` still forces it for
-//! parity/research.
+//! The production crossover benchmark separately proves the warm RTX 5090 GPU
+//! route beats Hyperscan at 8 MiB. This test does not infer that winner from a
+//! threshold: auto-routing consumes persisted local calibration evidence.
+//! Canonical maintenance calibration enables every eligible GPU peer, while
+//! low-level direct calibration uses `--autoroute-gpu`. `--backend gpu` remains
+//! an explicit parity/research route.
 //!
 //! The calibration owner is pinned in `crates/cli/tests/unit/orchestrator/`.
 //! Scanner-side heuristic predicate values are pinned in
@@ -15,10 +14,10 @@
 //! prints to stderr.
 //!
 //! Why these assertions hold on EVERY host (deterministic, machine-independent):
-//!   * WITHOUT persisted calibration, the auto path fails with
+//!   * Without persisted calibration, the auto path fails with
 //!     "autoroute calibration required" rather than guessing a backend. If a
-//!     valid cache is present, it still must not report GPU as selected unless
-//!     calibration picked it.
+//!     valid cache is present, normal scans may select GPU only when calibration
+//!     picked it; they do not repeat the calibration admission flag.
 //!   * `--backend gpu` reports it as FORCED (`forced via …`), not auto-selected
 //!     when a usable adapter exists; on a host with no usable adapter it fails
 //!     closed instead of silently substituting SIMD.
@@ -63,6 +62,10 @@ fn scan(path: &PathBuf, extra: &[&str]) -> (Option<i32>, String) {
     cmd.args(["scan", "--daemon=off", "--progress", "--format", "json"]);
     cmd.args(extra);
     cmd.arg(path);
+    cmd.env(
+        "XDG_CACHE_HOME",
+        path.parent().expect("fixture path has parent"),
+    );
     let output = cmd.output().expect("spawn keyhog scan");
     (
         output.status.code(),
@@ -71,26 +74,15 @@ fn scan(path: &PathBuf, extra: &[&str]) -> (Option<i32>, String) {
 }
 
 #[test]
-fn without_optin_a_large_scan_never_reports_gpu_auto_selected() {
+fn without_persisted_evidence_a_large_auto_scan_fails_closed() {
     let (_dir, path) = large_clean_file();
     let (code, stderr) = scan(&path, &[]);
 
-    if code == Some(0) {
-        assert!(
-            stderr.contains("INFO backend:"),
-            "scan must emit the routing rationale line; stderr={stderr}"
-        );
-        assert!(
-            !stderr.contains("gpu-region-presence (selected"),
-            "the GPU must NOT be auto-selected without calibration evidence; stderr={stderr}"
-        );
-    } else {
-        assert!(
-            code == Some(2) && stderr.contains("autoroute calibration required"),
-            "auto scan without a valid calibration record must fail loudly, not guess; \
-             code={code:?} stderr={stderr}"
-        );
-    }
+    assert!(
+        code == Some(2) && stderr.contains("autoroute calibration required"),
+        "auto scan without a valid calibration record must fail loudly, not guess; \
+         code={code:?} stderr={stderr}"
+    );
 }
 
 #[test]
@@ -124,16 +116,15 @@ fn forcing_backend_gpu_reports_a_forced_line_not_an_auto_selection() {
 }
 
 #[test]
-fn autoroute_gpu_flag_is_accepted_and_does_not_break_a_clean_scan() {
-    // With the opt-in set, calibration is allowed to include GPU candidates, but
-    // a normal production scan still must not benchmark or guess without a
-    // persisted decision.
+fn autoroute_gpu_admission_flag_does_not_make_a_normal_scan_calibrate() {
+    // Candidate admission is meaningful only with explicit calibration mode.
+    // A normal scan still refuses to benchmark or guess without persisted proof.
     let (_dir, path) = large_clean_file();
     let (code, stderr) = scan(&path, &["--autoroute-gpu"]);
 
     assert!(
-        code == Some(0) || (code == Some(2) && stderr.contains("autoroute calibration required")),
-        "--autoroute-gpu must either use valid persisted calibration or fail loudly; \
+        code == Some(2) && stderr.contains("autoroute calibration required"),
+        "--autoroute-gpu alone must not turn a normal scan into calibration; \
          code={code:?} stderr={stderr}"
     );
 }

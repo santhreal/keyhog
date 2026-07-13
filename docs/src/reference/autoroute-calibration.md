@@ -6,15 +6,30 @@
 > counters (`keyhog calibrate --tp/--fp`), see
 > [Confidence calibration](./confidence-calibration.md).
 
-KeyHog scans with the **fastest backend that is proven correct** for your
-hardware and workload: Hyperscan/SIMD, scalar CPU, or GPU. It does not guess.
-Autoroute is *not* a fallback hierarchy: at install time KeyHog measures every
-eligible backend, rejects candidates whose canonical match identity differs
-from the reference (chunk, detector id, credential hash, file, line, and byte
-offset), and records the fastest survivor. Normal scans then do a zero-cost
-table lookup; they never benchmark mid-scan. Report metadata outside that
-identity is produced by the shared post-processing/reporting tail rather than
-by backend-specific extraction.
+KeyHog uses measured evidence to select a backend for a calibrated workload key:
+Hyperscan/SIMD, scalar CPU, or the GPU runtime acquired by the scanner. It does
+not guess from a device name or a hard-coded size threshold. Autoroute is *not*
+a fallback hierarchy: during calibration KeyHog measures every eligible
+execution class exposed by that scanner, rejects candidates whose complete
+redacted raw-match identity differs from the reference, and records the fastest
+survivor for the measured representative. CUDA and WGPU are not independently
+calibrated candidates; they are implementations behind the single acquired GPU
+class. The parity identity
+covers chunk membership; detector id/name/service/severity; hashes of the actual
+credential, stored hash, and companion names/values; full source/history
+location; entropy; confidence; and finding multiplicity. Plain credentials and
+companions never enter calibration logs. Normal scans then do a direct table
+lookup; they never benchmark mid-scan.
+
+Performance selection uses the median of the recorded trials, not the single
+fastest sample. If one route's 95% Student-t confidence interval is entirely
+below every competitor, it is the separated winner. If intervals overlap,
+KeyHog reports that evidence as inconclusive and chooses the lowest measured
+median among the statistically non-dominated routes; it does not pretend that
+overlap proves equivalence or apply a CPU/GPU preference hierarchy. Engagement
+overhead breaks only an exact median tie. `keyhog backend --autoroute` exposes
+the representative times and a `selection_basis` for every decision, so this
+distinction is visible in both text and JSON inspection output.
 
 Because the decision is *measured*, it must be recorded before `--backend auto`
 (the default) can run. A fresh install has no recorded decisions yet, so until
@@ -22,7 +37,15 @@ you calibrate, an auto scan fails closed with
 [exit code `2`](./exit-codes.md), `autoroute calibration required`, rather
 than silently substituting a slower or unverified backend.
 
-## Calibrate
+## Operator workflow
+
+1. Install normally or run calibration for the workload families you use.
+2. Inspect the cache with `keyhog backend --autoroute`.
+3. Run with the default `--backend auto`; normal scans never benchmark.
+4. If a real scan names an uncovered key, calibrate that workload family or use
+   an explicit backend only as a deliberate diagnostic override.
+
+## Calibrate core and source-specific workloads
 
 **A normal install calibrates automatically.** Plain `./install.sh` /
 `./install.ps1` runs the visible calibration phase after the binary is verified,
@@ -61,24 +84,37 @@ parity-checked, to the autoroute cache
 (`$XDG_CACHE_HOME/keyhog/autoroute.json` by default; override with
 `--autoroute-cache <path>` or `[system].autoroute_cache`).
 
+Canonical calibration admits every eligible execution class. The low-level
+`scan --no-autoroute-gpu --autoroute-calibrate` diagnostic deliberately writes
+under a noncanonical config identity; its CPU-only evidence cannot overwrite a
+normal all-candidate decision.
+
 Calibration saves take an exclusive sibling-file lock across the complete
 read/merge/atomic-write cycle. Separate calibration processes therefore
-accumulate their config and workload decisions without a last-writer-wins
-loss; the operating system releases the lock if a writer exits or crashes.
+accumulate compatible config and workload decisions without a
+last-writer-wins loss; the operating system releases the lock if a writer exits
+or crashes. Only identity-compatible, structurally valid rows are preserved. If
+an existing cache is unreadable, incompatible, or invalid, calibration emits an
+unconditional stderr warning with the cache path and replacement reason, then
+starts a fresh cache; unrelated preset rows in that old file are not merged.
 
 ## What a decision covers
 
-A decision is tied to your exact binary, host, detector corpus, **and resolved
-scan configuration**. Options that change the resolved config get their own
-calibration, even when they do not change which backend is fastest:
+A decision is tied to its recorded build identity, host profile, detector
+corpus, **and routing-relevant resolved scan configuration**. Options that
+change that identity get their own calibration, even when they do not change
+which backend is fastest:
 
-- Build identity records the CLI and dependency feature sets. GPU and SIMD
-  support are read from the scanner library that actually owns and compiled
-  those backends, not inferred from similarly named CLI features. Source
-  capability identity separately records each compiled filesystem, archive,
-  forge, cloud, container, and web source feature (including GitHub, GitLab,
-  and Bitbucket), while verifier identity records whether live verification is
-  compiled. A binary with a different capability set cannot reuse the evidence.
+- Build identity records the exact running executable SHA-256, package version,
+  Git hash, and the CLI and dependency feature sets. GPU and SIMD support are
+  read from the scanner library that
+  actually owns and compiled those backends, not inferred from similarly named
+  CLI features. Source capability identity separately records each compiled
+  filesystem, archive, forge, cloud, container, and web source feature
+  (including GitHub, GitLab, and Bitbucket), while verifier identity records
+  whether live verification is compiled. A different artifact or recorded
+  capability set cannot reuse the evidence, including dirty/profile/native-link
+  builds that happen to share a package version and Git hash.
 - Host identity includes OS/architecture, CPU model and topology, memory, CPU
   instruction support and, when the scanner can use a physical GPU, the GPU
   device, runtime backend, and driver/runtime identity. A missing or changed
@@ -100,30 +136,51 @@ calibration, even when they do not change which backend is fastest:
 - Workload **shape** matters: a single file, a directory, and a piped `stdin`
   stream are distinct buckets, and `stdin` is content-sensitive.
 
-`keyhog config --effective` prints the exact resolved settings that are hashed into
-this identity; pair it with `keyhog backend --autoroute --json` to verify that a single
-setting change in `ScanConfig` produced a new `config_digest` row.
+The host profile is deliberately checked, but it is not a complete performance-
+environment fingerprint: for example, cache age, CPU governor, system load, and
+every accelerator limit are not all identity fields. Decisions do not expire by
+age. Recalibrate after driver, firmware, power-policy, or material workload
+changes even when the stored identity still parses as compatible.
+
+`keyhog config --effective` prints the resolved scan settings. Pair it with
+`keyhog backend --autoroute --json` to verify that a routing-relevant setting
+change produced a new `config_digest` row.
 
 Every lookup is exact at the complete workload-key level. Size, chunk-count,
-maximum-file dimensions use one-power-of-two logarithmic ranges; decode density
-uses paired logarithmic ranges to resist content-sample jitter. The
-decision proves the measured representative for that full range key, not every
-individual byte length inside it. A neighbouring range is not evidence for this
-one. Uncalibrated keys fail closed; KeyHog never interpolates or clamps them to
-a CPU/GPU substitute.
+and maximum-file dimensions use one-power-of-two logarithmic ranges; decode
+density uses paired logarithmic ranges to resist content-sample jitter. The
+decision proves correctness and timing for the representative that was
+measured under that key. It does **not** prove that the same backend is fastest
+for every individual byte length inside the numeric range. A neighbouring range
+is not evidence for this one. Uncalibrated keys fail closed; KeyHog never
+interpolates or clamps them to a CPU/GPU substitute.
+
+Large directory and multi-source scans run in process and produce multiple real
+batches. Each batch needs an exact key in the cache; one calibrated single-file
+key does not authorize every later tree shape. The core calibration command
+includes file-tree probes, while Git, Docker, and web fixtures require installer
+calibration.
 
 ## One-shot scans and the daemon
 
-Runtime lifetime changes GPU cost, so it is part of routing semantics. Each GPU
-measurement contains the real first dispatch plus warm trials:
+Runtime lifetime changes GPU cost, so it is part of routing semantics.
+Calibration records warm CPU/Hyperscan medians and, for GPU, the real first
+dispatch followed by warm trials:
 
 - An in-process one-shot scan includes cold GPU cost when choosing a backend.
 - A ready daemon initializes accelerator state before accepting requests and
   chooses from the warm GPU trials.
 
+The current in-process router applies that cold-aware decision to each workload
+lookup. It does not infer request-wide GPU startup amortization across a large
+number of batches. This is why the cache and inspection output describe a
+measured workload key and runtime class rather than promising one universal
+crossover size.
+
 Both routes consume the same parity-checked primary evidence; they derive the
 appropriate decision for their runtime instead of sharing one misleading
-"GPU time." CPU, Hyperscan/SIMD, and GPU remain peers in both cases. See
+"GPU time." `keyhog backend --autoroute` prints both routes. CPU,
+Hyperscan/SIMD, and GPU remain peers in both cases. See
 [Daemon and warm scans](../workflows/daemon.md) for request eligibility,
 in-process retry policy, socket, and timeout semantics.
 
@@ -150,8 +207,32 @@ keyhog backend --autoroute --json   # machine-readable
 keyhog doctor                       # reports calibrated / not calibrated / STALE
 ```
 
-These show every persisted config, its workload buckets, and the resolved
-backend, so when a scan hits `exit 2` you can see exactly what *is* covered.
+These show every persisted config, its workload buckets, representative median
+route times, whether confidence was separated, the selection basis, and the
+resolved one-shot and daemon backends. When a scan hits `exit 2`, you can
+therefore see exactly what *is* covered and how each existing decision was
+made. An invalid decision makes the inspection report the cache as unusable;
+inspection never omits a malformed row and presents the remainder as healthy.
+
+Inspection validates build compatibility and the complete persisted cache
+structure. It does not have the live scan's host, detector, rule, and resolved
+config inputs; those identities are checked when a real scan loads its decision.
+Therefore a readable, build-matched inspection is evidence that the cache can be
+examined, not a guarantee that the next workload has a usable row.
+
+The per-decision JSON fields have these exact meanings:
+
+| Field | Meaning |
+|---|---|
+| `backend` | Cold-aware backend for an in-process one-shot scan. |
+| `simd_ms`, `cpu_ms` | Median trial time for that CPU route; `cpu_ms` is `null` when scalar CPU was not measured separately. |
+| `gpu_ms` | One-shot GPU representative: the greater of the real first dispatch and the warm-trial median. |
+| `gpu_warm_ms` | Warm GPU median used by a ready daemon; `null` when GPU was not eligible. |
+| `confidence_separated` | Whether the one-shot winner's 95% interval is entirely below every competitor. |
+| `selection_basis` | `separated-95pct-confidence`, or `lowest-measured-median-among-overlapping-confidence`. |
+| `selected_margin_ns` | One-shot representative-time margin to the next candidate; `null` when there is no competitor. |
+| `daemon_backend` | Backend derived for a ready persistent daemon from warm GPU evidence. |
+| `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts of the one-shot confidence, basis, and margin fields. |
 
 ## Single-backend builds
 

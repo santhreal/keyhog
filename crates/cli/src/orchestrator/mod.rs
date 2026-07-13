@@ -383,9 +383,7 @@ pub(crate) fn setup_default_scan_runtime(
     let mut detectors = crate::orchestrator_config::load_detectors_or_embedded(detectors_path)?;
 
     // Apply `[detector.<id>] enabled = false`: drop the disabled detectors before
-    // compilation so they never fire (mirrors `ScanOrchestrator::new`). The
-    // hardcoded hot-pattern fast path is not in this corpus, so those ids are
-    // also carried in the post-scan filter's `disabled_detectors` below.
+    // compilation so they never fire (mirrors `ScanOrchestrator::new`).
     let disabled_detectors = effective_config.disabled_detectors.clone();
     if !disabled_detectors.is_empty() {
         let before = detectors.len();
@@ -524,10 +522,8 @@ pub(crate) struct ScanOrchestrator {
     pub(crate) signatures: std::collections::HashSet<Arc<str>>,
     pub(crate) test_fixture_suppressions: crate::test_fixture_suppressions::TestFixtureSuppressions,
     /// Detector ids disabled via `.keyhog.toml` `[detector.<id>] enabled = false`.
-    /// TOML-corpus detectors are also dropped at load (so they never compile),
-    /// but the hardcoded hot-pattern fast path is not part of that corpus, so
-    /// their findings are filtered here in `filter_and_resolve` - making the
-    /// documented toggle work for every detector, hot or TOML.
+    /// Corpus detectors are dropped at load so they never compile. The shared
+    /// post-filter retains the same exact-id guard for every runtime surface.
     pub(crate) disabled_detectors: std::collections::HashSet<String>,
     /// Per-detector confidence floors from `.keyhog.toml`
     /// `[detector.<id>] min_confidence = <f>`. Applied in `filter_and_resolve`:
@@ -682,7 +678,7 @@ impl ScanOrchestrator {
                 let palette = style::for_stderr();
                 eprintln!(
                     "{} .keyhog.toml disables detector id(s) {disabled_detectors:?}, but none matched the loaded corpus. \
-                     Detector ids come from `keyhog detectors` (e.g. hot-pattern ids are prefixed `hot-`).",
+                     Detector ids come from `keyhog detectors`; accelerated slots use the same canonical TOML id.",
                     style::warn("WARN", &palette)
                 );
             }

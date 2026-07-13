@@ -66,8 +66,9 @@ pub(crate) struct ResolvedScanConfig {
     /// Whether autoroute calibration may include GPU candidates.
     pub(crate) autoroute_gpu: bool,
     /// Explicit scan execution mode that writes autoroute calibration evidence.
-    /// This is intentionally not part of `autoroute_config_digest`: calibration
-    /// records must be keyed to the normal scan identity they will serve.
+    /// Canonical all-candidate calibration shares the normal scan identity it
+    /// serves. An explicitly GPU-excluded calibration is isolated under a
+    /// diagnostic identity so incomplete evidence cannot replace that record.
     pub(crate) autoroute_calibration: bool,
     /// Engine-side config consumed by `CompiledScanner::with_config`.
     pub(crate) scanner: ScannerConfig,

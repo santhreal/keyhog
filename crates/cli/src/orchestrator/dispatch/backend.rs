@@ -22,15 +22,18 @@
 //! ```text
 //! backend.rs ── routers, override parsing, single-backend resolution
 //!   ├─ calibration ── install-time probe/parity/timing measurement
-//!   └─ store ──────── on-disk cache schema (v22), load/validate/merge-save
-//!        depend on ↓
-//!   ├─ evidence ───── timing records, AutorouteDecision, correctness digests
+//!   ├─ evidence ───── decision policy
+//!   │    ├─ timing ─────── measured trials and confidence intervals
+//!   │    └─ match_identity ─ secret-safe semantic parity proof
+//!   ├─ store ──────── cache facade (schema v24)
+//!   │    ├─ schema / artifact_identity / build_identity
+//!   │    └─ codec / validation / persistence / inspection
 //!   ├─ host ───────── host identity captured in each calibration record
 //!   └─ workload ───── workload bucketing + source-shape fingerprints
 //! ```
 //!
-//! Leaves (`evidence`, `host`, `workload`) never import upward; only
-//! [`inspect_autoroute_cache`] crosses the module boundary outward.
+//! Low-level evidence, identity, and codec modules never import routers; only
+//! [`inspect_autoroute_cache`] crosses the package boundary outward.
 
 mod calibration;
 mod evidence;
@@ -42,8 +45,8 @@ use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
 use self::host::AutorouteHostProfile;
 pub(crate) use self::store::inspect_autoroute_cache;
-use self::store::{load_autoroute_cache, save_autoroute_cache};
-use self::workload::{workload_key, WorkloadClassificationError, WorkloadKey};
+use self::store::{load_autoroute_cache, save_autoroute_cache, AutorouteCacheSaveOutcome};
+use self::workload::{render_workload_key, workload_key, WorkloadClassificationError, WorkloadKey};
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
@@ -51,6 +54,12 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 
+// v24: exact running-executable SHA-256 joins the cache identity. Two artifacts
+// with the same package/git/features but different codegen or native linkage
+// can no longer reuse one another's performance evidence.
+// v23: timing evidence persists only the measured trial vector. Min/max/mean,
+// best-trial, confidence intervals, and medians are derived on demand, so the
+// cache cannot contain a summary that disagrees with its primary evidence.
 // v22: one-power-of-two workload bands replace the old paired bands. Numeric
 // bucket ids changed meaning, so v21 caches must be rejected rather than risk a
 // small new workload aliasing a much larger old calibration row.
@@ -65,7 +74,7 @@ use std::path::PathBuf;
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 22;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 24;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -135,7 +144,7 @@ impl AutorouteRoutingError {
         cache_load_error: &Option<String>,
     ) -> Self {
         // Inverted pyramid: what happened, then the fix, then the forensics.
-        // The bucket is rendered by `store::render_workload_key`: the ONE
+        // The bucket is rendered by `workload::render_workload_key`: the ONE
         // rendering shared with `keyhog backend --autoroute`, so an operator can
         // match this refused bucket against calibrated buckets field-for-field.
         let cache_state = autoroute_cache_state(cache_path, cache_load_error);
@@ -152,7 +161,7 @@ impl AutorouteRoutingError {
                  scan config, and source class. Normal auto scans never benchmark, guess, or \
                  substitute CPU/SIMD/GPU for a missing decision; pass an explicit \
                  `--backend <{}>` for a one-off diagnostic scan.",
-                store::render_workload_key(&key),
+                render_workload_key(&key),
                 runtime_class.label(),
                 backend_override_hint(),
             ),
@@ -381,11 +390,14 @@ impl MeasuredBackendRouter {
     ) -> Self {
         let runtime_status = scanner.runtime_status();
         let detector_digest = runtime_status.detector_digest;
-        let host_profile = AutorouteHostProfile::from_caps(
-            &hw_caps,
-            runtime_status.gpu_backend,
-            keyhog_scanner::hw_probe::gpu_backend_compiled(),
-        );
+        // A GPU-excluded diagnostic calibration neither measures nor persists a
+        // GPU route, so physical GPU identity is not part of that diagnostic
+        // cache. Normal routing and canonical all-candidate calibration retain
+        // the exact device/runtime/driver identity.
+        let gpu_participates = keyhog_scanner::hw_probe::gpu_backend_compiled()
+            && (!calibration_mode || autoroute_gpu);
+        let host_profile =
+            AutorouteHostProfile::from_caps(&hw_caps, runtime_status.gpu_backend, gpu_participates);
         let (cache_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
             detector_digest,
             &rules_digest,
@@ -495,7 +507,7 @@ impl MeasuredBackendRouter {
         } else {
             &self.decisions
         };
-        save_autoroute_cache(
+        let save_outcome = save_autoroute_cache(
             path,
             self.detector_digest,
             &self.rules_digest,
@@ -504,6 +516,12 @@ impl MeasuredBackendRouter {
             decisions,
         )
         .map_err(AutorouteRoutingError::calibration_not_persisted)?;
+        if let AutorouteCacheSaveOutcome::Replaced { reason } = save_outcome {
+            eprintln!(
+                "warning: replaced existing autoroute cache {}: {reason}",
+                path.display()
+            );
+        }
         self.cache_dirty = false;
         Ok(())
     }

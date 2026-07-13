@@ -57,8 +57,8 @@ fn daemon_slot() -> MutexGuard<'static, ()> {
 }
 
 /// A planted AWS access key. The `AKIA` prefix + 16 base32 chars is the
-/// canonical AWS key shape every keyhog build detects (named
-/// `aws-access-key` detector or the `hot-aws_key` simd fast path). Split
+/// canonical AWS key shape every KeyHog build detects under the
+/// `aws-access-key` detector id. Split
 /// across a concat so this source file itself does not trip a self-scan.
 fn planted_secret() -> String {
     concat!("AKIA", "QYLPMN5HFIQR7XYA").to_string()
@@ -218,12 +218,11 @@ fn detector_ids(findings: &[serde_json::Value]) -> Vec<String> {
         .collect()
 }
 
-/// True when at least one finding looks like the planted AWS key
-/// (`aws-access-key` named detector or the `hot-aws_key` fast path).
+/// True when at least one finding has the canonical AWS detector id.
 fn has_aws_finding(findings: &[serde_json::Value]) -> bool {
     detector_ids(findings)
         .iter()
-        .any(|id| id == "aws-access-key" || id == "hot-aws_key")
+        .any(|id| id == "aws-access-key")
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -373,9 +372,7 @@ fn daemon_honors_keyhogignore_detector_entry() {
         &format!("aws_key = \"{secret}\"\n"),
     );
 
-    // Discover the exact detector id the running build assigns to this
-    // key (named detector vs hot-pattern), then suppress precisely that
-    // id - asserting truth, not a guessed constant.
+    // Prove the canonical detector is present, then suppress that exact id.
     let baseline = scan_json(&daemon, &path, "--daemon=off");
     assert!(
         has_aws_finding(&baseline),
@@ -383,7 +380,7 @@ fn daemon_honors_keyhogignore_detector_entry() {
     );
     let aws_id = detector_ids(&baseline)
         .into_iter()
-        .find(|id| id == "aws-access-key" || id == "hot-aws_key")
+        .find(|id| id == "aws-access-key")
         .expect("an AWS detector id in the baseline findings");
 
     write_fixture(
@@ -426,7 +423,7 @@ fn daemon_honors_keyhogignore_toml_rule() {
     );
     let aws_id = detector_ids(&baseline)
         .into_iter()
-        .find(|id| id == "aws-access-key" || id == "hot-aws_key")
+        .find(|id| id == "aws-access-key")
         .expect("an AWS detector id in the baseline findings");
 
     write_fixture(

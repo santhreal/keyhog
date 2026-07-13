@@ -2,11 +2,15 @@
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::ResolvedScanConfig;
-use anyhow::Context;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use keyhog_core::Source;
 use keyhog_core::{Chunk, MerkleIndex, SourceError};
-#[cfg(feature = "git")]
+#[cfg(any(
+    feature = "git",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket"
+))]
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
 #[cfg(feature = "git")]
@@ -16,6 +20,80 @@ use std::sync::Arc;
 
 struct EmptySource {
     name: &'static str,
+}
+
+/// Resolve a hosted-source credential without letting ambient environment
+/// variables select a source. Callers invoke this only after the operator has
+/// explicitly selected the corresponding organization/group/workspace.
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+#[derive(Clone, Copy)]
+enum HostedCredentialEnv {
+    #[cfg(feature = "github")]
+    GithubToken,
+    #[cfg(feature = "gitlab")]
+    GitlabToken,
+    #[cfg(feature = "bitbucket")]
+    BitbucketUsername,
+    #[cfg(feature = "bitbucket")]
+    BitbucketToken,
+}
+
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+impl HostedCredentialEnv {
+    fn name(self) -> &'static str {
+        match self {
+            #[cfg(feature = "github")]
+            Self::GithubToken => "KEYHOG_GITHUB_TOKEN",
+            #[cfg(feature = "gitlab")]
+            Self::GitlabToken => "KEYHOG_GITLAB_TOKEN",
+            #[cfg(feature = "bitbucket")]
+            Self::BitbucketUsername => "KEYHOG_BITBUCKET_USERNAME",
+            #[cfg(feature = "bitbucket")]
+            Self::BitbucketToken => "KEYHOG_BITBUCKET_TOKEN",
+        }
+    }
+
+    fn read(self) -> Option<std::ffi::OsString> {
+        match self {
+            #[cfg(feature = "github")]
+            Self::GithubToken => std::env::var_os("KEYHOG_GITHUB_TOKEN"),
+            #[cfg(feature = "gitlab")]
+            Self::GitlabToken => std::env::var_os("KEYHOG_GITLAB_TOKEN"),
+            #[cfg(feature = "bitbucket")]
+            Self::BitbucketUsername => std::env::var_os("KEYHOG_BITBUCKET_USERNAME"),
+            #[cfg(feature = "bitbucket")]
+            Self::BitbucketToken => std::env::var_os("KEYHOG_BITBUCKET_TOKEN"),
+        }
+    }
+}
+
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+fn hosted_source_credential<'a>(
+    cli_value: Option<&'a str>,
+    env: HostedCredentialEnv,
+) -> Result<Option<Cow<'a, str>>> {
+    let env_name = env.name();
+    if let Some(value) = cli_value {
+        anyhow::ensure!(
+            !value.is_empty(),
+            "{env_name} / CLI credential cannot be empty"
+        );
+        return Ok(Some(Cow::Borrowed(value)));
+    }
+
+    let Some(value) = env.read() else {
+        return Ok(None);
+    };
+    let value = value.into_string().map_err(|_| {
+        anyhow::anyhow!(
+            "{env_name} is not valid UTF-8. Fix: replace it with the provider credential text."
+        )
+    })?;
+    anyhow::ensure!(
+        !value.is_empty(),
+        "{env_name} is empty. Fix: set it to the provider credential or unset it and pass the matching token flag."
+    );
+    Ok(Some(Cow::Owned(value)))
 }
 
 impl EmptySource {
@@ -264,7 +342,12 @@ pub(crate) fn build_sources(
     }
 
     #[cfg(feature = "github")]
-    if let (Some(org), Some(token)) = (&args.github_org, &args.github_token) {
+    if let Some(org) = &args.github_org {
+        let token = hosted_source_credential(
+            args.github_token.as_deref(),
+            HostedCredentialEnv::GithubToken,
+        )?
+        .context("GitHub organization source requires --github-token or KEYHOG_GITHUB_TOKEN")?;
         let params = format!("{org}\n{token}");
         sources.push(
             keyhog_sources::create_source_with_http_config_limits_and_policy(
@@ -278,7 +361,12 @@ pub(crate) fn build_sources(
     }
 
     #[cfg(feature = "gitlab")]
-    if let (Some(group), Some(token)) = (&args.gitlab_group, &args.gitlab_token) {
+    if let Some(group) = &args.gitlab_group {
+        let token = hosted_source_credential(
+            args.gitlab_token.as_deref(),
+            HostedCredentialEnv::GitlabToken,
+        )?
+        .context("GitLab group source requires --gitlab-token or KEYHOG_GITLAB_TOKEN")?;
         let params = format!("{group}\n{token}\n{}", args.gitlab_endpoint);
         sources.push(
             keyhog_sources::create_source_with_http_config_limits_and_policy(
@@ -292,11 +380,21 @@ pub(crate) fn build_sources(
     }
 
     #[cfg(feature = "bitbucket")]
-    if let (Some(workspace), Some(username), Some(token)) = (
-        &args.bitbucket_workspace,
-        &args.bitbucket_username,
-        &args.bitbucket_token,
-    ) {
+    if let Some(workspace) = &args.bitbucket_workspace {
+        let username = hosted_source_credential(
+            args.bitbucket_username.as_deref(),
+            HostedCredentialEnv::BitbucketUsername,
+        )?
+        .context(
+            "Bitbucket workspace source requires --bitbucket-username or KEYHOG_BITBUCKET_USERNAME",
+        )?;
+        let token = hosted_source_credential(
+            args.bitbucket_token.as_deref(),
+            HostedCredentialEnv::BitbucketToken,
+        )?
+        .context(
+            "Bitbucket workspace source requires --bitbucket-token or KEYHOG_BITBUCKET_TOKEN",
+        )?;
         let params = format!(
             "{workspace}\n{username}\n{token}\n{}",
             args.bitbucket_endpoint
@@ -482,30 +580,58 @@ fn validate_source_flag_combinations(args: &ScanArgs, _has_path_source: bool) ->
     }
 
     #[cfg(feature = "github")]
+    let github_token_present = args.github_token.is_some()
+        || (args.github_org.is_some()
+            && hosted_source_credential(None, HostedCredentialEnv::GithubToken)?.is_some());
+    #[cfg(feature = "github")]
     validate_all_or_none_source_flags(
         "GitHub organization source",
         &[
             ("--github-org", args.github_org.is_some()),
-            ("--github-token", args.github_token.is_some()),
+            (
+                "--github-token or KEYHOG_GITHUB_TOKEN",
+                github_token_present,
+            ),
         ],
     )?;
 
+    #[cfg(feature = "gitlab")]
+    let gitlab_token_present = args.gitlab_token.is_some()
+        || (args.gitlab_group.is_some()
+            && hosted_source_credential(None, HostedCredentialEnv::GitlabToken)?.is_some());
     #[cfg(feature = "gitlab")]
     validate_all_or_none_source_flags(
         "GitLab group source",
         &[
             ("--gitlab-group", args.gitlab_group.is_some()),
-            ("--gitlab-token", args.gitlab_token.is_some()),
+            (
+                "--gitlab-token or KEYHOG_GITLAB_TOKEN",
+                gitlab_token_present,
+            ),
         ],
     )?;
 
+    #[cfg(feature = "bitbucket")]
+    let bitbucket_username_present = args.bitbucket_username.is_some()
+        || (args.bitbucket_workspace.is_some()
+            && hosted_source_credential(None, HostedCredentialEnv::BitbucketUsername)?.is_some());
+    #[cfg(feature = "bitbucket")]
+    let bitbucket_token_present = args.bitbucket_token.is_some()
+        || (args.bitbucket_workspace.is_some()
+            && hosted_source_credential(None, HostedCredentialEnv::BitbucketToken)?.is_some());
     #[cfg(feature = "bitbucket")]
     validate_all_or_none_source_flags(
         "Bitbucket workspace source",
         &[
             ("--bitbucket-workspace", args.bitbucket_workspace.is_some()),
-            ("--bitbucket-username", args.bitbucket_username.is_some()),
-            ("--bitbucket-token", args.bitbucket_token.is_some()),
+            (
+                "--bitbucket-username or KEYHOG_BITBUCKET_USERNAME",
+                bitbucket_username_present,
+            ),
+            (
+                "--bitbucket-token or KEYHOG_BITBUCKET_TOKEN",
+                bitbucket_token_present,
+            ),
         ],
     )?;
 

@@ -9,6 +9,10 @@ static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 const AMBIENT_SOURCE_ENV: &[(&str, &str)] = &[
     ("SLACK_TOKEN", "xoxb-redacted"),
+    ("KEYHOG_GITHUB_TOKEN", "github-redacted"),
+    ("KEYHOG_GITLAB_TOKEN", "gitlab-redacted"),
+    ("KEYHOG_BITBUCKET_USERNAME", "alice"),
+    ("KEYHOG_BITBUCKET_TOKEN", "bitbucket-redacted"),
     ("S3_BUCKET", "secret-bucket"),
     ("GCS_BUCKET", "secret-gcs-bucket"),
     (
@@ -32,6 +36,25 @@ impl Drop for RestoreEnv {
             }
         }
     }
+}
+
+#[cfg(feature = "github")]
+#[test]
+fn explicit_github_scope_can_read_token_from_dedicated_env() {
+    with_ambient_source_env(|| {
+        let args = ScanArgs::try_parse_from(["scan", "--github-org", "acme"])
+            .expect("explicit GitHub scope must parse without a token in argv");
+        assert!(
+            args.github_token.is_none(),
+            "the credential must remain outside parsed process arguments"
+        );
+
+        let sources = API
+            .build_sources(&args, vec![], None)
+            .expect("dedicated token env must complete the explicit source");
+        assert_eq!(sources.len(), 1, "exactly the requested source is built");
+        assert_eq!(sources[0].name(), "github-org");
+    });
 }
 
 fn with_ambient_source_env<R>(body: impl FnOnce() -> R) -> R {

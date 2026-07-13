@@ -192,14 +192,16 @@ fn strace_syscall_counts(
         .arg(scan_dir)
         .arg("--threads")
         .arg("1")
-        // Disable the GPU probe for the measured scan. The metric is the FILE
+        // Select CPU explicitly for the measured scan. The metric is the FILE
         // ingestion syscall count (read/stat/openat/fadvise), which the scan
         // ENGINE choice does not touch, so this does not perturb the ratio. It
         // removes a real crash vector: the GPU init can SIGSEGV under strace's
         // ptrace when the host is loaded (e.g. the CI all-targets run executes
         // many test binaries in parallel), which would otherwise flake this
         // tripwire as "keyhog under strace exited unexpectedly".
-        .env("KEYHOG_NO_GPU", "1")
+        .arg("--backend")
+        .arg("cpu")
+        .arg("--daemon=off")
         // findings-or-not is irrelevant; we only measure ingestion syscalls.
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

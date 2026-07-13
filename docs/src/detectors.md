@@ -26,20 +26,33 @@ id = "stripe-secret-key"
 name = "Stripe Secret Key"
 service = "stripe"
 severity = "critical"
-keywords = ["sk_live_", "sk_test_", "stripe"]
+keywords = ["sk_live_", "sk_test_", "rk_live_", "rk_test_", "stripe"]
+simdsieve_prefixes = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"]
 
 [[detector.patterns]]
-regex = "sk_(?:live|test)_[a-zA-Z0-9]{24,}"
-description = "Stripe secret key - live or test mode"
-group = 0
+regex = 'sk_live_[a-zA-Z0-9]{24,}'
+description = "Stripe live secret key"
+
+[[detector.patterns]]
+regex = 'sk_test_[a-zA-Z0-9]{24,}'
+description = "Stripe test secret key"
+
+[[detector.patterns]]
+regex = 'rk_live_[a-zA-Z0-9]{24,}'
+description = "Stripe live restricted key"
+
+[[detector.patterns]]
+regex = 'rk_test_[a-zA-Z0-9]{24,}'
+description = "Stripe test restricted key"
 
 [detector.verify]
 method = "GET"
 url = "https://api.stripe.com/v1/charges?limit=1"
 
 [detector.verify.auth]
-type = "bearer"
-field = "match"
+type = "basic"
+username = "match"
+password = ""
 
 [detector.verify.success]
 status = 200
@@ -67,6 +80,11 @@ corpora remain separate because one compact pair cannot prove those contracts.
 
 `detector.id` - kebab-case, globally unique. Shows up in JSON output
 as `detector_id` and in CLI output as the third column.
+
+`detector.kind` - optional execution class. Omission or `"regex"` selects the
+normal regex detector contract. `"phase2-generic"` selects a scanner-owned
+generic discovery mechanism whose policy remains in this TOML; it may have no
+`patterns`, but must declare the mechanism-specific fields validation requires.
 
 `detector.name` - human-readable name. Shows up in `keyhog detectors`
 listing and IDE plugins.
@@ -101,10 +119,11 @@ public and the secret prefix (Stripe `pk_*` vs `sk_*`, Mapbox `pk.`
 vs `sk.`) tag only the public pattern so a misused secret key still
 surfaces at its nominal severity.
 
-`detector.keywords` - strings the prefilter Aho-Corasick automaton matches on.
-At least ONE keyword in the chunk is required before the regex even
-runs. Pick keywords that are short, distinctive, and likely to appear
-near a real credential (`stripe`, `sk_live_`, `STRIPE_SECRET_KEY`).
+`detector.keywords` - optional prefilter and context signals. Regexes with an
+extractable literal prefix or inner literal can trigger from that literal even
+when no declared keyword occurs; patterns with neither run in the ungated
+phase-2 path and emit a load warning. `kind = "phase2-generic"` detectors require
+keywords because their assignment/context bridge is the candidate source.
 
 `detector.patterns[]` - one or more regexes. Each carries:
 
@@ -127,10 +146,10 @@ near a real credential (`stripe`, `sk_live_`, `STRIPE_SECRET_KEY`).
 Multiple patterns means "any of these shapes". A typical detector has
 1-3 patterns covering env-var, JSON, and inline forms.
 
-`detector.companions[]` - optional. Some credentials are only useful
-in pairs (AWS access key + secret key). A companion is a second regex
-that must match within N lines of the primary; without it, the
-primary's finding is dropped.
+`detector.companions[]` - optional nearby values described by `name`, `regex`,
+`within_lines`, and `required` (default `false`). Optional companions enrich the
+finding and can strengthen confidence or verification. Only a companion marked
+`required = true` gates the primary finding when absent.
 
 `detector.verify` - optional. If present, `keyhog scan --verify`
 makes the documented API call with the captured credential and:
@@ -160,7 +179,7 @@ The available per-detector tuning fields are:
 *   **`entropy_low`** (float, optional): Per-detector keyword-context (low) entropy threshold. Falls back to `LOW_ENTROPY_THRESHOLD` (3.0) if unset.
 *   **`entropy_very_high`** (float, optional): Per-detector very-high entropy threshold for keyword-free or isolated tokens. Falls back to `VERY_HIGH_ENTROPY_THRESHOLD` (5.8) if unset.
 *   **`mixed_alnum_floor`** (float, optional): Per-detector mixed alpha-numeric token entropy floor. Falls back to `MIXED_ALNUM_TOKEN_THRESHOLD` (4.0) if unset.
-*   **`entropy_floor`** (array of tables, optional): Length-bucketed low-entropy suppression floor mapping maximum lengths to minimum entropy scores. Falls back to `EntropyFloorTable::DEFAULT_FLOOR` if unset.
+*   **`entropy_floor`** (array of tables, optional): Length-bucketed low-entropy suppression floor mapping maximum lengths to minimum entropy scores. If absent, generic adjudication uses its compiled 3.5-bit fallback where this gate applies.
     *   `max_len` (integer, optional): Inclusive maximum length for this bucket.
     *   `floor` (float): Shannon entropy floor.
 
@@ -178,14 +197,14 @@ The available per-detector tuning fields are:
     `[scan].entropy_bpe_max_bytes_per_token` or CLI flag is the final Tier-A
     override for all eligible detectors. Lower ceilings favor precision and
     higher ceilings favor recall. This is the
-    token-efficiency mechanism popularized by Betterleaks, not another Shannon
+    token-efficiency mechanism popularized by BetterLeaks, not another Shannon
     entropy calculation: it measures language-model subword compressibility.
     A generic detector may use it as the main **precision discriminator** by
     choosing a permissive detector-local entropy floor and a measured BPE
     ceiling, or compose both gates when byte-distribution and language-likeness
     each reject different noise. It is not a candidate generator: the
     detector's regex or phase-2 assignment/entropy discovery path must first
-    produce a candidate. Betterleaks' public documentation calls this Token
+    produce a candidate. BetterLeaks' public documentation calls this Token
     Efficiency, not BPD; KeyHog uses `bpe_...` field names to keep that
     distinction explicit.
 
@@ -244,7 +263,7 @@ least one `phase2-generic` detector. A focused custom corpus without one compile
 without that bridge; KeyHog does not silently inject the bundled generic rules.
 
 ### Allowlists & Exclusions
-*   **`allowlist_paths`** (array of strings, optional): Per-detector path-exclusion regexes (Betterleaks-style allowlist). Any candidate match whose file path matches any of these regexes is suppressed.
+*   **`allowlist_paths`** (array of strings, optional): Per-detector path-exclusion regexes (BetterLeaks-style allowlist). Any candidate match whose file path matches any of these regexes is suppressed.
 *   **`allowlist_values`** (array of strings, optional): Per-detector value-exclusion regexes. Any candidate secret value matching any of these regexes is suppressed (useful for filtering out test, example, or placeholder values).
 *   **`stopwords`** (array of strings, optional): Per-detector literal stopwords. A matched value equal to or containing any of these strings (case-insensitive) is suppressed.
 
@@ -359,21 +378,11 @@ enabled = false
 ```
 
 Detector ids are the `detector_id` field in `--format json`/`jsonl` output, or
-the left column of `keyhog detectors`. The high-precision fast-path detectors
-are prefixed `hot-` (e.g. `hot-aws_key`); a service like AWS can have both a
-`hot-` detector and a TOML detector, so disable both to silence it entirely:
-
-```toml
-[detector.hot-aws_key]
-enabled = false
-[detector.aws-access-key]
-enabled = false
-```
-
-Disabled TOML detectors are dropped before the corpus compiles (zero scan
-cost); disabled hot-pattern findings are filtered from the report. If an id
-matches nothing in the loaded corpus, keyhog warns rather than silently
-ignoring it.
+the left column of `keyhog detectors`. Accelerated literal slots remain owned by
+the same canonical TOML detector id; there is no separate `hot-*` detector to
+disable. Disabled detectors are dropped before the corpus compiles (zero scan
+cost). If an id matches nothing in the loaded corpus, KeyHog warns rather than
+silently ignoring it.
 
 ## Running only a chosen subset
 
@@ -393,8 +402,9 @@ down-weight it instead of dropping it entirely so a real hit still
 surfaces:
 
 ```sh
-keyhog calibrate --fp generic-api-key       # record a false positive
-keyhog scan . --min-confidence 0.7          # filter low-confidence hits
+CACHE="$XDG_CACHE_HOME/keyhog/calibration.json"
+keyhog calibrate --cache "$CACHE" --fp generic-api-key
+keyhog scan . --calibration-cache "$CACHE" --min-confidence 0.7
 ```
 
 Each `--fp` lowers that detector's Bayesian confidence multiplier

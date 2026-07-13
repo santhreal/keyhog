@@ -30,7 +30,7 @@
 //!
 //! Host-independence: `github-classic-pat` and `aws-access-key` are
 //! literal-anchored detectors that fire on the scalar/CPU path, so this runs
-//! with `--backend cpu` + `KEYHOG_NO_GPU=1` and never assumes an accelerator.
+//! with `--backend cpu` and never assumes an accelerator.
 //! Every assert pins a concrete value (exact string / hash / count / exit code /
 //! JSON Value) (never a bare `!is_empty` / `is_ok`).
 
@@ -102,7 +102,7 @@ fn run_sarif(target: &PathBuf, out: Option<&PathBuf>) -> (Option<i32>, String, S
     if let Some(o) = out {
         cmd.arg("--output").arg(o);
     }
-    cmd.arg(target).env("KEYHOG_NO_GPU", "1");
+    cmd.arg(target);
     let output = cmd.output().expect("spawn keyhog scan");
     (
         output.status.code(),
@@ -519,7 +519,6 @@ fn sarif_short_o_flag_equivalent_to_long_output() {
         ])
         .arg(&short_file)
         .arg(&target)
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .map(|o| (o.status.code(), String::new(), String::new()))
         .expect("spawn short-flag sarif scan");

@@ -20,10 +20,10 @@
 
 # Workflows
 
-- [Daemon and warm scans](./workflows/daemon.md)
 - [Pre-commit hook](./workflows/precommit.md)
 - [CI integration](./workflows/ci.md)
 - [Integration recipes](./workflows/integrations.md)
+- [Daemon and warm scans](./workflows/daemon.md)
 
 # Reference
 

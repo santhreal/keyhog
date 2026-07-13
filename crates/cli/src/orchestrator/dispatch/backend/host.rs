@@ -115,6 +115,34 @@ impl AutorouteHostProfile {
     }
 }
 
+/// Stable operator-facing host identity used by autoroute inspection.
+pub(super) fn render_host_profile(host: &AutorouteHostProfile) -> String {
+    let simd = if host.has_avx512 {
+        "AVX-512"
+    } else if host.has_avx2 {
+        "AVX2"
+    } else if host.has_neon {
+        "NEON"
+    } else {
+        "scalar"
+    };
+    format!(
+        "{}/{} {} | {}p/{}l cores | {} | hyperscan={} | gpu={}",
+        host.os,
+        host.arch,
+        host.cpu_model.as_deref().unwrap_or("unknown-cpu"), // LAW10: display-only host label; recall-safe
+        host.physical_cores,
+        host.logical_cores,
+        simd,
+        if host.hyperscan_available {
+            "yes"
+        } else {
+            "no"
+        },
+        host.gpu_name.as_deref().unwrap_or("none"), // LAW10: display-only host label; recall-safe
+    )
+}
+
 /// True when an optional identity field is `Some` with non-blank content
 /// the ONE definition of "this probe field actually resolved" shared by every
 /// `require_exact_identity` check (a `Some("")` is a probe bug, not identity).

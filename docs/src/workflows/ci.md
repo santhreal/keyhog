@@ -1,8 +1,17 @@
 # CI integration
 
-A CI step that catches leaked credentials before they ship. Three
-patterns: GitHub Actions, GitLab CI, generic shell. The examples gate
-on findings and keep machine-readable reports available for triage.
+Add KeyHog in two stages: make findings visible with a durable report, then
+turn new findings into a merge gate. The recipes below keep scanning,
+enforcement, and report retention explicit so a missing upload or unsupported
+source cannot look like a clean run.
+
+| Workflow | Recommended scan | Why |
+|---|---|---|
+| Developer commit | `keyhog hook install` | Fast staged-file feedback before push. |
+| Pull request | Working tree, baseline enabled | Blocks newly introduced credentials. |
+| Main branch | Full reachable Git history | Finds secrets already merged into history. |
+| Release | History plus explicit live verification | Prevents publishing with a confirmed live credential. |
+| Large scheduled inventory | Partitioned repository/cloud scopes | Keeps ownership, coverage, and artifacts independently retryable. |
 
 ## GitHub Actions
 
@@ -63,7 +72,7 @@ To adopt on a repo that already has known findings, generate and commit a
 baseline once, then wire it into the action:
 
 ```bash
-keyhog scan --create-baseline .keyhog-baseline.json
+keyhog scan . --create-baseline .keyhog-baseline.json
 git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
 ```
 
@@ -72,6 +81,26 @@ git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
         with:
           baseline: .keyhog-baseline.json
 ```
+
+## Exclusions and adoption policy
+
+Use exclusions for content that should not be scanned, and a baseline for known
+findings that should remain visible but not block adoption:
+
+- Put generated trees, vendored fixtures, and intentionally synthetic corpora
+  in `.keyhogignore` as `path:` rules. Keep a short comment explaining each
+  exclusion; broad globs can hide real coverage.
+- Put finding-specific exceptions in `.keyhogignore` or
+  `.keyhogignore.toml`, preferably with reason, expiry, and approval metadata.
+- Commit a baseline when introducing KeyHog to an existing repository. Do not
+  regenerate it automatically in CI; review baseline changes like code.
+- Never convert a source failure or coverage gap into an exclusion. KeyHog uses
+  distinct nonzero exit semantics for invalid configuration, system failures,
+  unavailable required GPU execution, and incomplete sources.
+
+For a monorepo, keep one root policy when ownership is shared. When teams need
+independent gates, run explicit subdirectory jobs with their own reports and
+baselines; do not hide one team's paths behind another team's ignore file.
 
 ## GitLab CI
 
@@ -176,6 +205,37 @@ The PR scan keeps the dev feedback loop fast. The post-merge history
 scan catches anything that slipped through pre-commit + PR review.
 The release scan verifies what's live, useful for the changelog
 ("rotated these N credentials before shipping").
+
+## Mass scanning
+
+For many repositories or remote collections, make each organization, group,
+bucket, or repository partition its own retryable job and retain one
+machine-readable report per partition. Keep hosted-Git credentials out of the
+process list by injecting `KEYHOG_GITHUB_TOKEN`, `KEYHOG_GITLAB_TOKEN`, or
+`KEYHOG_BITBUCKET_USERNAME` plus `KEYHOG_BITBUCKET_TOKEN` through the CI secret
+store. Then select the scope explicitly:
+
+```bash
+keyhog scan --github-org acme --precision --format jsonl --output acme.jsonl
+keyhog scan --gitlab-group platform --precision --format jsonl --output platform.jsonl
+keyhog scan --s3-bucket audit-archive --s3-prefix production/ \
+  --precision --format jsonl --output audit-archive.jsonl
+```
+
+Use the source limits from the [CLI reference](../reference/cli.md) to define the
+intended coverage boundary. Reaching one is an incomplete-source result, not a
+clean scan; size the limit deliberately or split the inventory into more jobs.
+
+Start in report-only mode, review coverage gaps separately from findings, then
+enable enforcement once baselines and exclusions are owned. Runtime and route
+choice vary with detector policy, source shape, cache state, host CPU/GPU, and
+network limits. Calibrate autoroute on the actual worker class; do not copy a
+routing cache between machines or force GPU/CPU based only on input size.
+
+For long-lived workers, the [daemon workflow](./daemon.md) avoids repeated
+startup work. Ephemeral hosted CI should normally use the ordinary process path
+unless the job performs enough scans to amortize daemon startup and explicitly
+checks daemon compatibility.
 
 ## Failure modes worth knowing
 

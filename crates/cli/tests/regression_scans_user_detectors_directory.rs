@@ -45,7 +45,7 @@ fn scan_reports_secret_under_user_detectors_directory() {
             .get("location")
             .and_then(|value| value.get("file_path"))
             .and_then(|value| value.as_str());
-        matches!(detector_id, Some("aws-access-key" | "hot-aws_key"))
+        matches!(detector_id, Some("aws-access-key"))
             && file_path.is_some_and(|path| path.ends_with("detectors/leak.env"))
     });
     assert!(

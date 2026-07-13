@@ -244,7 +244,6 @@ fn daemon_socket_flag_wires_scan_to_a_fixed_location_daemon() {
 
     // (a) A scan pointed at the daemon's socket reaches it and finds the secret.
     let mut scan = Command::new(binary())
-        .env("KEYHOG_NO_GPU", "1")
         .args(["scan", "--daemon=on", "--daemon-socket"])
         .arg(&socket)
         .args(["--stdin", "--format", "json"])
@@ -278,7 +277,6 @@ fn daemon_socket_flag_wires_scan_to_a_fixed_location_daemon() {
     //     closed (no daemon there) (proving the flag is what wired (a)).
     let elsewhere = dir.path().join("nowhere.sock");
     let mut miss = Command::new(binary())
-        .env("KEYHOG_NO_GPU", "1")
         .args(["scan", "--daemon=on", "--daemon-socket"])
         .arg(&elsewhere)
         .args(["--stdin", "--format", "json"])

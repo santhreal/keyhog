@@ -46,6 +46,9 @@ custom endpoint without an explicit opt-in flag.
 
 | Variable | Effect |
 |----------|--------|
+| `KEYHOG_GITHUB_TOKEN` | GitHub PAT read only when `--github-org` explicitly selects an organization scan. Preferred over putting `--github-token` in the process arguments. |
+| `KEYHOG_GITLAB_TOKEN` | GitLab PAT read only when `--gitlab-group` explicitly selects a group scan. |
+| `KEYHOG_BITBUCKET_USERNAME`, `KEYHOG_BITBUCKET_TOKEN` | Bitbucket Cloud identity read only when `--bitbucket-workspace` explicitly selects a workspace scan. |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `AWS_DEFAULT_REGION` | SigV4 signing for S3 `ListObjectsV2` / object GET against AWS-owned endpoints. |
 | `GOOGLE_OAUTH_ACCESS_TOKEN`, `GCS_BEARER_TOKEN` | Bearer token for `--gcs-bucket` JSON-API listing/downloads (the Google token wins when both are set). |
 

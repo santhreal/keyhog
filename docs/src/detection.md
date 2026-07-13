@@ -40,12 +40,12 @@ then confirm, reject, or score them. Verification runs only after a candidate
 survives detection and reporting policy.
 
 BPE is not a replacement name for entropy: it is an independent post-candidate
-signal. Betterleaks calls the approach
+signal. BetterLeaks calls the approach
 [Token Efficiency](https://github.com/betterleaks/betterleaks#notable-features);
 KeyHog uses the same broad BPE idea while keeping its own detector schema,
 thresholds, pipeline, and behavioral evidence.
 
-Terminology matters here: Betterleaks' public documentation names the feature
+Terminology matters here: BetterLeaks' public documentation names the feature
 **Token Efficiency** and describes BPE tokenization as a natural-language false
 positive filter; it does not present “BPD” as a separate score. KeyHog names its
 related mechanism **BPE token efficiency**, uses `cl100k_base`, measures UTF-8
@@ -76,23 +76,42 @@ resolved scan-wide policy.
 | `canonical_hex_key_material` | Adds only the declared pure-hex lengths under the declared assignment keys | Omitted keyword/length pairs remain digest-shaped negatives |
 | `min_len` / `keyword_free_min_len` | Longer values are required; short false positives fall, but short real credentials can also fall | Shorter credential shapes become eligible |
 | `max_len` (phase-2 generic) | Longer assignment values remain eligible; increase only when the credential contract permits them | Long assignment values are rejected rather than truncated into an apparently valid finding |
+| `allowlist_paths`, `allowlist_values`, `stopwords` | Adds detector-specific path, value-regex, or literal exclusions | Removing an exclusion makes that detector consider the matching path/value again; it does not affect other detectors |
 | `min_confidence` | Raises this detector's reporting floor | Lowers this detector's reporting floor; an operator override can still replace it |
-| `weak_anchor`, `structural_password_slot`, `credential_shape` | Enables the named detector-family/shape policy; these are classifications, not numeric quality sliders | Leaves that policy inactive |
+| `weak_anchor` | Keeps generic shape/entropy gates active for a service detector whose captured value collides with generic identifiers | Trusts the service anchor without the weak-anchor policy; use only when the pattern itself proves the credential shape |
+| `structural_password_slot` | Applies password-slot placeholder policy to a free-form value captured from a syntactic credential slot | Leaves that detector outside the structural-password family |
+| `private_key_block` | Makes the detector's enclosing key block suppress less-specific findings nested inside it | Treats the match as an ordinary, non-enclosing finding |
+| `[detector.credential_shape]` | Declares exact prefix/length/shape constraints that a captured credential must satisfy | Omitting it leaves that detector without an additional credential-shape constraint |
 
-### Precedence and Resolution Rules
+### Resolution rules
 
-*   **BPE Ceiling Precedence**:
-    1.  Compiled Fallback: `2.2` bytes-per-token (default `keyhog_core::DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN`).
-    2.  Detector TOML Override: `bpe_max_bytes_per_token`.
-    3.  Global Override: `[scan].entropy_bpe_max_bytes_per_token` in `.keyhog.toml` or `--entropy-bpe-max-bytes-per-token` CLI override.
-*   **Confidence Floor Precedence**:
-    1.  Compiled Default: `0.40`.
-    2.  Global Scan Floor: `[scan].min_confidence` in `.keyhog.toml` or `--min-confidence` CLI override.
-    3.  Detector TOML Floor: `min_confidence` (self-declared by the detector author).
-    4.  Operator Override: `[detector.<id>].min_confidence` in `.keyhog.toml` (highest authority).
-*   **Entropy Threshold Precedence**:
-    1.  Compiled Defaults: `4.5` (high), `3.0` (low), `5.8` (very high), `4.0` (mixed alnum).
-    2.  Detector TOML Overrides: `entropy_high`, `entropy_low`, `entropy_very_high`, `mixed_alnum_floor`.
+These settings do not all use one generic “last value wins” rule:
+
+- **BPE ceiling:** the compiled fallback is `2.2` UTF-8 bytes per
+  `cl100k_base` token. The owning detector's `bpe_max_bytes_per_token` replaces
+  that fallback. An explicitly supplied
+  `[scan].entropy_bpe_max_bytes_per_token` or
+  `--entropy-bpe-max-bytes-per-token` replaces every BPE-enabled
+  entropy/generic detector ceiling; the CLI wins over the config file.
+  `bpe_enabled = false` still disables the gate for that detector.
+- **Confidence floor:** the scan floor defaults to `0.40`. A detector TOML
+  `min_confidence` replaces the scan floor for that detector, and an operator
+  `[detector.<id>].min_confidence` replaces the detector-declared floor. Under
+  `--precision`, the resolved global and per-detector floors are clamped to at
+  least `0.85`; neither source can weaken the precision preset.
+- **Entropy policy:** omitted detector fields use `4.5` (`entropy_high`), `3.0`
+  (`entropy_low`), `5.8` (`entropy_very_high`), and `4.0`
+  (`mixed_alnum_floor`). Detector TOML values replace those individual
+  fallbacks. The scan-wide `entropy_threshold` is deliberately not a blanket
+  replacement for all four bands. On the phase-2 generic bridge it tightens
+  only when it exceeds the owning detector's high band. On the entropy scanner,
+  a value above that high band tightens keyword and isolated candidates; a
+  value below the keyword detector's low band loosens that keyword path, while
+  values between the low and high bands leave its low floor in place. The
+  isolated path keeps its mixed-alphanumeric floor unless the scan threshold
+  exceeds the high band. These rules preserve the different evidence carried
+  by an assignment key, an isolated opaque token, and an unanchored generic
+  value.
 
 Token efficiency can carry more of the precision burden for a detector whose
 assignment key or regex already creates the candidate. That is the practical
@@ -126,10 +145,14 @@ positive, negative, evasion, backend-parity, and corpus contracts.
 ## Settings, hardware, and result parity
 
 Hardware changes execution, not detection policy. CPU, SIMD/Hyperscan, and GPU
-routes consume the same resolved detector/config digest and must return the
-same complete finding set. Autoroute calibrates only fastest **correct**
-candidates and refuses to route when exact persisted evidence is missing or
-stale; it does not relax a detector to make a backend faster.
+routes consume the same resolved detector/config digest. Autoroute admits a
+candidate only when its canonical detection identities match the reference:
+chunk membership, detector id/name/service/severity, hashed credential value,
+stored credential hash, hashed companion names and values, source, file, line,
+byte offset, commit, author, date, entropy, confidence, and multiplicity.
+Confidence, suppression, verification, deduplication, and output formatting
+then run through the shared policy tail. Missing or stale exact evidence is an
+error; calibration never relaxes a detector to make a backend look faster.
 
 | Change | Finding-set effect | Routing/calibration effect |
 |---|---|---|
@@ -138,6 +161,7 @@ stale; it does not relax a detector to make a backend faster.
 | `--fast`, `--deep`, or `--precision` | Changes the resolved feature and confidence policy, so results may differ by design | Each preset has a distinct config identity and calibration coverage |
 | Explicit `--backend cpu|simd|gpu` | Intended to be parity-identical; it is a diagnostic/benchmark override, not proof | Bypasses autoroute and does not create reusable fastest-correct evidence |
 | Input size, chunk count, source family, decode density, or full-source-size availability | The input itself can change findings; backend choice must not | Selects a different exact workload key, including whether each source family's size bucket came from full-source or payload evidence |
+| One-shot process versus ready daemon | None: runtime lifetime cannot change detector policy or canonical matches | The same timing record derives a cold-aware one-shot route and a warm persistent-daemon route; the winners may differ |
 
 ### Configuration Presets
 
@@ -151,9 +175,11 @@ KeyHog supports three search backends: pure Rust CPU, SIMD/Hyperscan
 (`simd-regex`), and GPU/VYRE region presence. Portable builds retain the
 pure-Rust trigger path without Hyperscan. `keyhog calibrate-autoroute` measures
 every eligible backend for the host/config/workload key and rejects candidates
-whose canonical match identity differs from the reference. A missing or invalid
-decision is an error; automatic routing never silently substitutes another
-backend.
+whose canonical match identity differs from the reference. It records the first
+real GPU dispatch plus warm trials: an ordinary process resolves against the
+cold-aware GPU cost, while a daemon that initialized its engines before
+readiness resolves against the warm GPU evidence. A missing or invalid decision
+is an error; automatic routing never silently substitutes another backend.
 
 When comparing settings, record the effective config, detector digest, input
 identity, backend, host/accelerator identity, and complete findings, not only
@@ -199,17 +225,18 @@ After these screens, ordinary misses stop. Decode-shaped misses instead take
 the bounded decode-only path described above; transformed plaintext is then
 attributed back to the original source.
 
-3. **SIMD prefilter (`simd-regex`).** A multi-pattern trigger scanner.
-   When the `simd` feature is compiled, the detector corpus is also compiled
-   into Hyperscan databases; portable builds use the pure-Rust trigger path.
-   One scan pass returns "which detector IDs have a candidate match."
+3. **Backend trigger pass.** The `simd-regex` backend compiles the detector
+   corpus into Hyperscan databases when the `simd` feature is present;
+   `cpu-fallback` uses the pure-Rust trigger path. One pass returns which
+   detector IDs have a candidate match.
 
    GPU-capable builds add VYRE's region-presence literal-set backend. There is
    no universal model-name or byte threshold at which KeyHog silently switches
    to it. `--backend auto` requires an exact persisted calibration decision for
    the current binary, detector/config digest, host/device/driver, workload
-   class, and size bucket. Calibration keeps a GPU route only when its complete
-   findings are identical and it is the fastest eligible backend for that key.
+   class, and size bucket. Calibration keeps a GPU route only when its canonical
+   match identities equal the reference and it is the fastest eligible backend
+   for that key.
 
 ## Stage 3 - detector match
 
@@ -254,6 +281,14 @@ Detectors fall into two camps:
   2.3 ceiling; password/passphrase policies set `bpe_enabled = false` because
   human-chosen credentials may intentionally be word-like. Disabled policies
   skip tokenizer work entirely rather than using a magic oversized ceiling.
+
+The `entropy-generic`, `entropy-password`, `entropy-token`, and
+`entropy-api-key` IDs are output classifications for entropy-discovered
+findings, not four additional detector TOML files. Their candidate policy is
+owned by the corresponding phase-2 TOMLs selected from the assignment context:
+`generic-secret`, `generic-password`, `generic-keyword-secret`, or
+`generic-api-key`. Use `keyhog explain` on those owning detector IDs when
+tuning entropy, BPE, length, or canonical-key policy.
 
 The split matters for the post-process stage.
 

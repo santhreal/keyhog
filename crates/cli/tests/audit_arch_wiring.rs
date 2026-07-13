@@ -400,7 +400,7 @@ fn daemon_route_honors_config_show_secrets() {
             .find(|f| {
                 matches!(
                     f.get("detector_id").and_then(|v| v.as_str()),
-                    Some("aws-access-key") | Some("hot-aws_key")
+                    Some("aws-access-key")
                 )
             })
             .unwrap_or_else(|| panic!("{label}: expected an AWS finding; got {fs:?}"));

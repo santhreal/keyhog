@@ -186,9 +186,8 @@ use std::io::Write;
 #[test]
 fn findings_report_array_is_recognized() {
     // `scan --format json` emits a top-level ARRAY of findings.
-    assert!(
-        API.baseline_looks_like_findings_report(r#"[{"detector_id":"hot-github_pat","line":1}]"#)
-    );
+    assert!(API
+        .baseline_looks_like_findings_report(r#"[{"detector_id":"github-classic-pat","line":1}]"#));
 }
 
 #[test]
@@ -210,7 +209,7 @@ fn load_of_scan_report_gives_actionable_error_not_serde_noise() {
     // surface "invalid type: map, expected u32", which reads like file
     // corruption. It must instead name the right command.
     let mut tmp = tempfile::NamedTempFile::new().unwrap();
-    write!(tmp, r#"[{{"detector_id":"hot-github_pat","line":1}}]"#).unwrap();
+    write!(tmp, r#"[{{"detector_id":"github-classic-pat","line":1}}]"#).unwrap();
     let err = API
         .baseline_load(tmp.path())
         .expect_err("a findings array is not a baseline");

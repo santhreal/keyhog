@@ -251,10 +251,10 @@ fn explain_prints_canonical_remediation_steps() {
 }
 
 // ---------------------------------------------------------------------------
-// hot-* SIMD fast-path alias resolution
+// Retired hot-* alias migration
 // ---------------------------------------------------------------------------
 
-/// Positive: a `hot-github_pat` fast-path label resolves to the canonical
+/// Positive: a historical `hot-github_pat` alias resolves to the canonical
 /// `github-classic-pat` registry spec, exits 0, and says so on stdout.
 #[test]
 fn hot_alias_github_resolves_to_canonical_id() {
@@ -262,7 +262,7 @@ fn hot_alias_github_resolves_to_canonical_id() {
     assert_eq!(out.status.code(), Some(0), "stderr={}", stderr_of(&out));
     let s = stdout_of(&out);
     assert!(
-        s.contains("'hot-github_pat' is keyhog's SIMD fast-path label; showing the canonical detector 'github-classic-pat'."),
+        s.contains("'hot-github_pat' is a retired KeyHog fast-path alias; showing the canonical detector 'github-classic-pat'."),
         "expected the hot-alias resolution notice; got:\n{s}"
     );
     // And it actually renders the canonical spec, not just the notice.
@@ -331,9 +331,8 @@ fn unknown_detector_id_exits_two_and_names_it() {
     );
 }
 
-/// Negative twin: an unknown `hot-*` label whose service prefix DOES match
-/// real detectors exits 2 with the fast-path-label message listing related
-/// ids (NOT the plain "no detector with id" branch).
+/// Negative twin: an unknown retired-alias shape whose service prefix matches
+/// real detectors exits 2 with related canonical ids.
 #[test]
 fn unknown_hot_label_exits_two_with_fastpath_message() {
     let out = explain(&["hot-github_zzz_unmapped"]);
@@ -345,8 +344,8 @@ fn unknown_hot_label_exits_two_with_fastpath_message() {
     );
     let err = stderr_of(&out);
     assert!(
-        err.contains("is a keyhog SIMD fast-path label, not a registry detector id"),
-        "expected the fast-path-label branch; got:\n{err}"
+        err.contains("resembles a retired fast-path alias, not a current detector id"),
+        "expected the retired-alias branch; got:\n{err}"
     );
     assert!(
         err.contains("github-classic-pat"),

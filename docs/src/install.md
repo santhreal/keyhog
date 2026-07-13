@@ -86,7 +86,7 @@ iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 `
 | `--yes` / `-y`                          | Accept the displayed defaults without prompting: PATH setup yes, optional completion and repository hook no. |
 | `--no-color`                            | Disable ANSI colors (e.g. for log capture).                   |
 | `--from-file=/path/to/asset`            | Offline / air-gapped install from a pre-downloaded complete host bundle. The installer requires sibling `.sha256` files unless `--insecure` accepts missing checksum proof; verify the downloaded `.minisig` files manually as shown below before invoking the local path. |
-| `--calibrate`                           | Re-run only the post-install autoroute calibration phase on an already-installed binary. |
+| `--calibrate`                           | Re-run the installer's visible autoroute calibration sweep against the already-installed binary, without replacing that binary. |
 | `--insecure`                            | Emergency-only: proceed when signature/checksum *proof is missing*. A present-but-wrong signature or checksum is always fatal, `--insecure` or not. |
 
 The table uses Unix spellings. The PowerShell equivalents are `-Version`,
@@ -135,6 +135,38 @@ the scanner-owned cache path while the candidate binary is health-checked. A
 failed artifact install or candidate check restores both the previous binary
 and every replaced matcher; concurrent maintenance uses a visible cache lock.
 
+### Post-install calibration
+
+The installer does not report success immediately after copying the binary. It
+runs `keyhog doctor`, then visibly measures every candidate enabled for each
+calibrated configuration: scalar CPU and Hyperscan/SIMD where present, plus
+every eligible hardware GPU. It covers the workload classes and scan-policy
+presets it can materialize on that host. The resulting
+decisions are written to the same per-user autoroute cache normal scans read. If
+a required calibration probe fails, the install fails rather than leave
+`--backend auto` pretending to be usable. Source-specific probes that require
+an unavailable external tool, such as Git or a running Docker daemon, are named
+as unavailable; install the tool and rerun `install.sh --calibrate` or
+`install.ps1 -Calibrate` before relying on that source class.
+
+Calibration is identity-bound to the KeyHog binary/build, detector and routing
+rules, resolved scan configuration, host/backend capabilities, source class,
+and workload bucket. An absent, stale, malformed, or incomplete decision is
+therefore not permission to choose a convenient backend. An automatic scan
+fails closed with exit `2` and an actionable recalibration message. Inspect the
+current state without changing it with:
+
+```sh
+keyhog backend --autoroute
+keyhog backend --autoroute --json
+```
+
+Use `keyhog calibrate-autoroute` for KeyHog's self-contained filesystem/stdin
+workload sweep. Use the installer `--calibrate` mode when you also want its
+environment-backed Git, URL, and container probes. An explicit
+`--backend cpu|simd|gpu` bypasses the autoroute decision table for that scan;
+it is a diagnostic or benchmark override, not a repair for missing evidence.
+
 ### Runtime GPU controls
 
 | Control                  | Effect                                                                                                                                                                                                                                       |
@@ -148,6 +180,41 @@ The GitHub Action calibrates the actual runner and admits only usable physical
 accelerators. On self-hosted GPU runners, `--require-gpu` or
 `[system].gpu = "required"` turns accelerator availability into an explicit
 fail-closed requirement; it does not choose GPU over a faster calibrated peer.
+
+### Daemon policy after installation
+
+Installation and calibration do not start a daemon. On Unix, run and manage the
+optional warm scanner explicitly:
+
+```sh
+keyhog daemon start
+keyhog daemon status
+keyhog daemon stop
+```
+
+`daemon start` is a foreground long-lived process; run it under the service
+manager or terminal lifecycle you intend to own. It announces readiness only
+after compiling the scanner and validating its selected backend.
+
+For `keyhog scan`, an omitted daemon flag means `--daemon=auto`. Auto uses a
+reachable, compatible daemon only for a request it can reproduce exactly
+(currently one stdin stream or one regular file). With no socket it runs in
+process directly. If a reachable daemon fails its handshake or request, KeyHog
+prints the failure and retries the same eligible scan in process. Directory,
+Git/remote, baseline, verification, explicit backend/GPU, and unsupported
+policy combinations stay in process without weakening their semantics.
+
+Bare `--daemon` means `--daemon=on`: the daemon is required, so a missing,
+stale, incompatible, or incapable daemon is an exit-`2` error and no in-process
+substitution occurs. `--daemon=off` always runs in process. A daemon left alive
+across a binary, build, or detector-corpus change is visible as stale in
+`keyhog daemon status`; scan handshakes refuse it until it is restarted. Windows
+has no daemon transport: an omitted flag and `--daemon=off` run in process,
+while explicit `--daemon=auto`, `--daemon=on`, and daemon subcommands fail
+loudly. A connected-but-stale `daemon status` prints the identity mismatch but
+still exits `0`, because the status request itself succeeded; the strict scan
+route remains rejected. See [Daemon and warm scans](workflows/daemon.md) for
+request eligibility, socket trust, warm-GPU routing, and timeout details.
 
 ## Repair, diagnose, uninstall
 

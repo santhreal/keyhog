@@ -91,19 +91,21 @@ are peer candidates. A backend is eligible only after calibration proves two
 things for the current binary, detector digest, host profile, and workload
 class:
 
-- **Correctness parity:** the candidate backend returns the same detector ids,
-  locations, hashes, and finding counts as the reference scanner path for the
-  sampled workload.
+- **Correctness parity:** the candidate returns the same complete redacted raw
+  match identity as the reference path: detector metadata, severity, hashed
+  credential and companions, full source location/history metadata, entropy,
+  confidence, chunk membership, and finding multiplicity.
 - **Measured speed:** the candidate is faster than the alternatives on this
   host and workload class, including batching, detector digest, file-size
   distribution, accelerator state, and platform overhead. Calibration records
   store repeated parity-checked trials, not a single lucky timing sample.
 
 The selected decision must be explainable and reproducible. Any cached routing
-decision is keyed by binary version, OS/arch, CPU features, GPU identity,
+decision is keyed by exact executable SHA-256, binary version, OS/arch, CPU features, GPU identity,
 detector digest, resolved scan-config digest including batch-pipeline route,
-explicit calibration controls, calibration schema, and workload-shape buckets;
-changing any of those
+calibration schema, and workload-shape buckets. Canonical GPU admission during
+calibration shares normal scan identity; deliberately excluding GPU candidates
+is isolated as a diagnostic-only calibration identity. Changing any keyed input
 invalidates the decision and requires a fresh calibration probe during install
 or explicit recalibration. Invalid existing cache records are rejected instead
 of being silently trusted. The installer runs a visible autoroute calibration
@@ -122,12 +124,15 @@ such as the portable/static release) has no backend *choice* to route, so it
 resolves its lone CPU backend directly and never requires calibration (and never
 fails closed). Autoroute engages only when a build compiled more than one backend.
 
-The visible calibration phase measures every real workload class on your
-hardware: stdin, small/large files, many-file trees, decode-heavy input, git
+The visible calibration phase measures every workload class the current host
+can materialize: stdin, small/large files, many-file trees, decode-heavy input, git
 history/blobs/diff, a loopback web URL, and a live container image, timing each
 backend per class and persisting only a route it can prove fastest (or the sound
-lowest-overhead tie-break when two routes are statistically tied). The install
-refuses to finish unless every class calibrates.
+lowest measured median among statistically non-dominated routes when confidence
+intervals overlap). Backend engagement overhead breaks only an exact median
+tie. A materialized class must calibrate successfully; classes whose required
+tool, daemon, or fixture cannot be created are reported as unavailable rather
+than silently claimed as covered.
 
 Because a scan-policy preset (`--fast`, `--deep`, `--precision`) changes the
 scanner fields hashed into the routing digest, each preset resolves a *different*
@@ -148,14 +153,15 @@ for the exact workload key shown by `keyhog backend --autoroute`.
 
 `keyhog backend --autoroute` is the companion view: it reads the *persisted*
 calibration cache and lists which resolved scan configs and workload buckets
-already have a fastest-correct decision (and the backend each resolved to),
-plus whether the cache is stale for this build. When a scan exits with
+already have a fastest-correct decision, the distinct cold-aware one-shot and
+warm-daemon routes, representative medians, confidence separation, selection
+basis, and whether the cache is stale for this build. When a scan exits with
 `autoroute calibration required: no decision for workload bucket …`, this is
 how you see what *is* calibrated and recalibrate the gap. Add `--json` for a
 stable, scriptable shape.
 
 <p align="center">
-  <img src="demo/keyhog-backend.gif" alt="keyhog backend: hardware probe (RTX 5090, AVX-512, io_uring) and the size-driven autoroute decision matrix: simd-regex for small inputs, gpu-region-presence once per-tier byte thresholds are met" width="860" />
+  <img src="demo/keyhog-backend.gif" alt="keyhog backend diagnostic hardware probe and advisory size matrix; persisted automatic routing is inspected separately with keyhog backend --autoroute" width="860" />
 </p>
 
 The `simdsieve` prefilter is a performance layer, not a separate detector: a
@@ -176,7 +182,7 @@ Banner **patterns** is the compiled pattern count shown in the startup banner ab
 `generic-api-key`, `generic-keyword-secret`, `generic-password`, `generic-secret`
 - plus vendor-specific rules) with ~1697 `[[detector.patterns]]` rows in total.
 
-**Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, exit codes, env vars, contributing. Source under `docs/`.
+**Full documentation:** [santhreal.github.io/keyhog](https://santhreal.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, exit codes, env vars, contributing. Source under `docs/`.
 
 ---
 
@@ -690,8 +696,7 @@ hosted_git_pages = 1000
 docker_tar_total_bytes = "8GB"
 
 [detector.generic-api-key]
-enabled = false                # noisy detector? turn it off (hot-* fast-path
-                               # ids like `hot-aws_key` are disabled the same way)
+enabled = false                # accelerated slots use this same canonical id
 
 [detector.twilio-api-key]
 min_confidence = 0.6           # per-detector floor; overrides the global one

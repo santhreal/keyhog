@@ -18,7 +18,6 @@ fn backend_autoroute_reports_uncalibrated_cache_cleanly() {
     let out = Command::new(binary())
         .args(["backend", "--autoroute"])
         .env("XDG_CACHE_HOME", cache.path())
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .expect("spawn keyhog backend --autoroute");
     assert_eq!(
@@ -46,7 +45,6 @@ fn backend_autoroute_json_is_valid_and_marks_absence() {
     let out = Command::new(binary())
         .args(["backend", "--autoroute", "--json"])
         .env("XDG_CACHE_HOME", cache.path())
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .expect("spawn keyhog backend --autoroute --json");
     assert_eq!(
@@ -87,7 +85,6 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
         ])
         .arg(&target)
         .env("XDG_CACHE_HOME", cache.path())
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .expect("spawn keyhog scan --autoroute-calibrate");
     // A calibration scan runs calibration THEN scans, so it returns the scan code
@@ -102,7 +99,6 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
     let out = Command::new(binary())
         .args(["backend", "--autoroute", "--json"])
         .env("XDG_CACHE_HOME", cache.path())
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .expect("spawn keyhog backend --autoroute --json");
     assert_eq!(
@@ -134,6 +130,30 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
     assert!(
         !backend.is_empty(),
         "a decision must name the resolved backend; json={value}"
+    );
+    let decision = &decisions[0];
+    assert!(
+        decision["confidence_separated"].is_boolean(),
+        "inspection must disclose whether one-shot confidence is separated; json={value}"
+    );
+    assert!(
+        matches!(
+            decision["selection_basis"].as_str(),
+            Some("separated-95pct-confidence")
+                | Some("lowest-measured-median-among-overlapping-confidence")
+        ),
+        "inspection must disclose the one-shot selection rule; json={value}"
+    );
+    assert!(
+        decision["daemon_backend"]
+            .as_str()
+            .is_some_and(|backend| !backend.is_empty()),
+        "inspection must name the warm persistent-daemon route; json={value}"
+    );
+    assert!(
+        decision["daemon_confidence_separated"].is_boolean()
+            && decision["daemon_selection_basis"].is_string(),
+        "inspection must disclose daemon confidence and selection rule; json={value}"
     );
     let workload = decisions[0]["workload"]
         .as_str()

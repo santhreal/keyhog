@@ -23,16 +23,37 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
         "/src/orchestrator/dispatch/backend/calibration.rs"
     ))
     .expect("dispatch/backend/calibration.rs readable");
-    let evidence = std::fs::read_to_string(concat!(
+    let mut evidence = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/orchestrator/dispatch/backend/evidence.rs"
     ))
     .expect("dispatch/backend/evidence.rs readable");
-    let store = std::fs::read_to_string(concat!(
+    let backend_dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/orchestrator/dispatch/backend");
+    for file in ["evidence/match_identity.rs", "evidence/timing.rs"] {
+        evidence.push_str(
+            &std::fs::read_to_string(backend_dir.join(file))
+                .unwrap_or_else(|error| panic!("dispatch/backend/{file} readable: {error}")),
+        );
+    }
+    let mut store = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/orchestrator/dispatch/backend/store.rs"
     ))
     .expect("dispatch/backend/store.rs readable");
+    for file in [
+        "store/artifact_identity.rs",
+        "store/build_identity.rs",
+        "store/codec.rs",
+        "store/persistence.rs",
+        "store/schema.rs",
+        "store/validation.rs",
+    ] {
+        store.push_str(
+            &std::fs::read_to_string(backend_dir.join(file))
+                .unwrap_or_else(|error| panic!("dispatch/backend/{file} readable: {error}")),
+        );
+    }
     let cache_path = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/autoroute_cache_path.rs"
@@ -65,7 +86,7 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
     assert!(
         backend.contains("calibrate_fastest_correct_backend")
             && evidence.contains("canonical_matches")
-            && evidence.contains("type CanonicalMatch<'a>")
+            && evidence.contains("struct CanonicalMatch<'a>")
             && evidence.contains("&'a str")
             && evidence.contains("m.detector_id.as_ref()")
             && evidence.contains("m.location.file_path.as_deref()")

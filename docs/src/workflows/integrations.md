@@ -1,11 +1,23 @@
 # Integration recipes
 
-Copy-paste integrations for KeyHog. Every snippet here is a complete,
-self-contained config: drop it in the indicated file, commit, and it
-works. No additional setup required beyond installing keyhog via the
-[one-line installer](https://github.com/santhsecurity/keyhog#install)
-(`curl -fsSL .../install.sh | sh` on Linux/macOS, `iwr .../install.ps1 -useb | iex`
-on Windows) or a source build (`cargo build --release` inside the repo).
+Task-oriented recipes for running KeyHog locally, in hooks, and in CI. Install
+the release with the [verified installer](../install.md), which also records the
+host's autoroute evidence. A source-built multi-backend binary must run
+`keyhog calibrate-autoroute` before its first automatic scan; a portable
+single-backend build has no routing choice. An explicit `--backend cpu` in the
+lightweight local-hook recipes below deliberately avoids machine-local routing
+state.
+
+For the full contract behind a command, use the focused reference instead of
+treating a copied snippet as a second specification:
+
+| Task | Start here |
+|---|---|
+| Protect local commits | [`keyhog hook install`](./precommit.md) |
+| Gate a pull request | [CI integration](./ci.md) |
+| Scan a large tree or choose a policy | [Detection settings and hardware](../detection.md#settings-hardware-and-result-parity) |
+| Suppress an accepted finding | [Suppressions](../suppressions.md) |
+| Interpret a failure | [Exit codes](../reference/exit-codes.md) |
 
 If you only need one section, jump to:
 
@@ -27,40 +39,31 @@ If you only need one section, jump to:
 - [Allowlists and baselines](#allowlists-and-baselines)
 - [Exit codes](#exit-codes)
 
-## Pre-commit hook (git)
+## Pre-commit hook (Git)
 
-Block any commit that contains a high-confidence secret. Drop this into
-`.git/hooks/pre-commit` and `chmod +x` it.
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-keyhog scan --git-staged \
-  --min-confidence 0.5 \
-  --format text \
-  --fast \
-  || {
-    echo
-    echo "✘ keyhog found secrets in staged files."
-    echo "  Either remove them, raise --min-confidence, or"
-    echo "  add an allowlist entry to .keyhog.toml."
-    exit 1
-  }
-```
-
-Install it for every clone in your repo by committing the script under
-`scripts/install-hooks.sh` and adding it to your README onboarding.
-
-Or use the bundled installer:
+The maintained path is one command:
 
 ```bash
-keyhog hook install              # writes .git/hooks/pre-commit
+keyhog hook install
 ```
 
-The pre-push hook is the shell snippet shown above; there is no
-`--pre-push` flag on `hook install` yet.
+It installs a KeyHog-owned `.git/hooks/pre-commit` and refuses to overwrite an
+unrelated hook unless you explicitly pass `--force`. See the
+[pre-commit guide](./precommit.md) for ownership, uninstall, and staged-content
+semantics.
 
-## Pre-push hook (git)
+If another hook manager owns the file, invoke the same canonical staged scan:
+
+```bash
+keyhog scan --fast --git-staged --backend cpu
+```
+
+`--backend cpu` makes this small local check independent of autoroute state. The
+hook scans the Git index, not unstaged working-tree changes. Review and remove a
+real secret; suppress an accepted result through `.keyhogignore` or
+`.keyhogignore.toml`, never an invented `.keyhog.toml [suppress]` table.
+
+## Pre-push hook (Git)
 
 Pre-commit is the strongest gate. Pre-push catches secrets that landed
 in earlier commits but were never pushed. Drop into `.git/hooks/pre-push`:
@@ -71,15 +74,16 @@ set -euo pipefail
 # Scan everything between the remote's HEAD and the local branch tip.
 remote_sha="$(git ls-remote origin HEAD | awk '{print $1}')"
 keyhog scan --git-diff "$remote_sha" \
-  --min-confidence 0.4 \
-  --format text \
-  || {
-    echo "✘ keyhog found secrets in commits about to be pushed."
-    exit 1
-  }
+  --backend cpu
 ```
 
-## pre-commit framework
+This compact hook compares the checked-out branch with the remote's default
+branch. Repositories that push several refs or use a different integration base
+should enforce the exact ref range in CI, where the server supplies authoritative
+base and head revisions. KeyHog's nonzero status is left intact so operational
+errors cannot be mislabeled as findings.
+
+## `pre-commit` framework
 
 For projects that use the [pre-commit](https://pre-commit.com) Python
 tool, add this to `.pre-commit-config.yaml`:
@@ -90,15 +94,11 @@ repos:
     rev: v0.5.41
     hooks:
       - id: keyhog
-        name: keyhog secret scan (staged)
-        entry: keyhog scan --git-staged --min-confidence 0.5 --fast
-        language: system
-        pass_filenames: false
-        always_run: true
 ```
 
-Then `pre-commit install` once and every contributor's commits get
-scanned automatically.
+Then run `pre-commit install` once. KeyHog's repository-owned hook definition
+supplies the canonical staged command; do not restate `entry`, filename, or
+backend behavior in the consuming repository.
 
 ## Husky / lefthook
 
@@ -108,7 +108,7 @@ scanned automatically.
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-keyhog scan --git-staged --min-confidence 0.5 --fast
+keyhog scan --fast --git-staged --backend cpu
 ```
 
 ### Lefthook (`lefthook.yml`)
@@ -118,7 +118,7 @@ pre-commit:
   parallel: true
   commands:
     keyhog:
-      run: keyhog scan --git-staged --min-confidence 0.5 --fast --format text
+      run: keyhog scan --fast --git-staged --backend cpu
       fail_text: "secrets detected - see output above"
 ```
 
@@ -196,22 +196,29 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Scan working tree
-        run: keyhog scan . --format sarif -o keyhog.sarif --min-confidence 0.3
+        id: keyhog
+        continue-on-error: true
+        run: keyhog scan . --severity high --format sarif -o keyhog.sarif
       - name: Upload SARIF
-        if: always()
+        if: always() && hashFiles('keyhog.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: keyhog.sarif
-      - name: Fail on high-severity findings
-        run: keyhog scan . --severity high --min-confidence 0.5
+      - name: Enforce scan result
+        if: steps.keyhog.outcome == 'failure'
+        run: exit 1
 ```
+
+`continue-on-error` applies only to the scan step so SARIF can upload. The final
+step restores the failing job outcome for findings and operational errors; it
+does not convert an incomplete scan into success.
 
 ### Scan only changed files in a PR (faster)
 
 ```yaml
 - name: Scan PR diff
   if: github.event_name == 'pull_request'
-  run: keyhog scan --git-diff origin/${{ github.base_ref }} --min-confidence 0.4
+  run: keyhog scan --git-diff origin/${{ github.base_ref }} --severity high
 ```
 
 ## GitLab CI
@@ -221,14 +228,13 @@ jobs:
 ```yaml
 keyhog:
   stage: test
-  image: alpine:latest
+  image: ubuntu:24.04
   before_script:
-    - apk add --no-cache bash curl ca-certificates
+    - apt-get update -qq && apt-get install -y -qq curl ca-certificates
     - curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
     - export PATH="$HOME/.local/bin:$PATH"
   script:
-    - keyhog scan . --format gitlab-sast -o keyhog.json --min-confidence 0.3
-    - keyhog scan . --severity high --min-confidence 0.5
+    - keyhog scan . --severity high --format gitlab-sast -o keyhog.json
   artifacts:
     when: always
     paths:
@@ -257,12 +263,10 @@ jobs:
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$BASH_ENV"
       - run:
           name: Scan working tree
-          command: keyhog scan . --format json -o keyhog.json --min-confidence 0.3
-      - run:
-          name: Fail on high-severity findings
-          command: keyhog scan . --severity high --min-confidence 0.5
+          command: keyhog scan . --severity high --format json -o keyhog.json
       - store_artifacts:
           path: keyhog.json
+          when: always
 workflows:
   ci:
     jobs:
@@ -278,13 +282,12 @@ kind: pipeline
 name: keyhog
 steps:
   - name: scan
-    image: alpine:latest
+    image: ubuntu:24.04
     commands:
-      - apk add --no-cache bash curl ca-certificates
+      - apt-get update -qq && apt-get install -y -qq curl ca-certificates
       - curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
       - export PATH="$HOME/.local/bin:$PATH"
-      - keyhog scan . --min-confidence 0.3 --format json -o keyhog.json
-      - keyhog scan . --severity high --min-confidence 0.5
+      - keyhog scan . --severity high --format json -o keyhog.json
 ```
 
 ## BuildKite
@@ -297,8 +300,7 @@ steps:
     command: |
       curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
       export PATH="$HOME/.local/bin:$PATH"
-      keyhog scan . --min-confidence 0.3 --format text
-      keyhog scan . --severity high --min-confidence 0.5
+      keyhog scan . --severity high --format json -o keyhog.json
     artifact_paths:
       - "keyhog.json"
 ```
@@ -313,7 +315,7 @@ the host:
 # ships in the repo root), then run the scan:
 docker build -t keyhog:local https://github.com/santhsecurity/keyhog.git
 docker run --rm -v "$PWD":/src keyhog:local \
-  scan /src --format text --min-confidence 0.3
+  scan /src --backend cpu --format text
 ```
 
 `docker-compose.yml`:
@@ -324,15 +326,14 @@ services:
     build: https://github.com/santhsecurity/keyhog.git
     volumes:
       - ./:/src:ro
-    command: scan /src --format json --min-confidence 0.3
+    command: scan /src --backend cpu --format json
 ```
 
-To scan a built image's filesystem:
+To scan a built image, use the Docker/OCI source so layers, manifests, and source
+coverage are handled by KeyHog instead of manually unpacking an archive:
 
 ```bash
-mkdir -p /tmp/imgfs
-docker save my-image:latest | tar -x -C /tmp/imgfs
-keyhog scan /tmp/imgfs --min-confidence 0.4
+keyhog scan --docker-image my-image:latest
 ```
 
 ## Jenkins
@@ -348,8 +349,7 @@ pipeline {
                 sh '''
                     curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
                     export PATH="$HOME/.local/bin:$PATH"
-                    keyhog scan . --format json -o keyhog.json --min-confidence 0.3
-                    keyhog scan . --severity high --min-confidence 0.5
+                    keyhog scan . --severity high --format json -o keyhog.json
                 '''
             }
             post {
@@ -378,7 +378,7 @@ corpus; there is no separate `keyhog-detectors` crate.)
 Minimal scan:
 
 ```rust,ignore
-use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
+use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -399,7 +399,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     };
     for m in scanner.scan(&chunk) {
-        println!("{}: {} (detector {})", m.line, m.credential_redacted, m.detector_id);
+        println!(
+            "{}:{} (detector {})",
+            m.location.file_path.as_deref().unwrap_or("<memory>"),
+            m.location.line.unwrap_or(0),
+            m.detector_id
+        );
     }
     Ok(())
 }
@@ -433,6 +438,12 @@ use std::process::Command;
 let out = Command::new("keyhog")
     .args(["scan", "--format", "jsonl", "--min-confidence", "0.4", "."])
     .output()?;
+if !matches!(out.status.code(), Some(0 | 1)) {
+    return Err(std::io::Error::other(format!(
+        "keyhog did not complete the requested scan: {}",
+        String::from_utf8_lossy(&out.stderr)
+    )).into());
+}
 for line in out.stdout.split(|b| *b == b'\n') {
     if line.is_empty() { continue; }
     let finding: serde_json::Value = serde_json::from_slice(line)?;
@@ -452,8 +463,8 @@ keyhog scan /path/to/project --format jsonl --min-confidence 0.4
 keyhog scan . --format sarif -o keyhog.sarif
 ```
 
-Then upload to GitHub Code Scanning (see [GitHub Actions](#github-actions)
-above). KeyHog tags every finding with CWE-798 (Use of Hard-coded
+Then upload to GitHub Code Scanning (see the [CI integration guide](./ci.md)).
+KeyHog tags every finding with CWE-798 (Use of Hard-coded
 Credentials) and the OWASP A07:2021 (Identification and Authentication
 Failures) category, so they surface in the right dashboards out of the
 box.
@@ -465,7 +476,14 @@ Post a one-line summary on every finding:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
+set +e
 findings_json="$(keyhog scan . --format json --min-confidence 0.4)"
+scan_status=$?
+set -e
+case "$scan_status" in
+  0|1) ;;
+  *) echo "keyhog scan did not complete (exit $scan_status)" >&2; exit "$scan_status" ;;
+esac
 count="$(echo "$findings_json" | jq 'length')"
 if [ "$count" -gt 0 ]; then
   curl -X POST -H 'Content-type: application/json' \
@@ -473,6 +491,7 @@ if [ "$count" -gt 0 ]; then
     "$SLACK_WEBHOOK_URL"
   exit 1
 fi
+exit "$scan_status"
 ```
 
 For Discord, replace `text` with `content`. For PagerDuty, use the
@@ -524,35 +543,25 @@ the full schema.
 
 ## Exit codes
 
-- `0` - no findings
-- `1` - findings at or above `--severity` / `--min-confidence`
-- `2` - user error (bad flag, missing/unreadable path, config error)
-- `3` - system error (low-level I/O other than operator-correctable
-  not-found/permission-denied cases, or GPU/hardware init)
-- `10` - live credentials confirmed (only under `--verify`)
-- `11` - scanner thread panicked mid-scan (state unreliable)
-- `12` - selected or required GPU unavailable
-- `13` - requested source failed or input coverage was incomplete
-- `130` - interrupted (SIGINT / Ctrl-C)
-
-CI gates should treat `exit 1` and `exit 10` as build-blocking scan
-outcomes. `exit 2`, `exit 3`, `exit 12`, and `exit 13` are operator/configuration
-problems to surface to the on-call. `exit 130` means the run was interrupted
-(SIGINT / Ctrl-C) and should be retried, not treated as a clean pass.
+Use the canonical [exit-code reference](../reference/exit-codes.md) for the full
+numeric contract. In CI, findings and verified-live credentials block the
+change; configuration, system, backend, incomplete-coverage, panic, and
+interruption outcomes also fail the job because the requested security control
+did not complete. Never normalize every nonzero result to “findings found.”
 
 ---
 
-## Performance flags for tight CI budgets
+## Choose a scan policy for scale
 
 ```bash
-# Disable ML, entropy discovery, and decode recursion - pre-commit speed
-keyhog scan . --fast --min-confidence 0.5
+# Lightweight staged-content check; independent of host autoroute state
+keyhog scan --fast --git-staged --backend cpu
 
-# Maximum detection depth - release/security gate
-keyhog scan . --deep --min-confidence 0.3
+# Deep release/security gate; uses calibrated automatic routing
+keyhog scan . --deep --severity high
 
-# Pin worker count to host CPU
-keyhog scan . --threads $(nproc)
+# High-precision policy for a large tree where false-positive review dominates
+keyhog scan /large/tree --precision --severity high
 
 # Force GPU for a diagnostic/benchmark run
 keyhog scan . --backend gpu
@@ -561,18 +570,20 @@ keyhog scan . --backend gpu
 keyhog scan . --format jsonl --output findings.jsonl
 ```
 
-`--fast` is the reduced-cost pre-commit policy. `--deep` enables the documented
-deeper paths for release/security gates. Measure both on the actual repository;
-the relative cost is workload- and hardware-dependent. Reports are finalized
-after scanning and verification; `--stream` adds immediate redacted previews
-on stderr but does not turn the final report into an unbuffered writer.
+`--fast`, `--deep`, and `--precision` intentionally resolve different detection
+policies and can produce different findings. Hardware and automatic backend
+selection must not. Measure the chosen policy on the real corpus and let
+persisted calibration choose among every measured-correct backend for that exact
+host and workload. See [How detection works](../detection.md#configuration-presets)
+and [Backends and routing](../backends.md) before changing policy or forcing an
+engine.
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Exit `12` with a selected-GPU diagnostic | Required, explicit, or autoroute-selected GPU execution could not start or complete | Run `keyhog backend --self-test`, recalibrate autoroute after fixing the GPU stack, or select another backend explicitly; KeyHog never substitutes CPU/SIMD inside the failed route |
-| Findings count drops vs prior run | `.keyhog-baseline.json` is up-to-date or `.keyhog.toml` widened | `git diff .keyhog-baseline.json .keyhog.toml` |
+| Findings count drops vs prior run | Baseline, detector corpus, scan policy, or `.keyhog.toml` changed | Compare the effective config, detector digest, baseline, and input scope from both runs |
 | Pre-commit hook is slow | Scanning the whole repo on every commit | Use `--git-staged` not `scan .` |
-| SARIF upload rejects file | `min_confidence` too low; thousands of findings | Raise to ≥0.3 for SARIF specifically |
+| SARIF report is too large for the consumer | The selected scope produced more findings than the consumer accepts | Narrow the scanned source, use a reviewed baseline, or choose an explicit severity policy; do not hide an incomplete upload |
 | Detection misses a known token | Detector absent from the loaded corpus / `--fast` disabled decode recursion or entropy discovery | Re-run with the embedded corpus and `--deep`; file an issue if it still misses |
