@@ -1149,6 +1149,47 @@ fn missing_autoroute_cache_does_not_require_gpu_runtime_identity() {
     );
 }
 
+#[test]
+fn autoroute_cache_metadata_errors_are_not_reported_as_absence() {
+    let dir = tempfile::TempDir::new().expect("metadata-error tempdir");
+    let blocking_parent = dir.path().join("not-a-directory");
+    std::fs::write(&blocking_parent, b"file blocks child metadata")
+        .expect("write blocking parent fixture");
+    let path = blocking_parent.join("autoroute.json");
+    let host = test_host(None);
+
+    let (loaded_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
+        0x1234_5678_9ABC_DEF0,
+        test_rules_digest(),
+        0xA55A_D00D_CAFE_BEEF,
+        &host,
+        Ok(Some(path.clone())),
+    );
+    assert_eq!(loaded_path, Some(path.clone()));
+    assert!(decisions.is_empty());
+    let error = cache_load_error.expect("metadata error must remain visible");
+    assert!(
+        error.contains("cannot inspect autoroute cache path")
+            && error.contains(&path.display().to_string()),
+        "metadata error must name the configured cache path: {error}"
+    );
+    assert!(
+        !error.contains("No autoroute cache file exists"),
+        "metadata failure must not be rendered as absence: {error}"
+    );
+
+    let inspection = inspect_autoroute_cache(Some(&path));
+    assert!(!inspection.present);
+    let inspection_error = inspection
+        .error
+        .expect("inspection must surface metadata failure");
+    assert!(
+        inspection_error.contains("cannot be inspected")
+            && inspection_error.contains("Fix path permissions or parent storage"),
+        "inspection metadata error: {inspection_error}"
+    );
+}
+
 /// An outdated cache (older `version`, written before a field was added to the
 /// schema) must be rejected on its schema version with a clear, actionable
 /// message: NOT the opaque serde "missing field …" error a naive full

@@ -45,7 +45,10 @@ use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
 use self::host::AutorouteHostProfile;
 pub(crate) use self::store::inspect_autoroute_cache;
-use self::store::{load_autoroute_cache, save_autoroute_cache, AutorouteCacheSaveOutcome};
+use self::store::{
+    autoroute_cache_file_presence, load_autoroute_cache, save_autoroute_cache,
+    AutorouteCacheSaveOutcome,
+};
 use self::workload::{render_workload_key, workload_key, WorkloadClassificationError, WorkloadKey};
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
@@ -557,9 +560,20 @@ fn load_persistent_autoroute_decisions(
             return (None, HashMap::new(), Some(error));
         }
     };
-    // Disabled cache (None) or a not-yet-calibrated path: cold start, no error.
-    let Some(existing_path) = cache_path.as_deref().filter(|path| path.exists()) else {
+    // Disabled cache (None) or a genuinely absent path: cold start, no error.
+    let Some(configured_path) = cache_path.as_deref() else {
         return (cache_path, HashMap::new(), None);
+    };
+    let existing_path = match autoroute_cache_file_presence(configured_path) {
+        Ok(true) => configured_path,
+        Ok(false) => return (cache_path, HashMap::new(), None),
+        Err(error) => {
+            let message = format!(
+                "cannot inspect autoroute cache path '{}': {error}. Fix the path permissions or parent storage and retry",
+                configured_path.display()
+            );
+            return (cache_path, HashMap::new(), Some(message));
+        }
     };
     if let Err(error) = host_profile.require_exact_identity() {
         let error = error.to_string();
@@ -606,12 +620,18 @@ fn autoroute_cache_state(
         return format!("The autoroute cache or host identity was rejected: {error}");
     }
     match cache_path {
-        Some(path) if path.exists() => format!(
-            "The autoroute cache at {} is valid for this binary/host/config but does not cover \
-             this workload bucket",
-            path.display()
-        ),
-        Some(path) => format!("No autoroute cache file exists at {}", path.display()),
+        Some(path) => match autoroute_cache_file_presence(path) {
+            Ok(true) => format!(
+                "The autoroute cache at {} is valid for this binary/host/config but does not cover \
+                 this workload bucket",
+                path.display()
+            ),
+            Ok(false) => format!("No autoroute cache file exists at {}", path.display()),
+            Err(error) => format!(
+                "The autoroute cache path {} cannot be inspected: {error}. Fix the path permissions or parent storage and retry",
+                path.display()
+            ),
+        },
         None => "--autoroute-cache off / [system].autoroute_cache = \"off\" disables the autoroute cache".to_string(),
     }
 }

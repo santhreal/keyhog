@@ -3,7 +3,10 @@
 use serde::Serialize;
 
 use super::artifact_identity::current_executable_sha256;
-use super::codec::{parse_autoroute_cache, read_autoroute_cache_file, CacheParseError};
+use super::codec::{
+    autoroute_cache_file_presence, parse_autoroute_cache, read_autoroute_cache_file,
+    CacheParseError,
+};
 use super::schema::AutorouteBuildFeatures;
 use super::validation::validate_cache_structure;
 use crate::orchestrator::dispatch::backend::host::render_host_profile;
@@ -91,8 +94,15 @@ pub(crate) fn inspect_autoroute_cache(path: Option<&std::path::Path>) -> Autorou
         );
         return out;
     };
-    if !path.exists() {
-        return out;
+    match autoroute_cache_file_presence(path) {
+        Ok(true) => {}
+        Ok(false) => return out,
+        Err(error) => {
+            out.error = Some(format!(
+                "autoroute cache path cannot be inspected: {error}. Fix path permissions or parent storage and retry"
+            ));
+            return out;
+        }
     }
 
     let data = match read_autoroute_cache_file(path) {

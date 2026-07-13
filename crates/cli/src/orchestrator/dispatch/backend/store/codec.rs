@@ -54,3 +54,11 @@ pub(super) fn read_autoroute_cache_file(path: &std::path::Path) -> std::io::Resu
     }
     Ok(data)
 }
+
+pub(crate) fn autoroute_cache_file_presence(path: &std::path::Path) -> std::io::Result<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
