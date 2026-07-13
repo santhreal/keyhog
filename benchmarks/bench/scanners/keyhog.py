@@ -34,6 +34,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 
 from ..keyhog_version import detector_corpus_sha256 as compute_detector_corpus_sha256
@@ -46,6 +47,19 @@ _REQUIRE_GPU_BACKENDS = {"gpu"}
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _DETECTOR_CORPUS = _REPO_ROOT / "detectors"
+
+
+def _detector_snapshot_root() -> pathlib.Path:
+    override = os.environ.get("KEYHOG_BENCH_SNAPSHOT_DIR")
+    if override:
+        return pathlib.Path(override)
+    if os.name == "nt":
+        base = pathlib.Path(os.environ.get("LOCALAPPDATA", pathlib.Path.home() / "AppData/Local"))
+    elif sys.platform == "darwin":
+        base = pathlib.Path.home() / "Library/Caches"
+    else:
+        base = pathlib.Path(os.environ.get("XDG_CACHE_HOME", pathlib.Path.home() / ".cache"))
+    return base / "keyhog" / "benchmark-detector-snapshots-v1"
 
 
 def _cargo_target_dir() -> pathlib.Path | None:
@@ -237,6 +251,53 @@ class KeyhogScanner(Scanner):
     def detector_corpus_sha256(self) -> str:
         return compute_detector_corpus_sha256(self._detector_corpus)
 
+    def _detector_snapshot(self) -> tuple[pathlib.Path, str]:
+        digest = self.detector_corpus_sha256()
+        root = _detector_snapshot_root()
+        target = root / digest / "detectors"
+        if target.is_dir():
+            observed = compute_detector_corpus_sha256(target)
+            if observed != digest:
+                raise RuntimeError(
+                    f"benchmark detector snapshot {target} is corrupt: "
+                    f"expected SHA-256 {digest}, found {observed}. "
+                    "Remove that snapshot directory and rerun"
+                )
+            return target, digest
+
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="keyhog-bench-detectors-", dir=root
+        ) as raw_staging:
+            staging = pathlib.Path(raw_staging)
+            staged_detectors = staging / "detectors"
+            staged_detectors.mkdir(mode=0o700)
+            sources = sorted(
+                self._detector_corpus.glob("*.toml"),
+                key=lambda path: os.fsencode(path.name),
+            )
+            if not sources:
+                raise RuntimeError(
+                    f"{self._detector_corpus} contains no detector TOMLs; "
+                    "cannot run a provenance-bound benchmark"
+                )
+            for source in sources:
+                destination = staged_detectors / source.name
+                shutil.copyfile(source, destination)
+                destination.chmod(0o400)
+            staged_detectors.chmod(0o500)
+            if compute_detector_corpus_sha256(staged_detectors) != digest:
+                raise RuntimeError(
+                    "detector corpus changed while its benchmark snapshot was created; rerun"
+                )
+            published = root / digest
+            try:
+                staging.rename(published)
+            except OSError:
+                if not target.is_dir() or compute_detector_corpus_sha256(target) != digest:
+                    raise
+        return target, digest
+
     # ── config matrix ──────────────────────────────────────────────────
 
     def variants(self) -> list[ScannerConfig]:
@@ -344,26 +405,18 @@ class KeyhogScanner(Scanner):
         timeout: int = 3600,
     ) -> tuple[list[Finding], RunStats, str]:
         """Scan one immutable detector snapshot and return its exact digest."""
-        with tempfile.TemporaryDirectory(prefix="keyhog-bench-detectors-") as raw_snapshot:
-            snapshot = pathlib.Path(raw_snapshot) / "detectors"
-            snapshot.mkdir(mode=0o700)
-            sources = sorted(
-                self._detector_corpus.glob("*.toml"),
-                key=lambda path: os.fsencode(path.name),
+        snapshot, digest = self._detector_snapshot()
+        findings, stats = self._run_prepared(
+            root, cfg, snapshot, output=output, extra_env=extra_env,
+            extra_args=extra_args, timeout=timeout,
+        )
+        observed = compute_detector_corpus_sha256(snapshot)
+        if observed != digest:
+            raise RuntimeError(
+                f"benchmark detector snapshot changed during the scan: "
+                f"expected SHA-256 {digest}, found {observed}"
             )
-            if not sources:
-                raise RuntimeError(
-                    f"{self._detector_corpus} contains no detector TOMLs; "
-                    "cannot run a provenance-bound benchmark"
-                )
-            for source in sources:
-                shutil.copyfile(source, snapshot / source.name)
-            digest = compute_detector_corpus_sha256(snapshot)
-            findings, stats = self._run_prepared(
-                root, cfg, snapshot, output=output, extra_env=extra_env,
-                extra_args=extra_args, timeout=timeout,
-            )
-            return findings, stats, digest
+        return findings, stats, digest
 
     def _run_prepared(
         self, root: pathlib.Path, cfg: ScannerConfig,

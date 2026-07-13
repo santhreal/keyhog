@@ -398,6 +398,7 @@ def test_keyhog_caller_output_without_cache_allocates_only_detector_snapshot(
         binary="/unused/keyhog", detector_corpus=detector_corpus,
     )
     output = tmp_path / "caller-owned.json"
+    monkeypatch.setenv("KEYHOG_BENCH_SNAPSHOT_DIR", str(tmp_path / "snapshots"))
     real_tempdir = keyhog_adapter.tempfile.TemporaryDirectory
     prefixes = []
 
@@ -436,6 +437,8 @@ def test_keyhog_run_binds_digest_and_scan_to_immutable_detector_snapshot(
     scanner = scanners.KeyhogScanner(
         binary="/unused/keyhog", detector_corpus=detector_corpus,
     )
+    snapshot_root = tmp_path / "snapshots"
+    monkeypatch.setenv("KEYHOG_BENCH_SNAPSHOT_DIR", str(snapshot_root))
     scanned_detector_paths = []
 
     def successful_scan(cmd, **kwargs):
@@ -453,12 +456,20 @@ def test_keyhog_run_binds_digest_and_scan_to_immutable_detector_snapshot(
     findings, stats, digest = scanner.run_with_provenance(
         tmp_path, ScannerConfig(backend="simd"),
     )
+    second_findings, second_stats, second_digest = scanner.run_with_provenance(
+        tmp_path, ScannerConfig(backend="simd"),
+    )
 
     assert findings == []
     assert stats.exit_code == 0
     assert digest == keyhog_adapter.compute_detector_corpus_sha256(detector_corpus)
-    assert len(scanned_detector_paths) == 1
-    assert not scanned_detector_paths[0].exists()
+    assert second_findings == []
+    assert second_stats.exit_code == 0
+    assert second_digest == digest
+    assert len(scanned_detector_paths) == 2
+    assert scanned_detector_paths[0] == scanned_detector_paths[1]
+    assert scanned_detector_paths[0].is_dir()
+    assert len(list(snapshot_root.iterdir())) == 1
 
 
 def test_keyhog_warm_runs_are_private_under_concurrency_and_ignore_old_paths(
