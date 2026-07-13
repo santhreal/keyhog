@@ -35,7 +35,7 @@ pub(crate) fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// Drop whole-line `//` comments so a gate's `contains(...)` check matches only
 /// real code, never a symbol mentioned in a comment. (Does not strip trailing
-/// or block comments — gates that need those handle them explicitly.)
+/// or block comments, gates that need those handle them explicitly.)
 pub(crate) fn uncommented_code(src: &str) -> String {
     src.lines()
         .filter(|line| !line.trim_start().starts_with("//"))
@@ -66,7 +66,7 @@ pub(crate) fn source_without_whitespace(src: &str) -> String {
 
 /// Every production (non-comment, non-`#[cfg(test)]`) line in `src` that calls
 /// `.unwrap(` / `.expect(`, as `(1-based line number, full line)`. This is the
-/// shared scan behind the per-module `*_no_unwrap_expect` gates — each still
+/// shared scan behind the per-module `*_no_unwrap_expect` gates, each still
 /// owns its own source path and layers any documented allowlist on top of this
 /// (the contract stays per-module; only the identical byte-scan is shared).
 pub(crate) fn unwrap_expect_offenders(src: &str) -> Vec<(usize, &str)> {

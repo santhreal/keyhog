@@ -173,7 +173,7 @@ fn finding_verification_is_skipped_without_verify_flag() {
     let verification = first
         .get("verification")
         .expect("finding carries a verification field");
-    // VerificationResult::Skipped — no live verification was attempted, so
+    // VerificationResult::Skipped, no live verification was attempted, so
     // the run is exactly the exit-1 (not exit-10) branch.
     let as_str = verification.as_str().unwrap_or("");
     assert!(
@@ -379,7 +379,7 @@ fn lockdown_no_decode_exits_two_with_message() {
     // run.rs guard: "lockdown mode forbids --no-decode". This bail happens
     // AFTER apply_lockdown_protections / disk-cache checks, so on hosts where
     // mlock/coredump cannot engage it may instead surface the protections
-    // error — also exit 2. Accept either, but require exit 2 + a lockdown msg.
+    // error (also exit 2. Accept either, but require exit 2 + a lockdown msg).
     let (_g, path) = fixture("clean.txt", "ok\n");
     let (combined, code) = lockdown_scan(&path, &["--no-decode", "--format", "json"]);
     assert_eq!(
@@ -468,7 +468,7 @@ fn lockdown_fast_is_rejected_at_clap_or_runtime_exit_two() {
     // `--fast` and `--lockdown` are BOTH accepted by clap (no conflicts_with
     // between them), so the rejection is the run.rs guard:
     // "lockdown mode forbids --fast". But `--fast` is `conflicts_with_all`
-    // with --no_decode etc. — not with --lockdown — so this reaches runtime.
+    // with --no_decode etc. (not with --lockdown (so this reaches runtime)).
     let (_g, path) = fixture("clean.txt", "ok\n");
     let (combined, code) = lockdown_scan(&path, &["--fast", "--format", "json"]);
     assert_eq!(
@@ -735,7 +735,7 @@ fn require_gpu_does_not_print_findings_on_fail_closed() {
     if host_has_usable_gpu() {
         return;
     }
-    // When the preflight fails, run.rs returns immediately — no findings are
+    // When the preflight fails, run.rs returns immediately, no findings are
     // ever computed or printed. With --format json, stdout must NOT contain a
     // findings array; the run never reached report_findings.
     let line = aws_key_line();
@@ -1176,7 +1176,7 @@ fn stdin_leak_exits_one() {
 #[test]
 fn stdin_lockdown_show_secrets_fails_closed_exit_two() {
     // Lockdown + show-secrets over stdin must still hit the run.rs guard and
-    // exit 2 with the show-secrets message — the no-plaintext contract holds
+    // exit 2 with the show-secrets message, the no-plaintext contract holds
     // on the stdin path too, and it must NOT leak the key on stdout/stderr.
     use std::io::Write;
     use std::process::Stdio;

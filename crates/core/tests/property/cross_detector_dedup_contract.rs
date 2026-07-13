@@ -1,14 +1,14 @@
-//! Property tier for `dedup_cross_detector` — the RECALL-SAFETY stage. When two
+//! Property tier for `dedup_cross_detector`: the RECALL-SAFETY stage. When two
 //! different detectors fire on the SAME credential in the SAME file, it collapses
 //! them to ONE finding (the highest-confidence detector wins; the losers survive
-//! as `cross_detector.*` companions on the winner — their evidence is DEMOTED,
+//! as `cross_detector.*` companions on the winner, their evidence is DEMOTED,
 //! never dropped). A bug here silently disappears a real secret from the report,
 //! which is exactly why `DEDUP_LOST_SINGLETON` exists. The `regression_finding_*`
 //! / `new_core_finding_dedup` files pin fixed decisions; this file locks the
 //! RECALL biconditional over arbitrary match sets (proptest, 10k):
 //!
 //!   * output has EXACTLY ONE finding per distinct `(credential_hash, file)`
-//!     group present in the input — no group lost, no group fabricated;
+//!     group present in the input, no group lost, no group fabricated;
 //!   * every demoted loser survives as a `cross_detector.*` companion on its
 //!     group's winner (companion count == group size − 1), so no detector's
 //!     evidence is dropped;
@@ -16,7 +16,7 @@
 //!
 //! Inputs are produced by the REAL `dedup_matches` pipeline (so `DedupedMatch`,
 //! which lives in a private module, is constructed the production way rather than
-//! named), then fed to `dedup_cross_detector` — the exact production sequence.
+//! named), then fed to `dedup_cross_detector`: the exact production sequence.
 
 use keyhog_core::{
     dedup_cross_detector, dedup_matches, CredentialHash, DedupScope, MatchLocation, RawMatch,
@@ -91,7 +91,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(10_000))]
 
     /// One winner per distinct `(credential_hash, file)` group, and the output
-    /// group set EQUALS the input group set — no finding lost, none fabricated.
+    /// group set EQUALS the input group set (no finding lost, none fabricated).
     #[test]
     fn prop_preserves_every_group_exactly_once(specs in prop::collection::vec(spec_strat(), 0..24)) {
         let deduped = dedup_matches(build(&specs), &DedupScope::File);

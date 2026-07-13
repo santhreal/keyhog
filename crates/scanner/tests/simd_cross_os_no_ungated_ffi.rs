@@ -1,6 +1,6 @@
 //! Cross-OS build contract: the `simd` backend must not reference Unix-only FFI
 //! (`libc::geteuid`) outside a `#[cfg(unix)]` scope, or the DEFAULT build
-//! (default features include `simd`) fails to compile on Windows — exactly the
+//! (default features include `simd`) fails to compile on Windows, exactly the
 //! regression this guards.
 //!
 //! `simd/backend.rs` previously called `unsafe { libc::geteuid() }`
@@ -35,14 +35,14 @@ fn current_uid_has_both_platform_arms() {
     let code = code_only(&backend_src());
     let compact = code.replace(char::is_whitespace, "");
     // The Unix arm (real geteuid) and the non-Unix arm (constant) must BOTH be
-    // present — that split is the entire fix.
+    // present (that split is the entire fix).
     assert!(
         compact.contains("#[cfg(unix)]fncurrent_uid"),
         "missing the #[cfg(unix)] current_uid() arm (geteuid)"
     );
     assert!(
         compact.contains("#[cfg(not(unix))]fncurrent_uid"),
-        "missing the #[cfg(not(unix))] current_uid() arm — the default Windows \
+        "missing the #[cfg(not(unix))] current_uid() arm, the default Windows \
          build would fall back to an unconditional libc::geteuid()"
     );
 }
@@ -78,11 +78,11 @@ fn every_geteuid_call_is_cfg_unix_guarded() {
     assert!(
         sites >= 1,
         "expected at least one libc::geteuid() site (the current_uid Unix arm); \
-         found none — did the helper move?"
+         found none (did the helper move)?"
     );
     assert!(
         ungated.is_empty(),
         "libc::geteuid() called without a #[cfg(unix)] guard at line(s) {ungated:?} \
-         — this breaks the default Windows build. Route uid through current_uid()."
+This breaks the default Windows build. Route uid through current_uid()."
     );
 }

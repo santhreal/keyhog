@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "SKYSCANNER_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "SKYSCANNER_API_KEY=JEA8DEXAMPLEEXAMPLEQWBgg"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "{\"SKYSCANNER_API_KEY\":\"JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg\"}"
 credential = "JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

@@ -6,9 +6,9 @@
 //! `^xoxb-[0-9]{10,15}-[0-9]{10,15}-[a-zA-Z0-9]{15,40}$`, which REQUIRES two
 //! numeric segments. The `slack-bot-token` detector
 //! (`detectors/slack-bot-token.toml`) is the source of truth for what the
-//! scanner emits and it ships TWO patterns — a 3-segment canonical
+//! scanner emits and it ships TWO patterns, a 3-segment canonical
 //! (`xoxb-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,32}`) AND a 2-segment /
-//! "mixed" form (`xoxb-[0-9]{10,13}-[0-9A-Za-z]{15,36}`) — and the per-detector
+//! "mixed" form (`xoxb-[0-9]{10,13}-[0-9A-Za-z]{15,36}`), and the per-detector
 //! contract (`tests/contracts/slack-bot-token.toml`) states both "must surface".
 //!
 //! This validator is the checksum GATE every emitted Slack match is routed
@@ -152,7 +152,7 @@ fn three_segment_bot_token_still_valid() {
 
 #[test]
 fn bot_two_numeric_segments_no_secret_still_invalid() {
-    // `xoxb-{10}-{10}` has NO alnum secret at all — the detector's 2-segment
+    // `xoxb-{10}-{10}` has NO alnum secret at all, the detector's 2-segment
     // pattern also requires a >=15-char secret, so this is correctly Invalid.
     // (Making the middle segment optional must NOT accept this.)
     let token = format!(
@@ -200,7 +200,7 @@ fn bot_first_segment_9_digits_still_invalid() {
 
 #[test]
 fn bot_first_segment_16_digits_still_invalid() {
-    // 16 digits exceeds the {10,15} ceiling — the anchored `$` rejects it.
+    // 16 digits exceeds the {10,15} ceiling (the anchored `$` rejects it).
     let token = format!(
         "{}-{}-{}",
         concat!("xox", "b"),
@@ -295,7 +295,7 @@ fn user_secret_23_chars_still_invalid() {
 
 #[test]
 fn non_slack_prefix_not_applicable() {
-    // Unknown prefix is NotApplicable (not Invalid) — the validator must not
+    // Unknown prefix is NotApplicable (not Invalid), the validator must not
     // claim tokens it does not understand.
     assert_eq!(
         SlackTokenValidator.validate("not-a-slack-token"),

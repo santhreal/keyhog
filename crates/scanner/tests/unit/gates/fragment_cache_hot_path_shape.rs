@@ -16,7 +16,7 @@ fn fragment_cache_uses_borrowed_scoped_key_for_lru_lookup() {
         prod.matches("get_or_insert_mut_ref(key, Vec::new)").count() >= 1,
         "every fragment-cache record path must query the LRU by borrowed &str \
          (the borrowed-ref helper must actually be used, not merely defined). \
-         The exact path count is not pinned here — a legitimate consolidation of \
+         The exact path count is not pinned here, a legitimate consolidation of \
          record paths must not trip this gate; the no-owned-key-allocation contract \
          is enforced by the negative assertion below, not by a brittle occurrence count."
     );

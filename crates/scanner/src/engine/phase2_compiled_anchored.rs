@@ -41,7 +41,7 @@ impl CompiledScanner {
     /// `extract_anchored` at its candidate positions; one whose anchored regex
     /// failed to compile falls back LOUDLY to the cursor-bounded whole-chunk walk
     /// so recall is preserved. Shared by the main shared-anchor candidate pass
-    /// and the localized-homoglyph plain candidate pass — the two passes ran
+    /// and the localized-homoglyph plain candidate pass, the two passes ran
     /// byte-identical copies of this loop, a drift hazard for the
     /// anchored-vs-fallback verify logic.
     #[allow(clippy::too_many_arguments)]
@@ -207,7 +207,7 @@ impl CompiledScanner {
                 // Localized homoglyph path (ASCII chunks): the prefilter skipped
                 // the plain (homoglyph) patterns, so verify them here from the
                 // folded-literal AC candidate positions via `extract_anchored`
-                // (O(match) each — dense over-marking from a short literal is a
+                // (O(match) each, dense over-marking from a short literal is a
                 // cheap quick-fail, not a whole-chunk scan). Plain patterns with
                 // no folded literal run whole-chunk (they are few).
                 if self.tuning.homoglyph_gate_enabled()

@@ -5,7 +5,7 @@
 //! strong credential anchor (admitting it past the file-extension gate). It used
 //! to allocate `let lower = keyword.to_ascii_lowercase()` up front, but the
 //! normalized-keyword path that runs first reads `keyword` directly and returns
-//! early for credential keywords — so that allocation was wasted on the common
+//! early for credential keywords, so that allocation was wasted on the common
 //! positive case. It now runs after the early-return.
 //!
 //! This pins both that the real outputs are unchanged (credential keywords admit,
@@ -23,7 +23,7 @@ fn keyword_credential_anchor_outputs_unchanged_by_lazy_lowercase() {
         "no-keyword sentinel is not an anchor"
     );
 
-    // Credential keywords admit — via the normalized path or the
+    // Credential keywords admit, via the normalized path or the
     // GENERIC_ASSIGNMENT_KEYWORDS substring path.
     assert!(is_anchor("api_key"), "api_key is a credential anchor");
     assert!(is_anchor("password"), "password is a credential anchor");
@@ -68,7 +68,7 @@ fn keyword_credential_anchor_outputs_unchanged_by_lazy_lowercase() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin a handful of anchors/rejects; these SWEEP the behavioral
 // contract. The lazy-lowercase is only correct if the decision is CASE-INSENSITIVE
-// for every non-sentinel keyword (normalize case-folds; the fallback lowercases) —
+// for every non-sentinel keyword (normalize case-folds; the fallback lowercases) 
 // swept over `[A-Za-z0-9_]` inputs, which can never be the spaces/parens sentinel.
 // Plus: the fixed credential keywords admit in any case, and any keyword containing
 // `bearer` (any case) admits via the explicit substring branch. Traced against

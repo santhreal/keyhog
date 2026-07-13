@@ -3,14 +3,14 @@
 //!
 //! `value_shaped_group_shared_heuristic.rs` pins the four canonical behaviours
 //! (fall back, leave-unchanged, short-sibling-kept, <=2-groups-short-circuit).
-//! This file pins the EDGES that a future tweak could silently slide across —
+//! This file pins the EDGES that a future tweak could silently slide across 
 //! each one a recall/precision drift hazard because the heuristic is shared by
 //! the whole-chunk walk (`extract_grouped_matches`) and the phase-2 anchored
 //! path (`extract_anchored`), so a boundary that moves in one definition moves
 //! in both at once and is invisible at scan time.
 //!
 //! The two definitions under exercise (`scan_filters.rs`):
-//!   * `looks_like_variable_name(s)` — `true` iff `s` is non-empty, `<= 64`
+//!   * `looks_like_variable_name(s)`: `true` iff `s` is non-empty, `<= 64`
 //!     bytes, and every byte is `[A-Za-z0-9_]`. (So an empty group, a `> 64`
 //!     byte group, or any non-ASCII / punctuation byte makes it value-shaped.)
 //!   * a sibling qualifies as the replacement iff it PARTICIPATED in the match,
@@ -18,7 +18,7 @@
 //!     by ascending capture-group index wins (early return).
 //!
 //! Every test drives a real compiled regex through the shared test seam and
-//! asserts the EXACT resolved bytes (Law 6 — real values, never `is_some`).
+//! asserts the EXACT resolved bytes (Law 6 (real values, never `is_some`)).
 
 use keyhog_scanner::testing::resolve_value_shaped_group_for_test as resolve;
 
@@ -41,7 +41,7 @@ fn sibling_exactly_8_bytes_qualifies() {
 
 #[test]
 fn sibling_exactly_7_bytes_is_rejected_and_original_group_kept() {
-    // "ab-cdef" is 7 bytes — one below the floor — so it does NOT qualify and
+    // "ab-cdef" is 7 bytes, one below the floor, so it does NOT qualify and
     // the original variable-name group is returned unchanged.
     let text = "name=val key=ab-cdef";
     let pattern = r"(\w+)=\w+ \w+=([\w-]+)";
@@ -94,7 +94,7 @@ fn configured_group_two_with_no_qualifying_sibling_keeps_group_two() {
 
 #[test]
 fn first_value_shaped_sibling_by_index_wins_even_when_a_later_one_is_longer() {
-    // Both group 2 and group 3 qualify; the lower index must win — proving the
+    // Both group 2 and group 3 qualify; the lower index must win, proving the
     // selection is first-by-index, not longest / last.
     let text = "name a-shortone b-longer-token-here";
     let pattern = r"(\w+) (a[\w-]+) (b[\w-]+)";
@@ -179,7 +179,7 @@ fn exactly_two_total_groups_short_circuits_even_for_a_variable_name_group() {
 fn empty_configured_group_is_value_shaped_and_returned_without_panic() {
     // `(\w*)` matches zero-width before '='. An empty string is NOT
     // variable-name shaped, so the heuristic returns the (empty) current range
-    // unchanged — and must not panic re-slicing it.
+    // unchanged (and must not panic re-slicing it).
     let text = "=sk-secret-value";
     let pattern = r"(\w*)=(\S+)";
     let (s, e) = resolve(pattern, text, 1).expect("pattern must match");
@@ -220,8 +220,8 @@ fn digit_only_configured_group_is_a_name_so_heuristic_engages() {
 
 #[test]
 fn underscore_and_digit_name_is_variable_name_shaped() {
-    // "api_key_v2" mixes letters, digits and underscores — all in the
-    // [A-Za-z0-9_] set — so it is variable-name shaped and the heuristic engages.
+    // "api_key_v2" mixes letters, digits and underscores, all in the
+    // [A-Za-z0-9_] set (so it is variable-name shaped and the heuristic engages).
     let text = "api_key_v2=val key=resolved-value-x";
     let pattern = r"(\w+)=\w+ \w+=([\w-]+)";
     assert_eq!(resolved_slice(pattern, text, 1), "resolved-value-x");

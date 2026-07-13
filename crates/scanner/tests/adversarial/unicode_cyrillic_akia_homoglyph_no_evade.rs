@@ -4,7 +4,7 @@ use super::oracle_support::scan_text;
 
 #[test]
 fn unicode_cyrillic_akia_homoglyph_no_evade() {
-    // Latin A replaced with Cyrillic А (U+0410) in prefix only — body stays canonical.
+    // Latin A replaced with Cyrillic А (U+0410) in prefix only (body stays canonical).
     let homoglyph_prefix = "\u{0410}KIA"; // АKIA visually similar
     let body = format!("{homoglyph_prefix}QYLPMN5HFIQR7XYA");
     let matches = scan_text(&format!("export AWS_KEY=\"{body}\""), "homoglyph.env");

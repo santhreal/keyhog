@@ -2,7 +2,7 @@
 //!
 //! Builds real JWTs (base64url header.payload.sig) and asserts the exact
 //! parsed `alg`/`iss`/`sub`/`exp`, the precise `JwtAnomaly` set (notably the
-//! `alg=none` forgery signal), and the shape-gate behaviour — never `is_some`.
+//! `alg=none` forgery signal), and the shape-gate behaviour (never `is_some`).
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -18,7 +18,7 @@ fn make_jwt(header_json: &str, payload_json: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// looks_like_jwt — shape gate
+// looks_like_jwt, shape gate
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -49,7 +49,7 @@ fn looks_like_jwt_rejects_non_base64url_chars() {
 }
 
 // ---------------------------------------------------------------------------
-// analyze — real claim extraction
+// analyze, real claim extraction
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -168,7 +168,7 @@ fn anomalies_metadata_carries_alg_none_key() {
 }
 
 // ---------------------------------------------------------------------------
-// finding_metadata — the shared scan/verify/daemon bridge
+// finding_metadata, the shared scan/verify/daemon bridge
 // ---------------------------------------------------------------------------
 
 #[test]

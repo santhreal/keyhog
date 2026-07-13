@@ -55,7 +55,7 @@ fn newline_count_is_exact() {
 
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin one example each; these SWEEP them. `bytecount_newlines`
-// (memchr SIMD) must EXACTLY equal the naive `\n` count for any bytes — a
+// (memchr SIMD) must EXACTLY equal the naive `\n` count for any bytes, a
 // DIFFERENTIAL that keeps the SIMD path behavior-identical to the old scalar loop.
 // `splice_decoded_payload_at` gets a raw-decoder splice round-trip in a small
 // parent (window covers it, so decoded replaces the span with context preserved)
@@ -84,7 +84,7 @@ proptest! {
     }
 
     /// A raw-decoder splice in a small parent (fully inside the context window)
-    /// replaces `[start, end)` with the decoded text, preserving both sides — the
+    /// replaces `[start, end)` with the decoded text, preserving both sides, the
     /// window starts at 0 and the decoded sits at `start`.
     #[test]
     fn raw_splice_replaces_span_in_small_parent(

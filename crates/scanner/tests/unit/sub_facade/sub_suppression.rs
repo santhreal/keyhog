@@ -4,7 +4,7 @@
 //! These predicates decide whether a captured value is a grammar token /
 //! decorated identifier rather than a real credential body. Tests assert the
 //! exact true/false verdict for each documented FP family AND the negative
-//! twin (a real credential of similar surface shape must NOT be suppressed) —
+//! twin (a real credential of similar surface shape must NOT be suppressed) 
 //! never `is_empty`/single-direction decoration.
 
 use keyhog_scanner::testing::shape::{
@@ -159,8 +159,8 @@ fn standard_base64_blob_detected() {
     // `is_random_base64_blob(_, 40, 80, 32)` (the single source of truth this
     // delegates to) admits a blob via ANY of: `+/` punctuation, `=` padding, or
     // >=32 distinct alphanumeric chars on a mult-of-4 length. The previous
-    // fixture (`[0x5A; 48]`) encoded to `WlpaWlpa…` — only 4 distinct chars, no
-    // punctuation, no padding — so it correctly FAILED all three admit clauses
+    // fixture (`[0x5A; 48]`) encoded to `WlpaWlpa…`: only 4 distinct chars, no
+    // punctuation, no padding, so it correctly FAILED all three admit clauses
     // and this assertion was a stale false-positive expectation.
     //
     // Cover the two non-degenerate admit paths with real blobs:
@@ -196,7 +196,7 @@ fn short_token_is_not_base64_blob() {
 }
 
 // ---------------------------------------------------------------------------
-// looks_like_prose_whitespace_run — the ONE predicate now shared by the direct
+// looks_like_prose_whitespace_run, the ONE predicate now shared by the direct
 // `prose_whitespace` gate and the base64-decoded `decoded_prose_whitespace`
 // twin (DEDUP, µ-dcn-12). Pin the exact >30-byte / ≥2-whitespace / lowercase-
 // word≥3 threshold so the two paths can never drift apart again.

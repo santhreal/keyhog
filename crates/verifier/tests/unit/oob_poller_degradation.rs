@@ -1,11 +1,11 @@
 //! Re-homed from the former inline `poller_degradation_tests` in
-//! `crates/verifier/src/oob/session.rs` — the `oob_session_no_inline_tests`
+//! `crates/verifier/src/oob/session.rs`: the `oob_session_no_inline_tests`
 //! folder-contract gate forbids inline `#[cfg(test)]` there.
 //!
 //! Pins the OOB poller-degradation fail-closed SECURITY contract: once polls to
 //! the interactsh collector fail `OOB_DEGRADED_ERROR_THRESHOLD` times in a row
 //! the poller is "degraded", and a subsequent `wait_for` TIMEOUT must fail closed
-//! (`Disabled`, a verification error) instead of a false `NotObserved` — which
+//! (`Disabled`, a verification error) instead of a false `NotObserved`: which
 //! would misreport a possibly-live secret as dead (Law 10). The private
 //! `poller_is_degraded` / `elapsed_verdict` / degraded seam are exercised through
 //! the `testing` facade accessors so they stay module-private.
@@ -21,7 +21,7 @@ use std::time::Duration;
 #[test]
 fn degraded_only_at_or_past_threshold() {
     let threshold = oob_degraded_error_threshold();
-    // Below the threshold the poller is NOT degraded — a transient one- or
+    // Below the threshold the poller is NOT degraded, a transient one- or
     // two-poll blip must never flip healthy `NotObserved` verdicts into
     // inconclusive `Disabled` ones.
     assert!(!oob_poller_is_degraded(0), "zero errors is healthy");
@@ -67,7 +67,7 @@ async fn wait_for_timeout_honours_degraded_flag() {
     );
     let session = TestApi.oob_session_for_test(client, OobConfig::default());
 
-    // Healthy: an empty wait that hits its tiny timeout is NotObserved — the
+    // Healthy: an empty wait that hits its tiny timeout is NotObserved, the
     // callback simply never fired.
     let healthy = session
         .wait_for("id-never-hit", OobAccept::Any, Duration::from_millis(10))

@@ -3,17 +3,17 @@
 //! owned by `keyhog_core` (`core::dedup`). Distinct from the sibling
 //! `regression_finding_dedup.rs` / `regression_finding_dedup_merge.rs` /
 //! `new_core_finding_dedup.rs` files, which pin group counts and cross-detector
-//! companion folding: THIS file pins ONLY the `additional_locations` vector —
+//! companion folding: THIS file pins ONLY the `additional_locations` vector 
 //! how the same credential seen at N places records exactly one primary plus
 //! the deduped remainder, with each recorded location's exact
 //! source/file/line/offset asserted.
 //!
 //! The dedup identity that decides "same finding, collapse" is
-//! `(source, file_path, line, commit)` — offset is deliberately EXCLUDED (the
+//! `(source, file_path, line, commit)`: offset is deliberately EXCLUDED (the
 //! structured-preprocessor synthetic-line alias fires the same value twice on
 //! one line at two offsets, one past EOF; both are one finding). Every test
 //! below asserts a concrete value: exact `additional_locations.len()`, exact
-//! primary offset/line, exact per-location file/source/commit — never
+//! primary offset/line, exact per-location file/source/commit, never
 //! `is_empty()` / `len() > 0` alone.
 //!
 //! Host-independent: pure in-process `keyhog_core` API, no accelerator, no

@@ -20,7 +20,7 @@ pub enum DaemonAction {
         ///
         /// A daemon started here is reachable by `daemon stop`/`status --socket`
         /// AND by scans via `keyhog scan --daemon --daemon-socket <same path>`
-        /// — pass the matching path so a fixed-location daemon (e.g. a systemd
+        ///: pass the matching path so a fixed-location daemon (e.g. a systemd
         /// unit) actually serves scans, not just admin commands.
         #[arg(long, value_name = "PATH")]
         socket: Option<PathBuf>,

@@ -34,7 +34,7 @@ fn scan_credentials(text: &str, path: &str) -> Vec<String> {
 
 #[test]
 fn suppresses_the_aws_canonical_example_key() {
-    // AKIAIOSFODNN7EXAMPLE is AWS's documented placeholder — must never flag.
+    // AKIAIOSFODNN7EXAMPLE is AWS's documented placeholder (must never flag).
     let creds = scan_credentials("key = AKIAIOSFODNN7EXAMPLE", "s.txt");
     assert!(
         !creds.iter().any(|c| c == "AKIAIOSFODNN7EXAMPLE"),

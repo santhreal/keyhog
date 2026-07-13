@@ -27,7 +27,7 @@ reason = "Keyword context without valid credential body."
 [[evasion]]
 text = "export IPS4 api_key=2963950e3ed2e3dc49d5740982bac6a9"
 credential = "2963950e3ed2e3dc49d5740982bac6a9"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

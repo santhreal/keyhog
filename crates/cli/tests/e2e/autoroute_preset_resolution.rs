@@ -1,5 +1,5 @@
 //! E2E (#39): every documented scan-policy preset resolves an autoroute decision
-//! after calibration — a default `scan <preset>` must never fail closed (exit 2)
+//! after calibration, a default `scan <preset>` must never fail closed (exit 2)
 //! once `--autoroute-calibrate` has run for that preset on the same workload.
 //!
 //! Each preset resolves its own config digest, and they coexist in the v20
@@ -67,7 +67,7 @@ fn every_documented_preset_resolves_after_calibration() {
     }
 
     // After calibration, a plain auto scan with each preset must RESOLVE a
-    // decision — never fail closed (exit 2). Re-run the whole sweep so a later
+    // decision, never fail closed (exit 2). Re-run the whole sweep so a later
     // preset's calibration cannot have clobbered an earlier preset's decision
     // (the multi-config merge contract).
     for preset in presets {

@@ -13,7 +13,7 @@
 //!
 //! Previously this file had 867 individual `#[test]` functions. Rust's test
 //! harness runs them in parallel, so 867 concurrent `SCANNER.scan()` calls
-//! each allocated match buffers — the process ballooned to 19 GB and was
+//! each allocated match buffers, the process ballooned to 19 GB and was
 //! OOM-killed (pid 2579946). Now there is ONE test function that loops over
 //! a static table of (example, detector_id) pairs, calling
 //! `assert_detector_fires` sequentially. One scanner, one match buffer at a
@@ -50,7 +50,7 @@ fn assert_detector_fires(example: &str, detector_id: &str) {
     );
 }
 
-/// Static table of (example, detector_id) pairs — one per detector.
+/// Static table of (example, detector_id) pairs (one per detector).
 /// Extracted from the original 867 individual `#[test]` functions.
 /// Keeping them in a single table + loop prevents the parallel-scan OOM
 /// that killed the old layout (19 GB, pid 2579946).
@@ -916,7 +916,7 @@ static DETECTOR_EXAMPLES: &[(&str, &str)] = &[
 ];
 
 /// Run every per-detector regression example sequentially. One scanner,
-/// one match buffer at a time — the original 867 parallel `#[test]` fns
+/// one match buffer at a time, the original 867 parallel `#[test]` fns
 /// each allocated independent match buffers and OOM'd at 19 GB.
 ///
 /// Collects ALL failures before panicking so a single run surfaces every

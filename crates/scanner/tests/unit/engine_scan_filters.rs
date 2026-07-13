@@ -134,7 +134,7 @@ fn heroku_prefix_is_case_sensitive() {
 fn deliberately_excluded_short_prefixes_do_not_trigger() {
     // AKIA (AWS access-key id) and eyJ (base64 `{"` JWT header) are SHORT and
     // appear constantly in fixtures/docs, so they are intentionally excluded
-    // from this multiline gate. Pin that exclusion — re-adding them would flood
+    // from this multiline gate. Pin that exclusion, re-adding them would flood
     // the phase-2 tail with fixture noise.
     assert!(
         !has_secret_keyword_fast(b"AKIAIOSFODNN7EXAMPLE"),
@@ -175,7 +175,7 @@ fn plain_prose_without_any_prefix_does_not_trigger() {
 #[test]
 fn truncated_prefixes_do_not_trigger() {
     // `ghp` without the `_`, and `sk-proj` without the trailing `-`, are not
-    // the full curated prefixes — the gate must require the exact token so it
+    // the full curated prefixes, the gate must require the exact token so it
     // stays specific.
     assert!(!has_secret_keyword_fast(b"ghp is a common abbreviation"));
     assert!(!has_secret_keyword_fast(b"my sk-proj folder"));
@@ -213,7 +213,7 @@ fn generic_gate_rejects_a_non_credential_line() {
 // credential-value bytes (alphanumerics + token separators + symbolic password
 // punctuation). Recall-critical: without it, pure-entropy secrets with no keyword
 // anchor bail (that regression pinned generic-high-entropy recall at 0.36). The
-// gate is deliberately PERMISSIVE — UUID/hash-shaped false positives that pass here
+// gate is deliberately PERMISSIVE: UUID/hash-shaped false positives that pass here
 // are suppressed downstream, so this pins the run/threshold contract, not precision.
 
 #[test]
@@ -298,7 +298,7 @@ fn realistic_40_char_base62_token_triggers() {
 fn uuid_shaped_string_reaches_the_run_threshold() {
     // A 36-char UUID is one contiguous run because `-` is a candidate byte, so it
     // DOES pass this permissive gate (36 >= 32). The UUID-shaped false positive is
-    // killed downstream by is_uuid_v4_shape, not here — pin that division of labor.
+    // killed downstream by is_uuid_v4_shape, not here (pin that division of labor).
     let uuid = b"550e8400-e29b-41d4-a716-446655440000";
     assert_eq!(uuid.len(), 36);
     assert!(has_high_entropy_run_fast(uuid));

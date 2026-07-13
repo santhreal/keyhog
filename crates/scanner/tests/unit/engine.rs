@@ -356,7 +356,7 @@ fn named_detector_comment_anchor_floor_keeps_anchored_secret_visible() {
     // the keyword-anchored named-detector floor (NAMED_DETECTOR_ANCHOR_FLOOR, the
     // recall feature added in 9f5dfc097: "lift keyword-anchored named-detector
     // matches to a confidence floor") lifts a `HARDTOK`-anchored named match back
-    // to 0.55 — above the 0.5 comment hard-suppression threshold — so a real
+    // to 0.55, above the 0.5 comment hard-suppression threshold, so a real
     // anchored secret pasted into a comment still SURFACES instead of being
     // silently hard-suppressed (keyhog is recall-bound; a key in a comment is a
     // real leak). Precise hard_suppressed_context tracing for the matches that DO
@@ -475,9 +475,9 @@ fn entropy_fallback_rejection_is_operator_visible() {
     // --dogfood trace (Law 10: no silent drop). The entropy fallback drops this
     // generic candidate at the entropy floor (it does not clear the fallback's
     // high-entropy bar, which is above the configured candidate threshold) and
-    // records it with `path: None` — only early gates carry the source file; a
+    // records it with `path: None`: only early gates carry the source file; a
     // later/fallback stage records None by design (see the dedup note in
-    // telemetry.rs) — so filter by reason, not path. Min-confidence reject
+    // telemetry.rs), so filter by reason, not path. Min-confidence reject
     // tracing (below_min_confidence) for a candidate that DOES clear the entropy
     // floor is covered by `named_detector_min_floor`.
     let reasons: Vec<_> = trace
@@ -747,11 +747,11 @@ fn generic_assignment_prefilter_collects_gpu_position_lines_once() {
 // CredData's dominant credential-env shape is `*_PASS=` (GRAPHITE_PASS,
 // JENKINS_PASS, DB_PASS, …). The bridge keyword list historically had
 // `password`/`passwd`/`pwd` but not the bare `pass` abbreviation, so these were
-// never surfaced as candidates — a real recall hole on the home-turf corpus.
+// never surfaced as candidates (a real recall hole on the home-turf corpus).
 // `pass` is now in the list, made safe by the whole-word left boundary in
 // GENERIC_RE. The value below has entropy above the generic-secret floor (2.8)
 // but below the standalone entropy-fallback bar, so it is reachable ONLY through
-// the keyword bridge — which isolates the keyword change from the entropy path.
+// the keyword bridge (which isolates the keyword change from the entropy path).
 #[test]
 fn generic_assignment_bridges_bare_pass_abbreviation() {
     let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
@@ -767,7 +767,7 @@ fn generic_assignment_bridges_bare_pass_abbreviation() {
 
 // Boundary twin: `pass` must match as a whole word, never as the tail of
 // `bypass`/`compass`/`encompass`. Same value as the positive test, which the
-// standalone entropy path will not promote on its own — so a match here would
+// standalone entropy path will not promote on its own, so a match here would
 // mean the boundary leaked and `bypass`/`compass` are firing as `pass`.
 #[test]
 fn generic_assignment_bare_pass_respects_word_boundary() {

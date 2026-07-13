@@ -27,7 +27,7 @@ use crate::types::CompiledPattern;
 /// When an active generator has no finite match width (an unbounded detector
 /// regex, or entropy on a non-source path) the seam buffer would otherwise
 /// splice ALL of chunk A onto ALL of chunk B and full-rescan a ~2x-chunk buffer
-/// for EVERY adjacent pair — O(pairs x chunk_bytes) plus large transient
+/// for EVERY adjacent pair: O(pairs x chunk_bytes) plus large transient
 /// allocations on a many-chunk gapless producer. A straddling secret only needs
 /// a bounded reassembly window: any credential/line longer than this on one
 /// side is already visible whole inside that chunk's own in-chunk scan. Sized
@@ -257,7 +257,7 @@ fn scan_one_pair(
         // anchor prefix can be split across the seam while the captured
         // credential group lives entirely in B's region.  In that case
         // `credential.start >= seam_file_offset`, the straddle check fired
-        // false, and the finding was silently dropped — a recall loss.
+        // false, and the finding was silently dropped (a recall loss).
         //
         // The straddle check's original purpose (avoid double-counting
         // matches already visible inside chunk A or B on their own) is

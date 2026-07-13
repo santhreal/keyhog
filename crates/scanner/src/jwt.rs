@@ -148,11 +148,11 @@ pub(crate) fn looks_like_jwt(s: &str) -> bool {
     jwt_segments(s).is_some()
 }
 
-/// The base64url encoding of a JWT header's opening `{"` — every JWT/JWS begins
+/// The base64url encoding of a JWT header's opening `{"`: every JWT/JWS begins
 /// `eyJ…` because the header JSON starts `{"alg"…`. SINGLE OWNER of this marker:
 /// it is the load-bearing prefix of the `jwt-token` (and every JWT-shaped vendor)
 /// detector pattern, and scanner logic keys off it in the entropy plausibility
-/// gate and the canonical-shape suppression check — those were three bare `"eyJ"`
+/// gate and the canonical-shape suppression check, those were three bare `"eyJ"`
 /// literals free to drift and are now this const, bound to the jwt-token detector
 /// by a guard test.
 pub(crate) const JWT_BASE64_HEADER_PREFIX: &str = "eyJ";

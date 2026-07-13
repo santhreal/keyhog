@@ -1,4 +1,4 @@
-//! Contract for `compiler::compiler_compile::compile_companion` — the compiler
+//! Contract for `compiler::compiler_compile::compile_companion`: the compiler
 //! that turns a detector's `CompanionSpec` (a nearby-value regex used to enrich
 //! or gate a finding, e.g. an AWS secret-key companion beside an access-key ID)
 //! into a `CompiledCompanion`. Previously untested directly.

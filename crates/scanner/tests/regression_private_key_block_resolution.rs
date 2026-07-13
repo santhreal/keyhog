@@ -6,13 +6,13 @@
 //! `private-key` (service=crypto) and `ssh-private-key` (service=ssh) BOTH match
 //! the same `-----BEGIN … PRIVATE KEY … END` span for every label they share
 //! (RSA / EC / DSA / OPENSSH / PKCS#8 / ENCRYPTED). At the raw
-//! `CompiledScanner::scan` layer both are present — but the operator path runs
+//! `CompiledScanner::scan` layer both are present, but the operator path runs
 //! `resolution::resolve_matches` (wired at cli postprocess.rs + scan.rs), which
 //! groups by `(file, line)` and keeps only matches within `PRIORITY_EPSILON`
 //! (1e-9) of the top `match_priority`. `ssh-private-key` is service-anchored
 //! (`is_private_key_fallback` is ONLY the literal `private-key`), so it earns
 //! `+NAMED_DETECTOR_PRIORITY (+10)` and `+KNOWN_PREFIX_SERVICE_BONUS (+5)` plus a
-//! longer id, beating the `private-key` fallback by ~16 — so `private-key` is
+//! longer id, beating the `private-key` fallback by ~16, so `private-key` is
 //! dropped and ONE finding survives.
 //!
 //! This suite pins that contract end-to-end through the REAL resolver so a
@@ -188,7 +188,7 @@ fn pgp_does_not_yield_ssh_private_key() {
 
 #[test]
 fn raw_scan_shows_both_block_detectors_for_rsa() {
-    // Pre-resolution, BOTH private-key and ssh-private-key are present — proving
+    // Pre-resolution, BOTH private-key and ssh-private-key are present, proving
     // the single-survivor outcome above is the RESOLVER's doing, not a scan-time
     // accident.
     let raw = raw_block_ids(&pem("RSA PRIVATE KEY", "RAWBOTH9"));

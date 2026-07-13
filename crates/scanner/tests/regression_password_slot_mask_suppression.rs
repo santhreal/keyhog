@@ -4,8 +4,8 @@
 //! strong-anchor AND `is_service_anchored`, so the suppression pipeline sets
 //! `bypass_shape_gates = true` and SKIPS the Tier-B repetitive-run / repeated-
 //! block mask gates that normally drop a redaction mask. `is_confident_dictionary_word`
-//! cannot catch a mask — `xxxxxxxx` / `12345678` have improbable English bigrams,
-//! so the model is (correctly) NOT confident they are words — so without a second
+//! cannot catch a mask: `xxxxxxxx` / `12345678` have improbable English bigrams,
+//! so the model is (correctly) NOT confident they are words, so without a second
 //! guard the strong anchor surfaces every `--password xxxxxxxx` / `IDENTIFIED BY
 //! 'XXXXXXXX'` redaction as a false positive.
 //!
@@ -162,7 +162,7 @@ fn cli_repeated_zero_mask_suppressed() {
     );
 }
 
-// ── RECALL the family must KEEP — genuine random passwords (≥3 distinct) ─────
+// ── RECALL the family must KEEP, genuine random passwords (≥3 distinct) ─────
 
 #[test]
 fn url_random_password_still_surfaces() {
@@ -190,7 +190,7 @@ fn sql_random_password_still_surfaces() {
 
 #[test]
 fn cli_low_alpha_password_still_surfaces() {
-    // `i8cr1w!` has 4 distinct letters (i,c,r,w) — clears the diversity floor —
+    // `i8cr1w!` has 4 distinct letters (i,c,r,w), clears the diversity floor 
     // and < 6 alpha (the bigram model returns None), so it is neither a confident
     // dictionary word nor a low-diversity mask: the recovery the fix must preserve.
     assert!(

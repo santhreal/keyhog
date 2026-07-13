@@ -6,14 +6,14 @@
 //! into the `Error(String)` variant carrying one of a small, fixed set of
 //! operator-facing reason strings. Two contracts must never silently drift:
 //!
-//!   1. The **verdict wire contract** — the snake_case serde tag each verdict
+//!   1. The **verdict wire contract**: the snake_case serde tag each verdict
 //!      serializes to. Reporters, the SARIF writer, and the JSON output all key
 //!      off these exact tags, so a rename here is a breaking, silent data bug.
 //!      A live 200 probe -> `Live` -> `"live"`; a 401/403 rejection -> `Dead`
 //!      -> `"dead"`; a 429/5xx -> `RateLimited` -> `"rate_limited"`; a timeout
 //!      or network error -> `Error(msg)` -> `{"error": msg}`.
 //!
-//!   2. The **transport-error reason contract** — the exact `Error(...)` payload
+//!   2. The **transport-error reason contract**: the exact `Error(...)` payload
 //!      strings for the timeout / connect / redirect / request-failed paths, the
 //!      three response-body errors, and the `blocked:` refusal family. Each
 //!      actionable failure leads with its legacy short phrase (Law 3 substring
@@ -36,7 +36,7 @@ use keyhog_verifier::testing::{
 };
 
 // ────────────────────────────────────────────────────────────────────────────
-// Group A — verdict wire contract (the output side of status -> verdict).
+// Group A (verdict wire contract (the output side of status -> verdict)).
 // A downstream JSON/SARIF consumer keys off these exact snake_case tags.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ fn rate_limited_verdict_serializes_snake_case() {
 
 /// A timeout / network failure maps to the `Error(String)` variant, which
 /// serializes as an externally-tagged object `{"error": <reason>}` carrying the
-/// exact reason string verbatim — here the canonical timeout reason.
+/// exact reason string verbatim (here the canonical timeout reason).
 #[test]
 fn timeout_maps_to_error_variant_with_exact_payload_under_error_tag() {
     let verdict = VerificationResult::Error(TIMEOUT_ERROR.to_string());
@@ -128,7 +128,7 @@ fn error_verdict_roundtrips_and_preserves_exact_reason() {
     }
 }
 
-/// Deserialization of the snake_case tags recovers the exact unit verdicts —
+/// Deserialization of the snake_case tags recovers the exact unit verdicts 
 /// the input side of the wire contract, exercised as a negative twin to the
 /// serialize tests above.
 #[test]
@@ -150,7 +150,7 @@ fn snake_case_tags_deserialize_to_expected_unit_verdicts() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Group B — transport-failure reason strings (the Error(...) payloads emitted
+// Group B, transport-failure reason strings (the Error(...) payloads emitted
 // by the timeout / connect / redirect / request-failed / body / refusal paths).
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -190,7 +190,7 @@ fn redirect_and_request_failed_are_distinct_and_prefixed() {
 }
 
 /// The `blocked:` refusal family (SSRF private-URL, HTTPS-only, empty-DNS) is
-/// the fail-closed outcome — terse, uniformly prefixed, and deliberately
+/// the fail-closed outcome, terse, uniformly prefixed, and deliberately
 /// carrying NO `Fix:`, because the refusal itself is the correct result.
 #[test]
 fn refusal_family_is_blocked_prefixed_with_no_fix() {
@@ -249,7 +249,7 @@ fn response_body_errors_lead_with_legacy_phrases() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Group C — pure helper: the malformed-target-URL reason builder.
+// Group C (pure helper: the malformed-target-URL reason builder).
 // ────────────────────────────────────────────────────────────────────────────
 
 /// `invalid_url_error` preserves the underlying parse error verbatim, leads with
@@ -274,7 +274,7 @@ fn invalid_url_error_embeds_parse_error_and_is_actionable() {
     );
 }
 
-/// Two different parse errors produce two different messages — the reason is not
+/// Two different parse errors produce two different messages, the reason is not
 /// a constant that swallows the underlying cause.
 #[test]
 fn invalid_url_error_varies_with_the_parse_cause() {
@@ -286,7 +286,7 @@ fn invalid_url_error_varies_with_the_parse_cause() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Group D — OOB live-probe error redaction mapping. The interactsh poll URL
+// Group D: OOB live-probe error redaction mapping. The interactsh poll URL
 // carries the session secret as a query param; transport errors must be reduced
 // to a category, while the hand-written non-transport variants pass through.
 // ────────────────────────────────────────────────────────────────────────────
@@ -305,7 +305,7 @@ fn redact_passes_through_non_transport_poll_error_verbatim() {
 }
 
 /// The timeout variant (which never embeds a URL) also passes through, rendering
-/// the exact deadline it fired on — here a 7-second duration.
+/// the exact deadline it fired on (here a 7-second duration).
 #[test]
 fn redact_renders_timeout_variant_with_exact_duration() {
     let err = InteractshError::Timeout(Duration::from_secs(7));
@@ -314,7 +314,7 @@ fn redact_renders_timeout_variant_with_exact_duration() {
 }
 
 /// A register-failure and a poll-failure at the same status must remain
-/// distinguishable after redaction — the phase (`register` vs `poll`) survives.
+/// distinguishable after redaction (the phase (`register` vs `poll`) survives).
 #[test]
 fn redact_keeps_register_and_poll_phases_distinct() {
     let register = redact_interactsh_error(&InteractshError::Register {

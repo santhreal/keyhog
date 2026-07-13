@@ -7,7 +7,7 @@ on:
   pull_request:
 
 # Cancel older in-flight CI when a newer push lands on the same ref.
-# Without this a rapid succession of pushes stacks 5+ deep — each one
+# Without this a rapid succession of pushes stacks 5+ deep, each one
 # burning ~25 minutes of macOS + linux runner time on already-stale
 # code. Burned through that 5-deep queue 2026-05-23.
 concurrency:
@@ -19,7 +19,7 @@ env:
   CC: ""
   # crates.io downloads on the hosted runners intermittently drop mid-stream
   # ("curl failed: [55] ... OpenSSL SSL_read: SSL_ERROR_SYSCALL"), which cargo's
-  # default of 3 retries does not reliably survive — it has red-failed otherwise
+  # default of 3 retries does not reliably survive, it has red-failed otherwise
   # green Test runs on unrelated crates (base64, gix-protocol). Ten retries makes
   # a transient peer reset a non-event for every cargo invocation in every job.
   CARGO_NET_RETRY: "10"
@@ -32,12 +32,12 @@ jobs:
   # entry-point shell gates, cargo audit, and (when their corpus/results/binary
   # assets are present) the backend-parity + recall-floor pytests, the
   # differential bench gate, and the ML feature-parity gate. Before this job the
-  # 3 source prevention gates ran ONLY in the pre-commit hook / locally — a
+  # 3 source prevention gates ran ONLY in the pre-commit hook / locally, a
   # contributor without the hook could land a new silent fallback, an
   # untested subcommand, or an over-budget engine file with green CI. This is
   # the gate that turns "I ran the gates on my box" into "green in CI on every
   # push". The asset-bearing gates LOUD-SKIP here (this runner has no CredData
-  # corpus, no competitor binaries, no results/, no prebuilt dump_features) — the
+  # corpus, no competitor binaries, no results/, no prebuilt dump_features), the
   # full asset run lives in bench-nightly.yml / differential-bench.yml. cargo
   # audit DOES run (the advisory DB is fetched), centralizing what the separate
   # `audit` job does. Mostly Python + shell + cargo-audit, plus the lightweight
@@ -60,7 +60,7 @@ jobs:
         run: bash scripts/gates/run_all.sh
 
   # PR gate: all strict contract multipliers in strict mode. This job requires
-  # `lfs: true` checkout — the contract corpus and several runner fixtures are
+  # `lfs: true` checkout, the contract corpus and several runner fixtures are
   # LFS-tracked.
   strict-runners:
     name: Strict adversarial runners
@@ -158,7 +158,7 @@ jobs:
       # fail-closed contracts + exit codes, so they run as their own bounded
       # targets (NOT folded into all_tests, which would grow the OOM/link
       # footprint). They were CI-orphans (keyhog CI ran only specific `--test`
-      # targets), so these fail-closed assertions never ran — un-orphaning them
+      # targets), so these fail-closed assertions never ran, un-orphaning them
       # surfaced a real SIGSEGV: a CPU-forced scan hitting an early setup error
       # (expired `.keyhogignore`, missing path) crashed via a leaked GPU/Vulkan
       # probe thread instead of `exit(2)`. `regression_scan_setup_error_exits_cleanly`
@@ -185,7 +185,7 @@ jobs:
 
       # Property tests (10 000+ cases per invariant). The proptest
       # regression file (scanner_fuzz.proptest-regressions) re-runs
-      # every historical failure first — adding a new failure mode
+      # every historical failure first, adding a new failure mode
       # there permanently gates the suite.
       - name: Property tests
         run: cargo test -p keyhog-scanner --lib property::scanner_fuzz --profile release-fast
@@ -255,7 +255,7 @@ jobs:
       # 2) Every opt-in backend's `--lib` inline unit tests: hosted-Git SSRF +
       #    credential redaction, cloud request construction, slack/docker helpers.
       #    Restricted to `--lib` on purpose: the `all_tests` aggregator with these
-      #    features is NOT yet parallel-deterministic — some integration tests bump
+      #    features is NOT yet parallel-deterministic, some integration tests bump
       #    the process-global skip counters through non-`gate_scan` helper calls
       #    that escape the exclusive scan scope, so they race a concurrent
       #    counter-asserting test (e.g. corrupt_zip). The `--lib` inline tests
@@ -265,7 +265,7 @@ jobs:
       - name: sources opt-in backends (inline unit tests)
         run: cargo test -p keyhog-sources --lib --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast
       # 3) The opt-in backends' INTEGRATION tests (tests/*.rs). Many are
-      #    deliberately their OWN test binary — they assert on the process-global
+      #    deliberately their OWN test binary, they assert on the process-global
       #    skip counters and keep those assertions out of `all_tests.rs` so a
       #    per-test fixture can reset the atomics without racing sibling tests in
       #    the same process. Their skip-counter, cloud-listing, hosted-git
@@ -273,7 +273,7 @@ jobs:
       #    were DOUBLE-orphaned before this step: not aggregated into all_tests
       #    AND all_tests never ran with their feature, so they never executed in
       #    CI. This runs `cargo test -p keyhog-sources` with NO `--test` filter,
-      #    so EVERY integration target compiles + runs — each standalone file in
+      #    so EVERY integration target compiles + runs, each standalone file in
       #    its own process (counter-safe by construction), and the `all_tests`
       #    aggregator too. `--test-threads=1` keeps the aggregator's own
       #    process-global-counter tests deterministic (same reason as
@@ -281,7 +281,7 @@ jobs:
       #    all-targets step as wiring every sources `tests/*.rs`.
       - name: sources opt-in backends (all standalone targets, serial)
         run: cargo test -p keyhog-sources --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast -- --test-threads=1
-      # NOTE: two sources perf tripwires are `#[ignore]`d and NOT run in CI —
+      # NOTE: two sources perf tripwires are `#[ignore]`d and NOT run in CI 
       # `perf_io_path` (straces a spawned scan; ptrace-fragile under the parallel
       # test-binary load) and `perf_parallel_cores` (a multicore speedup RATIO,
       # only valid on an otherwise-idle host). Both still COMPILE in the
@@ -292,7 +292,7 @@ jobs:
         run: cargo test -p keyhog-verifier --test all_tests --profile release-fast
       # `break_it.rs` is a fuzz file of engine tests that drive `verify_all`
       # through the process-global rate limiter on a shared service slot with
-      # tight watchdogs; it is intentionally NOT in `all_tests` (parallel) — it
+      # tight watchdogs; it is intentionally NOT in `all_tests` (parallel), it
       # runs as its own SERIAL target so its isolation assumptions hold. Removing
       # this step orphans it (`scripts/gates/tests_wired.py` would flag).
       - name: verifier break_it (serial)
@@ -353,14 +353,14 @@ jobs:
       # Auth:Basic-Authorization CredData category (0 -> 491 TP, recall 0.824);
       # this pins that a realistic `Basic <base64>` blob surfaces, the curl-shape
       # surfaces, and the English word `basically` does NOT trip the `\b`-anchored
-      # detector — a recall regression here is a real detection loss to fix at the
+      # detector: a recall regression here is a real detection loss to fix at the
       # source, never to weaken.
       - name: basic-auth detector recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test basic_auth_credentials_recall
       # Named-detector anchor-floor recall contract. `compute_confidence` is a
       # *normalized* signal sum, so a keyword-anchored service detector match
       # (`Splunk=<uuid>`) that can only earn the context-anchor weight scored
-      # below the 0.40 floor and was dropped as `below_min_confidence` — the
+      # below the 0.40 floor and was dropped as `below_min_confidence`: the
       # dominant cause of 538 strict contract-positive misses. The floor lifts
       # such matches; this pins the lift is named+anchor-gated (FP-safe: generic
       # / entropy / weak-anchor detectors keep the full gate stack), a recovered
@@ -372,7 +372,7 @@ jobs:
       # Canonical-hex service-key recall contract. A weak_anchor service detector
       # (alchemy/datadog/crowdin/…) whose regex REQUIRED its service keyword and
       # captured canonical-length pure hex (32/40/48/64) had the value dropped by
-      # the bare-hex-digest shape gate BEFORE confidence — defeating its own
+      # the bare-hex-digest shape gate BEFORE confidence, defeating its own
       # min_confidence=0.2. The KH-L-0110 allow_canonical_hex_key escape hatch is
       # now keyed on the service anchor; this pins a keyword-anchored hex key
       # surfaces, a bare hex without the keyword does not claim the detector, and
@@ -412,7 +412,7 @@ jobs:
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_distinctive_infix_anchor_recall
       # Checksum boundary no-downgrade recall contract. A known-prefix boundary
       # extension (provider-token bytes / base64 `=` padding) must never turn a
-      # checksum-VALID token into a non-valid one — e.g. a `pypi-…` token abutted
+      # checksum-VALID token into a non-valid one, e.g. a `pypi-…` token abutted
       # by a `="…"` separator must not absorb the `=` and fail its checksum.
       - name: checksum boundary no-downgrade recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_checksum_boundary_no_downgrade
@@ -481,7 +481,7 @@ jobs:
       # ISOLATION. Checking features only in combination (the `default`/`full`
       # steps above, or a hand-picked `entropy,ml,decode` set) MASKS the
       # cross-feature coupling bug this job exists to catch: a helper / re-export
-      # hosted in — or gated to — one feature's module but CALLED by code active
+      # hosted in, or gated to, one feature's module but CALLED by code active
       # under another feature breaks a single-feature build while every combined
       # build stays green. Three such bugs shipped precisely because this job
       # only spot-checked a subset (sources `media_type` gated to cloud yet
@@ -490,7 +490,7 @@ jobs:
       # ml/decode/multiline/simdsieve). Loop the FULL feature list per crate so a
       # narrower-than-its-callers gate can never regress a single-feature
       # consumer again. Keep these green.
-      - name: keyhog-sources — every feature compiles standalone
+      - name: keyhog-sources, every feature compiles standalone
         run: |
           set -euo pipefail
           # ZERO features: the always-on filesystem/PDF/HAR path must build with
@@ -503,11 +503,11 @@ jobs:
             cargo check -p keyhog-sources --no-default-features --features "$f"
             echo "::endgroup::"
           done
-      - name: keyhog-scanner — every CPU feature compiles standalone
+      - name: keyhog-scanner, every CPU feature compiles standalone
         run: |
           set -euo pipefail
           # ZERO features first: `entropy`/`decode`/… are declared OPTIONAL, so
-          # the lib MUST build with none of them — else the optional-feature
+          # the lib MUST build with none of them, else the optional-feature
           # claim is a lie (the entropy::scanner re-export was once gated
           # narrower than the unconditional testing facade, breaking this).
           echo "::group::keyhog-scanner --no-default-features (zero features)"
@@ -518,7 +518,7 @@ jobs:
             cargo check -p keyhog-scanner --no-default-features --features "$f"
             echo "::endgroup::"
           done
-      # The INSTALLABLE BINARY with each user-facing source feature alone — the
+      # The INSTALLABLE BINARY with each user-facing source feature alone, the
       # surface a user actually gets from `cargo install keyhog
       # --no-default-features --features github`. The lib loops above cover the
       # library layer; this catches the CLI layer, where a shared clap
@@ -526,7 +526,7 @@ jobs:
       # by another's args (e.g. `parse_positive_limit_count` was gated to `git`
       # yet used by the s3/gcs/azure and github/gitlab/bitbucket limit args, so
       # `--features github` alone failed to compile).
-      - name: keyhog binary — every user-facing source feature compiles standalone
+      - name: keyhog binary, every user-facing source feature compiles standalone
         run: |
           set -euo pipefail
           for f in git web github gitlab bitbucket azure gcs s3 docker binary verify; do
@@ -682,7 +682,7 @@ jobs:
       # accept-with-rationale advisories in `audit.toml` (the workspace
       # root file that documents the security review). Adding a fifth
       # ignore without a corresponding SECURITY.md rationale block is
-      # an invalid security gate — update both files together.
+      # an invalid security gate (update both files together).
       - name: Run cargo audit
         run: |
           cargo audit \
@@ -717,7 +717,7 @@ jobs:
           # shapes.) The demo key is on the bundled test-fixture
           # suppression list (crates/cli/data/suppressions/test-fixtures.toml),
           # so the smoke test must opt out via
-          # --no-suppress-test-fixtures to surface the finding —
+          # --no-suppress-test-fixtures to surface the finding 
           # otherwise default-mode correctly returns zero matches
           # and the smoke test would mis-assert "scanner broken."
           prefix="sk_$(printf live)"

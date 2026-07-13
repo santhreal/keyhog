@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "SQUADCAST_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "SQUADCAST_API_KEY=04c87EXAMPLEEXAMPLE33412"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "export SQUADCAST_API_KEY=04c87c3c76ba4d6ca219893fc4733412"
 credential = "04c87c3c76ba4d6ca219893fc4733412"
-reason = "Adversarial env_export envelope — credential must still surface under this detector."
+reason = "Adversarial env_export envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

@@ -20,7 +20,7 @@ reason = "Body below 20 alnum chars."
 [[evasion]]
 text = "CIO_SITE_ID=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"
 credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

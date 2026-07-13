@@ -69,7 +69,7 @@ pub fn validate_checksum(credential: &str) -> ChecksumResult {
 }
 
 /// True when extending `original` to `extended` turned a `Valid` checksum into a
-/// non-`Valid` one — a boundary extension that corrupted a complete,
+/// non-`Valid` one, a boundary extension that corrupted a complete,
 /// checksum-valid token by grabbing an adjacent byte. The credential-boundary
 /// extender in `engine::scan_filters` reverts to `original` in that case so the
 /// canonical, checksum-valid token still surfaces.

@@ -11,8 +11,8 @@ use std::time::Duration;
 use tokio::net::UnixStream;
 
 /// This client binary's keyhog version. A daemon reporting a DIFFERENT version
-/// in its `Hello` is running an older (or newer) binary — and therefore a
-/// possibly-different detector corpus + scan pipeline — than the client that
+/// in its `Hello` is running an older (or newer) binary, and therefore a
+/// possibly-different detector corpus + scan pipeline, than the client that
 /// just upgraded. Routing scans to it would silently return stale-corpus
 /// results, so [`connect`] fails closed on a mismatch.
 const CLIENT_KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -28,7 +28,7 @@ pub async fn connect(socket_path: &Path) -> Result<Client> {
     connect_inner(socket_path, true).await
 }
 
-/// Connect WITHOUT the build/corpus staleness rejection — only wire
+/// Connect WITHOUT the build/corpus staleness rejection, only wire
 /// compatibility is enforced. `daemon stop` / `daemon status` use this so an
 /// operator can still stop or inspect a daemon left running across an upgrade
 /// (the whole point of `stop` on a stale daemon is to clear it; refusing on a
@@ -93,7 +93,7 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
             // releases that change the DETECTOR CORPUS or scan pipeline (e.g.
             // 0.5.40 -> 0.5.41). A daemon started before a
             // `keyhog update` keeps the old scanner in memory and would serve
-            // the upgraded client OLD-corpus results — a silent recall/precision
+            // the upgraded client OLD-corpus results, a silent recall/precision
             // divergence the wire check cannot catch. Refuse so the scan path
             // never depends on whether a stale daemon happens to be running.
             let expected_rules_digest = embedded_detector_rules_digest()?;

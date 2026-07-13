@@ -3,7 +3,7 @@
 //! The existing `backend_parity_*` suite proves CPU and GPU produce identical
 //! findings; it does NOT pin the routing *decision* functions themselves. These
 //! functions are pure (a function of their arguments, with no runtime-env or
-//! GPU-presence gating — unlike `select_backend`, which reads `KEYHOG_NO_GPU`
+//! GPU-presence gating, unlike `select_backend`, which reads `KEYHOG_NO_GPU`
 //! and is host-dependent), so every assertion here is deterministic on any host,
 //! GPU or not. They assert concrete values (Law 6), never just shape.
 
@@ -18,7 +18,7 @@ fn profiles() -> [GpuRoutingProfile; 3] {
 fn high_tier_adapters_classify_to_the_high_profile() {
     let high = profiles()[0];
     // Every current high-tier discrete must resolve to the SAME (High) profile as
-    // the tier-array head — proving `classify_gpu_tier` routes them to High.
+    // the tier-array head (proving `classify_gpu_tier` routes them to High).
     for name in [
         "NVIDIA GeForce RTX 5090",
         "RTX 4090",

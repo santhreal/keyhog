@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Gate #5 — COMPLEXITY BUDGET (a ratchet that can only tighten).
+"""Gate #5: COMPLEXITY BUDGET (a ratchet that can only tighten).
 
 The disease behind the silent fallbacks is sprawl: `walk -> match -> emit`
 spread across phase-2 lanes and several divergent backends, each re-implementing
 a slice of the same job, each free to drift and hide its own silent drop. Prose
 ("keep it simple") never stopped that growth. This gate makes growth a RED
 BUILD: the scan engine may not gain a new phase-2 lane, a new backend, or net
-LOC beyond the pinned budgets without a deliberate edit to the budgets below —
+LOC beyond the pinned budgets without a deliberate edit to the budgets below 
 which shows up in the diff as "I am making this more complex on purpose," the
 exact decision that was never made consciously here.
 
@@ -26,7 +26,7 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 ENGINE = REPO / "crates" / "scanner" / "src" / "engine"
 SELECT = REPO / "crates" / "scanner" / "src" / "hw_probe" / "select.rs"
 
-# ── BUDGETS (ratchet — only ever DECREASE these) ──────────────────────
+# ── BUDGETS (ratchet, only ever DECREASE these) ──────────────────────
 # Pinned to the measured state on 2026-06-15. Lowering one as you simplify is
 # the whole point; raising one must be a conscious, reviewed exception.
 BUDGET = {
@@ -35,7 +35,7 @@ BUDGET = {
     # Raised 45 -> 48 (2026-06-27): prior work split three god-files into focused
     # single-responsibility modules per Law 5 (engine helper-owner splits, the GPU
     # literal-artifact compiler, the entropy fallback-gate helpers). That is the
-    # healthy direction — fewer responsibilities per file — and the engine_loc
+    # healthy direction, fewer responsibilities per file, and the engine_loc
     # budget below (11967/12000) still guards real bloat, so the file-count rise
     # from cohesive splits is not new divergent complexity. The ratchet stays
     # exact at the current count so further growth still fails.
@@ -45,14 +45,14 @@ BUDGET = {
     # all four as you collapse the engine.
     # Raised 12000 -> 12200 (2026-06-28): the prior 12000 pin was breached by
     # legitimate accumulated multi-agent in-file feature work (gpu_region_dispatch,
-    # the phase2 lanes) — NOT new divergent complexity. The structural ratchets
+    # the phase2 lanes). NOT new divergent complexity. The structural ratchets
     # (phase2_lanes 12, scan_backends 4, engine_files 48) all still hold EXACTLY,
-    # so there is no new lane, backend, or god-file — the sprawl signal is green.
+    # so there is no new lane, backend, or god-file (the sprawl signal is green).
     # Before re-pinning, the dead `CsrU32::from_rows` generic constructor was
     # removed (Law 11: the four real builders all take the `From<Vec<Vec<usize>>>`
     # path through `from_rows_sized`), dropping the measured value 12057 -> 12035.
-    # Re-pinned to 12035 + a slim ~1.4% headroom — tighter than the original ~3%
-    # — so this backstop keeps tightening pressure without red-flagging every
+    # Re-pinned to 12035 + a slim ~1.4% headroom, tighter than the original ~3%
+    #, so this backstop keeps tightening pressure without red-flagging every
     # ordinary in-file edit, which is exactly this budget's stated purpose.
     "engine_loc": 12200,         # total non-blank LOC under engine/ (measured 12035)
 }
@@ -66,7 +66,7 @@ def count_scan_backends() -> int:
     if not SELECT.exists():
         return 0
     text = SELECT.read_text()
-    # `enum ScanBackend { Variant, ... }` — count the variant identifiers.
+    # `enum ScanBackend { Variant, ... }`: count the variant identifiers.
     m = re.search(r"enum\s+ScanBackend\s*\{(.*?)\}", text, re.S)
     if not m:
         # Fall back to distinct `ScanBackend::Variant` references.
@@ -103,14 +103,14 @@ def main() -> int:
             breaches.append((k, got, budget))
 
     if breaches:
-        print("\nFAIL — the scan engine grew past its complexity budget:", file=sys.stderr)
+        print("\nFAIL, the scan engine grew past its complexity budget:", file=sys.stderr)
         for k, got, budget in breaches:
             print(f"  {k}: {got} > {budget}. Either remove the new complexity, "
-                  f"or — if it is genuinely necessary — raise the budget in "
+                  f"or, if it is genuinely necessary, raise the budget in "
                   f"scripts/gates/complexity_budget.py IN THIS COMMIT and say why.",
                   file=sys.stderr)
         return 1
-    print("\nOK — scan engine within its complexity budget.")
+    print("\nOK, scan engine within its complexity budget.")
     return 0
 
 

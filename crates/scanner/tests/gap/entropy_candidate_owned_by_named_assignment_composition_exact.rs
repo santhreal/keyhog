@@ -49,7 +49,7 @@ fn an_empty_owned_set_owns_nothing() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin each branch; these SWEEP the COMPOSITION as a CROSS-FACADE
 // differential (real truth, not a source mirror): both disjuncts are delegated to
-// their own facades, so the oracle tests only the OR wiring — `candidate_owned` is
+// their own facades, so the oracle tests only the OR wiring: `candidate_owned` is
 // exactly `embeds(candidate) OR (same_line present AND its keyword owned)`. Plus
 // empty-set-owns-nothing, monotone-in-owned-set, and no-panic. Traced against
 // generic_keyword_owner.rs:171. No proptest before.

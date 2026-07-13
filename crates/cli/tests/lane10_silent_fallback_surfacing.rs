@@ -10,7 +10,7 @@
 //! The behavioral cases (inotify queue overflow; a `--no-default-features`
 //! build with the `git` feature off) cannot be reliably forced from a default
 //! release build, so these assert the surfacing at the source the operator
-//! sees — the strongest available regression pin for those code paths.
+//! sees (the strongest available regression pin for those code paths).
 
 use std::path::Path;
 
@@ -34,7 +34,7 @@ fn watch_watcher_error_is_surfaced_loudly_not_traced() {
     assert!(
         arm.contains("eprintln!"),
         "a filesystem watcher error must be surfaced LOUDLY on stderr (eprintln!), \
-         not swallowed by tracing — dropped events are unscanned files (Law 10)"
+         not swallowed by tracing, dropped events are unscanned files (Law 10)"
     );
     assert!(
         arm.contains("DROPPED") || arm.contains("NOT") || arm.contains("not re-scanned"),

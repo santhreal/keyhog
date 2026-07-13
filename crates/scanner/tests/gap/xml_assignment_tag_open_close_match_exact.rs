@@ -57,7 +57,7 @@ const MARKERS: &[char] = &['/', '!', '?'];
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(2_000))]
 
-    /// RECALL: a well-formed element yields its tag name — including a
+    /// RECALL: a well-formed element yields its tag name, including a
     /// non-credential tag and one carrying attributes (name split off attributes).
     #[test]
     fn well_formed_element_yields_its_tag_name(

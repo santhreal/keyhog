@@ -47,7 +47,7 @@ impl AnchoredRegex {
             Ok(rx) => Arc::new(rx),
             // Law 10 / fail-closed: the base detector regex ALREADY compiled, so
             // wrapping it as `{prefix}<src>{suffix}` failing is a build-invariant
-            // violation of a HARDCODED transform baked into the binary — never a
+            // violation of a HARDCODED transform baked into the binary, never a
             // valid runtime condition. The former handling returned `None`, which
             // the anchored-scan consumer swallowed into an early `return`, silently
             // dropping every match for this pattern (recall loss with no fallback on
@@ -82,7 +82,7 @@ mod fail_closed_tests {
             .expect("anchored verifier must match a value at the start");
         assert_eq!(m.start(), 0);
         assert_eq!(m.end(), 5, "matches exactly the 5-char shape ABC12");
-        // Embedded (not at offset 0): `\A` blocks it — proving the anchor is real.
+        // Embedded (not at offset 0): `\A` blocks it (proving the anchor is real).
         assert!(
             re.captures_read(&mut locs, "xxABC12").is_none(),
             "\\A must reject a value that does not start at offset 0"
@@ -94,7 +94,7 @@ mod fail_closed_tests {
     fn no_context_compile_failure_panics_fail_closed() {
         // A source that makes the hardcoded `\A(?:<src>)` wrapper unbalanced forces
         // the anchored build to fail. Per Law 10 that is a build-invariant violation
-        // of a baked-in transform and MUST abort loudly — the former handling
+        // of a baked-in transform and MUST abort loudly, the former handling
         // returned `None`, which the anchored-scan consumer swallowed into a silent
         // early `return`, dropping every match for this pattern.
         let ar = AnchoredRegex::new(")unbalanced", false);
@@ -114,7 +114,7 @@ mod fail_closed_tests {
     // The anchored verifier couples BOTH `case_insensitive` and `crlf` to the
     // detector's `case_insensitive` bit. This is NOT a copy-paste of crlf<-ci:
     // the base detector regex (`LazyRegex::get`) is itself compiled on two
-    // branches that pair the flags exactly the same way —
+    // branches that pair the flags exactly the same way 
     //   ci detector  -> `shared_regex`  => case_insensitive(true)  + crlf(true)
     //   non-ci       -> `Regex::new`    => case_insensitive(false) + crlf(false)
     // The anchored verifier's whole purpose is whole-chunk-equivalence with that
@@ -122,22 +122,22 @@ mod fail_closed_tests {
     // dot excludes `\r`; under crlf(false) it matches `\r`. That makes a ci and a
     // non-ci verifier legitimately DIVERGE on a CR-bearing haystack, mirroring
     // their base regexes. This pins the coupling so a future "crlf should always
-    // be true" edit — which would silently break case-sensitive-detector parity
-    // on CRLF input — fails loudly here instead.
+    // be true" edit, which would silently break case-sensitive-detector parity
+    // on CRLF input (fails loudly here instead).
     #[test]
     fn anchored_crlf_and_case_flags_mirror_the_two_branch_base_compile() {
         use regex::{Regex, RegexBuilder};
 
         let hay = "A\rB";
 
-        // Base branch A — case-sensitive detector: `Regex::new` default, crlf
+        // Base branch A, case-sensitive detector: `Regex::new` default, crlf
         // false, so the dot matches CR and the whole shape matches.
         let base_cs = Regex::new("A.B").expect("base cs regex compiles");
         assert!(
             base_cs.is_match(hay),
             "crlf(false) base: the dot matches CR, so `A.B` matches `A\\rB`"
         );
-        // Base branch B — case-insensitive detector: `shared_regex` flags, crlf
+        // Base branch B, case-insensitive detector: `shared_regex` flags, crlf
         // true, so the dot excludes CR and the shape does NOT match.
         let base_ci = RegexBuilder::new("A.B")
             .case_insensitive(true)
@@ -150,7 +150,7 @@ mod fail_closed_tests {
         );
 
         // The anchored verifier for each detector kind must AGREE with its own
-        // base branch — proving the flag coupling reproduces the base, not that
+        // base branch, proving the flag coupling reproduces the base, not that
         // crlf is uniformly true.
         let anch_cs = AnchoredRegex::new("A.B", false);
         assert!(

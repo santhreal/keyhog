@@ -48,7 +48,7 @@ fn scan_format_sarif_rules_indexed() {
     for rule_id in &referenced_rules {
         assert!(
             defined_rules.contains(rule_id),
-            "result references ruleId '{}' which is not in tool.driver.rules[] — github code-scanning would drop it",
+            "result references ruleId '{}' which is not in tool.driver.rules[], github code-scanning would drop it",
             rule_id
         );
     }

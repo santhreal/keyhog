@@ -4,7 +4,7 @@
 //!   * an UNCHANGED file (same content hash) is recognized and SKIPPED
 //!     (`record_*_check_unchanged` returns `true`),
 //!   * a single changed byte flips the content hash so the file is
-//!     RESCANNED (returns `false`) — a freshly injected secret can never be
+//!     RESCANNED (returns `false`), a freshly injected secret can never be
 //!     silently skipped,
 //!   * the persisted JSON cache round-trips the EXACT `(mtime, size, BLAKE3)`
 //!     tuple, and the racy-clean / spec-hash / schema guards fail closed to a

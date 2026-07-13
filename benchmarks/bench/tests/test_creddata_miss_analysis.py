@@ -1,7 +1,7 @@
 """Tests for the CredData miss-analysis dev tool (bench.creddata_miss_analysis).
 
 The tool informs detection decisions (which keyword/shape combinations are worth
-surfacing) but never fabricates truth — every value it buckets must be sliceable
+surfacing) but never fabricates truth, every value it buckets must be sliceable
 from its on-disk byte span, exactly like the production CredData adapter. These
 tests pin the value-slicing + per-keyword precision split on a tiny synthetic
 corpus so the numbers the tool reports are provably the corpus's, not an artifact

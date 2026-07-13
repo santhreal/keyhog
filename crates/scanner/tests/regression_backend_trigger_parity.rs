@@ -10,10 +10,10 @@
 //! literal set (e.g. `aws-access-key`, keyword `AKIA`) and one that has NO
 //! standalone literal-prefix and fires only once the regex confirms an
 //! in-window vendor fingerprint (`twilio-auth-token`) must BOTH yield the same
-//! `(detector_id, credential, absolute_offset)` triples on either backend — a
+//! `(detector_id, credential, absolute_offset)` triples on either backend, a
 //! divergence is a real recall/precision bug in one collector, not a nuance.
 //!
-//! Host-independence: this file asserts CPU-vs-CPU parity only — never the GPU
+//! Host-independence: this file asserts CPU-vs-CPU parity only, never the GPU
 //! path. `SimdCpu` is gated on `warm_backend`, because on a build without the
 //! `simd` feature (or a host whose Hyperscan DB failed to build) a forced
 //! `SimdCpu` scan hard-exits the process by contract; when it is unavailable we
@@ -64,7 +64,7 @@ fn run(sc: &CompiledScanner, chunks: &[Chunk], backend: ScanBackend) -> Vec<Vec<
     sc.scan_chunks_with_backend(chunks, backend)
 }
 
-/// `(detector_id, credential, absolute_offset)` triples — the exact parity key.
+/// `(detector_id, credential, absolute_offset)` triples (the exact parity key).
 fn triples(results: &[Vec<RawMatch>]) -> BTreeSet<(String, String, usize)> {
     results
         .iter()
@@ -79,7 +79,7 @@ fn triples(results: &[Vec<RawMatch>]) -> BTreeSet<(String, String, usize)> {
         .collect()
 }
 
-/// `(detector_id, credential)` pairs — offset-independent membership checks.
+/// `(detector_id, credential)` pairs (offset-independent membership checks).
 fn pairs(results: &[Vec<RawMatch>]) -> BTreeSet<(String, String)> {
     results
         .iter()
@@ -113,7 +113,7 @@ fn offsets_of(results: &[Vec<RawMatch>], id: &str) -> Vec<usize> {
 
 /// Run the SAME chunks on both CPU backends. The SIMD leg is `None` only when
 /// this build/host has no usable Hyperscan prefilter (feature `simd` off or the
-/// database failed to build) — forcing `SimdCpu` there would hard-exit the
+/// database failed to build), forcing `SimdCpu` there would hard-exit the
 /// process, so we gate on the side-effect-free `warm_backend` probe.
 fn both_cpu_backends(
     sc: &CompiledScanner,
@@ -136,7 +136,7 @@ const AWS_KEY: &str = "AKIAQYLPMN5HFIQR7XYA";
 // Known-valid classic PAT: `ghp_` + 36 chars with a CORRECT trailing CRC32
 // checksum, so it clears the shipped `GithubClassicPatValidator` gate. The
 // previous fixture `ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX` was fabricated
-// with a bad checksum — once checksum wiring landed it was silently dropped, so
+// with a bad checksum, once checksum wiring landed it was silently dropped, so
 // `github-classic-pat` surfaced zero findings and this (CI-orphaned) parity
 // suite failed. This is the same canonical token as `regression_github_pat_
 // boundary::GHP_VALID` (see keyhog checksum-fixture contract).
@@ -278,7 +278,7 @@ fn twilio_auth_token_present_on_both_backends() {
 #[test]
 fn twilio_negative_twin_without_companion_suppressed_on_both_backends() {
     let sc = scanner();
-    // Auth token ALONE — the required `account_sid` companion is absent, so the
+    // Auth token ALONE, the required `account_sid` companion is absent, so the
     // detector must suppress the finding on either backend (negative twin).
     let chunks = vec![chunk(
         "TWILIO_AUTH_TOKEN=4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f\n",

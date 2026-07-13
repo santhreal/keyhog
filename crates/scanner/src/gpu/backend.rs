@@ -122,14 +122,14 @@ impl ReadbackWaitBackoff {
 /// Why GPU MoE init failed, carrying whether a *real* (non-software) GPU adapter
 /// was physically acquired. The failure path in [`get_gpu`] runs while BOTH the
 /// `GPU` and (transitively) `HW_PROBE` OnceLocks are mid-init, so it cannot ask
-/// `probe_hardware()`/`get_gpu()` "is a GPU present?" — that re-enters an
+/// `probe_hardware()`/`get_gpu()` "is a GPU present?", that re-enters an
 /// initializing OnceLock and DEADLOCKS the scan thread, and is circular anyway
 /// (`HardwareCaps::gpu_available` is itself `get_gpu().is_some()`). `init_gpu`
 /// therefore reports adapter presence directly, in-band, so the operator notice
 /// is decided without touching either lock.
 struct GpuInitError {
     /// True only when a non-software GPU adapter was acquired but a LATER MoE
-    /// init step failed — the actionable "GPU present but unusable" case. False
+    /// init step failed, the actionable "GPU present but unusable" case. False
     /// when no adapter exists or it is a software renderer (the expected quiet
     /// CPU-only majority: laptops, containers, CI with llvmpipe/lavapipe).
     adapter_present: bool,
@@ -138,7 +138,7 @@ struct GpuInitError {
 
 impl GpuInitError {
     /// No usable hardware adapter: nothing was acquired, or it was a software
-    /// renderer. Stays quiet — this is the ordinary CPU-only path.
+    /// renderer. Stays quiet (this is the ordinary CPU-only path).
     fn no_adapter(detail: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> Self {
         Self {
             adapter_present: false,
@@ -147,7 +147,7 @@ impl GpuInitError {
     }
 
     /// A real GPU adapter was acquired but the MoE compute path could not be
-    /// built on it — the actionable driver/limits fault worth a loud notice.
+    /// built on it (the actionable driver/limits fault worth a loud notice).
     fn adapter_unusable(detail: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> Self {
         Self {
             adapter_present: true,
@@ -190,7 +190,7 @@ fn classify_gpu_init_failure(
 /// Emit the correct operator notice for a GPU MoE init failure and return `None`.
 /// Split out of [`get_gpu`]'s `Err` arm so the failure path is exercised by tests
 /// off the GPU. MUST NOT call `probe_hardware()` or `get_gpu()`: both are mid-init
-/// on this path and re-entering either OnceLock deadlocks — the bug this fixes.
+/// on this path and re-entering either OnceLock deadlocks (the bug this fixes).
 fn on_gpu_init_failed(err: &GpuInitError, disabled: bool, required: bool) -> Option<GpuContext> {
     match classify_gpu_init_failure(err, disabled, required) {
         GpuInitFailureAction::HardFail => {
@@ -207,7 +207,7 @@ CPU/SIMD scan path. Use --no-gpu to silence this, or --require-gpu to fail inste
         }
         GpuInitFailureAction::Quiet => {}
     }
-    // LAW10: NOT the sole surface — the degrade is loud above (hard-fail under
+    // LAW10: NOT the sole surface, the degrade is loud above (hard-fail under
     // --require-gpu, or the eprintln when a real GPU is present) + the
     // MOE_RUNTIME_DEGRADE_WARNED once-guard; CPU MoE is recall-preserving. This
     // debug line is supplementary detail only.
@@ -239,7 +239,7 @@ fn init_gpu() -> Result<GpuContext, GpuInitError> {
     // A real adapter was acquired. Prove it can actually BIND the MoE weights as
     // a storage buffer before returning a context whose first dispatch would trip
     // a `max_storage_buffer_binding_size` validation error deep in a live scan.
-    // A constrained adapter (downlevel/mobile limits) is "present but unusable" —
+    // A constrained adapter (downlevel/mobile limits) is "present but unusable" 
     // fail closed loudly here, not with a mid-scan wgpu panic.
     let all_weights = crate::ml_scorer::ml_weights::all_weights_slice();
     let weights_bytes = std::mem::size_of_val(all_weights) as u64;
@@ -352,7 +352,7 @@ pub(crate) fn get_gpu() -> Option<&'static GpuContext> {
         // No silent fallbacks: if a real GPU is present but unusable the operator
         // is told loudly. CRITICAL: resolve policy from the AtomicU8 readers (no
         // OnceLock) and let `on_gpu_init_failed` decide from the error's in-band
-        // `adapter_present` flag — NEVER call `probe_hardware()`/`get_gpu()` here.
+        // `adapter_present` flag: NEVER call `probe_hardware()`/`get_gpu()` here.
         // Both are mid-init on this path; re-entering either deadlocks the scan
         // thread on GPU-init failure (the bug this fixes), and the old
         // `probe_hardware().gpu_available` check was circular anyway.
@@ -422,13 +422,13 @@ this scan are scored on the CPU MoE (identical scores, lower throughput). Set \
 }
 
 /// Surface NaN / ±Inf scores returned by the GPU MoE staging buffer. A
-/// non-finite probability is not a routing choice — it can only come from a GPU
+/// non-finite probability is not a routing choice, it can only come from a GPU
 /// driver bug, a shader miscompile, or a corrupt weights buffer, i.e. a GPU
 /// CORRECTNESS fault. Each bad value is sanitized to a neutral `0.5` at the GPU
 /// boundary (so downstream `confidence` math never sees NaN and the finding
 /// still surfaces on its heuristic score), but Law 10 forbids doing that
 /// silently: the operator must be told their GPU produced garbage. Gating
-/// mirrors [`moe_runtime_degrade`] — hard-fail under `--require-gpu` (a GPU
+/// mirrors [`moe_runtime_degrade`], hard-fail under `--require-gpu` (a GPU
 /// emitting NaN is exactly the malfunction that flag exists to catch), one loud
 /// stderr line on an ordinary run, and quiet under `--no-gpu` where the CPU MoE
 /// is the intended path anyway.
@@ -438,7 +438,7 @@ fn moe_nonfinite_degrade(nonfinite: usize, total: usize) {
     if require_gpu {
         crate::process_exit::require_gpu_unmet(format!(
             "--require-gpu requested but the GPU MoE returned {nonfinite}/{total} \
-non-finite (NaN/Inf) confidence score(s) — a GPU driver/shader/weights malfunction. \
+non-finite (NaN/Inf) confidence score(s), a GPU driver/shader/weights malfunction. \
 Refusing to silently sanitize and continue."
         ));
     }
@@ -490,7 +490,7 @@ the CPU MoE instead. Use --require-gpu to hard-fail until the GPU shader/driver/
 ///
 /// ```rust,ignore
 /// use keyhog_scanner::gpu::batch_score_features;
-/// // The feature width is `model_arch::INPUT_DIM` (43 after DET-1) — never a
+/// // The feature width is `model_arch::INPUT_DIM` (43 after DET-1), never a
 /// // bare literal; a wrong-width buffer is rejected by the GPU host layout.
 /// let _ = batch_score_features(&[[0.0f32; 43]], std::time::Duration::from_millis(30_000));
 /// ```
@@ -505,7 +505,7 @@ pub(crate) fn batch_score_features(
     // Honor the resolved GPU runtime policy BEFORE touching `get_gpu()` /
     // `init_gpu()`, exactly as `gpu_probe()` does. Without this gate a
     // `--no-gpu` scan that reaches a large MoE batch still triggers the wgpu
-    // adapter probe inside `init_gpu()` — which the team's own `gpu_probe`
+    // adapter probe inside `init_gpu()`: which the team's own `gpu_probe`
     // comment notes "can block for minutes on broken driver stacks." Policy
     // disabled => return None so the caller scores this batch on CPU (identical
     // scores), and the adapter is never probed. Mirrors the gpu_probe guard so
@@ -515,14 +515,14 @@ pub(crate) fn batch_score_features(
     }
 
     // The GPU compute shader MUST reproduce the CPU MoE (`ml_scorer::score_features`
-    // — the reference every confidence floor is tuned and benched against) within
+    //: the reference every confidence floor is tuned and benched against) within
     // tolerance. A shader miscompile, weights-packing mismatch, or driver bug that
     // makes the GPU score DIVERGE from CPU would silently change findings vs the
     // CPU/SIMD path (a Law-10 recall bug: a real secret the CPU scores ~1.0 gets a
     // GPU ~0.0 and is dropped) AND make autoroute calibration nondeterministic (the
     // readback-timeout degrade swaps the broken GPU score for the correct CPU one
     // between trials, flipping a floor-straddling finding). Probe ONCE per process;
-    // on divergence FAIL CLOSED — return None so every batch scores on the correct,
+    // on divergence FAIL CLOSED, return None so every batch scores on the correct,
     // deterministic CPU path, loudly, instead of trusting a broken accelerator.
     if !gpu_moe_numerically_trustworthy(readback_timeout) {
         return None;
@@ -546,7 +546,7 @@ struct MoeBufferPool {
 }
 
 /// A checked-out set of MoE dispatch buffers. Returned to the pool on drop
-/// via [`MoeBufferPool::checkin`]. The params buffer is NOT pooled — it is
+/// via [`MoeBufferPool::checkin`]. The params buffer is NOT pooled, it is
 /// 16 bytes and created fresh per dispatch to prevent concurrent batch_size
 /// races (the params buffer is the one shared mutable GPU state that must
 /// remain per-dispatch).
@@ -574,7 +574,7 @@ impl MoeBufferPool {
             if set.alloc_batch_size >= batch_size {
                 return Some(set);
             }
-            // Too small — discard. The larger allocation will replace it.
+            // Too small (discard. The larger allocation will replace it).
         }
         None
     }
@@ -585,7 +585,7 @@ impl MoeBufferPool {
         // (it will be reallocated at the larger size next time).
         if let Some(existing) = self.spare.last() {
             if existing.alloc_batch_size >= set.alloc_batch_size {
-                // Existing spare is at least as large — drop the incoming.
+                // Existing spare is at least as large (drop the incoming).
                 return;
             }
         }
@@ -624,7 +624,7 @@ fn dispatch_moe_batch(
     let output_size = (batch_size * std::mem::size_of::<f32>()) as u64;
 
     // Checkout pooled buffers (reused across dispatches, eliminating
-    // per-dispatch buffer allocation — the dominant non-GPU overhead for
+    // per-dispatch buffer allocation, the dominant non-GPU overhead for
     // large MoE batches in coalesced scanning). The global mutex is held
     // only for the pop/push, not during GPU compute or readback.
     let bufs = {
@@ -634,7 +634,7 @@ fn dispatch_moe_batch(
     let bufs = match bufs {
         Some(set) => set,
         None => {
-            // No spare set or too small — allocate fresh. The input buffer
+            // No spare set or too small, allocate fresh. The input buffer
             // uses COPY_DST so we can write_buffer into it for reuse.
             let input_bytes = (batch_size * INPUT_DIM * std::mem::size_of::<f32>()) as u64;
             let output_bytes = (batch_size * std::mem::size_of::<f32>()) as u64;
@@ -668,7 +668,7 @@ fn dispatch_moe_batch(
     // concurrent dispatch is a data race (Law 7): dispatch A writes
     // batch_size 136, dispatch B overwrites it with 72 before A's compute
     // reads it, so A processes only 72 of its 136 candidates and the tail
-    // 64 outputs are never written — read back as 0.0 and dropped below the
+    // 64 outputs are never written, read back as 0.0 and dropped below the
     // confidence floor. Each dispatch owning its params buffer removes the
     // only shared mutable GPU state across concurrent MoE batches.
     let params = GpuParams {
@@ -683,7 +683,7 @@ fn dispatch_moe_batch(
 
     // Upload input features via queue.write_buffer (pooled buffer is
     // COPY_DST). `&[[f32; INPUT_DIM]]` is already a contiguous f32 block,
-    // so reinterpret in place — no flatten allocation.
+    // so reinterpret in place (no flatten allocation).
     queue.write_buffer(&bufs.input, 0, bytemuck::cast_slice(features));
 
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -728,7 +728,7 @@ fn dispatch_moe_batch(
     encoder.copy_buffer_to_buffer(&bufs.output, 0, &bufs.staging, 0, output_size);
     queue.submit(std::iter::once(encoder.finish()));
 
-    // Read back results — slice only the portion we copied (the pooled
+    // Read back results, slice only the portion we copied (the pooled
     // staging buffer may be larger than this batch if it was allocated
     // for a previous larger batch).
     let slice = bufs.staging.slice(..output_size);
@@ -845,14 +845,14 @@ fn dispatch_moe_batch(
 /// GPU shader is a re-implementation of `ml_scorer::score_features`; both compute
 /// the same f32 MoE, so a faithful shader matches the CPU reference to well within
 /// this bound (the only legitimate gap is `exp()`/rounding differences in the
-/// softmax). A divergence above this is a shader/weights/driver fault — NOT
-/// acceptable precision noise — because the GPU score then gates findings
+/// softmax). A divergence above this is a shader/weights/driver fault. NOT
+/// acceptable precision noise, because the GPU score then gates findings
 /// differently from the CPU/SIMD path.
 pub(crate) const GPU_MOE_PARITY_TOLERANCE: f64 = 0.01;
 
 /// Probe inputs for the GPU-vs-CPU MoE parity self-test. A deterministic spread
 /// that MUST include high-confidence real secrets (so a GPU that collapses every
-/// score toward 0 — the observed failure mode — diverges visibly from the CPU
+/// score toward 0, the observed failure mode, diverges visibly from the CPU
 /// reference) alongside obvious non-secrets (so a GPU stuck near 1.0 is caught
 /// too). Cycled to `GPU_BATCH_THRESHOLD` so the probe drives the exact production
 /// dispatch path; sub-threshold batches never reach the GPU.
@@ -889,7 +889,7 @@ fn gpu_moe_parity_probe_features() -> Vec<[f32; INPUT_DIM]> {
         ),
     ];
     // Representative keyword activators so the probe EXERCISES the config-driven
-    // feature slots that empty lists left permanently 0.0 — feature 12/13 (known-
+    // feature slots that empty lists left permanently 0.0, feature 12/13 (known-
     // prefix present/length), 17 (secret keyword), 18 (test keyword), 20
     // (placeholder keyword). A GPU/CPU divergence in any of those WGSL feature
     // slots is invisible to the parity gate unless some probe vector sets them
@@ -927,7 +927,7 @@ fn gpu_moe_parity_probe_features() -> Vec<[f32; INPUT_DIM]> {
 /// Run the production GPU MoE dispatch on the parity probe and return the maximum
 /// absolute divergence from the CPU MoE reference across all probe inputs, or an
 /// error if the GPU could not be dispatched at all. Single source of truth for
-/// "does the GPU MoE reproduce the CPU MoE on this device?" — shared by the
+/// "does the GPU MoE reproduce the CPU MoE on this device?", shared by the
 /// runtime trust gate and `gpu_self_test` (so doctor reports the same verdict the
 /// scan path enforces).
 pub(crate) fn gpu_moe_parity_max_divergence(readback_timeout: Duration) -> Result<f64, String> {
@@ -1002,7 +1002,7 @@ mod tests {
         let timeout = Duration::from_millis(30_000);
         for rep in 0..128 {
             let gpu = dispatch_moe_batch(&probe, timeout)
-                .unwrap_or_else(|| panic!("GPU MoE dispatch {rep} returned no result")); // LAW10: test-only proof panic — not a fallback; a missing dispatch result is the failure under test
+                .unwrap_or_else(|| panic!("GPU MoE dispatch {rep} returned no result")); // LAW10: test-only proof panic, not a fallback; a missing dispatch result is the failure under test
             assert_eq!(
                 gpu.len(),
                 probe.len(),
@@ -1037,7 +1037,7 @@ mod tests {
         // ML scoring dispatches MoE batches concurrently (rayon par_iter in
         // scan_coalesced). A single shared uniform written by every dispatch let
         // one dispatch clobber another's batch_size, so the larger batch processed
-        // too few candidates and its tail read back 0.0 — dropping a
+        // too few candidates and its tail read back 0.0, dropping a
         // floor-straddling finding so the SIMD reference flipped between trials.
         // The diagnostic signature was unmistakable: on the demo a batch of 136
         // intermittently read back EXACTLY 64 zeros == 136 - 72, the other

@@ -5,8 +5,8 @@
 //! (exact exit code, exact stdout bytes, exact operator-visible error text),
 //! never merely that output is non-empty.
 //!
-//! HOST-INDEPENDENCE: every scan pins `--backend cpu` — the scalar path that is
-//! always present on every host — so no assertion depends on an accelerator
+//! HOST-INDEPENDENCE: every scan pins `--backend cpu`: the scalar path that is
+//! always present on every host, so no assertion depends on an accelerator
 //! (Hyperscan / SIMD / GPU) being available. The config-load contract is
 //! identical on the scalar path, and the fixture (a canary AWS access-key id)
 //! fires there deterministically.
@@ -16,7 +16,7 @@
 //!   * a CLI flag and `--no-config` each OVERRIDE the on-disk value (precedence);
 //!   * an explicit `--config PATH` outside the scan tree is loaded;
 //!   * a malformed / invalid config FAILS CLOSED with exit 2 and a message that
-//!     names the offending key AND the fix — never a silent degrade.
+//!     names the offending key AND the fix (never a silent degrade).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -318,7 +318,7 @@ fn explicit_config_path_outside_scan_dir_is_loaded() {
 #[test]
 fn malformed_toml_syntax_fails_closed_with_helpful_message() {
     // `[scan].severity = ` is a syntax error. The scan must fail closed (exit 2) and the
-    // message must name the failure AND the fix — not silently scan on defaults.
+    // message must name the failure AND the fix (not silently scan on defaults).
     let dir = make_scan_dir(Some("[scan]\nseverity = \n"));
     let (code, _stdout, stderr) = scan(dir.path(), &[]);
     assert_eq!(
@@ -451,7 +451,7 @@ fn ambiguous_legacy_rate_config_is_rejected() {
 #[test]
 fn explicit_config_missing_file_fails_closed_with_fix() {
     // `--config` to a non-existent path must fail closed with exit 2 and name the
-    // read failure + the fix — never silently fall back to a default scan.
+    // read failure + the fix (never silently fall back to a default scan).
     let scan_dir = make_scan_dir(None);
     let output = Command::new(binary())
         .arg("scan")

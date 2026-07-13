@@ -91,7 +91,7 @@ no_unicode_norm = false
 # Verify discovered credentials via API calls
 # WARNING: enabling this sends every detected secret to a third-party
 # HTTPS endpoint (only domains on the per-detector allowlist or the
-# builtin service map — see `verifier::domain_allowlist`). Use only in
+# builtin service map, see `verifier::domain_allowlist`). Use only in
 # isolated environments and never in CI logs that capture verifier
 # output. REFUSED in --lockdown mode.
 verify = false
@@ -245,7 +245,7 @@ gpu_moe_timeout_ms = 30000
 # When scanning git history (`--git-history`), findings whose blob OID is
 # reachable from HEAD keep their detector's declared severity (live leak).
 # Findings only present in older commits drop one tier (Critical → High,
-# etc.). No config knob — always on for git sources.
+# etc.). No config knob (always on for git sources).
 
 # ============================================================================
 # WATCH DAEMON (v0.3.0+)
@@ -253,13 +253,13 @@ gpu_moe_timeout_ms = 30000
 
 # `keyhog watch <path>` starts a notify-based file watcher and re-scans
 # any modified file with the same compiled detector corpus. Sub-100ms
-# detection on file save. No config knob — invoke as a separate command.
+# detection on file save. No config knob (invoke as a separate command).
 
 # ============================================================================
 # ADDITIONAL POLICY TABLES
 # ============================================================================
 
-# [detector.<id>] — per-detector overrides keyed by detector id
+# [detector.<id>], per-detector overrides keyed by detector id
 # (`keyhog detectors` lists ids; `keyhog explain <id>` shows one).
 #   enabled = false          drops the detector from the corpus entirely
 #   min_confidence = <0..1>  per-detector floor; OVERRIDES the global
@@ -273,7 +273,7 @@ gpu_moe_timeout_ms = 30000
 # [detector.twilio-api-key]
 # min_confidence = 0.6
 
-# [lockdown] — refuse to run unless the operator passes --lockdown.
+# [lockdown] (refuse to run unless the operator passes --lockdown).
 # A repo that demands maximum-security scanning sets this so a plain
 # `keyhog scan` fails closed rather than silently running unhardened.
 # [lockdown]

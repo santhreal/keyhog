@@ -125,7 +125,7 @@ fn zero_width_negative_twins_are_not_stripped() {
             cp as u32
         );
     }
-    // 1D17B is a combining mark though (Mn) — it is still handled, just by a
+    // 1D17B is a combining mark though (Mn), it is still handled, just by a
     // different owner. A plain visible letter is fully kept:
     assert!(char_normalization_is_keep('\u{2070}'));
     assert!(char_normalization_is_keep('\u{FFA1}'));

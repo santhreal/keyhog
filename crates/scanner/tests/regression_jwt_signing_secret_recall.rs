@@ -1,4 +1,4 @@
-//! #128 JWT completeness — the SIGNING material, not just the token.
+//! #128 JWT completeness (the SIGNING material, not just the token).
 //!
 //! The `jwt-token` detector already recovers a JWT regardless of header field
 //! order (#66, locked in regression_jwt_header_field_order_recall.rs). The more
@@ -27,7 +27,7 @@ fn shared() -> &'static CompiledScanner {
 }
 
 /// Deterministic high-entropy alphanumeric signing secret of length `n`. Mixed
-/// case + digits, no dictionary word, no repeated run — so a miss is a real
+/// case + digits, no dictionary word, no repeated run, so a miss is a real
 /// recall gap, not a value the low-diversity / placeholder gates legitimately drop.
 fn secret(n: usize, seed: usize) -> String {
     const ALNUM: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -80,7 +80,7 @@ fn b64url(s: &str) -> String {
 
 /// A realistic, non-specimen JWT payload. Deliberately NOT the RFC 7519 /
 /// jwt.io demo claim (`"sub":"1234567890","name":"John Doe"`), which keyhog
-/// correctly suppresses as `rfc7519_example_jwt` — see the dedicated precision
+/// correctly suppresses as `rfc7519_example_jwt`: see the dedicated precision
 /// locks below.
 const REAL_PAYLOAD: &str = r#"{"email":"ops@acme.io","sub":"auth0|65f3a9c1d2b4","scope":"read:billing","iat":1700000000,"exp":1700003600}"#;
 /// High-entropy, non-specimen signature (NOT the demo `SflKxw…` signature).
@@ -88,14 +88,14 @@ const REAL_SIG: &str = "Kp7Vb2T9hYR3qZ8mNx4cLwF6aD1sG5jB0eU2iO7tArQ9xZ";
 
 /// Build a realistic structural JWT for the given `alg`. The algorithm value is
 /// irrelevant to the `eyJ`-anchored structural shape (that is the point of #66),
-/// so HS256/RS256/ES256 all surface identically — none collides with the
+/// so HS256/RS256/ES256 all surface identically, none collides with the
 /// suppressed RFC 7519 specimen because the payload + signature are realistic.
 fn jwt(alg: &str) -> String {
     let header = format!(r#"{{"alg":"{alg}","typ":"JWT"}}"#);
     format!("{}.{}.{}", b64url(&header), b64url(REAL_PAYLOAD), REAL_SIG)
 }
 
-/// The verbatim RFC 7519 §3.1 / jwt.io demo token — a textbook example that
+/// The verbatim RFC 7519 §3.1 / jwt.io demo token, a textbook example that
 /// appears in millions of docs and tutorials and is NOT a real credential.
 const RFC7519_SPECIMEN: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.\
     eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.\
@@ -311,7 +311,7 @@ fn jwt_secret_prose_mention_without_value_surfaces_nothing() {
 // ── precision: the RFC 7519 / jwt.io specimen token is NOT a real credential ──
 // It is the most-copied JWT on earth (every tutorial). The structural shape
 // matches it, so it is dropped post-match by the `rfc7519_example_jwt`
-// suppression — keyed on the literal base64url of
+// suppression, keyed on the literal base64url of
 // `{"alg":"HS256","typ":"JWT"}.{"sub":"1234567890`, which no production token
 // carries. A realistic JWT (REAL_PAYLOAD) with the SAME shape still surfaces,
 // proving the suppression is specimen-specific and does not cost JWT recall.
@@ -338,7 +338,7 @@ fn rfc7519_specimen_in_auth_token_assignment_is_suppressed() {
 #[test]
 fn realistic_jwt_with_specimen_shape_still_surfaces() {
     // Same structural shape + same HS256 header bytes as the specimen, but a
-    // realistic payload/signature — must surface, proving the suppression is
+    // realistic payload/signature, must surface, proving the suppression is
     // specimen-keyed, not a blanket HS256-JWT drop (no recall cost).
     let t = jwt("HS256");
     assert!(

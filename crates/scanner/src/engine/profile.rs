@@ -11,7 +11,7 @@
 //! [`dump`].
 //! Leaf passes never nest within each other (decode recursion re-enters as fresh
 //! leaf recordings that aggregate into the same leaves), so the totals are the
-//! elapsed time per pass summed across all rayon workers and all decode depths —
+//! elapsed time per pass summed across all rayon workers and all decode depths 
 //! no double-counting, no per-span stack needed. Accelerator dispatch contributes
 //! the host-observed elapsed wait for that pass. Totals can exceed wall-clock
 //! because the scan is parallel; read them as proportions.
@@ -36,7 +36,7 @@ pub(crate) enum P {
     BackendDispatch,
     Hot,
     Confirmed,
-    /// Always-active RegexSet prefilter — the anchorless detectors that run on
+    /// Always-active RegexSet prefilter, the anchorless detectors that run on
     /// EVERY chunk (the cost the old label hid).
     Phase2Prefilter,
     /// Keyword Aho-Corasick prefilter (gates keyword-anchored phase-2 patterns).
@@ -77,7 +77,7 @@ const NAMES: [&str; N] = [
 
 /// One zeroed counter per leaf, sized off `N` so the array can never drift from
 /// the enum's variant count (the old hand-listed 13-element literal had to be
-/// hand-edited in lockstep with `P` — three copies to keep in sync).
+/// hand-edited in lockstep with `P`: three copies to keep in sync).
 const ZEROS: [AtomicU64; N] = [const { AtomicU64::new(0) }; N];
 
 static NS: [AtomicU64; N] = ZEROS;
@@ -327,10 +327,10 @@ pub fn dump(label: &str) {
                 // Law 10: never print a mis-accounted decomposition as if it were
                 // correct. The snapshot is quiescent here (read after the scan
                 // joined), so a failed split means a `record_*` path bumped
-                // `calls` without its matching sub-counter — every percentage on
+                // `calls` without its matching sub-counter, every percentage on
                 // this line is then wrong. Surface it loudly next to the figures.
                 eprintln!(
-                    "        ↳ {line}  ⚠ INCONSISTENT: gate-skip + hs + regexset ({}) != calls ({}) — prefilter call accounting bug",
+                    "        ↳ {line}  ⚠ INCONSISTENT: gate-skip + hs + regexset ({}) != calls ({}), prefilter call accounting bug",
                     mark.gate_skips + mark.served_total(),
                     mark.calls
                 );

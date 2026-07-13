@@ -2,7 +2,7 @@
 //! finding, no matter how hostile its fields. This is the integration layer
 //! above regression_report_escape_invariants.rs (which proves the escape/CDATA
 //! primitives in isolation): here we prove the JUnit formatter actually USES
-//! those primitives on every field it writes — a formatter that forgot to escape
+//! those primitives on every field it writes, a formatter that forgot to escape
 //! one attribute or CDATA body would produce XML a CI JUnit consumer rejects, or
 //! (worse) let an attacker-controlled file path / detector name / redacted
 //! credential inject markup.
@@ -40,7 +40,7 @@ fn xml_well_formed(xml: &str) -> Result<(), String> {
 
 /// Field strings mixing known injection tokens (`]]>` CDATA breakout, raw
 /// markup, attribute-quote escapes, entities, XML-illegal controls) with random
-/// Unicode — far more adversarial than uniform random, which almost never emits
+/// Unicode, far more adversarial than uniform random, which almost never emits
 /// the exact `]]>` or a balanced-looking `<tag>`.
 fn arb_hostile_field() -> impl Strategy<Value = String> {
     let fragment = prop_oneof![
@@ -208,7 +208,7 @@ fn an_attribute_breakout_in_the_detector_name_stays_well_formed() {
     );
     // Well-formedness already proves the ATTRIBUTE didn't break out (a raw `">`
     // there would unbalance the tree). The name also appears VERBATIM in the
-    // CDATA body (CDATA is literal text — that's correct, not a leak), so the
+    // CDATA body (CDATA is literal text, that's correct, not a leak), so the
     // meaningful check is that the attribute copy was entity-escaped.
     assert!(
         out.contains("&quot;"),

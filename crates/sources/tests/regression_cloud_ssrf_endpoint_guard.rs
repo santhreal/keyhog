@@ -63,12 +63,12 @@ const SSRF_REFUSAL: &str =
     "refusing S3 endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)";
 
 // --------------------------------------------------------------------------
-// Private / loopback / link-local / metadata literal IP endpoints — REJECTED
+// Private / loopback / link-local / metadata literal IP endpoints. REJECTED
 // --------------------------------------------------------------------------
 
 #[test]
 fn aws_metadata_service_ipv4_endpoint_is_refused() {
-    // 169.254.169.254 is the IMDS link-local metadata endpoint — the canonical
+    // 169.254.169.254 is the IMDS link-local metadata endpoint, the canonical
     // cloud SSRF target.
     let error = single_endpoint_error("http://169.254.169.254");
     assert!(
@@ -134,7 +134,7 @@ fn ipv6_loopback_endpoint_is_refused() {
 }
 
 // --------------------------------------------------------------------------
-// Metadata / internal *hostnames* (DNS-name form, not literal IP) — REJECTED
+// Metadata / internal *hostnames* (DNS-name form, not literal IP). REJECTED
 // --------------------------------------------------------------------------
 
 #[test]
@@ -158,7 +158,7 @@ fn localhost_hostname_endpoint_is_refused() {
 }
 
 // --------------------------------------------------------------------------
-// Integer/hex-encoded loopback evasion forms — REJECTED
+// Integer/hex-encoded loopback evasion forms. REJECTED
 // --------------------------------------------------------------------------
 
 #[test]
@@ -183,7 +183,7 @@ fn hex_encoded_loopback_endpoint_is_refused() {
 }
 
 // --------------------------------------------------------------------------
-// Scheme / userinfo shape rejections — REJECTED with the generic reason
+// Scheme / userinfo shape rejections: REJECTED with the generic reason
 // (pre-existing gate; asserted here so the SSRF change did not regress it)
 // --------------------------------------------------------------------------
 
@@ -255,7 +255,7 @@ fn public_https_host_endpoint_is_accepted_by_the_ssrf_guard() {
     // ordinary (non-private) domain, so `parse_http_endpoint` returns Ok and
     // execution proceeds past validation to DNS resolution, which fails fast
     // with NXDOMAIN. The point is that the failure is a network/DNS error, NOT
-    // an SSRF refusal or an invalid-endpoint rejection — proving a legitimate
+    // an SSRF refusal or an invalid-endpoint rejection, proving a legitimate
     // public host passes the guard.
     let rows: Vec<_> = TestApi
         .s3_source_with_endpoint_allow_private(BUCKET, "https://objectstore.public.invalid", false)

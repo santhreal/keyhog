@@ -4,14 +4,14 @@
 use keyhog_core::SensitiveString;
 
 /// ONE owner for the printable-run floor used by every `extract_printable_strings`
-/// caller — binary sections/literals, web WASM extraction, and filesystem
+/// caller, binary sections/literals, web WASM extraction, and filesystem
 /// archive/PDF strings. Tune the strings-scan recall floor here and nowhere else.
 pub(crate) const MIN_PRINTABLE_STRING_LEN: usize = 8;
 
 /// Extract printable ASCII strings of at least `min_len` from binary data.
 ///
 /// Covers two encodings: contiguous printable ASCII runs, and UTF-16LE "wide"
-/// strings (printable ASCII bytes interleaved with `0x00`) — the dominant
+/// strings (printable ASCII bytes interleaved with `0x00`), the dominant
 /// string encoding in Windows PE / .NET assemblies and many embedded
 /// resources, equivalent to `strings -e l`. The ASCII pass alone sees each
 /// wide char interrupted by its `0x00` and never accumulates a run, so without

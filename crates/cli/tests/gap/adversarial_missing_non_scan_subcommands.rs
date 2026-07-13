@@ -1,4 +1,4 @@
-//! KH-GAP-141: Adversarial suite covers scan argv only — daemon/hook/baseline/scan-system/watch absent.
+//! KH-GAP-141: Adversarial suite covers scan argv only (daemon/hook/baseline/scan-system/watch absent).
 
 use std::path::PathBuf;
 

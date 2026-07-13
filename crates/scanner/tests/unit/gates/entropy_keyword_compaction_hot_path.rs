@@ -28,7 +28,7 @@ fn entropy_keyword_compaction_does_not_materialize_strings() {
     // Whitespace-insensitive: `cargo fmt` may wrap either call across lines
     // (`compact_keyword_eq(\n    &normalized,\n    anchor.as_bytes(),\n)`), so
     // collapse all whitespace before matching. This still fails loudly if the
-    // call or its argument order changes — it only tolerates reformatting.
+    // call or its argument order changes (it only tolerates reformatting).
     let generic_ws = source_without_whitespace(&generic_keywords);
     assert!(
         generic_ws.contains("compact_keyword_eq(keyword,exact")

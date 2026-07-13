@@ -1,9 +1,9 @@
 //! Extended end-to-end detection-truth (#177/#184): more vendor detectors plus
-//! the ENCODED and STRUCTURED paths — a secret hidden in a base64 blob must be
+//! the ENCODED and STRUCTURED paths, a secret hidden in a base64 blob must be
 //! decoded and re-scanned, and a secret inside JSON must be found. Exact-value
 //! assertions (Law 6). Strong-anchor/decoder paths are ML-independent, so these
 //! hold with or without the `ml` feature (run without `ml` while the embedded
-//! weights are mid-retrain — see BACKLOG ml-weights finding).
+//! weights are mid-retrain (see BACKLOG ml-weights finding)).
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};

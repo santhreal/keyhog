@@ -1,7 +1,7 @@
-//! Regression e2e — the operator-facing `scan` / `diff` / `explain` surfaces,
+//! Regression e2e, the operator-facing `scan` / `diff` / `explain` surfaces,
 //! driven over the SHIPPED `keyhog` binary and pinned to EXACT values.
 //!
-//! Every assertion here pins a concrete, load-bearing value — an exact exit
+//! Every assertion here pins a concrete, load-bearing value, an exact exit
 //! code, detector id, service string, severity token, redacted-credential
 //! byte sequence, SARIF `ruleId` / `level` / rule name, JSON `location.line`
 //! integer, credential-hash length, diff category counts, or explain body
@@ -119,7 +119,7 @@ fn planted_dir(filename: &str) -> (TempDir, PathBuf) {
 }
 
 // ---------------------------------------------------------------------------
-// scan — clean tree
+// scan, clean tree
 // ---------------------------------------------------------------------------
 
 /// A directory of several credential-free files exits 0 and the JSON report is
@@ -150,7 +150,7 @@ fn clean_directory_exits_zero_with_empty_json_array() {
 }
 
 // ---------------------------------------------------------------------------
-// scan — planted finding payload (JSON)
+// scan, planted finding payload (JSON)
 // ---------------------------------------------------------------------------
 
 /// The planted PAT fires `github-classic-pat` and the JSON finding carries the
@@ -304,7 +304,7 @@ fn duplicate_token_across_two_files_dedups_to_one_finding_with_both_paths() {
 }
 
 // ---------------------------------------------------------------------------
-// scan — SARIF rule metadata
+// scan: SARIF rule metadata
 // ---------------------------------------------------------------------------
 
 /// The SARIF report's single result carries `ruleId == github-classic-pat` and
@@ -458,8 +458,8 @@ fn explain_unknown_detector_exits_two_and_names_the_id() {
     );
 }
 
-/// `explain hot-github_pat` — a SIMD fast-path FINDING label, not a registry
-/// id — resolves to the canonical `github-classic-pat` detector, exits 0, and
+/// `explain hot-github_pat`: a SIMD fast-path FINDING label, not a registry
+/// id, resolves to the canonical `github-classic-pat` detector, exits 0, and
 /// tells the operator what happened rather than 404-ing.
 #[test]
 fn explain_hot_fast_path_label_resolves_to_canonical_detector() {

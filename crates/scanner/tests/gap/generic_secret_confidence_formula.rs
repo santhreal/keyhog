@@ -7,13 +7,13 @@
 //! context-base gating: BOTH the entropy boost `((entropy-3.5)*0.1)` and the
 //! length boost `((len-16)*0.005)` are clamped to a non-negative range
 //! (`[0.0, 0.25]` and `[0.0, 0.15]`), so neither a low-entropy nor a short
-//! generic value is penalised below the context base — a deliberate recall
+//! generic value is penalised below the context base, a deliberate recall
 //! floor (policy.rs `generic_secret_confidence`; real low-entropy secrets must
 //! keep their base score). A boost only ever ADDS.
 //!
 //! Boost-zeroing inputs: entropy == 3.5 makes `(entropy - 3.5) * 0.1 == 0`, and
 //! value_len == 16 makes `(len - 16) * 0.005 == 0`, so the result is exactly the
-//! context base — keeping these assertions off float-rounding fragility.
+//! context base (keeping these assertions off float-rounding fragility).
 
 use keyhog_scanner::testing::generic_secret_confidence_for_test as conf;
 
@@ -50,7 +50,7 @@ fn short_value_gets_no_negative_length_penalty() {
 fn low_entropy_floors_at_the_unboosted_base_never_below() {
     // The entropy boost `((entropy-3.5)*0.1)` is clamped to `[0.0, 0.25]`
     // (policy.rs), so a below-3.5-entropy generic value contributes a ZERO
-    // boost — it floors AT the base, never below it. This is the deliberate
+    // boost, it floors AT the base, never below it. This is the deliberate
     // recall floor: real secrets are frequently low-entropy and must not be
     // penalised under the context base. Mirrors the in-module
     // `low_entropy_never_drives_confidence_below_base` unit test.
@@ -67,7 +67,7 @@ fn low_entropy_floors_at_the_unboosted_base_never_below() {
 // The fixed vectors pin the base table and a few boost points; these SWEEP the
 // formula's STRUCTURAL invariants over the continuous entropy/length domain
 // (implementation-independent, NOT an arithmetic mirror): the result never drops
-// below the boost-zeroed base (boosts only ADD — the deliberate recall floor) and
+// below the boost-zeroed base (boosts only ADD, the deliberate recall floor) and
 // never exceeds the 0.95 ceiling; it is monotone non-decreasing in BOTH entropy and
 // value length; and a high-entropy long value under the Unknown base saturates at
 // exactly 0.95. Traced against `generic_secret_confidence` (policy.rs). No proptest
@@ -83,7 +83,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(3_000))]
 
     /// The result is always within `[base, 0.95]`: boosts only add (never penalise
-    /// below the context base) and the ceiling caps at 0.95 — for any context, any
+    /// below the context base) and the ceiling caps at 0.95, for any context, any
     /// flags, any entropy, any length.
     #[test]
     fn result_stays_between_base_and_ceiling(

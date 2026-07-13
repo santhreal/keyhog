@@ -11,7 +11,7 @@
 //! This suite pins POSITIVE TRUTH first, then parity:
 //!   1. A fixed corpus of credentials with VALID checksums (so the github CRC
 //!      gate and AWS shape gate hold) must surface an EXACT, named set of
-//!      detector ids — asserted against a hard-coded expectation, so a recall
+//!      detector ids, asserted against a hard-coded expectation, so a recall
 //!      regression that drops one detector flips this red even if every backend
 //!      agrees on the wrong (smaller) set.
 //!   2. Every available backend must then produce identical complete `RawMatch`
@@ -90,7 +90,7 @@ fn fixed_corpus() -> Vec<Chunk> {
 
 /// The EXACT detector ids the fixed corpus must surface. Hard-coded so a recall
 /// regression that drops any of these (or an over-broad change that adds a
-/// spurious one) flips this red — independently of cross-backend agreement.
+/// spurious one) flips this red (independently of cross-backend agreement).
 fn expected_detector_ids() -> BTreeSet<String> {
     ["aws-access-key", "github-classic-pat", "stripe-secret-key"]
         .into_iter()
@@ -111,7 +111,7 @@ fn fixed_corpus_surfaces_exactly_the_expected_detectors_on_simd() {
     assert!(
         missing.is_empty(),
         "SimdCpu missed expected detector(s) on the fixed corpus: {missing:?}\n\
-         (a recall regression — one of these credentials stopped firing). got={got:?}"
+         (a recall regression, one of these credentials stopped firing). got={got:?}"
     );
 
     // Every expected credential value must be present verbatim, proving the
@@ -148,7 +148,7 @@ fn simd_and_cpu_fallback_produce_identical_match_records() {
     // regressed to zero, so equality is vacuously true" failure mode).
     assert!(
         simd.len() >= expected_detector_ids().len(),
-        "SimdCpu produced too few records ({}) — expected at least {}",
+        "SimdCpu produced too few records ({}), expected at least {}",
         simd.len(),
         expected_detector_ids().len()
     );
@@ -198,7 +198,7 @@ fn each_cpu_backend_is_deterministic_across_two_runs() {
         let second = records(&scanner.scan_chunks_with_backend(&corpus, backend));
         assert!(
             !first.is_empty(),
-            "{backend:?} surfaced nothing on the fixed corpus — recall floor breached"
+            "{backend:?} surfaced nothing on the fixed corpus, recall floor breached"
         );
         assert_eq!(
             first, second,

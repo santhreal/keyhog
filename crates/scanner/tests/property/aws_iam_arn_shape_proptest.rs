@@ -3,14 +3,14 @@
 //!
 //! An IAM ARN (`arn:aws:iam::123456789012:role/Name`) is an identifier, not a
 //! secret, and its long random-looking tail otherwise trips generic gates. Two
-//! predicates recognise it, split by a deliberate — and easily-missed —
+//! predicates recognise it, split by a deliberate, and easily-missed 
 //! distinction this suite pins:
 //!   • `looks_like_aws_iam_arn` requires the literal `arn:` lead (the full ARN).
 //!   • `looks_like_trimmed_aws_iam_arn` requires the `arn:` lead to be ABSENT (a
 //!     value the extractor already trimmed to `<partition>:iam::…`).
 //! They are mutually exclusive on the `arn:` prefix, and BOTH additionally require
 //! a real resource target (`:role/`, `:user/`, `:group/`, `:policy/`,
-//! `:instance-profile/`) — a partition prefix alone is not enough.
+//! `:instance-profile/`) (a partition prefix alone is not enough).
 
 use keyhog_scanner::testing::{
     looks_like_aws_iam_arn_for_test, looks_like_trimmed_aws_iam_arn_for_test,

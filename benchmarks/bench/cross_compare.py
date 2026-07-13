@@ -53,7 +53,7 @@ def rows_for(root: pathlib.Path, corpus: str, scanner: str | None):
 
 def render(rows) -> str:
     if not rows:
-        return "_No cross-device results yet — run benchmarks/cross_device.sh._"
+        return "_No cross-device results yet, run benchmarks/cross_device.sh._"
     lines = [
         "| Device | OS / arch | Scanner | F1 | Precision | Recall | Wall | Peak RSS |",
         "|---|---|---|---|---|---|---|---|",

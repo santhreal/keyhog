@@ -1,7 +1,7 @@
 //! LR1-A8 replacement gate: keyhog's OWN safe file reader must surface a missing
 //! path as `NotFound`. The scan path (`scan_file`) relies on this exact error
 //! kind to quietly skip files that vanished between walk and read. The previous
-//! body asserted `std::fs::read(...).is_err()` — that tests the standard library,
+//! body asserted `std::fs::read(...).is_err()`: that tests the standard library,
 //! not keyhog, and would pass no matter how `read_file_safe_bytes` behaved.
 
 use std::io::ErrorKind;

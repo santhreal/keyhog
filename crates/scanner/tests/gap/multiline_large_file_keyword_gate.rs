@@ -13,7 +13,7 @@
 
 use keyhog_scanner::testing::multiline::has_concatenation_indicators_for_test as has_concat;
 
-/// Explicit `"abc" +` string concatenation split across two lines — a concat
+/// Explicit `"abc" +` string concatenation split across two lines, a concat
 /// indicator (the first line trims to end with `+`).
 const CONCAT_SHAPE: &str = "x = \"abc\" +\n    \"def\"\n";
 
@@ -62,7 +62,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(1_500))]
 
     /// A short concat shape (well under the 4096-byte gate) is an indicator with no
-    /// keyword — the structural scan runs unconditionally below the gate.
+    /// keyword (the structural scan runs unconditionally below the gate).
     #[test]
     fn short_concat_shape_is_an_indicator(a in "[0-9]{1,8}", b in "[0-9]{1,8}") {
         let text = format!("x = \"{a}\" +\n    \"{b}\"\n");
@@ -70,7 +70,7 @@ proptest! {
         prop_assert!(has_concat(&text));
     }
 
-    /// The same shape padded past the gate with keyword-free filler is gated OFF —
+    /// The same shape padded past the gate with keyword-free filler is gated OFF 
     /// a large non-secret blob with incidental concat shape is skipped.
     #[test]
     fn large_keyword_free_blob_is_gated_off(

@@ -8,8 +8,8 @@
 //! expensive per-pattern body entirely on chunks that cannot activate any
 //! always-active pattern.
 //!
-//! **This test** measures the ISOLATED `mark_matches` gate path cost — bypassing
-//! the phase-1 Hyperscan scan entirely — by calling the internal timing helper
+//! **This test** measures the ISOLATED `mark_matches` gate path cost, bypassing
+//! the phase-1 Hyperscan scan entirely, by calling the internal timing helper
 //! `testing::mark_matches_gate_ns_per_call`. It asserts the per-call cost is
 //! well below 30931 ns (the concrete pre-fix ceiling from the issue), proving
 //! the optimization closes the gap by an order of magnitude.
@@ -25,7 +25,7 @@ use super::support;
 use support::paths::detector_dir;
 
 /// Isolated `mark_matches` gate path cost ceiling. The pre-fix always-active HS
-/// scan cost 30931 ns/call. The first-bigram+AC gate must be at least 10x cheaper —
+/// scan cost 30931 ns/call. The first-bigram+AC gate must be at least 10x cheaper 
 /// this ceiling is 3000 ns, leaving 10x headroom below the pre-fix baseline.
 /// On Zen 4 / warm L1d the gate typically costs 100-600 ns for ~200-byte
 /// no-candidate text.
@@ -117,7 +117,7 @@ fn mark_matches_gate_path_is_fast() {
         ns_per_call < GATE_CEILING_NS,
         "SWE-101 REGRESSION: mark_matches gate path costs {ns_per_call:.1} ns/call on \
          no-candidate text, which exceeds the {GATE_CEILING_NS:.0} ns ceiling \
-         (pre-fix baseline was 30931 ns/call — the gate is 10x cheaper or the \
+         (pre-fix baseline was 30931 ns/call, the gate is 10x cheaper or the \
          optimization was reverted). Fix the gate path cost."
     );
 }

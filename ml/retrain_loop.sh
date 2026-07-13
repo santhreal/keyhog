@@ -24,12 +24,12 @@
 #   * real held-out recall@.40 >= --min-real-recall  (real recall must not regress)
 #
 # Bench gate (--verify only; the guard the train-gates can't be): held-out F1 and
-# recall passed last time too — the kubernetes-bootstrap-token +203-FP regression
+# recall passed last time too, the kubernetes-bootstrap-token +203-FP regression
 # only showed up in the full per-detector CredData bench. --verify reproduces that
 # bench against a self-captured baseline of the model being replaced and refuses
 # (fail-closed: restores weights.bin from .bak + rebuilds) on any per-detector FP
 # spike or overall-F1 regression. Without --verify, --write prints a loud banner
-# that this guard has NOT run — it never silently ships an unverified model.
+# that this guard has NOT run (it never silently ships an unverified model).
 #
 # Contract-recall gate (--verify, second guard): the bench above is BLIND to the
 # known-positive contract fixtures, so a model that suppresses generic/entropy
@@ -65,7 +65,7 @@ REBUILD_CMD="${REBUILD_CMD:-cargo build --release -p keyhog --bin keyhog --featu
 
 # Resolve the cargo target-dir the same way the bench adapter does (env →
 # ~/.cargo/config.toml `target-dir` → <repo>/target) so VERIFY_BIN points at the
-# binary REBUILD_CMD actually produces — not a stale sibling profile. This was a
+# binary REBUILD_CMD actually produces, not a stale sibling profile. This was a
 # real footgun: the harvest auto-resolver preferred release-fast/keyhog while
 # REBUILD_CMD builds release/keyhog, so verify would have benched an un-rebuilt
 # stale binary and gated it against itself (verifying nothing).
@@ -128,7 +128,7 @@ _gate_vs() {  # corpus, results_dir, baseline_dir
 # Contract-recall gate (--verify): the per-detector FP/F1 bench above is BLIND to
 # the known-positive contract fixtures. A model that suppresses generic/entropy
 # contract positives (`password=<real>`, `{"secret":"<real>"}`) sails through the
-# bench yet breaks the hard contract CI gate — exactly how moe-v1-1cbb8088 shipped
+# bench yet breaks the hard contract CI gate, exactly how moe-v1-1cbb8088 shipped
 # past --verify on 2026-07-07 (CredData F1 +0.088, mirror recall flat) while MISSING
 # 13 contract positives (generic-password + 8 JSON-wrapped evasions). Running
 # contracts_runner against the just-shipped candidate closes that hole so --verify
@@ -141,7 +141,7 @@ _contracts_gate() {  # run the full contract suite against the current candidate
     && CARGO_TARGET_DIR="${TARGET_DIR}" cargo test -p keyhog-scanner --test contracts_runner )
 }
 # Fail-closed revert: put the pre-ship model back and rebuild so the live binary
-# never embeds a rejected candidate (Law 10 — never silently leave the worse
+# never embeds a rejected candidate (Law 10, never silently leave the worse
 # model shipped).
 _restore_and_rebuild() {
   if [[ ! -f "${WEIGHTS}.bak" ]]; then
@@ -202,7 +202,7 @@ python3 ml/harvest_corpus.py --corpora ${CORPORA} --keyhog-bin "${KEYHOG_BIN}" -
 # 2b) Blend the detector contract fixtures in as labeled training data
 #     (positive/evasion=1, negative=0). CredData alone never taught the model
 #     these context-anchored medium-entropy shapes, so a precision retrain drops
-#     them — moe-v1-1cbb8088 shipped past the bench gate but MISSED 13 contract
+#     them: moe-v1-1cbb8088 shipped past the bench gate but MISSED 13 contract
 #     positives. Blending them (+ their placeholder negatives, which reinforce
 #     precision) is what lets a precision retrain also clear the contract gate.
 #     Contract records force into the train split (train_classifier._group_split)
@@ -218,7 +218,7 @@ if [[ -n "${CONTRACT_CORPUS:-}" ]]; then
 fi
 
 # 2.5) [verify] Capture the PRE-SHIP baseline from VERIFY_BIN (just rebuilt from
-#      the current weights.bin), BEFORE train --write overwrites it — so the gate
+#      the current weights.bin), BEFORE train --write overwrites it, so the gate
 #      compares the candidate against the exact model it replaces (honest
 #      per-detector FP / F1 deltas, no stale committed baseline).
 BASE_DIR=""
@@ -264,18 +264,18 @@ if [[ "${DO_WRITE}" == "1" && "${DO_VERIFY}" == "1" ]]; then
       VERIFY_FAILED=1
     fi
   done
-  # Contract-recall gate — the bench above cannot see the known-positive
+  # Contract-recall gate, the bench above cannot see the known-positive
   # fixtures; run them against the candidate so a generic/entropy recall
   # regression can't slip through (the moe-v1-1cbb8088 failure mode).
   if [[ "${VERIFY_FAILED}" == "0" && "${VERIFY_CONTRACTS}" == "1" ]]; then
     echo "→ [verify] contract-recall gate: full known-positive fixture suite (bench-blind)"
     if ! _contracts_gate; then
-      echo "✗ [verify] contract-recall gate FAILED — candidate suppresses known-positive contract fixtures" >&2
+      echo "✗ [verify] contract-recall gate FAILED, candidate suppresses known-positive contract fixtures" >&2
       VERIFY_FAILED=1
     fi
   fi
   if [[ "${VERIFY_FAILED}" != "0" ]]; then
-    echo "✗ [verify] regression detected — model REJECTED" >&2
+    echo "✗ [verify] regression detected, model REJECTED" >&2
     _restore_and_rebuild || exit 2
     exit 1
   fi
@@ -284,7 +284,7 @@ elif [[ "${DO_WRITE}" == "1" ]]; then
   cat >&2 <<'BANNER'
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ weights.bin SHIPPED, but the per-detector bench gate has NOT run.          │
-│ Held-out F1/recall passing does NOT prove no per-detector FP regression —  │
+│ Held-out F1/recall passing does NOT prove no per-detector FP regression. │
 │ the kubernetes-bootstrap-token +203-FP spike passed the held-out gates and │
 │ only surfaced in the full CredData per-detector bench. Before trusting it: │
 │   ml/retrain_loop.sh --write --verify     (re-ships + auto-verifies)       │

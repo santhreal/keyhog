@@ -1,6 +1,6 @@
 //! Regression: `keyhog scan --stdin` positional-chunk semantics that the
 //! sibling `regression_cli_scan_stdin.rs` (format/exit-code matrix) does NOT
-//! cover — LINE/OFFSET fidelity over multi-line and multi-secret chunks, the
+//! cover: LINE/OFFSET fidelity over multi-line and multi-secret chunks, the
 //! oversized-stdin fail-closed, byte-size flag validation, and the scan-path
 //! CONTROL-BYTE sanitization contract observed end-to-end through the shipped
 //! binary over a piped stdin.
@@ -12,9 +12,9 @@
 //! deterministically on the path-less stdin chunk.
 //!
 //! Control-byte truth (proven here, not asserted from memory): the scan path
-//! STRIPS non-whitespace C0 control bytes (0x08 backspace, 0x0C form-feed) —
+//! STRIPS non-whitespace C0 control bytes (0x08 backspace, 0x0C form-feed) 
 //! so a leading 0x0C leaves the token at offset 0 and a 0x08 spliced INTO the
-//! token rejoins it to the exact same value/hash (an evasion that fails) —
+//! token rejoins it to the exact same value/hash (an evasion that fails) 
 //! while it PRESERVES the whitespace controls (0x09 tab, 0x0D carriage
 //! return), which shift the token to offset 1.
 //!
@@ -99,7 +99,7 @@ fn json_findings(out: &str) -> Vec<serde_json::Value> {
 /// A token on the THIRD line of a piped chunk must report `line: 3` and the
 /// byte offset of the token within the chunk. The two preceding lines are
 /// `"line one plain text\n"` (20 bytes) + `"second line also plain\n"`
-/// (23 bytes) = 43, so the token starts at offset 43 — proving stdin line/offset
+/// (23 bytes) = 43, so the token starts at offset 43, proving stdin line/offset
 /// is computed from the chunk, not reset to line 1 / offset 0.
 #[test]
 fn stdin_multiline_token_reports_exact_line_3_and_offset_43() {
@@ -251,7 +251,7 @@ fn stdin_leading_formfeed_0x0c_stripped_token_at_offset_0() {
 }
 
 /// A leading TAB (0x09, a whitespace control) is PRESERVED: the token reports
-/// offset 1 — the tab occupies byte 0. This is the negative twin of the 0x0C
+/// offset 1, the tab occupies byte 0. This is the negative twin of the 0x0C
 /// case and proves whitespace controls are NOT stripped.
 #[test]
 fn stdin_leading_tab_0x09_preserved_token_at_offset_1() {
@@ -291,7 +291,7 @@ fn stdin_leading_cr_0x0d_preserved_token_at_offset_1() {
 }
 
 /// Adversarial evasion: a BACKSPACE (0x08) spliced INTO the middle of the token
-/// is stripped, rejoining the two halves into the exact valid token — so the
+/// is stripped, rejoining the two halves into the exact valid token, so the
 /// split does NOT evade detection. The finding reports offset 0 and the clean
 /// token's hash, proving the sanitizer defeats control-byte splitting.
 #[test]
@@ -325,8 +325,8 @@ fn stdin_backspace_0x08_split_token_still_detected_same_hash() {
 // ---------------------------------------------------------------------------
 
 /// Oversized stdin fails CLOSED: piping 100 bytes with `--limit-stdin-bytes 8B`
-/// exits 13 (EXIT_SOURCE_FAILED) — the scanner refuses to report "clean" for a
-/// source it could not fully read — and stdout is the empty JSON array (no
+/// exits 13 (EXIT_SOURCE_FAILED), the scanner refuses to report "clean" for a
+/// source it could not fully read, and stdout is the empty JSON array (no
 /// partial findings).
 #[test]
 fn stdin_oversized_input_fails_closed_exit_13_empty_stdout() {
@@ -353,7 +353,7 @@ fn stdin_oversized_input_fails_closed_exit_13_empty_stdout() {
     assert_eq!(
         out.trim_end(),
         "",
-        "a failed-closed stdin scan (exit 13) emits nothing on stdout — the error is \
+        "a failed-closed stdin scan (exit 13) emits nothing on stdout, the error is \
          reported on stderr, not an empty JSON array; got: {out:?}"
     );
 }
@@ -453,7 +453,7 @@ fn stdin_bad_byte_limit_missing_unit_exit_2() {
 /// `--backend simd` over stdin is host-independent: on a build WITH the
 /// Hyperscan prefilter it surfaces the same finding (exit 1, same detector id);
 /// on a `ci`/no-prefilter build it FAILS CLOSED (exit 3) with the
-/// "silent cpu-fallback execution is forbidden" refusal — never a silent
+/// "silent cpu-fallback execution is forbidden" refusal, never a silent
 /// downgrade. Exactly one of those two outcomes must hold.
 #[test]
 fn stdin_simd_backend_surfaces_finding_or_fails_closed() {

@@ -11,7 +11,7 @@
 use keyhog_verifier::ssrf::is_private_url;
 
 // --------------------------------------------------------------------------
-// TRUE (blocked) — private / loopback / reserved IPv4 literals
+// TRUE (blocked), private / loopback / reserved IPv4 literals
 // --------------------------------------------------------------------------
 
 #[test]
@@ -36,7 +36,7 @@ fn private_192_168_1_1_is_blocked() {
 
 #[test]
 fn link_local_metadata_169_254_169_254_is_blocked() {
-    // AWS/GCP/Azure link-local metadata address — the canonical SSRF target.
+    // AWS/GCP/Azure link-local metadata address (the canonical SSRF target).
     assert_eq!(is_private_url("http://169.254.169.254"), true);
 }
 
@@ -46,7 +46,7 @@ fn unspecified_0_0_0_0_is_blocked() {
 }
 
 // --------------------------------------------------------------------------
-// TRUE (blocked) — IPv6 literals
+// TRUE (blocked). IPv6 literals
 // --------------------------------------------------------------------------
 
 #[test]
@@ -56,12 +56,12 @@ fn ipv6_loopback_bracketed_is_blocked() {
 
 #[test]
 fn ipv6_unique_local_fc00_is_blocked() {
-    // fc00::/7 unique-local — blocked via bogon is_unique_local().
+    // fc00::/7 unique-local (blocked via bogon is_unique_local()).
     assert_eq!(is_private_url("http://[fc00::1]"), true);
 }
 
 // --------------------------------------------------------------------------
-// TRUE (blocked) — integer-encoded loopback evasions
+// TRUE (blocked), integer-encoded loopback evasions
 // --------------------------------------------------------------------------
 
 #[test]
@@ -76,7 +76,7 @@ fn hex_integer_loopback_0x7f000001_is_blocked() {
 }
 
 // --------------------------------------------------------------------------
-// TRUE (blocked) — internal / metadata domain suffixes
+// TRUE (blocked), internal / metadata domain suffixes
 // --------------------------------------------------------------------------
 
 #[test]
@@ -86,7 +86,7 @@ fn metadata_google_internal_domain_is_blocked() {
 }
 
 // --------------------------------------------------------------------------
-// FALSE (allowed) — genuine public destinations
+// FALSE (allowed), genuine public destinations
 // --------------------------------------------------------------------------
 
 #[test]
@@ -105,7 +105,7 @@ fn public_domain_example_com_is_allowed() {
 }
 
 // --------------------------------------------------------------------------
-// Adversarial / boundary twins — pin fail-closed behavior around the edges
+// Adversarial / boundary twins, pin fail-closed behavior around the edges
 // --------------------------------------------------------------------------
 
 #[test]

@@ -9,7 +9,7 @@ name = "Sentry DSN"
 service = "sentry"
 severity = "high"
 # "dsn" removed: over-broad (fires on ODBC/`dsn=` connection strings and any
-# "dsn" mention) and redundant — both regexes require `.ingest.sentry.io`
+# "dsn" mention) and redundant, both regexes require `.ingest.sentry.io`
 # (keyword "sentry.io"), which every real Sentry DSN contains. Recall-neutral.
 keywords = ["sentry.io", "sentry_dsn", "o0.ingest", "o1.ingest"]
 

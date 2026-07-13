@@ -4,7 +4,7 @@
 //! (a real-looking value that must survive). Covers the empty-input hash gate
 //! (MD5/SHA1/SHA256, case-insensitive, exact-length only), the EXAMPLE suffix
 //! convention, the x-dominated mask, and the ascending/descending hex-sequential
-//! placeholder — all reached through `is_known_example_credential`, plus the
+//! placeholder, all reached through `is_known_example_credential`, plus the
 //! `is_sequential_placeholder` repeated-body gate directly.
 
 use keyhog_scanner::testing::context::{is_known_example_credential, is_sequential_placeholder};
@@ -52,7 +52,7 @@ fn non_empty_md5_length_value_is_not_placeholder() {
 
 #[test]
 fn real_sha256_digest_is_not_placeholder() {
-    // SHA256("test") — real content hash, not the empty-input hash, not monotonic.
+    // SHA256("test") (real content hash, not the empty-input hash, not monotonic).
     assert!(!is_known_example_credential(
         "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
     ));
@@ -119,7 +119,7 @@ fn x_below_three_quarter_threshold_is_not_placeholder() {
 
 #[test]
 fn mostly_x_under_sixteen_is_not_placeholder() {
-    // 13 chars, 10 'x' (77%) — would be x-dominated at >=16 chars, but below the
+    // 13 chars, 10 'x' (77%), would be x-dominated at >=16 chars, but below the
     // floor the mask rule does not apply. Not all-same-byte and not a repeated
     // pair, so the sequential gate does not catch it either: it must survive.
     assert!(!is_known_example_credential("xxxxxxxxxxabc"));

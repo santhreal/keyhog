@@ -1,7 +1,7 @@
 //! Differential parity gate: the shared-anchor phase-2 path must produce a
 //! finding set IDENTICAL to the legacy whole-chunk path, on every input. Any
 //! divergence is an unsound literal extraction (a dropped or extra match) and a
-//! recall bug — the gate fails loudly with the offending input.
+//! recall bug (the gate fails loudly with the offending input).
 //!
 //! Scans each input twice in one process via `scanner.tuning()
 //! .set_phase2_anchor_mode` (forcing anchored on, then off) and compares the
@@ -163,7 +163,7 @@ fn chunk_of(bytes: &[u8], label: &str) -> Chunk {
 
 /// Canonical, order-independent representation of a finding set. Includes the
 /// source location so a missed/extra match at a DIFFERENT offset (same
-/// detector+credential) is still caught — recall is per-location.
+/// detector+credential) is still caught (recall is per-location).
 type Key = (String, String, String);
 fn canonical(matches: &[Vec<RawMatch>]) -> Vec<Key> {
     let mut v: Vec<Key> = matches
@@ -200,7 +200,7 @@ fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
     // Clear the cross-chunk fragment-reassembly cache between the two scans:
     // it persists on the scanner across calls, so scanning the SAME chunk twice
     // back-to-back would let the first scan's reassembly state perturb the
-    // second (a test-only hazard — in production each chunk is scanned once and
+    // second (a test-only hazard, in production each chunk is scanned once and
     // the cache evolves identically for a fixed anchor setting).
     // Shipping config: shared-anchor localization ON + homoglyph ASCII-gate ON.
     keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, Some(true));

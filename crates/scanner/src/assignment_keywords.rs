@@ -15,7 +15,7 @@
 //! (`scan_filters::has_generic_assignment_keyword`), the no-hit prefilter stem set
 //! (`phase2_generic::keywords::generic_keyword_prefilter_stems`), and the entropy
 //! keyword-anchor contains-check (`phase2_entropy::helpers`). Widening a generic
-//! detector's `keywords` now widens the prefilter automatically — no second list to
+//! detector's `keywords` now widens the prefilter automatically, no second list to
 //! keep in sync.
 
 use keyhog_core::{DetectorKind, DetectorSpec};
@@ -56,7 +56,7 @@ pub(crate) fn assignment_keywords() -> &'static [String] {
 /// detector, lowercase them, and expand each into its three separator spellings.
 /// The `pass` stem (the dominant `*_PASS=` CredData credential-env pattern) is a
 /// real `generic-keyword-secret` keyword, so it flows through this union like any
-/// other — the owning-detector find in `phase2_generic.rs` can then attribute
+/// other, the owning-detector find in `phase2_generic.rs` can then attribute
 /// `*_PASS=` candidates to that low-floor detector (the SES_PASS recall fix). The
 /// `kind` filter is load-bearing: it admits only the shapeless-secret bridge
 /// detectors and EXCLUDES the regex-kind generic detectors (e.g. `generic-password`,
@@ -139,7 +139,7 @@ mod tests {
     /// The recall-critical assignment keywords: every CredData credential-env
     /// trigger the prefilter matched BEFORE this vocabulary moved into the
     /// detector specs (the old hand-maintained `rules/assignment_keywords.toml`).
-    /// The derived vocab MUST remain a SUPERSET of this set — that is the recall
+    /// The derived vocab MUST remain a SUPERSET of this set, that is the recall
     /// parity contract. It is a floor, not an equality: the derivation legitimately
     /// carries EXTRA keywords the generic detectors declare (e.g. `secret_key`,
     /// `access_token`, `passphrase`), which only widens recall.
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn the_legacy_assignment_keywords_toml_is_gone() {
-        // The old hand-maintained vocab file must not exist — its concept now lives
+        // The old hand-maintained vocab file must not exist, its concept now lives
         // solely in the detector specs. A re-added file is a second home (drift).
         let legacy = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../rules/assignment_keywords.toml");
@@ -335,11 +335,11 @@ mod tests {
     fn derive_carries_the_pass_stem_from_its_real_detector_owner() {
         // `pass` is now a real `generic-keyword-secret` keyword (the `*_PASS=`
         // recall owner), so a phase2-generic detector carrying it contributes it
-        // to the derived vocab like any keyword — the former PASS_STEM injection
+        // to the derived vocab like any keyword, the former PASS_STEM injection
         // is gone (ONE PLACE: one owner, no byte-identical inline copy).
         let with = derive_assignment_keywords(&[phase2_generic(&["secret", "pass"])]).unwrap();
         assert!(with.iter().any(|k| k == "pass"));
-        // A detector WITHOUT `pass` no longer conjures it — its presence now
+        // A detector WITHOUT `pass` no longer conjures it, its presence now
         // depends solely on its real detector owner.
         let without = derive_assignment_keywords(&[phase2_generic(&["secret"])]).unwrap();
         assert!(!without.iter().any(|k| k == "pass"));
@@ -358,7 +358,7 @@ mod tests {
     fn derive_fails_closed_when_no_generic_phase2_detector_is_present() {
         // Empty corpus.
         assert!(derive_assignment_keywords(&[]).is_err());
-        // Only a regex-kind generic detector — still no phase-2 bridge.
+        // Only a regex-kind generic detector (still no phase-2 bridge).
         let mut regex_generic = phase2_generic(&["password"]);
         regex_generic.kind = DetectorKind::Regex;
         let err = derive_assignment_keywords(&[regex_generic]).unwrap_err();
@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn bare_key_stem_is_not_in_the_base_list() {
-        // `key` is added by `generic_keyword_prefilter_stems`, NOT the base vocab —
+        // `key` is added by `generic_keyword_prefilter_stems`, NOT the base vocab 
         // pin that so a future edit does not silently widen the AC.
         assert!(
             !assignment_keywords().iter().any(|k| k == "key"),

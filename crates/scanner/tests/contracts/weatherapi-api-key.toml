@@ -19,16 +19,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "WEATHERAPI           _       _ __    _       _           _   _    _ _      _ __     _ _     _      _ API _       KEY =   =\"' \" =           \"    :   == \":  = : : ': =    =='\"  \"\"='  = '  :  : '::' \"  =\"   : YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "WEATHERAPI           _       _ __    _       _           _   _    _ _      _ __     _ _     _      _ API _       KEY =   =\"' \" =           \"    :   == \":  = : : ': =    =='\"  \"\"='  = '  :  : '::' \"  =\"   : wlTYcEXAMPLEEXAMPLEVx9Rw"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "curl \"https://api.weatherapi.com/v1/current.json?key=wlTYc8i0vvSM1qBeVx9Rw&q=London\""
 credential = "wlTYc8i0vvSM1qBeVx9Rw"
-reason = "URL query parameter with weatherapi.com domain — second-pattern context anchor."
+reason = "URL query parameter with weatherapi.com domain (second-pattern context anchor)."
 
 [perf]
 fixture_bytes = 4096

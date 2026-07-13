@@ -1,10 +1,10 @@
 //! Confirmed-pass SUFFIX GATE builder, extracted from `scan_postprocess.rs`
 //! (Law 5). Builds one ASCII-case-insensitive Aho-Corasick over every ac_map
 //! pattern's required trailing literals so the confirmed pass can skip a pattern
-//! whose suffix is absent (it cannot match) — recall-identical, see the unit
+//! whose suffix is absent (it cannot match), recall-identical, see the unit
 //! gate. `build_confirmed_suffix_gate` is re-exported through `scan_postprocess`.
 //! The runtime ENABLE/override toggle lives on the per-scanner `ScannerTuning`
-//! (`tuning::ScannerTuning::confirmed_suffix_gate_enabled`), not here — there is
+//! (`tuning::ScannerTuning::confirmed_suffix_gate_enabled`), not here, there is
 //! no process-global gate state.
 use crate::types::*;
 

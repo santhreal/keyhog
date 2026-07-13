@@ -8,7 +8,7 @@ never forks the format.
 
 The schema is a superset of the legacy ``score.py`` ``ScoreReport``: it
 keeps the detection block (overall + per-category P/R/F1) byte-for-byte
-compatible and adds the requested axes — host hardware, scanner config
+compatible and adds the requested axes, host hardware, scanner config
 (backend/cache/daemon/mode), corpus size, and speed (wall/throughput/RSS).
 
 Every dataclass round-trips through :meth:`to_json` / :meth:`from_json`
@@ -94,17 +94,17 @@ class DetectorStat:
     """Per-detector confusion stats + confidence histograms, the signal the
     per-detector ``min_confidence`` tuning loop consumes.
 
-    * ``tp`` — labeled positive *records* this detector caught (deduped per
+    * ``tp``, labeled positive *records* this detector caught (deduped per
       record, matching the overall scorer's record-counting TP semantics).
-    * ``fp`` — false-firing *findings* attributed to this detector.
-    * ``unique_tp`` — positives that **only** this detector caught; raising
+    * ``fp`` (false-firing *findings* attributed to this detector).
+    * ``unique_tp``, positives that **only** this detector caught; raising
       its floor risks losing exactly these, so this is the recall-criticality
       that gates a safe threshold bump.
-    * ``tp_hist`` / ``fp_hist`` — :data:`CONF_BINS`-bin confidence histograms
+    * ``tp_hist`` / ``fp_hist``: :data:`CONF_BINS`-bin confidence histograms
       of the detector's TP and FP findings. A TP record is binned at the max
       confidence among the findings that caught it. These let
       :mod:`bench.calibrate` compute the floor that drops FPs without losing
-      TPs — without persisting every raw finding.
+      TPs: without persisting every raw finding.
 
     Precision is exact (TP/FP are both counts of the detector's own output);
     recall is corpus-relative (``unique_tp`` / corpus positives) and computed
@@ -201,7 +201,7 @@ class Host:
     """Captured once per run so Windows-ThinkPad / macOS / santhserver /
     desktop results aggregate into one matrix keyed by real hardware.
 
-    ``hostname_hash`` is a short non-reversible digest of the hostname —
+    ``hostname_hash`` is a short non-reversible digest of the hostname 
     enough to group a machine's runs without committing a raw hostname.
     """
 
@@ -241,7 +241,7 @@ class ScannerConfig:
     # Optional report-floor override. None = the scanner's compiled default
     # (what the leaderboard scores). The harvest loop sets this LOW so the ML
     # feedback loop can label the sub-floor candidates a detector fires on but
-    # the default floor hides — without those, a retrain can never learn the
+    # the default floor hides, without those, a retrain can never learn the
     # hard negatives it currently surfaces only as below-threshold scores
     # (the kubernetes-bootstrap-token +203-FP retrain regression came from
     # exactly this blind spot). Left None for every leaderboard config so

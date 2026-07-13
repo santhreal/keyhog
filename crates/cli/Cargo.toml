@@ -159,7 +159,7 @@ chrono = { workspace = true }
 dirs = { workspace = true }
 notify = { workspace = true }
 # Used by `baseline.rs::save` for atomic-rename writes via
-# `NamedTempFile::persist()` — same pattern used by merkle and
+# `NamedTempFile::persist()`: same pattern used by merkle and
 # calibration. A mid-write crash on `--update-baseline` would
 # otherwise leave a corrupt JSON the next run can't parse.
 tempfile = { workspace = true }
@@ -197,7 +197,7 @@ tempfile = { workspace = true }
 regex = { workspace = true }
 toml = { workspace = true }
 # Property-based suite (tests/property.rs). These proptests reference `proptest`
-# but the dep was missing — the whole property/ dir was orphaned (empty mod.rs)
+# but the dep was missing, the whole property/ dir was orphaned (empty mod.rs)
 # so it never compiled and the gap stayed hidden. Pinned via the workspace.
 proptest = { workspace = true }
 # Mock GitHub releases API for the installer/update lifecycle suite: drive the

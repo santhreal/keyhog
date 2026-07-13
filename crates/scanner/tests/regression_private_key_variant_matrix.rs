@@ -1,11 +1,11 @@
 //! Recall lock: the `private-key` (PEM) detector must fire on EVERY PEM
-//! private-key label its regex enumerates — RSA / EC / DSA / OPENSSH / PKCS#8
+//! private-key label its regex enumerates. RSA / EC / DSA / OPENSSH / PKCS#8
 //! (`PRIVATE KEY`) / ENCRYPTED / PGP (`… BLOCK`).
 //!
 //! Why this matrix exists
 //! ----------------------
 //! `detectors/private-key.toml` enumerates the algorithm labels in an explicit
-//! alternation specifically because — per its own comment — "Hyperscan's NFA can
+//! alternation specifically because, per its own comment. "Hyperscan's NFA can
 //! drop OPENSSH matches when a greedy character class straddles `PRIVATE`". That
 //! is a live recall hazard: a future regex refactor (e.g. collapsing the
 //! alternation back to `[A-Z ]*`) could silently stop detecting one label while
@@ -14,7 +14,7 @@
 //! recall regression fails loudly here.
 //!
 //! Each variant is asserted three ways: the detector FIRES (a `private-key`
-//! RawMatch exists), the capture INCLUDES the PEM body (not just the header —
+//! RawMatch exists), the capture INCLUDES the PEM body (not just the header 
 //! header-only captures collapse under credential dedup), and the header-only
 //! marker (no `END`) does NOT produce a finding (the regex requires a closed
 //! BEGIN/END block, so a bare header is not a credential).
@@ -184,7 +184,7 @@ fn pgp_block_is_private_key_only_not_ssh_private_key() {
 fn json_escaped_newline_pem_still_fires() {
     // Cloud service-account keys ship the PEM with LITERAL `\n` escapes inside a
     // JSON string. `[\s\S]*?` spans the escape bytes, so the closed block is
-    // still detected — the dominant real-world private-key shape.
+    // still detected (the dominant real-world private-key shape).
     let text = r#"{"type":"service_account","private_key":"-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqESCAPEDBODYZZ9\n-----END PRIVATE KEY-----\n"}"#;
     let capture = private_key_capture(text).expect("JSON-escaped PEM must fire");
     assert!(capture.contains("ESCAPEDBODYZZ9"), "captured: {capture:?}");
@@ -213,7 +213,7 @@ fn two_distinct_rsa_blocks_yield_two_findings() {
 #[test]
 fn mismatched_begin_end_labels_still_match_lenient_recall() {
     // The BEGIN and END label groups are independent in the regex, so a
-    // corrupted/mismatched block (BEGIN RSA … END PRIVATE KEY) is still caught —
+    // corrupted/mismatched block (BEGIN RSA … END PRIVATE KEY) is still caught 
     // a leaked key with a mangled footer must not slip through.
     let text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEMISMATCHEDBODYQ7\n-----END PRIVATE KEY-----";
     let capture = private_key_capture(text).expect("mismatched block must still fire");

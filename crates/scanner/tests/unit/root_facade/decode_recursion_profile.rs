@@ -1,4 +1,4 @@
-//! Measure the decode-recursion share of a full end-to-end mirror scan — the
+//! Measure the decode-recursion share of a full end-to-end mirror scan, the
 //! lever behind the ~0.4 MB/s ceiling that the phase-2 breakdown does NOT
 //! capture (it excludes `post_process_matches`' decode-through). Reports total
 //! scan wall time vs the time spent rescanning decoded sub-chunks, the

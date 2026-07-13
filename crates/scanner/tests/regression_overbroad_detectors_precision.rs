@@ -3,21 +3,21 @@
 //! Five detectors shipped patterns that fired on generic, non-credential
 //! tokens, producing false positives at (in three cases) `critical` severity:
 //!
-//!   * `transpose-api-key`  — `(?:TRANSPOSE|transpose)[_a-zA-Z0-9]*[=:\s"']+([a-f0-9]{32})`
+//!   * `transpose-api-key`: `(?:TRANSPOSE|transpose)[_a-zA-Z0-9]*[=:\s"']+([a-f0-9]{32})`
 //!     The `[_a-zA-Z0-9]*` let ANY identifier *starting* with "transpose"
 //!     (e.g. `transposeMatrixChecksum=<32hex>`) anchor a generic 32-hex
 //!     hash/digest.
-//!   * `octopus-deploy-api-key` — `API-[A-Z0-9]{16,}` (compiled case-insensitive)
+//!   * `octopus-deploy-api-key`: `API-[A-Z0-9]{16,}` (compiled case-insensitive)
 //!     matched generic uppercase tokens such as `API-DOCUMENTATIONREFERENCE`
 //!     and lowercase `api-...` words; no digit was required.
-//!   * `moralis-api-key` — a bare `X-API-Key[=:\s"']+([a-zA-Z0-9]{60,})` pattern.
+//!   * `moralis-api-key`: a bare `X-API-Key[=:\s"']+([a-zA-Z0-9]{60,})` pattern.
 //!     `X-API-Key` is a generic HTTP header shared by dozens of services and
 //!     Moralis keys carry no distinctive prefix, so the pattern matched ANY
 //!     service's 60+ char token as a critical Moralis key.
-//!   * `pipedream-api-key` — `api_[a-zA-Z0-9]{40,}`. `api_` is a generic prefix,
+//!   * `pipedream-api-key`: `api_[a-zA-Z0-9]{40,}`. `api_` is a generic prefix,
 //!     so any `api_<40+ alnum>` (lowercase identifiers, lowercase hex digests)
 //!     matched.
-//!   * `vercel-edge-function-credentials` — the `ecfg_` trigger must be a token,
+//!   * `vercel-edge-function-credentials`: the `ecfg_` trigger must be a token,
 //!     not a case-insensitive substring inside SCREAMING_CASE enum names such as
 //!     `CUDNN_BACKEND_ENGINECFG_DESCRIPTOR`.
 //!
@@ -26,7 +26,7 @@
 //!
 //! This test asserts the precision/recall behaviour DIRECTLY against the
 //! shipped detector TOMLs, compiling each pattern exactly the way the engine
-//! does (`RegexBuilder::new(p).case_insensitive(true).crlf(true)` — see
+//! does (`RegexBuilder::new(p).case_insensitive(true).crlf(true)`: see
 //! `crates/scanner/src/compiler/compiler_compile.rs::shared_regex_compile`). It FAILS on
 //! the old over-broad regexes and PASSES on the tightened ones.
 
@@ -174,7 +174,7 @@ fn transpose_boundary_hash_length() {
 #[test]
 fn octopus_keeps_canonical_recall() {
     let spec = load_detector("octopus-deploy-api-key");
-    // Canonical contract positive — bare key only matches the API- pattern.
+    // Canonical contract positive (bare key only matches the API- pattern).
     let key = "API-7X68S9206QLQW4S2FVP";
     assert!(
         any_pattern_matches(&spec, key),

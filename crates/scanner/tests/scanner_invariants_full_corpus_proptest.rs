@@ -1,9 +1,9 @@
 //! Scanner invariants over the FULL production detector corpus
-//! (TESTING vector 12, lane 9 — proptest, 10k+ cases).
+//! (TESTING vector 12, lane 9 (proptest, 10k+ cases)).
 //!
 //! The existing `property/scanner_fuzz.rs` fuzzes `CompiledScanner::scan` with
 //! a SYNTHETIC 2-detector set. That proves the hot path doesn't panic for a toy
-//! engine, but the real binary compiles ~900 detectors — a different literal
+//! engine, but the real binary compiles ~900 detectors, a different literal
 //! set, a different Aho-Corasick automaton, different decode/entropy fan-out.
 //! A panic, slice-boundary bug, or recall-losing batch path that only manifests
 //! with the full corpus would ride right past the 2-detector fuzz.
@@ -11,14 +11,14 @@
 //! Two properties, both over the REAL on-disk corpus compiled once via
 //! `LazyLock` (the ~2–3 s build amortised across every case):
 //!
-//!   1. `scan_never_panics_on_arbitrary_bytes` (10_000 cases) — scanning any
+//!   1. `scan_never_panics_on_arbitrary_bytes` (10_000 cases), scanning any
 //!      byte string (lossy-decoded to the UTF-8 the chunk API takes, including
 //!      control bytes, lone surrogates' replacement, NULs, and long high-
 //!      entropy runs) must RETURN, never panic / index out of bounds / overflow.
 //!      Every surfaced match must also be internally consistent: its credential
 //!      is non-empty and its byte offset points at a byte inside the chunk.
 //!
-//!   2. `coalesced_batch_loses_no_per_chunk_finding` (2_000 cases) — the
+//!   2. `coalesced_batch_loses_no_per_chunk_finding` (2_000 cases), the
 //!      production batch path (`scan_coalesced`, which adds cross-chunk boundary
 //!      reassembly on top of per-chunk scanning) is a SUPERSET of the per-chunk
 //!      `scan` results: every credential the per-chunk path surfaces is also
@@ -102,7 +102,7 @@ proptest! {
     /// planted credential-sufficient secret, then assert coalesced ⊇ per-chunk
     /// by credential value. The planted secret lives in its own clean chunk (not
     /// mixed with adversarial noise) so the per-chunk path finds it
-    /// deterministically — the property under test is the no-LOSS direction
+    /// deterministically, the property under test is the no-LOSS direction
     /// between the two scan paths, not the scanner's robustness to hostile
     /// context (which the dedicated suppression tests own).
     #[test]
@@ -143,7 +143,7 @@ proptest! {
                 .collect();
 
         // The planted secret is in the dedicated clean chunk, so the per-chunk
-        // path MUST surface it — and coalesced, a superset, must too.
+        // path MUST surface it (and coalesced, a superset, must too).
         let per_chunk_has_plant = per_chunk.iter().any(|c| c.contains(PLANTED));
         prop_assert!(
             per_chunk_has_plant,

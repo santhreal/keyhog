@@ -1,5 +1,5 @@
 //! KH-GAP-096 (git-diff variant): `--git-diff` against a non-repository must
-//! not exit 0 / report "clean" — the requested diff scan never ran, so a CI
+//! not exit 0 / report "clean", the requested diff scan never ran, so a CI
 //! gate must see a failure, not a false all-clear.
 
 use crate::e2e::support::binary;

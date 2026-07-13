@@ -1,10 +1,10 @@
 //! Detector classification overrides loaded from Tier-B data.
 //!
-//! This now loads ONLY the Stripe hot-path prefix list — a genuine PREFIX list,
+//! This now loads ONLY the Stripe hot-path prefix list, a genuine PREFIX list,
 //! not a per-detector property. The `weak_anchor` and `private_key_block`
 //! classifications that used to live here as centralized detector-id lists are
 //! now per-detector `DetectorSpec` fields declared in each detector's own
-//! `detectors/<id>.toml` (the DET-0 architecture law — "a detector's TOML is the
+//! `detectors/<id>.toml` (the DET-0 architecture law: "a detector's TOML is the
 //! whole story"). Their family membership is pinned by the
 //! `weak_anchor_family_is_toml_declared` / `private_key_block_family_is_toml_declared`
 //! drift-guard tests in `detector_ids.rs`. Because the flag now lives on the

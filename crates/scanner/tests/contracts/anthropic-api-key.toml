@@ -26,7 +26,7 @@ reason = "Upper bound: exactly 120 body chars (the regex maximum). Must match."
 [[positive]]
 text = "ANTHROPIC_ADMIN_KEY=sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6"
 credential = "sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6"
-reason = "DET-17: Anthropic ADMIN key (sk-ant-admin01- prefix, docs-confirmed) — caught by the broad modern sk-ant- pattern, locked here so org-admin keys can't regress to the generic path. Synthetic random 80-char body."
+reason = "DET-17: Anthropic ADMIN key (sk-ant-admin01- prefix, docs-confirmed), caught by the broad modern sk-ant- pattern, locked here so org-admin keys can't regress to the generic path. Synthetic random 80-char body."
 
 [[negative]]
 text = "ANTHROPIC_API_KEY=sk-ant-api03-shortbody"

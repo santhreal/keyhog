@@ -74,7 +74,7 @@ where
 {
     // Canonicalize the layer root ONCE, not per chunk: it is invariant across
     // every chunk in the layer, and `std::fs::canonicalize` is a syscall that
-    // walks the whole path resolving symlinks — a big layer paid it thousands
+    // walks the whole path resolving symlinks, a big layer paid it thousands
     // of times for the same directory. Callers pass a real unpacked layer dir,
     // so a canonicalize failure here is a genuine setup error surfaced once.
     let normalized_root = std::fs::canonicalize(layer_root).map_err(|error| {
@@ -132,7 +132,7 @@ fn scan_docker_layer(
 fn docker_layer_name(layer_tar: &Path, root_path: &Path) -> String {
     layer_tar
         .strip_prefix(root_path)
-        .ok() // LAW10: a non-prefixed path falls back to the full display path below — both are valid scannable labels, no layer is dropped
+        .ok() // LAW10: a non-prefixed path falls back to the full display path below, both are valid scannable labels, no layer is dropped
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| layer_tar.display().to_string()) // LAW10: display-label fallback only; the layer is still unpacked + scanned
 }

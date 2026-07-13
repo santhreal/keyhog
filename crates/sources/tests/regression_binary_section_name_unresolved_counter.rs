@@ -1,6 +1,6 @@
 //! LANE close-law10 regression: the binary section-name partial-parse counter
 //! (`BINARY_SECTION_NAME_UNRESOLVED`) is a real, resettable, public coverage
-//! signal — NOT a silent drop.
+//! signal: NOT a silent drop.
 //!
 //! Before the fix, `extract_sections` resolved every ELF/PE/Mach-O section name
 //! with `unwrap_or("")`: a corrupt section-name string table silently produced

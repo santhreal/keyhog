@@ -222,7 +222,7 @@ fn hex_encoded_gzip_stays_opaque_no_inflate_stage() {
     // hex-encode the gzip bytes, then round-trip through the hex decoder.
     let gzip_hex = hex::encode(&gzip_bytes);
     let decoded = hex_decode(&gzip_hex).expect("hex of gzip decodes to raw gzip bytes");
-    // The hex decoder returns the RAW gzip bytes verbatim — no inflate stage.
+    // The hex decoder returns the RAW gzip bytes verbatim (no inflate stage).
     assert_eq!(decoded, gzip_bytes);
     assert_eq!(&decoded[..2], &[0x1fu8, 0x8b]);
     // The decoded bytes are binary, so the UTF-8 gate in `HexDecoder::decode_chunk`
@@ -233,7 +233,7 @@ fn hex_encoded_gzip_stays_opaque_no_inflate_stage() {
     );
 
     // End to end: scanning the hex-encoded gzip surfaces ZERO matches carrying
-    // the compressed AWS key — the documented gap (hex has no inflate stage).
+    // the compressed AWS key (the documented gap (hex has no inflate stage)).
     let scanner = full_scanner();
     scanner.clear_fragment_cache();
     let matches = scanner.scan(&make_chunk(&gzip_hex));

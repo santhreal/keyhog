@@ -628,7 +628,7 @@ pub(crate) fn read_api_json<T: DeserializeOwned>(
 ) -> Result<T, SourceError> {
     let max_response_bytes_u64 = match u64::try_from(max_response_bytes) {
         Ok(value) => value,
-        Err(_) => u64::MAX, // LAW10: unreachable on real platforms — only a usize wider than u64 takes this arm, where reqwest content lengths and Read::take caps are u64-bounded, so every representable HTTP body length is still capped.
+        Err(_) => u64::MAX, // LAW10: unreachable on real platforms, only a usize wider than u64 takes this arm, where reqwest content lengths and Read::take caps are u64-bounded, so every representable HTTP body length is still capped.
     };
     if let Some(content_length) = response.content_length() {
         if content_length > max_response_bytes_u64 {
@@ -694,7 +694,7 @@ fn api_endpoint_for_error(endpoint: &str) -> String {
         url.set_fragment(None);
         return url.to_string();
     }
-    let cutoff = redacted.find(['?', '#']).unwrap_or(redacted.len()); // LAW10: display-only — malformed endpoint diagnostics keep only the non-secret prefix
+    let cutoff = redacted.find(['?', '#']).unwrap_or(redacted.len()); // LAW10: display-only, malformed endpoint diagnostics keep only the non-secret prefix
     redacted[..cutoff].to_string()
 }
 
@@ -816,7 +816,7 @@ fn clone_repo(
     // ONE PLACE: build the clone via the hermetic git factory so it nulls
     // GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM (a host `commit.gpgsign` /
     // `credential.helper` / `core.hooksPath` cannot hook, sign, or block the
-    // clone on a prompt) and resolves the trusted git binary — the exact
+    // clone on a prompt) and resolves the trusted git binary, the exact
     // isolation every other git spawn uses. `git_command()`'s own doc requires
     // that "every git spawn goes through here rather than Command::new(git_bin)";
     // this clone was the one bypass. The auth-specific askpass is layered on top.

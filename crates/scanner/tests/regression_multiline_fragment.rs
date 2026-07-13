@@ -10,7 +10,7 @@
 //! Reachable via the public `keyhog_scanner::testing::fragment_cache::*` shim.
 //! Every expected value is derived by tracing the real source, not guessed.
 //! Distinct from `regression_multiline_join.rs` (which drives the multiline
-//! preprocessor) — this file exercises the FragmentCache primitive directly.
+//! preprocessor) (this file exercises the FragmentCache primitive directly).
 
 use keyhog_scanner::testing::fragment_cache::{
     shard_index_drift_probe, FragmentCache, SecretFragment,

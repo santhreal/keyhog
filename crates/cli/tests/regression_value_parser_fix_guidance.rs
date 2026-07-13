@@ -4,7 +4,7 @@
 //! concrete example. Previously the parse-failure branches said only "not a
 //! valid floating point number" / "not a valid positive integer" with no range
 //! or example, leaving the operator to guess the bounds (task #131). This pins
-//! that both failure modes — unparseable input AND out-of-range input — carry
+//! that both failure modes, unparseable input AND out-of-range input, carry
 //! actionable guidance, and that the wording is uniform across every parser
 //! (one shared formatter, no drift).
 
@@ -119,7 +119,7 @@ fn daemon_request_timeout_unparseable_states_form_and_example() {
 
 #[test]
 fn min_confidence_out_of_range_keeps_pinned_wording() {
-    // Other tests (flag_surface.rs) assert this exact substring — do not drift.
+    // Other tests (flag_surface.rs) assert this exact substring (do not drift).
     let e = API.parse_min_confidence("1.5").unwrap_err();
     assert!(
         e.contains("min_confidence must be between 0.0 and 1.0"),

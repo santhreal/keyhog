@@ -24,7 +24,7 @@ use keyhog_scanner::testing::decode_chunk;
 
 /// Run the whole decode pipeline over `text` and return the `data` of every
 /// emitted layer whose `source_type` names `decoder` (exactly one of
-/// `"html-named-entity"` / `"html-numeric-entity"` — neither is a substring of
+/// `"html-named-entity"` / `"html-numeric-entity"`: neither is a substring of
 /// the other). Depth 2 admits the chunk-level candidate extraction.
 fn layers_for(text: &str, decoder: &str) -> Vec<String> {
     let chunk = Chunk {
@@ -44,7 +44,7 @@ fn any_layer_contains(text: &str, decoder: &str, needle: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Named entities `&name;` — every entry in the decode table, pinned exactly
+// Named entities `&name;`: every entry in the decode table, pinned exactly
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -125,7 +125,7 @@ fn named_prefix_before_first_entity_is_preserved() {
 }
 
 // ---------------------------------------------------------------------------
-// Named entities — negative / adversarial
+// Named entities, negative / adversarial
 // ---------------------------------------------------------------------------
 
 #[test]

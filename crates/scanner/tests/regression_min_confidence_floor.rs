@@ -1,5 +1,5 @@
-//! Regression: the post-scan `min_confidence` floor — global default AND the
-//! per-detector `spec.min_confidence` override — decides, exactly, which
+//! Regression: the post-scan `min_confidence` floor, global default AND the
+//! per-detector `spec.min_confidence` override, decides, exactly, which
 //! findings survive.
 //!
 //! The floor is a pure `confidence < floor` gate applied after the confidence
@@ -17,7 +17,7 @@
 //! the observed confidence is a *stable value ~0.70* (context boosts it above the
 //! global default). That still makes it the ideal probe: the confidence is
 //! deterministic, so a per-detector floor set just above/below/equal to the
-//! OBSERVED value (`sgp_confidence()`) flips the finding deterministically — which
+//! OBSERVED value (`sgp_confidence()`) flips the finding deterministically, which
 //! is exactly what the per-detector-floor `>=` semantics must honour. (This
 //! fixture clears the global default on its own; the 0.2 floor is load-bearing
 //! only for lower-scoring sourcegraph bodies, which these tests note explicitly.)
@@ -25,8 +25,8 @@
 //! HOST-INDEPENDENCE: `sgp_` is a distinctive LITERAL prefix, so the detector
 //! fires on the scalar `CpuFallback` path (it does not depend on Hyperscan/SIMD
 //! the way a no-literal detector such as `datadog-api-key` does). Every scan
-//! here forces `ScanBackend::CpuFallback`, so the confidence — and therefore the
-//! floor decision — is identical on every host, GPU or not.
+//! here forces `ScanBackend::CpuFallback`, so the confidence, and therefore the
+//! floor decision (is identical on every host, GPU or not).
 
 mod support;
 use keyhog_core::{load_detectors, Chunk, DetectorSpec, RawMatch, ScanConfig};
@@ -52,7 +52,7 @@ fn load_base() -> Vec<DetectorSpec> {
 }
 
 /// Clone the corpus, overriding ONLY the sourcegraph detector's per-detector
-/// `min_confidence` — every other detector is untouched, so the floor decision
+/// `min_confidence`: every other detector is untouched, so the floor decision
 /// is isolated to this one detector.
 fn with_sgp_floor(base: &[DetectorSpec], floor: Option<f64>) -> Vec<DetectorSpec> {
     base.iter()
@@ -79,7 +79,7 @@ fn scan(detectors: Vec<DetectorSpec>, global_floor: f64) -> Vec<RawMatch> {
 
 /// The sourcegraph-attributed match for our planted token, if it survived. Keyed
 /// on `detector_id` so any unrelated generic finding on the same value (a
-/// distinct dedup key — `RawMatchDedupKey` includes `detector_id`) can never
+/// distinct dedup key: `RawMatchDedupKey` includes `detector_id`) can never
 /// mask the floor decision for THIS detector.
 fn sgp_finding(matches: &[RawMatch]) -> Option<&RawMatch> {
     matches
@@ -154,7 +154,7 @@ fn sourcegraph_ships_per_detector_floor_of_0_2() {
 /// The finding's confidence is at/above its shipped 0.2 floor (so the detector
 /// works out of the box) and, under the anchored context, above the 0.40 global
 /// default. If the observed value ever drops below 0.40 the "clears the default"
-/// tests below must be revisited — a real coherence signal.
+/// tests below must be revisited (a real coherence signal).
 #[test]
 fn sourcegraph_confidence_clears_its_floor_and_the_global_default() {
     let base = load_base();
@@ -190,7 +190,7 @@ fn shipped_sourcegraph_detector_surfaces_at_the_global_default() {
 }
 
 /// With the per-detector floor REMOVED, the global 0.40 default applies. This
-/// token scores above 0.40, so it survives — the floor is load-bearing only for
+/// token scores above 0.40, so it survives, the floor is load-bearing only for
 /// sourcegraph bodies scoring in [0.2, 0.40), which this fixture is not.
 #[test]
 fn removing_per_detector_floor_keeps_finding_that_clears_global_default() {
@@ -215,7 +215,7 @@ fn per_detector_floor_overrides_a_high_global_floor() {
 }
 
 /// Mirror direction: a per-detector floor set ABOVE the finding's confidence
-/// drops it even when the global floor is a permissive 0.0 — the detector floor
+/// drops it even when the global floor is a permissive 0.0, the detector floor
 /// is consulted regardless of how low the global is.
 #[test]
 fn per_detector_floor_above_confidence_drops_despite_permissive_global() {

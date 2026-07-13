@@ -22,7 +22,7 @@ reason = "Standard env-var assignment (HuggingFace's documented variable name)."
 [[positive]]
 text = "Authorization: Bearer hf_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBn"
 credential = "hf_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBn"
-reason = "Bearer header — HuggingFace Inference API auth shape."
+reason = "Bearer header: HuggingFace Inference API auth shape."
 
 # ---- NEGATIVES (precision) ------------------------------------------
 

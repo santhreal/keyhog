@@ -2,7 +2,7 @@
 //! (Slack / Discord / Zapier) and webhook SIGNING secrets (Stripe / GitHub /
 //! Shopify). A leaked incoming-webhook URL lets anyone post into the channel;
 //! a leaked signing secret lets an attacker forge authentic webhook deliveries.
-//! These detectors ship but had no dedicated recall test — this pins that the
+//! These detectors ship but had no dedicated recall test, this pins that the
 //! exact secret-bearing bytes surface, and that host/shape precision holds.
 
 mod support;
@@ -241,7 +241,7 @@ fn stripe_and_github_webhook_secrets_cosurface() {
 
 #[test]
 fn slack_wrong_host_dot_io_does_not_fire() {
-    // hooks.slack.IO is not Slack's webhook host — the regex pins hooks.slack.com.
+    // hooks.slack.IO is not Slack's webhook host (the regex pins hooks.slack.com).
     let url = format!(
         "https://hooks.slack.io/services/T{}/B{}/{}",
         alnum(9, 16),

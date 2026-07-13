@@ -1,6 +1,6 @@
-//! Regression: the generic-detector entropy-floor calibration — now owned in each
+//! Regression: the generic-detector entropy-floor calibration, now owned in each
 //! generic detector's OWN `detectors/*.toml` `entropy_floor` field (there is no
-//! `rules/entropy-floors.toml`) — and the drop/keep semantics the scanner layers
+//! `rules/entropy-floors.toml`), and the drop/keep semantics the scanner layers
 //! on top of it.
 //!
 //! The test loads the same detector specs the scanner compiles and drives the
@@ -10,7 +10,7 @@
 //!
 //!   1. first-matching-bucket lookup from the supplied active DetectorSpec.
 //!   2. `adjudicate::generic_entropy_below_floor` / the `generic_keyword_low_entropy`
-//!      toggle in `generic_bridge_entropy_below_floor` — the kept-vs-dropped
+//!      toggle in `generic_bridge_entropy_below_floor`: the kept-vs-dropped
 //!      decision (`entropy < floor`) and the Tier-A `entropy_threshold` override
 //!      that can only RAISE a floor.
 //!
@@ -55,7 +55,7 @@ struct Bucket {
 
 /// Build the floor view from the embedded detector corpus: every detector that
 /// declares an `entropy_floor` contributes one family. This is the same source
-/// the scanner's runtime table derives from — the detector TOMLs.
+/// the scanner's runtime table derives from (the detector TOMLs).
 fn load() -> FloorFile {
     let specs =
         keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus loads");
@@ -174,7 +174,7 @@ fn password_is_single_flat_bucket_2_5() {
 
 #[test]
 fn keyword_secret_floor_is_exactly_1_5() {
-    // KEYWORD_SECRET_FLOOR: the lowest bar of any family — the keyword anchor is
+    // KEYWORD_SECRET_FLOOR: the lowest bar of any family, the keyword anchor is
     // the evidence, not entropy.
     let file = load();
     let fam = family(&file, GENERIC_KEYWORD_SECRET).expect("generic-keyword-secret family present");
@@ -334,7 +334,7 @@ fn keyword_low_entropy_toggle_is_noop_above_both_floors() {
 
 // ---------------------------------------------------------------------------
 // Cross-family invariants documented in the TOML header, asserted on the SHIPPED
-// data (the src unit tests only reject synthetic BAD data — these guard the
+// data (the src unit tests only reject synthetic BAD data, these guard the
 // GOOD data still satisfies the contract).
 // ---------------------------------------------------------------------------
 

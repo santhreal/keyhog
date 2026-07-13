@@ -6,7 +6,7 @@
 //! companion / suppression / dedup). Phase-2 is 15-30 s on the same corpus and
 //! is ALL of the wall time. It runs on the CPU, one candidate at a time. The
 //! GPU region-presence route only replaces phase-1, so forcing GPU is strictly
-//! slower end-to-end — the 10x can only come from BATCHING phase-2 onto the GPU.
+//! slower end-to-end (the 10x can only come from BATCHING phase-2 onto the GPU).
 //!
 //! ## The targets encoded here (concrete, defensible, RED today)
 //!   1. **Per-candidate phase-2 cost `< PER_CANDIDATE_TARGET_US`.** A batched
@@ -15,7 +15,7 @@
 //!      throughput implied by target #2). Measured CPU per-candidate cost today
 //!      is far higher, so this fails.
 //!   2. **Batch verify of N candidates completes in `< N / 100_000` seconds.**
-//!      i.e. ≥100k candidates/second sustained — the batched-GPU verify
+//!      i.e. ≥100k candidates/second sustained, the batched-GPU verify
 //!      throughput target. Today's CPU phase-2 is well under 100k/s, so the
 //!      measured wall time exceeds `N/100_000` and this fails.
 //!
@@ -158,11 +158,11 @@ const CANDIDATE_LINES: &[usize] = &[10_000, 25_000, 50_000, 100_000];
 const TARGET_CANDS_PER_SEC: f64 = 100_000.0;
 
 /// Target #1: per-candidate marginal phase-2 cost, in microseconds. 1/100_000 s
-/// = 10 µs — the per-candidate budget implied by the 100k/s batch throughput.
+/// = 10 µs (the per-candidate budget implied by the 100k/s batch throughput).
 const PER_CANDIDATE_TARGET_US: f64 = 10.0;
 
 /// Timed scans per measurement after one warm-up. The current CPU phase-2 misses
-/// the 100k cand/s target by a large factor — far beyond jitter — so one timed
+/// the 100k cand/s target by a large factor, far beyond jitter, so one timed
 /// scan is a sound RED signal and keeps the suite runnable (no `#[ignore]`).
 const MEASURE_REPS: usize = 1;
 
@@ -207,7 +207,7 @@ fn assert_batch_phase2_throughput_at(lines: usize) {
          cand/s). Measured throughput is {cands_per_sec:.0} cand/s on the routed path ({}). \
          Phase-2 runs one-candidate-at-a-time on the CPU today; this stays RED until the \
          batched-GPU verify lands. Phase-1 is ≈free, so routing to GPU region-presence does \
-         NOT help — the work to move is phase-2.",
+         NOT help, the work to move is phase-2.",
         routed.label()
     );
 }

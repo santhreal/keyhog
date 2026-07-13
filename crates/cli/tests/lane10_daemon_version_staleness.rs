@@ -5,7 +5,7 @@
 //! `keyhog update` keeps its OLD detector corpus + scan pipeline in memory.
 //! The wire version can stay stable across such a release (e.g. 0.5.40 ->
 //! 0.5.41, with the same compatible wire), so the wire-version handshake alone does NOT catch
-//! it — the upgraded client would route scans to the stale daemon and silently
+//! it, the upgraded client would route scans to the stale daemon and silently
 //! get old-corpus results. `client::connect` now gates on package, Git build,
 //! and detector-rules identity; `client::connect_any_version` (used by `daemon stop`/`status`)
 //! deliberately does not, so an operator can still stop/inspect a stale daemon.

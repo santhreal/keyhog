@@ -1,34 +1,34 @@
 #!/usr/bin/env bash
 # THE ONE prevention-gate entrypoint. Every audit keyhog has is invoked from
 # here so a single `scripts/gates/run_all.sh` (and the one `audit-gates` CI job
-# that runs it) is the whole story — not a scatter of gates a human has to
+# that runs it) is the whole story, not a scatter of gates a human has to
 # remember to run. Each failure class that bit keyhog this round goes RED here,
 # not into a sentence in CLAUDE.md someone can skip.
 #
 # Fast, always-run source/org gates (no corpus, no built binary, no network):
-#   #1 no_silent_fallbacks   — new Law-10 swallow in a scan/CLI/verify crate (ratchet)
-#   #1b law10_semantics      — Law-10 exemptions must prove conservation/loud surfacing
-#   #1c no_stale_internal_refs — retired planning docs/registries cannot reappear
-#   #1d no_deferral_markers  — stale deferral markers cannot reappear
-#   #1e docs_truth           — canonical mdBook is complete and source-true
-#   #1f github_actions_pinned — repo CI cannot execute mutable third-party refs
-#   #4 surface_coverage      — a subcommand with no real-process test
-#   #5 complexity_budget     — engine grew a new lane/backend/file past budget
-#   org_audit.py             — stale claims, generated LOC-cap bloat, evidence wiring
-#   install_static_analysis  — install.sh/install.ps1 lint/static parser coverage
-#   cli_claims_check.sh      — no hallucinated CLI flags in canonical docs
-#   entrypoints_check.sh     — pre-commit hook + composite Action stay wired
-#   ci-operability           — workflow, metadata, fuzz/dogfood, and pin contracts
+#   #1 no_silent_fallbacks: new Law-10 swallow in a scan/CLI/verify crate (ratchet)
+#   #1b law10_semantics: Law-10 exemptions must prove conservation/loud surfacing
+#   #1c no_stale_internal_refs, retired planning docs/registries cannot reappear
+#   #1d no_deferral_markers, stale deferral markers cannot reappear
+#   #1e docs_truth, canonical mdBook is complete and source-true
+#   #1f github_actions_pinned, repo CI cannot execute mutable third-party refs
+#   #4 surface_coverage: a subcommand with no real-process test
+#   #5 complexity_budget: engine grew a new lane/backend/file past budget
+#   org_audit.py: stale claims, generated LOC-cap bloat, evidence wiring
+#   install_static_analysis: install.sh/install.ps1 lint/static parser coverage
+#   cli_claims_check.sh: no hallucinated CLI flags in canonical docs
+#   entrypoints_check.sh: pre-commit hook + composite Action stay wired
+#   ci-operability: workflow, metadata, fuzz/dogfood, and pin contracts
 #
 # Gates that need an asset (corpus / built binary / network / cargo-audit DB).
-# These run when their asset is present and LOUD-SKIP (printed, never silent —
+# These run when their asset is present and LOUD-SKIP (printed, never silent 
 # Law 10) when not, so a developer box without the corpus still gets the source
 # gates and CI (which HAS the assets) gets everything:
-#   #2 backend parity        — a scan path silently diverges (pytest, needs corpus+bin)
-#   #3 recall floor          — recall regressed below the pinned line (pytest)
-#   bench gate               — keyhog must lead competitors + not regress (needs results/)
-#   audit.sh                 — cargo audit (needs cargo-audit + advisory DB)
-#   ml/parity_check.py       — Rust<->Python feature parity (skipped if ml/ absent)
+#   #2 backend parity: a scan path silently diverges (pytest, needs corpus+bin)
+#   #3 recall floor: recall regressed below the pinned line (pytest)
+#   bench gate, keyhog must lead competitors + not regress (needs results/)
+#   audit.sh: cargo audit (needs cargo-audit + advisory DB)
+#   ml/parity_check.py: Rust<->Python feature parity (skipped if ml/ absent)
 #
 # Usage:
 #   scripts/gates/run_all.sh            # run every gate, loud-skip missing assets
@@ -83,13 +83,13 @@ fi
 skip() {
   echo "  SKIP (loud): $1"
   if [ "$STRICT_ASSETS" = "1" ]; then
-    echo "    STRICT_ASSETS=1 — treating this skip as a FAILURE." >&2
+    echo "    STRICT_ASSETS=1, treating this skip as a FAILURE." >&2
     rc=1
   fi
 }
 
 run() {
-  # run "<label>" cmd args...  — print a banner, run, OR rc=1 on non-zero.
+  # run "<label>" cmd args... (print a banner, run, OR rc=1 on non-zero).
   local label="$1"; shift
   echo "== ${label} =="
   "$@" || rc=1
@@ -151,59 +151,59 @@ run "CI operability: workflow and metadata contracts" \
 
 echo "== Gates #2 + #3: backend parity + recall floor (bench pytest) =="
 if [ "$GATES_SOURCE_ONLY" = "1" ]; then
-  skip "GATES_SOURCE_ONLY=1 — backend parity + recall floor pytest not run."
+  skip "GATES_SOURCE_ONLY=1 (backend parity + recall floor pytest not run)."
 elif [ -d benchmarks/corpora/creddata/CredData/meta ]; then
   ( cd benchmarks && python3 -m pytest \
       bench/tests/test_backend_parity.py \
       bench/tests/test_creddata_recall_matrix.py::test_creddata_recall_does_not_regress_below_floor \
       -q --no-header -p no:cacheprovider ) || rc=1
 else
-  skip "CredData corpus not present — run \`make creddata\` to enable #2/#3."
+  skip "CredData corpus not present (run \`make creddata\` to enable #2/#3)."
 fi
 echo
 
 echo "== Bench gate: keyhog must lead competitors + not regress past baseline =="
 # The differential+regression gate consumes an already-produced leaderboard in
 # benchmarks/results/ (run \`make leaderboard\` / the bench-nightly workflow
-# first). We do NOT run a fresh leaderboard here — that needs every competitor
+# first). We do NOT run a fresh leaderboard here, that needs every competitor
 # binary on PATH and minutes of scan time; this entrypoint stays fast. If no
 # results are present we loud-skip rather than run binaries that may be absent.
 if [ "$GATES_SOURCE_ONLY" = "1" ]; then
-  skip "GATES_SOURCE_ONLY=1 — differential bench gate not run."
+  skip "GATES_SOURCE_ONLY=1 (differential bench gate not run)."
 elif [ -d benchmarks/results ] && \
    find benchmarks/results -name '*.json' -print -quit 2>/dev/null | grep -q .; then
   ( cd benchmarks && python3 -m bench gate \
       --corpus mirror --results results \
       --baseline baselines/mirror-keyhog-baseline.json --epsilon 0.005 ) || rc=1
 else
-  skip "no benchmarks/results/*.json — run \`make leaderboard\` (or the bench-nightly workflow) to enable the differential gate."
+  skip "no benchmarks/results/*.json (run \`make leaderboard\` (or the bench-nightly workflow) to enable the differential gate)."
 fi
 echo
 
 echo "== Security audit: cargo audit (advisory ignores from audit.toml) =="
 if [ "$GATES_SOURCE_ONLY" = "1" ]; then
-  skip "GATES_SOURCE_ONLY=1 — cargo audit not run."
+  skip "GATES_SOURCE_ONLY=1 (cargo audit not run)."
 elif command -v cargo-audit >/dev/null 2>&1 || cargo audit --version >/dev/null 2>&1; then
   bash scripts/audit.sh || rc=1
 else
-  skip "cargo-audit not installed — \`cargo install cargo-audit\` to enable the RUSTSEC gate."
+  skip "cargo-audit not installed: \`cargo install cargo-audit\` to enable the RUSTSEC gate."
 fi
 echo
 
 echo "== ML feature parity: Rust dump_features vs ml/feature_parity.py =="
 # parity_check.py compares the Rust serve-path feature extractor against the
 # Python parity/debug port. It needs the Rust extractor: a prebuilt $KEYHOG_DUMP_FEATURES
-# binary (what CI builds once and exports) — we do NOT trigger a cargo build from
+# binary (what CI builds once and exports), we do NOT trigger a cargo build from
 # this fast entrypoint. Absent the script entirely, or the prebuilt binary, we
 # loud-skip.
 if [ "$GATES_SOURCE_ONLY" = "1" ]; then
-  skip "GATES_SOURCE_ONLY=1 — ML feature-parity gate not run."
+  skip "GATES_SOURCE_ONLY=1: ML feature-parity gate not run."
 elif [ ! -f ml/parity_check.py ]; then
-  skip "ml/parity_check.py absent — ML feature-parity gate not applicable in this tree."
+  skip "ml/parity_check.py absent. ML feature-parity gate not applicable in this tree."
 elif [ -n "${KEYHOG_DUMP_FEATURES:-}" ] && [ -x "${KEYHOG_DUMP_FEATURES:-}" ]; then
   ( cd ml && python3 parity_check.py ) || rc=1
 else
-  skip "KEYHOG_DUMP_FEATURES (prebuilt dump_features binary) not set — build it (\`cargo build -p keyhog-scanner --example dump_features\`) and export its path to enable the ML parity gate without a cargo build from this entrypoint."
+  skip "KEYHOG_DUMP_FEATURES (prebuilt dump_features binary) not set, build it (\`cargo build -p keyhog-scanner --example dump_features\`) and export its path to enable the ML parity gate without a cargo build from this entrypoint."
 fi
 echo
 

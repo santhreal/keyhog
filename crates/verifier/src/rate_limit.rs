@@ -44,7 +44,7 @@ struct ServiceLimit {
     /// Current working inter-request interval (AIMD-adjusted: `>= base_interval`,
     /// grows on 429, shrinks back on success).
     interval: Duration,
-    /// Configured target interval — the FASTEST (smallest) pace for this service
+    /// Configured target interval, the FASTEST (smallest) pace for this service
     /// and the floor AIMD recovery returns to. Set at creation / `update_limit`.
     base_interval: Duration,
 }
@@ -182,7 +182,7 @@ impl RateLimiter {
     /// Additive-increase: a successful round-trip for `service` recovers
     /// `base_interval / RATE_LIMIT_RECOVERY_STEP_DIVISOR` of its backoff, floored
     /// at `base_interval` (never faster than configured). No-op when the service
-    /// has no slot or is already at base — cheap to call on every success.
+    /// has no slot or is already at base (cheap to call on every success).
     pub fn reward_service(&self, service: &str) {
         if let Some(entry) = self.services.get(service) {
             let mut limit = entry.value().lock();
@@ -209,7 +209,7 @@ impl RateLimiter {
 /// container, where `Instant::now()` can be *less than* `interval` from the
 /// monotonic clock's origin) a plain `now - interval` underflows and PANICS.
 /// `checked_sub` clamps to `now` instead: the first request then waits one
-/// interval — a one-off politeness delay, never a correctness or security
+/// interval, a one-off politeness delay, never a correctness or security
 /// regression, and never a panic.
 pub(crate) fn initial_last_request(now: Instant, interval: Duration) -> Instant {
     now.checked_sub(interval).map_or(now, |instant| instant)

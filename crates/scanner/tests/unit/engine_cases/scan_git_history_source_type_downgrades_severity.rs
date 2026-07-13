@@ -65,7 +65,7 @@ fn git_history_hyphen_source_type_downgrades_severity() {
 
 /// `location.source` Arcs for a single scanner scanning two identical chunks of
 /// `source_type`. A scanner-wide static interner is cloned per scan but built
-/// once per scanner, while the per-scan metadata interner is rebuilt per chunk —
+/// once per scanner, while the per-scan metadata interner is rebuilt per chunk 
 /// so a PRE-SEEDED source_type resolves to the same shared `Arc<str>` across both
 /// chunk buckets, whereas an un-seeded one allocates a fresh Arc per chunk.
 fn source_arcs_over_two_chunks(source_type: &str) -> (Arc<str>, Arc<str>) {
@@ -102,7 +102,7 @@ fn git_history_source_type_resolves_to_shared_interned_arc() {
     );
 
     // Control: an un-seeded source_type is NOT in the static interner, so each
-    // chunk's per-scan interner allocates a distinct Arc — proving the seeding,
+    // chunk's per-scan interner allocates a distinct Arc, proving the seeding,
     // not just Arc reuse, is what shares the git-history case.
     let (c, d) = source_arcs_over_two_chunks("kh-unseeded-control-source");
     assert!(

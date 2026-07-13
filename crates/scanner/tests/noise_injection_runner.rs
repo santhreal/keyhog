@@ -1,4 +1,4 @@
-//! Noise-injection runner — a credential-sufficient secret survives padding.
+//! Noise-injection runner (a credential-sufficient secret survives padding).
 //!
 //! Real-world secrets rarely land in a bare `KEY=value` line: a 4 KB JSON log
 //! row, a base64 audit-trail entry, a Vec-of-structs debug dump, a stack trace
@@ -11,18 +11,18 @@
 //! Padding noise on both sides of a positive leaves the credential BYTES
 //! intact, so this is a *credential-sufficiency invariance* contract (see
 //! `support::contracts`): a credential that fires on its own bytes alone MUST
-//! still surface with arbitrary noise padded around it — the padding cannot
+//! still surface with arbitrary noise padded around it, the padding cannot
 //! remove bytes the detector already matched standalone. We gate exactly that,
 //! all-or-nothing, across every noise size and kind. Companion-required
 //! positives (no standalone fire) legitimately depend on context the padding
 //! pushes away; their survival is an accuracy RATE owned by the differential
-//! bench (`benchmarks/bench`), recorded here for visibility but never gated —
+//! bench (`benchmarks/bench`), recorded here for visibility but never gated 
 //! asserting that rate in `cargo test` is the exact T-01 violation this rewrite
 //! removes.
 //!
 //! Noise stays ≤4 KiB each side (≤~8 KiB total), well inside the 1 MiB scan
 //! window, so there is no legitimate size cap that could drop an in-bounds
-//! credential — every credential-sufficient miss here is a real recall bug.
+//! credential (every credential-sufficient miss here is a real recall bug).
 
 mod support;
 use support::contracts::{load_contracts, primaries, scanner, sufficiency_mask, surfaces, Primary};
@@ -174,7 +174,7 @@ fn credential_sufficient_secrets_survive_noise_padding() {
     assert!(
         violations.is_empty(),
         "noise-injection credential-sufficiency invariance violated ({} cases): a credential \
-         that fires standalone was dropped when noise was padded around it — a window/span \
+         that fires standalone was dropped when noise was padded around it, a window/span \
          recall bug, NOT a fixture artifact (the credential needs no companion context):\n  - {}",
         violations.len(),
         violations.join("\n  - "),

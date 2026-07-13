@@ -78,10 +78,10 @@ pub(in crate::filesystem) fn read_file_buffered(
 /// hot read path.
 ///
 /// After the open succeeds we fstat the OPENED descriptor (not the path) and
-/// refuse anything that is not a regular file — FIFO, socket, block/char device.
+/// refuse anything that is not a regular file. FIFO, socket, block/char device.
 /// fstat'ing the fd we just opened, rather than re-stat'ing the path, closes the
 /// TOCTOU window where the walker stats a regular file and an attacker swaps it
-/// for a FIFO before this open (`O_NOFOLLOW` does not help — a FIFO is not a
+/// for a FIFO before this open (`O_NOFOLLOW` does not help, a FIFO is not a
 /// symlink). A content scanner must never read from a special file; failing
 /// closed here is surfaced loudly by the caller as a skip error, never silently.
 ///
@@ -125,7 +125,7 @@ pub(crate) fn open_file_safe(path: &Path) -> std::io::Result<File> {
     // Fail closed on any non-regular file. fstat the OPENED fd (the same object
     // the O_NONBLOCK open returned) so a FIFO/socket/device cannot reach the read
     // path: a FIFO read would hang, a device (`/dev/zero`) would stream until the
-    // read cap, and neither is a scan target. Checking the fd — not the path —
+    // read cap, and neither is a scan target. Checking the fd, not the path 
     // also closes the regular-file→FIFO TOCTOU swap. `is_file()` is true ONLY for
     // a regular file on every platform, so this one check covers all special
     // types (and a directory, which never reaches a content read anyway).
@@ -322,7 +322,7 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<BufferedFileR
     }
     // NB: no re-flock here. `open_file_safe` (which opened `file`) already holds
     // the advisory `LOCK_SH` on this fd, and a shared lock we already hold blocks
-    // any new exclusive lock — so a re-request could only re-confirm the lock we
+    // any new exclusive lock, so a re-request could only re-confirm the lock we
     // own (a redundant syscall whose "locked by another process" failure branch
     // was dead). The lock stays held for `file`'s lifetime, which spans the mmap
     // below. ONE owner of the flock guard: `open_file_safe`. Contract pinned by

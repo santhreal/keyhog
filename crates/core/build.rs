@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // on-disk `detectors/` tree (cargo's `rerun-if-changed` cannot be trusted
     // across in-place TOML edits, so a fresh-from-this-build digest is the
     // authoritative answer to "what got compiled in"). Self-contained FNV-1a
-    // (no build-dependency on a hashing crate) — it identifies the set, it is
+    // (no build-dependency on a hashing crate), it identifies the set, it is
     // not a security primitive.
     let detector_digest = detector_set_digest(&entries);
     println!("cargo:rustc-env=KEYHOG_DETECTOR_DIGEST={detector_digest}");
@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Sorted `.toml` paths in `detectors_dir` — the single directory walk both
+/// Sorted `.toml` paths in `detectors_dir`: the single directory walk both
 /// the embedded table and the per-file `rerun-if-changed` lines derive from.
 /// Sorting by path equals sorting by file name (shared parent), so the
 /// embedded detector order is stable across platforms.

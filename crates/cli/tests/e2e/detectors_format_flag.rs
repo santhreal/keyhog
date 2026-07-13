@@ -1,4 +1,4 @@
-//! CLI-01 coherence guard — `detectors --format` parity with `scan --format`.
+//! CLI-01 coherence guard: `detectors --format` parity with `scan --format`.
 //!
 //! WHY THIS FILE EXISTS
 //! --------------------
@@ -13,7 +13,7 @@
 //! 1. `detectors --format json` is accepted and emits the structured array.
 //! 2. `detectors --format text` is accepted and is NOT JSON (human summary).
 //! 3. The narrow format set is enforced: a findings-report-only format
-//!    (`sarif`) is rejected for `detectors` rather than silently accepted —
+//!    (`sarif`) is rejected for `detectors` rather than silently accepted 
 //!    the `detectors` surface intentionally offers only text|json.
 //! 4. The retired `--json` duplicate is rejected instead of silently choosing
 //!    a second path to the same behavior.
@@ -51,7 +51,7 @@ fn detectors_format_text_is_not_json() {
         String::from_utf8_lossy(&out.stderr),
     );
     // The human summary starts with the loaded-detectors banner and is not a
-    // JSON array — parsing it as a JSON array must fail.
+    // JSON array (parsing it as a JSON array must fail).
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("Loaded") && stdout.contains("detectors"),
@@ -67,7 +67,7 @@ fn detectors_format_text_is_not_json() {
 fn detectors_format_rejects_findings_only_format() {
     // SARIF is a findings-report shape with no meaning for a detector listing.
     // `detectors` deliberately offers only text|json, so this must be rejected
-    // (exit 2) — not silently accepted, and not crashing.
+    // (exit 2) (not silently accepted, and not crashing).
     let out = run(&["detectors", "--format", "sarif"]);
     assert_eq!(
         out.status.code(),

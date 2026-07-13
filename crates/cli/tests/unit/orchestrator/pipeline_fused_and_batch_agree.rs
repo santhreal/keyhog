@@ -3,7 +3,7 @@
 //!
 //! The fused path (default for CPU/SIMD filesystem scans) scans every chunk
 //! independently on the global rayon pool and skips the per-batch
-//! `scan_chunk_boundaries` pass — which is a no-op for the filesystem source's
+//! `scan_chunk_boundaries` pass, which is a no-op for the filesystem source's
 //! 128 KiB-overlapping windows anyway. This test is the parity guard for that
 //! claim: same corpus, same detectors, the two pipelines must agree exactly.
 
@@ -34,8 +34,8 @@ fn planted_dir() -> tempfile::TempDir {
 }
 
 /// The DISTINCT findings of a scan (deduped by detector/credential/file/line).
-/// scan_sources returns pre-dedup RawMatch — one planted secret yields several
-/// raw matches across the named/generic-assignment/entropy stages — so the
+/// scan_sources returns pre-dedup RawMatch, one planted secret yields several
+/// raw matches across the named/generic-assignment/entropy stages, so the
 /// parity claim is over the distinct set, not raw multiplicity.
 fn scan_findings(dir: &Path, batch_pipeline: bool) -> BTreeSet<(String, String, String, String)> {
     let detectors = vec![make_detector()];

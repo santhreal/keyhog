@@ -6,7 +6,7 @@ static SIMD_AUTO_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::
 /// Family + homoglyph breakdown of the always-active (`phase2_always_active_indices`)
 /// pool, used to pin the true composition behind the F3 perf floor.
 ///
-/// The distinction that matters: `*_homoglyph` patterns are ASCII-fold-skippable —
+/// The distinction that matters: `*_homoglyph` patterns are ASCII-fold-skippable 
 /// on a pure-ASCII chunk (the CredData common case) they are SKIPPED by
 /// `homoglyph_ascii_skip` and contribute NOTHING to the ASCII prefilter cost. So
 /// the pool that actually runs the 84.3%-of-scan HS pass on ASCII source is the
@@ -87,7 +87,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     }
 
     /// Pre-interned `(detector_id, detector_name, service)` triple for the
-    /// detector at `detector_index`. Three `Arc::clone`s, zero hashing — the
+    /// detector at `detector_index`. Three `Arc::clone`s, zero hashing, the
     /// hot-path replacement for three `ScanState::intern_metadata` calls on
     /// frozen detector metadata (PERF-locality_intern-1). Returns byte-for-byte
     /// the same `Arc<str>` values `static_intern.lookup(...)` would, because
@@ -135,7 +135,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         &self.tuning
     }
 
-    /// Diagnostic: `(phase2_total, always_active, always_active_eligible)` —
+    /// Diagnostic: `(phase2_total, always_active, always_active_eligible)` 
     /// how much the shared-anchor index shrinks the RegexSet prefilter. The
     /// prefilter cost scales with `always_active - always_active_eligible`.
     #[cfg(test)]
@@ -183,7 +183,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     /// FULL always-active DB vs a lean DB that EXCLUDES homoglyph variants.
     ///
     /// On a pure-ASCII chunk the homoglyph variants (99.9% of the pool) cannot
-    /// match — their prefixes are unicode look-alikes absent from ASCII bytes, and
+    /// match, their prefixes are unicode look-alikes absent from ASCII bytes, and
     /// the base ASCII prefix is already covered by the AC/confirmed path (the same
     /// invariant `homoglyph_ascii_skip` relies on). The RegexSet path already skips
     /// them on ASCII; the HS path does NOT. This measures whether that missing skip
@@ -203,7 +203,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             .iter()
             .filter(|&&i| !self.phase2_patterns[i].0.homoglyph_variant)
             .count();
-        // ONE engine — the production object, which now holds both the full DB and
+        // ONE engine, the production object, which now holds both the full DB and
         // the lean ASCII sub-DB. Time the two routes exactly as the hot path selects
         // them (`skip_homoglyph_ascii` false vs true).
         let engine = Phase2HsEngine::build(&self.phase2_patterns, &all).expect("HS engine");
@@ -230,11 +230,11 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     /// Recall-neutrality proof for the HS homoglyph-ASCII skip: on `ascii_text`,
     /// mark once with the full DB and once with the lean ASCII DB, and return
     /// `(full_marked, lean_marked, non_homoglyph_dropped, lean_extra)`:
-    ///   * `non_homoglyph_dropped` — patterns the full DB marked that the lean DB
+    ///   * `non_homoglyph_dropped`: patterns the full DB marked that the lean DB
     ///     did NOT, which are NOT homoglyph variants. MUST be empty: the lean DB may
     ///     only ever drop homoglyph variants (whose ASCII matches the base AC path
     ///     already covers), never a real pattern.
-    ///   * `lean_extra` — patterns the lean DB marked that the full DB did not. MUST
+    ///   * `lean_extra`: patterns the lean DB marked that the full DB did not. MUST
     ///     be empty: lean is a strict subset, so it can never over-mark.
     /// Both empty ⇒ the lean DB differs from the full DB by EXACTLY the homoglyph
     /// variants, so on ASCII (base covers homoglyph) findings are unchanged.
@@ -273,7 +273,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     /// that `scan_phase2_patterns` runs over the whole chunk once their
     /// keyword fires. Used by anchor-localization analysis to classify which
     /// carry a regex-required literal that can drive a windowed (rather than
-    /// whole-chunk) scan. Diagnostic surface only — not part of the scan path.
+    /// whole-chunk) scan. Diagnostic surface only (not part of the scan path).
     #[cfg(test)]
     pub(crate) fn phase2_pattern_diagnostics(&self) -> Vec<(String, Vec<String>)> {
         self.phase2_patterns
@@ -282,7 +282,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             .collect()
     }
 
-    /// Diagnostic: family composition of the always-active (`phase2_n`) pool —
+    /// Diagnostic: family composition of the always-active (`phase2_n`) pool 
     /// `(generic_entropy_count, other_count, distinct_other_ids)`.
     ///
     /// The recall-neutral decode-path perf lever (F3) rests on what `other_count`
@@ -294,7 +294,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     /// skipped on the decode path with zero recall change; if `other_count > 0`,
     /// the skip must exclude ONLY the generic/entropy subset so the no-keyword
     /// vendor patterns (which the decode-guard KEEPS) still run. This diagnostic
-    /// is the durable proof of which case holds. Diagnostic only — not on the
+    /// is the durable proof of which case holds. Diagnostic only, not on the
     /// scan path.
     #[cfg(test)]
     pub(crate) fn phase2_always_active_family_breakdown(&self) -> Phase2PoolBreakdown {
@@ -388,7 +388,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     /// Cumulative count of runtime GPU dispatch degrades recorded by this
     /// scanner (via `record_gpu_degrade`). Cheap (one relaxed atomic load) so the
     /// per-batch dispatch loop can snapshot it before/after a GPU arm and tell
-    /// whether THAT batch actually ran on the GPU or degraded to CPU/SIMD — the
+    /// whether THAT batch actually ran on the GPU or degraded to CPU/SIMD, the
     /// completion summary's "chunks on GPU" must reflect real execution, not the
     /// router's CHOICE (Law 10 telemetry truth). `runtime_status()` also carries
     /// this value but recomputes digests, so it is too heavy to poll per batch.
@@ -471,13 +471,13 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         };
         // Warming is a PROBE with an in-band `bool` channel: report readiness
         // honestly (`false` when a forced GPU stack is unusable) instead
-        // of hard-stopping the process. This is NOT a silent fallback (Law 10) —
+        // of hard-stopping the process. This is NOT a silent fallback (Law 10) 
         // the caller receives the `false` and decides. The no-silent-fallback
         // hard-stop lives where it MUST: `--require-gpu` is caught by the CLI
         // preflight (`gpu::require_gpu_preflight`) before any scan, and a forced
         // backend that reaches GPU dispatch fails closed via
         // `deny_silent_selected_backend_degrade` inside `scan_with_backend`
-        // (the `par_iter` closure with no `Result` channel — the ONLY place the
+        // (the `par_iter` closure with no `Result` channel, the ONLY place the
         // M12 process-exit is justified). Exiting here instead broke the `-> bool`
         // contract and killed the whole process (exit 12) on any GPU-less warm.
         ready

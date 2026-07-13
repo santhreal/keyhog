@@ -13,7 +13,7 @@ fn bench_nightly_installs_hyperscan_before_release_build() {
     assert!(
         has_hyperscan,
         "bench-nightly.yml builds `cargo build --release -p keyhog` with default \
-         features (simd/Hyperscan) but never installs libhyperscan — nightly leaderboard \
+         features (simd/Hyperscan) but never installs libhyperscan, nightly leaderboard \
          may measure portable fallback, not production Linux build (KH-GAP-079)"
     );
 }

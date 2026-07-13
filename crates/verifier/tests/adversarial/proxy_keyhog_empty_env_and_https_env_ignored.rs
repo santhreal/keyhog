@@ -1,5 +1,5 @@
 //! Verifier proxy edge: neither KEYHOG_PROXY nor an ambient HTTPS_PROXY can
-//! activate the proxy — both are ignored (config-policy mandate + security).
+//! activate the proxy (both are ignored (config-policy mandate + security)).
 
 use crate::contract::support::with_proxy_contract_env;
 use keyhog_verifier::proxy_is_active;

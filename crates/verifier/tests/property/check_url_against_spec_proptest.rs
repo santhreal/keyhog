@@ -11,8 +11,8 @@
 //! The primitives (`effective_allowlist`, `host_is_allowed`) have their own
 //! fixed-vector + property coverage; this file locks the COMPOSED entry point:
 //! that it equals `host_is_allowed` over the effective allowlist, fails closed
-//! when no allowlist is configured or the URL cannot be parsed, and — crucially
-//! — screens the PARSED host, defeating userinfo/appended-suffix host-confusion
+//! when no allowlist is configured or the URL cannot be parsed, and, crucially
+//!, screens the PARSED host, defeating userinfo/appended-suffix host-confusion
 //! evasions. Dependency-free fixed-seed LCG, same convention as the sibling
 //! property files.
 
@@ -23,7 +23,7 @@ use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 const SAMPLES: usize = 20_000;
 
 /// A spec with an explicit allowlist and an EMPTY service, so no builtin service
-/// domains merge in — `effective_allowlist` returns exactly `domains`, making the
+/// domains merge in: `effective_allowlist` returns exactly `domains`, making the
 /// composition equivalence below exact.
 fn spec_with_domains(domains: Vec<String>) -> VerifySpec {
     VerifySpec {
@@ -93,7 +93,7 @@ fn no_configured_allowlist_fails_closed_for_any_url() {
 #[test]
 fn unparseable_or_hostless_url_fails_closed() {
     // Even WITH a valid allowlist, a URL that cannot be parsed or carries no host
-    // is blocked — the guard never falls open on a malformed target.
+    // is blocked (the guard never falls open on a malformed target).
     let spec = spec_with_domains(vec!["api.example.com".to_string()]);
     for bad in [
         "not a url",
@@ -112,7 +112,7 @@ fn unparseable_or_hostless_url_fails_closed() {
 
 #[test]
 fn parsed_host_defeats_host_confusion_evasions() {
-    // The guard screens the PARSED host, not the raw string — so classic
+    // The guard screens the PARSED host, not the raw string, so classic
     // host-confusion exfil vectors are all blocked while the legitimate exact and
     // subdomain hosts are allowed.
     let spec = spec_with_domains(vec!["api.example.com".to_string()]);
@@ -130,7 +130,7 @@ fn parsed_host_defeats_host_confusion_evasions() {
     assert!(TestApi
         .check_url_against_spec("https://api.example.com.attacker.io/", &spec)
         .is_err());
-    // The allowed name appears only in the path — the real host is the attacker.
+    // The allowed name appears only in the path (the real host is the attacker).
     assert!(TestApi
         .check_url_against_spec("https://attacker.io/api.example.com", &spec)
         .is_err());

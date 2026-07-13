@@ -1,5 +1,5 @@
 //! Property tier for `validate_scan_archive_entry_name` (reached via the
-//! `SourceTestApi` facade) — the guard every archive extractor (zip / 7z / rar)
+//! `SourceTestApi` facade), the guard every archive extractor (zip / 7z / rar)
 //! runs over each entry name before the member is processed. The fixed-vector
 //! twin (`tests/unit/archive_entry_name_traversal_contract.rs`) pins the exact
 //! refusal reason for each hand-picked class; this file sweeps the SECURITY
@@ -8,18 +8,18 @@
 //!
 //! The invariants proved here, none of which the fixed vectors establish:
 //!
-//!   * ROBUSTNESS — the validator never panics on arbitrary Unicode or on a
+//!   * ROBUSTNESS, the validator never panics on arbitrary Unicode or on a
 //!     hostile alphabet concentrated on the exact bytes its decode/traversal
 //!     logic branches on (`. / \ % 2 e f c : NUL …`).
-//!   * ANTI-SMUGGLING DEPTH — a `../` payload hidden behind *any* number of
+//!   * ANTI-SMUGGLING DEPTH, a `../` payload hidden behind *any* number of
 //!     percent-encoding layers is ALWAYS refused: shallow layers decode to the
 //!     literal `../` and trip the traversal check, and layers past the decode
 //!     cap trip the "excessively encoded" refusal. The fixed test only exercises
 //!     one and two layers; here every depth `1..=12` is a case.
-//!   * DECODE-CAP BOUNDARY — the mirror of the above for a *safe* name: it
+//!   * DECODE-CAP BOUNDARY, the mirror of the above for a *safe* name: it
 //!     survives up to the nine decode layers the loop can traverse and is
 //!     refused at ten (a DoS guard), pinning the exact loop-depth contract.
-//!   * ROOT CONTAINMENT — every name the validator ACCEPTS is, under an
+//!   * ROOT CONTAINMENT, every name the validator ACCEPTS is, under an
 //!     independent lexical normalization (depth counting, not a copy of the
 //!     implementation), guaranteed not to escape the extraction root, and free
 //!     of the NUL / backslash structural hazards. This is the load-bearing
@@ -27,7 +27,7 @@
 //!
 //! Reached ONLY through the stable `SourceTestApi` facade (the
 //! `src/filesystem/extract/**` no-inline-tests contract keeps unit coverage out
-//! of `src`). No cargo feature is required — the guard is on the base build.
+//! of `src`). No cargo feature is required (the guard is on the base build).
 
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use proptest::prelude::*;
@@ -37,7 +37,7 @@ use proptest::prelude::*;
 /// becomes `%25` in the outer layer, so `onion(s, k)` is `s` wrapped in `k`
 /// independent decode layers. Deliberately encodes all bytes (not just the
 /// traversal-significant ones) so an intermediate layer never carries a raw
-/// `/`, `.` or `..` — only the fully-decoded innermost `s` can trip a
+/// `/`, `.` or `..`: only the fully-decoded innermost `s` can trip a
 /// content check, which is exactly what makes the depth argument clean.
 fn pct_encode_all(s: &str) -> String {
     let mut out = String::with_capacity(s.len() * 3);
@@ -60,7 +60,7 @@ fn pct_onion(s: &str, layers: usize) -> String {
 /// path joined onto the extraction root, ever resolve ABOVE the root? Counts
 /// component depth (`..` pops, ordinary components push); a depth that ever goes
 /// negative means the path climbed out of the root. Structural hazards that make
-/// containment meaningless on a real filesystem (NUL, backslash — a Windows
+/// containment meaningless on a real filesystem (NUL, backslash, a Windows
 /// separator the forward-slash walk would miss) count as an escape. This is a
 /// from-scratch oracle, NOT a call back into the validator, so it can actually
 /// disagree with a buggy guard.
@@ -69,7 +69,7 @@ fn lexically_escapes_root(name: &str) -> bool {
         return true;
     }
     // A Windows drive prefix (`C:...`) is an absolute anchor, not a relative
-    // component — treat it as an escape.
+    // component (treat it as an escape).
     let b = name.as_bytes();
     if b.len() >= 2 && b[1] == b':' && b[0].is_ascii_alphabetic() {
         return true;
@@ -110,7 +110,7 @@ fn hazardous_name() -> impl Strategy<Value = String> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(6_000))]
 
-    /// Never panics on a hostile, traversal-flavoured alphabet — no slice on a
+    /// Never panics on a hostile, traversal-flavoured alphabet, no slice on a
     /// non-char-boundary, no index-out-of-bounds in the `%XX` decode, no
     /// unbounded recursion.
     #[test]
@@ -177,7 +177,7 @@ proptest! {
     }
 
     /// The acceptance mirror: a SAFE relative name behind 1..=6 encoding layers
-    /// (all within the loop's decode budget) decodes fully and is accepted — the
+    /// (all within the loop's decode budget) decodes fully and is accepted, the
     /// loop must not over-reject a legitimately percent-encoded entry name.
     #[test]
     fn safe_name_survives_multiple_encoding_layers(

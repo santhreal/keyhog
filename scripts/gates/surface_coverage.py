@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gate #4 — SURFACE COVERAGE: every subcommand has a real-process test.
+"""Gate #4: SURFACE COVERAGE: every subcommand has a real-process test.
 
 The `keyhog tui` dashboard rotted unusable for two months while its UNIT tests
 stayed green, because no test ever actually RAN the surface as a user would. A
@@ -8,12 +8,12 @@ feature whose only coverage is "the module compiles" is a feature-shaped shell.
 This gate enumerates the real subcommand surface from the canonical `clap`
 `enum Command` in `crates/cli/src/args.rs` and asserts that EVERY subcommand is
 exercised by the reliability matrix in `crates/cli/tests/reliability/harness.rs`
-— the suite that SPAWNS THE ACTUAL BINARY (`run(profile, &[sub, ...])`) under
+The suite that SPAWNS THE ACTUAL BINARY (`run(profile, &[sub, ...])`) under
 16 hostile profiles and asserts clean exit / no panic / no ANSI leak / a usage
 contract. A subcommand present in the binary but absent from that list = a
 surface with no real-process coverage = RED BUILD.
 
-(Interactive surfaces that need a live workflow — a TUI, a daemon stream — must
+(Interactive surfaces that need a live workflow, a TUI, a daemon stream, must
 additionally carry a PTY/e2e test; there are none today after the TUI removal,
 but if one is re-added, list it here as a required PTY-covered name.)
 
@@ -46,7 +46,7 @@ def command_variants() -> set[str]:
     text = ARGS.read_text()
     m = re.search(r"enum\s+Command\s*\{(.*?)\n\}", text, re.S)
     if not m:
-        print("FAIL — could not locate `enum Command` in args.rs", file=sys.stderr)
+        print("FAIL, could not locate `enum Command` in args.rs", file=sys.stderr)
         sys.exit(2)
     body = m.group(1)
     # Strip line comments + doc comments, then grab `Variant(` / `Variant {` /
@@ -64,13 +64,13 @@ def command_variants() -> set[str]:
 
 def covered_subcommands() -> set[str]:
     if not HARNESS.exists():
-        print(f"FAIL — reliability harness not found: {HARNESS}", file=sys.stderr)
+        print(f"FAIL, reliability harness not found: {HARNESS}", file=sys.stderr)
         sys.exit(2)
     text = HARNESS.read_text()
     # The SUBCOMMANDS const is the array containing "scan-system" + "daemon".
     m = re.search(r"&\[([^\]]*?\"scan-system\"[^\]]*?)\]", text, re.S)
     if not m:
-        print("FAIL — could not locate the subcommand list in harness.rs", file=sys.stderr)
+        print("FAIL, could not locate the subcommand list in harness.rs", file=sys.stderr)
         sys.exit(2)
     return set(re.findall(r'"([a-z][a-z0-9-]*)"', m.group(1)))
 
@@ -89,7 +89,7 @@ def main() -> int:
 
     rc = 0
     if gaps:
-        print(f"\nFAIL — {len(gaps)} subcommand(s) in the binary have NO real-process "
+        print(f"\nFAIL: {len(gaps)} subcommand(s) in the binary have NO real-process "
               f"coverage: {sorted(gaps)}", file=sys.stderr)
         print("  Add each to the SUBCOMMANDS list in "
               "crates/cli/tests/reliability/harness.rs so the reliability matrix "
@@ -97,12 +97,12 @@ def main() -> int:
               "PTY/e2e test on top.", file=sys.stderr)
         rc = 1
     if stale:
-        print(f"\nFAIL — {len(stale)} name(s) covered by the matrix no longer exist "
+        print(f"\nFAIL: {len(stale)} name(s) covered by the matrix no longer exist "
               f"as subcommands: {sorted(stale)}. Remove them from harness.rs "
               "(dead coverage hides a removed surface).", file=sys.stderr)
         rc = 1
     if rc == 0:
-        print("\nOK — every subcommand surface has real-process coverage.")
+        print("\nOK, every subcommand surface has real-process coverage.")
     return rc
 
 

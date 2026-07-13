@@ -10,7 +10,7 @@
 //!
 //! Isolation technique (why every positive is attributable to JSON decode):
 //! the detector's structural ANCHOR keyword is itself written with a `o`
-//! ('o') escape — e.g. `_authToken`, `password`, `BEGIN`. In the
+//! ('o') escape, e.g. `_authToken`, `password`, `BEGIN`. In the
 //! RAW (un-decoded) bytes that keyword is ABSENT, so the detector cannot fire on
 //! the parent chunk; the credential can ONLY surface after the JSON decoder
 //! unescapes `o` back to `o`. `baseline_raw_anchor_escaped_yields_zero`
@@ -20,7 +20,7 @@
 //! Dedup note: the pipeline dedups decoded matches by `(detector_id,
 //! credential)` (see `engine/scan_postprocess.rs`), so even though BOTH the
 //! `json` decoder and the sibling `unicode-escape` decoder unescape `\uXXXX`,
-//! the identical recovered credential collapses to exactly ONE match — hence the
+//! the identical recovered credential collapses to exactly ONE match, hence the
 //! `== 1` counts below are stable, not brittle.
 
 mod support;
@@ -31,13 +31,13 @@ use keyhog_scanner::CompiledScanner;
 
 // ── firing plaintexts (all shipped checksum-free contract positives) ──
 
-/// `.npmrc` legacy token — `npmrc-auth-token`, capture group 1 = bare token.
+/// `.npmrc` legacy token: `npmrc-auth-token`, capture group 1 = bare token.
 const NPMRC_FULL_TOKEN: &str = "s0meL3gacyT0kenValue12345";
 /// Same token but with an embedded `/` (npm token class includes `/`).
 const NPMRC_SLASH_TOKEN: &str = "s0meL3gacyT0ken/alue12345";
 /// `.netrc` password with a single interior backslash (netrc class allows `\`).
 const NETRC_BACKSLASH_PW: &str = "Zx9Qw\\3Rt7Lp2Mk"; // 15 chars, one backslash
-/// PEM body anchor — distinctive first base64 run of the RSA key.
+/// PEM body anchor (distinctive first base64 run of the RSA key).
 const PEM_NEEDLE: &str = "MIIBOgIBAAJBAKj34Gkx";
 
 fn scanner() -> CompiledScanner {
@@ -75,7 +75,7 @@ fn only(matches: &[RawMatch], id: &str) -> RawMatch {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// BASELINES — establish that recovery is attributable to JSON decode.
+// BASELINES (establish that recovery is attributable to JSON decode).
 // ─────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -98,12 +98,12 @@ fn baseline_plaintext_anchor_fires() {
     // The DECODED anchor `_authToken=` is exactly what the detector keys on.
     let raw = "//registry.npmjs.org/:_authToken=s0meL3gacyT0kenValue12345";
     let m = only(&scan(raw), "npmrc-auth-token");
-    // Group 1 is the bare token — no registry prefix, no quotes.
+    // Group 1 is the bare token (no registry prefix, no quotes).
     assert_eq!(m.credential.as_ref(), NPMRC_FULL_TOKEN);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// POSITIVE — each JSON escape kind is unescaped and the detector fires on the
+// POSITIVE, each JSON escape kind is unescaped and the detector fires on the
 // EXACT decoded bytes.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -149,7 +149,7 @@ fn double_backslash_collapses_to_single_in_netrc() {
     let json =
         "{\"netrc\":\"machine api.example.com login deploy passw\\u006Frd Zx9Qw\\\\3Rt7Lp2Mk\"}";
     let m = only(&scan(json), "netrc-password");
-    // Exactly one interior backslash — NOT the two that appear in the JSON text.
+    // Exactly one interior backslash: NOT the two that appear in the JSON text.
     assert_eq!(m.credential.as_ref(), NETRC_BACKSLASH_PW);
     assert_eq!(
         m.credential.as_ref().matches('\\').count(),
@@ -197,7 +197,7 @@ fn valid_surrogate_pair_decodes_and_recovers_token() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// BOUNDARY / ADVERSARIAL — a malformed escape aborts the unescape entirely,
+// BOUNDARY / ADVERSARIAL, a malformed escape aborts the unescape entirely,
 // so the anchor is never restored and NOTHING is recovered.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -228,7 +228,7 @@ fn truncated_unicode_escape_aborts_no_recovery() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// NEGATIVE-TWIN — the decoder must not fabricate findings, and non-escaped
+// NEGATIVE-TWIN, the decoder must not fabricate findings, and non-escaped
 // JSON is left untouched (raw detection still works, no duplicate surfaces).
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -252,7 +252,7 @@ fn benign_escaped_value_fabricates_nothing() {
 fn unescaped_value_left_alone_but_raw_still_fires() {
     // No backslash anywhere: the JSON decoder extracts nothing (it only touches
     // strings that CONTAIN escapes), yet the plaintext anchor still fires on the
-    // parent scan — and exactly ONCE, proving no phantom decoded duplicate.
+    // parent scan (and exactly ONCE, proving no phantom decoded duplicate).
     let json = "{\"registry\":\"//registry.npmjs.org/:_authToken=s0meL3gacyT0kenValue12345\"}";
     let m = only(&scan(json), "npmrc-auth-token");
     assert_eq!(m.credential.as_ref(), NPMRC_FULL_TOKEN);
@@ -263,7 +263,7 @@ fn unterminated_json_string_still_recovers_via_quote_independent_unicode_decode_
     // Opening quote, escaped anchor, but NO closing quote before EOF. The JSON
     // string-extractor drops the unterminated span, but the unicode-escape
     // decoder still runs over the raw chunk (quote-independent) and restores the
-    // `o` escape, so the token surfaces exactly once — and the scan
+    // `o` escape, so the token surfaces exactly once, and the scan
     // terminates cleanly (no panic / no infinite loop).
     let json = "{\"registry\":\"//registry.npmjs.org/:_authT\\u006Fken=s0meL3gacyT0kenValue12345";
     let matches = scan(json);
@@ -281,7 +281,7 @@ fn multiple_escaped_values_each_surface_with_exact_credential() {
     // carries a JSON-escaped backslash `\\3`: the JSON-decoded form
     // `Zx9Qw\3...` (15 chars, one backslash) AND the raw literal form
     // `Zx9Qw\\3...` (16 chars, two backslashes) are BOTH valid netrc-password
-    // strings, so that anchor legitimately surfaces two DISTINCT credentials —
+    // strings, so that anchor legitimately surfaces two DISTINCT credentials 
     // assert the decoded secret is present with its exact bytes (not `only`).
     let json = "{\"a\":\"//registry.npmjs.org/:_authT\\u006Fken=s0meL3gacyT0kenValue12345\",\
 \"b\":\"machine api.example.com login deploy passw\\u006Frd Zx9Qw\\\\3Rt7Lp2Mk\"}";

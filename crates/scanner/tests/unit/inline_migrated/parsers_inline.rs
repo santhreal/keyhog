@@ -34,7 +34,7 @@ fn env_strips_matching_quotes() {
 /// Regression: a docker-compose `environment:` sequence entry like
 /// `=secretvalue` (leading `=`) used to produce an ExtractedPair
 /// with an empty `context`. That's malformed compose and the empty
-/// context would be useless downstream — must be skipped, matching
+/// context would be useless downstream, must be skipped, matching
 /// the k8s parser's empty-key policy.
 #[test]
 fn docker_compose_sequence_skips_empty_key_with_leading_equals() {
@@ -48,7 +48,7 @@ services:
 ";
     let pairs = parse_docker_compose(text);
     // Three entries in the YAML, but the one with the empty key
-    // must be dropped — so we expect FOO and BAZ only.
+    // must be dropped (so we expect FOO and BAZ only).
     let contexts: Vec<_> = pairs.iter().map(|p| p.context.as_str()).collect();
     assert!(contexts.contains(&"FOO"));
     assert!(contexts.contains(&"BAZ"));
@@ -64,7 +64,7 @@ services:
 }
 
 /// Docker-compose sequence form `FOO=` (empty value, non-empty key)
-/// MUST still be preserved — env vars are legitimately allowed to
+/// MUST still be preserved, env vars are legitimately allowed to
 /// be set to empty.
 #[test]
 fn docker_compose_sequence_preserves_empty_value_with_present_key() {
@@ -208,7 +208,7 @@ fn jupyter_code_cell_lines_are_resolved_in_batch() {
     assert_eq!(by_context.get("jupyter-cell-1"), Some(&9));
 }
 
-/// Same guard for the docker-compose path — a YAML mapping nested
+/// Same guard for the docker-compose path, a YAML mapping nested
 /// thousands of levels deep must bail rather than stack-overflow.
 #[test]
 fn docker_compose_deeply_nested_yaml_does_not_overflow() {

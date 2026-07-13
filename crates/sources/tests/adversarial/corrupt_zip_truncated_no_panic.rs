@@ -58,7 +58,7 @@ fn corrupt_zip_truncated_fails_loud_and_scan_continues() {
     );
     // `archive_duplicate_scan_unavailable` is bumped ONLY by the ZIP duplicate-
     // scan path (zip_scan.rs), so under the held exclusive scope it is effectively
-    // exclusive to this test — assert the exact value.
+    // exclusive to this test (assert the exact value).
     assert_eq!(
         skip_counts().archive_duplicate_scan_unavailable,
         1,

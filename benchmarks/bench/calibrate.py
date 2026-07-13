@@ -1,7 +1,7 @@
 """Closed-loop per-detector ``min_confidence`` calibration.
 
 keyhog detectors each carry a ``min_confidence`` floor in
-``detectors/<id>.toml`` — the precision/recall knob the docs call "per-detector
+``detectors/<id>.toml``, the precision/recall knob the docs call "per-detector
 fine tuning". Today those floors are hand-chosen from a few observed scores.
 This module turns the labeled-corpus scorer's per-detector confidence
 histograms (:class:`bench.schema.DetectorStat`) into a *measured*
@@ -16,10 +16,10 @@ findings it would cut.
 
 Two recommendations per detector:
 
-* **lossless** — the *highest* floor that cuts ≥1 FP while losing **zero** TP.
+* **lossless** (the *highest* floor that cuts ≥1 FP while losing **zero** TP).
   This is the safe win: a strictly-better precision at identical recall. The
   TOML overlay only emits these.
-* **f1** — the floor maximising F1 over the detector's *own* findings
+* **f1**: the floor maximising F1 over the detector's *own* findings
   (precision against that detector's FP, recall against its own catchable
   positives). This trades a little recall for precision; surfaced as advice,
   never auto-applied.
@@ -36,7 +36,7 @@ from .schema import CONF_BIN_WIDTH, CONF_BINS, DetectorStat
 
 
 def _cut_below(hist: list[int], k: int) -> int:
-    """Count in bins ``0..k-1`` — what a floor of ``k*CONF_BIN_WIDTH`` drops."""
+    """Count in bins ``0..k-1``, what a floor of ``k*CONF_BIN_WIDTH`` drops."""
     return sum(hist[:k])
 
 
@@ -92,7 +92,7 @@ def recommend(detector_id: str, stat: DetectorStat) -> Recommendation:
     lossless_fp_cut = 0
     for k in range(1, CONF_BINS):
         if _cut_below(tp_hist, k) != 0:
-            break  # this floor would start dropping real detections — stop
+            break  # this floor would start dropping real detections, stop
         fp_cut = _cut_below(fp_hist, k)
         if fp_cut > 0:
             lossless_floor = _floor(k)
@@ -141,7 +141,7 @@ def recommend_all(
     """Recommendations for every detector that fired, FP-heavy first.
 
     ``skip_empty_detector`` drops the ``""`` bucket (findings whose scanner
-    reported no detector id — competitors), so the output is keyhog-only.
+    reported no detector id (competitors), so the output is keyhog-only).
     """
     recs = [
         recommend(det_id, stat)
@@ -162,7 +162,7 @@ def actionable(recs: list[Recommendation]) -> list[Recommendation]:
 def to_toml_overlay(recs: list[Recommendation]) -> str:
     """A copy-pasteable overlay of the lossless floor bumps.
 
-    Each block is the exact edit for ``detectors/<id>.toml`` — set
+    Each block is the exact edit for ``detectors/<id>.toml``, set
     ``min_confidence`` under ``[detector]``. Only lossless, FP-cutting
     recommendations are emitted (applying these cannot lose a TP on the
     corpus they were measured against).
@@ -171,7 +171,7 @@ def to_toml_overlay(recs: list[Recommendation]) -> str:
     if not wins:
         return "# No lossless min_confidence bumps available on this corpus.\n"
     lines = [
-        "# Per-detector min_confidence overlay — measured, lossless on the",
+        "# Per-detector min_confidence overlay, measured, lossless on the",
         "# benchmark corpus (each floor cuts ≥1 FP, loses 0 TP). Each block below",
         "# is the exact edit for that detector's own detectors/<id>.toml: set",
         "# min_confidence under its [detector] table, then rebuild + re-score to",
@@ -179,8 +179,8 @@ def to_toml_overlay(recs: list[Recommendation]) -> str:
         "",
     ]
     for r in wins:
-        # Emit exactly what the target file wants — a `[detector]` table with the
-        # floor — prefixed by the file it belongs in. (This overlay is a reference
+        # Emit exactly what the target file wants, a `[detector]` table with the
+        # floor: prefixed by the file it belongs in. (This overlay is a reference
         # list of per-file edits, not one loadable TOML: each block lands in a
         # different detectors/<id>.toml.)
         lines.append(

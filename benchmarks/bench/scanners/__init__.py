@@ -5,7 +5,7 @@ Each adapter wraps a secret-scanner binary behind one contract
 config ``variants()`` it supports, and a ``run(root, cfg)`` that returns
 normalised findings plus a :class:`RunStats` (wall / peak-RSS / throughput).
 A single scorer + runner then treats keyhog and every competitor
-identically — the comparison stays apples-to-apples.
+identically: the comparison stays apples-to-apples.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ SCANNERS = {
     "titus": TitusScanner,
 }
 
-# Canonical ordered scanner names — the single source the CLI defaults and the
+# Canonical ordered scanner names, the single source the CLI defaults and the
 # leaderboard/gate scanner lists derive from (never re-typed inline).
 SCANNER_NAMES = tuple(SCANNERS)
 

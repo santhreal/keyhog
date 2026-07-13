@@ -305,7 +305,7 @@ fn web_response_kind_from_content_type(
         Ok(raw) => raw,
         Err(_error) => {
             // LAW10: invalid Content-Type is only a routing hint failure;
-            // recall-preserving — the URL-extension classifier below still
+            // recall-preserving, the URL-extension classifier below still
             // chooses a scannable path.
             return None;
         }
@@ -348,7 +348,7 @@ fn send_with_pinned_redirects(
     let mut allow_current_calibration_url = allow_autoroute_loopback_calibration_url
         && is_autoroute_loopback_calibration_url(&current_url);
     // Reuse one client (and its TLS config + connection pool) across hops whose
-    // pinned host:port and calibration flag are unchanged — a same-host redirect
+    // pinned host:port and calibration flag are unchanged, a same-host redirect
     // (only the path changes) is the common case. Rebuilding per hop paid a fresh
     // TLS/connector setup up to REDIRECT_LIMIT+1 times per URL (Law 7). A client
     // is only rebuilt when the target host:port differs, since the SSRF-screened
@@ -474,7 +474,7 @@ fn handle_json(
     };
     // Parse the JSON body ONCE: if it is source-map-shaped, expand it from the
     // already-parsed value; otherwise scan it as text. Previously the body was
-    // parsed twice here — once by `is_sourcemap_shaped_json` to classify it and
+    // parsed twice here, once by `is_sourcemap_shaped_json` to classify it and
     // again inside `expand_sourcemap_body` to walk it.
     match serde_json::from_str::<serde_json::Value>(&body) {
         Ok(value) if is_sourcemap_shaped_value(&value) => expand_sourcemap_value(value, body, url),
@@ -529,8 +529,8 @@ fn expand_sourcemap_body(body: String, url: &str) -> Vec<Result<Chunk, SourceErr
 
 /// Expand an ALREADY-PARSED source map value into per-`sourcesContent` chunks
 /// (plus the raw map when there is no embedded content or some entries are
-/// malformed). Split out of [`expand_sourcemap_body`] so `handle_json` — which
-/// must parse the body anyway to decide it is source-map-shaped — reuses that
+/// malformed). Split out of [`expand_sourcemap_body`] so `handle_json`: which
+/// must parse the body anyway to decide it is source-map-shaped, reuses that
 /// single parse instead of re-parsing the same JSON.
 fn expand_sourcemap_value(
     mut map: serde_json::Value,

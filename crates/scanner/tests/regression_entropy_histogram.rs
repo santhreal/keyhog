@@ -14,11 +14,11 @@
 //! symbol, and a lone trailing null in the sub-8 remainder drops out.
 //!
 //! Driven through the public `keyhog_scanner::testing` facade:
-//!   - `testing::entropy_fast::shannon_entropy_simd` — the arch-dispatched
+//!   - `testing::entropy_fast::shannon_entropy_simd`: the arch-dispatched
 //!     entropy entry point (all ISA paths share the one exact reduction).
-//!   - `testing::match_entropy` — the pipeline entry (cache → same reduction),
+//!   - `testing::match_entropy`: the pipeline entry (cache → same reduction),
 //!     used to prove the cached path agrees bit-for-bit with the direct one.
-//!   - `testing::confidence::unique_byte_count` — the distinct-symbol primitive
+//!   - `testing::confidence::unique_byte_count`: the distinct-symbol primitive
 //!     that caps entropy at `log2(unique)`.
 
 use keyhog_scanner::testing::confidence::unique_byte_count;
@@ -65,7 +65,7 @@ fn all_same_byte_is_zero() {
 #[test]
 fn uniform_256_distinct_is_eight_bits() {
     // Every byte value 0..=255 exactly once. active_len = 256 (> 255 → direct
-    // branch). H = -Σ (1/256)·log2(1/256) = log2(256) = 8.0 bits/byte — the
+    // branch). H = -Σ (1/256)·log2(1/256) = log2(256) = 8.0 bits/byte, the
     // maximum for a byte alphabet. The leading 0x00 is COUNTED (its 8-byte
     // chunk [0,1,2,3,4,5,6,7] is not all-null), which is exactly why
     // active_len stays 256 and the result is exactly 8.0.

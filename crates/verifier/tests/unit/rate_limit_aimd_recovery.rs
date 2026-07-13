@@ -1,7 +1,7 @@
 //! Per-service AIMD backoff MUST recover.
 //!
 //! Regression for the never-recovers bug: a `429` used to `update_limit(service,
-//! 0.5)` — a HARD SET to 0.5 rps that pinned the service to a 2s interval for the
+//! 0.5)`, a HARD SET to 0.5 rps that pinned the service to a 2s interval for the
 //! rest of the process, even after thousands of successes (Law 7: a permanently
 //! throttled verifier is a throughput bug). The replacement is classic AIMD:
 //! multiplicative decrease on `429` (`penalize_service`), additive increase on

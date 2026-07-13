@@ -3,17 +3,17 @@
 //! Each test here pins one safety invariant of the live credential-verification
 //! path and goes RED if that invariant regresses. Every assertion checks a
 //! concrete value (exact error string, exact byte presence/absence, exact
-//! result variant) — never `is_ok()` / `!is_empty()` decoration.
+//! result variant) (never `is_ok()` / `!is_empty()` decoration).
 //!
 //! Covered invariants:
 //!   1. Response bodies are hard-capped (decompression/OOM-bomb defense).
 //!   2. Internal / link-local targets (cloud IMDS, loopback) are refused
-//!      BEFORE any outbound request — even when the detector allowlists them.
+//!      BEFORE any outbound request (even when the detector allowlists them).
 //!   3. The raw credential never appears in ANY emitted `VerifiedFinding`
 //!      string (verification result, metadata keys/values, redacted form).
 //!   4. A per-request timeout is enforced against a slow server.
 //!   5. The DNS-pin client-build failure path FAILS CLOSED (no silent
-//!      fallback to an unpinned client — the DNS-rebinding-window reopen
+//!      fallback to an unpinned client, the DNS-rebinding-window reopen
 //!      Law-10 bug). Pinned at the source so a refactor that reintroduces
 //!      the fallback trips immediately.
 //!   6. The verifier's reqwest does not enable auto-decompression features,
@@ -342,7 +342,7 @@ async fn gzip_content_encoding_does_not_bypass_the_wire_byte_cap() {
     // Decompression-bomb runtime proof: the server advertises
     // `Content-Encoding: gzip` and streams 2 MiB of raw bytes. Because the
     // verifier's reqwest is built WITHOUT the gzip feature AND the builder
-    // calls .no_gzip() explicitly, reqwest never inflates the body — the 1 MB
+    // calls .no_gzip() explicitly, reqwest never inflates the body, the 1 MB
     // streaming cap counts real wire bytes and fires. A regression that turned
     // on auto-gzip would inflate first, letting a tiny compressed bomb expand
     // far past 1 MB before our cap saw a byte; this test would then NOT see the
@@ -415,7 +415,7 @@ async fn response_body_just_under_cap_is_read_not_rejected() {
 }
 
 // ===========================================================================
-// 2. Internal / link-local target refusal — before any outbound request
+// 2. Internal / link-local target refusal, before any outbound request
 // ===========================================================================
 
 #[tokio::test]
@@ -543,7 +543,7 @@ async fn raw_credential_never_appears_in_any_emitted_finding_string() {
         );
     }
 
-    // No metadata key OR value may contain the raw credential — even though the
+    // No metadata key OR value may contain the raw credential, even though the
     // server reflected it in the body, only the explicitly-extracted `/account`
     // field is captured, and that field does not contain the credential.
     for (k, v) in &f.metadata {
@@ -571,7 +571,7 @@ async fn raw_credential_never_appears_in_any_emitted_finding_string() {
 async fn slow_server_hits_the_configured_timeout() {
     // Server sends a partial status line then stalls for a LONG time. With a
     // 150 ms per-detector timeout the verifier must abort with a timeout-class
-    // error, not wait out the stall — a slow server must never hang the scan.
+    // error, not wait out the stall (a slow server must never hang the scan).
     //
     // The stall (120 s) is deliberately far larger than any legitimate
     // client-side delay so the wall-clock cleanly separates the two outcomes:
@@ -607,7 +607,7 @@ async fn slow_server_hits_the_configured_timeout() {
         engine.verify_all(vec![group_for("slow", "secret")]),
     )
     .await
-    .expect("verify_all must return — the per-request timeout must fire, not hang");
+    .expect("verify_all must return, the per-request timeout must fire, not hang");
     let elapsed = started.elapsed();
 
     assert_eq!(findings.len(), 1);
@@ -617,7 +617,7 @@ async fn slow_server_hits_the_configured_timeout() {
     assert!(
         elapsed < Duration::from_secs(45),
         "timeout must bound the request (a slow server must not hang the scan); \
-         took {elapsed:?} — far below the 120 s server stall means the per-request \
+         took {elapsed:?}, far below the 120 s server stall means the per-request \
          timeout fired"
     );
     match &findings[0].verification {
@@ -633,7 +633,7 @@ async fn slow_server_hits_the_configured_timeout() {
 
 // ===========================================================================
 // 4b. A transport failure becomes Error (Unknown), never a silent Live/Dead
-//     (Law 10: a verification that ERRORS must report Unknown loudly — never
+//     (Law 10: a verification that ERRORS must report Unknown loudly, never
 //     fail-open to "valid" nor fail-shut to a confident "dead").
 // ===========================================================================
 
@@ -642,11 +642,11 @@ async fn connection_reset_yields_error_not_silent_live_or_dead() {
     // Server accepts the connection, reads the request, then drops the socket
     // WITHOUT writing any HTTP response (hard reset). reqwest surfaces this as a
     // connect/request error. The verifier must map it to VerificationResult::Error
-    // (a non-conclusive "Unknown") — NOT Live (fail-open: the credential is NOT
+    // (a non-conclusive "Unknown"). NOT Live (fail-open: the credential is NOT
     // proven valid) and NOT Dead (fail-shut: the credential is NOT proven
     // rejected). Treating an errored probe as either verdict is a security bug.
     let base = spawn_mock(|stream| async move {
-        // Read nothing, write nothing — just drop the stream to reset.
+        // Read nothing, write nothing (just drop the stream to reset).
         drop(stream);
     })
     .await;
@@ -675,7 +675,7 @@ async fn connection_reset_yields_error_not_silent_live_or_dead() {
 }
 
 // ===========================================================================
-// 5. DNS-pin failure FAILS CLOSED — no silent unpinned fallback (Law 10)
+// 5. DNS-pin failure FAILS CLOSED, no silent unpinned fallback (Law 10)
 // ===========================================================================
 
 #[test]
@@ -1089,7 +1089,7 @@ fn aws_sts_egress_uses_resolved_screened_client() {
 #[test]
 fn oob_decrypt_entry_drops_are_surfaced_loudly_not_silently() {
     // A malformed/undecryptable interactsh entry is skipped so one bad entry
-    // can't abort the whole poll batch — but the drop is recall-affecting (a
+    // can't abort the whole poll batch, but the drop is recall-affecting (a
     // missed OOB callback can flip an exfil-capable credential from Live to
     // Dead). Law 10: that drop must be surfaced LOUDLY (`warn!`), never via the
     // silent `debug!` it used to use for the JSON-parse path nor silently
@@ -1209,7 +1209,7 @@ fn verifier_reqwest_has_no_auto_decompression_feature() {
 // ===========================================================================
 
 /// The no-decompression + no-redirect posture now lives in ONE definitional
-/// home — `harden_verifier_client_builder` (lib.rs) — which every verifier and
+/// home: `harden_verifier_client_builder` (lib.rs), which every verifier and
 /// OOB client routes through. Assert the owner disables all four codecs and
 /// refuses redirects, so pinning it here covers the base client, the DNS-pinned
 /// rebuild, and the OOB collector at once.
@@ -1242,7 +1242,7 @@ fn assert_shared_harden_disables_decompression_and_redirects() {
 fn engine_base_client_builder_disables_auto_decompression_explicitly() {
     // The base engine client (verify/mod.rs) is used on the proxy path and as
     // the AwsV4 self-constructing client. It must carry the no-decompression
-    // posture — now applied by the single-owner `harden_verifier_client_builder`.
+    // posture (now applied by the single-owner `harden_verifier_client_builder`).
     // Verify (a) the base client routes through that owner, and (b) the owner
     // disables all four codecs.
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/mod.rs"))
@@ -1296,7 +1296,7 @@ fn oob_deregister_error_body_is_capped_not_unbounded() {
     // register()/poll() both stream their error/diagnostic bodies through the
     // shared `read_capped_text(_, ERROR_BODY_CAP)` budget. deregister() used a
     // bare `resp.text().await.unwrap_or_default()`, which buffers the ENTIRE
-    // server-controlled body with no cap — a hostile/misbehaving collector
+    // server-controlled body with no cap, a hostile/misbehaving collector
     // returning a multi-GiB body on a deregister-failure status could spike
     // process memory. Pin the fix at the source: the deregister error path must
     // route through read_capped_text and must NOT use the uncapped resp.text().
@@ -1364,7 +1364,7 @@ fn oob_collector_direct_client_is_dns_pinned() {
 #[test]
 fn oob_collector_pinned_client_preserves_security_builder_options() {
     // The OOB collector's pinned client is built by the single-owner
-    // `crate::build_pinned_verifier_client` (lib.rs) — the same builder the
+    // `crate::build_pinned_verifier_client` (lib.rs), the same builder the
     // per-request verify path uses. Verify that owner preserves the timeout +
     // invalid-cert posture + no_proxy + the address pin AND routes decompression/
     // redirect through `harden_verifier_client_builder`.

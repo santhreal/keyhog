@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use super::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD};
 
-/// Tier-B "universal rejection" value prefixes — the single owner
+/// Tier-B "universal rejection" value prefixes, the single owner
 /// (`rules/universal-rejection-prefixes.toml`; were inline `starts_with` terms in
 /// [`matches_universal_rejection`]). A value beginning with any of these is a
 /// structural non-secret or an encrypted/wrapped blob, never a plaintext secret.
@@ -157,13 +157,13 @@ pub(crate) fn has_low_alnum_ratio(value: &str) -> bool {
     // Fewer than half the CHARACTERS are alphanumeric. Both numerator and
     // denominator are counted in characters: a multibyte alphanumeric char (an
     // accented letter, a CJK ideograph) is one alphanumeric unit, so dividing
-    // the char count by the BYTE length — as this once did — understates the
+    // the char count by the BYTE length, as this once did, understates the
     // ratio and would wrongly reject a real secret that contains non-ASCII
     // letters. ASCII values are unaffected (char count == byte count there).
     // The integer comparison `alnum * 2 < total` avoids a float division on this
     // hot plausibility gate; an empty value has no alphanumerics and stays low.
     // Single pass over the chars (was two: one for the total, one filtered for
-    // the alnum count) — the two counters are derived from the same iteration.
+    // the alnum count) (the two counters are derived from the same iteration).
     let mut total = 0usize;
     let mut alnum = 0usize;
     for ch in value.chars() {
@@ -207,7 +207,7 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
         return true;
     }
     if context.is_credential_context {
-        // Single pass over the bytes (was three independent `.any()` scans) — the
+        // Single pass over the bytes (was three independent `.any()` scans), the
         // three character-class flags are folded from one iteration.
         let mut has_alpha = false;
         let mut has_digit = false;

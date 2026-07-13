@@ -9,7 +9,7 @@
 //! `extract_active_phase2_patterns` helper.
 //!
 //! The decode-focus path (`scan_phase2_patterns_focused`) keeps its own loop on
-//! purpose — it is cursor-bounded via `extract_matches_inner`, a real difference,
+//! purpose, it is cursor-bounded via `extract_matches_inner`, a real difference,
 //! not duplication.
 //!
 //! This pins the dedup: the helper exists, both whole-chunk paths delegate to it,
@@ -40,7 +40,7 @@ fn whole_chunk_phase2_extract_loop_has_single_owner() {
     // The deadline-cadence loop was open-coded three times: the two whole-chunk
     // paths (now collapsed into the helper) and the decode-focus path (kept,
     // cursor-bounded). So the cadence marker must drop from 3 sites to 2 (helper
-    // + focus) — proving the two whole-chunk copies became one.
+    // + focus) (proving the two whole-chunk copies became one).
     let cadence_sites = src.matches("tested.is_multiple_of(16)").count();
     assert_eq!(
         cadence_sites, 2,

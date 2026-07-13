@@ -1,35 +1,35 @@
 //! Property tier for `slice_into_windows` (reached via the `SourceTestApi`
-//! facade) — the overlapping-window slicer the large-file mmap scan path
+//! facade), the overlapping-window slicer the large-file mmap scan path
 //! delegates its boundary arithmetic to. The fixed-vector unit twins
 //! (`tests/unit/a5_lr2/read_slice_*`) pin only the window COUNT for three hand
 //! sizes (empty, one window, two windows). None of them prove the property that
 //! actually makes windowing correct: that the windows COVER the whole input and
-//! SHARE exactly `overlap` bytes with their neighbour — the reason overlap
+//! SHARE exactly `overlap` bytes with their neighbour, the reason overlap
 //! exists at all is that a secret straddling a window cut would otherwise be
 //! sliced in half and missed by every window. A silent regression in the stride
 //! or overlap arithmetic would drop real credentials at window seams while every
 //! count-only test stayed green.
 //!
 //! Invariants proved here:
-//!   * EXACT RECONSTRUCTION (ASCII) — `window[0]` followed by every later
+//!   * EXACT RECONSTRUCTION (ASCII): `window[0]` followed by every later
 //!     window with its leading `overlap` bytes removed reconstructs the input
 //!     byte-for-byte. This simultaneously proves full coverage (no gap) AND the
 //!     exact `overlap` share (no more, no less): the recall guarantee that any
 //!     token of length `<= overlap` sits wholly inside at least one window.
-//!   * NEIGHBOUR OVERLAP (ASCII) — the leading `overlap` bytes of window `k`
+//!   * NEIGHBOUR OVERLAP (ASCII), the leading `overlap` bytes of window `k`
 //!     equal the trailing `overlap` bytes of window `k-1`.
-//!   * SIZE SHAPE (ASCII) — every non-final window is exactly `window_size`
+//!   * SIZE SHAPE (ASCII), every non-final window is exactly `window_size`
 //!     bytes; the final window is in `(overlap, window_size]`.
-//!   * COUNT FORMULA (any bytes) — the number of windows depends only on the
+//!   * COUNT FORMULA (any bytes), the number of windows depends only on the
 //!     byte length and the size/overlap, never on content, and equals the
 //!     closed form `1 + ceil((len - window_size) / stride)` (or 1 / 0 for the
 //!     small / empty cases). Content-independent, so it also covers multi-byte
 //!     and invalid-UTF-8 input, where lossy decoding changes byte lengths but
 //!     never the window boundaries.
-//!   * ROBUSTNESS — never panics on arbitrary bytes; empty in ⇔ empty out.
+//!   * ROBUSTNESS (never panics on arbitrary bytes; empty in ⇔ empty out).
 //!
 //! `window_size > overlap` is the slicer's own hard precondition (it asserts
-//! otherwise), so every generated `(window_size, overlap)` pair honours it —
+//! otherwise), so every generated `(window_size, overlap)` pair honours it 
 //! feeding an inverted pair would test the panic, not the arithmetic.
 //! Base build: the slicer facade needs no cargo feature.
 
@@ -132,7 +132,7 @@ proptest! {
         }
     }
 
-    /// The window count is content-independent — identical for arbitrary bytes
+    /// The window count is content-independent, identical for arbitrary bytes
     /// (multi-byte, invalid UTF-8) as for the byte length alone, and never
     /// panics. Lossy decoding changes byte lengths but never boundaries.
     #[test]

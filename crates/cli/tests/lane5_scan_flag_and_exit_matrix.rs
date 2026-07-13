@@ -1,14 +1,14 @@
-//! LANE 5 (test-cli-e2e) — the `keyhog scan` flag matrix and exit-code matrix,
+//! LANE 5 (test-cli-e2e), the `keyhog scan` flag matrix and exit-code matrix,
 //! driven over the SHIPPED binary with a planted, checksum-valid secret.
 //!
 //! The contracts pinned here, all end-to-end through the real executable:
 //!
-//!   * EXIT-CODE MATRIX — clean tree → 0, unverified findings → 1, bad
+//!   * EXIT-CODE MATRIX, clean tree → 0, unverified findings → 1, bad
 //!     flag/value/path → 2 (the documented `args.rs` exit contract). Each is a
 //!     distinct, separately-asserted case so a regression that collapses two
 //!     classes (e.g. a parse error that exits 1 instead of 2) is caught.
 //!
-//!   * BACKEND × FORMAT GRID — the SAME planted secret must surface under the
+//!   * BACKEND × FORMAT GRID, the SAME planted secret must surface under the
 //!     explicit `--backend {simd,cpu,gpu}` CLI flag AND under every
 //!     `--format {text,json,jsonl,sarif,csv,html,junit}`, with the JSON/JSONL
 //!     paths carrying the SAME credential hash. This is a Cartesian product
@@ -16,17 +16,17 @@
 //!     so a serializer or backend-routing bug that drops the finding on ONE
 //!     cell is a recall hole the operator hits by switching a flag.
 //!
-//!   * MASKING — `--show-secrets` emits the full token; the default redacts to
+//!   * MASKING: `--show-secrets` emits the full token; the default redacts to
 //!     `ghp_…DSiF`. Asserted on the exact bytes, not a shape.
 //!
-//!   * `-o` / `--output` — writes the report to a file (atomic-rename path) and
+//!   * `-o` / `--output`: writes the report to a file (atomic-rename path) and
 //!     the file parses as the requested format; stdout stays empty.
 //!
-//!   * BOUNDARIES — `--min-confidence` at 0.0 / 1.0 (valid) and out-of-range
+//!   * BOUNDARIES: `--min-confidence` at 0.0 / 1.0 (valid) and out-of-range
 //!     (rejected exit 2); `--severity` filtering; `--no-config` hermetic run.
 //!
 //! Every assert pins an EXACT exit code, an EXACT detector id / credential
-//! hash, an EXACT count, or EXACT bytes — never `!is_empty` (Law 6). All scans
+//! hash, an EXACT count, or EXACT bytes, never `!is_empty` (Law 6). All scans
 //! pass `--daemon=off` (no background-process nondeterminism), pin `--backend simd`
 //! for non-routing assertions, and clear the legacy `KEYHOG_BACKEND` env so the
 //! CLI flag is the only routing input.
@@ -429,7 +429,7 @@ fn severity_filter_keeps_a_critical_finding_and_a_higher_floor_does_not_drop_a_c
     );
 
     // A checksum-valid PAT is boosted to the confidence floor, so even
-    // `--min-confidence 1.0` keeps it — pin that exact behavior.
+    // `--min-confidence 1.0` keeps it (pin that exact behavior).
     let strict = scan(&path, &["--format", "json", "--min-confidence", "1.0"]);
     assert_eq!(
         strict.0,
@@ -462,7 +462,7 @@ fn min_confidence_boundary_values_zero_and_one_are_accepted() {
 #[test]
 fn no_config_runs_hermetically_and_finds_the_planted_secret() {
     // `--no-config` must scan on the shipped defaults (no walk-up `.keyhog.toml`)
-    // and still surface the planted finding — the benchmark/CI hermetic path.
+    // and still surface the planted finding (the benchmark/CI hermetic path).
     let (_dir, path) = planted_fixture();
     let (code, stdout, stderr) = scan(&path, &["--no-config", "--format", "json"]);
     assert_eq!(

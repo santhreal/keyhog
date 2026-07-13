@@ -15,11 +15,11 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "PE_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "PE_TOKEN=df2C-EXAMPLEEXAMPLEtF61X"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "{\"PE_TOKEN\":\"df2C-IwsG2vZK2btF61X\"}"

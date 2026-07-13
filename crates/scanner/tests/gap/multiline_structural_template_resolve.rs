@@ -1,7 +1,7 @@
 //! Gap test: the structural template-interpolation resolver.
 //!
-//! A credential split across template-literal interpolation —
-//! `const a = "xoxb-"; const b = "..."; token = `${a}${b}`;` — reassembles only
+//! A credential split across template-literal interpolation 
+//! `const a = "xoxb-"; const b = "..."; token = `${a}${b}`;`: reassembles only
 //! when every `${ident}` / `${"lit"}` in the template RHS resolves to a recorded
 //! literal. `resolve_template_reference` does that join: each `${ident}` becomes
 //! its bound value, each `${"lit"}`/`${'lit'}` becomes the inner literal, plain
@@ -73,7 +73,7 @@ proptest! {
         prop_assert_eq!(out, Some(format!("{lit}{vc}")));
     }
 
-    /// An unresolved `${ident}` (no matching binding) yields None — no partial
+    /// An unresolved `${ident}` (no matching binding) yields None, no partial
     /// candidate is ever emitted.
     #[test]
     fn an_unresolved_reference_yields_none_sweep(

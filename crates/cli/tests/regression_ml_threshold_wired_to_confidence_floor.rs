@@ -3,7 +3,7 @@
 //! `ScanArgs::ml_threshold` was parsed and range-validated but never read by
 //! any non-test path: `build_scanner_config` set `ml_weight` but never
 //! `ml_threshold`, so `keyhog scan --ml-threshold 0.9` produced identical
-//! findings to `--ml-threshold 0.01` — a dead precision lever advertised in
+//! findings to `--ml-threshold 0.01`: a dead precision lever advertised in
 //! `--help`, giving false confidence that the ML/entropy floor had been
 //! raised.
 //!

@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "rubygEXAMPLEEXAMPLE2d75f"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "Authorization: Bearer token=\"rubygems_8ba813318e80dc5764a1f36c0d275492825aa46472f2d75f\""
 credential = "rubygems_8ba813318e80dc5764a1f36c0d275492825aa46472f2d75f"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

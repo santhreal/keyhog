@@ -13,7 +13,7 @@ pub struct ExitCodeDefinition {
     pub label: &'static str,
     /// Full one-line description rendered in the `EXIT CODES:` help block. The
     /// generated [`help`] view renders these, so `DEFINITIONS` is the single source
-    /// of truth for the printed help — the numbers and the docs cannot drift.
+    /// of truth for the printed help (the numbers and the docs cannot drift).
     pub help: &'static str,
     pub scan_reachable: bool,
 }

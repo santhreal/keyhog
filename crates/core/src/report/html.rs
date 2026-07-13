@@ -80,7 +80,7 @@ impl<W: Write + Send> Reporter for HtmlReporter<W> {
         // ({"error":"…"}). The report JS treats `verification` as a string
         // everywhere (f.verification.toLowerCase()), so an Error finding crashed
         // the page (blank render). Flatten the object form to the bare "error"
-        // discriminant — uniform with the other variants — before inlining, so
+        // discriminant, uniform with the other variants, before inlining, so
         // every finding renders. (Full error text is still in json/csv/sarif.)
         let mut findings_value = serde_json::to_value(&self.findings)?;
         if let Some(arr) = findings_value.as_array_mut() {

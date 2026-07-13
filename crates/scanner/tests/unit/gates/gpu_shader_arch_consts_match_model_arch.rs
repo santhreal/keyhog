@@ -5,7 +5,7 @@
 //! textual copy of INPUT_DIM / EXPERT_COUNT / HIDDEN1 / HIDDEN2 and the derived
 //! weight-layout offsets. A drift between the two (e.g. a model retrain widening
 //! a hidden layer, or DET-1 bumping INPUT_DIM 42→43, updated on the Rust side
-//! only) would make the GPU MoE read the weight buffer with the WRONG layout —
+//! only) would make the GPU MoE read the weight buffer with the WRONG layout 
 //! silently wrong scores, not a compile error.
 //!
 //! The shader is now GENERATED from `model_arch` by
@@ -51,7 +51,7 @@ fn gpu_shader_arch_consts_match_model_arch() {
             wgsl as usize, owner,
             "generated WGSL `{wgsl_name}` ({wgsl}) diverged from its model_arch owner \
              ({owner}); the GPU MoE would read the weight buffer with the wrong layout. \
-             The shader header is generated in gpu_shader::moe_shader — fix the model_arch \
+             The shader header is generated in gpu_shader::moe_shader, fix the model_arch \
              mapping there, never hardcode a literal."
         );
     }
@@ -73,7 +73,7 @@ fn gpu_shader_arch_consts_match_model_arch() {
     // Tripwire against re-hardcoding: the shader BODY (everything after the
     // generated header's last const) must not contain a raw architecture
     // literal. Named WGSL consts only, so the layout can change in exactly one
-    // place — model_arch.
+    // place (model_arch).
     let body = shader
         .split_once("const SIGMOID_SAT")
         .map(|(_, rest)| rest)
@@ -87,13 +87,13 @@ fn gpu_shader_arch_consts_match_model_arch() {
     ] {
         assert!(
             !body.contains(banned),
-            "shader body must not hardcode architecture literal `{banned}` — reference the \
+            "shader body must not hardcode architecture literal `{banned}`: reference the \
              generated named WGSL const (INPUT_DIM/HIDDEN1/EXPERT_COUNT/…) instead"
         );
     }
 }
 
-/// The generated WGSL must PARSE and TYPE-CHECK as valid shader source — no GPU
+/// The generated WGSL must PARSE and TYPE-CHECK as valid shader source, no GPU
 /// adapter needed. This guards the const-expression forms the generation relies
 /// on (`array<f32, HIDDEN1>`, `-SIGMOID_SAT`): a naga-rejected shader would only
 /// fail at runtime GPU-init on a real device, invisible to GPU-less CI.

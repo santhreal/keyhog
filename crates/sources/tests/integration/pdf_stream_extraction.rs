@@ -3,23 +3,23 @@
 //!
 //! The sibling files cover different halves of the surface and this one fills
 //! the gaps neither reaches:
-//!   * `pdf_documents_are_scanned.rs` — the happy-path stream positives
+//!   * `pdf_documents_are_scanned.rs`: the happy-path stream positives
 //!     (one uncompressed literal stream, one FlateDecode stream, one hex string).
-//!   * `pdf_metadata_and_strings.rs` — Info-dictionary metadata + the
+//!   * `pdf_metadata_and_strings.rs`: Info-dictionary metadata + the
 //!     literal/hex string primitives (`\)`, `\\`, `\101`, balanced parens, odd
 //!     hex nibble, mixed case).
-//!   * `regression_pdf_coverage_gaps_counted.rs` — the Law-10 gap *counters*
+//!   * `regression_pdf_coverage_gaps_counted.rs`: the Law-10 gap *counters*
 //!     (encrypted / corrupt-flate / missing-endstream / unsupported-filter /
 //!     truncation / partial-recovery) via the process-global atomics.
 //!
 //! What NONE of them reach, and what this file locks:
-//!   * `is_pdf_keyword_boundary` — a PDF name or word that merely *contains*
+//!   * `is_pdf_keyword_boundary`: a PDF name or word that merely *contains*
 //!     `stream` must not be mistaken for the `stream` keyword (a false match
 //!     would fabricate a bogus stream body / missing-endstream gap).
-//!   * `stream_body_start` — the CRLF / bare-CR / bare-LF byte(s) after the
+//!   * `stream_body_start`: the CRLF / bare-CR / bare-LF byte(s) after the
 //!     `stream` keyword must be consumed exactly, never dropping the first
 //!     content byte of the secret.
-//!   * `stream_is_image` — an `/Image` XObject stream is skipped, never emitted
+//!   * `stream_is_image`: an `/Image` XObject stream is skipped, never emitted
 //!     as garbage "text", and never masks a co-located real text stream.
 //!   * the `/Fl` abbreviated flate filter name.
 //!   * a multi-filter `/Filter [ … /FlateDecode]` chain we cannot fully decode
@@ -87,7 +87,7 @@ fn flate(plain: &[u8]) -> Vec<u8> {
 }
 
 /// Build a single unfiltered content stream whose `stream` keyword is followed
-/// by exactly `eol` before `body` — the `stream_body_start` EOL contract.
+/// by exactly `eol` before `body`: the `stream_body_start` EOL contract.
 fn pdf_stream_with_eol(eol: &[u8], body: &[u8]) -> Vec<u8> {
     let mut pdf = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n2 0 obj\n<< /Length ".to_vec();
     pdf.extend_from_slice(body.len().to_string().as_bytes());
@@ -222,7 +222,7 @@ fn pdf_text_stream_between_two_image_streams_is_extracted() {
 #[test]
 fn pdf_two_adjacent_image_streams_both_skipped() {
     // Negative: the window-bounding fix must not accidentally un-classify a real
-    // image whose `/Subtype /Image` lives in its OWN dict — both stay skipped.
+    // image whose `/Subtype /Image` lives in its OWN dict (both stay skipped).
     let chunks = scan_clean(pdf_streams(&[
         (IMAGE_DICT, b"KEYHOG_IMG_ADJ_A_BLOB_3333333333"),
         (IMAGE_DICT, b"KEYHOG_IMG_ADJ_B_BLOB_4444444444"),
@@ -287,7 +287,7 @@ fn pdf_two_text_streams_both_secrets_extracted() {
 #[test]
 fn pdf_name_with_stream_substring_not_parsed_as_stream() {
     // `/Substream` contains "stream" preceded by a name byte, so it must NOT be
-    // treated as a content-stream keyword — no bogus missing-endstream gap, and
+    // treated as a content-stream keyword, no bogus missing-endstream gap, and
     // the co-located metadata secret still extracts cleanly.
     let chunks = scan_clean(pdf_with_body(
         "3 0 obj\n<< /Producer (KEYHOG_KWB_SUBSTREAM_SECRET_1234567890) /Kind /Substream >>\nendobj\n",

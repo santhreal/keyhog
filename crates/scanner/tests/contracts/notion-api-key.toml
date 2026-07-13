@@ -15,12 +15,12 @@ severity = "critical"
 [[positive]]
 text = "NOTION_API_KEY=secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
 credential = "secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
-reason = "Env-var name + key body — keyword anchor lifts confidence above generic-`secret_` floor."
+reason = "Env-var name + key body (keyword anchor lifts confidence above generic-`secret_` floor)."
 
 [[positive]]
 text = "const notionApi = new Client({ auth: \"secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY\" });"
 credential = "secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
-reason = "Notion JS SDK Client constructor — the canonical leak shape."
+reason = "Notion JS SDK Client constructor (the canonical leak shape)."
 
 # ---- NEGATIVES (precision) ------------------------------------------
 
@@ -37,7 +37,7 @@ reason = "42 chars after secret_ (one short)."
 [[evasion]]
 text = "Authorization: Bearer secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
 credential = "secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
-reason = "Bearer-token header — `Bearer` keyword adjacent to credential."
+reason = "Bearer-token header: `Bearer` keyword adjacent to credential."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

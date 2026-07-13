@@ -202,7 +202,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("gpu_warm_ms")
             // v21: the GPU cold/warm/route values are DERIVED via the
             // `gpu_cold_warm_route` accessor (single owner), not stored as a
-            // `gpu_warm_timing` field — assert the derivation accessor instead.
+            // `gpu_warm_timing` field (assert the derivation accessor instead).
             && backend.contains("gpu_cold_warm_route")
             && backend.contains("gpu_route_ns")
             && backend.contains("gpu_cold_warm_route_evidence")
@@ -409,7 +409,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && !install_sh.contains("KEYHOG_AUTOROUTE_CALIBRATE")
             // Calibration runs with the DEFAULT scan flags plus each documented
             // scan-policy preset, parametrized through `autoroute_scan_flags` /
-            // `autoroute_presets` — NOT the spurious `--batch-pipeline
+            // `autoroute_presets`: NOT the spurious `--batch-pipeline
             // --autoroute-gpu`, which hashed into a digest no real `keyhog
             // scan .` ever requested and made every auto scan fail closed.
             && install_sh.contains("autoroute_scan_flags")
@@ -479,7 +479,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && !install_ps1.contains("KEYHOG_AUTOROUTE_CALIBRATE")
             // Calibration runs the DEFAULT scan flags plus each documented
             // scan-policy preset, parametrized through `$autoroutePresets` /
-            // `$presetPasses` — NOT the spurious `--batch-pipeline --autoroute-gpu`,
+            // `$presetPasses`: NOT the spurious `--batch-pipeline --autoroute-gpu`,
             // which hashed into a digest no real `keyhog scan .` ever requested and
             // made every default Windows scan fail closed (parity with install.sh).
             && install_ps1.contains("autoroutePresets")

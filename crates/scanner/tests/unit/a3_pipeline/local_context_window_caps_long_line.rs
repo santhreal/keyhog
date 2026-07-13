@@ -7,7 +7,7 @@ use keyhog_scanner::testing::local_context_window;
 // (a 164 KiB single-line file with 8 K matches took ~18 s before the cap).
 // The window is byte-capped, so a match anywhere on a giant line yields at
 // most ~8 KiB of context. (Short lines hit their newline first and are
-// returned whole — covered by `local_context_window_single_line`.)
+// returned whole, covered by `local_context_window_single_line`.)
 #[test]
 fn long_no_newline_line_is_byte_capped() {
     let text = "x".repeat(512 * 1024); // 512 KiB, zero newlines

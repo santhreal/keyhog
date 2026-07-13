@@ -1,21 +1,21 @@
 //! Parity + behavioral truth for the path-component predicates in
-//! `platform_compat::path` — `path_basename`, `path_basename_bytes`, and
+//! `platform_compat::path`: `path_basename`, `path_basename_bytes`, and
 //! `path_has_any_component`.
 //!
 //! `path_basename` (string, `rsplit`) and `path_basename_bytes` (raw bytes,
-//! `rposition`) are TWO implementations of the SAME operation — "the final
+//! `rposition`) are TWO implementations of the SAME operation. "the final
 //! component after the last `/` or `\`". The string version drives
 //! context/suppression file attribution; the byte version drives the raw-bytes
 //! suppression hot path (`suppression::path_filter`). If they ever disagree, the
 //! same file is attributed one way on the string path and another on the byte
-//! path — a silent suppression/recall bug of exactly the "two impls that drift"
+//! path, a silent suppression/recall bug of exactly the "two impls that drift"
 //! class. The proptest pins them byte-for-byte over generated paths; the byte
 //! version is ALSO checked standalone against a hand-rolled oracle on arbitrary
 //! (incl. non-UTF-8) bytes, which the string version cannot be handed.
 //!
 //! `path_has_any_component` gates example-path suppression (a finding under
 //! `test/` `examples/` `fixtures/` … is downranked). Its contract is EXACT
-//! component match (NOT substring — `secrets/` must not match component
+//! component match (NOT substring: `secrets/` must not match component
 //! `secret`), case-insensitive, across BOTH separators. A false widen suppresses
 //! real secrets in innocently-named dirs; a false narrow floods FPs. These pin
 //! the contract directly rather than only through a full scan.
@@ -56,7 +56,7 @@ fn byte_basename_posix_windows_mixed_and_none() {
 fn byte_basename_agrees_with_string_on_multibyte_components() {
     // `/` and `\` are ASCII (0x2F / 0x5C) and can never be a UTF-8 continuation
     // byte, so byte-search and char-search find the SAME cut points even amid
-    // multibyte content — the two impls stay in lock-step.
+    // multibyte content (the two impls stay in lock-step).
     let p = "café/naïve/mañana.clé";
     assert_eq!(basename(p).as_bytes(), basename_bytes(p.as_bytes()));
     assert_eq!(basename(p), "mañana.clé");
@@ -66,7 +66,7 @@ fn byte_basename_agrees_with_string_on_multibyte_components() {
 
 proptest! {
     // Testing Contract: 8k cases. Per case = two O(n) scans over a <=~60-byte
-    // path, no allocation beyond the built path string — cheap at 8k.
+    // path, no allocation beyond the built path string (cheap at 8k).
     #![proptest_config(ProptestConfig::with_cases(8_000))]
 
     /// The two implementations must agree byte-for-byte on every valid-UTF-8
@@ -98,7 +98,7 @@ proptest! {
     }
 
     /// The byte version must equal the independent oracle on ARBITRARY bytes,
-    /// including non-UTF-8 — separators are over-represented so the cut path is
+    /// including non-UTF-8, separators are over-represented so the cut path is
     /// hit frequently.
     #[test]
     fn byte_basename_matches_oracle_on_arbitrary_bytes(
@@ -130,7 +130,7 @@ fn has_component_matches_exact_component_case_insensitively() {
 
 #[test]
 fn has_component_requires_a_whole_component_not_a_substring() {
-    // Exact component, NOT substring — a widen here would suppress real secrets
+    // Exact component, NOT substring, a widen here would suppress real secrets
     // under an innocently-named dir.
     assert!(!has_component("secrets/prod.key", &["secret"]));
     assert!(!has_component("mytest/x", &["test"]));

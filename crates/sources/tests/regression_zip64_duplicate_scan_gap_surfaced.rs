@@ -1,5 +1,5 @@
 //! Regression: a zip whose end-of-central-directory carries a zip64 sentinel
-//! makes the duplicate-entry detector bail — it explicitly does not model zip64
+//! makes the duplicate-entry detector bail, it explicitly does not model zip64
 //! central directories. That bail used to be swallowed by an
 //! `if let Ok(Some(..))` in `extract_zip_archive`, so the archive was silently
 //! handed to the standard parser (which surfaces only one entry per name); any
@@ -60,7 +60,7 @@ fn zip64_eocd_sentinel_records_duplicate_scan_unavailable_gap() {
 /// Build a minimal stored single-entry zip, then set the classic EOCD's
 /// total-entry-count field to the zip64 sentinel `0xFFFF`. `read_central_zip_entries`
 /// reads that field at `eocd + 10` and returns "zip64 central directory is not
-/// handled by duplicate fallback" — the exact `Err` whose former silent swallow
+/// handled by duplicate fallback", the exact `Err` whose former silent swallow
 /// this test guards against.
 fn zip_with_zip64_eocd_sentinel(name: &str, data: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
@@ -116,7 +116,7 @@ fn zip_with_zip64_eocd_sentinel(name: &str, data: &[u8]) -> Vec<u8> {
     write_u16(&mut out, 0); // disk number
     write_u16(&mut out, 0); // disk with central dir
     write_u16(&mut out, 0xFFFF); // entries on this disk (zip64 sentinel)
-    write_u16(&mut out, 0xFFFF); // total entries (zip64 sentinel) — read at eocd+10
+    write_u16(&mut out, 0xFFFF); // total entries (zip64 sentinel), read at eocd+10
     write_u32(&mut out, central_size);
     write_u32(&mut out, central_offset);
     write_u16(&mut out, 0); // comment length

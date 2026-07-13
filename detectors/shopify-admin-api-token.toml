@@ -8,7 +8,7 @@ id = "shopify-admin-api-token"
 name = "Shopify Admin API Token"
 service = "shopify"
 severity = "critical"
-# "admin" removed: over-broad generic prefilter the regex does NOT need — every
+# "admin" removed: over-broad generic prefilter the regex does NOT need, every
 # pattern self-anchors on the service name (kept), which is present in any real
 # match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.
 keywords = ["shpat_", "shopify"]

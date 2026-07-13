@@ -9,8 +9,8 @@
 //!
 //! Only a source-shape gate referenced the plural `_stems()` builder; the
 //! singular classifier had no behavioral test. The ORDER is the load-bearing
-//! property — a keyword containing two of these substrings resolves to the
-//! earlier one — so pin every precedence collision and the fall-through. All
+//! property, a keyword containing two of these substrings resolves to the
+//! earlier one, so pin every precedence collision and the fall-through. All
 //! vectors were traced against the chain.
 
 use keyhog_scanner::testing::generic_keyword_prefilter_stem_for_test as stem;
@@ -32,7 +32,7 @@ fn earlier_substring_wins_each_collision() {
     // `secret` outranks both `key` and `webhook`.
     assert_eq!(stem("secret_key"), "secret");
     assert_eq!(stem("webhook_secret"), "secret");
-    // `pass` outranks `pwd` — `passwd` contains `pass`, so it never reaches pwd.
+    // `pass` outranks `pwd`: `passwd` contains `pass`, so it never reaches pwd.
     assert_eq!(stem("passwd"), "pass");
     // `token` outranks `auth`.
     assert_eq!(stem("oauth_token"), "token");

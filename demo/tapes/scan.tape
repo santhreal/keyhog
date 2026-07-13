@@ -1,6 +1,6 @@
 # Hero scan recording: `keyhog scan` over the synthetic demo/ tree, run on the
-# GPU region-presence backend (RTX 5090) — the premium fast path.
-# Renders the real headless scan surface — boxed findings with severity,
+# GPU region-presence backend (RTX 5090) (the premium fast path).
+# Renders the real headless scan surface, boxed findings with severity,
 # confidence, file:line, and remediation, then the results summary and the
 # coverage-gap (skipped-file) notice that keeps "N findings" honest.
 Output demo/keyhog-scan.gif

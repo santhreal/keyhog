@@ -1,6 +1,6 @@
 //! Offline AWS account-ID recovery + canary-token classification.
 //!
-//! The implementation is the fleet-canonical one in [`keyhog_core::aws`] — it
+//! The implementation is the fleet-canonical one in [`keyhog_core::aws`], it
 //! lives in `keyhog-core` because BOTH the scanner (which attaches the decoded
 //! account / canary flag as finding metadata with no verify) and the verifier
 //! (which refuses to send a live STS probe for a canary key) need it, and

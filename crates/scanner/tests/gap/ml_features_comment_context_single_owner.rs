@@ -6,7 +6,7 @@
 //! block) and feature 38 (`COMMENT_CONTEXT_FEATURE_INDEX`). Both derive from the
 //! SAME `COMMENT_PREFIXES`/`context.trim().starts_with(..)` check, hoisted into a
 //! single `context_starts_with_comment_prefix` owner so they can never drift to
-//! different comment definitions — the model was trained on them as identical
+//! different comment definitions, the model was trained on them as identical
 //! signals, so a divergence would silently corrupt scoring. Pin that they move
 //! together (both 1.0 in a comment, both 0.0 outside) alongside the exact prefix
 //! and length binary features computed from the same call.

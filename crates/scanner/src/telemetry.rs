@@ -69,7 +69,7 @@ struct Telemetry {
     /// The same credential is adjudicated by several pipeline stages (the
     /// example-token gate AND a shape/weak-anchor gate can both drop the same
     /// `AKIA…EXAMPLE` key), so without this the `--dogfood` trace emitted one
-    /// event per STAGE — duplicate noise for one logical suppression (KH-GAP-091).
+    /// event per STAGE (duplicate noise for one logical suppression (KH-GAP-091)).
     /// Keyed without the reason/stage so the FIRST stage to record a credential
     /// wins and later stages are deduped; the example counter keeps its own
     /// (reason-keyed) dedup so per-stage COUNTS are unaffected.
@@ -176,7 +176,7 @@ static GPU_DISPATCHES: AtomicUsize = AtomicUsize::new(0);
 /// state, Jupyter notebook, docker-compose) but FAILED to parse, so the
 /// structured decode-through (e.g. base64-encoded secrets inside a k8s `data:`
 /// block) was NOT applied. The raw text is still scanned, so this is not a total
-/// miss — but credentials only reachable via the structured decode are silently
+/// miss, but credentials only reachable via the structured decode are silently
 /// lost on the offending file. Counted (not just `tracing::debug!`-logged, which
 /// is filtered out at default verbosity) so the scan can surface the coverage
 /// gap loudly at completion (Law 10).
@@ -365,12 +365,12 @@ fn record_example_suppression_in(
 /// only the FIRST time a given credential VALUE is seen this scan. Both
 /// suppression recorders gate their `events.push` on this so the `--dogfood`
 /// trace carries one event per logical suppression rather than one per pipeline
-/// stage. The key is the credential hash ALONE — not `path\0hash` — because one
+/// stage. The key is the credential hash ALONE, not `path\0hash`: because one
 /// logical drop of a credential can be recorded by several stages with
 /// INCONSISTENT path context (an early gate knows the file; a later
 /// entropy/fallback stage records `path=None`); keying on path would let those
 /// re-emit as duplicate events for the same logical suppression (KH-GAP-091). A
-/// poisoned lock fails OPEN (returns `true`) — an extra event is a far smaller
+/// poisoned lock fails OPEN (returns `true`), an extra event is a far smaller
 /// sin than silently dropping the trace (Law 10).
 fn mark_suppression_event_emitted(
     emitted_suppression_events: &Mutex<HashSet<String>>,

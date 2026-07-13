@@ -6,10 +6,10 @@
 //! root dedup collapses a repeated credential to ONE finding spanning both
 //! files, a duplicated path argument is not double-counted, and a single
 //! nonexistent root fails the whole run closed (exit 2, named path, fix
-//! guidance) — never a partial/silent report.
+//! guidance) (never a partial/silent report).
 //!
-//! HOST-INDEPENDENCE: both planted detectors — `github-classic-pat` (literal
-//! `ghp_`) and `slack-bot-token` (literal `xoxb-`) — are literal-anchored, so
+//! HOST-INDEPENDENCE: both planted detectors: `github-classic-pat` (literal
+//! `ghp_`) and `slack-bot-token` (literal `xoxb-`), are literal-anchored, so
 //! they fire on the always-available CPU/aho-corasick path and do NOT depend on
 //! Hyperscan/SIMD/GPU. github maps to the SAME id (`github-classic-pat`) on both
 //! the named-detector and simdsieve hot-pattern paths, so no host-dependent
@@ -34,7 +34,7 @@ use tempfile::TempDir;
 const GITHUB: &str = concat!("ghp_", "1234567890123456789012345678902PDSiF");
 const GITHUB_ID: &str = "github-classic-pat";
 const GITHUB_NAME: &str = "GitHub Classic PAT";
-/// sha256(GITHUB) — `credential_hash` is sha256(value) verbatim.
+/// sha256(GITHUB): `credential_hash` is sha256(value) verbatim.
 const GITHUB_HASH: &str = "7b85310a29300230c865bc48ca1836f15b81bd50ac85e8c0785e8145e98ff175";
 const GITHUB_REDACTED: &str = "ghp_...DSiF";
 
@@ -171,7 +171,7 @@ fn both_dirs_surface_distinct_detectors_exit_1() {
     );
 }
 
-/// Each finding names ITS OWN file, on line 1, with source `filesystem` — the
+/// Each finding names ITS OWN file, on line 1, with source `filesystem`: the
 /// github finding points at `leak_a.env` (dir1) and the slack finding at
 /// `leak_b.env` (dir2); the locations are never crossed.
 #[test]
@@ -254,7 +254,7 @@ fn github_finding_exact_identity_fields() {
     );
 }
 
-/// The slack finding (from the OTHER root) carries its own exact identity —
+/// The slack finding (from the OTHER root) carries its own exact identity 
 /// proving neither root's fields bleed into the other.
 #[test]
 fn slack_finding_exact_identity_fields() {
@@ -288,7 +288,7 @@ fn slack_finding_exact_identity_fields() {
 }
 
 /// The `credential_hash` of each cross-root finding equals sha256 of the exact
-/// planted token bytes — a serializer that hashed a truncated/salted form would
+/// planted token bytes, a serializer that hashed a truncated/salted form would
 /// break this.
 #[test]
 fn credential_hash_equals_sha256_of_each_token() {
@@ -431,7 +431,7 @@ fn text_over_two_paths_reports_two_secrets_found() {
 
 /// A secret on line 2 of a file in one of several roots reports the exact line
 /// (2) and absolute byte offset (33 = 20-byte first line + 13-byte
-/// `GITHUB_TOKEN=` prefix) — multi-root scanning does not corrupt per-file
+/// `GITHUB_TOKEN=` prefix), multi-root scanning does not corrupt per-file
 /// offsets.
 #[test]
 fn secret_on_second_line_reports_exact_line_and_offset() {
@@ -534,7 +534,7 @@ fn dedup_records_one_additional_location_covering_both_files() {
 }
 
 /// The deduped cross-root finding's `credential_hash` equals the hash from a
-/// single-root scan of the same token — the identity is stable regardless of
+/// single-root scan of the same token, the identity is stable regardless of
 /// how many roots the credential appears in.
 #[test]
 fn dedup_finding_hash_matches_single_scan_identity() {

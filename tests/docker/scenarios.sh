@@ -28,10 +28,10 @@ FAILED=()
 # Some images ship a single-backend PORTABLE build (the musl/static image is built
 # `--features portable`: no Hyperscan, no GPU). On such a build the `simd` backend
 # does not exist, so `--backend simd` correctly errors instead of scanning. Probe
-# the image's compiled backends once and skip the simd-specific scenarios there —
+# the image's compiled backends once and skip the simd-specific scenarios there 
 # they assert a backend this variant cannot have. This is a loud, recorded skip,
 # never a silent pass. (Auto scans need no guard: a single-backend build resolves
-# its lone backend directly — see `sole_compiled_backend` in dispatch/backend.rs —
+# its lone backend directly, see `sole_compiled_backend` in dispatch/backend.rs 
 # so it never fails closed and needs no calibration bake.)
 if docker run --rm "$IMAGE" keyhog backend 2>&1 | grep -qE 'hyperscan: *compiled-in'; then
   HAS_SIMD=1

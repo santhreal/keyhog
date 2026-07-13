@@ -109,7 +109,7 @@ fn detector_ids_module_owns_scanner_detector_identity() {
             .join("confirmed_extract.rs"),
     );
     // DET-0 architecture law: `weak_anchor` and `private_key_block` are PER-DETECTOR
-    // `DetectorSpec` flags declared in each detector's own TOML — one file tells the
+    // `DetectorSpec` flags declared in each detector's own TOML, one file tells the
     // whole story of one detector. They are NOT hardcoded in detector_ids.rs and are
     // NO LONGER centralized id lists in the Tier-B classification rules. Exact family
     // membership is pinned by `weak_anchor_family_is_toml_declared` /

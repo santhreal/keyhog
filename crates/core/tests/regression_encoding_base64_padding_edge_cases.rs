@@ -4,7 +4,7 @@
 //! The previous implementation used `take_while(|c| c != b'=')`, which stopped
 //! at the FIRST `=` and silently dropped everything after it. That made
 //! `"QUJ=Q0Q="` decode to just `"AB"` (the bytes after the embedded `=` were
-//! thrown away with no error) — a silent-accept that corrupts a credential
+//! thrown away with no error), a silent-accept that corrupts a credential
 //! round-trip through `Credential`'s serde. These tests pin the corrected,
 //! fail-closed behavior with EXACT byte oracles, and pin that the legitimate
 //! trailing-padding forms still succeed unchanged.
@@ -26,7 +26,7 @@ fn data_after_embedded_padding_is_rejected_not_truncated() {
 #[test]
 fn leading_padding_is_rejected() {
     let err = decode_standard_base64("=QUJD").expect_err("leading '=' must be rejected");
-    // A LEADING `=` (index 0) is padding with zero preceding data — the code
+    // A LEADING `=` (index 0) is padding with zero preceding data, the code
     // reports that specific case, distinct from the mid-string "data after
     // padding" error. Assert the accurate message the code actually emits.
     assert_eq!(err, "invalid base64: padding '=' with no preceding data");

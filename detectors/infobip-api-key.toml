@@ -9,7 +9,7 @@ name = "Infobip API Key"
 service = "infobip"
 severity = "critical"
 # "app" removed: an over-trigger (application/apple/happen/…) that no regex
-# requires — the two patterns anchor on `infobip` and `Authorization` (both
+# requires: the two patterns anchor on `infobip` and `Authorization` (both
 # still keywords). The `(?:App|APP)?` in the auth regex is optional and gated by
 # the `Authorization` trigger, not by an "app" keyword. Recall-neutral.
 keywords = ["infobip", "INFOBIP", "authorization"]

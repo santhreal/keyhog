@@ -4,7 +4,7 @@
 //! delegation changes no output (Law 6 + DEDUP / drift-hazard removal).
 //!
 //! `contains_evasion` used to inline `cyrillic_to_latin(ch).is_some() || … ||
-//! is_ascii_evasion_control(ch)` — the same disjunction `normalized_char`
+//! is_ascii_evasion_control(ch)`, the same disjunction `normalized_char`
 //! already computes (Replace for the homoglyphs, Drop for the rest, Keep
 //! otherwise). Two copies of "which chars are evasive" can drift: add a new
 //! category to `normalized_char` and the detector silently misses it. The
@@ -59,7 +59,7 @@ fn contains_evasion_matches_normalized_char_classification() {
     );
 
     // DEL (0x7F) is >= 0x20 so the byte fast-path misses it; it must be caught
-    // through `normalized_char`'s Drop arm (is_ascii_evasion_control) — the exact
+    // through `normalized_char`'s Drop arm (is_ascii_evasion_control), the exact
     // path this dedup routes through.
     assert!(
         contains_evasion("ab\u{007F}cd"),
@@ -104,7 +104,7 @@ fn contains_evasion_delegates_to_normalized_char_single_owner() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vector enumerates one instance per evasion category; these SWEEP the
 // two directional guarantees the detector exists for. `contains_evasion` gates
-// the unicode-hardening scan path — a false negative lets an evasion-obfuscated
+// the unicode-hardening scan path, a false negative lets an evasion-obfuscated
 // secret through (recall), a false positive flags clean source (precision). No
 // proptest covered it before.
 
@@ -126,7 +126,7 @@ const EVASION_CHARS: &[char] = &[
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
-    /// PRECISION: clean printable ASCII (0x20..=0x7e — no control byte, no
+    /// PRECISION: clean printable ASCII (0x20..=0x7e, no control byte, no
     /// homoglyph) is NEVER flagged as evasion, so ordinary source lines are never
     /// falsely rejected by the hardening gate.
     #[test]
@@ -135,7 +135,7 @@ proptest! {
     }
 
     /// RECALL: a single evasion char is detected regardless of surrounding clean
-    /// text — no clean prefix or suffix can mask it. One char per non-Keep
+    /// text, no clean prefix or suffix can mask it. One char per non-Keep
     /// category, wrapped in arbitrary clean-ASCII context.
     #[test]
     fn an_evasion_char_is_detected_in_any_clean_context(

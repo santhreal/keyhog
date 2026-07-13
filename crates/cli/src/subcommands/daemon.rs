@@ -92,7 +92,7 @@ async fn stop(socket: Option<PathBuf>) -> Result<ExitCode> {
 
 async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
     let socket = socket.unwrap_or_else(default_socket_path); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
-                                                             // `connect_any_version`: `status` is diagnostic — an operator inspecting a
+                                                             // `connect_any_version`: `status` is diagnostic, an operator inspecting a
                                                              // daemon left running across an upgrade NEEDS to see it (so they can decide
                                                              // to restart it), not get a refusal. The strict version-gated `connect`
                                                              // would hide the very stale daemon the operator is trying to find.
@@ -107,7 +107,7 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
     // Surface staleness LOUDLY: a daemon left running across a `keyhog update`
     // serves an OLDER detector corpus. The scan route already refuses it
     // (`connect` fails closed), but an operator running `status` must SEE that
-    // the daemon is stale — otherwise the healthy-looking uptime line hides the
+    // the daemon is stale, otherwise the healthy-looking uptime line hides the
     // very reason their scans are silently routed in-process.
     let stale = conn.is_stale();
     let daemon_version = conn.daemon_version().to_string();

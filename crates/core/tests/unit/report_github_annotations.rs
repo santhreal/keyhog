@@ -75,7 +75,7 @@ fn github_annotation_escapes_workflow_command_injection() {
     // The verification token is NOT run through `sanitize_terminal`; its CR/LF are
     // instead escaped to %0D/%0A by `escape_command_data`. Either layer prevents a
     // literal newline from injecting a second command (see the one-line assertion
-    // above) — this pins that the verification path uses the escape layer.
+    // above) (this pins that the verification path uses the escape layer).
     assert!(
         out.contains("verification=error: bad%0D%0A::error title=owned::pwn%25"),
         "error verification text must escape CR/LF and percent: {out:?}"

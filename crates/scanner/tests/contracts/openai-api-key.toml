@@ -38,11 +38,11 @@ reason = "Python-style constructor call with quoted key."
 
 [[negative]]
 text = "sk-too-short"
-reason = "Legacy key requires exactly 48 alphanumerics — must not match."
+reason = "Legacy key requires exactly 48 alphanumerics (must not match)."
 
 [[negative]]
 text = "sk-proj-short"
-reason = "Project key requires >=40 chars after prefix — must not match."
+reason = "Project key requires >=40 chars after prefix (must not match)."
 
 [[negative]]
 text = "stripe sk_live_ format is unrelated to openai's sk- prefix"
@@ -50,7 +50,7 @@ reason = "Prose mentioning both prefixes without a real key body."
 
 [[negative]]
 text = "sk-1234567890abcdefghijABCDEFGHIJ1234567890abcdef"
-reason = "Only 47 alphanumerics after sk- — one short of legacy length."
+reason = "Only 47 alphanumerics after sk- (one short of legacy length)."
 
 # ---- EVASIONS (adversarial) -----------------------------------------
 
@@ -62,7 +62,7 @@ reason = "Inside a shell/python comment."
 [[evasion]]
 text = "<!-- OPENAI_API_KEY=sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ -->"
 credential = "sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
-reason = "HTML-commented config line — the realistic leak shape: env-var name + key together inside a commented-out block. The assignment + sensitive variable name lift confidence above the Comment-context hard-suppress floor. Bare `<!--KEY-->` (no env-var) is intentionally suppressed by the engine — see tests/openai_html_comment_bug_62.rs for that DOCUMENTED behavior."
+reason = "HTML-commented config line, the realistic leak shape: env-var name + key together inside a commented-out block. The assignment + sensitive variable name lift confidence above the Comment-context hard-suppress floor. Bare `<!--KEY-->` (no env-var) is intentionally suppressed by the engine (see tests/openai_html_comment_bug_62.rs for that DOCUMENTED behavior)."
 
 [[evasion]]
 text = "Authorization: Bearer sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
@@ -74,7 +74,7 @@ reason = "Bearer-token header context."
 [perf]
 fixture_bytes = 4096
 max_microseconds = 25000
-note = "Single 4 KiB fixture, one planted key, full pipeline cost. Budget allows for CI jitter — typical local run is ~15 ms but loaded runners spike to 19 ms."
+note = "Single 4 KiB fixture, one planted key, full pipeline cost. Budget allows for CI jitter (typical local run is ~15 ms but loaded runners spike to 19 ms)."
 
 [scale]
 fixture_bytes = 1048576

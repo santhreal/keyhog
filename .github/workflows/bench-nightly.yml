@@ -39,7 +39,7 @@ jobs:
   leaderboard:
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    # Per-job permissions — see keyhog.yml header note. Top-level
+    # Per-job permissions, see keyhog.yml header note. Top-level
     # `permissions:` rejected at dispatch time on this repo.
     permissions:
       contents: read

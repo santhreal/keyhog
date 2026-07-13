@@ -842,7 +842,7 @@ impl RarEntrySink {
 
 /// Append `buf` to a decoded-entry buffer, failing (and latching `hit_cap`) if the
 /// running total would exceed `cap`. Single owner of the capped-append `Write`
-/// core that `RarEntrySink` and `SolidRarEntrySink` share — they differed only in
+/// core that `RarEntrySink` and `SolidRarEntrySink` share, they differed only in
 /// the `what` label baked into the over-cap error. The drain sink counts instead
 /// of storing, so it stays separate.
 fn capped_extend(

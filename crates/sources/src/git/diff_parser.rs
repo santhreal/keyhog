@@ -281,7 +281,7 @@ fn normalize_git_relative_path(path: &str) -> Option<String> {
     }
 
     // Borrow the path components (`&str` into `path`) rather than heap-allocating
-    // a `String` per component — the only reducible allocation on the `+++ ` header
+    // a `String` per component, the only reducible allocation on the `+++ ` header
     // path (the per-content-line hot path is already zero-alloc: it borrows via
     // `UnifiedDiffEvent<'a>`). One `join` allocation for the result, not N+1.
     let mut normalized: Vec<&str> = Vec::new();
@@ -494,10 +494,10 @@ mod tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(4000))]
 
-        /// `git diff` output is UNTRUSTED — a malicious repository controls it. The
+        /// `git diff` output is UNTRUSTED, a malicious repository controls it. The
         /// stateful line parser must NEVER panic on any byte sequence across any
         /// parser state (the `@@` hunk-header math, the `+++`/quoted-path branch,
-        /// the octal unescape) — it may only return `Ok(event)` or `Err`.
+        /// the octal unescape) (it may only return `Ok(event)` or `Err`).
         #[test]
         fn parse_line_is_total_on_arbitrary_diff_bytes(
             lines in prop::collection::vec(prop::collection::vec(any::<u8>(), 0..48usize), 0..8usize),
@@ -512,7 +512,7 @@ mod tests {
 
         /// SECURITY INVARIANT: the path sanitizer feeds a write/scan path derived
         /// from an attacker-controlled `+++ b/…` header. Any `Some(path)` it emits
-        /// MUST stay inside the repo — never absolute, never carrying a surviving
+        /// MUST stay inside the repo, never absolute, never carrying a surviving
         /// `..` traversal component, never empty. (A crafted `+++ b/../../etc/passwd`
         /// or `+++ b//abs` must sanitize to `None`, not to an escaping path.)
         #[test]
@@ -533,7 +533,7 @@ mod tests {
         }
 
         /// The quoted-git-path octal/backslash unescaper does index arithmetic
-        /// (`body.get(index)?`, 3-digit octal accumulation) over attacker bytes — it
+        /// (`body.get(index)?`, 3-digit octal accumulation) over attacker bytes, it
         /// must be total (no panic) on any input.
         #[test]
         fn unescape_quoted_git_path_body_is_total(

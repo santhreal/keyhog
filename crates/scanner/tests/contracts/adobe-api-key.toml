@@ -20,7 +20,7 @@ reason = "Body below 32 hex chars."
 [[evasion]]
 text = "adobe.client.id=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
 credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
-reason = "Dot-separated adobe.client.id — regex covers [._-]?"
+reason = "Dot-separated adobe.client.id (regex covers [._-])?"
 
 [perf]
 fixture_bytes = 4096

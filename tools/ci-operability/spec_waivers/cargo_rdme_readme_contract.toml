@@ -1,4 +1,4 @@
-# SPEC waiver — KH-GAP-111 / readme_missing_santh_status_badge.rs
+# SPEC waiver: KH-GAP-111 / readme_missing_santh_status_badge.rs
 # cargo-rdme + mandatory README sections require multi-crate doc migration.
 gap_id = "KH-GAP-111"
 kind = "spec"

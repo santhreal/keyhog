@@ -15,12 +15,12 @@ reason = "Doppler personal token with dp.pt. prefix and 44-char base58 body."
 
 [[negative]]
 text = "doppler dp.ct.short"
-reason = "Body too short — only 5 chars after prefix."
+reason = "Body too short (only 5 chars after prefix)."
 
 [[evasion]]
 text = "doppler dp.ct.NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1JRcor"
 credential = "dp.ct.NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1JRcor"
-reason = "Adversarial anchor_bare envelope — credential must still surface under this detector."
+reason = "Adversarial anchor_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

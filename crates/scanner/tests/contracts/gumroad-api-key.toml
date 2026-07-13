@@ -24,7 +24,7 @@ reason = "Keyword context without valid credential body."
 [[evasion]]
 text = "gumroad access_token=b2963950e3ed2e3dc49d5740982bac6a94"
 credential = "b2963950e3ed2e3dc49d5740982bac6a94"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

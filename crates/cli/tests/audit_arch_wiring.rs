@@ -41,7 +41,7 @@ fn binary() -> PathBuf {
 /// The repo's `detectors/` directory, resolved relative to this crate's
 /// manifest dir. Guarantees the real `aws-access-key` detector is loaded by
 /// BOTH the daemon and the in-process path rather than whatever subset the
-/// embedded corpus carries — the planted key must be detectable on both
+/// embedded corpus carries, the planted key must be detectable on both
 /// routes for a parity assertion to mean anything.
 fn workspace_detectors() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -255,7 +255,7 @@ fn write_fixture(dir: &Path, name: &str, content: &str) -> PathBuf {
     path
 }
 
-/// AUD-arch_wiring-1 — `.keyhog.toml` `min_confidence` must be considered
+/// AUD-arch_wiring-1: `.keyhog.toml` `min_confidence` must be considered
 /// before a forced daemon route is accepted.
 #[test]
 fn daemon_route_honors_config_min_confidence_floor() {
@@ -306,12 +306,12 @@ fn daemon_route_honors_config_min_confidence_floor() {
     );
 }
 
-/// AUD-arch_wiring-2 — `[lockdown] require = true` (a fail-closed security
+/// AUD-arch_wiring-2: `[lockdown] require = true` (a fail-closed security
 /// control) is bypassed by the daemon route.
 ///
 /// Finding: `ScanOrchestrator::new` enforces `[lockdown] require = true`
 /// with a `bail!` (orchestrator/mod.rs:89-95) when `--lockdown` was not
-/// passed — a deliberate fail-closed guard so a repo that mandates hardening
+/// passed, a deliberate fail-closed guard so a repo that mandates hardening
 /// never runs unprotected. But that check lives inside the orchestrator,
 /// which the daemon route never constructs. `daemon_route` (scan.rs:97) only
 /// looks at the `args.lockdown` CLI flag, not the config-file
@@ -320,7 +320,7 @@ fn daemon_route_honors_config_min_confidence_floor() {
 ///
 /// Reference behavior (`--daemon=off`): exit code 2 with the lockdown error
 /// on stderr; no findings emitted (fail closed).
-/// Buggy behavior (`--daemon`): the scan runs normally — exit 1 with the
+/// Buggy behavior (`--daemon`): the scan runs normally, exit 1 with the
 /// finding on stdout. This test asserts the daemon route ALSO fails closed.
 /// It FAILS today because the daemon route scans instead of refusing.
 ///
@@ -357,7 +357,7 @@ fn daemon_route_enforces_config_lockdown_require() {
     );
 
     // Under test: the daemon route must ALSO refuse to scan. Today it runs
-    // the scan and exits 1 with the finding — the security control is gone.
+    // the scan and exits 1 with the finding (the security control is gone).
     let via_daemon = scan(&daemon, &path, "--daemon");
     assert_ne!(
         via_daemon.exit_code,
@@ -378,7 +378,7 @@ fn daemon_route_enforces_config_lockdown_require() {
     );
 }
 
-/// AUD-arch_wiring-3 — `show_secrets = true` from `.keyhog.toml` must not be
+/// AUD-arch_wiring-3: `show_secrets = true` from `.keyhog.toml` must not be
 /// served by a forced daemon route that would redact differently.
 #[test]
 fn daemon_route_honors_config_show_secrets() {

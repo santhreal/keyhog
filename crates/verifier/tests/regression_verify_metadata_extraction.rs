@@ -1,5 +1,5 @@
 //! Coverage for the verifier's response-metadata extraction
-//! (`verify::response::extract_metadata`) — previously UNTESTED live code.
+//! (`verify::response::extract_metadata`) (previously UNTESTED live code).
 //!
 //! After a credential verifies Live, `extract_metadata` pulls operator-facing
 //! metadata (account name, email, plan, …) out of the JSON response body via
@@ -7,7 +7,7 @@
 //! a JSON POINTER (RFC 6901, `serde_json::Value::pointer`), and each extracted
 //! value is rendered with the same contract-string mapping as the success gate
 //! (String→raw, Number→decimal, Bool→"true"/"false"). A non-JSON body yields no
-//! metadata (not an error — verification still proceeds on status/body rules).
+//! metadata (not an error (verification still proceeds on status/body rules)).
 //! A silent drift here would surface wrong or missing finding metadata, so the
 //! hit / miss / type / non-JSON branches are all pinned.
 

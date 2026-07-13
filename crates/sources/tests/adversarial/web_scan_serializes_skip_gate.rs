@@ -7,7 +7,7 @@
 //! concurrent SSRF-blocked web scan's `Unreadable` increment intermittently
 //! flipped a sibling coverage-gap assertion (the `zero_byte_gzip` test, which
 //! asserts `skip_counts().unreadable == 1`) from 1 to 2 under parallel
-//! `cargo test` — a false CI red whose production behavior was correct.
+//! `cargo test`: a false CI red whose production behavior was correct.
 //!
 //! The discriminator here is BLOCKING, not a global-counter read (which would
 //! itself be contamination-prone and reintroduce the very flake under test):

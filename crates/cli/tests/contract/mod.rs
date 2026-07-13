@@ -1,6 +1,6 @@
 //! CLI contract tests: exit codes, --help documentation, output-format
 //! validity, and flag parsing. Every `.rs` in this directory is a contract
-//! module and MUST be declared here — files were silently orphaned before
+//! module and MUST be declared here, files were silently orphaned before
 //! (3 of 97 wired), so the bulk of the CLI contract suite never compiled or
 //! ran. `contract_modules_all_wired` guards against re-drift.
 

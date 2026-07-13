@@ -4,8 +4,8 @@
 //! `evaluate_success` is the pure precursor that decides whether a 2xx response
 //! actually confirms a credential Live. The `status`/`status_not` gates are
 //! pinned by `regression_status_verdict_map`; this file closes the gap on the
-//! REMAINING gates — `body_contains`, `body_not_contains`, and
-//! `json_path` (+`equals`) — which are IMPLEMENTED and live in the verify path
+//! REMAINING gates: `body_contains`, `body_not_contains`, and
+//! `json_path` (+`equals`), which are IMPLEMENTED and live in the verify path
 //! but currently populated by zero shipped detectors (see backlog 6245), so a
 //! silent drift there would ship unnoticed. Every gate is AND-combined: a
 //! response is a success only when EVERY set constraint holds. A false verdict
@@ -36,7 +36,7 @@ fn body_contains_requires_the_substring_present() {
         "substring absent => not success"
     );
     assert!(!eval(&spec, 200, ""), "empty body can't contain the needle");
-    // Substring (not word/JSON) semantics: an embedded match still counts —
+    // Substring (not word/JSON) semantics: an embedded match still counts 
     // "inactive" contains the substring "active" (in‑active), so it passes;
     // note "deactivated" does NOT (…activ-A-ted), a genuine substring subtlety.
     assert!(eval(&spec, 200, "inactive"));

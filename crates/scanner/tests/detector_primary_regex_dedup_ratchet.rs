@@ -3,11 +3,11 @@
 //!
 //! Two detectors whose primary regex is identical are a duplicate detection:
 //! they fire the same finding twice (deduped by value downstream, so the bench
-//! score hides it) and split one concept across two TOMLs — the exact rot the
+//! score hides it) and split one concept across two TOMLs, the exact rot the
 //! ONE-PLACE law bans. This gate enumerates every such pair and asserts the set
 //! is a SUBSET of the documented debt baseline below, so a NEW duplicate fails
 //! the build the moment it is introduced, while the known pairs are tracked for
-//! consolidation (each annotated with the survivor + the compat caveat — a
+//! consolidation (each annotated with the survivor + the compat caveat, a
 //! detector id is a public contract via `.keyhogignore` / SARIF baselines, so
 //! removing one needs a migration note, not a silent delete).
 //!
@@ -35,7 +35,7 @@ const KNOWN_DUP_PAIRS: &[&[&str]] = &[
         "bigcommerce-access-token",
         "bigcommerce-store-api-credentials",
     ],
-    // Both fire on `pk_(?:live|test)_[a-zA-Z0-9]{32}` — Clerk's PUBLISHABLE
+    // Both fire on `pk_(?:live|test)_[a-zA-Z0-9]{32}`: Clerk's PUBLISHABLE
     // (client-safe) key. 100% redundant (same regex/severity/client_safe). The
     // real secret `sk_` is already caught (shares Stripe's `sk_live_` prefix).
     // Survivor: clerk-frontend-api-key (the precise "frontend/publishable"
@@ -88,7 +88,7 @@ fn no_new_duplicate_primary_regex_detectors() {
 
     // Group detector ids by their PRIMARY (patterns[0]) regex. Detectors with no
     // patterns (kind = "phase2-generic": shapeless secrets driven by keywords +
-    // entropy_floor, no regex anchor) have no primary regex and are excluded —
+    // entropy_floor, no regex anchor) have no primary regex and are excluded 
     // they cannot collide on a regex string.
     let mut by_regex: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for det in &detectors {
@@ -117,7 +117,7 @@ fn no_new_duplicate_primary_regex_detectors() {
         new_dups.is_empty(),
         "ONE-PLACE violation: {} NEW byte-identical primary-regex duplicate group(s) \
          (not in the tracked baseline). Two detectors with an identical primary regex \
-         are a duplicate detection — consolidate into one detector, or if intentional, \
+         are a duplicate detection, consolidate into one detector, or if intentional, \
          add the pair to KNOWN_DUP_PAIRS with a survivor note:\n{}",
         new_dups.len(),
         new_dups
@@ -144,7 +144,7 @@ fn no_new_duplicate_primary_regex_detectors() {
     assert!(
         still_dup >= baseline.len().saturating_sub(1).max(1),
         "dedup ratchet hollowed out: only {still_dup}/{} tracked dup pairs still load \
-         as duplicates — either a big consolidation landed (tighten KNOWN_DUP_PAIRS to \
+         as duplicates, either a big consolidation landed (tighten KNOWN_DUP_PAIRS to \
          match) or the detector dir regressed",
         baseline.len(),
     );

@@ -5,14 +5,14 @@
 //!
 //! `OPENPACK_EXTS` already routed `.zip`/`.jar`/`.apk`/`.ipa`/`.crx` (+ OOXML/ODF)
 //! to the archive extractor, but `.whl`/`.war`/`.ear`/`.aar`/`.nupkg`/`.snupkg`/
-//! `.egg`/`.xpi`/`.vsix` fell through to the general read path — so a credential
+//! `.egg`/`.xpi`/`.vsix` fell through to the general read path, so a credential
 //! baked into a DEFLATE-compressed entry (a `application.properties` in a WAR, a
 //! config in a wheel, `appsettings.json` in a NuGet package) was never reached.
 //! Adding those extensions routes them through `OpenPack::open`.
 //!
 //! The proof each format is unpacked: a `source_type == "filesystem/archive"`
 //! chunk whose path is `<artifact>//<entry>`. That source_type is emitted ONLY by
-//! the archive extractor — a raw-binary read of the same `.whl` would tag the
+//! the archive extractor, a raw-binary read of the same `.whl` would tag the
 //! chunk `filesystem/binary`/`...windowed`, never `filesystem/archive`. So the
 //! assertion is a definitive lock on the routing, independent of whether the entry
 //! happened to be STORED or compressed.
@@ -224,7 +224,7 @@ fn deeply_nested_war_entry_path_surfaces() {
 
 #[test]
 fn whl_secret_is_archive_chunk_not_raw_binary() {
-    // The secret must arrive on a filesystem/archive chunk — NOT on a
+    // The secret must arrive on a filesystem/archive chunk. NOT on a
     // binary/windowed chunk, which is what a non-unpacked read would produce.
     let (_dir, chunks, _errors) = scan_named("whl", &secret_zip(ENTRY));
     let carriers: Vec<&str> = chunks
@@ -241,7 +241,7 @@ fn whl_secret_is_archive_chunk_not_raw_binary() {
 
 #[test]
 fn binary_entry_in_whl_surfaces_as_archive_binary() {
-    // A non-text (binary) entry with an embedded printable run is still scanned —
+    // A non-text (binary) entry with an embedded printable run is still scanned 
     // as a `filesystem/archive-binary` chunk via printable-strings extraction.
     let mut body = vec![0x00u8, 0x01, 0x02, 0xff];
     body.extend_from_slice(format!("embedded_{SECRET}_run").as_bytes());
@@ -283,7 +283,7 @@ fn realistic_nupkg_appsettings_secret_surfaces() {
 #[test]
 fn non_zip_named_whl_produces_no_archive_chunk() {
     // Random non-zip bytes (no zip local-file-header) named `.whl`: OpenPack::open
-    // fails, so there must be NO filesystem/archive chunk — and no panic.
+    // fails, so there must be NO filesystem/archive chunk (and no panic).
     let junk: Vec<u8> = (0u8..=255).cycle().take(2048).collect();
     let (_dir, chunks, _errors) = scan_named("whl", &junk);
     assert!(
@@ -300,7 +300,7 @@ fn non_zip_named_whl_produces_no_archive_chunk() {
 
 #[test]
 fn non_zip_named_whl_does_not_panic_and_completes() {
-    // The scan must terminate (collect returns) on a malformed artifact — the
+    // The scan must terminate (collect returns) on a malformed artifact, the
     // assertion is simply that we reach this line.
     let junk = b"this is not a zip file at all, just plain text masquerading as a wheel";
     let (_dir, _chunks, _errors) = scan_named("whl", junk);

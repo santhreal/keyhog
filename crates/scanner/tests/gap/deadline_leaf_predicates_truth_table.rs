@@ -1,7 +1,7 @@
 //! Leaf-predicate truth tables for the deadline module (`expired`,
 //! `LoopDeadline::from_deadline`, `LoopDeadline::expired`). The sibling
 //! `deadline_cadence_tick_dedup` test drives these ONLY through the cadence
-//! wrappers with an already-reached deadline — so the NOT-yet-reached arm (a live
+//! wrappers with an already-reached deadline, so the NOT-yet-reached arm (a live
 //! scan still under its wall-clock budget must KEEP GOING, not abort) and the
 //! `None`/no-deadline arm were unexercised. A regression flipping the `>=`
 //! comparison, the `budget.is_zero()` fallback, or the `None` handling would
@@ -34,7 +34,7 @@ fn expired_reached_deadline_is_expired() {
 fn expired_far_future_deadline_is_not_expired() {
     assert!(
         !deadline_expired_far_future_for_test(),
-        "a deadline an hour out must NOT report expired — the live-scan-keeps-going path"
+        "a deadline an hour out must NOT report expired, the live-scan-keeps-going path"
     );
 }
 

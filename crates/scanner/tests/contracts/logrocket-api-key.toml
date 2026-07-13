@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "LOGROCKET_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "LOGROCKET_API_KEY=XTgWGEXAMPLEEXAMPLE7kunT"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "# LOGROCKET_API_KEY=XTgWG3ko9u_47Xtuf6XF4bdjMdsEGaG3bqFIpzl0kYmlBk-s5-Jhtml7WjUqI4C_av3g7x8-CM7gXgALSqNPXe06VT_:wQSo-54VIvNBiRC3vqN3AY3EJbZ9LD0odjTcHgQ5134_v3Kza6g4xs6nTS9hsLzL_aAnQ58ISu71FaiIZ:tQW7kunT"
 credential = "XTgWG3ko9u_47Xtuf6XF4bdjMdsEGaG3bqFIpzl0kYmlBk-s5-Jhtml7WjUqI4C_av3g7x8-CM7gXgALSqNPXe06VT_:wQSo-54VIvNBiRC3vqN3AY3EJbZ9LD0odjTcHgQ5134_v3Kza6g4xs6nTS9hsLzL_aAnQ58ISu71FaiIZ:tQW7kunT"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

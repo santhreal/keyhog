@@ -2,7 +2,7 @@
 //! predicate (`has_digit_and_long_alnum_run`: >=1 ASCII digit AND an 8+
 //! contiguous ASCII-alphanumeric run). This pins the exact run-length boundary,
 //! the digit requirement, the contiguity requirement, and the shift-invariance
-//! that justifies evaluating the shared half once on the raw candidate — so the
+//! that justifies evaluating the shared half once on the raw candidate, so the
 //! two callers can never drift on the thresholds after the DEDUP.
 
 use keyhog_scanner::testing::decode_caesar::{

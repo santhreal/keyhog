@@ -65,7 +65,7 @@ fn a_single_percent_triplet_is_kept() {
 // The fixed vectors pin one example of each shape/floor; these SWEEP them. The
 // KILLER is a UNIVERSAL SPAN SELF-CONSISTENCY invariant: for EVERY returned
 // (value, start, end), the span must be a valid char-aligned byte range whose
-// slice is EXACTLY the returned value — this is the splice-back contract, and an
+// slice is EXACTLY the returned value, this is the splice-back contract, and an
 // off-by-one span silently decodes into the wrong place. Then CONSTRUCTIVE recall
 // for the assignment / quoted / freestanding-16 shapes and the below-floor drop.
 // Traced against the extractor's documented span semantics. No proptest before.
@@ -77,7 +77,7 @@ proptest! {
 
     /// SPLICE-BACK SAFETY: every span is a valid, char-aligned byte range within
     /// the line, and the returned value is never LONGER than its span (the value is
-    /// a filtered subsequence of the raw range). Holds for arbitrary Unicode — also
+    /// a filtered subsequence of the raw range). Holds for arbitrary Unicode, also
     /// the no-panic guarantee.
     #[test]
     fn every_span_is_a_valid_range_bounding_its_value(line in "(?s).{0,60}") {
@@ -104,7 +104,7 @@ proptest! {
 
     /// SPLICE-BACK CONTRACT (backslash-free input, so no escape handling): the
     /// returned value is EXACTLY the raw span with internal ASCII whitespace
-    /// removed — the quoted path strips whitespace while the span covers the raw
+    /// removed, the quoted path strips whitespace while the span covers the raw
     /// first→last non-whitespace range; all other paths carry no internal
     /// whitespace, so the strip is a no-op and value == the raw slice.
     #[test]
@@ -143,7 +143,7 @@ proptest! {
     }
 
     /// A freestanding run below 16 chars (no assignment / quote / percent) yields
-    /// nothing — it is an ordinary word, not an encoded value.
+    /// nothing (it is an ordinary word, not an encoded value).
     #[test]
     fn freestanding_run_below_sixteen_yields_nothing(run in "[A-Za-z0-9]{1,15}") {
         prop_assert!(extract(&run).is_empty());

@@ -9,7 +9,7 @@ name = "Baidu Maps API Key"
 service = "baidu"
 severity = "high"
 # "ak" removed: a 2-char over-trigger (make/take/back/…) that NO regex references
-# — every pattern here requires a `baidu[_.]maps[_.]key` anchor, so "ak" only
+#, every pattern here requires a `baidu[_.]maps[_.]key` anchor, so "ak" only
 # wasted scan passes. Recall-neutral.
 keywords = ["BAIDU_MAPS_KEY", "baidu.maps.key", "baidu_maps_key"]
 

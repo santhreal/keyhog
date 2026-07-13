@@ -684,8 +684,8 @@ fn tar_archive_content_is_unpacked_and_scanned() {
     // AUD-capability-1: `.tar` is NO LONGER skipped purely on extension. A real
     // tarball is unpacked per-entry (mirroring the zip branch), so a secret
     // committed inside it is found and the chunk path is the inner
-    // `<archive>//<entry>`. (`.tar` is the dominant Linux/cloud archive — docker
-    // layer exports, helm charts, source tarballs — so skipping it was a
+    // `<archive>//<entry>`. (`.tar` is the dominant Linux/cloud archive, docker
+    // layer exports, helm charts, source tarballs, so skipping it was a
     // first-class recall hole.)
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("bundle.tar");
@@ -1008,7 +1008,7 @@ fn large_utf16le_file_with_ascii_secret_is_decoded_not_windowed_nul_interleaved(
     // REGRESSION (windowed-path UTF-16 recall gap): a UTF-16LE file larger than
     // DEFAULT_WINDOW_SIZE (1 MiB) used to take the raw-byte windowed/mmap path,
     // which `from_utf8_lossy`-decodes each byte window and so leaves an ASCII
-    // secret NUL-interleaved (`A\0K\0I\0A\0…`) — no detector can match it, a
+    // secret NUL-interleaved (`A\0K\0I\0A\0…`), no detector can match it, a
     // silent false "clean" on large Windows/PowerShell/.NET UTF-16 dumps. The fix
     // short-circuits a UTF-16-BOM file out of the windowed branch so it falls
     // through to the single-chunk `read_file_mmap` -> `decode_text_file` path,
@@ -1054,7 +1054,7 @@ fn large_utf16le_file_with_ascii_secret_is_decoded_not_windowed_nul_interleaved(
         chunks.len(),
         source_types
     );
-    // ...and is NOT left NUL-interleaved — the exact signature of the old
+    // ...and is NOT left NUL-interleaved, the exact signature of the old
     // raw-byte windowed path having run on UTF-16 bytes.
     let interleaved: String = marker.chars().flat_map(|c| [c, '\u{0}']).collect();
     assert!(
@@ -1213,7 +1213,7 @@ fn respect_gitignore_false_still_scans_ignored_file() {
 #[test]
 fn respect_gitignore_true_hides_gitignored_file() {
     // Default (true): a .gitignore'd file is excluded from the walk.
-    // `.gitignore` only takes effect inside a git repository — the `ignore`
+    // `.gitignore` only takes effect inside a git repository, the `ignore`
     // crate keys off a `.git` directory to locate the repo root before
     // applying gitignore rules. Mark this tempdir as a repo so the default
     // respect_gitignore(true) walk honors .gitignore (a bare temp dir with no

@@ -74,7 +74,7 @@ struct EntropyMarkerSection {
 /// credential; the entropy-marker lists are stored lowercase (ci_substrings are
 /// matched case-insensitively over raw bytes; exact_values are matched
 /// case-sensitively as whole raw-byte values, so only the lowercase whole value
-/// suppresses — the pinned current behavior).
+/// suppresses (the pinned current behavior)).
 #[derive(Debug)]
 pub(crate) struct PlaceholderVocab {
     words: Vec<PlaceholderWord>,
@@ -194,13 +194,13 @@ pub(crate) fn bytes_contain_entropy_placeholder_marker(bytes: &[u8]) -> bool {
     {
         return true;
     }
-    // Category 2: length-gated substring (bespoke rule, not a list — `secret_key`
+    // Category 2: length-gated substring (bespoke rule, not a list. `secret_key`
     // counts as a decoy ONLY for short values; a long value merely containing it is
     // a real secret and must not be suppressed).
     if crate::ascii_ci::ci_find(bytes, b"secret_key") && bytes.len() < 20 {
         return true;
     }
-    // Category 3: compound prefix+suffix (bespoke rule — an `AKIA…` shape whose body
+    // Category 3: compound prefix+suffix (bespoke rule, an `AKIA…` shape whose body
     // ends `EXAMPLE` or carries the `1234567890` sequential filler is a docs decoy).
     if crate::ascii_ci::starts_with_ignore_ascii_case(bytes, b"AKIA")
         && (crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b"EXAMPLE")
@@ -208,7 +208,7 @@ pub(crate) fn bytes_contain_entropy_placeholder_marker(bytes: &[u8]) -> bool {
     {
         return true;
     }
-    // Category 4: structural angle-bracket presence (bespoke rule — `<...>` marks a
+    // Category 4: structural angle-bracket presence (bespoke rule. `<...>` marks a
     // fill-in-the-blank placeholder).
     if bytes.contains(&b'<') || bytes.contains(&b'>') {
         return true;
@@ -223,7 +223,7 @@ pub(crate) fn bytes_contain_entropy_placeholder_marker(bytes: &[u8]) -> bool {
 /// `secret`/`password`). A credential that *is* one of these words is a
 /// placeholder on ANY detector path, so this is the ONE owner shared by the
 /// entropy-marker check ([`bytes_contain_entropy_placeholder_marker`] Category 5)
-/// and the named-detector suppression Tier-A gate — named/vendor detectors
+/// and the named-detector suppression Tier-A gate, named/vendor detectors
 /// otherwise bypass the entropy-path check and emit a bare `password` value.
 pub(crate) fn is_exact_entropy_placeholder(bytes: &[u8]) -> bool {
     entropy_marker_exact_values()
@@ -270,7 +270,7 @@ fn looks_like_high_entropy_marker_collision(credential: &str, entropy_hint: Opti
 
 /// Back-compat wrapper: parse only the placeholder-word list. Kept so the
 /// `parse_placeholder_words_for_test` facade and its callers (which pass
-/// `[placeholder_words]`-only TOMLs) keep working unchanged (Law 3). Test-only —
+/// `[placeholder_words]`-only TOMLs) keep working unchanged (Law 3). Test-only 
 /// production parses the full vocab via `parse_vocab`, so this is `#[cfg(test)]`
 /// to stay dead-code-warning-clean in the lib build (its sole callers are the
 /// `#[cfg(test)]` facade + the inline parse tests).
@@ -388,7 +388,7 @@ mod tests {
     // The exact UPPERCASE forms the scanner matched BEFORE the Tier-B move (the old
     // `INSTRUCTIONAL_FRAGMENTS` / `DOC_MARKER_SUBSTRINGS` consts in
     // `suppression/doc_markers.rs`). The loaded vocab must reproduce them
-    // byte-for-byte — this is the zero-behavior-change parity proof.
+    // byte-for-byte (this is the zero-behavior-change parity proof).
     const LEGACY_INSTRUCTIONAL: &[&str] = &["YOUR_", "YOUR-", "INSERT", "CHANGE", "REPLACE"];
     const LEGACY_SUBSTRINGS: &[&str] = &[
         "EXAMPLE",
@@ -555,7 +555,7 @@ mod tests {
     #[test]
     fn parse_vocab_without_doc_markers_section_parses_with_empty_markers() {
         // Back-compat: a `[placeholder_words]`-only TOML (what confidence_penalties
-        // passes) still parses; markers default empty (permissive parse — the
+        // passes) still parses; markers default empty (permissive parse, the
         // fail-closed non-empty check lives on the bundled-file VOCAB loader).
         let vocab = parse_vocab("[placeholder_words]\nwords = [\"example\"]\n").expect("valid");
         assert!(vocab.instructional_fragments.is_empty());
@@ -596,7 +596,7 @@ mod tests {
     #[test]
     fn bundled_file_parses_and_matches_accessors() {
         // The real bundled file parses cleanly and a fresh parse equals the VOCAB
-        // accessors — no drift between the cached static and the parser.
+        // accessors (no drift between the cached static and the parser).
         let vocab = parse_vocab(include_str!("../../../rules/placeholder_words.toml"))
             .expect("bundled file valid");
         assert_eq!(
@@ -675,7 +675,7 @@ mod tests {
                 "{exact:?} is an exact placeholder and must match",
             );
         }
-        // A value that merely CONTAINS a placeholder word is NOT an exact match —
+        // A value that merely CONTAINS a placeholder word is NOT an exact match 
         // this is what keeps a real credential like `mysecretkey123` alive.
         assert!(!is_exact_entropy_placeholder(b"password123"));
         assert!(!is_exact_entropy_placeholder(b"mysecretkey123"));

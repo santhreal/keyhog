@@ -284,7 +284,7 @@ impl PartialOrd for RawMatch {
 impl Ord for RawMatch {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Higher confidence first
-        // LAW10 (both): recall-safe — a `None` confidence sorts as 0.0 (lowest)
+        // LAW10 (both): recall-safe, a `None` confidence sorts as 0.0 (lowest)
         // for stable display ordering ONLY. Both findings remain in the result
         // set; sort position never drops a finding.
         let self_conf = self.confidence.unwrap_or(0.0); // LAW10: absent confidence => 0.0 for sort/partition ordering only; recall-safe
@@ -316,7 +316,7 @@ impl Ord for RawMatch {
         // Without this key, two matches of the same secret at different offsets
         // compare Equal, so when the capped per-chunk match heap
         // (`ScanState::push_match`) evicts among them at `max_matches_per_chunk`,
-        // the survivor is chosen by insertion order — which is HashMap-iteration
+        // the survivor is chosen by insertion order, which is HashMap-iteration
         // and rayon-thread nondeterministic. A dense, repetitive chunk (e.g. the
         // concat-source throughput corpus) overflows the cap with many such
         // ties, so the finding set flickered run-to-run. Including the location

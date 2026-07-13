@@ -136,7 +136,7 @@ fn content_type_classification_strips_params_and_folds_case() {
 fn octet_stream_and_text_content_types_are_not_binary_classified() {
     let api = TestApi;
     // Negative twin: octet-stream is the *unknown* class, NOT the binary class
-    // that `is_binary_content_type` rejects — it must return false here.
+    // that `is_binary_content_type` rejects (it must return false here).
     assert_eq!(
         api.cloud_is_binary_content_type("application/octet-stream"),
         false
@@ -147,7 +147,7 @@ fn octet_stream_and_text_content_types_are_not_binary_classified() {
 }
 
 // ---------------------------------------------------------------------------
-// SSRF endpoint classifier (keyhog_verifier::ssrf) — the single owner the
+// SSRF endpoint classifier (keyhog_verifier::ssrf), the single owner the
 // Azure container-URL screen delegates to. Pure string classification, no DNS.
 // ---------------------------------------------------------------------------
 
@@ -174,7 +174,7 @@ fn ssrf_classifier_blocks_loopback_and_metadata_hosts() {
 #[test]
 fn ssrf_classifier_allows_public_azure_blob_endpoint() {
     // Negative twin: a legitimate public Azure Blob container host is allowed.
-    // A `Domain` host is classified purely (no DNS) — public => false.
+    // A `Domain` host is classified purely (no DNS) (public => false).
     assert_eq!(
         keyhog_verifier::ssrf::is_private_url("https://acct.blob.core.windows.net/mycontainer"),
         false
@@ -205,7 +205,7 @@ fn ssrf_classifier_blocks_evasion_encodings_and_fails_closed() {
 // ---------------------------------------------------------------------------
 // End-to-end refusal through the public Source::chunks() surface. Each of these
 // short-circuits inside validate_container_url BEFORE any HTTP/DNS, yielding
-// exactly one error chunk — a fail-closed refusal, never a silent degrade.
+// exactly one error chunk (a fail-closed refusal, never a silent degrade).
 // ---------------------------------------------------------------------------
 
 fn only_error(url: &str) -> String {

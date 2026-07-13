@@ -1,5 +1,5 @@
 //! Boundary contract for the three isolated-bare candidate SHAPE gates in
-//! `entropy/isolated.rs` — the keyword-free admission gates that decide whether
+//! `entropy/isolated.rs`: the keyword-free admission gates that decide whether
 //! a bare token is even shaped like an opaque secret before the entropy floors
 //! run. Each carries hand-tuned magic lengths/counts (colon halves >=20/>=16,
 //! symbolic-alpha len>=18 + punctuation>=3 + alpha*2>=len, symbolic-bare

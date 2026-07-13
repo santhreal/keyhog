@@ -6,7 +6,7 @@
 //!   1. confidence, DESCENDING (`other_conf.total_cmp(&self_conf)`), with an
 //!      absent confidence treated as `0.0` (LAW10 recall-safe: `None` sorts as
 //!      the lowest priority, never dropped);
-//!   2. severity, DESCENDING (`other.severity.cmp(&self.severity)` — Critical
+//!   2. severity, DESCENDING (`other.severity.cmp(&self.severity)`: Critical
 //!      before Info, the OPPOSITE direction of `Severity`'s own ascending Ord);
 //!   3. detector_id, ASCENDING;
 //!   4. credential, ASCENDING;

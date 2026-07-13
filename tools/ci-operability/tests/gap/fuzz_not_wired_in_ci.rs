@@ -20,7 +20,7 @@ fn ci_workflows_invoke_fuzz_targets_or_cargo_fuzz() {
 
     assert!(
         wired,
-        "no .github/workflows/*.yml references cargo-fuzz or fuzz/ targets — \
+        "no .github/workflows/*.yml references cargo-fuzz or fuzz/ targets. \
          fuzz corpus never runs in CI (KH-GAP-074)"
     );
 }

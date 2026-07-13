@@ -1,4 +1,4 @@
-//! PERF TRIPWIRE — suppression / allowlist per-finding cost.
+//! PERF TRIPWIRE (suppression / allowlist per-finding cost).
 //!
 //! HOT PATH: `keyhog_core::Allowlist::is_path_ignored`
 //! (crates/core/src/allowlist.rs:267) and its sibling `is_allowed`
@@ -15,15 +15,15 @@
 //!      Every finding is tested against *every* glob with no prefix bucket,
 //!      literal set, or automaton. Cost grows linearly in rule count: a
 //!      `.keyhogignore` copied from a monorepo `.gitignore` (hundreds of
-//!      globs — the bare-glob fallback at allowlist.rs:163-174 means every
+//!      globs, the bare-glob fallback at allowlist.rs:163-174 means every
 //!      copied `.gitignore` line becomes a path rule) makes each finding pay
 //!      the full O(rules) sweep.
 //!
 //!   2. PER-FINDING PATTERN RECOMPILE. Inside the walk,
 //!      `glob_match_normalized` (allowlist.rs:286-308) recomputes, for the
 //!      SAME fixed pattern, on EVERY finding:
-//!         - `normalize_path(pattern)`           (line 287)  — heap String
-//!         - `split_segments(&normalized_pattern)`(line 288) — heap Vec<&str>
+//!         - `normalize_path(pattern)`           (line 287), heap String
+//!         - `split_segments(&normalized_pattern)`(line 288), heap Vec<&str>
 //!         - the two oversize segment scans       (lines 291-306)
 //!      None of this depends on the finding; the pattern segments are fixed
 //!      at parse time yet are rebuilt findings×rules times. A precompiled
@@ -31,7 +31,7 @@
 //!      built once in `Allowlist::parse` removes both costs.
 //!
 //! MEASURED (release-fast characteristics: opt-level=3, thin LTO; this test's
-//! timing logic mirrors that — run it `--release`; the bound is a *ratio* so
+//! timing logic mirrors that, run it `--release`; the bound is a *ratio* so
 //! it is hardware-independent regardless of profile):
 //!   Standalone -O probe, 2000 findings, all non-matching (worst case = full
 //!   sweep), .keyhogignore of monorepo-style path globs:
@@ -58,7 +58,7 @@
 use keyhog_core::Allowlist;
 use std::time::Instant;
 
-/// Monorepo-style path globs — the kind a user gets by copying a big
+/// Monorepo-style path globs, the kind a user gets by copying a big
 /// `.gitignore` into `.keyhogignore` (bare globs become path rules, see
 /// allowlist.rs:163-174). `count` rules, deterministic, all `path:`-form.
 fn build_allowlist(count: usize) -> Allowlist {
@@ -108,7 +108,7 @@ fn build_allowlist(count: usize) -> Allowlist {
     al
 }
 
-/// Findings whose paths do NOT match any rule — the worst case that forces
+/// Findings whose paths do NOT match any rule, the worst case that forces
 /// the full per-finding sweep over all rules (an early match would mask the
 /// linear cost). 2000 distinct source paths.
 fn build_findings() -> Vec<String> {
@@ -161,7 +161,7 @@ fn suppression_path_walk_must_scale_sublinearly_in_rule_count() {
     // findings the small workload is hundreds of microseconds minimum.
     assert!(
         t_small > 0,
-        "small workload measured 0 ns — timer resolution too coarse to form a ratio"
+        "small workload measured 0 ns, timer resolution too coarse to form a ratio"
     );
 
     let ratio = t_large as f64 / t_small as f64;

@@ -352,7 +352,7 @@ pub trait CliTestApi {
     ) -> Result<Option<keyhog_scanner::ScanBackend>>;
     /// Build a `DefaultScanRuntime` forced to the explicit `backend` (e.g. "cpu")
     /// and scan `body`, returning the detector ids found. Proves a forced backend
-    /// scans WITHOUT autoroute calibration — the `keyhog watch --backend` fix.
+    /// scans WITHOUT autoroute calibration (the `keyhog watch --backend` fix).
     fn forced_backend_runtime_detector_ids(&self, backend: &str, body: &str)
         -> Result<Vec<String>>;
     fn allowlist_root_for_test(&self, path: &Path) -> PathBuf;

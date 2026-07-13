@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "SMARTTHINGS_ACCESS_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "SMARTTHINGS_ACCESS_TOKEN=be96dEXAMPLEEXAMPLE2746d"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "{\"secret\":\"be96d2f7-20dc-a4ec-aa3a-c4179112746d\"}"
 credential = "be96d2f7-20dc-a4ec-aa3a-c4179112746d"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

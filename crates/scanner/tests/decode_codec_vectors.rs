@@ -86,7 +86,7 @@ fn z85_rejects_length_not_a_multiple_of_five() {
 #[test]
 fn decoders_fail_closed_on_oversized_input() {
     // Anti-DoS: base64/z85 cap input at 16 MiB, hex at 32 MiB. Input past the
-    // cap must return Err via an O(1) length check — never hang or allocate the
+    // cap must return Err via an O(1) length check, never hang or allocate the
     // (potentially huge) decoded output. Content is all-`A` (valid in every
     // alphabet) so the reject is driven purely by size, not by an invalid byte.
     let over_hex = "A".repeat(33 * 1024 * 1024); // > 32 MiB hex cap

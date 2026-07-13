@@ -1,5 +1,5 @@
 //! Detection-truth: PRECISION negatives (#177/#184). The bench win over peers is
-//! precision — not flagging placeholders, examples, and non-secrets. Each input
+//! precision, not flagging placeholders, examples, and non-secrets. Each input
 //! is a known non-secret; the scan must yield NO credential. These are robust
 //! across feature sets: the no-ml scan path is strictly MORE permissive than the
 //! ml path (ML only removes candidates), so a negative that holds here holds

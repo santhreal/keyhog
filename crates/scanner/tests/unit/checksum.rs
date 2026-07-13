@@ -42,7 +42,7 @@ fn github_classic_not_applicable_variants() {
         ChecksumResult::NotApplicable
     );
     // A genuinely unrecognised prefix (ghz_) is NotApplicable even at the right
-    // length — the validator only claims the five real github families.
+    // length (the validator only claims the five real github families).
     assert_eq!(
         GithubClassicPatValidator.validate("ghz_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0uCPlr"),
         ChecksumResult::NotApplicable
@@ -204,7 +204,7 @@ fn registry_routes_and_rejects() {
 }
 
 /// CONSOLIDATION GUARD (DR-321): every checksum-family prefix is single-owned in
-/// `crate::checksum::prefixes` and the validators strip it from there — but the
+/// `crate::checksum::prefixes` and the validators strip it from there, but the
 /// SAME prefix is also the detection signal in the family's detector TOML. This
 /// binds the two so the detector is the source of truth: each bound prefix MUST
 /// appear verbatim in its detector's TOML, so a pattern edit can never silently
@@ -213,11 +213,11 @@ fn registry_routes_and_rejects() {
 /// single-owner set so no newly-added checksum family can slip past unbound.
 #[test]
 fn checksum_prefixes_are_backed_by_their_detector() {
-    // `(checksum prefix, authoritative detector)` — the detector is the source of
+    // `(checksum prefix, authoritative detector)`: the detector is the source of
     // truth for the prefix; the validator const is a mirror this test keeps
     // honest. This binding lives in the TEST (detector-id strings belong only to
     // `detector_ids.rs` in src, per the `detector_id_owner` gate).
-    // DELIBERATE OMISSION — Stripe `pk_live_`/`pk_test_`: the validator
+    // DELIBERATE OMISSION: Stripe `pk_live_`/`pk_test_`: the validator
     // structurally recognises publishable keys, but NO detector surfaces them
     // (a publishable key is PUBLIC, not a secret), so they are validator-only.
     let bindings: &[(&str, &str)] = &[
@@ -250,7 +250,7 @@ fn checksum_prefixes_are_backed_by_their_detector() {
         assert!(
             bindings.iter().any(|(bound, _)| *bound == prefix),
             "checksum prefix {prefix:?} (crate::checksum::prefixes) is not bound to a \
-             detector in this guard — add its (prefix, detector) row"
+             detector in this guard, add its (prefix, detector) row"
         );
     }
 
@@ -264,7 +264,7 @@ fn checksum_prefixes_are_backed_by_their_detector() {
         if !toml.contains(prefix) {
             drifted.push(format!(
                 "checksum prefix {prefix:?} is absent from its detector {detector_id}.toml \
-                 — the validator literal drifted from the detection pattern"
+The validator literal drifted from the detection pattern"
             ));
         }
     }

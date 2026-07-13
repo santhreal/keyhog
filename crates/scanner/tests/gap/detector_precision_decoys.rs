@@ -6,9 +6,9 @@
 //! `crates/scanner/src/entropy/{keywords,scanner}.rs`.
 //!
 //! Two surfaces are exercised:
-//!   * `known_example_suppressed` — the generic / EXAMPLE
+//!   * `known_example_suppressed`: the generic / EXAMPLE
 //!     entry point (bypass_shape_gates = false, weak_anchor = false).
-//!   * `named_detector_suppressed` — the service-anchored
+//!   * `named_detector_suppressed`: the service-anchored
 //!     entry point (bypass_shape_gates depends on the detector id).
 //! Plus the leaf predicates exposed through `keyhog_scanner::testing`.
 //!
@@ -80,7 +80,7 @@ fn instructional_fragment_requires_leading_boundary_real_cred_survives() {
     // whose only "change" occurrence is preceded by an alphanumeric so the
     // boundary check fails, and which is not otherwise a recognised decoy
     // shape (mixed alphanum, no 5+ runs, not pure hex, has a digit).
-    // "aXchange9Qm7Kp2" — the substring CHANGE is preceded by 'X'.
+    // "aXchange9Qm7Kp2" (the substring CHANGE is preceded by 'X').
     assert!(!suppress_generic("aXchange9Qm7Kp2"));
 }
 
@@ -116,7 +116,7 @@ fn example_dot_com_domain_is_not_suppressed_as_marker() {
     // isolate the marker behaviour, assert the marker exemption directly:
     // a value containing "example.com" and otherwise a plain credential
     // shape with a digit must not be suppressed by the EXAMPLE marker.
-    // "Tok3nForexample.comService" — contains example.com, no path '/',
+    // "Tok3nForexample.comService", contains example.com, no path '/',
     // has digit, mixed case, no 5+ runs, not hex.
     assert!(!suppress_generic("Tok3nForexample.comService"));
 }
@@ -221,7 +221,7 @@ fn clean_known_prefix_sequential_body_takes_allow_fast_path() {
     // decision tree's `is_known_example_credential` (step 6). A `sk-`
     // prefixed token whose body is a sequential pair-run is NOT a masked
     // sequence (no trailing `...`, no XXX/*** lead), so check_markers
-    // returns Allow and the value is NOT suppressed — the prefix is treated
+    // returns Allow and the value is NOT suppressed, the prefix is treated
     // as positive evidence. (A real `sk-` OpenAI key with incidentally
     // repeating chars must not be dropped here.)
     assert!(!suppress_generic("sk-abababababababab"));
@@ -299,7 +299,7 @@ fn bare_hex_digest_suppressed_generic_but_not_named_hex_key() {
     // Negative-direction twin: the SAME 32-hex value under a strongly-
     // anchored service detector (algolia-admin-api-key is NOT generic-/
     // entropy-/weak/residual) sets bypass_shape_gates = true, so the
-    // ambiguous bare-hex gate does NOT fire — a real 32-hex Algolia admin
+    // ambiguous bare-hex gate does NOT fire, a real 32-hex Algolia admin
     // key survives. (The value is random hex, not the empty-input digest,
     // so is_known_example_credential does not flag it either.)
     assert!(!suppress_named(hex32, "algolia-admin-api-key"));
@@ -329,8 +329,8 @@ fn mixed_case_hex_is_not_treated_as_hash_digest() {
     // is_uniform_hex rejects mixed-case hex. A 32-char MiXeD-case hex
     // value is NOT a bare-hex-digest decoy, so it must NOT be suppressed
     // by that gate on the generic path. It also has no 5+ runs, no marker,
-    // no fake sequence. (No digit-vs-letter requirement — hex letters count.)
-    // "aB1cD2eF3aB4cD5eF6aB7cD8eF9aB0cD1" len 33 — make it exactly 32:
+    // no fake sequence. (No digit-vs-letter requirement, hex letters count.)
+    // "aB1cD2eF3aB4cD5eF6aB7cD8eF9aB0cD1" len 33, make it exactly 32:
     assert!(!suppress_generic("aB1cD2eF3aB4cD5eF6aB7cD8eF9aB0cD"));
 }
 
@@ -415,7 +415,7 @@ fn real_symbolic_password_not_suppressed_as_filler() {
     // Negative twin: a rich-symbol password has >2 distinct non-alnum
     // chars and contains alphanumerics, so neither the all-filler nor the
     // <=2-distinct-symbol gate fires. Mixed case + digits + many symbols.
-    // "P@ssw0rd!#$%Zx9" — has alnum so the symbolic-only gate is skipped.
+    // "P@ssw0rd!#$%Zx9" (has alnum so the symbolic-only gate is skipped).
     assert!(!suppress_generic("P@ssw0rd!#Zx9Qm7"));
 }
 
@@ -551,7 +551,7 @@ fn canonical_non_secret_shapes_classified() {
 #[test]
 fn real_random_token_is_not_canonical_non_secret() {
     // Negative twin: a 40-char base62 token with mixed case + digits is NOT
-    // a canonical non-secret shape (not 32/40/64/128 hex — has letters
+    // a canonical non-secret shape (not 32/40/64/128 hex, has letters
     // g-z, not a UUID, not SRI-prefixed, not a 29-char serial).
     assert!(!is_canonical_non_secret_shape(
         "Zx9QmRtbKpLmNoVwXyAbCdEfGhJkMnPqRsTuVwYz"
@@ -657,7 +657,7 @@ fn base64_blob_outside_length_band_not_classified() {
 #[test]
 fn url_safe_token_is_not_standard_base64_blob() {
     // Negative twin: a base64URL token (uses `-`/`_`, not `+`/`/`) is NOT a
-    // standard-base64 blob — the `-`/`_` bytes fall in the `_ => return false`
+    // standard-base64 blob, the `-`/`_` bytes fall in the `_ => return false`
     // arm of is_random_base64_blob's alphabet scan.
     let urlsafe = "abcDEF-_ghiJKL012345mnoPQR678-_stuVWX9012abc"; // 44, has -_
     assert!(urlsafe.contains('-') && urlsafe.contains('_'));
@@ -691,7 +691,7 @@ fn base64_wrapped_iam_arn_suppressed() {
 fn pem_framed_private_key_never_suppressed() {
     // decision: `-----BEGIN` returns false immediately (the frame IS the
     // signal). OPENSSH keys contain AAAA runs that would otherwise trip the
-    // identical-run masks — the bypass protects real recall.
+    // identical-run masks (the bypass protects real recall).
     let openssh = "-----BEGIN OPENSSH PRIVATE KEY-----\n\
                    b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAA";
     assert!(!suppress_generic(openssh));
@@ -809,10 +809,10 @@ fn real_credential_corpus_property_none_suppressed() {
 //  * `is_dash_segmented_alnum_decoy` (suppression/shape/canonical.rs:590): reject
 //    if no `-`, if any byte is not alnum-or-`-`, or if any dash group is empty;
 //    then `group_count >= 3 && all_len5_upperdigit` is a DETERMINISTIC accept
-//    (the 5×N serial family — it never consults token randomness), while the
+//    (the 5×N serial family, it never consults token randomness), while the
 //    all-alpha branch does. So a `>=3` run of exactly-5 `[A-Z0-9]` groups is
 //    ALWAYS a decoy, a `<3`-group value never is, and any injected symbol /
-//    empty group / missing dash disqualifies unconditionally — all randomness-
+//    empty group / missing dash disqualifies unconditionally, all randomness-
 //    independent, so no flake.
 //  * `looks_like_standard_base64_blob` == `is_random_base64_blob(v, 40, 80, 32)`
 //    (decode_structure.rs:148): length outside [40,80] returns false BEFORE any
@@ -827,7 +827,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(2_000))]
 
     /// >=3 groups of exactly-5 `[A-Z0-9]` chars joined by `-` ALWAYS hit the
-    /// deterministic branch-5 serial admit — independent of token randomness.
+    /// deterministic branch-5 serial admit (independent of token randomness).
     #[test]
     fn five_by_n_upper_digit_serial_is_dash_decoy(
         groups in prop::collection::vec("[A-Z0-9]{5}", 3..=8),
@@ -909,7 +909,7 @@ proptest! {
         );
     }
 
-    /// A value shorter than the 40-char floor is never a blob — the length band
+    /// A value shorter than the 40-char floor is never a blob, the length band
     /// is checked before any shape parse, so this holds for any content.
     #[test]
     fn below_floor_is_never_base64_blob(v in "[A-Za-z0-9+/]{0,39}") {
@@ -925,18 +925,18 @@ proptest! {
 }
 
 // ── Property tier: is_random_token fail-safe floors ──────────────────────────
-// `is_random_token` (suppression/token_randomness.rs — CLEAN source) is the
+// `is_random_token` (suppression/token_randomness.rs. CLEAN source) is the
 // randomness discriminator that LIFTS the identifier-suppression gate: a false
 // `true` verdict recovers a code reference (`password = getUserName`) as a
 // credential (an FP). Its soundness rests on three fail-safe floors, each
-// provable from source WITHOUT re-implementing the English-bigram model — a value
+// provable from source WITHOUT re-implementing the English-bigram model, a value
 // is NEVER classified random when any floor is unmet, so the gate keeps
 // suppressing (precision-safe, "soundness over reach"):
 //   * < MIN_ALPHA(6) alphabetic chars   → mean_bigram_logprob None → false (:106)
 //   * pairs == 0 (no adjacent letters)  → mean_bigram_logprob None → false (:106)
 //   * < MIN_DISTINCT_LETTERS(3) letters → false regardless of bigram score (:131)
 // We deliberately do NOT sweep the reverse "random letters ⇒ random" (that IS
-// model-dependent — a random `[a-z]` run may read as pronounceable); only the
+// model-dependent, a random `[a-z]` run may read as pronounceable); only the
 // guaranteed fail-safe direction, which is the load-bearing safety contract.
 // No proptest for this predicate before.
 
@@ -982,7 +982,7 @@ proptest! {
 }
 
 // ── Property tier: looks_like_english_prose structural floors ─────────────────
-// `looks_like_english_prose` (suppression/shape/prose.rs) — used to drop prose
+// `looks_like_english_prose` (suppression/shape/prose.rs), used to drop prose
 // captured under a weak anchor. Contract from source: len<16 → false; else an
 // ALL-lowercase run → true (branch 1); else `split_whitespace` needs >=2 all-
 // alphabetic tokens with a >=3-char lowercase word (branch 2). A WHITESPACE-FREE
@@ -1043,8 +1043,8 @@ proptest! {
         prop_assert!(is_canonical_non_secret_shape(&v), "{v:?} (hex len {len})");
     }
 
-    /// A hex string shorter than the smallest canonical digest length (32) — and
-    /// carrying no dash / sha-prefix — hits none of the four canonical branches.
+    /// A hex string shorter than the smallest canonical digest length (32), and
+    /// carrying no dash / sha-prefix (hits none of the four canonical branches).
     #[test]
     fn sub_canonical_hex_is_not_non_secret_shape(v in "[0-9a-f]{16,31}") {
         prop_assert!(!is_canonical_non_secret_shape(&v), "{v:?} is sub-canonical hex");

@@ -24,7 +24,7 @@ reason = "Keyword context without valid credential body."
 [[evasion]]
 text = "export HEAP_APP_ID=4876475938"
 credential = "4876475938"
-reason = "Adversarial env_export envelope — credential must still surface under this detector."
+reason = "Adversarial env_export envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

@@ -41,11 +41,11 @@ impl ScannerTuningConfig {
     /// `|| is_ascii` clause in `hs_prefilter_engages` runs HS there), but on
     /// large NON-ASCII chunks HS is NOT a win. Forcing HS on non-ASCII was tried
     /// (route the unicode-vs-byte divergent `.`/`\w`/`\s` patterns to a supplemental
-    /// unicode host RegexSet so byte-mode HS stays recall-exact) — recall held, but
+    /// unicode host RegexSet so byte-mode HS stays recall-exact), recall held, but
     /// it cost **2.75× more CPU** than the RegexSet (51.9s vs 18.8s on a 2 MiB
     /// non-ASCII corpus): HS byte-mode ≈ the RegexSet's cost there, and the
     /// supplemental divergent set is dot-heavy and CANNOT be prefix-AC-gated the
-    /// way the portable batches are, so it is pure overhead. DEAD END (Law 7) — the
+    /// way the portable batches are, so it is pure overhead. DEAD END (Law 7), the
     /// recall-required work dominates non-ASCII either way, so the RegexSet (with
     /// its prefix gating) is strictly faster. Gate stays a Tier-A knob for opt-in.
     pub(crate) const HS_PREFILTER_MAX_LEN_DEFAULT: usize = 4096;
@@ -199,33 +199,33 @@ impl ResolvedRuntimeTuningConfig {
     }
 }
 
-/// Scanner-side configuration: the canonical [`ScanConfig`] — the single owned
+/// Scanner-side configuration: the canonical [`ScanConfig`], the single owned
 /// source of truth for every shared detection knob (decode depth, entropy, ML,
-/// confidence floor, keyword lists, …) — PLUS the two knobs that are
+/// confidence floor, keyword lists, …). PLUS the two knobs that are
 /// scanner-crate-local and have no place on `keyhog-core`'s `ScanConfig`:
 ///
-/// - `multiline` — its type ([`crate::multiline::MultilineConfig`]) is defined
+/// - `multiline`: its type ([`crate::multiline::MultilineConfig`]) is defined
 ///   in THIS crate, and `keyhog-core` cannot depend on `keyhog-scanner` without
 ///   a dependency cycle, so the field cannot live on `ScanConfig`.
-/// - `penalize_test_paths` — a scanner-internal suppression toggle the CLI flips
+/// - `penalize_test_paths`: a scanner-internal suppression toggle the CLI flips
 ///   for `--no-suppress-test-fixtures`; it never appears on the on-disk config.
 ///
 /// This is the "thin newtype over `ScanConfig`" MC-01 calls for. It deliberately
 /// does **not** restate any of `ScanConfig`'s fields: every shared knob is read
 /// and written straight through [`Deref`]/[`DerefMut`] (`config.min_confidence`,
 /// `config.entropy_enabled`, `config.known_prefixes`, …), so there is exactly
-/// ONE definition of each — no parallel field list that can drift, and the
+/// ONE definition of each, no parallel field list that can drift, and the
 /// `From<ScanConfig>` impl below is a structural wrap, never a hand-maintained
 /// field-by-field copy.
 ///
 /// `ScanConfig`'s `max_file_size` / `dedup` fields are reachable through the
-/// deref but are NOT consumed by the scan engine — they are enforced elsewhere
+/// deref but are NOT consumed by the scan engine, they are enforced elsewhere
 /// (the source walker and the verifier) and carry that caveat in their own doc
 /// comments on `ScanConfig`. Their presence here is the wrapped truth, not a
 /// second silent copy. `min_secret_len` is consumed by the entropy fallback.
 #[derive(Debug, Clone)]
 pub struct ScannerConfig {
-    /// The canonical shared detection config — single source of truth for every
+    /// The canonical shared detection config, single source of truth for every
     /// knob the engine and CLI agree on. Reached transparently via `Deref`, so
     /// callers write `config.min_confidence`, not `config.scan.min_confidence`.
     pub scan: ScanConfig,
@@ -309,7 +309,7 @@ impl ScannerConfig {
     ///   lifts genuine secrets over the high floor while leaving FP-shaped tokens
     ///   below it. Disabling it would crater the scores the 0.85 bar relies on,
     ///   so precision KEEPS ML (this mode trades recall for precision, not for
-    ///   speed — use `--fast` when speed is the goal).
+    ///   speed (use `--fast` when speed is the goal)).
     /// - `min_confidence = HIGH_PRECISION_MIN_CONFIDENCE` (0.85): combined with
     ///   the engine's checksum policy (valid token → floored 0.9, invalid →
     ///   capped 0.1) and clamped over every detector's self-declared floor, this
@@ -374,7 +374,7 @@ impl ScannerConfig {
         // Shannon entropy: 8.0 is the mathematical upper bound for byte-level
         // entropy (a genuine constant, not a config default). NaN / negative →
         // the CANONICAL `ScanConfig::default()` floor, read from `canon` like the
-        // `ml_weight` / `min_confidence` scrubs above — NOT a forked literal, so a
+        // `ml_weight` / `min_confidence` scrubs above. NOT a forked literal, so a
         // future change to the shipped entropy default can never silently diverge
         // on the corrupt-config path (single source of truth).
         if !self.entropy_threshold.is_finite() || self.entropy_threshold < 0.0 {
@@ -386,7 +386,7 @@ impl ScannerConfig {
         // `cpt > bound` gate (NaN comparisons are always false → nothing ever
         // suppressed), and a negative bound would suppress EVERY candidate
         // (cpt is always ≥ ~0.5 > any negative). Both scrub to the CANONICAL
-        // shipped bound, read from `canon` like the scrubs above — never a
+        // shipped bound, read from `canon` like the scrubs above, never a
         // forked literal. No upper clamp: a deliberately large bound is the
         // documented way to disable the gate (trade precision for recall).
         if !self.entropy_bpe_max_bytes_per_token.is_finite()
@@ -450,14 +450,14 @@ impl From<ScanConfig> for ScannerConfig {
         // Structural wrap, NOT a field-by-field copy: the canonical `ScanConfig`
         // is moved in whole into `self.scan`, so there is no parallel field list
         // that can silently drift from the owned truth (the original lossy
-        // `From` — which renamed/invented/dropped fields — was MC-01's core
+        // `From`: which renamed/invented/dropped fields, was MC-01's core
         // complaint; a wrap makes that class of bug structurally impossible).
         //
         // The only additions are the two scanner-crate-local knobs:
-        //   - `multiline` — its type lives in this crate; `keyhog-core` cannot
+        //   - `multiline`: its type lives in this crate; `keyhog-core` cannot
         //     depend on `keyhog-scanner` (cycle), so it cannot sit on
         //     `ScanConfig`. Takes the scanner default here.
-        //   - `penalize_test_paths` — defaults on; the CLI flips it off for
+        //   - `penalize_test_paths`: defaults on; the CLI flips it off for
         //     `--no-suppress-test-fixtures`.
         let canonical_bpe_bound = ScanConfig::default().entropy_bpe_max_bytes_per_token;
         let entropy_bpe_max_bytes_per_token_override =

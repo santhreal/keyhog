@@ -1,12 +1,12 @@
 //! Regression e2e: `keyhog explain <id>` across concrete detectors.
 //!
-//! Drives the REAL shipped binary (`env!("CARGO_BIN_EXE_keyhog")`) — no
+//! Drives the REAL shipped binary (`env!("CARGO_BIN_EXE_keyhog")`), no
 //! in-process reach into private helpers. Every assertion pins a CONCRETE
 //! value read out of the source of truth:
 //!   - detector specs in `detectors/{github-classic-pat,aws-access-key,
 //!     stripe-secret-key}.toml` (Name / Service / Severity),
 //!   - the per-service rotation URLs in `subcommands/explain.rs::rotation_guide`
-//!     (github -> github.com docs, aws -> aws docs, stripe -> stripe dashboard —
+//!     (github -> github.com docs, aws -> aws docs, stripe -> stripe dashboard 
 //!     proven DISTINCT, not one shared constant),
 //!   - the exit-code contract (`exit_codes::EXIT_USER_ERROR == 2`),
 //!   - the `hot-*` SIMD fast-path alias -> canonical registry id resolution.

@@ -21,7 +21,7 @@ fn macos_build_job_tests_default_features_with_hyperscan() {
 
     assert!(
         exercises_default && installs_vectorscan,
-        "macos-build uses --no-default-features only — Hyperscan/simd path is never \
+        "macos-build uses --no-default-features only. Hyperscan/simd path is never \
          compiled or tested on macOS CI (KH-GAP-075). Block excerpt:\n{macos_block}"
     );
 }

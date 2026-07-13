@@ -1,4 +1,4 @@
-//! Property / differential coverage for the SSRF IP-address screen — the
+//! Property / differential coverage for the SSRF IP-address screen, the
 //! security-critical gate (`keyhog_verifier::ssrf`) that stops live credential
 //! verification from being used as an SSRF proxy against internal services.
 //!
@@ -7,8 +7,8 @@
 //! large sample of the IPv4/IPv6 address space and of adversarial URL strings.
 //!
 //! Dependency-free by design: a fixed-seed LCG (Numerical Recipes constants)
-//! drives the "random" sampling, so the sample — and therefore any failing
-//! case — is byte-for-byte reproducible on every run without pulling in a
+//! drives the "random" sampling, so the sample, and therefore any failing
+//! case, is byte-for-byte reproducible on every run without pulling in a
 //! `proptest` dev-dependency. Every assertion pins the exact boolean the screen
 //! must return, never a shape/`!is_empty` check.
 
@@ -36,7 +36,7 @@ fn fast_and_full_ipv4_screen_never_diverge() {
         assert_eq!(
             is_private_ip_addr_fast(&ip),
             is_private_ip_addr(&ip),
-            "fast/full SSRF screen diverged on {ip} — a divergence is an SSRF gap"
+            "fast/full SSRF screen diverged on {ip}, a divergence is an SSRF gap"
         );
     }
 }
@@ -55,7 +55,7 @@ fn fast_and_full_ipv6_screen_never_diverge() {
         assert_eq!(
             is_private_ip_addr_fast(&ip),
             is_private_ip_addr(&ip),
-            "fast/full SSRF screen diverged on {ip} — a divergence is an SSRF gap"
+            "fast/full SSRF screen diverged on {ip}, a divergence is an SSRF gap"
         );
     }
 }
@@ -139,7 +139,7 @@ fn well_known_public_ipv4_is_not_blocked() {
     ] {
         assert!(
             !is_private_ip_addr(&IpAddr::V4(ip)),
-            "{ip} is a public address — the SSRF screen must NOT block it"
+            "{ip} is a public address, the SSRF screen must NOT block it"
         );
         assert!(
             !is_private_url(&format!("http://{ip}/")),
@@ -152,7 +152,7 @@ fn well_known_public_ipv4_is_not_blocked() {
 fn integer_hex_and_octal_encoded_private_ipv4_is_blocked_via_url() {
     // A permissive resolver (glibc/musl getaddrinfo) canonicalizes decimal, hex
     // and octal integer hosts into an IPv4. The SSRF screen must block a private
-    // target in EVERY encoding — the VRF-001 class of bypass. Every form below
+    // target in EVERY encoding, the VRF-001 class of bypass. Every form below
     // resolves to the same private address and must be refused.
     let private = [
         Ipv4Addr::new(127, 0, 0, 1),
@@ -184,7 +184,7 @@ fn inet_aton_short_form_private_ipv4_is_blocked_via_url() {
     // trailing bytes into the final field: `127.1` → 127.0.0.1, `172.16.1` →
     // 172.16.0.1, plus hex/octal-leading fields (`0x7f.1`). These dot-bearing
     // short forms bypass the dotless-domain refusal, so the screen's
-    // `canonicalize_short_form_ipv4` must resolve and block each one — this is
+    // `canonicalize_short_form_ipv4` must resolve and block each one, this is
     // the class the source calls out as an SSRF bypass (a 2-/3-part hex-leading
     // short form reaching neither the dotless gate nor `looks_like_malformed_ip`).
     let private = [
@@ -211,7 +211,7 @@ fn inet_aton_short_form_private_ipv4_is_blocked_via_url() {
 #[test]
 fn is_private_url_never_panics_and_fails_closed_on_adversarial_input() {
     // The screen must ALWAYS return a bool (fail-closed on anything it cannot
-    // parse), never panic — a panic in the SSRF gate would abort verification or
+    // parse), never panic, a panic in the SSRF gate would abort verification or
     // could be turned into a DoS. Sweep pseudo-random printable-ASCII strings
     // plus a curated set of known-nasty inputs.
     let mut state = 0xDEAD_BEEF;
@@ -284,7 +284,7 @@ fn every_bogon_is_ssrf_blocked() {
     // bogon ever slipped past the screen it would be a live SSRF hole. This ties
     // the two predicates together so a future edit to either cannot open a gap
     // between them. Swept over v4 + v6 + the structured v6 families, against the
-    // REAL bogon predicate (not a re-implementation — ONE source of truth).
+    // REAL bogon predicate (not a re-implementation. ONE source of truth).
     let mut state = 0x0B06_0002;
     let mut bogons_seen = 0usize;
     for _ in 0..SAMPLES {
@@ -306,7 +306,7 @@ fn every_bogon_is_ssrf_blocked() {
         }
     }
     for ip in structured_v6_probe() {
-        // Fast/full parity across the structured families too — uniform random
+        // Fast/full parity across the structured families too, uniform random
         // sampling almost never lands on a mapped-v4 / NAT64 / site-local shape.
         assert_eq!(
             is_private_ip_addr_fast(&ip),
@@ -320,13 +320,13 @@ fn every_bogon_is_ssrf_blocked() {
     }
     // Sanity: the v4 bogon space (RFC1918/loopback/link-local/…) is large, so a
     // 100k v4 sweep hits it thousands of times. A zero would mean the implication
-    // was never exercised — the guard would prove nothing.
+    // was never exercised (the guard would prove nothing).
     assert!(
         bogons_seen > 100,
-        "sweep never hit a bogon ({bogons_seen}) — the implication was never exercised"
+        "sweep never hit a bogon ({bogons_seen}), the implication was never exercised"
     );
     // The screen is a STRICT superset: v4 multicast + class-E reserved are
-    // SSRF-blocked even though they are NOT classic bogons — the "extra" the
+    // SSRF-blocked even though they are NOT classic bogons, the "extra" the
     // screen adds on top of the bogon set.
     let mcast = IpAddr::V4(Ipv4Addr::new(224, 0, 0, 1));
     let class_e = IpAddr::V4(Ipv4Addr::new(240, 0, 0, 1));
@@ -347,7 +347,7 @@ fn every_bogon_is_ssrf_blocked() {
 #[test]
 fn url_ip_literal_matches_ip_screen_across_address_space() {
     // For an IP-literal URL host, `is_private_url` must decide EXACTLY as the
-    // direct IP screen — no gap (a private target let through) and no over-block
+    // direct IP screen, no gap (a private target let through) and no over-block
     // (a public target refused). Stronger than the public/private split checks
     // above: asserts exact equality across the whole sampled v4 space, so a
     // divergence on any interior address is caught.

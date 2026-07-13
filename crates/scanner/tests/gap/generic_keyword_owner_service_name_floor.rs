@@ -50,7 +50,7 @@ fn bare_service_marker_without_secret_suffix_is_not_owned() {
 // The fixed vectors pin the floor at 2/3 chars and the bare-marker case; these
 // SWEEP the three ownership gates in isolation. A keyword is owned iff ALL of:
 // (a) service.len() >= MIN_SERVICE_NAME_LEN (3), (b) the keyword has a secret
-// suffix, and (c) the keyword CONTAINS the service substring — and the result is a
+// suffix, and (c) the keyword CONTAINS the service substring, and the result is a
 // sorted, deduped BTreeSet. Each property flips exactly one gate. Traced against
 // `build_generic_named_assignment_keywords` (generic_keyword_owner.rs:100). No
 // proptest before.

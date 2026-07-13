@@ -1,7 +1,7 @@
 //! The verification cache must hold only STABLE verdicts. A `RateLimited` (429,
 //! always transient) or a transient-network `Error` (timeout/reset/"max retries
 //! exceeded") that exhausted the retry loop must never be pinned for the full
-//! cache TTL — otherwise a single network blip reports a live credential as
+//! cache TTL, otherwise a single network blip reports a live credential as
 //! errored on every rescan within the window. Deterministic config errors are
 //! cheap, network-free local recomputes, so they are not cached either.
 //!

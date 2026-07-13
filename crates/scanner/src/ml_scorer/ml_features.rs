@@ -19,7 +19,7 @@ use crate::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_
 /// (codecov, grafana, …), else 0.0. Combined with feature 17 (generic
 /// credential word in context) it gives the model the split the shape features
 /// cannot see: service-keyword + UUID (real secret) vs generic-keyword + UUID
-/// (identifier) — the dominant CredData/mirror confusion. See `service_vocab`.
+/// (identifier) (the dominant CredData/mirror confusion. See `service_vocab`).
 ///
 /// The value is owned once by `super::model_arch::INPUT_DIM` (the gate/expert
 /// input width). This name is the feature-extraction view of that same owner.
@@ -49,7 +49,7 @@ const MAX_NORMALIZED_ENTROPY: f32 = 8.0;
 /// `entropy::plausibility::SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR` (also 3.5): that is
 /// a hard recall floor on the deterministic path, this is a model INPUT bucket
 /// boundary retuned with each `weights.bin`. They coincide today by coincidence,
-/// not by contract — `entropy_feature_bucket_currently_matches_symbolic_floor`
+/// not by contract: `entropy_feature_bucket_currently_matches_symbolic_floor`
 /// pins that coincidence so a retune of either is a conscious, reviewed change.
 pub(crate) const ML_LOW_ENTROPY_FEATURE_THRESHOLD: f64 = 3.5;
 

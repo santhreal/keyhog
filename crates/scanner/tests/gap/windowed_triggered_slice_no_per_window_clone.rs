@@ -2,11 +2,11 @@
 //! bitmap to `scan_prepared_with_triggered` BY SLICE, never re-clone it per
 //! window.
 //!
-//! `scan_prepared_with_triggered` only borrows `triggered_patterns` — its sole
+//! `scan_prepared_with_triggered` only borrows `triggered_patterns`: its sole
 //! use is `expand_triggered_patterns(triggered_patterns)`, and that helper
 //! takes `&[u64]`. The signature used to take `Vec<u64>` by value, which forced
 //! `scan_windowed_with_triggered` to call `triggered_patterns.to_vec()` INSIDE
-//! its `rayon` `.par_iter().map()` — one owned `Vec<u64>` allocation per window,
+//! its `rayon` `.par_iter().map()`: one owned `Vec<u64>` allocation per window,
 //! i.e. N redundant copies of the same bitmap on a multi-MiB chunk (Law 7).
 //!
 //! The fix changed the signature to `&[u64]` and threads the borrow straight
@@ -22,7 +22,7 @@ fn read_src(rel: &str) -> String {
 #[test]
 fn windowed_triggered_passes_slice_not_per_window_clone() {
     let backend = read_src("src/engine/backend_triggered.rs");
-    // The receiver borrows the bitmap — owned `Vec<u64>` would force callers to
+    // The receiver borrows the bitmap, owned `Vec<u64>` would force callers to
     // allocate to satisfy it.
     assert!(
         backend.contains("triggered_patterns: &[u64],"),

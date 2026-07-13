@@ -6,7 +6,7 @@
 //! `model_arch.rs`. The WGSL is now GENERATED from that owner by
 //! `gpu::gpu_shader::moe_shader` (a shader source cannot import Rust consts, so
 //! the header is `format!`-interpolated from the same constants and the body
-//! uses only named WGSL consts). This test validates the GENERATED shader — it
+//! uses only named WGSL consts). This test validates the GENERATED shader, it
 //! extracts every emitted `const` and asserts equality against the Rust owner,
 //! plus that the body sizes its arrays / clamps its sigmoid from those named
 //! consts. A regression that re-hardcodes a diverging literal, drops the
@@ -15,7 +15,7 @@
 //!
 //! Gated on `feature = "gpu"`: with the feature off the `gpu_shader` module is
 //! not compiled at all (there is no shader to check), so `moe_shader_for_test`
-//! only exists — and this parity claim only applies — in `gpu` builds.
+//! only exists (and this parity claim only applies (in `gpu` builds)).
 #![cfg(feature = "gpu")]
 
 use std::collections::HashMap;
@@ -31,7 +31,7 @@ fn shader_src() -> String {
 
 /// Parse every `const NAME: u32 = <digits>u;` line into `{NAME: value}`. Trailing
 /// `// ...` comments and the `u` suffix are ignored; non-`u32` consts and struct
-/// fields (`batch_size: u32,` — no `const`) are skipped.
+/// fields (`batch_size: u32,`: no `const`) are skipped.
 fn wgsl_u32_consts(src: &str) -> HashMap<String, u64> {
     let mut map = HashMap::new();
     for line in src.lines() {
@@ -104,7 +104,7 @@ fn wgsl_literals_match_rust_owner() {
         assert_eq!(
             *got, *value,
             "WGSL const {name} = {got}u but Rust model_arch derives {value}; the GPU shader \
-             diverged from the single owner — update src/gpu/gpu_shader.rs to match model_arch.rs"
+             diverged from the single owner, update src/gpu/gpu_shader.rs to match model_arch.rs"
         );
     }
 

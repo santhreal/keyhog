@@ -385,7 +385,7 @@ fn strip_hash_algo_prefix_binds_the_sri_label_owner() {
     for reowned in ["b\"sha512-\"", "b\"sha384-\"", "b\"sha256-\""] {
         assert!(
             !shape.contains(reowned),
-            "canonical.rs must not re-own the dash SRI label {reowned} as a byte literal — bind the owner instead"
+            "canonical.rs must not re-own the dash SRI label {reowned} as a byte literal, bind the owner instead"
         );
     }
 }

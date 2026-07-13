@@ -11,9 +11,9 @@
 //! This guard fails loudly if that misconfiguration ever returns, and catches
 //! the root cause two ways so it fires regardless of whether THIS checkout has
 //! LFS installed:
-//!   1. content check   — no test source/fixture is an LFS pointer (catches an
+//!   1. content check, no test source/fixture is an LFS pointer (catches an
 //!      actual pointer in a non-LFS checkout);
-//!   2. attribute check — `.gitattributes` assigns `filter=lfs` to no path under
+//!   2. attribute check: `.gitattributes` assigns `filter=lfs` to no path under
 //!      the scanner test tree (catches the root cause in an LFS checkout, where
 //!      the content is smudged to real text and the content check would pass).
 
@@ -64,7 +64,7 @@ fn no_test_source_or_fixture_is_an_lfs_pointer() {
     fixture_sources(&scanner_tests_dir(), &mut sources);
     assert!(
         sources.len() > 100,
-        "found only {} test sources/fixtures under {} — the walk is broken \
+        "found only {} test sources/fixtures under {}, the walk is broken \
          (the contract corpus alone is ~900 files)",
         sources.len(),
         scanner_tests_dir().display(),
@@ -109,7 +109,7 @@ fn gitattributes_does_not_lfs_track_the_test_tree() {
 
     assert!(
         offenders.is_empty(),
-        ".gitattributes LFS-tracks files under the scanner test tree — this breaks \
+        ".gitattributes LFS-tracks files under the scanner test tree, this breaks \
          `cargo check` / contracts_runner in non-LFS checkouts: {offenders:?}. \
          Test sources and fixtures must be normal text.",
     );

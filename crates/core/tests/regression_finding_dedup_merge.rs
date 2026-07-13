@@ -4,7 +4,7 @@
 //! `dedup_cross_detector`:
 //!   * two identical findings collapse to exactly ONE report entry;
 //!   * the dedup key is `(detector_id, file-scope-path, credential-value-hash)`
-//!     — changing any one of the three keeps the findings separate;
+//!, changing any one of the three keeps the findings separate;
 //!   * merging a group keeps the EXACT higher confidence (max), order-independent;
 //!   * `DedupScope::None` disables grouping (differing-line matches stay separate);
 //!   * cross-detector folding picks the highest-confidence winner and preserves

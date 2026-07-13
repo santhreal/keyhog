@@ -22,7 +22,7 @@ pub(crate) static ASSIGN_RE: LazyLock<Regex> = LazyLock::new(|| {
     // Law 10: hardcoded compile-time-constant pattern. Both consumers
     // (`scan_fragment_assignments`, `collect_structural_fragments`) SKIP their
     // scan pass when this regex is absent, so a silent `None` on compile failure
-    // is an INVISIBLE recall loss — not a recall-preserving degrade. Fail closed:
+    // is an INVISIBLE recall loss, not a recall-preserving degrade. Fail closed:
     // a compile failure here is a regex-crate version defect, surfaced loudly at
     // build/startup, never a silent runtime downgrade.
     let pattern = r#"(?i)([a-z0-9_-]{2,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_-]{4,})["'`](?:;|,)?$"#;

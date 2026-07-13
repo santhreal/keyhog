@@ -7,7 +7,7 @@
 //! `compiler_compile::compile_pattern`, which now checks
 //! `group < regex.captures_len()` and fails closed with
 //! `ScanError::CaptureGroupOutOfRange`. Without it, an out-of-range group is not
-//! a regex error — the pattern compiles — but at scan time
+//! a regex error, the pattern compiles, but at scan time
 //! `extract_grouped_matches` does `locs.get(group).unwrap_or((full_start,
 //! full_end))` and SILENTLY captures the whole match (keyword + separator +
 //! value) instead of the secret (Law 10: no silent fallback).

@@ -41,7 +41,7 @@ fn take_scratch(
     // database. This is NOT a fallback and NOT a partial scan: it runs the
     // identical precise Hyperscan path over the full chunk, so recall and
     // precision are unchanged. It is the seed pool growing to true concurrency
-    // — at most once per (thread, scanner, shard), because the scratch then
+    //: at most once per (thread, scanner, shard), because the scratch then
     // lives in this thread's TLS and is reused lock-free on every later scan
     // (alloc cost amortizes to zero, Law 7). The old hard error here was the
     // real defect: it forced callers into the over-marking degrade, which is

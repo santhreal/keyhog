@@ -64,14 +64,14 @@ pub(crate) fn base62_encode_u32(mut value: u32, width: usize) -> String {
 ///
 /// Format: `{ghp_|gho_|ghu_|ghs_|ghr_}` + 30-character entropy + 6-character
 /// base62 CRC32 checksum. The CRC32 is computed over the 30-character entropy
-/// portion ONLY, so it is prefix-independent — the same validator serves all
+/// portion ONLY, so it is prefix-independent, the same validator serves all
 /// five families (their prefixes are single-sourced in `prefixes.rs`).
 pub(crate) struct GithubClassicPatValidator;
 
 impl ChecksumValidator for GithubClassicPatValidator {
     fn validate(&self, credential: &str) -> ChecksumResult {
         // ghp_ (classic PAT) and the OAuth-family siblings (gho_/ghu_/ghs_/ghr_)
-        // share the identical `_`+30-entropy+6-CRC32-base62 body — the CRC is over
+        // share the identical `_`+30-entropy+6-CRC32-base62 body, the CRC is over
         // the 30-char entropy only, so it is prefix-independent. Strip whichever
         // of the five recognised prefixes matches.
         let payload = std::iter::once(super::prefixes::GITHUB_CLASSIC_PAT)

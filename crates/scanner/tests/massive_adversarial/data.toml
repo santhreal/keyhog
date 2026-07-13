@@ -4182,7 +4182,7 @@ suite = 18
 
 # A 32+ alphanumeric value after the CENSUS_TOKEN anchor IS a census-api-key by
 # the detector contract (`(?:CENSUS)[_.]?(?:API[._-]?KEY|TOKEN)[=:\s"']+([a-zA-Z0-9]{32,})`),
-# so these fire — including the unicode-evasion variants, which the scanner
+# so these fire, including the unicode-evasion variants, which the scanner
 # normalizes and defeats rather than letting them hide the secret (mirrors the
 # census suite-74 positive and the zwsp/hyphen/homoglyph "fires" convention the
 # whole adversarial suite uses). The only true negative is a wrong keyword.

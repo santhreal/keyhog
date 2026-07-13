@@ -118,7 +118,7 @@ fn print_show(calibration: &Calibration, cache_path: &std::path::Path) {
 /// before they are persisted, and warn on ids not present in the embedded
 /// corpus. Unknown ids stay a warning, not an error, because operators can
 /// run custom detector TOMLs whose ids the embedded corpus has never heard
-/// of — but a typo'd `--tp strpe-secret-key` would otherwise silently seed a
+/// of, but a typo'd `--tp strpe-secret-key` would otherwise silently seed a
 /// counter no detector ever reads.
 fn validate_detector_ids<'a>(ids: impl Iterator<Item = &'a String>) -> Result<()> {
     let known: std::collections::HashSet<String> = keyhog_core::load_embedded_detectors_or_fail()

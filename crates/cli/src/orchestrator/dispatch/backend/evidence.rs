@@ -43,12 +43,12 @@ pub(super) fn gpu_cold_warm_route_evidence(
 /// PRIMARY EVIDENCE ONLY: the persisted state is the measured timing evidence
 /// (`simd_timing` / `cpu_timing` / `gpu_timing`) plus the resolved `backend`,
 /// calibration sample, digest, timestamp, and trial count. Every value that is a
-/// pure function of that evidence — per-backend best-ms (`simd_ms()`/…), the GPU
+/// pure function of that evidence, per-backend best-ms (`simd_ms()`/…), the GPU
 /// cold/warm/route triple (`gpu_cold_warm_route()`), and the selected-backend
-/// margin (`selected_margin_ns()`) — is DERIVED on demand through the accessors
+/// margin (`selected_margin_ns()`), is DERIVED on demand through the accessors
 /// below rather than stored a second time. This is the ONE-PLACE invariant: a
 /// cache can never hold a derived value inconsistent with its own evidence,
-/// because there is no stored copy to drift — which is why the old
+/// because there is no stored copy to drift, which is why the old
 /// `validate_decision_route_evidence` cross-field-mismatch checks no longer exist.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct AutorouteDecision {
@@ -137,7 +137,7 @@ impl AutorouteDecision {
         self.gpu_timing.as_ref().map(BackendTimingEvidence::best_ms)
     }
 
-    /// The GPU cold-start ns, warm timing evidence, and routing ns — all derived
+    /// The GPU cold-start ns, warm timing evidence, and routing ns, all derived
     /// from the persisted `gpu_timing` through the single owner
     /// [`gpu_cold_warm_route_evidence`]. `None` when there is no GPU timing or it
     /// cannot produce valid cold/warm evidence (too few warm trials).
@@ -216,13 +216,13 @@ impl AutorouteDecision {
     /// The single deterministic source of truth for which backend a persisted
     /// timing set routes to. Calibration SELECTS this; validation REQUIRES the
     /// persisted `backend` to equal it. It is a pure function of the measured
-    /// timing evidence (canonical `Gpu` label — this calibration path only ever
+    /// timing evidence (canonical `Gpu` label, this calibration path only ever
     /// measures `Gpu`), so a cache that names any other backend is rejected as
     /// tampered or non-deterministic.
     ///
     /// Policy:
     /// - If one backend is provably fastest (its 95% CI lies entirely below
-    ///   every competitor's), that backend wins — the strongest evidence.
+    ///   every competitor's), that backend wins (the strongest evidence).
     /// - Otherwise the empirically-fastest backend is statistically TIED with
     ///   one or more competitors within measurement precision. A tie is itself a
     ///   *proven* conclusion that the tied-fastest routes are equivalent, so the
@@ -233,7 +233,7 @@ impl AutorouteDecision {
         // Lowest-overhead member of the statistically-tied fastest set (SimdCpu <
         // CpuFallback < Gpu). An empty winner set means no timing evidence, so
         // `min_by_key` yields `None`, propagated to the caller as "no persisted
-        // route" — never silently defaulted to a backend.
+        // route" (never silently defaulted to a backend).
         self.fastest_winner_set(false)
             .into_iter()
             .min_by_key(|backend| backend_overhead_rank(*backend))
@@ -250,7 +250,7 @@ impl AutorouteDecision {
     }
 
     /// True iff exactly one route is provably fastest. Equivalently, the
-    /// resolved winner is separated from every competitor — its 95% CI lies
+    /// resolved winner is separated from every competitor, its 95% CI lies
     /// entirely below theirs. When false, two or more routes tie within
     /// measurement precision and routing falls to the lowest-overhead tie-break.
     pub(super) fn has_separated_fastest_route(&self) -> bool {
@@ -258,7 +258,7 @@ impl AutorouteDecision {
             .is_some_and(|winner| self.selected_backend_has_non_overlapping_confidence(winner))
     }
 
-    /// The set of routes that are NOT provably beaten by any competitor — i.e.
+    /// The set of routes that are NOT provably beaten by any competitor (i.e).
     /// no other route's 95% CI lies entirely below this route's CI. Routing is
     /// decided from confidence intervals, never a single `best_ns` trial, so a
     /// lucky outlier on a noisy backend can never win over a steadily-faster one.
@@ -333,7 +333,7 @@ fn route_candidates_with_gpu_backend(
 
 /// Engagement-overhead rank used to break a statistical tie: lower wins. A tie
 /// means the routes are equally fast within measurement precision, so the
-/// cheapest-to-engage route is the sound choice — SimdCpu (reference, always
+/// cheapest-to-engage route is the sound choice. SimdCpu (reference, always
 /// available, no GPU launch/transfer) before CpuFallback before any GPU route.
 fn backend_overhead_rank(backend: ScanBackend) -> u8 {
     match backend {
@@ -565,8 +565,8 @@ fn canonical_match(chunk_idx: usize, m: &RawMatch) -> CanonicalMatch<'_> {
 }
 
 /// Render one canonical match identity for the reference-mismatch diff log.
-/// Derived from [`canonical_match`] — the ONE owner of which fields make up a
-/// match's calibration identity — so the diff that *explains* an equality
+/// Derived from [`canonical_match`], the ONE owner of which fields make up a
+/// match's calibration identity, so the diff that *explains* an equality
 /// failure can never disagree with the equality itself about what was compared.
 pub(super) fn render_canonical_match(
     (chunk_idx, detector_id, credential_hash, file_path, line, offset): &CanonicalMatch<'_>,

@@ -3,7 +3,7 @@
 //! API `keyhog_scanner::checksum::{validate_checksum, checksum_adjusted_confidence}`.
 //!
 //! Stripe publishes NO checksum, so a structurally-valid Stripe key must report
-//! `StructurallyValid` — NOT `Valid` — which means its confidence passes through
+//! `StructurallyValid`: NOT `Valid`: which means its confidence passes through
 //! UNCHANGED and it never receives the `CHECKSUM_VALID_FLOOR` (0.9) that a real
 //! CRC-checksummed token (GitHub/npm/…) earns. That distinction is the load-
 //! bearing detection-truth contract: treating a Stripe shape as checksum-proven
@@ -99,7 +99,7 @@ fn all_six_stripe_prefixes_claim_the_token() {
 #[test]
 fn invalid_stripe_shape_drops_the_match() {
     // The Invalid verdict (here: too-short payload) makes the confidence policy
-    // return None so the caller DROPS the match — even from a high 0.9 input.
+    // return None so the caller DROPS the match (even from a high 0.9 input).
     let key = stripe_key("sk_live_", 23);
     assert_eq!(
         checksum_adjusted_confidence(0.9, &key),

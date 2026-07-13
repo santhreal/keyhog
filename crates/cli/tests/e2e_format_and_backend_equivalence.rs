@@ -3,13 +3,13 @@
 //!
 //! Two operator-visible contracts that only a real-tool run can prove:
 //!
-//!   1. FORMAT WIRING — the SAME planted secret must surface under `--format
+//!   1. FORMAT WIRING, the SAME planted secret must surface under `--format
 //!      json`, `--format jsonl`, and `--format sarif`, carrying the SAME
 //!      credential hash. A reporter that drops a finding in one format (a
 //!      serializer bug, a filter applied on only one path) is a recall hole an
 //!      operator hits silently when they switch `--format`.
 //!
-//!   2. BACKEND-FLAG WIRING / e2e RECALL PARITY — `--backend cpu` and
+//!   2. BACKEND-FLAG WIRING / e2e RECALL PARITY: `--backend cpu` and
 //!      `--backend simd` (and `gpu`, which fails closed without a usable
 //!      adapter) must surface the SAME finding through the binary. The unit
 //!      parity tests compare backends inside one process on synthetic chunks;
@@ -154,7 +154,7 @@ fn the_planted_secret_surfaces_under_sarif_with_the_same_finding_count_as_json()
     assert_eq!(
         sarif_results, json_findings,
         "sarif result count ({sarif_results}) must equal the json finding count \
-         ({json_findings}) — formats must agree on how many findings exist"
+         ({json_findings}), formats must agree on how many findings exist"
     );
 }
 

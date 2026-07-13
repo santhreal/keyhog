@@ -1,27 +1,27 @@
 //! Byte-exact contract for the binary source backend's C-string unescaper.
 //!
-//! Audit: KH-GAP — binary literal recall hardening (follows the two-assertion
+//! Audit: KH-GAP, binary literal recall hardening (follows the two-assertion
 //! `binary_literal_decode.rs`, which only pinned the 8-byte minimum and one
 //! mixed hex+octal vector).
 //!
 //! ## Why this is recall-critical
 //!
 //! When keyhog scans a compiled binary, the `binary` backend recovers candidate
-//! strings from the decompiler / `strings`-style output as C source fragments —
+//! strings from the decompiler / `strings`-style output as C source fragments 
 //! e.g. `"AKIA\x41QYLPM..."`. Those fragments still carry C escape sequences.
 //! [`extract_string_literals`] must decode each escape to the exact byte the
 //! compiler originally emitted *before* the detectors run, because the detector
 //! regexes match the literal secret bytes (`AKIAA...`), not the escaped source
-//! form (`AKIA\x41...`). A single wrong byte — an octal value that fails to
+//! form (`AKIA\x41...`). A single wrong byte, an octal value that fails to
 //! wrap to `u8`, a hex escape that greedily eats a third digit, an escaped quote
-//! that prematurely terminates the literal — silently corrupts the candidate and
+//! that prematurely terminates the literal, silently corrupts the candidate and
 //! the secret is missed with no error. That is invisible recall loss, the worst
 //! failure mode for a scanner, so every escape-decoding edge is pinned here to
 //! its exact output rather than to a shape check.
 //!
 //! These tests run only under `--features binary`; see the crate's `binary`
-//! feature. They exercise the pure text-parsing path — no Ghidra subprocess and
-//! no goblin object parsing — so they are deterministic and host-independent.
+//! feature. They exercise the pure text-parsing path, no Ghidra subprocess and
+//! no goblin object parsing (so they are deterministic and host-independent).
 #![cfg(feature = "binary")]
 
 use keyhog_sources::testing::{SourceTestApi, TestApi};
@@ -31,7 +31,7 @@ fn lits(line: &str) -> Vec<String> {
     TestApi.extract_string_literals(line)
 }
 
-/// A typed empty result — asserting exact emptiness, not `is_empty()`, so the
+/// A typed empty result, asserting exact emptiness, not `is_empty()`, so the
 /// failure diff shows what leaked through instead of a bare `false`.
 fn none() -> Vec<String> {
     Vec::new()
@@ -91,7 +91,7 @@ fn hex_escape_caps_at_two_digits() {
     assert_eq!(
         lits(r#"x = "AAAA\x414BBBB";"#),
         vec!["AAAAA4BBBB".to_string()],
-        "\\x414 is byte 0x41 ('A') then a literal '4' — a hex escape never eats a 3rd digit"
+        "\\x414 is byte 0x41 ('A') then a literal '4', a hex escape never eats a 3rd digit"
     );
 }
 
@@ -140,7 +140,7 @@ fn octal_escape_caps_at_three_digits() {
     assert_eq!(
         lits(r#"x = "AAAA\1234BBBB";"#),
         vec!["AAAAS4BBBB".to_string()],
-        "\\1234 is 0o123 ('S') then a literal '4' — octal never consumes a 4th digit"
+        "\\1234 is 0o123 ('S') then a literal '4', octal never consumes a 4th digit"
     );
 }
 

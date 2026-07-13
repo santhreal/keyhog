@@ -320,7 +320,7 @@ fn fingerprint_id_composition_exact() {
     );
 }
 
-/// Positive: the fingerprint is STABLE — two independent renders of the same
+/// Positive: the fingerprint is STABLE, two independent renders of the same
 /// finding produce byte-identical `id`s.
 #[test]
 fn fingerprint_stable_across_renders() {
@@ -402,7 +402,7 @@ fn missing_file_path_fails_closed() {
     );
 }
 
-/// Adversarial twin: an empty-string file path is treated the same as absent —
+/// Adversarial twin: an empty-string file path is treated the same as absent 
 /// fail closed, not emit `location.file == ""`.
 #[test]
 fn empty_file_path_fails_closed() {

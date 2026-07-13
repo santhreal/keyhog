@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "postgEXAMPLEEXAMPLEAz8ol"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "<token>postgres://\"']oT &k$0_PJ9@[3(o#<a5\"H^ubLhQ72qh:vp|PdAvLM,z\">N:&%!@j01tpmv2ygaalu4lbioiis43-hx3wr-ackyl5w38je-9empd71ch4cl.neon.tech/eFffOlBTrz16jBlSz6dLnrfMn05NZRI4PbHnC0L8Al-Az8ol</token>"
 credential = "postgres://\"']oT &k$0_PJ9@[3(o#<a5\"H^ubLhQ72qh:vp|PdAvLM,z\">N:&%!@j01tpmv2ygaalu4lbioiis43-hx3wr-ackyl5w38je-9empd71ch4cl.neon.tech/eFffOlBTrz16jBlSz6dLnrfMn05NZRI4PbHnC0L8Al-Az8ol"
-reason = "Adversarial xml envelope — credential must still surface under this detector."
+reason = "Adversarial xml envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

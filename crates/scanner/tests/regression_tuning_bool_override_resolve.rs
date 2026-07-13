@@ -5,7 +5,7 @@
 //! Each flag is a 3-state atomic override resolved against a compiled default:
 //! an UNSET override (`None`) resolves to the flag's compiled default, a forced
 //! `Some(true)`/`Some(false)` overrides it. A bug in `resolve()` / `from_option`
-//! would silently ignore an operator's `--tune`/env override or flip a default —
+//! would silently ignore an operator's `--tune`/env override or flip a default 
 //! a Tier-A wiring failure (Review Vector 9: a parsed override must reach
 //! operator-visible behavior). These round-trip the real setter+getter on a
 //! fresh local config, so the assertions are deterministic and env-independent.
@@ -62,7 +62,7 @@ fn force_on_and_force_off_are_distinct_resolutions() {
 #[test]
 fn a_forced_override_wins_over_the_default_when_they_differ() {
     // Forcing the OPPOSITE of the default must actually change the resolved value
-    // — proves the override takes precedence over the compiled default.
+    //: proves the override takes precedence over the compiled default.
     assert_eq!(
         localizer(Some(!TUNING_LOCALIZER_DEFAULT)),
         !TUNING_LOCALIZER_DEFAULT

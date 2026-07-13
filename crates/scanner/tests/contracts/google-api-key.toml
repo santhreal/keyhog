@@ -23,7 +23,7 @@ reason = "Standard env-var assignment."
 [[positive]]
 text = "https://maps.googleapis.com/maps/api/geocode/json?address=NYC&key=AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV"
 credential = "AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV"
-reason = "URL query-string embed — common JS/web client leak shape."
+reason = "URL query-string embed (common JS/web client leak shape)."
 
 # ---- NEGATIVES (precision) ------------------------------------------
 
@@ -49,7 +49,7 @@ reason = "Inside a C++/JS single-line comment."
 [[evasion]]
 text = "<meta name=\"google-api-key\" content=\"AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV\">"
 credential = "AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV"
-reason = "HTML meta tag — extraction must not consume the closing quote/bracket."
+reason = "HTML meta tag (extraction must not consume the closing quote/bracket)."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

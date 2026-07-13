@@ -5,7 +5,7 @@
 //! parse failed" WARNs on a corpus of non-JSON `.ipynb` snippets). Flooding
 //! stderr buries real findings and other diagnostics. This layer shows the
 //! first [`WARN_REPEATS_SHOWN`] occurrences of each WARN *callsite* and
-//! suppresses the rest — but NEVER silently (Law 10): every suppressed repeat
+//! suppresses the rest, but NEVER silently (Law 10): every suppressed repeat
 //! is counted, and [`WarnDedupSummaryGuard`] prints a per-callsite
 //! "repeated N more times" summary to stderr when the run ends, so the
 //! operator sees the true magnitude, just not 5,000 copies of it.
@@ -86,7 +86,7 @@ impl<S: Subscriber> Filter<S> for WarnRepeatLimit {
 }
 
 /// Drop guard that reports every suppressed WARN callsite once, loudly, at the
-/// end of the run — the Law-10 half of the rate limit: the repeats are hidden
+/// end of the run, the Law-10 half of the rate limit: the repeats are hidden
 /// from the stream, never from the operator.
 pub(crate) struct WarnDedupSummaryGuard;
 

@@ -45,7 +45,7 @@ fn the_credential_first_selection_is_threaded_into_the_membership_check() {
 // `assignment_keyword_for_line` extractor: empty set owns nothing, else the
 // extracted keyword must be a MEMBER of the owned set. The oracle DELEGATES
 // extraction to the real facade, so this is a true differential of the
-// composition — and it cross-checks the source's sorted `binary_search` membership
+// composition, and it cross-checks the source's sorted `binary_search` membership
 // against a linear `any`, which agree ONLY if the facade sorts the owned set
 // correctly. No proptest before.
 
@@ -53,7 +53,7 @@ use keyhog_scanner::testing::assignment_keyword_for_line_for_test as line_keywor
 use proptest::prelude::*;
 
 /// Credential keys already in normalized form (extractor returns them unchanged
-/// for a `key=value` line) — each must make its own line owned.
+/// for a `key=value` line) (each must make its own line owned).
 const OWNED_KEYS: &[&str] = &[
     "api_key",
     "client_secret",
@@ -87,7 +87,7 @@ proptest! {
         prop_assert_eq!(line_owned(&refs, &line), oracle(&refs, &line));
     }
 
-    /// The same differential over ARBITRARY Unicode — locks that extraction +
+    /// The same differential over ARBITRARY Unicode, locks that extraction +
     /// membership never panic and stay in agreement on non-ASCII input.
     #[test]
     fn line_owned_matches_oracle_on_arbitrary_unicode(
@@ -98,7 +98,7 @@ proptest! {
         prop_assert_eq!(line_owned(&refs, &line), oracle(&refs, &line));
     }
 
-    /// RECALL: a line keyed on an owned credential keyword (`key=value`) is owned —
+    /// RECALL: a line keyed on an owned credential keyword (`key=value`) is owned 
     /// pins the real extractor returns the key unchanged and membership hits.
     #[test]
     fn a_line_keyed_on_an_owned_credential_keyword_is_owned(

@@ -23,7 +23,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4000))]
 
     /// Round-trip: for any set of pattern indices in `[0, n)`, marking them in a
-    /// fresh `n`-pattern bitmap and walking it recovers EXACTLY those indices —
+    /// fresh `n`-pattern bitmap and walking it recovers EXACTLY those indices 
     /// no miss, no duplicate, strictly ascending (the confirmed pass relies on
     /// each triggered pattern being visited once).
     #[test]
@@ -58,7 +58,7 @@ proptest! {
         prop_assert!(collect(&words).is_empty(), "a fresh bitmap must have no set bits");
     }
 
-    /// Marking EVERY in-range bit recovers the full `[0, n)` range exactly — the
+    /// Marking EVERY in-range bit recovers the full `[0, n)` range exactly, the
     /// dense case, catching a high-word tail-bit miss that a sparse set hides.
     #[test]
     fn all_bits_set_recovers_full_range(n in 0usize..1024) {

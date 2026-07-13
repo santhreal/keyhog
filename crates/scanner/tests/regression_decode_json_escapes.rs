@@ -3,7 +3,7 @@
 //! keyhog treats a JSON string value as an encoding layer: before pattern
 //! matching, `JsonDecoder` unescapes the value (`json_unescape`) and splices the
 //! plaintext adjacent to its key so a credential stored as a JSON-encoded field
-//! survives into the scanner. This file is the ESCAPE-TABLE contract — it asserts
+//! survives into the scanner. This file is the ESCAPE-TABLE contract, it asserts
 //! the exact decoded bytes for every arm of `json_unescape`:
 //!
 //!   `\"` -> 0x22   `\\` -> 0x5C   `\/` -> 0x2F   `\b` -> 0x08   `\f` -> 0x0C
@@ -16,10 +16,10 @@
 //!
 //! Isolation technique (why each positive is attributable to the decode, not the
 //! raw bytes): the detector's structural ANCHOR is hidden behind an escape in the
-//! RAW text — the PEM `BEGIN` keeps its `I` as `I` (`BEGIN`), so the
+//! RAW text, the PEM `BEGIN` keeps its `I` as `I` (`BEGIN`), so the
 //! `private-key` regex, which needs a literal `BEGIN`, cannot fire on the parent
 //! chunk NOR on the base64-decoder child (which never touches `\u`). Only the
-//! json / unicode-escape children, which restore `BEGIN`, can match — and they
+//! json / unicode-escape children, which restore `BEGIN`, can match, and they
 //! decode identically, so the pipeline's `(detector_id, credential)` dedup
 //! collapses them to exactly ONE `private-key` match. That lets `only()` assert
 //! the full decoded credential unambiguously.
@@ -27,13 +27,13 @@
 //! DISTINCT FROM `regression_json_decoder_through` (iter7): that file proves the
 //! anchor-restoration recall path (`\u` BMP, `\/`, `\\`, `\n`, a surrogate pair,
 //! and the abort boundaries). THIS file pins the escapes iter7 left un-pinned as
-//! EXACT bytes inside a recovered credential — `\t`/`\r`/`\b`/`\f`/`\"` and a
-//! single full-table equality — plus the `\uXXXX` -> exact ASCII scalar and the
+//! EXACT bytes inside a recovered credential: `\t`/`\r`/`\b`/`\f`/`\"` and a
+//! single full-table equality, plus the `\uXXXX` -> exact ASCII scalar and the
 //! astral scalar landing verbatim in the credential.
 //!
 //! HOST-INDEPENDENCE: every scan runs on `ScanBackend::CpuFallback`. `private-key`
 //! (keywords `BEGIN`/`PRIVATE KEY`) and `generic-password` (keyword `password`)
-//! are literal-anchored detectors, so their identity is the same on every host —
+//! are literal-anchored detectors, so their identity is the same on every host 
 //! no assertion depends on Hyperscan/SIMD/GPU being present.
 
 mod support;
@@ -51,7 +51,7 @@ const RUN24: &str = "Xk7Qp2Lm9Rt4Wv6Bn3Hs8Zcd";
 
 /// Compile the shipped detector set with the confidence gate pinned OFF
 /// (`min_confidence = 0.0`) so a decoded medium-severity `generic-password`
-/// value is never dropped by confidence — the assertions are about the DECODED
+/// value is never dropped by confidence, the assertions are about the DECODED
 /// BYTES, not the confidence model.
 fn scanner() -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
@@ -160,7 +160,7 @@ fn u_escape_hex_digits_are_case_insensitive() {
 #[test]
 fn u_escape_decodes_in_class_special_char() {
     // `!` -> '!' (U+0021). '!' is inside the generic-password value class,
-    // so it is captured rather than terminating the value — pins that `\u`
+    // so it is captured rather than terminating the value, pins that `\u`
     // resolves to the literal scalar, not a placeholder.
     let json = pw_json(&format!("{RUN24}\\u0021Rq"));
     let matches = scan(&json);
@@ -174,7 +174,7 @@ fn u_escape_decodes_in_class_special_char() {
 // ─────────────────────────────────────────────────────────────────────────
 
 // NOTE: `solidus_escape_decodes_to_literal_slash` was removed pending empirical
-// rework — the raw/decoded generic-password dedup interaction for a single `\/`
+// rework, the raw/decoded generic-password dedup interaction for a single `\/`
 // (1 backslash escape, below the decode-density backslash trigger) needs an
 // instrumented probe before its exact expected match count/credential is pinned.
 
@@ -216,7 +216,7 @@ fn carriage_return_escape_is_0x0d() {
 
 // NOTE: `backspace_escape_is_0x08` and `formfeed_escape_is_0x0c` were removed
 // pending empirical rework. The scan path sanitizes the non-whitespace control
-// bytes 0x08/0x0C (unlike whitespace 0x09/0x0D/0x0A, which survive — see the
+// bytes 0x08/0x0C (unlike whitespace 0x09/0x0D/0x0A, which survive, see the
 // passing tab/CR tests), so a PEM whose only separator is \b or \f does not
 // produce a private-key match. The CORRECT assertion is that 0x08/0x0C are
 // stripped; pinning the exact sanitized credential form needs an instrumented
@@ -264,7 +264,7 @@ fn double_backslash_collapses_to_single_backslash() {
 // ─────────────────────────────────────────────────────────────────────────
 
 // NOTE: `full_escape_table_single_block_decodes_each_byte_exactly` was removed
-// pending empirical rework — its all-escapes-at-once fixture includes \b (0x08)
+// pending empirical rework, its all-escapes-at-once fixture includes \b (0x08)
 // and \f (0x0C), which the scan path sanitizes (see the backspace/formfeed note
 // above), so the exact full-table credential cannot be pinned until the
 // control-strip behavior is probed and the expected sanitized form is known.
@@ -291,7 +291,7 @@ fn valid_surrogate_pair_decodes_to_astral_scalar() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// BOUNDARY — a malformed escape aborts the WHOLE unescape (Err), so the hidden
+// BOUNDARY, a malformed escape aborts the WHOLE unescape (Err), so the hidden
 // `BEGIN` anchor is never restored and nothing is recovered.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -317,7 +317,7 @@ fn lone_low_surrogate_aborts_no_match() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// NEGATIVE-TWIN — escapes are present (decoder RUNS) but the decoded bytes carry
+// NEGATIVE-TWIN, escapes are present (decoder RUNS) but the decoded bytes carry
 // no secret; the escape table must not FABRICATE a finding.
 // ─────────────────────────────────────────────────────────────────────────
 

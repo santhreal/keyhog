@@ -116,7 +116,7 @@ runs:
           *)              name="" ;;
         esac
         echo "name=$name" >> "$GITHUB_OUTPUT"
-        echo "Asset name for $os/$arch: ${name:-<none — source build>}"
+        echo "Asset name for $os/$arch: ${name:-<none, source build>}"
 
     - name: Install Vectorscan/Hyperscan runtime (Linux prebuilt)
       if: startsWith(steps.asset.outputs.name, 'keyhog-linux-x86_64')
@@ -135,7 +135,7 @@ runs:
     # release. The trade-off is accepted here because (a) the action already
     # trusts github.com for its own composite source via the action ref,
     # (b) installing minisign portably on all three runner OSes adds its own
-    # unpinned supply-chain dependency, and (c) failure stays closed — a
+    # unpinned supply-chain dependency, and (c) failure stays closed, a
     # missing or mismatched checksum on a required release errors out, never
     # falls back silently. If GitHub-release compromise is in your threat
     # model, install with install.sh (full signature verification) and run

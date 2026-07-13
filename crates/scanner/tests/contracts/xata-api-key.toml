@@ -4,7 +4,7 @@ service = "xata"
 severity = "high"
 
 # Xata API keys have the literal `xau_` prefix + 40+ alphanumeric chars.
-# The `xata_workspace_url` companion is optional (not `required = true`) —
+# The `xata_workspace_url` companion is optional (not `required = true`) 
 # verify needs it to template the host, but detection should fire either
 # way, so the contract exercises both shapes.
 
@@ -12,21 +12,21 @@ severity = "high"
 text = """XATA_API_KEY=xau_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz
 XATA_DATABASE_URL=https://acme-eu-west-1.xata.sh"""
 credential = "xau_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
-reason = "Standard env-var pair (key + workspace URL companion) — both companion and key fire."
+reason = "Standard env-var pair (key + workspace URL companion) (both companion and key fire)."
 
 [[positive]]
 text = "xata_api_key: xau_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn"
 credential = "xau_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn"
-reason = "YAML-style key alone — companion is optional so detection still fires."
+reason = "YAML-style key alone (companion is optional so detection still fires)."
 
 [[negative]]
 text = "xau_short"
-reason = "Body too short — regex requires 40+ alnum after `xau_`."
+reason = "Body too short (regex requires 40+ alnum after `xau_`)."
 
 [[evasion]]
 text = "client = new XataClient({apiKey: \"xau_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz\"})"
 credential = "xau_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
-reason = "JavaScript SDK constructor — regex still extracts the literal."
+reason = "JavaScript SDK constructor (regex still extracts the literal)."
 
 [perf]
 fixture_bytes = 4096

@@ -9,7 +9,7 @@
 //! regression_html_report_script_breakout_xss.rs pins this for one crafted
 //! payload; this proves the invariant holds for arbitrary hostile findings: the
 //! rendered report always contains EXACTLY the template's single `</script>`
-//! close (and single `<script` open) — a finding can never add another — and
+//! close (and single `<script` open), a finding can never add another, and
 //! the raw JS-statement-terminating separators never survive.
 
 use std::borrow::Cow;

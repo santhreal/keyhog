@@ -119,7 +119,7 @@ fn scan_exit_precedence_keeps_system_failure_above_source_coverage_gap() {
     // (human) and structured (SARIF) wording lives with the kind in reporting.rs.
     // Assert the terminal summary renders the canonical set, and that the generic
     // source-error category carries BOTH its terminal and structured wording
-    // there — so a partial source can never be surfaced on one summary and
+    // there, so a partial source can never be surfaced on one summary and
     // silently dropped from the other.
     assert!(
         reporting.contains("CoverageGapKind::ALL") && reporting.contains("human_reason"),

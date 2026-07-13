@@ -7,7 +7,7 @@
 //! RTL overrides, or ASCII control bytes injected is provably restored to the
 //! clean token a detector would then match.
 //!
-//! Exercised through the crate's `testing::unicode_hardening` facade — the same
+//! Exercised through the crate's `testing::unicode_hardening` facade, the same
 //! `pub(crate)` functions the scan path calls, no production visibility widened.
 
 use std::borrow::Cow;
@@ -32,7 +32,7 @@ fn zero_width_space_u200b_stripped_restores_token() {
 
 #[test]
 fn invisible_operators_u2061_u2064_all_stripped() {
-    // U+2061 FUNCTION APPLICATION .. U+2064 INVISIBLE PLUS — the exact block the
+    // U+2061 FUNCTION APPLICATION .. U+2064 INVISIBLE PLUS, the exact block the
     // "is_zero_width still missing U+2061-2064" hardening note called out.
     let evaded = "gh\u{2061}\u{2062}\u{2063}\u{2064}p_secretbodyvalue0001";
     let out = uh::normalize_homoglyphs(evaded);
@@ -109,7 +109,7 @@ fn fullwidth_forms_folded_to_ascii() {
 #[test]
 fn del_control_u007f_dropped() {
     // U+007F DEL is an ASCII control that `is_ascii_control()` covers but a naive
-    // `b < 0x20` gate misses — the documented recall hole. It must be dropped.
+    // `b < 0x20` gate misses (the documented recall hole. It must be dropped).
     let evaded = "ghp_abc\u{7F}def0123456789ABCDEF";
     let out = uh::normalize_homoglyphs(evaded);
     assert_eq!(out.as_ref(), "ghp_abcdef0123456789ABCDEF");

@@ -9,7 +9,7 @@
 //!   * the [`resolve_scan_roots`] overlap/validation resolver (via the
 //!     `CliTestApi` facade, on real temp directories), and
 //!   * the shipped binary end to end (every root is actually scanned and no
-//!     finding is silently dropped — the recall contract this feature exists
+//!     finding is silently dropped, the recall contract this feature exists
 //!     for).
 
 use clap::Parser;
@@ -23,7 +23,7 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// A planted AWS access-key id — a deterministic high-confidence positive used
+/// A planted AWS access-key id, a deterministic high-confidence positive used
 /// across the e2e suite, so a finding is guaranteed on any host/backend.
 const PLANTED_SECRET: &str = "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n";
 
@@ -32,7 +32,7 @@ fn parse(argv: &[&str]) -> ScanArgs {
 }
 
 // ---------------------------------------------------------------------------
-// Layer 1 — `ScanArgs::scan_roots` accessor (pure)
+// Layer 1: `ScanArgs::scan_roots` accessor (pure)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -117,7 +117,7 @@ fn stdin_shorthand_cannot_hide_inside_a_multi_root_request() {
 }
 
 // ---------------------------------------------------------------------------
-// Layer 2 — `resolve_scan_roots` validation + overlap fold (real dirs)
+// Layer 2: `resolve_scan_roots` validation + overlap fold (real dirs)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -197,7 +197,7 @@ fn sibling_directories_are_both_kept() {
     std::fs::create_dir(&b).unwrap();
 
     // `shared_b` is NOT nested in `shared_a` even though the canonical string of
-    // one is a textual prefix of the other — `Path::starts_with` is
+    // one is a textual prefix of the other. `Path::starts_with` is
     // component-wise, so neither is folded.
     let kept = API
         .resolve_scan_roots(&[a.clone(), b.clone()])
@@ -236,7 +236,7 @@ fn nonexistent_root_fails_closed() {
 }
 
 // ---------------------------------------------------------------------------
-// Layer 2b — combination guard (`guard_multi_root_combinations`)
+// Layer 2b, combination guard (`guard_multi_root_combinations`)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -273,7 +273,7 @@ fn git_staged_with_single_root_is_allowed() {
 }
 
 // ---------------------------------------------------------------------------
-// Layer 3 — shipped binary, end to end
+// Layer 3, shipped binary, end to end
 // ---------------------------------------------------------------------------
 
 fn scan(args: &[&std::ffi::OsStr]) -> std::process::Output {

@@ -3,7 +3,7 @@
 //! `#68` decomposes a single HS-served prefilter call's time into the SIMD scan
 //! vs the dropped HS-incompatible host-regex loop, so the dominant sub-cost of
 //! the 84.8%-of-scan `phase2:prefilter` pass is identifiable. The live timing
-//! accumulators are profile-gated process-wide atomics (not unit-tested — timing
+//! accumulators are profile-gated process-wide atomics (not unit-tested, timing
 //! is nondeterministic, like `POPULATE_PREFILTER_NS`); this suite pins the PURE
 //! surface that turns those nanoseconds into the operator-facing line: the
 //! `HsMarkSplit` percentage/total helpers (incl. divide-by-zero safety) and the
@@ -103,7 +103,7 @@ fn split_is_copy_and_independent() {
 }
 
 // ---------------------------------------------------------------------------
-// format_hs_mark_split — the exact one-line diagnostic the profiler prints.
+// format_hs_mark_split (the exact one-line diagnostic the profiler prints).
 // ---------------------------------------------------------------------------
 
 #[test]

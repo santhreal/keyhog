@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "pk.caEXAMPLEEXAMPLE4414e"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "LOCATIONIQ_API_KEY=pk.b02a70db24b788f217af47231d91e27e96c388b92f008b39c24addc0706"
 credential = "pk.b02a70db24b788f217af47231d91e27e96c388b92f008b39c24addc0706"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

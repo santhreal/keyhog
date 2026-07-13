@@ -1,5 +1,5 @@
 //! Contract: the loaded corpus size equals the on-disk `detectors/` TOML
-//! count — i.e. the loader loads EVERY on-disk detector, none silently
+//! count, i.e. the loader loads EVERY on-disk detector, none silently
 //! dropped. The count is single-sourced from the loader (see
 //! `readme_claims::readme_claim_detector_count`); this test pins the
 //! internal invariant with no hardcoded number, so adding a detector never
@@ -27,7 +27,7 @@ fn readme_detector_count_matches_disk() {
         loaded,
         "loader drift: {disk_count} *.toml files on disk in {} but the loader \
          returned {loaded} detectors. A detector TOML is being silently dropped \
-         (bad id, duplicate, parse-skip) — every on-disk detector must load.",
+         (bad id, duplicate, parse-skip), every on-disk detector must load.",
         dir.display(),
     );
 }

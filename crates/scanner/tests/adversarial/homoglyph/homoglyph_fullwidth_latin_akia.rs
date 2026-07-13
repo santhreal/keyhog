@@ -12,7 +12,7 @@ fn homoglyph_fullwidth_latin_akia() {
     let matches = scan_text(&text, "homoglyph.env");
     assert!(
         matches.iter().any(|m| m.credential.as_ref().contains(tail)),
-        "Fullwidth AKIA prefix must not fully evade — tail {tail:?}; matches={:?}",
+        "Fullwidth AKIA prefix must not fully evade, tail {tail:?}; matches={:?}",
         matches
             .iter()
             .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))

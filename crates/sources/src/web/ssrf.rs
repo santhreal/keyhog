@@ -86,12 +86,12 @@ pub(crate) fn is_autoroute_loopback_calibration_url(url: &str) -> bool {
 /// `keyhog_verifier::ssrf::is_private_ip_addr`, which is the single
 /// source of truth for "is this address one an SSRF guard must
 /// refuse?". That predicate composes the fast reserved-range bitwise
-/// checks (`is_private_ip_addr_fast` — loopback, RFC 1918, link-local,
+/// checks (`is_private_ip_addr_fast`: loopback, RFC 1918, link-local,
 /// multicast, 0.0.0.0/8, 100.64.0.0/10 CGN, 240.0.0.0/4 Class E, ...)
 /// on top of `bogon::ip_addr_is_bogon` (CGN, 192.0.0.0/24 IETF
 /// protocol assignment, 198.18.0.0/15 benchmark, IPv6 unique-local /
 /// link-local / Teredo / ORCHIDv2 / documentation / 6to4-wrapped
-/// bogons, ...) — exactly the "layer additional checks on top of
+/// bogons, ...), exactly the "layer additional checks on top of
 /// `ip_addr_is_bogon`, do not fork it" contract the bogon module docs
 /// mandate (`crates/verifier/src/bogon.rs`).
 ///
@@ -99,7 +99,7 @@ pub(crate) fn is_autoroute_loopback_calibration_url(url: &str) -> bool {
 /// is_private || is_link_local || is_multicast || is_broadcast ||
 /// is_unspecified`) that was a strict subset of the canonical and
 /// silently let CGN, benchmark, IETF, Class E, and 0.0.0.0/8 (minus
-/// the single 0.0.0.0) addresses through — an SSRF pivot into
+/// the single 0.0.0.0) addresses through, an SSRF pivot into
 /// internal/provider space. The fork is gone; both the direct
 /// `resolve_and_screen` path and the redirect-revalidation path now
 /// resolve to this one predicate.

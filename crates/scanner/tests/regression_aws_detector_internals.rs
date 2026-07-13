@@ -1,12 +1,12 @@
-//! AWS access-key detector internals — exact classification, the
+//! AWS access-key detector internals, exact classification, the
 //! access-key/session-token/secret companion distinction, offline account
 //! decode, and canary-token flagging, all pinned to CONCRETE expected values.
 //!
 //! Two production surfaces are exercised together, both through the crate's
-//! PUBLIC api (this is an external integration crate — it sees only the public
+//! PUBLIC api (this is an external integration crate, it sees only the public
 //! surface + the `keyhog_core::testing` facade, never `#[cfg(test)]` helpers):
 //!
-//!   1. The compiled scanner (`support::contracts::scanner`) — an `AKIA…`/
+//!   1. The compiled scanner (`support::contracts::scanner`), an `AKIA…`/
 //!      `ASIA…` id must classify under detector `aws-access-key`, service
 //!      `aws`, severity `Critical`, name `AWS Access Key`, capturing the whole
 //!      20-char id as the credential; a nearby `AWS_SESSION_TOKEN` and
@@ -17,7 +17,7 @@
 //!
 //!   2. The offline metadata path (`keyhog_scanner::aws::finding_metadata`,
 //!      `keyhog_core::key_id_canary_status`, and the `keyhog_core::testing`
-//!      decode facade) — every well-formed id yields its 12-digit account with
+//!      decode facade), every well-formed id yields its 12-digit account with
 //!      no network; a decoded account that belongs to a baseline
 //!      canarytokens.org / knockoff issuer flags `is_canary=true` with the
 //!      exact operator note; a non-base32 body char (e.g. the digit `0`, which
@@ -67,7 +67,7 @@ const CANARY_MESSAGE: &str =
      verification request alerts whoever planted it. See \
      https://trufflesecurity.com/canaries";
 
-/// One compiled scanner for the whole file — `scanner()` recompiles every
+/// One compiled scanner for the whole file: `scanner()` recompiles every
 /// on-disk detector per call, so the `OnceLock` keeps the suite fast. The
 /// scanner is `Send + Sync`; the fragment cache is cleared before each scan.
 fn shared() -> &'static CompiledScanner {
@@ -136,7 +136,7 @@ fn akia_classifies_as_aws_access_key_with_exact_service_kind_severity_name() {
 #[test]
 fn asia_session_id_shares_the_aws_access_key_detector() {
     // An ASIA temporary/STS access-key id uses the SAME embedding and the SAME
-    // detector as a long-term AKIA id — no separate "aws-session-key" kind.
+    // detector as a long-term AKIA id (no separate "aws-session-key" kind).
     let text = format!("[profile ci]\naws_access_key_id={ASIA_ACCT_987654321098}\n");
     let m = only(&text, "aws-access-key");
     assert_eq!(m.detector_id.as_ref(), "aws-access-key");
@@ -151,7 +151,7 @@ fn asia_session_id_shares_the_aws_access_key_detector() {
 fn asia_with_secret_and_session_token_captures_both_companions_distinctly() {
     // Real STS creds block: access-key id + secret + session token within the
     // 5-line companion window. The 40-char secret must land under `secret_key`
-    // and the 90-char token under `session_token` — never swapped or merged.
+    // and the 90-char token under `session_token`: never swapped or merged.
     let text = format!(
         "[default]\naws_access_key_id = {ASIA_ACCT_987654321098}\n\
          aws_secret_access_key = {AWS_SECRET}\naws_session_token = {AWS_SESSION_TOKEN}\n"

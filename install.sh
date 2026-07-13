@@ -18,7 +18,7 @@
 #   --uninstall       remove the binary + optionally clean up hooks
 #
 # Common flags:
-#   --version=v0.5.37   pin a release tag (default: latest release with assets)
+#   --version=vX.Y.Z    pin a release tag (default: latest stable complete bundle)
 #   --install-dir=PATH  override the default install directory
 #   --from-file=PATH    install a pre-built/pre-downloaded keyhog binary instead
 #                       of downloading a release (offline / air-gapped installs,
@@ -40,7 +40,7 @@
 set -eu
 
 # Refuse to run when SOURCED. This installer calls `exit` on many paths, and
-# `exit` inside a sourced script terminates the caller's interactive shell — a
+# `exit` inside a sourced script terminates the caller's interactive shell, a
 # nasty surprise for anyone who runs `. install.sh` / `source install.sh`. The
 # guard is scoped to bash/zsh (the shells that expose a sourcing signal); under a
 # plain POSIX `sh` the documented `curl | sh` RUN path hits neither branch and is
@@ -298,10 +298,9 @@ resolve_asset() {
 
 resolve_tag() {
     if [ -n "$VERSION" ]; then
-        # keyhog release tags are all v-prefixed (v0.5.37). Accept a bare
-        # semver too (`--version=0.5.37`): a download URL built from the
-        # un-prefixed tag 404s, which is exactly what broke the Windows
-        # install smoke (it passed "0.5.37"). Normalise a digit-leading
+        # keyhog release tags are all v-prefixed (vX.Y.Z). Accept a bare
+        # semver too (`--version=X.Y.Z`): a download URL built from the
+        # un-prefixed tag 404s. Normalise a digit-leading
         # version to the v-prefixed tag; leave an explicit v… or any other
         # ref (branch, sha, custom tag) untouched.
         case "$VERSION" in
@@ -327,13 +326,10 @@ github_api_get() {
 }
 
 resolve_tag_from_api() {
-    # /releases/latest reports the most recently-published release. But
-    # a release can exist with zero assets (e.g. the release-workflow
-    # built the workspace but failed to upload), in which case every
-    # subsequent download from that tag will 404. Walk back through
-    # /releases (most-recent first) and pick the newest tag that has
-    # ANY asset attached. This survives a one-off release-workflow
-    # failure without forcing the operator to pass --version manually.
+    # Walk recent releases in publication order and admit only a stable,
+    # non-draft release with this host's complete signed bundle. Selecting a
+    # release merely because it has one asset can choose a partial publication
+    # or an asset for another platform.
     releases_api_err=$(mktemp "${TMPDIR:-/tmp}/keyhog-releases-api.XXXXXX")
     if ! releases_json=$(github_api_get "https://api.github.com/repos/$REPO/releases?per_page=10" 2>"$releases_api_err"); then
         releases_api_msg=$(sed -n '1p' "$releases_api_err")
@@ -342,47 +338,70 @@ resolve_tag_from_api() {
         if [ -n "$releases_api_msg" ]; then
             err "GitHub API error: $releases_api_msg"
         fi
-        err "Try --version=v0.5.37 (or another known tag) explicitly."
+        err "Try --version=vX.Y.Z with a known published release tag explicitly."
         exit 1
     fi
     rm -f "$releases_api_err"
     if [ -z "$releases_json" ]; then
         err "Could not query GitHub releases API."
         err "GitHub releases API returned an empty response."
-        err "Try --version=v0.5.37 (or another known tag) explicitly."
+        err "Try --version=vX.Y.Z with a known published release tag explicitly."
         exit 1
     fi
 
-    # Parse the first 10 releases (most-recent first) and pick the newest
-    # tag whose release has at least one downloadable asset. POSIX awk-only,
-    # no jq dep.
-    #
-    # This is deliberately indentation-INDEPENDENT. The previous version
-    # keyed on `/^  \]/` to find the close of the assets array, assuming a
-    # two-space indent - but the GitHub REST API indents the assets array's
-    # closing bracket FOUR spaces (`    ],`), so that pattern never matched
-    # and the default `curl | sh` install always failed with "no release has
-    # assets" unless the user passed --version. Within each release object
-    # the API emits "tag_name" BEFORE its "assets" array, and
-    # "browser_download_url" appears ONLY inside an asset entry. So the first
-    # browser_download_url we encounter belongs to the first (newest) release
-    # that actually has an asset, and `tag` still holds that release's tag.
-    TAG=$(printf '%s' "$releases_json" | awk '
+    # GitHub emits tag/draft/prerelease before the assets array. Match exact
+    # asset names, independent of JSON indentation, without requiring jq.
+    TAG=$(printf '%s' "$releases_json" | awk -v base="$ASSET" '
         /"tag_name": / {
             sub(/.*"tag_name": *"/, "")
             sub(/".*/, "")
             tag = $0
+            stable = published = 0
+            binary = checksum = signature = sidecar = sidecar_checksum = sidecar_signature = 0
         }
-        /"browser_download_url": / {
-            if (tag != "") { print tag; exit }
+        /"draft": *false/ { published = 1 }
+        /"prerelease": *false/ { stable = 1 }
+        /"name": / {
+            name = $0
+            sub(/.*"name": *"/, "", name)
+            sub(/".*/, "", name)
+            if (name == base) binary = 1
+            if (name == base ".sha256") checksum = 1
+            if (name == base ".minisig") signature = 1
+            if (name == base ".gpu-literals.tar.gz") sidecar = 1
+            if (name == base ".gpu-literals.tar.gz.sha256") sidecar_checksum = 1
+            if (name == base ".gpu-literals.tar.gz.minisig") sidecar_signature = 1
+        }
+        {
+            if (tag != "" && published && stable && binary && checksum && signature && sidecar && sidecar_checksum && sidecar_signature) {
+                print tag
+                exit
+            }
         }
     ')
 
     if [ -z "$TAG" ]; then
-        err "No GitHub release in the last 10 has any assets uploaded."
-        err "Try --version=v0.5.37 (or another known tag) explicitly."
+        err "No stable GitHub release in the last 10 has the complete signed bundle for $ASSET."
+        err "Required: binary, SHA-256, minisign, GPU literal sidecar, sidecar SHA-256, and sidecar minisign."
+        err "Try --version=vX.Y.Z with a known published release tag explicitly."
         exit 1
     fi
+}
+
+release_bundle_is_complete() {
+    bundle_tag=$1
+    for bundle_asset in \
+        "$ASSET" \
+        "$ASSET.sha256" \
+        "$ASSET.minisig" \
+        "$ASSET.gpu-literals.tar.gz" \
+        "$ASSET.gpu-literals.tar.gz.sha256" \
+        "$ASSET.gpu-literals.tar.gz.minisig"; do
+        if ! curl -fsSI "https://github.com/$REPO/releases/download/$bundle_tag/$bundle_asset" >/dev/null 2>&1; then
+            return 1
+        fi
+    done
+    return 0
 }
 
 resolve_tag_from_latest_redirect() {
@@ -394,6 +413,7 @@ resolve_tag_from_latest_redirect() {
     fi
     redirect_tag=$(printf '%s\n' "$redirect_url" | sed -n 's#.*/releases/download/\([^/][^/]*\)/.*#\1#p' | head -n 1)
     [ -n "$redirect_tag" ] || return 1
+    release_bundle_is_complete "$redirect_tag" || return 1
     TAG="$redirect_tag"
     return 0
 }
@@ -406,7 +426,7 @@ resolve_operator_release_tag() {
             LATEST_RELEASE_ALIAS=1
             return
         fi
-        warn "Latest release asset redirect did not reveal a concrete tag; checking recent releases for the newest tag with assets."
+        warn "Latest release redirect did not prove a complete signed host bundle; checking recent stable releases."
         resolve_tag_from_api
         LATEST_RELEASE_ALIAS=1
     fi
@@ -1283,9 +1303,9 @@ prime_autoroute_cache() {
     fi
     # Calibrate the SAME resolved-config digest a real scan requests. The
     # autoroute config digest hashes routing/pipeline knobs (batch_pipeline,
-    # autoroute_gpu), so calibrating with `--batch-pipeline --autoroute-gpu` —
+    # autoroute_gpu), so calibrating with `--batch-pipeline --autoroute-gpu` 
     # which a plain `keyhog scan .` never uses (a filesystem auto scan cannot
-    # route GPU and does not force the coalesced batch pipeline) — keyed the
+    # route GPU and does not force the coalesced batch pipeline), keyed the
     # cache to a digest no real default scan ever looked up, and every auto scan
     # failed closed (exit 2). Default calibration now matches the default scan
     # path; GPU/coalesced calibration is a separate, explicit opt-in digest.
@@ -1986,7 +2006,7 @@ start_calibration_web_server() {
         # exec so this subshell process BECOMES the Python server: $! below then
         # captures the server's real PID, so stop_calibration_web_server's kill
         # reaps the actual HTTP server. Without exec, POSIX sh forks Python as a
-        # child of the subshell and $! is the subshell's PID — killing it orphans
+        # child of the subshell and $! is the subshell's PID, killing it orphans
         # the Python process, leaking a server that still holds the loopback port.
         exec "$python_cmd" - "$port_file" <<'PY'
 import http.server
@@ -2115,7 +2135,7 @@ post_install_wizard() {
 
     if confirm "Wire keyhog as a git pre-commit hook in the CURRENT directory?" N; then
         # `[ -d .git ]` is wrong inside a git WORKTREE, where `.git` is a FILE
-        # (a `gitdir:` pointer), not a directory — the hook install was silently
+        # (a `gitdir:` pointer), not a directory, the hook install was silently
         # skipped there. `git rev-parse --is-inside-work-tree` is true for a
         # regular repo, a worktree, and a subdirectory alike.
         if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then

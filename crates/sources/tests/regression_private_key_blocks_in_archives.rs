@@ -9,7 +9,7 @@
 //! `Private-MAC`). If archive unpacking dropped, reflowed, or split the interior
 //! newlines, the detector's structural regex would never match and the most
 //! severe class of secret would silently fall through. These tests assert the
-//! complete block — BEGIN/header, every interior line, and END/MAC — arrives in
+//! complete block: BEGIN/header, every interior line, and END/MAC, arrives in
 //! one `filesystem/archive` chunk byte-for-byte, newlines preserved.
 //!
 //! Detection of the block itself is locked elsewhere (`pem_private_key_recall_64`,
@@ -61,7 +61,7 @@ fn scan_archive(name: &str, bytes: &[u8]) -> (tempfile::TempDir, Vec<keyhog_core
     (dir, chunks)
 }
 
-/// All `filesystem/archive` chunk bodies concatenated — the unpacked text.
+/// All `filesystem/archive` chunk bodies concatenated (the unpacked text).
 fn unpacked_text(chunks: &[keyhog_core::Chunk]) -> String {
     chunks
         .iter()
@@ -135,7 +135,7 @@ fn pem_in_zip_interior_body_line_present() {
     let (_d, chunks) = scan_archive("keys.zip", &zip_of("k.pem", PEM_KEY));
     assert!(
         unpacked_text(&chunks).contains(PEM_INTERIOR_SENTINEL),
-        "an interior base64 line must survive — no mid-block truncation"
+        "an interior base64 line must survive, no mid-block truncation"
     );
 }
 

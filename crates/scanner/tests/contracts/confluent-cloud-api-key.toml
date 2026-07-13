@@ -20,7 +20,7 @@ reason = "Body 40 chars after cflt, below 60 minimum."
 [[evasion]]
 text = "cfltKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
 credential = "cfltKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
-reason = "Adversarial anchor_bare envelope — credential must still surface under this detector."
+reason = "Adversarial anchor_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

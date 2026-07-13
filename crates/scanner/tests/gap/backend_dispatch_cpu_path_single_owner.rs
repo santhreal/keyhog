@@ -5,13 +5,13 @@
 //! request degrade. Those were two byte-identical copies of
 //!   `chunks.par_iter().map(|c| self.scan_with_backend(c, backend)).collect()`
 //!   `+ scan_chunk_boundaries(...)`
-//! that could drift apart — and the `scan_chunk_boundaries` seam pass is
+//! that could drift apart, and the `scan_chunk_boundaries` seam pass is
 //! load-bearing recall (a secret straddling two gapless chunks is invisible to
 //! the per-chunk scan), so a divergence there silently loses findings on one
 //! path. The two copies are now one `scan_chunks_cpu_parallel` helper.
 //!
 //! This pins the dedup: the helper exists, the parallel scan-map appears
-//! exactly once, and the boundary pass is invoked from the helper — so a future
+//! exactly once, and the boundary pass is invoked from the helper, so a future
 //! edit can't re-inline a second copy that drifts.
 
 fn read_src(rel: &str) -> String {
@@ -28,7 +28,7 @@ fn cpu_scan_and_boundary_path_has_single_owner() {
         "the CPU scan + boundary path must live in one owner, scan_chunks_cpu_parallel"
     );
 
-    // The parallel per-chunk scan-map is the duplicated core — it must appear
+    // The parallel per-chunk scan-map is the duplicated core, it must appear
     // exactly once now (inside the helper), not re-inlined in each branch.
     let map_occurrences = src
         .matches(".map(|chunk| self.scan_with_backend(chunk, backend))")

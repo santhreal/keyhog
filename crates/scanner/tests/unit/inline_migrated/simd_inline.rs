@@ -1,4 +1,4 @@
-//! Migrated from src/simd.rs — silent_drop_regression gate.
+//! Migrated from src/simd.rs (silent_drop_regression gate).
 //!
 //! `HsScanner` is only exposed when the `simd` (Hyperscan) feature is on;
 //! the lean ci build skips this test entirely.
@@ -31,7 +31,7 @@ fn no_embedded_detector_pattern_silently_drops_at_hyperscan_compile() {
         keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
     assert!(
         !specs.is_empty(),
-        "embedded detector corpus is empty — build.rs likely skipped embedding; \
+        "embedded detector corpus is empty, build.rs likely skipped embedding; \
          rebuild keyhog-core from a clean target/."
     );
 
@@ -47,7 +47,7 @@ fn no_embedded_detector_pattern_silently_drops_at_hyperscan_compile() {
                         dropped.push((
                             spec.id.to_string(),
                             regex_str.to_string(),
-                            "Hyperscan: single-pattern compile returned unsupported — \
+                            "Hyperscan: single-pattern compile returned unsupported. \
                              probable DFA-size or unsupported-feature rejection"
                                 .to_string(),
                         ));

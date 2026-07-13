@@ -14,11 +14,11 @@ Base layout (indices, mirrors the Rust comment "37 base + 4 padding = 41"):
   38    in-comment    39 assignment-op    40 test-file-context
 
 Feature #41 (the 42nd, appended when the Rust scanner is bumped to 42 features):
-  41    decode-structure is_binary_payload — keyhog's decode-through advantage
+  41    decode-structure is_binary_payload: keyhog's decode-through advantage
         fed into the model. Computed on the credential text via decode_structure.
 
 Feature #42 (the 43rd, DET-1 keyword specificity):
-  42    service-context — the ML context window names a SPECIFIC service from
+  42    service-context: the ML context window names a SPECIFIC service from
         the detector corpus (vs generic role words only, which feature 17
         already covers). Vocabulary re-derived here from detectors/*.toml with
         rules byte-identical to ml_scorer/service_vocab.rs (length floor 4,

@@ -8,7 +8,7 @@
 //! tested `b < 0x20`, which EXCLUDES DEL (0x7F), while the per-char Drop
 //! classifier used `char::is_ascii_control()`, which INCLUDES it. A `ghp_…` with
 //! a spliced DEL therefore gated to `CleanAscii`, returned `Cow::Borrowed`
-//! unchanged, and the DEL broke the body regex — the secret evaded. All three
+//! unchanged, and the DEL broke the body regex, the secret evaded. All three
 //! sites now delegate to one predicate, so DEL (and every other non-whitespace
 //! control) is dropped uniformly, and legitimate `\n`/`\r`/`\t` are preserved.
 
@@ -20,7 +20,7 @@ use std::borrow::Cow;
 const DEL: char = '\u{7F}';
 
 /// Splice `c` into a `ghp_` token; assert it is dropped so the token reassembles
-/// AND the normalizer reports a change (`Cow::Owned`) — i.e. the fast-path gate
+/// AND the normalizer reports a change (`Cow::Owned`), i.e. the fast-path gate
 /// actually routed this input to the strip rather than passing it through.
 fn assert_control_dropped(c: char, label: &str) {
     let text = format!("ghp_ab{c}cd");
@@ -108,7 +108,7 @@ fn multiple_dels_all_dropped() {
 
 #[test]
 fn del_does_not_corrupt_a_following_kept_nonascii_char() {
-    // DEL dropped, the (kept) é survives — proves the rebuild splices correctly
+    // DEL dropped, the (kept) é survives, proves the rebuild splices correctly
     // across an ASCII-control drop followed by a multibyte kept char.
     let out = normalize_homoglyphs("ab\u{7F}é");
     assert_eq!(out.as_ref(), "abé", "got {out:?}");
@@ -255,14 +255,14 @@ fn printable_ascii_with_no_controls_not_evasion() {
 
 #[test]
 fn del_and_zero_width_both_removed_in_one_token() {
-    // DEL (ASCII control) + ZWSP (U+200B) — different predicates, one rebuild.
+    // DEL (ASCII control) + ZWSP (U+200B) (different predicates, one rebuild).
     let out = normalize_homoglyphs("g\u{7F}h\u{200B}p_secret");
     assert_eq!(out.as_ref(), "ghp_secret", "got {out:?}");
 }
 
 // ── detect_unicode_attacks must report the SAME ASCII controls normalize drops ─
 //
-// The detector and the normalizer must classify the same chars — omitting ASCII
+// The detector and the normalizer must classify the same chars, omitting ASCII
 // controls from the report is exactly the detect/normalize desync class that hid
 // the DEL recall hole. Controls are reported under `Suspicious` (the separator
 // group), with no replacement.

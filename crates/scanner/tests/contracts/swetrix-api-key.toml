@@ -20,15 +20,15 @@ reason = "Quoted-value variant of the canonical positive."
 [[positive]]
 text = "swetrix analytics client init; X-Api-Key: b539e4ae802deaca3a83216dd1580f3e"
 credential = "b539e4ae802deaca3a83216dd1580f3e"
-reason = "swetrix-BEFORE-header order (the split pattern 2b). Regression guard for the alternation-split fix: the OLD single-alternation pattern put the value in capture group 2 for this order, so group 1 was absent and the extractor fell back to the whole match — a garbage credential. The split isolates the 32-hex key as group 1 in both orders. (See regression_swetrix_capture_group.rs for the strict exact-capture assertion the containment check here cannot make.)"
+reason = "swetrix-BEFORE-header order (the split pattern 2b). Regression guard for the alternation-split fix: the OLD single-alternation pattern put the value in capture group 2 for this order, so group 1 was absent and the extractor fell back to the whole match, a garbage credential. The split isolates the 32-hex key as group 1 in both orders. (See regression_swetrix_capture_group.rs for the strict exact-capture assertion the containment check here cannot make.)"
 
 [[negative]]
 text = "X-Api-Key       \"' =  \"\"=  =  YOUR_API_KEY_HERE_PLACEHOLDER_VALUE xxq<N5%VSp  Cu(#u[ZjLB1Z,[#7TE1Fd+%Npf4-+@@*?\"865 g-swetrix"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "X-Api-Key       \"' =  \"\"=  =  b539eEXAMPLEEXAMPLE80f3e xxq<N5%VSp  Cu(#u[ZjLB1Z,[#7TE1Fd+%Npf4-+@@*?\"865 g-swetrix"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 # ---- EVASION (adversarial) -----------------------------------------
 

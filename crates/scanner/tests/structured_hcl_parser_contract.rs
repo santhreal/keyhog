@@ -225,7 +225,7 @@ fn single_line_stripper_never_diverges_from_the_one_owner() {
 
 /// The inline `/* … */` block comment has its interior removed while the code
 /// AFTER `*/` is PRESERVED. The pre-unification body truncated here, losing
-/// `b = "keep"` — a silently dropped assignment.
+/// `b = "keep"`: a silently dropped assignment.
 #[test]
 fn strip_hcl_line_comment_preserves_code_after_inline_block_comment() {
     let stripped = hcl_contract::strip_hcl_line_comment(r#"a = "drop" /* note */ b = "keep""#);
@@ -322,7 +322,7 @@ mod hcl_robustness_fuzz {
         /// out-of-range index, or an unterminated comment/quote/heredoc state
         /// machine) and never loop unboundedly. Every pair it returns must carry a
         /// 1-based line number, and the parse must be DETERMINISTIC (no hidden
-        /// mutable state) — re-parsing identical bytes yields the same pair count.
+        /// mutable state) (re-parsing identical bytes yields the same pair count).
         /// This sweeps thousands of interleavings of `#`, `//`, `/* */`, quotes,
         /// escapes, braces and heredoc markers through the now-single comment
         /// grammar (`strip_hcl_comments` and its single-line driver).

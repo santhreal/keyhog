@@ -150,7 +150,7 @@ pub(crate) fn validate_rule_value(
     // Reject whitespace-only values, not just the empty string. Production callers
     // (`normalize_rule_list`, `normalize_prefix_suffix_rules`) pre-trim, so for them
     // `value.trim() == value` and this is byte-identical; but it ALSO fails closed
-    // when `validate_rule_value` is called directly on an untrimmed value — a
+    // when `validate_rule_value` is called directly on an untrimmed value, a
     // spaces-only entry slips past the other guards (a space is not a control char
     // and lowercases to itself, so only the emptiness check can catch it). The
     // boundary guard must not depend on the caller having trimmed first.

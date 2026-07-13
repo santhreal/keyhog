@@ -272,7 +272,7 @@ fn scan_json_schema_carries_required_fields() {
     let findings: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is valid JSON");
     let arr = findings.as_array().expect("findings JSON is an array");
     // Truth assert (not "some finding"): the planted ghp_ token fired a GitHub
-    // detector on line 1 — otherwise the field-presence loop below would pass
+    // detector on line 1, otherwise the field-presence loop below would pass
     // vacuously over an empty array.
     let gh = arr.iter().find(|f| {
         let det = f.get("detector_id").and_then(|v| v.as_str()).unwrap_or("");
@@ -316,7 +316,7 @@ fn scan_json_schema_carries_required_fields() {
 /// Shipped-artifact binding test: the binary must advertise exactly the
 /// detector + pattern corpus it was built from. Both expected counts are
 /// DERIVED from `keyhog_core::load_detectors` over the on-disk `detectors/`
-/// tree — the same set `build.rs` embeds — so adding/removing a detector
+/// tree, the same set `build.rs` embeds, so adding/removing a detector
 /// never requires editing a literal here (the count is single-sourced from
 /// the loader; the README headline is pinned separately in
 /// `scanner/tests/readme_claims.rs`).
@@ -349,7 +349,7 @@ fn readme_banner_counts_match_loaded_corpus() {
         arr.len(),
         expected_detectors,
         "binary advertises {} detectors but the on-disk corpus has {expected_detectors}. \
-         The shipped binary embeds a stale set — rebuild, or a detector silently failed \
+         The shipped binary embeds a stale set, rebuild, or a detector silently failed \
          to embed.",
         arr.len(),
     );
@@ -761,7 +761,7 @@ fn explicit_format_text_does_not_emit_json() {
 /// weaker token would be the one the opt-in lifts above the floor.)
 #[test]
 fn scan_comments_flag_surfaces_credentials_in_comments() {
-    // A genuine-shape AWS access key — exactly 20 chars (`AKIA` + 16) —
+    // A genuine-shape AWS access key, exactly 20 chars (`AKIA` + 16) 
     // inside a `//`-style comment. The length is load-bearing: the
     // aws-access-key detector requires the canonical 20-char form, so a
     // longer `AKIA…` string is correctly rejected as malformed and would

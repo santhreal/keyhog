@@ -1,7 +1,7 @@
 //! Gap test: the universal-rejection prefix gate's exact reject/accept table.
 //!
 //! `matches_universal_rejection` is the first gate in the entropy plausibility
-//! checks — it drops candidates that are obviously not free-standing secrets:
+//! checks, it drops candidates that are obviously not free-standing secrets:
 //! URLs, filesystem paths, CI/template variables, three-segment JWTs, SSH/PEM
 //! key material, age/ansible-vault/sops/AWS-KMS envelopes, Windows drive paths,
 //! and markdown fences. Each branch keeps a whole false-positive class out of
@@ -79,7 +79,7 @@ fn plausible_secrets_and_near_misses_are_not_rejected() {
 use proptest::prelude::*;
 
 /// Rejected examples whose rejection is MONOTONIC under append (prefix-list / `://`
-/// / `Ag` / drive-path rules) — excludes the JWT and PEM entries, whose structural
+/// / `Ag` / drive-path rules), excludes the JWT and PEM entries, whose structural
 /// checks can flip when text is appended.
 const SUFFIX_STABLE_REJECTED: &[&str] = &[
     "https://example.com/path",

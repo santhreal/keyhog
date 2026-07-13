@@ -5,7 +5,7 @@
 //!
 //! Root cause this locks against: the generic assignment bridge (engine/phase2_generic.rs)
 //! required the credential keyword to sit IMMEDIATELY before `["'`]? [=:]`, so a
-//! suffixed keyword never bridged — `DJANGO_SECRET_KEY=` (the canonical
+//! suffixed keyword never bridged: `DJANGO_SECRET_KEY=` (the canonical
 //! Django/Flask/Rails secret), `secret_key_base=` (Rails), `credential_value:`,
 //! `token_value=`, `private_key_raw=` were all proven NEVER-CANDIDATE on the real
 //! CredData corpus (KH-L-0410: ~80% of recall loss is candidate-generation, and
@@ -17,7 +17,7 @@
 //!
 //! The fix is generation-only: the captured KEYWORD group is still the bare stem
 //! (the suffix is non-capturing), so the downstream entropy floor, shape gates,
-//! checksum policy, context haircut and ML scoring all run unchanged — a decoy in
+//! checksum policy, context haircut and ML scoring all run unchanged, a decoy in
 //! a suffixed assignment is dropped by the same gates as a bare-keyword decoy.
 //! Verified on BOTH bench corpora before landing (CredData recall up, mirror
 //! precision held ≥ 0.9945).
@@ -58,7 +58,7 @@ fn caught(scanner: &CompiledScanner, line: &str, value: &str) -> bool {
 /// Like `caught`, but accepts the whole detectorless generic-bridge FAMILY
 /// (`generic-secret` / `generic-password` / `entropy-api-key`). A bare
 /// secret-family keyword (`secret = <v>`, zero suffixes) routes to
-/// `generic-password` / `entropy-api-key` rather than `generic-secret` — the
+/// `generic-password` / `entropy-api-key` rather than `generic-secret`: the
 /// label follows the detector set, but the VALUE still surfaces. Recall, not the
 /// specific generic label, is the backward-compat contract this locks.
 fn caught_by_generic_family(scanner: &CompiledScanner, line: &str, value: &str) -> bool {
@@ -93,7 +93,7 @@ fn secret_preserving_suffix_forms_are_surfaced() {
         caught(&s, &format!("DJANGO_SECRET_KEY = \"{v1}\""), v1),
         "SECRET_KEY (secret + _key suffix) must bridge"
     );
-    // `secret` + `_key` + `_base` (two stacked suffixes — Rails secret_key_base).
+    // `secret` + `_key` + `_base` (two stacked suffixes. Rails secret_key_base).
     let v2 = "aB3xK9mN2pQ7rS5tU8vW1xY4";
     assert!(
         caught(&s, &format!("secret_key_base = \"{v2}\""), v2),
@@ -127,7 +127,7 @@ fn secret_preserving_suffix_forms_are_surfaced() {
     // Bare `secret =` routes to `generic-password` / `entropy-api-key` rather
     // than `generic-secret` (the suffixed forms above route to generic-secret);
     // the label follows the detector set but the value still surfaces, so this
-    // asserts the generic-bridge FAMILY caught it — recall, not the label.
+    // asserts the generic-bridge FAMILY caught it (recall, not the label).
     let v7 = "Xk9mP2qR7sT4vW8zCb3dE6fG";
     assert!(
         caught_by_generic_family(&s, &format!("secret = \"{v7}\""), v7),
@@ -138,23 +138,23 @@ fn secret_preserving_suffix_forms_are_surfaced() {
 #[test]
 fn identifier_and_metadata_suffixes_do_not_bridge() {
     let s = scanner();
-    // The suffix allowlist EXCLUDES `_type`, `_hash`, `_id` — these denote a
+    // The suffix allowlist EXCLUDES `_type`, `_hash`, `_id`: these denote a
     // non-secret (OAuth metadata, a digest, an identifier). Each value is verified
     // to surface under a bare keyword, so the ONLY reason for no-catch here is the
-    // deliberately-excluded suffix — never the entropy floor or a shape gate.
+    // deliberately-excluded suffix (never the entropy floor or a shape gate).
     let v1 = "Wj3kZ9mP2qR7sT4vXa8bC1dE";
     assert!(
         !caught(&s, &format!("token_type = \"{v1}\""), v1),
-        "token_type (excluded `_type` suffix) must NOT bridge — OAuth metadata, not a secret"
+        "token_type (excluded `_type` suffix) must NOT bridge. OAuth metadata, not a secret"
     );
     let v2 = "Lq8nR4tW7xZ2mK9pV5sB3jH6";
     assert!(
         !caught(&s, &format!("password_hash = \"{v2}\""), v2),
-        "password_hash (excluded `_hash` suffix) must NOT bridge — a digest, not the password"
+        "password_hash (excluded `_hash` suffix) must NOT bridge, a digest, not the password"
     );
     let v3 = "Pf6dG9kM2qZ7xW4rT8sV5nB3";
     assert!(
         !caught(&s, &format!("secret_key_id = \"{v3}\""), v3),
-        "secret_key_id (excluded trailing `_id`) must NOT bridge — an identifier, not a key"
+        "secret_key_id (excluded trailing `_id`) must NOT bridge, an identifier, not a key"
     );
 }

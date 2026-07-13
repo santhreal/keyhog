@@ -79,7 +79,7 @@ fn missing_companion_refs_reports_only_absent_names_in_order() {
     );
 }
 
-/// A missing ref repeated many times is reported exactly once — the dedup guard
+/// A missing ref repeated many times is reported exactly once, the dedup guard
 /// (`!missing.iter().any(|m| m == name)`) holds, so the returned vec is a set.
 #[test]
 fn missing_companion_refs_dedups_a_repeated_missing_ref() {
@@ -93,12 +93,12 @@ fn missing_companion_refs_dedups_a_repeated_missing_ref() {
 
 /// DoS BOUND (Law 7 / Testing-Contract adversarial): a hostile template with far
 /// more than `MAX_TEMPLATE_TOKENS` distinct `{{companion.*}}` refs must not be
-/// scanned unboundedly — `missing_companion_refs` stops after exactly
+/// scanned unboundedly: `missing_companion_refs` stops after exactly
 /// `MAX_TEMPLATE_TOKENS` tokens. We plant `MAX+76` DISTINCT missing names (so no
 /// dedup collision masks the count) and assert: (a) exactly `MAX` names come back
-/// — proving the loop halted at the bound rather than walking all of them; (b)
+///: proving the loop halted at the bound rather than walking all of them; (b)
 /// the FIRST ref (`m0`) is present but (c) a ref PAST the bound (`m{MAX+75}`) is
-/// absent — the definitive proof the scan stopped early instead of processing the
+/// absent, the definitive proof the scan stopped early instead of processing the
 /// whole template. Asserts against the single `MAX_TEMPLATE_TOKENS` owner, never a
 /// hardcoded `1024`, so a retune of the bound moves the test with it.
 #[test]
@@ -132,7 +132,7 @@ fn missing_companion_refs_stops_scanning_at_max_template_tokens() {
 /// `MAX_TEMPLATE_TOKENS` `{{…}}` tokens; everything past the cap is copied
 /// verbatim (interpolate.rs:311). A hostile template with `MAX+50` `{{match}}`
 /// tokens must therefore yield exactly `MAX` substituted credentials followed by
-/// the 50 un-expanded `{{match}}` tokens — proving the loop halted at the bound
+/// the 50 un-expanded `{{match}}` tokens, proving the loop halted at the bound
 /// rather than substituting all `MAX+50`. This goes through the PUBLIC
 /// `TestApi.interpolate` (no facade needed) and asserts exact occurrence counts,
 /// not `contains`, so a regression that lifted or removed the cap (unbounded

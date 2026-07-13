@@ -5,7 +5,7 @@
 //! This is DISTINCT from `regression_binary_strings_minlen` (which exercises
 //! the goblin string-extraction min-length floor) and from the density/NUL
 //! boundary cases already pinned in `regression_skip_rules`: here every case
-//! targets a specific arm of the classifier that those files do NOT cover —
+//! targets a specific arm of the classifier that those files do NOT cover 
 //! the magic-header short-circuit (ELF / PNG / Python-pickle-protocol-2), the
 //! UTF-8-BOM-is-text vs UTF-16-BOM-is-binary asymmetry, embedded-vs-scattered
 //! NUL runs, the exact 5%-control density threshold, the whitespace-exempt vs
@@ -26,7 +26,7 @@ use std::fs;
 
 /// Serializes the process-global skip counters across the parallel tests in
 /// this binary (each integration-test file is its own process, so a file-local
-/// mutex is sufficient — mirrors `regression_skip_rules.rs`). Held for the
+/// mutex is sufficient, mirrors `regression_skip_rules.rs`). Held for the
 /// whole `reset -> scan -> read skip_counts()` window.
 static SKIP_COUNTER_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

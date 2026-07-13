@@ -8,7 +8,7 @@ id = "thingspeak-api-key"
 name = "ThingSpeak API Key"
 service = "thingspeak"
 severity = "medium"
-# "api_key" removed: over-broad generic prefilter the regex does NOT need — every
+# "api_key" removed: over-broad generic prefilter the regex does NOT need, every
 # pattern self-anchors on the service name (kept), which is present in any real
 # match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.
 keywords = ["thingspeak", "write_api_key", "read_api_key"]

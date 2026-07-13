@@ -2,7 +2,7 @@
 //! reported finding path metadata.
 //!
 //! The previous code embedded `archive_entry.name` verbatim in the `path`
-//! field — a `../escape.env` entry would produce a chunk whose path was
+//! field, a `../escape.env` entry would produce a chunk whose path was
 //! `foo.zip//../escape.env`, misleading operators and any downstream tooling
 //! that reconstructs paths from findings.
 //!
@@ -26,13 +26,13 @@ fn zip_slip_dotdot_reported_path_is_sanitized() {
     let mut zip = ZipWriter::new(file);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
-    // Traversal entry — name contains `../`
+    // Traversal entry, name contains `../`
     zip.start_file("../traversal.env", opts)
         .expect("start traversal");
     zip.write_all(b"TRAVERSAL_KEY=some_value\n")
         .expect("write traversal");
 
-    // Safe entry — should still be scanned
+    // Safe entry, should still be scanned
     zip.start_file("safe.env", opts).expect("start safe");
     zip.write_all(b"SAFE_KEY=ok\n").expect("write safe");
 
@@ -43,7 +43,7 @@ fn zip_slip_dotdot_reported_path_is_sanitized() {
         "../traversal.env",
     );
 
-    // No chunk's path metadata must contain a raw `../` component — the
+    // No chunk's path metadata must contain a raw `../` component, the
     // sanitizer must either drop the entry or clean the path.
     for chunk in &chunks {
         if let Some(path) = &chunk.metadata.path {

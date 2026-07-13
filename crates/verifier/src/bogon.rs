@@ -1,4 +1,4 @@
-//! # bogon — canonical SSRF-policy IP classification
+//! # bogon, canonical SSRF-policy IP classification
 //!
 //! Single source of truth for the question *"is this address safe to
 //! fetch from over the internet, or does it belong to a private /
@@ -6,14 +6,14 @@
 //! across the Santh scanner fleet.
 //!
 //! Before this crate existed, four independent implementations of the
-//! same predicate lived in the tree — scanclient, wafrift-types,
+//! same predicate lived in the tree, scanclient, wafrift-types,
 //! netshift's DNS pool, netshift's DNS cache, and golemn's URL
 //! guard. Three of the four had coverage gaps (no CGN, no IETF
 //! protocol-assignment range, no benchmark range, no Teredo, no
 //! ORCHIDv2, no discard prefix). One had a `::1` IPv6 loopback
 //! escape bug. Re-export shims couldn't fix it because scanclient is
 //! a heavy reqwest/tokio/rustls/hickory consumer and netshift sits
-//! *below* scanclient in the dependency graph — depending on
+//! *below* scanclient in the dependency graph, depending on
 //! scanclient from netshift would have created a cycle.
 //!
 //! This crate exists to break that cycle. Pure std-only, zero
@@ -32,7 +32,7 @@
 //! documentation (TEST-NET-1/2/3), unspecified, Carrier-Grade NAT
 //! (100.64.0.0/10), IETF protocol assignment (192.0.0.0/24),
 //! benchmark (198.18.0.0/15), AWS/GCP/Azure IMDS metadata
-//! (169.254.169.254 specifically — but covered by the broader
+//! (169.254.169.254 specifically, but covered by the broader
 //! 169.254.0.0/16 link-local rule).
 //!
 //! **IPv6:** loopback (`::1`), unspecified (`::`), unique-local
@@ -63,12 +63,12 @@
 //! the SSRF guard. The cause: `Ipv6Addr::to_ipv4()` decomposes
 //! `::1` to `0.0.0.1`, which is *not* in the IPv4 loopback range
 //! (`127.0.0.0/8`). The donor fell through to the v4 fallback and
-//! returned `false`. The fix — check `is_loopback()` /
-//! `is_unspecified()` before any v4 mapping — is now load-bearing
+//! returned `false`. The fix, check `is_loopback()` /
+//! `is_unspecified()` before any v4 mapping, is now load-bearing
 //! and pinned by [`tests::rejects_ipv6_loopback`].
 
-// This module is `no_std`-clean by construction — it imports only
-// `core::net` and forbids unsafe — but `#![no_std]` is a *crate*-level
+// This module is `no_std`-clean by construction, it imports only
+// `core::net` and forbids unsafe, but `#![no_std]` is a *crate*-level
 // attribute and is silently ignored (with a warning) inside a submodule, so
 // it is intentionally not declared here. The `core::` imports below are the
 // real enforcement.
@@ -110,7 +110,7 @@ pub(crate) fn ip_addr_is_bogon(ip: IpAddr) -> bool {
                 // single 0.0.0.0 that `is_unspecified()` matches. 0.0.0.1 et al.
                 // are non-routable and an SSRF target. `verifier_blocks_ip_addr`
                 // (and its `is_private_ip_addr_fast` alias) enforce this range
-                // by delegating here — the whole first octet is the check.
+                // by delegating here (the whole first octet is the check).
                 || v.octets()[0] == 0
             {
                 return true;
@@ -125,7 +125,7 @@ pub(crate) fn ip_addr_is_bogon(ip: IpAddr) -> bool {
             if octets[0] == 198 && (octets[1] & 0xfe) == 18 {
                 return true; // 198.18.0.0/15
             }
-            // Link-local + metadata (IMDS) — explicit for stealth
+            // Link-local + metadata (IMDS), explicit for stealth
             // parity with proxy audits.
             if octets[0] == 169 && octets[1] == 254 {
                 return true;
@@ -138,7 +138,7 @@ pub(crate) fn ip_addr_is_bogon(ip: IpAddr) -> bool {
             // 0.0.0.1 / 0.0.0.0, neither of which matches the IPv4
             // loopback predicate (127/8). Without this short-circuit
             // the v4 fallback would let `::1` past the SSRF guard
-            // — a real bug the original donor copy carried before
+            //: a real bug the original donor copy carried before
             // 2026-05-23.
             if v.is_loopback() || v.is_unspecified() {
                 return true;
@@ -202,14 +202,14 @@ pub(crate) fn ip_addr_is_bogon(ip: IpAddr) -> bool {
 /// two standardized NAT64 prefixes. Single owner for the NAT64 → IPv4
 /// decomposition (RFC 6052 §2.2 embedding format).
 ///
-/// - **Well-Known Prefix** `64:ff9b::/96` (RFC 6052 §2.1): /96 embedding only —
+/// - **Well-Known Prefix** `64:ff9b::/96` (RFC 6052 §2.1): /96 embedding only 
 ///   the IPv4 occupies the low 32 bits (`segs[6..8]`).
-/// - **Local-Use Prefix** `64:ff9b:1::/48` (RFC 8215): /48 embedding — the IPv4
+/// - **Local-Use Prefix** `64:ff9b:1::/48` (RFC 8215): /48 embedding, the IPv4
 ///   occupies bits 48-63 (`segs[3]`) and 72-87 (`segs[4]` low byte, `segs[5]`
 ///   high byte), skipping the reserved u-octet at bits 64-71. The u-octet is
 ///   NOT required to be zero here: the whole /48 is dedicated to NAT64, so an
 ///   attacker setting it must not smuggle an embedded internal IPv4 past the
-///   screen (fail closed — extract and check regardless).
+///   screen (fail closed (extract and check regardless)).
 ///
 /// Network-Specific Prefixes (operator-chosen, any of the six RFC 6052 lengths)
 /// are intentionally not enumerated: they are unknowable without operator
@@ -219,7 +219,7 @@ fn nat64_embedded_ipv4(segs: &[u16; 8]) -> Option<core::net::Ipv4Addr> {
     if segs[0] != 0x0064 || segs[1] != 0xff9b {
         return None;
     }
-    // Well-Known Prefix 64:ff9b::/96 — IPv4 in the low 32 bits.
+    // Well-Known Prefix 64:ff9b::/96. IPv4 in the low 32 bits.
     if segs[2] == 0 && segs[3] == 0 && segs[4] == 0 && segs[5] == 0 {
         return Some(core::net::Ipv4Addr::new(
             (segs[6] >> 8) as u8,
@@ -228,7 +228,7 @@ fn nat64_embedded_ipv4(segs: &[u16; 8]) -> Option<core::net::Ipv4Addr> {
             (segs[7] & 0xff) as u8,
         ));
     }
-    // Local-Use Prefix 64:ff9b:1::/48 — RFC 6052 §2.2 /48 embedding.
+    // Local-Use Prefix 64:ff9b:1::/48. RFC 6052 §2.2 /48 embedding.
     if segs[2] == 0x0001 {
         return Some(core::net::Ipv4Addr::new(
             (segs[3] >> 8) as u8,

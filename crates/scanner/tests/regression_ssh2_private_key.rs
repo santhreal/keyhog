@@ -160,7 +160,7 @@ fn two_encrypted_blocks_distinct_captures() {
 }
 #[test]
 fn lazy_capture_does_not_span_two_blocks() {
-    // Lazy `*?` must stop at the FIRST END, not swallow a second block — else
+    // Lazy `*?` must stop at the FIRST END, not swallow a second block, else
     // two findings would collapse into one greedy span.
     let text = format!("{}\n\n{}", enc_block("LAZYA"), enc_block("LAZYB"));
     let first = ssh2(&text).expect("at least one");
@@ -194,7 +194,7 @@ fn format_mention_does_not_fire() {
 }
 #[test]
 fn three_dash_framing_does_not_fire() {
-    // Wrong dash count (3, not 4) — not the RFC 4716 framing.
+    // Wrong dash count (3, not 4) (not the RFC 4716 framing).
     let text = "--- BEGIN SSH2 PRIVATE KEY ---\nbodybodybodybody\n--- END SSH2 PRIVATE KEY ---";
     assert!(!fires(text));
 }

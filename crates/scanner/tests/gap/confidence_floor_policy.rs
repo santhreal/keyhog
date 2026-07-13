@@ -58,7 +58,7 @@ fn body30() -> String {
 }
 
 // ===========================================================================
-// SECTION 1: checksum_adjusted_confidence — Valid floors at CHECKSUM_VALID_FLOOR
+// SECTION 1: checksum_adjusted_confidence: Valid floors at CHECKSUM_VALID_FLOOR
 // ===========================================================================
 
 #[test]
@@ -147,7 +147,7 @@ fn valid_one_confidence_stays_one() {
 }
 
 // ===========================================================================
-// SECTION 2: checksum_adjusted_confidence — Invalid DROPS (returns None)
+// SECTION 2: checksum_adjusted_confidence: Invalid DROPS (returns None)
 // ===========================================================================
 
 #[test]
@@ -222,7 +222,7 @@ fn gitlab_glpat_too_short_body_invalid_and_dropped() {
 }
 
 // ===========================================================================
-// SECTION 3: checksum_adjusted_confidence — NotApplicable passes through
+// SECTION 3: checksum_adjusted_confidence: NotApplicable passes through
 // ===========================================================================
 
 #[test]
@@ -471,7 +471,7 @@ fn github_fine_grained_wrong_part_count_is_invalid() {
 }
 
 // ===========================================================================
-// SECTION 5: --precision floor — high_precision() sets 0.85 and composes as a
+// SECTION 5: --precision floor, high_precision() sets 0.85 and composes as a
 // MAX over existing floors, never a replace.
 // ===========================================================================
 
@@ -574,7 +574,7 @@ fn explicit_min_confidence_override_can_raise_above_preset() {
 }
 
 // ===========================================================================
-// SECTION 6: interaction — a checksum-valid token clears the precision bar,
+// SECTION 6: interaction, a checksum-valid token clears the precision bar,
 // a checksum-invalid one is dropped before the bar even matters.
 // ===========================================================================
 
@@ -612,7 +612,7 @@ fn not_applicable_token_must_earn_precision_bar_on_its_own() {
 }
 
 // ===========================================================================
-// SECTION 7: known_prefix_confidence_floor — the 0.8 base used by the
+// SECTION 7: known_prefix_confidence_floor, the 0.8 base used by the
 // hot-pattern confidence policy before checksum adjustment.
 // ===========================================================================
 
@@ -774,7 +774,7 @@ fn property_precision_max_is_monotone_and_never_lowers() {
 }
 
 // ===========================================================================
-// SECTION 9: adversarial / evasion — attacker-shaped inputs that must NOT earn
+// SECTION 9: adversarial / evasion, attacker-shaped inputs that must NOT earn
 // the valid floor.
 // ===========================================================================
 
@@ -831,7 +831,7 @@ fn first_matching_validator_wins_no_double_adjudication() {
 
 // ===========================================================================
 // SECTION 10: round-trip integrity of the construction helpers themselves.
-// If these break, every "valid" assertion above is suspect — so prove the
+// If these break, every "valid" assertion above is suspect, so prove the
 // helper's CRC matches what the validator recomputes.
 // ===========================================================================
 

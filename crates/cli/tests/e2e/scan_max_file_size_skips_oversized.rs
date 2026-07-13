@@ -14,7 +14,7 @@ fn scan_max_file_size_skips_oversized_file() {
     let dir = TempDir::new().expect("tempdir");
     // A scannable small file PLUS an oversized one: the cap skips only the
     // large file, so the scan exercises the PARTIAL-coverage path (scanned
-    // some, skipped one) — `[]` findings on stdout + an "input coverage was
+    // some, skipped one): `[]` findings on stdout + an "input coverage was
     // incomplete" gap on stderr. (A dir whose ONLY file is skipped instead
     // hits the stronger "source produced no data" fail-closed, which this test
     // is not about.)

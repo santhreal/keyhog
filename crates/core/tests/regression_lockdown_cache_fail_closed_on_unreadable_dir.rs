@@ -4,7 +4,7 @@
 //! The previous implementation ended the cache scan with `.unwrap_or(false)`,
 //! so a `read_dir` error (e.g. an EACCES permission denial on a directory that
 //! DOES exist and may hold a past-findings cache) was read as "clean" and
-//! `--lockdown` would happily start with an unaudited artifact present — a
+//! `--lockdown` would happily start with an unaudited artifact present, a
 //! fail-OPEN security gate (Law 10). The fix distinguishes `NotFound`
 //! (genuinely clean) from every other error (fail closed, surfaced loudly,
 //! reported as a violation).
@@ -19,13 +19,13 @@ use tempfile::TempDir;
 fn unreadable_cache_dir_is_a_lockdown_violation_not_silently_clean() {
     // Running as root bypasses Unix permission bits, so the dir would be
     // readable regardless and the EACCES path is untestable. Skip there rather
-    // than assert a false negative — but surface that we skipped, loudly, so a
+    // than assert a false negative, but surface that we skipped, loudly, so a
     // root CI run does not silently lose this coverage.
     // SAFETY: libc::geteuid is a pure read of the effective uid.
     let euid = unsafe { libc::geteuid() };
     if euid == 0 {
         eprintln!(
-            "regression_lockdown_cache_fail_closed: skipped — running as root \
+            "regression_lockdown_cache_fail_closed: skipped, running as root \
              (uid 0) bypasses directory permission bits; EACCES path untestable here"
         );
         return;

@@ -8,14 +8,14 @@
 //! If those two paths ever presented DIFFERENT bytes for the same logical content
 //! (e.g. a stray trailing NUL separator on a single-chunk scratch build, or a
 //! lowercasing mismatch), the GPU literal DFA would see different input than the
-//! borrow path and emit different presence bits — a silent GPU/CPU parity break
+//! borrow path and emit different presence bits, a silent GPU/CPU parity break
 //! invisible to any test that only exercises one path.
 //!
 //! This proves the invariant: for a single already-lowercase chunk, the borrow
 //! path and the scratch path (forced by uppercasing the SAME content, which the
 //! scratch builder lowercases back) produce BYTE-IDENTICAL `(haystack, starts)`.
-//! Runs on CPU — no GPU adapter required (it inspects the coalesced input the GPU
-//! path would consume, not a GPU dispatch) — but the region-presence batch path
+//! Runs on CPU, no GPU adapter required (it inspects the coalesced input the GPU
+//! path would consume, not a GPU dispatch), but the region-presence batch path
 //! itself only exists in the `gpu` build, so this file is gated to that feature
 //! (the `ci-lean`/`portable` binaries have no GPU region path to test).
 #![cfg(feature = "gpu")]

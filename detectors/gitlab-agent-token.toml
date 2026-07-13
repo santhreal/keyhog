@@ -12,7 +12,7 @@ name = "GitLab Agent for Kubernetes Token"
 service = "gitlab"
 severity = "critical"
 # "kas" removed: over-broad 3-char prefilter (kaspersky/alaska/…) that no regex
-# references — the pattern requires the unambiguous `glagent-` prefix (keyword
+# references: the pattern requires the unambiguous `glagent-` prefix (keyword
 # "glagent-"), so "kas" only forced wasted scan passes. Recall-neutral.
 keywords = ["glagent-", "gitlab", "agentk"]
 

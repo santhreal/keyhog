@@ -7,7 +7,7 @@
 //! which is the Tier-A vs Tier-B split the suppression tree is built around.
 //!
 //! Facades used (all public, non-`cfg(test)`, available to an integration test):
-//!   * `known_example_suppressed(cred, path, ctx)` — the known-example stage
+//!   * `known_example_suppressed(cred, path, ctx)`: the known-example stage
 //!   * `named_detector_suppressed(cred, path, ctx, source, detector_id)`
 //!   * `is_canonical_service_hex_key`, `looks_like_standard_base64_blob`
 //!   * `shape::looks_like_syntactic_punctuation_marker`
@@ -24,7 +24,7 @@ use keyhog_scanner::testing::{
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// A value carrying the `placeholder` Tier-B word (word-bounded) is a documented
-/// sample, never a production secret — the known-example stage suppresses it.
+/// sample, never a production secret (the known-example stage suppresses it).
 #[test]
 fn placeholder_word_value_is_suppressed() {
     assert!(
@@ -48,7 +48,7 @@ fn real_stripe_live_secret_is_not_suppressed() {
 }
 
 /// A `{{var}}` template placeholder (brace-wrapped, <= 80 bytes) is never the
-/// delivery form of a real credential — the `template_placeholder` gate fires.
+/// delivery form of a real credential (the `template_placeholder` gate fires).
 #[test]
 fn double_brace_template_variable_is_suppressed() {
     assert!(
@@ -142,7 +142,7 @@ fn service_anchored_detector_keeps_bare_uuid() {
 }
 
 // A 40-char standard-base64 blob (has `/`, length multiple of 4). This is the
-// base64-protobuf FP shape — the single largest generic-detector FP class.
+// base64-protobuf FP shape (the single largest generic-detector FP class).
 const SLASH_B64_BLOB: &str = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYzT9k2LmQ8p";
 
 /// A generic detector drops the standard-base64 blob via the `base64_blob` gate.
@@ -199,7 +199,7 @@ fn syntactic_flag_marker_suppresses_even_for_service_anchored_detector() {
 const OPENAI_SHAPED: &str = "sk-proj-Xy9kLm2Qw";
 
 /// A short-prefix detector firing on printable strings extracted from a compiled
-/// binary is noise — the `native_binary_strings` source gate suppresses it.
+/// binary is noise (the `native_binary_strings` source gate suppresses it).
 #[test]
 fn binary_strings_source_suppresses_named_finding() {
     assert!(

@@ -3,7 +3,7 @@
 //! Coverage area `oob_ratelimit`:
 //!   - OOB interaction protocol parse (`InteractionProtocol::parse`) and the
 //!     `OobAccept` filter + its `From<keyhog_core::OobProtocol>` mapping.
-//!   - Transport-error redaction (`redact_interactsh_error`) — exact Display
+//!   - Transport-error redaction (`redact_interactsh_error`), exact Display
 //!     bytes for every non-Transport variant, asserting the URL/secret never
 //!     leaks.
 //!   - Rate limiter: per-service override independence, NaN/inf/zero/negative/
@@ -229,7 +229,7 @@ fn accept_any_matches_every_protocol_including_other() {
     assert!(OobAccept::Any.matches(InteractionProtocol::Dns));
     assert!(OobAccept::Any.matches(InteractionProtocol::Http));
     assert!(OobAccept::Any.matches(InteractionProtocol::Smtp));
-    // Critically `Any` even matches `Other` — the catch-all arm `(Self::Any, _)`.
+    // Critically `Any` even matches `Other`: the catch-all arm `(Self::Any, _)`.
     assert!(OobAccept::Any.matches(InteractionProtocol::Other));
 }
 
@@ -244,7 +244,7 @@ fn accept_no_non_any_variant_matches_other() {
 
 #[test]
 fn accept_from_core_oob_protocol_maps_each_variant() {
-    // From<keyhog_core::OobProtocol> — the CLI/spec → verifier bridge.
+    // From<keyhog_core::OobProtocol> (the CLI/spec → verifier bridge).
     assert!(OobAccept::from(keyhog_core::OobProtocol::Dns).matches(InteractionProtocol::Dns));
     assert!(!OobAccept::from(keyhog_core::OobProtocol::Dns).matches(InteractionProtocol::Http));
 
@@ -702,7 +702,7 @@ async fn update_limit_clamps_invalid_rps_without_panic() {
     // first wait against a freshly-updated service is delayed by the interval
     // (update sets last_request = now), so we keep the assertion to "no panic"
     // and a generous upper bound for the clamped (1s) services is avoided here
-    // to keep the suite fast — see update_limit_zero_first_wait_is_delayed.
+    // to keep the suite fast (see update_limit_zero_first_wait_is_delayed).
     limiter.update_limit("nan_svc", f64::NAN).await;
     limiter.update_limit("inf_svc", f64::INFINITY).await;
     limiter.update_limit("neg_svc", -3.0).await;

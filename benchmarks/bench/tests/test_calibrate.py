@@ -105,7 +105,7 @@ def test_toml_overlay_emits_only_lossless_wins():
     overlay = to_toml_overlay(recs)
     # The block is the exact edit for the detector's own file: a [detector]
     # table under a comment naming detectors/<id>.toml (coherent with the
-    # header's instruction — not a `["<id>"]` table that mismatches it).
+    # header's instruction (not a `["<id>"]` table that mismatches it)).
     assert "# detectors/winner.toml" in overlay
     assert "[detector]" in overlay
     assert "min_confidence = 0.8" in overlay

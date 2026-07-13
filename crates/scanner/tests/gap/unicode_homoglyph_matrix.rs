@@ -57,7 +57,7 @@ fn is_owned(input: &str) -> bool {
 
 #[test]
 fn cyrillic_lowercase_full_table_to_latin() {
-    // (source codepoint, expected Latin) — derived from cyrillic_to_latin.
+    // (source codepoint, expected Latin) (derived from cyrillic_to_latin).
     let cases: &[(char, char)] = &[
         ('\u{0430}', 'a'), // а
         ('\u{0435}', 'e'), // е
@@ -580,7 +580,7 @@ fn emoji_is_preserved_and_borrowed() {
 
 #[test]
 fn plain_ascii_letters_never_rewritten() {
-    // Latin ASCII 'a','o','p' must never be touched — only their lookalikes are.
+    // Latin ASCII 'a','o','p' must never be touched (only their lookalikes are).
     let text = "aop_AOP";
     assert_eq!(norm(text), "aop_AOP");
     assert!(is_borrowed_same_ptr(text));

@@ -1,4 +1,4 @@
-//! LANE 6 — explicit adversarial + boundary cases over the REAL full corpus.
+//! LANE 6 (explicit adversarial + boundary cases over the REAL full corpus).
 //!
 //! Companion to `lane6_full_corpus_property_invariants` (randomised). This file
 //! pins DETERMINISTIC, NAMED edge inputs the property generators are unlikely to
@@ -6,7 +6,7 @@
 //!   * the scan RETURNS (no panic / OOB / overflow),
 //!   * it finishes in BOUNDED time (a generous wall-clock budget that still
 //!     fails loud on an O(n^2) blow-up or an unbounded decode/alloc), and
-//!   * where a known-shape secret is planted, it is STILL surfaced (recall) —
+//!   * where a known-shape secret is planted, it is STILL surfaced (recall) 
 //!     and where no secret exists, NOTHING is surfaced (no phantom).
 //!
 //! The adversarial-shape table is DATA-DRIVEN (`adversarial_inputs()`), so the
@@ -34,7 +34,7 @@ static SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
 });
 
 /// A valid-SHAPE AWS access key id: `AKIA` + 16 uppercase alphanumerics. Fires
-/// on its own bytes, no companion keyword needed — the same token the existing
+/// on its own bytes, no companion keyword needed, the same token the existing
 /// full-corpus proptest plants, so its standalone surfacing is already proven.
 const PLANTED_AWS: &str = "AKIAQYLPMN5HFIQR7XYZ";
 
@@ -87,7 +87,7 @@ fn scan_bounded(name: &str, text: &str) -> Vec<keyhog_core::RawMatch> {
     assert!(
         elapsed < PER_INPUT_BUDGET,
         "adversarial input '{name}' ({} bytes) took {elapsed:?}, exceeding the \
-         {PER_INPUT_BUDGET:?} budget — a quadratic/unbounded path has regressed",
+         {PER_INPUT_BUDGET:?} budget, a quadratic/unbounded path has regressed",
         text.len()
     );
     // Every surfaced offset must index a real char boundary (a reporter slices
@@ -115,7 +115,7 @@ fn scan_bounded(name: &str, text: &str) -> Vec<keyhog_core::RawMatch> {
 /// The data-driven hostile-shape table. Each `(name, builder)` produces one
 /// chunk of text; `scan_bounded` drives every one through the real scanner and
 /// asserts no-panic + bounded time + per-match consistency. None of these plant
-/// a secret — they only have to NOT crash and NOT hang.
+/// a secret (they only have to NOT crash and NOT hang).
 fn adversarial_inputs() -> Vec<(&'static str, String)> {
     let mut out: Vec<(&'static str, String)> = Vec::new();
 
@@ -164,7 +164,7 @@ fn adversarial_inputs() -> Vec<(&'static str, String)> {
     out.push(("bare_cr_runs", "\r".repeat(4096)));
     out.push(("mixed_eol", "a\nb\r\nc\rd\n\re".repeat(256)));
 
-    // ── Huge single line (no newline) — stresses line-scan windowing ───
+    // ── Huge single line (no newline), stresses line-scan windowing ───
     out.push(("huge_single_line", "A".repeat(256 * 1024)));
     out.push((
         "huge_single_line_alnum",
@@ -202,7 +202,7 @@ fn adversarial_inputs() -> Vec<(&'static str, String)> {
     }
 
     // ── Pathological regex-backtracking bait ───────────────────────────
-    // Long run of a single char then a near-miss tail — classic catastrophic
+    // Long run of a single char then a near-miss tail, classic catastrophic
     // backtracking trigger for naive engines. keyhog uses linear-time engines;
     // this must stay linear.
     out.push(("aaa_run_then_x", format!("{}!", "a".repeat(100_000))));
@@ -237,9 +237,9 @@ fn adversarial_inputs() -> Vec<(&'static str, String)> {
     // 100k empty lines: forces 100k line-offset entries and 100k window
     // iterations of the line-scan; must stay linear, never O(lines^2).
     out.push(("newline_storm", "\n".repeat(100_000)));
-    // Alternating one-char lines — every line is its own scan unit.
+    // Alternating one-char lines (every line is its own scan unit).
     out.push(("tiny_line_storm", "a\n".repeat(80_000)));
-    // A long run of `=` and quotes interleaved — keyword-separator bait that
+    // A long run of `=` and quotes interleaved, keyword-separator bait that
     // tempts the env/key-value parsers into rescanning the same span.
     out.push(("kv_separator_storm", "=\"".repeat(60_000)));
 
@@ -254,7 +254,7 @@ fn adversarial_shapes_no_panic_bounded_time_consistent() {
     let inputs = adversarial_inputs();
     assert!(
         inputs.len() >= 30,
-        "adversarial table shrank to {} (<30) — coverage regressed",
+        "adversarial table shrank to {} (<30), coverage regressed",
         inputs.len()
     );
     for (name, text) in &inputs {
@@ -300,7 +300,7 @@ fn one_byte_chunk_zero_findings() {
 }
 
 /// A secret sitting EXACTLY at the end of a chunk (offset = len - secret_len)
-/// is still surfaced — the last-byte boundary must not be trimmed by a window
+/// is still surfaced, the last-byte boundary must not be trimmed by a window
 /// or prefilter off-by-one.
 #[test]
 fn secret_exactly_at_chunk_end_is_found() {
@@ -354,7 +354,7 @@ fn secret_split_across_chunk_boundary_is_reassembled() {
     assert!(
         found,
         "AWS key split across the chunk boundary was NOT reassembled by \
-         scan_coalesced — cross-chunk recall regression. results: {:?}",
+         scan_coalesced: cross-chunk recall regression. results: {:?}",
         results
             .iter()
             .flatten()
@@ -364,7 +364,7 @@ fn secret_split_across_chunk_boundary_is_reassembled() {
 }
 
 /// A non-adjacent split (a GAP between chunks, base_offset not contiguous) must
-/// NOT fabricate a finding — the boundary path only reassembles gapless pairs.
+/// NOT fabricate a finding (the boundary path only reassembles gapless pairs).
 /// This is the negative twin of the reassembly recall case.
 #[test]
 fn secret_split_with_gap_is_not_fabricated() {
@@ -385,7 +385,7 @@ fn secret_split_with_gap_is_not_fabricated() {
     assert!(
         !fabricated,
         "non-contiguous (gapped) chunks fabricated a reassembled AWS finding \
-         — the boundary path must only join gapless pairs"
+The boundary path must only join gapless pairs"
     );
 }
 
@@ -419,7 +419,7 @@ fn secret_just_past_max_chunk_limit_is_found() {
     let limit = 1024 * 1024;
     let anchor = format!("AWS_ACCESS_KEY_ID={PLANTED_AWS}");
     // First window is [0, 1 MiB); plant the secret comfortably inside the file
-    // but past the 1 MiB mark would need a second window — instead anchor it
+    // but past the 1 MiB mark would need a second window, instead anchor it
     // early so a single window contains it, while the total length forces the
     // windowed code path (len > limit).
     let head = format!("{anchor}{}", "x".repeat(limit + 4096));

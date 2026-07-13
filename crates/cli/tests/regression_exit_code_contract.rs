@@ -12,7 +12,7 @@
 //! classes is caught end to end.
 //!
 //! Every assertion pins an EXACT `u8` code, an EXACT `Option<i32>` process exit
-//! code, or an EXACT documented help string — never a shape (Law 6).
+//! code, or an EXACT documented help string (never a shape (Law 6)).
 
 use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::VerificationResult as V;
@@ -102,7 +102,7 @@ fn rate_limited_finding_yields_success() {
 #[test]
 fn error_finding_yields_success() {
     // Verification that failed with a network/timeout error is UNKNOWN, not
-    // live — failing it into the live class would be a false "live" alarm.
+    // live (failing it into the live class would be a false "live" alarm).
     let findings = [finding(V::Error("connection reset".to_string()))];
     assert_eq!(API.scan_exit_code(&findings), EXIT_SUCCESS);
 }
@@ -123,7 +123,7 @@ fn one_live_among_non_live_still_yields_ten() {
 
 #[test]
 fn all_non_live_mix_yields_success() {
-    // Every non-live state combined still resolves to 0 — there is no live
+    // Every non-live state combined still resolves to 0, there is no live
     // credential in the set.
     let findings = [
         finding(V::Dead),

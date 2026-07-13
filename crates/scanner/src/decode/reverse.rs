@@ -15,7 +15,7 @@ use std::sync::LazyLock;
 /// useless chunks for the scanner to dedup.
 pub(crate) struct ReverseDecoder;
 
-/// Semantic alias of the shared evasion-decode floor — same value as
+/// Semantic alias of the shared evasion-decode floor, same value as
 /// `caesar::MIN_CAESAR_LEN`, owned once in [`super::util::MIN_EVASION_DECODE_LEN`].
 const MIN_REVERSE_LEN: usize = super::util::MIN_EVASION_DECODE_LEN;
 
@@ -34,7 +34,7 @@ const MIN_REVERSE_PREFIX_LEN: usize = 3;
 
 /// Reverse-prefix automaton for [`looks_reversible`]: an Aho-Corasick over the
 /// reversed known prefixes (each 3+ chars). One linear pass replaces an
-/// `O(prefixes × |candidate|)` fan of `str::contains` calls — the twin of the
+/// `O(prefixes × |candidate|)` fan of `str::contains` calls, the twin of the
 /// caesar decoder's `PLAIN_PREFIX_AC`, built from the same `KNOWN_PREFIXES`
 /// source of truth (ONE-PLACE).
 ///

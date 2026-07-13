@@ -1,5 +1,5 @@
 //! Boundary contract for the two canonical base64-byte predicates in
-//! decode/base64.rs — `is_standard_base64_byte` (RFC 4648 standard alphabet:
+//! decode/base64.rs: `is_standard_base64_byte` (RFC 4648 standard alphabet:
 //! alphanumeric + `+ / =`) and `is_base64_candidate_byte` (standard plus the
 //! url-safe `-` and `_`). Four scanner call sites (three in
 //! context/false_positive.rs, one in suppression/shape/canonical.rs) inlined

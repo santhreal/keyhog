@@ -1,7 +1,7 @@
 //! End-to-end detection-truth through the public scan API (#177/#184).
 //!
 //! Feeds canonical secrets into the REAL compile->scan pipeline and asserts the
-//! EXACT credential value recovered (Law 6 — never `!is_empty`). These target
+//! EXACT credential value recovered (Law 6, never `!is_empty`). These target
 //! strong-anchor NAMED detectors (regex + checksum), which fire independently of
 //! the ML re-scoring layer, so they hold across feature sets. Run without the
 //! `ml` feature while the embedded weights are mid-retrain; they also hold under

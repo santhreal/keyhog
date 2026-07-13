@@ -1,7 +1,7 @@
 # cargo-audit configuration for keyhog.
 #
 # Each advisory in the ignore list has a corresponding rationale
-# block in SECURITY.md under "RustSec Advisory Assessment" — touching
+# block in SECURITY.md under "RustSec Advisory Assessment", touching
 # this list without updating that document will silently weaken our
 # security posture. The matching `--ignore` flags on the
 # `cargo audit` invocation in `.github/workflows/ci.yml` need to

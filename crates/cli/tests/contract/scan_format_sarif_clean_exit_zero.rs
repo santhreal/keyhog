@@ -22,7 +22,7 @@ fn scan_format_sarif_clean_exit_zero() {
     let sarif: serde_json::Value =
         serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("sarif json");
     // Law 6: a clean scan still emits a well-formed SARIF 2.1.0 document with a
-    // run whose results array is present and EMPTY — not merely "runs exists".
+    // run whose results array is present and EMPTY (not merely "runs exists").
     assert_eq!(
         sarif["version"].as_str(),
         Some("2.1.0"),

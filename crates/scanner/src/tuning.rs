@@ -4,13 +4,13 @@
 //! `AtomicUsize` with `usize::MAX` = compiled default; timeout `AtomicU64` with
 //! 0 = compiled default). A differential parity test drives one input down both
 //! code paths by flipping the override ON ITS OWN scanner (through
-//! `keyhog_scanner::testing::set_*` helpers), so two scanners — or two tests
-//! running in parallel — never see each other's overrides.
+//! `keyhog_scanner::testing::set_*` helpers), so two scanners, or two tests
+//! running in parallel (never see each other's overrides).
 //! `.keyhog.toml` `[tuning]` applies explicit production overrides through the
 //! same per-scanner state, so tuning is part of resolved config and autoroute
 //! identity instead of ambient process environment. Recall is identical either
 //! way for every toggle (each selects a performance route or a measurement path,
-//! not a detection set) — see the per-method docs. The toggles span the phase-2
+//! not a detection set), see the per-method docs. The toggles span the phase-2
 //! prefilter, the decode-recursion focus, and the confirmed-pass suffix gate, so
 //! this carries every recall-identical per-scan route lever in one place.
 //! Re-exported through `engine::phase2` (`pub use crate::tuning::*`).
@@ -85,7 +85,7 @@ pub(crate) struct ScannerTuning {
     /// Override for the confirmed-pass suffix gate.
     confirmed_suffix_gate: AtomicU8,
     /// Override for the SWE-101 combined no-candidate prefilter gate (default ON;
-    /// recall-identical — a no-hit is a sound proof nothing can fire). A
+    /// recall-identical, a no-hit is a sound proof nothing can fire). A
     /// differential parity test forces it OFF on one scanner to prove the gate
     /// changes no finding.
     no_candidate_gate: AtomicU8,
@@ -214,7 +214,7 @@ impl ScannerTuning {
 
     /// Override shared-anchor phase-2 localization (test/diagnostic).
     /// `Some(true)` forces it on, `Some(false)` the legacy whole-chunk path,
-    /// `None` the compiled default. Recall-identical — pure performance route.
+    /// `None` the compiled default. Recall-identical (pure performance route).
     pub(crate) fn set_phase2_anchor_mode(&self, mode: Option<bool>) {
         self.phase2_anchor
             .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
@@ -273,7 +273,7 @@ impl ScannerTuning {
     /// Override the prefilter `{N,}`→`{N}` truncation (the lazy-DFA lever).
     /// `Some(true)` forces it on, `Some(false)` off, `None` = compiled default.
     /// Recall-identical (the truncated set is a sound SUPERSET marking gate;
-    /// extraction with the full pattern filters) — proven by
+    /// extraction with the full pattern filters), proven by
     /// `prefilter_truncate_parity`.
     pub(crate) fn set_prefilter_truncate(&self, mode: Option<bool>) {
         self.prefilter_truncate
@@ -283,7 +283,7 @@ impl ScannerTuning {
     // ── Prefix-literal skip gate ───────────────────────────────────────────
 
     /// Override the phase-2 prefix-literal skip gate (test/diagnostic).
-    /// Recall-identical — the gate only skips batches whose patterns ALL provably
+    /// Recall-identical, the gate only skips batches whose patterns ALL provably
     /// require a prefix literal absent from the chunk.
     pub(crate) fn set_phase2_prefix_gate(&self, mode: Option<bool>) {
         self.phase2_prefix_gate
@@ -312,7 +312,7 @@ impl ScannerTuning {
 
     /// Override the confirmed-pass suffix gate (test/diagnostic). `Some(true)`
     /// forces it on, `Some(false)` off, `None` = compiled default (on). Recall is
-    /// identical either way — the gate only skips patterns whose required suffix
+    /// identical either way, the gate only skips patterns whose required suffix
     /// literal is absent (so they cannot match), so it is safe to flip.
     pub(crate) fn set_confirmed_suffix_gate(&self, mode: Option<bool>) {
         self.confirmed_suffix_gate

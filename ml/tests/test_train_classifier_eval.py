@@ -276,7 +276,7 @@ def test_six_scanner_differential_rejects_missing_class(tmp_path):
 
 def test_group_split_forces_contract_files_into_train():
     # Contract fixtures (source_file="contract:<det>") must ALWAYS train and never
-    # enter the held-out — the contract gate tests the full suite, so they are a
+    # enter the held-out, the contract gate tests the full suite, so they are a
     # memorization requirement, not a generalization target.
     files = (
         [f"repo/real_{i}.py" for i in range(10)]

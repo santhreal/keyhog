@@ -13,7 +13,7 @@ use keyhog_scanner::decode::z85_decode;
 use keyhog_scanner::testing::{looks_reversible_for_test, reverse_str_for_test};
 
 // ---------------------------------------------------------------------------
-// Z85 decoder — decode(encode(x)) == x for known vectors
+// Z85 decoder, decode(encode(x)) == x for known vectors
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -34,7 +34,7 @@ fn z85_decodes_all_zero_frame_to_four_zero_bytes() {
 
 #[test]
 fn z85_decodes_max_u32_frame_to_four_ff_bytes() {
-    // "%nSc0" is the encoding of u32::MAX (0xFFFF_FFFF) — the largest value a
+    // "%nSc0" is the encoding of u32::MAX (0xFFFF_FFFF), the largest value a
     // single 5-char Z85 frame may legally represent.
     assert_eq!(z85_decode("%nSc0"), Ok(vec![0xFF, 0xFF, 0xFF, 0xFF]));
 }
@@ -67,14 +67,14 @@ fn z85_empty_input_decodes_to_empty_vec() {
 }
 
 // ---------------------------------------------------------------------------
-// Z85 decoder — negative / boundary / adversarial: must fail closed with Err
+// Z85 decoder, negative / boundary / adversarial: must fail closed with Err
 // ---------------------------------------------------------------------------
 
 #[test]
 fn z85_length_not_multiple_of_five_is_err() {
-    // "Hell" is 4 chars — not a whole frame. Fails closed.
+    // "Hell" is 4 chars (not a whole frame. Fails closed).
     assert_eq!(z85_decode("Hell"), Err(()));
-    // 6 chars is one full frame plus a dangling char — also rejected.
+    // 6 chars is one full frame plus a dangling char (also rejected).
     assert_eq!(z85_decode("HelloW"), Err(()));
 }
 
@@ -96,7 +96,7 @@ fn z85_frame_value_overflowing_u32_is_err() {
 }
 
 // ---------------------------------------------------------------------------
-// Reverse decoder — reverse_str involution and secret recovery
+// Reverse decoder, reverse_str involution and secret recovery
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -128,7 +128,7 @@ fn reverse_str_recovers_a_reversed_aws_key() {
 }
 
 // ---------------------------------------------------------------------------
-// Reverse decoder — looks_reversible admission gate (exact bool)
+// Reverse decoder, looks_reversible admission gate (exact bool)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -168,7 +168,7 @@ fn looks_reversible_run_length_boundary_at_twelve() {
 #[test]
 fn looks_reversible_false_short_run_even_with_reversed_prefix() {
     // Contains "-ks" (reverse of the known prefix "sk-"), so the prefix gate
-    // alone would pass — but the longest alnum run is only 5 (< 12), so gate 1
+    // alone would pass, but the longest alnum run is only 5 (< 12), so gate 1
     // rejects it first. Proves the run gate is independent and enforced.
     assert_eq!(looks_reversible_for_test("x-ksxyz"), false);
 }

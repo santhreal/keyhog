@@ -21,7 +21,7 @@ fn approx(a: f64, b: f64, eps: f64) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// shannon_entropy — known closed-form values
+// shannon_entropy, known closed-form values
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -149,7 +149,7 @@ fn shannon_null_padding_contract_8byte_chunks() {
 }
 
 // ---------------------------------------------------------------------------
-// normalized_entropy — rescaled to 0..1
+// normalized_entropy, rescaled to 0..1
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -185,7 +185,7 @@ fn normalized_is_bounded_unit_interval() {
 }
 
 // ---------------------------------------------------------------------------
-// is_entropy_appropriate — path gating truth table
+// is_entropy_appropriate, path gating truth table
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -311,7 +311,7 @@ fn entropy_appropriate_with_content_lifts_source_with_keyword() {
 }
 
 // ---------------------------------------------------------------------------
-// Threshold constants — documented ordering invariants
+// Threshold constants, documented ordering invariants
 // ---------------------------------------------------------------------------
 
 #[test]

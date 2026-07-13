@@ -9,7 +9,7 @@ fn homoglyph_greek_o_in_sk_live() {
     let matches = scan_text(text, "homoglyph.env");
     assert!(
         matches.iter().any(|m| m.credential.as_ref().contains(tail)),
-        "Greek-o homoglyph sk_live body must not fully evade — tail {tail:?}; matches={:?}",
+        "Greek-o homoglyph sk_live body must not fully evade, tail {tail:?}; matches={:?}",
         matches
             .iter()
             .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))

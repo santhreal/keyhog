@@ -4,10 +4,10 @@
 //! Two structurally different detector classes reach the confirmed-extraction
 //! path through the same `Vec<u64>` trigger bitmap:
 //!
-//!   * **AC-literal detectors** — e.g. `aws-access-key`, whose regex begins with
+//!   * **AC-literal detectors**: e.g. `aws-access-key`, whose regex begins with
 //!     the fixed literal `AKIA`/`ASIA`. The Aho-Corasick literal pass
 //!     (`collect_triggered_patterns_cpu`) sets their bit directly.
-//!   * **No-usable-literal detectors** — e.g. `twilio-auth-token`, a context-
+//!   * **No-usable-literal detectors**: e.g. `twilio-auth-token`, a context-
 //!     anchored `…auth…token…=(hex32)` shape with no distinctive literal prefix
 //!     the AC pass can key on. Their bit is set ONLY by the Hyperscan pass, and
 //!     the SIMD/GPU trigger collectors must OR that into the AC bitmap
@@ -15,9 +15,9 @@
 //!     detectors go silently dead if the union is dropped
 //!     (`SIMD trigger union is recall-load-bearing`, fixed @3ccad545).
 //!
-//! Every assertion pins a concrete value — an exact `usize` word count, an exact
+//! Every assertion pins a concrete value, an exact `usize` word count, an exact
 //! finding count, the exact credential bytes, and the exact byte offset the
-//! credential is reported at — never `is_empty()`/`is_ok()`. Positive, negative
+//! credential is reported at, never `is_empty()`/`is_ok()`. Positive, negative
 //! twin, boundary, and adversarial cases are all covered.
 //!
 //! HS-dependent cases are `#[cfg(feature = "simd")]`: the `twilio-auth-token`
@@ -53,7 +53,7 @@ const AWS_KEY: &str = "AKIAZ7QH4XNB2WKLP3RV";
 // `tests/contracts/twilio-auth-token.toml`): a 32-hex token that fires ONLY
 // once its `account_sid` companion (`AC` + 32 hex) is present within 5 lines.
 // `twilio-auth-token` has no AC-usable literal, so its trigger bit is set only
-// by the Hyperscan pass — the exact union invariant this file locks.
+// by the Hyperscan pass (the exact union invariant this file locks).
 #[cfg(feature = "simd")]
 const TWILIO_TOKEN: &str = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f";
 #[cfg(feature = "simd")]
@@ -67,7 +67,7 @@ fn twilio_pair() -> String {
 }
 
 // ===========================================================================
-// Group A — trigger-bitmap sizing primitives (backend-agnostic, exact usize).
+// Group A (trigger-bitmap sizing primitives (backend-agnostic, exact usize)).
 //
 // `words_for` and `new_trigger_bitmap` are the single owner of the
 // `div_ceil(64)` sizing every trigger bitmap (AC, SIMD, and pooled scratch)
@@ -111,7 +111,7 @@ fn new_trigger_bitmap_length_equals_words_for() {
 
 #[test]
 fn new_trigger_bitmap_is_fully_zeroed() {
-    // Every word of a fresh bitmap is zero — no pattern is spuriously triggered
+    // Every word of a fresh bitmap is zero, no pattern is spuriously triggered
     // before the AC/HS passes run.
     let bitmap = testing::new_trigger_bitmap_for_test(200);
     assert_eq!(bitmap.len(), 4); // 200.div_ceil(64) == 4
@@ -140,7 +140,7 @@ fn words_for_and_bitmap_len_agree_over_range() {
 }
 
 // ===========================================================================
-// Group B — AC-literal trigger path (backend-agnostic; `aws-access-key`).
+// Group B: AC-literal trigger path (backend-agnostic; `aws-access-key`).
 // ===========================================================================
 
 #[test]
@@ -207,7 +207,7 @@ fn false_prefix_storm_confirms_exactly_one_key() {
     // Adversarial: 400 `AKIA_…` decoys (the `_` breaks the `[0-9A-Z]{16}`
     // body, so the regex rejects each) surround ONE real key. The AC pass sets
     // the aws-access-key trigger bit for every `AKIA` occurrence; the confirmed
-    // regex must still emit exactly ONE finding — the real key. A regression
+    // regex must still emit exactly ONE finding, the real key. A regression
     // that emitted a finding per prefix-hit (or dropped the trigger) fails here.
     let mut text = String::with_capacity(16_384);
     for i in 0..200 {
@@ -270,7 +270,7 @@ fn clean_region_is_not_triggered() {
 }
 
 // ===========================================================================
-// Group C — Hyperscan-only trigger path + AC∪HS union (`twilio-auth-token`).
+// Group C: Hyperscan-only trigger path + AC∪HS union (`twilio-auth-token`).
 // ===========================================================================
 
 #[cfg(feature = "simd")]
@@ -323,7 +323,7 @@ fn twilio_auth_token_reported_at_credential_offset() {
 fn twilio_missing_companion_is_suppressed() {
     // Negative twin: the auth token WITHOUT its `account_sid` companion. The
     // required-companion gate suppresses the finding even though the HS trigger
-    // fires — proving the trigger union does not overreach into a false positive.
+    // fires (proving the trigger union does not overreach into a false positive).
     let text = format!("TWILIO_AUTH_TOKEN={TWILIO_TOKEN}\n");
     let chunk = make_chunk(&text, "filesystem", "twilio-lonely.env");
 
@@ -419,7 +419,7 @@ fn union_holds_on_explicit_simdcpu_backend() {
 #[test]
 fn union_scan_is_deterministic_across_two_runs() {
     // Running the same union chunk twice yields byte-identical
-    // (detector_id, credential, offset) triples — no HS/AC iteration-order or
+    // (detector_id, credential, offset) triples, no HS/AC iteration-order or
     // trigger-bitmap nondeterminism.
     let text = format!("aws_access_key_id = {AWS_KEY}\n{}", twilio_pair());
     let chunk = make_chunk(&text, "filesystem", "union-determinism.env");

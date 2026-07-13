@@ -1,4 +1,4 @@
-//! Regression coverage for the reverse decoder's *pipeline* behaviour — how it
+//! Regression coverage for the reverse decoder's *pipeline* behaviour, how it
 //! interacts with the BFS decode-through depth cap, the `MIN_REVERSE_LEN` gate,
 //! and its own anti-recursion guard (`source_type.contains("/reverse")`).
 //!
@@ -10,7 +10,7 @@
 //!
 //! HOST-INDEPENDENCE: the reverse decoder and the decode pipeline are pure
 //! scalar CPU code with no accelerator dependency, and `CompiledScanner::scan`
-//! always has the CPU path available — so every contract below is fully
+//! always has the CPU path available, so every contract below is fully
 //! host-independent (no Hyperscan/SIMD/GPU assumption).
 
 use keyhog_core::{Chunk, ChunkMetadata};
@@ -92,7 +92,7 @@ fn looks_reversible_false_for_alpha_prose_without_reversed_prefix() {
 
 #[test]
 fn looks_reversible_false_when_alnum_run_too_short_despite_reversed_prefix() {
-    // Contains "AIKA" (reverse of "AKIA"), so gate 2 alone would pass — but the
+    // Contains "AIKA" (reverse of "AKIA"), so gate 2 alone would pass, but the
     // longest reversed-direction alnum run is only 4 ("AIKA"), far below the
     // 12-char floor, so gate 1 rejects first. Proves the run gate is enforced
     // independently of the prefix gate.
@@ -125,7 +125,7 @@ fn decode_chunk_recovers_reversed_secret_with_exact_spliced_bytes() {
     let recovered: &str = &rev[0].data;
     assert_eq!(recovered, "token = \"AKIAQYLPMN5HFIQR7XYA\"");
     assert!(recovered.contains(AWS_SECRET));
-    // The reversed form is gone — it was decoded, not merely copied through.
+    // The reversed form is gone (it was decoded, not merely copied through).
     assert!(!recovered.contains(AWS_REVERSED));
     // Provenance records the reverse decoder.
     assert_eq!(rev[0].metadata.source_type.as_ref(), "regr/reverse");
@@ -167,7 +167,7 @@ fn decode_chunk_never_double_reverses_its_own_output() {
 #[test]
 fn decode_chunk_reverse_guard_blocks_when_root_already_reverse_sourced() {
     // A chunk whose provenance already contains `/reverse` (as any descendant of
-    // a reverse output would) must NOT be reverse-decoded again — the guard
+    // a reverse output would) must NOT be reverse-decoded again, the guard
     // returns empty for it and, because every descendant inherits the marker,
     // no `/reverse`-terminating chunk is ever produced in this BFS.
     let input = format!("token = \"{AWS_REVERSED}\"");
@@ -252,7 +252,7 @@ fn full_scan_finds_forward_aws_key_directly() {
 #[test]
 fn full_scan_surfaces_reversed_aws_key_as_forward_credential() {
     // Reverse-evasion: the on-disk text holds the REVERSED key; the decode
-    // pipeline must recover it so the scanner reports the FORWARD credential —
+    // pipeline must recover it so the scanner reports the FORWARD credential 
     // and never the reversed literal.
     let scanner = compile_scanner();
     let chunk = chunk_with(&format!("token = \"{AWS_REVERSED}\""), "evasion");
@@ -273,7 +273,7 @@ fn full_scan_surfaces_reversed_aws_key_as_forward_credential() {
     // evasion target): aws-access-key requires the literal AKIA/ASIA prefix,
     // which the reversed form lacks, so it fires only on the RECOVERED forward
     // key. (A generic/high-entropy detector may legitimately flag the 20-char
-    // reversed literal on its own bytes — that is a separate, correct finding
+    // reversed literal on its own bytes, that is a separate, correct finding
     // and not the reverse-evasion path under test here.)
     let reports_reversed_as_aws = matches
         .iter()

@@ -33,7 +33,7 @@ reason = "Linux kernel m52xxacr.h dogfood: ACR_USER is a C access-control regist
 [[evasion]]
 text = "ACR_TOKEN=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrcDRxeDcifQ"
 credential = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrcDRxeDcifQ"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

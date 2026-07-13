@@ -1,6 +1,6 @@
 //! LANE-4 detection-truth: every detector that ships an inline `[[detector.tests]]`
 //! fixture must (a) FIRE on its `test_positive` under its OWN detector id, and
-//! (b) NOT fire under its own id on its `test_negative` twin — driven through
+//! (b) NOT fire under its own id on its `test_negative` twin, driven through
 //! the REAL `CompiledScanner::scan` production path, asserting the EXACT
 //! detector id (Law 6, never `!is_empty`).
 //!
@@ -10,12 +10,12 @@
 //! (Tier-B self-test data) and was only pinned by `all_detectors_self_validate`
 //! at the structural level ("has a contract OR is deferred"). This suite pins
 //! the inline fixtures' SCAN BEHAVIOUR directly: the positive the author wrote
-//! into the detector MUST surface that detector, and the negative MUST NOT — so
+//! into the detector MUST surface that detector, and the negative MUST NOT, so
 //! a regex edit that breaks the author's own example flips a named case red.
 //!
 //! Plus a per-detector REGISTRY-CARDINALITY lane: every one of the ~900
 //! embedded detector ids must be present, exactly once, in the scanner the
-//! binary actually compiles — a per-id assertion (the registry truth matrix
+//! binary actually compiles, a per-id assertion (the registry truth matrix
 //! pins only aggregate counts), so a single dropped/shadowed id is caught by
 //! name.
 //!
@@ -40,7 +40,7 @@ struct InlineCase {
 }
 
 /// Read every `detectors/*.toml`, returning the id + inline `[[detector.tests]]`
-/// fixtures for the detectors that ship them. Fails LOUDLY on a parse error —
+/// fixtures for the detectors that ship them. Fails LOUDLY on a parse error 
 /// a malformed detector TOML is a source bug, never a silently-skipped file
 /// (Law 10).
 fn load_inline_cases() -> Vec<InlineCase> {
@@ -95,7 +95,7 @@ fn make_chunk(text: &str) -> Chunk {
     }
 }
 
-/// FLOOR: the inline-test feature is actually wired — at least the known
+/// FLOOR: the inline-test feature is actually wired, at least the known
 /// authored set ships. If this collapses to 0 the per-case assertions below
 /// pass vacuously, so pin a concrete floor (11 detectors ship inline tests as
 /// of this writing; new ones only raise it).
@@ -106,7 +106,7 @@ fn inline_test_fixtures_are_present() {
     assert!(
         with_positive >= 11,
         "expected >= 11 detectors shipping an inline test_positive, found {with_positive} \
-         — the inline `[[detector.tests]]` self-test corpus shrank (or the loader broke)"
+The inline `[[detector.tests]]` self-test corpus shrank (or the loader broke)"
     );
 }
 
@@ -158,7 +158,7 @@ fn every_inline_positive_fires_its_own_detector() {
             continue;
         };
         // Isolate cross-file fragment-reassembly state between fixtures (the
-        // scanner accumulates it across scan() calls — see contracts_runner).
+        // scanner accumulates it across scan() calls (see contracts_runner)).
         scanner.clear_fragment_cache();
         let matches = scanner.scan(&make_chunk(positive));
         let fired = matches
@@ -186,7 +186,7 @@ fn every_inline_positive_fires_its_own_detector() {
     );
 }
 
-/// Every inline `test_negative` MUST NOT fire its own detector — the author's
+/// Every inline `test_negative` MUST NOT fire its own detector, the author's
 /// negative twin proves the regex isn't over-broad. (Another detector may fire
 /// on the same text; we only assert THIS detector stays silent, mirroring the
 /// contract-runner negative semantics.)

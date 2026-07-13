@@ -125,7 +125,7 @@ fn slack_message_with_secret_surfaces_exact_channel_and_ts_metadata() {
 
 /// A thread reply returned inline in `conversations.history` (extra
 /// `thread_ts` / `reply_count` / `parent_user_id` fields present) is walked and
-/// scanned with *its own* timestamp — unknown JSON fields are tolerated, the
+/// scanned with *its own* timestamp, unknown JSON fields are tolerated, the
 /// reply is not dropped, and it shares the parent's channel chunk.
 #[cfg(feature = "slack")]
 #[test]
@@ -199,7 +199,7 @@ fn slack_empty_channel_yields_zero_chunks_and_no_error() {
 }
 
 /// Adversarial: a message with no `user` field still surfaces its text, but
-/// WITHOUT a `[USER ..]` marker — the extractor must not fabricate provenance
+/// WITHOUT a `[USER ..]` marker, the extractor must not fabricate provenance
 /// nor drop the anonymous message.
 #[cfg(feature = "slack")]
 #[test]

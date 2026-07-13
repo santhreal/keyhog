@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "infobip=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "infobip=52160EXAMPLEEXAMPLEdba23"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "export infobip=521605cd-2e1a-7f93-dc93-62773b2dba23"
 credential = "521605cd-2e1a-7f93-dc93-62773b2dba23"
-reason = "Adversarial env_export envelope — credential must still surface under this detector."
+reason = "Adversarial env_export envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

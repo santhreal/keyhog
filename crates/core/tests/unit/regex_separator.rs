@@ -10,8 +10,8 @@ fn canon(s: &str) -> String {
 
 #[test]
 fn every_corpus_separator_form_collapses_to_canonical() {
-    // The 17 resolved forms enumerated across the shipped detector corpus —
-    // clean and buggy alike — must all become exactly the one canonical class.
+    // The 17 resolved forms enumerated across the shipped detector corpus 
+    // clean and buggy alike (must all become exactly the one canonical class).
     let want = format!("api{CANONICAL_SEPARATOR}key");
     for form in [
         "[_-]?",
@@ -42,7 +42,7 @@ fn every_corpus_separator_form_collapses_to_canonical() {
 
 #[test]
 fn pure_whitespace_classes_are_left_alone() {
-    // Ambiguous with value-assignment spacing (`Key[\s]*:`) — must NOT be
+    // Ambiguous with value-assignment spacing (`Key[\s]*:`), must NOT be
     // touched, and must keep its original (here unbounded) quantifier.
     for s in ["Key[\\s]*:", "Key[\\s]:", "header[\\s]*=[\\s]*(.+)"] {
         assert_eq!(canon(s), s, "pure-whitespace {s:?} must be untouched");
@@ -53,8 +53,8 @@ fn pure_whitespace_classes_are_left_alone() {
 fn non_separator_classes_are_untouched() {
     for s in [
         "[a-z]+",
-        "([A-Za-z0-9_\\-]{32,})", // token body — has letters/digits
-        "[=:\\s\"']+",            // value assignment — has = : " '
+        "([A-Za-z0-9_\\-]{32,})", // token body, has letters/digits
+        "[=:\\s\"']+",            // value assignment, has = : " '
         "\\b(?:avaya)\\b",        // no class at all
         "[0-9a-f]{32}",           // hex body
         "(?:KEY|key)[\\d]{4}",    // \d is not a separator

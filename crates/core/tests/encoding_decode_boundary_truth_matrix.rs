@@ -8,7 +8,7 @@
 //! exhaustively round-trips the decoder against an independently-implemented,
 //! trivially-auditable RFC-4648 reference ENCODER (below) over every payload
 //! length 0..=N and a deterministic pseudo-random byte stream, then asserts the
-//! decoded bytes are byte-for-byte the original payload — the *strongest*
+//! decoded bytes are byte-for-byte the original payload, the *strongest*
 //! oracle for "the wave-1 base64-truncation fix stays fixed": if the decoder
 //! ever drops a tail byte again, a specific payload length flips red with the
 //! exact lost bytes named.
@@ -22,7 +22,7 @@
 use keyhog_core::decode_standard_base64;
 
 /// Trivially-auditable RFC-4648 standard-alphabet base64 ENCODER. ~20 lines,
-/// no `=`-truncation subtlety — it is the independent oracle the decoder is
+/// no `=`-truncation subtlety, it is the independent oracle the decoder is
 /// differential-tested against. Always emits canonical trailing padding.
 fn encode_standard_base64_reference(data: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -52,7 +52,7 @@ fn encode_standard_base64_reference(data: &[u8]) -> String {
     out
 }
 
-/// Deterministic xorshift64* pseudo-random byte stream (seeded) — gives a
+/// Deterministic xorshift64* pseudo-random byte stream (seeded), gives a
 /// reproducible, non-trivial byte distribution (so we exercise every 6-bit
 /// alphabet symbol and every padding remainder class) without an RNG crate or
 /// non-determinism. Same seed ⇒ same corpus on every run / host / CI.
@@ -90,7 +90,7 @@ fn reference_encoder_matches_rfc4648_test_vectors() {
         assert_eq!(
             encode_standard_base64_reference(raw),
             *expected,
-            "reference encoder disagrees with RFC-4648 §10 on {raw:?} — the \
+            "reference encoder disagrees with RFC-4648 §10 on {raw:?}, the \
              differential oracle is broken, fix the test encoder first"
         );
     }
@@ -102,7 +102,7 @@ fn reference_encoder_matches_rfc4648_test_vectors() {
 /// original payload byte-for-byte. 769 distinct round-trip cases, each covering
 /// a different `len % 3` padding-remainder class and a different final-quad
 /// shape. A tail-truncation regression (the wave-1 bug) drops the last 1-2
-/// bytes — caught here as a length/byte mismatch naming the exact payload.
+/// bytes (caught here as a length/byte mismatch naming the exact payload).
 #[test]
 fn every_payload_length_round_trips_to_exact_bytes() {
     let mut rng = Xorshift64(0x9E3779B97F4A7C15);
@@ -116,7 +116,7 @@ fn every_payload_length_round_trips_to_exact_bytes() {
         assert_eq!(
             decoded.len(),
             len,
-            "len {len}: decoded {} bytes, expected {len} — TAIL TRUNCATION \
+            "len {len}: decoded {} bytes, expected {len}. TAIL TRUNCATION \
              regression (the wave-1 base64 fix). encoded={encoded:?}",
             decoded.len()
         );
@@ -157,7 +157,7 @@ fn unpadded_form_round_trips_to_exact_bytes() {
 /// Interior-`=` rejection over a generated matrix: for every well-formed
 /// encoding of length >= 8, split it before each interior position and inject a
 /// single `=`, then a data char. EVERY such mutation must be REJECTED with the
-/// exact "data after padding" message — the wave-1 silent-truncation bug
+/// exact "data after padding" message, the wave-1 silent-truncation bug
 /// decoded the prefix and dropped the suffix. Thousands of mutation cases.
 #[test]
 fn interior_padding_followed_by_data_is_always_rejected() {
@@ -241,7 +241,7 @@ fn out_of_alphabet_bytes_are_rejected_not_skipped() {
 }
 
 /// Truncated final quad (a lone leftover char, `idx % 4 == 1`) is impossible to
-/// encode and must be rejected — over a generated spread of base lengths. A
+/// encode and must be rejected, over a generated spread of base lengths. A
 /// lone trailing char carries < 6 bits of a byte; accepting it would fabricate
 /// a byte. Pins the "truncated base64" / unalignable arms.
 #[test]
@@ -308,7 +308,7 @@ fn oversize_input_is_rejected_at_the_exact_boundary() {
     assert_eq!(
         max_standard_base64_input_bytes,
         16 * 1024 * 1024,
-        "the standard-base64 input cap changed — update the DoS-bound contract \
+        "the standard-base64 input cap changed, update the DoS-bound contract \
          and the scanner's matching limit together"
     );
 }

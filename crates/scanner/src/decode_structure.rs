@@ -16,8 +16,8 @@
 //!     Mach-O/PE/zstd/xz/bzip2/7z/SQLite/Java-class header IS that format. Over
 //!     3000 random 24-48 byte secrets, ZERO carry any of the >= 3-byte headers at
 //!     offset 0 (they are 3-8 specific bytes out of 256^k). The only 2-byte
-//!     magics ('MZ'/PE, 0x1f8b/gzip) are too weak on the prefix alone — a
-//!     printable 'MZ' can begin a real secret — so they are confirmed by the
+//!     magics ('MZ'/PE, 0x1f8b/gzip) are too weak on the prefix alone, a
+//!     printable 'MZ' can begin a real secret, so they are confirmed by the
 //!     format's internal structure (`is_pe_image` / `is_gzip_stream`) before they
 //!     may mark a candidate as binary.
 //!   * **Full protobuf-wire parse.** Bytes that parse end-to-end as a protobuf
@@ -142,7 +142,7 @@ thread_local! {
 /// `suppression::shape::looks_like_standard_base64_blob` (40..=80,
 /// diversity 32). The emit/drop scanner paths need a stricter admit (BOTH
 /// `+` AND `/`), so they share the separate [`is_byte_distribution_base64_blob`]
-/// skeleton instead of this one — see that function for why the two admit
+/// skeleton instead of this one, see that function for why the two admit
 /// policies cannot be one over-parameterised gate.
 #[must_use]
 pub(crate) fn is_random_base64_blob(
@@ -212,7 +212,7 @@ pub(crate) fn looks_like_uniform_base64_blob(value: &str) -> bool {
 /// Why a separate canonical instead of a parameter on [`is_random_base64_blob`]:
 /// the two have *mutually exclusive* admit policies. `is_random_base64_blob`
 /// powers the *penalty* path and admits on `+`-OR-`/` OR padding OR a high
-/// alphanumeric-diversity wedge — tuned to slam pure-alphanumeric blobs hard.
+/// alphanumeric-diversity wedge (tuned to slam pure-alphanumeric blobs hard).
 /// This gate powers the *emit drop* and must NOT bite restricted-secret-key
 /// positives that carry at most one punctuation mark, so it has no diversity
 /// admit and requires BOTH punctuation marks. Real provider tokens are pure
@@ -403,8 +403,8 @@ fn magic_format(b: &[u8]) -> Option<&'static str> {
 
 /// A real PE image: the 'MZ' DOS header whose `e_lfanew` (u32 LE at offset 0x3C)
 /// points at the `PE\0\0` NT signature inside the buffer. A bare 'MZ' prefix is
-/// only ~1/65536 per candidate — and, being two printable ASCII letters, can
-/// begin a genuine base64-decoded secret — so it must not drive suppression
+/// only ~1/65536 per candidate, and, being two printable ASCII letters, can
+/// begin a genuine base64-decoded secret, so it must not drive suppression
 /// alone. A short high-entropy secret cannot satisfy this structural check.
 fn is_pe_image(b: &[u8]) -> bool {
     if !b.starts_with(b"MZ") || b.len() < 0x40 {

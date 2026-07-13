@@ -5,7 +5,7 @@
 //! anchored verification) both resolve the credential group, and both used to
 //! open-code the same fallback: when the configured group looks like a variable
 //! name, scan the other capture groups for a value-shaped sibling. Two copies of
-//! a detection-load-bearing heuristic is a drift hazard — a tweak to one path's
+//! a detection-load-bearing heuristic is a drift hazard, a tweak to one path's
 //! notion of "value-shaped" silently diverges recall between the whole-chunk and
 //! anchored paths. It is now one `resolve_value_shaped_group` helper.
 //!
@@ -16,7 +16,7 @@
 //!     contains some other byte, e.g. `-` `/` `.` `+`) AND is at least 8 bytes.
 //!
 //! This drives the shared helper through a real compiled regex and pins the
-//! actual resolved byte ranges (Law 6 — real values, not shape).
+//! actual resolved byte ranges (Law 6 (real values, not shape)).
 
 use keyhog_scanner::testing::resolve_value_shaped_group_for_test as resolve;
 
@@ -125,7 +125,7 @@ proptest! {
     }
 
     /// A var-name group whose only sibling is ALSO variable-name shaped (not
-    /// value-shaped) keeps the original group — no spurious move.
+    /// value-shaped) keeps the original group (no spurious move).
     #[test]
     fn no_value_shaped_sibling_keeps_original(
         tok1 in "[A-Za-z0-9_]{1,20}",

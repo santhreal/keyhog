@@ -59,11 +59,11 @@ fn parse_config_decode_depth(errors: &mut Vec<String>, field: &str, depth: usize
 /// lives in exactly one validator). Renders the TOML f64 to its string form, runs
 /// the parser, and on rejection pushes a `field = value: <reason>` config error
 /// (returning None so the caller leaves the arg at its default). This is the ONE
-/// body for `min_confidence` / `ml_weight` / `ml_threshold` — the numeric knobs
+/// body for `min_confidence` / `ml_weight` / `ml_threshold`: the numeric knobs
 /// settable on BOTH the flag AND the `[scan]`/top-level TOML; each wrapper supplies
 /// only its parser. Without this routing, a config value the CLI fails closed on
 /// (e.g. `min_confidence = 5.0`) was applied un-validated and silently broke
-/// scanning (zero recall / distorted confidence) — a Law-10 silent failure.
+/// scanning (zero recall / distorted confidence) (a Law-10 silent failure).
 fn parse_config_f64(
     errors: &mut Vec<String>,
     field: &str,
@@ -213,11 +213,11 @@ fn config_fast_noop_fields(config: &ConfigFile) -> Vec<&'static str> {
 /// operator left it unset (CLI overrides TOML). ONE home for the reject-0 +
 /// CLI-precedence guard that `threads` / `reader_threads` / `fused_batch` /
 /// `fused_depth` / `per_chunk_timeout_ms` / `min_secret_len` all share on BOTH
-/// the flat and `[scan]` config forms — `label` carries the `[scan].`-prefix
+/// the flat and `[scan]` config forms: `label` carries the `[scan].`-prefix
 /// distinction, and the generic `T` covers the `usize` knobs plus the `u64`
 /// `per_chunk_timeout_ms`. Before this the guard was pasted 12 times, which is
 /// exactly how `threads` silently diverged from `reader_threads` (missing its
-/// reject-0 check) until RECONCILE#14 — one owner makes that class impossible.
+/// reject-0 check) until RECONCILE#14 (one owner makes that class impossible).
 fn apply_positive_int_field<T: Copy + PartialEq + From<u8>>(
     config_errors: &mut Vec<String>,
     target: &mut Option<T>,

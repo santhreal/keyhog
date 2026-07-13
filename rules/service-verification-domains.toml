@@ -1,6 +1,6 @@
 # Tier-B verification-domain allowlist: `service` -> apex domains a credential
 # for that service MAY be sent to at verify time (crates/verifier). A service NOT
-# in this map (and without a detector-level `allowed_domains`) is REFUSED — every
+# in this map (and without a detector-level `allowed_domains`) is REFUSED, every
 # entry is a license to send a secret somewhere, so add a domain only after
 # confirming it belongs to the service owner. Two services are intentionally
 # EMPTY (`jwt`, `generic`): structural-only, never network-verified. Editing this

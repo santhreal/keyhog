@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-# timezone.utc (not datetime.UTC, which is 3.11+) — macOS ships Python 3.9.
+# timezone.utc (not datetime.UTC, which is 3.11+) (macOS ships Python 3.9).
 from datetime import datetime, timezone
 from typing import Protocol
 

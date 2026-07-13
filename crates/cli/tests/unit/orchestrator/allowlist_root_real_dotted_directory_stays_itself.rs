@@ -4,7 +4,7 @@ use keyhog::testing::{CliTestApi as _, API};
 /// named `repo.git`, a Python `venv.d`, …) must anchor the allowlist at ITSELF.
 /// The `is_dir()` filesystem probe in `allowlist_root` is LOAD-BEARING: the
 /// non-existent-path shape heuristic treats ANY dotted path that has a parent as
-/// a file — `(has_extension, Some(parent)) => parent` — so without the real-FS
+/// a file: `(has_extension, Some(parent)) => parent`: so without the real-FS
 /// check a dotted directory would wrongly anchor `.keyhogignore` at its PARENT,
 /// loading a sibling tree's allowlist over the scanned directory's own. The
 /// existing `allowlist_root_*` tests use only NON-existent paths (the heuristic

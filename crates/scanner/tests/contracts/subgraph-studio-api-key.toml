@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "SUBGRAPH_STUDIO=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "SUBGRAPH_STUDIO=3e3ccEXAMPLEEXAMPLE51d13"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "export SUBGRAPH_STUDIO=3e3ccac4f51f88a6dd87cafaf4951d13"
 credential = "3e3ccac4f51f88a6dd87cafaf4951d13"
-reason = "Adversarial env_export envelope — credential must still surface under this detector."
+reason = "Adversarial env_export envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

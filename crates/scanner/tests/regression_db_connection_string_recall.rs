@@ -1,10 +1,10 @@
 //! #106 recall lock: database connection-string credentials across the wire
-//! formats real apps emit them in — URI authority (postgres/mysql/mongodb+srv/
+//! formats real apps emit them in. URI authority (postgres/mysql/mongodb+srv/
 //! redis/amqp), JDBC query params, ADO.NET / libpq / ODBC key-value DSNs, and
 //! framework config keys. keyhog already covers these through `url-credentials`
 //! (any-scheme userinfo password) and `generic-password` (the `password=`/
 //! `Password=`/`Pwd=` assignment), so this is a recall-assurance lock that pins
-//! every form keeps surfacing — never `!is_empty`, always the exact password
+//! every form keeps surfacing, never `!is_empty`, always the exact password
 //! bytes via the on-disk scanner.
 //!
 //! Each password is a 14-20 char alphanumeric token (no `.`) so it clears both
@@ -18,7 +18,7 @@ use keyhog_scanner::CompiledScanner;
 use std::sync::OnceLock;
 use support::contracts::{make_chunk, scanner};
 
-/// One shared compiled scanner for the whole file — `scanner()` recompiles all
+/// One shared compiled scanner for the whole file: `scanner()` recompiles all
 /// detectors per call, so caching keeps the suite fast. `CompiledScanner` is
 /// `Send + Sync` (the CLI holds it behind an `Arc`); the harness runs these
 /// `#[test]`s serially (`--test-threads=1`) so the per-scan fragment-cache clear
@@ -28,7 +28,7 @@ fn shared() -> &'static CompiledScanner {
     SCANNER.get_or_init(scanner)
 }
 
-/// True iff scanning `text` surfaces `password` — i.e. some finding's credential
+/// True iff scanning `text` surfaces `password`: i.e. some finding's credential
 /// CONTAINS it. Connection-string detectors (postgres/mysql/redis/…) capture the
 /// WHOLE URL as the credential, so the embedded password is recoverable from
 /// that finding even when a service-anchored whole-URL match outranks the

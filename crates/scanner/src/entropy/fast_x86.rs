@@ -7,7 +7,7 @@ use crate::entropy::fast::{entropy_from_histogram, histogram_8way};
 ///
 /// The `#[target_feature(enable = "avx2,fma")]` attribute is retained so this
 /// stays a distinct dispatch slot, but the reduction is no longer a vectorized
-/// polynomial-log2 (which diverged from the scalar reference by ~5e-3 bits/byte —
+/// polynomial-log2 (which diverged from the scalar reference by ~5e-3 bits/byte 
 /// see [`entropy_from_histogram`]); the 256-bin reduction is negligible and now
 /// bit-identical to every other path.
 ///

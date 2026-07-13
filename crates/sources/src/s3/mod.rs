@@ -374,7 +374,7 @@ fn fetch_object_chunk(
     max_object_bytes: u64,
 ) -> Result<Option<Chunk>, SourceError> {
     if object_size > max_object_bytes {
-        // Law 10: an over-cap object is dropped from the scan — an UNKNOWN, not a
+        // Law 10: an over-cap object is dropped from the scan, an UNKNOWN, not a
         // clean object. The old `tracing::debug!` was invisible at default
         // verbosity, so a secret in an oversized object vanished with no trace.
         // Surface loudly + count it (as over-max-size, the matching category the

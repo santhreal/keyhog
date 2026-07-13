@@ -11,7 +11,7 @@
 //! detector spec or a malicious upstream verification response could otherwise
 //! stuff unbounded metadata into the long-lived in-memory cache, multiplied
 //! across every cached finding. The truncation routine
-//! (`truncate_to_char_boundary`) is ALSO a panic-safety primitive — slicing a
+//! (`truncate_to_char_boundary`) is ALSO a panic-safety primitive, slicing a
 //! `&str` at a non-char boundary panics, so a multibyte value cut at the byte
 //! cap must walk back to a valid boundary.
 //!
@@ -55,7 +55,7 @@ fn many_entries(n: usize, value: &str) -> HashMap<String, String> {
 }
 
 // ===========================================================================
-// GROUP A — entry-count cap (16).
+// GROUP A (entry-count cap (16)).
 // ===========================================================================
 
 #[test]
@@ -118,7 +118,7 @@ fn entry_cap_and_value_cap_apply_together() {
 }
 
 // ===========================================================================
-// GROUP B — value-byte cap (256).
+// GROUP B (value-byte cap (256)).
 // ===========================================================================
 
 #[test]
@@ -161,7 +161,7 @@ fn truncated_value_keeps_the_head_not_the_tail() {
 }
 
 // ===========================================================================
-// GROUP C — key-byte cap (64).
+// GROUP C (key-byte cap (64)).
 // ===========================================================================
 
 #[test]
@@ -198,7 +198,7 @@ fn oversized_key_and_value_capped_independently() {
 }
 
 // ===========================================================================
-// GROUP D — multibyte char-boundary safety (truncate must not split a char,
+// GROUP D, multibyte char-boundary safety (truncate must not split a char,
 //           and must not panic). UTF-8 widths: é=2, €=3, 😀=4 bytes.
 // ===========================================================================
 
@@ -274,7 +274,7 @@ fn three_byte_key_truncation_walks_back_to_boundary() {
 }
 
 // ===========================================================================
-// GROUP E — round-trip integrity of the common (non-oversized) path + replace.
+// GROUP E (round-trip integrity of the common (non-oversized) path + replace).
 // ===========================================================================
 
 #[test]

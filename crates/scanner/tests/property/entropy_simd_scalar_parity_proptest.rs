@@ -3,7 +3,7 @@
 //! The entropy reduction has a scalar reference (`shannon_entropy_scalar`) and
 //! AVX2 / AVX-512 / NEON specializations. They all count through the one
 //! `histogram_8way` null contract, but each SIMD path specializes the 256-bin
-//! log2 summation — the exact place a floating-point or formula divergence can
+//! log2 summation, the exact place a floating-point or formula divergence can
 //! creep in. Law 8 makes SIMD/scalar parity non-optional: a fast path that
 //! disagrees with the scalar oracle is a correctness bug, not an acceptable
 //! speed trade. The two branches of `entropy_from_histogram` (KH-28 table
@@ -11,7 +11,7 @@
 //!
 //! Each `#[target_feature]` path is invoked only when the running CPU actually
 //! carries its features (the `*_if_supported` accessors return `None`
-//! otherwise), so this never calls an illegal intrinsic — but on a CPU that
+//! otherwise), so this never calls an illegal intrinsic, but on a CPU that
 //! DOES carry AVX2/AVX-512 the parity assertion runs for real (no silent skip).
 
 #[cfg(target_arch = "x86_64")]
@@ -129,7 +129,7 @@ proptest! {
     }
 
     /// The KH-28 small-input branch (`active_len <= 255`, table-lookup formula)
-    /// is the regime most likely to diverge from a naive per-symbol SIMD sum —
+    /// is the regime most likely to diverge from a naive per-symbol SIMD sum 
     /// sweep it densely.
     #[test]
     fn simd_matches_scalar_on_small_inputs(bytes in prop::collection::vec(any::<u8>(), 0..=255)) {

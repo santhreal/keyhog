@@ -102,7 +102,7 @@ fn dogfood_captures_redacted_event() {
     let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
     // Capture via a THREAD-LOCAL scoped telemetry trace, not the process-global
     // enable_dogfood()/drain_events() path. Under parallel test execution another
-    // thread's scan can record — and dedup, by credential hash — the SAME EXAMPLE
+    // thread's scan can record, and dedup, by credential hash, the SAME EXAMPLE
     // credential into the global buffer inside this test's enable→scan→drain
     // window, so the global path is racy here (it passes single-threaded, flakes
     // in the full parallel run). The scoped trace is per-thread, so this test
@@ -115,9 +115,9 @@ fn dogfood_captures_redacted_event() {
     // (`keyhog_core::redact`), which scales the retained edge to credential length
     // (`(len/8).clamp(1,4)`): the 20-char AWS EXAMPLE key keeps 2 leading + 2
     // trailing bytes around an ellipsis (`AK...LE`), NOT a fixed 4+4 prefix. Pin
-    // to the canonical redaction of the credential this test planted so that —
+    // to the canonical redaction of the credential this test planted so that 
     // even if another test's EXAMPLE suppression interleaves in the process-global
-    // buffer under parallel execution — we assert against our own event.
+    // buffer under parallel execution (we assert against our own event).
     let planted = concat!("AK", "IAIOSFODNN7EXAMPLE");
     let expected_redaction = keyhog_core::redact(planted).into_owned();
     let redacted = events
@@ -139,7 +139,7 @@ fn dogfood_captures_redacted_event() {
         !redacted.contains(planted),
         "redacted output must NOT contain the full credential: {redacted}"
     );
-    // Shape: scaled edge bytes around an ellipsis — provider-identifying prefix,
+    // Shape: scaled edge bytes around an ellipsis, provider-identifying prefix,
     // a `...` separator, and trailing bytes for at-a-glance verification.
     assert!(
         redacted.starts_with("AK") && redacted.contains("...") && redacted.ends_with("LE"),
@@ -321,7 +321,7 @@ fn null_padded_binaryish_chunk_is_safe() {
 
 /// KH-L-0409: the `process_match` engine pre-cascade gates (probabilistic,
 /// entropy floor, camel, checksum, hex-fragment, FP-context, …) used to drop
-/// candidates SILENTLY — invisible to `--dogfood`, which conflated them with
+/// candidates SILENTLY, invisible to `--dogfood`, which conflated them with
 /// "never reached the engine" and blocked the recall decomposition. A
 /// generic-* detector matching a low-diversity value is rejected by the
 /// generic-only probabilistic gate (process.rs, BEFORE the suppression

@@ -3,7 +3,7 @@
 # CLAUDE.md "per-rule directory contract" instantiated as a single
 # TOML. The shared runner (crates/scanner/tests/contracts/runner.rs)
 # enforces every section. A detector without a green contract isn't
-# legendary — adding a new entry to the corpus or detector regex
+# legendary: adding a new entry to the corpus or detector regex
 # WITHOUT updating this file fails the runner.
 #
 # Section semantics:
@@ -19,7 +19,7 @@ schema_version = 1
 detector_id = "aws-access-key"
 service = "aws"
 severity = "critical"
-# README claim (top-level scalar — see every_contract_readme_claim_present):
+# README claim (top-level scalar, see every_contract_readme_claim_present):
 readme_claim = "aws-access-key"
 
 # ---- POSITIVES (recall) ---------------------------------------------
@@ -108,7 +108,7 @@ reason = "Public detector-corpus AWS key shape from https://github.com/trufflese
 [perf]
 fixture_bytes = 4096
 max_microseconds = 15000
-note = "Single 4 KiB fixture, one planted key, full 894-detector pipeline. The pipeline is built for batch throughput, not single-file latency — a 4 KiB scan pays the full per-call orchestration cost. Steady-state baseline ~6 ms on a 5090; budget set with 2.5× headroom. Tighten when scan_one_chunk gets a fast path for sub-page inputs."
+note = "Single 4 KiB fixture, one planted key, full 894-detector pipeline. The pipeline is built for batch throughput, not single-file latency, a 4 KiB scan pays the full per-call orchestration cost. Steady-state baseline ~6 ms on a 5090; budget set with 2.5× headroom. Tighten when scan_one_chunk gets a fast path for sub-page inputs."
 
 [scale]
 fixture_bytes = 1048576

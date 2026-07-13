@@ -6,7 +6,7 @@
 //! anchor is weak. It accepts two shapes: a single all-lowercase run of >= 16
 //! bytes, OR >= 2 all-alphabetic whitespace-separated words with at least one
 //! lowercase word. A value with ANY digit or symbol can be neither, so it is
-//! never prose — the property this suite pins hardest, since a real secret almost
+//! never prose, the property this suite pins hardest, since a real secret almost
 //! always carries a digit/symbol and must not be swallowed as "prose".
 
 use keyhog_scanner::testing::looks_like_english_prose_for_test;
@@ -50,7 +50,7 @@ proptest! {
         prop_assert!(!looks_like_english_prose_for_test(&s));
     }
 
-    /// Any value containing an ASCII DIGIT is never prose — the all-lowercase
+    /// Any value containing an ASCII DIGIT is never prose, the all-lowercase
     /// branch rejects the digit and the word branch's all-alpha check rejects the
     /// digit-bearing token. This is the recall-critical guard: a secret with a
     /// digit is never mistaken for prose.

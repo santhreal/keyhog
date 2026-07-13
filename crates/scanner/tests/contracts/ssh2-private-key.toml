@@ -21,7 +21,7 @@ reason = "Unencrypted SSH2 private key variant."
 
 [[negative]]
 text = "---- BEGIN SSH2 PUBLIC KEY ----\nAAAAB3NzaC1yc2E\n---- END SSH2 PUBLIC KEY ----"
-reason = "SSH2 PUBLIC key block — not a secret; the detector requires PRIVATE KEY."
+reason = "SSH2 PUBLIC key block (not a secret; the detector requires PRIVATE KEY)."
 
 [[negative]]
 text = "See the ---- BEGIN SSH2 PRIVATE KEY ---- header described in RFC 4716."

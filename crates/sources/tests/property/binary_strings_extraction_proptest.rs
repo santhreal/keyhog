@@ -1,5 +1,5 @@
 //! Property tier for `extract_printable_strings` (reached via the
-//! `SourceTestApi` facade) — the `strings(1)`-equivalent that turns a binary
+//! `SourceTestApi` facade), the `strings(1)`-equivalent that turns a binary
 //! blob (ELF/PE/.NET, PDF, WASM, archive members) into the printable runs the
 //! scanner then searches for credentials. The fixed-vector twins
 //! (`tests/unit/strings_extract.rs`, `tests/regression_binary_strings_*`) pin a
@@ -8,16 +8,16 @@
 //! floor, or the UTF-16LE pass surfaces on a shape nobody wrote a vector for.
 //!
 //! Invariants proved here:
-//!   * SHAPE + ROBUSTNESS — over ARBITRARY bytes, every extracted string is made
+//!   * SHAPE + ROBUSTNESS, over ARBITRARY bytes, every extracted string is made
 //!     only of printable bytes (`ascii_graphic | space | tab`, the extractor's
 //!     own alphabet) and is at least `min_len` long, and the extractor never
 //!     panics. A run that leaked a control byte, or a sub-`min_len` fragment,
 //!     would be a real recall/precision bug.
-//!   * MIN_LEN MONOTONICITY — raising the length floor only ever DROPS strings:
+//!   * MIN_LEN MONOTONICITY, raising the length floor only ever DROPS strings:
 //!     the runs are the same byte scan, so `extract(bytes, hi)` is a
 //!     sub-multiset of `extract(bytes, lo)` for `lo <= hi`. A floor that added
 //!     or lengthened a run when raised would be incoherent.
-//!   * RECALL — a printable run of length `>= min_len` delimited by NUL bytes
+//!   * RECALL, a printable run of length `>= min_len` delimited by NUL bytes
 //!     (the canonical shape of a secret embedded in a binary) is recovered
 //!     verbatim. This is the extractor's whole job; the fixed vectors only
 //!     sample one or two such runs.
@@ -54,7 +54,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// Every extracted string is all-printable and at least `min_len` long, over
-    /// arbitrary bytes — which also proves the extractor never panics.
+    /// arbitrary bytes (which also proves the extractor never panics).
     #[test]
     fn every_extracted_string_is_printable_and_meets_min_len(
         bytes in prop::collection::vec(any::<u8>(), 0..=512),

@@ -132,7 +132,7 @@ fn configured_canary_account_parser_accepts_unique_toml_values() {
 fn canary_parser_rejects_confusable_and_overlong_account_ids() {
     // A 12-CHARACTER id whose length passes but contains a non-digit (letter 'O'
     // where '0' belongs) must fail closed. This exercises the `all(is_ascii_digit)`
-    // half of the 12-digit contract — a DISTINCT branch from the "1234" case
+    // half of the 12-digit contract, a DISTINCT branch from the "1234" case
     // above, which fails on length. A length-only guard would silently accept a
     // confusable account id and mis-classify a real credential's canary status.
     let confusable = keyhog_core::testing::CoreTestApi::parse_aws_canary_accounts_for_test(
@@ -145,7 +145,7 @@ fn canary_parser_rejects_confusable_and_overlong_account_ids() {
         "unexpected confusable-account error: {confusable}"
     );
 
-    // A 13-digit id (one over) must also fail closed — the UPPER boundary of the
+    // A 13-digit id (one over) must also fail closed, the UPPER boundary of the
     // exact-length rule; "1234" only pins the lower boundary.
     let overlong = keyhog_core::testing::CoreTestApi::parse_aws_canary_accounts_for_test(
         &keyhog_core::testing::TestApi,
@@ -161,7 +161,7 @@ fn canary_parser_rejects_confusable_and_overlong_account_ids() {
 #[test]
 fn canary_parser_merges_knockoff_table_into_the_canary_set() {
     // keyhog treats off-brand `[knockoff]` accounts IDENTICALLY to first-party
-    // `[canary]` ones — both tables merge into ONE recognized set (aws.rs
+    // `[canary]` ones, both tables merge into ONE recognized set (aws.rs
     // `parse_canary_accounts` chains `canary.accounts` and `knockoff.accounts`).
     // A regression that dropped the knockoff table would silently stop
     // recognizing knockoff canary accounts, so a real knockoff canary credential
@@ -232,8 +232,8 @@ proptest! {
     /// account is accepted IFF its trimmed form is EXACTLY 12 ASCII digits, and on
     /// acceptance the set stores that trimmed form. The generator `[0-9a ]{0,16}`
     /// is dense in every boundary the hand-written example tests pin only pointwise
-    /// — exactly-12 (accept), 11/13 digits (length reject), a non-digit among 12
-    /// chars (charset reject), and leading/trailing spaces (trim then re-check) —
+    ///: exactly-12 (accept), 11/13 digits (length reject), a non-digit among 12
+    /// chars (charset reject), and leading/trailing spaces (trim then re-check) 
     /// so no edge can let a malformed account into the canary set (which would
     /// silently mis-classify a real credential's canary status) or drop a valid one.
     #[test]

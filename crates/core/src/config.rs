@@ -18,20 +18,20 @@ pub const DEFAULT_MAX_FILE_SIZE_BYTES: u64 = 100 * 1024 * 1024;
 /// Single owner of the Tier-A generic-entropy gate default (the
 /// `ScanConfig::default().entropy_threshold` knob). The scanner's adjudicate
 /// fallback (`generic_entropy_floor`) resolves an absent per-scan value to this
-/// SAME number, so it references this const rather than re-spelling `4.5` — the
+/// SAME number, so it references this const rather than re-spelling `4.5`: the
 /// two must stay equal by construction, not by two hand-kept literals.
 pub const DEFAULT_ENTROPY_THRESHOLD: f64 = 4.5;
 
 /// Single owner of the BPE "rare-not-random" gate default (the
 /// `ScanConfig::default().entropy_bpe_max_bytes_per_token` knob). An entropy /
 /// generic candidate whose `cl100k_base` bytes-per-token is STRICTLY GREATER
-/// than this compresses into few common subword tokens — word-like (a probable
-/// false positive: dotted API paths, prose, XML) rather than a random secret —
+/// than this compresses into few common subword tokens, word-like (a probable
+/// false positive: dotted API paths, prose, XML) rather than a random secret 
 /// and is suppressed. `2.2` is the empirical CredData F1 peak (see
 /// `keyhog_scanner::entropy::bpe`; the offline A/B lifted F1 0.368→0.424).
 ///
 /// This lives in `keyhog-core` (not next to the gate in `keyhog-scanner`) so
-/// `ScanConfig` can default to it WITHOUT a scanner↔core dependency cycle — the
+/// `ScanConfig` can default to it WITHOUT a scanner↔core dependency cycle, the
 /// gate imports it back. There is exactly ONE definitional home for the value;
 /// the scanner re-exports this const under its historical name for the gate's
 /// compiled default and its tests, so the two can never drift.
@@ -52,7 +52,7 @@ pub struct ScanConfig {
     /// When the entropy fallback fires, score its candidates through the MoE
     /// with the model AUTHORITATIVE (the entropy magnitude is NOT a confidence
     /// floor) instead of emitting the bare entropy heuristic. Default on: on the
-    /// real-distribution-trained model this is a recall-safe precision win — the
+    /// real-distribution-trained model this is a recall-safe precision win, the
     /// model scores real high-entropy secrets high and structured non-secrets
     /// (FQDNs, git SHAs, base64 blobs) low, so FPs fall below the report floor
     /// while genuine recall is preserved. Opt out with `--no-entropy-ml-scoring`.
@@ -75,14 +75,14 @@ pub struct ScanConfig {
     pub entropy_threshold: f64,
     /// BPE "rare-not-random" precision bound: a surviving entropy / generic
     /// candidate whose `cl100k_base` bytes-per-token is STRICTLY GREATER than
-    /// this is treated as word-like (a probable false positive — dotted API
+    /// this is treated as word-like (a probable false positive, dotted API
     /// paths, prose, XML) and suppressed. Lower = more aggressive suppression
     /// (higher precision, lower recall); higher = looser (a very large value
     /// effectively disables the gate). The compiled default is
     /// [`DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN`]. Operators trade precision
     /// for recall per corpus via the `[scan]` TOML key or `--entropy-bpe-max-bytes-per-token`.
     /// A `#[serde(default)]` keeps configs that predate the field on the shipped
-    /// bound instead of `f64`'s `0.0` — which would suppress EVERY candidate
+    /// bound instead of `f64`'s `0.0`: which would suppress EVERY candidate
     /// (bytes-per-token is always > 0), a silent recall wipeout. No-op unless the
     /// entropy feature is compiled and the gate is reached.
     #[serde(default = "default_entropy_bpe_max_bytes_per_token")]
@@ -167,7 +167,7 @@ fn default_generic_keyword_low_entropy() -> bool {
 
 /// Serde default for [`ScanConfig::entropy_bpe_max_bytes_per_token`]: configs
 /// that predate the field get the shipped bound
-/// [`DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN`] rather than `f64`'s `0.0` — a
+/// [`DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN`] rather than `f64`'s `0.0`: a
 /// `0.0` bound would treat every non-empty candidate as word-like and suppress
 /// the entire entropy/generic surface (bytes-per-token is always > 0), a silent
 /// recall wipeout on old configs. One owner for the value (the core const).
@@ -187,12 +187,12 @@ pub enum ConfigError {
     DepthTooHigh(usize),
     /// `ml_weight` was outside the closed unit interval `[0.0, 1.0]`. The score
     /// blend multiplies by this weight; a value above 1.0 over-weights the model
-    /// and a negative one inverts it — both silently distort every confidence.
+    /// and a negative one inverts it (both silently distort every confidence).
     #[error("ml_weight must be between 0.0 and 1.0, found {0}")]
     InvalidMlWeight(f64),
     /// `entropy_bpe_max_bytes_per_token` was not a finite value strictly greater
     /// than zero. A `0.0` (or negative / NaN) bound treats EVERY candidate as
-    /// word-like and suppresses the entire entropy/generic surface — a silent
+    /// word-like and suppresses the entire entropy/generic surface, a silent
     /// recall wipeout (the `#[serde(default)]` guards only configs that OMIT the
     /// key, not an explicit out-of-range value).
     #[error("entropy_bpe_max_bytes_per_token must be a finite value > 0.0, found {0}")]
@@ -206,7 +206,7 @@ pub enum ConfigError {
     #[error("entropy_threshold must be between 0.0 and 8.0 bits per byte, found {0}")]
     InvalidEntropyThreshold(f64),
     /// The TOML text could not be deserialized into a [`ScanConfig`] (syntax
-    /// error, wrong type, or an unknown field — the struct is
+    /// error, wrong type, or an unknown field, the struct is
     /// `#[serde(deny_unknown_fields)]`). The inner string is the `toml` crate's
     /// diagnostic, kept as a `String` so the public error type does not leak the
     /// `toml` version into the API.
@@ -281,7 +281,7 @@ impl Default for ScanConfig {
 impl ScanConfig {
     // PRESET SINGLE SOURCE OF TRUTH (MC-05): the operator-facing presets
     // (`--fast` / `--deep` / `--precision`) live on `ScannerConfig`
-    // (`scanner/src/scanner_config.rs::{fast,thorough,high_precision}`) — the
+    // (`scanner/src/scanner_config.rs::{fast,thorough,high_precision}`), the
     // one path the CLI's `build_scanner_config` actually selects. Earlier this
     // crate also carried `ScanConfig::fast/thorough/paranoid`, but they had ZERO
     // production callers and their values DIVERGED from the shipped ones (e.g.
@@ -338,7 +338,7 @@ impl ScanConfig {
     ///
     /// This is the public, fail-closed loader for the published `keyhog-core`
     /// config surface. `ScanConfig` derives `Deserialize`, so a consumer can
-    /// always `toml::from_str` it directly — but that path is UNVALIDATED by
+    /// always `toml::from_str` it directly, but that path is UNVALIDATED by
     /// design (validation is a separate step). `from_toml_str` is the ONE place
     /// that composes both, so an external `min_confidence = 5.0` / `ml_weight =
     /// 2.0` / `entropy_bpe_max_bytes_per_token = 0.0` is rejected here exactly as

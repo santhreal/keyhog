@@ -2,14 +2,14 @@
 //! set.
 //!
 //! Historical benchmarks reported FP swinging 173 → 37 → 306 as the
-//! floor rose 0.30 → 0.40 → 0.50 — a non-monotonic floor, which a clean cutoff
+//! floor rose 0.30 → 0.40 → 0.50, a non-monotonic floor, which a clean cutoff
 //! can never produce. That evidence was a measurement artifact of two *other*
 //! bugs, both since fixed:
-//!   * DET-10 — the `--decode-*` flag path resolved a different config than the
+//!   * DET-10, the `--decode-*` flag path resolved a different config than the
 //!     baked defaults (FP 312 vs 41 for the SAME nominal values); the floor was
 //!     swept via that broken flag path. Now there is one applied config
 //!     (`orchestrator/mod.rs`: `.with_config(effective_config.scanner)`).
-//!   * DET-11 — the default GPU auto-route scored the MoE on a shader whose
+//!   * DET-11, the default GPU auto-route scored the MoE on a shader whose
 //!     activation diverged from the CPU rational sigmoid by ~0.05, flipping
 //!     ±15 findings run-to-run near the floor. Now the shader uses the CPU
 //!     sigmoid (`gpu_shader_sigmoid_contract.rs`) and the bench pins the CPU
@@ -64,7 +64,7 @@ fn collect_keys(results: &[Vec<RawMatch>]) -> BTreeSet<FindingKey> {
 /// not suppressed as examples.
 fn corpus() -> Vec<keyhog_core::Chunk> {
     vec![
-        // Named, checksum/prefix-anchored — high confidence, survive most floors.
+        // Named, checksum/prefix-anchored (high confidence, survive most floors).
         make_chunk(
             "const AWS_KEY = \"AKIAQYLPMN5HFIQR7XYA\";\n",
             "fixtures/a.rs",
@@ -128,7 +128,7 @@ fn finding_set_is_nested_and_non_increasing_as_floor_rises() {
         assert!(
             hi.is_subset(lo),
             "floor {hi_floor} produced findings absent at the lower floor {lo_floor} \
-             (non-monotonic — raising the floor must only remove findings): \
+             (non-monotonic, raising the floor must only remove findings): \
              only-at-higher-floor = {:?}",
             hi.difference(lo).take(5).collect::<Vec<_>>(),
         );

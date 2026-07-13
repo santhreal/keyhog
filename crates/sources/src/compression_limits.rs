@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn window_is_the_smallest_that_covers() {
         // Tightness: above the floor and below the ceiling, the next-smaller
-        // window must be too small — no memory is wasted.
+        // window must be too small (no memory is wasted).
         for b in [1025u64, 4096, 65_537, (1 << 20) + 7, (1 << 24) + 1, 1 << 31] {
             let log = window_log(b);
             assert!(

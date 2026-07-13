@@ -2,7 +2,7 @@
 //!
 //! ONE PLACE for "does this string carry a Windows drive letter". Two callers
 //! previously hand-rolled a private `is_windows_absolute` with *different*
-//! semantics under the *same* name — a same-name-divergence trap:
+//! semantics under the *same* name, a same-name-divergence trap:
 //!
 //! * the archive entry-name sanitizer (a security reject) wanted the BROAD
 //!   sense: reject anything drive-letter-prefixed, including the drive-RELATIVE
@@ -32,7 +32,7 @@ pub fn has_windows_drive_prefix(s: &str) -> bool {
 
 /// True iff `s` is a fully-qualified Windows absolute path: a drive letter, a
 /// colon, and a path separator (`C:\dir` or `C:/dir`). This is the STRICT sense
-/// used when "absolute" must mean root-anchored — e.g. deciding whether a path
+/// used when "absolute" must mean root-anchored, e.g. deciding whether a path
 /// is already absolute for URI formatting. The drive-relative `C:rel` is NOT
 /// absolute and returns `false`.
 #[must_use]

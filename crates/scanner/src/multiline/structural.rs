@@ -14,17 +14,17 @@ use std::sync::LazyLock;
 /// and `config::has_var_ref_concat_line` (uses `is_match`; the capture group is
 /// inert for a presence test), so the two call sites can never drift.
 // Law 10 (build-bug ⇒ fail closed): both of these regexes are COMPILE-TIME
-// CONSTANT patterns baked into the binary — no user/attacker input reaches
+// CONSTANT patterns baked into the binary, no user/attacker input reaches
 // `Regex::new`. A constant pattern either always compiles or never does, so a
 // failure is a BUILD defect (someone edited the literal into an invalid regex),
 // not a runtime condition. The old path called `warn_prefilter_disabled` and
 // returned `None`, which SILENTLY DISABLED the multiline var-reference /
-// template-interpolation reassembly surface for the whole process — a recall
+// template-interpolation reassembly surface for the whole process, a recall
 // hole hidden behind one log line. PANIC in the initializer instead so the
 // defect is caught at first use and can never ship as a quietly-degraded
 // scanner. (`warn_prefilter_disabled` + `None` remains correct only for
 // USER-supplied / data-driven patterns that can legitimately be malformed at
-// runtime — not for these compiled-in literals.)
+// runtime, not for these compiled-in literals.)
 pub(super) static CONCAT_RE: LazyLock<Regex> = LazyLock::new(|| {
     let pattern = r#"(?i)^\s*[a-z0-9_\-\.]{2,64}\s*[:=]\s*([a-z0-9_\-]{2,32}(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8})\s*;?\s*$"#;
     match Regex::new(pattern) {
@@ -349,7 +349,7 @@ pub(crate) fn resolve_template_reference(
             for c in chars.by_ref() {
                 // Track string spans so a `{`/`}` inside a quoted literal
                 // (`${"a}b"}`) does not miscount the brace depth and end the
-                // interpolation early — mirrors the string-aware skip in
+                // interpolation early, mirrors the string-aware skip in
                 // string_extract::extract_template_literal_continuation.
                 if let Some(q) = in_str {
                     if c == q {
@@ -413,7 +413,7 @@ fn join_inline_array_strings(line: &str) -> String {
     // Only join the quoted literals INSIDE the `[...]` array body. Scanning the
     // whole line would splice a quoted LHS key (`"api_key": ["a", "b"]`) or a
     // bare single-string assignment (`key = "value"`, no array) into the
-    // reassembled candidate — corrupting the value and emitting phantom
+    // reassembled candidate, corrupting the value and emitting phantom
     // duplicates of secrets the per-line chain already handles. No `[` means
     // this is not an inline array.
     let Some(open) = line.find('[') else {

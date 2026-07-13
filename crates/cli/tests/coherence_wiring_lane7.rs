@@ -1,4 +1,4 @@
-//! Lane 7 — COHERENCE + WIRING + UTILIZATION regression suite.
+//! Lane 7: COHERENCE + WIRING + UTILIZATION regression suite.
 //!
 //! These black-box tests drive the REAL `keyhog` binary and assert that the
 //! operator-facing contract the docs/README/`--help` advertise matches what the
@@ -10,13 +10,13 @@
 //! docs got wrong; if any of these regress, the named assertion goes red:
 //!
 //!   * `--format` accepts all 9 documented values (text/json/jsonl/sarif/csv/
-//!     github-annotations/gitlab-sast/html/junit) and rejects garbage — the format-count claim in
+//!     github-annotations/gitlab-sast/html/junit) and rejects garbage, the format-count claim in
 //!     docs/src/output-formats.md.
 //!   * `keyhog scan` has NO `--quiet` flag (output-formats.md no longer tells
 //!     operators to pass one).
 //!   * the JSON `verification` field serialises as the lowercase
 //!     `VerificationResult` variant (`skipped`/`live`/`dead`), NOT the
-//!     `verified-live`/`verified-dead` text-reporter labels — so the `jq`
+//!     `verified-live`/`verified-dead` text-reporter labels, so the `jq`
 //!     filter in output-formats.md actually matches.
 //!   * the `--help` EXIT CODES block documents every code the binary emits and
 //!     labels exit 2 "User error" (matching docs + `EXIT_USER_ERROR`).
@@ -70,7 +70,7 @@ fn scan_file(content: &str, extra: &[&str]) -> (Option<i32>, String, String) {
 
 /// Every `--format` value the `OutputFormat` enum offers (and that
 /// docs/src/output-formats.md advertises) must be
-/// ACCEPTED by `scan --format` — i.e. it must not exit 2 (clap unknown-value).
+/// ACCEPTED by `scan --format`: i.e. it must not exit 2 (clap unknown-value).
 /// A clean file with any valid format exits 0.
 #[test]
 fn every_documented_format_value_is_accepted() {
@@ -518,7 +518,7 @@ fn output_formats_doc_states_nine_values() {
 /// README↔installer verification coherence (dogfood 2026-06-22). `install.sh`
 /// and `install.ps1` gate every download on a minisign SIGNATURE against the
 /// pinned public key and FAIL CLOSED when minisign is absent: a real install ran
-/// on a host with no minisign — it downloaded the binary + `.minisig`, then
+/// on a host with no minisign, it downloaded the binary + `.minisig`, then
 /// refused with "minisign is not installed … Refusing to install an unverified
 /// keyhog binary" and wrote nothing. README's `## Install` section previously
 /// claimed only "Each download is SHA256-verified against the release-side
@@ -535,7 +535,7 @@ fn readme_documents_minisign_install_gate_coherently() {
 
     // Ground truth FIRST: both installers really do verify a minisign signature
     // and fail closed without it. The README assertions below only make sense
-    // while this is the live behavior — so anchor on it.
+    // while this is the live behavior (so anchor on it).
     assert!(
         install_sh.contains("minisign -Vm")
             && install_sh.contains("Refusing to install an unverified"),
@@ -559,7 +559,7 @@ fn readme_documents_minisign_install_gate_coherently() {
 
     // Coherence: because the install fails closed without minisign, the README
     // install section MUST tell operators minisign is required and that the
-    // install fails closed — not imply sha256-only verification.
+    // install fails closed (not imply sha256-only verification).
     assert!(
         install_section.contains("minisign"),
         "README `## Install` must document the minisign signature requirement (the installer \

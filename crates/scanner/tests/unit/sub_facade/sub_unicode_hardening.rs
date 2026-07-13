@@ -2,7 +2,7 @@
 //!
 //! Asserts the exact normalized BYTES of homoglyph/fullwidth/zero-width
 //! evasion, the precise `EvasionKind` reported per attack class, and the
-//! anchored interior-control strip — never `is_empty`/`is_some` decoration.
+//! anchored interior-control strip (never `is_empty`/`is_some` decoration).
 
 use keyhog_scanner::testing::unicode_hardening::{
     contains_evasion, detect_unicode_attacks, full_normalize, is_evasion_char,
@@ -10,7 +10,7 @@ use keyhog_scanner::testing::unicode_hardening::{
 };
 
 // ---------------------------------------------------------------------------
-// normalize_homoglyphs — exact ASCII output, allocation-free fast path
+// normalize_homoglyphs, exact ASCII output, allocation-free fast path
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -72,13 +72,13 @@ fn unicode_separator_is_stripped() {
 }
 
 // ---------------------------------------------------------------------------
-// full_normalize — NFC then homoglyph fold
+// full_normalize: NFC then homoglyph fold
 // ---------------------------------------------------------------------------
 
 #[test]
 fn full_normalize_composes_then_folds() {
     // Decomposed 'é' (e + U+0301) composes under NFC; the combining mark on the
-    // homoglyph path is dropped, leaving plain 'e' is NOT what NFC does — NFC
+    // homoglyph path is dropped, leaving plain 'e' is NOT what NFC does. NFC
     // composes to precomposed 'é' (U+00E9). Assert the precomposed form.
     let decomposed = "caf\u{0065}\u{0301}";
     let out = full_normalize(decomposed);
@@ -93,7 +93,7 @@ fn full_normalize_handles_homoglyph_after_compose() {
 }
 
 // ---------------------------------------------------------------------------
-// detect_unicode_attacks — exact kind + replacement per class
+// detect_unicode_attacks, exact kind + replacement per class
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -189,7 +189,7 @@ fn contains_evasion_false_for_clean_text() {
 }
 
 // ---------------------------------------------------------------------------
-// strip_interior_evasion_controls — anchored, structural-safe
+// strip_interior_evasion_controls, anchored, structural-safe
 // ---------------------------------------------------------------------------
 
 #[test]

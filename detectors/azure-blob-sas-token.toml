@@ -12,7 +12,7 @@ severity = "high"
 # case=/response=, sp= on resp=/disp=) that no regex references. Every matchable SAS
 # token carries sv= AND sig= (pattern 1 requires both); the connection-string and
 # env-var forms carry blob.core.windows.net / sv=. So sv=/sig=/host cover both the
-# trigger and the keyword_nearby signal — the three params are redundant. Recall-neutral.
+# trigger and the keyword_nearby signal (the three params are redundant. Recall-neutral).
 keywords = ["sig=", "sv=", "blob.core.windows.net"]
 
 [[detector.patterns]]

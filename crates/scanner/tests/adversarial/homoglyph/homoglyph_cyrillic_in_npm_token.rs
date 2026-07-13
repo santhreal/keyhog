@@ -9,7 +9,7 @@ fn homoglyph_cyrillic_in_npm_token() {
     let matches = scan_text(text, "homoglyph.env");
     assert!(
         matches.iter().any(|m| m.credential.as_ref().contains(tail)),
-        "Cyrillic homoglyph npm token must not fully evade — tail {tail:?}; matches={:?}",
+        "Cyrillic homoglyph npm token must not fully evade, tail {tail:?}; matches={:?}",
         matches
             .iter()
             .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))

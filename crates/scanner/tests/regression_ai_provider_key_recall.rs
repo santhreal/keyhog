@@ -1,4 +1,4 @@
-//! AI-provider API-key recall + precision lock: OpenAI and Anthropic — the two
+//! AI-provider API-key recall + precision lock: OpenAI and Anthropic, the two
 //! most commonly leaked modern credential families, which had no dedicated recall
 //! test (only a single OpenAI HTML-comment bug regression existed).
 //!
@@ -7,11 +7,11 @@
 //!
 //! Anthropic (`anthropic-api-key`) has TWO patterns that together cover the whole
 //! family without overlap:
-//!   1. `sk-ant-api03-<80..120 url-safe>` — the documented api03 form.
+//!   1. `sk-ant-api03-<80..120 url-safe>`: the documented api03 form.
 //!   2. a "modern" `sk-ant-<80..120 url-safe>` form whose alternation deliberately
 //!      EXCLUDES bodies beginning `api03-` (so pattern 1 owns those). This second
 //!      pattern was added because the api03 regex matched zero of 40 modern
-//!      `sk-ant-` fixtures — i.e. it is itself a recall fix worth locking.
+//!      `sk-ant-` fixtures (i.e. it is itself a recall fix worth locking).
 //! Neither family is checksum-gated (no `sk-`/`sk-ant-` validator), so fabricated
 //! high-entropy fixtures surface; the precision floors are pure length/charset.
 
@@ -21,7 +21,7 @@ use support::contracts::{make_chunk, scanner};
 use keyhog_core::Chunk;
 use keyhog_scanner::CompiledScanner;
 
-/// Deterministic high-entropy string of length `n` over `charset` (seeded LCG) —
+/// Deterministic high-entropy string of length `n` over `charset` (seeded LCG) 
 /// avoids dictionary/low-entropy suppression that would mask a real recall gap.
 fn gen(n: usize, seed: usize, charset: &[u8]) -> String {
     let m = charset.len() as u64;
@@ -251,7 +251,7 @@ fn anthropic_modern_min_80_surfaces() {
 #[test]
 fn anthropic_api03_prefix_without_dash_surfaces_via_modern() {
     // `sk-ant-api03X…` (6th body char is NOT `-`) is owned by pattern 2's `api03`
-    // alternation branch, NOT pattern 1 — this pins that branch specifically.
+    // alternation branch, NOT pattern 1 (this pins that branch specifically).
     let t = format!("sk-ant-api03M{}", b64url(74, 20)); // body = api03M(6) + 74 = 80
     assert!(surfaces_under(&t, "anthropic-api-key", &t));
 }

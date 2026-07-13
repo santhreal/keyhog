@@ -6,7 +6,7 @@
 //! The load-bearing property is the userinfo/host boundary. Per RFC 3986 /
 //! WHATWG URL, `host` cannot contain `@`, so the userinfo extends to the LAST
 //! `@` in the authority. A password with a literal (improperly unescaped) `@`
-//! — `https://u:pa@ss@host/` — must redact to `https://***@host/`. Splitting on
+//!: `https://u:pa@ss@host/`: must redact to `https://***@host/`. Splitting on
 //! the FIRST `@` instead leaks the password tail (`https://***@ss@host/`, which
 //! exposes `ss`). These tests pin the last-`@` rule, prove the leak is closed,
 //! and prove an `@` outside the authority (path / query / fragment) is never

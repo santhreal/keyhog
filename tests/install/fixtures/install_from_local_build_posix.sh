@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Proof that install.sh translates a freshly-BUILT binary into a working
-# install on this OS — the gap the mocked detection-path scenarios
+# install on this OS, the gap the mocked detection-path scenarios
 # (scenarios.sh / edge_cases.sh) and the published-release smoke
 # (integration-smoke.yml) leave open: neither proves that the CURRENT
 # source, once built, installs and actually runs end-to-end.

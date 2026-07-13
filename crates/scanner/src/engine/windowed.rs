@@ -165,7 +165,7 @@ fn estimate_window_match_capacity(chunk_len: usize) -> usize {
 
 /// Absolute OOM backstop for windowed scanning. `scan_windowed` already scans a
 /// chunk in bounded `MAX_SCAN_CHUNK_BYTES` slices, so a chunk below this ceiling
-/// is fully covered (windowed), NOT dropped — per-window memory stays bounded
+/// is fully covered (windowed), NOT dropped, per-window memory stays bounded
 /// regardless of total chunk size. This hard skip therefore fires only for a
 /// pathological multi-GiB single chunk, where the resident buffer plus the line
 /// -offset table would themselves threaten OOM. Set far above any real input so

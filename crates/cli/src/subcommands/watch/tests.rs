@@ -20,7 +20,7 @@ fn content_hash_matches_reference_fnv1a() {
     // Empty input hashes to the offset basis (FNV-1a base case).
     assert_eq!(content_hash(b""), FNV_OFFSET_BASIS);
     // Concrete reference vectors computed from the canonical FNV-1a 64 algorithm
-    // — these lock the const-hoist to byte-identical behavior.
+    //: these lock the const-hoist to byte-identical behavior.
     assert_eq!(content_hash(b"keyhog"), 0x061a_b633_9fdc_03fa);
     assert_eq!(content_hash(b"PASSWORD=hunter2"), 0x2a02_5e63_1b56_f2ad);
 }
@@ -47,7 +47,7 @@ const AKIA_DETECTOR: &str = "aws-access-key";
 fn watch_reports_aws_key_without_any_suppression() {
     // Adversarial twin / baseline: with no config or ignore file, the key IS a
     // finding. If this ever stops firing, the suppression tests below would pass
-    // vacuously — this pins that they don't.
+    // vacuously (this pins that they don't).
     let dir = tempfile::TempDir::new().expect("tempdir");
     let body = format!("AWS_ACCESS_KEY_ID = \"{AKIA}\"\n");
     let ids =
@@ -90,7 +90,7 @@ fn watch_honors_inline_ignore_suppression() {
 #[test]
 fn watch_honors_disabled_detector_config() {
     // `.keyhog.toml` `[detector.<id>] enabled = false` must be resolved by
-    // `setup_default_scan_runtime` and drop the detector before it ever fires —
+    // `setup_default_scan_runtime` and drop the detector before it ever fires 
     // proving the config is no longer silently ignored by the watch runtime.
     let dir = tempfile::TempDir::new().expect("tempdir");
     std::fs::write(

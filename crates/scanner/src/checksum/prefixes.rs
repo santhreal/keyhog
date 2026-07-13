@@ -1,17 +1,17 @@
 //! Single owner for every checksum-family credential prefix.
 //!
-//! A checksum prefix is TWO things at once: (1) a detection signal — it appears
+//! A checksum prefix is TWO things at once: (1) a detection signal, it appears
 //! verbatim in the family's `detectors/<id>.toml` pattern, which is what
 //! surfaces the credential; and (2) the self-selection key each checksum
 //! validator strips before recomputing the family's embedded CRC. Historically
 //! each validator hard-coded its own bare `"ghp_"` / `"glpat-"` / … literal, so
 //! the same prefix lived in two places (the validator AND the detector) with
-//! nothing binding them — a detector-pattern edit could silently diverge from
+//! nothing binding them, a detector-pattern edit could silently diverge from
 //! the validator that gates it, and two validators could disagree on a shared
 //! prefix. This module is the ONE owner of those literals.
 //!
 //! Because each family's checksum ALGORITHM is genuinely code (bespoke CRC width,
-//! body layout, "CRC-over-what"), the validator cannot be fully data-driven — but
+//! body layout, "CRC-over-what"), the validator cannot be fully data-driven, but
 //! the PREFIX can be single-sourced here. [`all_checksum_prefixes`] gathers the
 //! full set so the `checksum_prefixes_are_backed_by_their_detector` guard (tests)
 //! can bind each to its authoritative `detectors/<id>.toml` and make the detector
@@ -22,7 +22,7 @@
 
 /// GitHub classic personal access token: `ghp_` + 30 entropy + 6 CRC32-base62.
 pub(crate) const GITHUB_CLASSIC_PAT: &str = "ghp_";
-/// GitHub OAuth-family tokens that share the IDENTICAL classic body — `_` + 30
+/// GitHub OAuth-family tokens that share the IDENTICAL classic body. `_` + 30
 /// entropy + 6 CRC32-base62, with the CRC taken over the 30-char entropy ONLY,
 /// so it is prefix-independent: `gho_` OAuth access, `ghu_` user-to-server,
 /// `ghs_` server-to-server / app-installation, `ghr_` refresh. Each is surfaced

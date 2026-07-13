@@ -8,7 +8,7 @@
 //!      regex as `format!("{flag_prefix}{body}")` (see `rewrite_homoglyph_literal_prefix`
 //!      / `split_leading_inline_flag` uses), so a split that drops or duplicates a
 //!      byte would silently corrupt the compiled pattern.
-//!   2. TOTALITY: never panics — including on inputs where the byte after the flag
+//!   2. TOTALITY: never panics, including on inputs where the byte after the flag
 //!      chars is the lead of a multi-byte UTF-8 char (the fn indexes `s.as_bytes()`
 //!      and slices `s[..=i]`/`s[i+1..]`; those slices must always land on char
 //!      boundaries).
@@ -43,13 +43,13 @@ proptest! {
 
         let (flag_prefix, body) = split_leading_inline_flag(&s);
 
-        // 1. PARTITION — the pieces reconstruct the input byte-for-byte.
+        // 1. PARTITION (the pieces reconstruct the input byte-for-byte).
         let mut recombined = String::with_capacity(flag_prefix.len() + body.len());
         recombined.push_str(flag_prefix);
         recombined.push_str(body);
         prop_assert_eq!(recombined.as_str(), s.as_str());
 
-        // 3. FLAG-SHAPE — a non-empty head is `(?` … `)` with a flag-only middle.
+        // 3. FLAG-SHAPE (a non-empty head is `(?` … `)` with a flag-only middle).
         if !flag_prefix.is_empty() {
             prop_assert!(
                 flag_prefix.starts_with("(?"),
@@ -68,7 +68,7 @@ proptest! {
     }
 
     /// Constructive: a real `(?<flags>)<body>` splits into exactly that head and
-    /// that body — for any flag subset (incl. empty) and any body (incl. one that
+    /// that body, for any flag subset (incl. empty) and any body (incl. one that
     /// itself contains `)` or multi-byte chars).
     #[test]
     fn split_leading_inline_flag_extracts_the_exact_flag_head(

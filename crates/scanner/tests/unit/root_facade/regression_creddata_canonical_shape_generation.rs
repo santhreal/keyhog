@@ -1,13 +1,13 @@
-//! Regression (CredData recall lane — candidate GENERATION): the entropy
+//! Regression (CredData recall lane, candidate GENERATION): the entropy
 //! fallback must GENERATE a candidate for the CredData `UUID` and `hex64`
 //! (AES-256-key) miss classes when a STRONG credential keyword anchors the line
 //! AND the MoE is the runtime precision authority (`ml_enabled &&
-//! entropy_ml_authoritative`), so the model — not a shape gate at the generation
-//! source — arbitrates the value. ~83% of keyhog's CredData misses NEVER
+//! entropy_ml_authoritative`), so the model, not a shape gate at the generation
+//! source, arbitrates the value. ~83% of keyhog's CredData misses NEVER
 //! generate a candidate; UUID-bodied and 64-hex (AES-256) keys are dropped at
 //! the generation source by `entropy::scanner::is_canonical_non_secret_shape`
 //! and again by the entropy gauntlet's UUID / bare-hash-digest shape arms,
-//! before any candidate exists — so no downstream model authority could ever
+//! before any candidate exists, so no downstream model authority could ever
 //! recover them.
 //!
 //! Root cause this locks against (two gates, both candidate-GENERATION-side):
@@ -59,7 +59,7 @@ fn entropy(value: &str) -> f64 {
 fn strict_gate_drops_canonical_shapes_under_anchor() {
     // The non-lift (model-absent) credential context MUST keep the strict gate:
     // a UUID / 64-hex / 32-hex value is a hash/UUID shape and never generates a
-    // candidate. This pins that the lift is genuinely OFF by default — the
+    // candidate. This pins that the lift is genuinely OFF by default, the
     // SecretBench-mirror-safe behaviour.
     let ctx = credential_keyword_context("api_key");
     for shape in [UUID_SECRET, HEX64_SECRET, HEX32_SECRET] {
@@ -131,7 +131,7 @@ fn lift_still_drops_short_and_placeholder_values() {
 
 fn scanner_with_floor(min_confidence: f64) -> CompiledScanner {
     // Default config has ml_enabled, entropy_enabled, and
-    // entropy_ml_authoritative all true — the production state that engages the
+    // entropy_ml_authoritative all true, the production state that engages the
     // lift. Lower only the min-confidence floor so the assertion pins candidate
     // GENERATION (the value reaches the output), not the MoE's score magnitude.
     let mut config = ScannerConfig::default();
@@ -182,7 +182,7 @@ fn caught(scanner: &CompiledScanner, line: &str, value: &str) -> bool {
 
 #[test]
 fn e2e_uuid_under_strong_keyword_is_generated_and_surfaced() {
-    // The whole assigned value is a UUID under a strong credential keyword — the
+    // The whole assigned value is a UUID under a strong credential keyword, the
     // CredData `UUID` miss class (LaunchDarkly SDK keys, Heroku UUID keys,
     // PowerBI client secrets). With the lift it must reach the output.
     let s = scanner_with_floor(0.0);
@@ -192,7 +192,7 @@ fn e2e_uuid_under_strong_keyword_is_generated_and_surfaced() {
          model-authoritative entropy lift"
     );
     // `client_secret` is a default credential keyword (OAuth client secrets are
-    // frequently UUID-bodied) — a second anchor proves the lift is not tied to a
+    // frequently UUID-bodied), a second anchor proves the lift is not tied to a
     // single keyword string.
     assert!(
         caught(
@@ -206,7 +206,7 @@ fn e2e_uuid_under_strong_keyword_is_generated_and_surfaced() {
 
 #[test]
 fn e2e_hex64_aes_key_under_strong_keyword_is_generated_and_surfaced() {
-    // 64-hex (AES-256 key) under a strong cryptographic-key keyword — the
+    // 64-hex (AES-256 key) under a strong cryptographic-key keyword, the
     // CredData `hex64` miss class, previously dropped as a sha256 digest at the
     // generation source.
     let s = scanner_with_floor(0.0);
@@ -272,7 +272,7 @@ fn e2e_placeholder_uuid_stays_suppressed_even_under_lift() {
 fn e2e_lift_is_gated_off_when_model_not_authoritative() {
     // Gating proof: with `entropy_ml_authoritative = false` the lift MUST NOT
     // engage, so the canonical UUID / hex64 shapes stay suppressed exactly as on
-    // the legacy path — even at a zero floor. This pins that the recall lift is
+    // the legacy path, even at a zero floor. This pins that the recall lift is
     // strictly model-authority-conditioned and cannot leak FPs onto the non-ML
     // path.
     let s = scanner_without_lift(0.0);
@@ -302,7 +302,7 @@ fn e2e_keyword_free_canonical_shape_never_lifts() {
     let line = format!("resource_id = \"{UUID_SECRET}\"");
     assert!(
         !caught(&s, &line, UUID_SECRET),
-        "UUID under a NON-credential keyword (`resource_id`) must NOT lift — the \
+        "UUID under a NON-credential keyword (`resource_id`) must NOT lift, the \
          lift requires a strong credential anchor on the value's line"
     );
 }

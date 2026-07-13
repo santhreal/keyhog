@@ -10,7 +10,7 @@
 //! user-token `{34,}`) all match the same `hf_<34>` value at the same offset, so
 //! value-dedup keeps just one of the three labels. The recall contract is "an
 //! `hf_` token is detected as HuggingFace", not which of the overlapping labels
-//! wins — the tests assert membership in the HuggingFace detector set.
+//! wins (the tests assert membership in the HuggingFace detector set).
 
 mod support;
 use support::contracts::{make_chunk, scanner};

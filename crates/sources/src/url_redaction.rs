@@ -5,14 +5,14 @@
 //! `?token=`, …). This module masks BOTH with `***` before the URL is ever
 //! printed, so a fetch/DNS error never leaks the credential (engineering
 //! standard: never log secrets). It is the ONE PLACE that decides what "safe to
-//! log" means — every logger routes through `redact_url` rather than
+//! log" means, every logger routes through `redact_url` rather than
 //! re-implementing masking.
 
 use std::borrow::Cow;
 
 /// Query-parameter keys (case-insensitive) whose VALUE is a credential and must
 /// be masked before a URL is logged. Presigned S3 / Azure SAS / OAuth callbacks
-/// carry the whole secret here. ONE PLACE owner — extend here, never inline a
+/// carry the whole secret here. ONE PLACE owner, extend here, never inline a
 /// second list at a call site.
 const SENSITIVE_QUERY_KEYS: &[&str] = &[
     "sig",
@@ -72,16 +72,16 @@ fn redact_query_params(query: &str) -> Option<String> {
 ///
 /// Per RFC 3986 / the WHATWG URL standard, the authority is
 /// `[ userinfo "@" ] host [ ":" port ]`, and `host` (reg-name / IP-literal /
-/// IPv4address) cannot contain `@` — so any `@` in the authority belongs to the
+/// IPv4address) cannot contain `@`: so any `@` in the authority belongs to the
 /// userinfo, and the userinfo/host separator is the *last* `@`. A password may
 /// itself contain an (improperly unescaped) `@`, e.g. `https://u:pa@ss@host/`.
 ///
 /// Splitting on the FIRST `@` (`find`) would treat `pa` as the whole userinfo
-/// and leave `ss@host` as the "host", emitting `https://***@ss@host/` — leaking
+/// and leave `ss@host` as the "host", emitting `https://***@ss@host/`: leaking
 /// `ss`, a fragment of the password, into the log. Splitting on the LAST `@`
 /// (`rfind`) redacts the entire userinfo to `https://***@host/`. The `@` search
 /// is confined to the authority (the span before the first `/`, `?`, or `#`), so
-/// an `@` later in the path/query/fragment — e.g. `?email=a@b.com` — is never
+/// an `@` later in the path/query/fragment, e.g. `?email=a@b.com`: is never
 /// treated as a userinfo separator.
 pub(crate) fn redact_url(url: &str) -> Cow<'_, str> {
     let scheme_end = match url.find("://") {

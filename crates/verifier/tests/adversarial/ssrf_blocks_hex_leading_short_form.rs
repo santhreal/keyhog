@@ -6,7 +6,7 @@
 //! 169.254.169.254). The pre-fix string gate stripped a whole-string `0x`
 //! prefix first; the embedded dot then failed the integer parse and the host
 //! never reached the per-field short-form canonicalizer. `looks_like_malformed_ip`
-//! only fires at ≥4 parts, so these 2-/3-part forms reached neither gate — and on
+//! only fires at ≥4 parts, so these 2-/3-part forms reached neither gate, and on
 //! the proxy verification path (no post-resolution IP veto) the string gate is
 //! the *only* SSRF check. They must now be blocked.
 //!
@@ -74,7 +74,7 @@ fn blocks_hex_two_part_private_a() {
 
 #[test]
 fn blocks_hex_two_part_this_network_zero() {
-    // 0x0.1 -> 0.0.0.1 ("this network" 0.0.0.0/8 — non-routable SSRF target)
+    // 0x0.1 -> 0.0.0.1 ("this network" 0.0.0.0/8, non-routable SSRF target)
     assert!(
         is_private_url("http://0x0.1/"),
         "0x0.1 -> 0.0.0.1 must be blocked"
@@ -122,7 +122,7 @@ fn blocks_hex_three_part_link_local() {
 #[test]
 fn blocks_hex_short_form_cloud_metadata_imds() {
     // 0xa9.0xfe.0xa9fe -> 169 . 254 . (packed 0xa9fe=43518) -> 169.254.169.254
-    // The AWS/GCP/Azure IMDS endpoint — the crown-jewel SSRF target.
+    // The AWS/GCP/Azure IMDS endpoint (the crown-jewel SSRF target).
     assert!(
         is_private_url("http://0xa9.0xfe.0xa9fe/"),
         "0xa9.0xfe.0xa9fe -> 169.254.169.254 (IMDS) must be blocked"
@@ -163,7 +163,7 @@ fn allows_public_hex_three_part() {
 
 #[test]
 fn blocks_hex_four_part_loopback() {
-    // 0x7f.0.0.1 — 4-part octet-shaped form caught by the malformed-IP heuristic.
+    // 0x7f.0.0.1: 4-part octet-shaped form caught by the malformed-IP heuristic.
     assert!(
         is_private_url("http://0x7f.0.0.1/"),
         "0x7f.0.0.1 (4-part) must be blocked"
@@ -172,7 +172,7 @@ fn blocks_hex_four_part_loopback() {
 
 #[test]
 fn blocks_all_hex_octets_four_part() {
-    // 0xc0.0xa8.0x0.0x1 — every octet 0x-prefixed, 4 parts.
+    // 0xc0.0xa8.0x0.0x1 (every octet 0x-prefixed, 4 parts).
     assert!(
         is_private_url("http://0xc0.0xa8.0x0.0x1/"),
         "0xc0.0xa8.0x0.0x1 (4-part all-hex) must be blocked"
@@ -181,7 +181,7 @@ fn blocks_all_hex_octets_four_part() {
 
 #[test]
 fn blocks_mixed_hex_octal_four_part() {
-    // 0x7f.0177.0.1 — mixed radix, 4 parts.
+    // 0x7f.0177.0.1 (mixed radix, 4 parts).
     assert!(
         is_private_url("http://0x7f.0177.0.1/"),
         "0x7f.0177.0.1 (4-part mixed radix) must be blocked"
@@ -192,7 +192,7 @@ fn blocks_mixed_hex_octal_four_part() {
 
 #[test]
 fn still_blocks_dotless_hex_loopback() {
-    // 0x7f000001 (no dots) -> 127.0.0.1 — blocked as before.
+    // 0x7f000001 (no dots) -> 127.0.0.1 (blocked as before).
     assert!(
         is_private_url("http://0x7f000001/"),
         "dotless 0x7f000001 -> 127.0.0.1 must stay blocked"
@@ -201,7 +201,7 @@ fn still_blocks_dotless_hex_loopback() {
 
 #[test]
 fn still_blocks_dotless_decimal_loopback() {
-    // 2130706433 (no dots) -> 127.0.0.1 — blocked as before.
+    // 2130706433 (no dots) -> 127.0.0.1 (blocked as before).
     assert!(
         is_private_url("http://2130706433/"),
         "dotless 2130706433 -> 127.0.0.1 must stay blocked"
@@ -210,7 +210,7 @@ fn still_blocks_dotless_decimal_loopback() {
 
 #[test]
 fn still_blocks_octal_leading_short_form() {
-    // 0177.1 -> 127.0.0.1 — octal-leading path unchanged.
+    // 0177.1 -> 127.0.0.1 (octal-leading path unchanged).
     assert!(
         is_private_url("http://0177.1/"),
         "0177.1 -> 127.0.0.1 must stay blocked"
@@ -219,7 +219,7 @@ fn still_blocks_octal_leading_short_form() {
 
 #[test]
 fn still_blocks_decimal_two_part_short_form() {
-    // 127.1 -> 127.0.0.1 — decimal short form unchanged.
+    // 127.1 -> 127.0.0.1 (decimal short form unchanged).
     assert!(
         is_private_url("http://127.1/"),
         "127.1 -> 127.0.0.1 must stay blocked"
@@ -244,7 +244,7 @@ fn still_blocks_full_dotted_quad_private() {
 
 #[test]
 fn still_allows_public_decimal_short_form() {
-    // 8.8 -> 8.0.0.8 (public) — must not be over-blocked.
+    // 8.8 -> 8.0.0.8 (public) (must not be over-blocked).
     assert!(
         !is_private_url("http://8.8/"),
         "8.8 -> 8.0.0.8 public short form must stay allowed"

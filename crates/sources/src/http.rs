@@ -65,7 +65,7 @@ pub struct HttpClientConfig {
     /// cloud-metadata. OFF by default: the SSRF host-screen in
     /// `cloud::parse_http_endpoint` refuses every such endpoint. This is a
     /// Tier-A config knob (set by `--allow-private-cloud-endpoint` / TOML, NEVER
-    /// an environment variable — scan/security behavior is resolved config, not
+    /// an environment variable, scan/security behavior is resolved config, not
     /// env) for legit private-network deployments (MinIO / Ceph on an internal
     /// gateway) and loopback mock servers in integration tests.
     pub allow_private_endpoint: bool,
@@ -73,7 +73,7 @@ pub struct HttpClientConfig {
 
 impl HttpClientConfig {
     /// The configured proxy, or `None`. ONLY the explicit `proxy` field (set by
-    /// the `--proxy` CLI flag / TOML) is honored — no environment variable can
+    /// the `--proxy` CLI flag / TOML) is honored, no environment variable can
     /// change egress routing (config-policy mandate: env never overrides
     /// behavior). Ambient `HTTP(S)_PROXY` is separately neutralized in the
     /// builders via `.no_proxy()` so a stray CI/shell proxy can't silently
@@ -105,11 +105,11 @@ impl HttpClientConfig {
         feature = "gcs"
     ))]
     pub(crate) fn effective_timeout(&self) -> Duration {
-        self.timeout.unwrap_or(crate::timeouts::HTTP_REQUEST) // LAW10: Tier-A config default — unset timeout uses the ONE shared HTTP_REQUEST default, not a swallowed error
+        self.timeout.unwrap_or(crate::timeouts::HTTP_REQUEST) // LAW10: Tier-A config default, unset timeout uses the ONE shared HTTP_REQUEST default, not a swallowed error
     }
 
     /// Whether to accept invalid / self-signed TLS certs. ONLY the explicit
-    /// `insecure_tls` field (set by `--insecure` / TOML) is honored — no
+    /// `insecure_tls` field (set by `--insecure` / TOML) is honored, no
     /// environment variable can disable certificate verification. An ambient
     /// toggle must never be able to switch off the only thing protecting
     /// exfiltrated secrets from a MITM on the verifier's outbound calls.
@@ -129,7 +129,7 @@ impl HttpClientConfig {
 
     /// HTTP config identical to the default EXCEPT it permits private / loopback
     /// endpoints. The config-flag replacement for the retired
-    /// `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` env opt-in — used by the source-test
+    /// `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` env opt-in, used by the source-test
     /// facade so httpmock (`127.0.0.1`) endpoints pass the cloud SSRF screen
     /// without any process-global env state.
     #[cfg(any(feature = "s3", feature = "gcs", feature = "azure"))]
@@ -156,8 +156,8 @@ pub(crate) const REDIRECT_LIMIT: usize = 5;
 /// Extract the bare media type from a `Content-Type` header value: the text
 /// before the first `;` (dropping any `charset=`/`boundary=` parameters), with
 /// surrounding whitespace trimmed. Single owner in this always-compiled module
-/// so every content-type classifier — the `web` response router
-/// (`crate::web`) AND the cloud binary/unknown checks (`crate::cloud`) — splits
+/// so every content-type classifier, the `web` response router
+/// (`crate::web`) AND the cloud binary/unknown checks (`crate::cloud`), splits
 /// the header the same way WITHOUT the `web` feature having to pull in a cloud
 /// provider feature (the fn used to live in the `cfg`-gated `cloud` module,
 /// which made `--features web` fail to compile standalone). Gated to exactly
@@ -181,8 +181,8 @@ pub(crate) fn user_agent(suffix: Option<&str>) -> String {
 
 /// The ONE outbound-HTTP policy, applied identically to the blocking and async
 /// `ClientBuilder`s (which share every method name but no common trait, so a
-/// macro is the single owner). Any new hardening — a decompression toggle, a
-/// proxy sentinel, a TLS knob — is added here once and both builders inherit it,
+/// macro is the single owner). Any new hardening, a decompression toggle, a
+/// proxy sentinel, a TLS knob, is added here once and both builders inherit it,
 /// preventing the two-copies drift this module exists to prevent.
 ///
 /// `$builder` is a fresh `reqwest::{blocking,}::ClientBuilder`; expands inside a

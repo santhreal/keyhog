@@ -6,7 +6,7 @@
 //!  - Azure: storage-account keys (env var, connection-string `AccountKey=`,
 //!    `AzureWebJobsStorage`), IoT-Hub and Service-Bus connection strings, and
 //!    the AD / Entra service-principal client secret (`AZURE_CLIENT_SECRET` /
-//!    `ARM_CLIENT_SECRET` / `AAD_CLIENT_SECRET` / `servicePrincipalKey`) — a
+//!    `ARM_CLIENT_SECRET` / `AAD_CLIENT_SECRET` / `servicePrincipalKey`), a
 //!    class that had NO standalone detector before this lock.
 //!  - GCP: service-account JSON key files in BOTH the minified and the
 //!    pretty-printed (`gcloud iam service-accounts keys create`) layout. The
@@ -14,7 +14,7 @@
 //!    vertexai detector's old `[^\n]` bridge could not cross.
 //!
 //! The oracle asserts the exact secret bytes are CONTAINED in some finding's
-//! credential through the on-disk `CompiledScanner` — never `!is_empty`. Each
+//! credential through the on-disk `CompiledScanner`: never `!is_empty`. Each
 //! synthesized body is high-entropy and distinct (no repeated/placeholder shape
 //! suppression would drop, no `EXAMPLE` marker) so a miss is a real recall gap.
 
@@ -25,7 +25,7 @@ use keyhog_scanner::CompiledScanner;
 use std::sync::OnceLock;
 use support::contracts::{make_chunk, scanner};
 
-/// One shared compiled scanner for the whole file — `scanner()` recompiles all
+/// One shared compiled scanner for the whole file: `scanner()` recompiles all
 /// detectors per call, so caching keeps the suite fast. `CompiledScanner` is
 /// `Send + Sync`; the harness runs these `#[test]`s serially
 /// (`--test-threads=1`) so the per-scan fragment-cache clear never races.
@@ -46,7 +46,7 @@ fn body(n: usize, seed: usize) -> String {
         .collect()
 }
 
-/// True iff scanning `text` surfaces `needle` — i.e. some finding's credential
+/// True iff scanning `text` surfaces `needle`: i.e. some finding's credential
 /// CONTAINS it. Connection-string / service-anchored detectors capture the whole
 /// URL or block as the credential, so the embedded secret is recoverable from
 /// that finding; the recall contract is only that the secret value reaches a
@@ -94,7 +94,7 @@ fn sa_json_minified() -> String {
     )
 }
 
-/// Pretty-printed (multi-line) service-account JSON — the canonical downloaded
+/// Pretty-printed (multi-line) service-account JSON, the canonical downloaded
 /// key file, with real newlines between fields.
 fn sa_json_multiline() -> String {
     format!(
@@ -247,7 +247,7 @@ fn gcp_sa_json_minified_private_key_surfaces() {
 
 #[test]
 fn gcp_sa_json_multiline_private_key_surfaces() {
-    // The canonical downloaded key file — real newlines between fields.
+    // The canonical downloaded key file (real newlines between fields).
     assert!(surfaces(
         &sa_json_multiline(),
         "-----BEGIN PRIVATE KEY-----"
@@ -266,7 +266,7 @@ fn gcp_sa_json_minified_attributes_to_vertexai() {
 #[test]
 fn gcp_sa_json_multiline_attributes_to_vertexai() {
     // The fix target: the pretty-printed bridge must cross the newlines so the
-    // GCP-specific detector — not just the generic private-key block — fires.
+    // GCP-specific detector (not just the generic private-key block (fires)).
     let ids = detectors_for(&sa_json_multiline(), "-----BEGIN PRIVATE KEY-----");
     assert!(
         ids.iter().any(|id| id == "vertexai-service-account"),
@@ -302,7 +302,7 @@ fn azure_client_secret_below_floor_does_not_surface() {
 
 #[test]
 fn bare_client_secret_not_attributed_to_azure() {
-    // No AZURE_/ARM_/AAD_ scope prefix — a generic client_secret must NOT be
+    // No AZURE_/ARM_/AAD_ scope prefix, a generic client_secret must NOT be
     // mislabeled as an Azure service-principal secret.
     let v = body(40, 23);
     let ids = detectors_for(&format!("keycloak_client_secret={v}"), &v);

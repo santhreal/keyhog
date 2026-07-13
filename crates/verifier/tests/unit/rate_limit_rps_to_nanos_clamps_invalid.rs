@@ -14,8 +14,8 @@ fn rate_limit_rps_to_nanos_clamps_invalid() {
 }
 
 /// VALID-input overflow branch (distinct from the invalid-clamp above): a tiny
-/// but *positive, finite* rps passes the `rps.is_finite() && rps > 0.0` guard —
-/// so it is NOT sent through the 1.0 fallback — and then the interval it implies
+/// but *positive, finite* rps passes the `rps.is_finite() && rps > 0.0` guard 
+/// so it is NOT sent through the 1.0 fallback, and then the interval it implies
 /// (`1e9 / 1e-20 = 1e29` ns) exceeds `u64::MAX`. `rps_to_nanos` must take its
 /// final `else` arm and return exactly one second, never wrap/panic on the
 /// `nanos as u64` cast. The clamp-invalid test cannot reach this arm because its
@@ -33,7 +33,7 @@ fn rate_limit_rps_to_nanos_tiny_positive_rate_overflows_to_one_second() {
 /// below one nanosecond (`1e9 / 1e10 = 0.1 ns → round → 0`) must be floored to
 /// the `1` ns minimum, never a zero-interval (= unbounded-rate) slot. Zero would
 /// make `next_slot == last_request`, letting a service burst with no pacing at
-/// all — a rate-limit-bypass bug. Pins the `nanos < 1.0 => 1` floor arm.
+/// all (a rate-limit-bypass bug. Pins the `nanos < 1.0 => 1` floor arm).
 #[test]
 fn rate_limit_rps_to_nanos_huge_rate_floors_to_one_nanosecond() {
     assert_eq!(

@@ -1,4 +1,4 @@
-//! Coverage for `strip_windows_verbatim_prefix` (#177) — the allocation-free
+//! Coverage for `strip_windows_verbatim_prefix` (#177), the allocation-free
 //! display normalization that removes the Windows `\\?\` extended-length prefix
 //! from operator-facing paths. Previously untested; correctness matters because
 //! the same normalized string is what a user reads and what path-keyed output

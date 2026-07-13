@@ -28,7 +28,7 @@ fn scan_lockdown_git_staged_clean_exits_zero() {
     let repo = dir.path();
     // Hermetic cache: lockdown fails closed if a disk cache exists (it could
     // expose past findings), so an inherited real `~/.cache/keyhog` - or one a
-    // sibling test populated in this suite — would make this non-deterministic.
+    // sibling test populated in this suite (would make this non-deterministic).
     // Point HOME / XDG_CACHE_HOME at a throwaway dir so lockdown sees no cache.
     let home = TempDir::new().expect("home tempdir");
     init_git_repo(repo);

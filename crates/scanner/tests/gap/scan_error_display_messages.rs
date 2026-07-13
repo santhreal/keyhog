@@ -92,7 +92,7 @@ fn every_string_variant_puts_fix_after_the_detail() {
 #[test]
 fn gpu_and_simd_fix_offers_the_cpu_backend_fallback() {
     // A fatal GPU/SIMD failure is exactly when the operator needs to know they can
-    // fall back to the portable path — the single most actionable next step.
+    // fall back to the portable path (the single most actionable next step).
     assert!(ScanError::Gpu("x".to_string())
         .to_string()
         .contains("--backend cpu"));
@@ -228,7 +228,7 @@ fn capture_group_out_of_range_names_every_field_and_the_fix() {
 #[test]
 fn capture_group_out_of_range_explains_the_fallback_risk() {
     // The message must explain WHY the misconfiguration matters (context), not just
-    // state it — the whole-match fallback silently captures the wrong bytes.
+    // state it (the whole-match fallback silently captures the wrong bytes).
     let msg = ScanError::CaptureGroupOutOfRange {
         detector_id: "d".to_string(),
         index: 0,

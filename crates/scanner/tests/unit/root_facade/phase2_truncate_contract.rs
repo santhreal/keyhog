@@ -1,10 +1,10 @@
-//! Contract for `truncate_for_prefilter` — the prefilter input-truncation that
+//! Contract for `truncate_for_prefilter`: the prefilter input-truncation that
 //! keeps the always-active RegexSet on the lazy-DFA instead of falling to PikeVM
 //! on `{N,}`/`+`/`*` bodies. Moved out of `engine/phase2_truncate.rs` so
 //! scanner src stays free of inline test modules (KH-GAP-004); driven through
 //! the crate-root re-export.
 //!
-//! Soundness pin: truncation is a SOUND SUPERSET presence gate — it may only
+//! Soundness pin: truncation is a SOUND SUPERSET presence gate, it may only
 //! drop a trailing bounded suffix, never widen the prefix, so the full-pattern
 //! extraction still filters any over-mark. These cases assert the exact
 //! truncated forms (Law 6), not merely "is/!is_none".
@@ -25,7 +25,7 @@ fn bounded_range_is_not_truncated() {
 
 #[test]
 fn at_least_range_truncated_to_minimum() {
-    // `{3,}` is bounded to its minimum `{3}` — exact, not a superset.
+    // `{3,}` is bounded to its minimum `{3}`: exact, not a superset.
     assert_eq!(truncate_for_prefilter(r"[a-z]{3,}").unwrap(), r"[a-z]{3}");
 }
 

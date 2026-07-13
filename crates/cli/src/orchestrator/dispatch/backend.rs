@@ -5,7 +5,7 @@
 //! Backend choice splits by *when* it runs, never by guessing:
 //!
 //! - [`CachedBackendRouter`] drives normal scans. It only reads install-time
-//!   calibration evidence — zero benchmarks, zero writes. A bucket the
+//!   calibration evidence, zero benchmarks, zero writes. A bucket the
 //!   installer never measured is an [`AutorouteRoutingError`], not a runtime
 //!   probe or a substitute backend.
 //! - [`MeasuredBackendRouter`] drives explicit calibration (installer / backend
@@ -14,7 +14,7 @@
 //!
 //! Both honour an explicit `--backend` first; only then does
 //! [`sole_compiled_backend`] resolve a build that compiled exactly one backend
-//! (portable / single-feature). Neither path silently substitutes — a miss
+//! (portable / single-feature). Neither path silently substitutes, a miss
 //! fails closed (Law 10).
 //!
 //! # Submodule map (one-way dependency DAG)
@@ -54,14 +54,14 @@ use std::path::PathBuf;
 // v22: one-power-of-two workload bands replace the old paired bands. Numeric
 // bucket ids changed meaning, so v21 caches must be rejected rather than risk a
 // small new workload aliasing a much larger old calibration row.
-// v21: primary-evidence-only decision schema — `AutorouteDecision` persists just
+// v21: primary-evidence-only decision schema. `AutorouteDecision` persists just
 // the measured timing evidence (simd/cpu/gpu) plus backend/sample/digest; every
 // derived value (per-backend ms, GPU cold/warm/route, selected margin) is computed
 // on load via accessors instead of stored, so a cache can never hold a value
 // inconsistent with its own evidence (the whole cross-field-mismatch validation
 // class is gone). v20 caches carry the now-removed denormalized fields and are
 // rejected on the version gate and recalibrated.
-// v20: multi-config cache schema — shared binary/host/corpus identity once at
+// v20: multi-config cache schema, shared binary/host/corpus identity once at
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
@@ -135,7 +135,7 @@ impl AutorouteRoutingError {
         cache_load_error: &Option<String>,
     ) -> Self {
         // Inverted pyramid: what happened, then the fix, then the forensics.
-        // The bucket is rendered by `store::render_workload_key` — the ONE
+        // The bucket is rendered by `store::render_workload_key`: the ONE
         // rendering shared with `keyhog backend --autoroute`, so an operator can
         // match this refused bucket against calibrated buckets field-for-field.
         let cache_state = autoroute_cache_state(cache_path, cache_load_error);
@@ -260,7 +260,7 @@ impl std::error::Error for AutorouteRoutingError {}
 /// `SimdCpu` is gated by the `simd` (Hyperscan) feature and `Gpu` by
 /// `gpu`; a build with neither (e.g. `--features portable`) can only ever run
 /// `CpuFallback`. There is nothing to route, and autoroute calibration could never
-/// produce a decision such a build would request — so resolving the lone backend
+/// produce a decision such a build would request, so resolving the lone backend
 /// here keeps single-backend builds from failing closed (exit 2) on a workload
 /// they have no way to calibrate. This is NOT a silent fallback: it is the only
 /// backend that exists, and it is reached only AFTER the explicit `--backend`
@@ -342,7 +342,7 @@ impl CachedBackendRouter {
 /// Resolve an exact workload bucket against the persisted decision table and
 /// fail closed on any miss. ONE owner for the lookup contract shared by
 /// [`CachedBackendRouter::choose`] and the non-calibration branch of
-/// [`MeasuredBackendRouter::choose`] — neither router may infer a backend from
+/// [`MeasuredBackendRouter::choose`], neither router may infer a backend from
 /// neighbouring measurements.
 fn resolve_persisted_backend(
     decisions: &HashMap<WorkloadKey, AutorouteDecision>,

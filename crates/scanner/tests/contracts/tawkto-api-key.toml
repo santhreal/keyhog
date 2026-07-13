@@ -19,11 +19,11 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "TAWK_TOTOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "TAWK_TOTOKEN=6c452EXAMPLEEXAMPLE4d06d"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[negative]]
 text = "TAWK_TO_SITE_ID=57e268430f27d064a9cf899b"

@@ -1,8 +1,8 @@
 //! WebSource SSRF unification lock. The WebSource IP screen once shipped a
 //! hand-rolled subset (`is_loopback || is_private || is_link_local || …`) that
-//! silently let a whole class of addresses through — CGN (100.64.0.0/10), IETF
+//! silently let a whole class of addresses through. CGN (100.64.0.0/10), IETF
 //! benchmark (198.18.0.0/15), IETF protocol assignment (192.0.0.0/24), Class E
-//! (240.0.0.0/4), and the non-zero 0.0.0.0/8 space — an SSRF pivot into
+//! (240.0.0.0/4), and the non-zero 0.0.0.0/8 space, an SSRF pivot into
 //! internal / provider space. The fork was removed: `is_disallowed_web_host`
 //! now delegates to `keyhog_verifier::ssrf::is_private_url` and
 //! `is_disallowed_ip` to `is_private_ip_addr` (the single fleet-canonical
@@ -12,7 +12,7 @@
 //! missed must be BLOCKED on BOTH the URL-host screen and the resolved-IP
 //! screen, and unambiguously-public addresses must still be allowed (no
 //! block-everything degenerate). Re-forking WebSource to a subset would turn
-//! this red — before the SSRF pivot could ship.
+//! this red (before the SSRF pivot could ship).
 
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use std::net::{IpAddr, Ipv4Addr};
@@ -31,7 +31,7 @@ const FORKED_GAP_ADDRS: &[(&str, [u8; 4])] = &[
     ("0.0.0.0/8 non-zero 0.1.2.3", [0, 1, 2, 3]),
 ];
 
-/// Unambiguously-public addresses — the screen must NOT block these (guard
+/// Unambiguously-public addresses, the screen must NOT block these (guard
 /// against a degenerate block-everything screen).
 const PUBLIC_ADDRS: &[[u8; 4]] = &[[8, 8, 8, 8], [1, 1, 1, 1], [93, 184, 216, 34]];
 
@@ -46,12 +46,12 @@ fn websource_ssrf_screen_blocks_historically_forked_ranges() {
         let ip = v4(o);
         assert!(
             TestApi.is_disallowed_ip(ip),
-            "resolved-IP SSRF screen must block {label} ({ip}) — the old-fork gap"
+            "resolved-IP SSRF screen must block {label} ({ip}), the old-fork gap"
         );
         let url = format!("http://{ip}/x.js");
         assert!(
             TestApi.is_disallowed_web_host(&url),
-            "URL-host SSRF screen must block {label} ({url}) — the old-fork gap"
+            "URL-host SSRF screen must block {label} ({url}), the old-fork gap"
         );
     }
 

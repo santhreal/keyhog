@@ -20,7 +20,7 @@ reason = "Body below 32 hex chars."
 [[evasion]]
 text = "dd_api_key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
 credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
-reason = "Lowercased dd_api_key — regex `DD.API.KEY` dot-class accepts underscore separator."
+reason = "Lowercased dd_api_key (regex `DD.API.KEY` dot-class accepts underscore separator)."
 
 [perf]
 fixture_bytes = 4096

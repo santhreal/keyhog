@@ -18,12 +18,12 @@ reason = "Canonical jwt.io example token (HS256, John Doe). The most-cited JWT i
 [[positive]]
 text = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5OTk5OTk5OTk5IiwidGVuYW50Ijoia2V5aG9nLWUyZSIsImlhdCI6MTc0ODA3MjAwMH0.K3xqLnZWP4UlH9oZcQK7nBmJrEzVfYp2N1RsAtX5Y8w"
 credential = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5OTk5OTk5OTk5IiwidGVuYW50Ijoia2V5aG9nLWUyZSIsImlhdCI6MTc0ODA3MjAwMH0.K3xqLnZWP4UlH9oZcQK7nBmJrEzVfYp2N1RsAtX5Y8w"
-reason = "Bearer-token header — the most common JWT leak channel."
+reason = "Bearer-token header (the most common JWT leak channel)."
 
 # Header-field-order recall (KH recall lane). The prior `eyJhbGci` anchor only
 # fired when `alg` serialized FIRST. These spec-valid JWTs put `typ` / `jwk` /
 # `kid` first, so they begin `eyJ0eXAi` / `eyJqd2si` / `eyJraWQ` and were missed
-# entirely — 52 such positives in CredData. The structural `eyJ`-header anchor
+# entirely: 52 such positives in CredData. The structural `eyJ`-header anchor
 # recovers them (jwt_non_alg_first candidate: +54 TP at 0.964 precision).
 [[positive]]
 text = "token = \"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk\""
@@ -52,7 +52,7 @@ reason = "Prose mentioning the prefix without a real JWT."
 
 [[negative]]
 text = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ"
-reason = "Header + payload but no signature (only 2 segments) — must not match."
+reason = "Header + payload but no signature (only 2 segments) (must not match)."
 
 # ---- EVASIONS (adversarial) -----------------------------------------
 

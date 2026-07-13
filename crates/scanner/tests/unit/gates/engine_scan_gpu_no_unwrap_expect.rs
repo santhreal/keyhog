@@ -29,7 +29,7 @@ const GPU_SCAN_SRCS: &[&str] = &[
 const INLINE_TEST_ALLOWLIST: &[&str] = &["gpu_region_dispatch.rs"];
 
 /// Returns `true` when `line` starts a test-cfg annotation that gates an
-/// inline test module — either the plain `#[cfg(test)]` form or the
+/// inline test module, either the plain `#[cfg(test)]` form or the
 /// compound `#[cfg(all(test, …))]` variant used by GPU-gated modules.
 fn is_test_cfg_line(line: &str) -> bool {
     let t = line.trim();
@@ -78,7 +78,7 @@ fn collect_unwrap_offenders(
                 if test_mod_depth > 0 {
                     pending_test_mod = false;
                 }
-                // This line is part of the test module boundary — skip it.
+                // This line is part of the test module boundary (skip it).
                 continue;
             }
             if test_mod_depth > 0 {
@@ -136,14 +136,14 @@ fn engine_scan_gpu_inline_test_allowlist_not_stale() {
         let src = std::fs::read_to_string(&path).unwrap_or_else(|e| {
             panic!(
                 "INLINE_TEST_ALLOWLIST entry `{rel}` not readable ({e}); \
-                the file was moved — remove it from the allowlist"
+                the file was moved, remove it from the allowlist"
             )
         });
         let has_test_cfg = src.lines().any(|line| is_test_cfg_line(line));
         assert!(
             has_test_cfg,
             "stale INLINE_TEST_ALLOWLIST entry `{rel}`: the file no longer \
-             contains a #[cfg(test)] / #[cfg(all(test, ...))] annotation — \
+             contains a #[cfg(test)] / #[cfg(all(test, ...))] annotation. \
              remove it from INLINE_TEST_ALLOWLIST"
         );
     }

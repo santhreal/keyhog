@@ -2,36 +2,36 @@
 //!
 //! The contract corpus (`contracts_runner.rs`) drives ~900 hand-written
 //! positive/negative fixtures, but it only covers the subset of detectors that
-//! have a `tests/contracts/<id>.toml`. The *registry* itself — every one of the
+//! have a `tests/contracts/<id>.toml`. The *registry* itself, every one of the
 //! ~900 on-disk `detectors/*.toml`, the compiled-in embedded set, and the
-//! invariants that make a detector loadable and routable — was pinned only by
+//! invariants that make a detector loadable and routable, was pinned only by
 //! ad-hoc spot checks. This suite pins the WHOLE registry with one exact
 //! assertion per invariant per detector, so a malformed, duplicate, empty, or
 //! count-drifted detector flips a specific named case red.
 //!
 //! Every assertion is exact (Law 6): a precise count, a named id, a concrete
-//! field value — never `!is_empty()` standing in for truth. The suite is
+//! field value, never `!is_empty()` standing in for truth. The suite is
 //! deterministic and host-independent (no GPU, no network, no scan timing).
 //!
 //! What each test pins, and what goes red on regression:
-//!   * `detector_ids_are_globally_unique` — two TOMLs claiming the same `id`
+//!   * `detector_ids_are_globally_unique`: two TOMLs claiming the same `id`
 //!     (a copy-paste that silently shadows one detector in the compiled map).
-//!   * `every_detector_has_at_least_one_pattern` — a detector with zero
+//!   * `every_detector_has_at_least_one_pattern`: a detector with zero
 //!     `[[detector.patterns]]` can never fire; it is dead weight in the corpus.
 //!   * `every_pattern_regex_is_nonempty` / `every_shipped_detector_passes_the_`
 //!     `production_quality_gate` / `the_whole_on_disk_corpus_compiles_into_one_`
-//!     `scanner` — an empty / invalid / ReDoS-prone regex (a typo in a
+//!     `scanner`: an empty / invalid / ReDoS-prone regex (a typo in a
 //!     contributed TOML) that would be dropped or fail to compile.
-//!   * `every_detector_severity_is_a_known_tier` — a severity outside the
+//!   * `every_detector_severity_is_a_known_tier`: a severity outside the
 //!     `Severity` enum (caught at parse, re-asserted here as a value pin so a
 //!     new tier can't silently widen the contract).
 //!   * `embedded_set_matches_the_on_disk_toml_tree` /
-//!     `gated_on_disk_load_is_a_subset_of_the_embedded_set` — the compiled-in
+//!     `gated_on_disk_load_is_a_subset_of_the_embedded_set`: the compiled-in
 //!     `build.rs` corpus drifting from the shipped `detectors/` tree (a stale
 //!     embed = the binary scans with a different rule set than the repo claims).
-//!   * `every_keyword_is_nonempty_and_distinct_within_a_detector` — a blank or
+//!   * `every_keyword_is_nonempty_and_distinct_within_a_detector`: a blank or
 //!     duplicate prefilter keyword that would no-op (or screen in every chunk).
-//!   * `self_declared_min_confidence_floor_is_a_unit_interval` — a self-declared
+//!   * `self_declared_min_confidence_floor_is_a_unit_interval`: a self-declared
 //!     floor outside `[0,1]` that would silently suppress or admit everything.
 
 use super::support;
@@ -43,11 +43,11 @@ use keyhog_core::{validate_detector, DetectorSpec, QualityIssue, Severity};
 use keyhog_scanner::CompiledScanner;
 
 /// The FULL shipped detector population: the compiled-in embedded corpus the
-/// binary actually carries (every `detectors/*.toml`, UNGATED — `build.rs`
+/// binary actually carries (every `detectors/*.toml`, UNGATED. `build.rs`
 /// embeds them verbatim, without the runtime quality gate). Structural
 /// invariants (unique id, non-blank fields, has-pattern, valid severity) are
-/// pinned over THIS set so a gate-rejected detector — which `load_detectors`
-/// would silently drop — is still caught. Fails LOUDLY on a parse error
+/// pinned over THIS set so a gate-rejected detector, which `load_detectors`
+/// would silently drop, is still caught. Fails LOUDLY on a parse error
 /// (Law 10): `load_embedded_detectors_or_fail` is itself fail-closed.
 fn load_shipped() -> Vec<DetectorSpec> {
     keyhog_core::load_embedded_detectors_or_fail()
@@ -63,7 +63,7 @@ fn load_embedded() -> Vec<DetectorSpec> {
 /// The GATED runtime population: what `load_detectors` returns after applying
 /// the quality gate (gate-rejected detectors dropped). Used only where the
 /// runtime-scannable set is the subject (population floor, gated-subset check).
-/// Fails LOUDLY if the tree is absent — a missing `detectors/` dir is a
+/// Fails LOUDLY if the tree is absent, a missing `detectors/` dir is a
 /// harness/checkout error, never a silent green (Law 10).
 fn load_gated() -> Vec<DetectorSpec> {
     keyhog_core::load_detectors(&detector_dir()).unwrap_or_else(|e| {
@@ -82,7 +82,7 @@ fn registry_has_a_substantial_detector_population() {
     let detectors = load_gated();
     assert!(
         detectors.len() >= 800,
-        "on-disk detector corpus collapsed to {} (<800) — loader or detectors/ \
+        "on-disk detector corpus collapsed to {} (<800), loader or detectors/ \
          tree is broken; every per-detector assertion below would pass vacuously",
         detectors.len()
     );
@@ -157,7 +157,7 @@ fn every_detector_has_at_least_one_pattern() {
         .collect();
     assert!(
         zero_pattern_named.is_empty(),
-        "a non-generic detector with zero patterns can never fire — it is dead \
+        "a non-generic detector with zero patterns can never fire, it is dead \
          corpus weight:\n  - {}",
         zero_pattern_named.join("\n  - ")
     );
@@ -213,12 +213,12 @@ fn every_pattern_regex_is_nonempty() {
 
 #[test]
 fn every_shipped_detector_passes_the_production_quality_gate() {
-    // Validate the EMBEDDED (ungated) population, not `load_detectors` — the
+    // Validate the EMBEDDED (ungated) population, not `load_detectors`: the
     // latter already SKIPS gate-rejected detectors, so re-checking its output
     // is tautological. The embedded set is what `build.rs` baked into the
     // binary verbatim; a gate Error here means a shipped detector that
     // `load_detectors` would silently drop at runtime (an invisible recall
-    // hole — exactly the dead-detector class core lib.rs warns about). Use
+    // hole, exactly the dead-detector class core lib.rs warns about). Use
     // keyhog's OWN validator (the same `validate_detector` the loader runs),
     // not an independent regex builder whose different flavor would false-red.
     let detectors = load_embedded();
@@ -244,7 +244,7 @@ fn the_whole_on_disk_corpus_compiles_into_one_scanner() {
     // The end-to-end production compile path: every detector's patterns,
     // companions, and keywords must fuse into one `CompiledScanner` without
     // error. This is what the binary does at startup; a regex the literal-set/
-    // NFA compiler rejects surfaces here, not in the field. Use the GATED set —
+    // NFA compiler rejects surfaces here, not in the field. Use the GATED set 
     // the exact population `load_detectors -> CompiledScanner::compile` feeds the
     // scanner in production (a quality-Error detector is dropped before compile,
     // and is independently caught by the quality-gate test above).
@@ -256,14 +256,14 @@ fn the_whole_on_disk_corpus_compiles_into_one_scanner() {
     // The compiled scanner must carry a substantial pattern set. A floor (not a
     // tie to the exact detector count, since the compiler may dedup identical
     // regex strings shared across detectors) catches the regression where
-    // compile silently produces a near-empty engine — every scan would then
+    // compile silently produces a near-empty engine, every scan would then
     // read clean. 700 is comfortably below the real pattern count yet far above
     // any degenerate near-empty compile.
     let patterns = keyhog_scanner::testing::pattern_regex_strs(&scanner).len();
     assert!(
         patterns >= 700,
         "compiled scanner exposes only {patterns} pattern regexes (<700) for \
-         {count} detectors — the engine compiled to near-nothing (a silent \
+         {count} detectors, the engine compiled to near-nothing (a silent \
          drop), and every scan would read clean"
     );
 }
@@ -309,7 +309,7 @@ fn every_detector_severity_is_a_known_tier() {
     );
 }
 
-/// Count the `.toml` files in the detectors tree — the UNGATED population that
+/// Count the `.toml` files in the detectors tree, the UNGATED population that
 /// `build.rs` embeds verbatim (it does not run the quality gate). This is the
 /// right comparand for the embedded set; `load_detectors` applies the gate and
 /// may drop a gate-rejected detector, so it is a (possibly proper) subset.
@@ -332,7 +332,7 @@ fn embedded_set_matches_the_on_disk_toml_tree() {
 
     // The embedded helper's reported count must equal the parsed embedded set.
     // (Each embedded TOML holds exactly one detector, so parse-count ==
-    // file-count when every TOML parses — `load_embedded_detectors_or_fail`
+    // file-count when every TOML parses: `load_embedded_detectors_or_fail`
     // fails closed otherwise, so reaching here proves they all parsed.)
     assert_eq!(
         embedded.len(),
@@ -344,7 +344,7 @@ fn embedded_set_matches_the_on_disk_toml_tree() {
 
     // The compiled-in corpus must match the shipped `detectors/` .toml tree
     // exactly (build.rs embeds every .toml, ungated). A drift means a stale
-    // embed: the binary scans with a different rule set than the repo claims —
+    // embed: the binary scans with a different rule set than the repo claims 
     // the exact failure mode that hid a broken detector in a benched release
     // (see core lib.rs docs on load_embedded_detectors_or_fail).
     assert_eq!(
@@ -363,7 +363,7 @@ fn gated_on_disk_load_is_a_subset_of_the_embedded_set() {
     // detector; the embedded set is ungated. So every gated id must be present
     // in the embedded set (the gate only ever removes), and the gated count
     // never exceeds the embedded count. A gated id NOT in the embedded set
-    // would mean the on-disk tree and the embed diverged — a stale embed.
+    // would mean the on-disk tree and the embed diverged (a stale embed).
     let on_disk = load_gated();
     let embedded = load_embedded();
     let embedded_ids: std::collections::BTreeSet<&str> =
@@ -384,7 +384,7 @@ fn gated_on_disk_load_is_a_subset_of_the_embedded_set() {
     assert!(
         orphan_gated.is_empty(),
         "detector(s) loaded from disk but ABSENT from the embedded set (stale \
-         embed — rebuild): {orphan_gated:?}"
+         embed: rebuild): {orphan_gated:?}"
     );
 }
 
@@ -435,7 +435,7 @@ fn self_declared_min_confidence_floor_is_a_unit_interval() {
     // wiring is dead and this assertion is a tripwire for that regression.
     assert!(
         declared > 0,
-        "no detector declares a min_confidence floor — the self-declared-floor \
+        "no detector declares a min_confidence floor, the self-declared-floor \
          feature (sourcegraph/cursor low-entropy-body detectors) is unwired"
     );
 }

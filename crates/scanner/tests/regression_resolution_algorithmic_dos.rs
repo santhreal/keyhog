@@ -7,15 +7,15 @@
 //! key body is never double-reported alongside the block finding.
 //!
 //! The hazard it used to carry: for every match it scanned EVERY private-key
-//! span (`spans.iter().any(...)`) — O(matches × spans). A crafted file packed
+//! span (`spans.iter().any(...)`). O(matches × spans). A crafted file packed
 //! with thousands of tiny PEM blocks (each a private-key-block match) and
 //! thousands of nested fragments drives that product into the billions: a
-//! single-file algorithmic-DoS (Law 7 — avoidable O(n²) is a production bug at
+//! single-file algorithmic-DoS (Law 7, avoidable O(n²) is a production bug at
 //! scale). The fix indexes spans per file as (sorted starts, prefix-max end)
-//! and answers each containment query with one binary search — O((M+P) log P).
+//! and answers each containment query with one binary search. O((M+P) log P).
 //!
 //! This suite is the regression guard. It pins (1) the exact containment
-//! semantics across every boundary the prefix-max index has to get right —
+//! semantics across every boundary the prefix-max index has to get right 
 //! inclusive bounds, off-by-one rejects, overlapping spans, the wide-early-span
 //! case a naive "last span with start ≤ q" check gets WRONG, cross-file
 //! isolation, and (2) the DoS bound itself: 40 000 spans + 40 000 nested
@@ -177,7 +177,7 @@ fn nested_probe_in_one_of_many_spans_is_suppressed() {
 fn wide_early_span_suppresses_probe_past_a_narrow_later_span_start() {
     // span A [0, 1000) is wide; span B [500, 510) starts LATER but is narrow.
     // probe [505, 900): its start (505) is past B's start, so a naive "rightmost
-    // span whose start ≤ 505" picks B [500,510), which does NOT contain it — a
+    // span whose start ≤ 505" picks B [500,510), which does NOT contain it, a
     // false KEEP. The prefix-max index takes max(end) over all starts ≤ 505 =
     // 1000 (from A) ≥ 900 → correctly nested.
     let resolved = resolve_matches(vec![
@@ -229,7 +229,7 @@ fn probe_entirely_after_span_is_kept() {
 
 #[test]
 fn probe_extending_one_byte_past_span_end_is_kept() {
-    // span [100, 300); probe [150, 301) — one byte past block_end (300).
+    // span [100, 300); probe [150, 301) (one byte past block_end (300)).
     let resolved = resolve_matches(vec![span(FILE, 100, 200), probe(FILE, 150, 151)]);
     assert!(
         probe_kept(&resolved, 150),
@@ -239,7 +239,7 @@ fn probe_extending_one_byte_past_span_end_is_kept() {
 
 #[test]
 fn probe_starting_one_byte_before_span_is_kept() {
-    // span [100, 300); probe [99, 200) — starts one byte before block_start (100).
+    // span [100, 300); probe [99, 200) (starts one byte before block_start (100)).
     let resolved = resolve_matches(vec![span(FILE, 100, 200), probe(FILE, 99, 101)]);
     assert!(
         probe_kept(&resolved, 99),
@@ -473,7 +473,7 @@ fn adversarial_many_spans_and_nested_probes_resolve_within_time_bound() {
     assert!(
         elapsed < Duration::from_secs(5),
         "nesting suppression over {N} spans + {N} probes took {elapsed:?}; the prefix-max \
-         index resolves this in milliseconds — exceeding 5s means the O(matches × spans) \
+         index resolves this in milliseconds, exceeding 5s means the O(matches × spans) \
          scan was reintroduced (algorithmic-DoS, Law 7)"
     );
     // The bound is only meaningful alongside correctness: the work was real.

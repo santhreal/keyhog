@@ -27,7 +27,7 @@ fn parse_inference_markers(raw: &str) -> Result<InferenceMarkers, String> {
 /// parsed exactly ONCE here and each classifier below reads its field, instead
 /// of the previous eight statics that each re-`include_str!`'d and re-parsed the
 /// whole file at first use (8x redundant startup parse + eight `expect` sites).
-/// Fail-closed (Law 10): invalid bundled metadata panics loudly at first use —
+/// Fail-closed (Law 10): invalid bundled metadata panics loudly at first use 
 /// the scanner refuses to run without credential-context classification truth.
 static INFERENCE_MARKERS: LazyLock<InferenceMarkers> =
     LazyLock::new(|| match parse_inference_markers(INFERENCE_MARKERS_TOML) {
@@ -56,7 +56,7 @@ const ATTR_BLOCK_LOOKBACK: usize = 32;
 /// the two sites from silently drifting apart.
 const CFG_TEST_ATTR: &str = concat!("#[cfg(", "test)]");
 
-/// Canonical comment-opener markers for the context module — the single owner
+/// Canonical comment-opener markers for the context module, the single owner
 /// shared by `strip_comment_prefix` here and the disclaimer scan in
 /// `false_positive.rs`. `--` opens a comment only when it is not the `---`
 /// document separator (each consumer applies that exception).
@@ -398,8 +398,8 @@ pub(crate) fn is_in_test_function(lines: &[&str], line_idx: usize) -> bool {
 }
 
 /// True if `trimmed` opens a Rust `fn` signature, tolerating the full leading
-/// qualifier run — visibility (`pub`, `pub(crate)`, `pub(super)`, `pub(in …)`),
-/// `const`, `unsafe`, `async`, `default`, and `extern "…"` — in any order before
+/// qualifier run, visibility (`pub`, `pub(crate)`, `pub(super)`, `pub(in …)`),
+/// `const`, `unsafe`, `async`, `default`, and `extern "…"`: in any order before
 /// the `fn` keyword. The look-back boundary check only knew `fn`/`pub fn`/
 /// `async fn`/`pub async fn`, so a `pub(crate) fn` / `const fn` / `unsafe fn`
 /// between a match and a test marker was skipped, mis-classifying real code as
@@ -486,10 +486,10 @@ pub(crate) fn surrounding_line_window(text: &str, offset: usize, radius: usize) 
     // pathological line with no `\n` for kilobytes (e.g. a minified bundle,
     // or a file that is one giant space-separated run of credential-shaped
     // tokens): there, an uncapped per-match `O(line_len)` walk turned the
-    // whole-file scan quadratic — a 164 KiB single-line file with 8 K matches
+    // whole-file scan quadratic, a 164 KiB single-line file with 8 K matches
     // took ~18 s, a 656 KiB one timed out. Capping the window keeps each
     // match's context cost O(1); the FP heuristics only need nearby keywords,
-    // for which the immediate line is enough — these FP heuristics detect
+    // for which the immediate line is enough, these FP heuristics detect
     // HTTP cache / CORS / integrity-hash / renovate-digest *line* context, so
     // 2 KiB each side covers any real header line while keeping the per-match
     // substring scans cheap (this also speeds ordinary minified-bundle scans,

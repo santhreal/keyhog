@@ -62,7 +62,7 @@ fn decompress_to_bytes(
     // Cap the reader at `budget + 1` bytes: one over the budget so the caller
     // can tell "hit the cap" from "exactly fit". Every decoder below streams,
     // so a decompression bomb can never allocate beyond this ceiling.
-    let budget_u64 = u64::try_from(budget).unwrap_or(u64::MAX); // LAW10: unreachable on real platforms — only a wider-than-u64 usize target takes this arm, where u64::MAX is the largest stream cap the shared reader can represent.
+    let budget_u64 = u64::try_from(budget).unwrap_or(u64::MAX); // LAW10: unreachable on real platforms, only a wider-than-u64 usize target takes this arm, where u64::MAX is the largest stream cap the shared reader can represent.
     let read_cap = budget_u64.saturating_add(1);
     let read = match format {
         CompressedFormat::Gzip => {
@@ -194,7 +194,7 @@ pub(super) fn emit_tar_entries_with_state(
         let mut entry = match entry {
             Ok(e) => e,
             Err(error) => {
-                // Law 10: a dropped tar entry is an UNKNOWN — count it as
+                // Law 10: a dropped tar entry is an UNKNOWN, count it as
                 // unreadable so coverage reflects it.
                 tracing::warn!(archive = %container_display, %error, "skipping unreadable tar entry");
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
@@ -281,7 +281,7 @@ pub(super) fn emit_tar_entries_with_state(
             continue;
         }
         if max_size > 0 && entry_size > max_size {
-            // Law 10: an over-cap tar entry is dropped from the scan — count it so
+            // Law 10: an over-cap tar entry is dropped from the scan, count it so
             // coverage reflects the gap (the operator can re-scan with a larger cap).
             tracing::warn!(
                 archive = %container_display,
@@ -304,7 +304,7 @@ pub(super) fn emit_tar_entries_with_state(
         }
         *total_uncompressed = (*total_uncompressed).saturating_add(entry_size);
         if total_budget > 0 && *total_uncompressed > total_budget {
-            // Law 10: a tar-bomb abort truncates extraction — the remaining
+            // Law 10: a tar-bomb abort truncates extraction, the remaining
             // entries are NOT scanned, so this is partial coverage the operator
             // must see (the old `tracing::warn!` was invisible at default
             // verbosity). Surface loudly + count.
@@ -324,7 +324,7 @@ pub(super) fn emit_tar_entries_with_state(
             Ok(read) => read,
             Err(error) => {
                 // Law 10: a tar entry whose body could not be read is an UNKNOWN
-                // dropped from the scan — count it.
+                // dropped from the scan (count it).
                 tracing::warn!(archive = %container_display, entry = %entry_name, %error, "failed to read tar entry body");
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                 if !emit_tar_entry_error(
@@ -622,7 +622,7 @@ pub(super) fn extract_compressed_chunks(
 
 fn report_compressed_recovered_after_error(path: &Path, decoded_len: usize) -> SourceError {
     eprintln!(
-        "keyhog: WARNING: decompression of {} produced a {} byte prefix and then failed — only the recovered prefix was scanned; the rest was NOT.",
+        "keyhog: WARNING: decompression of {} produced a {} byte prefix and then failed, only the recovered prefix was scanned; the rest was NOT.",
         path.display(),
         decoded_len
     );
@@ -634,13 +634,13 @@ fn report_compressed_recovered_after_error(path: &Path, decoded_len: usize) -> S
 }
 
 fn report_compressed_truncation(path: &Path, budget: usize, decoded_len: usize) -> SourceError {
-    // Law 10: the decompressed stream was truncated at the bomb cap — only the
+    // Law 10: the decompressed stream was truncated at the bomb cap, only the
     // prefix is scanned, the tail is NOT. Surface loudly + count as a
     // truncated archive so the operator sees the partial coverage (the old
     // `tracing::warn!` was invisible at default verbosity).
     eprintln!(
         "keyhog: WARNING: decompression of {} hit the {} byte cap (= 4x --max-file-size; \
-         zip-bomb guard) — only the truncated {}-byte prefix was scanned; the rest was NOT.",
+         zip-bomb guard), only the truncated {}-byte prefix was scanned; the rest was NOT.",
         path.display(),
         budget,
         decoded_len

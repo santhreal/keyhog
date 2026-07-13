@@ -22,7 +22,7 @@ from typing import Callable
 #
 # Every builder takes a `rnd` (random.Random instance) so the
 # corpus is reproducible from a single seed. Fragments NEVER spell
-# the full credential — assembly always crosses at least one `+`
+# the full credential, assembly always crosses at least one `+`
 # so a literal-string scanner of THIS source file can't see the
 # concatenated form.
 
@@ -46,7 +46,7 @@ _GH_BASE62_DIGITS = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuv
 
 
 def _crc32_iso_hdlc(data: bytes) -> int:
-    # Standard CRC-32 (ISO HDLC) — same polynomial and reflection that
+    # Standard CRC-32 (ISO HDLC), same polynomial and reflection that
     # keyhog's `checksum::github::crc32` uses (0xEDB88320, reflected).
     # Hand-rolled rather than `zlib.crc32` to keep the per-byte path
     # explicit + auditable against the Rust impl.
@@ -121,7 +121,7 @@ def gcp_service_account_pem(rnd: random.Random) -> str:
 def github_classic_pat(rnd: random.Random) -> str:
     # Real github_pat format: ghp_ + 30 chars entropy + 6 chars CRC32(base62).
     # The previous "ghp_ + 36 random chars" was the right SHAPE but the last
-    # 6 chars never validated as the CRC of the first 30 — keyhog's
+    # 6 chars never validated as the CRC of the first 30: keyhog's
     # `checksum::github::GithubClassicPatValidator` rejected bench fixtures
     # as `Invalid` and dropped them in scan.rs:723 before emit, flooring
     # github_classic_pat recall on the bench at 0%.
@@ -132,7 +132,7 @@ def github_classic_pat(rnd: random.Random) -> str:
 
 def github_fine_grained_pat(rnd: random.Random) -> str:
     # Real format: github_pat_<22 entropy>_<53 entropy + 6 CRC>. The
-    # checksum validator tries both `full_payload` and `right_only` —
+    # checksum validator tries both `full_payload` and `right_only` 
     # we generate the simpler `right_only` form (CRC over the right
     # 53-char segment), which validates the same way as a real PAT
     # rotated through GitHub's emit path.
@@ -187,8 +187,8 @@ def slack_webhook(rnd: random.Random) -> str:
     # B-prefixed bot/channel IDs. The previous generator emitted random
     # uppercase alphanumerics for both ID segments which doesn't match
     # any real Slack webhook (or any precise detector regex). Scanners
-    # that anchor on T/B prefixes — including keyhog's slack-webhook-url
-    # detector — correctly reject the old shape as not-a-webhook.
+    # that anchor on T/B prefixes, including keyhog's slack-webhook-url
+    # detector: correctly reject the old shape as not-a-webhook.
     # Bringing the synth fixture in line with the real format closes
     # the recall floor on the webhook-url-token category.
     team_id = "T" + _rand_chars(rnd, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 9)
@@ -290,7 +290,7 @@ def aws_session_token(rnd: random.Random) -> str:
 
 
 def azure_storage_key(rnd: random.Random) -> str:
-    # Real Azure storage keys never appear bare in production code —
+    # Real Azure storage keys never appear bare in production code 
     # they're always inside an `AccountName=...;AccountKey=<88-char
     # b64>;EndpointSuffix=core.windows.net` connection string OR
     # behind an `AZURE_STORAGE_KEY=` environment variable. The bare
@@ -359,7 +359,7 @@ def jwt_token(rnd: random.Random) -> str:
     alg = rnd.choice(["HS256", "HS384", "HS512", "RS256", "RS512", "ES256", "PS256"])
     header_json = json.dumps({"alg": alg, "typ": "JWT"}, separators=(",", ":")).encode()
     header = base64.urlsafe_b64encode(header_json).rstrip(b"=").decode()
-    # Payload starts with "{" → base64url begins with "eyJ" — matches
+    # Payload starts with "{" → base64url begins with "eyJ", matches
     # the second `eyJ` anchor in the detector. Use a real-shape claims
     # set with sub/iat/exp so the encoded length lands in the
     # `{10,1000}` window the jwt-token detector requires.
@@ -473,7 +473,7 @@ def dbt_cloud_pat(rnd: random.Random) -> str:
 
 def pinecone_api_key(rnd: random.Random) -> str:
     # UUID-shaped, but Pinecone keys live in `PINECONE_API_KEY=…`
-    # context — the synthesizer emits the value bare and relies on
+    # context: the synthesizer emits the value bare and relies on
     # the wrapper to add the env-var anchor.
     return uuid_v4_str(rnd)
 
@@ -662,7 +662,7 @@ CATALOG: list[tuple[str, str, Builder, int]] = [
 # provider-named environment variables (e.g. `AWS_SECRET_ACCESS_KEY=`,
 # `STRIPE_API_KEY=`), not in generic `SECRET_KEY=`. A bench that
 # always uses generic keys is testing the generic-secret detector
-# only — and that detector necessarily over-suppresses base64
+# only: and that detector necessarily over-suppresses base64
 # blobs to control protobuf-class FPs, which floors recall on
 # real shapes that happen to be 40-char b64 (AWS, Azure, etc).
 #

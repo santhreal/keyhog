@@ -17,7 +17,7 @@ reason = "HTTP header style with X-Api-Key prefix and trailing EPA context."
 
 [[negative]]
 text = "EPA_API_KEY=short"
-reason = "Body too short — pattern requires 32-40 alphanumeric chars."
+reason = "Body too short (pattern requires 32-40 alphanumeric chars)."
 
 [[evasion]]
 text = "EPA_API_KEY: Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"

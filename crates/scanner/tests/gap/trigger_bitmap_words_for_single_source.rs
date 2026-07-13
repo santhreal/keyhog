@@ -8,7 +8,7 @@
 //! word count from the single `trigger_bitmap::words_for`.
 //!
 //! This pins `words_for`'s exact arithmetic AND the invariant that a freshly
-//! allocated bitmap is `words_for(n)` zeroed words — so a future word-width
+//! allocated bitmap is `words_for(n)` zeroed words, so a future word-width
 //! change (or an off-by-one in the ceiling) is caught with concrete integers.
 
 use keyhog_scanner::testing::{
@@ -45,7 +45,7 @@ fn words_for_is_ceil_div_64_and_sizes_the_bitmap() {
 // The fixed vector pins the ceiling at a handful of boundaries; these SWEEP the
 // contract by its MEANING, not its `div_ceil` shape (Law 6). `words_for(n)` is the
 // exact bit-ceiling: enough 64-bit words to hold n pattern bits and never one too
-// many — characterized by the capacity bounds `w*64 >= n` and `(w-1)*64 < n`, which
+// many, characterized by the capacity bounds `w*64 >= n` and `(w-1)*64 < n`, which
 // hold regardless of how the count is computed. Plus the 64-bit period (adding one
 // full word of bits adds exactly one word) and the fresh-bitmap sizing/zeroing over
 // any n. Traced against `words_for` / `new_trigger_bitmap`. No proptest before.
@@ -56,7 +56,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// `words_for(n)` allocates just enough 64-bit words to hold n pattern bits and
-    /// never one word too many — the exact bit-ceiling, by capacity bounds.
+    /// never one word too many (the exact bit-ceiling, by capacity bounds).
     #[test]
     fn words_for_is_the_exact_bit_ceiling(n in 0usize..10_000_000) {
         let w = words_for(n);
@@ -69,13 +69,13 @@ proptest! {
     }
 
     /// Adding a full word of bits (64) increases the word count by exactly one at
-    /// any n — pins the 64-bit period without reference to the implementation.
+    /// any n (pins the 64-bit period without reference to the implementation).
     #[test]
     fn adding_sixty_four_bits_adds_exactly_one_word(n in 0usize..10_000_000) {
         prop_assert_eq!(words_for(n + 64), words_for(n) + 1);
     }
 
-    /// A freshly allocated bitmap is exactly `words_for(n)` all-zero words — no
+    /// A freshly allocated bitmap is exactly `words_for(n)` all-zero words, no
     /// pattern is pre-marked, for any n.
     #[test]
     fn fresh_bitmap_is_words_for_zeroed_words(n in 0usize..100_000) {

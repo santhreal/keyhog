@@ -24,7 +24,7 @@ const RETRY_DELAY_MS: u64 = 500;
 /// `.contains` checks) then states the likely cause and the fix.
 pub const MAX_RETRIES_ERROR: &str = "max retries exceeded: every verification \
      attempt returned a retryable error (rate-limit, 5xx, or transport failure). \
-     Fix: the host may be rate-limiting or flapping — retry later, or lower \
+     Fix: the host may be rate-limiting or flapping, retry later, or lower \
      verification concurrency so the endpoint is not overwhelmed";
 
 /// Process-lifetime guard so the OOB-required-but-no-session warning
@@ -397,7 +397,7 @@ pub(crate) async fn verify_credential(
 
     // AwsV4 self-constructs its own STS endpoint + client in `build_aws_probe`,
     // so it never consumes `url_template`. Resolving/SSRF-screening/pinning a
-    // client for `url_template` here would be discarded — skip it entirely and
+    // client for `url_template` here would be discarded, skip it entirely and
     // go straight to the self-constructing path (using a placeholder URL the
     // AwsV4 auth arm ignores). Non-AwsV4 auth still resolves + SSRF-screens.
     let base_request = if is_self_constructing_auth {
@@ -611,11 +611,11 @@ async fn combine_oob(
     metadata: &mut HashMap<String, String>,
 ) -> VerificationResult {
     // Short-circuit: under OobAndHttp the verdict is `http_only_result` whenever
-    // HTTP already failed — the OOB observation cannot change it (see the
+    // HTTP already failed, the OOB observation cannot change it (see the
     // `!http_live` arm of `oob_combined_verdict`). Waiting up to `timeout` (30s
     // default) for a callback we will never consult is pure latency, so record
     // OOB's absence and return immediately. The only observation this skips is an
-    // exfil callback firing for a credential whose HTTP probe already failed — a
+    // exfil callback firing for a credential whose HTTP probe already failed, a
     // doomed OobAndHttp verdict either way.
     if matches!(ctx.spec.policy, OobPolicy::OobAndHttp) && !http_live {
         metadata.insert("oob_unique_id".to_string(), ctx.unique_id.clone());
@@ -664,7 +664,7 @@ async fn combine_oob(
 /// Pure verdict combiner: fold the HTTP outcome and the OOB observation into a
 /// final [`VerificationResult`] per the detector's [`OobPolicy`]. Extracted from
 /// `combine_oob` (which owns the async wait + metadata) so the policy truth
-/// table is ONE testable owner — and so the `OobAndHttp` short-circuit above can
+/// table is ONE testable owner, and so the `OobAndHttp` short-circuit above can
 /// point at the exact arm (`!http_live` ⇒ `http_only_result`, independent of
 /// `observed`) that proves skipping the wait is verdict-safe.
 pub(crate) fn oob_combined_verdict(

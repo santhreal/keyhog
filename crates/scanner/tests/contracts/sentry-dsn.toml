@@ -23,17 +23,17 @@ reason = "Standard env-var assignment."
 [[positive]]
 text = "Sentry.init({ dsn: \"https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890\" });"
 credential = "https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890"
-reason = "Sentry JS SDK init call — most common public-client leak."
+reason = "Sentry JS SDK init call (most common public-client leak)."
 
 # ---- NEGATIVES (precision) ------------------------------------------
 
 [[negative]]
 text = "https://abc@o12345.ingest.sentry.io/67890"
-reason = "3-char key (not 32 hex) — must not match."
+reason = "3-char key (not 32 hex) (must not match)."
 
 [[negative]]
 text = "https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@example.com/67890"
-reason = "Wrong domain — must require sentry.io ingest."
+reason = "Wrong domain (must require sentry.io ingest)."
 
 [[negative]]
 text = "see https://sentry.io/welcome/ for setup"
@@ -44,7 +44,7 @@ reason = "Just a sentry.io URL with no DSN body."
 [[evasion]]
 text = "<meta name=\"sentry-dsn\" content=\"https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890\">"
 credential = "https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890"
-reason = "HTML meta tag — extraction must not consume the closing quote/bracket."
+reason = "HTML meta tag (extraction must not consume the closing quote/bracket)."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

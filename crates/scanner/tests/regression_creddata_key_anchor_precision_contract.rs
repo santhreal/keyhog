@@ -11,25 +11,25 @@
 //!   * STRONG, unambiguous anchors (`secret_key`, `private_key`,
 //!     `encryption_key`, `client_secret`, `apikey`, `masterkey`,
 //!     `signing_key`, `access_key`) carrying a canonical hex32/hex48 key DO
-//!     surface — keyhog's credential detection works; these are the recall we
+//!     surface, keyhog's credential detection works; these are the recall we
 //!     hold and must not regress.
 //!   * BARE, standalone `key`/`Key` (no `[._-]` vendor prefix) does NOT promote
 //!     a hex value: a bare `key = <32hex>` is indistinguishable from an MD5
 //!     digest / map key / ETag, so admitting it would flood real code with FPs.
 //!     This is the precision boundary that separates `secret_key = <hex>`
-//!     (real) from `Key = <hex>` (ambiguous) — the dominant CredData `Key`
+//!     (real) from `Key = <hex>` (ambiguous), the dominant CredData `Key`
 //!     key-dump shape, deliberately declined.
 //!   * hex64 (sha256) and hex128 (sha512) lengths stay suppressed even under a
-//!     strong anchor — hash-shape traps the mirror plants as negatives.
+//!     strong anchor (hash-shape traps the mirror plants as negatives).
 //!   * The CredData `UUID` class is NOT credentials: the labelled positives are
 //!     `X-Request-Id`, `session_id`, record `id`, `collectionId`,
-//!     `client-request-id` — identifiers, not secrets. keyhog correctly
+//!     `client-request-id`: identifiers, not secrets. keyhog correctly
 //!     declines every one; flagging them would devastate precision on real
 //!     code. The benchmark's `UUID` recall sink is ground-truth pollution, not
 //!     a keyhog gap.
 //!
 //! Every assertion checks the exact surfaced/absent credential bytes via the
-//! shared `generic_secret_surfaces` / `nothing_surfaces` helpers — never
+//! shared `generic_secret_surfaces` / `nothing_surfaces` helpers, never
 //! `!is_empty`.
 
 mod support;
@@ -163,7 +163,7 @@ fn access_key_hex48_surfaces() {
 // ── NEGATIVE: bare standalone `key`/`Key` is too ambiguous to promote a hex ──
 // The dominant CredData `Key` key-dump shape is a bare `Key = <hex>`. A bare
 // `key`/`Key` has no `[._-]key` vendor prefix and is not an enumerated strong
-// stem, so it must NOT promote a hex value — a 32-hex bare `key` is
+// stem, so it must NOT promote a hex value, a 32-hex bare `key` is
 // indistinguishable from an MD5 digest, an ETag, or a map key.
 
 #[test]
@@ -192,7 +192,7 @@ fn bare_lowercase_key_hex48_stays_suppressed() {
     assert_eq!(cred.len(), 48);
     assert!(
         nothing_surfaces(&format!("key = {cred}"), cred),
-        "bare `key = <hex48>` must STAY suppressed — bare `key` is ambiguous at \
+        "bare `key = <hex48>` must STAY suppressed, bare `key` is ambiguous at \
          any length, unlike the `*_key` vendor family"
     );
 }
@@ -290,7 +290,7 @@ fn bare_uuid_array_element_stays_suppressed() {
 #[test]
 fn uuid_under_strong_secret_anchor_stays_suppressed() {
     // Even under a strong `client_secret` anchor, a UUID-SHAPED value is not a
-    // hex key (dashes fail the hex gate) and is not a real secret here — the
+    // hex key (dashes fail the hex gate) and is not a real secret here, the
     // shape gauntlet declines it. Pins that the strong-anchor recall lane does
     // NOT become a UUID promoter.
     assert!(

@@ -108,7 +108,7 @@ fn disclaimer_tail_is_bounded_to_its_own_line() {
     // phrase on a LATER line is NOT inside an earlier line's comment. Line 1 here
     // has a `//` with an EMPTY tail; line 2 carries "fake key" but no marker.
     // Before the tail was line-bounded, line 1's `//` tail ran to end-of-buffer
-    // and falsely matched "fake key" on line 2 — a cross-line false suppression.
+    // and falsely matched "fake key" on line 2 (a cross-line false suppression).
     assert!(
         !has_disclaimer_comment_bytes(b"a = 1 //\nfake key here"),
         "a disclaimer phrase on a later line must not be attributed to an earlier \

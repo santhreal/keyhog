@@ -29,7 +29,7 @@ reason = "Sourcegraph endpoint URL, no sgp_/slk_ token."
 
 [[negative]]
 text = "https://sourcegraph.com/github.com/o/r/-/commit/6d2fabeb6add229bc199faba28fd3efb57df0bd3"
-reason = "40-hex commit SHA in a sourcegraph.com URL — the char after `sourcegraph` is `.`/`/`, not `:`/`=`, so the keyword-assignment pattern must NOT fire (FP avoidance)."
+reason = "40-hex commit SHA in a sourcegraph.com URL (the char after `sourcegraph` is `.`/`/`, not `:`/`=`, so the keyword-assignment pattern must NOT fire (FP avoidance))."
 
 [[evasion]]
 text = "sourcegraph sgp_719f3553f917bddb719f3553f917bddb719f3553"

@@ -59,7 +59,7 @@ fn a_non_prefix_match_or_empty_set_or_unnormalizable_candidate_is_not_owned() {
 
 use proptest::prelude::*;
 
-/// Owned keys already in normalized form that carry a real credential suffix —
+/// Owned keys already in normalized form that carry a real credential suffix 
 /// each MUST own any strictly-longer candidate that begins with it.
 const SUFFIXED: &[&str] = &[
     "api_key",
@@ -71,7 +71,7 @@ const SUFFIXED: &[&str] = &[
 ];
 
 /// Owned keys that are BARE service markers (no `key`/`secret`/`token`/
-/// `password`/`pwd`/`passwd` suffix) — they never claim ownership of anything.
+/// `password`/`pwd`/`passwd` suffix) (they never claim ownership of anything).
 const UNSUFFIXED: &[&str] = &["service", "vendor", "config", "region", "profile"];
 
 proptest! {
@@ -96,7 +96,7 @@ proptest! {
     }
 
     /// A candidate that normalizes to EXACTLY the owned key is not a prefix-embed
-    /// (`>`, not `>=`) — that is the exact-membership path's job, not this one.
+    /// (`>`, not `>=`) (that is the exact-membership path's job, not this one).
     #[test]
     fn an_exact_normalized_match_is_not_a_prefix_embed(i in 0usize..SUFFIXED.len()) {
         let key = SUFFIXED[i];
@@ -104,7 +104,7 @@ proptest! {
     }
 
     /// A bare service marker (no credential suffix) never owns, no matter what a
-    /// candidate that begins with it looks like — the suffix gate is on the OWNED
+    /// candidate that begins with it looks like, the suffix gate is on the OWNED
     /// key, not the candidate.
     #[test]
     fn an_unsuffixed_owned_key_never_owns(

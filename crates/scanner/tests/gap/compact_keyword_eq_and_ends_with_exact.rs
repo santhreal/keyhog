@@ -2,8 +2,8 @@
 //!
 //! `engine::phase2_generic::keywords` compacts a keyword (case-fold + drop the
 //! assignment separators `_`/`-`/`.`) and then compares it two ways:
-//!   * `compact_keyword_eq` — the compacted form EXACTLY equals the needle;
-//!   * `compact_keyword_ends_with` — the compacted form ends with the suffix.
+//!   * `compact_keyword_eq`: the compacted form EXACTLY equals the needle;
+//!   * `compact_keyword_ends_with`: the compacted form ends with the suffix.
 //!
 //! These are the byte primitives the strong-key anchor is built on
 //! (`is_strong_keyword_anchored_hex_key`), but they were referenced only by a
@@ -78,7 +78,7 @@ proptest! {
     /// `eq(keyword, needle)` ⟺ the compacted keyword bytes EXACTLY equal the
     /// needle bytes (no leading/trailing slop). The shared `[A-Za-z0-9_.-]`
     /// keyword alphabet and lowercase `[a-z0-9]` needle yield natural hits and
-    /// misses (needle is compared as-is, not re-compacted — matching the helper).
+    /// misses (needle is compared as-is, not re-compacted (matching the helper)).
     #[test]
     fn eq_matches_byte_level_compaction_oracle(
         keyword in r"[A-Za-z0-9_.\-]{0,16}",
@@ -89,7 +89,7 @@ proptest! {
     }
 
     /// `ends_with(keyword, suffix)` ⟺ the compacted keyword bytes end with the
-    /// suffix bytes — a true suffix, never a prefix or interior match.
+    /// suffix bytes (a true suffix, never a prefix or interior match).
     #[test]
     fn ends_with_matches_byte_level_compaction_oracle(
         keyword in r"[A-Za-z0-9_.\-]{0,16}",
@@ -100,7 +100,7 @@ proptest! {
     }
 
     /// POSITIVE PATH: a keyword always `eq`s AND `ends_with`s its OWN compaction
-    /// — the reflexive anchor a sort/fold regression would break. (Dropping ASCII
+    ///: the reflexive anchor a sort/fold regression would break. (Dropping ASCII
     /// separators from valid UTF-8 keeps it valid UTF-8, so the round-trip holds.)
     #[test]
     fn a_keyword_equals_and_ends_with_its_own_compaction(

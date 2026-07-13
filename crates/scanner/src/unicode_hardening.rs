@@ -133,7 +133,7 @@ pub(crate) fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
         // ASCII evasion controls (C0 U+0000–001F + DEL U+007F, minus the
         // structural whitespace \n/\r/\t). `normalize_homoglyphs` DROPS these
         // (via `is_ascii_evasion_control`), so the detector must report the SAME
-        // chars — leaving them out is exactly the detect/normalize desync class
+        // chars, leaving them out is exactly the detect/normalize desync class
         // that hid the DEL recall hole. Grouped with separators under
         // `Suspicious`: both are non-printing characters that split a credential.
         if is_ascii_evasion_control(ch) {
@@ -242,7 +242,7 @@ fn ascii_normalization_scan(bytes: &[u8]) -> AsciiNormalizationScan {
 }
 
 /// True for an ASCII control byte an attacker can splice into a credential body
-/// to break its byte sequence — every C0 control (U+0000–001F) **and DEL
+/// to break its byte sequence, every C0 control (U+0000–001F) **and DEL
 /// (U+007F)**, EXCEPT the structural whitespace `\n`/`\r`/`\t`. Newlines, CR,
 /// and tabs are legitimate layout (TSV columns, indentation, CRLF line ends);
 /// dropping them would corrupt offsets and mangle ordinary text, so they are
@@ -254,7 +254,7 @@ fn ascii_normalization_scan(bytes: &[u8]) -> AsciiNormalizationScan {
 /// so they cannot desync. DEL is a real hole when missed: `is_ascii_control()`
 /// includes 0x7F, so a gate that only tested `b < 0x20` let `ghp_abc\x7Fdef…`
 /// reach the scanner as `CleanAscii` (returned `Cow::Borrowed` unchanged), and
-/// the spliced DEL broke the credential body regex — the secret evaded.
+/// the spliced DEL broke the credential body regex (the secret evaded).
 #[inline]
 fn is_ascii_evasion_control_byte(b: u8) -> bool {
     (b < 0x20 || b == 0x7F) && !matches!(b, b'\n' | b'\r' | b'\t')
@@ -308,14 +308,14 @@ pub(crate) fn parse_evasion_anchors(raw: &str) -> Result<Vec<String>, String> {
     Ok(anchors)
 }
 
-/// Single Aho-Corasick automaton over all anchors — one O(n) pass to find every
+/// Single Aho-Corasick automaton over all anchors, one O(n) pass to find every
 /// prefix occurrence, instead of one search per anchor.
 ///
 /// LAW 10 (fail closed): the anchor set is embedded Tier-B data
 /// ([`EVASION_ANCHORS`], already validated non-empty at parse time), so this
 /// automaton is compiled from a fixed, in-binary literal set. If
 /// `AhoCorasick::new` cannot build it, that is a BUILD/data bug, not a runtime
-/// condition to degrade around — silently returning `None` here would disable
+/// condition to degrade around, silently returning `None` here would disable
 /// split-credential evasion normalization for the whole process with no signal,
 /// exactly the invisible recall loss Law 10 bans. We panic instead: a broken
 /// build fails loud, a working build always has the automaton.
@@ -409,7 +409,7 @@ pub(crate) fn strip_interior_evasion_controls(text: &str) -> std::borrow::Cow<'_
                 && is_credential_body_byte(bytes[j + 1])
             {
                 // A control with a credential byte on both sides: interior to the
-                // body, so it's evasion — drop it and keep walking.
+                // body, so it's evasion (drop it and keep walking).
                 drop_indices.push(j);
                 j += 1;
             } else {
@@ -474,8 +474,8 @@ pub(crate) fn cyrillic_to_latin(ch: char) -> Option<char> {
         'һ' => Some('h'), // U+04BB
         'ɡ' => Some('g'), // U+0261
         'ї' => Some('i'), // U+0457
-        'к' => Some('k'), // U+043A (Cyrillic ka — visual 'k')
-        'т' => Some('t'), // U+0442 (Cyrillic te — lowercase often rendered 't')
+        'к' => Some('k'), // U+043A (Cyrillic ka, visual 'k')
+        'т' => Some('t'), // U+0442 (Cyrillic te, lowercase often rendered 't')
         // Uppercase
         'А' => Some('A'), // U+0410
         'В' => Some('B'), // U+0412
@@ -488,7 +488,7 @@ pub(crate) fn cyrillic_to_latin(ch: char) -> Option<char> {
         'О' => Some('O'), // U+041E
         'Р' => Some('P'), // U+0420
         'С' => Some('C'), // U+0421
-        'Ѕ' => Some('S'), // U+0405 (Cyrillic capital dze — visual 'S')
+        'Ѕ' => Some('S'), // U+0405 (Cyrillic capital dze, visual 'S')
         'Т' => Some('T'), // U+0422
         'Х' => Some('X'), // U+0425
         'Ү' => Some('Y'), // U+04AE
@@ -536,7 +536,7 @@ pub(crate) fn greek_to_latin(ch: char) -> Option<char> {
 ///
 /// The surrounding Halfwidth-and-Fullwidth-Forms block (U+FF00..=U+FFEF) also
 /// holds halfwidth katakana (U+FF61–FF9F), halfwidth hangul, fullwidth white
-/// brackets (U+FF5F–FF60), and CJK currency signs (U+FFE0–FFE6) — NONE of which
+/// brackets (U+FF5F–FF60), and CJK currency signs (U+FFE0–FFE6). NONE of which
 /// are ASCII variants. Matching the whole block falsely flagged legitimate CJK
 /// text as "fullwidth evasion" and pushed it onto the slow normalization path
 /// with a `Replace(self)` no-op rebuild allocation. Every fullwidth form of the
@@ -572,9 +572,9 @@ pub(crate) fn is_evasion_char(ch: char) -> bool {
 ///
 /// This is a **curated** set of `General_Category=Cf` (plus soft hyphen)
 /// codepoints that render to nothing, NOT a blanket `Cf` drop: some format
-/// chars carry meaning and a visible/structural effect — the Arabic number
+/// chars carry meaning and a visible/structural effect, the Arabic number
 /// signs (U+0600–0605), Syriac abbreviation mark (U+070F), Kaithi number sign
-/// (U+110BD), etc. — and dropping those would corrupt legitimate text. Only
+/// (U+110BD), etc., and dropping those would corrupt legitimate text. Only
 /// codepoints that are genuinely invisible AND have no legitimate role inside a
 /// credential token belong here. (Variation selectors and other combining marks
 /// are `General_Category=Mark` and are handled by [`is_combining_mark`].)
@@ -585,7 +585,7 @@ pub(crate) fn is_evasion_char(ch: char) -> bool {
 /// owned by [`is_combining_mark`] (the `Mark`-category members: CGJ U+034F,
 /// variation selectors U+FE00–FE0F / U+E0100–E01EF, Khmer inherent vowels
 /// U+17B4–17B5) and [`is_rtl_override`] (bidi embeddings/overrides U+202A–202E).
-/// A few `Mark`-category Mongolian selectors are ALSO listed explicitly below —
+/// A few `Mark`-category Mongolian selectors are ALSO listed explicitly below 
 /// see the note there for why that intentional overlap is a robustness guard,
 /// not a duplication bug.
 pub(crate) fn is_zero_width(ch: char) -> bool {
@@ -602,7 +602,7 @@ pub(crate) fn is_zero_width(ch: char) -> bool {
         // (U+180F) are General_Category=Mn, so `is_combining_mark` also catches
         // them WHEN the linked unicode-normalization tables are new enough (FVS4
         // was added in Unicode 14.0). Listing them here makes the invisible-strip
-        // fail-safe against a crate lagging behind the Unicode version — an
+        // fail-safe against a crate lagging behind the Unicode version, an
         // intentional, behavior-identical overlap, not a drifting second source.
         '\u{180B}'..='\u{180D}' |
         '\u{180F}' |
@@ -615,7 +615,7 @@ pub(crate) fn is_zero_width(ch: char) -> bool {
         '\u{2068}' | // First Strong Isolate
         '\u{2069}' | // Pop Directional Isolate
         '\u{206A}'..='\u{206F}' | // Deprecated Cf: inhibit/activate symmetric swapping + Arabic form shaping + national/nominal digit shapes (invisible)
-        // Invisible fillers with General_Category=Lo (letters) — NOT combining
+        // Invisible fillers with General_Category=Lo (letters). NOT combining
         // marks and NOT Cf, so nothing else on the strip path catches them, yet
         // they render as blank/zero-advance and are a classic "looks empty"
         // splice vector.
@@ -634,9 +634,9 @@ pub(crate) fn is_zero_width(ch: char) -> bool {
 fn is_unicode_separator_evasion(ch: char) -> bool {
     matches!(
         ch,
-        '\u{0085}' | // Next Line (NEL) — invisible line splitter
-        '\u{00A0}' | // No-Break Space — invisible word splitter
-        '\u{1680}' | // Ogham Space Mark (Zs) — renders as blank in most fonts
+        '\u{0085}' | // Next Line (NEL), invisible line splitter
+        '\u{00A0}' | // No-Break Space, invisible word splitter
+        '\u{1680}' | // Ogham Space Mark (Zs), renders as blank in most fonts
         '\u{2000}'
             ..='\u{200A}' | // En/em/thin/hair and related spaces
         '\u{2028}' | // Line Separator
@@ -647,7 +647,7 @@ fn is_unicode_separator_evasion(ch: char) -> bool {
     )
 }
 
-/// True for any Unicode combining mark — the full `Grapheme_Extend` set
+/// True for any Unicode combining mark, the full `Grapheme_Extend` set
 /// (general categories Mn/Mc/Me), not just the U+0300–U+036F Combining
 /// Diacritical Marks block.
 ///
@@ -655,14 +655,14 @@ fn is_unicode_separator_evasion(ch: char) -> bool {
 /// between credential bytes makes the underlying char sequence stop matching a
 /// detector regex (`g\u{1DC0}hp_…` no longer matches `ghp_`), and NFC does not
 /// rescue it (a mark with no precomposed base, e.g. U+1DC0, survives `nfc()`).
-/// Any block other than U+0300–036F — Supplement (U+1AB0–1AFF), Extended
+/// Any block other than U+0300–036F. Supplement (U+1AB0–1AFF), Extended
 /// (U+1DC0–1DFF), for-Symbols (U+20D0–20FF), Half Marks (U+FE20–FE2F), or the
-/// Cyrillic/Hebrew/Arabic marks — therefore slipped past the strip.
+/// Cyrillic/Hebrew/Arabic marks (therefore slipped past the strip).
 ///
 /// Delegating to `unicode-normalization` (already a dependency) keeps this in
 /// lockstep with the Unicode tables with zero drift. ASCII is never a combining
 /// mark, so the `is_ascii` guard skips the table lookup on the common byte
-/// range — the per-char cost on the slow (non-ASCII) path stays a perfect-hash
+/// range, the per-char cost on the slow (non-ASCII) path stays a perfect-hash
 /// lookup, a rounding error.
 pub(crate) fn is_combining_mark(ch: char) -> bool {
     !ch.is_ascii() && unicode_normalization::char::is_combining_mark(ch)

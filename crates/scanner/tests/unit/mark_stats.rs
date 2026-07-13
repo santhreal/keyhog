@@ -1,8 +1,8 @@
 //! Unit contract for the phase-2 prefilter call-accounting counters
 //! (`engine::phase2::mark_stats`).
 //!
-//! These counters decompose the `phase2:prefilter` profiler leaf — the single
-//! most expensive pass in a real scan — into gate-skip / HS-served /
+//! These counters decompose the `phase2:prefilter` profiler leaf, the single
+//! most expensive pass in a real scan, into gate-skip / HS-served /
 //! RegexSet-served calls, so the dominant scan cost is diagnosable instead of an
 //! opaque "N calls, M ns/call" aggregate. This suite pins:
 //!   * each `record_*` increments exactly its own counter (no cross-talk),
@@ -12,7 +12,7 @@
 //!   * the pure `format_mark_decomposition` line the profiler prints is exact.
 //!
 //! Under `cfg(test)` the counters are thread-local, so each `#[test]` (run on its
-//! own libtest thread) owns a private copy — no mutex or serialization needed for
+//! own libtest thread) owns a private copy, no mutex or serialization needed for
 //! the direct-record tests below. Every test still resets first as a guard
 //! against any thread reuse.
 
@@ -34,7 +34,7 @@ fn snap(calls: u64, gate_skips: u64, perpattern_work: u64, hs: u64, regexset: u6
 }
 
 // ---------------------------------------------------------------------------
-// Counter recording — each record_* touches exactly one field.
+// Counter recording (each record_* touches exactly one field).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -216,7 +216,7 @@ fn perpattern_pct_is_fraction_of_calls() {
 
 #[test]
 fn hs_served_pct_is_fraction_of_perpattern_not_calls() {
-    // 60 of 75 per-pattern calls = 80% — NOT 60% of total calls. The denominator
+    // 60 of 75 per-pattern calls = 80%: NOT 60% of total calls. The denominator
     // is per-pattern work, so the reader sees "of the expensive calls, how many
     // took the fast path".
     let s = snap(100, 25, 75, 60, 15);
@@ -248,7 +248,7 @@ fn served_pcts_sum_to_100_when_perpattern_split() {
 #[test]
 fn pct_helpers_return_zero_on_empty_snapshot() {
     let s = MarkSnapshot::default();
-    // No NaN / no divide-by-zero — all percentages are a clean 0.0.
+    // No NaN / no divide-by-zero (all percentages are a clean 0.0).
     assert_eq!(s.gate_skip_pct(), 0.0);
     assert_eq!(s.perpattern_pct(), 0.0);
     assert_eq!(s.hs_served_pct(), 0.0);
@@ -259,7 +259,7 @@ fn pct_helpers_return_zero_on_empty_snapshot() {
 #[test]
 fn hs_pct_is_zero_when_perpattern_zero_even_with_calls() {
     // All gate-skips: per-pattern is 0, so the served percentages must not divide
-    // by zero — they report 0.0, and the call-level split is still meaningful.
+    // by zero (they report 0.0, and the call-level split is still meaningful).
     let s = snap(100, 100, 0, 0, 0);
     assert_eq!(s.hs_served_pct(), 0.0);
     assert_eq!(s.regexset_served_pct(), 0.0);
@@ -268,7 +268,7 @@ fn hs_pct_is_zero_when_perpattern_zero_even_with_calls() {
 }
 
 // ---------------------------------------------------------------------------
-// MarkSnapshot::is_consistent — the path-split accounting invariant the profiler
+// MarkSnapshot::is_consistent, the path-split accounting invariant the profiler
 // asserts before printing the decomposition (Law 10: never print a mis-accounted
 // split as if correct). Consistent iff `gate_skips + served_total == calls` AND
 // `served_total == perpattern_work`.
@@ -369,7 +369,7 @@ fn is_consistent_false_when_regexset_inflated() {
 
 #[test]
 fn is_consistent_false_when_only_calls_recorded() {
-    // calls bumped but no path counter followed — the canonical accounting bug.
+    // calls bumped but no path counter followed (the canonical accounting bug).
     assert!(!snap(5, 0, 0, 0, 0).is_consistent());
 }
 
@@ -413,7 +413,7 @@ fn snapshot_is_copy_and_independent() {
 }
 
 // ---------------------------------------------------------------------------
-// format_mark_decomposition — the exact one-line diagnostic the profiler prints.
+// format_mark_decomposition (the exact one-line diagnostic the profiler prints).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -477,7 +477,7 @@ fn format_is_deterministic() {
 #[test]
 fn format_all_gate_skip_corpus_shows_zero_served() {
     // A sparse corpus: every call is a cheap gate-skip. The line must make that
-    // obvious — per-pattern 0, both served paths 0.
+    // obvious (per-pattern 0, both served paths 0).
     let s = snap(500, 500, 0, 0, 0);
     let line = format_mark_decomposition(&s);
     assert!(line.contains("gate-skip=500 (100.0%)"), "{line}");

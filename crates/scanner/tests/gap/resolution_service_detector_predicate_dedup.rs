@@ -2,7 +2,7 @@
 //! canonical predicate, not an independent recomputation.
 //!
 //! `resolution::is_service_specific_detector` used to compute
-//! `!entropy && !(generic || private_key_fallback)` through local wrappers —
+//! `!entropy && !(generic || private_key_fallback)` through local wrappers 
 //! algebraically identical to `detector_ids::is_service_anchored_detector`'s
 //! `!generic && !entropy && !private_key_fallback`, i.e. a duplicated predicate
 //! and a silent-drift hazard. It now delegates to the canonical owner. Pin both
@@ -13,7 +13,7 @@ use keyhog_scanner::testing::{
     is_service_anchored_detector_for_test, is_service_specific_detector_for_test,
 };
 
-// (detector_id, expected service-specific?) — one case per exclusion branch.
+// (detector_id, expected service-specific?) (one case per exclusion branch).
 const CASES: &[(&str, bool)] = &[
     ("aws-access-key", true),    // real named service detector
     ("stripe-secret-key", true), // real named service detector
@@ -50,7 +50,7 @@ fn service_specific_equals_canonical_service_anchored() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin the truth table on 6 representative ids; these SWEEP it.
 // The DEDUP guarantee is the killer: the two predicates agree on EVERY id (one
-// delegates to the other) — swept over arbitrary Unicode. Constructive cases pin
+// delegates to the other), swept over arbitrary Unicode. Constructive cases pin
 // each exclusion branch (`generic-`/`entropy-` prefixes, bare `entropy`) reject
 // and a plain vendor id is service-specific. Traced against detector_ids.rs:99. No
 // proptest before.

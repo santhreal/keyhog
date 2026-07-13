@@ -6,7 +6,7 @@
 //! Detector authors hand-write the separator that sits *between keyword words*
 //! of an anchor (`api`‹sep›`key`, `google`‹sep›`meet`, `D1`‹sep›`TOKEN`). Across
 //! the shipped corpus that separator was written in **17 inconsistent forms**
-//! — `[_-]?` (no whitespace at all, so `client id` is missed), `[_\s]?` (a
+//!: `[_-]?` (no whitespace at all, so `client id` is missed), `[_\s]?` (a
 //! single optional separator, so `api  key` is missed), `[_]*` (underscore
 //! only), exact-one `[_-]`, and even genuinely broken **over-escaped** classes
 //! like `[_\\s-]` whose `\\s` matches a *literal backslash and the letter `s`*
@@ -16,7 +16,7 @@
 //!
 //! Every one of those is a recall bug of the same shape: a real secret is missed
 //! because the leaked file happened to use a tab, a double space, or a hyphen
-//! where the author allowed only one underscore — or because of a stray
+//! where the author allowed only one underscore, or because of a stray
 //! backslash in the regex.
 //!
 //! ## The fix
@@ -24,12 +24,12 @@
 //! Collapse every inter-keyword separator class to one canonical form,
 //! [`CANONICAL_SEPARATOR`] = `[_\-\s]*`: the union charset (underscore, hyphen,
 //! every whitespace byte), unbounded. It is a strict **superset** of every input
-//! form, so canonicalization only ever *broadens* a match — no positive can
-//! regress — and `*` is already the most common shipped form (336 detectors),
+//! form, so canonicalization only ever *broadens* a match, no positive can
+//! regress, and `*` is already the most common shipped form (336 detectors),
 //! so its precision is established. Applied once at spec deserialization
 //! ([`crate::PatternSpec`] / [`crate::CompanionSpec`]), so every downstream
-//! consumer — AC literals, Hyperscan, literal-prefix extraction, phase-2 anchor,
-//! the boundary upper-bound, the bench — sees the same canonical regex.
+//! consumer: AC literals, Hyperscan, literal-prefix extraction, phase-2 anchor,
+//! the boundary upper-bound, the bench (sees the same canonical regex).
 //!
 //! ## Why this is sound (not a blind regex rewrite)
 //!
@@ -44,7 +44,7 @@
 //!    which must keep its own (often unbounded) semantics. Only the presence of
 //!    `_`/`-` makes a class an *unambiguous* keyword separator.
 //! 2. **It is corpus-verified.** Auditing the complete shipped corpus, every class
-//!    matching this oracle sits between keyword words or alternation groups —
+//!    matching this oracle sits between keyword words or alternation groups 
 //!    never inside a token body or a value-assignment run. A class carrying any
 //!    other byte (a letter range, a digit, `=`/`:`/quote) fails the subset test
 //!    and is copied verbatim. The companion `keyword_separator_canonical` audit
@@ -61,12 +61,12 @@ use std::borrow::Cow;
 /// The hyphen is escaped (`\-`) so it is always a class *member*, never a range
 /// operator, regardless of neighbours.
 ///
-/// Unbounded (`*`) — matching the dominant shipped form (`[_\s]*`, 336
+/// Unbounded (`*`), matching the dominant shipped form (`[_\s]*`, 336
 /// detectors) and every adversarial contract fixture that stuffs long separator
 /// runs between anchor words. `*` is a strict superset of every input form, so
 /// canonicalization only ever *broadens* a match. On keyhog's linear matching
 /// engines an unbounded char-class repeat is a single self-loop state, never a
-/// finite unrolling, so it carries no catastrophic-match risk — the complexity
+/// finite unrolling, so it carries no catastrophic-match risk, the complexity
 /// validator's *counted*-repetition product correctly excludes it.
 pub const CANONICAL_SEPARATOR: &str = "[_\\-\\s]*";
 
@@ -78,9 +78,9 @@ struct SepKinds {
     underscore: bool,
     hyphen: bool,
     whitespace: bool,
-    /// A literal backslash member — only ever appears via an over-escaped `\\s`.
+    /// A literal backslash member (only ever appears via an over-escaped `\\s`).
     backslash_literal: bool,
-    /// A literal `s` member — likewise the tail of an over-escaped `\\s`.
+    /// A literal `s` member (likewise the tail of an over-escaped `\\s`).
     s_literal: bool,
     /// Any byte that is NOT a separator (letters other than `s`, digits, `=`,
     /// `:`, quotes, `\d`/`\w`/…). Its presence disqualifies the class.

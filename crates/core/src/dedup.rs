@@ -414,7 +414,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
                 None => {
                     DEDUP_LOST_SINGLETON.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     eprintln!(
-                        "keyhog: BUG — dedup_cross_detector hit an empty group under \
+                        "keyhog: BUG, dedup_cross_detector hit an empty group under \
                          a len()==1 guard; a finding may have been dropped. Please \
                          report this with the scanned input shape."
                     );
@@ -425,13 +425,13 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
         // Sort: highest-confidence first, then severity desc, then detector_id
         // asc, then credential / credential_hash / offset so the order is TOTAL.
         // The winner is `group.remove(0)`; without the trailing keys, two
-        // matches sharing (confidence, severity, detector_id) — e.g. the same
-        // detector firing on two credentials at one (file, line, commit) scope —
+        // matches sharing (confidence, severity, detector_id), e.g. the same
+        // detector firing on two credentials at one (file, line, commit) scope 
         // compare Equal, so which becomes the primary (vs. a `cross_detector.*`
         // companion) is decided by input order, which is HashMap-iteration /
         // thread nondeterministic. A total key fixes the primary credential.
         group.sort_by(|a, b| {
-            // A `None` confidence sorts as 0.0 (lowest) for winner selection — a
+            // A `None` confidence sorts as 0.0 (lowest) for winner selection, a
             // deterministic ordering choice, not a swallowed value; the
             // credential/hash/offset tiebreaks below keep the order TOTAL so no
             // finding is dropped or nondeterministically reordered.

@@ -6,7 +6,7 @@
 //! path against the **process working directory**, which only equals the
 //! package root under a plain `cargo test`. The same call fails with `NotFound`
 //! when the test binary is run directly, under `cargo-nextest` (CWD = workspace
-//! root, not package), or whenever a sibling test mutates the global CWD — a
+//! root, not package), or whenever a sibling test mutates the global CWD, a
 //! deterministic structural check turned into a parallel-load flake.
 //!
 //! The fix is the canonical [`keyhog_core::testing::read_crate_source`] helper,
@@ -25,9 +25,9 @@ const READ_ENTRY_POINTS: &[&str] = &["read_to_string(", "File::open(", "fs::read
 /// crate source (a temp path, a fixture, an absolute path, …).
 ///
 /// In scope: `src/...` and `crates/...` (this crate / the workspace), plus
-/// `../.../src/...` (a sibling crate's source read from a parent-relative path —
+/// `../.../src/...` (a sibling crate's source read from a parent-relative path 
 /// e.g. a core test introspecting `../cli/src/...`). Out of scope: `./`,
-/// `tests/`, absolute, and any non-`/src/` parent path — runtime data, not
+/// `tests/`, absolute, and any non-`/src/` parent path, runtime data, not
 /// crate-source introspection.
 fn crate_source_prefix(body: &str) -> Option<&'static str> {
     if body.starts_with("src/") {

@@ -20,7 +20,7 @@ reason = "Body below 32 hex chars."
 [[evasion]]
 text = "X-Papertrail-Token: 7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
 credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
-reason = "X-Papertrail-Token header form — pattern explicitly anchors on this header name."
+reason = "X-Papertrail-Token header form (pattern explicitly anchors on this header name)."
 
 [perf]
 fixture_bytes = 4096

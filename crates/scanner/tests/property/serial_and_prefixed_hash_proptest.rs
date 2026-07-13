@@ -2,14 +2,14 @@
 //! (`crates/scanner/src/suppression/shape/canonical.rs`).
 //!
 //! Two more identifier-not-secret gates:
-//!   • `looks_like_dashed_serial_key` — a product/license key in the 5×5 dash shape
+//!   • `looks_like_dashed_serial_key`: a product/license key in the 5×5 dash shape
 //!     `XXXXX-XXXXX-XXXXX-XXXXX-XXXXX` (exactly 29 chars, alnum groups, dashes at
 //!     5/11/17/23).
-//!   • `looks_like_prefixed_hash_digest` — a hash-algo-LABELLED digest
+//!   • `looks_like_prefixed_hash_digest`: a hash-algo-LABELLED digest
 //!     (`sha256:<64hex>`, `md5:<32hex>`, `sha256-<b64>`, …). The label is matched
 //!     case-insensitively and as a SUBSTRING (`nginx@sha256:<hex>` counts), and the
 //!     stripped body must itself be a canonical-length uniform hex or base64
-//!     integrity blob — the label ALONE never suppresses.
+//!     integrity blob (the label ALONE never suppresses).
 
 use keyhog_scanner::testing::{
     looks_like_dashed_serial_key_for_test, looks_like_prefixed_hash_digest_for_test,
@@ -92,7 +92,7 @@ fn wrong_label_or_body_length_is_not_a_prefixed_digest() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
-    /// A serial match IMPLIES exactly 29 bytes with dashes at 5/11/17/23 — the gate
+    /// A serial match IMPLIES exactly 29 bytes with dashes at 5/11/17/23, the gate
     /// can never fire on any other layout.
     #[test]
     fn serial_match_implies_5x5_layout(value in "[A-Za-z0-9-]{0,40}") {

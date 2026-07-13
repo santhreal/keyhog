@@ -14,12 +14,12 @@
 //! The bytes written here are never a valid ELF/PE/Mach-O/archive magic, so
 //! goblin's section pass returns `None` and the only emitted chunk is the
 //! whole-file `binary:strings` chunk. When NOTHING reaches the threshold the
-//! source must NOT report a clean file — it emits exactly one `SourceError`
+//! source must NOT report a clean file, it emits exactly one `SourceError`
 //! row (Law 10), which the boundary-drop tests below assert on.
 //!
 //! Distinct from `regression_binary_strings_extract.rs`: that file surveys the
 //! extractor broadly; this file drills the 6/7/8/9 length boundary from every
-//! angle — alone-drop, alone-keep, leading/trailing EOF flush, whitespace and
+//! angle, alone-drop, alone-keep, leading/trailing EOF flush, whitespace and
 //! symbol runs counting toward length, capacity-growth of a long run, the
 //! UTF-16LE wide pass honouring the identical 7-drop/8-keep threshold, and a
 //! planted secret surfacing verbatim.
@@ -216,7 +216,7 @@ fn single_graphic_bytes_between_delimiters_never_reach_threshold() {
 #[test]
 fn planted_secret_in_binary_noise_surfaces_verbatim() {
     // A 20-char AWS-shaped access key planted amid non-graphic noise is above the
-    // threshold and surfaces as the exact, sole run — the operator-visible point
+    // threshold and surfaces as the exact, sole run, the operator-visible point
     // of the whole extractor.
     let mut bytes = vec![0x00_u8, 0x01, 0x02];
     bytes.extend_from_slice(b"AKIAIOSFODNN7EXAMPLE");

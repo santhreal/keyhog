@@ -1,7 +1,7 @@
 # Per-detector contract: terraform-cloud-api-token
 #
 # Format: <14 alnum>.atlasv1.<67+ alnum>. The `.atlasv1.` infix is
-# the load-bearing fingerprint — Terraform Cloud's official issuance
+# the load-bearing fingerprint: Terraform Cloud's official issuance
 # format always carries it.
 
 schema_version = 1
@@ -24,7 +24,7 @@ reason = "Standard `TF_TOKEN_app_terraform_io` env-var shape (Terraform's docume
 [[positive]]
 text = "credentials \"app.terraform.io\" { token = \"9X3kQp7VbT2hYR.atlasv1.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy\" }"
 credential = "9X3kQp7VbT2hYR.atlasv1.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy"
-reason = "Terraform CLI credentials file block — the canonical HCL leak channel."
+reason = "Terraform CLI credentials file block (the canonical HCL leak channel)."
 
 # ---- NEGATIVES (precision) ------------------------------------------
 
@@ -38,14 +38,14 @@ reason = "Prose mentioning the infix without a real token."
 
 [[negative]]
 text = "9X3kQp7VbT2hYR.atlasv2.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy"
-reason = "atlasv2 is not the documented infix — must not match."
+reason = "atlasv2 is not the documented infix (must not match)."
 
 # ---- EVASIONS (adversarial) -----------------------------------------
 
 [[evasion]]
 text = "{\"token\":\"9X3kQp7VbT2hYR.atlasv1.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy\"}"
 credential = "9X3kQp7VbT2hYR.atlasv1.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy"
-reason = "JSON payload — extraction must not consume the closing quote/brace."
+reason = "JSON payload (extraction must not consume the closing quote/brace)."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

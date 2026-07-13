@@ -15,7 +15,7 @@
 #   -Uninstall       remove the binary
 #
 # Common flags:
-#   -Version v0.5.37      pin a release tag (default: latest release with assets)
+#   -Version vX.Y.Z       pin a release tag (default: latest stable complete bundle)
 #   -FromFile PATH        install a pre-built/pre-downloaded keyhog.exe instead
 #                         of querying GitHub (offline / air-gapped / CI proving).
 #                         Requires PATH.sha256, PATH.gpu-literals.tar.gz, and
@@ -247,10 +247,9 @@ function Resolve-Asset {
 
 function Resolve-Tag {
     if ($Version) {
-        # keyhog release tags are all v-prefixed (v0.5.37). Accept a bare
-        # semver too (`-Version 0.5.37`): a download URL built from the
-        # un-prefixed tag 404s, which is exactly what broke the Windows
-        # install smoke (it passed "0.5.37"). Normalise a digit-leading
+        # keyhog release tags are all v-prefixed (vX.Y.Z). Accept a bare
+        # semver too (`-Version X.Y.Z`): a download URL built from the
+        # un-prefixed tag 404s. Normalise a digit-leading
         # version to the v-prefixed tag; leave an explicit v… or any other
         # ref untouched.
         if ($Version -match '^[0-9]') { $Script:Tag = "v$Version" } else { $Script:Tag = $Version }
@@ -273,26 +272,62 @@ function Invoke-GitHubApi {
 }
 
 function Resolve-TagFromApi {
-    # /releases/latest can return a release with zero assets (a release
-    # workflow that built but failed to upload). Walk the recent
-    # releases list, take the newest tag whose assets array is non-empty.
+    # Select the newest stable, published release with the complete signed
+    # Windows bundle. Any-asset admission can choose a partial or other-host
+    # release and fail after claiming it was installable.
     # This is the Windows mirror of install.sh's resolve_tag_from_api fallback.
     try {
         $releases = Invoke-GitHubApi -Uri "https://api.github.com/repos/$Repo/releases?per_page=10"
     } catch {
         Err "Could not query GitHub releases API: $_"
-        Err "Try -Version v0.5.37 (or another known tag) explicitly."
+        Err "Try -Version vX.Y.Z with a known published release tag explicitly."
         exit 1
     }
+    $required = @(
+        $Script:Asset,
+        "$($Script:Asset).sha256",
+        "$($Script:Asset).minisig",
+        "$($Script:Asset).gpu-literals.tar.gz",
+        "$($Script:Asset).gpu-literals.tar.gz.sha256",
+        "$($Script:Asset).gpu-literals.tar.gz.minisig"
+    )
     foreach ($r in $releases) {
-        if ($r.assets -and $r.assets.Count -gt 0) {
+        if ($r.draft -or $r.prerelease) { continue }
+        $names = @($r.assets | ForEach-Object { $_.name })
+        $complete = $true
+        foreach ($name in $required) {
+            if ($names -notcontains $name) { $complete = $false; break }
+        }
+        if ($complete) {
             $Script:Tag = $r.tag_name
             return
         }
     }
-    Err "No GitHub release in the last 10 has any assets uploaded."
-    Err "Try -Version v0.5.37 (or another known tag) explicitly."
+    Err "No stable GitHub release in the last 10 has the complete signed bundle for $($Script:Asset)."
+    Err "Required: binary, SHA-256, minisign, GPU literal sidecar, sidecar SHA-256, and sidecar minisign."
+    Err "Try -Version vX.Y.Z with a known published release tag explicitly."
     exit 1
+}
+
+function Test-ReleaseBundleComplete {
+    param([string]$Tag)
+    $required = @(
+        $Script:Asset,
+        "$($Script:Asset).sha256",
+        "$($Script:Asset).minisig",
+        "$($Script:Asset).gpu-literals.tar.gz",
+        "$($Script:Asset).gpu-literals.tar.gz.sha256",
+        "$($Script:Asset).gpu-literals.tar.gz.minisig"
+    )
+    foreach ($name in $required) {
+        $url = "https://github.com/$Repo/releases/download/$Tag/$name"
+        try {
+            Invoke-WebRequest -Uri $url -Method Head -UseBasicParsing -ErrorAction Stop | Out-Null
+        } catch {
+            return $false
+        }
+    }
+    return $true
 }
 
 function Resolve-TagFromLatestRedirect {
@@ -313,7 +348,9 @@ function Resolve-TagFromLatestRedirect {
         }
     }
     if ($location -and $location -match '/releases/download/([^/]+)/') {
-        $Script:Tag = $Matches[1]
+        $candidate = $Matches[1]
+        if (-not (Test-ReleaseBundleComplete -Tag $candidate)) { return $false }
+        $Script:Tag = $candidate
         return $true
     }
     return $false
@@ -327,7 +364,7 @@ function Resolve-OperatorReleaseTag {
             $Script:LatestReleaseAlias = $true
             return
         }
-        Warn "Latest release asset redirect did not reveal a concrete tag; checking recent releases for the newest tag with assets."
+        Warn "Latest release redirect did not prove a complete signed host bundle; checking recent stable releases."
         Resolve-TagFromApi
         $Script:LatestReleaseAlias = $true
     }
@@ -1208,7 +1245,7 @@ function Invoke-AutorouteCalibration {
 
             # Core stdin + filesystem workloads calibrate once per scan-policy preset
             # (default policy first, then each supported preset); external-source
-            # workloads (git/docker/web) calibrate the default policy only — mirrors
+            # workloads (git/docker/web) calibrate the default policy only, mirrors
             # the install.sh `for autoroute_scan_flags in "" $autoroute_presets` loop.
             $coreModes = @('stdin', 'path')
             $presetPasses = @('') + $autoroutePresets

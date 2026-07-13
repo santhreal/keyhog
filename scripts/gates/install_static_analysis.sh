@@ -57,7 +57,7 @@ installer_release_api_gate() {
 # colon inside a double-quoted string. PowerShell parses "$name:" as a
 # drive-qualified reference ($drive:var), so `"$AssetName: $($_.Exception...)"`
 # is a hard parse error (InvalidVariableReferenceWithDrive) and the ENTIRE
-# script fails to load on Windows — `keyhog` never installs. The pwsh ParseFile
+# script fails to load on Windows: `keyhog` never installs. The pwsh ParseFile
 # gate below catches this too, but only where pwsh is installed; it loud-skips
 # on a pwsh-less box (and most CI lacks pwsh), which is exactly how three of
 # these shipped at install.ps1:495/552/1500. This guard runs everywhere.
@@ -96,7 +96,7 @@ powershell_drive_ref_gate() {
     fi
 }
 
-# The release/CI shell scripts are linted here too — they were previously
+# The release/CI shell scripts are linted here too, they were previously
 # unchecked, so a broken `publish.sh`/`prerelease.sh` only surfaced at release
 # time. All four pass `shellcheck -x` and shfmt-parse cleanly at the gate's
 # default (info-level) severity.

@@ -47,7 +47,7 @@ mod tests {
     use std::io::{Error, ErrorKind, Read};
 
     /// The truncation marker, derived from the cap const so these tests stay
-    /// correct if the cap changes — and so they lock the ONE-PLACE fix that made
+    /// correct if the cap changes, and so they lock the ONE-PLACE fix that made
     /// the production marker derive the byte count from `STDERR_EXCERPT_BYTES`
     /// instead of a hardcoded literal.
     fn expected_marker() -> String {
@@ -110,7 +110,7 @@ mod tests {
         assert!(out.contains("ok"), "valid bytes survive the lossy decode");
     }
 
-    /// Yields an `Interrupted` (EINTR) error once, then a data chunk, then EOF —
+    /// Yields an `Interrupted` (EINTR) error once, then a data chunk, then EOF 
     /// proving the read loop RETRIES EINTR rather than aborting the capture.
     struct InterruptOnceThenData {
         interrupted: bool,

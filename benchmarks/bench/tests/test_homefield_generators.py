@@ -83,7 +83,7 @@ _SAMPLE_RECORDS = [
 def _assert_split_layout(home: pathlib.Path, turf: str) -> None:
     manifest = home / "manifest.jsonl"
     assert manifest.exists(), "manifest must sit at <home>/manifest.jsonl"
-    # The scan tree must NOT contain the answer key — a scanner pointed at
+    # The scan tree must NOT contain the answer key, a scanner pointed at
     # <home>/corpus would otherwise 'find' every labeled secret in plaintext.
     scan_root = home / "corpus"
     assert scan_root.is_dir()

@@ -79,7 +79,7 @@ pub enum InteractionProtocol {
 impl InteractionProtocol {
     // `#[doc(hidden)] pub` rather than `pub(super)`: the OOB protocol-string
     // parser is exercised directly by the boundary test
-    // `oob_interaction_protocol_parse_exact`. Hidden from the rendered API —
+    // `oob_interaction_protocol_parse_exact`. Hidden from the rendered API 
     // it is an internal categorizer, not a semver-covered surface.
     #[doc(hidden)]
     pub fn parse(s: &str) -> Self {
@@ -128,7 +128,7 @@ pub struct InteractshClient {
 /// One shared 2048-bit RSA key for every `for_test` client. Generated ONCE
 /// (lazily, on first test use) and cloned into each instance, so the many test
 /// callers of [`InteractshClient::for_test`] pay a SINGLE 2048-bit keygen
-/// instead of one per call — full weak-crypto hygiene (NIST-minimum modulus)
+/// instead of one per call, full weak-crypto hygiene (NIST-minimum modulus)
 /// without the per-test keygen cost that a naive `RsaPrivateKey::new(_, 2048)`
 /// in the constructor would impose. Never initialized in a production build
 /// (`for_test` is test-only), so it costs nothing there.
@@ -538,7 +538,7 @@ async fn collector_http_client(
         // client; the local screen above already rejected an internal resolve.
         // Keep the caller's proxy client after the screen.
         CollectorClientPlan::UseProxy => Ok(base_client.clone()),
-        // ONE owner for the pinned rebuild — identical posture to the per-request
+        // ONE owner for the pinned rebuild, identical posture to the per-request
         // verify client; see `crate::build_pinned_verifier_client`.
         CollectorClientPlan::Pin(pinned_addrs) => {
             crate::build_pinned_verifier_client(&host, &pinned_addrs, timeout, insecure_tls)
@@ -647,12 +647,12 @@ fn check_collector_resolved_addrs(
 /// Keeping only scheme/host/port is load-bearing for host safety: a collector
 /// string carrying a path (`oast.fun/evil`) or userinfo (`oast.fun@internal`)
 /// would otherwise survive into `server_host()` and mint a malformed
-/// `<id>.oast.fun/evil` callback host, or — worse — let the userinfo `@`
+/// `<id>.oast.fun/evil` callback host, or, worse, let the userinfo `@`
 /// redirect the real connect target. We re-serialize from a parsed URL so the
 /// stored `server` is exactly `https://<host>[:<port>]`.
 ///
 /// An unparseable / hostless input is returned scheme-forced but otherwise
-/// untouched; it is not silently "cleaned" into something connectable — the
+/// untouched; it is not silently "cleaned" into something connectable, the
 /// downstream `is_private_url` / `collector_host_and_port` screens then reject
 /// it (fail closed).
 fn normalize_server(s: &str) -> String {

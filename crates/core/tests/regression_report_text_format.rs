@@ -22,7 +22,7 @@
 //!   * COLOR IS A PURE FUNCTION OF THE `color` FLAG: `color:false` (what the CLI
 //!     resolves `NO_COLOR` to) emits ZERO ANSI escape bytes; `color:true` wraps
 //!     the severity label in the exact SGR sequence;
-//!   * an attacker-controlled redacted value cannot inject an ANSI escape — it
+//!   * an attacker-controlled redacted value cannot inject an ANSI escape, it
 //!     is neutralized to U+FFFD even when the reporter itself runs uncolored.
 //!
 //! Host-independence: `write_report` is a pure formatter over an in-memory
@@ -110,7 +110,7 @@ fn render_text_full(
     String::from_utf8(buf).expect("text output must be valid UTF-8")
 }
 
-/// Uncolored render with no suppressions — the common case.
+/// Uncolored render with no suppressions (the common case).
 fn render_text(findings: &[VerifiedFinding]) -> String {
     render_text_full(findings, false, 0, false)
 }
@@ -184,7 +184,7 @@ fn text_location_file_and_line_exact() {
     );
 }
 
-/// Boundary: when the line number is unknown the location is the bare path —
+/// Boundary: when the line number is unknown the location is the bare path 
 /// no trailing `:` and no fabricated line number.
 #[test]
 fn text_location_path_only_when_line_unknown() {
@@ -255,7 +255,7 @@ fn text_confidence_over_one_clamps_to_full_bar_and_100_percent() {
 }
 
 /// Adversarial: a NaN confidence (public field, no scanner sanitize) renders as
-/// `0%` and an empty bar, never a `NaN` glyph — matching the scanner's
+/// `0%` and an empty bar, never a `NaN` glyph, matching the scanner's
 /// `finalize_confidence` NaN -> minimum. `f64::clamp` alone does NOT sanitize
 /// NaN, so the reporter guards `is_finite()` explicitly.
 #[test]
@@ -514,7 +514,7 @@ fn text_empty_scan_single_suppression_dogfood_phrasing() {
 // ---------------------------------------------------------------------------
 
 /// Adversarial/NO_COLOR contract: with `color:false` (the value the CLI resolves
-/// `NO_COLOR` to) the ENTIRE report contains ZERO ANSI escape bytes — no SGR
+/// `NO_COLOR` to) the ENTIRE report contains ZERO ANSI escape bytes, no SGR
 /// coloring of any kind leaks through.
 #[test]
 fn text_no_color_emits_no_ansi_escapes() {
@@ -532,7 +532,7 @@ fn text_no_color_emits_no_ansi_escapes() {
 }
 
 /// Positive twin: with `color:true` the severity label is wrapped in the exact
-/// SGR sequence — HIGH uses `31`, Critical uses `1;31` — proving coloring is a
+/// SGR sequence: HIGH uses `31`, Critical uses `1;31`: proving coloring is a
 /// pure function of the flag, not the host.
 #[test]
 fn text_color_wraps_severity_label_in_exact_sgr() {
@@ -560,7 +560,7 @@ fn text_color_wraps_severity_label_in_exact_sgr() {
 }
 
 /// Adversarial: an attacker-controlled redacted value that embeds a raw ANSI
-/// escape sequence cannot inject color/terminal control — every control byte is
+/// escape sequence cannot inject color/terminal control, every control byte is
 /// neutralized to U+FFFD, even though the reporter itself runs UNCOLORED.
 #[test]
 fn text_redacted_ansi_injection_is_neutralized() {

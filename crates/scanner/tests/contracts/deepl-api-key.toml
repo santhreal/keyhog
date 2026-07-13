@@ -20,7 +20,7 @@ reason = "Truncated UUID body, fails 8-4-4-4-12 structure."
 [[evasion]]
 text = "DEEPL_API_KEY=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d:fx"
 credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d:fx"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

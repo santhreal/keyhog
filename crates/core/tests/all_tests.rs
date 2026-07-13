@@ -8,7 +8,7 @@ pub mod regression;
 // Top-level standalone `tests/*.rs` files aggregated as sibling modules. CI runs
 // keyhog-core tests only via `--test all_tests` (+ `--lib`, `--test
 // new_core_finding_dedup`), so a top-level file not aggregated here (or named by
-// a `--test` step) is a CI-orphan whose `#[test]`s never run — including the
+// a `--test` step) is a CI-orphan whose `#[test]`s never run, including the
 // HTML-report XSS / CSV-formula-injection / SARIF security locks and the
 // detector-corpus integrity guard. `scripts/gates/tests_wired.py` enforces this
 // (verifier + core); keep every top-level `tests/*.rs` reachable from here.

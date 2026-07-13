@@ -72,7 +72,7 @@ fn local_context_window_truncates_at_end_keeps_trailing_newline() {
 #[test]
 fn local_context_window_line_beyond_file_returns_empty() {
     // Requesting line 10 (radius 0) needs 9 preceding newlines; the buffer has
-    // only 5. The forward walk runs out of newlines and returns "" — the
+    // only 5. The forward walk runs out of newlines and returns "", the
     // documented "fewer lines than the window asks for" branch.
     let w = local_context_window(FIVE_LINES, 10, 0);
     assert_eq!(w, "");
@@ -125,7 +125,7 @@ fn compute_line_offsets_no_trailing_newline_and_empty() {
 
 #[test]
 fn infer_context_assignment_exact() {
-    // `KEY = "value"` — a bare assignment. The assignment check precedes the
+    // `KEY = "value"`: a bare assignment. The assignment check precedes the
     // string-literal fallback, so this is Assignment, not StringLiteral.
     let lines = ["API_KEY = \"abc\""];
     assert_eq!(infer_context(&lines, 0, None), CodeContext::Assignment);
@@ -139,7 +139,7 @@ fn infer_context_comment_vs_commented_assignment() {
 
     // A comment whose body is itself an assignment is reclassified as
     // Assignment (the commented-assignment check runs before the plain
-    // comment check) — a credential hidden in a commented-out `KEY = val`
+    // comment check), a credential hidden in a commented-out `KEY = val`
     // must not get the softer comment multiplier.
     let commented_assign = ["# API_KEY = secret"];
     assert_eq!(

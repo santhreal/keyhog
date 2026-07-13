@@ -2,8 +2,8 @@
 //! `crates/scanner/src/decode` (base64 / hex / z85 / reverse) and the pre-decode
 //! extractor's freestanding-run floor.
 //!
-//! Every assertion pins a CONCRETE expected value — exact decoded bytes, exact
-//! candidate strings/spans, exact `Err(())`, exact booleans — not shape. The
+//! Every assertion pins a CONCRETE expected value, exact decoded bytes, exact
+//! candidate strings/spans, exact `Err(())`, exact booleans, not shape. The
 //! decoders are the front door of decode-through scanning: a silent drift in
 //! the base64 variant classifier, the hex underscore-tolerance, the z85 frame
 //! math, the extractor's 16-char freestanding floor, or the reverse-decode
@@ -205,7 +205,7 @@ fn reversed_known_prefix_is_admitted() {
 
 #[test]
 fn long_alnum_run_without_reversed_prefix_is_rejected() {
-    // reverse("ABC..Z") — a 26-char alnum run but no reversed provider prefix,
+    // reverse("ABC..Z"), a 26-char alnum run but no reversed provider prefix,
     // so it must NOT be treated as a reverse-encoded credential.
     assert!(!looks_reversible_for_test("ZYXWVUTSRQPONMLKJIHGFEDCBA"));
 }
@@ -222,6 +222,6 @@ fn two_char_prefix_0x_is_below_min_reverse_prefix_len() {
 fn three_char_prefix_hf_is_admitted() {
     // Ends with "_fh" == reverse("hf_"), a 3-char vendor prefix that still gates.
     // Same 12+ alnum run as the 0x case, so the ONLY difference is the prefix
-    // length crossing MIN_REVERSE_PREFIX_LEN — this one is admitted.
+    // length crossing MIN_REVERSE_PREFIX_LEN (this one is admitted).
     assert!(looks_reversible_for_test("ABCDEFGHIJKL_fh"));
 }

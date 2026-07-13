@@ -17,7 +17,7 @@ reason = "ES_API_KEY prefix with 56-char body."
 
 [[negative]]
 text = "ELASTICSEARCH_API_KEY=short"
-reason = "Body too short — pattern requires 48+ chars for raw key and 40+ for base64."
+reason = "Body too short (pattern requires 48+ chars for raw key and 40+ for base64)."
 
 [[evasion]]
 text = "elastic_api_key: Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"

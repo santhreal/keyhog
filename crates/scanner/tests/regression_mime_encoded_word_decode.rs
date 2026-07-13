@@ -1,6 +1,6 @@
 //! Test-depth lock for the RFC2047 MIME encoded-word decoder
 //! (`crates/scanner/src/decode/url.rs::mime_encoded_word_decode`), the primitive
-//! that unwraps `=?charset?enc?text?=` — the form used to smuggle non-ASCII (and
+//! that unwraps `=?charset?enc?text?=`: the form used to smuggle non-ASCII (and
 //! secrets) through email/HAR headers, e.g. `Subject: =?utf-8?B?<base64>?=`.
 //!
 //! Before this suite the decoder had only a B-happy-path and a Q-underscore

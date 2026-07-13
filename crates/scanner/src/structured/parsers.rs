@@ -45,7 +45,7 @@ pub(super) fn gap_is_real(decode_derived: bool) -> bool {
 
 /// Effect: record ONE structured decode-through coverage gap against the
 /// file-level telemetry counter (Law 10). Call at most once per file, only when
-/// [`gap_is_real`] holds — the counter counts FILES that lost decode-through, so
+/// [`gap_is_real`] holds, the counter counts FILES that lost decode-through, so
 /// a file with N malformed fragments/documents/values must still record once.
 pub(super) fn record_structured_gap() {
     crate::telemetry::record_structured_parse_failure();

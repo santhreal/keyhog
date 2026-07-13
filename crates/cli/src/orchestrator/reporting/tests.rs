@@ -26,7 +26,7 @@ fn bar_width_is_twenty_two_cells() {
 }
 
 /// Single-owner proof: the scan, verification and reporting tickers all read
-/// the hoisted module-level `FRAMES`/`BAR_WIDTH` — not private per-function
+/// the hoisted module-level `FRAMES`/`BAR_WIDTH`: not private per-function
 /// copies. Each renders the same spinner glyph for a given frame and an
 /// indeterminate sweep of exactly BAR_WIDTH cells. If any function
 /// reintroduced a divergent local const, one of these equalities would break.

@@ -48,7 +48,7 @@ pub(super) fn calibrate_fastest_correct_backend(
         let measured_gpu_timing =
             measure_candidate_backend(scanner, sample, ScanBackend::Gpu, &reference_matches)?;
         // Admit the GPU candidate only if its timing can produce valid cold/warm
-        // route evidence — the SAME derivability invariant the loaded-cache path
+        // route evidence, the SAME derivability invariant the loaded-cache path
         // enforces (`store::validate_gpu_cold_warm_cache_evidence`). The cold /
         // warm / route VALUES are DERIVED on demand from `gpu_timing`
         // (`AutorouteDecision::gpu_cold_warm_route`), never stored here.
@@ -79,7 +79,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     // route if one is statistically separated, otherwise the lowest-overhead
     // member of the tied-fastest set. `resolved_routing_backend` is the SAME
     // function `store::validate_decision_route_evidence` re-checks, so
-    // calibration never persists a decision validation would reject — and a fast
+    // calibration never persists a decision validation would reject, and a fast
     // host where the routes tie within measurement noise still gets a usable,
     // sound cache instead of an empty one that hard-errors every auto scan.
     // The provisional backend/margin are ALWAYS overwritten below; only the
@@ -101,7 +101,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     };
     // Persist the resolved backend; the selected-backend margin is DERIVED from
     // it + the timing evidence on demand (`AutorouteDecision::selected_margin_ns`),
-    // not stored — so it can never disagree with the persisted evidence.
+    // not stored (so it can never disagree with the persisted evidence).
     decision.backend = resolved.label().to_string();
 
     tracing::info!(
@@ -139,8 +139,8 @@ fn measure_reference_simd(
     sample: &[Chunk],
 ) -> Result<(Vec<Vec<keyhog_core::RawMatch>>, BackendTimingEvidence), AutorouteRoutingError> {
     // Warmup (UN-timed): the reference scan establishes the reference match set
-    // AND absorbs one-time cold costs — Hyperscan scratch first-alloc, cold
-    // instruction cache, page-faults — so the timed trials below measure
+    // AND absorbs one-time cold costs. Hyperscan scratch first-alloc, cold
+    // instruction cache, page-faults, so the timed trials below measure
     // steady-state throughput, not first-run startup. Including the cold first
     // run would inflate the SIMD baseline and unfairly bias every candidate
     // comparison against it (Law 7: a biased measurement is a production bug).

@@ -1,5 +1,5 @@
 //! Property/adversarial contract for the shared report sanitizers in
-//! `core/src/report/escape.rs` — the single owner of output escaping for every
+//! `core/src/report/escape.rs`: the single owner of output escaping for every
 //! reporter (SARIF/JUnit/GitLab-SAST XML, CSV, terminal text). These functions
 //! are the injection boundary: an attacker who controls a scanned file path, git
 //! author, or redacted credential must not be able to break out of an XML
@@ -10,14 +10,14 @@
 //! crafted inputs (regression_report_junit_xml, regression_csv_formula_injection,
 //! gap/report_text_csv_injection). This pins the SECURITY INVARIANTS that must
 //! hold for EVERY input, not just the sampled ones:
-//!   * `escape_cdata`   — the output never contains the CDATA terminator `]]>`;
-//!   * `escape_xml_attr`— no raw `< > " '` survives and every `&` begins a
+//!   * `escape_cdata`: the output never contains the CDATA terminator `]]>`;
+//!   * `escape_xml_attr`: no raw `< > " '` survives and every `&` begins a
 //!                        known entity; XML-1.0-illegal controls are stripped;
-//!   * `sanitize_xml`   — strips every XML-illegal C0 control but KEEPS tab/LF/CR,
+//!   * `sanitize_xml`: strips every XML-illegal C0 control but KEEPS tab/LF/CR,
 //!                        is idempotent, borrows clean input, and replaces 1:1;
-//!   * `sanitize_terminal` — strips the WHOLE terminal-control class (C0, DEL,
+//!   * `sanitize_terminal`: strips the WHOLE terminal-control class (C0, DEL,
 //!                        C1), is idempotent, borrows clean input, replaces 1:1;
-//!   * `is_terminal_control` — exact boundary contract (differential vs oracle).
+//!   * `is_terminal_control`: exact boundary contract (differential vs oracle).
 
 use keyhog_core::testing::{
     escape_cdata_for_test as escape_cdata, escape_csv_for_test as escape_csv,
@@ -65,14 +65,14 @@ fn only_valid_entities_and_no_raw_metachars(s: &str) -> bool {
 }
 
 /// Arbitrary Unicode strings that deliberately include C0/C1/DEL controls and
-/// the XML/CSV metacharacters — `any::<char>()` spans the whole scalar range.
+/// the XML/CSV metacharacters: `any::<char>()` spans the whole scalar range.
 fn arb_hostile_string() -> impl Strategy<Value = String> {
     prop::collection::vec(any::<char>(), 0..80).prop_map(|v| v.into_iter().collect())
 }
 
 /// Decode a run of concatenated `<![CDATA[...]]>` sections back to raw text, the
 /// way an XML parser would (section content is literal; adjacent sections
-/// concatenate). Returns `None` if the input is not a clean run of sections —
+/// concatenate). Returns `None` if the input is not a clean run of sections 
 /// which for an escaped body would itself be an escaping bug. This is the oracle
 /// that proves `escape_cdata` round-trips: the correct invariant is NOT "output
 /// has no `]]>`" (the canonical `]]]]><![CDATA[>` escape intentionally emits
@@ -160,7 +160,7 @@ proptest! {
 
     #[test]
     fn sanitize_xml_is_a_one_to_one_replacement(s in arb_hostile_string()) {
-        // Each illegal control becomes exactly one U+FFFD — never dropped — so
+        // Each illegal control becomes exactly one U+FFFD, never dropped, so
         // char offsets used for SARIF regions stay aligned.
         let out = sanitize_xml(&s);
         prop_assert_eq!(s.chars().count(), out.chars().count(), "length changed in {:?}", out);
@@ -196,7 +196,7 @@ proptest! {
 
     #[test]
     fn sanitize_terminal_replaces_controls_with_the_replacement_char(s in arb_hostile_string()) {
-        // 1:1 replacement — every stripped control becomes U+FFFD, none dropped.
+        // 1:1 replacement (every stripped control becomes U+FFFD, none dropped).
         let out = sanitize_terminal(&s);
         prop_assert_eq!(s.chars().count(), out.chars().count());
         let expected_controls = s.chars().filter(|&c| is_term_control_oracle(c)).count();

@@ -15,7 +15,7 @@ reason = "gitea@<40-hex> git-remote URL form."
 
 [[negative]]
 text = 'token = "5aab40e433037523cc70af7d3894a0fa"'
-reason = "No gitea keyword anchor — a bare hex value must not fire this detector."
+reason = "No gitea keyword anchor (a bare hex value must not fire this detector)."
 
 [[negative]]
 text = 'gitea_token = deadbeef'

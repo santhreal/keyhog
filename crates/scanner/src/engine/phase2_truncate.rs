@@ -1,12 +1,12 @@
 //! Prefilter input-truncation + UTF-8 boundary helpers, extracted from
-//! `phase2.rs`. Pure `&str` functions — regex prefix-anchorability and
-//! focus-window truncation — with no engine-state coupling.
+//! `phase2.rs`. Pure `&str` functions, regex prefix-anchorability and
+//! focus-window truncation (with no engine-state coupling).
 //! `truncate_for_prefilter` is re-exported at the crate root (see lib.rs);
 //! `regex_prefix_anchorable` and `truncate_src` are pub(crate) for phase-2
 //! prefilter and profiling paths. Pure move, no behaviour change.
 
 /// True iff `src` has a finite, enumerable required-prefix literal set every
-/// member of which is >= 3 bytes — the soundness precondition for driving the
+/// member of which is >= 3 bytes, the soundness precondition for driving the
 /// pattern from prefix-anchor positions instead of a whole-chunk walk.
 pub(crate) fn regex_prefix_anchorable(src: &str) -> bool {
     use regex_syntax::hir::literal::{ExtractKind, Extractor};
@@ -30,7 +30,7 @@ pub(crate) fn regex_prefix_anchorable(src: &str) -> bool {
 ///
 /// SOUNDNESS: any match of the FULL pattern `A B{n,} <rest>` contains the prefix
 /// `A B{n}` at its start, so if the truncated form does NOT match, the full
-/// pattern cannot match anywhere — i.e. the truncated set is a SOUND SUPERSET
+/// pattern cannot match anywhere, i.e. the truncated set is a SOUND SUPERSET
 /// presence gate. It may over-mark (a pattern whose `A B{n}` is present but whose
 /// `<rest>` is absent), but extraction runs the FULL pattern and filters those,
 /// so the finding set is unchanged. For the common credential shape `prefix
@@ -39,7 +39,7 @@ pub(crate) fn regex_prefix_anchorable(src: &str) -> bool {
 ///
 /// Returns `None` when there is no top-level unbounded repetition (already
 /// bounded → use the source verbatim) or the structure is not a simple top-level
-/// concat/repetition (kept full — sound, just stays on the slow path). The
+/// concat/repetition (kept full, sound, just stays on the slow path). The
 /// returned string is validated to compile.
 pub(crate) fn truncate_for_prefilter(src: &str) -> Option<String> {
     use regex_syntax::ast::{Ast, RepetitionKind, RepetitionRange};
@@ -77,7 +77,7 @@ pub(crate) fn truncate_for_prefilter(src: &str) -> Option<String> {
             RepetitionKind::Range(RepetitionRange::AtLeast(n)) => {
                 format!("{}{{{}}}", src.get(..op_start)?, n)
             }
-            // ZeroOrOne / Exactly / Bounded are already finite — not a blow-up
+            // ZeroOrOne / Exactly / Bounded are already finite, not a blow-up
             // source; keep scanning for a later unbounded repetition.
             _ => continue,
         };

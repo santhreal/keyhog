@@ -1,4 +1,4 @@
-//! Contract for `structured/parsers/line.rs::resolve_line_number_options` — the
+//! Contract for `structured/parsers/line.rs::resolve_line_number_options`: the
 //! needle-locating half of structured line attribution.
 //!
 //! `finalize_pending_pairs` turns every extracted structured pair into a
@@ -6,21 +6,21 @@
 //! the 1-based source line of each pair's value/owned anchor. The OFFSET→line
 //! table it stands on (`compute_line_offsets` + `partition_point`) is pinned by
 //! `structured_line_offsets_shared_builder.rs`; this file pins the NEEDLE search
-//! layered on top — the part with the subtle branches:
+//! layered on top, the part with the subtle branches:
 //!
-//!   * repeated-needle dedup — two slots holding the SAME anchor string share one
+//!   * repeated-needle dedup, two slots holding the SAME anchor string share one
 //!     Aho-Corasick pattern, so BOTH take that pattern's FIRST match line (a
 //!     value appearing twice attributes both pairs to the earliest line);
-//!   * empty-needle skip — an empty anchor is never added as a pattern and stays
+//!   * empty-needle skip, an empty anchor is never added as a pattern and stays
 //!     `None` (line falls back to the LAW10 placeholder in the caller);
-//!   * all-empty / empty-text early return — no patterns ⇒ every slot `None`;
+//!   * all-empty / empty-text early return, no patterns ⇒ every slot `None`;
 //!   * not-found ⇒ `None` (mixed freely with located needles, per slot);
-//!   * overlapping substrings — `find_overlapping_iter` (not `find_iter`) means a
+//!   * overlapping substrings: `find_overlapping_iter` (not `find_iter`) means a
 //!     needle that is a prefix/substring of another (`beta` vs `beta=SECRET`)
 //!     still resolves; a non-overlapping scan would drop the shorter one.
 //!
 //! A regression in any of these silently mis-attributes a finding's reported line
-//! — the operator is pointed at the wrong line of a real leak. The example test
+//!, the operator is pointed at the wrong line of a real leak. The example test
 //! asserts exact integers; the proptest fuzzes the whole search against an
 //! independent `str::find`-per-needle oracle over a tiny `{a,b,\n}` alphabet
 //! (which makes duplicates, overlaps, and absences all dense).
@@ -110,7 +110,7 @@ proptest! {
     /// EXACT equivalence with the oracle over a tiny `{a, b, '\n'}` alphabet:
     /// short needles over this alphabet collide constantly, so the space is dense
     /// in duplicates (dedup), overlaps (`a` vs `ab` vs `aba`), absences, and
-    /// multi-line texts — exactly the branches the example test pins by hand. A
+    /// multi-line texts, exactly the branches the example test pins by hand. A
     /// `\n` may appear inside a needle, exercising multi-line anchors too.
     #[test]
     fn matches_str_find_oracle_over_small_alphabet(

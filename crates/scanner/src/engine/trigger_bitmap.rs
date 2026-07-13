@@ -2,15 +2,15 @@
 //!
 //! A *trigger bitmap* is a `Vec<u64>` with one bit per pattern index (AC literal
 //! + phase-2 regex): bit `i` set means "pattern `i` may match this chunk, run
-//! its extraction". The same three operations — allocate `n_patterns.div_ceil(64)`
-//! zeroed words, set bit `i`, and walk every set bit — were open-coded across
+//! its extraction". The same three operations, allocate `n_patterns.div_ceil(64)`
+//! zeroed words, set bit `i`, and walk every set bit, were open-coded across
 //! `backend_triggered` and `scan_postprocess`. Funneling
 //! them through one module means the word width and `div_ceil(64)` sizing live in
 //! exactly one place (so a future width change can't update only some sites) and
 //! the hot bit-walk has a single, audited implementation.
 //!
 //! Everything here is `#[inline(always)]` on the hot paths so the helpers compile
-//! to the same code the open-coded loops did — this is a deduplication, not an
+//! to the same code the open-coded loops did, this is a deduplication, not an
 //! abstraction that costs cycles.
 
 /// Number of `u64` words a trigger bitmap needs for `n_patterns` bits.
@@ -34,7 +34,7 @@ pub(crate) fn new_trigger_bitmap(n_patterns: usize) -> Vec<u64> {
 ///
 /// The index is `word_idx * 64 + bit`. Trailing padding bits in the final word
 /// are always zero (the bitmap is sized to the exact pattern count and only valid
-/// indices are ever set), so `f` is never called for an out-of-range index — but
+/// indices are ever set), so `f` is never called for an out-of-range index, but
 /// callers that index fallibly should still guard, as the open-coded loops did.
 #[inline(always)]
 pub(crate) fn for_each_set_bit(words: &[u64], mut f: impl FnMut(usize)) {

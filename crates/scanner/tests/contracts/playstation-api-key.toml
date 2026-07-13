@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "PSN_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "PSN_API_KEY=39ff7EXAMPLEEXAMPLE96f97"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "export PSN_API_KEY=39ff7f8437d8ac46e79536bc00e27c0a367fbb9357961603fddf2b5706196f97"
 credential = "39ff7f8437d8ac46e79536bc00e27c0a367fbb9357961603fddf2b5706196f97"
-reason = "Adversarial env_export envelope — credential must still surface under this detector."
+reason = "Adversarial env_export envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

@@ -47,14 +47,14 @@ pub(crate) fn multiline_secret_prefixes() -> &'static [String] {
 /// Parse and validate the multiline secret-prefix list from raw TOML: ASCII with
 /// optional `_`/`-`/`.` separators, no empties, no duplicates, non-empty overall,
 /// order and CASE preserved (the consumer's Aho-Corasick is case-sensitive, so the
-/// exact vendor casing must survive verbatim — unlike the case-folded generic
+/// exact vendor casing must survive verbatim, unlike the case-folded generic
 /// assignment-keyword vocab, this passes `require_lowercase: false` and does NOT
 /// lowercase).
 pub(crate) fn parse_multiline_secret_prefixes(raw: &str) -> Result<Vec<String>, String> {
     let parsed: MultilineSecretPrefixFile = toml::from_str(raw)
         .map_err(|error| format!("invalid multiline_secret_prefixes.toml: {error}"))?;
     // The consumer's Aho-Corasick is case-sensitive, so casing is PRESERVED verbatim
-    // (require_lowercase: false) — the one axis on which this differs from the
+    // (require_lowercase: false), the one axis on which this differs from the
     // case-folded assignment-keyword list.
     crate::tier_b_list::parse_token_list(
         parsed.multiline_secret_prefixes.prefixes,
@@ -73,7 +73,7 @@ mod tests {
 
     /// The EXACT list the multiline gate matched BEFORE the Tier-B move (the inline
     /// `AhoCorasick::new([...])` array in `engine/scan_filters.rs`), in order and
-    /// with vendor casing. The loaded vocab must reproduce it byte-for-byte — the
+    /// with vendor casing. The loaded vocab must reproduce it byte-for-byte, the
     /// zero-behavior-change parity proof for the recall-critical split-secret gate.
     const LEGACY: &[&str] = &[
         "sk-proj-",
@@ -254,7 +254,7 @@ mod tests {
         // Prove the recall-critical consumer works from the Tier-B list: a
         // case-SENSITIVE Aho-Corasick (the default `AhoCorasick::new`) built from the
         // loaded prefixes fires on the exact vendor casing and REJECTS an uppercased
-        // spelling — the behavior `has_secret_keyword_fast` depends on.
+        // spelling (the behavior `has_secret_keyword_fast` depends on).
         let ac =
             aho_corasick::AhoCorasick::new(multiline_secret_prefixes().iter().map(String::as_str))
                 .expect("AC builds from the Tier-B prefixes");

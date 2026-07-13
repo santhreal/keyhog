@@ -13,7 +13,7 @@ impl Phase2GpuDfaShard {
     /// `marked`, when `Some`, receives per-region the phase-2 pattern indices that
     /// the GPU regex-DFA matched (the SAME indices `scratch.mark` uses on the CPU
     /// path). This is the step-1 seam that lets the caller use the GPU-marked active
-    /// set to bypass the CPU always-active RegexSet for covered patterns — inert
+    /// set to bypass the CPU always-active RegexSet for covered patterns, inert
     /// (behavior-identical) while callers pass `None`.
     pub(super) fn scan_admission_into(
         &self,

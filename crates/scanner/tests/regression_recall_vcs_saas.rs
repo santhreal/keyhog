@@ -10,7 +10,7 @@
 //!
 //! Every positive asserts the EXACT surfaced `detector_id`, the EXACT credential
 //! bytes, and the EXACT 1-based source line. Every negative twin asserts the
-//! named detector is ABSENT — never a bare `!is_empty()`.
+//! named detector is ABSENT (never a bare `!is_empty()`).
 //!
 //! Token authenticity: `ghp_` tokens carry a real CRC32 base62 checksum (an
 //! invalid-checksum `ghp_` is DROPPED by the checksum gate, see

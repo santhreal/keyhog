@@ -110,12 +110,12 @@ pub(crate) fn read_to_string_limited(
     // the text it does contain rather than rejected. Rejecting it made
     // `cat binaryfile | keyhog scan --stdin` a source failure (exit 2 under the
     // KH-GAP-096 fail-closed) while `keyhog scan binaryfile` happily lossy-scans
-    // the same bytes — an inconsistency, and real secrets do live in otherwise
+    // the same bytes, an inconsistency, and real secrets do live in otherwise
     // non-UTF-8 inputs (embedded configs, archive members, latin-1 logs). The
     // size cap above already bounds memory.
     //
     // `from_utf8` (consuming the owned `Vec`) reuses the buffer's allocation on
-    // the common valid-UTF-8 path — zero copy — and only the rare invalid input
+    // the common valid-UTF-8 path, zero copy, and only the rare invalid input
     // pays the lossy re-encode; `from_utf8_lossy(&bytes).into_owned()` copied the
     // whole stdin buffer even when it was already valid UTF-8.
     match String::from_utf8(read.bytes) {

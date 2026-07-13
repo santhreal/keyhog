@@ -1,9 +1,9 @@
-//! LANE 5 (test-cli-e2e) — SARIF schema deep-validation and a data-driven
+//! LANE 5 (test-cli-e2e). SARIF schema deep-validation and a data-driven
 //! scale matrix, driven over the SHIPPED binary.
 //!
 //! Two contracts, both end-to-end:
 //!
-//!   1. SARIF SCHEMA — `keyhog scan --format sarif` must emit a structurally
+//!   1. SARIF SCHEMA: `keyhog scan --format sarif` must emit a structurally
 //!      complete SARIF 2.1.0 document a consuming platform (GitHub code
 //!      scanning) accepts: the `$schema` + `version`, a `tool.driver` with
 //!      `name`/`informationUri`/`rules`, EVERY `result.ruleId` resolving into
@@ -14,14 +14,14 @@
 //!      the ruleId↔rules closure across a MULTI-detector corpus, the case the
 //!      single-finding compliance test does not cover.)
 //!
-//!   2. SCALE — a generated corpus of N files, each planted with the same
+//!   2. SCALE, a generated corpus of N files, each planted with the same
 //!      checksum-valid PAT, must yield EXACTLY N findings (one per file) under
 //!      json AND the SARIF result count must equal the json finding count.
 //!      Re-run across the backend axis, this is a few-hundred-assertion grid
 //!      that proves the walker→engine→reporter pipeline neither drops nor
 //!      duplicates findings as the tree grows or the backend changes.
 //!
-//! Every assert pins an EXACT count, ruleId, hash, or level — never `!is_empty`.
+//! Every assert pins an EXACT count, ruleId, hash, or level (never `!is_empty`).
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -84,7 +84,7 @@ fn sarif_is_structurally_complete_2_1_0_with_every_ruleid_resolving() {
     std::fs::create_dir_all(dir.path().join("src")).expect("mkdir src");
     // Two SEPARATE files so the two detectors fire deterministically. Putting
     // both tokens in one file lets the second line's match context bleed into
-    // the first and flip a named detector to an entropy variant — a real
+    // the first and flip a named detector to an entropy variant, a real
     // context-window behavior, but not what this schema test is pinning.
     std::fs::write(
         dir.path().join("src/gh.env"),
@@ -195,7 +195,7 @@ fn sarif_is_structurally_complete_2_1_0_with_every_ruleid_resolving() {
         );
     }
 
-    // The PAT result must carry the exact credential hash in its fingerprint —
+    // The PAT result must carry the exact credential hash in its fingerprint 
     // this is the value the self-scan suppression dedups on (project memory).
     let pat_result = results
         .iter()
@@ -243,7 +243,7 @@ fn sarif_result_count_equals_json_finding_count_across_backends() {
         assert_eq!(
             sarif_count, json_count,
             "--backend {backend}: sarif result count ({sarif_count}) must equal json \
-             finding count ({json_count}) — a format must never add/drop a finding"
+             finding count ({json_count}), a format must never add/drop a finding"
         );
         assert_eq!(
             json_count, 2,
@@ -253,7 +253,7 @@ fn sarif_result_count_equals_json_finding_count_across_backends() {
 }
 
 // ----------------------------------------------------------------------------
-// SCALE — N files → exactly N findings, no drop, no duplicate
+// SCALE: N files → exactly N findings, no drop, no duplicate
 // ----------------------------------------------------------------------------
 
 /// Plant `n` files, each with the SAME checksum-valid PAT, in a temp tree.
@@ -263,7 +263,7 @@ fn plant_n_pat_files(n: usize) -> TempDir {
         std::fs::write(
             dir.path().join(format!("svc_{i:04}.env")),
             // Distinct var name per file so the *file* differs, but the
-            // credential is identical — the dedup scope (default: Credential)
+            // credential is identical, the dedup scope (default: Credential)
             // collapses identical hashes, so we use --dedup none to count files.
             format!("TOKEN_{i}={PAT}\n"),
         )

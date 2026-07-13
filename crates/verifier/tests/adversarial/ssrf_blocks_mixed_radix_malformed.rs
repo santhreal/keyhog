@@ -8,7 +8,7 @@ use keyhog_verifier::ssrf::is_private_url;
 #[test]
 fn ssrf_blocks_mixed_hex_octal_malformed() {
     // Octets: 0x7f (hex), 0177 (octal), 0 (decimal), 1 (decimal)
-    // Single octet must be decimal, hex, or octal — not mixed with dots and different radix.
+    // Single octet must be decimal, hex, or octal (not mixed with dots and different radix).
     // looks_like_malformed_ip line 222-229: >= 4 parts, all octet-shaped, has 0x/digit/- chars.
     assert!(
         is_private_url("http://0x7f.0177.0.1/"),
@@ -27,7 +27,7 @@ fn ssrf_blocks_mixed_hex_negative_malformed() {
 
 #[test]
 fn ssrf_blocks_all_hex_octets_malformed() {
-    // All octets prefixed 0x, each is a hex digit: 0x0.0x7.0x0.0x1 — evasion attempt
+    // All octets prefixed 0x, each is a hex digit: 0x0.0x7.0x0.0x1, evasion attempt
     assert!(
         is_private_url("http://0x0.0x7.0x0.0x1/"),
         "SSRF guard must block all-hex-prefix octets: http://0x0.0x7.0x0.0x1/"

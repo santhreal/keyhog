@@ -1,24 +1,24 @@
-"""Overlap/attribution scorer — the SecretBench truth rules.
+"""Overlap/attribution scorer (the SecretBench truth rules).
 
 This is the legacy ``tools/secretbench/scoring/score.py`` attribution logic,
 ported so the numbers are identical, with one generalisation: it groups
 ground-truth records by file so a single file may carry several labeled
 secrets (CredData). The single-record-per-file mirror corpus scores
-bit-identically to the legacy scorer — ``test_score.py`` pins that.
+bit-identically to the legacy scorer: ``test_score.py`` pins that.
 
 Attribution (SecretBench paper, Basak et al. MSR 2023):
 
-* **True positive** — a finding's surfaced value contains, or is contained
+* **True positive**, a finding's surfaced value contains, or is contained
   in, a labeled secret on a positive record (``overlap`` rule below).
-* **False positive** — a finding that overlaps no positive record on a
+* **False positive**, a finding that overlaps no positive record on a
   known file (fires on a negative, or on a positive file but off-secret),
   or a finding on a file with no records at all.
-* **False negative** — a positive record with no overlapping finding.
-* **Ignored** — a finding overlapping an ``ignore`` record (CredData
+* **False negative** (a positive record with no overlapping finding).
+* **Ignored**, a finding overlapping an ``ignore`` record (CredData
   ``Template``/``X``) counts neither way; ignore records never produce FN.
 
 ``overlap`` / ``_normalize_for_overlap`` / ``_try_base64_decode`` are copied
-verbatim from the legacy scorer — same robustness to redaction, escape-
+verbatim from the legacy scorer, same robustness to redaction, escape-
 sequence re-wrapping, and k8s base64 ``data:`` fields.
 """
 
@@ -48,7 +48,7 @@ _ESCAPE_NORMALIZE = (
 
 def _try_base64_decode(s: str) -> str | None:
     """Return s base64-decoded as latin-1 text, or None. Lets a captured
-    k8s ``data:`` value (base64) overlap a manifest plaintext secret — the
+    k8s ``data:`` value (base64) overlap a manifest plaintext secret, the
     underlying bytes are the same secret, only the surface differs. Mirror
     v28: 38 FPs traced to exactly this encoding mismatch. Conservative:
     16+ chars, base64 alphabet, decodes to 8+ bytes, so random ASCII won't
@@ -142,7 +142,7 @@ def build_basename_index(aliases: dict[str, str]) -> dict[str, list[tuple[str, s
     """basename -> [(normalized spelling, canonical key)]. Built ONCE per file
     index; every non-exact path match (equality, "/"-suffix either direction,
     basename) preserves the final path component, so a finding only ever needs
-    the candidates sharing its basename — turning the per-finding alias scan
+    the candidates sharing its basename, turning the per-finding alias scan
     from O(all aliases) into O(same-basename aliases)."""
     index: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for spelling, key in aliases.items():
@@ -193,7 +193,7 @@ def _resolve_finding_file_candidates(
         return tail_matches
     # No "/"-anchored suffix match. A finding path that CARRIES directory
     # structure (contains a "/") but matches no record's path is a file the
-    # corpus simply does not label — e.g. a duplicate-basename doc in a snapshot
+    # corpus simply does not label, e.g. a duplicate-basename doc in a snapshot
     # whose *other* files are labeled (CredData has 60+ files named
     # `b3356305.md`). Resolve it to "no record" (empty) so the finding is
     # skipped, NEVER blamed on the dozens of unrelated same-basename files: that
@@ -228,7 +228,7 @@ def found_record_ids(
     This is the per-record recall hit-set that :func:`score` computes
     internally (its ``hit_ids``) but does not expose. It reuses the SAME file
     index, path resolution, and :func:`overlap` rule, so a record id is in this
-    set iff that record is a true positive in :func:`score` — the per-secret
+    set iff that record is a true positive in :func:`score`: the per-secret
     recall matrix (``test_creddata_recall_matrix``) asserts membership here, and
     its module pins ``len(found_record_ids(...)) == score(...).overall.tp`` so
     the two can never drift. Kept a thin standalone helper (not folded into
@@ -272,7 +272,7 @@ def score(
     Populates ``per_category`` (taxonomy buckets) and ``per_detector``
     (keyhog detector id) confusion matrices. Per-detector FP is per-finding;
     per-detector TP is per-record (deduped), so a detector that fires three
-    times on one secret scores one TP — matching the overall TP semantics.
+    times on one secret scores one TP (matching the overall TP semantics).
     A record's TP confidence is the max over the findings that caught it.
     """
     det = Detection()

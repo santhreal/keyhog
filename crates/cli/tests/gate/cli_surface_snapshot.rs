@@ -1,5 +1,5 @@
-//! CLI-08 surface gate: pin the CLI's two bloat-prone axes — the top-level
-//! subcommand set and the `scan` long-flag set — so neither can grow (or
+//! CLI-08 surface gate: pin the CLI's two bloat-prone axes, the top-level
+//! subcommand set and the `scan` long-flag set, so neither can grow (or
 //! silently churn via rename) without a deliberate edit to this file.
 //!
 //! This snapshot flags the concern directly: "scan carries
@@ -7,7 +7,7 @@
 //! keep coherent, document, and test." This gate makes every addition show up
 //! as a failing test that names exactly what was added/removed, forcing the
 //! author to (a) confirm the new surface is intentional and (b) update the
-//! pinned list — which is the audit trail.
+//! pinned list (which is the audit trail).
 //!
 //! It introspects the SAME canonical `clap::Command` the binary runs
 //! (`keyhog::args::command()`), not rendered `--help` text, so it can't be
@@ -19,7 +19,7 @@ use keyhog::args::command;
 
 /// Top-level subcommands that are ALWAYS compiled in (no feature gate). Every
 /// verb is currently unconditional, so [`expected_subcommands`] is just this
-/// list — but the helper stays a function so a future feature-gated verb is
+/// list, but the helper stays a function so a future feature-gated verb is
 /// added under the SAME `#[cfg]` the `Command` variant carries, keeping the
 /// gate feature-robust. Adding a subcommand is a deliberate surface-growth
 /// decision: update this list in the same change and justify the new verb.
@@ -100,7 +100,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "ml-weight",
     // `--no-config`: hermetic run on the compiled-in Tier-A shipped defaults,
     // rejecting ambient `.keyhog.toml` discovery (conflicts_with = "config";
-    // hermetic config enforcement). Unconditional — not feature-gated.
+    // hermetic config enforcement). Unconditional (not feature-gated).
     "no-config",
     "no-autoroute-gpu",
     "no-batch-pipeline",

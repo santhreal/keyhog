@@ -3,14 +3,14 @@
 //! `AlphabetMask` is a 256-bit byte-presence histogram; `AlphabetScreen` is the
 //! Layer-0 chunk-skip prefilter. These tests assert exact presence/intersection
 //! semantics, the SIMD-vs-scalar mask equality contract, the case-folding
-//! screen, and the empty-data reject — never `is_empty` decoration.
+//! screen, and the empty-data reject (never `is_empty` decoration).
 
 use keyhog_scanner::testing::{
     assert_alphabet_prefilter_backend_parity, AlphabetMask, AlphabetScreen,
 };
 
 // ---------------------------------------------------------------------------
-// AlphabetMask — presence + intersection
+// AlphabetMask, presence + intersection
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -69,7 +69,7 @@ fn high_bytes_set_in_upper_lanes() {
 }
 
 // ---------------------------------------------------------------------------
-// SIMD body parity (scalar reference) — the documented robustness contract
+// SIMD body parity (scalar reference), the documented robustness contract
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -94,7 +94,7 @@ fn avx2_body_matches_scalar_when_available() {
 }
 
 // ---------------------------------------------------------------------------
-// AlphabetScreen — case-folding chunk skip
+// AlphabetScreen, case-folding chunk skip
 // ---------------------------------------------------------------------------
 
 #[test]

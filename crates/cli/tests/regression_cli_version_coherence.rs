@@ -6,8 +6,8 @@
 //! them (`keyhog_core::git_hash`, `keyhog_core::detector_digest`,
 //! `keyhog_core::embedded_detector_count`, `keyhog_scanner::ml_scorer::model_version`),
 //! and the build-target line is checked against `std::env::consts`. The binary is
-//! driven as a real process through `CARGO_BIN_EXE_keyhog` — the same pattern the
-//! sibling e2e suites use — so a drift between what the binary prints and what the
+//! driven as a real process through `CARGO_BIN_EXE_keyhog`: the same pattern the
+//! sibling e2e suites use, so a drift between what the binary prints and what the
 //! linked libraries report fails loudly instead of hiding behind a smoke check.
 //!
 //! Because the test crate links the SAME workspace `keyhog-core` / `keyhog-scanner`
@@ -126,7 +126,7 @@ fn short_and_long_version_flags_are_byte_identical() {
 // build-provenance lines ↔ library accessors
 // ---------------------------------------------------------------------------
 
-/// Line 2 is exactly `Commit: {keyhog_core::git_hash()}` — the build.rs-stamped
+/// Line 2 is exactly `Commit: {keyhog_core::git_hash()}`: the build.rs-stamped
 /// git SHA (or the literal `unknown` for a no-.git build), verified against the
 /// SAME accessor the binary formats from.
 #[test]
@@ -166,7 +166,7 @@ fn version_detector_set_line_matches_core_count_and_digest() {
         "detector-set line must equal `{expected}`; got {line:?}"
     );
     // The digest is defined as `<count>-<hash>`, so its count prefix must agree
-    // with the standalone count — a defensive cross-check of the two sources.
+    // with the standalone count (a defensive cross-check of the two sources).
     let digest_prefix = format!("{count}-");
     assert!(
         digest.starts_with(&digest_prefix),
@@ -337,7 +337,7 @@ fn top_level_help_usage_names_binary_keyhog() {
     );
 }
 
-/// `--help` and the short `-h` produce byte-identical stdout at exit 0 — the two
+/// `--help` and the short `-h` produce byte-identical stdout at exit 0, the two
 /// help spellings must never diverge.
 #[test]
 fn long_help_and_short_h_are_byte_identical() {

@@ -9,7 +9,7 @@ name = "Hashnode Personal Access Token"
 service = "hashnode"
 severity = "medium"
 # "pat" removed: over-broad (path/pattern/patch/compatible contain it) and
-# redundant — the regex self-anchors on hashnode/personal_access_token (both
+# redundant: the regex self-anchors on hashnode/personal_access_token (both
 # still keywords), never on a bare "pat". Recall-neutral.
 keywords = ["hashnode", "HASHNODE", "personal_access_token"]
 

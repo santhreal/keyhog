@@ -1,4 +1,4 @@
-//! KH-GAP-130: STANDARD CI contract — repo `.github/workflows/ci.yml` is the 5-line santh-ci reuse.
+//! KH-GAP-130: STANDARD CI contract (repo `.github/workflows/ci.yml` is the 5-line santh-ci reuse).
 
 use super::support::spec_waiver::spec_waiver_active;
 use super::support::{repo_root, CI_YML_WAIVER as WAIVER_REL};

@@ -2,7 +2,7 @@
 //! mapping an entropy candidate's keyword to its detector-metadata index
 //! (0 generic / 1 password / 2 token / 3 api-key). The keyword is the captured
 //! assignment key and preserves its source case, so the mapping must be
-//! ASCII-case-insensitive — an all-caps `PASSWORD=`/`TOKEN=` anchor must land in
+//! ASCII-case-insensitive, an all-caps `PASSWORD=`/`TOKEN=` anchor must land in
 //! the Password/Token bucket, not default to the API-Key bucket. These tests pin
 //! every casing, the branch precedence, and the preserved `none`-sentinel cases.
 

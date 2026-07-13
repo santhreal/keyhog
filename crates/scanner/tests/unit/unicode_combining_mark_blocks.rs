@@ -2,13 +2,13 @@
 //! marks from **every** Unicode combining block, not just U+0300–U+036F.
 //!
 //! `normalize_homoglyphs` runs on the main scan path (`backend_dispatch`), so a
-//! combining mark spliced between credential bytes — `g\u{1DC0}hp_…` — must be
+//! combining mark spliced between credential bytes: `g\u{1DC0}hp_…`: must be
 //! dropped, or the underlying char sequence stops matching the detector regex
 //! (`ghp_`) and the secret is missed. The original strip only covered the
 //! Combining Diacritical Marks block (U+0300–036F); marks from the Supplement
 //! (U+1DC0–1DFF), Extended (U+1AB0–1AFF), for-Symbols (U+20D0–20FF), Half Marks
 //! (U+FE20–FE2F), and the Cyrillic/Hebrew/Arabic/Indic blocks all evaded it.
-//! NFC does not rescue these — a mark with no precomposed base survives `nfc()`.
+//! NFC does not rescue these (a mark with no precomposed base survives `nfc()`).
 //!
 //! Every codepoint below was confirmed `category == M*` against `unicodedata`.
 
@@ -99,7 +99,7 @@ fn devanagari_combining_udatta_stripped() {
 
 #[test]
 fn extended_mark_between_prefix_chars_reassembles_ghp() {
-    // `g<mark>hp_` — the mark sits inside the literal prefix itself.
+    // `g<mark>hp_`: the mark sits inside the literal prefix itself.
     let normalized = normalize_homoglyphs("g\u{1DC0}hp_deadbeefcafe");
     assert!(
         normalized.starts_with("ghp_"),
@@ -109,7 +109,7 @@ fn extended_mark_between_prefix_chars_reassembles_ghp() {
 
 #[test]
 fn spliced_mark_lets_aws_key_reassemble() {
-    // AKIA + 16 — a mark spliced after the AKIA anchor must vanish so the
+    // AKIA + 16, a mark spliced after the AKIA anchor must vanish so the
     // AKIA[0-9A-Z]{16} body is contiguous again.
     let normalized = normalize_homoglyphs("AKIA\u{20DD}QYLPMN5HFIQR7BBB");
     assert!(
@@ -193,7 +193,7 @@ fn contains_evasion_true_for_extended_supplement_mark() {
 
 #[test]
 fn precomposed_letter_n_tilde_is_kept() {
-    // U+00F1 ñ is a letter (Ll), not a combining mark — must survive.
+    // U+00F1 ñ is a letter (Ll), not a combining mark (must survive).
     let normalized = normalize_homoglyphs("ma\u{00F1}ana_token");
     assert!(
         normalized.contains('\u{00F1}'),

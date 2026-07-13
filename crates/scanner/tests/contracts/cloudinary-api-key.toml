@@ -32,7 +32,7 @@ reason = "An invalid continuation after the cloud name must not produce a trunca
 [[evasion]]
 text = "cloudinary://123456:Kp4Qx7Rm2Sn5Tb8Vw3Yz@mycloud"
 credential = "cloudinary://123456:Kp4Qx7Rm2Sn5Tb8Vw3Yz@mycloud"
-reason = "Adversarial header_bare envelope — credential must still surface under this detector."
+reason = "Adversarial header_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

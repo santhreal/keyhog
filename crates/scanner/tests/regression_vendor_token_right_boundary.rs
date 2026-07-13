@@ -11,7 +11,7 @@
 //! regex path are enrolled here (so the `\b` cost no real recall), and each
 //! asserts the overlong run is suppressed on both (the precision gain). The
 //! remaining fixed-length candidates from the audit are tracked in the
-//! boundary-sweep memory pending the same per-detector proof — including npm /
+//! boundary-sweep memory pending the same per-detector proof, including npm /
 //! Shopify, which did NOT surface a valid token even before the boundary was
 //! added (a separate recall investigation, not a boundary regression).
 
@@ -21,7 +21,7 @@ use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::sync::OnceLock;
 
-/// Enrolled detectors — every one is proven (below) to surface its exact token.
+/// Enrolled detectors (every one is proven (below) to surface its exact token).
 const DETECTOR_IDS: &[&str] = &[
     "buildkite-api-access-token",
     "render-api-key",
@@ -99,7 +99,7 @@ macro_rules! vendor_boundary {
         }
         #[test]
         fn $eof() {
-            // End of input is a word boundary — no trailing delimiter needed.
+            // End of input is a word boundary (no trailing delimiter needed).
             assert!(
                 reports_on_both($det, $tok, $tok),
                 "{} exact token must surface at end of input",

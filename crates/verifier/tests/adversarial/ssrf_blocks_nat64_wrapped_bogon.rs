@@ -1,8 +1,8 @@
 //! SSRF adversarial: the NAT64 well-known prefix (`64:ff9b::/96`, RFC 6052)
 //! embeds an IPv4 address in its low 32 bits. An attacker who controls a URL the
 //! verifier fetches can hide a private/metadata IPv4 inside a NAT64 IPv6 literal
-//! — `http://[64:ff9b::169.254.169.254]/` reaches cloud IMDS on any host with a
-//! NAT64 resolver — bypassing a guard that only screens dotted-quad IPv4. The
+//!: `http://[64:ff9b::169.254.169.254]/` reaches cloud IMDS on any host with a
+//! NAT64 resolver, bypassing a guard that only screens dotted-quad IPv4. The
 //! bogon classifier unwraps the embedded v4 and refuses it; these pin that.
 
 use keyhog_verifier::ssrf::is_private_url;
@@ -38,7 +38,7 @@ fn ssrf_blocks_nat64_wrapped_loopback() {
 fn ssrf_allows_nat64_wrapped_public_ipv4() {
     // Negative twin: 64:ff9b::808:808 == NAT64 wrapping 8.8.8.8 (public). A NAT64
     // prefix around a globally routable IPv4 is a legitimate fetch target, so the
-    // guard must NOT over-block it — refusing here would be a false positive that
+    // guard must NOT over-block it, refusing here would be a false positive that
     // silently kills real verification.
     assert!(
         !is_private_url("http://[64:ff9b::808:808]/"),

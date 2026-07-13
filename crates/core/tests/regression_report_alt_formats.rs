@@ -4,7 +4,7 @@
 //! Companion to `regression_report_output_bytes.rs` (which pins SARIF/JSON/
 //! JSONL/text). Here every assertion is a concrete value: the exact header /
 //! wrapper line each format ships, the exact placement of a single planted
-//! finding's fields, and — for each streaming format — the exact empty-but-still
+//! finding's fields, and, for each streaming format, the exact empty-but-still
 //! -valid document an all-clean scan produces. All values are computed by
 //! reading the reporter source (`crates/core/src/report/{csv,html,junit,
 //! github_annotations,gitlab_sast}.rs`), never guessed.
@@ -105,7 +105,7 @@ fn csv_planted_finding_row_is_exact() {
 }
 
 /// Negative twin: an empty (all-clean) scan yields the header line and nothing
-/// else — a still-valid, single-line CSV document.
+/// else (a still-valid, single-line CSV document).
 #[test]
 fn csv_empty_run_is_header_only() {
     let out = render_str(ReportFormat::Csv, &[]);

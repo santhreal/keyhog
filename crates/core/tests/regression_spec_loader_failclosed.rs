@@ -3,16 +3,16 @@
 //! keyhog's recall is only as complete as the detector corpus it actually
 //! loads. The load path therefore has ONE binding rule (Law 10, NO SILENT
 //! FALLBACKS): a detector that cannot be parsed or validated must produce a
-//! LOUD, offender-naming hard error — never a silent `continue` that drops it
+//! LOUD, offender-naming hard error, never a silent `continue` that drops it
 //! and reports "all detectors loaded". This is exactly how the dead
 //! `discord-bot-token` detector (a single-quoted TOML literal that broke the
 //! parse) reached a benched release as an invisible recall hole.
 //!
 //! This file drives the three real fail-closed entry points end to end:
-//!   * `load_embedded_detectors_or_fail` — the compiled-in corpus,
-//!   * `load_detectors` (public, directory-based) — an on-disk corpus,
+//!   * `load_embedded_detectors_or_fail`: the compiled-in corpus,
+//!   * `load_detectors` (public, directory-based), an on-disk corpus,
 //!   * `load_detectors_from_str` / `load_detectors_with_gate` (testing facade)
-//!     — single-string and gated loads,
+//!, single-string and gated loads,
 //! plus the two operator-facing error variants' rendered contracts. Every
 //! assertion pins a concrete value: an exact count, an exact `SpecError`
 //! variant + its fields, an exact detector field, or an exact substring of the
@@ -89,7 +89,7 @@ fn embedded_corpus_loads_exactly_the_authoritative_count() {
 }
 
 /// A specific, stable detector must survive the embedded load with its exact
-/// declared fields — proof the loader materialises real spec content, not
+/// declared fields, proof the loader materialises real spec content, not
 /// empty-shell structs that a lossy parse could leave behind.
 #[test]
 fn embedded_corpus_contains_aws_access_key_with_exact_fields() {
@@ -126,9 +126,9 @@ fn every_embedded_detector_has_nonempty_id_and_a_matcher() {
     let detectors = load_embedded_detectors_or_fail().expect("embedded corpus loads");
 
     let empty_id = detectors.iter().filter(|d| d.id.is_empty()).count();
-    // A detector must be able to MATCH: via a regex pattern, OR — for phase-2
+    // A detector must be able to MATCH: via a regex pattern, OR, for phase-2
     // keyword/entropy generic detectors (generic-api-key / generic-secret /
-    // generic-keyword-secret, which carry NO regex anchor by design) — via a
+    // generic-keyword-secret, which carry NO regex anchor by design), via a
     // keyword. Only a detector with NEITHER could never fire.
     let unmatchable = detectors
         .iter()
@@ -230,7 +230,7 @@ client_safe = true
 /// whose rendered message points the operator at the syntax.
 #[test]
 fn malformed_toml_string_yields_invalid_toml_not_silent_skip() {
-    // Unterminated string / stray bracket — invalid TOML syntax.
+    // Unterminated string / stray bracket (invalid TOML syntax).
     let broken = "[detector]\nid = \"oops\nseverity = \"high\"\n";
     let err = from_str(broken).expect_err("malformed TOML must fail closed, not return empty");
 
@@ -252,7 +252,7 @@ fn malformed_toml_string_yields_invalid_toml_not_silent_skip() {
 
 /// The schema's `deny_unknown_fields` typo-guard is load-bearing: a detector
 /// with a misspelled field (`sevrity`) is REJECTED rather than loaded with the
-/// intended field silently defaulted — otherwise a typo'd severity would ship
+/// intended field silently defaulted, otherwise a typo'd severity would ship
 /// an Info-tier detector no one asked for.
 #[test]
 fn unknown_field_is_rejected_fail_closed() {
@@ -294,7 +294,7 @@ fn dir_with_single_valid_detector_loads_one_with_exact_fields() {
 }
 
 /// A directory whose only detector file is malformed rejects the WHOLE corpus
-/// with `DetectorCorpusRejected`, naming the offending file — not a silent skip
+/// with `DetectorCorpusRejected`, naming the offending file, not a silent skip
 /// that returns an empty (recall-zero) set.
 #[test]
 fn dir_with_malformed_toml_rejects_corpus_naming_offender() {
@@ -344,11 +344,11 @@ fn dir_mixing_valid_and_malformed_fails_closed_not_partial() {
     }
 }
 
-/// Two detector files sharing an `id` are a shadowing bug — the loser's
+/// Two detector files sharing an `id` are a shadowing bug, the loser's
 /// patterns/companions never fire and finding attribution is ambiguous. Under
 /// the enforced gate the whole corpus is rejected, naming the duplicate id;
 /// gate-off keeps both (the explicit escape hatch), proving the gate is what
-/// rejects — mirroring the patternless case. The two files carry DIFFERENT
+/// rejects, mirroring the patternless case. The two files carry DIFFERENT
 /// bodies so this is a genuine id collision, not a duplicate file.
 #[test]
 fn dir_with_duplicate_detector_ids_is_gate_rejected_naming_the_id() {
@@ -392,7 +392,7 @@ regex = "demo2_[A-Z0-9]{8}"
 }
 
 /// A pattern with an EMPTY regex parses and COMPILES cleanly, but matches the
-/// empty string at every position — a detector carrying one fires on every byte
+/// empty string at every position, a detector carrying one fires on every byte
 /// of every file (a catastrophic FP flood the compile check cannot catch). The
 /// quality gate must reject it up front, naming the cause.
 #[test]
@@ -412,7 +412,7 @@ regex = ""
     write_toml(dir.path(), "void.toml", empty_regex);
 
     let err = load_detectors(dir.path())
-        .expect_err("an empty-regex pattern must fail closed — it matches everywhere");
+        .expect_err("an empty-regex pattern must fail closed, it matches everywhere");
     match &err {
         SpecError::DetectorCorpusRejected { detail, .. } => {
             assert!(
@@ -425,7 +425,7 @@ regex = ""
 }
 
 /// `min_confidence` is a probability in [0.0, 1.0]. A value outside it (here 1.5)
-/// silently breaks the gate — the detector could never clear its own floor — so
+/// silently breaks the gate, the detector could never clear its own floor, so
 /// the quality gate rejects it. The inclusive boundary (1.0) still loads, proving
 /// the check rejects only genuinely out-of-range values, not the edge.
 #[test]
@@ -608,7 +608,7 @@ fn empty_dir_is_rejected_with_zero_counts() {
 /// The quality gate is fail-closed when enforced: a detector with zero patterns
 /// (`patterns = []`) is rejected under `enforce_gate = true` naming the cause,
 /// but the same directory loads it under `enforce_gate = false` (the explicit
-/// gate-off path) — proving the gate is what does the rejecting, not the parse.
+/// gate-off path) (proving the gate is what does the rejecting, not the parse).
 #[test]
 fn patternless_detector_is_gate_rejected_but_loads_gate_off() {
     let patternless = r#"

@@ -25,7 +25,7 @@ pub(crate) struct CompileState {
 /// its inner literals (only when there is no usable prefix), and whether it has
 /// neither a literal nor a keyword (a quality warning). Deriving these in the
 /// `par_iter` instead of the serial assembly loop is what keeps cold-compile
-/// wall-clock flat as the corpus grows — the AST parsing and homoglyph DFA
+/// wall-clock flat as the corpus grows, the AST parsing and homoglyph DFA
 /// compilation are the cost, and they are independent per pattern.
 struct PatternArtifacts {
     compiled: CompiledPattern,
@@ -38,7 +38,7 @@ struct PatternArtifacts {
 /// Minimum byte length of a literal prefix before it is worth generating a
 /// homoglyph phase-2 variant. A 1-2 byte prefix carries too little signal: its
 /// homoglyph expansion would broaden the AC set for almost no spoof-coverage
-/// gain. This is deliberately SHORTER than `MIN_INNER_LITERAL_CHARS` — a
+/// gain. This is deliberately SHORTER than `MIN_INNER_LITERAL_CHARS`: a
 /// homoglyph variant still splices back into the FULL regex (the rest of the
 /// pattern must match), whereas an inner literal stands alone in the AC set and
 /// needs more distinctiveness to avoid flooding the prefilter. Named to match
@@ -277,7 +277,7 @@ pub(crate) fn rewrite_alternation_prefix(
     // (the two paren scanners in this file must agree). An escaped `\)` or a
     // `)` / `(` inside a `[...]` class is a LITERAL, not a group delimiter:
     // counting it would prematurely balance `depth` and mis-locate the close,
-    // then splice a wrong slice — e.g. `(?:a|b\)c)x` with prefix `a` stopped at
+    // then splice a wrong slice, e.g. `(?:a|b\)c)x` with prefix `a` stopped at
     // the escaped `\)` and produced the malformed `{expanded}c)x` (unbalanced
     // paren). Tracking escapes and classes finds the real top-level close, so
     // the rewrite is either correct or cleanly declined (`None`), never wrong.

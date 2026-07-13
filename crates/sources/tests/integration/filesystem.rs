@@ -645,7 +645,7 @@ fn compressed_path_skips_corrupt_or_oversize_inputs_without_panic() {
     let source = FilesystemSource::new(dir.path().to_path_buf());
     // Just verify it doesn't panic and the iterator drains cleanly. A non-gz
     // `.gz` surfaces a loud SourceError row (Law 10) rather than Ok/empty, so
-    // drain into a Result vec WITHOUT unwrapping — the contract is "no panic",
+    // drain into a Result vec WITHOUT unwrapping, the contract is "no panic",
     // not "no error row".
     let rows: Vec<_> = source.chunks().collect();
     let (_chunks, _errors) = crate::support::split_chunk_results(&rows);

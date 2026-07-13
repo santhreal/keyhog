@@ -14,7 +14,7 @@ impl CompiledScanner {
         // and independent per-chunk, so par_iter() saturates cores. The
         // `scan_chunk_boundaries` pass reassembles secrets straddling the seam
         // between adjacent gapless chunks of the same file (a per-chunk scan sees
-        // each half too short to match) — load-bearing recall, not optional.
+        // each half too short to match) (load-bearing recall, not optional).
         let gpu_path = matches!(backend, ScanBackend::Gpu);
         if !gpu_path || chunks.is_empty() {
             return self.scan_chunks_cpu_parallel(chunks, backend);

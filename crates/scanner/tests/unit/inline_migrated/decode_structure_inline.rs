@@ -1,4 +1,4 @@
-//! Migrated from src/decode_structure.rs — uniform-base64-blob and
+//! Migrated from src/decode_structure.rs, uniform-base64-blob and
 //! double-base64 (k8s `data:`) shape gates (KH-GAP-004).
 
 use base64::Engine as _;

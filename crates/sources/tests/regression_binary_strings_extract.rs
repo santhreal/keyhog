@@ -191,7 +191,7 @@ fn ascii_runs_precede_wide_runs_in_output() {
 fn all_runs_below_threshold_yields_source_error_not_empty_chunk() {
     // "short" (5) and "tiny" (4) are both below threshold; with no NULs there is
     // no wide candidate either, so nothing is extractable. The source must NOT
-    // report a clean file — it emits exactly one SourceError row (Law 10).
+    // report a clean file (it emits exactly one SourceError row (Law 10)).
     let rows = source_rows(b"\xFFshort\xFFtiny\xFF");
     assert_eq!(
         rows.len(),

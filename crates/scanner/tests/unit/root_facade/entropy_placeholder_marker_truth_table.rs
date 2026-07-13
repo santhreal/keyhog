@@ -13,13 +13,13 @@
 //!   5. whole-value EXACT, case-sensitive (`null`, `none`, `undefined`, `empty`,
 //!      `default`, `secret`, `password`)
 //!
-//! Until now this recall-affecting suppression path had no behavioral test — only
+//! Until now this recall-affecting suppression path had no behavioral test, only
 //! a source-ownership gate. Every assertion below is an exact boolean for a
 //! concrete input (Law 6). The point is twofold: (a) lock the current decision so
 //! a future move of these markers into Tier-B data cannot silently change recall,
 //! and (b) make the heterogeneous semantics (length gate, exact-vs-substring,
 //! case sensitivity) explicit so the refactor must preserve or consciously change
-//! each one. Pure decision logic — deterministic and host-independent.
+//! each one. Pure decision logic (deterministic and host-independent).
 
 use keyhog_scanner::testing::confidence::entropy_placeholder_marker as marker;
 
@@ -60,7 +60,7 @@ fn category2_secret_key_is_gated_on_length_under_twenty() {
         "`secret_key` substring under 20 bytes suppresses"
     );
     // 24 bytes >= 20: the length gate closes and NOTHING else here matches, so a
-    // longer `secret_key`-bearing value must NOT be suppressed by this gate — the
+    // longer `secret_key`-bearing value must NOT be suppressed by this gate, the
     // recall-load-bearing boundary.
     assert!(
         !marker(b"my_secret_key_padding_xx"),
@@ -117,7 +117,7 @@ fn category5_whole_value_exact_matches_suppress() {
 #[test]
 fn category5_is_exact_not_substring() {
     // `null` as a SUBSTRING of a longer value is NOT the exact whole-value match,
-    // and no other clause fires, so it is not suppressed — proving these seven are
+    // and no other clause fires, so it is not suppressed, proving these seven are
     // whole-value-exact, not substring, markers.
     assert!(
         !marker(b"null_value"),
@@ -137,7 +137,7 @@ fn category5_is_exact_not_substring() {
 fn category5_exact_arm_is_case_sensitive() {
     // CURRENT behavior pinned (not endorsed): the whole-value arm compares raw
     // bytes, so the uppercase form is NOT suppressed by it. A future move to a
-    // case-insensitive Tier-B list would flip this to `true` — and this assertion
+    // case-insensitive Tier-B list would flip this to `true`: and this assertion
     // makes that change visible rather than silent.
     assert!(
         !marker(b"NULL"),

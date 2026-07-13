@@ -1,4 +1,4 @@
-//! Property tier for `RawMatch`'s `Ord` — the sort + capped-heap eviction order
+//! Property tier for `RawMatch`'s `Ord`: the sort + capped-heap eviction order
 //! that makes the per-chunk finding set REPRODUCIBLE run-to-run (`push_match`
 //! eviction at `max_matches_per_chunk`; see the location-tiebreak comment on the
 //! `Ord` impl). `RawMatch::Ord` uses confidence(desc) → severity(desc) →
@@ -39,7 +39,7 @@ fn severity_of(i: u8) -> Severity {
     }
 }
 
-/// `(detector_idx, credential_idx, severity_idx, confidence, offset, line)` —
+/// `(detector_idx, credential_idx, severity_idx, confidence, offset, line)` 
 /// small universes so distinct matches frequently tie on a prefix of the sort
 /// key and exercise the tiebreak cascade.
 type Spec = (u8, u8, u8, Option<f64>, u32, u32);
@@ -108,7 +108,7 @@ proptest! {
     }
 
     /// Transitive total order: `a ≤ b ≤ c ⟹ a ≤ c` (and the mirror), for all
-    /// triples — the property a broken tiebreak cascade would violate.
+    /// triples (the property a broken tiebreak cascade would violate).
     #[test]
     fn prop_transitive(a in spec(), b in spec(), c in spec()) {
         let (ra, rb, rc) = (raw(&a), raw(&b), raw(&c));
@@ -159,7 +159,7 @@ proptest! {
     /// `sort()` yields a cmp-ordered sequence, is idempotent, and is
     /// PERMUTATION-STABLE at the ordering level: sorting the reversed input
     /// produces a sequence that is element-wise cmp-`Equal` to the original
-    /// sort — the reproducible-eviction guarantee, independent of input order.
+    /// sort (the reproducible-eviction guarantee, independent of input order).
     #[test]
     fn prop_sort_is_ordered_and_permutation_stable(specs in prop::collection::vec(spec(), 0..24)) {
         let mut v: Vec<RawMatch> = specs.iter().map(raw).collect();

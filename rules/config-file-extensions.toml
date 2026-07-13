@@ -3,7 +3,7 @@
 # path onto the entropy-appropriate path (scanned for high-entropy secrets)
 # instead of the source-code path (skipped unless --entropy-source-files).
 #
-# Single source of truth for `entropy::is_entropy_appropriate_inner` — adding a
+# Single source of truth for `entropy::is_entropy_appropriate_inner`: adding a
 # new ecosystem's config extension is a data edit here, not a source edit. All
 # comparisons are ASCII-case-insensitive, so lowercase entries suffice.
 #

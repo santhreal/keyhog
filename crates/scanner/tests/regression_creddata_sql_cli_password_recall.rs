@@ -10,7 +10,7 @@
 //! classified weak_anchor, so the random-vs-dictionary discriminator runs).
 //!
 //! Assertions check the exact surfaced credential bytes via the on-disk scanner
-//! — never `!is_empty`.
+//! (never `!is_empty`).
 
 mod support;
 use support::contracts::{make_chunk, scanner};
@@ -53,7 +53,7 @@ fn no_password_slot_match(text: &str) -> bool {
         .any(|(id, _)| id == "sql-password" || id == "cli-password-flag")
 }
 
-// ── SQL `IDENTIFIED BY` — verbatim CredData shapes ──────────────────────────
+// ── SQL `IDENTIFIED BY`: verbatim CredData shapes ──────────────────────────
 
 #[test]
 fn sql_random_lowercase_value_recovered_by_strong_anchor() {
@@ -62,7 +62,7 @@ fn sql_random_lowercase_value_recovered_by_strong_anchor() {
     // (it is a pure-lowercase token, which that arm treats as a code identifier).
     // Its adjacent bigrams (`yj`,`jq`,`qr`) are improbable English (mean ≈ −7.3,
     // below the −6.85 threshold), so it is NOT a confident dictionary word and the
-    // strong anchor — which skips that Tier-B arm — correctly recovers it. This is
+    // strong anchor, which skips that Tier-B arm, correctly recovers it. This is
     // the recall the generalization buys; `IDENTIFIED BY '<x>'` is an unambiguous
     // credential context, so a random token there is a real secret, not an FP.
     let text = "mysql -e \"CREATE USER 'cactiuser'@'localhost' IDENTIFIED BY 'argriyjqr';\"";
@@ -86,13 +86,13 @@ fn sql_short_value_below_regex_floor_no_match() {
 fn sql_identified_by_secret_dictionary_suppressed() {
     assert!(
         nothing_surfaces("ALTER USER app IDENTIFIED BY 'secret';", "secret"),
-        "`secret` is a confident dictionary word — the dictionary gate must drop it"
+        "`secret` is a confident dictionary word, the dictionary gate must drop it"
     );
 }
 
 #[test]
 fn sql_alter_user_with_plugin_by_surfaces() {
-    // a5f87782.md:444 shape — the WITH <plugin> BY form, dash-bearing value.
+    // a5f87782.md:444 shape (the WITH <plugin> BY form, dash-bearing value).
     let text =
         "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'bjy-jbpuyowe';";
     assert!(
@@ -115,7 +115,7 @@ fn sql_truly_random_lowercase_surfaces() {
 
 #[test]
 fn sql_double_quoted_value_with_inner_quote_surfaces() {
-    // 3245bad3.md:32 shape — double-quoted value containing an inner single quote.
+    // 3245bad3.md:32 shape (double-quoted value containing an inner single quote).
     let text = "CREATE USER root@'hostname' IDENTIFIED BY \"5q'jK3d7ca\";";
     assert!(
         surfaces_under(text, "sql-password", "5q'jK3d7ca"),
@@ -123,11 +123,11 @@ fn sql_double_quoted_value_with_inner_quote_surfaces() {
     );
 }
 
-// ── CLI `--password` / `-Password` — verbatim CredData shapes ────────────────
+// ── CLI `--password` / `-Password`: verbatim CredData shapes ────────────────
 
 #[test]
 fn cli_powershell_password_flag_surfaces() {
-    // 7269210a.md:313 shape — PowerShell -Password with a 10-char mixed value.
+    // 7269210a.md:313 shape: PowerShell -Password with a 10-char mixed value.
     let text = "Invoke-MSOLSpray -UserList .\\userlist.txt -Password Rcuhxw1486";
     assert!(
         surfaces_under(text, "cli-password-flag", "Rcuhxw1486"),
@@ -201,7 +201,7 @@ fn cli_password_dictionary_value_stays_suppressed() {
 fn cli_password_welcome_dictionary_suppressed() {
     assert!(
         nothing_surfaces("login-tool --password welcome", "welcome"),
-        "`welcome` is a confident dictionary word — the dictionary gate must drop it"
+        "`welcome` is a confident dictionary word, the dictionary gate must drop it"
     );
 }
 
@@ -221,7 +221,7 @@ fn cli_password_angle_template_suppressed() {
     );
 }
 
-// ── STRUCTURAL NON-MATCHES — no quoted/flagged credential slot ───────────────
+// ── STRUCTURAL NON-MATCHES, no quoted/flagged credential slot ───────────────
 
 #[test]
 fn sql_prose_identified_by_no_quotes_no_match() {
@@ -239,7 +239,7 @@ fn cli_prose_without_flag_no_match() {
     );
 }
 
-// ── CAPTURE PRECISION — group 1 is the password, never the whole clause ──────
+// ── CAPTURE PRECISION, group 1 is the password, never the whole clause ──────
 
 #[test]
 fn sql_capture_is_password_only() {

@@ -60,7 +60,7 @@ fn non_base64url_header_rejected() {
 
 #[test]
 fn oversized_segment_rejected() {
-    // > 16KB per segment — should be rejected without OOM
+    // > 16KB per segment, should be rejected without OOM
     let huge: String = "A".repeat(16 * 1024 + 1);
     let token = format!("{huge}.{PAYLOAD_FUTURE}.{SIG}");
     assert!(!looks_like_jwt(&token));
@@ -139,7 +139,7 @@ fn non_standard_typ_flags_anomaly() {
     let custom_typ_header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkNVU1RPTSR9";
     let empty_payload = "e30";
     let token = format!("{custom_typ_header}.{empty_payload}.{SIG}");
-    // May or may not parse depending on JSON validity — just ensure no panic
+    // May or may not parse depending on JSON validity, just ensure no panic
     let _ = analyze(&token);
 }
 

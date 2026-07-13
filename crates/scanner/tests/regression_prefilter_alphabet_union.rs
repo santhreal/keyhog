@@ -8,7 +8,7 @@
 //! literals into ONE 256-bit presence mask, so the screen admits a chunk that
 //! carries any one detector's distinctive byte and rejects a chunk disjoint
 //! from every detector. The recall-load-bearing invariants are:
-//!   * union WIDENS admission — a chunk a narrower detector set rejects becomes
+//!   * union WIDENS admission, a chunk a narrower detector set rejects becomes
 //!     admitted once the owning detector is unioned in (monotone, never shrinks),
 //!   * a chunk disjoint from ALL detectors is rejected,
 //!   * target-set ORDER does not change the verdict (union is commutative),
@@ -41,7 +41,7 @@ fn det_ab() -> Vec<String> {
     vec!["AKIA".to_string(), "ghp_".to_string()]
 }
 
-/// det A + det B + det C — the full three-detector union.
+/// det A + det B + det C (the full three-detector union).
 fn det_abc() -> Vec<String> {
     vec!["AKIA".to_string(), "ghp_".to_string(), "123456".to_string()]
 }
@@ -62,11 +62,11 @@ fn union_admits_a_chunk_carrying_any_single_detector_byte() {
 #[test]
 fn union_rejects_chunk_disjoint_from_all_detectors() {
     let screen = AlphabetScreen::new(&det_abc());
-    // z q w v m — none in U.
+    // z q w v m (none in U).
     assert_eq!(screen.screen(b"zqwvm"), false);
     // Digits 7 8 9 0 are outside U (only 1..6 are targeted) plus '?'.
     assert_eq!(screen.screen(b"7890?7890"), false);
-    // Uppercase near-misses B L O — not in U.
+    // Uppercase near-misses B L O (not in U).
     assert_eq!(screen.screen(b"BLOB"), false);
 }
 
@@ -114,13 +114,13 @@ fn union_verdict_is_order_independent() {
     let forward = AlphabetScreen::new(&det_abc());
     let reversed =
         AlphabetScreen::new(&["123456".to_string(), "ghp_".to_string(), "AKIA".to_string()]);
-    // Admit case (det-B underscore) — identical verdict regardless of order.
+    // Admit case (det-B underscore) (identical verdict regardless of order).
     assert_eq!(forward.screen(b"__"), true);
     assert_eq!(reversed.screen(b"__"), true);
-    // Reject case (disjoint) — identical verdict regardless of order.
+    // Reject case (disjoint) (identical verdict regardless of order).
     assert_eq!(forward.screen(b"zqwvm"), false);
     assert_eq!(reversed.screen(b"zqwvm"), false);
-    // Admit case (det-C digit) — identical verdict regardless of order.
+    // Admit case (det-C digit) (identical verdict regardless of order).
     assert_eq!(forward.screen(b"6"), true);
     assert_eq!(reversed.screen(b"6"), true);
 }
@@ -143,7 +143,7 @@ fn union_case_folds_letters_from_each_uppercase_detector() {
 fn union_does_not_case_fold_non_letter_detector_bytes() {
     // '_' (det B) and digits (det C) are non-letters: only their exact byte is
     // set, never a 0x20-flip. DEL 0x7F (== '_' ^ 0x20) must stay rejected, and
-    // '1' ^ 0x20 == 0x11 must stay rejected — proving folding is letter-only
+    // '1' ^ 0x20 == 0x11 must stay rejected, proving folding is letter-only
     // even across a multi-detector union.
     let screen = AlphabetScreen::new(&det_abc());
     assert_eq!(screen.screen(&[0x7Fu8]), false); // DEL, would-be flip of '_'

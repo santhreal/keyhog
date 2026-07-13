@@ -32,11 +32,11 @@
 //!      identical to the live call.
 //!
 //! GOLDEN FINDINGS (the durable proof both fixes are output-neutral):
-//!   * `dense_corpus_findings_unchanged` — a dense corpus of a strong-anchored
+//!   * `dense_corpus_findings_unchanged`: a dense corpus of a strong-anchored
 //!     and a weak-anchored credential, each firing many times through the
 //!     confirmed-extraction + per-candidate scoring path, surfaces EXACTLY the
 //!     expected detector ids and EXACTLY the captured credential bytes.
-//!   * `findings_independent_of_catalog_size` — the SAME trigger text scanned by
+//!   * `findings_independent_of_catalog_size`: the SAME trigger text scanned by
 //!     a scanner with a small detector catalog and by one padded with hundreds of
 //!     extra never-firing detectors produces the IDENTICAL finding set. This is
 //!     the behavioural shadow of optimization (1): if the confirmed collection
@@ -96,7 +96,7 @@ impl XorShift {
 /// Data-driven equivalence over THOUSANDS of randomized bitmaps across a range
 /// of catalog sizes and densities. The set-bit walk must return the IDENTICAL
 /// `Vec<usize>` (same indices, same ascending order) as the exhaustive range
-/// filter for every one — that is the byte-for-byte contract the perf rewrite
+/// filter for every one, that is the byte-for-byte contract the perf rewrite
 /// in `scan_prepared_with_triggered` must hold.
 #[test]
 fn bitmap_setbit_walk_equals_range_filter() {
@@ -156,9 +156,9 @@ fn bitmap_collection_boundary_truths() {
     assert_eq!(collect_range_filter(&bm, 65), vec![64]);
 
     // A set bit in the PADDING region (index 70, beyond a 65-pattern catalog)
-    // must be excluded by BOTH the guard and the range filter — they agree on 0.
+    // must be excluded by BOTH the guard and the range filter (they agree on 0).
     let mut bm_pad = vec![0u64; 2];
-    bm_pad[1] |= 1u64 << 6; // index 70 — padding, out of the 0..65 domain
+    bm_pad[1] |= 1u64 << 6; // index 70, padding, out of the 0..65 domain
     assert_eq!(
         collect_setbit_walk(&bm_pad, 65),
         Vec::<usize>::new(),
@@ -179,7 +179,7 @@ fn bitmap_collection_boundary_truths() {
 // ---------------------------------------------------------------------------
 
 /// `detector_weak_anchor` must be DETERMINISTIC and depend ONLY on the
-/// `DetectorSpec` — that is the precondition that lets the scanner resolve it
+/// `DetectorSpec`: that is the precondition that lets the scanner resolve it
 /// ONCE at construction (`detector_weak_anchor_by_index`) and reuse it for every
 /// candidate. Computed twice over the full on-disk corpus, the result is
 /// identical, and a `clone()` of a spec yields the identical classification.
@@ -188,7 +188,7 @@ fn weak_anchor_is_a_pure_function_of_the_spec() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     assert!(
         detectors.len() >= 100,
-        "expected the full detector corpus (>=100), only loaded {} — the cache \
+        "expected the full detector corpus (>=100), only loaded {}, the cache \
          correctness net would otherwise be empty",
         detectors.len()
     );
@@ -199,7 +199,7 @@ fn weak_anchor_is_a_pure_function_of_the_spec() {
         let b = detector_weak_anchor(d).expect("detector classification rules must be valid");
         assert_eq!(
             a, b,
-            "detector_weak_anchor is non-deterministic for `{}` ({a} vs {b}) — the \
+            "detector_weak_anchor is non-deterministic for `{}` ({a} vs {b}), the \
              construction-time cache would then disagree with a live recompute",
             d.id
         );
@@ -209,7 +209,7 @@ fn weak_anchor_is_a_pure_function_of_the_spec() {
         assert_eq!(
             detector_weak_anchor(&cloned).expect("detector classification rules must be valid"),
             a,
-            "clone of `{}` classified differently — value is not spec-pure",
+            "clone of `{}` classified differently, value is not spec-pure",
             d.id
         );
         if a {
@@ -337,9 +337,9 @@ fn confirmed_only_scanner(detectors: Vec<DetectorSpec>) -> CompiledScanner {
         .with_config(config)
 }
 
-/// GOLDEN: a dense corpus of two prefix-anchored tokens — each firing many times
+/// GOLDEN: a dense corpus of two prefix-anchored tokens, each firing many times
 /// through the confirmed-extraction + per-candidate scoring path that consumes
-/// the `detector_weak_anchor` memoization — surfaces EXACTLY the expected
+/// the `detector_weak_anchor` memoization, surfaces EXACTLY the expected
 /// detector ids and EXACTLY the captured credential bytes. Any divergence between
 /// the cached weak-anchor value and the live computation, or any drop/reorder in
 /// the rewritten confirmed-pattern collection, would change this finding set.
@@ -412,7 +412,7 @@ fn dense_corpus_findings_unchanged() {
 /// SAME trigger text with a small catalog vs a catalog padded with hundreds of
 /// extra never-firing detectors must produce the IDENTICAL finding set. The
 /// set-bit walk is O(set-bits) not O(catalog), but more importantly it must be
-/// catalog-size-INVARIANT in OUTPUT — the indices it confirms are exactly the
+/// catalog-size-INVARIANT in OUTPUT, the indices it confirms are exactly the
 /// ones triggered, regardless of how many other patterns exist.
 #[test]
 fn findings_independent_of_catalog_size() {
@@ -431,7 +431,7 @@ fn findings_independent_of_catalog_size() {
 
     // Large catalog: the target plus 400 distinct never-firing decoys with
     // unique literal prefixes that do NOT appear in `text`, so only the target
-    // triggers — but the confirmed-pattern collection now walks a 401-entry
+    // triggers, but the confirmed-pattern collection now walks a 401-entry
     // catalog's bitmap. Output must be identical.
     let mut many = vec![target];
     for i in 0..400 {
@@ -523,7 +523,7 @@ fn coalesced_and_per_chunk_findings_match() {
         per_chunk.extend(scanner.scan(c));
     }
 
-    // Coalesced batch API — drives scan_coalesced_phase2 directly.
+    // Coalesced batch API (drives scan_coalesced_phase2 directly).
     scanner.clear_fragment_cache();
     let coalesced: Vec<RawMatch> = scanner
         .scan_coalesced(&chunks)

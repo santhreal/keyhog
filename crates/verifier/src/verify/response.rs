@@ -13,7 +13,7 @@ pub(crate) const MAX_RESPONSE_BODY_BYTES: usize = 1024 * 1024;
 /// checks keep matching (Law 3), then states the actionable fix.
 pub const BODY_READ_FAILED_ERROR: &str =
     "body read failed: the connection dropped while reading the verification response. \
-     Fix: this is usually transient network or proxy instability — retry, or check egress \
+     Fix: this is usually transient network or proxy instability, retry, or check egress \
      to the credential's host";
 
 /// The endpoint returned more than the 1 MB the verifier reads, so the
@@ -22,7 +22,7 @@ pub const RESPONSE_TOO_LARGE_ERROR: &str =
     "response body exceeds 1MB limit: the endpoint returned more than the 1 MB the verifier \
      reads, so the success/failure signal cannot be parsed. \
      Fix: this usually means the verify URL points at a web page or download rather than the \
-     JSON API — check the detector's verify URL";
+     JSON API: check the detector's verify URL";
 
 /// The response body was not valid UTF-8, so the success/failure text can't be read.
 pub const BODY_NOT_UTF8_ERROR: &str =
@@ -153,16 +153,16 @@ pub(crate) fn evaluate_success(
 /// The hard problem with the original implementation was that it scanned the
 /// lowercased whole body for the bare substrings `invalid` / `error` /
 /// `expired` / `revoked`. That fires on overwhelmingly common *benign* tokens
-/// in a live JSON payload — `"errors":[]`, `"error":null`, `"error_rate":0`,
+/// in a live JSON payload: `"errors":[]`, `"error":null`, `"error_rate":0`,
 /// `"invalid_count":0`, `"expired":false`, or any field/account/repo name that
-/// merely embeds one of those words — and silently flips confirmed-live
+/// merely embeds one of those words, and silently flips confirmed-live
 /// credentials to Dead (a recall regression).
 ///
 /// To avoid clobbering an explicitly-matched success signal, the check is now
 /// conservative: an error token only counts when it is paired with a value
 /// that actually denotes a present error. For JSON bodies that means an error
 /// key whose value is a non-empty string, a non-empty array/object, or boolean
-/// `true` / numeric non-zero — `null`, `false`, `0`, `[]`, and `{}` are treated
+/// `true` / numeric non-zero: `null`, `false`, `0`, `[]`, and `{}` are treated
 /// as "no error" exactly as a service author would intend. Non-JSON bodies fall
 /// back to a whole-word (not arbitrary-substring) scan so values like
 /// `error_rate` or `myinvalidatedname` no longer trigger it.

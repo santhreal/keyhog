@@ -21,7 +21,7 @@ fn v6(s: &str) -> IpAddr {
 }
 
 // ===========================================================================
-// bogon: IPv4 — each documented range must be refused
+// bogon: IPv4, each documented range must be refused
 // ===========================================================================
 
 #[test]
@@ -34,7 +34,7 @@ fn bogon_v4_rfc1918_private_a() {
 fn bogon_v4_rfc1918_private_b() {
     assert!(TestApi.ip_addr_is_bogon(v4(172, 16, 0, 1)));
     assert!(TestApi.ip_addr_is_bogon(v4(172, 31, 255, 254)));
-    // 172.15 and 172.32 are OUTSIDE the /12 — must be allowed.
+    // 172.15 and 172.32 are OUTSIDE the /12 (must be allowed).
     assert!(!TestApi.ip_addr_is_bogon(v4(172, 15, 0, 1)));
     assert!(!TestApi.ip_addr_is_bogon(v4(172, 32, 0, 1)));
 }
@@ -76,7 +76,7 @@ fn bogon_v4_documentation_test_nets() {
 
 #[test]
 fn bogon_v4_this_network_zero_octet() {
-    // 0.0.0.0/8 "this network" — not just 0.0.0.0.
+    // 0.0.0.0/8 "this network" (not just 0.0.0.0).
     assert!(TestApi.ip_addr_is_bogon(v4(0, 0, 0, 0)));
     assert!(TestApi.ip_addr_is_bogon(v4(0, 0, 0, 1)));
     assert!(TestApi.ip_addr_is_bogon(v4(0, 255, 1, 2)));
@@ -126,7 +126,7 @@ fn bogon_v4_public_addresses_are_allowed() {
 
 #[test]
 fn bogon_v6_loopback_regression() {
-    // The historic `::1` escape bug — must be a bogon.
+    // The historic `::1` escape bug (must be a bogon).
     assert!(
         TestApi.ip_addr_is_bogon(v6("::1")),
         "::1 must be refused (the documented donor-copy regression)"
@@ -186,7 +186,7 @@ fn bogon_v6_6to4_wrapping_bogon_v4() {
         "6to4 wrapping a private v4 must be refused"
     );
     // 6to4 wrapping a PUBLIC v4 (8.8.8.8 -> 2002:0808:0808::) should NOT be a
-    // bogon — it decodes to a routable address.
+    // bogon (it decodes to a routable address).
     assert!(!TestApi.ip_addr_is_bogon(v6("2002:0808:0808::1")));
 }
 
@@ -205,7 +205,7 @@ fn bogon_v6_public_is_allowed() {
 }
 
 // ===========================================================================
-// ssrf::is_private_ip_addr_fast — compatibility alias for the canonical verifier IP policy
+// ssrf::is_private_ip_addr_fast, compatibility alias for the canonical verifier IP policy
 // ===========================================================================
 
 #[test]
@@ -221,7 +221,7 @@ fn fast_path_v4_private_and_loopback() {
 fn fast_path_v4_multicast_and_reserved() {
     // 224.0.0.0/4 multicast.
     assert!(is_private_ip_addr_fast(&v4(224, 0, 0, 1)));
-    // 240.0.0.0/4 reserved (Class E) — incl. .254 just below broadcast.
+    // 240.0.0.0/4 reserved (Class E) (incl. .254 just below broadcast).
     assert!(is_private_ip_addr_fast(&v4(240, 0, 0, 1)));
     assert!(is_private_ip_addr_fast(&v4(255, 255, 255, 254)));
 }
@@ -253,7 +253,7 @@ fn fast_path_v6_public_is_not_private() {
 }
 
 // ===========================================================================
-// ssrf::is_private_ip_addr — the canonical post-resolution verifier IP policy
+// ssrf::is_private_ip_addr, the canonical post-resolution verifier IP policy
 // ===========================================================================
 
 #[test]
@@ -280,7 +280,7 @@ fn combined_veto_allows_public() {
 }
 
 // ===========================================================================
-// ssrf::is_private_url — URL-string SSRF gate
+// ssrf::is_private_url: URL-string SSRF gate
 // ===========================================================================
 
 #[test]
@@ -358,7 +358,7 @@ fn url_ipv6_loopback_blocked() {
 
 #[test]
 fn url_malformed_is_blocked_fail_closed() {
-    // Unparseable URL — blocked fail-closed.
+    // Unparseable URL (blocked fail-closed).
     assert!(
         is_private_url("not a url at all"),
         "a malformed URL must be blocked fail-closed"

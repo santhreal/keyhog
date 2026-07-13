@@ -7,7 +7,7 @@
 //! the shared `support::vendorgen` harness.
 //!
 //! `secret_<43>` (Notion's legacy form) shares a generic `secret_` shape, so its
-//! value can carry a generic label after dedup — it is asserted as detected, not
+//! value can carry a generic label after dedup, it is asserted as detected, not
 //! by vendor label. The `ntn_` form is the unambiguous Notion lock.
 
 mod support;

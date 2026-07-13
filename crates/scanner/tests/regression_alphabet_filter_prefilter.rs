@@ -12,7 +12,7 @@
 //! which case-folds ASCII *letters* by also setting `b ^ 0x20`, but leaves
 //! non-letters like `_` exact):
 //!   letters (case-insensitive): A a K k I i G g H h P p
-//!   non-letter exact:           _  (0x5F)  — its flip 0x7F is NOT set
+//!   non-letter exact:           _  (0x5F), its flip 0x7F is NOT set
 //! Filler byte `x` (0x78) is deliberately outside this set.
 
 use keyhog_scanner::testing::{
@@ -46,9 +46,9 @@ fn screen_admits_chunk_containing_target_byte() {
 #[test]
 fn screen_rejects_chunk_with_no_target_bytes() {
     let screen = AlphabetScreen::new(&akia_ghp_targets());
-    // Bytes b,e,l,o,w,? — none is in {A a K k I i G g H h P p _}.
+    // Bytes b,e,l,o,w,? (none is in {A a K k I i G g H h P p _}).
     assert_eq!(screen.screen(b"below?"), false);
-    // Uppercase near-miss B,L,O,B — still none in the set.
+    // Uppercase near-miss B,L,O,B (still none in the set).
     assert_eq!(screen.screen(b"BLOB"), false);
     // Pure digits and symbols, no alphabet overlap.
     assert_eq!(screen.screen(b"1234567890!@#$%^&*()"), false);
@@ -57,7 +57,7 @@ fn screen_rejects_chunk_with_no_target_bytes() {
 #[test]
 fn screen_all_whitespace_chunk_rejected() {
     let screen = AlphabetScreen::new(&akia_ghp_targets());
-    // Space 0x20, tab 0x09, LF 0x0A, CR 0x0D, VT 0x0B, FF 0x0C — none targeted.
+    // Space 0x20, tab 0x09, LF 0x0A, CR 0x0D, VT 0x0B, FF 0x0C (none targeted).
     assert_eq!(screen.screen(b"   \t\n\r \x0b\x0c  "), false);
     assert_eq!(screen.screen(b"                "), false);
 }
@@ -76,7 +76,7 @@ fn screen_is_case_insensitive_for_letters() {
 
 #[test]
 fn screen_underscore_membership_exact_not_case_folded() {
-    // '_' (0x5F) is a non-letter, so ONLY 0x5F is set — its 0x20-flip 0x7F (DEL)
+    // '_' (0x5F) is a non-letter, so ONLY 0x5F is set, its 0x20-flip 0x7F (DEL)
     // must NOT be admitted. This guards against accidentally folding non-letters.
     let screen = AlphabetScreen::new(&["ghp_".to_string()]);
     assert_eq!(screen.screen(b"_"), true); // exact underscore -> admit
@@ -153,7 +153,7 @@ fn mask_membership_exact_for_representative_bytes() {
 
 #[test]
 fn mask_from_text_is_not_case_folded() {
-    // The raw mask sets exactly the bytes present — lowercase 'a' is a DIFFERENT
+    // The raw mask sets exactly the bytes present, lowercase 'a' is a DIFFERENT
     // byte than 'A' and must be absent from a mask built from "AKIA".
     let alpha = AlphabetMask::from_text("AKIA");
     assert_eq!(alpha.intersects(&AlphabetMask::from_bytes(b"a")), false);

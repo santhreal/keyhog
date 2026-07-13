@@ -17,7 +17,7 @@ reason = "Base64-encoded shape with 52 chars and single trailing equals."
 
 [[negative]]
 text = "ELASTICSEARCH_API_KEY=short"
-reason = "Body too short — id:key requires 20+:16+ and base64 requires 40+."
+reason = "Body too short (id:key requires 20+:16+ and base64 requires 40+)."
 
 [[evasion]]
 text = "export ELASTICSEARCH_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz:Kp4Qx7Rm2Sn5Tb8V"

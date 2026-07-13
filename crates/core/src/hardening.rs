@@ -232,7 +232,7 @@ fn apply_lockdown_protections() -> HardeningReport {
         // implemented via mlockall, which is Linux-only: macOS lacks mlockall and
         // Windows needs per-region VirtualLock with a raised working-set quota,
         // neither of which is wired. Fail closed (Law 10) instead of reporting a
-        // lock that never happened — push a failures entry so the lockdown caller
+        // lock that never happened, push a failures entry so the lockdown caller
         // (which treats any failure as hard) surfaces that memory pinning is
         // unavailable on this platform rather than silently claiming success.
         report.mlocked = false;
@@ -285,7 +285,7 @@ where
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
             // Law 10 / fail-closed for a SECURITY gate: any OTHER error (e.g. a
             // permission denial on a directory that DOES exist) must NOT be read
-            // as "clean" — that would let `--lockdown` start with an unaudited
+            // as "clean", that would let `--lockdown` start with an unaudited
             // cache present. Surface it LOUDLY and treat the path as a violation
             // so lockdown refuses to start rather than silently passing.
             Err(e) => {

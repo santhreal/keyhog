@@ -6,7 +6,7 @@
 //! (or empty) result, but it must never hang, panic, or allocate super-linearly
 //! (the OOM/DoS class in the over-allocation backlog). These tests feed large and
 //! crafted inputs and assert (1) no panic, (2) output bounded by a small constant
-//! factor of the input — which fails LOUDLY (hang/OOM) if any decoder is
+//! factor of the input, which fails LOUDLY (hang/OOM) if any decoder is
 //! accidentally quadratic/exponential. If they pass, the leaf decoders are proven
 //! linear and the "huge candidate → OOM" concern is bounded at the leaf.
 
@@ -18,7 +18,7 @@ use keyhog_scanner::testing::{
 };
 use proptest::prelude::*;
 
-/// 2 MiB — large enough that a non-linear decoder would hang or OOM this test,
+/// 2 MiB, large enough that a non-linear decoder would hang or OOM this test,
 /// small enough that a linear one finishes in milliseconds.
 const BIG: usize = 2 * 1024 * 1024;
 
@@ -42,7 +42,7 @@ fn reverse_str_is_linear_on_a_huge_candidate() {
 
 #[test]
 fn quoted_printable_decode_is_bounded_on_a_huge_candidate() {
-    // A huge run of `=41` QP octets — each 3 input chars decode to 1 byte, so the
+    // A huge run of `=41` QP octets, each 3 input chars decode to 1 byte, so the
     // output is ~1/3 the input, never larger.
     let input = "=41".repeat(BIG / 3);
     let out = quoted_printable_decode_for_test(&input);
@@ -67,7 +67,7 @@ fn mime_encoded_word_decode_is_bounded_on_a_huge_candidate() {
 
 #[test]
 fn octal_escape_decode_is_bounded_on_a_huge_candidate() {
-    // A huge run of `\101` octal escapes — 4 input chars → 1 byte.
+    // A huge run of `\101` octal escapes: 4 input chars → 1 byte.
     let input = "\\101".repeat(BIG / 4);
     let out = octal_escape_decode_for_test(&input);
     if let Some(decoded) = out {
@@ -98,7 +98,7 @@ fn pathological_shapes_do_not_panic() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(2_000))]
 
-    /// Caesar output length ALWAYS equals input length (1:1 transform) — no
+    /// Caesar output length ALWAYS equals input length (1:1 transform), no
     /// decoder-side amplification on any input.
     #[test]
     fn caesar_output_length_equals_input(s in ".{0,512}", shift in 0u8..26) {

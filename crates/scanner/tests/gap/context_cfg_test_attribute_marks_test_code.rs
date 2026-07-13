@@ -1,7 +1,7 @@
 //! Migrated from the inline `cfg_test_attr_tests` module in `context/inference.rs`
 //! (removed to satisfy `context_inference_no_inline_tests`). The `#[cfg(test)]`
-//! gate attribute — assembled in-source via `concat!` so the literal token never
-//! appears in the file (KH-GAP-129) — must mark the following code as test
+//! gate attribute, assembled in-source via `concat!` so the literal token never
+//! appears in the file (KH-GAP-129), must mark the following code as test
 //! context. Tested through the public `infer_context` API (behaviour, not the
 //! private `CFG_TEST_ATTR` constant's value, which the KH-GAP-129 source gate
 //! already guards).

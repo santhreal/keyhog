@@ -37,7 +37,7 @@ accounts = [
 ]
 
 # Off-brand canaries inspired by / cloning the canarytokens.org design. Treated
-# identically (is_canary=true, verification suppressed) — the operator must not
+# identically (is_canary=true, verification suppressed), the operator must not
 # trip any of them.
 [knockoff]
 accounts = [

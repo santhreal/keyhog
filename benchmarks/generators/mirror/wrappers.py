@@ -1,4 +1,4 @@
-"""Wrapper formats — embed a credential in a realistic file shape.
+"""Wrapper formats (embed a credential in a realistic file shape).
 
 Each builder takes ``(secret, rnd, key_override)`` and returns the file
 CONTENTS (a str). Wrappers are chosen randomly per positive so the generated

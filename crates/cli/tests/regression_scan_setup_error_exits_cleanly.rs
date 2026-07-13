@@ -6,8 +6,8 @@
 //! instead of `exit(2)`. `probe_hardware()` is memoised and calls `gpu_probe()`
 //! on its first use; with a non-`Disabled` GPU runtime policy that creates a
 //! wgpu/Vulkan instance whose mesa driver worker thread (`[vkps] Update`)
-//! segfaults during teardown when the process exits fast — before the driver
-//! finishes initialising — on an early setup error. An explicit `--backend cpu`
+//! segfaults during teardown when the process exits fast, before the driver
+//! finishes initialising, on an early setup error. An explicit `--backend cpu`
 //! never uses the GPU, so the fix sets the runtime policy to `Disabled` from the
 //! operator's flags BEFORE any probe (`ScanOrchestrator::new`'s first statement
 //! + `gpu_runtime_policy_from_args` mapping an explicit CPU backend to
@@ -41,7 +41,7 @@ fn scan_cpu(path: &std::path::Path) -> Output {
         .expect("spawn keyhog scan")
 }
 
-/// Run `keyhog scan --daemon=off <path>` with the DEFAULT (autoroute) backend —
+/// Run `keyhog scan --daemon=off <path>` with the DEFAULT (autoroute) backend 
 /// the backend a user gets when they do not pass `--backend`. Autoroute probes
 /// the GPU, so this exercises the path where the probe is NOT disabled: the
 /// early scan-path validation must still make a missing path exit cleanly.
@@ -202,7 +202,7 @@ fn empty_dir_scan_is_clean_success_baseline() {
 #[test]
 fn content_scan_completes_cleanly_baseline() {
     // Control: a CPU scan over a real file completes with a clean exit code
-    // (0 = no findings, 1 = findings) rather than crashing or erroring — proving
+    // (0 = no findings, 1 = findings) rather than crashing or erroring, proving
     // the GPU-probe short-circuit did not break the file-read/scan happy path.
     let dir = dir_with_fixture();
     let output = scan_cpu(dir.path());
@@ -276,11 +276,11 @@ fn nonexistent_extra_path_exits_by_code_not_signal() {
 fn default_backend_valid_dir_exits_by_code_not_signal() {
     // A real directory on the autoroute backend must exit with a CODE, never a
     // signal. The autoroute probe creates the leaked Vulkan instance, so this is
-    // the case that previously SIGSEGV'd whenever the scan then failed fast —
+    // the case that previously SIGSEGV'd whenever the scan then failed fast 
     // e.g. `autoroute calibration required` on a host with no persisted decision
     // (exit 2), which is the default on an uncalibrated box (as in CI). Exit
     // code is host-dependent (2 uncalibrated; 0/1 once calibrated), so this pins
-    // the real contract — exits cleanly — not a specific code.
+    // the real contract (exits cleanly (not a specific code)).
     let dir = dir_with_fixture();
     let output = scan_default(dir.path());
     assert_exited_by_code(&output, "autoroute scan of a valid dir");

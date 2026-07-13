@@ -4,7 +4,7 @@
 //! *errors*). Those pin the happy path and the two EOF-error halves; this pins
 //! the gaps that were previously uncovered:
 //!
-//!   * the OTHER half of the EOF contract — a peer that closes cleanly *between*
+//!   * the OTHER half of the EOF contract, a peer that closes cleanly *between*
 //!     frames (empty buffer at EOF) must yield `Ok(None)`, NOT an error and NOT a
 //!     spurious frame (`decode_body`'s `if eof && !src.is_empty()` guard);
 //!   * every remaining `Request` variant (ScanPath / Health / Shutdown) and the
@@ -13,14 +13,14 @@
 //!   * a valid length prefix followed by a NON-JSON body fails closed as a parse
 //!     error (never a silent empty frame), and a zero-length frame is likewise a
 //!     parse error rather than a phantom success;
-//!   * the POSITIVE incremental-assembly path — a body delivered one byte at a
+//!   * the POSITIVE incremental-assembly path, a body delivered one byte at a
 //!     time must reassemble into the exact frame. The existing incremental test
 //!     only proves the decoder *errors* on a truncated body at EOF; this proves
 //!     it *succeeds* when the bytes eventually all arrive ("grow only as bytes
 //!     arrive", frame.rs:6-7), the behavior the DoS-bounding buffer depends on.
 //!
 //! All assertions drive the real `pub` async frame API over an in-memory duplex
-//! — the production read/write path, not a facade.
+//! (the production read/write path, not a facade).
 
 use keyhog::daemon::frame;
 use keyhog::daemon::protocol::{Request, Response};
@@ -157,7 +157,7 @@ async fn error_response_roundtrips_carrying_its_message() {
 #[tokio::test]
 async fn a_valid_prefix_with_a_non_json_body_fails_closed_as_a_parse_error() {
     // Length prefix says 5 bytes; the body is `hello`, not JSON. The decoder must
-    // surface a parse error naming the byte count — never treat garbage as a
+    // surface a parse error naming the byte count, never treat garbage as a
     // silent empty frame (Law 10: fail closed, not a quiet fallback).
     let (mut client, mut server) = tokio::io::duplex(64);
     let body = b"hello";
@@ -199,7 +199,7 @@ async fn a_zero_length_frame_is_a_parse_error_not_a_phantom_success() {
 #[tokio::test]
 async fn a_body_delivered_one_byte_at_a_time_reassembles_into_the_exact_frame() {
     // The positive of "grow only as bytes arrive": the decoder must buffer a
-    // trickled body and decode exactly once the final byte lands — never decode
+    // trickled body and decode exactly once the final byte lands, never decode
     // early on a partial body, never lose bytes across polls.
     let sent = Request::ScanText {
         path: Some("trickle.txt".into()),

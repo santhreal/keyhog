@@ -237,7 +237,7 @@ def test_creddata_recovers_multiline_and_split_drift_positives(tmp_path):
     truth (undercounting recall + starving the MoE retrain):
 
     * ValueStart == -1 marks a WHOLE-LINE multi-line span (PEM/RSA private keys,
-      1003 CredData positives) — the old `value_start < 0 -> return ""` guard
+      1003 CredData positives): the old `value_start < 0 -> return ""` guard
       dropped every one.
     * `str.splitlines()` breaks on \\v \\f \\x1c-\\x1e \\x85 U+2028 U+2029, which
       CredData's `\\n`-based LineStart does not, drifting the line index so the

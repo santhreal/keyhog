@@ -2,7 +2,7 @@
 //!
 //! The entropy detectors (`entropy-token`, `entropy-api-key`, `entropy-password`)
 //! flag high-entropy tokens. Their dominant false positives on real corpora are
-//! NOT random noise but WORD-LIKE structured identifiers — dotted API paths like
+//! NOT random noise but WORD-LIKE structured identifiers, dotted API paths like
 //! `PInvoke.User32.WindowMessage.WM_SYSCOLORCHANGE`, XML/HTML fragments, camelCase
 //! symbol names. These are high-entropy (mixed case, punctuation) yet compress
 //! into a handful of common subword tokens, whereas a real secret (`ghp_a8Xk…`,
@@ -33,7 +33,7 @@ use tiktoken_rs::{cl100k_base, CoreBPE};
 /// (F1 ≈ 0.421–0.424).
 ///
 /// The VALUE has exactly one owner, [`keyhog_core::DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN`]
-/// — it lives in the lower `keyhog-core` crate so `ScanConfig` can default to it
+///: it lives in the lower `keyhog-core` crate so `ScanConfig` can default to it
 /// without a scanner↔core cycle. This is the historical name re-bound to that one
 /// owner for the gate's compiled default and the tests below; a per-scan override
 /// (`ScanConfig::entropy_bpe_max_bytes_per_token`, Tier-A TOML + CLI) is threaded
@@ -65,7 +65,7 @@ pub(crate) fn bytes_per_token(s: &str) -> f64 {
 }
 
 /// True iff `s` is word-like (compresses into few common subwords) under the
-/// given `max_bytes_per_token` bound — i.e. a probable entropy false positive
+/// given `max_bytes_per_token` bound, i.e. a probable entropy false positive
 /// that should be suppressed. The bound is the per-scan
 /// `ScanConfig::entropy_bpe_max_bytes_per_token` (Tier-A), which defaults to
 /// `keyhog_core::DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN`; the predicate itself owns no threshold so
@@ -184,7 +184,7 @@ mod tests {
 
     /// The discrimination is not marginal: the LEAST word-like FP sits far above
     /// the MOST word-like secret, so the 2.2 bound falls in a wide empty gap.
-    /// This gap is what makes the gate a precision win at ~zero recall cost — if
+    /// This gap is what makes the gate a precision win at ~zero recall cost, if
     /// it ever collapses (the classes crowd the bound), the threshold is
     /// mis-set. Differential proof, not a per-example shape check.
     #[test]

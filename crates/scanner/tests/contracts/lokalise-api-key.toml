@@ -20,7 +20,7 @@ reason = "Body below 40 hex chars after `lol` prefix."
 [[evasion]]
 text = "X-Api-Token: lol7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3ea9e2"
 credential = "lol7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3ea9e2"
-reason = "X-Api-Token header form — pattern 3 anchored extractor."
+reason = "X-Api-Token header form (pattern 3 anchored extractor)."
 
 [perf]
 fixture_bytes = 4096

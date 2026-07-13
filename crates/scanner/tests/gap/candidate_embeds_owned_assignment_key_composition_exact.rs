@@ -81,7 +81,7 @@ proptest! {
     }
 
     /// With NO leading `=`/`:`/`~` terminator, `leading_assignment_key` is None, so
-    /// `embeds` reduces EXACTLY to the prefix-embed check — the exact-leading-key
+    /// `embeds` reduces EXACTLY to the prefix-embed check, the exact-leading-key
     /// disjunct is unreachable.
     #[test]
     fn no_terminator_reduces_to_prefix_embed(
@@ -94,7 +94,7 @@ proptest! {
     }
 
     /// Monotone in the owned set: adding owned keys can only ADD ownership (both
-    /// disjuncts — exact membership and prefix-embed — grow with the set).
+    /// disjuncts (exact membership and prefix-embed (grow with the set))).
     #[test]
     fn embeds_is_monotone_in_the_owned_set(
         candidate in "[A-Za-z0-9_.=:~-]{0,32}",

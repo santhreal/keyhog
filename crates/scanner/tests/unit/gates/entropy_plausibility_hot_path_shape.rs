@@ -25,7 +25,7 @@ fn entropy_placeholder_and_ascii_uniqueness_stay_allocation_light() {
     // distinct-byte primitive `entropy::unique_byte_count` (mod.rs) instead of
     // re-inlining the 256-slot presence table a fourth time. Assert the
     // allocation-light PRIMITIVE is used (not a per-candidate HashSet) and that
-    // the primitive itself still owns the fixed-size stack bitmap — pinning the
+    // the primitive itself still owns the fixed-size stack bitmap, pinning the
     // owner, not a copy the dedup legitimately relocated (same principle as the
     // placeholder marker assertion above).
     let entropy_mod = std::fs::read_to_string(root.join("src/entropy/mod.rs"))

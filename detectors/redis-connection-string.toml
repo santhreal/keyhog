@@ -20,7 +20,7 @@ regex = '(?:rediss|redis)://[^:]*:[^@\s]+@[a-zA-Z0-9._:-]+'
 description = "Redis connection string with credentials"
 
 [[detector.patterns]]
-# redis.conf server-side auth directives — the password is NOT in a URL, so the
+# redis.conf server-side auth directives, the password is NOT in a URL, so the
 # generic `key=value` bridge never produces a candidate and the URI pattern
 # above cannot reach it. `requirepass` sets the instance password; `masterauth`
 # is the replica's password for authenticating to its primary. Both are

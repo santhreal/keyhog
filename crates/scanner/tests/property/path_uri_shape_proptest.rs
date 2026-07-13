@@ -72,7 +72,7 @@ fn filename_references_match_case_insensitively() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
-    /// A scheme-URI match IMPLIES a colon at a valid scheme position (3..=15) — the
+    /// A scheme-URI match IMPLIES a colon at a valid scheme position (3..=15), the
     /// gate can never fire without the structural scheme boundary.
     #[test]
     fn uri_match_implies_valid_scheme_colon(value in "[a-zA-Z0-9:/._-]{0,30}") {

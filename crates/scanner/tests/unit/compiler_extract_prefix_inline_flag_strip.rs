@@ -2,7 +2,7 @@
 //! but consumes no input, so BOTH prefix extractors must strip it and reach the
 //! literal that follows. The two extractors had drifted: the routing
 //! `extract_literal_prefixes` (plural) stripped it; the confidence-feeding
-//! `extract_literal_prefix` (singular, behind `has_literal_prefix`) did not — so
+//! `extract_literal_prefix` (singular, behind `has_literal_prefix`) did not, so
 //! the 62 detectors whose regex opens with `(?-i)` (cloudsmith `cs_`,
 //! promptlayer `pl_`, ntfy `tk_`) were denied their literal-prefix credit and
 //! scored below the `min_confidence` floor. Both forms are pinned here.
@@ -34,7 +34,7 @@ fn singular_extract_literal_prefix_strips_leading_inline_flags() {
     );
     // A SCOPED flag group `(?i:…)` carries its `abc` body and is NOT a bare
     // mode-set directive: the strip leaves it intact for the `(`-group parser,
-    // which descends and returns `abc` — unchanged by the fix.
+    // which descends and returns `abc`: unchanged by the fix.
     assert_eq!(
         extract_literal_prefix("(?i:abc)def"),
         Some("abc".to_string())

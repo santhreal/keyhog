@@ -39,7 +39,7 @@ fn starts_with_matches_case_insensitively_and_fails_closed_on_overlong_prefix() 
     assert!(starts_with_ignore_ascii_case("Bearer xyz", "bEaRer"));
     assert!(starts_with_ignore_ascii_case("anything", ""));
     // Boundary: a prefix longer than the value cannot match (no panic, no
-    // out-of-bounds slice — `get(..len)` returns None).
+    // out-of-bounds slice: `get(..len)` returns None).
     assert!(!starts_with_ignore_ascii_case("ab", "abc"));
     assert!(!starts_with_ignore_ascii_case("Token", "key"));
 }
@@ -66,7 +66,7 @@ fn ascii_fold_does_not_spuriously_match_multibyte_utf8() {
     assert!(!contains_bytes_ignore_ascii_case("ab", b"abc"));
 }
 
-// `ends_with_ignore_ascii_case` — migrated out of `src/ascii_ci.rs` inline
+// `ends_with_ignore_ascii_case`: migrated out of `src/ascii_ci.rs` inline
 // tests (KH-GAP-004). Case-insensitive suffix match without allocating a
 // lowercased copy; used by extension/URL classification hot paths.
 

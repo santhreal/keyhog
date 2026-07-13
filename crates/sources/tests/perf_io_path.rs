@@ -7,14 +7,14 @@
 //! through `filesystem::extract::process_entry`, which for a sub-64-KiB text
 //! file (the dominant case in any real source tree) does, per file:
 //!
-//!   1. `file_live_metadata(&path)` -> `std::fs::symlink_metadata(path)` — a
+//!   1. `file_live_metadata(&path)` -> `std::fs::symlink_metadata(path)`: a
 //!      path-based, symlink-NOFOLLOWING metadata read. Its consumers are the
 //!      live size cap, `Chunk.metadata.size_bytes`, `Chunk.metadata.mtime_ns`,
 //!      and the merkle/incremental cache when present.
 //!   2. `read_file_buffered` -> `read_file_safe` (read/raw.rs:72-102):
 //!        * `open_file_safe` -> one `openat(O_NOFOLLOW)`,
 //!        * one `posix_fadvise` (`fadvise64`),
-//!        * `Vec::new(); file.take(..).read_to_end(&mut bytes)` — an
+//!        * `Vec::new(); file.take(..).read_to_end(&mut bytes)`: an
 //!          **un-presized** `read_to_end`. `entry.size` is already known
 //!          (it sits in the `FileEntry`), but the buffer starts empty and grows
 //!          by doubling, so a tiny file costs MANY small `read(2)` syscalls
@@ -31,7 +31,7 @@
 //!   openat(O_NOFOLLOW)  2_000   =>  1.0  per file  (anchor: one content open/file)
 //!
 //! At 4000 files the per-file constants hold (read ~5.9/file, statx ~6.0/file),
-//! confirming the cost is per-file, not fixed startup — i.e. it scales linearly
+//! confirming the cost is per-file, not fixed startup, i.e. it scales linearly
 //! with file count and dominates many-small-files scans.
 //!
 //! TARGET (what a properly optimized per-file path costs)
@@ -58,14 +58,14 @@
 //! real production read path, not a re-implementation.
 //!
 //! RECALL GUARD (the optimization must not lose findings): the landed fix is a
-//! pure I/O-shape change — presize the read buffer to the walker's known
+//! pure I/O-shape change, presize the read buffer to the walker's known
 //! `entry.size` (`read/raw.rs` `read_file_safe`), which returns byte-identical
 //! content. It must keep the existing filesystem source->scanner recall tests
-//! green — in particular `crates/sources/tests/all_tests.rs` (filesystem
+//! green, in particular `crates/sources/tests/all_tests.rs` (filesystem
 //! read/decode coverage) and `crates/sources/tests/property/filesystem_fuzz.rs`.
 //!
-//! The originally-proposed second half — gating the per-file `file_live_metadata`
-//! stat on `merkle.is_some()` — was NOT applied: `FilesystemSource` populates
+//! The originally-proposed second half, gating the per-file `file_live_metadata`
+//! stat on `merkle.is_some()`: was NOT applied: `FilesystemSource` populates
 //! `Chunk.metadata.mtime_ns` on every scan by contract (see the three
 //! `mtime_ns.is_some()` assertions cited on `MAX_META_STATS_PER_FILE`), so that
 //! stat is required, not waste. See that constant for why the metadata budget is
@@ -90,7 +90,7 @@ const MAX_READS_PER_FILE: f64 = 3.5;
 /// scanned file (statx + stat + fstat + newfstatat). Measured ~7-8.5/file
 /// across hosts.
 ///
-/// NOTE — the original "drop the unused `file_live_metadata` follow-stat → ~3-4/file"
+/// NOTE, the original "drop the unused `file_live_metadata` follow-stat → ~3-4/file"
 /// target was REFUTED. `file_live_metadata` is NOT waste: `FilesystemSource` populates
 /// live size plus `Chunk.metadata.mtime_ns` on EVERY scan (not just
 /// `--incremental`), a contract asserted by integration/gap tests. Gating that
@@ -98,7 +98,7 @@ const MAX_READS_PER_FILE: f64 = 3.5;
 /// be deduplicated against the walker's own stat: `codewalk = "=0.2.5"` exposes
 /// only `path`/`size`/`is_binary`, not mtime. So one path-stat for live size and
 /// mtime is contract-required, and the remaining stats are codewalk's intrinsic
-/// per-entry directory walk — neither is a removable keyhog redundancy. This
+/// per-entry directory walk, neither is a removable keyhog redundancy. This
 /// ceiling therefore only catches a GROSS regression (e.g. a SECOND redundant
 /// per-file stat creeping in), not the refuted 3-4 target. The controllable,
 /// landed win is the `read(2)` budget below.
@@ -133,7 +133,7 @@ fn locate_keyhog() -> Option<PathBuf> {
         }
     }
     // Prefer release-fast (the documented audit artifact), then release, then
-    // debug — all share the same syscall shape.
+    // debug (all share the same syscall shape).
     for root in &roots {
         for profile in ["release-fast", "release", "debug"] {
             let cand = root.join(profile).join("keyhog");
@@ -233,13 +233,13 @@ fn strace_syscall_counts(
 
 // Ignored by default: this tripwire straces a spawned `keyhog scan` to count
 // per-file read/stat syscalls. Under strace's ptrace it is fragile when the host
-// is loaded — the parallel all-targets CI pass runs ~11 sibling test binaries,
+// is loaded, the parallel all-targets CI pass runs ~11 sibling test binaries,
 // and the traced process can be killed by a signal under that contention (the
 // harness surfaces it as "keyhog under strace exited unexpectedly"), a
 // scheduling artifact unrelated to the read-path budget it asserts. Run it
 // isolated (its own invocation / locally) via `--ignored`, on an idle host with
 // strace installed, where the measurement is meaningful. The DELTA measurement
-// and 3.5-read budget are UNCHANGED — only the scheduling is gated.
+// and 3.5-read budget are UNCHANGED (only the scheduling is gated).
 #[ignore = "strace syscall tripwire: run isolated (`--ignored`) on an idle host; ptrace-fragile under the parallel all-targets load"]
 #[test]
 fn io_path_per_file_syscall_budget_is_not_blown() {
@@ -248,7 +248,7 @@ fn io_path_per_file_syscall_budget_is_not_blown() {
             "PERF-io_path tripwire could not locate a `keyhog` binary. Build it \
              (CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target \
              cargo build -p keyhog --profile release-fast) or set KEYHOG_PERF_BIN. \
-             A perf tripwire must MEASURE, not silently pass — refusing to no-op."
+             A perf tripwire must MEASURE, not silently pass (refusing to no-op)."
         )
     });
     if !have_strace() {
@@ -259,7 +259,7 @@ fn io_path_per_file_syscall_budget_is_not_blown() {
         // is a LOUD skip (printed), not a silent pass.
         eprintln!(
             "SKIP (loud): PERF-io_path tripwire needs `strace` to count per-file \
-             syscalls and none is installed — per-file read budget NOT enforced \
+             syscalls and none is installed, per-file read budget NOT enforced \
              on this runner. Install strace to enable it."
         );
         return;
@@ -268,7 +268,7 @@ fn io_path_per_file_syscall_budget_is_not_blown() {
     // Measure the STRUCTURAL per-file syscall cost as a DELTA between two corpus
     // sizes. A single scan's `reads / N` conflates the per-file read path with
     // the fixed process-startup cost (config load + ~900 embedded-detector
-    // reads). That startup does NOT amortize away at N=4000 — empirically it
+    // reads). That startup does NOT amortize away at N=4000, empirically it
     // added ~2.2 read/file and masked the true per-file cost (~1.5), tripping a
     // 3.5 budget for a NON-defect. Straceing a small baseline and the full
     // corpus and dividing the DIFFERENCE by the file-count difference cancels
@@ -305,7 +305,7 @@ fn io_path_per_file_syscall_budget_is_not_blown() {
         // Anchor sanity: the buffered read path runs ~once per ADDED file, so the
         // fadvise64/openat DELTA must track the file-count delta. If it does not,
         // the corpus didn't take the sub-64KiB buffered path and the ratio would
-        // be meaningless — surface that instead of asserting on garbage.
+        // be meaningless (surface that instead of asserting on garbage).
         if fadvise >= denom * 0.9 && opens_nofollow >= denom * 0.9 {
             anchor_ok = true;
         }
@@ -347,7 +347,7 @@ fn io_path_per_file_syscall_budget_is_not_blown() {
 
     // ---- PERF-io_path metadata-stat GROSS-REGRESSION backstop --------------
     // (Generous ceiling: the per-file mtime stat is contract-required and the
-    // rest are codewalk's intrinsic walk — see MAX_META_STATS_PER_FILE. This
+    // rest are codewalk's intrinsic walk, see MAX_META_STATS_PER_FILE. This
     // only fires if a SECOND redundant per-file stat creeps in.)
     assert!(
         min_meta_per_file <= MAX_META_STATS_PER_FILE,

@@ -50,7 +50,7 @@ where
 /// a high surrogate. A lone low surrogate is rejected. This is the ONE owner of
 /// the UTF-16 surrogate-pair detection + second-unit read shared by the `json`
 /// and `unicode_escape` decoders (both feed it a `char` iterator), so the range
-/// checks — not just the [`surrogate_pair_to_char`] bit-math — have a single
+/// checks, not just the [`surrogate_pair_to_char`] bit-math, have a single
 /// definition and cannot drift.
 #[allow(clippy::result_unit_err)]
 pub(crate) fn resolve_escaped_codepoint<I>(code: u32, chars: &mut I) -> Result<char, ()>

@@ -1,4 +1,4 @@
-//! LANE 6 — property invariants over the REAL full production scanner.
+//! LANE 6 (property invariants over the REAL full production scanner).
 //!
 //! The existing full-corpus proptest (`scanner_invariants_full_corpus_proptest`)
 //! pins two properties: arbitrary bytes never panic, and coalesced ⊇ per-chunk
@@ -8,24 +8,24 @@
 //! This file fills the gaps neither covers, all against the SAME ~900-detector
 //! on-disk corpus the shipped binary compiles (compiled once via `LazyLock`):
 //!
-//!   1. `coalesced_equals_per_chunk_for_single_chunk` (10_000 cases) — for a
+//!   1. `coalesced_equals_per_chunk_for_single_chunk` (10_000 cases), for a
 //!      ONE-chunk batch there is no cross-chunk seam to reassemble, so the
 //!      production `scan_coalesced` MUST return EXACTLY the per-chunk `scan`
-//!      result — same credentials, same detector ids, same offsets — not merely
+//!      result, same credentials, same detector ids, same offsets, not merely
 //!      a superset. A coalesced path that ADDS phantom findings (boundary
 //!      buffer over-firing, decode-through double counting) or DROPS one on the
 //!      single-chunk case is a divergence the superset property cannot catch.
 //!
-//!   2. `scan_is_deterministic_across_two_runs` (10_000 cases) — scanning the
+//!   2. `scan_is_deterministic_across_two_runs` (10_000 cases), scanning the
 //!      same arbitrary bytes twice through the FULL corpus yields the identical
 //!      finding set, keyed by (detector_id, credential, offset). The toy fuzz
 //!      proves this for 2 detectors; the real corpus has rayon fan-out, a
-//!      fragment cache, ML-pending state, and decode recursion — any of which
+//!      fragment cache, ML-pending state, and decode recursion, any of which
 //!      could leak nondeterminism that 2 detectors never exercise. Cache is
 //!      cleared between the two runs so the property is true determinism, not a
 //!      memoised replay.
 //!
-//!   3. `every_match_offset_indexes_a_char_boundary` (10_000 cases) — beyond
+//!   3. `every_match_offset_indexes_a_char_boundary` (10_000 cases), beyond
 //!      "offset ≤ len" (already pinned), every surfaced offset must land on a
 //!      UTF-8 char boundary of the chunk text. An offset mid-codepoint is a
 //!      slicing bug that panics the moment a reporter slices `&text[offset..]`.
@@ -65,7 +65,7 @@ fn chunk(text: &str) -> Chunk {
     }
 }
 
-/// (detector_id, credential, offset) — the stable identity of a finding,
+/// (detector_id, credential, offset), the stable identity of a finding,
 /// order-independent so rayon fan-out reordering never flips equality.
 type FindingKey = (String, String, usize);
 

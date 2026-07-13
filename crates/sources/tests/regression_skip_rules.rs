@@ -9,14 +9,14 @@
 //!
 //! Skip taxonomy exercised here (owned by `filesystem::extract::process_entry`
 //! and `filesystem::filter` / `skip.rs`):
-//!   * `.keyhogignore` / `.gitignore` / `with_ignore_paths` — filtered at the
+//!   * `.keyhogignore` / `.gitignore` / `with_ignore_paths`: filtered at the
 //!     codewalk WALKER layer, BEFORE `process_entry`, so the file never becomes
 //!     a chunk AND increments NO `SkipCounts` category (it is not a
 //!     process-entry skip). The negative twin (`skip_counts().excluded == 0`)
 //!     proves the ignore did not leak into the typed counters.
-//!   * over-size — `SkipCounts::over_max_size`, plus a loud `SourceError::Other`
+//!   * over-size: `SkipCounts::over_max_size`, plus a loud `SourceError::Other`
 //!     row (Law 10: the drop is surfaced, not silent).
-//!   * binary — `SkipCounts::binary` for skip-extension and extensionless
+//!   * binary: `SkipCounts::binary` for skip-extension and extensionless
 //!     NUL-run files.
 
 use keyhog_core::{Chunk, Source, SourceError};
@@ -27,7 +27,7 @@ use std::path::Path;
 
 /// Serializes the process-global skip counters across the parallel tests in this
 /// binary (each integration-test file is its own process, so a file-local mutex
-/// is sufficient — mirrors `default_excludes_flag.rs`). Held for the whole
+/// is sufficient, mirrors `default_excludes_flag.rs`). Held for the whole
 /// `reset -> scan -> read skip_counts()` window of every counter-asserting test.
 static SKIP_COUNTER_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -69,7 +69,7 @@ fn write_control(dir: &Path) {
 }
 
 // --------------------------------------------------------------------------
-// .keyhogignore (custom ignore file — respected regardless of git presence).
+// .keyhogignore (custom ignore file (respected regardless of git presence)).
 // --------------------------------------------------------------------------
 
 #[test]

@@ -121,7 +121,7 @@ fn round_trip(metadata: HashMap<String, String>) -> HashMap<String, String> {
 #[test]
 fn identity_metadata_survives_the_cap_deterministically() {
     // 21 entries (arn + n00..n19) over the 16 cap: arn (priority) is always kept,
-    // the highest-lex noise keys are always dropped — same result every run.
+    // the highest-lex noise keys are always dropped (same result every run).
     let first = round_trip(oversized_metadata());
     let second = round_trip(oversized_metadata());
     assert_eq!(first.len(), 16);

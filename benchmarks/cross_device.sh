@@ -18,7 +18,7 @@
 # crosses the network.
 #
 # Windows devices are NOT handled here (POSIX-only); use the PowerShell sibling
-# flow for the ThinkPad — see benchmarks/README.md.
+# flow for the ThinkPad (see benchmarks/README.md).
 set -euo pipefail
 
 DEVICE="${DEVICE:?set DEVICE=<ssh-alias>}"
@@ -31,19 +31,19 @@ SEED="${SEED:-0}"
 REMOTE_TMP="${REMOTE_TMP:-/tmp/keyhog-bench}"
 # cargo-install feature set. Empty = the device picks per-OS: macOS/Darwin gets
 # `--no-default-features --features portable` (keyhog's documented system-lib-free
-# build — no Hyperscan/pkg-config/CUDA), Linux gets the default (Hyperscan SIMD).
+# build: no Hyperscan/pkg-config/CUDA), Linux gets the default (Hyperscan SIMD).
 KEYHOG_INSTALL_FEATURES="${KEYHOG_INSTALL_FEATURES:-}"
 # We rsync THIS host's current tree to a device-local scratch copy and build
 # there, so a device's stale/absent clone never benches old code. (The repo's
 # normal rule is "use the NFS tree"; the user sanctioned rsync for the
-# cross-device bench specifically — git clone/NFS-build is too slow.)
+# cross-device bench specifically, git clone/NFS-build is too slow.)
 REMOTE_REPO="${REMOTE_REPO:-$REMOTE_TMP/keyhog}"
 # cargo target stays out of the synced tree.
 REMOTE_CARGO_TARGET="${REMOTE_CARGO_TARGET:-$REMOTE_TMP/cargo-target}"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"          # benchmarks/
 LOCAL_REPO="${LOCAL_REPO:-$(cd "$HERE/.." && pwd)}"           # repo root
-# Per-device, and OUTSIDE results/ — the README leaderboard report reads
+# Per-device, and OUTSIDE results/, the README leaderboard report reads
 # results/ and `canonical_leaderboard` picks newest-per-scanner across hosts,
 # so a remote host's row must never land where it could shadow the canonical
 # reference-host numbers. Cross-device data is compared explicitly, not injected.

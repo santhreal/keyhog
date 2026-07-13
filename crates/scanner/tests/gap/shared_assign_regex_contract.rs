@@ -1,8 +1,8 @@
 //! Behavioral contract for the shared `ASSIGN_RE` assignment-detection regex
 //! (crates/scanner/src/shared_regexes.rs). `ASSIGN_RE` is the SINGLE compiled
-//! `key = "value"` source consumed by two scan paths — `engine` fragment
+//! `key = "value"` source consumed by two scan paths: `engine` fragment
 //! reassembly (scan_postprocess/fragments.rs) and the `multiline::structural`
-//! preprocessor — so its exact match/reject behaviour is a real detection
+//! preprocessor, so its exact match/reject behaviour is a real detection
 //! contract: a silent shift in the one regex would move both paths at once.
 //!
 //! Pattern under test:
@@ -96,7 +96,7 @@ fn assign_re_is_end_anchored_but_admits_trailing_separator() {
 // `key <sep> <quote>value<quote> <tail>` shape (both separators, all three quotes,
 // optional `;`/`,` tail, optional whitespace) and asserts the two captured groups
 // are exactly the key and value. NOTE: the pattern has no start anchor, so only
-// the LOWER floors hard-reject (a >32 key just suffix-matches) — swept accordingly:
+// the LOWER floors hard-reject (a >32 key just suffix-matches), swept accordingly:
 // a sub-4 value and a 1-char key reject, and trailing non-`;`/`,` content fails the
 // `$` anchor. Traced against shared_regexes.rs `ASSIGN_RE`. No proptest before.
 

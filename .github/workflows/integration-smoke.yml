@@ -4,8 +4,8 @@ name: integration-smoke
 # Downloads install.sh / install.ps1 from raw.githubusercontent.com,
 # runs them non-interactively, then exercises the CLI surface a new
 # user touches in their first minute: scan, exit codes, SARIF, hook,
-# daemon. Defaults to the current release (v0.5.37) but accepts any
-# tag with published binary assets via the `version` workflow input.
+# daemon. With no input it follows the installer's latest published stable
+# release; `version` pins any release tag that has a complete signed bundle.
 #
 # Manual only. Pre-launch sanity gate before any growth push.
 
@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag to install (no leading v, e.g. 0.5.37)."
+        description: "Release tag to install (vX.Y.Z or X.Y.Z); leave blank for latest stable."
         required: false
-        default: "0.5.37"
+        default: ""
 
 jobs:
   smoke:
@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           uname -a || systeminfo | head -5 || true
-          echo "version input: ${{ inputs.version }}"
+          echo "version input: ${{ inputs.version || 'latest stable' }}"
 
       - name: Install runtime deps (Ubuntu only)
         if: runner.os == 'Linux'
@@ -49,15 +49,23 @@ jobs:
       - name: Install (unix)
         if: runner.os != 'Windows'
         shell: bash
+        env:
+          KEYHOG_SMOKE_VERSION: ${{ inputs.version }}
         run: |
-          set -e
+          set -euo pipefail
           curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh -o /tmp/install.sh
-          sh /tmp/install.sh --version=v${{ inputs.version }} --yes --no-prompt
+          install_args=(--yes --no-prompt)
+          if [[ -n "$KEYHOG_SMOKE_VERSION" ]]; then
+            install_args+=(--version="$KEYHOG_SMOKE_VERSION")
+          fi
+          sh /tmp/install.sh "${install_args[@]}"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install (windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          KEYHOG_SMOKE_VERSION: ${{ inputs.version }}
         run: |
           # PowerShell's -File flag requires a .ps1 extension. New-TemporaryFile
           # returns a .tmp path, which pwsh -File refuses. Save to an explicit
@@ -65,9 +73,14 @@ jobs:
           $url = "https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1"
           $tmp = Join-Path $env:RUNNER_TEMP "install.ps1"
           Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
-          & powershell -ExecutionPolicy Bypass -File $tmp -Version "${{ inputs.version }}" -Yes
+          $installArgs = @('-ExecutionPolicy', 'Bypass', '-File', $tmp, '-Yes')
+          if (-not [string]::IsNullOrWhiteSpace($env:KEYHOG_SMOKE_VERSION)) {
+            $installArgs += @('-Version', $env:KEYHOG_SMOKE_VERSION)
+          }
+          & powershell @installArgs
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
           # install.ps1's default Windows install dir is %LOCALAPPDATA%\keyhog\bin
-          # (param: Join-Path $env:LOCALAPPDATA 'keyhog\bin'), NOT ~/.local/bin —
+          # (param: Join-Path $env:LOCALAPPDATA 'keyhog\bin'), NOT ~/.local/bin 
           # that was a unix-ism that left keyhog off PATH and failed the Version
           # step with exit 127. Under -Yes the installer DOES persist that dir to
           # the User PATH (Ensure-OnPath auto-approves the Yes-default), but that

@@ -140,7 +140,7 @@ fn roundtrip_serialize_then_deserialize_is_identity_for_all_variants() {
 #[test]
 fn deserialize_unknown_variant_errors_with_named_message() {
     // Negative twin: an unknown label fails closed (an error), and the error is
-    // the serde "unknown variant" diagnostic naming the offending token — not a
+    // the serde "unknown variant" diagnostic naming the offending token, not a
     // silent default to Info/Critical.
     let err = serde_json::from_str::<Severity>("\"totally-not-a-severity\"").unwrap_err();
     let msg = err.to_string();
@@ -221,7 +221,7 @@ fn client_safe_sits_between_info_and_low() {
 #[test]
 fn adjacent_pairs_are_monotonically_increasing() {
     // Walk the documented order and assert each neighbour is strictly greater
-    // than the one before — a full transitive check of the declaration order.
+    // than the one before (a full transitive check of the declaration order).
     for window in ORDER_LOW_TO_HIGH.windows(2) {
         let lower = window[0];
         let higher = window[1];

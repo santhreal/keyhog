@@ -3,12 +3,12 @@
 //!
 //! Two more shape gates, plus a length-set DIVERGENCE this suite pins so the two
 //! hex gates are never conflated:
-//!   • `is_canonical_service_hex_key` — uniform-case pure hex at a SERVICE-KEY
+//!   • `is_canonical_service_hex_key`: uniform-case pure hex at a SERVICE-KEY
 //!     width `32/40/48/64` (a real anchored service key).
-//!   • `looks_like_bare_hex_digest` — the BROADER digest widths
+//!   • `looks_like_bare_hex_digest`: the BROADER digest widths
 //!     `32/40/48/56/64/72/128`. So `56/72/128`-hex is a digest but NOT a service
 //!     key; the service set is a strict subset.
-//!   • `looks_like_truncated_uuid_v4_suffix` — a UUID v4 with its 2 leading hex
+//!   • `looks_like_truncated_uuid_v4_suffix`: a UUID v4 with its 2 leading hex
 //!     chars dropped (34 chars, `6-4-4-4-12`, version `4` at 12, variant at 17).
 
 use keyhog_scanner::testing::{
@@ -82,7 +82,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// A uniform-lowercase hex string is a service key IFF its length is one of the
-    /// four service widths — exact membership, and NEVER a 56/72/128 digest width.
+    /// four service widths (exact membership, and NEVER a 56/72/128 digest width).
     #[test]
     fn lowercase_hex_is_service_key_iff_service_width(len in 1usize..140) {
         let hex = "a".repeat(len);

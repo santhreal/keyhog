@@ -8,7 +8,7 @@ fn detectors_search_aws() {
     assert_eq!(output.status.code(), Some(0));
     let arr = serde_json::from_slice::<Vec<serde_json::Value>>(&output.stdout).expect("json");
     // Truth assert: the canonical aws-access-key detector (service=aws) is in the
-    // search results — not merely "some non-empty list".
+    // search results (not merely "some non-empty list").
     assert!(
         arr.iter().any(|d| {
             d.get("id").and_then(|v| v.as_str()) == Some("aws-access-key")

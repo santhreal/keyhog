@@ -67,7 +67,7 @@ impl CsrU32 {
 impl From<Vec<Vec<usize>>> for CsrU32 {
     fn from(rows: Vec<Vec<usize>>) -> Self {
         // Both capacities are exactly knowable here, so the build does exactly
-        // two allocations (one `data`, one `offsets`) with zero reallocation —
+        // two allocations (one `data`, one `offsets`) with zero reallocation 
         // making the "exactly two allocations" claim in the type doc literally
         // true on the construction path the four real builders take.
         let data_cap: usize = rows.iter().map(Vec::len).sum();

@@ -14,7 +14,7 @@
 //! Both paths therefore agree: the exact 40-char token reports next to any
 //! non-word delimiter (or end of input), and any overlong word-character run
 //! (trailing letter, digit, or underscore) is suppressed. The boundary is
-//! trailing-only by design — a leading `\b` would diverge because the hot
+//! trailing-only by design, a leading `\b` would diverge because the hot
 //! path's candidate slice begins at the `ghp_` literal and no longer sees the
 //! byte in front of it.
 
@@ -84,7 +84,7 @@ fn suppressed_on_all_backends(text: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Overlong runs (extra word characters) — must FAIL CLOSED on every backend.
+// Overlong runs (extra word characters) (must FAIL CLOSED on every backend).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -151,7 +151,7 @@ fn one_extra_word_char_at_end_of_input_is_suppressed() {
 }
 
 // ---------------------------------------------------------------------------
-// Exact 40-char token beside a non-word delimiter — must REPORT on every backend.
+// Exact 40-char token beside a non-word delimiter (must REPORT on every backend).
 // ---------------------------------------------------------------------------
 
 #[test]

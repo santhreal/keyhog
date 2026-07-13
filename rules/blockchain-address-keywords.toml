@@ -4,7 +4,7 @@
 # BlockchainOrNetworkAddress shape stage instead of flagging them.
 #
 # Entries are matched against the UPPERCASED line via substring `contains`, so
-# the trailing boundary char (`=`, space, `"`, `:`) is SIGNIFICANT — it anchors
+# the trailing boundary char (`=`, space, `"`, `:`) is SIGNIFICANT, it anchors
 # the match to a real assignment and is preserved exactly. Single-quoted TOML
 # literals keep the trailing space / quote bytes intact.
 #

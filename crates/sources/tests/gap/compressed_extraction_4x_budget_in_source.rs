@@ -3,7 +3,7 @@
 //!
 //! The capability refactor (AUD-capability-1/2/3) unified the gzip / tgz / tar
 //! paths through `decompress_to_bytes(.., budget)` and `emit_tar_entries`,
-//! which made the guard *stronger* — the decompressing reader itself is capped
+//! which made the guard *stronger*, the decompressing reader itself is capped
 //! at `budget + 1` bytes so a bomb can never allocate past the ceiling, and an
 //! over-budget stream is truncated-and-scanned rather than dropped. This pins
 //! the durable shape of that guard (the 4× budget computation and the cap log)

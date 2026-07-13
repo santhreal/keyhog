@@ -2,7 +2,7 @@
 //! (`crates/scanner/src/suppression/{api,path_filter}.rs`). These gates form the
 //! scanner-owned allowlist: a finding is dropped when its *source file* is a
 //! secret-scanner's own source, a vendored/minified third-party bundle, an
-//! extracted native-binary string dump, or an explicitly-base64 file — and it
+//! extracted native-binary string dump, or an explicitly-base64 file, and it
 //! survives when the file is ordinary first-party source. This is the layer
 //! below the CLI's declarative `.keyhogignore` (that lives in `keyhog_cli` and
 //! cannot be imported here); this file pins the EXACT boolean the scanner
@@ -73,7 +73,7 @@ fn trufflehog_scanner_source_path_is_suppressed() {
 }
 
 /// NEGATIVE TWIN: ordinary first-party source (`/repo/src/auth.rs`) is NOT on any
-/// allowlist, and `CLEAN` survives every shape gate under a service anchor — so
+/// allowlist, and `CLEAN` survives every shape gate under a service anchor, so
 /// the finding passes. This is the baseline the positives are measured against.
 #[test]
 fn ordinary_first_party_source_path_is_not_suppressed() {
@@ -107,7 +107,7 @@ fn node_modules_vendored_path_is_suppressed() {
     );
 }
 
-/// A `.min.js` suffix marks a minified bundle regardless of directory — the
+/// A `.min.js` suffix marks a minified bundle regardless of directory, the
 /// suffix arm of the vendored-path allowlist fires.
 #[test]
 fn minified_js_suffix_path_is_suppressed() {
@@ -124,7 +124,7 @@ fn minified_js_suffix_path_is_suppressed() {
 }
 
 /// NEGATIVE TWIN: a hand-written `.js` file in first-party `src/` is NOT vendored
-/// (no `node_modules`, no `.min.js`/`.bundle.js` suffix) — the finding passes.
+/// (no `node_modules`, no `.min.js`/`.bundle.js` suffix) (the finding passes).
 #[test]
 fn first_party_js_source_path_is_not_suppressed() {
     assert!(
@@ -142,7 +142,7 @@ fn first_party_js_source_path_is_not_suppressed() {
 // ── extracted native-binary strings: universal allowlist ──
 
 /// The `binary-strings` source type means the bytes were `strings`-extracted from
-/// a compiled ELF/Mach-O/PE — prefix detectors generate noise on random rodata,
+/// a compiled ELF/Mach-O/PE, prefix detectors generate noise on random rodata,
 /// so every named-detector finding on that source is allowlisted.
 #[test]
 fn binary_strings_source_is_suppressed() {
@@ -214,7 +214,7 @@ fn raw_base64_file_with_derived_source_is_not_suppressed() {
 
 // ── universal value-shape allowlist arms (Tier-A, fire for ALL detectors) ──
 
-/// An email-shaped value is a public identifier, never a credential — suppressed
+/// An email-shaped value is a public identifier, never a credential, suppressed
 /// universally even under a strong service anchor that bypasses Tier-B shape
 /// gates. Concrete value from the shopify golden-fixture family.
 #[test]
@@ -248,7 +248,7 @@ fn email_shaped_value_is_suppressed_under_generic_password() {
 }
 
 /// A value ending in a regex sigil (`]+`) is a regex-pattern definition captured
-/// from another scanner's own source, never a credential — universal allowlist.
+/// from another scanner's own source, never a credential (universal allowlist).
 #[test]
 fn regex_literal_tail_value_is_suppressed() {
     assert!(

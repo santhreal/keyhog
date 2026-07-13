@@ -15,11 +15,11 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "RAYGUN_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "RAYGUN_API_KEY=zHHPHEXAMPLEEXAMPLE5YTMi"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "{\"raygun_api_key\":\"zHHPHPTJ-SaJd915YTMi\"}"

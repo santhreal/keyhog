@@ -506,10 +506,10 @@ pub struct FilesystemSource {
     /// Bytes of overlap between consecutive windows. Same rationale.
     window_overlap: usize,
     /// Whether the walker's built-in exclusion list (lock files, minified /
-    /// bundled JS, vendored directories — `filter::is_default_excluded` + the
+    /// bundled JS, vendored directories: `filter::is_default_excluded` + the
     /// `.min.`/`.bundle.` filename checks) is applied. `true` (default) is the
     /// normal scan. `--no-default-excludes` flips this to `false` so a secret
-    /// committed inside e.g. `package-lock.json` is still scanned — previously
+    /// committed inside e.g. `package-lock.json` is still scanned, previously
     /// the flag only reached the codewalk glob layer, NOT this in-process
     /// filter, so the lock/vendored files stayed silently excluded.
     respect_default_excludes: bool,
@@ -714,11 +714,11 @@ impl Source for FilesystemSource {
                 // dangerous case. Include paths are admitted below via
                 // `canonicalize()` + `is_file()`, BOTH of which follow
                 // symlinks, and canonicalize resolves the link before any
-                // later `is_symlink(path)` check can see it — so the refusal
+                // later `is_symlink(path)` check can see it, so the refusal
                 // must happen HERE, on the original pre-canonicalization path.
                 //
                 // ASYMMETRY (two pinned contracts): a symlink to a PLAIN file
-                // is read (documented "canonicalize-then-read" — the user
+                // is read (documented "canonicalize-then-read", the user
                 // explicitly named it; see
                 // `included_symlinked_plain_file_is_canonicalized_then_read`).
                 // But a symlink whose link name OR resolved target extension marks
@@ -837,7 +837,7 @@ impl Source for FilesystemSource {
                     // directory: a broken symlink, a special file (socket /
                     // device / fifo), or it vanished between include-admission
                     // and this walk. The user named it, so a silent drop would
-                    // again read as "clean" — count it unreadable so the gap is
+                    // again read as "clean", count it unreadable so the gap is
                     // surfaced rather than swallowed (Law 10).
                     tracing::warn!(
                         path = %path.display(),

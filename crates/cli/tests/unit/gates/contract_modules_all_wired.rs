@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 
 /// Module names declared via `mod NAME;` / `pub mod NAME;` in `decl_file`.
 /// `#[path = "..."]` attribute lines (no trailing `;` after an identifier) are
-/// ignored — only the `mod NAME;` line itself is counted.
+/// ignored (only the `mod NAME;` line itself is counted).
 fn declared_modules(decl_file: &str) -> BTreeSet<String> {
     let src = std::fs::read_to_string(decl_file)
         .unwrap_or_else(|e| panic!("declaring file {decl_file} readable: {e}"));
@@ -65,7 +65,7 @@ fn contract_modules_all_wired() {
         let on_disk = files_on_disk(&dir_abs);
 
         // Orphan direction only: a file on disk that is NOT declared is silently
-        // dead coverage (the compiler never sees it — no error). The reverse
+        // dead coverage (the compiler never sees it, no error). The reverse
         // (a declared module with no file) is a hard compile error (E0583), so
         // it needs no gate; and standalone binary roots legitimately declare
         // out-of-dir prelude modules (e.g. adversarial.rs pulls in the e2e

@@ -7,7 +7,7 @@
 //! base62 encoding silently flips real tokens to `Invalid` (recall loss) or
 //! fabricated ones to `Valid` (precision loss). They are pure and
 //! detection-semantics-neutral, so they get exact known-answer vectors plus
-//! whole-`u32` round-trip / alphabet / padding invariants — the algorithm itself
+//! whole-`u32` round-trip / alphabet / padding invariants, the algorithm itself
 //! is pinned, independent of any detector policy.
 
 use keyhog_scanner::testing::checksum::{base62_encode_u32, crc32_base62_suffix, standard_crc32};
@@ -16,7 +16,7 @@ use proptest::prelude::*;
 const BASE62_DIGITS: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 /// Independent reference base62 decoder (big-endian, same alphabet) so the
-/// round-trip proves `base62_encode_u32` is the exact inverse — not merely
+/// round-trip proves `base62_encode_u32` is the exact inverse, not merely
 /// self-consistent.
 fn base62_decode(s: &str) -> u64 {
     let mut v: u64 = 0;
@@ -82,7 +82,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(8_000))]
 
     /// For width 6, EVERY `u32` encodes to exactly six base62 chars whose reverse
-    /// decode is the original value — the encoder is a total, injective inverse
+    /// decode is the original value, the encoder is a total, injective inverse
     /// over the whole `u32` domain (62^6 > 2^32).
     #[test]
     fn base62_width6_roundtrips_every_u32(v in any::<u32>()) {

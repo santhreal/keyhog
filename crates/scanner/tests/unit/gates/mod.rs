@@ -120,7 +120,7 @@ pub mod gpu_no_unwrap_expect;
 pub mod gpu_presence_scratch;
 pub mod gpu_region_dispatch_contracts;
 // Validates the GENERATED WGSL MoE shader (`moe_shader_for_test`, itself
-// `#[cfg(feature = "gpu")]`) — so the module only compiles with the gpu feature.
+// `#[cfg(feature = "gpu")]`) (so the module only compiles with the gpu feature).
 // Without this gate the ci-lean (no-gpu) lib-test build fails E0425. Mirrors the
 // gpu-gating already applied to `compiler_gpu_literals_empty_disables_gpu` in
 // `tests/unit/mod.rs`.

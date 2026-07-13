@@ -20,7 +20,7 @@ reason = "Body below 32 chars, fails regex."
 [[evasion]]
 text = "bkua_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
 credential = "bkua_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
-reason = "Adversarial anchor_bare envelope — credential must still surface under this detector."
+reason = "Adversarial anchor_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

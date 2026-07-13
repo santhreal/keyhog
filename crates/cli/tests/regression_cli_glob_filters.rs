@@ -3,7 +3,7 @@
 //! binary (`--daemon=off`, `--backend cpu`).
 //!
 //! The CLI exposes exactly ONE user-facing scan-glob filter: `--exclude-paths`
-//! (see `crates/cli/src/args/scan.rs` — there is deliberately NO `--include`
+//! (see `crates/cli/src/args/scan.rs`: there is deliberately NO `--include`
 //! glob flag; the `include_paths` machinery is git-staged-only). These tests
 //! pin that real surface end to end:
 //!   * `--exclude-paths '*.txt'` scans only `a.rs` (exact one-finding set).
@@ -16,7 +16,7 @@
 //!   * the nonexistent `--include` flag is a clap usage error (exit 2).
 //!
 //! Two DISTINCT valid GitHub classic PATs are planted (identical values would
-//! be deduped into one finding with an extra `additional_locations` entry —
+//! be deduped into one finding with an extra `additional_locations` entry 
 //! test #11 pins exactly that), so which file survived a filter is provable by
 //! the surviving finding's file path AND its `credential_hash`.
 //!
@@ -252,7 +252,7 @@ fn exclude_rs_glob_keeps_only_txt() {
     );
 }
 
-/// Both globs together prune every file: an HONEST empty result — exit 0 and a
+/// Both globs together prune every file: an HONEST empty result, exit 0 and a
 /// literal `[]` JSON array (not a crash, not a usage error).
 #[test]
 fn exclude_both_globs_finds_nothing_exit_zero() {
@@ -282,7 +282,7 @@ fn exclude_exact_filename_skips_that_file() {
 }
 
 /// Negative twin: a glob that matches NOTHING (`*.md`) leaves both findings
-/// intact — the filter must never over-prune.
+/// intact (the filter must never over-prune).
 #[test]
 fn exclude_nonmatching_glob_keeps_all() {
     let dir = plant_flat();
@@ -356,7 +356,7 @@ fn multiple_excludes_compose_to_single_file() {
 }
 
 /// Adversarial: there is NO `--include` scan-glob flag. Passing one is a clap
-/// usage error — exit 2, with the argument named on stderr. This pins that the
+/// usage error, exit 2, with the argument named on stderr. This pins that the
 /// filter surface is exclude-only (the include machinery is git-staged-only).
 #[test]
 fn unknown_include_flag_is_usage_error() {
@@ -389,7 +389,7 @@ fn unknown_include_flag_is_usage_error() {
 
 /// Adversarial dedup: the SAME token value in two DIFFERENT files collapses to
 /// ONE finding (dedup is by credential value) with one `additional_locations`
-/// entry — which is exactly why the other tests plant DISTINCT tokens to prove
+/// entry, which is exactly why the other tests plant DISTINCT tokens to prove
 /// which file survived a filter.
 #[test]
 fn identical_value_in_two_files_dedups_to_one() {
@@ -407,7 +407,7 @@ fn identical_value_in_two_files_dedups_to_one() {
 }
 
 /// Field-level pin: the a.rs finding lands on line 1, offset 0, severity
-/// critical, detector github-classic-pat — so the tests above assert against a
+/// critical, detector github-classic-pat, so the tests above assert against a
 /// fully-pinned finding, not a fuzzy shape.
 #[test]
 fn surviving_finding_fields_are_pinned() {

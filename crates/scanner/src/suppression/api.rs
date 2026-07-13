@@ -201,12 +201,12 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // is correct for a random password (`://user:pxidztpv@host`, `IDENTIFIED BY
     // 'argriyjqr'`) but surfaces two placeholder shapes a real secret never has:
     //   1. the literal dictionary word (`://user:password@host`, `IDENTIFIED BY
-    //      'secret'`, `--password welcome`) — caught by the bigram model being
+    //      'secret'`, `--password welcome`), caught by the bigram model being
     //      CONFIDENT the value is pronounceable English; never a random token
     //      (below the English threshold), a short fail-safe (model returns None),
     //      or a hex digest (no g..z letter);
     //   2. the repetitive / digit-only MASK (`--password xxxxxxxx`, `IDENTIFIED
-    //      BY 'XXXXXXXX'`, `--password 12345678`) — improbable bigrams, so the
+    //      BY 'XXXXXXXX'`, `--password 12345678`), improbable bigrams, so the
     //      dictionary gate misses it, but fewer than `MIN_DISTINCT_LETTERS`
     //      distinct letters, the same floor `is_random_token` uses, so a genuine
     //      short random password (`i8cr1w!`, 4 distinct letters) is kept.
@@ -256,7 +256,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // generic-* / entropy-* findings, dropping real random passwords a service
     // detector flagged. Gate it on the SHARED `keep_identifier_gate` so a random
     // token (`gjbubxsu`) is recovered while a dictionary reference
-    // (`getUserName`) still suppresses — one discriminator, both paths.
+    // (`getUserName`) still suppresses (one discriminator, both paths).
     if apply_tier_b
         && keep_identifier_gate_with_randomness(credential, &randomness)
         && looks_like_pure_identifier(credential)
@@ -456,7 +456,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // placeholder arms only (every decoy gate still runs). Strong-anchor
     // detectors already skip those via `bypass_shape_gates`; this is the
     // weak_anchor pure-hex case (alchemy / carbon-black / crowdin / …) whose
-    // `min_confidence = 0.2` already declares the keyword anchor authoritative —
+    // `min_confidence = 0.2` already declares the keyword anchor authoritative 
     // the shape gate firing ahead of confidence was defeating that intent.
     let allow_canonical_hex_key = crate::detector_ids::is_service_anchored_detector(detector_id)
         && super::shape::is_canonical_service_hex_key(credential);
@@ -543,7 +543,7 @@ pub(crate) enum WeakAnchorBase {
     /// path resolves this against the specific pattern via the memoized
     /// `LazyRegex::has_broad_identifier_capture`
     /// (`CompiledScanner::detector_pattern_weak_anchor`), so there is no
-    /// regex-reparsing `resolve` helper here — the hot path must use the
+    /// regex-reparsing `resolve` helper here, the hot path must use the
     /// memoized form, not a fresh parse.
     PerPattern,
 }
@@ -559,7 +559,7 @@ pub(crate) fn detector_weak_anchor_base(
     }
     if spec.weak_anchor {
         // Per-detector `DetectorSpec::weak_anchor` (was the centralized
-        // `rules/detector-classification.toml` `weak_anchor` id list — DET-0).
+        // `rules/detector-classification.toml` `weak_anchor` id list. DET-0).
         return Ok(WeakAnchorBase::Always);
     }
     if spec.min_confidence.is_some() {
@@ -606,7 +606,7 @@ fn has_broad_identifier_capture(regex: &str) -> bool {
     false
 }
 
-/// True when the `[` at `class_open` is the first atom of a capturing group —
+/// True when the `[` at `class_open` is the first atom of a capturing group 
 /// either a bare `([`, or a NAMED capture `(?P<name>[` / `(?<name>[`. Lookbehind
 /// (`(?<=` / `(?<!`) ends in `=`/`!`, never `>`, so it is never mistaken for a
 /// named capture.
@@ -627,7 +627,7 @@ fn class_opens_a_capture_group(regex: &str, class_open: usize) -> bool {
 /// If `after` (the slice immediately following a class's closing `]`) closes the
 /// capture group right after it, return the class's minimum repeat count. `Some`
 /// only when the group is exactly `([class]<quant>)` where `<quant>` is empty
-/// (`([class])` ⇒ min 1), `?` (min 0), `+`/`*`, or `{n,..}` — an optional lazy
+/// (`([class])` ⇒ min 1), `?` (min 0), `+`/`*`, or `{n,..}`: an optional lazy
 /// `?` before the group close is accepted. A bare `([class])` and an optional
 /// `([class]?)` are broad captures (min ≤ 1) that were previously missed
 /// (returned `None`), so their weak-anchor detectors kept their shape gates
@@ -641,8 +641,8 @@ fn group_capture_min_len(after: &str) -> Option<usize> {
         _ => false,
     };
     match bytes.first()? {
-        b')' => Some(1),                 // ([class]) — matches exactly once
-        b'?' if closes_at(1) => Some(0), // ([class]?) — zero or one
+        b')' => Some(1),                 // ([class]), matches exactly once
+        b'?' if closes_at(1) => Some(0), // ([class]?), zero or one
         b'+' if closes_at(1) => Some(1), // ([class]+) / lazy ([class]+?)
         b'*' if closes_at(1) => Some(0), // ([class]*) / lazy ([class]*?)
         b'{' => {
@@ -685,7 +685,7 @@ static TOKENS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
 
 /// True if `body` (a regex character-class body, without the brackets) includes
 /// a full alphabetic range (`a-z`, `A-Z`, or `\w`). Extra literal characters
-/// that only WIDEN the class (e.g. `.` in `[A-Za-z0-9._-]`) keep it broad — a
+/// that only WIDEN the class (e.g. `.` in `[A-Za-z0-9._-]`) keep it broad, a
 /// superset of the identifier alphabet is at least as broad as the identifier
 /// alphabet itself, so it must not be mistaken for a strong fixed-shape anchor.
 /// Hex-only classes (`a-f0-9`) still return false: they contain no full-alpha
@@ -826,8 +826,8 @@ fn suppress_per_detector_allowlist(
 /// coincidental `stopwords` hit.
 ///
 /// Randomness guard: when the capture is a genuine RANDOM token the stopword is
-/// a coincidental fragment of the entropy body — `sk_test_4eC39HqLyjWDarjtT1zdp7dc`
-/// is a real Stripe test key that merely CONTAINS `test`, not a placeholder — so
+/// a coincidental fragment of the entropy body: `sk_test_4eC39HqLyjWDarjtT1zdp7dc`
+/// is a real Stripe test key that merely CONTAINS `test`, not a placeholder, so
 /// a random credential BYPASSES stopword suppression. This wraps the SAME shared
 /// `is_random_token` model the identifier / word-separated gates use (ONE
 /// discriminator, no second copy): a low-entropy dictionary value
@@ -886,11 +886,11 @@ mod weak_anchor_shape_tests {
 
     #[test]
     fn bare_optional_and_lazy_captures_are_broad() {
-        // No quantifier: `([class])` matches exactly once (min 1 ≤ 1) — broad.
+        // No quantifier: `([class])` matches exactly once (min 1 ≤ 1) (broad).
         assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-])"));
-        // Optional: `([class]?)` matches zero-or-one (min 0) — broad.
+        // Optional: `([class]?)` matches zero-or-one (min 0) (broad).
         assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-]?)"));
-        // Lazy quantifiers close the group after a `?`; still min ≤ 1 — broad.
+        // Lazy quantifiers close the group after a `?`; still min ≤ 1 (broad).
         assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-]+?)"));
         assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-]*?)"));
         assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-]{1,}?)"));
@@ -966,7 +966,7 @@ mod weak_anchor_shape_tests {
         use crate::context::CodeContext;
 
         // A real vendor detector (no configured allowlist/stopwords) so the
-        // universal Tier-A exact-placeholder gate is what decides — this is the
+        // universal Tier-A exact-placeholder gate is what decides, this is the
         // `rabbitmq-management-credentials` FP class: `RABBITMQ_PASSWORD=password`
         // captured the bare word, which the entropy path drops but named
         // detectors previously bypassed.

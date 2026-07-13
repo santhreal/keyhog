@@ -7,7 +7,7 @@
 //! `crates/verifier/src/verify/aws.rs::build_sigv4_request` is the production
 //! path that decides whether an AWS credential is `Live` or `Dead`: it signs an
 //! STS `GetCallerIdentity` probe and reads the HTTP status. The entire verdict
-//! rests on the signature being **bit-exact** — AWS replies `403
+//! rests on the signature being **bit-exact**: AWS replies `403
 //! SignatureDoesNotMatch` to a signature that is wrong by a single byte, and
 //! `classify_aws_sts_failure` maps that 403 to `VerificationResult::Dead`. So a
 //! latent defect anywhere in canonical-request assembly (header sort/merge/trim,
@@ -29,17 +29,17 @@
 //! `2015-08-30T12:36:00Z` / `us-east-1`); they differ only by service, host,
 //! query, and signed headers, which is exactly what isolates each moving part:
 //!
-//! * **IAM `GET ListUsers`** — the worked example from the AWS "Signature
+//! * **IAM `GET ListUsers`**: the worked example from the AWS "Signature
 //!   Version 4" documentation. Exercises a multi-pair canonical query
 //!   (`Action`/`Version`), an extra signed header (`content-type`), and the
 //!   three-header lexicographic sort. Published signature:
 //!   `5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7`.
-//! * **`get-vanilla`** — the canonical case from the AWS SigV4 test suite
+//! * **`get-vanilla`**: the canonical case from the AWS SigV4 test suite
 //!   (`service`/`example.amazonaws.com`, no query, no extra headers). Published
 //!   signature: `5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31`.
 //!
 //! Everything is driven through the single `pub` entrypoint
-//! `sign_request_authorization` — these are end-to-end locks, not unit pokes at
+//! `sign_request_authorization`: these are end-to-end locks, not unit pokes at
 //! internals, so they also prove the public surface is the one the production
 //! caller uses.
 
@@ -50,7 +50,7 @@ use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 // Shared reference constants (verbatim from AWS's published examples).
 // ---------------------------------------------------------------------------
 
-/// `hex(SHA256(b""))` — the empty-body payload hash AWS uses in its GET
+/// `hex(SHA256(b""))`: the empty-body payload hash AWS uses in its GET
 /// reference vectors.
 const EMPTY_BODY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 /// AWS documented example access key id.
@@ -100,7 +100,7 @@ fn pair(key: &str, value: &str) -> (String, String) {
 }
 
 // ===========================================================================
-// GROUP A — AWS official known-answer vectors (the headline locks).
+// GROUP A: AWS official known-answer vectors (the headline locks).
 // ===========================================================================
 
 #[test]
@@ -267,7 +267,7 @@ fn two_reference_vectors_share_scope_prefix_and_differ_by_service() {
 }
 
 // ===========================================================================
-// GROUP B — Authorization grammar / structural contract.
+// GROUP B: Authorization grammar / structural contract.
 // ===========================================================================
 
 #[test]
@@ -367,7 +367,7 @@ fn algorithm_token_is_aws4_hmac_sha256() {
 }
 
 // ===========================================================================
-// GROUP C — determinism & purity (no hidden clock / randomness in the signer).
+// GROUP C (determinism & purity (no hidden clock / randomness in the signer)).
 // ===========================================================================
 
 #[test]
@@ -459,7 +459,7 @@ fn changing_only_the_secret_changes_only_the_signature() {
 }
 
 // ===========================================================================
-// GROUP D — session token (ASIA temp creds) folded into the real signature.
+// GROUP D (session token (ASIA temp creds) folded into the real signature).
 // ===========================================================================
 
 #[test]
@@ -486,7 +486,7 @@ fn session_token_appends_security_token_signed_header_sorted_last() {
 #[test]
 fn session_token_is_signed_not_cosmetic() {
     // The same request with vs. without a session token must produce different
-    // signatures — proving the token is folded into the canonical request, not
+    // signatures, proving the token is folded into the canonical request, not
     // merely sent as an unsigned header (the C5 regression's root cause).
     let without = sign_request_authorization(
         "ASIAIOSFODNN7EXAMPLE",
@@ -552,7 +552,7 @@ fn distinct_session_tokens_produce_distinct_signatures() {
 }
 
 // ===========================================================================
-// GROUP E — canonical-query encoding + ordering (exercised end-to-end).
+// GROUP E (canonical-query encoding + ordering (exercised end-to-end)).
 // ===========================================================================
 
 #[test]
@@ -567,7 +567,7 @@ fn query_pair_input_order_does_not_change_signature() {
 #[test]
 fn space_plus_and_bare_query_values_encode_to_distinct_signatures() {
     // A space encodes to %20, a literal '+' to %2B, and neither equals the bare
-    // value — so all three sign differently. Proves percent-encoding happens.
+    // value (so all three sign differently. Proves percent-encoding happens).
     let spaced = vanilla_query_signature(&[pair("k", "a b")]);
     let plussed = vanilla_query_signature(&[pair("k", "a+b")]);
     let bare = vanilla_query_signature(&[pair("k", "ab")]);
@@ -593,7 +593,7 @@ fn adding_a_query_pair_changes_the_signature() {
 }
 
 // ===========================================================================
-// GROUP F — production caller shape (real aws.rs A -> sigv4 B coverage).
+// GROUP F (production caller shape (real aws.rs A -> sigv4 B coverage)).
 // ===========================================================================
 
 #[test]
@@ -657,7 +657,7 @@ fn sts_body_hash_is_load_bearing_in_the_signature() {
 }
 
 // ===========================================================================
-// GROUP G — date routine boundaries reachable via the testing facade.
+// GROUP G (date routine boundaries reachable via the testing facade).
 //           NEW boundaries not covered by regression_sigv4_asia_security_token:
 //           epoch zero, end-of-day, the 400-year leap rule, and the non-leap
 //           century rule (2100). These pin the Howard-Hinnant civil-from-days

@@ -10,7 +10,7 @@
 //! Every expected value is derived from the real source under
 //! `crates/scanner/src` and `detectors/*.toml`:
 //!
-//!   - The checksum DROP policy lives in `engine/process.rs:166` — a `ghp_` /
+//!   - The checksum DROP policy lives in `engine/process.rs:166`: a `ghp_` /
 //!     `npm_` token whose embedded CRC32 does NOT match its body is dropped
 //!     before scoring (`validate_checksum(..) == Invalid → return`). So a
 //!     github-classic / npm recall test MUST mint a token whose trailing
@@ -24,8 +24,8 @@
 //!
 //! The scanner is built exactly like the production adversarial oracle
 //! (`tests/adversarial/oracle_support.rs`): `min_confidence = 0.0`,
-//! `unicode_normalization = true`. The 0.0 floor isolates *recall* — "did the
-//! right detector see this token" — from the separate confidence-floor gate.
+//! `unicode_normalization = true`. The 0.0 floor isolates *recall*. "did the
+//! right detector see this token" (from the separate confidence-floor gate).
 //! It does NOT bypass the checksum DROP (that returns before scoring), so a
 //! checksum-invalid github/npm token still vanishes here, which is what the
 //! negative-twin tests assert.
@@ -80,7 +80,7 @@ fn hits<'a>(matches: &'a [RawMatch], detector_id: &str) -> Vec<&'a RawMatch> {
 
 /// Assert `detector_id` fired AND surfaced a credential that contains
 /// `credential` (substring: a detector may legitimately capture surrounding
-/// structure — same philosophy as the contract runner's containment check).
+/// structure (same philosophy as the contract runner's containment check)).
 fn assert_fires(detector_id: &str, text: &str, credential: &str) {
     let matches = scan(text, &format!("{detector_id}-recall.env"));
     let h = hits(&matches, detector_id);
@@ -275,7 +275,7 @@ fn github_classic_pat_invalid_crc_is_dropped() {
 #[test]
 fn github_oauth_access_token_gho_fires() {
     // gho_ shares the classic 30-entropy + 6-CRC32 body. A valid-checksum token
-    // fires; a fabricated CRC is dropped pre-scoring (the precision gain — the
+    // fires; a fabricated CRC is dropped pre-scoring (the precision gain, the
     // classic validator now covers gho_/ghu_/ghs_/ghr_, not only ghp_). Regex:
     // gho_[A-Za-z0-9]{36}.
     let tok = mint_crc_token("gho_", &"aBcDe12345".repeat(3));
@@ -344,7 +344,7 @@ fn plain_anchored_detector_survives_multibyte_dense_window() {
     // path localises the regex scan to a BYTE window around a literal hit. When
     // that window start landed mid-multibyte-char, the plain extractor passed a
     // non-boundary byte index straight to `Regex::find_at`, panicking the whole
-    // scan — the grouped extractor snapped with `floor_char_boundary`, the plain
+    // scan, the grouped extractor snapped with `floor_char_boundary`, the plain
     // one did not. `github-classic-pat` (`ghp_[A-Za-z0-9]{36}\b`, NO capture
     // group) routes through the PLAIN extractor; a dense run of 3-byte chars
     // before the token forces a non-boundary window start.
@@ -417,7 +417,7 @@ fn google_api_key_aiza_fires() {
 
 #[test]
 fn google_api_key_aizasy_places_variant_fires() {
-    // AIzaSy[A-Za-z0-9_-]{33} (Places variant) — still id google-api-key.
+    // AIzaSy[A-Za-z0-9_-]{33} (Places variant) (still id google-api-key).
     let tok = "AIzaSyD9aBcDeFgHiJkLmNoPqRsTuVwXyZ01234";
     assert_eq!(tok.len(), 39);
     let text = format!("PLACES_API_KEY = \"{tok}\"\n");
@@ -503,7 +503,7 @@ fn sendgrid_api_key_sg_fires() {
 #[test]
 fn twilio_api_key_sk_fires_with_required_secret() {
     // twilio-api-key pattern: SK[a-f0-9]{32}, companion `secret` is required=true,
-    // so the SK SID alone won't surface — plant the secret in-window too.
+    // so the SK SID alone won't surface (plant the secret in-window too).
     let sid = "SK0123456789abcdef0123456789abcdef";
     let secret = "0123456789abcdef0123456789abcdef"; // 32 alnum
     let text = format!("twilio_api_key_sid = {sid}\nTWILIO_API_SECRET = {secret}\n");

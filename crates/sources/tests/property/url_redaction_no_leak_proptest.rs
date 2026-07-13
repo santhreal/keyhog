@@ -1,4 +1,4 @@
-//! Property tier for `redact_url` (reached via the `SourceTestApi` web facade) —
+//! Property tier for `redact_url` (reached via the `SourceTestApi` web facade) 
 //! the ONE credential-masking gate every WebSource / cloud / DNS error message
 //! routes through before it is logged (`url_redaction.rs`; called at each SSRF
 //! refusal site in `web/ssrf.rs`). A leak here is a real secret-disclosure bug:
@@ -12,20 +12,20 @@
 //! sensitive-query masking surfaces on a shape nobody wrote a vector for.
 //!
 //! Invariants proved here:
-//!   * USERINFO — for ANY secret in the `user:secret@` / `secret@` position, the
+//!   * USERINFO, for ANY secret in the `user:secret@` / `secret@` position, the
 //!     whole userinfo collapses to `***@`; the emitted URL is EXACTLY the
 //!     host+path with the userinfo masked, so no byte of the secret survives.
 //!     The generated secret spans the rich authority charset (incl. an embedded
 //!     `@`, the `rfind`-not-`find` boundary case) but excludes `/ ? # &` and
-//!     space, which are the authority/query terminators — so the secret stays in
+//!     space, which are the authority/query terminators, so the secret stays in
 //!     the region the masker owns and the expected output is deterministic.
-//!   * SENSITIVE QUERY — for every key in the module's `SENSITIVE_QUERY_KEYS`
+//!   * SENSITIVE QUERY, for every key in the module's `SENSITIVE_QUERY_KEYS`
 //!     contract, `?key=secret` masks the value to `key=***` while the benign
 //!     siblings (`&page=2`) are preserved verbatim.
-//!   * NO-LEAK (literal) — with a secret drawn from a charset DISJOINT from the
+//!   * NO-LEAK (literal), with a secret drawn from a charset DISJOINT from the
 //!     lowercase+symbol scaffold, `!output.contains(secret)` is a sound, direct
 //!     statement of the security property (no coincidental-substring escape).
-//!   * NO OVER-REDACTION — a URL with only benign query keys and no userinfo is
+//!   * NO OVER-REDACTION, a URL with only benign query keys and no userinfo is
 //!     returned byte-for-byte unchanged; the masker never eats innocent content.
 //!
 //! Feature gate: `redact_url` is exposed on the facade under `feature = "web"`,
@@ -57,7 +57,7 @@ const SENSITIVE_QUERY_KEYS: &[&str] = &[
     "auth",
 ];
 
-/// Query keys that carry NO credential — the masker must leave their values
+/// Query keys that carry NO credential, the masker must leave their values
 /// alone. None of these appear (case-insensitively) in `SENSITIVE_QUERY_KEYS`.
 const BENIGN_QUERY_KEYS: &[&str] = &[
     "page", "sort", "state", "limit", "offset", "format", "sv", "se", "q", "lang",
@@ -76,7 +76,7 @@ fn safe_secret() -> impl Strategy<Value = String> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
-    /// `user:<secret>@host` — the whole userinfo (name AND password, including an
+    /// `user:<secret>@host`: the whole userinfo (name AND password, including an
     /// embedded `@`) collapses to `***@`, emitting exactly the host+path. Nothing
     /// of the secret can survive because the output is fully determined and
     /// contains only the mask.
@@ -87,7 +87,7 @@ proptest! {
         prop_assert_eq!(redacted, "https://***@host.example/path/to/resource");
     }
 
-    /// `<secret>@host` — userinfo with no `:` password separator is masked just
+    /// `<secret>@host`: userinfo with no `:` password separator is masked just
     /// the same (a bare token in the userinfo slot).
     #[test]
     fn userinfo_without_password_is_always_fully_masked(secret in safe_secret()) {
@@ -97,7 +97,7 @@ proptest! {
     }
 
     /// Every sensitive query key masks its value to `key=***`, while the trailing
-    /// benign `&page=2` is preserved — proving the masker is value-scoped, not a
+    /// benign `&page=2` is preserved, proving the masker is value-scoped, not a
     /// blunt whole-query wipe.
     #[test]
     fn every_sensitive_query_key_masks_only_its_value(
@@ -113,7 +113,7 @@ proptest! {
     /// LITERAL no-leak: a secret drawn from an UPPERCASE-only charset (disjoint
     /// from the lowercase+symbol scaffold) placed in BOTH the userinfo and a
     /// sensitive query value must not appear anywhere in the output. Disjointness
-    /// makes `!contains` sound — no coincidental substring can mask a real leak.
+    /// makes `!contains` sound (no coincidental substring can mask a real leak).
     #[test]
     fn secret_bytes_never_survive_userinfo_or_query(secret in "[A-Z]{8,40}") {
         let url = format!("https://user:{secret}@host.example/cb?token={secret}&page=2");

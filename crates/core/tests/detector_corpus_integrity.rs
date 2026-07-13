@@ -1,15 +1,15 @@
 //! Integrity guard for the embedded detector corpus.
 //!
 //! `assemble_detector_load` collects every parsed spec into a `Vec` and sorts by
-//! id — it never checks that ids are UNIQUE or well-formed. With a large corpus
+//! id, it never checks that ids are UNIQUE or well-formed. With a large corpus
 //! authored across many sessions, a copy-pasted `id` would silently double-fire
 //! (or shadow the original in any id-keyed downstream map), and a malformed id
-//! breaks doc/registry cross-references — both invisible at scan time. These
+//! breaks doc/registry cross-references, both invisible at scan time. These
 //! tests lock the sound, engine-independent corpus invariants so a future
 //! malformed or duplicate spec fails CI instead of silently degrading recall.
 //!
 //! The corpus under test is the EMBEDDED one (`load_embedded_detectors_or_fail`)
-//! — exactly the set the shipped binary scans with, not a loose on-disk copy.
+//! (exactly the set the shipped binary scans with, not a loose on-disk copy).
 
 use std::collections::HashSet;
 
@@ -158,7 +158,7 @@ fn no_service_contains_whitespace() {
 #[test]
 fn every_detector_has_at_least_one_pattern() {
     // Phase-2 generic detectors (kind = "phase2-generic") intentionally carry NO
-    // regex pattern — a shapeless secret has no anchor, so they fire in phase 2 on
+    // regex pattern, a shapeless secret has no anchor, so they fire in phase 2 on
     // keywords + entropy_floor. Every OTHER (phase-1 regex) detector must have a
     // pattern or it can never fire.
     let bad: Vec<String> = corpus()

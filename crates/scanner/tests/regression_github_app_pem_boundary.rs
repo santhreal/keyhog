@@ -5,7 +5,7 @@
 //! `-----BEGIN RSA PRIVATE KEY-----` line can't match a tiny non-key. But with
 //! the inter-marker class `[\s\S]` that minimum was UNSOUND: two short adjacent
 //! RSA keys (each body < 200) let the lazy `{200,}?` skip the first (too-short)
-//! `-----END` — `[\s\S]` happily consumes its dashes — and run on to the SECOND
+//! `-----END`: `[\s\S]` happily consumes its dashes, and run on to the SECOND
 //! key's `-----END`, matching ~312 chars and reporting both distinct keys as one
 //! credential. In `resolve_matches` that merged span then outranks the correct
 //! single-key `ssh-private-key` on the first key's line (longer id + longer
@@ -17,7 +17,7 @@
 //! first `-----END` and can never cross a block boundary. This suite pins both
 //! halves of the contract: (1) two short adjacent blocks never merge and never
 //! trip the detector at all, and (2) a genuine long key (≥200 base64 body) still
-//! matches — bounded to its own single block.
+//! matches (bounded to its own single block).
 
 mod support;
 use support::paths::detector_dir;
@@ -30,7 +30,7 @@ use keyhog_scanner::CompiledScanner;
 /// block built from it clears the `{200,}` floor on its own.
 const B64_BODY: &str = "MIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5sT6yU0pN2aG4eH7iO9kB1lM3rV5wX8zC0dQ2fS4gJ6kP8mR0tU2wY4aB6cD8eF0gH2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0uV2wX4yZ6aB8cD0eF2gH4iJ6kL8mN0oP2qR4sT6uV8wX0yZ2aB4cD6eF8gH0iJ2kL4";
 
-/// A PEM block whose body is far UNDER 200 base64 chars — on its own it can
+/// A PEM block whose body is far UNDER 200 base64 chars, on its own it can
 /// never satisfy the GitHub App detector's `{200,}` floor.
 fn short_block(label: &str, marker: &str) -> String {
     format!("-----BEGIN {label}-----\nMIIBVAIBADANBgkqhkiG9w0BAQEF{marker}Po0kjAB\n-----END {label}-----")
@@ -248,16 +248,16 @@ fn long_block_between_two_short_blocks_matches_only_the_long_one() {
     );
 }
 
-/// DR-329 CONSOLIDATION GUARD — the PEM armor marker `-----BEGIN` is detection
+/// DR-329 CONSOLIDATION GUARD, the PEM armor marker `-----BEGIN` is detection
 /// signal (the load-bearing prefix of the private-key detector patterns). Scanner
-/// logic also keys off it in two places — the suppression carve-out
+/// logic also keys off it in two places, the suppression carve-out
 /// (`suppression/decision.rs`, so a PEM body is not masking-pattern suppressed)
 /// and the entropy plausibility gate (`entropy/plausibility.rs`). Those were two
 /// bare `"-----BEGIN"` literals free to drift; they now share the single owner
 /// `credential_shapes::PEM_BEGIN_MARKER` via `is_pem_block`. This binds that
 /// const to its authoritative detector so it can never diverge from the pattern
-/// that actually surfaces a PEM key. (Lives HERE — a regression file
-/// `#[path]`-included in `all_tests`, which CI runs via `--test all_tests` — not
+/// that actually surfaces a PEM key. (Lives HERE, a regression file
+/// `#[path]`-included in `all_tests`, which CI runs via `--test all_tests`: not
 /// in `pem_private_key_recall_64.rs`, which is a CI-orphan; see DR-334.)
 #[test]
 fn pem_begin_marker_is_backed_by_the_private_key_detector() {
@@ -268,7 +268,7 @@ fn pem_begin_marker_is_backed_by_the_private_key_detector() {
     assert!(
         toml.contains(marker),
         "PEM marker {marker:?} (credential_shapes::PEM_BEGIN_MARKER) is absent from its \
-         authoritative private-key.toml pattern — the single-owner const drifted from the \
+         authoritative private-key.toml pattern, the single-owner const drifted from the \
          detector that surfaces a PEM key"
     );
 }

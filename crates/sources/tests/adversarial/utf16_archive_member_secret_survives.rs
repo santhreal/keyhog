@@ -15,7 +15,7 @@ use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use std::io::Write;
 
-/// Encode `s` as UTF-16LE bytes with a leading BOM (`FF FE`) — the exact shape a
+/// Encode `s` as UTF-16LE bytes with a leading BOM (`FF FE`), the exact shape a
 /// Windows/PowerShell/.NET tool writes and the old `String::from_utf8` decode
 /// could not handle.
 fn utf16le_with_bom(s: &str) -> Vec<u8> {
@@ -26,7 +26,7 @@ fn utf16le_with_bom(s: &str) -> Vec<u8> {
     out
 }
 
-/// The NUL-interleaved form a raw-byte decode would have left the marker in —
+/// The NUL-interleaved form a raw-byte decode would have left the marker in 
 /// asserting its ABSENCE proves the canonical decoder ran.
 fn nul_interleaved(s: &str) -> String {
     s.chars().flat_map(|c| [c, '\u{0}']).collect()

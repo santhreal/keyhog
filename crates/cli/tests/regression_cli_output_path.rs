@@ -1,8 +1,8 @@
-//! Regression: `keyhog scan --output <path>` — path-handling and per-format
+//! Regression: `keyhog scan --output <path>`: path-handling and per-format
 //! contract that the sibling `regression_cli_output_file.rs` does NOT cover.
 //!
 //! Everything here drives the REAL shipped binary (`--daemon=off`, `--backend
-//! cpu`, `KEYHOG_NO_GPU=1` so NO accelerator is assumed — host-independent) and
+//! cpu`, `KEYHOG_NO_GPU=1` so NO accelerator is assumed, host-independent) and
 //! every assertion pins a CONCRETE value (exact bytes / JSON value / line count
 //! / substring / bool / exit code). No bare `!is_empty` / `is_ok`.
 //!
@@ -24,7 +24,7 @@
 //!   * a CLEAN scan atomically REPLACES a LARGER stale file with exactly `[]`.
 //!   * the written path is a REGULAR FILE (persist target, not a symlink/tmp).
 //!   * a SUCCESSFUL atomic write leaves NO stray `NamedTempFile` sibling in the
-//!     parent directory — the only entry is the requested file.
+//!     parent directory (the only entry is the requested file).
 //!   * an INVALID `--format` value is rejected by the arg parser (exit 2) and
 //!     writes NO output file.
 //!   * `--stream` puts the redacted `[stream]` preview on stderr while the JSON
@@ -49,7 +49,7 @@ const PLANTED_2: &str = "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";
 /// The detector id both planted secrets must carry.
 const DETECTOR_ID: &str = "github-classic-pat";
 /// The human `text` report names the detector by its TOML display `name`, not the
-/// machine id — the JSON/SARIF formats carry the id (see the json/sarif tests).
+/// machine id (the JSON/SARIF formats carry the id (see the json/sarif tests)).
 const DETECTOR_NAME: &str = "GitHub Classic PAT";
 
 fn binary() -> PathBuf {
@@ -123,7 +123,7 @@ fn run(target: &Path, format: &str, out: Option<&Path>) -> (Option<i32>, String,
 // ---------------------------------------------------------------------------
 
 /// A RELATIVE `--output report.json` (no directory component) writes into the
-/// process's current working directory — the `.`-parent branch of
+/// process's current working directory, the `.`-parent branch of
 /// `atomic_file::write_with_file`.
 #[test]
 fn relative_output_path_lands_in_cwd() {
@@ -337,7 +337,7 @@ fn text_output_leaves_stdout_empty() {
 // ---------------------------------------------------------------------------
 
 /// A CLEAN scan atomically replaces a LARGER pre-existing file with exactly the
-/// empty-array bytes `[]` — no trailing remnants of the longer stale content.
+/// empty-array bytes `[]`: no trailing remnants of the longer stale content.
 #[test]
 fn clean_scan_replaces_larger_stale_file_with_empty_array() {
     let (_dir, target) = clean_fixture();
@@ -418,7 +418,7 @@ fn successful_write_leaves_no_temp_sibling() {
 // ---------------------------------------------------------------------------
 
 /// An INVALID `--format` value is rejected by the argument parser (exit 2) and
-/// NO output file is created — the parse error precedes any scan or write.
+/// NO output file is created (the parse error precedes any scan or write).
 #[test]
 fn invalid_format_value_writes_no_output_file() {
     let (_dir, target) = leak_fixture();

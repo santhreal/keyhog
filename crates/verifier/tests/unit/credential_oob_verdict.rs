@@ -1,7 +1,7 @@
 //! Re-homed from the inline `oob_verdict_tests` in
 //! `crates/verifier/src/verify/credential.rs` (the `no_inline_tests_in_verifier_src`
 //! gate forbids inline `#[cfg(test)]`). Pins the OOB-combined-verdict policy
-//! matrix — how `OobPolicy` × http-live × observed collapse to a final
+//! matrix, how `OobPolicy` × http-live × observed collapse to a final
 //! `VerificationResult` (incl. the OobAndHttp+!http_live short-circuit that
 //! justifies skipping the OOB wait). Exercised through the `testing` facade so
 //! `oob_combined_verdict` stays `pub(crate)`.

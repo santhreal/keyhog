@@ -2,7 +2,7 @@
 //! containers whose text lives in member XML. A credential pasted into a
 //! spreadsheet or doc is a real, common leak that keyhog previously dropped
 //! SILENTLY at the walker (these extensions were in SKIP_EXTENSIONS, so the file
-//! was never read and `SKIPPED_BINARY` was never even incremented — a Law-10
+//! was never read and `SKIPPED_BINARY` was never even incremented, a Law-10
 //! false-clean AND a recall hole). They are now routed through the existing
 //! openpack/ZIP unpacker (`is_openpack_archive_ext`), so the member XML is
 //! scanned like any other archived file.
@@ -18,7 +18,7 @@ use std::fs::File;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
-/// A fake-but-checksum-shaped AWS access key id — distinctive bytes to assert on.
+/// A fake-but-checksum-shaped AWS access key id (distinctive bytes to assert on).
 const SECRET: &str = "AKIAQYLPMN5HFIQR7XYA";
 
 fn write_zip(path: &std::path::Path, members: &[(&str, String)]) {

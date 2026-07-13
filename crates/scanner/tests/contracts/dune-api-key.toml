@@ -15,12 +15,12 @@ reason = "Dune API key in header format with x-dune-api-key prefix."
 
 [[negative]]
 text = "dune_api_key=short"
-reason = "Body too short — only 5 hex chars."
+reason = "Body too short (only 5 hex chars)."
 
 [[evasion]]
 text = "dune_api_key=466426fae9480469a7737ec218a5dca3"
 credential = "466426fae9480469a7737ec218a5dca3"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

@@ -5,15 +5,15 @@
 //! PREFIXLESS patterns.
 //!
 //! The confirmed `ac_map` partitions into three buckets:
-//!   - `prefix_anchored` — a required leading literal; ALREADY localized today
+//!   - `prefix_anchored`: a required leading literal; ALREADY localized today
 //!     by `ConfirmedAnchorIndex`.
-//!   - `prefixless_internal_literal` — no leading literal but a required
+//!   - `prefixless_internal_literal`: no leading literal but a required
 //!     internal literal run; the 4786 internal-literal-AC extension COULD
-//!     localize these. (HS `SOM_LEFTMOST` is NOT viable for them — it errors
+//!     localize these. (HS `SOM_LEFTMOST` is NOT viable for them, it errors
 //!     "Pattern too large" on exactly these complex regexes; see
 //!     `simd/backend.rs`, so the feasible lever is an internal-literal AC, not
 //!     HS-SOM.)
-//!   - `whole_chunk_residue` — no required literal at all; irreducibly
+//!   - `whole_chunk_residue`: no required literal at all; irreducibly
 //!     whole-chunk, loudly counted.
 //!
 //! This is a standalone binary (NOT the `unit/root_facade/confirmed_pattern_profile.rs`
@@ -27,7 +27,7 @@ fn som_window_localization_ceiling_over_embedded_corpus() {
         keyhog_scanner::testing::confirmed_pattern_localization_distribution();
     let total = prefix_anchored + prefixless_internal_literal + whole_chunk_residue;
     eprintln!(
-        "SPEED/som-window 4786 ceiling — confirmed ac_map localization: \
+        "SPEED/som-window 4786 ceiling, confirmed ac_map localization: \
          prefix_anchored={prefix_anchored} \
          prefixless_internal_literal={prefixless_internal_literal} \
          whole_chunk_residue={whole_chunk_residue} total={total}"

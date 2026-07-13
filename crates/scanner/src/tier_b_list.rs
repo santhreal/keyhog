@@ -1,6 +1,6 @@
 //! Shared parse + validate primitive for Tier-B single-column token lists.
 //!
-//! Several Tier-B data files are just an ordered list of tokens — the phase-2
+//! Several Tier-B data files are just an ordered list of tokens, the phase-2
 //! assignment keywords ([`crate::assignment_keywords`]) and the multiline secret
 //! prefixes ([`crate::secret_prefixes`]) among them. They share the EXACT same
 //! validation: trim each entry, reject empties, restrict the charset to ASCII
@@ -10,7 +10,7 @@
 //! (the consumer is case-sensitive), and (2) which separators are allowed.
 //!
 //! This module owns that one validator so each per-file loader stays a thin wrapper
-//! over a single source of truth — no drift across copies (NO DUPLICATION), and the
+//! over a single source of truth, no drift across copies (NO DUPLICATION), and the
 //! error wording, dedup semantics, and charset rules can only ever change in one
 //! place.
 
@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn dedup_is_byte_exact_not_case_folded() {
-        // With case preserved, `AB` and `ab` are distinct tokens and both survive —
+        // With case preserved, `AB` and `ab` are distinct tokens and both survive 
         // dedup is exact-string, never case-folded.
         let out = parse_token_list(owned(&["AB", "ab"]), &preserve("prefix")).unwrap();
         assert_eq!(out, vec!["AB", "ab"]);

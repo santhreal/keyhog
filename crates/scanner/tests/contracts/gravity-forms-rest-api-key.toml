@@ -44,7 +44,7 @@ reason = "Truncated credential value (30 hex characters)."
 [[evasion]]
 text = "export GRAVITY_FORMS api_key \"963950e3ed2e3dc49d5740982bac6a94\""
 credential = "963950e3ed2e3dc49d5740982bac6a94"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

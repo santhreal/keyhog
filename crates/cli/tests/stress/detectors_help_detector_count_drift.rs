@@ -1,5 +1,5 @@
 //! KH-GAP-094 (stress): `keyhog detectors --help` and the `detectors` banner
-//! must both report the SAME corpus size the binary actually loads — derived at
+//! must both report the SAME corpus size the binary actually loads, derived at
 //! runtime, never hardcoded. The count is rendered from
 //! `keyhog_core::embedded_detector_count()`, so the expected value here comes
 //! from the binary's own `detectors --format json` output rather than a literal that

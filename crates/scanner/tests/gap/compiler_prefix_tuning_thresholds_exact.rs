@@ -2,7 +2,7 @@
 //! have exact, pinned values.
 //!
 //! These four constants jointly bound how the compiler turns detector regexes
-//! into the Aho-Corasick prefilter set — the recall/precision tradeoff of the
+//! into the Aho-Corasick prefilter set, the recall/precision tradeoff of the
 //! whole fast path:
 //!   - MIN_HOMOGLYPH_PREFIX_LEN (3): shortest literal prefix worth a homoglyph
 //!     phase-2 variant;
@@ -14,7 +14,7 @@
 //!     into AC prefixes before it is treated as a body matcher.
 //!
 //! Before this, the homoglyph threshold was a bare `3` literal (unlike its three
-//! named siblings) and NONE of the four had its exact value pinned — a silent
+//! named siblings) and NONE of the four had its exact value pinned, a silent
 //! drift of any of them would shift prefilter recall with no failing test. Also
 //! pin the one real cross-threshold invariant: the homoglyph prefix floor is
 //! strictly below the standalone-inner-literal floor (a homoglyph variant still

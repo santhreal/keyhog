@@ -5,7 +5,7 @@
 //!
 //!   1. A multi-line PEM private-key block is carried through byte-identically
 //!      (exact boundaries preserved) so the private-key detector sees the whole
-//!      `-----BEGIN…-----END` envelope — the preprocessor must NOT rewrite or
+//!      `-----BEGIN…-----END` envelope, the preprocessor must NOT rewrite or
 //!      shred it. Verified through both the joined-text seam and the offset→line
 //!      mapping.
 //!   2. A secret embedded in a multi-line JSON body survives preprocessing
@@ -45,7 +45,7 @@ use keyhog_scanner::testing::multiline::{
 const SYNTHETIC_BASE_LINE: usize = 1_000_000_000;
 
 /// Byte offsets of each `\n`-joined line, matching `crate::compute_line_offsets`
-/// over the original text `lines.join("\n")` — feeds the structural seam so its
+/// over the original text `lines.join("\n")`: feeds the structural seam so its
 /// `original_start_offset` bookkeeping resolves without a telemetry gap record.
 fn line_offsets(lines: &[&str]) -> Vec<usize> {
     let mut offsets = Vec::with_capacity(lines.len());
@@ -230,7 +230,7 @@ fn structural_cluster_reassembles_related_credential_fragments() {
 }
 
 /// The negative twin: identically-shaped fragments whose names are NOT
-/// credential-like (`greeting_part*`) are dropped — no cluster, no candidate.
+/// credential-like (`greeting_part*`) are dropped (no cluster, no candidate).
 #[test]
 fn structural_cluster_skips_non_credential_names() {
     let lines = [
@@ -276,7 +276,7 @@ fn structural_variable_reference_resolves_prefix_and_suffix() {
 }
 
 /// Negative twin: when the referenced identifiers were never assigned a
-/// literal, the var-reference resolver cannot glue anything — no candidate.
+/// literal, the var-reference resolver cannot glue anything (no candidate).
 #[test]
 fn structural_variable_reference_unresolved_yields_nothing() {
     // `count` / `amount` are never assigned string literals above, so the
@@ -293,7 +293,7 @@ fn structural_variable_reference_unresolved_yields_nothing() {
 // ── Template-literal interpolation resolver: positive + negatives ─────────────
 
 /// Adjacent `${a}${b}` interpolations resolve each identifier to its bound
-/// literal and concatenate — the whole `xoxb-…` token.
+/// literal and concatenate (the whole `xoxb-…` token).
 #[test]
 fn template_literal_adjacent_interpolation_reassembles() {
     let resolved = resolve_template_reference_for_test(

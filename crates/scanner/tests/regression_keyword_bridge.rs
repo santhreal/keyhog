@@ -11,7 +11,7 @@
 //! / `Severity::Medium`, and applies a value-shape + entropy gauntlet before
 //! emitting. Because the trigger set is a fixed credential vocabulary (not "any
 //! assignment"), the bridge reaches only a small slice of a source tree's
-//! assignments — a random `hostname=<token>` or a bare high-entropy blob never
+//! assignments, a random `hostname=<token>` or a bare high-entropy blob never
 //! reaches it. This file pins:
 //!   * the exact stamped identity of a bridged `password=<value>` (positive),
 //!   * that the whole credential vocabulary + all three separator spellings
@@ -19,7 +19,7 @@
 //!   * the low-entropy floor and 8-byte length floor reject trivial values
 //!     (negative / boundary),
 //!   * the SAME value surfaces under a credential key yet NOT under a
-//!     non-credential key — the load-bearing "narrow surface" contract, and
+//!     non-credential key, the load-bearing "narrow surface" contract, and
 //!   * the bridge is produced on the host-independent scalar `CpuFallback`
 //!     path (it is a scalar keyword+regex path, never accelerator-gated).
 //!
@@ -28,8 +28,8 @@
 //! bridge is a scalar detector and its identity is the same on every host.
 //!
 //! Entropy math is taken from the crate's own
-//! `testing::entropy_fast::shannon_entropy_simd` — the SAME function the engine
-//! feeds the floor gate — so a "reason is entropy, not shape" claim is proven
+//! `testing::entropy_fast::shannon_entropy_simd`: the SAME function the engine
+//! feeds the floor gate, so a "reason is entropy, not shape" claim is proven
 //! against the number the gate actually saw (no epsilon slop between the test's
 //! math and the engine's).
 
@@ -46,13 +46,13 @@ use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 /// generic-password / generic-secret keyword sets: password/passwd/pwd/secret/
 /// token/api_key/client_secret/…), but every bridged emit is stamped with the
 /// single stable `generic-secret` id under the DISTINCT name
-/// `Generic Secret (Key=Value)` — distinguishing a keyword-bridge finding from a
+/// `Generic Secret (Key=Value)`: distinguishing a keyword-bridge finding from a
 /// native `generic-secret.toml` match. (The BRIDGE stamp was migrated from the
 /// old `generic-password` id to `generic-secret`; `generic-password` is NOT
-/// gone — it remains a LIVE native detector (`detectors/generic-password.toml`,
+/// gone, it remains a LIVE native detector (`detectors/generic-password.toml`,
 /// id `generic-password`) whose entropy floor comes from the active detector
 /// spec's `entropy_floor`. So a `password=`/`client_password=` line is claimed
-/// by that dedicated native detector, NOT this bridge — see DR-336: the intended
+/// by that dedicated native detector, NOT this bridge, see DR-336: the intended
 /// owner of `password=` (native detector vs bridge) is a detection-design call.)
 const BRIDGE_DETECTOR_ID: &str = "generic-secret";
 const BRIDGE_DETECTOR_NAME: &str = "Generic Secret (Key=Value)";
@@ -73,7 +73,7 @@ const HIGH_ENTROPY_VALUE: &str = "ufnlbbavawsdeecn";
 /// An 8-byte value with Shannon entropy exactly 2.5 bits/byte: inside the
 /// `[1.5, 2.8)` band, i.e. above the keyword floor but below the strict generic
 /// floor. Surfaces with the shipped default (keyword floor ON) yet is far too
-/// low to trip any isolated bare-entropy path — the ideal probe for the
+/// low to trip any isolated bare-entropy path, the ideal probe for the
 /// "non-credential key does not bridge" negative twin.
 const MID_ENTROPY_VALUE: &str = "gjbubxsu";
 
@@ -138,7 +138,7 @@ fn bridged(matches: &[RawMatch], credential: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Fixture entropy — pin the numbers the floor gate compares against.
+// Fixture entropy (pin the numbers the floor gate compares against).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -198,7 +198,7 @@ fn bridged_match_stamps_the_shannon_entropy_the_floor_gate_saw() {
     let recomputed = shannon_entropy_simd(HIGH_ENTROPY_VALUE.as_bytes());
     assert!(
         (reported - recomputed).abs() < 1e-9,
-        "stamped entropy ({reported}) must equal shannon_entropy_simd ({recomputed}) — one source of truth"
+        "stamped entropy ({reported}) must equal shannon_entropy_simd ({recomputed}), one source of truth"
     );
     assert!(
         (reported - 3.5).abs() < 1e-9,
@@ -253,7 +253,7 @@ fn every_bare_credential_keyword_bridges_to_generic_password() {
 #[test]
 fn all_three_separator_spellings_of_a_compound_keyword_bridge() {
     let s = default_scanner();
-    // underscore / hyphen / dot — the three real-world spellings the Tier-B
+    // underscore / hyphen / dot, the three real-world spellings the Tier-B
     // vocabulary ships for every compound key.
     for kw in ["private_key", "private-key", "private.key"] {
         let body = format!("{kw}={HIGH_ENTROPY_VALUE}\n");
@@ -284,7 +284,7 @@ fn uppercase_keyword_bridges_case_insensitively() {
 
 #[test]
 fn constant_repeated_char_value_is_rejected_by_the_low_entropy_floor() {
-    // Entropy 0.0: a single repeated symbol. Far below the 1.5 keyword floor —
+    // Entropy 0.0: a single repeated symbol. Far below the 1.5 keyword floor 
     // dropped even though `password=` is a valid credential anchor.
     let value = "aaaaaaaa";
     assert_eq!(
@@ -311,7 +311,7 @@ fn one_bit_alternating_value_is_below_the_keyword_floor_and_rejected() {
     );
     assert!(
         h < KEYWORD_SECRET_FLOOR,
-        "1.0 is below the 1.5 keyword floor — the reason for rejection is entropy"
+        "1.0 is below the 1.5 keyword floor, the reason for rejection is entropy"
     );
     let s = default_scanner();
     let matches = scan(&s, "password=abababab\n");
@@ -324,7 +324,7 @@ fn one_bit_alternating_value_is_below_the_keyword_floor_and_rejected() {
 // ---------------------------------------------------------------------------
 // Boundary: the 8-byte length floor. Below 8 the value is rejected as
 // `ValueTooShort` BEFORE any identifier gate, even when its entropy clears the
-// keyword floor — so the rejection reason is length, not entropy.
+// keyword floor (so the rejection reason is length, not entropy).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -351,7 +351,7 @@ fn seven_byte_value_is_rejected_by_the_length_floor_not_entropy() {
 #[test]
 fn eight_byte_value_at_the_length_floor_bridges() {
     // Exactly 8 bytes (`gjbubxsu`), entropy 2.5 clears the keyword floor: the
-    // twin of the 7-byte rejection — proving 8 is the inclusive lower bound.
+    // twin of the 7-byte rejection (proving 8 is the inclusive lower bound).
     assert_eq!(MID_ENTROPY_VALUE.len(), 8);
     let s = default_scanner();
     let matches = scan(&s, "password=gjbubxsu\n");
@@ -381,7 +381,7 @@ fn detector_owned_max_len_accepts_boundary_and_rejects_whole_longer_value() {
 // ---------------------------------------------------------------------------
 // Narrow surface: the bridge fires ONLY on credential-keyword lines. The SAME
 // value that bridges under a credential key must NOT surface under an ordinary
-// non-credential assignment — the load-bearing "~10% reach" contract.
+// non-credential assignment (the load-bearing "~10% reach" contract).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -394,7 +394,7 @@ fn same_value_bridges_under_password_but_not_under_hostname() {
     let host_matches = scan(&s, "hostname=gjbubxsu\n");
     assert!(
         find(&host_matches, MID_ENTROPY_VALUE).is_none(),
-        "the IDENTICAL value under a non-credential key must NOT surface — the bridge is credential-keyword-gated; matches: {host_matches:#?}"
+        "the IDENTICAL value under a non-credential key must NOT surface, the bridge is credential-keyword-gated; matches: {host_matches:#?}"
     );
 }
 

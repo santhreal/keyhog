@@ -1,11 +1,11 @@
 //! Lane-10 (dogfood/robustness) regression: `reap_stale_binaries` must clear
 //! ALL of the temp artifacts a crashed `update`/`repair` can leave beside the
-//! binary — not just the rename-away stash.
+//! binary (not just the rename-away stash).
 //!
 //! The leak this pins: `install_with_rollback` copies the working binary to a
 //! `.<name>.keyhog-bak-<PID>` backup before swapping. The success/rollback
 //! paths delete it, but a process KILLED (SIGKILL, OOM, power loss) between the
-//! copy and its removal orphans that backup forever — one stale file per
+//! copy and its removal orphans that backup forever, one stale file per
 //! crashed update accumulating in the install dir. `install_binary` likewise
 //! stages to a `.<name>-update-<PID>.tmp` file that a hard kill orphans. Both
 //! are now reaped on the next update/repair, while UNRELATED files beside the

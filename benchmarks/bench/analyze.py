@@ -42,7 +42,7 @@ def analyze(scanner_name: str, corpus_name: str, *,
     corpus = resolve_corpus_with_root(corpus_name, corpus_root)
     records = corpus.records()
     if not records:
-        raise SystemExit(f"corpus {corpus_name!r} is unlabeled — nothing to analyze")
+        raise SystemExit(f"corpus {corpus_name!r} is unlabeled, nothing to analyze")
     scanner = resolve_scanner(scanner_name, binary=scanner_binary)
     if not scanner.available():
         raise SystemExit(f"{scanner_name} binary not found: {scanner.binary}")
@@ -50,7 +50,7 @@ def analyze(scanner_name: str, corpus_name: str, *,
 
     by_key, aliases = _build_file_index(records, corpus.file_root)
     basename_index = build_basename_index(aliases)
-    # The recall hit-set is score's own attribution — reuse it verbatim so an
+    # The recall hit-set is score's own attribution, reuse it verbatim so an
     # analyze and a score of the same run can never disagree (they share one
     # overlap/index rule). Only the FP *mining* below is analyze-specific.
     hit_ids = found_record_ids(records, findings, corpus.file_root)

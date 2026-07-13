@@ -31,7 +31,7 @@ fn from_literal_prefixes_covers_all_bigrams_plus_extension() {
     assert!(bloom.maybe_overlaps(b"xxx_gh_xxx"));
     // Must hit on "p_" bigram too.
     assert!(bloom.maybe_overlaps(b"zzz_p_zzz"));
-    // Extension: "_" followed by any byte — e.g. "_A".
+    // Extension: "_" followed by any byte (e.g. "_A").
     assert!(bloom.maybe_overlaps(b"zzz_Azzz"));
 }
 
@@ -63,7 +63,7 @@ fn no_false_negatives_for_inserted_patterns() {
 #[test]
 fn chunk_shorter_than_two_bytes_always_passes() {
     let bloom = BigramBloom::from_literal_prefixes(&["test".to_string()]);
-    // Chunks with < 2 bytes can't form a bigram — should return true
+    // Chunks with < 2 bytes can't form a bigram, should return true
     // (conservative: can't prove no overlap).
     assert!(bloom.maybe_overlaps(b"x"));
     assert!(bloom.maybe_overlaps(b""));
@@ -129,7 +129,7 @@ fn no_hit_on_unrelated_chunk() {
     ]);
     // A chunk of all-zeros has only bigram (0x00, 0x00). Unless FNV
     // collides, the bloom should not match. (We accept occasional
-    // false positives — the assertion is that zero-valued data is
+    // false positives, the assertion is that zero-valued data is
     // unlikely to match prefix bigrams.)
     let zeros = vec![0u8; 1024];
     // We can't assert false because of FP, but we CAN assert the

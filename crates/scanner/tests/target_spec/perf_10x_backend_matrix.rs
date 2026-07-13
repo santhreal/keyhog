@@ -7,19 +7,19 @@
 //!      backend, the full scan on that backend must be at least 10x faster than
 //!      the SimdCpu CPU baseline. Today phase-2 dominates and is backend-
 //!      independent (proven by `backend_crossover_sweep` / `phase2_breakdown`),
-//!      so EVERY backend is ≈ the baseline, none is 10x — every cell fails. The
+//!      so EVERY backend is ≈ the baseline, none is 10x, every cell fails. The
 //!      matrix makes the "GPU is not faster because phase-2 is CPU" fact one red
 //!      assertion per (backend, size) cell, so when batched-GPU phase-2 lands,
 //!      exactly the GPU cells turn green and the SimdCpu/CpuFallback cells stay
-//!      red (they have no batched verify) — a precise progress signal.
+//!      red (they have no batched verify) (a precise progress signal).
 //!
 //!   B. **Phase-2 dominance.** Asserts phase-2 is < 5% of full-scan wall time at
-//!      each size — the INVERSE of today's reality (phase-2 is the ~99%). This
+//!      each size, the INVERSE of today's reality (phase-2 is the ~99%). This
 //!      is the load-bearing premise of the whole 10x program ("the 10x lives in
 //!      phase-2"): it must stay RED until phase-2 is fast, at which point phase-1
 //!      becomes the floor and dominance flips. We bound phase-1 by a near-free
 //!      no-candidate scan of the SAME bytes and treat the remainder of the
-//!      candidate-dense scan as phase-2 — a sound split because phase-1 cost is
+//!      candidate-dense scan as phase-2, a sound split because phase-1 cost is
 //!      candidate-independent (it touches every byte either way).
 //!
 //! The named matrix/dominance cells assert REAL measured ratios (Law 6), never
@@ -65,7 +65,7 @@ fn corpus(target_bytes: usize, credential_dense: bool) -> String {
     let mut i = 0usize;
     while out.len() < target_bytes {
         if credential_dense {
-            // Authentic anchored shape — phase-1 surfaces a candidate per line.
+            // Authentic anchored shape (phase-1 surfaces a candidate per line).
             let _ = i;
             out.push_str("k = \"github_pat_");
             out.push_str(&alnumn(&mut next, 22));
@@ -121,14 +121,14 @@ const SPEEDUP_TARGET: f64 = 10.0;
 
 /// Timed scans per measurement after one warm-up. Phase-2 dominates and is
 /// backend-independent today, so every cell misses 10x by ~an order of
-/// magnitude — one timed scan is a sound RED signal and keeps this 12-cell ×
-/// multi-MiB matrix (which RUNS — never `#[ignore]`) within budget.
+/// magnitude, one timed scan is a sound RED signal and keeps this 12-cell ×
+/// multi-MiB matrix (which RUNS (never `#[ignore]`) within budget).
 const MEASURE_REPS: usize = 1;
 
 /// Every backend that the live scan dispatcher can route a workload to. The
 /// matrix asserts each must reach 10x once batched phase-2 exists; the
 /// CPU-only backends are included deliberately so the matrix records that they
-/// STILL won't be 10x (no batched verify) — making GPU-vs-CPU progress legible.
+/// STILL won't be 10x (no batched verify) (making GPU-vs-CPU progress legible).
 const ROUTABLE_BACKENDS: &[ScanBackend] = &[ScanBackend::Gpu, ScanBackend::CpuFallback];
 
 /// One (backend, size) cell of the 10x cross-matrix.
@@ -279,7 +279,7 @@ fn assert_phase2_dominance_at(mib: usize) {
         frac < PHASE2_MAX_FRACTION,
         "PHASE-2 DOMINANCE [{mib} MiB]: phase-2 is {:.1}% of full-scan wall time but the \
          post-batched-GPU target is < {:.0}%. Phase-2 (per-candidate CPU verify) is the \
-         bottleneck — this is the load-bearing premise of the 10x program. RED until phase-2 \
+         bottleneck: this is the load-bearing premise of the 10x program. RED until phase-2 \
          is batched onto the GPU and phase-1 becomes the floor.",
         frac * 100.0,
         PHASE2_MAX_FRACTION * 100.0

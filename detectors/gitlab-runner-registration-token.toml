@@ -2,7 +2,7 @@
 # Format: fixed `GR1348941` prefix (GitLab runner-registration-token, "RRT")
 #   followed by a base58-ish body. The prefix is unique and self-anchoring, so
 #   no keyword context is needed (like `gho_`/`glpat-`).
-# Verify: none (self-hosted/gitlab.com instance varies — never send to a fake verifier).
+# Verify: none (self-hosted/gitlab.com instance varies (never send to a fake verifier)).
 # Prefix: GR1348941
 
 [detector]

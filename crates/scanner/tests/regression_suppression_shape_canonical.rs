@@ -129,8 +129,8 @@ fn redacted_marker_inside_ghp_token_suppresses_as_doc_marker_substring() {
 }
 
 /// The `notareal` marker (no separators) is a doc-marker substring; `secret` in
-/// the same value is deliberately NOT a placeholder word, so the substring arm —
-/// not the placeholder-word arm — is the one that fires.
+/// the same value is deliberately NOT a placeholder word, so the substring arm 
+/// not the placeholder-word arm (is the one that fires).
 #[test]
 fn notareal_marker_suppresses_as_doc_marker_substring() {
     assert_suppressed_reason("token_notareal_secret_abcdef", "doc_marker_substring");
@@ -141,7 +141,7 @@ fn notareal_marker_suppresses_as_doc_marker_substring() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Same 20-char `AKIA…` shape as the documentation key but WITHOUT the `EXAMPLE`
-/// suffix — a real access key body, kept via the known-prefix Allow.
+/// suffix (a real access key body, kept via the known-prefix Allow).
 #[test]
 fn real_aws_access_key_without_example_is_kept() {
     assert_kept("AKIAJ7QK2MZ4XR8WNP6D");
@@ -161,7 +161,7 @@ fn real_ghp_token_without_marker_is_kept() {
 /// `example.com` is an RFC 2606 reserved domain: a real `ghp_` secret sitting
 /// beside such a mention must NOT be over-suppressed. The `.com` guard skips BOTH
 /// the word-bounded example arm and the doc-marker substring arm, so the token
-/// reaches the known-prefix Allow and survives — even though a bare `example`
+/// reaches the known-prefix Allow and survives, even though a bare `example`
 /// word boundary is present.
 #[test]
 fn reserved_example_com_domain_spares_real_ghp_secret() {

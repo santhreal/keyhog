@@ -4,13 +4,13 @@
 //! an adversarial case that FAILS pre-fix plus a positive twin so the fix cannot
 //! be "passed" by over-blocking:
 //!
-//!  1. `bogon.rs` — NAT64 decomposition missed the RFC 8215 Local-Use prefix
+//!  1. `bogon.rs`: NAT64 decomposition missed the RFC 8215 Local-Use prefix
 //!     `64:ff9b:1::/48`; an internal IPv4 embedded in it slipped the SSRF guard.
-//!  2. `oob/client.rs` `collector_http_client` — the proxy-configured client
+//!  2. `oob/client.rs` `collector_http_client`: the proxy-configured client
 //!     skipped the resolved-IP screen (proxy-SSRF / DNS rebinding).
-//!  3. `oob/client.rs` `normalize_server` — kept path/userinfo, minting a
+//!  3. `oob/client.rs` `normalize_server`: kept path/userinfo, minting a
 //!     malformed callback host after sanitization.
-//!  4. `rate_limit.rs` — `Instant::now() - interval` underflow-panicked on a
+//!  4. `rate_limit.rs`: `Instant::now() - interval` underflow-panicked on a
 //!     low-uptime host (fresh container).
 //!
 //! Oracles are exact: each address falls in a named RFC range, each host string
@@ -23,10 +23,10 @@ use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
 // ===========================================================================
-// 1. NAT64 Local-Use prefix 64:ff9b:1::/48 (RFC 8215) — the fix
+// 1. NAT64 Local-Use prefix 64:ff9b:1::/48 (RFC 8215), the fix
 // ===========================================================================
 
-/// 64:ff9b:1:a9fe:a9:fe00:: — RFC 8215 Local-Use NAT64 wrapping 169.254.169.254
+/// 64:ff9b:1:a9fe:a9:fe00::. RFC 8215 Local-Use NAT64 wrapping 169.254.169.254
 /// (cloud IMDS). RFC 6052 §2.2 /48 embedding: octets in segs[3] and
 /// segs[4].lo/segs[5].hi, u-octet (segs[4].hi) reserved-zero.
 fn nat64_lup(a: u8, b: u8, c: u8, d: u8) -> Ipv6Addr {
@@ -73,7 +73,7 @@ fn nat64_local_use_prefix_wrapping_rfc1918_and_loopback_is_bogon() {
 fn nat64_local_use_prefix_nonzero_u_octet_still_decomposes_internal_v4() {
     // Adversarial: RFC 6052 reserves the u-octet (bits 64-71) as zero, but the
     // whole /48 is NAT64. An attacker setting u=0xff must NOT smuggle an
-    // embedded internal IPv4 past the screen — we decompose regardless of u.
+    // embedded internal IPv4 past the screen (we decompose regardless of u).
     let mut addr = nat64_lup(169, 254, 169, 254);
     let mut segs = addr.segments();
     segs[4] |= 0xff00; // set the reserved u-octet
@@ -181,7 +181,7 @@ fn proxy_client_rejects_rebinding_host_resolving_to_nat64_internal() {
 #[test]
 fn proxy_client_reused_for_public_resolve() {
     // Positive twin: a public resolve under a proxy keeps the caller's proxy
-    // client (Ok(true) = reuse proxy) — the screen must not over-block.
+    // client (Ok(true) = reuse proxy) (the screen must not over-block).
     let reuses_proxy = TestApi
         .oob_collector_reuses_proxy_client(
             "https://collector.example",
@@ -288,7 +288,7 @@ fn normalize_strips_path_from_full_url() {
 
 #[test]
 fn normalize_preserves_explicit_port() {
-    // "keep scheme/host/port only" — a non-default port is kept, path dropped.
+    // "keep scheme/host/port only" (a non-default port is kept, path dropped).
     let host = minted_host("https://oast.fun:8443/evil");
     assert!(
         host.ends_with(".oast.fun:8443"),
@@ -299,7 +299,7 @@ fn normalize_preserves_explicit_port() {
 
 #[test]
 fn normalize_drops_userinfo_and_reveals_true_host() {
-    // Adversarial: `oast.fun@internal` — a naive "keep the left side" would
+    // Adversarial: `oast.fun@internal`: a naive "keep the left side" would
     // trust oast.fun, but `internal` is the real connect target. Parsing to
     // scheme/host/port reveals it (and downstream `is_private_url` then blocks
     // the dotless `internal`).

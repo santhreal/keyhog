@@ -199,7 +199,7 @@ function toggleDetailsFromKeyboard(event, idx) {
 
 // The search box fires on every keystroke; each run rebuilds the whole table,
 // so coalesce rapid typing into one render. Checkboxes/tabs call applyFilters
-// directly (a single discrete event needs no debounce — it stays instant).
+// directly (a single discrete event needs no debounce (it stays instant)).
 let filterDebounceTimer = null;
 function applyFiltersDebounced() {
   if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
@@ -249,7 +249,7 @@ function applyFilters() {
 
 // Lead with the worst: severity descending, then live credentials first within
 // a severity (a confirmed-live Critical is the single most urgent line in the
-// report). Pure presentation order — does not touch counts or filtering.
+// report). Pure presentation order (does not touch counts or filtering).
 const SEVERITY_RANK = { 'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'info': 4, 'client-safe': 5 };
 function findingOrderKey(f) {
   const sev = SEVERITY_RANK[(f.severity || '').toLowerCase()];
@@ -444,7 +444,7 @@ function renderTable(findings, isInitial) {
     tr.onkeydown = event => toggleDetailsFromKeyboard(event, idx);
 
     const line = finding.location.line ? `:${finding.location.line}` : '';
-    // Split the path so the filename — what the eye scans for — is emphasised
+    // Split the path so the filename, what the eye scans for, is emphasised
     // while the directory recedes and the line number reads as an accent. Both
     // segments are escaped independently; no scan-derived bytes skip escaping.
     const rawPath = finding.location.file_path || '';
@@ -453,7 +453,7 @@ function renderTable(findings, isInitial) {
     const basePart = sepIdx >= 0 ? rawPath.slice(sepIdx + 1) : rawPath;
     // Filename first (bold, never split) with the line as an accent; the
     // directory follows on a dimmed second line that left-truncates to its
-    // meaningful tail (…/parent/) with the full path on hover — so a column of
+    // meaningful tail (…/parent/) with the full path on hover, so a column of
     // long absolute paths stays compact and scannable instead of wrapping into
     // tall mid-word blocks.
     const lineHtml = line ? `<span class="kh-path-line">${escapeHtml(line)}</span>` : '';
@@ -485,7 +485,7 @@ function renderTable(findings, isInitial) {
     const unattempted = verificationIsUnattempted(finding.verification);
     if (unattempted) statusClass += ' dot-unattempted';
     const statusTitle = unattempted
-      ? 'Verification was NOT attempted — treat this secret as potentially live'
+      ? 'Verification was NOT attempted, treat this secret as potentially live'
       : 'Verification result';
 
     tr.innerHTML = `
@@ -526,7 +526,7 @@ function renderTable(findings, isInitial) {
     if (!metadataItems) metadataItems = '<div style="color: var(--text-muted); font-size:12px;">No provider metadata.</div>';
 
     // The report only ever holds the REDACTED credential (never plaintext), so
-    // there is nothing to unmask — render the redacted value as static text.
+    // there is nothing to unmask (render the redacted value as static text).
     const credRedacted = escapeHtml(finding.credential_redacted);
 
     detailsTr.innerHTML = `
@@ -542,7 +542,7 @@ function renderTable(findings, isInitial) {
                 </span>
               </div>
               <div class="details-item"><span class="details-lbl">Credential Hash:</span><span class="details-val">${escapeHtml(finding.credential_hash)}</span><button class="copy-btn" type="button" onclick="copyFrom(this)" aria-label="Copy credential hash to clipboard">Copy</button></div>
-              <div class="details-item"><span class="details-lbl">Verification:</span><span class="details-val">${escapeHtml(verificationLabel(finding.verification))}${verificationIsUnattempted(finding.verification) ? ' <span class="verify-note">— not attempted; treat as potentially live</span>' : ''}</span></div>
+              <div class="details-item"><span class="details-lbl">Verification:</span><span class="details-val">${escapeHtml(verificationLabel(finding.verification))}${verificationIsUnattempted(finding.verification) ? ' <span class="verify-note">, not attempted; treat as potentially live</span>' : ''}</span></div>
               <div class="details-item"><span class="details-lbl">Confidence:</span><span class="details-val">${confidenceStr}</span></div>
             </div>
           </div>
@@ -687,7 +687,7 @@ function renderMetrics(findings, isInitial) {
 // Initial setup
 // Render the scan-coverage panel: an honest account of what was NOT fully
 // scanned. Absence of a panel must never be read as "fully clean", so the panel
-// is shown either way — listing the gaps, or stating none were recorded.
+// is shown either way (listing the gaps, or stating none were recorded).
 function renderCoverageGaps() {
   const panel = document.getElementById('coverage-panel');
   const note = document.getElementById('coverage-note');
@@ -702,14 +702,14 @@ function renderCoverageGaps() {
   if (gaps.length === 0) {
     panel.classList.add('coverage-clean');
     if (dot) dot.classList.add('coverage-dot--clean');
-    note.textContent = 'No coverage gaps recorded — every reachable file was scanned.';
+    note.textContent = 'No coverage gaps recorded, every reachable file was scanned.';
     return;
   }
   panel.classList.add('coverage-gapped');
   if (dot) dot.classList.add('coverage-dot--gapped');
   const totalAffected = gaps.reduce((n, g) => n + g.count, 0);
   note.textContent =
-    `${totalAffected} item(s) across ${gaps.length} categor${gaps.length === 1 ? 'y' : 'ies'} were NOT fully scanned — ` +
+    `${totalAffected} item(s) across ${gaps.length} categor${gaps.length === 1 ? 'y' : 'ies'} were NOT fully scanned. ` +
     `findings below are not a complete picture of this target.`;
   gaps.sort((a, b) => b.count - a.count).forEach(g => {
     const li = document.createElement('li');

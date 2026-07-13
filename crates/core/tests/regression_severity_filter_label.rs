@@ -1,4 +1,4 @@
-//! Regression: `Severity::from_filter_label` — the CLI/`.keyhogignore.toml`
+//! Regression: `Severity::from_filter_label`: the CLI/`.keyhogignore.toml`
 //! filter-label parse.
 //!
 //! `Severity::from_filter_label` is `pub(crate)`, so it is exercised here
@@ -7,7 +7,7 @@
 //! (crates/core/src/spec.rs:486) and, on success, compiles into a
 //! `FieldInSet { field: "severity", set: [<canonical as_str>] }` predicate.
 //! A finding therefore matches (is suppressed) IFF its severity's kebab-case
-//! `as_str` equals the label the parser resolved to — which lets each test pin
+//! `as_str` equals the label the parser resolved to, which lets each test pin
 //! the EXACT `Severity` variant a label parsed to by observing which findings
 //! `RuleSuppressor::matches` drops.
 //!
@@ -83,7 +83,7 @@ fn severity_eq(label: &str) -> RuleSuppressor {
 fn label_critical_parses_to_critical_variant_only() {
     let s = severity_eq("critical");
     assert!(s.matches(&finding(Severity::Critical)));
-    // Neighbours and extremes must NOT match — proves it resolved to exactly
+    // Neighbours and extremes must NOT match, proves it resolved to exactly
     // Critical, not "critical-or-anything-else".
     assert!(!s.matches(&finding(Severity::High)));
     assert!(!s.matches(&finding(Severity::Medium)));
@@ -122,7 +122,7 @@ fn label_low_parses_to_low_variant_not_client_safe_below_it() {
 fn label_info_parses_to_info_variant_not_client_safe_above_it() {
     let s = severity_eq("info");
     assert!(s.matches(&finding(Severity::Info)));
-    // ClientSafe ranks just ABOVE Info — an EQUALS "info" must not catch it.
+    // ClientSafe ranks just ABOVE Info (an EQUALS "info" must not catch it).
     assert!(!s.matches(&finding(Severity::ClientSafe)));
     assert!(!s.matches(&finding(Severity::Low)));
 }
@@ -225,7 +225,7 @@ fn unknown_label_errors_with_exact_schema_message_and_index_zero() {
 #[test]
 fn unknown_label_error_message_reflects_lowercased_trimmed_input() {
     // `normalise_severity` echoes the input as `{:?}` of its trimmed+lowercased
-    // form — so "  URGENT  " reports as "urgent", not "  URGENT  ".
+    // form (so "  URGENT  " reports as "urgent", not "  URGENT  ").
     let err = "[[suppress]]\nseverity = \"  URGENT  \"\n"
         .parse::<RuleSuppressor>()
         .expect_err("unknown severity label must be rejected");

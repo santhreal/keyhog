@@ -82,8 +82,8 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
         } else {
             // Law 10: surface the reduced coverage, don't dim it. Keyword-anchored
             // detection is fully preserved (the keyword-gated regex fallback runs on
-            // every chunk regardless of Hyperscan), but BARE context-less tokens —
-            // e.g. a standalone Twilio AccountSid `AC…` with no nearby keyword — fire
+            // every chunk regardless of Hyperscan), but BARE context-less tokens 
+            // e.g. a standalone Twilio AccountSid `AC…` with no nearby keyword, fire
             // only via Hyperscan's full-regex scan, so their coverage is reduced on
             // this build. Verified empirically: TWILIO_AUTH_TOKEN / DATADOG_API_KEY
             // still fire here; only the no-keyword bare-shape case is affected.
@@ -190,13 +190,13 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
 
     // ── Autoroute calibration coverage ────────────────────────────────
     // The default `keyhog scan` resolves a backend from the persisted autoroute
-    // cache and FAILS CLOSED (exit 2) on a workload it has no decision for —
+    // cache and FAILS CLOSED (exit 2) on a workload it has no decision for 
     // Law 10: never guess a substitute. Surface whether this binary+host is
     // calibrated so a user understands an "autoroute calibration required" scan
     // error. This is informational and never marks the install unhealthy: an
     // uncalibrated cache is the expected pre-`--calibrate` state (and single-
     // backend / portable builds never fail closed, so they need no decision). A
-    // STALE cache — one written by a different build — is a WARN (exit stays 0),
+    // STALE cache, one written by a different build, is a WARN (exit stays 0),
     // because auto scans reject it until re-calibrated while explicit `--backend`
     // still works. Reuses the same inspection primitive as `backend --autoroute`.
     println!("\n{bold}autoroute{reset}");

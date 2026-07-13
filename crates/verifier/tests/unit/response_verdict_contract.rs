@@ -1,7 +1,7 @@
 //! Verification-verdict contract: `body_indicates_error` and `evaluate_success`
 //! decide whether a credential is reported LIVE or DEAD, so their precision is
 //! recall-load-bearing. `body_indicates_error` is a deliberately CONSERVATIVE
-//! backstop — an error token only counts when it is paired with a *populated*
+//! backstop, an error token only counts when it is paired with a *populated*
 //! value, so the overwhelmingly common benign shapes (`"error":null`,
 //! `"errors":[]`, `"error":0/false/""/{}`) never flip a live credential to Dead.
 //! These tests pin the entire truthy-error truth table, the exact-key contract,

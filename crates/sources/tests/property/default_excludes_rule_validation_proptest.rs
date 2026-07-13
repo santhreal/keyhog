@@ -13,7 +13,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// The validator must NEVER panic and must return a bool-ish Result for any
-    /// (value, kind) pair — arbitrary config bytes cannot crash the loader.
+    /// (value, kind) pair (arbitrary config bytes cannot crash the loader).
     #[test]
     fn validate_never_panics_on_arbitrary_value(
         value in ".{0,32}",
@@ -22,7 +22,7 @@ proptest! {
         let _ = validate_rule_value_for_test("field", &value, KINDS[which]);
     }
 
-    /// An accepted entry is ALWAYS lowercase, non-empty, and control-char-free —
+    /// An accepted entry is ALWAYS lowercase, non-empty, and control-char-free 
     /// these three guards apply before any kind-specific shape check, so no
     /// accepted value may violate them regardless of kind.
     #[test]
@@ -38,7 +38,7 @@ proptest! {
         }
     }
 
-    /// No accepted entry of ANY kind may contain a path separator — that is a
+    /// No accepted entry of ANY kind may contain a path separator, that is a
     /// universal refusal shared by every branch.
     #[test]
     fn accepted_value_never_contains_a_separator(

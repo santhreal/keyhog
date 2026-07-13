@@ -67,7 +67,7 @@ pub(super) fn decrypt_entry(
     Aes256CfbDec::new_from_slices(aes_key, iv)
         .map_err(|e| InteractshError::Decrypt(format!("cfb init: {e}")))?
         .decrypt(payload);
-    // LAW 10 — a dropped OOB interaction is NOT silent. Skipping a malformed
+    // LAW 10, a dropped OOB interaction is NOT silent. Skipping a malformed
     // entry is the right call (one bad entry must not abort the whole poll
     // batch), but the drop is recall-affecting: a missed callback can flip an
     // exfil-capable credential from Live to Dead. Surface every drop LOUDLY at
@@ -79,7 +79,7 @@ pub(super) fn decrypt_entry(
                 target: "keyhog::oob",
                 error = %e,
                 "interactsh entry decrypted to non-UTF-8 bytes (wrong AES key or \
-                 corrupt ciphertext); skipping this interaction — an OOB callback \
+                 corrupt ciphertext); skipping this interaction, an OOB callback \
                  may be missed"
             );
             return Ok(None);
@@ -91,7 +91,7 @@ pub(super) fn decrypt_entry(
             warn!(
                 target: "keyhog::oob",
                 error = %e,
-                "interactsh JSON parse failed; skipping this interaction — an OOB \
+                "interactsh JSON parse failed; skipping this interaction, an OOB \
                  callback may be missed"
             );
             return Ok(None);
@@ -106,7 +106,7 @@ pub(super) fn decrypt_entry(
         warn!(
             target: "keyhog::oob",
             "interactsh interaction carried no full-id or unique-id; skipping this \
-             interaction — an OOB callback may be missed"
+             interaction: an OOB callback may be missed"
         );
         return Ok(None);
     }

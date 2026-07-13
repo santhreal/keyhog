@@ -2,8 +2,8 @@
 //!
 //! `simdsieve` checks keyhog's hot prefixes in a single AVX-512/AVX2/NEON
 //! pass. (The crate's 50+ GB/s headline is its single-byte-prefix peak;
-//! multi-byte prefixes like these run lower — throughput scales down with
-//! prefix length — but still far faster than running AC/regex on every byte.)
+//! multi-byte prefixes like these run lower, throughput scales down with
+//! prefix length, but still far faster than running AC/regex on every byte.)
 //! This module integrates it as Layer 1 of the scanning pipeline:
 //! hot patterns are checked first, and if found, we can often skip AC/Regex.
 
@@ -22,7 +22,7 @@ pub(crate) fn hot_pattern_index_at(
 
 /// Everything the SIMD hot fast-path needs to turn a literal-prefix sieve hit
 /// at slot `i` into a precise finding, kept in ONE row so a slot's validator and
-/// its `ac_map` delegate are physically inseparable — they can never be indexed
+/// its `ac_map` delegate are physically inseparable, they can never be indexed
 /// apart and so can never drift. Slot order follows loaded detector specs and
 /// their `simdsieve_prefixes`; built once by
 /// `engine::compile_helpers::build_hot_pattern_slots`.
@@ -30,7 +30,7 @@ pub(crate) fn hot_pattern_index_at(
 /// Before unification these were two separate `Vec`s on `CompiledScanner`
 /// (`hot_pattern_validators` and `hot_ac_map_index_by_index`) read by the SAME
 /// `pattern_idx` at scan time. Nothing structurally bound slot `i`'s validator
-/// to slot `i`'s `ac_map` entry — only construction discipline and a runtime
+/// to slot `i`'s `ac_map` entry, only construction discipline and a runtime
 /// length-equality guard. A future edit that filtered one vec but not the other
 /// would have silently applied slot `i`'s validator to slot `j`'s detector: a
 /// wrong-detector emission, invisible. One row per slot makes that
@@ -39,7 +39,7 @@ pub(crate) fn hot_pattern_index_at(
 pub(crate) struct HotPatternSlot {
     pub(crate) prefix: Box<[u8]>,
     /// Precise-regex validator (anchored at the candidate start) every
-    /// literal-prefix candidate for this slot must satisfy before emission —
+    /// literal-prefix candidate for this slot must satisfy before emission 
     /// restores AC+regex parity so the fast path can't surface a token the
     /// detector's own regex rejects (the length floor alone let
     /// `ghp_…_…`/`xoxp-123-456-789-abc` through).
@@ -99,7 +99,7 @@ pub(crate) fn build_hot_pattern_validator(
     // Law 10: FAIL CLOSED on a build error, never `.ok()` it away. The
     // old `.ok()` turned a build failure into a silent `None`, which the
     // consumer (`engine/hot_patterns.rs`) demotes to the weak
-    // length-floor gate — an invisible precision loss on the hot path.
+    // length-floor gate (an invisible precision loss on the hot path).
     // The individual detector patterns are already validated on the
     // primary compile path; the only NEW failure here is the combined
     // alternation exceeding the size/DFA limit. If that happens the build

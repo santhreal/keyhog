@@ -15,7 +15,7 @@ reason = "Env-var assignment around prefix detector."
 
 [[negative]]
 text = "xoxp-123-456-789-abc"
-reason = "Segments too short — Slack tokens require 10-13 digits per segment + 32-hex final."
+reason = "Segments too short: Slack tokens require 10-13 digits per segment + 32-hex final."
 
 [[evasion]]
 text = "Authorization: Bearer xoxp-1234567890123-2345678901234-3456789012345-7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"

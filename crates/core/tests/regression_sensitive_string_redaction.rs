@@ -4,7 +4,7 @@
 //!
 //! This is a standalone integration test (external crate): it can only touch
 //! the public API (`redact`, `SensitiveString`, `Credential`) plus the
-//! `#[doc(hidden)]` `testing` facade — never `#[cfg(test)]` internals.
+//! `#[doc(hidden)]` `testing` facade (never `#[cfg(test)]` internals).
 //!
 //! Every assertion is a CONCRETE expected value. Boundaries verified against
 //! the source: ASCII path `len<=8 -> "****"`, else

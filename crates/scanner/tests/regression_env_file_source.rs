@@ -12,7 +12,7 @@
 //! (keywords include `sk-`), so it fires on the scalar/AC-literal path with no
 //! Hyperscan/SIMD/GPU present. Every assertion below is therefore true on a
 //! bare CI runner, not only on an accelerated host. The `.env` structured pass
-//! is purely additive context — the raw byte scan already recovers each value —
+//! is purely additive context, the raw byte scan already recovers each value 
 //! so these contracts hold whether or not the structured preprocessor runs,
 //! which is exactly the recall-safe, no-silent-degrade behaviour we want to
 //! lock.
@@ -139,7 +139,7 @@ fn backtick_quoted_value_surfaces_unquoted_credential() {
 
 #[test]
 fn inline_comment_after_unquoted_value_is_not_part_of_credential() {
-    // `KEY=<token> # note` — the inline comment must be stripped from an
+    // `KEY=<token> # note`: the inline comment must be stripped from an
     // UNQUOTED value, so the credential is exactly the token (no ` # note`).
     let matches = scan_as(
         ".env",
@@ -219,7 +219,7 @@ fn malformed_line_without_equals_does_not_break_following_valid_line() {
     assert_eq!(
         openai_count(&matches),
         1,
-        "exactly one openai match — the malformed line yields no extra secret \
+        "exactly one openai match, the malformed line yields no extra secret \
          and the raw+synthetic hits dedup to one"
     );
 }
@@ -227,7 +227,7 @@ fn malformed_line_without_equals_does_not_break_following_valid_line() {
 #[test]
 fn empty_key_line_still_scans_the_value() {
     // `=<token>` has an empty key; the parser skips emitting a synthetic pair,
-    // but recall is preserved — the raw byte scan still surfaces the token.
+    // but recall is preserved (the raw byte scan still surfaces the token).
     let matches = scan_as(".env", &format!("={KEY}\n"));
     assert!(
         has_openai_at(&matches, KEY, 1),
@@ -298,12 +298,12 @@ fn windows_backslash_path_env_file_finds_secret() {
 fn non_env_path_still_finds_secret_via_raw_scan() {
     // Negative twin for structured detection: a `.txt` path does NOT trigger
     // the `.env` structured pass, yet the raw byte scan must still recover the
-    // KEY=VALUE secret — the structured pass is additive, never load-bearing
+    // KEY=VALUE secret, the structured pass is additive, never load-bearing
     // for recall (no silent degrade).
     let matches = scan_as("notes.txt", &format!("OPENAI_API_KEY={KEY}\n"));
     assert!(
         has_openai_at(&matches, KEY, 1),
-        "recall must not depend on `.env` structured detection — the raw scan \
+        "recall must not depend on `.env` structured detection, the raw scan \
          must surface the secret from a non-.env path too"
     );
 }

@@ -14,9 +14,9 @@ fn confidence_calibration_uncalibrated_passthrough() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vector pins one score/detector; these SWEEP the fresh-install
 // passthrough. The 2-arg facade supplies `None` calibration (the no-history-loaded
-// state), so the multiplier is never applied — every in-range score returns
+// state), so the multiplier is never applied, every in-range score returns
 // unchanged, for ANY detector id, and the result is independent of the id (proving
-// no per-detector multiplier leaks in on a fresh install — the KH-GAP-016 recall
+// no per-detector multiplier leaks in on a fresh install, the KH-GAP-016 recall
 // guarantee: uncalibrated detectors must not halve confidence). Traced against
 // `apply_calibration_multiplier` (penalties.rs). No proptest before.
 

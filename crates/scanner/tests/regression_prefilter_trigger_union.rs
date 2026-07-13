@@ -1,16 +1,16 @@
 //! Prefilter trigger-union recall contract: the `SimdCpu` (Hyperscan/SIMD)
 //! backend's per-chunk trigger set MUST be the UNION of the AC-literal trigger
-//! set and the Hyperscan confirmed-trigger set — never one or the other.
+//! set and the Hyperscan confirmed-trigger set (never one or the other).
 //!
 //! Why this is recall-load-bearing (see `collect_triggered_patterns_simd`):
 //! a subset of detectors have NO standalone AC literal that the Aho-Corasick
 //! prefilter can key on; their pattern index is marked triggered ONLY when the
 //! Hyperscan multi-pattern scan confirms an in-window fingerprint. `datadog-api-key`
-//! is one such HS-only detector — its extractable trigger comes from the
+//! is one such HS-only detector, its extractable trigger comes from the
 //! `(?:DD.API.KEY|…)[…]([a-f0-9]{32})` regex, not from a short literal in the
 //! AC set. If the SIMD collector ever stopped unioning the HS trigger bits into
 //! the AC bitmap (regression: "AC triggers only"), datadog-api-key and its ~48
-//! HS-only siblings would silently stop firing on the default backend — an
+//! HS-only siblings would silently stop firing on the default backend, an
 //! invisible recall cliff. This file pins:
 //!   1. an HS-only detector (`datadog-api-key`) STILL fires on `SimdCpu`,
 //!   2. an AC-literal detector (`aws-access-key`, keyword prefix `AKIA`) fires,
@@ -58,7 +58,7 @@ fn run(sc: &CompiledScanner, chunks: &[Chunk], backend: ScanBackend) -> Vec<Vec<
     sc.scan_chunks_with_backend(chunks, backend)
 }
 
-/// `(detector_id, credential, absolute_offset)` triples — the exact parity key.
+/// `(detector_id, credential, absolute_offset)` triples (the exact parity key).
 fn triples(results: &[Vec<RawMatch>]) -> BTreeSet<(String, String, usize)> {
     results
         .iter()
@@ -92,7 +92,7 @@ fn creds_of(results: &[Vec<RawMatch>], id: &str) -> BTreeSet<String> {
 }
 
 /// Run the SAME chunks on both CPU backends. The SIMD leg is `None` only when
-/// this build/host has no usable Hyperscan prefilter — forcing `SimdCpu` there
+/// this build/host has no usable Hyperscan prefilter, forcing `SimdCpu` there
 /// would hard-exit the process, so gate on `warm_backend`.
 fn both_cpu_backends(
     sc: &CompiledScanner,
@@ -138,7 +138,7 @@ fn datadog_hs_only_detector_fires_on_simd_cpu() {
 
     if let Some(simd) = simd {
         // The load-bearing assertion: an HS-only detector STILL fires on the
-        // SIMD backend — proving the Hyperscan trigger bits were unioned into
+        // SIMD backend, proving the Hyperscan trigger bits were unioned into
         // the AC trigger bitmap (a "AC-only" regression drops this to 0).
         assert_eq!(
             count_detector(&simd, "datadog-api-key"),
@@ -174,7 +174,7 @@ fn datadog_hs_only_parity_cpu_vs_simd() {
     if let Some(simd) = simd {
         // Full triple parity (id, credential, absolute offset) across backends
         // proves the SIMD union reproduces the CpuFallback result byte-for-byte,
-        // including the finding's location — not merely that "something" fired.
+        // including the finding's location (not merely that "something" fired).
         assert_eq!(
             triples(&scalar),
             triples(&simd),
@@ -249,7 +249,7 @@ fn ac_literal_and_hs_only_cosurface_same_chunk() {
         assert_eq!(
             count_detector(&simd, "datadog-api-key"),
             1,
-            "SimdCpu must also surface the HS-only half — the full union in one chunk"
+            "SimdCpu must also surface the HS-only half, the full union in one chunk"
         );
         assert_eq!(
             triples(&scalar),
@@ -334,11 +334,11 @@ fn datadog_short_body_no_fire_on_both() {
 #[test]
 fn datadog_31_vs_32_hex_boundary_on_both() {
     let sc = scanner();
-    // 31 hex: one short of the `{32}` quantifier — must NOT fire.
+    // 31 hex: one short of the `{32}` quantifier (must NOT fire).
     let body31 = &DD_BODY[..31];
     assert_eq!(body31.len(), 31);
     let text31 = format!("DD_API_KEY={body31}\n");
-    // 32 hex: exactly the quantifier — MUST fire, exact body.
+    // 32 hex: exactly the quantifier: MUST fire, exact body.
     let text32 = format!("DD_API_KEY={DD_BODY}\n");
 
     let (scalar31, simd31) = both_cpu_backends(&sc, &vec![chunk(&text31, "dd31.env")]);
@@ -391,7 +391,7 @@ fn hs_only_trigger_survives_ac_literal_storm() {
         1,
         "CpuFallback must confirm the single real datadog key amid 600 AKIA decoys"
     );
-    // The decoys are invalid AWS keys — none confirm.
+    // The decoys are invalid AWS keys (none confirm).
     assert_eq!(
         count_detector(&scalar, "aws-access-key"),
         0,
@@ -417,7 +417,7 @@ fn hs_only_trigger_survives_ac_literal_storm() {
 #[test]
 fn datadog_lowercase_anchor_evasion_still_unions() {
     let sc = scanner();
-    // `dd_api_key=` — the regex `DD.API.KEY` dot-class accepts the underscore
+    // `dd_api_key=`: the regex `DD.API.KEY` dot-class accepts the underscore
     // separator; the shipped evasion contract expects this to still surface.
     let text = format!("dd_api_key={DD_BODY}\n");
     let chunks = vec![chunk(&text, "evasion.env")];
@@ -490,7 +490,7 @@ fn simd_union_determinism_run_twice_identical() {
 #[test]
 fn trigger_bitmap_words_for_exact_div_ceil_64() {
     use keyhog_scanner::testing::trigger_bitmap_words_for_test as words_for;
-    // `words_for(n) == n.div_ceil(64)` — the single source of the bitmap's word
+    // `words_for(n) == n.div_ceil(64)`: the single source of the bitmap's word
     // width (one bit per pattern index). Pin every boundary the union relies on.
     assert_eq!(words_for(0), 0, "zero patterns need zero words");
     assert_eq!(words_for(1), 1);

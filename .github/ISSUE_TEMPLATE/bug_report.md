@@ -6,7 +6,7 @@ labels: ["bug", "needs-triage"]
 ---
 
 <!-- Before filing: search existing issues to avoid duplicates.
-     If this looks like a security issue, do NOT file it here — open
+     If this looks like a security issue, do NOT file it here, open
      a private advisory at /security/advisories/new instead. -->
 
 ## Summary

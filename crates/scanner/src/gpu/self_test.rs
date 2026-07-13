@@ -47,7 +47,7 @@ pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
 
                 // PARITY, not "in range". The prior check scored ALL-ZERO feature
                 // vectors and only asserted each result was finite and within
-                // [0,1] — which a GPU that returns 0.0 for EVERY input trivially
+                // [0,1], which a GPU that returns 0.0 for EVERY input trivially
                 // passes. That masked a real shipped fault: the MoE shader scored
                 // genuine secrets ~0.0 (CPU scored them ~1.0), so on a GPU host the
                 // ML gate silently dropped findings and `--self-test` still reported

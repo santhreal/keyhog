@@ -1,17 +1,17 @@
 //! Phase-2 always-active prefilter call accounting.
 //!
 //! The unified profiler (`keyhog scan --profile`) times the `phase2:prefilter`
-//! leaf — the single most expensive pass in a real scan — but a raw "N calls,
+//! leaf, the single most expensive pass in a real scan, but a raw "N calls,
 //! M ns/call" line cannot answer the one question that decides every prefilter
 //! optimization: *where does that time go?* A `mark_matches` call resolves down
 //! exactly one of three paths, cheapest to most expensive:
 //!
-//!   1. **gate-skip** — the SWE-101 combined no-candidate gate proved no
+//!   1. **gate-skip**: the SWE-101 combined no-candidate gate proved no
 //!      anchorable always-active pattern can fire on this (pure-ASCII, no-anchor)
 //!      chunk, so only the tiny non-anchorable set was checked. Near-free.
-//!   2. **HS-served** — a candidate is possible and the chunk is within the HS
+//!   2. **HS-served**: a candidate is possible and the chunk is within the HS
 //!      size window, so ONE Hyperscan SIMD scan marked the active set.
-//!   3. **RegexSet-served** — a candidate is possible but HS was unavailable,
+//!   3. **RegexSet-served**: a candidate is possible but HS was unavailable,
 //!      errored, or the chunk exceeded `hs_prefilter_max_len`, so the portable
 //!      `regex::RegexSet` batches ran (the ~2.7k-pattern whole-chunk pass).
 //!
@@ -24,8 +24,8 @@
 //!
 //! Cost: each counter is one relaxed atomic add. `record_mark_call` /
 //! `record_mark_gate_skip` fire once per chunk; the HS/RegexSet counters fire
-//! only on per-pattern calls (the minority on sparse corpora) whose body — an HS
-//! scan or a multi-pattern RegexSet pass — is hundreds-to-thousands of ns, so the
+//! only on per-pattern calls (the minority on sparse corpora) whose body, an HS
+//! scan or a multi-pattern RegexSet pass, is hundreds-to-thousands of ns, so the
 //! added atomic is a rounding error and never gates a fast path (Law 7).
 //!
 //! In normal builds these are process-wide relaxed atomics that aggregate across
@@ -75,7 +75,7 @@ impl MarkSnapshot {
     /// after scanning stops) must satisfy both equalities. The profiler asserts
     /// this before printing the decomposition: an inconsistent snapshot means a
     /// `record_*` path bumped `calls` without its matching sub-counter (an
-    /// accounting bug), which would make every reported percentage wrong — so it
+    /// accounting bug), which would make every reported percentage wrong, so it
     /// is surfaced loudly rather than printed as if correct (Law 10).
     ///
     /// Only valid post-scan: a live read across rayon workers can momentarily

@@ -60,7 +60,7 @@ fn negated_class_is_never_a_separator() {
 }
 
 /// An escaped `\[` is not a class opener, so nothing between it and the
-/// escaped `\]` is scanned as a separator body — input passes through.
+/// escaped `\]` is scanned as a separator body (input passes through).
 #[test]
 fn escaped_bracket_not_treated_as_class() {
     let input = "foo\\[_-\\]bar";
@@ -88,7 +88,7 @@ fn digit_member_disqualifies_class() {
 }
 
 /// The over-escaped `[_\\s-]` (literal backslash + literal `s` + `_` + `-`)
-/// is still recognised as a separator and canonicalized — the exact recall
+/// is still recognised as a separator and canonicalized, the exact recall
 /// bug the module was written to erase.
 #[test]
 fn over_escaped_backslash_s_class_is_canonicalized() {
@@ -347,7 +347,7 @@ fn empty_suppressor_matches_nothing() {
 }
 
 /// A `[[suppress]]` table with no conditions is a Schema error at rule 0 with
-/// the canonical "no conditions" message — never a match-everything rule.
+/// the canonical "no conditions" message (never a match-everything rule).
 #[test]
 fn empty_suppress_entry_is_schema_error() {
     let err = RuleSuppressor::from_str("[[suppress]]\n").expect_err("empty entry must error");
@@ -367,7 +367,7 @@ fn empty_suppress_entry_is_schema_error() {
 }
 
 /// An unknown field is rejected (schema is `deny_unknown_fields`) as a Toml
-/// error — a typo'd predicate name fails closed rather than silently no-op.
+/// error (a typo'd predicate name fails closed rather than silently no-op).
 #[test]
 fn unknown_field_is_rejected() {
     // `path_contain` (missing trailing s) is a typo of `path_contains`.

@@ -79,11 +79,11 @@ fn extract_tfstate_output_values(
                         pending.push(PendingExtractedPair::value_anchor(context, val_str));
                     } else {
                         // The output's `value` is a COMPLEX type (a nested map or
-                        // array — a Terraform output can be `object({...})`,
+                        // array, a Terraform output can be `object({...})`,
                         // `map(string)`, `list(string)`, `tuple(...)`, etc.). The
                         // old code only handled the scalar arm and dropped every
                         // secret nested inside a complex output value on the floor
-                        // (Law 10: a whole decode-through surface silently lost —
+                        // (Law 10: a whole decode-through surface silently lost 
                         // e.g. `outputs.credentials.value = { api_key = "AKIA…" }`).
                         // Walk it for EVERY nested scalar with the same
                         // arbitrary-JSON scalar extractor the resource-attribute
@@ -426,7 +426,7 @@ static JUPYTER_TEXT_OUTPUT_MIME_TYPES: std::sync::LazyLock<Vec<String>> =
     std::sync::LazyLock::new(|| {
         // `include_str!` embeds the file at compile time; attacker-controlled input
         // cannot reach this parse. A panic here indicates a build-time defect in the
-        // bundled `rules/jupyter-mime-types.toml`, not a runtime hostile-input risk —
+        // bundled `rules/jupyter-mime-types.toml`, not a runtime hostile-input risk 
         // fail-closed (Law 10), naming the file so the build owner knows what to fix.
         match parse_jupyter_mime_types(include_str!("../../../../../rules/jupyter-mime-types.toml"))
         {
@@ -570,7 +570,7 @@ fn json_mapping_anchors(key: &str, value: &serde_json::Value) -> Option<(String,
 /// Render a JSON scalar (string/number/bool) as its literal form: strings are
 /// JSON-quoted, numbers/bools rendered as-is, everything else `None`. One owner
 /// for both the `<key>: <value>` mapping anchor and the instance `index_key`
-/// rendering — they need identical scalar-literal semantics.
+/// rendering (they need identical scalar-literal semantics).
 fn json_scalar_literal(value: &serde_json::Value) -> Option<String> {
     match value {
         serde_json::Value::String(s) => Some(json_string_literal(s)),

@@ -17,13 +17,13 @@ reason = "Canonical Azure Blob SAS token query string with sv (storage version),
 [[positive]]
 text = "https://myaccount.blob.core.windows.net/container/blob?sv=2023-08-03&ss=b&srt=co&sp=rwdlacx&se=2030-12-31T00:00:00Z&st=2023-01-01T00:00:00Z&spr=https&sig=AbCdEfGhIjKlMnOpQrStUvWxYz1234567890%2F%2BabCD%3D"
 credential = "?sv=2023-08-03&ss=b&srt=co&sp=rwdlacx&se=2030-12-31T00:00:00Z&st=2023-01-01T00:00:00Z&spr=https&sig=AbCdEfGhIjKlMnOpQrStUvWxYz1234567890%2F%2BabCD%3D"
-reason = "Full Azure Blob URL with SAS token — the canonical leak channel."
+reason = "Full Azure Blob URL with SAS token (the canonical leak channel)."
 
 # ---- NEGATIVES (precision) ------------------------------------------
 
 [[negative]]
 text = "?sv=2023-08-03"
-reason = "Just the storage version, no signature — must not match."
+reason = "Just the storage version, no signature (must not match)."
 
 [[negative]]
 text = "?sv=abc&sig=short"

@@ -254,12 +254,12 @@ impl CompiledScanner {
 
             // UNIFIED SCORING. When ML is live, route the entropy candidate
             // through the SAME MoE batch the detector/generic matches use, with
-            // the model AUTHORITATIVE (no entropy-magnitude floor — see
+            // the model AUTHORITATIVE (no entropy-magnitude floor, see
             // `MlPendingMatch::model_authoritative`). The MoE separates real
             // high-entropy secrets (~0.98) from high-entropy NON-secrets (FQDNs,
             // git SHAs, base64 blobs ~0.01) that the shape gates above don't
             // catch, and `apply_ml_batch_scores` then runs the ONE canonical
-            // penalty / path / calibration / checksum / floor pipeline — so this
+            // penalty / path / calibration / checksum / floor pipeline, so this
             // path no longer needs a bespoke `apply_post_ml_penalties` +
             // `checksum_adjusted_confidence` tail (the batch path applies both,
             // identically). The shape gates above remain cheap, recall-safe

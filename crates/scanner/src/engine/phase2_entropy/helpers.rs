@@ -25,7 +25,7 @@ pub(crate) const ENTROPY_DETECTOR_METADATA: [(&str, &str, &str); 4] = [
 #[inline]
 pub(crate) fn classify_entropy_detector_index(keyword: &str) -> usize {
     // The keyword is the captured assignment key and preserves its source case
-    // (`PASSWORD=`, `Api_Key=`, `SEGMENT_WRITE_KEY=`) — the sibling
+    // (`PASSWORD=`, `Api_Key=`, `SEGMENT_WRITE_KEY=`), the sibling
     // `keyword_is_credential_anchor` lowercases it for exactly this reason. Match
     // case-insensitively so an all-caps `PASSWORD`/`TOKEN` anchor is labelled
     // Password/Token, not defaulted to the API-Key bucket. `ci_find` jumps to

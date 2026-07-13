@@ -10,7 +10,7 @@ pub(crate) struct PreparedChunk<'a> {
     /// every code-tree scan).
     pub(crate) chunk: &'a Chunk,
     /// Preprocessed scan text. Borrows `chunk.data` (`Cow::Borrowed`) on the
-    /// passthrough common path — no per-chunk full-body copy — and owns a
+    /// passthrough common path, no per-chunk full-body copy, and owns a
     /// synthesized `String` only on the structured/multiline-join paths.
     pub(crate) preprocessed: ScannerPreprocessedText<'a>,
     /// Cached `compute_line_offsets(&preprocessed.text)`. Both the

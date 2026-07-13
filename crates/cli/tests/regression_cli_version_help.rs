@@ -93,7 +93,7 @@ fn command_names(stdout: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 /// `--version` exits 0 and its first line is byte-exactly
-/// `KeyHog v{CARGO_PKG_VERSION}` — the program name `KeyHog` followed by the cli
+/// `KeyHog v{CARGO_PKG_VERSION}`: the program name `KeyHog` followed by the cli
 /// crate's compiled-in package version (which inherits `version.workspace`).
 #[test]
 fn version_long_flag_prints_keyhog_banner_with_exact_pkg_version_exit0() {
@@ -183,7 +183,7 @@ fn help_long_flag_exits_zero_on_stdout() {
 }
 
 /// The top-level `Usage:` line is byte-exactly `Usage: keyhog [OPTIONS] [COMMAND]`
-/// — binary name `keyhog`, options-then-optional-command shape.
+///: binary name `keyhog`, options-then-optional-command shape.
 #[test]
 fn help_usage_line_is_exact() {
     let (code, stdout, _e) = run(&["--help"]);
@@ -215,7 +215,7 @@ fn help_lists_every_real_subcommand() {
 }
 
 /// clap's auto-generated `help` subcommand is present in the `Commands:` block,
-/// and the block lists exactly the 17 real subcommands plus `help` — 18 entries,
+/// and the block lists exactly the 17 real subcommands plus `help`: 18 entries,
 /// no more, no fewer. A silently-added or hidden-then-unhidden subcommand fails.
 #[test]
 fn help_lists_exactly_real_subcommands_plus_help() {
@@ -266,7 +266,7 @@ fn help_carries_about_tagline_two_lines() {
 }
 
 /// The `Options:` surface documents both the `-V, --version` and `-h, --help`
-/// flags — the two flags this suite exercises must be self-described in help.
+/// flags (the two flags this suite exercises must be self-described in help).
 #[test]
 fn help_documents_version_and_help_option_flags() {
     let (code, stdout, _e) = run(&["--help"]);
@@ -295,7 +295,7 @@ fn help_carries_exit_codes_block_with_success_row() {
         stdout.contains("  0   Success (no secrets found)"),
         "--help EXIT CODES must contain the exact code-0 row; got:\n{stdout}"
     );
-    // The user-error row must state exit 2 — the same code the negative-twin
+    // The user-error row must state exit 2, the same code the negative-twin
     // tests below assert for a bad flag / bad subcommand.
     assert!(
         stdout.contains("  2   User error"),
@@ -320,7 +320,7 @@ fn short_h_lists_same_commands_as_long_help() {
 }
 
 // ---------------------------------------------------------------------------
-// negative twins — usage errors
+// negative twins, usage errors
 // ---------------------------------------------------------------------------
 
 /// An unknown top-level flag is a clap usage error: exit code 2, with an

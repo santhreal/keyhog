@@ -5,13 +5,13 @@
 //! `confidence::KNOWN_PREFIXES` (the 0.8 confidence floor) already lists many
 //! non-checksummed DISTINCTIVE vendor prefixes (glpat-, SG., hf_, vercel_, sbp_,
 //! dop_v1_, sk-, npm_). Being on the list is what lets a vendor token surface
-//! REGARDLESS of path — including a test/fixture path, where `penalize_test_paths`
+//! REGARDLESS of path, including a test/fixture path, where `penalize_test_paths`
 //! (default ON) otherwise penalises the confidence below the 0.40 floor. deepseek
 //! `sk-<32hex>` surfaces in a `fixtures/` path; a bare unfloored `pul-<40hex>`
 //! does not. The prefixes above are the SAME distinctive/critical class but were
 //! MISSING, so they behaved inconsistently (suppressed in test-shaped paths).
 //! Enrolling them makes the list consistent. NOTE: these vendors already surface
-//! in ordinary (non-test) paths without the floor — this is a completeness fix
+//! in ordinary (non-test) paths without the floor, this is a completeness fix
 //! for path-robustness, not a real-path recall bug (see the boundary-sweep /
 //! hexbody-prefix-floor memory for the corrected analysis).
 //!
@@ -180,7 +180,7 @@ fn brevo_degenerate_all_zero_body_stays_suppressed() {
 fn bad_checksum_npm_still_suppressed_despite_floor() {
     // `npm_` IS in KNOWN_PREFIXES and IS checksum-gated. The known-prefix floor
     // (0.8) is applied before the checksum policy, which returns None on an
-    // invalid CRC and DROPS the match — the floor must never resurrect a
+    // invalid CRC and DROPS the match, the floor must never resurrect a
     // checksum-invalid token. This fabricated body has an invalid CRC32.
     let bad = "npm_aK9mZ2xQ7wB4nR1tY6vC3sJ8fG5hL0pP2oM7";
     assert!(

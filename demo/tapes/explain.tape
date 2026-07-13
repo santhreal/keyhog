@@ -1,11 +1,11 @@
-# Detector anatomy recording: `keyhog explain <id>` — the full spec dump for one
+# Detector anatomy recording: `keyhog explain <id>`: the full spec dump for one
 # detector (patterns, keywords, verification endpoint) plus the service-keyed
 # rotation + remediation guide. Visual for the README "What it catches" section:
 # every finding is explainable down to the regex and comes with a fix.
 #
 # The `cd` to a neutral dir runs under Hide so the recording shows only the
 # clean explain output. (Run from a directory that holds a live `detectors/`
-# TOML corpus and explain additionally re-validates that corpus out loud — that
+# TOML corpus and explain additionally re-validates that corpus out loud, that
 # is the live-corpus audit path, not the embedded-default a normal user hits.)
 Output demo/keyhog-explain.gif
 

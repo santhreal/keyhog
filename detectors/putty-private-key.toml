@@ -37,7 +37,7 @@ keywords = ["PuTTY-User-Key-File"]
 # file (header → public blob → PRIVATE blob → MAC). The interior
 # `Private-Lines: <n>` requirement rejects a bare header reference (e.g. a doc
 # mention of the format) that carries no key material. `[\s\S]*?` is lazy +
-# unbounded — like `private-key.toml`, this keeps the match bounded to ONE key
+# unbounded: like `private-key.toml`, this keeps the match bounded to ONE key
 # file (a file with two adjacent .ppk blocks yields two matches, not one giant
 # span) and stays linear-time in the `regex`/Hyperscan engines (no nested
 # unbounded repetition → no catastrophic backtracking). `Private-MAC` is hex:
@@ -49,7 +49,7 @@ description = "Full PuTTY .ppk private-key file (header…Private-MAC)"
 
 # Author-shipped self-test (Tier-B): a minimal unencrypted v2 .ppk MUST fire;
 # a bare format mention (keyword present, no Private-Lines/Private-MAC body)
-# MUST NOT — proving the detector keys on the key-file STRUCTURE, not merely
+# MUST NOT: proving the detector keys on the key-file STRUCTURE, not merely
 # the header literal.
 [[detector.tests]]
 test_positive = """

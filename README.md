@@ -229,7 +229,7 @@ trust downgrade visibly.
 
 Pin a version with `KEYHOG_VERSION=v0.5.41`. Change the install dir with
 `--install-dir=/usr/local/bin`. Runtime backend policy belongs to
-`keyhog scan --backend ...`, `[system].gpu`, and autoroute calibration—not the
+`keyhog scan --backend ...`, `[system].gpu`, and autoroute calibration: not the
 installer asset name.
 
 Three diagnostic modes ship with the same script:

@@ -3,7 +3,7 @@
 //! for ARBITRARY high-entropy tokens, not just the fixed regression fixtures.
 //!
 //! For any high-entropy token `T`, base64-encoding `secret=T` and scanning the
-//! blob with decode-through recovers `secret=T` as SYNTHESIZED decoded content —
+//! blob with decode-through recovers `secret=T` as SYNTHESIZED decoded content 
 //! where a generic/entropy detector would fire on shape/entropy ALONE, with no
 //! anchor in the decoded bytes. The guard must gate EVERY such decoded
 //! generic/entropy match. This proptest sweeps the token space and asserts that
@@ -14,7 +14,7 @@
 //!
 //! Why `credential == token` isolates the decoded match: the token is base64
 //! ENCODED at top level, so no TOP-LEVEL finding can carry the raw token as its
-//! credential — only a match on the DECODED content can. A leaked entry is
+//! credential, only a match on the DECODED content can. A leaked entry is
 //! therefore proof the guard failed on the decode path, never a top-level
 //! false positive on the blob.
 
@@ -38,7 +38,7 @@ static SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
 
 /// Thin alias to the canonical predicate the GUARD itself gates on
 /// (`keyhog_scanner::is_generic_or_entropy_detector` → `detector_ids::is_generic_or_entropy_detector`),
-/// so this property validates the EXACT classification the guard uses — ONE
+/// so this property validates the EXACT classification the guard uses. ONE
 /// definitional home, no drift if the canonical prefix set ever changes.
 fn is_generic_or_entropy(id: &str) -> bool {
     keyhog_scanner::is_generic_or_entropy_detector(id)

@@ -42,7 +42,7 @@ simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (
 # cudarc still loads libcuda/libnvrtc DYNAMICALLY at runtime, while GPU
 # availability and any CPU degradation are reported by the engine/autoroute
 # result path instead of being hidden at feature selection time. Turning the
-# feature OFF removes wgpu/vulkan/EGL linkage entirely — the lean CI path.
+# feature OFF removes wgpu/vulkan/EGL linkage entirely (the lean CI path).
 # `vyre`/`vyre_libs` stay on either way because their CPU primitives are woven
 # into the scan types.
 #
@@ -68,7 +68,7 @@ gpu = [
 [dependencies]
 keyhog-core = { workspace = true }
 flate2 = { workspace = true }
-# GPU stack — optional, gated by the `gpu` feature so the lean CI build does
+# GPU stack, optional, gated by the `gpu` feature so the lean CI build does
 # not link wgpu and does not probe Vulkan/EGL at startup. `vyre`/`vyre_libs`
 # are kept unconditional because their CPU primitives (LiteralMatch,
 # GpuLiteralSet, RulePipeline) are woven into the scan types.
@@ -118,7 +118,7 @@ tokio = { workspace = true, features = ["rt", "time"] }
 base64-simd = "0.8.0"
 hex-simd = "0.8.0"
 # Used for atomic-rename of the Hyperscan database cache via
-# `NamedTempFile::persist()` — see `simd.rs::HsScanner::compile`.
+# `NamedTempFile::persist()`: see `simd.rs::HsScanner::compile`.
 # The Drop impl deletes the tmp on panic between create and rename.
 tempfile = { workspace = true }
 # Parses the embedded Tier-B disclaimer-phrase data file
@@ -343,7 +343,7 @@ name = "target_spec_perf_10x_backend_matrix"
 path = "tests/target_spec/perf_10x_backend_matrix.rs"
 
 # TARGET-SPEC recall worklist (FAILING-BY-DESIGN): the candidate-GENERATION gap
-# expressed as executable contracts — prefix-free real-world secret shapes the
+# expressed as executable contracts, prefix-free real-world secret shapes the
 # shipped scanner does not surface. RED until keyword/shape generation lands;
 # each red is one tracked recall miss (Law 6). Subdir file needs an explicit
 # [[test]] path to be discovered as its own test binary.

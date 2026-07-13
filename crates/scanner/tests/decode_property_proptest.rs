@@ -2,11 +2,11 @@
 //!
 //! The known-answer suite (`decode_codec_vectors`) pins specific vectors; this
 //! proves the invariants that must hold for ALL inputs:
-//!   1. ROUNDTRIP — for every byte string, `decode(encode(bytes)) == bytes`.
+//!   1. ROUNDTRIP (for every byte string, `decode(encode(bytes)) == bytes`).
 //!      The reference encoders here are self-checked against a fixed vector
 //!      first, so a roundtrip failure isolates to keyhog's DECODER (a real bug
-//!      to report, never a test to weaken — Law 6/9), not to a wrong encoder.
-//!   2. PANIC-SAFETY — no arbitrary input (hostile, truncated, mixed-alphabet)
+//!      to report, never a test to weaken. Law 6/9), not to a wrong encoder.
+//!   2. PANIC-SAFETY, no arbitrary input (hostile, truncated, mixed-alphabet)
 //!      may panic a decoder. These run on the scan hot path over attacker-
 //!      controlled bytes, so a slice-boundary/overflow panic is a DoS.
 
@@ -72,7 +72,7 @@ fn z85_encode(data: &[u8]) -> String {
 #[test]
 fn reference_encoders_match_known_vectors() {
     // If these hold, the reference encoders are correct, so any roundtrip
-    // failure below is keyhog's decoder — not a wrong encoder here.
+    // failure below is keyhog's decoder (not a wrong encoder here).
     assert_eq!(hex_encode(b"Hello"), "48656c6c6f");
     assert_eq!(b64_encode(b"hello"), "aGVsbG8=");
     assert_eq!(b64_encode(b"Hello, World!"), "SGVsbG8sIFdvcmxkIQ==");
@@ -120,7 +120,7 @@ proptest! {
 
     /// Bias the generator toward the decode alphabets + separators + a little
     /// garbage so cases reach DEEP into the decode logic (past the early
-    /// reject), where a slice/index bug would live — not just trivial rejects.
+    /// reject), where a slice/index bug would live (not just trivial rejects).
     #[test]
     fn decoders_never_panic(s in "[A-Za-z0-9+/=_\\-. \t\r\n!:]{0,300}") {
         // Success or Err are both fine; a PANIC fails the case with the minimal

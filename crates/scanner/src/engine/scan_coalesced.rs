@@ -12,7 +12,7 @@ use std::cell::RefCell;
 /// Upper size bound for admitting a no-phase-1-hit chunk to the keyword-free
 /// entropy fallback. A no-hit chunk larger than this that carries a bare
 /// high-entropy secret with no keyword/assignment anchor is NOT admitted to the
-/// entropy path — the bound caps the cost of the entropy scan on chunks that
+/// entropy path, the bound caps the cost of the entropy scan on chunks that
 /// produced no literal trigger. Raising it trades scan time for recall on large
 /// anchorless blobs. Recall-affecting; kept beside the other engine thresholds
 /// (`MAX_INNER_LOOP_ITERS`, `BIGRAM_BLOOM_MIN_CHUNK_BYTES`).

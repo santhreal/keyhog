@@ -15,7 +15,7 @@ reason = "Env-var anchored 40-char token."
 
 [[negative]]
 text = "ZENDESK_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder body — suppression gate strips it."
+reason = "Placeholder body (suppression gate strips it)."
 
 [[negative]]
 text = "agent@subdomain.zendesk.com/token:tooshort"

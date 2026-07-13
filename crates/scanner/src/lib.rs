@@ -6,35 +6,35 @@
 //! # Module map (by pipeline stage)
 //!
 //! The modules below are declared in dependency order, but they READ in pipeline
-//! order — the same bytes→finding flow as [`docs/src/architecture.md`] and the
+//! order, the same bytes→finding flow as [`docs/src/architecture.md`] and the
 //! method-level map in [`engine`] (`engine::mod` "# The one flow"). To find a
 //! responsibility, locate its stage:
 //!
-//! - **Config / state / shared types** — [`scanner_config`], [`scan_state`],
+//! - **Config / state / shared types**: [`scanner_config`], [`scan_state`],
 //!   [`types`], [`hw_probe`] (hardware routing), [`error`].
-//! - **Phase 1 · prefilter** (cheap "could a detector fire here?") —
+//! - **Phase 1 · prefilter** (cheap "could a detector fire here?") 
 //!   [`alphabet_filter`], [`bigram_bloom`], [`prefix_trie`], `ascii_ci`,
 //!   `simd` / `simdsieve_prefilter` (feature-gated), `prefilter_degrade`
 //!   (loud Law-10 fallback).
-//! - **Compile** (detectors → matchers) — [`compiler`], `shared_regexes`,
+//! - **Compile** (detectors → matchers): [`compiler`], `shared_regexes`,
 //!   [`static_intern`].
-//! - **Scan engine** (phase 1 triggers + phase 2 extraction; CPU or GPU) —
+//! - **Scan engine** (phase 1 triggers + phase 2 extraction; CPU or GPU) 
 //!   [`engine`] (start at its header doc), [`pipeline`], [`gpu`].
-//! - **Decode-through** (nested base64/hex/url/unicode, recursive) —
+//! - **Decode-through** (nested base64/hex/url/unicode, recursive) 
 //!   [`decode`], [`decode_structure`].
-//! - **Entropy** — [`entropy`] is now the single home for all of it: the
+//! - **Entropy**: [`entropy`] is now the single home for all of it: the
 //!   keyword/scanner detection logic plus the fast Shannon-entropy primitive
 //!   `entropy::fast` (+ `entropy::avx512` / `entropy::fast_x86` /
 //!   `entropy::fast_neon` SIMD impls, arch-gated).
-//! - **Confidence / ML** — [`ml_scorer`] (serves the embedded `weights.bin`;
+//! - **Confidence / ML**: [`ml_scorer`] (serves the embedded `weights.bin`;
 //!   trained out-of-band by the repo's `ml/`), [`confidence`],
 //!   `probabilistic_gate`.
-//! - **Context, fragment reassembly, multiline, suppression, resolution** —
+//! - **Context, fragment reassembly, multiline, suppression, resolution** 
 //!   [`context`], `fragment_cache`, [`multiline`], `suppression`,
 //!   [`resolution`], `structured`.
-//! - **Specialized validators** — [`checksum`], [`jwt`], [`aws`],
+//! - **Specialized validators**: [`checksum`], [`jwt`], [`aws`],
 //!   `homoglyph`, [`unicode_hardening`].
-//! - **Cross-cutting** — `platform_compat`, `placeholder_words`,
+//! - **Cross-cutting**: `platform_compat`, `placeholder_words`,
 //!   `process_exit`, [`telemetry`], `util_hash`.
 //!
 //! Most single-file modules are one responsibility each; the multi-file engine
@@ -143,7 +143,7 @@ pub(crate) mod ascii_ci;
 pub(crate) mod bigram_bloom;
 // The fast Shannon-entropy primitives (scalar dispatcher + AVX-512 / AVX2-SSE2 /
 // NEON SIMD impls) now live UNDER `entropy/` (entropy::fast / ::avx512 /
-// ::fast_x86 / ::fast_neon) — one home for all entropy code. See `entropy/mod.rs`.
+// ::fast_x86 / ::fast_neon) (one home for all entropy code. See `entropy/mod.rs`).
 pub(crate) mod homoglyph;
 /// JWT structural validation and anomaly detection.
 pub mod jwt;
@@ -157,7 +157,7 @@ pub(crate) mod suppression;
 /// Per-scan telemetry: always-on counters + opt-in `--dogfood` events.
 pub mod telemetry;
 /// Shared parse + validate primitive for Tier-B single-column token lists
-/// (assignment keywords, multiline secret prefixes) — one owner, no drift.
+/// (assignment keywords, multiline secret prefixes) (one owner, no drift).
 pub(crate) mod tier_b_list;
 pub(crate) mod tuning;
 /// Unicode normalization and homoglyph defense.
@@ -214,8 +214,8 @@ pub fn validate_hyperscan_cache_dir(path: &std::path::Path) -> std::result::Resu
 /// given secret is *context-dependent*: the same bytes embedded in a longer
 /// token run (a connection-string URL, a `key=` assignment) can dilute below the
 /// entropy gate even though they fire in isolation. Consumers that categorize a
-/// finding by detector family — and the contract test harness, which must not
-/// gate context-dependent firings all-or-nothing — use this to distinguish the
+/// finding by detector family, and the contract test harness, which must not
+/// gate context-dependent firings all-or-nothing, use this to distinguish the
 /// entropy fallback from service-anchored detectors without re-encoding the
 /// naming contract owned by [`detector_ids`].
 #[inline]

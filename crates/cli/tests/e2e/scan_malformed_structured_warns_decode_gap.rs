@@ -1,7 +1,7 @@
 //! E2E (Law 10): scanning a file that matches a structured format but fails to
 //! parse must surface the lost decode-through at completion, not swallow it at
 //! `tracing::debug!`. A `.yaml` declaring `kind: Secret` with broken YAML is the
-//! canonical case — its base64 `data:` values can't be decoded, so any secret
+//! canonical case, its base64 `data:` values can't be decoded, so any secret
 //! encoded inside is invisible unless the operator is told the file didn't parse.
 
 use crate::e2e::support::{binary, write_temp_file};

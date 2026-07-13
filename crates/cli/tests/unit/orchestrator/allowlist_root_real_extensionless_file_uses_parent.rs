@@ -10,7 +10,7 @@ use keyhog::testing::{CliTestApi as _, API};
 /// `allowlist_root_*` tests all use NON-existent paths (exercising the
 /// heuristic), so this is the first to prove the real-FS `is_file()` branch
 /// overrides the extension guess. Regressing it means `keyhog scan ./Dockerfile`
-/// silently loads the allowlist from `./Dockerfile/` instead of `.` — real
+/// silently loads the allowlist from `./Dockerfile/` instead of `.`: real
 /// suppressions stop applying (recall/precision drift).
 #[test]
 fn allowlist_root_real_extensionless_file_uses_parent() {

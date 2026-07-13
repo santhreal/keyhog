@@ -368,7 +368,7 @@ fn drain_entry_or_stop(
     let cap = super::UNCAPPED_ARCHIVE_BUDGET;
     let drain = crate::capped_read::read_to_cap_preserving_error(entry_reader, cap, None);
     if drain.truncated {
-        // The skipped entry expanded beyond the global budget — treat it as an
+        // The skipped entry expanded beyond the global budget, treat it as an
         // archive-bomb abort: surface loudly, count, stop further extraction.
         tracing::warn!(
             archive = %archive_display,

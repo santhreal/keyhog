@@ -2,7 +2,7 @@
 //! (over the per-blob `MAX_GIT_BLOB_BYTES` cap, a true-binary blob that carries
 //! no grep-able credential, or the aggregate history source cap) must be COUNTED in the shared
 //! `skip_counts()` so a "0 findings --git" run is not mistaken for full history
-//! coverage — never a silent `let Ok(..) else { continue }` / `continue`.
+//! coverage (never a silent `let Ok(..) else { continue }` / `continue`).
 //!
 //! Before the fix `stream_git_blobs` dropped:
 //!   * an over-cap blob (`header.size() > MAX_GIT_BLOB_BYTES`) with a bare
@@ -82,7 +82,7 @@ fn oversized_git_blob_is_counted_over_max_size() {
 
     // An over-cap blob: > MAX_GIT_BLOB_BYTES of printable text so it is NOT
     // binary (it must hit the SIZE gate, not the binary gate). The leading
-    // marker would be a finding if it were scanned — proving it is dropped.
+    // marker would be a finding if it were scanned (proving it is dropped).
     let mut big = String::with_capacity(MAX_GIT_BLOB_BYTES + 4096);
     big.push_str("aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n"); // keyhog:ignore detector=aws-access-key (synthetic test fixture)
     while big.len() <= MAX_GIT_BLOB_BYTES + 1024 {
@@ -136,8 +136,8 @@ fn oversized_git_blob_is_counted_over_max_size() {
 }
 
 /// A true-binary git blob (recognized magic header) is dropped from the history
-/// scan and counted as binary — the history analogue of the filesystem binary
-/// skip — never a silent `continue`.
+/// scan and counted as binary, the history analogue of the filesystem binary
+/// skip (never a silent `continue`).
 #[test]
 fn binary_git_blob_is_counted_binary() {
     let _guard = counter_guard();

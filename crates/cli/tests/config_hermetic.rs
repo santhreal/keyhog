@@ -10,8 +10,8 @@
 //! Bidirectional contract, driven through the real binary ("the product is the
 //! binary", CLAUDE.md test type 10):
 //!   * a config disabling every detector that can report the planted AWS key IS
-//!     honored on the default path — the planted key is suppressed (exit 0); and
-//!   * the SAME config is IGNORED under `--no-config` — the key fires (exit 1).
+//!     honored on the default path, the planted key is suppressed (exit 0); and
+//!   * the SAME config is IGNORED under `--no-config`: the key fires (exit 1).
 //! Plus the clap guard: `--config` and `--no-config` together is a user error.
 
 use std::path::PathBuf;
@@ -23,7 +23,7 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// A planted AWS access key id (`aws-access-key` detector) — concatenated so the
+/// A planted AWS access key id (`aws-access-key` detector), concatenated so the
 /// literal token never appears in source and trips the repo's own self-scan.
 const PLANTED: &str = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
 
@@ -61,7 +61,7 @@ fn scan_dir_with_config(config: &str, extra: &[&str]) -> (Option<i32>, String, S
 fn ambient_config_is_honored_without_no_config() {
     // Baseline: the `.keyhog.toml` disables every detector that can report this
     // planted key, so the scan exits clean. This proves the config genuinely
-    // changes behavior — without it the next test's assertion would be vacuous.
+    // changes behavior (without it the next test's assertion would be vacuous).
     let (code, stdout, stderr) = scan_dir_with_config(DISABLE_PLANTED, &[]);
     assert_eq!(
         code,

@@ -70,7 +70,7 @@ def run_one(scanner_name: str, corpus_name: str, cfg: ScannerConfig,
         result.error = "scanner timed out"
         result.available = False
     elif not scanner.exit_success(stats.exit_code):
-        # A crashed scanner produced no usable result — mark it unavailable so a
+        # A crashed scanner produced no usable result, mark it unavailable so a
         # nonzero-exit competitor isn't ranked as a real low-recall entrant.
         result.error = f"scanner exited {stats.exit_code}"
         result.available = False

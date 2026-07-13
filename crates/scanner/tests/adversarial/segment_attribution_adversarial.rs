@@ -102,7 +102,7 @@ fn match_spanning_two_segments() {
     }];
     let result = map_offsets_to_segments(&segments, &matches);
     // A match [45,55) that spills across the boundary is fully contained in
-    // NEITHER segment ([0,50) nor [50,100)), so the attributor drops it — it only
+    // NEITHER segment ([0,50) nor [50,100)), so the attributor drops it, it only
     // rewrites matches that fit wholly inside a single segment. Assert that exact
     // behaviour: Ok, but no attributed match.
     let attributed = result.expect("valid segments must not error");
@@ -173,7 +173,7 @@ fn zero_length_segment() {
 
 #[test]
 fn segment_at_u32_max() {
-    // Segment near u32::MAX — tests overflow safety.
+    // Segment near u32::MAX (tests overflow safety).
     let segments = [Segment::new(0, u32::MAX - 10, 10)];
     let matches = [GlobalMatch {
         start: u32::MAX - 5,
@@ -192,7 +192,7 @@ fn segment_end_overflows_u32() {
     let result = map_offsets_to_segments(&segments, &[]);
     // `start + len` = u32::MAX + 1 overflows. Segment validation runs UPFRONT
     // (`validate_segments` before any match is processed), so this ALWAYS errors
-    // regardless of the empty match slice — the previous "Ok also acceptable" arm
+    // regardless of the empty match slice, the previous "Ok also acceptable" arm
     // was wrong. Assert the exact error, including its fields.
     assert_eq!(
         result.unwrap_err(),
@@ -266,6 +266,6 @@ fn match_outside_all_segments() {
     }];
     let result = map_offsets_to_segments(&segments, &matches);
     assert!(result.is_ok());
-    // Match is outside the segment — should not be attributed.
+    // Match is outside the segment (should not be attributed).
     assert!(result.unwrap().is_empty());
 }

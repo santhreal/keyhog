@@ -2,17 +2,17 @@
 //! outcome, driven through the REAL shipped binary (`CARGO_BIN_EXE_keyhog`).
 //!
 //! The numeric codes are owned by `crate::exit_codes` (single source of truth):
-//!   * `EXIT_SUCCESS`       = 0  — clean scan, no findings.
-//!   * `EXIT_FINDINGS`      = 1  — secrets found, none confirmed live.
-//!   * `EXIT_USER_ERROR`    = 2  — bad flag/value, unknown subcommand, missing
+//!   * `EXIT_SUCCESS`       = 0 (clean scan, no findings).
+//!   * `EXIT_FINDINGS`      = 1 (secrets found, none confirmed live).
+//!   * `EXIT_USER_ERROR`    = 2, bad flag/value, unknown subcommand, missing
 //!                                 path (NotFound is a user I/O error); also the
 //!                                 code clap uses for its own usage diagnostics.
-//!   * `EXIT_SYSTEM_ERROR`  = 3  — local environment failure (not asserted via a
+//!   * `EXIT_SYSTEM_ERROR`  = 3, local environment failure (not asserted via a
 //!                                 live path here; pinned as a constant).
-//!   * `EXIT_LIVE_CREDENTIALS` = 10 — a verified-live credential (requires
+//!   * `EXIT_LIVE_CREDENTIALS` = 10, a verified-live credential (requires
 //!                                 `--verify`); an UNVERIFIED finding must never
 //!                                 reach this code.
-//!   * `EXIT_SOURCE_FAILED` = 13 — a requested source produced incomplete
+//!   * `EXIT_SOURCE_FAILED` = 13, a requested source produced incomplete
 //!                                 coverage (fail-closed, not "clean").
 //!
 //! HOST-INDEPENDENCE: every scan runs `--backend cpu` (the `ci`-feature binary
@@ -21,7 +21,7 @@
 //! accelerator. No test asserts a GPU-only outcome.
 //!
 //! TEST-TRUTH: every assertion pins an EXACT `Option<i32>` process code, an
-//! EXACT `u8` constant, or EXACT stdout bytes — never a shape (Law 6).
+//! EXACT `u8` constant, or EXACT stdout bytes (never a shape (Law 6)).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -31,7 +31,7 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// A GitHub classic PAT with a valid trailing CRC — proven by the format/backend
+/// A GitHub classic PAT with a valid trailing CRC, proven by the format/backend
 /// parity e2e to fire `github-classic-pat` (severity critical, service github)
 /// on its own bytes on the cpu path. Split via `concat!` so this test file is
 /// not itself a self-scan tripwire; a fabricated random body would checksum-fail
@@ -65,7 +65,7 @@ fn fixture(name: &str, contents: &str) -> (TempDir, PathBuf) {
 }
 
 // ---------------------------------------------------------------------------
-// CONSTANT CONTRACT — the numeric codes cannot drift from their documented values
+// CONSTANT CONTRACT, the numeric codes cannot drift from their documented values
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -87,7 +87,7 @@ fn exit_code_constants_have_documented_numbers() {
 }
 
 // ---------------------------------------------------------------------------
-// 0 — clean scan
+// 0, clean scan
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -101,7 +101,7 @@ fn clean_scan_exits_success_zero() {
 
 #[test]
 fn clean_scan_json_is_exactly_empty_array() {
-    // A clean json run must be EXACTLY the two-byte bracket pair — the honest
+    // A clean json run must be EXACTLY the two-byte bracket pair, the honest
     // empty shape, not a fail-closed empty stdout.
     let (_d, path) = fixture("notes.txt", "nothing sensitive at all in this file\n");
     let (code, out, err) = scan(&path, &["--format", "json"]);
@@ -114,7 +114,7 @@ fn clean_scan_json_is_exactly_empty_array() {
 }
 
 // ---------------------------------------------------------------------------
-// 1 — findings present (and NEVER 10 without --verify)
+// 1, findings present (and NEVER 10 without --verify)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -132,7 +132,7 @@ fn planted_valid_token_exits_findings_one() {
 #[test]
 fn planted_unverified_token_never_exits_live_ten() {
     // Without `--verify` the finding is verification=Skipped, so the live path
-    // (exit 10) must NOT fire — a found-but-unverified secret is exit 1, not 10.
+    // (exit 10) must NOT fire (a found-but-unverified secret is exit 1, not 10).
     let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={PLANTED}\n"));
     let (code, _out, err) = scan(&path, &["--format", "json"]);
     assert_ne!(
@@ -148,7 +148,7 @@ fn planted_unverified_token_never_exits_live_ten() {
 }
 
 // ---------------------------------------------------------------------------
-// 2 — user error (bad path / bad value / bad args)
+// 2, user error (bad path / bad value / bad args)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -229,7 +229,7 @@ fn unknown_subcommand_exits_user_error_two() {
 }
 
 // ---------------------------------------------------------------------------
-// 13 — source failed / incomplete coverage (fail closed, NOT "clean")
+// 13, source failed / incomplete coverage (fail closed, NOT "clean")
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -250,7 +250,7 @@ fn malformed_har_exits_source_failed_thirteen() {
 }
 
 // ---------------------------------------------------------------------------
-// 0 — non-scan surfaces that must exit cleanly
+// 0, non-scan surfaces that must exit cleanly
 // ---------------------------------------------------------------------------
 
 #[test]

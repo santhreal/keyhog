@@ -3,13 +3,13 @@
 //! This is the **single source of truth** for two credential-string-only facts
 //! about an AWS access-key ID, shared by every keyhog crate (scanner attaches
 //! them as finding metadata with no verify; verifier consults the canary check
-//! to refuse tripping a canary on `--verify`). It lives in `keyhog-core` — the
-//! one crate both `keyhog-scanner` and `keyhog-verifier` depend on — so there is
+//! to refuse tripping a canary on `--verify`). It lives in `keyhog-core`: the
+//! one crate both `keyhog-scanner` and `keyhog-verifier` depend on, so there is
 //! exactly one decode and one canary list, never a fork.
 //!
 //! 1. **Account decode.** Every modern AWS access-key ID (`AKIA…` long-term,
 //!    `ASIA…` temporary STS) has the 12-digit account number mathematically
-//!    embedded in it, recoverable with a pure base32-decode + bit-shift — NO
+//!    embedded in it, recoverable with a pure base32-decode + bit-shift. NO
 //!    network call, NO STS `GetCallerIdentity`, and it works on LIVE *and*
 //!    revoked keys. Algorithm matches the trufflesecurity write-up
 //!    <https://trufflesecurity.com/blog/research-uncovers-aws-account-numbers-hidden-in-access-keys>:
@@ -77,7 +77,7 @@ fn base32_value(c: u8) -> Option<u8> {
 /// caller can blindly try every credential and only act on `Some`.
 ///
 /// For a real AWS access-key ID the returned string is 12 ASCII digits,
-/// zero-padded — AWS account numbers are 12-digit identifiers and the
+/// zero-padded: AWS account numbers are 12-digit identifiers and the
 /// leading-zero form (e.g. `052310077262`) is the canonical rendering, matching
 /// the STS `Account` field and trufflehog's output.
 ///
@@ -158,7 +158,7 @@ fn base_canary_accounts() -> Result<&'static HashSet<String>, String> {
 }
 
 /// `[canary]`/`[knockoff]` TOML shape used by the embedded baseline. Both
-/// tables are merged into the same account set — keyhog treats off-brand
+/// tables are merged into the same account set, keyhog treats off-brand
 /// knockoffs identically to first-party canaries.
 #[derive(serde::Deserialize, Default)]
 struct CanaryFile {

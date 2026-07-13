@@ -56,7 +56,7 @@ fn daemon_start_status_stop_lifecycle_and_socket_hygiene() {
     let dir = TempDir::new().unwrap();
     let (mut child, socket) = start_daemon(dir.path(), &[]);
 
-    // Socket must be 0600 (user-only) — same-uid trust model for plaintext
+    // Socket must be 0600 (user-only), same-uid trust model for plaintext
     // credentials on the wire.
     let mode = std::fs::metadata(&socket)
         .expect("socket metadata")
@@ -113,7 +113,7 @@ fn daemon_reclaims_stuck_half_frame_connection() {
     // round-trip; a connection idle past this is stuck and must be reclaimed.
     let (mut child, socket) = start_daemon(dir.path(), &["--request-timeout-secs", "1"]);
 
-    // Open a connection, announce a frame length, then send NOTHING — the
+    // Open a connection, announce a frame length, then send NOTHING, the
     // classic half-frame / slowloris stall that would otherwise hold a
     // connection_limit permit forever.
     let mut stuck = StdUnixStream::connect(&socket).expect("connect stuck client");
@@ -127,7 +127,7 @@ fn daemon_reclaims_stuck_half_frame_connection() {
     // Give the stuck connection time to hit the 1s timeout and be reclaimed.
     std::thread::sleep(Duration::from_millis(1500));
 
-    // A well-behaved status request must still succeed — proving the stuck
+    // A well-behaved status request must still succeed, proving the stuck
     // connection did not deadlock the daemon.
     let status = Command::new(binary())
         .args(["daemon", "status", "--socket"])
@@ -144,8 +144,8 @@ fn daemon_reclaims_stuck_half_frame_connection() {
 
     // The stuck connection must have been CLOSED by the server-side request
     // timeout: a read returns Ok(0) (true EOF). A read TIMEOUT (WouldBlock /
-    // TimedOut) instead would mean the server never closed it — i.e. the
-    // timeout fix is absent — so we must distinguish the two and only accept a
+    // TimedOut) instead would mean the server never closed it, i.e. the
+    // timeout fix is absent, so we must distinguish the two and only accept a
     // genuine EOF. (`unwrap_or(0)` would have masked the missing-fix case.)
     stuck
         .set_read_timeout(Some(Duration::from_secs(5)))
@@ -160,7 +160,7 @@ fn daemon_reclaims_stuck_half_frame_connection() {
         Err(e) => panic!(
             "the server must CLOSE the stuck connection after the request timeout \
              (expected EOF / Ok(0)); instead the read returned {e:?}, meaning the \
-             connection is still open — the request-read timeout did not fire"
+             connection is still open, the request-read timeout did not fire"
         ),
     }
 
@@ -182,7 +182,7 @@ fn daemon_rejects_oversized_frame_length_prefix() {
         .expect("write oversized prefix");
     hostile.flush().ok();
 
-    // The connection must be DROPPED (true EOF / Ok(0)) promptly — not hang
+    // The connection must be DROPPED (true EOF / Ok(0)) promptly, not hang
     // while the server tries to allocate a 64 MiB+ recv buffer. A read TIMEOUT
     // would mean the server is still waiting on the (never-sent) body, i.e. the
     // length cap did not reject the frame.
@@ -219,7 +219,7 @@ fn daemon_rejects_oversized_frame_length_prefix() {
 
 /// Wiring (#9): a daemon bound to a non-default socket (`daemon start --socket`)
 /// must be reachable by a scan via `scan --daemon --daemon-socket <same path>`
-/// — proving the CLI override symmetrically targets the daemon's bind and the
+///: proving the CLI override symmetrically targets the daemon's bind and the
 /// scan client's connect. Before `--daemon-socket`, a fixed-location daemon
 /// (e.g. a systemd unit on `/run/keyhog/keyhog.sock`) was unreachable by scans:
 /// `scan --daemon` only ever resolved `default_socket_path()`, so a
@@ -227,8 +227,8 @@ fn daemon_rejects_oversized_frame_length_prefix() {
 /// actually serve a scan.
 ///
 /// Strengthening: the same scan forced `--daemon=on` but pointed at a DIFFERENT
-/// `--daemon-socket` must fail closed (no daemon there), proving the flag — not
-/// coincidence — is what makes the running daemon reachable.
+/// `--daemon-socket` must fail closed (no daemon there), proving the flag, not
+/// coincidence (is what makes the running daemon reachable).
 #[cfg(unix)]
 #[test]
 fn daemon_socket_flag_wires_scan_to_a_fixed_location_daemon() {
@@ -275,7 +275,7 @@ fn daemon_socket_flag_wires_scan_to_a_fixed_location_daemon() {
     );
 
     // (b) The SAME forced scan pointed at a DIFFERENT --daemon-socket must fail
-    //     closed (no daemon there) — proving the flag is what wired (a).
+    //     closed (no daemon there) (proving the flag is what wired (a)).
     let elsewhere = dir.path().join("nowhere.sock");
     let mut miss = Command::new(binary())
         .env("KEYHOG_NO_GPU", "1")

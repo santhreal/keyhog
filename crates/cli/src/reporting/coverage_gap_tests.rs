@@ -5,8 +5,8 @@
 //! process-global counters. The contract these lock: the structured surface
 //! reports EVERY coverage-gap category (a category the human end-of-scan summary
 //! can print but the structured report omits is a false-clean, Law 10). Two
-//! categories previously drifted out of the structured path — unreadable
-//! *binaries* and the structured decode-through oversize skip — and are
+//! categories previously drifted out of the structured path, unreadable
+//! *binaries* and the structured decode-through oversize skip, and are
 //! regression-locked below.
 
 use super::{coverage_gap_summary, CoverageCounts, CoverageGapKind, CoverageSeverity};
@@ -262,7 +262,7 @@ fn binary_degraded_surfaces() {
 }
 
 /// Regression: unreadable *binaries* were surfaced by the human summary but
-/// omitted from the structured (SARIF/HTML) report — a structured false-clean.
+/// omitted from the structured (SARIF/HTML) report (a structured false-clean).
 #[test]
 fn binary_unreadable_surfaces() {
     let s = coverage_gap_summary(&CoverageCounts {
@@ -336,7 +336,7 @@ fn all_unreadable_being_binaries_drops_the_generic_line() {
 // ── structural contracts ─────────────────────────────────────────────────────
 
 /// Set EVERY counter and assert the summary is well-formed: one entry per
-/// category, all reasons unique and non-empty. This is the drift guard — if a
+/// category, all reasons unique and non-empty. This is the drift guard, if a
 /// new counter is added without a distinct reason it trips here.
 fn all_ones() -> CoverageCounts {
     CoverageCounts {
@@ -420,7 +420,7 @@ fn surfaced_count_equals_input_count() {
 //
 // Both the human end-of-scan summary (`report_skip_summary`) and the SARIF
 // report (`coverage_gap_summary`) iterate the SAME `CoverageGapKind::ALL`. These
-// lock the single-source contract so the two surfaces can never drift apart — a
+// lock the single-source contract so the two surfaces can never drift apart, a
 // gap on one surface but not the other is a Law-10 false-clean.
 
 #[test]
@@ -515,7 +515,7 @@ fn warn_severity_set_is_exact() {
 
 #[test]
 fn severity_partition_totals_all_kinds() {
-    // 11 FAIL + 9 WARN = 20 — no kind is left unclassified, and the split is
+    // 11 FAIL + 9 WARN = 20, no kind is left unclassified, and the split is
     // pinned so a future re-classification is a deliberate, reviewed change.
     let fail = CoverageGapKind::ALL
         .iter()
@@ -595,7 +595,7 @@ fn human_reason_embeds_the_count() {
 
 #[test]
 fn sarif_summary_is_the_projection_of_all_kinds() {
-    // Every kind with a non-zero count — and only those — must appear in the
+    // Every kind with a non-zero count, and only those, must appear in the
     // SARIF summary keyed by its exact sarif_reason. This binds the SARIF surface
     // to the canonical set.
     let counts = all_ones();

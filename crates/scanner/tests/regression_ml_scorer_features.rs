@@ -356,10 +356,10 @@ fn context_keyword_features_use_supplied_lists() {
 #[test]
 fn service_context_feature_reflects_named_service_vs_generic() {
     // Feature 42 (DET-1 keyword specificity): the full feature vector's slot [42]
-    // must be WIRED to `service_vocab::context_names_service` on the context — a
+    // must be WIRED to `service_vocab::context_names_service` on the context, a
     // context that names a specific service from the detector-corpus-derived vocab
     // makes an otherwise-generic value credible (fires), while a purely generic
-    // role-word context (api_key/secret/token — excluded from the vocab) does not.
+    // role-word context (api_key/secret/token (excluded from the vocab) does not).
     // The token value is held constant; ONLY the context varies, isolating slot 42.
     let value = "gH7kLmN9pQ2rS4tV6wX8yZ0aB1cD3eF5";
 

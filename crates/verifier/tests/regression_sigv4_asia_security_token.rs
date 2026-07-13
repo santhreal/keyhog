@@ -26,7 +26,7 @@
 //! the SigV4-required lexicographic order `host < x-amz-date <
 //! x-amz-security-token`, and sends the token as a request header
 //! (`aws.rs` lines ~165-167). The token is deliberately NOT placed in the
-//! `Authorization` header — that grammar carries only Credential / SignedHeaders
+//! `Authorization` header, that grammar carries only Credential / SignedHeaders
 //! / Signature.
 //!
 //! Reachability note (derived by reading the crate)
@@ -49,7 +49,7 @@
 //! * Reproduce the signer's pure string builders (canonical/signed headers,
 //!   canonical request, credential scope, string-to-sign, Authorization grammar)
 //!   byte-for-byte from `aws.rs`, wire the REAL timestamp into them, and assert
-//!   the exact ASIA-vs-AKIA differences with concrete strings — including the
+//!   the exact ASIA-vs-AKIA differences with concrete strings, including the
 //!   real code-derived payload hash of the STS GetCallerIdentity body. The
 //!   load-bearing assertions are the ASIA-token ones: they encode the post-fix
 //!   contract and would fail against the pre-fix `("…", "host;x-amz-date")`
@@ -62,7 +62,7 @@ use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 // ---------------------------------------------------------------------------
 
 /// `hex::encode(Sha256::digest(b"Action=GetCallerIdentity&Version=2011-06-15"))`
-/// — the payload hash the signer puts on the last line of the canonical
+///: the payload hash the signer puts on the last line of the canonical
 /// request (`aws.rs` line ~136).
 const STS_BODY_SHA256: &str = "ab821ae955788b0e33ebd34c208442ccfc2d406e2edc5e7a39bd6458fbb4f843";
 
@@ -203,7 +203,7 @@ fn asia_signed_headers_are_lexicographically_sorted() {
 
 #[test]
 fn asia_token_rides_request_header_not_authorization_header() {
-    // The token is NOT in the Authorization header — only SignedHeaders grows.
+    // The token is NOT in the Authorization header (only SignedHeaders grows).
     let (date_stamp, _amz) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let scope = mirror_credential_scope(&date_stamp, "us-east-1", "sts");
     assert_eq!(scope, "20240101/us-east-1/sts/aws4_request");
@@ -305,7 +305,7 @@ fn empty_token_string_still_appends_signed_token_line() {
 
 // ===========================================================================
 // 4. ADVERSARIAL / EVASION: real STS tokens are long base64-ish blobs with
-//    '+', '/', '=' — they must be embedded verbatim (no encoding by the signer)
+//    '+', '/', '=', they must be embedded verbatim (no encoding by the signer)
 //    and must not break the canonical-header structure.
 // ===========================================================================
 
@@ -341,7 +341,7 @@ fn token_with_embedded_newline_does_not_silently_split_a_clean_token() {
 
 // ===========================================================================
 // 5. PROPERTY-STYLE: over a sweep of timestamps and tokens, the ASIA invariant
-//    holds — signed headers always end with ';x-amz-security-token', stay sorted
+//    holds, signed headers always end with ';x-amz-security-token', stay sorted
 //    and ';'-deduplicated, and the canonical block stays consistent.
 // ===========================================================================
 
@@ -413,7 +413,7 @@ fn reference_timestamp_flows_into_canonical_header_verbatim() {
     let (canon, _signed) =
         mirror_signed_headers("sts.us-east-1.amazonaws.com", &amz_date, Some("tk"));
     assert!(canon.contains("x-amz-date:20150830T123600Z\n"));
-    // date_stamp (8) is the prefix of amz_date — both feed the same signature.
+    // date_stamp (8) is the prefix of amz_date (both feed the same signature).
     assert_eq!(&amz_date[0..8], date_stamp.as_str());
 
     // The credential scope built from this date for the STS service.

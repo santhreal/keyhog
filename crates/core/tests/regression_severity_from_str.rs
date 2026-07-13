@@ -143,7 +143,7 @@ fn toml_reserializes_alias_input_to_canonical_kebab() {
 fn whitespace_padded_spelling_is_not_trimmed_and_rejected() {
     // serde does NOT trim before variant matching, so a padded token is a
     // distinct (rejected) string, not `Critical`. (`from_filter_label` trims;
-    // the raw deserializer does not — this pins that difference.)
+    // the raw deserializer does not, this pins that difference.)
     for bad in ["\" critical \"", "\"critical \"", "\" info\"", "\"low\\t\""] {
         let res = serde_json::from_str::<Severity>(bad);
         assert!(

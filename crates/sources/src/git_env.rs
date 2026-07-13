@@ -1,4 +1,4 @@
-//! Hermetic git spawn factory — the ONE owner of the trusted-binary resolution
+//! Hermetic git spawn factory, the ONE owner of the trusted-binary resolution
 //! and isolation environment every git invocation needs.
 //!
 //! This lives OUTSIDE the `git` module because it must be reachable from two
@@ -19,7 +19,7 @@ const GIT_NULL_CONFIG: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
 /// Resolve `git` to an absolute path inside a trusted system bin dir.
 /// SECURITY (kimi-wave1 audit finding 3.PATH-git): refuses to fall back to
 /// `Command::new("git")`, which would let a hostile `$PATH` substitute the git
-/// binary at runtime — keyhog feeds git the repo path and scans the blob bytes
+/// binary at runtime, keyhog feeds git the repo path and scans the blob bytes
 /// it returns, so a substituted git could exfiltrate credentials directly.
 pub(crate) fn git_bin() -> Result<PathBuf, SourceError> {
     keyhog_core::resolve_safe_bin("git").ok_or_else(|| {

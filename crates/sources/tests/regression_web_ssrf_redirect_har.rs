@@ -4,7 +4,7 @@
 //! Two invariants are locked here:
 //!
 //! 1. Every SSRF host decision on the web fetch path delegates to the single
-//!    canonical predicate `keyhog_verifier::ssrf::is_private_url` — WebSource
+//!    canonical predicate `keyhog_verifier::ssrf::is_private_url`: WebSource
 //!    must NOT carry a hand-rolled fork. The classification matrix asserts the
 //!    exact bool the canonical returns AND that `is_disallowed_web_host` agrees
 //!    with it for every case, so a re-forked copy that drifts fails here.
@@ -26,7 +26,7 @@ fn loopback_source(url: String) -> keyhog_sources::WebSource {
 }
 
 // ----------------------------------------------------------------------------
-// SSRF host / IP classification — canonical predicate reuse (no hand-rolled fork)
+// SSRF host / IP classification, canonical predicate reuse (no hand-rolled fork)
 // ----------------------------------------------------------------------------
 
 #[test]
@@ -100,7 +100,7 @@ fn web_host_screen_matches_canonical_is_private_url_for_every_case() {
         "http://127.0.0.1/",
         "http://169.254.169.254/latest/meta-data/",
         "http://10.0.0.5/",
-        "http://100.64.0.1/", // carrier-grade NAT — the classic fork gap
+        "http://100.64.0.1/", // carrier-grade NAT, the classic fork gap
         "http://0x7f000001/",
         "http://2130706433/",
         "http://localhost/",
@@ -129,7 +129,7 @@ fn web_host_screen_matches_canonical_is_private_url_for_every_case() {
 fn is_disallowed_ip_screens_resolved_addresses_with_exact_bools() {
     use std::net::IpAddr;
 
-    // Post-DNS resolution screen (rebinding defense) — assert the exact verdict
+    // Post-DNS resolution screen (rebinding defense), assert the exact verdict
     // for each resolved address class.
     assert_eq!(
         TestApi.is_disallowed_ip("127.0.0.1".parse::<IpAddr>().unwrap()),
@@ -165,7 +165,7 @@ fn is_disallowed_ip_screens_resolved_addresses_with_exact_bools() {
 }
 
 // ----------------------------------------------------------------------------
-// Redirect revalidation — e2e through the real WebSource fetch path
+// Redirect revalidation, e2e through the real WebSource fetch path
 // ----------------------------------------------------------------------------
 
 fn only_error_message(
@@ -277,7 +277,7 @@ fn redirect_to_non_http_scheme_is_refused() {
 }
 
 // ----------------------------------------------------------------------------
-// HAR 1.2 expansion — exact chunk count, metadata, and embedded secrets
+// HAR 1.2 expansion, exact chunk count, metadata, and embedded secrets
 // ----------------------------------------------------------------------------
 
 const TWO_ENTRY_HAR: &str = r#"{

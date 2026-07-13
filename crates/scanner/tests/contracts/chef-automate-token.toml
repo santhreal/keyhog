@@ -20,7 +20,7 @@ reason = "Body below 20 alnum chars."
 [[evasion]]
 text = "chef-automate auth token = \"Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn\""
 credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn"
-reason = "Chef-automate auth token with spaces and quotes — regex covers .*auth.*token."
+reason = "Chef-automate auth token with spaces and quotes (regex covers .*auth.*token)."
 
 [perf]
 fixture_bytes = 4096

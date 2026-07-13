@@ -9,7 +9,7 @@ use crate::fragment_cache::FragmentCache;
 /// Join adjacent string fragments and continuations before scanning.
 ///
 /// The returned [`PreprocessedText`] borrows `text` (`Cow::Borrowed`) on the
-/// passthrough / no-concatenation paths — the byte-identical common case — and
+/// passthrough / no-concatenation paths, the byte-identical common case, and
 /// only owns a fresh `String` (`Cow::Owned`) when a real concatenation join or
 /// structural fragment actually appends NEW bytes.
 pub(crate) fn preprocess_multiline<'a>(
@@ -51,11 +51,11 @@ pub(crate) fn preprocess_multiline<'a>(
     // `has_concatenation_indicators`) already returns early for real JSON data
     // (`should_passthrough` ⇒ passthrough at the top of this fn), so a `{`-leading
     // buffer only reaches this point when it is NOT strict JSON and DID trip a
-    // concat shape — precisely the JS/TS case we must preprocess.
+    // concat shape (precisely the JS/TS case we must preprocess).
 
     // `result_lines` gets exactly one push per outer-loop iteration and the loop
     // advances `index` by at least 1 each time, so it never holds more than
-    // `lines.len()` entries — reserve that upper bound up front to skip the
+    // `lines.len()` entries, reserve that upper bound up front to skip the
     // doubling reallocations as the join walk fills it (the capacity is
     // unobservable in the returned `PreprocessedText`).
     let mut result_lines = Vec::with_capacity(lines.len());
@@ -159,7 +159,7 @@ pub(crate) fn preprocess_multiline<'a>(
     original_mappings.extend(mappings);
 
     PreprocessedText {
-        // `final_text` is the input plus appended join/structural bytes — newly
+        // `final_text` is the input plus appended join/structural bytes, newly
         // synthesized, so it is owned.
         text: std::borrow::Cow::Owned(final_text),
         original_end,

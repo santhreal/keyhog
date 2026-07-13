@@ -3,14 +3,14 @@
 //! Targets the verifier predicates that decide whether live credential
 //! verification is allowed to dial a host:
 //!
-//!   * `keyhog_verifier::ssrf::is_private_ip_addr_fast` — compatibility alias
+//!   * `keyhog_verifier::ssrf::is_private_ip_addr_fast`: compatibility alias
 //!     for the single verifier IP refusal policy.
-//!   * `keyhog_verifier::ssrf::is_private_ip_addr` — the same single verifier
+//!   * `keyhog_verifier::ssrf::is_private_ip_addr`: the same single verifier
 //!     IP refusal policy used after DNS resolution to defeat DNS rebinding.
-//!   * `keyhog_verifier::ssrf::is_private_url` — the URL-string gate that parses
+//!   * `keyhog_verifier::ssrf::is_private_url`: the URL-string gate that parses
 //!     the host through the `url` crate and refuses private / reserved / encoded
 //!     loopback hosts (the only gate on the proxy verification path).
-//!   * `keyhog_verifier::testing::ip_addr_is_bogon` — the shared bogon predicate.
+//!   * `keyhog_verifier::testing::ip_addr_is_bogon`: the shared bogon predicate.
 //!
 //! Every expected value here is derived directly from
 //! `crates/verifier/src/ssrf.rs` + `crates/verifier/src/bogon.rs`. The verifier
@@ -37,7 +37,7 @@ fn v6(s: &str) -> IpAddr {
 }
 
 // ===========================================================================
-// is_private_ip_addr_fast — IPv4 loopback 127.0.0.0/8
+// is_private_ip_addr_fast. IPv4 loopback 127.0.0.0/8
 // ===========================================================================
 
 #[test]
@@ -65,7 +65,7 @@ fn fast_v4_loopback_upper_boundary_neighbor() {
 }
 
 // ===========================================================================
-// is_private_ip_addr_fast — RFC1918 10/8, 172.16/12, 192.168/16
+// is_private_ip_addr_fast. RFC1918 10/8, 172.16/12, 192.168/16
 // ===========================================================================
 
 #[test]
@@ -102,7 +102,7 @@ fn fast_v4_private_c_192_168_slash16() {
 }
 
 // ===========================================================================
-// is_private_ip_addr_fast — link-local 169.254/16 + IMDS metadata
+// is_private_ip_addr_fast, link-local 169.254/16 + IMDS metadata
 // ===========================================================================
 
 #[test]
@@ -117,7 +117,7 @@ fn fast_v4_link_local_slash16() {
 }
 
 // ===========================================================================
-// is_private_ip_addr_fast — unspecified 0/8
+// is_private_ip_addr_fast, unspecified 0/8
 // ===========================================================================
 
 #[test]
@@ -129,7 +129,7 @@ fn fast_v4_unspecified_slash8() {
 }
 
 // ===========================================================================
-// is_private_ip_addr_fast — multicast 224/4 and reserved 240/4
+// is_private_ip_addr_fast, multicast 224/4 and reserved 240/4
 // ===========================================================================
 
 #[test]
@@ -154,7 +154,7 @@ fn fast_v4_reserved_class_e_slash4() {
 }
 
 // ===========================================================================
-// is_private_ip_addr_fast — CGN 100.64/10
+// is_private_ip_addr_fast. CGN 100.64/10
 // ===========================================================================
 
 #[test]
@@ -167,7 +167,7 @@ fn fast_v4_cgn_100_64_slash10_inside() {
 
 #[test]
 fn fast_v4_cgn_100_64_slash10_boundaries_public() {
-    // 100.63.x is below the /10 and 100.128.x is above it — both public.
+    // 100.63.x is below the /10 and 100.128.x is above it (both public).
     assert!(!is_private_ip_addr_fast(&v4(100, 63, 255, 255)));
     assert!(!is_private_ip_addr_fast(&v4(100, 128, 0, 0)));
     // 100.0.0.1 is in 100.0.0.0/24 (public), not CGN.
@@ -175,7 +175,7 @@ fn fast_v4_cgn_100_64_slash10_boundaries_public() {
 }
 
 // ===========================================================================
-// is_private_ip_addr_fast — public IPv4 must be allowed
+// is_private_ip_addr_fast, public IPv4 must be allowed
 // ===========================================================================
 
 #[test]
@@ -187,7 +187,7 @@ fn fast_v4_public_addresses_allowed() {
 }
 
 // ===========================================================================
-// is_private_ip_addr_fast — IPv6 loopback / unspecified / fe80 / fc00 / ff00
+// is_private_ip_addr_fast. IPv6 loopback / unspecified / fe80 / fc00 / ff00
 // ===========================================================================
 
 #[test]
@@ -280,7 +280,7 @@ fn bogon_v4_broadcast_255() {
 }
 
 // ===========================================================================
-// ip_addr_is_bogon — IPv6 special wrappings & ranges
+// ip_addr_is_bogon: IPv6 special wrappings & ranges
 // ===========================================================================
 
 #[test]
@@ -355,7 +355,7 @@ fn bogon_v6_public_allowed() {
 }
 
 // ===========================================================================
-// ip_addr_is_bogon — the ::1 regression (decomposes to 0.0.0.1, must be caught
+// ip_addr_is_bogon, the ::1 regression (decomposes to 0.0.0.1, must be caught
 // by the loopback short-circuit BEFORE the v4 fallback).
 // ===========================================================================
 
@@ -370,7 +370,7 @@ fn bogon_v6_loopback_regression_not_via_v4_fallback() {
 }
 
 // ===========================================================================
-// is_private_url — domain suffix blocklist
+// is_private_url, domain suffix blocklist
 // ===========================================================================
 
 #[test]
@@ -412,7 +412,7 @@ fn url_allows_public_domains() {
 }
 
 // ===========================================================================
-// is_private_url — malformed URL fails closed
+// is_private_url, malformed URL fails closed
 // ===========================================================================
 
 #[test]
@@ -425,7 +425,7 @@ fn url_malformed_blocked_fail_closed() {
 }
 
 // ===========================================================================
-// is_private_url — dotted-quad IPv4 in every guarded range
+// is_private_url, dotted-quad IPv4 in every guarded range
 // ===========================================================================
 
 #[test]
@@ -448,7 +448,7 @@ fn url_allows_dotted_quad_public() {
 }
 
 // ===========================================================================
-// is_private_url — integer / hex / octal encoded loopback (radix evasion)
+// is_private_url, integer / hex / octal encoded loopback (radix evasion)
 // ===========================================================================
 
 #[test]
@@ -479,13 +479,13 @@ fn url_blocks_octal_integer_loopback() {
 
 #[test]
 fn url_blocks_octal_dotted_loopback() {
-    // 0177.0.0.1 — octal first octet == 127.
+    // 0177.0.0.1 (octal first octet == 127).
     assert!(is_private_url("http://0177.0.0.1/"));
 }
 
 #[test]
 fn url_blocks_hex_dotted_loopback() {
-    // 0x7f.0.0.1 — hex first octet == 127.
+    // 0x7f.0.0.1 (hex first octet == 127).
     assert!(is_private_url("http://0x7f.0.0.1/"));
 }
 
@@ -496,7 +496,7 @@ fn url_decimal_max_minus_one_is_reserved_blocked() {
 }
 
 // ===========================================================================
-// is_private_url — short-form (inet_aton) dotted IPv4
+// is_private_url, short-form (inet_aton) dotted IPv4
 // ===========================================================================
 
 #[test]
@@ -531,7 +531,7 @@ fn url_allows_public_two_part_short_form() {
 }
 
 // ===========================================================================
-// is_private_url — IPv6 literal hosts (bracketed)
+// is_private_url: IPv6 literal hosts (bracketed)
 // ===========================================================================
 
 #[test]
@@ -561,7 +561,7 @@ fn url_blocks_ipv6_mapped_and_compat_loopback_literal() {
 
 #[test]
 fn url_blocks_ipv6_documentation_literal() {
-    // 2001:db8:: documentation — caught via the bogon layer in is_private_url.
+    // 2001:db8:: documentation (caught via the bogon layer in is_private_url).
     assert!(is_private_url("http://[2001:db8::1]/"));
 }
 
@@ -572,26 +572,26 @@ fn url_allows_ipv6_public_literal() {
 }
 
 // ===========================================================================
-// is_private_url — malformed-IP heuristic & spec-rejected hosts (DNS-rebind
+// is_private_url, malformed-IP heuristic & spec-rejected hosts (DNS-rebind
 // style evasion). The url crate REJECTS >4-part and negative-octet hosts, so
 // is_private_url returns true via the malformed-URL fail-closed branch.
 // ===========================================================================
 
 #[test]
 fn url_blocks_too_many_octets() {
-    // 0.0.0.0.0 — five parts; url IPv4 parser fails => malformed URL => blocked.
+    // 0.0.0.0.0 (five parts; url IPv4 parser fails => malformed URL => blocked).
     assert!(is_private_url("http://0.0.0.0.0/"));
 }
 
 #[test]
 fn url_blocks_negative_octets() {
-    // -1.-1.-1.-1 — rejected by the url host parser => blocked.
+    // -1.-1.-1.-1 (rejected by the url host parser => blocked).
     assert!(is_private_url("http://-1.-1.-1.-1/"));
 }
 
 #[test]
 fn url_blocks_mixed_radix_evasion_loopback() {
-    // 0x7f.0177.0.1 — hex + octal blend resolving toward loopback territory.
+    // 0x7f.0177.0.1 (hex + octal blend resolving toward loopback territory).
     assert!(is_private_url("http://0x7f.0177.0.1/"));
 }
 
@@ -603,7 +603,7 @@ fn url_blocks_userinfo_loopback() {
 }
 
 // ===========================================================================
-// is_private_url — DNS rebinding intent: post-resolution IP veto.
+// is_private_url: DNS rebinding intent: post-resolution IP veto.
 // The string gate cannot see attacker.com's A record; the resolved-IP veto
 // (is_private_ip_addr) is what defeats rebinding. Assert the resolved-IP layer
 // catches private targets that a rebind would return.
@@ -687,9 +687,9 @@ fn prop_v4_cgn_100_64_slash10_membership() {
 fn prop_v4_first_octet_reserved_blocks() {
     // Sweep the first octet with a fixed public-looking tail (x.123.45.67) and
     // assert the fast-path verdict matches the derived range table:
-    //   0 (0/8), 10 (10/8), 100 (CGN only if 2nd octet in 64..=127 — here 123 -> private),
-    //   127 (loopback), 169 (only 169.254 — here .123 -> public),
-    //   172 (only .16..=.31 — here .123 -> public), 192 (only 192.168 — here .123 -> public),
+    //   0 (0/8), 10 (10/8), 100 (CGN only if 2nd octet in 64..=127, here 123 -> private),
+    //   127 (loopback), 169 (only 169.254, here .123 -> public),
+    //   172 (only .16..=.31, here .123 -> public), 192 (only 192.168, here .123 -> public),
     //   224..=255 (multicast+reserved). Everything else public.
     for first in 0u16..=255 {
         let ip = v4(first as u8, 123, 45, 67);

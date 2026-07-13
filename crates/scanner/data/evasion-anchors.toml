@@ -13,9 +13,9 @@
 #   - Anchor MUST be distinctive enough that a word-boundary match implies "a
 #     credential body follows": prefer >= 4 chars OR a trailing structural
 #     separator (`_`, `-`, `.`). Do NOT add short ambiguous fragments like
-#     `sk-`, `key-`, `SK`, `AC` — they false-anchor on ordinary identifiers.
+#     `sk-`, `key-`, `SK`, `AC`: they false-anchor on ordinary identifiers.
 #   - This is an evasion-hardening HINT list, intentionally a curated subset of
-#     the detector corpus's prefixes — it is NOT the detection source of truth,
+#     the detector corpus's prefixes, it is NOT the detection source of truth,
 #     so partial coverage only costs recall-under-evasion, never precision.
 #
 # Contributors: append to the `anchors` array.
@@ -33,7 +33,7 @@ anchors = [
   "AIza",
   # Slack tokens / app-level.
   "xoxb-", "xoxp-", "xoxa-", "xoxr-", "xoxs-", "xapp-",
-  # OpenAI / Anthropic (full distinctive prefixes only — never bare `sk-`).
+  # OpenAI / Anthropic (full distinctive prefixes only (never bare `sk-`)).
   "sk-proj-", "sk-ant-",
   # SendGrid (`SG.` is short but boundary-anchored and highly distinctive).
   "SG.",

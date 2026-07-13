@@ -24,7 +24,7 @@ static SKIPPED_EXCLUDED: AtomicUsize = AtomicUsize::new(0);
 
 /// How many files the walker could not read (permission denied / I/O error) and
 /// therefore did NOT scan. This is the most important to surface: an unreadable
-/// file is an UNKNOWN, not a clean file — silently dropping it is a false-clean
+/// file is an UNKNOWN, not a clean file, silently dropping it is a false-clean
 /// (Law 10). Bumped on the walk's error path.
 static SKIPPED_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
 
@@ -35,7 +35,7 @@ static SKIPPED_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
 static GIT_OBJECT_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
 
 /// How many archives (zip/apk/jar/tar/.gz/.tgz/...) had their extraction
-/// TRUNCATED by a decompression-bomb guard — the per-archive 4x-of-`--max-file-size`
+/// TRUNCATED by a decompression-bomb guard, the per-archive 4x-of-`--max-file-size`
 /// uncompressed budget was exceeded, so the remaining entries were NOT scanned.
 /// A truncated archive is partial coverage, not a clean archive: silently
 /// dropping the unscanned tail is a false-clean (Law 10). Bumped once per
@@ -44,11 +44,11 @@ static GIT_OBJECT_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
 static SKIPPED_ARCHIVE_TRUNCATED: AtomicUsize = AtomicUsize::new(0);
 
 /// How many binary (ELF/PE/Mach-O) sections were SKIPPED because their name
-/// could not be resolved from the object's section-name string table — a
+/// could not be resolved from the object's section-name string table, a
 /// corrupt/truncated strtab in a malformed binary. The previous code substituted
 /// an empty name (`unwrap_or("")`) and then silently dropped the section because
 /// `""` is never in the high-value target list: a `.rodata`/`.data` section whose
-/// name lookup failed vanished from the scan with no trace (Law 10 false-clean —
+/// name lookup failed vanished from the scan with no trace (Law 10 false-clean 
 /// embedded secrets in that section were never scanned). Bumped once per section
 /// whose name lookup fails; surfaced so the operator knows the binary parse was
 /// partial. Reset via `reset_skip_counters`.
@@ -76,13 +76,13 @@ static STRUCTURED_SOURCE_PARSE_FAILURES: AtomicUsize = AtomicUsize::new(0);
 /// 10 false-clean); now surfaced.
 static ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE: AtomicUsize = AtomicUsize::new(0);
 
-/// How many files were recognised as Git-LFS *pointers* — the tiny text
+/// How many files were recognised as Git-LFS *pointers*, the tiny text
 /// stand-ins Git LFS commits in place of a large blob. keyhog scans the pointer
 /// text (and suppresses its content-hash `oid`), but the real blob it references
 /// lives in LFS storage and is NOT on disk to scan unless `git lfs pull` has
 /// materialised it. Silently reporting an unmaterialised-pointer repo as clean
-/// is a false-clean (Law 10): the blob — which can hold secrets (a keystore, a
-/// `.pem`, an encrypted `.env`) — was never scanned. Bumped once per pointer
+/// is a false-clean (Law 10): the blob, which can hold secrets (a keystore, a
+/// `.pem`, an encrypted `.env`), was never scanned. Bumped once per pointer
 /// file; surfaced at end-of-scan as partial coverage. Recognition is the shared
 /// `keyhog_core::git_lfs::is_git_lfs_pointer`.
 static GIT_LFS_POINTER: AtomicUsize = AtomicUsize::new(0);
@@ -244,7 +244,7 @@ pub fn reset_skipped_over_max_size() {
 // end-of-scan. But the integration test binary runs hundreds of scans
 // concurrently in a single process, so a counter-asserting test
 // (`reset → scan → read skip_counts()`) can observe increments from another
-// test's scan running on a different thread — a false failure that has nothing
+// test's scan running on a different thread, a false failure that has nothing
 // to do with the code under test.
 //
 // The gate makes the asserting window EXCLUSIVE without changing the counters'
@@ -258,7 +258,7 @@ pub fn reset_skipped_over_max_size() {
 //
 // The gate is ARMED only when the test harness first enters an exclusive scope.
 // A production scan never arms it, so `scan_gate_read_lease` returns after a
-// single relaxed atomic-bool load and never touches the lock — zero production
+// single relaxed atomic-bool load and never touches the lock, zero production
 // cost (Law 7). The asserting test's OWN scan bypasses the read lease via a
 // thread-local flag, so its reader-pool workers (which never touch the gate)
 // run freely under the held write lease without self-deadlock.
@@ -291,7 +291,7 @@ pub(crate) fn enter_exclusive_scan_scope() -> ScanCounterScope {
     SCAN_GATE_ARMED.store(true, Relaxed);
     let write = SCAN_GATE
         .write()
-        // LAW10: recover the inner guard — test-only scan gate, never armed in
+        // LAW10: recover the inner guard, test-only scan gate, never armed in
         // production; a recovered guard still serializes the asserting test.
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     IN_EXCLUSIVE_SCAN_SCOPE.with(|in_scope| in_scope.set(true));
@@ -306,8 +306,8 @@ pub(crate) struct ScanReadLease {
 }
 
 /// Acquire a scan read lease. Must be taken BEFORE any recording work (eager
-/// walk errors, reader-pool spawn) so a concurrent scan blocks here — behind an
-/// active exclusive scope — instead of recording into the counters an asserting
+/// walk errors, reader-pool spawn) so a concurrent scan blocks here, behind an
+/// active exclusive scope, instead of recording into the counters an asserting
 /// test is about to read. Returns immediately in production (gate unarmed).
 pub(crate) fn acquire_scan_read_lease() -> ScanReadLease {
     if !SCAN_GATE_ARMED.load(Relaxed) {
@@ -320,7 +320,7 @@ pub(crate) fn acquire_scan_read_lease() -> ScanReadLease {
         _lease: Some(
             SCAN_GATE
                 .read()
-                // LAW10: recover the inner guard — test-only scan gate, never
+                // LAW10: recover the inner guard, test-only scan gate, never
                 // armed in production; a recovered guard still serializes scans.
                 .unwrap_or_else(|poisoned| poisoned.into_inner()),
         ),

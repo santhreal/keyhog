@@ -1,12 +1,12 @@
 //! `rewrite_alternation_prefix` must locate the leading group's matching close
 //! with the SAME escape- and char-class-aware discipline as
-//! `split_top_level_alternatives` — an escaped `\)` or a `)` / `(` inside a
+//! `split_top_level_alternatives`: an escaped `\)` or a `)` / `(` inside a
 //! `[...]` class is a LITERAL, not a group delimiter.
 //!
 //! Before the unification the close-finder was a naive `(` / `)` counter (the
 //! source comment even called class parens "rare in real detectors"). That let
 //! an escaped or classed paren prematurely balance the depth counter and
-//! mis-locate the close, so the rewrite spliced a WRONG slice — a silent recall
+//! mis-locate the close, so the rewrite spliced a WRONG slice, a silent recall
 //! bug (Law 10). These cases pin the corrected behavior.
 
 /// Escaped `\)` inside the alternation body must NOT be mistaken for the group
@@ -24,7 +24,7 @@ fn escaped_close_paren_in_leading_group_is_not_the_group_close() {
 
 /// A char class carrying an UNbalanced paren (`[)]`) must not corrupt the depth
 /// count. The naive scanner counted the classed `)` and closed the group inside
-/// the class (finding no `|`, it declined the rewrite entirely — lost
+/// the class (finding no `|`, it declined the rewrite entirely, lost
 /// acceleration); the class-aware scanner steps over `[...]` and rewrites
 /// correctly.
 #[test]

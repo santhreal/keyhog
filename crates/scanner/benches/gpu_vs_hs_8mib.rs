@@ -17,7 +17,7 @@
 //! remains mandatory in both modes.
 //!
 //! This is a plain `main()` (harness = false) so the numbers are raw wall-time
-//! medians, not criterion's adaptive sampling — every number is one timed call.
+//! medians, not criterion's adaptive sampling (every number is one timed call).
 
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{
@@ -327,7 +327,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     #[cfg(not(feature = "gpu"))]
     {
-        println!("(gpu feature OFF — build with --features gpu for the GPU comparison)");
+        println!("(gpu feature OFF, build with --features gpu for the GPU comparison)");
     }
     Ok(())
 }

@@ -16,7 +16,7 @@ mod zip_scan;
 /// Initial decode-buffer capacity reserved per archive entry, capped by the
 /// entry's real size via `min`. A 64 KiB starting buffer avoids repeated small
 /// reallocations while keeping the up-front reservation bounded for tiny
-/// entries. ONE PLACE owner for every archive backend (zip/7z/rar) — never
+/// entries. ONE PLACE owner for every archive backend (zip/7z/rar), never
 /// re-hardcode this value in a per-format module.
 pub(super) const ARCHIVE_ENTRY_READ_CAPACITY_HINT: u64 = 64 * 1024;
 
@@ -173,7 +173,7 @@ pub(super) fn extract_openpack_archive(
                             > total_budget
                     {
                         // Law 10: a zip-bomb abort truncates extraction, so the
-                        // remaining entries are NOT scanned — partial coverage the
+                        // remaining entries are NOT scanned, partial coverage the
                         // operator must see. The old `tracing::warn!` was invisible
                         // at default verbosity; surface it loudly + count it.
                         let error = report_archive_truncation(
@@ -244,7 +244,7 @@ pub(super) fn extract_openpack_archive(
                         }
                         Err(error) => {
                             // Law 10: a dropped archive entry is an UNKNOWN, not a
-                            // clean entry — count it as unreadable so end-of-scan
+                            // clean entry, count it as unreadable so end-of-scan
                             // coverage reflects it (the `tracing::warn!` alone is
                             // invisible at default verbosity).
                             tracing::warn!(

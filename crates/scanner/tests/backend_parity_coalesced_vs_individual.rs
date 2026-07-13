@@ -126,7 +126,7 @@ fn per_chunk_order_preserved_coalesced_dispatch() {
         make_chunk("// another empty comment", "comment.txt", 0),
         // Valid-checksum GitHub PAT: the github detector verifies the trailing
         // CRC, so a fabricated `ghp_token…` (wrong length, bad checksum) is
-        // correctly dropped — the chunk must carry a real-shaped token for the
+        // correctly dropped, the chunk must carry a real-shaped token for the
         // "chunk 3 has findings" assertion to test backend parity, not the
         // checksum gate. See memory: checksum-invalidates-fabricated-token-fixtures.
         make_chunk("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", "github.md", 0),

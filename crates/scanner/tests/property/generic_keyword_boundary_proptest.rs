@@ -1,8 +1,8 @@
 //! Generic-bridge keyword left-boundary contract
 //! (`crates/scanner/src/adjudicate/generic.rs`).
 //!
-//! The generic secret bridge fires on assignment keywords. Two of them — `pass`
-//! and `auth` — are substrings of common non-secret words (`bypass`, `compass`,
+//! The generic secret bridge fires on assignment keywords. Two of them. `pass`
+//! and `auth`: are substrings of common non-secret words (`bypass`, `compass`,
 //! `author`, `oauth`), so they require a whole-word left boundary before the
 //! bridge will trust them. `keyword_has_word_boundary` admits a real word start
 //! (line start, a non-letter neighbor, or a camelCase hinge `…yPass`) while
@@ -97,7 +97,7 @@ proptest! {
     }
 
     /// A lowercase letter directly before a lowercase keyword char is NEVER a
-    /// boundary (the `bypass` family) — the camelCase hinge needs an uppercase head.
+    /// boundary (the `bypass` family) (the camelCase hinge needs an uppercase head).
     #[test]
     fn lower_then_lower_is_never_a_boundary(
         head in "[a-z]{1,6}",

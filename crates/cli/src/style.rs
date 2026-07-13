@@ -75,8 +75,8 @@ pub(crate) fn info(label: &str, palette: &Palette) -> String {
 
 // 24-bit truecolor severity / progress palette shared by the scan progress
 // ticker and the completion severity/verification summary lines
-// (`orchestrator::reporting`). Centralized here — the one CLI file exempt from
-// the no-raw-ANSI-escape gate — so the orchestrator never embeds escape
+// (`orchestrator::reporting`). Centralized here, the one CLI file exempt from
+// the no-raw-ANSI-escape gate, so the orchestrator never embeds escape
 // literals directly. Each is gated at its call site behind the ticker's `color`
 // flag (TTY && !NO_COLOR), so piped / NO_COLOR output stays plain.
 pub(crate) const SEV_BRAND: &str = "\x1b[38;2;255;214;10m";
@@ -93,7 +93,7 @@ pub(crate) const SEV_RESET: &str = "\x1b[0m";
 
 /// Wrap `text` in `color_code` + reset when `color` is set, else return it
 /// plain. The owned-style replacement for the orchestrator's former local
-/// per-file colorizer — the deliberately distinct name keeps the no-raw-ANSI
+/// per-file colorizer, the deliberately distinct name keeps the no-raw-ANSI
 /// gate's legacy-colorizer ban a true signal.
 pub(crate) fn paint(text: String, color_code: &str, color: bool) -> String {
     if color {

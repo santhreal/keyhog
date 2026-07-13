@@ -11,7 +11,7 @@
 //! patterns, structural signals, coarse file-type cues, the decode-structure
 //! verdict (feature #41, base64/hex → magic-bytes/protobuf) that drove the
 //! base64-of-binary false-flag rate to 0%, and the keyword-specificity signal
-//! (feature #42, context names a SPECIFIC service vs generic role words only —
+//! (feature #42, context names a SPECIFIC service vs generic role words only 
 //! see `service_vocab`), which separates service-keyword+UUID real secrets
 //! from generic-keyword+UUID identifiers.
 
@@ -54,7 +54,7 @@ pub(crate) const SCORE_CACHE_CAPACITY: usize = 256;
 
 // NUM_FEATURES is `model_arch::INPUT_DIM` (one owner), so the forward pass's
 // const-generic layer widths (EXPERT_FC1_OUT/EXPERT_FC2_OUT) and the buffer
-// strides in `ml_weights` are the SAME consts — a retrain cannot make them
+// strides in `ml_weights` are the SAME consts, a retrain cannot make them
 // disagree. `weights.bin`'s byte length is still checked at parse time.
 
 /// Score a candidate secret and its surrounding context using default (empty) heuristic lists.
@@ -215,7 +215,7 @@ pub fn model_card_json() -> &'static str {
 ///    and accumulated, so the dependency-free inner loop over outputs vectorizes
 ///    across 8-16 output lanes. Each output still reduces its inputs in index
 ///    order with separate round(mul)/round(add) (no FMA fusion), so the result is
-///    BIT-IDENTICAL to the row-major scalar dot product — vectorizing across
+///    BIT-IDENTICAL to the row-major scalar dot product, vectorizing across
 ///    outputs never reassociates a single output's sum. The small gate (6) and
 ///    fc3 (1) layers stay scalar [`dense_row`] (nothing to vectorize across).
 ///
@@ -281,7 +281,7 @@ fn expert_logit(expert: &ml_weights::ExpertWeights, input: &[f32; NUM_FEATURES])
 /// `OUTPUT`-wide weight row by `input[k]` and accumulate into the `OUTPUT` running
 /// sums. The inner loop over outputs has NO loop-carried dependency (each
 /// `acc[o]` is independent), so LLVM vectorizes it across the output lanes at
-/// opt-level 3 — 8-16 outputs updated per SIMD instruction instead of one scalar
+/// opt-level 3: 8-16 outputs updated per SIMD instruction instead of one scalar
 /// MAC at a time.
 ///
 /// BIT-IDENTICAL to the row-major `dense_row` dot product: each `acc[o]` still

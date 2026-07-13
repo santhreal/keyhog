@@ -1,4 +1,4 @@
-//! Migrated from src/entropy/scanner.rs — canonical-shape gating under a
+//! Migrated from src/entropy/scanner.rs, canonical-shape gating under a
 //! credential anchor (KH-GAP-004).
 //!
 //! Perfect digest/UUID/license-serial shapes must be dropped even under a

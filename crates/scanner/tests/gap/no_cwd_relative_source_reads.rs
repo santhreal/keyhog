@@ -6,7 +6,7 @@
 //! working directory**, which only equals the package root under a plain
 //! `cargo test`. The same call fails with `NotFound` when the test binary is
 //! run directly, under `cargo-nextest` (CWD = workspace root, not package), or
-//! whenever a sibling test mutates the global CWD — a deterministic structural
+//! whenever a sibling test mutates the global CWD, a deterministic structural
 //! check turned into a parallel-load flake.
 //!
 //! The fix is the canonical [`keyhog_scanner::testing::read_crate_source`]
@@ -26,7 +26,7 @@ const READ_ENTRY_POINTS: &[&str] = &["read_to_string(", "File::open(", "fs::read
 ///
 /// In scope: `src/...` and `crates/...` (this crate / the workspace), plus
 /// `../.../src/...` (a sibling crate's source read from a parent-relative path).
-/// Out of scope: `./`, `tests/`, absolute, and any non-`/src/` parent path —
+/// Out of scope: `./`, `tests/`, absolute, and any non-`/src/` parent path 
 /// those are runtime data, not crate-source introspection.
 fn crate_source_prefix(body: &str) -> Option<&'static str> {
     if body.starts_with("src/") {
@@ -164,7 +164,7 @@ fn predicate_tolerates_whitespace_before_argument() {
 
 #[test]
 fn predicate_ignores_manifest_anchored_join() {
-    // The canonical form: read_to_string(root.join(rel)) — first arg is not a
+    // The canonical form: read_to_string(root.join(rel)), first arg is not a
     // string literal, so it is not CWD-relative.
     assert_eq!(
         cwd_relative_source_read(r#"std::fs::read_to_string(root.join(rel)).expect("x")"#),
@@ -211,7 +211,7 @@ fn predicate_flags_cross_crate_parent_src_literal() {
 
 #[test]
 fn predicate_ignores_parent_relative_non_source_literal() {
-    // "../" alone is not the bug — only "../" paths that read into a `/src/`
+    // "../" alone is not the bug, only "../" paths that read into a `/src/`
     // tree are crate-source introspection. A parent-relative fixture is not.
     assert_eq!(
         cwd_relative_source_read(r#"read_to_string("../fixtures/data.txt")"#),

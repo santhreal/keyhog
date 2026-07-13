@@ -78,7 +78,7 @@ fn non_alnum_body_and_missing_prefix() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin the layout on a single `aaa…` entropy; these SWEEP it. The
 // core is a ROUND-TRIP recall property: for ANY 30-char alnum entropy, a token
-// carrying its real 6-char CRC32/base62 checksum validates — proving the 30/6
+// carrying its real 6-char CRC32/base62 checksum validates, proving the 30/6
 // split and the checksum computation over the whole entropy space, not one value.
 // Negatives sweep the reject rules (wrong checksum, wrong body length, non-alnum
 // body, missing prefix), and one property pins the checksum OUTPUT shape (always 6

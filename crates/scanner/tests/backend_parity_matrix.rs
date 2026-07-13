@@ -156,7 +156,7 @@ fn build_fixtures() -> Vec<Fixture> {
         },
         Fixture {
             // The `twilio-auth-token` detector has NO standalone literal prefix in
-            // the GPU literal set — it fires only once the regex confirms the
+            // the GPU literal set, it fires only once the regex confirms the
             // 32-hex auth-token shape alongside its required `account_sid`
             // companion (`AC` + 32 hex). It is one of the ~49 no-literal / HS-only
             // detectors, the exact class the GPU region-presence trigger producer

@@ -4,8 +4,8 @@
 //! ROOT GAP (measured on the shipped v0.5.40 release binary BEFORE this change):
 //! the detector-owned generic keyword bridge (`engine::phase2_generic` +
 //! `KEYWORD_AC` prefilter) enumerated a FIXED stem list, so the dominant CredData
-//! "Key" anchor shape — a `<vendor>_<noun>_key`-style identifier whose stem is
-//! NOT one of the enumerated literals — never produced a candidate even on a
+//! "Key" anchor shape, a `<vendor>_<noun>_key`-style identifier whose stem is
+//! NOT one of the enumerated literals, never produced a candidate even on a
 //! high-entropy RANDOM value. Proven never-candidate on the release binary:
 //!   app_key=          -> 0 findings
 //!   consumer_key:     -> 0 findings
@@ -17,7 +17,7 @@
 //! `*_key` family (`ovh_consumer_key`, `kubeadm_certificate_key`,
 //! `github_enterprise_org_key`, `app_key`, `consumer_key`, …).
 //!
-//! THE FIX (candidate generation only — no scoring/suppression internals
+//! THE FIX (candidate generation only, no scoring/suppression internals
 //! touched): a trailing `GENERIC_RE` alternation arm admits a 1..=3-segment
 //! lowercase identifier ending in a `[._-](?:key|secret|token)` suffix, plus a
 //! local bare-`key` literal in the generic-bridge `KEYWORD_AC` prefilter so the
@@ -30,7 +30,7 @@
 //! These are PASSING regression tests: each new class surfaces on a
 //! representative RANDOM positive and does NOT surface on its dictionary /
 //! placeholder / no-separator negative twin. Assertions check the exact
-//! detector_id AND the exact surfaced credential bytes — never `!is_empty`.
+//! detector_id AND the exact surfaced credential bytes (never `!is_empty`).
 
 mod support;
 use support::contracts::{make_chunk, scanner};
@@ -54,7 +54,7 @@ fn matches(s: &CompiledScanner, chunk: &Chunk) -> Vec<(String, String, f64)> {
 }
 
 /// True iff SOME surfaced match carries exactly `credential` (whole value, not a
-/// substring) under the `generic-secret` detector — the bridge's emit id.
+/// substring) under the `generic-secret` detector (the bridge's emit id).
 fn generic_secret_surfaces(text: &str, credential: &str) -> bool {
     let s = scanner();
     let chunk = make_chunk(text, "source", "probe.conf");
@@ -121,7 +121,7 @@ fn rotation_key_random_value_surfaces() {
     // (canon `rotationkey`) contains none of `secret`/`token`/`apikey`/
     // `accesskey`/`encryptionkey`/…, so it reached NO prefilter literal before
     // the local bare-`key` augment + the new alternation arm. It is the cleanest
-    // proof that the new arm — not a pre-existing substring match — adds the
+    // proof that the new arm, not a pre-existing substring match, adds the
     // candidate. (`*_secret` names were already covered by the `secret`
     // substring arm, so they do not isolate the new behaviour.)
     let cred = "Rt8Vy3Bn6Kc4mLp9qL2vW7n";
@@ -131,7 +131,7 @@ fn rotation_key_random_value_surfaces() {
     );
 }
 
-// ── NEGATIVE TWINS: precision held — the gap closes WITHOUT new FPs ──
+// ── NEGATIVE TWINS: precision held, the gap closes WITHOUT new FPs ──
 
 #[test]
 fn dictionary_word_value_does_not_surface() {
@@ -158,7 +158,7 @@ fn placeholder_value_does_not_surface() {
 fn no_separator_before_key_does_not_surface() {
     // `monkey`/`keyboard` reach the prefilter (bare `key` literal) but the regex
     // arm requires a `[._-]` separator immediately before `key`, so they produce
-    // NO candidate — the precision guard that makes the bare-`key` prefilter safe.
+    // NO candidate (the precision guard that makes the bare-`key` prefilter safe).
     assert!(
         nothing_surfaces("monkey=Xy9KmPq2LvWnB7tRsYz3", "Xy9KmPq2LvWnB7tRsYz3"),
         "`monkey=` (no separator before `key`) must NOT generate a candidate"
@@ -173,7 +173,7 @@ fn no_separator_before_key_does_not_surface() {
 
 #[test]
 fn aes_key_hex32_surfaces_via_generalized_exemption() {
-    // hex32 AES-128 key under `aes_key` — the strong-keyword hex exemption
+    // hex32 AES-128 key under `aes_key`: the strong-keyword hex exemption
     // (`is_strong_keyword_anchored_hex_key`) now generalizes to any
     // `*key`/`*secret`-suffixed anchor, so the bare-hex-digest shape gate is
     // released for length 32 (the mirror plants NO hex32 hash decoy).
@@ -190,7 +190,7 @@ fn vendor_key_hex64_stays_suppressed_sha256_trap() {
     // hex64 == sha256 length: the documented v31 catastrophe (the mirror plants
     // `TOKEN=<64hex>` as BOTH positive AND sha256/git-sha/k8s-uid negative). The
     // exemption is length-gated to 32|48 ONLY, so a 64-hex value under the new
-    // anchor MUST stay dropped by the bare-hex-digest gate — precision floor.
+    // anchor MUST stay dropped by the bare-hex-digest gate (precision floor).
     let cred = "200cbbe4d5f76059b65ce82c10484863200cbbe4d5f76059b65ce82c10484863"; // 64 hex
     assert_eq!(cred.len(), 64);
     assert!(

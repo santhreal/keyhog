@@ -156,7 +156,7 @@ def test_category_recall_dashboard_ranks_by_miss_count():
     assert lines[1].startswith("| `UUID` |")
     assert "| `Key` | 80/3700 | 0.021 | BetterLeaks 0.868 |" in text
     # UUID has no competitor cell -> em dash, not a fabricated 0.000 winner.
-    assert "| `UUID` | 7/2260 | 0.003 | — |" in text
+    assert "| `UUID` | 7/2260 | 0.003 | |" in text
 
 
 def test_class_recall_differential_requires_full_scanner_set():

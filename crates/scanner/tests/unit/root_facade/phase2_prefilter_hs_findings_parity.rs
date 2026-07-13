@@ -2,13 +2,13 @@
 //!
 //! The HS engine replaces the `regex::RegexSet` whole-chunk prefilter that marks
 //! which always-active phase-2 patterns to extract. A prefilter swap is sound
-//! iff it does not change the SCANNER'S FINAL FINDINGS — the marked active set
+//! iff it does not change the SCANNER'S FINAL FINDINGS, the marked active set
 //! may differ (HS marks a superset; extraction filters), but the
 //! `(detector, credential, offset)` set the scanner emits must be byte-identical.
 //!
-//! This scans the real mirror corpus twice on the SAME compiled scanner —
+//! This scans the real mirror corpus twice on the SAME compiled scanner 
 //! `keyhog_scanner::testing::set_phase2_hs(&scanner, Some(true))` (SIMD path) and `Some(false)`
-//! (RegexSet reference) — and asserts the finding sets are identical per file. A mismatch
+//! (RegexSet reference), and asserts the finding sets are identical per file. A mismatch
 //! is a recall/precision regression (Law 6/Law 10) and fails the gate.
 //!
 //! Run: cargo test -p keyhog-scanner --features simd \
@@ -23,7 +23,7 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 use super::support;
 use support::paths::{corpus_dir, corpus_files_with_paths, detector_dir};
 
-/// `(detector_id, credential, offset)` — the finding identity the swap must
+/// `(detector_id, credential, offset)`: the finding identity the swap must
 /// preserve exactly.
 type FindingKey = (String, String, usize);
 
@@ -104,6 +104,6 @@ fn hs_prefilter_findings_identical_to_regexset() {
     );
     assert_eq!(
         mismatched, 0,
-        "HS prefilter changed findings on {mismatched} file(s) — recall/precision regression"
+        "HS prefilter changed findings on {mismatched} file(s), recall/precision regression"
     );
 }

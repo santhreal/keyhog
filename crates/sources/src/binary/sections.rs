@@ -4,14 +4,14 @@ use keyhog_core::{Chunk, ChunkMetadata};
 /// Resolve an ELF section name from a `shdr_strtab.get_at(..)` result.
 ///
 /// LAW10 (loud recall guard): goblin returns `None` when the `sh_name` index
-/// points OUTSIDE the section-name string table — a corrupt/truncated strtab.
+/// points OUTSIDE the section-name string table (a corrupt/truncated strtab).
 /// A section header with a non-zero `sh_name` that fails to resolve is a parse
 /// anomaly: the section could be a high-value `.rodata`/`.data` blob whose name
 /// we simply could not read, and substituting `""` would silently drop it from
 /// the high-value scan list. We bump `BINARY_SECTION_NAME_UNRESOLVED` so the
 /// partial parse is operator-visible, then return `""`. A `sh_name == 0` (the
 /// strtab's mandatory empty first entry, i.e. a legitimately unnamed section)
-/// resolves to `""` WITHOUT bumping the counter — that is normal, not an error.
+/// resolves to `""` WITHOUT bumping the counter (that is normal, not an error).
 pub(crate) fn resolve_section_name(resolved: Option<&str>, sh_name: usize) -> &str {
     match resolved {
         Some(n) => n,
@@ -32,7 +32,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
 
     let obj = match Object::parse(bytes) {
         Ok(o) => o,
-        // Law 10: recall-safe — bytes that aren't a recognized object format return
+        // Law 10: recall-safe, bytes that aren't a recognized object format return
         // `None` here, and the caller falls back to whole-file printable-string
         // extraction (`extract_printable_strings`), so the binary is still scanned.
         Err(_) => return None, // LAW10: unrecognized/partial => caller scans whole-file/recovered prefix; recall-preserving
@@ -96,8 +96,8 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                 let name = match std::str::from_utf8(&section.name) {
                     Ok(n) => n.trim_end_matches('\0'),
                     Err(_error) => {
-                        // Law 10: loud — bumps BINARY_SECTION_NAME_UNRESOLVED, never a silent drop
-                        // Law 10: loud — a non-UTF-8 PE section name means the
+                        // Law 10: loud, bumps BINARY_SECTION_NAME_UNRESOLVED, never a silent drop
+                        // Law 10: loud, a non-UTF-8 PE section name means the
                         // section table is corrupt; we cannot tell whether this is
                         // a high-value `.rdata`/`.data` section, so bump the
                         // partial-parse counter instead of silently treating it as

@@ -1,6 +1,6 @@
 //! Lane-10 (dogfood/robustness) regression: the daemon accept loop must
 //! distinguish a TRANSIENT accept() failure (back off, keep serving) from a
-//! FATAL one (surface loudly, shut down) — and never silently go deaf.
+//! FATAL one (surface loudly, shut down) (and never silently go deaf).
 //!
 //! The bug this pins: the old accept loop did `tracing::error!(...) ; break` on
 //! ANY accept() error. That is (a) silent without RUST_LOG and (b) permanently
@@ -40,7 +40,7 @@ fn connection_aborted_is_transient() {
     let e = Error::from(ErrorKind::ConnectionAborted);
     assert!(
         API.is_transient_accept_error(&e),
-        "a peer that aborted between SYN and accept() is transient — keep serving"
+        "a peer that aborted between SYN and accept() is transient, keep serving"
     );
 }
 
@@ -49,7 +49,7 @@ fn interrupted_syscall_is_transient() {
     let e = Error::from(ErrorKind::Interrupted);
     assert!(
         API.is_transient_accept_error(&e),
-        "EINTR (interrupted accept) is transient — retry, don't tear down"
+        "EINTR (interrupted accept) is transient, retry, don't tear down"
     );
 }
 
@@ -66,7 +66,7 @@ fn would_block_is_transient() {
 fn permission_denied_is_fatal() {
     // A non-recoverable error (e.g. the socket fd became unusable): the daemon
     // can never serve again, so it must NOT be classified transient (which
-    // would spin forever) — the caller shuts down loudly instead.
+    // would spin forever) (the caller shuts down loudly instead).
     let e = Error::from(ErrorKind::PermissionDenied);
     assert!(
         !API.is_transient_accept_error(&e),

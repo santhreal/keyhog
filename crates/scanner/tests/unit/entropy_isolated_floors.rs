@@ -1,7 +1,7 @@
 //! Boundary contract for the keyword-free ("isolated bare") high-entropy recall
 //! floors in `entropy/isolated.rs`. These rescue a high-entropy token that
 //! carries NO surrounding secret keyword, so each has a carefully-tuned entropy
-//! + shape threshold. They had no direct tests — a future edit to a threshold or
+//! + shape threshold. They had no direct tests, a future edit to a threshold or
 //! a required char-class would silently change recall. These tests pin every
 //! boundary so such a change fails loudly.
 //!

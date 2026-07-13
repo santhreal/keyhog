@@ -150,7 +150,7 @@ fn windowed_file_reports_absolute_line_numbers() {
 
     assert!(
         saw_windowed,
-        "no finding came from the `filesystem/windowed` source — the >1 MiB \
+        "no finding came from the `filesystem/windowed` source, the >1 MiB \
          fixture did not exercise the windowed path; the threshold may have \
          changed and this regression is no longer testing what it claims"
     );
@@ -166,7 +166,7 @@ fn windowed_file_reports_absolute_line_numbers() {
         assert_eq!(
             got, expected,
             "windowed-scan line attribution: key #{slot} planted on absolute \
-             line {expected} was reported on line {got} (window-local leak — \
+             line {expected} was reported on line {got} (window-local leak. \
              the base_line fix regressed)"
         );
     }

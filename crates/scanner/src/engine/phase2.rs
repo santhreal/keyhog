@@ -47,7 +47,7 @@ pub(crate) static POPULATE_KEYWORD_NS: AtomicU64 = AtomicU64::new(0);
 
 /// Prefix-gate diagnostics (enabled by `keyhog scan --profile`). Counts how
 /// many gateable batches were SKIPPED (their required prefix literals absent)
-/// vs RUN, and how many `mark_matches` calls the gate saw — so we can tell
+/// vs RUN, and how many `mark_matches` calls the gate saw, so we can tell
 /// whether the gate actually skips on a given corpus or whether spliced context
 /// keeps it firing.
 pub(crate) static GATE_BATCH_SKIPS: AtomicU64 = AtomicU64::new(0);
@@ -184,8 +184,8 @@ thread_local! {
 /// match somewhere; the rest are skipped (they would extract zero matches).
 ///
 /// SOUNDNESS: each set entry is built with the EXACT flags of the pattern's
-/// own regex — `shared_regex` (case-insensitive + CRLF + size/DFA limits) for
-/// `detector` patterns, `Regex::new` defaults for `plain` homoglyph variants —
+/// own regex: `shared_regex` (case-insensitive + CRLF + size/DFA limits) for
+/// `detector` patterns, `Regex::new` defaults for `plain` homoglyph variants 
 /// so the set reports a pattern iff that pattern's regex matches. No real match
 /// is ever skipped (recall-preserving); only dead work is removed. It MUST run
 /// over the same text the extraction uses (`preprocessed.text`).
@@ -197,13 +197,13 @@ pub(crate) struct PrefilterBatch {
     /// homoglyph regex with non-ASCII stripped: `[sѕｓ]`→`[s]`, `[lіІιΙｌΟοо]`→
     /// `[l]`), in the SAME entry order as `set`. On a pure-ASCII chunk the
     /// fold is match-equivalent to the unicode form, so `matches()` returns the
-    /// IDENTICAL set of entry ids — identical marking, identical active-set
-    /// order — but evaluates faster. `None` for case-insensitive batches and on
+    /// IDENTICAL set of entry ids, identical marking, identical active-set
+    /// order, but evaluates faster. `None` for case-insensitive batches and on
     /// fold-compile failure (the unicode `set` is then used everywhere).
     pub(crate) ascii_set: Option<regex::RegexSet>,
     /// Truncated-at-first-unbounded-repetition variant of `set` (each entry
     /// passed through `truncate_for_prefilter`, SAME entry order), kept on the
-    /// fast lazy-DFA. A sound SUPERSET marking gate — see `truncate_for_prefilter`.
+    /// fast lazy-DFA. A sound SUPERSET marking gate (see `truncate_for_prefilter`).
     /// Used instead of `set` when `prefilter_truncate_enabled()`.
     pub(crate) set_trunc: regex::RegexSet,
     /// Truncated variant of `ascii_set` (the folded form, then truncated). Same
@@ -261,7 +261,7 @@ pub(crate) struct PortablePrefilter {
 /// SWE-101 combined no-candidate gate for the always-active phase-2 prefilter.
 ///
 /// The always-active patterns split into ANCHORABLE (every match begins with one
-/// of a finite, >=3-byte ASCII required-prefix literal — their union is the
+/// of a finite, >=3-byte ASCII required-prefix literal, their union is the
 /// `anchor_ac`) and NON-ANCHORABLE (can match with no required literal). On a
 /// PURE-ASCII chunk where `anchor_ac` finds no literal, no anchorable pattern can
 /// fire, so the expensive HS / RegexSet body is skipped; the few non-anchorable
@@ -277,10 +277,10 @@ pub(crate) struct CombinedNoCandidateGate {
     pub(crate) anchor_ac: AhoCorasick,
     /// The non-anchorable always-active patterns (those with NO required prefix
     /// literal), as `(phase2_index, regex)`. Empty when every always-active
-    /// pattern is anchorable (the ideal — the gate then does a pure AC `is_match`
+    /// pattern is anchorable (the ideal, the gate then does a pure AC `is_match`
     /// and nothing else on the skip path). Each regex is the pattern's OWN compiled
     /// `LazyRegex` (cloned `Arc`, shared compile cache), so checking it on the skip
-    /// path is byte-for-byte match-equivalent to the full body — no over-marking,
+    /// path is byte-for-byte match-equivalent to the full body, no over-marking,
     /// no under-marking, recall-identical by construction.
     pub(crate) non_anchorable: Vec<(usize, LazyRegex)>,
     /// Fast first-bigram prescreen for the no-candidate path.
@@ -295,7 +295,7 @@ pub(crate) struct CombinedNoCandidateGate {
     /// byte pair in the text has its bit set, the AC scan is guaranteed to
     /// return false (no literal can start in the text). This is O(N/4) with a
     /// 4-wide unrolled loop (~1 cycle/byte on Zen 4 / Apple M-series vs.
-    /// ~5-15 ns/byte for AC state-machine transitions) — roughly 10-30x
+    /// ~5-15 ns/byte for AC state-machine transitions), roughly 10-30x
     /// cheaper than the AC on typical 200-4096 byte no-candidate chunks.
     ///
     /// Soundness: every anchor literal starts with its first 2 bytes; if those
@@ -336,7 +336,7 @@ impl CombinedNoCandidateGate {
         }
     }
 
-    /// True iff some non-anchorable pattern can fire on `match_text` — the boolean
+    /// True iff some non-anchorable pattern can fire on `match_text`: the boolean
     /// companion to [`mark_non_anchorable`](Self::mark_non_anchorable) for the
     /// admission gate. Checks each pattern's own regex, early-exiting at the first
     /// match, so the admission decision is exact (never over- or under-admits).
@@ -358,7 +358,7 @@ pub(crate) struct Phase2AlwaysActivePrefilter {
     /// and no-candidate skip path do not pay RegexSet construction for scans
     /// that never need it.
     pub(crate) portable: OnceLock<PortablePrefilter>,
-    /// SWE-101 combined no-candidate gate — the ONE fast combined prefilter that
+    /// SWE-101 combined no-candidate gate, the ONE fast combined prefilter that
     /// gates the expensive per-pattern marking. See [`CombinedNoCandidateGate`].
     /// Lazily initialized so scanner construction stores only validated routing
     /// indices; a scan that disables the gate or never reaches phase-2 does not
@@ -370,7 +370,7 @@ pub(crate) struct Phase2AlwaysActivePrefilter {
     /// (`phase2_hs_enabled`), `mark_matches` uses it instead of the
     /// `regex::RegexSet` batches above: one SIMD multi-pattern scan with
     /// `SINGLEMATCH` (fire-once = "does P match") replaces the ~2,679-pattern
-    /// whole-chunk RegexSet pass — the measured #1 scan cost (`phase2:prefilter`),
+    /// whole-chunk RegexSet pass, the measured #1 scan cost (`phase2:prefilter`),
     /// ~1000x faster (`phase2_prefilter_hs_vs_regexset`) and findings-identical
     /// (`phase2_prefilter_hs_findings_parity`). `None` when the `simd` feature
     /// is off or HS failed to compile (then the RegexSet batches are the path).
@@ -378,7 +378,7 @@ pub(crate) struct Phase2AlwaysActivePrefilter {
     /// The engine holds TWO sub-databases (`Phase2HsEngine::{full, ascii_lean}`):
     /// on a pure-ASCII chunk with `homoglyph_ascii_skip` on, `mark_matches` passes
     /// `skip_homoglyph_ascii=true` and marking routes through the lean sub-DB that
-    /// EXCLUDES the ~2.8k inert homoglyph variants — the same skip the RegexSet
+    /// EXCLUDES the ~2.8k inert homoglyph variants, the same skip the RegexSet
     /// path already applies, extended to HS (measured 100-215× cheaper on ASCII,
     /// recall-neutral: `hs_homoglyph_ascii_skip_drops_only_homoglyph_variants`).
     #[cfg(feature = "simd")]
@@ -397,8 +397,8 @@ pub(crate) const DECODE_FOCUS_MARGIN: usize = 64;
 // (a) changes the byte adjacencies at the junction and (b) creates new token
 // boundaries inside what was a contiguous base64/hex run. A confirmed /
 // companion-anchored detector can therefore fire on spliced context arbitrarily
-// far from the decoded span where the parent — which saw the still-encoded bytes
-// — did not, so the "outside the decoded span is a parent duplicate" theorem that
+// far from the decoded span where the parent, which saw the still-encoded bytes
+//: did not, so the "outside the decoded span is a parent duplicate" theorem that
 // makes the phase-2 focus sound does NOT hold for confirmed detectors. A
 // symmetric `[ds-M, de+M]` window with M=256 still dropped real cloudflare-api-token
 // and mysql-connection-string findings on the mirror corpus; the only provably
@@ -413,7 +413,7 @@ pub(crate) const DECODE_FOCUS_MARGIN: usize = 64;
 /// gated). Mirrors the soundness contract of `regex_prefix_anchorable`.
 pub(crate) fn gate_prefix_literals(src: &str) -> Option<Vec<Vec<u8>>> {
     use regex_syntax::hir::literal::{ExtractKind, Extractor};
-    // recall-safe (fail-OPEN) — if the prefix-source regex cannot be parsed here,
+    // recall-safe (fail-OPEN), if the prefix-source regex cannot be parsed here,
     // we return `None`, which makes the caller run the pattern UNCONDITIONALLY (no
     // prefix gate). The gate only ever SKIPS a pattern when it has positively
     // proven the required prefix is absent; a parse failure can therefore never
@@ -449,7 +449,7 @@ pub(crate) fn gate_prefix_literals(src: &str) -> Option<Vec<Vec<u8>>> {
 /// and run on pure-ASCII chunks. The prefilter's gate literals
 /// (`pattern_gate_literals`), the RegexSet alternate (`build_ascii_alternate` /
 /// `ascii_folded_sources`), and the shared-anchor localizer
-/// (`phase2_anchor::build`) MUST all fold identically — that is the soundness
+/// (`phase2_anchor::build`) MUST all fold identically, that is the soundness
 /// contract that the folded gate/literals describe the matcher that actually
 /// runs. Centralized here so the fold is one definition instead of three
 /// hand-kept copies that could silently drift apart.

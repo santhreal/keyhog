@@ -5,27 +5,27 @@
 //! `gpu::batch_ml_inference` → `ml_scorer::score_features` → `forward_pass`
 //! (crates/scanner/src/ml_scorer.rs).
 //!
-//! ## History — the original sub-µs target was REFUTED by the recall constraint
+//! ## History, the original sub-µs target was REFUTED by the recall constraint
 //! This file once demanded `forward/feature < 0.3x` and `forward-pass < 0.35 µs`
 //! on the theory that the MoE (~11,484 MACs/candidate) should run at 8-16
 //! MACs/cycle. That throughput is only reachable by REASSOCIATING each output's
-//! f32 reduction (SIMD-lane tree sums) and/or FUSING the multiply-add (FMA) —
+//! f32 reduction (SIMD-lane tree sums) and/or FUSING the multiply-add (FMA) 
 //! both of which change the result sub-ULP. An AVX2+FMA forward pass was tried
 //! and REVERTED: the sub-ULP drift pushed borderline ML-gated detectors
 //! (twilio-auth-token, africastalking-api-key, …) across their `min_confidence`
 //! floor and regressed 30+ `contracts_runner` positives. The confidence model
 //! and the GPU parity reference (DET-11) are calibrated against the EXACT scalar
-//! reduction, so the forward pass must stay numerically identical to it — which
+//! reduction, so the forward pass must stay numerically identical to it, which
 //! forbids the very reassociation the 0.35 µs target assumed. The target was
 //! unreachable WITHOUT regressing recall, so it is not the contract.
 //!
 //! ## What actually shipped (recall-safe), and what this guards
 //! Two numerically-inert optimizations landed in `ml_scorer.rs`/`ml_weights.rs`:
-//!   1. weight HOIST — the 37 per-candidate `OnceLock`-acquire + re-slice calls
+//!   1. weight HOIST, the 37 per-candidate `OnceLock`-acquire + re-slice calls
 //!      collapse to one acquire of a cached `&'static MoeModel`; and
 //!   2. OUTPUT-STATIONARY vectorization of the two large expert layers (fc1,
 //!      fc2) over column-major weights, which the compiler vectorizes ACROSS
-//!      outputs without reassociating any single output's reduction — so it is
+//!      outputs without reassociating any single output's reduction, so it is
 //!      BIT-IDENTICAL to the scalar dot product (proved exhaustively over random
 //!      data in `ml_forward_parity.rs`) yet ~1.9x faster (measured 4619 →
 //!      2481 ns/candidate on the audit host).
@@ -37,21 +37,21 @@
 //! hardware. This file therefore asserts the two STABLE, machine-independent
 //! invariants instead:
 //!   * (A) the per-(text,context) FNV score cache makes a repeated score
-//!     essentially free vs. a cache-missing distinct score — guards the caching
+//!     essentially free vs. a cache-missing distinct score, guards the caching
 //!     hot-path optimization with an order-of-magnitude margin; and
-//!   * (B) the forward-pass marginal stays under a GENEROUS absolute ceiling —
+//!   * (B) the forward-pass marginal stays under a GENEROUS absolute ceiling 
 //!     a catastrophic-regression backstop (e.g. re-introducing per-candidate
 //!     weight re-parsing or an accidental quadratic), NOT the refuted µs target.
 //!
 //! Recall correctness of any future change to the forward pass is locked by
 //! `ml_forward_parity.rs` (bit-identity) and `contracts_runner` (end-to-end,
-//! sensitive to sub-ULP score drift — it is what caught the FMA regression).
+//! sensitive to sub-ULP score drift (it is what caught the FMA regression)).
 
 use std::time::Instant;
 
 use keyhog_scanner::ml_scorer::score_with_config;
 
-/// Candidates scored per timed pass — large enough that per-call timer/loop
+/// Candidates scored per timed pass, large enough that per-call timer/loop
 /// overhead is negligible against the aggregate.
 const N: usize = 50_000;
 /// best-of-K: keep the cleanest sample so a stray context switch cannot inflate
@@ -226,7 +226,7 @@ fn ml_forward_pass_marginal_is_bounded() {
         "ML forward-pass marginal {fwd_ns:.1} ns/candidate exceeds the catastrophic-regression \
          ceiling {FORWARD_MARGINAL_CEILING_NS:.0} ns. The forward pass should be a single hoisted, \
          output-stationary vectorized MoE evaluation (ml_scorer.rs forward_pass / \
-         dense_relu_layer_t) — a value this high means the per-candidate weight hoist was lost, \
+         dense_relu_layer_t), a value this high means the per-candidate weight hoist was lost, \
          the kernel de-vectorized, or per-candidate weight re-parsing crept back in. (This is a \
          gross-regression backstop, NOT the refuted sub-µs target; see module docs.)"
     );

@@ -81,7 +81,7 @@ fn build_gpu_literal_rows<'a>(
             // Law 10: an empty AC literal disables the ENTIRE GPU literal scan for
             // this build (every scan then routes to CPU/SIMD). A `tracing::warn!`
             // alone is silent to an operator running `--backend gpu` at the default
-            // log level — surface it loudly, once, like report_gpu_matcher_unavailable.
+            // log level (surface it loudly, once, like report_gpu_matcher_unavailable).
             tracing::warn!("{label} contains an empty literal; disabling GPU literal scan");
             if GPU_LITERAL_EMPTY_WARNED.set(()).is_ok() {
                 eprintln!(
@@ -212,11 +212,11 @@ pub(crate) fn compile_pattern(
     // out-of-range group is not a regex error (the pattern compiles); it only
     // bites at scan time, where `extract_grouped_matches` resolves the target
     // with `locs.get(group).unwrap_or((full_start, full_end))` and SILENTLY
-    // falls back to the whole match — capturing keyword + separator + value
+    // falls back to the whole match, capturing keyword + separator + value
     // instead of the secret, which pollutes the credential and usually fails the
     // checksum, dropping a real secret. Fail closed here (Law 10: no silent
-    // fallback) so a malformed detector from ANY source — the embedded corpus or
-    // a user `--detectors` overlay — is rejected loudly at compile rather than
+    // fallback) so a malformed detector from ANY source, the embedded corpus or
+    // a user `--detectors` overlay, is rejected loudly at compile rather than
     // mis-scanned. (The embedded corpus is held clean by
     // detector_capture_group_integrity.rs; this also covers user overlays.)
     if let Some(group) = spec.group {

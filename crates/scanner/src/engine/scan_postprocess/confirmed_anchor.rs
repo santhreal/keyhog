@@ -101,7 +101,7 @@ impl ConfirmedAnchorIndex {
                 // The literal set is derived from compile-time-constant detector
                 // prefixes, so an `AhoCorasick` build failure here is a
                 // build-invariant violation. Surface it on the SAME loud channel
-                // as the sibling prefilters (Law 10) — a bare `tracing::warn!`
+                // as the sibling prefilters (Law 10), a bare `tracing::warn!`
                 // with no subscriber is silent, exactly the swallow the anchored
                 // verifier fail-closed sweep removed. Confirmed localization is a
                 // pure optimization with a whole-chunk fallback, so this stays a

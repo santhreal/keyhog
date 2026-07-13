@@ -46,14 +46,14 @@ static X86_ENTROPY_TIER: OnceLock<X86EntropyTier> = OnceLock::new();
 /// Detect the entropy SIMD tier once, record the choice loudly, and cache it.
 ///
 /// SAFETY (dispatch soundness): the runtime probe for a tier MUST be a SUPERSET
-/// of every feature the dispatched function's `#[target_feature]` enables —
+/// of every feature the dispatched function's `#[target_feature]` enables 
 /// entering a `target_feature` fn on a CPU lacking those features is UB/SIGILL
 /// (the compiler assumes them throughout the body):
 ///  - the AVX-512 reduction (`entropy::avx512::calculate_shannon_entropy`)
 ///    declares `avx512f,avx512bw`; soundness needs only those two. The gate ALSO
 ///    requires `avx512dq` as deliberate forward-headroom, so a future dq-using
 ///    re-vectorization of the reduction needs no gate change (entropy/avx512.rs)
-///    — a sound over-gate, not a current intrinsic need. KH C10/M9.
+///: a sound over-gate, not a current intrinsic need. KH C10/M9.
 ///  - the AVX2 reduction (`fast_x86::shannon_entropy_avx2`) declares `avx2,fma`,
 ///    which licenses the compiler to emit FMA3 (VFMADD231PD) in its body, so
 ///    `fma` is required in addition to `avx2` (else SIGILL on an AVX2-without-FMA
@@ -121,7 +121,7 @@ pub(crate) fn shannon_entropy_simd(data: &[u8]) -> f64 {
 ///
 /// Bytes are grouped into 8-byte chunks from offset 0. A fully-null chunk is
 /// skipped as binary padding (its 8 bytes leave `active_len`); every other
-/// chunk — including one that merely *contains* nulls — is counted in full, as
+/// chunk, including one that merely *contains* nulls, is counted in full, as
 /// is the sub-8 remainder (a lone trailing null drops out). Returns the merged
 /// 256-bin histogram and `active_len` (input length minus the padding bytes).
 ///
@@ -135,7 +135,7 @@ pub(crate) fn shannon_entropy_simd(data: &[u8]) -> f64 {
 /// Counting is memory-bound: a single `counts[b] += 1` carries a load-add-store
 /// dependency chain, so 8 independent accumulators (every 8th byte) let the
 /// out-of-order engine issue 8 chains in parallel and saturate the load/store
-/// ports (KH-27). Wider vectors win nothing in the count — they specialize only
+/// ports (KH-27). Wider vectors win nothing in the count, they specialize only
 /// the entropy summation over the 256 bins.
 #[inline]
 pub(crate) fn histogram_8way(data: &[u8]) -> ([u32; 256], usize) {
@@ -203,8 +203,8 @@ pub(crate) fn histogram_8way(data: &[u8]) -> ([u32; 256], usize) {
 ///
 /// A vectorized *polynomial* log2 reduction used to live in the AVX2/AVX512
 /// paths. It was removed: the 5-term minimax polynomial diverged from this exact
-/// reference by ~5e-3 bits/byte on long inputs — enough to flip an entropy gate
-/// near a threshold — while saving no measurable time over a 256-iteration loop
+/// reference by ~5e-3 bits/byte on long inputs, enough to flip an entropy gate
+/// near a threshold, while saving no measurable time over a 256-iteration loop
 /// (the loop is ~0.0004% of the work on a 64 KiB window). Soundness over a
 /// micro-optimization that was never on the hot path.
 ///

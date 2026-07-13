@@ -10,7 +10,7 @@
 //! `pscale_tkn_<43>` matches BOTH `planetscale-service-token` (exact 43) and
 //! `planetscale-api-token-v2` (`{32,}`); value-dedup keeps one label, so it is
 //! asserted with `surfaces_under_any`. Linode/Hetzner capture a bare 64-hex and
-//! Railway a bare UUID under a named anchor — the shape-collision carve-out keeps
+//! Railway a bare UUID under a named anchor, the shape-collision carve-out keeps
 //! them surfacing under the vendor label rather than a generic one.
 
 mod support;

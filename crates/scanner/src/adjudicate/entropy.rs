@@ -34,7 +34,7 @@ pub(crate) enum EntropyShapeStage {
     ConcatenationFragmentLine,
     StructuredDottedTooShort,
     /// Word-like non-secret by tiktoken cl100k_base bytes-per-token (dotted API
-    /// paths, prose, XML) — the BPE "rare-not-random" gate.
+    /// paths, prose, XML) (the BPE "rare-not-random" gate).
     WordLikeLowBpe,
     CanonicalNonSecretShape,
     CredentialContextTooShort,

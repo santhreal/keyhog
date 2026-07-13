@@ -5,7 +5,7 @@
 //!     the extracted chunk carries the exact secret bytes;
 //!   * a non-object / truncated binary is still handled (whole-file printable
 //!     strings fallback, recall preserved) instead of vanishing;
-//!   * OCI descriptor index-vs-manifest classification is exact — declared
+//!   * OCI descriptor index-vs-manifest classification is exact, declared
 //!     `mediaType` is authoritative, structural shape is the tiebreaker;
 //!   * a Docker `docker image save` layer archive is enumerated to its exact
 //!     blob path and its secret payload reaches filesystem scan chunks;

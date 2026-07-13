@@ -3,13 +3,13 @@
 //! keyhog decodes *text* encodings (base64/hex/url/…) before pattern matching,
 //! so a secret re-encoded as base64 must fire the SAME detector on the SAME
 //! credential. This file pins that recovery with exact detector-id and exact
-//! decoded-credential-byte assertions, and — separately — pins the DELIBERATE
+//! decoded-credential-byte assertions, and, separately, pins the DELIBERATE
 //! boundary of decode-through: a secret **compressed** into a gzip or zip
 //! container is opaque to the pipeline.
 //!
 //! Why gzip/zip are opaque (verified against the source, not assumed):
 //!   * The pipeline registry (`decode::pipeline::registry::default_decoders`)
-//!     has NO gzip/zip inflate decoder — only text codecs.
+//!     has NO gzip/zip inflate decoder (only text codecs).
 //!   * Every text decoder only emits a decoded sub-chunk when the decoded bytes
 //!     are valid UTF-8 (`String::from_utf8` gate in `decode/base64.rs:22` and
 //!     `decode/hex.rs:22`). A gzip stream (`1f 8b …`) and a zip local-file
@@ -21,7 +21,7 @@
 //! / `zipfile` (base64-of-the-container is embedded as a literal, since the
 //! scanner crate has no compression dependency to build them at test time). The
 //! `zip STORED` fixture literally contains the plaintext token yet is STILL not
-//! recovered — the surprising, load-bearing lock in this file.
+//! recovered (the surprising, load-bearing lock in this file).
 //!
 //! Companion file `regression_decode_through_strict.rs` covers the base64 ×
 //! hex × url matrix for the SAME contract positives; this file adds the
@@ -36,17 +36,17 @@ use keyhog_scanner::CompiledScanner;
 
 // ── checksum-free firing plaintexts (shipped contract positives) ──
 
-/// `.npmrc` legacy token — fires `npmrc-auth-token`, capture group 1 is the
+/// `.npmrc` legacy token, fires `npmrc-auth-token`, capture group 1 is the
 /// bare token, so the recovered credential equals `NPMRC_NEEDLE` exactly.
 const NPMRC: &str = "//registry.npmjs.org/:_authToken=s0meL3gacyT0kenValue12345";
 const NPMRC_NEEDLE: &str = "s0meL3gacyT0kenValue12345";
 
-/// `.netrc` triple — fires `netrc-password`, capture group 1 is the bare
+/// `.netrc` triple, fires `netrc-password`, capture group 1 is the bare
 /// password, so the recovered credential equals `NETRC_NEEDLE` exactly.
 const NETRC: &str = "machine api.example.com login deploy password Zx9Qw3Rt7Lp2Mk";
 const NETRC_NEEDLE: &str = "Zx9Qw3Rt7Lp2Mk";
 
-/// PEM RSA private key — fires `private-key`, no vendor checksum.
+/// PEM RSA private key (fires `private-key`, no vendor checksum).
 const PEM: &str = "-----BEGIN RSA PRIVATE KEY-----\n\
     MIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu\n\
     KUpRKfFLfRYC9AIKjbJTWit+CqvjWYzvQwECAwEAAQJAIWPaVgC5bA8AjVWdjxNm\n\
@@ -58,30 +58,30 @@ const PEM_NEEDLE: &str = "MIIBOgIBAAJBAKj34Gkx";
 // Verified: each decodes to non-UTF-8 bytes; the DEFLATE variants do not even
 // contain the needle; the STORED variant contains it literally.
 
-/// `base64(gzip(NPMRC))` — DEFLATE-compressed; needle absent from bytes.
+/// `base64(gzip(NPMRC))`: DEFLATE-compressed; needle absent from bytes.
 const B64_GZIP_NPMRC: &str =
     "H4sIAMQARmoC/9PXL0pNzywuKarUyyvIzSrWyy9K17eKTywtyQjJz07Nsy02yE31MU5PTK4MMQDywxJzSlMNjYxNTAFX/JQuOgAAAA==";
 
-/// `base64(zip_deflated(NPMRC))` — ZIP with a DEFLATE entry; needle absent.
+/// `base64(zip_deflated(NPMRC))`: ZIP with a DEFLATE entry; needle absent.
 const B64_ZIP_NPMRC: &str =
     "UEsDBBQAAAAIAEa54VxX/JQuOgAAADoAAAAKAAAAc2VjcmV0LnR4dNPXL0pNzywuKarUyyvIzSrWyy9K17eKTywtyQjJz07Nsy02yE31MU5PTK4MMQDywxJzSlMNjYxNTAFQSwECFAMUAAAACABGueFcV/yULjoAAAA6AAAACgAAAAAAAAAAAAAAgAEAAAAAc2VjcmV0LnR4dFBLBQYAAAAAAQABADgAAABiAAAAAAA=";
 
-/// `base64(zip_stored(NPMRC))` — ZIP with an UNCOMPRESSED (STORED) entry. The
+/// `base64(zip_stored(NPMRC))`: ZIP with an UNCOMPRESSED (STORED) entry. The
 /// plaintext token is present verbatim in the decoded bytes, but a CRC-32 byte
 /// (`0x94`) makes the blob invalid UTF-8, so the base64 decoder drops it.
 const B64_ZIP_STORED_NPMRC: &str =
     "UEsDBBQAAAAAAEa54VxX/JQuOgAAADoAAAAKAAAAc2VjcmV0LnR4dC8vcmVnaXN0cnkubnBtanMub3JnLzpfYXV0aFRva2VuPXMwbWVMM2dhY3lUMGtlblZhbHVlMTIzNDVQSwECFAMUAAAAAABGueFcV/yULjoAAAA6AAAACgAAAAAAAAAAAAAAgAEAAAAAc2VjcmV0LnR4dFBLBQYAAAAAAQABADgAAABiAAAAAAA=";
 
-/// `base64(gzip("the quick brown fox …"))` — benign, non-secret payload.
+/// `base64(gzip("the quick brown fox …"))`: benign, non-secret payload.
 const B64_GZIP_BENIGN: &str =
     "H4sIAO0ARmoC/yvJSFUoLM1MzlZIKsovz1NIy69QyCrNLShWyC9LLVIoAUrnJFZVKqTkp4M5A60WAMsN9o2wAAAA";
 
-/// `base64(zlib.compress(NPMRC, 9))` — zlib stream (`78 da`), DEFLATE-compressed.
+/// `base64(zlib.compress(NPMRC, 9))`: zlib stream (`78 da`), DEFLATE-compressed.
 /// Recovered through the same bounded inflate decode-through as gzip.
 const B64_ZLIB_NPMRC: &str =
     "eNrT1y9KTc8sLimq1MsryM0q1ssvSte3ik8sLckIyc9OzbMtNshN9TFOT0yuDDEA8sMSc0pTDY2MTUwBd6oUsg==";
 
-/// `base64(gzip-magic + 0xff garbage)` — a well-formed gzip header followed by a
+/// `base64(gzip-magic + 0xff garbage)`: a well-formed gzip header followed by a
 /// corrupt DEFLATE body. The inflate must fail closed (no panic, no finding).
 const B64_CORRUPT_GZIP: &str = "H4sIAP//////////////////////////";
 
@@ -140,7 +140,7 @@ fn baseline_npmrc_plaintext_captures_exact_token() {
         .iter()
         .find(|m| m.detector_id.as_ref() == "npmrc-auth-token")
         .expect("npmrc-auth-token fires on the raw .npmrc line");
-    // group 1 of the detector regex is the bare token — exact bytes, no prefix.
+    // group 1 of the detector regex is the bare token (exact bytes, no prefix).
     assert_eq!(m.credential.as_ref(), NPMRC_NEEDLE);
 }
 
@@ -167,7 +167,7 @@ fn npmrc_recovered_through_base64_standard() {
         .expect("npmrc token recovered through base64");
     assert_eq!(m.detector_id.as_ref(), "npmrc-auth-token");
     // Decode-through re-splices the plaintext, so the bare token is captured
-    // exactly — not the surrounding `//host/:` prefix or the config quotes.
+    // exactly (not the surrounding `//host/:` prefix or the config quotes).
     assert_eq!(m.credential.as_ref(), NPMRC_NEEDLE);
 }
 
@@ -232,7 +232,7 @@ fn gzip_compressed_npmrc_recovered_through_base64() {
 
 #[test]
 fn zlib_compressed_npmrc_recovered_through_base64() {
-    // zlib stream (`78 da`) via base64 — same bounded inflate decode-through.
+    // zlib stream (`78 da`) via base64 (same bounded inflate decode-through).
     let matches = scan_embedded(B64_ZLIB_NPMRC);
     let hit = matches
         .iter()
@@ -245,7 +245,7 @@ fn zlib_compressed_npmrc_recovered_through_base64() {
 #[test]
 fn corrupt_gzip_fails_closed_no_panic_no_finding() {
     // Valid gzip magic, corrupt DEFLATE body: the bounded inflate returns None
-    // (fails closed) — no panic, and the un-inflatable bytes surface no token.
+    // (fails closed) (no panic, and the un-inflatable bytes surface no token).
     let matches = scan_embedded(B64_CORRUPT_GZIP);
     assert_eq!(count_with_needle(&matches, NPMRC_NEEDLE), 0);
     assert_eq!(count_detector(&matches, "npmrc-auth-token"), 0);

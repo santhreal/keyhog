@@ -217,7 +217,7 @@ fn url_malformed_first_escape_decodes_valid_neighbor_best_effort() {
     // BEST-EFFORT decoder (decode/url.rs): a malformed `%zz` is copied through
     // as a literal byte, NOT an abort. Because the candidate still contains a
     // VALID `%41` escape, `url_decode` proceeds (it refuses only when NO valid
-    // `%XX` exists anywhere — see the HTML/QP negative twins) and emits exactly
+    // `%XX` exists anywhere, see the HTML/QP negative twins) and emits exactly
     // one url layer with `%41` decoded to 'A'. The old all-or-nothing contract
     // (abort at the first malformed escape → zero layers) was deliberately
     // replaced so a real secret next to a stray `%` is still recovered.

@@ -5,10 +5,10 @@
 //! calls are HS-served. This module decomposes a single HS-served call's TIME
 //! into its two halves, so the dominant sub-cost is identifiable:
 //!
-//!   * **scan** — `HsScanner::scan_each_result`: one SIMD pass over the chunk
+//!   * **scan**: `HsScanner::scan_each_result`: one SIMD pass over the chunk
 //!     against the whole always-active pattern database (~2.7k patterns incl. the
 //!     unicode homoglyph classes), plus the marking callback for each hit.
-//!   * **dropped-host-loop** — the HS-incompatible patterns (those with `^`/`$`,
+//!   * **dropped-host-loop**: the HS-incompatible patterns (those with `^`/`$`,
 //!     see `hs_prefilter_requires_host_regex`) each run their OWN whole-chunk
 //!     `regex::is_match` on EVERY HS mark call, unconditionally.
 //!
@@ -18,7 +18,7 @@
 //! recall-identical win. The decomposition exists so that choice is measured, not
 //! guessed.
 //!
-//! Cost discipline: the timing is PROFILE-GATED — `Phase2AlwaysActivePrefilter`'s
+//! Cost discipline: the timing is PROFILE-GATED. `Phase2AlwaysActivePrefilter`'s
 //! caller only takes `Instant::now()` when the unified profiler is enabled (the
 //! same gate the per-pattern profiler uses). When profiling is off this module
 //! contributes nothing to the hot path. The counters are process-wide relaxed

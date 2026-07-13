@@ -66,7 +66,7 @@ fn flagsmith_word_boundary_prefixed_token_surfaces() {
 #[test]
 fn flagsmith_word_internal_ser_is_not_claimed() {
     // `user.` embeds `ser.` but has no word boundary before `ser`, so the `\b`
-    // anchor must keep the detector from firing — the strip recovered the
+    // anchor must keep the detector from firing, the strip recovered the
     // prefix, it did not drop the boundary semantics.
     let matches = matches_for("myuser.7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7more");
     assert!(
@@ -91,7 +91,7 @@ fn locationiq_pk_alternation_token_surfaces() {
 #[test]
 fn locationiq_short_body_is_not_claimed() {
     // `pk.` + only 8 hex is below the {32,} body floor, so the detector must
-    // not fire — the recovered `pk.`/`sk.` prefixes route candidates, the full
+    // not fire, the recovered `pk.`/`sk.` prefixes route candidates, the full
     // regex still gates on body length.
     let matches = matches_for("LOCATIONIQ_API_KEY=pk.b02a70db");
     assert!(

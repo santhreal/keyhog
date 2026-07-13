@@ -1,28 +1,28 @@
-//! CROSS-OS contracts — derived from a real cross-OS dogfood, not from a guess.
+//! CROSS-OS contracts (derived from a real cross-OS dogfood, not from a guess).
 //!
 //! These were produced by building and driving the real `keyhog` binary on
 //! every reachable fleet host over SSH (work-linux hub + the boxes in
 //! `~/.ssh/config`):
 //!
-//!   * tt-macbook   (Darwin 25.x, arm64, macOS 26.3) — REACHED. Built
+//!   * tt-macbook   (Darwin 25.x, arm64, macOS 26.3). REACHED. Built
 //!     `--no-default-features --features portable` (release-fast, 1m10s, rc 0),
 //!     then ran the full operator path: `keyhog doctor` (exit 0), seeded scan
 //!     (exit 1, `aws-access-key` detector fired), clean scan (exit 0), SARIF
 //!     2.1.0 with 1 result, `--git-history` on a non-repo (exit 13, fail-closed),
 //!     `uninstall` dry-run (exit 0) and `uninstall --yes` (exit 0, binary
 //!     unlinked). `tests/install/install_from_local_build.sh` => 11/11 PASS.
-//!   * windows-thinkpad (Windows 10.0.26200, rustc/cargo 1.94.1) — REACHED.
+//!   * windows-thinkpad (Windows 10.0.26200, rustc/cargo 1.94.1). REACHED.
 //!     The Santh NFS share is NOT mounted there (`Test-Path Z:\... = False`), so
-//!     an OFFLINE source ship is the only build path — and that ship exposed the
+//!     an OFFLINE source ship is the only build path, and that ship exposed the
 //!     portability blocker pinned RED below.
-//!   * santhserver, axiomexec — UNREACHABLE (SSH connect hangs to timeout,
-//!     rc 124). thamiya — UNREACHABLE (connect to :22 timed out). Those
+//!   * santhserver, axiomexec: UNREACHABLE (SSH connect hangs to timeout,
+//!     rc 124). thamiya: UNREACHABLE (connect to :22 timed out). Those
 //!     ephemeral host observations are not shipped as product documentation.
 //!
 //! Two contract classes live here:
-//!   A. GREEN coherence pins (every OS) — lock the DELIBERATE cross-OS
+//!   A. GREEN coherence pins (every OS), lock the DELIBERATE cross-OS
 //!      divergences so a later edit cannot silently erase one.
-//!   B. A portability target — the one concrete cross-OS BUILD blocker the
+//!   B. A portability target, the one concrete cross-OS BUILD blocker the
 //!      dogfood surfaced. It stays green only while Vyre resolves from registry
 //!      pins or repo-contained paths, never from a tree-escaping NFS path.
 
@@ -42,13 +42,13 @@ fn read(rel: &str) -> String {
 }
 
 // ===========================================================================
-// A. GREEN coherence pins — DELIBERATE cross-OS divergences, locked in place.
+// A. GREEN coherence pins: DELIBERATE cross-OS divergences, locked in place.
 // ===========================================================================
 
 /// `keyhog uninstall --yes` is a documented, INTENTIONAL exit-code divergence:
-///   * Unix    — the kernel lets you unlink a running executable's inode, so the
+///   * Unix, the kernel lets you unlink a running executable's inode, so the
 ///               delete succeeds and `run()` returns `Ok(SUCCESS)` => exit 0.
-///   * Windows — the OS refuses to delete a running `.exe`; `remove_binary`
+///   * Windows, the OS refuses to delete a running `.exe`; `remove_binary`
 ///               returns a plain `anyhow` error (NOT an `io::Error`), which
 ///               `main.rs` maps to `EXIT_USER_ERROR = 2`.
 ///
@@ -86,7 +86,7 @@ fn uninstall_remove_binary_is_per_os_and_windows_fails_closed() {
         "the unix uninstall arm must remove_file(exe) so `uninstall --yes` exits 0"
     );
 
-    // Windows arm FAILS CLOSED (returns Err) — never a silent no-op success.
+    // Windows arm FAILS CLOSED (returns Err) (never a silent no-op success).
     let win_arm = src.split("#[cfg(windows)]").nth(1).expect("windows arm");
     assert!(
         win_arm.contains("Err(anyhow!("),
@@ -96,7 +96,7 @@ fn uninstall_remove_binary_is_per_os_and_windows_fails_closed() {
         win_arm.contains("Windows can't delete a running .exe"),
         "the windows uninstall error must carry the running-.exe diagnostic + path"
     );
-    // It must NOT contain a remove_file — that would be the silent-success regression.
+    // It must NOT contain a remove_file (that would be the silent-success regression).
     assert!(
         !win_arm.contains("remove_file"),
         "the windows uninstall arm must not attempt remove_file on a running .exe"
@@ -152,7 +152,7 @@ fn daemon_is_unix_only_with_explicit_windows_guidance() {
 }
 
 // ===========================================================================
-// B. Portability target — the cross-OS BUILD blocker the dogfood surfaced.
+// B. Portability target (the cross-OS BUILD blocker the dogfood surfaced).
 // ===========================================================================
 
 /// THE CROSS-OS BUILD BLOCKER (kept green by self-contained Vyre dependencies).

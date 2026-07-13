@@ -90,7 +90,7 @@ def lorem_ipsum_with_high_entropy_token(rnd: random.Random) -> str:
 
 
 def jwt_example_from_rfc(rnd: random.Random) -> str:
-    # The RFC 7519 specimen JWT — a famous public example token.
+    # The RFC 7519 specimen JWT (a famous public example token).
     return (
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
         "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ."

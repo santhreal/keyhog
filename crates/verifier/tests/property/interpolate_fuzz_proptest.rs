@@ -2,14 +2,14 @@
 //! surface (6318 slice 3). The fixed-value suites
 //! (`new_verifier_interpolate`, `adversarial/interpolate_no_second_order_expansion`,
 //! `unit/interpolate_oob_control_chars_in_host`) pin specific templates; this
-//! sweep throws a DENSE stream of adversarial structural templates — unbalanced
+//! sweep throws a DENSE stream of adversarial structural templates, unbalanced
 //! `{{`/`}}`, nested `{{companion.` runs, multibyte (`é`, `🔑`) and control bytes
-//! astride token boundaries, `scheme://` fragments — at both the URL and the
+//! astride token boundaries, `scheme://` fragments, at both the URL and the
 //! header/body interpolation contexts, with companion maps whose VALUES also
 //! carry `{{…}}` tokens (the second-order-expansion vector). The invariants:
 //!   1. No input panics (a slice on a non-char boundary, an OOB index into a
 //!      multibyte name, or an unterminated `{{` must never crash).
-//!   2. Output is BOUNDED — the single left-to-right pass caps at
+//!   2. Output is BOUNDED, the single left-to-right pass caps at
 //!      `MAX_TEMPLATE_TOKENS` replacements, so a substituted value can never be
 //!      re-scanned into unbounded growth.
 //! Uses the same hand-rolled LCG as the SSRF sweep (no `proptest` dev-dep here)
@@ -83,7 +83,7 @@ fn build_companions(state: &mut u32) -> HashMap<String, String> {
 /// A hostile input: structural fragments PLUS several arbitrary Unicode scalars
 /// drawn across the entire valid range (`char::from_u32` skips surrogates), so
 /// the sanitizers are exercised on astral-plane characters, exotic punctuation,
-/// and every control class — not just the small fragment alphabet.
+/// and every control class (not just the small fragment alphabet).
 fn build_hostile_input(state: &mut u32) -> String {
     let mut s = build_string(state, 16);
     let extra = (lcg(state) as usize) % 6;
@@ -145,7 +145,7 @@ fn interpolation_never_panics_and_output_is_bounded() {
 
             // Bounded: on inputs this small (template ≤ ~90 bytes, values ≤ ~40),
             // a correct single pass yields a few KB at most. A megabyte-scale
-            // output would mean a substituted value was re-expanded — the exact
+            // output would mean a substituted value was re-expanded, the exact
             // failure the single-pass design forbids.
             assert!(
                 http.len() < 1_000_000,
@@ -164,11 +164,11 @@ fn interpolation_never_panics_and_output_is_bounded() {
 /// URL-context CORRECTNESS, not merely no-panic/bounded: an embedded `{{match}}`
 /// reduces the credential to the percent-encoded `[A-Za-z0-9%]` charset, so a
 /// hostile scanned value can NEVER contribute a structural URL byte (`/ : @ ? #
-/// &`, space, CR, LF) that would restructure the outbound request — a second
+/// &`, space, CR, LF) that would restructure the outbound request, a second
 /// host, an extra path segment, a smuggled query, or a CRLF header split. The
 /// sweep above proves the pass terminates; this proves the substitution is inert
 /// in URL position. (`interpolate_url` percent-encodes NON_ALPHANUMERIC, so even
-/// `.`/`-`/`_` are encoded — the surviving alphabet is exactly letters, digits,
+/// `.`/`-`/`_` are encoded, the surviving alphabet is exactly letters, digits,
 /// and the `%` of an escape.)
 #[test]
 fn url_context_reduces_the_credential_to_the_percent_encoded_charset() {

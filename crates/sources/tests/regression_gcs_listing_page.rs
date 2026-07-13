@@ -5,7 +5,7 @@
 //!     yielding the EXACT union object count across all pages;
 //!   * build the EXACT list-request URL for a bucket + prefix
 //!     (`/storage/v1/b/<bucket>/o?alt=json&maxResults=1000&prefix=<prefix>`);
-//!   * classify each listed object key for scanning — a binary/container
+//!   * classify each listed object key for scanning, a binary/container
 //!     extension object is dropped before any media GET, a zero-size object
 //!     yields no chunk and no GET, an over-cap object is refused;
 //!   * treat an absent / empty / whitespace `nextPageToken` as "exhausted"
@@ -161,7 +161,7 @@ fn single_page_two_text_objects_exact_count() {
 // ---------------------------------------------------------------------------
 
 /// The first listing request targets EXACTLY `/storage/v1/b/<bucket>/o` with
-/// `alt=json` and `maxResults=1000` and NO `pageToken` — the mock only matches
+/// `alt=json` and `maxResults=1000` and NO `pageToken`: the mock only matches
 /// all four constraints at once, so `calls()==1` proves the exact URL and query
 /// string were built. (The `prefix` param is set through a `pub(crate)` setter
 /// not reachable from an external test crate, so it is exercised in the crate's
@@ -367,7 +367,7 @@ fn paginated_all_text_positive_twin_bytes_flow() {
 }
 
 /// A three-page listing (token, token, terminal) yields the exact union count
-/// and lists each page exactly once — the loop terminates on the final
+/// and lists each page exactly once, the loop terminates on the final
 /// non-truncated page.
 #[test]
 fn three_page_listing_yields_exact_union_count() {
@@ -476,7 +476,7 @@ fn empty_next_page_token_stops_without_restart() {
     );
 }
 
-/// A whitespace-only `nextPageToken` is likewise "exhausted" — `str::trim`
+/// A whitespace-only `nextPageToken` is likewise "exhausted". `str::trim`
 /// reduces it to empty, so the loop stops without a page-2 request.
 #[test]
 fn whitespace_next_page_token_stops_without_restart() {
@@ -682,7 +682,7 @@ fn binary_extension_object_classified_and_skipped_across_pages() {
 
 /// A zero-`size` object is dropped before any media GET (GCS lists zero-byte
 /// objects and "directory placeholder" keys), yields no chunk, no error, and
-/// bumps NO skip counter — the neighboring text object is still scanned.
+/// bumps NO skip counter (the neighboring text object is still scanned).
 #[test]
 fn zero_size_object_yields_no_chunk_and_no_get() {
     let _guard = loopback_guard();

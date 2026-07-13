@@ -4,7 +4,7 @@
 //! An AWS access-key ID (`AKIA…`/`ASIA…`) embeds its 12-digit owning account
 //! number, recoverable fully offline. When that decoded account belongs to a
 //! known canary issuer (canarytokens.org / Thinkst), the verifier MUST refuse
-//! to send any live STS probe — a signed request would alert whoever planted
+//! to send any live STS probe, a signed request would alert whoever planted
 //! the tripwire. This suite pins:
 //!   * the exact suppression decision (`VerificationResult::Unverifiable`),
 //!   * the exact suppression reason surfaced in metadata (`is_canary=true`,
@@ -69,7 +69,7 @@ async fn canary_key_is_unverifiable_with_full_canary_metadata_before_network() {
 async fn canary_suppression_fires_before_empty_secret_gate() {
     // An empty secret would normally return Unverifiable with EMPTY metadata.
     // The canary short-circuit must win, so the metadata still carries the
-    // canary reason — proving suppression precedes the empty-secret branch.
+    // canary reason (proving suppression precedes the empty-secret branch).
     let (result, metadata, transient) = VerifierApi
         .build_aws_probe_final_for_test(CANARY_KEY, "", "us-east-1")
         .await;
@@ -144,7 +144,7 @@ async fn real_account_key_passes_canary_gate_and_reaches_region_error() {
 #[tokio::test]
 async fn real_account_empty_secret_is_unverifiable_but_not_a_canary() {
     // Adversarial collision: an empty secret ALSO yields Unverifiable, exactly
-    // like a canary. The decisions must be distinguishable by their reason —
+    // like a canary. The decisions must be distinguishable by their reason 
     // the canary carries is_canary metadata, the empty-secret path is bare.
     let (result, metadata, transient) = VerifierApi
         .build_aws_probe_final_for_test(REAL_KEY, "", "us-east-1")

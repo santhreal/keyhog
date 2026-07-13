@@ -1,10 +1,10 @@
 //! GPU AC corrupt/degenerate match ranges must be rejected, and every GPU
-//! dispatch failure must carry an operator-visible reason — never a silent
+//! dispatch failure must carry an operator-visible reason, never a silent
 //! degrade (Law 10).
 //!
 //! The 78046450 consolidation removed `engine/gpu_ac_phase1.rs`: GPU phase-1 is
 //! now POSITIONLESS (a presence bitmap via `scan_presence` or the coalesced
-//! region-presence path — see `backend_triggered.rs` / `gpu_region_dispatch.rs`),
+//! region-presence path, see `backend_triggered.rs` / `gpu_region_dispatch.rs`),
 //! and all match POSITIONS come from CPU regex in
 //! `scan_coalesced_phase2`. So a degenerate GPU position triple can no longer
 //! reach attribution; the surviving structured integrity guard is
@@ -53,7 +53,7 @@ fn degenerate_match_ranges_are_rejected_not_silently_attributed() {
 
 /// Every GPU dispatch failure mode records a CONCRETE reason into
 /// `gpu_last_degrade_reason` (operator-visible via `last_gpu_degrade_reason()`
-/// and the self-test) — never a bare "GPU unavailable". The reasons live in the
+/// and the self-test), never a bare "GPU unavailable". The reasons live in the
 /// two consolidated dispatch sites that replaced `gpu_ac_phase1.rs`.
 #[test]
 fn gpu_dispatch_failures_preserve_operator_visible_reasons() {

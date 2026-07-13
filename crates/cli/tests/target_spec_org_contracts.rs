@@ -2,7 +2,7 @@
 //!
 //! The actual contracts live in `tests/target_spec/org_contracts.rs` (the
 //! task's named location). This top-level file is the binary entry point: each
-//! `.rs` directly under `tests/` is its own test binary (see `all_tests.rs` —
+//! `.rs` directly under `tests/` is its own test binary (see `all_tests.rs` 
 //! standalone binaries bound peak memory and link size), and a file nested in a
 //! subdirectory only compiles when a sibling top-level file declares it. We pull
 //! it in with `#[path]` rather than adding it to the big `all_tests` aggregator

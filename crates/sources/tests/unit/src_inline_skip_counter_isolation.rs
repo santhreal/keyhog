@@ -9,7 +9,7 @@
 //! skip counters (`reset_skip_counters` / `skip_counts` / `record_skip_event`)
 //! are process-global statics, so two different modules' counter tests share
 //! them. A per-module `static COUNTER_LOCK: Mutex<()>` only serializes tests
-//! within its own file — it does NOT serialize `hosted_git::tests` against
+//! within its own file, it does NOT serialize `hosted_git::tests` against
 //! `bitbucket_workspace::tests`. The result is a counter race (a test that resets
 //! to 0 then asserts `== 1` instead observes a sibling's bumps, e.g. `== 3`) and,
 //! when one such assertion panics while holding its local lock, a cascading
@@ -21,7 +21,7 @@
 //! process and recovers a poisoned guard instead of cascading.
 //!
 //! The sibling gate `internal_contracts::skip_counter_reset_tests_hold_shared_guard`
-//! only walks `tests/`, so it never saw these `src/` inline tests — which is
+//! only walks `tests/`, so it never saw these `src/` inline tests, which is
 //! exactly why the race shipped. This module walks `src/` and forbids the
 //! anti-pattern there, with the classifier unit-tested below so it cannot quietly
 //! stop matching.
@@ -30,7 +30,7 @@
 /// isolated. Returns `Some(reason)` for an offender, `None` when safe.
 ///
 /// Heuristic, anchored on signals that are unambiguous in this crate:
-///   * `static COUNTER_LOCK` — a per-module counter mutex is NEVER valid in a
+///   * `static COUNTER_LOCK`: a per-module counter mutex is NEVER valid in a
 ///     `--lib` inline test (it cannot serialize across modules). Always an
 ///     offense, even if the crate-wide scope is also present.
 ///   * `reset_skip_counters()` is a test-only operation (production scans never
@@ -92,7 +92,7 @@ fn src_inline_skip_counter_tests_hold_crate_wide_scope() {
     visit_rs_files(&src_root, &mut files);
     assert!(
         !files.is_empty(),
-        "src walk found no .rs files — wrong manifest anchor?"
+        "src walk found no .rs files (wrong manifest anchor)?"
     );
 
     let mut offenders = Vec::new();

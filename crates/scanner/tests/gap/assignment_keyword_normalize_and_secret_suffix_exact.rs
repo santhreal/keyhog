@@ -13,9 +13,9 @@
 //!     `key`/`secret`/`token`/`password`.
 //!
 //! Only a comment in the file-gate suite referenced these; neither had a direct
-//! exact-value test. The two carry a subtle asymmetry — `passwd`/`pwd` match
+//! exact-value test. The two carry a subtle asymmetry: `passwd`/`pwd` match
 //! ONLY as a full segment, while `key`/`secret`/`token`/`password` also match as
-//! a trailing substring — and `ends_with` is substring, not word-boundary
+//! a trailing substring, and `ends_with` is substring, not word-boundary
 //! (`monkey` ends with `key`). All vectors were traced against the byte logic.
 
 use keyhog_scanner::testing::normalize_assignment_keyword_for_test as normalize;
@@ -85,7 +85,7 @@ fn secret_suffix_rejects_non_credential_keys() {
 // The fixed vectors pin one example per rule; these SWEEP the whole pipeline.
 // `normalize` is exercised by IMPLEMENTATION-INDEPENDENT invariants (a valid
 // output is a clean snake token; Some iff an alphanumeric survives; idempotent;
-// pure lowercasing on clean alphanumerics) — no mirror-oracle, so a source
+// pure lowercasing on clean alphanumerics), no mirror-oracle, so a source
 // regression cannot hide behind a matching bug. `has_suffix` is exercised by
 // CONSTRUCTIVE differentials that isolate the subtle asymmetry:
 // `key`/`secret`/`token`/`password` match as a TRAILING substring while
@@ -125,7 +125,7 @@ proptest! {
         }
     }
 
-    /// A token is produced IFF the input carries at least one ASCII alphanumeric —
+    /// A token is produced IFF the input carries at least one ASCII alphanumeric 
     /// separators/other bytes alone normalize to nothing.
     #[test]
     fn normalize_is_some_iff_input_has_an_alphanumeric(keyword in "(?s).{0,40}") {

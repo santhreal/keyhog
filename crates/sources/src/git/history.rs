@@ -119,7 +119,7 @@ fn stream_git_history_chunks(
         "--src-prefix=a/",
         "--dst-prefix=b/",
         // Zero context so each hunk's `+` lines are the contiguous new-file
-        // run starting at the header's `+new_start` — lets a single per-hunk
+        // run starting at the header's `+new_start`: lets a single per-hunk
         // `base_line` map every added line to its absolute new-file line.
         // Context lines were already discarded (only `+` lines are collected),
         // so -U0 changes nothing about what is scanned, only the line math.

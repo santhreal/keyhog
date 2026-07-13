@@ -184,8 +184,8 @@ impl OwnedMatchIdentity {
     /// Zero-alloc identity equality against a live match. Compares the exact
     /// three fields `From<&RawMatch>` builds and the derived `Eq` checks
     /// (`SensitiveString::eq` is itself `as_str() == as_str()`), but borrows the
-    /// credential as `&str` instead of cloning its `SensitiveString` — a heap
-    /// allocation + zeroize-on-drop — for every element compared on the
+    /// credential as `&str` instead of cloning its `SensitiveString`: a heap
+    /// allocation + zeroize-on-drop, for every element compared on the
     /// claim/replace path (`.any`/`.position`/`.find` over the whole match heap).
     fn matches_raw(&self, m: &keyhog_core::RawMatch) -> bool {
         self.offset == m.location.offset
@@ -390,7 +390,7 @@ impl ScanState {
             .expect("identity in claimed_match_identities implies heap entry");
         data[idx] = candidate;
         // `BinaryHeap::from` re-heapifies the whole vec (O(n) rebuild), so a manual
-        // sift here would be thrown away — let `from` restore heap order.
+        // sift here would be thrown away (let `from` restore heap order).
         self.matches = BinaryHeap::from(data);
         true
     }

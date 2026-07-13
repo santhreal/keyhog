@@ -1,4 +1,4 @@
-//! Verifier proxy edge: ambient ALL_PROXY is IGNORED — no env var may activate
+//! Verifier proxy edge: ambient ALL_PROXY is IGNORED, no env var may activate
 //! the proxy (config-policy mandate + security: an ambient proxy must never
 //! silently reroute the verifier's secret-bearing traffic).
 

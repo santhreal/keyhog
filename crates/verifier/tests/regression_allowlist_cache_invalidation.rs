@@ -1,4 +1,4 @@
-//! Regression coverage for allowlist *cache invalidation* — the precompiled
+//! Regression coverage for allowlist *cache invalidation*, the precompiled
 //! `path_index` (a pure function of the PUBLIC, mutable `ignored_paths` Vec)
 //! and the hash/detector suppression sets that back the real
 //! `Allowlist::is_allowed` decision.
@@ -11,7 +11,7 @@
 //!
 //! Contract under test (all four legs the area demands):
 //!   1. An allowlisted value (path glob / credential hash) IS suppressed.
-//!   2. Changing the allowlist SET changes the decision — the precompiled
+//!   2. Changing the allowlist SET changes the decision, the precompiled
 //!      `path_index` cache invalidates on a directly-mutated `ignored_paths`,
 //!      INCLUDING an in-place same-length replacement that a length-only guard
 //!      would miss (see `PathGlobIndex::matches_sources`).
@@ -19,7 +19,7 @@
 //!      into the live index/sets).
 //!   4. A non-listed value passes through (not suppressed).
 //!
-//! Every assertion pins a concrete `bool` / integer / exact Vec — never a bare
+//! Every assertion pins a concrete `bool` / integer / exact Vec, never a bare
 //! `is_empty()` / `is_ok()`.
 
 use std::borrow::Cow;
@@ -36,7 +36,7 @@ const PAST: &str = "1970-01-01";
 /// A clearly-future expiry: later than any sane host clock's "today".
 const FUTURE: &str = "9999-12-31";
 
-/// All-zero 64-hex digest — a valid SHA-256 hex shape not equal to any real
+/// All-zero 64-hex digest, a valid SHA-256 hex shape not equal to any real
 /// credential hash used below.
 fn zero_hex() -> String {
     "0".repeat(64)

@@ -21,8 +21,8 @@ pub(crate) struct KeywordContext {
     /// CredData candidate-generation lift (recall lane). When `true`, a STRONG
     /// credential-anchored line is allowed to GENERATE a candidate whose value
     /// is a canonical hash/UUID/serial shape (`is_canonical_non_secret_shape`),
-    /// so the downstream MoE — the precision authority when
-    /// `entropy_ml_authoritative` is on — can arbitrate it instead of the shape
+    /// so the downstream MoE, the precision authority when
+    /// `entropy_ml_authoritative` is on, can arbitrate it instead of the shape
     /// being hard-dropped at the generation source before the model ever sees
     /// it. This is the root candidate-GENERATION gap for the CredData `UUID`
     /// and `hex64` (AES-256 key) miss classes: ~83% of CredData misses never
@@ -31,9 +31,9 @@ pub(crate) struct KeywordContext {
     /// Set ONLY when the MoE is the runtime precision authority
     /// (`ml_enabled && entropy_ml_authoritative`) AND the line is in credential
     /// context (a strong keyword anchor is positive evidence). Left `false`
-    /// everywhere else, so the non-ML path's behaviour — and the SecretBench
+    /// everywhere else, so the non-ML path's behaviour, and the SecretBench
     /// mirror precision (where `TOKEN=<32-hex>` is planted in BOTH the positive
-    /// and the sha256/git-sha/k8s-uid negative classes) — is byte-identical:
+    /// and the sha256/git-sha/k8s-uid negative classes), is byte-identical:
     /// no model, no lift. The keyword-FREE path keeps the strict gate
     /// unconditionally (no anchor ⇒ no evidence ⇒ no lift).
     pub(crate) allow_canonical_shapes: bool,
@@ -106,7 +106,7 @@ pub(crate) fn is_likely_innocuous_line(line: &str) -> bool {
     let wq = without_quotes.as_bytes();
     // Shared colon-form hash-algo labels from the single owner
     // (`suppression::shape::HASH_ALGO_COLON_LABELS`), plus `git-sha:` (git commit
-    // refs) — an entropy-LOCAL extra the suppression digest-strip intentionally
+    // refs), an entropy-LOCAL extra the suppression digest-strip intentionally
     // does not carry. A prefix match means this value is an algo-labelled digest,
     // not a secret. (Byte-identical to the former 5-way `||` chain.)
     if crate::suppression::shape::HASH_ALGO_COLON_LABELS
@@ -302,12 +302,12 @@ fn push_extraction_rejection(
     }
 }
 
-/// Import/module-declaration line prefixes — the single Tier-B owner
+/// Import/module-declaration line prefixes, the single Tier-B owner
 /// (`rules/import-line-prefixes.toml`; was an inline `&[&str]` const). A line
 /// opening with one of these is a language `import`/`use`/`include`/`package`
 /// statement, never a credential assignment. Every prefix is space- or
 /// paren-terminated so an identifier that merely *begins* with the keyword
-/// (`important_key`, `package_secret`) is NOT matched — that divergence used to
+/// (`important_key`, `package_secret`) is NOT matched, that divergence used to
 /// reject real credential lines here while [`is_likely_innocuous_line`] accepted
 /// them (the termination contract is documented in the data file). Fails closed
 /// on an invalid/empty list.
@@ -426,7 +426,7 @@ pub(crate) fn keyword_is_password_family(keyword: &str) -> bool {
 /// `rules/credential-keywords.toml`, leaking each keyword to `&'static [u8]` (a
 /// one-time init, conceptually static data) so the loaded list keeps the exact
 /// `&[u8]` element type the byte-exact membership checks below and the shared
-/// `entropy::scanner::KEY_MATERIAL_ANCHORS` lift gate consume — no caller type
+/// `entropy::scanner::KEY_MATERIAL_ANCHORS` lift gate consume, no caller type
 /// change vs the former inline `&[&[u8]]` consts. Fails closed on invalid/empty.
 fn parse_credential_keyword_field(key_material: bool) -> Vec<&'static [u8]> {
     #[derive(serde::Deserialize)]
@@ -461,7 +461,7 @@ fn parse_credential_keyword_field(key_material: bool) -> Vec<&'static [u8]> {
         .collect()
 }
 
-/// Broad credential-keyword vocabulary — the single Tier-B owner
+/// Broad credential-keyword vocabulary, the single Tier-B owner
 /// (`rules/credential-keywords.toml` `compact` list; was an inline `&[&[u8]]`).
 static CREDENTIAL_COMPACT_KEYWORDS: LazyLock<Vec<&'static [u8]>> =
     LazyLock::new(|| parse_credential_keyword_field(false));
@@ -565,7 +565,7 @@ pub(crate) fn authorization_header_value(line: &str) -> Option<&str> {
 
 /// Parse an `<tag>value</tag>` assignment line ONCE, returning the tag name and
 /// the trimmed inner value. Single owner of the open-tag + close-tag scan that
-/// `xml_assignment_tag` and `xml_assignment_value` previously each ran — `value`
+/// `xml_assignment_tag` and `xml_assignment_value` previously each ran. `value`
 /// re-found the `<`, the `>`, and re-ran the close-tag search the tag parse had
 /// already computed. The close-tag search is zero-alloc (matches `</` + tag-name
 /// + `>` instead of building a `format!("</{tag}>")` needle) and runs exactly once.

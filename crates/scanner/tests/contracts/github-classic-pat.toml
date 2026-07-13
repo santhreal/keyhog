@@ -5,7 +5,7 @@ schema_version = 1
 detector_id = "github-classic-pat"
 service = "github"
 severity = "critical"
-# README claim (top-level scalar — see every_contract_readme_claim_present):
+# README claim (top-level scalar, see every_contract_readme_claim_present):
 readme_claim = "github-classic-pat"
 
 # ---- POSITIVES ------------------------------------------------------
@@ -18,12 +18,12 @@ reason = "env-var-style assignment, common in CI configs."
 [[positive]]
 text = "token: \"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\""
 credential = "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"
-reason = "YAML quoted assignment — valid-CRC32 classic PAT (entropy body + matching 6-char base62 checksum) so github-classic-pat fires, not just a generic high-entropy fallback."
+reason = "YAML quoted assignment, valid-CRC32 classic PAT (entropy body + matching 6-char base62 checksum) so github-classic-pat fires, not just a generic high-entropy fallback."
 
 [[positive]]
 text = "Authorization: token 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"
 credential = "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"
-reason = "HTTP Authorization header — the leak shape every CVE scanner cares about most."
+reason = "HTTP Authorization header (the leak shape every CVE scanner cares about most)."
 
 # ---- NEGATIVES ------------------------------------------------------
 
@@ -44,7 +44,7 @@ reason = "Underscores break the [A-Za-z0-9]{36} class."
 [[evasion]]
 text = "GH_TOKEN=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"
 credential = "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"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [[evasion]]
 text = "<token>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</token>"

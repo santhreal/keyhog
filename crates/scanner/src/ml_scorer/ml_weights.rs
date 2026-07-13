@@ -33,7 +33,7 @@ use super::model_arch::{
 ///
 /// Model integrity: the size check guarantees the weights file matches the
 /// expected architecture. We intentionally do NOT use a SHA-256 checksum because
-/// it breaks the retrain→deploy workflow — every retrain produces new weights
+/// it breaks the retrain→deploy workflow, every retrain produces new weights
 /// with a different hash. But size alone accepts ANY bit pattern, so a corrupt
 /// `weights.bin` carrying NaN/inf would flow untouched into the forward pass and
 /// silently yield NaN confidences (softmax over a NaN sum, NaN-propagating
@@ -81,19 +81,19 @@ fn load_f32_slice(offset: usize, count: usize) -> &'static [f32] {
 /// re-bounds-checked and re-sliced out of the flat buffer on every candidate.
 ///
 /// `fc1_weight_t`/`fc2_weight_t` are the dense-layer weights in COLUMN-major
-/// (transposed) layout — input `k`'s fan-out to every output packed contiguously
+/// (transposed) layout, input `k`'s fan-out to every output packed contiguously
 /// at `[k*OUT .. (k+1)*OUT]`. The forward pass (`ml_scorer.rs`) runs these layers
 /// "output-stationary": for each input `k`, scale that contiguous output row by
 /// `input[k]` and accumulate into the `OUT` running sums. The inner loop over
 /// outputs is dependency-free (each `acc[o]` is independent), so the compiler
-/// auto-vectorizes it across the output lanes — WITHOUT reassociating any single
+/// auto-vectorizes it across the output lanes. WITHOUT reassociating any single
 /// output's reduction. Each `acc[o]` still sums its inputs in `k = 0,1,..,IN-1`
 /// order with separate round(mul) then round(add) steps (no FMA fusion), so the
 /// result is BIT-IDENTICAL to the row-major scalar dot product, not merely close.
 /// (A previous AVX2+FMA attempt fused the multiply-add and reassociated lanes,
 /// which was sub-ULP DIFFERENT and regressed ~30 ML-gated contracts; this layout
 /// gets the SIMD width with none of that divergence.) `fc3_weight` stays ROW-major
-/// (a single output — nothing to vectorize across), as does the 6-output gate.
+/// (a single output (nothing to vectorize across), as does the 6-output gate).
 pub(crate) struct ExpertWeights {
     pub fc1_weight_t: &'static [f32],
     pub fc1_bias: &'static [f32],

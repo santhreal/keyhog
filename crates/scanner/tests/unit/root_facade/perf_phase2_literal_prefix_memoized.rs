@@ -5,7 +5,7 @@
 //! The candidate confidence policy feeds
 //! `ConfidenceSignals.has_literal_prefix` for EVERY candidate that survives
 //! suppression. It previously computed that inline as
-//! `extract_literal_prefix(entry.regex.as_str()).is_some()` — a full
+//! `extract_literal_prefix(entry.regex.as_str()).is_some()`: a full
 //! char-by-char prefix parse that allocates a `String` (and, on a `(`
 //! alternation, an extra `chars.clone().collect::<String>()` of the whole
 //! pattern tail) on each call. The value depends ONLY on the regex SOURCE, so
@@ -15,17 +15,17 @@
 //!
 //! The fix memoizes it in `LazyRegex::has_literal_prefix()` (an
 //! `Arc<OnceLock<bool>>`, populated on first scoring touch, shared across
-//! clones — exactly like the compiled-`Regex` cache). This suite pins the two
+//! clones, exactly like the compiled-`Regex` cache). This suite pins the two
 //! invariants that the optimization must hold:
 //!
-//!   1. CORRECTNESS — the memoized accessor returns the BYTE-IDENTICAL value to
+//!   1. CORRECTNESS, the memoized accessor returns the BYTE-IDENTICAL value to
 //!      `extract_literal_prefix(src).is_some()` for every pattern shape the
 //!      engine ships (literal prefix, no prefix, mid-pattern alternation,
 //!      escaped literal, below-threshold prefix), AND across the ENTIRE on-disk
 //!      detector corpus. If the memoized path ever diverges from the
 //!      source-of-truth parser, this goes red.
 //!
-//!   2. MEMOIZATION — the accessor is stable across repeated calls and a clone
+//!   2. MEMOIZATION, the accessor is stable across repeated calls and a clone
 //!      shares the cached value (so the work is paid at most once per unique
 //!      regex source, which is the whole point of the perf fix).
 //!
@@ -73,7 +73,7 @@ fn memoized_matches_source_of_truth_on_shapes() {
             "detector LazyRegex `{p}` memoized has_literal_prefix={got_detector} but \
              extract_literal_prefix(...).is_some()={expected}"
         );
-        // The signal is a function of the SOURCE only — case-sensitivity flavor
+        // The signal is a function of the SOURCE only, case-sensitivity flavor
         // (detector vs plain) must not change it.
         assert_eq!(
             got_plain, expected,
@@ -106,7 +106,7 @@ fn known_shapes_have_exact_prefix_truth() {
 
 /// MEMOIZATION pin: the accessor is stable across repeated calls and a clone
 /// shares the cached value. Mirrors `lazy_regex.rs::clone_shares_compiled_state`
-/// for the compiled regex — the perf win is precisely that the prefix parse is
+/// for the compiled regex, the perf win is precisely that the prefix parse is
 /// paid at most once per unique source even across the `ac_map` clones the
 /// compiler makes (one `CompiledPattern` clone per literal prefix).
 #[test]
@@ -139,12 +139,12 @@ fn memoized_value_is_stable_and_shared_across_clones() {
 }
 
 /// CORPUS-WIDE correctness: for every pattern in every on-disk detector, the
-/// memoized accessor equals `!extract_literal_prefixes(src).is_empty()` — the
+/// memoized accessor equals `!extract_literal_prefixes(src).is_empty()`: the
 /// PLURAL routing extractor that `has_literal_prefix` delegates to (see
 /// `types.rs`). The singular `extract_literal_prefix` returns only the single
 /// COMMON prefix, so it wrongly yields `None` for a leading DIVERGENT
 /// alternation (123formbuilder's `(?:api…|API…)`), where the plural correctly
-/// expands both branches — so confidence and routing agree a literal anchor
+/// expands both branches, so confidence and routing agree a literal anchor
 /// exists. This is the broadest regression net: any future change to the
 /// memoized computation that diverges from the plural source-of-truth on even
 /// one shipped pattern goes red here.
@@ -168,7 +168,7 @@ fn memoized_matches_source_of_truth_on_full_corpus() {
     }
     assert!(
         checked >= 500,
-        "expected to cross-check the full corpus (>=500 patterns), only saw {checked} — \
+        "expected to cross-check the full corpus (>=500 patterns), only saw {checked}. \
          the corpus failed to load and the net is not actually covering anything"
     );
 }
@@ -178,7 +178,7 @@ fn memoized_matches_source_of_truth_on_full_corpus() {
 /// this test's control and decoupled from on-disk-corpus id/checksum churn that
 /// other lanes may be tuning. Both detectors are literal-prefixed, so the
 /// `has_literal_prefix` scoring signal this perf fix memoizes is `true` for
-/// both — exercising exactly the code path under test.
+/// both (exercising exactly the code path under test).
 fn inline_pattern(regex: &str) -> keyhog_core::PatternSpec {
     keyhog_core::PatternSpec {
         regex: regex.to_string(),
@@ -272,7 +272,7 @@ fn dense_corpus_findings_are_unchanged_by_memoization() {
         );
     }
 
-    // The exact credential bytes must be captured verbatim — proves the
+    // The exact credential bytes must be captured verbatim, proves the
     // scoring path that consumes `has_literal_prefix` still emits the same
     // bytes (not a shifted/extended slice).
     let creds: std::collections::BTreeSet<&str> =

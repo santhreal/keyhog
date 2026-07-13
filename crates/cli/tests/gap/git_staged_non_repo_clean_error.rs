@@ -1,5 +1,5 @@
 //! DF-03 guard: `--git-staged` outside a git repository must fail with a CLEAN,
-//! actionable message — not a raw git error leak, and never a false all-clear.
+//! actionable message (not a raw git error leak, and never a false all-clear).
 //!
 //! Dogfood hit `keyhog scan --git-staged` outside a repo and got a raw
 //! `git diff failed: error: ...` leaked straight from the diff invocation. The
@@ -38,7 +38,7 @@ fn git_staged_outside_repo_fails_cleanly_with_actionable_message() {
         "a failed staged scan must not print the clean-repo summary; combined={combined}"
     );
 
-    // Clean, actionable message — names the cause and the offending flag.
+    // Clean, actionable message (names the cause and the offending flag).
     assert!(
         combined.contains("not a git repository"),
         "error must explain the not-a-repo cause; combined={combined}"

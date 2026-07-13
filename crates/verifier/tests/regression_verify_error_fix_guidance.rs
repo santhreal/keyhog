@@ -106,7 +106,7 @@ fn redirect_has_fix_section() {
 fn redirect_explains_ssrf_rationale() {
     assert!(
         REDIRECT_LIMIT_ERROR.contains("SSRF"),
-        "redirects are refused for SSRF safety — the message must say so, not look like a bug"
+        "redirects are refused for SSRF safety, the message must say so, not look like a bug"
     );
 }
 
@@ -178,7 +178,7 @@ fn every_reason_is_meaningfully_longer_than_its_legacy_token() {
     for (msg, legacy) in TRANSPORT_REASONS {
         assert!(
             msg.len() >= legacy.len() + 40,
-            "{msg:?} is barely longer than {legacy:?} — it lost its fix guidance"
+            "{msg:?} is barely longer than {legacy:?}, it lost its fix guidance"
         );
     }
 }
@@ -210,7 +210,7 @@ fn no_reason_is_multiline() {
 
 #[test]
 fn no_reason_leaks_a_template_placeholder() {
-    // These are static operator messages — they must never carry an un-substituted
+    // These are static operator messages, they must never carry an un-substituted
     // interpolation placeholder that could imply a leaked credential/companion.
     for (msg, _) in TRANSPORT_REASONS {
         assert!(
@@ -240,7 +240,7 @@ fn no_reason_has_double_spaces_from_line_continuation() {
 // build failure). #131 requires every one of its variants to carry actionable
 // `Fix:` guidance too. The two String-detail variants are checked at runtime; the
 // two `ReqwestError`-wrapping variants have no public constructor, so their
-// templates are pinned at the source level — plus a whole-enum guard that counts
+// templates are pinned at the source level, plus a whole-enum guard that counts
 // `#[error(...)]` templates against `Fix:` clauses so a NEW variant added without
 // fix guidance fails this gate (the same contract the scanner's `ScanError`
 // `scan_error_display_messages` gate enforces).
@@ -276,7 +276,7 @@ fn proxy_config_display_carries_fix_and_preserves_detail() {
 #[test]
 fn proxy_config_fix_names_every_supported_scheme_and_the_off_switch() {
     // A proxy-config error is only actionable if it tells the operator what a VALID
-    // value looks like — all three supported schemes plus the disable switch.
+    // value looks like (all three supported schemes plus the disable switch).
     let msg = VerifyError::ProxyConfig("x".to_string()).to_string();
     assert!(msg.contains("http://"), "must name http:// : {msg:?}");
     assert!(msg.contains("https://"), "must name https:// : {msg:?}");
@@ -389,7 +389,7 @@ fn every_verify_error_variant_template_declares_a_fix() {
 #[test]
 fn verify_error_enum_block_is_bounded_to_the_enum() {
     // The whole-enum guard's template/Fix count is only correct if the sliced block
-    // is exactly the enum — it must include the last variant and stop before the
+    // is exactly the enum, it must include the last variant and stop before the
     // following item (VerificationEngine), or the count could drift.
     let block = verify_error_enum_block();
     assert!(
@@ -503,7 +503,7 @@ fn verify_error_implements_std_error_for_question_mark_propagation() {
 
 #[test]
 fn field_resolution_fix_scopes_to_the_detector_spec() {
-    // The actionable location is the detector spec, not an arbitrary field — the fix
+    // The actionable location is the detector spec, not an arbitrary field, the fix
     // must say so, or the operator doesn't know where to look.
     let msg = VerifyError::FieldResolution("x".to_string()).to_string();
     assert!(

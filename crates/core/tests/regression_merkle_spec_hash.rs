@@ -8,7 +8,7 @@
 //! (Law 10: a silent stale-cache skip would miss a freshly reachable secret
 //! forever) or stopped being order-invariant (spurious full re-scans), that is a
 //! recall/perf regression. These tests assert EXACT equality/inequality of the
-//! 32-byte digest and EXACT cold-start `MerkleLoadStatus` variants — never
+//! 32-byte digest and EXACT cold-start `MerkleLoadStatus` variants, never
 //! shapes.
 //!
 //! Distinct from `regression_merkle_incremental*` (which pin the record/skip hot

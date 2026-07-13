@@ -1,5 +1,5 @@
 //! Recall regression for the CredData "Bearer Authorization" class (~75 labeled
-//! positives) — the opaque token following the RFC 6750 `Bearer` scheme keyword,
+//! positives), the opaque token following the RFC 6750 `Bearer` scheme keyword,
 //! `Authorization: Bearer <token>` / `- Bearer <40-hex>`.
 //!
 //! keyhog was WHOLLY BLIND to this class (recalled 0 of 75): there was a
@@ -11,14 +11,14 @@
 //! pipeline
 //! skips the Tier-B randomness/digest floor (`apply_tier_b == false`), so those
 //! bare tokens surface, while precision against placeholders is held by three
-//! orthogonal gates that do NOT penalise a random token —
+//! orthogonal gates that do NOT penalise a random token 
 //!   * the `{16,}` value floor drops the short scheme words (`token`, `secret`);
 //!   * the regex excludes `<` `>` `$` (templates and shell vars);
 //!   * the `dictionary_word_placeholder` gate drops a value the English bigram
 //!     model is CONFIDENT is a real word.
 //!
 //! Each `text` mirrors a real corpus shape. Assertions check the exact surfaced
-//! credential bytes via the on-disk scanner — never `!is_empty`.
+//! credential bytes via the on-disk scanner (never `!is_empty`).
 
 mod support;
 use support::contracts::{make_chunk, scanner};
@@ -62,7 +62,7 @@ fn bearer_40hex_token_surfaces() {
     assert!(
         surfaces_under(&text, "bearer-authorization", cred),
         "40-hex Bearer token must surface (it is a bare digest the Tier-B floor \
-         would otherwise suppress) — got {:?}",
+         would otherwise suppress), got {:?}",
         {
             let s = scanner();
             matches(&s, &make_chunk(&text, "source", "probe.conf"))
@@ -86,7 +86,7 @@ fn bearer_in_curl_header_surfaces() {
 
 #[test]
 fn lowercase_bearer_scheme_surfaces() {
-    // (?i) — a lower-cased scheme keyword must still fire.
+    // (?i) (a lower-cased scheme keyword must still fire).
     let cred = "a3f9c1e07b42d85f6098ac1de2f3b4c5";
     let text = format!("authorization: bearer {cred}");
     assert!(surfaces_under(&text, "bearer-authorization", cred));
@@ -96,7 +96,7 @@ fn lowercase_bearer_scheme_surfaces() {
 
 #[test]
 fn bearer_angle_bracket_template_is_not_surfaced() {
-    // `<` is excluded from the value class — the token run never starts.
+    // `<` is excluded from the value class (the token run never starts).
     assert!(nothing_surfaces(
         "Authorization: Bearer <access_token>",
         "access_token",
@@ -113,7 +113,7 @@ fn bearer_shell_var_is_not_surfaced() {
 
 #[test]
 fn bearer_short_scheme_word_is_not_surfaced() {
-    // `token` is 5 chars — below the {16,} floor, the regex never matches.
+    // `token` is 5 chars (below the {16,} floor, the regex never matches).
     let s = scanner();
     let chunk = make_chunk(
         "Bearer token required for all authenticated API requests.",

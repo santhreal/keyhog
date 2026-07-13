@@ -17,7 +17,7 @@ fn retired_gap_registry_and_coordination_claims_stay_absent() {
         "benchmarks/docs/RECALL_GAP.md",
     ] {
         // The invariant is that retired planning registries never come back INTO
-        // THE REPO — assert they are not git-TRACKED, not merely absent from the
+        // THE REPO, assert they are not git-TRACKED, not merely absent from the
         // working tree. A gitignored local scratch copy (e.g. an agent's
         // `coordination/` work log) is not a repo artifact and must not trip this.
         let out = Command::new("git")

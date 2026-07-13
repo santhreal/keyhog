@@ -1,9 +1,9 @@
-//! PERF tripwire — `algo_complexity` vector.
+//! PERF tripwire: `algo_complexity` vector.
 //!
 //! TARGET HOT PATH: `keyhog_core::dedup_matches` (crates/core/src/dedup.rs).
 //!
 //! DEFECT (file:line evidence):
-//!   crates/core/src/dedup.rs:179-186 — for every raw match that lands in an
+//!   crates/core/src/dedup.rs:179-186, for every raw match that lands in an
 //!   already-seen `(detector_id, credential, file)` group, the duplicate arm does
 //!
 //!       if !is_same_location(&existing.primary_location, &matched.location)
@@ -30,7 +30,7 @@
 //!   is O(empty), `is_decoder_alias_pair` is O(1). The up-front
 //!   `matches.sort_by` (dedup.rs:130) is O(N log N) and the final key sort
 //!   (dedup.rs:215) is O(G log G). With all matches in one group, the quadratic
-//!   `.any()` sweep is the sole super-linear term — so doubling K must NOT
+//!   `.any()` sweep is the sole super-linear term, so doubling K must NOT
 //!   roughly quadruple the wall time. The dedup pass should collapse K repeats
 //!   into one finding with K-1 additional locations in O(K) (e.g. a HashSet of
 //!   seen-locations per group, or skipping the membership check entirely when the
@@ -43,7 +43,7 @@
 //! removes scheduler/allocator noise; the assertion is on a RATIO so it is
 //! immune to absolute clock speed. Run with the release-fast profile
 //! characteristics (the workspace CI/e2e profile): opt-level=3, thin LTO,
-//! debug-assertions=on — build/run via
+//! debug-assertions=on, build/run via
 //!   CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target \
 //!   cargo test -p keyhog-core --test perf_algo_complexity --release
 //! (a plain `cargo test` debug build also trips it; the ratio holds either way).
@@ -125,7 +125,7 @@ fn best_dedup_time(n: usize) -> Duration {
             deduped.len(),
             1,
             "expected the {n} repeats of one credential to collapse into a single \
-             DedupedMatch; got {} — the perf measurement is only valid when all \
+             DedupedMatch; got {}, the perf measurement is only valid when all \
              matches land in ONE group and exercise the additional_locations sweep",
             deduped.len()
         );
@@ -133,7 +133,7 @@ fn best_dedup_time(n: usize) -> Duration {
             deduped[0].additional_locations.len(),
             n - 1,
             "expected {} additional_locations (one per distinct line beyond the \
-             primary); got {} — distinct lines must all be retained, confirming \
+             primary); got {}, distinct lines must all be retained, confirming \
              the per-group additional_locations accumulation is exercised",
             n - 1,
             deduped[0].additional_locations.len()
@@ -165,9 +165,9 @@ fn dedup_additional_locations_is_subquadratic_in_group_size() {
          DISAMBIGUATE: the additional_locations accumulation is ALREADY O(K) today \
          (per-group `seen_locations` IndexSet membership, dedup.rs \
          `insert_new_location_identity`). A ratio over target therefore means \
-         EITHER (a) a real complexity regression — the O(1) IndexSet membership \
+         EITHER (a) a real complexity regression, the O(1) IndexSet membership \
          check was removed and a linear `additional_locations.iter().any(...)` scan \
-         reintroduced, making a K-repeat group O(K^2) again — OR (b), commonly, \
+         reintroduced, making a K-repeat group O(K^2) again. OR (b), commonly, \
          wall-clock NOISE: this is a best-of-N WALL-TIME ratio and is load-sensitive, \
          so a parallel build/test sharing the CPU inflates it. Re-run ISOLATED on an \
          idle box to disambiguate. The durable fix is to count comparison OPERATIONS \

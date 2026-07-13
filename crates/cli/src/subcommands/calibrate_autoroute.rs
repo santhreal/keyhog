@@ -1,18 +1,18 @@
-//! `keyhog calibrate-autoroute` — drive the full install-time autoroute
+//! `keyhog calibrate-autoroute`: drive the full install-time autoroute
 //! calibration sweep in one command.
 //!
-//! The installers used to hand-roll this probe loop twice — POSIX sh in
-//! `install.sh`, PowerShell in `install.ps1` — generating a stdin + filesystem
+//! The installers used to hand-roll this probe loop twice. POSIX sh in
+//! `install.sh`, PowerShell in `install.ps1`: generating a stdin + filesystem
 //! workload ladder and then running `keyhog scan --autoroute-calibrate` once
 //! per (scan-policy preset × workload) so every bucket a real scan looks up is
 //! persisted before the scan path goes live. That orchestration now lives here,
 //! in one testable place; the installer keeps only the external source probes
 //! (git / docker / web) that need environment orchestration this command does
-//! not own (Screwdriver Principle: one job — the core workload sweep — done
+//! not own (Screwdriver Principle: one job, the core workload sweep, done
 //! precisely).
 //!
-//! Each probe is a real child `keyhog scan --autoroute-calibrate` process —
-//! the same invocation the installer spawned — so calibration behavior is
+//! Each probe is a real child `keyhog scan --autoroute-calibrate` process 
+//! the same invocation the installer spawned, so calibration behavior is
 //! unchanged byte for byte; only the loop moved from shell into Rust. Because
 //! it runs in the same build whose presets it sweeps, every preset flag below
 //! always exists (the installer has to grep `scan --help` because it may drive
@@ -38,7 +38,7 @@ const SCAN_POLICY_PRESETS: &[&str] = &["--fast", "--deep", "--precision"];
 /// in the exact same size / decode-density bucket a shell-generated one landed.
 const PLAIN_SEED: &str = "src path one. scan text two. keyhog route plain. config value sample. ";
 
-/// A 1 KiB block dense with base64 runs — the decode-heavy bucket the scanner's
+/// A 1 KiB block dense with base64 runs, the decode-heavy bucket the scanner's
 /// decode-through path is timed against. Mirrors the installer's seed.
 const DECODE_HEAVY_SEED: &str = "apiVersion:v1 kind:Secret data token:QUtJQUlPU0ZPRE5ON0VYQU1QTEVBS0lBSU9TRk9ETk43RVhBTVBMRT0= payload:c2stcHJvai1BQkNkZWZHSElKS0xtbm9QUVJTVFVWV1hZWjAxMjM0NTY3ODkwPQ== ";
 
@@ -195,7 +195,7 @@ fn core_workload_plan() -> Vec<Workload> {
 
 /// Build `total` bytes of calibration content by repeating `seed`'s 1 KiB block.
 /// `total` is always a whole KiB multiple here, so the probe is byte-for-byte a
-/// run of identical blocks — the same shape the installer's `awk` loop emits.
+/// run of identical blocks (the same shape the installer's `awk` loop emits).
 fn calibration_bytes(seed: &str, total: usize) -> Vec<u8> {
     let block = calibration_block(seed);
     if total == 0 {
@@ -329,7 +329,7 @@ impl ProbeSweep<'_> {
     fn run_probe(&self, workload: &Workload, policy: Option<&str>, idx: usize) -> Result<()> {
         let p = self.palette;
         let label = workload.label();
-        // LAW10: reporting_only — display label for the default (no-flag) policy.
+        // LAW10: reporting_only (display label for the default (no-flag) policy).
         let policy_label = policy.unwrap_or("default policy");
         if !self.quiet {
             print!(
@@ -339,7 +339,7 @@ impl ProbeSweep<'_> {
                 dim = p.dim,
                 reset = p.reset,
             );
-            // LAW10: no runtime effect — a progress-line flush error is cosmetic; stdout flushes at exit.
+            // LAW10: no runtime effect (a progress-line flush error is cosmetic; stdout flushes at exit).
             std::io::stdout().flush().ok();
         }
 

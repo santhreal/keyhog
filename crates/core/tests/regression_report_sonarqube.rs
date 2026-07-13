@@ -2,7 +2,7 @@
 //! annotation reporter (`ReportFormat::GithubAnnotations`).
 //!
 //! NOTE ON NAMING: the requested area was a "SonarQube" report format. There is
-//! NO SonarQube reporter in this crate — `ReportFormat` has no `SonarQube`
+//! NO SonarQube reporter in this crate. `ReportFormat` has no `SonarQube`
 //! variant and `crates/core/src/report/` ships no `sonar*.rs`. The closest
 //! CI-consumed structured reporters are already pinned elsewhere
 //! (`regression_report_gitlab_codequality.rs` -> GitLab SAST,
@@ -392,7 +392,7 @@ fn property_values_escape_colon_and_comma() {
     );
 }
 
-/// Command DATA (the message after `::`) escapes only `%`, CR, and LF — colon
+/// Command DATA (the message after `::`) escapes only `%`, CR, and LF, colon
 /// and comma are preserved literally (the reverse of property escaping). This
 /// is the exact asymmetry that makes property-vs-data a real distinction.
 #[test]
@@ -432,7 +432,7 @@ fn command_data_escapes_percent_cr_lf_but_keeps_colon_and_comma() {
 // Cardinality (boundary)
 // ---------------------------------------------------------------------------
 
-/// One workflow-command line is emitted PER finding — three findings produce
+/// One workflow-command line is emitted PER finding, three findings produce
 /// exactly three lines.
 #[test]
 fn one_line_per_finding() {
@@ -480,7 +480,7 @@ fn one_line_per_finding() {
     );
 }
 
-/// An empty findings slice produces NO output at all — the annotation reporter
+/// An empty findings slice produces NO output at all, the annotation reporter
 /// has no report skeleton, unlike the JSON/SARIF envelopes.
 #[test]
 fn empty_findings_produce_no_output() {

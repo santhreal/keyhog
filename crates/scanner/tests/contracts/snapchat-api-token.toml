@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "SNAPCHAT_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "SNAPCHAT_API_KEY=a5738EXAMPLEEXAMPLE74c1a"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "export SNAPCHAT_API_KEY=a573881b385d7370d17ec84d8f8264a6f9a8d7709bc9323e8be592ba1c474c1a"
 credential = "a573881b385d7370d17ec84d8f8264a6f9a8d7709bc9323e8be592ba1c474c1a"
-reason = "Adversarial env_export envelope — credential must still surface under this detector."
+reason = "Adversarial env_export envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

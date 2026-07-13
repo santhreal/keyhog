@@ -1,6 +1,6 @@
 //! Regression: the `keyhog scan` credential-redaction contract, driven end to
 //! end over the SHIPPED binary (`--daemon=off`, `--backend cpu` so the assertions
-//! are host-independent — no accelerator is ever assumed).
+//! are host-independent (no accelerator is ever assumed)).
 //!
 //! A single checksum-valid GitHub classic PAT is planted in a temp file. It
 //! fires `github-classic-pat` on its own bytes with a passing CRC tail, so it
@@ -8,15 +8,15 @@
 //!
 //! The contract pinned here, on EXACT bytes (never a shape / `!is_empty`):
 //!
-//!   * DEFAULT REDACTS — every structured format (json, jsonl, csv, sarif) and
+//!   * DEFAULT REDACTS, every structured format (json, jsonl, csv, sarif) and
 //!     the human text report emit the masked `first4…last4` form `ghp_...DSiF`
 //!     and NEVER the 40-byte plaintext token nor its unique middle run.
-//!   * `--show-secrets` REVEALS — the same run with `--show-secrets` puts the
+//!   * `--show-secrets` REVEALS, the same run with `--show-secrets` puts the
 //!     full plaintext token back into `credential_redacted` / the CSV cell /
 //!     the text line, while the detector id and the sha256 credential hash are
 //!     byte-for-byte identical to the redacted run (only the credential text
-//!     differs — masking is display-only, it does not change identity).
-//!   * FAIL CLOSED — `--lockdown --show-secrets` is refused (exit 2) with an
+//!     differs (masking is display-only, it does not change identity)).
+//!   * FAIL CLOSED: `--lockdown --show-secrets` is refused (exit 2) with an
 //!     actionable message, so plaintext can never reach stdout under lockdown.
 //!
 //! There is NO `--no-redact` flag in the shipped CLI; the reveal flag is
@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
-/// A planted GitHub classic PAT with a VALID CRC32 tail — the exact token used
+/// A planted GitHub classic PAT with a VALID CRC32 tail, the exact token used
 /// across the scanner boundary/parity suites. Split-literal so THIS test file is
 /// not itself a planted-secret tripwire for keyhog's own self-scan.
 const PLANTED: &str = concat!("ghp_", "1234567890123456789012345678902PDSiF");
@@ -86,7 +86,7 @@ fn single_json_finding(stdout: &str) -> serde_json::Value {
 }
 
 // ---------------------------------------------------------------------------
-// DEFAULT REDACTION — json
+// DEFAULT REDACTION, json
 // ---------------------------------------------------------------------------
 
 /// Default json: `credential_redacted` is EXACTLY the masked `ghp_...DSiF`, and
@@ -110,7 +110,7 @@ fn default_json_redacts_credential_to_masked_form() {
 }
 
 /// Default json: the 40-byte plaintext token and its unique 32-char middle run
-/// are BOTH absent from the entire stdout — the mask does not leak the interior.
+/// are BOTH absent from the entire stdout (the mask does not leak the interior).
 #[test]
 fn default_json_output_contains_no_plaintext_token() {
     let (_dir, path) = planted_fixture();
@@ -160,7 +160,7 @@ fn default_masked_field_has_exact_shape_and_length() {
 }
 
 // ---------------------------------------------------------------------------
-// --show-secrets REVEALS — json
+// --show-secrets REVEALS, json
 // ---------------------------------------------------------------------------
 
 /// `--show-secrets` puts the FULL plaintext token back into `credential_redacted`.
@@ -178,7 +178,7 @@ fn show_secrets_reveals_full_plaintext_in_json() {
 }
 
 /// Masking is display-only: the `credential_hash` is byte-identical with and
-/// without `--show-secrets`, and equals sha256 of the exact plaintext — so the
+/// without `--show-secrets`, and equals sha256 of the exact plaintext, so the
 /// redacted report still traces to the same secret identity.
 #[test]
 fn hash_is_identical_and_is_sha256_of_plaintext_regardless_of_masking() {
@@ -359,7 +359,7 @@ fn show_secrets_text_prints_full_plaintext() {
 }
 
 // ---------------------------------------------------------------------------
-// FAIL CLOSED — lockdown refuses reveal
+// FAIL CLOSED, lockdown refuses reveal
 // ---------------------------------------------------------------------------
 
 /// Adversarial: `--lockdown --show-secrets` is refused (exit 2, a user error)
@@ -384,7 +384,7 @@ fn lockdown_with_show_secrets_fails_closed_exit_2() {
     );
 }
 
-/// `--show-secrets` sarif: the reveal flag applies uniformly across formats —
+/// `--show-secrets` sarif: the reveal flag applies uniformly across formats 
 /// the full plaintext token appears in the SARIF document, and it is the SAME
 /// single result (ruleId unchanged) as the redacted run.
 #[test]
@@ -410,7 +410,7 @@ fn show_secrets_sarif_reveals_plaintext_same_result() {
 }
 
 /// Cross-format redaction invariant: the DEFAULT (redacted) json, jsonl, csv,
-/// sarif, and text reports NONE leak the plaintext token — a per-format
+/// sarif, and text reports NONE leak the plaintext token, a per-format
 /// redaction hole (one serializer forgetting to use `credential_redacted`) is
 /// caught here even if the other formats are clean.
 #[test]

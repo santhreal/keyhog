@@ -1,6 +1,6 @@
 //! Regression (dogfood, CredData FP): a service-anchored (named) detector match
-//! whose body is a long run of one repeated character — e.g. the
-//! `AKIAXXXXXXXXXXXXXXXX` AWS-access-key placeholder CredData embeds — must be
+//! whose body is a long run of one repeated character, e.g. the
+//! `AKIAXXXXXXXXXXXXXXXX` AWS-access-key placeholder CredData embeds, must be
 //! crushed by the degenerate-repeat penalty.
 //!
 //! The bug: the `AKIA` (4-char) prefix dilutes the longest-run RATIO to exactly
@@ -8,7 +8,7 @@
 //! ratio gate; `char_diversity` is `4/20 = 0.2`, NOT `< 0.1`, so that gate
 //! missed it too. keyhog reported it as a CRITICAL 80% finding (and even
 //! base32-decoded a bogus AWS account_id from the all-`X` body). The absolute
-//! run-length guard (`>= 10` identical chars — synthetic for any real
+//! run-length guard (`>= 10` identical chars, synthetic for any real
 //! base32/hex/base64 secret, whose longest natural run is ~2-3) closes the hole
 //! without touching low-diversity-but-legit named keys (64-hex PATs, UUIDs).
 
@@ -29,7 +29,7 @@ fn named_detector_all_x_placeholder_is_crushed() {
 fn named_detector_real_low_diversity_hex_key_survives() {
     // A real 64-hex named-detector PAT (Linode-style): small alphabet → low
     // char_diversity (0.25), but the longest single-character run is 1. It must
-    // NOT be penalized — the service anchor already proved it is the credential.
+    // NOT be penalized (the service anchor already proved it is the credential).
     let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     let adjusted = apply_post_ml_penalties(0.9, hex, true);
     assert!(

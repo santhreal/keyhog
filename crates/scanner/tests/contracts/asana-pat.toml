@@ -20,7 +20,7 @@ reason = "Body segments below required lengths."
 [[evasion]]
 text = "curl https://app.asana.com/api/1.0/users/me -H 'Authorization: Bearer 1/4827193056718294/Kp7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU'"
 credential = "1/4827193056718294/Kp7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU"
-reason = "curl command at the documented asana endpoint — `app.asana.com` keyword activates the fallback regex (this regression-gates task #69)."
+reason = "curl command at the documented asana endpoint: `app.asana.com` keyword activates the fallback regex (this regression-gates task #69)."
 
 [perf]
 fixture_bytes = 4096

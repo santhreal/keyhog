@@ -2,12 +2,12 @@
 
 A :class:`Corpus` exposes three things the runner needs:
 
-* ``root`` — the single directory handed to a scanner; it recurses and pays
+* ``root``, the single directory handed to a scanner; it recurses and pays
   one cold-start over the whole tree (the 257x amortisation score.py
   documents).
-* ``records()`` — the ground truth as :class:`LabeledRecord` objects. Empty
+* ``records()``, the ground truth as :class:`LabeledRecord` objects. Empty
   for a perf-only corpus (kernel).
-* ``info()`` — fixture count / labeled-positive count / total bytes for the
+* ``info()``, fixture count / labeled-positive count / total bytes for the
   result header.
 
 One record == one labeled credential candidate. A file may carry several
@@ -34,7 +34,7 @@ class LabeledRecord:
     secret (a positive the scanner MUST surface), ``False`` = confirmed
     non-secret (a negative the scanner must NOT fire on). ``ignore=True``
     marks a candidate that scores neither way (CredData's ``Template`` /
-    ``X`` rows, placeholders) — findings overlapping it are dropped, and it
+    ``X`` rows, placeholders), findings overlapping it are dropped, and it
     never contributes a false negative.
     """
 
@@ -67,13 +67,13 @@ class Corpus(ABC):
 
     @property
     def scan_root(self) -> pathlib.Path:
-        """The path a scanner is actually pointed at — the fixture tree with
+        """The path a scanner is actually pointed at, the fixture tree with
         the ground-truth manifest/answer-key EXCLUDED. Defaults to ``root``;
         corpora whose manifest lives inside ``root`` override this to the
         manifest-free subtree (e.g. ``root/fixtures``).
 
         This is the fairness boundary: a scanner that reads the manifest
-        would "find" every labeled secret in plaintext — measured on the 15k
+        would "find" every labeled secret in plaintext, measured on the 15k
         mirror, betterleaks fires 9392 spurious matches on ``manifest.jsonl``
         and kingfisher 7581. No scanner is ever shown the answer key, so the
         comparison reflects detection skill, not whether a tool happens to
@@ -83,7 +83,7 @@ class Corpus(ABC):
     @abstractmethod
     def _load_records(self) -> list[LabeledRecord]:
         """Parse the ground truth from disk. Empty list for a perf-only corpus.
-        Called at most once per instance — :meth:`records` memoizes it."""
+        Called at most once per instance: :meth:`records` memoizes it."""
 
     def records(self) -> list[LabeledRecord]:
         """Ground-truth records, parsed once and cached on the instance.

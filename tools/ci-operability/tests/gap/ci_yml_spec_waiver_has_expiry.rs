@@ -20,6 +20,6 @@ fn ci_yml_spec_waiver_has_expiry() {
     );
     assert!(
         spec_waiver_active(WAIVER_REL),
-        "SPEC waiver must not be expired — renew or migrate ci.yml before expiry"
+        "SPEC waiver must not be expired, renew or migrate ci.yml before expiry"
     );
 }

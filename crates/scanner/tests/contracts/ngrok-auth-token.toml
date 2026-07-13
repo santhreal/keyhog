@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "NGROK_AUTHTOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "NGROK_AUTHTOKEN=6vFSdEXAMPLEEXAMPLEbvvn/"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "# NGROK_AUTHTOKEN=6vFSd5rDCFSM5K5OrRo4JGIdLLsIfXAuWO+bvvn/"
 credential = "6vFSd5rDCFSM5K5OrRo4JGIdLLsIfXAuWO+bvvn/"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

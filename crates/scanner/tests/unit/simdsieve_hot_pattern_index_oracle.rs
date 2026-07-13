@@ -6,8 +6,8 @@
 //! existing `inline_migrated::simdsieve_prefilter_inline` migration pins
 //! deterministic cases (each prefix at offset 0, one mid-buffer offset, a
 //! near-miss, empty input, offset==len). This suite sweeps thousands of RANDOM
-//! buffers at ARBITRARY offsets — crucially including offsets PAST the end of the
-//! buffer — and asserts the four invariants the hot path depends on:
+//! buffers at ARBITRARY offsets, crucially including offsets PAST the end of the
+//! buffer, and asserts the four invariants the hot path depends on:
 //!
 //!   1. TOTALITY: never panics for any `(bytes, offset)`, even `offset > len`.
 //!      The offset arrives from the sieve; a stale/edge offset must degrade to
@@ -17,12 +17,12 @@
 //!        * `Some(i)` ⟹ the bytes at `offset` actually start with `HOT_PATTERNS[i]`;
 //!        * `None` (when `offset` is in range) ⟹ NO slot's prefix is present there.
 //!      The resolver may neither attribute an absent prefix nor miss a present one.
-//!   4. FIRST-MATCH: the returned `i` is the LOWEST-indexed matching slot — the
+//!   4. FIRST-MATCH: the returned `i` is the LOWEST-indexed matching slot, the
 //!      documented tie-break that decides which detector id a shared-prefix byte
 //!      run is attributed to.
 //!
 //! Together (2)+(3)+(4) pin `hot_pattern_index_at` to EXACTLY "first slot whose
-//! literal prefix sits at `offset`, else None" — its whole contract.
+//! literal prefix sits at `offset`, else None" (its whole contract).
 #![cfg(feature = "simdsieve")]
 
 use keyhog_scanner::testing::{
@@ -51,7 +51,7 @@ fn assert_resolver_contract(bytes: &[u8], offset: usize) -> Result<(), TestCaseE
         }
         (Some(i), None) => {
             // A Some with an out-of-range offset would be an OOB read escaping as
-            // a bogus index — must never happen.
+            // a bogus index (must never happen).
             Err(TestCaseError::fail(format!(
                 "resolver returned Some({i}) for offset {offset} past end of {}-byte buffer",
                 bytes.len()
@@ -73,7 +73,7 @@ fn assert_resolver_contract(bytes: &[u8], offset: usize) -> Result<(), TestCaseE
             for (j, pat) in hot.iter().enumerate().take(i) {
                 prop_assert!(
                     !rest.starts_with(pat),
-                    "earlier slot {j} ({pat:?}) matches before returned slot {i} — first-match broken"
+                    "earlier slot {j} ({pat:?}) matches before returned slot {i}, first-match broken"
                 );
             }
             Ok(())
@@ -87,7 +87,7 @@ proptest! {
     /// Pure-random buffers at arbitrary offsets (including `offset > len`).
     /// Exercises totality, the out-of-bounds guard, and the `None`-completeness
     /// direction of the oracle; random bytes almost never contain a real prefix,
-    /// so this is dominated by the "nothing here" path — exactly where an OOB or
+    /// so this is dominated by the "nothing here" path, exactly where an OOB or
     /// a spurious attribution would hide.
     #[test]
     fn hot_pattern_index_at_is_total_on_arbitrary_input(
@@ -99,7 +99,7 @@ proptest! {
 
     /// Plant a real hot prefix at a known offset inside random surroundings and
     /// confirm it is attributed. Exercises the `Some` direction of the oracle and
-    /// the first-match tie-break — the path pure-random input never reaches.
+    /// the first-match tie-break (the path pure-random input never reaches).
     #[test]
     fn hot_pattern_index_at_attributes_a_planted_prefix(
         slot in 0..hot_patterns_len(),

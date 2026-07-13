@@ -92,7 +92,7 @@ fn both_surfaces_route_through_one_owner() {
 // math matches the fixed tests exactly (compose header = 3 lines → entries from
 // line 4; k8s Secret header = 5 lines → entries from line 6). NB the parser
 // SOURCE is mid phase-2 refactor (dirty), so this round-trip asserts the CURRENT
-// observable contract — a behavior change surfaces here as a regression signal.
+// observable contract (a behavior change surfaces here as a regression signal).
 // No proptest before.
 
 use proptest::prelude::*;

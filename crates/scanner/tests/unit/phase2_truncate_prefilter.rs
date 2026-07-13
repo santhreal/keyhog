@@ -8,7 +8,7 @@ use keyhog_scanner::testing::truncate_for_prefilter;
 
 /// The truncated prefilter form must be a SOUND SUPERSET: every string the
 /// FULL pattern matches must also be matched by the truncated form (so a
-/// truncated-no-match proves a full-no-match — the gate never under-marks).
+/// truncated-no-match proves a full-no-match (the gate never under-marks)).
 fn assert_superset(full: &str, samples: &[&str]) {
     let trunc = truncate_for_prefilter(full).expect("expected truncation");
     let rf = regex::Regex::new(full).unwrap();

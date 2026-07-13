@@ -17,12 +17,12 @@ reason = "Context-anchored EASYPOST.API.KEY with EZTK test prefix."
 
 [[negative]]
 text = "EZAKshort"
-reason = "EZAK prefix with only 5 trailing chars — pattern requires 50+."
+reason = "EZAK prefix with only 5 trailing chars (pattern requires 50+)."
 
 [[evasion]]
 text = "<token>EZAKKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz</token>"
 credential = "EZAKKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
-reason = "Inside XML element body — must still match bare prefix pattern."
+reason = "Inside XML element body (must still match bare prefix pattern)."
 
 [perf]
 fixture_bytes = 4096

@@ -1,5 +1,5 @@
 //! Regression locks for the scanner's decode-density gate
-//! (`decode::has_decodable_payload`) — the O(n), allocation-free prefilter in
+//! (`decode::has_decodable_payload`), the O(n), allocation-free prefilter in
 //! `crates/scanner/src/decode/mod.rs` that decides whether an otherwise
 //! prefilter-skipped chunk is routed into a decode-only pass.
 //!
@@ -8,9 +8,9 @@
 //!   * `MIN_PERCENT_ESCAPES` (4) `%XX` url-escapes, or
 //!   * `MIN_BACKSLASH_ESCAPES` (2) `\uXXXX` / `\xXX` string-escapes.
 //!
-//! `has_decodable_payload` itself is `pub(crate)` and — unlike ~40 sibling
+//! `has_decodable_payload` itself is `pub(crate)` and, unlike ~40 sibling
 //! decode internals (`caesar_shift_for_test`, `extract_encoded_value_spans_for_test`,
-//! `octal_escape_decode_for_test`, …) — has NO `*_for_test` seam in the
+//! `octal_escape_decode_for_test`, …), has NO `*_for_test` seam in the
 //! `keyhog_scanner::testing` facade, so it cannot be called directly from an
 //! integration-test crate. This file therefore pins the gate two reachable ways:
 //!
@@ -34,7 +34,7 @@ use keyhog_scanner::decode::is_base64_candidate_byte;
 use keyhog_scanner::CompiledScanner;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PART 1 — run-counter alphabet: `is_base64_candidate_byte` exact bools.
+// PART 1 (run-counter alphabet: `is_base64_candidate_byte` exact bools).
 //
 // The gate counts CONSECUTIVE bytes for which this predicate is `true`; the
 // first `false` byte resets the run to 0. So the exact membership of this set is
@@ -102,7 +102,7 @@ fn punctuation_adjacent_to_specials_resets_run() {
 
 #[test]
 fn escape_introducer_bytes_are_not_base64_run_bytes() {
-    // '%' opens a `%XX` url-escape and '\\' opens a `\u`/`\x` string-escape —
+    // '%' opens a `%XX` url-escape and '\\' opens a `\u`/`\x` string-escape 
     // both are handled by the gate's DEDICATED counters, never the base64 run,
     // so the alphabet predicate must reject them (a `true` here would merge the
     // two counting regimes and corrupt the 24-run boundary).
@@ -142,12 +142,12 @@ fn alphabet_cardinality_is_exactly_sixty_seven() {
 
 #[test]
 fn contiguous_24_byte_alphabet_run_all_accept_delimiter_breaks() {
-    // A 24-char base64 blob — every byte extends the run to reach the 24 gate.
+    // A 24-char base64 blob (every byte extends the run to reach the 24 gate).
     let run = b"QUJDREVGR0hJSktMTU5PUFFS"; // 24 base64 chars
     assert_eq!(run.len(), 24);
     assert!(run.iter().all(|&b| is_base64_candidate_byte(b)));
     // Insert one space at index 12: now the longest contiguous run is 12, well
-    // under 24 — the delimiter byte is the sole non-accepting element.
+    // under 24 (the delimiter byte is the sole non-accepting element).
     let broken = b"QUJDREVGR0hJ SktMTU5PUFFS";
     let non_accept = broken
         .iter()
@@ -157,7 +157,7 @@ fn contiguous_24_byte_alphabet_run_all_accept_delimiter_breaks() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PART 2 — observable gate contract through the public scan path.
+// PART 2 (observable gate contract through the public scan path).
 //
 // A fully-encoded secret carries NO plaintext keyword, so the direct-match
 // prefilters skip it; it can only surface if `has_decodable_payload` returned
@@ -166,7 +166,7 @@ fn contiguous_24_byte_alphabet_run_all_accept_delimiter_breaks() {
 // whether Hyperscan/SIMD/GPU is present or not.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// `.npmrc` legacy auth token — fires `npmrc-auth-token`, no vendor checksum.
+/// `.npmrc` legacy auth token (fires `npmrc-auth-token`, no vendor checksum).
 const NPMRC: &str = "//registry.npmjs.org/:_authToken=s0meL3gacyT0kenValue12345";
 const NPMRC_NEEDLE: &str = "s0meL3gacyT0kenValue12345";
 
@@ -250,7 +250,7 @@ fn prose_without_encoded_shape_never_surfaces_the_needle() {
 
 #[test]
 fn sub_threshold_base64_run_cannot_carry_the_needle() {
-    // Boundary twin of the positive: a base64 blob whose contiguous run is 23 —
+    // Boundary twin of the positive: a base64 blob whose contiguous run is 23 
     // one byte UNDER MIN_DECODABLE_RUN (24). 23 base64 chars decode to at most
     // 17 bytes, which cannot contain the 25-char needle regardless of whether
     // the gate admits it, so the needle is provably absent. This pins the

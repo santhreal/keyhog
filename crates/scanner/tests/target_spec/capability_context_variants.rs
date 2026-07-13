@@ -2,9 +2,9 @@
 //!
 //! For EVERY credential-sufficient detector in the contract corpus this lane
 //! takes the canonical credential and re-plants it in the surrounding contexts
-//! real leaks live in — an env assignment, a YAML value, a JSON field, inside a
+//! real leaks live in, an env assignment, a YAML value, a JSON field, inside a
 //! line of source code, wrapped in single/double quotes, padded with leading
-//! whitespace — then asserts the SAME credential still surfaces under the real
+//! whitespace, then asserts the SAME credential still surfaces under the real
 //! scan path. The contract proved the credential fires in ONE context; the
 //! product claim is that it fires in the contexts an operator actually scans.
 //!
@@ -12,7 +12,7 @@
 //! large fraction are expected RED today: many detectors anchor on a single
 //! quoting/keyword shape and miss the others. Those reds are the worklist; they
 //! MUST NOT be weakened to pass (Law 9). The lane is sound because every variant
-//! is a BYTE-PRESERVING re-context of a credential-sufficient token — the
+//! is a BYTE-PRESERVING re-context of a credential-sufficient token, the
 //! credential bytes are untouched, so a disappearance is a context-sensitivity
 //! hole, never a fixture artifact (see mod.rs sufficiency partition).
 
@@ -118,13 +118,13 @@ fn variants() -> Vec<Variant> {
 }
 
 /// Recall floor across the whole sufficient set: the fraction of (detector,
-/// variant) pairs that surface the credential. This is the TARGET — keyhog
+/// variant) pairs that surface the credential. This is the TARGET, keyhog
 /// SHOULD recover a credential-sufficient token in every realistic context, so
 /// the target ratio is 1.0. It is measured against the real engine and is
 /// expected BELOW 1.0 today; the assertion fails until the gap closes.
 ///
 /// The exact ratio is printed so the integrator can watch it climb as detectors
-/// widen. We pin the TARGET (>= 0.99), not today's number — that is the whole
+/// widen. We pin the TARGET (>= 0.99), not today's number, that is the whole
 /// point of a target-spec test (Law 6): it stays red until the product meets the
 /// bar, and is never lowered to match the current value (Law 9).
 const TARGET_CONTEXT_RECALL: f64 = 0.99;
@@ -194,7 +194,7 @@ fn every_sufficient_detector_recovers_credential_in_every_context() {
 /// Rotated-key variant: a credential that is structurally the same shape as the
 /// canonical one but with a freshly-randomised body (a "rotated" key) must still
 /// fire. A detector that only matches the EXACT canonical bytes (an over-fit
-/// regex or an accidental literal) is broken — real keys rotate. We rotate only
+/// regex or an accidental literal) is broken, real keys rotate. We rotate only
 /// the high-entropy alphanumeric run inside the credential, preserving every
 /// structural/prefix character, so the rotated token stays the same detector's
 /// shape.
@@ -210,7 +210,7 @@ fn every_sufficient_detector_fires_on_a_rotated_key() {
 
     for canon in &sufficient {
         let Some(rotated) = rotate_body(&canon.credential) else {
-            // No rotatable alphanumeric run of length >= 8 — e.g. a pure
+            // No rotatable alphanumeric run of length >= 8, e.g. a pure
             // structural token. Skip: there is nothing to rotate without
             // changing the shape. (Counted in `skipped`.)
             skipped += 1;
@@ -253,7 +253,7 @@ fn every_sufficient_detector_fires_on_a_rotated_key() {
     assert!(
         ratio >= TARGET_CONTEXT_RECALL,
         "rotated-key recall {surfaced}/{total} = {ratio:.4} below target {TARGET_CONTEXT_RECALL:.2}; \
-         these detectors fail on a rotated key (over-fit to the canonical body — a real key \
+         these detectors fail on a rotated key (over-fit to the canonical body, a real key \
          rotation would slip past keyhog):\n  - {}",
         join_capped(&failures, 60)
     );
@@ -443,7 +443,7 @@ fn rotated_key_generator_preserves_hex_anchors_and_checksums() {
 
 /// Population floor + visibility: how many detectors are credential-sufficient
 /// at all. A detector that is NOT sufficient (needs a companion/keyword anchor)
-/// is a separate, weaker class — this prints the partition so the integrator
+/// is a separate, weaker class, this prints the partition so the integrator
 /// sees how much of the 900-detector set ships a self-firing shape.
 #[test]
 fn sufficiency_partition_is_reported_and_bounded() {
@@ -468,7 +468,7 @@ fn sufficiency_partition_is_reported_and_bounded() {
     // credential-sufficient (distinctive prefix/shape, no anchor needed). The
     // target is 0.75; today it is lower because ~half the corpus is
     // keyword-anchored generic shapes (uuid/hex/base64 bodies) that only fire
-    // next to a `key=` token — exactly the CredData generation gap. This pins
+    // next to a `key=` token, exactly the CredData generation gap. This pins
     // that as a visible target, not a passing fact.
     assert!(
         ratio >= 0.75,

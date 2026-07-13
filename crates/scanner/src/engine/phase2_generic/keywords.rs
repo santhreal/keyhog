@@ -218,7 +218,7 @@ pub(crate) fn is_strong_keyword_anchored_hex_key(keyword: &str, value: &str) -> 
 
 /// The STRONG cryptographic-key anchor vocabulary, loaded from Tier-B
 /// `rules/strong-hex-key-anchors.toml` (compact lowercase, no separators). ONE
-/// home for the list — a team widens it by editing the TOML, no recompile of the
+/// home for the list, a team widens it by editing the TOML, no recompile of the
 /// classifier logic. Fails CLOSED (panic) on invalid embedded data.
 pub(crate) fn strong_hex_key_anchors() -> &'static [String] {
     &STRONG_HEX_KEY_ANCHORS
@@ -417,7 +417,7 @@ mod strong_anchor_tests {
     const HEX_48: &str = "0123456789abcdef0123456789abcdef0123456789abcdef";
     // 32 chars, but the final `g` is not a hex digit.
     const NOT_HEX_32: &str = "0123456789abcdef0123456789abcdeg";
-    // base64 of "ThisIsAPlaintextSecretValueForTests" — decodes to printable ASCII.
+    // base64 of "ThisIsAPlaintextSecretValueForTests" (decodes to printable ASCII).
     const PRINTABLE_B64: &str = "VGhpc0lzQVBsYWludGV4dFNlY3JldFZhbHVlRm9yVGVzdHM=";
 
     // ── Tier-B vocab loaded with the exact expected values (real assertions) ─
@@ -524,7 +524,7 @@ mod strong_anchor_tests {
     #[test]
     fn non_anchor_keyword_does_not_lift_encoded_text() {
         // Adversarial twin: same decodable value, but the key is not a credential
-        // anchor — no lift.
+        // anchor (no lift).
         assert!(!is_strong_keyword_anchored_encoded_text_secret(
             "hostname",
             PRINTABLE_B64

@@ -36,7 +36,7 @@ pub(crate) fn blocking_client(
         // object storage that lets a hostile or compromised endpoint 3xx-bounce
         // a listing/GET to an attacker-chosen host (metadata service, internal
         // API) *after* the endpoint URL cleared the pre-request host screen in
-        // `parse_http_endpoint` — the redirect target is never re-screened.
+        // `parse_http_endpoint`: the redirect target is never re-screened.
         // Mirroring `github_org`'s client, refuse redirects entirely: the S3,
         // GCS, and Azure Blob REST APIs never legitimately redirect a listing
         // or object fetch, so a redirect is either misconfiguration or an SSRF
@@ -82,14 +82,14 @@ pub(crate) fn parse_http_endpoint(
         // above classifies only the *literal* host token. A public hostname
         // whose A/AAAA record points at a private / loopback / link-local /
         // cloud-metadata address (169.254.169.254, 127.0.0.1, 10.x, [::1])
-        // sails past the string screen — classic DNS rebinding. WebSource
+        // sails past the string screen, classic DNS rebinding. WebSource
         // closes this in `web::ssrf::resolve_and_screen` (resolve, re-screen
         // every SocketAddr, pin the addrs), but the cloud S3/GCS/Azure blocking
         // client did NO post-DNS IP veto, so such a host still connected. Screen
         // the resolved addresses here against the SAME fleet-canonical predicate
         // WebSource uses (`keyhog_verifier::ssrf::is_private_ip_addr`) so the
         // "is this an SSRF target?" decision keeps its single owner (ONE PLACE)
-        // and only the resolution call is local — the cloud features do not pull
+        // and only the resolution call is local, the cloud features do not pull
         // in the `web` feature's threaded DNS pool. Honors the same explicit
         // opt-in above so loopback mock endpoints (MinIO/Ceph, httpmock) work.
         screen_resolved_endpoint_host(&parsed, source)?;
@@ -98,7 +98,7 @@ pub(crate) fn parse_http_endpoint(
 }
 
 /// Validate + normalize a cloud object-store endpoint: run the shared SSRF/shape
-/// screen (`parse_http_endpoint`) then apply the object-store shape rules — a
+/// screen (`parse_http_endpoint`) then apply the object-store shape rules, a
 /// query string is never valid, and (for stores like GCS that address buckets by
 /// host, not path) the path must be empty/root. Returns the trailing-slash-trimmed
 /// endpoint string. This is the single owner of the per-provider skeleton S3 and
@@ -128,8 +128,8 @@ pub(crate) fn validate_cloud_endpoint(
 /// A resolution *failure* is deliberately NOT a refusal: with no resolved
 /// address there is no connection target and therefore no SSRF, and reqwest
 /// re-resolves and surfaces the same failure at connect time. This can only ever
-/// *narrow* what is allowed — a host is refused solely when it successfully
-/// resolves to a blocked address, never when it merely fails to resolve — so it
+/// *narrow* what is allowed, a host is refused solely when it successfully
+/// resolves to a blocked address, never when it merely fails to resolve, so it
 /// is not a silent security downgrade (Law 10): the check that can be performed
 /// (screen a resolved address) always runs, and the only "skipped" case is one
 /// where there is nothing to screen and nothing to connect to.
@@ -146,7 +146,7 @@ fn screen_resolved_endpoint_host(parsed: &reqwest::Url, source: &str) -> Result<
     let port = parsed.port_or_known_default().map_or(443, |port| port);
     let Ok(addrs) = (host, port).to_socket_addrs() else {
         // Resolution failed: no address to attack. reqwest will re-resolve and
-        // surface the same failure at connect time — never an SSRF pivot.
+        // surface the same failure at connect time (never an SSRF pivot).
         return Ok(());
     };
     for addr in addrs {
@@ -221,7 +221,7 @@ pub(crate) fn take_listing_page<T>(items: Vec<T>, remaining: usize) -> (Vec<T>, 
 /// Every cloud lister (S3 `NextContinuationToken`, GCS `nextPageToken`, Azure
 /// `NextMarker`) paginates by re-requesting with the previous page's cursor and
 /// stops when there is no cursor. An *empty* cursor is not a valid "next page"
-/// pointer — re-requesting with it restarts the listing from the first page,
+/// pointer, re-requesting with it restarts the listing from the first page,
 /// which re-downloads the same objects (duplicate chunks, wasted bandwidth, and,
 /// with an unbounded `max_objects`, a non-terminating loop). Azure's protocol
 /// deliberately returns an empty `<NextMarker/>` element on the final page; some
@@ -366,7 +366,7 @@ pub(crate) fn read_listing_response_body(
 ) -> Result<String, SourceError> {
     let max_response_bytes_u64 = match u64::try_from(max_response_bytes) {
         Ok(value) => value,
-        Err(_) => u64::MAX, // LAW10: unreachable on real platforms — only a usize wider than u64 takes this arm, where reqwest content lengths and Read::take caps are u64-bounded, so every representable HTTP body length is still capped.
+        Err(_) => u64::MAX, // LAW10: unreachable on real platforms, only a usize wider than u64 takes this arm, where reqwest content lengths and Read::take caps are u64-bounded, so every representable HTTP body length is still capped.
     };
     if let Some(content_length) = response.content_length() {
         if content_length > max_response_bytes_u64 {

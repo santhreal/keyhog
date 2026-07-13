@@ -5,7 +5,7 @@
 //! returns `Some(gate)` iff a precision shape gate would have `continue`d
 //! (identifier / type-name / uri / base64-blob / encoded-binary / placeholder
 //! families), naming the firing gate, else `None`. Behaviour-identical to the
-//! former inline gauntlet — every gate is verbatim, each `continue` became
+//! former inline gauntlet, every gate is verbatim, each `continue` became
 //! `return Some(GenericValueShapeStage::...)` (KH-L-0412: the name feeds the
 //! `--dogfood` suppression trace; the caller records it, the predicate stays
 //! pure). Recall is guarded by the generic-secret bench gates.
@@ -14,7 +14,7 @@ use crate::adjudicate::GenericValueShapeStage;
 
 /// KH-L-0413: the identifier/type-name cluster (`pure_identifier_no_digit` /
 /// `pure_identifier` / `type_name_shape` / `word_separated_identifier`) drops
-/// code references (`password = getUserName`) — but also ~1114 keyword-anchored
+/// code references (`password = getUserName`), but also ~1114 keyword-anchored
 /// REAL random passwords (`GRAPHITE_PASS=gjbubxsu`) that are shape-identical
 /// (lowercase, no digit). `keep_identifier_gate_with_randomness` returns false
 /// (LIFT the gate, recover the value) ONLY when the value reads as a RANDOM
@@ -27,13 +27,13 @@ use crate::suppression::token_randomness::{
 
 impl CompiledScanner {
     /// `Some(gate)` iff a generic-secret candidate `value` (with precomputed
-    /// `entropy`) is rejected by a precision shape gate — the returned
+    /// `entropy`) is rejected by a precision shape gate, the returned
     /// stage names the FIRING gate (for the `--dogfood` suppression trace);
     /// `None` means the value passes every gate. Pure: reads `value`, `entropy`,
-    /// `chunk` metadata and `self.config` only — no side effects, no emission
+    /// `chunk` metadata and `self.config` only, no side effects, no emission
     /// (the caller, `scan_generic_assignments`, records the telemetry).
     ///
-    /// KH-L-0412: this gauntlet was the last SILENT suppression path — the caller
+    /// KH-L-0412: this gauntlet was the last SILENT suppression path, the caller
     /// did `if generic_value_shape_rejected(..) { continue }` with no telemetry,
     /// so every generic-bridge shape drop was invisible to `--dogfood` (a Law-10
     /// silent drop, and the bulk of the KH-L-0408 decomposition's never-candidate
@@ -56,11 +56,11 @@ impl CompiledScanner {
         }
 
         // Generic-secret min length comes from adjudicate, which owns the
-        // `GENERIC_SECRET` identity selection (this leaf never names the id —
+        // `GENERIC_SECRET` identity selection (this leaf never names the id 
         // see suppression_named_detector_ctx_owner gate). The base64-shape gates
         // below take the RAW `entropy`: their boundary is the base64-blob shape
         // constant `HIGH_ENTROPY_BASE64_CUTOFF` (owned once inside the decoy
-        // predicate), NOT generic-secret's confidence-boost `entropy_high` — those
+        // predicate), NOT generic-secret's confidence-boost `entropy_high`: those
         // are two distinct thresholds and must not be conflated (a marshalled-binary
         // blob is a blob regardless of the generic-secret confidence floor).
         let generic_secret_detector = self

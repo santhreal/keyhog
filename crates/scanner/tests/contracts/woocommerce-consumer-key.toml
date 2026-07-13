@@ -19,15 +19,15 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "ck_0aEXAMPLEEXAMPLE2409e"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 # ---- EVASION (adversarial) -----------------------------------------
 
 [[evasion]]
 text = "# woo (rotate): ck_0a6efc600fa229b936e33cb2e62710fe11c2409e"
 credential = "ck_0a6efc600fa229b936e33cb2e62710fe11c2409e"
-reason = "Commented-out token; the ck_ prefix anchor surfaces it (shares the ck_<40hex> shape with the sibling woocommerce-rest-api-credentials — same regex family)."
+reason = "Commented-out token; the ck_ prefix anchor surfaces it (shares the ck_<40hex> shape with the sibling woocommerce-rest-api-credentials (same regex family))."

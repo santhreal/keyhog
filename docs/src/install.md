@@ -14,7 +14,7 @@ existing install before downloading and tells you the chosen asset. Linux
 x86_64 has one accelerator-capable binary: Hyperscan plus VYRE's CUDA and WGPU
 drivers. CUDA/NVRTC use dynamic loading, so no build-time toolkit is required
 and the same artifact runs on GPU and CPU-only hosts. Backend probing and
-persisted autoroute evidence—not installer variants—decide execution. macOS and
+persisted autoroute evidence: not installer variants: decide execution. macOS and
 Windows assets use the portable no-system-library build without Hyperscan or GPU
 drivers.
 

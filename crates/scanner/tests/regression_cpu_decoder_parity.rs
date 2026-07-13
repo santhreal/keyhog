@@ -9,17 +9,17 @@
 //! decode feature); the reverse/caesar/pipeline-order tests live behind
 //! `#[cfg(feature = "decode")]`.
 //!
-//! Parity contract proven here (every assertion pins a CONCRETE value — exact
+//! Parity contract proven here (every assertion pins a CONCRETE value, exact
 //! decoded bytes, exact `Err(())`, exact candidate string, exact reversed /
 //! rotated string):
 //!   * `decode(encode(x)) == x` for hand-encoded fixtures across hex, the four
 //!     base64 alphabet variants, and z85.
 //!   * The SAME plaintext encoded two ways (hex vs base64; standard vs url-safe
-//!     alphabet) decodes to byte-identical output — alphabet-resolve parity.
+//!     alphabet) decodes to byte-identical output (alphabet-resolve parity).
 //!   * An ambiguous run that is simultaneously valid hex AND valid base64
 //!     resolves to two DISTINCT deterministic byte strings (the two decoders are
 //!     independent primitives, not a single overloaded path).
-//!   * Reverse and ROT-N are their own inverses (`f(f(x)) == x`) — the
+//!   * Reverse and ROT-N are their own inverses (`f(f(x)) == x`), the
 //!     round-trip parity the evasion decoders rely on.
 //!   * Invalid inputs fail closed to the exact `Err(())` / rejection.
 
@@ -55,7 +55,7 @@ fn base64_roundtrip_secret_token_standard_exact_bytes() {
 fn hex_base64_padded_and_nopad_decode_to_identical_bytes() {
     // The AWS example access-key-id encoded three ways. Hex, padded standard
     // base64, and unpadded standard base64 must all resolve to the exact same
-    // 20 plaintext bytes — the decode-through pipeline's parity guarantee.
+    // 20 plaintext bytes (the decode-through pipeline's parity guarantee).
     let expected = b"AKIAIOSFODNN7EXAMPLE".to_vec();
     let via_hex = hex_decode("414b4941494f53464f444e4e374558414d504c45").unwrap();
     let via_b64_padded = base64_decode("QUtJQUlPU0ZPRE5ON0VYQU1QTEU=").unwrap();
@@ -71,7 +71,7 @@ fn hex_base64_padded_and_nopad_decode_to_identical_bytes() {
 fn base64_standard_and_urlsafe_alphabets_decode_to_identical_bytes() {
     // "xy>>?~zz--__==test" encoded once in the standard alphabet (uses '+') and
     // once in the url-safe alphabet (uses '-'). Different alphabet, byte-for-byte
-    // identical decode — the classifier must resolve each to the right variant.
+    // identical decode (the classifier must resolve each to the right variant).
     let expected = b"xy>>?~zz--__==test".to_vec();
     let via_standard = base64_decode("eHk+Pj9+enotLV9fPT10ZXN0").unwrap();
     let via_urlsafe = base64_decode("eHk-Pj9-enotLV9fPT10ZXN0").unwrap();
@@ -97,7 +97,7 @@ fn base64_urlsafe_nopad_yields_exact_nonutf8_bytes() {
 fn ambiguous_run_hex_vs_base64_resolve_to_distinct_bytes() {
     // "deadbeefdeadbeef" is simultaneously valid hex (all hex digits) AND valid
     // standard base64 (all alnum, len 16, %4==0). The two decoders are separate
-    // primitives: hex resolves it to 8 bytes, base64 to 12 — both deterministic,
+    // primitives: hex resolves it to 8 bytes, base64 to 12, both deterministic,
     // never conflated into one overloaded path.
     let blob = "deadbeefdeadbeef";
     assert_eq!(
@@ -176,7 +176,7 @@ fn z85_reference_frame_decodes_and_invalid_symbol_rejects() {
 fn find_hex_and_find_base64_surface_same_ambiguous_run() {
     // "68656c6c6f68656c" is a 16-char run that is a valid hex string AND a valid
     // standard base64 candidate. Both extractors must surface it as exactly one
-    // candidate with the exact value — parity of the pre-decode extraction gate.
+    // candidate with the exact value (parity of the pre-decode extraction gate).
     let blob = "68656c6c6f68656c";
     let hex_cands: Vec<String> = find_hex_strings(blob, 16)
         .into_iter()
@@ -221,7 +221,7 @@ mod decode_feature {
 
     #[test]
     fn reverse_str_is_its_own_inverse() {
-        // reverse(reverse(x)) == x — the involution the reverse decoder relies on
+        // reverse(reverse(x)) == x, the involution the reverse decoder relies on
         // to refuse recursing on its own `/reverse` output. Exact reversed value.
         let original = "secret-token-42";
         let reversed = reverse_str_for_test(original);

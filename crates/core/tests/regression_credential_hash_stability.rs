@@ -1,5 +1,5 @@
 //! Regression: pin the byte-exact stability contract of the credential hashing
-//! primitive that the whole workspace shares — `keyhog_core::sha256_hash` and
+//! primitive that the whole workspace shares: `keyhog_core::sha256_hash` and
 //! the `CredentialHash` domain type it produces.
 //!
 //! WHY THIS MATTERS: `credential_hash` is a durable cross-report identity. It
@@ -11,7 +11,7 @@
 //! several fixed inputs against digests computed INDEPENDENTLY (GNU
 //! `sha256sum` / Python `hashlib`), never against `sha256_hash`'s own output.
 //!
-//! TEST-TRUTH: every assertion is a concrete value — an exact 64-char hex
+//! TEST-TRUTH: every assertion is a concrete value, an exact 64-char hex
 //! string, an exact bool, an exact length, or an exact byte array. No
 //! `is_empty()` / `is_some()` / `len() > 0`-only checks.
 //!
@@ -43,7 +43,7 @@ fn aws_example_hashes_to_exact_digest() {
 }
 
 /// Boundary: the empty string is a valid input and hashes to the canonical
-/// SHA-256 of zero bytes — and crucially that digest is NOT the all-zero
+/// SHA-256 of zero bytes, and crucially that digest is NOT the all-zero
 /// `ZERO` compatibility sentinel.
 #[test]
 fn empty_string_hashes_to_canonical_empty_digest() {
@@ -64,7 +64,7 @@ fn zero_sentinel_is_distinct_from_real_digest() {
     assert!(!hash.is_zero());
 }
 
-/// Negative-twin: hashing is case-sensitive — "a" and "A" differ by one bit in
+/// Negative-twin: hashing is case-sensitive: "a" and "A" differ by one bit in
 /// the input and produce completely different digests, each pinned exactly.
 #[test]
 fn hash_is_case_sensitive() {
@@ -87,7 +87,7 @@ fn multibyte_utf8_hashes_by_bytes() {
 }
 
 /// Adversarial: embedded control bytes (U+0000..U+0002) are valid str content
-/// and are hashed verbatim — no truncation at the NUL.
+/// and are hashed verbatim (no truncation at the NUL).
 #[test]
 fn control_bytes_are_hashed_verbatim() {
     let s = "\u{0}\u{1}\u{2}";
@@ -145,7 +145,7 @@ fn hex_is_lowercase_and_64_chars() {
     }
 }
 
-/// The `Debug` impl renders the exact lower-case hex — a stable, non-leaking
+/// The `Debug` impl renders the exact lower-case hex, a stable, non-leaking
 /// representation that must equal `hex_encode`.
 #[test]
 fn debug_impl_renders_exact_hex() {
@@ -155,7 +155,7 @@ fn debug_impl_renders_exact_hex() {
 }
 
 /// Byte round-trip: `from_bytes`/`as_bytes`/`into_bytes` are lossless and the
-/// hex of the raw bytes equals the hex of the hash — the digest is exactly the
+/// hex of the raw bytes equals the hex of the hash, the digest is exactly the
 /// 32 SHA-256 output bytes with no reordering.
 #[test]
 fn raw_bytes_round_trip_losslessly() {
@@ -184,7 +184,7 @@ fn serde_round_trips_as_hex_string() {
 }
 
 /// The two known SHA-256 test vectors for "" and "a" are distinct, non-zero,
-/// and equal to their pinned references — a cross-input sanity gate that would
+/// and equal to their pinned references, a cross-input sanity gate that would
 /// catch any global digest offset.
 #[test]
 fn distinct_inputs_map_to_distinct_pinned_digests() {

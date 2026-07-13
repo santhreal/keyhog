@@ -11,7 +11,7 @@ pub fn lcg(state: &mut u32) -> u32 {
 }
 
 /// A random DNS label: 1..=12 lowercase ASCII letters. Never empty, never
-/// contains a dot — so composing labels with `.` yields well-formed hostnames.
+/// contains a dot (so composing labels with `.` yields well-formed hostnames).
 pub fn rand_label(state: &mut u32) -> String {
     let len = 1 + (lcg(state) % 12) as usize;
     (0..len)

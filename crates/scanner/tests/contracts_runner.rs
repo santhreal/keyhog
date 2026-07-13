@@ -343,7 +343,7 @@ fn every_contract_perf_budget_holds() {
         // The budget gates match THROUGHPUT, so keep the best of a few passes:
         // a catastrophically slow regex blows the budget on EVERY pass (the min
         // still exceeds it and we still fail), while a one-off stall is discarded.
-        // The common case — under budget on the first pass — pays for exactly one
+        // The common case, under budget on the first pass, pays for exactly one
         // scan: the loop breaks as soon as a pass comes in under budget.
         let mut micros = u64::MAX;
         for _ in 0..5 {
@@ -504,7 +504,7 @@ fn every_contract_readme_claim_present() {
     // guard, so the gate cannot silently regress to checking nothing.
     assert!(
         checked >= 6,
-        "every_contract_readme_claim_present checked only {checked} readme_claim(s) — \
+        "every_contract_readme_claim_present checked only {checked} readme_claim(s). \
          expected >= 6. A claim was likely misplaced under a [table] and dropped; \
          move it to the top-level scalar position (right after `severity`).",
     );
@@ -572,7 +572,7 @@ fn every_contract_detector_id_resolves() {
     }
     assert!(
         orphans.is_empty(),
-        "contract(s) name a detector_id with no matching detector — their negative \
+        "contract(s) name a detector_id with no matching detector, their negative \
          tests are vacuous (the `detector_fired` check keys on detector_id):\n  - {}",
         orphans.join("\n  - "),
     );
@@ -604,8 +604,8 @@ fn contracts_cover_at_least_one_detector() {
 /// A secret-FREE fingerprint of a scan result: detector id, byte offset, and
 /// line for each surfaced match. Never the credential bytes (CLAUDE.md: never
 /// log secrets; `RawMatch`'s own `Debug` redacts the credential for the same
-/// reason). Offset makes the fingerprint injective per detector — one match
-/// starts at one offset — so a divergence names exactly which finding moved,
+/// reason). Offset makes the fingerprint injective per detector, one match
+/// starts at one offset, so a divergence names exactly which finding moved,
 /// appeared, or vanished without revealing the plaintext.
 fn scan_fingerprint(matches: &[keyhog_core::RawMatch]) -> Vec<(String, usize, Option<usize>)> {
     matches
@@ -622,10 +622,10 @@ fn scan_fingerprint(matches: &[keyhog_core::RawMatch]) -> Vec<(String, usize, Op
 
 /// Determinism / reproducibility lock over the WHOLE contract corpus.
 ///
-/// Scanning identical bytes twice — each scan isolated by `clear_fragment_cache`
+/// Scanning identical bytes twice, each scan isolated by `clear_fragment_cache`
 /// exactly the way every corpus runner isolates a fixture (see the cross-scan
 /// fragment-state note on `every_contract_passes_positives_negatives_evasions`
-/// above) — MUST yield a byte-identical finding set once sorted. This guards the
+/// above). MUST yield a byte-identical finding set once sorted. This guards the
 /// deliberately-engineered total order and content-determined eviction in
 /// `keyhog_core`'s `RawMatch: Ord`: the per-chunk match heap once evicted at its
 /// cap by HashMap / rayon *insertion* order, so the surfaced set flickered
@@ -674,7 +674,7 @@ fn every_positive_scans_deterministically_over_the_corpus() {
                 let mut again = scanner.scan(&chunk);
                 again.sort();
                 // Full `RawMatch` equality (every field, floats via total_cmp)
-                // — the strongest possible identity, not just the fingerprint.
+                //: the strongest possible identity, not just the fingerprint.
                 if first != again {
                     let other = scan_fingerprint(&again);
                     divergences.push(format!(

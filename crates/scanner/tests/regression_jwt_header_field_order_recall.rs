@@ -1,9 +1,9 @@
-//! Regression (KH recall lane — CredData candidate-generation gap): the
+//! Regression (KH recall lane: CredData candidate-generation gap): the
 //! `jwt-token` named detector must surface a structurally-valid JWT REGARDLESS
 //! of which header field serializes first, not only when `alg` comes first.
 //!
 //! Root cause this locks against: the shipped `jwt-token` detector
-//! (`detectors/jwt-token.toml`) anchored on the literal `eyJhbGci` — the exact
+//! (`detectors/jwt-token.toml`) anchored on the literal `eyJhbGci`: the exact
 //! base64url of the 8 bytes `{"alg":`. That requires `alg` to be the FIRST
 //! header field. A spec-valid JWT whose JSON header serializes `typ` / `jwk` /
 //! `kid` first begins `eyJ0eXAi` (`{"typ":`) / `eyJqd2si` (`{"jwk":`) /
@@ -11,11 +11,11 @@
 //! On the full real CredData tree that header-order miss class is 52 labeled
 //! positives (measured: the `jwt_non_alg_first` candidate in
 //! `benchmarks/bench/creddata_miss_analysis.py` recovers +54 TP at 0.964
-//! precision, +2 NEW FP — both themselves structurally-valid JWTs).
+//! precision, +2 NEW FP (both themselves structurally-valid JWTs)).
 //!
 //! The fix is candidate-GENERATION only (this lane does not touch scoring /
 //! suppression internals): the detector now anchors on the structural JWT
-//! shape — an `eyJ`-headed base64url HEADER segment, `.`, an `eyJ`-headed
+//! shape, an `eyJ`-headed base64url HEADER segment, `.`, an `eyJ`-headed
 //! base64url PAYLOAD segment, `.`, a base64url SIGNATURE segment. `eyJ` is the
 //! base64url of `{"`, the first two bytes of EVERY JWT header's JSON object, so
 //! it triggers on any field order; both the header AND the payload starting
@@ -25,8 +25,8 @@
 //! regression).
 //!
 //! Precision is pinned by the negative arm: a header+payload pair WITHOUT a
-//! third (signature) segment — the most common JWT look-alike (a 2-dot
-//! property access or a truncated token) — must NOT fire `jwt-token`.
+//! third (signature) segment, the most common JWT look-alike (a 2-dot
+//! property access or a truncated token) (must NOT fire `jwt-token`).
 
 mod support;
 use support::paths::detector_dir;
@@ -92,7 +92,7 @@ const TYP_FIRST_HEADER: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9";
 /// `{"jwk":{"crv":"P-256","kty":"EC"},"alg":"ES256"}` → `eyJqd2si...` header.
 /// This is the exact `eyJqd2si` prefix seen in CredData's miss set.
 const JWK_FIRST_HEADER: &str = "eyJqd2siOnsiY3J2IjoiUC0yNTYiLCJrdHkiOiJFQyJ9LCJhbGciOiJFUzI1NiJ9";
-/// `{"kid":"abc123","alg":"RS256"}` → `eyJraWQ...` header (kid first — the
+/// `{"kid":"abc123","alg":"RS256"}` → `eyJraWQ...` header (kid first, the
 /// key-rotation serialization order).
 const KID_FIRST_HEADER: &str = "eyJraWQiOiJhYmMxMjMiLCJhbGciOiJSUzI1NiJ9";
 
@@ -121,7 +121,7 @@ fn jwk_first_header_jwt_is_surfaced() {
     let tok = jwt(JWK_FIRST_HEADER);
     assert!(
         tok.starts_with("eyJqd2si") && !tok.starts_with("eyJhbGci"),
-        "fixture must be jwk-first (eyJqd2si) — the exact CredData miss prefix"
+        "fixture must be jwk-first (eyJqd2si), the exact CredData miss prefix"
     );
     assert!(
         jwt_caught(&s, &format!("jwt: {tok}"), &tok),
@@ -196,14 +196,14 @@ fn prose_mentioning_the_prefix_does_not_fire_jwt() {
     );
 }
 
-/// DR-330 CONSOLIDATION GUARD — the JWT header marker `eyJ` (base64url of `{"`,
+/// DR-330 CONSOLIDATION GUARD, the JWT header marker `eyJ` (base64url of `{"`,
 /// the load-bearing anchor of the `jwt-token` detector pattern) is ALSO keyed off
 /// by the entropy plausibility gate (`entropy/plausibility.rs`) and the
 /// canonical-shape suppression check (`suppression/shape/canonical.rs`). Those
 /// were three bare `"eyJ"` literals free to drift; they now share the single
 /// owner `jwt::JWT_BASE64_HEADER_PREFIX` via `has_jwt_header_prefix`. This binds
 /// that const to its authoritative detector so it can never diverge from the
-/// pattern that surfaces a JWT. (Only the LITERAL is unified here — the full
+/// pattern that surfaces a JWT. (Only the LITERAL is unified here, the full
 /// looks_like_jwt shape unification, which would tighten the plausibility gate,
 /// remains bench-gated per DR-330.)
 #[test]
@@ -218,7 +218,7 @@ fn jwt_header_marker_is_backed_by_the_jwt_detector() {
     assert!(
         toml.contains(marker),
         "JWT header marker {marker:?} (jwt::JWT_BASE64_HEADER_PREFIX) is absent from its \
-         authoritative jwt-token.toml pattern — the single-owner const drifted from the \
+         authoritative jwt-token.toml pattern, the single-owner const drifted from the \
          detector that surfaces a JWT"
     );
 }

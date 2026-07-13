@@ -21,7 +21,7 @@ use std::path::Path;
 const MANIFEST: &str = env!("CARGO_MANIFEST_DIR");
 
 /// A small source file that is guaranteed to exist and to carry stable marker
-/// strings — used as a convenient on-disk fixture for the read tests.
+/// strings (used as a convenient on-disk fixture for the read tests).
 const FIXTURE: &str = "src/context/placeholder.rs";
 
 // ── crate_source_path: pure resolution arithmetic ───────────────────────────
@@ -94,7 +94,7 @@ fn path_is_cwd_independent_by_construction() {
     // `crate_source_path` must not consult the runtime CWD: its value equals the
     // manifest join no matter what `current_dir()` happens to be. We assert the
     // structural identity (cheap, race-free) rather than mutating the global
-    // CWD — which would itself poison sibling tests.
+    // CWD (which would itself poison sibling tests).
     let from_helper = crate_source_path(FIXTURE);
     let from_constant = Path::new(MANIFEST).join(FIXTURE);
     assert_eq!(from_helper, from_constant);

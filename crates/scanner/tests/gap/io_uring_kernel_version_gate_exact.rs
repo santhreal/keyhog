@@ -4,7 +4,7 @@
 //! the running kernel is 5.1+ (where the io_uring syscall surface stabilized).
 //! That version check used to be an inline closure over `/proc/.../osrelease`,
 //! so the boundary (>= 5.1, and fail-closed on anything unparseable) had no
-//! test. It is now the pure `kernel_supports_io_uring(&str)` seam — pin its
+//! test. It is now the pure `kernel_supports_io_uring(&str)` seam, pin its
 //! exact truth table without needing a real kernel.
 //!
 //! Linux-only: the seam (and its facade) only compile under
@@ -47,7 +47,7 @@ fn surrounding_whitespace_is_trimmed() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin a handful of points; these SWEEP the gate. For any
 // well-formed `major.minor.patch` osrelease the result is EXACTLY the `(major,
-// minor) >= (5, 1)` tuple order — an implementation-independent characterization of
+// minor) >= (5, 1)` tuple order, an implementation-independent characterization of
 // the 5.1 floor (and it proves the patch/suffix is irrelevant). Plus: surrounding
 // whitespace never changes the verdict, and any single-component or non-numeric
 // string fails closed (never a spurious io_uring attempt on an unknown kernel).
@@ -58,7 +58,7 @@ use proptest::prelude::*;
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
-    /// A well-formed version is supported iff `(major, minor) >= (5, 1)` — swept
+    /// A well-formed version is supported iff `(major, minor) >= (5, 1)`: swept
     /// densely across the 5.0/5.1 boundary and both sides of major 5.
     #[test]
     fn wellformed_version_matches_the_5_1_floor(

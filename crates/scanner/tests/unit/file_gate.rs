@@ -600,7 +600,7 @@ fn decode_json_error() {
 #[test]
 fn decode_mod_happy() {
     // A FREESTANDING base64 run must reach MIN_B64_BLOCK_LEN (16) chars to be
-    // kept — the shortest that can carry a credential-length payload; shorter
+    // kept, the shortest that can carry a credential-length payload; shorter
     // alphanumeric runs (e.g. bare "c2s=") are ordinary identifiers/words and are
     // deliberately dropped as noise. The `min_length` arg is a SECONDARY floor
     // that can only raise this cutoff, never lower it. Use a 20-char run so the
@@ -1210,7 +1210,7 @@ fn homoglyph_normalizes_cyrillic_o_to_ascii_o() {
     // Homoglyph FOLDING (lookalike → ASCII) lives on the credential-VALUE scan
     // path, `unicode_hardening::normalize_homoglyphs`. It is deliberately NOT on
     // `normalize_chunk_data`, which only strips zero-width/RTL evasion chars for
-    // context-window text — folding lookalikes in ordinary prose would distort
+    // context-window text, folding lookalikes in ordinary prose would distort
     // the keyword/comment context features (see `normalize_chunk_data`'s docs).
     let normalized =
         keyhog_scanner::testing::unicode_hardening::normalize_homoglyphs("gh\u{043E}p_token");

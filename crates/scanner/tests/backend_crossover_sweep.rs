@@ -2,25 +2,25 @@
 //!
 //! `select_backend` (see `hw_probe::thresholds`) routes a scan to GPU once the
 //! coalesced buffer clears a tier floor. Those floors must reflect where the GPU
-//! *actually* overtakes the CPU paths on real hardware — a number that moved
+//! *actually* overtakes the CPU paths on real hardware, a number that moved
 //! after the always-active phase-2 prefilter fix made the common per-chunk CPU
 //! path much cheaper (the old `1–2.5 MiB/s` regime in `perf_floor_matrix` was
 //! dominated by 2,730 per-scan phase-2 regexes, now collapsed to one RegexSet
 //! pass). This test re-measures the crossover so the thresholds track data.
 //!
-//! **Why two payload regimes.** The GPU backend accelerates only *phase 1* —
+//! **Why two payload regimes.** The GPU backend accelerates only *phase 1* 
 //! the literal/Aho-Corasick prefilter scan. *Phase 2* (regex capture, entropy,
 //! ML confidence) runs on the CPU regardless of backend. So:
-//!   * **benign-sparse** input (mostly code, rare secrets) is phase-1-bound —
+//!   * **benign-sparse** input (mostly code, rare secrets) is phase-1-bound 
 //!     the GPU's parallel scan can beat serial CPU matching at large sizes.
 //!     This is the common real-world repo and the regime that sets the floor.
 //!   * **hit-dense** input (a credential dump; or keyhog's own secret-corpus)
-//!     is phase-2-bound — every byte triggers CPU confirmation, so the GPU adds
+//!     is phase-2-bound, every byte triggers CPU confirmation, so the GPU adds
 //!     dispatch cost on top of identical CPU work and is strictly slower. The
 //!     router has no hit-density signal, so the floor must not be so low that a
 //!     dense buffer gets sent to a GPU that cannot help it.
 //!
-//! `#[ignore]`d (a measurement, not a gate) — run explicitly:
+//! `#[ignore]`d (a measurement, not a gate), run explicitly:
 //!
 //! ```text
 //! cargo test -p keyhog-scanner --test backend_crossover_sweep -- --ignored --nocapture
@@ -51,7 +51,7 @@ const BENIGN_SIZES: &[usize] = &[
 ];
 
 /// Hit-dense is phase-2-bound and ~100× slower per byte, so only small sizes
-/// are feasible — just enough to demonstrate the GPU never leads here.
+/// are feasible (just enough to demonstrate the GPU never leads here).
 const DENSE_SIZES: &[usize] = &[64 * KIB, 256 * KIB];
 
 /// Timed runs per cell after warm-up; median sheds scheduler/turbo noise.
@@ -60,7 +60,7 @@ const TIMED_RUNS_DENSE: usize = 2;
 
 /// One realistic, fixed-shape secret line. Sprinkled sparsely into the benign
 /// stream so a *few* phase-2 confirmations happen (as in a real scan) without
-/// dominating — models real-world credential density, not a dump.
+/// dominating (models real-world credential density, not a dump).
 const SPARSE_SECRET: &str =
     "    let api_token = \"ghp_aaaabbbbccccddddeeeeffff00001111222233\"; // rotate me\n";
 
@@ -268,7 +268,7 @@ fn backend_crossover_sweep() {
     println!("\n=== backend crossover sweep ===");
     println!("gpu_present: {gpu_present}");
 
-    // PRIMARY: benign-sparse (phase-1-bound) — this is what sets the GPU floor.
+    // PRIMARY: benign-sparse (phase-1-bound) (this is what sets the GPU floor).
     let benign_base = benign_payload(2 * MIB);
     let gpu_win = sweep(
         &scanner,
@@ -279,7 +279,7 @@ fn backend_crossover_sweep() {
         gpu_present,
     );
 
-    // SECONDARY: hit-dense (phase-2-bound) — demonstrates GPU cannot lead here.
+    // SECONDARY: hit-dense (phase-2-bound) (demonstrates GPU cannot lead here).
     match dense_base() {
         Some(base) => {
             let _ = sweep(
@@ -305,7 +305,7 @@ fn backend_crossover_sweep() {
              (GPU not worth it in this range)",
             label(*BENIGN_SIZES.last().unwrap())
         ),
-        None => println!("GPU not present — crossover not measured on this host"),
+        None => println!("GPU not present, crossover not measured on this host"),
     }
     println!("=== end sweep ===\n");
 }
@@ -341,11 +341,11 @@ fn report_detector_loss(
 ///
 /// Guards a fail-open recall gap found on an RTX 5090 (2026-06-06): forcing
 /// `--backend gpu` on a benign-sparse 16 MiB buffer returned 496 matches vs the
-/// CPU's 744 — it dropped every github-classic-pat (248/248). Root cause was NOT
+/// CPU's 744, it dropped every github-classic-pat (248/248). Root cause was NOT
 /// the GPU kernel: the dense literal prefixes (~136k > the 32k AC dispatch cap)
 /// make GPU phase-1 reroute to `scan_coalesced`, which scanned the chunk WHOLE
 /// and let the per-chunk match cap (`max_matches_per_chunk`, default 1000)
-/// silently truncate — github-classic-pat fell past the cap behind the dense
+/// silently truncate, github-classic-pat fell past the cap behind the dense
 /// generic-assignment hits. Fixed by windowing large triggered chunks in
 /// `scan_coalesced` (each 1 MiB window gets its own cap). See the CPU-only
 /// `scan_coalesced_large_chunk_matches_windowed_path` for the GPU-free gate.
@@ -397,7 +397,7 @@ fn gpu_vs_cpu_recall_parity_large_buffer() {
 /// Sets a small `max_matches_per_chunk` so the cap would bite at a modest size,
 /// then scans a >1 MiB chunk through the bulk `scan_coalesced` path. The exact
 /// invariant the windowing fix guarantees: a coalesced scan of a large chunk
-/// returns MORE matches than the per-chunk cap — impossible for a single
+/// returns MORE matches than the per-chunk cap, impossible for a single
 /// unwindowed scan (which truncates AT the cap), only possible when the chunk is
 /// split into windows that each carry their own cap. Pre-fix `scan_coalesced`
 /// scanned large chunks whole and capped at ~32; post-fix it windows.
@@ -405,7 +405,7 @@ fn gpu_vs_cpu_recall_parity_large_buffer() {
 /// (Asserting `>cap` rather than exact equality with the per-file path keeps the
 /// gate robust: `scan()` additionally runs `post_process_matches` decode
 /// recursion that the bulk path deliberately skips, so their totals differ by a
-/// few near the cap boundary — a real path divergence, not the bug under test.)
+/// few near the cap boundary, a real path divergence, not the bug under test.)
 #[test]
 fn scan_coalesced_large_chunk_windows_instead_of_capping() {
     const CAP: usize = 32;

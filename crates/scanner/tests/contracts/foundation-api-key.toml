@@ -24,7 +24,7 @@ reason = "Keyword context without valid credential body."
 [[evasion]]
 text = "foundation API KEY= \"M9TBrKrmGsNmjQ8mT3OA12345678\""
 credential = "M9TBrKrmGsNmjQ8mT3OA12345678"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

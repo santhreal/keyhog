@@ -3,7 +3,7 @@ const MAX_MULTILINE_PREPROCESS_BYTES: usize = 2 * 1024 * 1024;
 #[cfg(feature = "multiline")]
 const MAX_MULTILINE_LINE_BYTES: usize = 64 * 1024;
 /// File-size threshold above which multiline concatenation preprocessing only
-/// runs when a secret-related keyword is present — below it the cheap structural
+/// runs when a secret-related keyword is present, below it the cheap structural
 /// scan runs unconditionally, above it the keyword gate avoids preprocessing
 /// large non-secret blobs.
 #[cfg(feature = "multiline")]
@@ -43,8 +43,8 @@ pub(super) fn source_line_offset_or_record_gap(
 /// (a chunk with no structured-config shape and no multiline concatenation)
 /// can BORROW the caller's chunk bytes with zero allocation instead of paying a
 /// full-body `to_string()` heap copy + memcpy on every chunk. Only the paths
-/// that genuinely synthesize NEW bytes — multiline-joined concatenation,
-/// structured-config key/value reassembly, homoglyph normalization — own a
+/// that genuinely synthesize NEW bytes, multiline-joined concatenation,
+/// structured-config key/value reassembly, homoglyph normalization, own a
 /// `String` via `Cow::Owned`. Downstream consumers read `text` as `&str` via
 /// `Deref`, so the borrow is internal to preprocessing.
 #[cfg(feature = "multiline")]
@@ -102,7 +102,7 @@ impl<'a> PreprocessedText<'a> {
     /// Build a preprocessed representation with a one-line identity mapping.
     ///
     /// Takes the text as a [`Cow`] so a byte-identical passthrough chunk can be
-    /// carried as `Cow::Borrowed` (zero allocation — no heap alloc or memcpy of
+    /// carried as `Cow::Borrowed` (zero allocation, no heap alloc or memcpy of
     /// the chunk body) while a normalization-rewritten chunk passes its already-
     /// owned `String` through as `Cow::Owned`. Only the per-line `mappings`
     /// bookkeeping (size-independent of the body bytes) is allocated either way.
@@ -188,13 +188,13 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     // by the structured JSON parser, and with no `"a" + "b"` concat surface to
     // recover) OR a JS / TS / Groovy / Jsonnet SOURCE file that legitimately
     // starts with an object / array literal carrying a multiline-concatenated
-    // secret — e.g. a module that opens `{ apiKey: "gh" +\n  "p_deadbeef…" }`.
+    // secret (e.g. a module that opens `{ apiKey: "gh" +\n  "p_deadbeef…" }`).
     // The old blanket leading-brace reject dropped the SECOND case's entire
     // multiline surface (Law 10: a whole scan surface silently skipped on a
     // shape heuristic). We defer the STRUCTURAL disambiguation (a strict-JSON
     // parse) to AFTER the cheap concat-indicator gate below so it runs only for
     // the narrow set of `{`/`[`-leading buffers that actually tripped a concat
-    // shape — a benign large JSON blob with no concat bytes still bails via the
+    // shape, a benign large JSON blob with no concat bytes still bails via the
     // cheap byte scans without ever paying a full parse.
     let starts_structured = trimmed.starts_with('{') || trimmed.starts_with('[');
 
@@ -241,7 +241,7 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     // At least one concat shape is present. If the buffer nonetheless opened with
     // `{`/`[` AND parses as strict JSON, it is genuine JSON data (the concat byte
     // lived inside a quoted JSON value, e.g. a backtick or `+` in a string) with
-    // no recoverable concatenation surface — skip it. A JS/TS object literal
+    // no recoverable concatenation surface, skip it. A JS/TS object literal
     // fails this parse fast and proceeds to the per-line scan below.
     if starts_structured && parses_as_strict_json(trimmed) {
         return false;
@@ -299,12 +299,12 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
 /// to recover and is correctly skipped here; a JS/TS/Groovy literal is NOT valid
 /// JSON (unquoted keys, `+` concatenation, backtick templates, trailing commas,
 /// comments) and serde's streaming parser rejects it at the first offending
-/// token — cheaply, without walking the whole buffer — so it falls through to
+/// token, cheaply, without walking the whole buffer, so it falls through to
 /// the concatenation-indicator scan and keeps its multiline surface.
 #[cfg(feature = "multiline")]
 fn parses_as_strict_json(text: &str) -> bool {
     // `IgnoredAny` validates the JSON grammar without materializing a `Value`
-    // tree — zero heap allocation on the common already-JSON path.
+    // tree (zero heap allocation on the common already-JSON path).
     serde_json::from_str::<serde::de::IgnoredAny>(text).is_ok()
 }
 
@@ -316,9 +316,9 @@ fn parses_as_strict_json(text: &str) -> bool {
 /// This is the gate for [`extract_dot_concatenation`]. It is deliberately
 /// precise so it does NOT trip preprocessing on the overloaded `.`:
 ///   * a `.` inside a string (`"a.b.c"`, `explode(".", $s)`) is skipped by
-///     quote tracking — it never reaches the join check;
+///     quote tracking, it never reaches the join check;
 ///   * a float (`3.14`) or member access (`obj.method`, `"str".length`) has a
-///     non-quote on at least one side, so it is rejected — the literal-method
+///     non-quote on at least one side, so it is rejected, the literal-method
 ///     case `"str".length` in particular is NOT a join (identifier on the
 ///     right), which keeps ordinary JS/Python string-method calls cheap.
 ///

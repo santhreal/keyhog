@@ -66,7 +66,7 @@ fn credential_context_too_short_gate_uses_unified_min_len() {
     // The credential-context too-short suppression gate fires at exactly the
     // unified `CREDENTIAL_CONTEXT_MIN_LEN` (8): a 7-char value is
     // `CredentialContextTooShort`, an 8-char value clears it. The facade sets
-    // threshold to 0 so only the length gate — not the entropy floor — decides,
+    // threshold to 0 so only the length gate, not the entropy floor, decides,
     // proving the min_len extraction floor and this suppression gate share one owner.
     let min_len = credential_context_min_len();
     let short = "a1B2c3D"; // 7 chars: below the 8-char floor

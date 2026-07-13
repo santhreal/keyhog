@@ -8,7 +8,7 @@ use keyhog_scanner::testing::{clear_test_backend_override, set_test_backend_over
 
 // NOTE: these tests deliberately do NOT mutate the process-global
 // `KEYHOG_BACKEND` env var. A global set to a GPU value races with
-// every concurrent scan in the parallel `all_tests` pool — `gpu_forced` reacts
+// every concurrent scan in the parallel `all_tests` pool: `gpu_forced` reacts
 // to a forced-but-unavailable GPU by exiting the whole process, which would
 // abort the entire harness. Backend FORCING is exercised via the thread-local
 // `set_test_backend_override` (race-free); the env-string→backend MAPPING is
@@ -45,7 +45,7 @@ fn gpu_picked_when_workload_huge_solo() {
     // (solo cap). Asserted on the side-effect-free `gpu_could_engage` predicate
     // rather than `select_backend`: the router additionally degrades a GPU
     // choice to SIMD when runtime policy disables GPU, so a `== Gpu`
-    // assertion is host-dependent — green on a GPU dev box, red on a GPU-less CI
+    // assertion is host-dependent, green on a GPU dev box, red on a GPU-less CI
     // runner. `gpu_could_engage` is exactly the GPU branch condition, factored
     // out, and depends only on the passed caps.
     assert!(gpu_could_engage(
@@ -82,7 +82,7 @@ fn gpu_skipped_below_buffer_threshold() {
 #[test]
 fn gpu_skipped_when_software_renderer() {
     clear_env();
-    // GPU available, but it's llvmpipe — must NEVER pick it.
+    // GPU available, but it's llvmpipe (must NEVER pick it).
     let caps = caps_with(true, true, true, true);
     assert_eq!(
         select_backend(&caps, 1024 * 1024 * 1024, 10_000),
@@ -107,7 +107,7 @@ fn cpu_fallback_when_no_gpu_no_hyperscan_even_with_avx2() {
     // The `SimdCpu` route IS the Hyperscan prefilter path: commit 0eb97683a
     // ("Fail closed selected SIMD routes") dropped the standalone AVX2 ISA
     // branch, so `cpu_tier_backend = hyperscan_available ? SimdCpu : CpuFallback`.
-    // Without Hyperscan, AVX2 alone no longer promotes to SimdCpu — it falls to
+    // Without Hyperscan, AVX2 alone no longer promotes to SimdCpu, it falls to
     // the scalar CpuFallback (sibling of `cpu_fallback_when_no_gpu_no_hyperscan_no_simd`).
     assert_eq!(
         select_backend(&caps, 1024 * 1024, 100),

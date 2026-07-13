@@ -4,7 +4,7 @@
 //! on the FIRST non-UTF-8 byte and silently dropped the whole file. The `keyhog
 //! scan` walker reads bytes and lossily decodes (recovering secrets in files
 //! with a stray non-UTF-8 byte), so the two entry points scanned DIFFERENT sets
-//! — a silent recall divergence invisible to the operator. Watch now routes
+//!, a silent recall divergence invisible to the operator. Watch now routes
 //! through `keyhog_sources::decode_file_bytes`, the SAME decoder the walker uses.
 //!
 //! These tests pin that contract: a non-strict-UTF-8 text file with an embedded
@@ -46,7 +46,7 @@ fn valid_utf8_passes_through_unchanged() {
 #[test]
 fn genuine_binary_is_skipped_not_misdecoded() {
     // An ELF header is unambiguously binary: the decoder must return None so the
-    // watch daemon skips it — matching the scan walker's binary policy, NOT
+    // watch daemon skips it, matching the scan walker's binary policy, NOT
     // scanning a wall of replacement characters.
     let mut bytes: Vec<u8> = vec![0x7f, b'E', b'L', b'F'];
     bytes.extend_from_slice(&[0u8; 64]);

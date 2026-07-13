@@ -39,7 +39,7 @@ fn validate_compiled_pattern_detector_index(
     Ok(())
 }
 
-/// Resolve every hot-pattern slot into a single `Vec<HotPatternSlot>` — the one
+/// Resolve every hot-pattern slot into a single `Vec<HotPatternSlot>`: the one
 /// runtime table the SIMD fast path indexes by `pattern_idx`.
 ///
 /// Prefix ownership comes directly from each loaded detector's

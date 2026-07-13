@@ -42,7 +42,7 @@ fn entropy_floor_resolver_reads_detector_specs_not_a_resurrected_floor_file() {
         .any(|l| l.contains("include_str!") && l.contains("entropy-floors"));
     assert!(
         !resurrected_file,
-        "adjudicate must NOT `include_str!` a separate `entropy-floors` file — the \
+        "adjudicate must NOT `include_str!` a separate `entropy-floors` file, the \
          floors live in each detector's own `detectors/<id>.toml` (`entropy_floor`). A second \
          floor source is exactly the scattered-settings regression this gate prevents."
     );

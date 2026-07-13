@@ -25,11 +25,11 @@ reason = "HTTP header context preserves the canonical key alphabet."
 
 [[negative]]
 text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "API-7EXAMPLEEXAMPLES2FVP"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[negative]]
 text = "OCTOPUS_API_KEY=api-7x68s9206qlqw4s2fvp"
@@ -42,7 +42,7 @@ reason = "Context must not bypass the canonical digit requirement for an Octopus
 [[evasion]]
 text = "Authorization: Bearer API-7X68S9206QLQW4S2FVP"
 credential = "API-7X68S9206QLQW4S2FVP"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

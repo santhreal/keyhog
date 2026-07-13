@@ -39,7 +39,7 @@ def test_leaderboard_run_one_marks_unexpected_exit_as_error(monkeypatch, tmp_pat
     result = leaderboard.run_one("fake", "kernel", ScannerConfig(), corpus_root=tmp_path)
 
     # A crashed scanner (nonzero, non-success exit) produced no usable result, so
-    # it is marked unavailable — the leaderboard/gate filter on `available`, and
+    # it is marked unavailable, the leaderboard/gate filter on `available`, and
     # ranking a crashed competitor as a real low-recall entrant would be wrong.
     assert result.available is False
     assert result.exit_code == 7

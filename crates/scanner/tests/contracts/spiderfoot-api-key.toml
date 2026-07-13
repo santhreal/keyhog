@@ -15,11 +15,11 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "spiderfoottoken=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "spiderfoottoken=QT3EUEXAMPLEEXAMPLEcUr_T"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "{\"spiderfoot_token\":\"QT3EUl0GUeQm_rjcUr_T\"}"

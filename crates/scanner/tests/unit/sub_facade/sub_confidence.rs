@@ -2,7 +2,7 @@
 //!
 //! Asserts the exact weighted-sum scoring, the known-prefix floor (and its
 //! placeholder/degenerate-run skips), the NaN-safety barrier, and the shape
-//! penalty math — computed against the source weights, never `> 0.0`.
+//! penalty math (computed against the source weights, never `> 0.0`).
 
 use keyhog_scanner::confidence::{
     compute_confidence, compute_confidence_with_threshold, is_sensitive_path,
@@ -35,7 +35,7 @@ fn all_false_signals() -> ConfidenceSignals {
 }
 
 // ---------------------------------------------------------------------------
-// compute_confidence — exact weighted normalization
+// compute_confidence, exact weighted normalization
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -189,7 +189,7 @@ fn placeholder_word_detected_case_insensitively() {
 }
 
 // ---------------------------------------------------------------------------
-// finalize_confidence — NaN/Inf safety + clamp
+// finalize_confidence: NaN/Inf safety + clamp
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -427,7 +427,7 @@ fn probabilistic_promise_override_still_slams_named_unpromising_identifier_shape
 }
 
 // ---------------------------------------------------------------------------
-// apply_calibration_multiplier — universal NaN/clamp contract (cache-agnostic)
+// apply_calibration_multiplier, universal NaN/clamp contract (cache-agnostic)
 // ---------------------------------------------------------------------------
 
 #[test]

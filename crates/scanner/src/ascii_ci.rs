@@ -304,7 +304,7 @@ pub(crate) fn ci_find_at(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 /// Index of the needle's statistically rarest byte, used to anchor the
 /// case-insensitive `memchr2` skim on a byte uncommon in real text so a
 /// repetitive/adversarial haystack yields few candidate windows (the O(n·m)
-/// first-byte-anchor DoS defense — see [`ci_find_at`]). Case is folded (`x`/`X`
+/// first-byte-anchor DoS defense, see [`ci_find_at`]). Case is folded (`x`/`X`
 /// share a rank) because the skim matches both. Ties resolve to the earliest
 /// index for determinism. Non-empty needle is a precondition (callers check).
 #[inline]
@@ -371,7 +371,7 @@ const fn ascii_ci_frequency_rank(b: u8) -> u16 {
 /// `memchr2` anchor so a repetitive/adversarial haystack cannot force the
 /// O(n·m) first-byte-anchor blowup. Windows may overlap; an empty needle (or a
 /// needle longer than the haystack) yields nothing. This is the ONE owner of
-/// the case-insensitive scan loop — [`ci_find_at`] takes its first element.
+/// the case-insensitive scan loop: [`ci_find_at`] takes its first element.
 #[inline]
 pub(crate) fn ci_find_iter<'h, 'n>(haystack: &'h [u8], needle: &'n [u8]) -> CiMatches<'h, 'n> {
     let anchor = if needle.is_empty() {
@@ -415,7 +415,7 @@ impl Iterator for CiMatches<'_, '_> {
         while self.pos <= self.haystack.len() {
             let rel = memchr::memchr2(self.a_lower, self.a_upper, &self.haystack[self.pos..])?;
             let hit = self.pos + rel;
-            // Advance past this anchor byte so the next call resumes after it —
+            // Advance past this anchor byte so the next call resumes after it 
             // consecutive/overlapping matches each surface their own anchor hit.
             self.pos = hit + 1;
             let Some(start) = hit.checked_sub(self.anchor) else {
@@ -452,7 +452,7 @@ pub(crate) fn contains_path_segment(path: &str, segment: &str) -> bool {
         return false;
     }
     // Leading segment at offset 0 of a RELATIVE path (`node_modules/foo`): there
-    // is no preceding separator, so the separator-anchored loop below — which
+    // is no preceding separator, so the separator-anchored loop below, which
     // only inspects bytes AFTER a `/` or `\\` - would never test it, silently
     // skipping vendored-tree suppression on relative roots (`keyhog scan
     // node_modules`). Require an immediately-following separator so a prefix like

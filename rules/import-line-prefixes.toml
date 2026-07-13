@@ -5,7 +5,7 @@
 # Each prefix is deliberately space- or paren-TERMINATED so an identifier that
 # merely begins with the keyword (`important_key`, `package_secret`,
 # `requireAuth`) is NOT matched. PRESERVE the trailing space or `(` when adding a
-# language's import syntax — dropping it would reject real credential lines.
+# language's import syntax (dropping it would reject real credential lines).
 prefixes = [
     "import ",
     "package ",

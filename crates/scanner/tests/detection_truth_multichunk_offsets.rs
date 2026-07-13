@@ -37,7 +37,7 @@ fn scan(chunks: &[Chunk]) -> Vec<Vec<(usize, String)>> {
 
 #[test]
 fn base_offset_propagates_into_global_finding_offset() {
-    // "key = AKIA..." — AWS key starts at local offset 6; base_offset 1000.
+    // "key = AKIA...". AWS key starts at local offset 6; base_offset 1000.
     let results = scan(&[chunk("key = AKIAQYLPMN5HFIQR7BBB", 1000)]);
     assert!(
         results[0]

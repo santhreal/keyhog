@@ -1,4 +1,4 @@
-//! Regression: GitHub org/repo *name* validation — the pure, no-network guard
+//! Regression: GitHub org/repo *name* validation, the pure, no-network guard
 //! that decides whether an org or repo name is safe to interpolate into the
 //! `api.github.com` request path (org) or to `join()` onto the temp clone root
 //! (repo). A compromised API response or a hostile `--org` argument that slips a
@@ -9,13 +9,13 @@
 //! This file is deliberately DISTINCT from `regression_github_repo_classify.rs`
 //! (blob→finding-path rewrite, `is_private_url` SSRF classification, clone-URL
 //! origin binding, listing truncation) and from the GitLab/Bitbucket name
-//! files: GitHub's org rule is its OWN alphabet — ASCII-alphanumeric with
-//! interior hyphens, **39-byte** cap, no leading/trailing hyphen — which none of
+//! files: GitHub's org rule is its OWN alphabet. ASCII-alphanumeric with
+//! interior hyphens, **39-byte** cap, no leading/trailing hyphen, which none of
 //! those files exercise as a length-boundary matrix. Here the subject is the
 //! exact 39/40-byte boundary, the empty-name floor, the leading/trailing-hyphen
 //! twins, the unsafe-character refusals, the length-checks-BEFORE-hyphen
 //! precedence, and the GitHub repo-name 100/101-byte boundary + traversal
-//! twins — each asserted against its concrete refusal message.
+//! twins (each asserted against its concrete refusal message).
 //!
 //! HOST-INDEPENDENCE: every assertion is pure string classification (accept vs a
 //! concrete refusal substring with an exact byte count). Nothing depends on an
@@ -37,7 +37,7 @@ fn assert_accepted(result: Result<(), SourceError>, label: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// validate_org_name — positive + length boundary
+// validate_org_name, positive + length boundary
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -73,7 +73,7 @@ fn github_org_name_39_byte_boundary_accepted() {
 #[test]
 fn github_org_name_40_byte_rejected_out_of_range() {
     // BOUNDARY twin: one byte past the cap is refused, and the message reports
-    // the exact offending length `(40)` — not a generic "too long".
+    // the exact offending length `(40)`: not a generic "too long".
     let name = "a".repeat(40);
     assert_eq!(name.len(), 40, "fixture must be exactly one past the cap");
     let err = TestApi
@@ -89,7 +89,7 @@ fn github_org_name_40_byte_rejected_out_of_range() {
 #[test]
 fn github_org_name_empty_rejected_out_of_range_zero() {
     // The floor: an empty org name is refused via the same out-of-range guard,
-    // reporting length `(0)` — a hostless `/orgs//repos` request never composes.
+    // reporting length `(0)`: a hostless `/orgs//repos` request never composes.
     let err = TestApi
         .validate_org_name("")
         .expect_err("an empty org name must be refused");
@@ -101,7 +101,7 @@ fn github_org_name_empty_rejected_out_of_range_zero() {
 }
 
 // ---------------------------------------------------------------------------
-// validate_org_name — hyphen placement twins
+// validate_org_name, hyphen placement twins
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -142,7 +142,7 @@ fn github_org_name_interior_hyphen_accepted() {
 }
 
 // ---------------------------------------------------------------------------
-// validate_org_name — unsafe-character refusals (URL-path injection guards)
+// validate_org_name, unsafe-character refusals (URL-path injection guards)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -191,7 +191,7 @@ fn github_org_name_query_metachar_rejected_unsafe() {
 #[test]
 fn github_org_name_length_check_precedes_hyphen_check() {
     // PRECEDENCE (adversarial): a 40-byte name that ALSO begins with a hyphen
-    // must be caught by the length guard FIRST — the reported message is the
+    // must be caught by the length guard FIRST, the reported message is the
     // out-of-range(40) length, not the hyphen message. This pins the check order
     // so a refactor that reorders the guards is caught.
     let name = format!("-{}", "a".repeat(39)); // leading hyphen + 39 = 40 bytes
@@ -231,7 +231,7 @@ fn github_accepted_org_composes_documented_listing_endpoint() {
 }
 
 // ---------------------------------------------------------------------------
-// validate_repo_name — GitHub's 100-byte cap + traversal twins
+// validate_repo_name: GitHub's 100-byte cap + traversal twins
 // (distinct alphabet/cap from the org rule above)
 // ---------------------------------------------------------------------------
 
@@ -296,7 +296,7 @@ fn github_repo_name_backslash_rejected_traversal() {
 #[test]
 fn github_repo_name_space_rejected_non_alphanumeric() {
     // A space is outside the repo alphabet ([A-Za-z0-9._-]) and is refused with
-    // the non-alphanumeric message — distinct from the traversal refusal above.
+    // the non-alphanumeric message (distinct from the traversal refusal above).
     let err = TestApi
         .validate_repo_name("my repo")
         .expect_err("a space in a repo name must be refused");

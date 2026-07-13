@@ -71,7 +71,7 @@ def _default_config_id(scanner_name: str) -> str | None:
     from .scanners import resolve_scanner
 
     # Only an UNKNOWN scanner (a result file for an adapter no longer
-    # registered) legitimately has no resolvable default — tolerate that by
+    # registered) legitimately has no resolvable default, tolerate that by
     # returning None. Any other failure (a real bug in default_config) must
     # propagate, never be swallowed into an arbitrary/tuned config pick.
     try:
@@ -376,7 +376,7 @@ def render_category_recall(results: list[RunResult], corpus: str) -> str:
         if o.tp + o.fn == 0:
             continue
         bname, brec = best_competitor_recall(cat)
-        best_cell = f"{_name(bname)} {brec:.3f}" if bname else "—"
+        best_cell = f"{_name(bname)} {brec:.3f}" if bname else ". "
         out_lines.append(
             f"| `{cat}` | {o.tp}/{o.fn} | {o.recall():.3f} | {best_cell} | "
             f"{o.fn / total_fn * 100:.1f}% |"
@@ -391,7 +391,7 @@ def render_per_detector(detection: Detection, corpus_positives: int,
                         top: int | None = None) -> str:
     """Per-detector precision/recall + the measured ``min_confidence`` floor.
 
-    One row per detector that fired, FP-heavy first — the tuning worklist:
+    One row per detector that fired, FP-heavy first, the tuning worklist:
     a low-precision, high-FP detector with a non-zero lossless floor is a
     free precision win; a high ``unique_tp`` detector is recall-critical and
     must be tuned carefully. ``RecallShare`` is the fraction of the corpus's
@@ -431,7 +431,7 @@ def render_calibration(detection: Detection) -> str:
     total_fp_cut = sum(r.lossless_fp_cut for r in wins)
     lines = [
         f"{len(wins)} detector(s) can losslessly cut **{total_fp_cut}** false "
-        f"positive(s) — each floor below removes ≥1 FP and loses 0 TP on this corpus.",
+        f"positive(s), each floor below removes ≥1 FP and loses 0 TP on this corpus.",
         "",
         "| Detector | Current P | FP | Recommended floor | FP cut |",
         "|---|---|---|---|---|",
@@ -451,9 +451,9 @@ def write_calibration_reports(detection: Detection, corpus: str,
     from .calibrate import recommend_all, to_toml_overlay
 
     reports_dir.mkdir(parents=True, exist_ok=True)
-    per_det = f"# Per-detector scoring — {corpus}\n\n" \
+    per_det = f"# Per-detector scoring: {corpus}\n\n" \
               f"{render_per_detector(detection, corpus_positives)}\n"
-    calib = f"# min_confidence calibration — {corpus}\n\n" \
+    calib = f"# min_confidence calibration: {corpus}\n\n" \
             f"{render_calibration(detection)}\n"
     overlay = to_toml_overlay(recommend_all(detection.per_detector))
     written = {
@@ -517,7 +517,7 @@ def report_files(results: list[RunResult], corpus: str) -> dict[str, str]:
     `reports/`. Single owner: `write_reports` (which writes them) and
     `stale_report_paths` (the `--check` gate that asserts they're current) both
     consume THIS, so the on-disk rollups and the staleness check can never
-    diverge — a byte-identical second dict was the exact drift risk this removes.
+    diverge: a byte-identical second dict was the exact drift risk this removes.
     """
     sections = build_sections(results, corpus)
     return {
@@ -579,7 +579,7 @@ def _main(argv: list[str] | None = None) -> int:
             if absent:
                 print(
                     f"README is missing BENCH markers for: {', '.join(absent)} "
-                    f"(injection cannot run — restore the <!-- BENCH:*:start/end --> markers).",
+                    f"(injection cannot run, restore the <!-- BENCH:*:start/end --> markers).",
                     file=sys.stderr,
                 )
                 return 1

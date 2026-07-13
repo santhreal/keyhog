@@ -15,7 +15,7 @@ reason = "YAML-style vonage anchor with quoted value."
 
 [[negative]]
 text = "NEXMO_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder body — suppression gate strips it."
+reason = "Placeholder body (suppression gate strips it)."
 
 [[negative]]
 text = "deadbeef"

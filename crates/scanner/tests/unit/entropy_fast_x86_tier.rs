@@ -25,7 +25,7 @@ fn tier_resolves_once_to_a_stable_known_variant() {
 #[test]
 fn dispatched_tier_matches_scalar_reduction_to_ulps() {
     // Whichever SIMD tier this CPU selects, its reduction must agree with the
-    // exact scalar reference to within a few ULPs — the histogram and the `log2`
+    // exact scalar reference to within a few ULPs, the histogram and the `log2`
     // reduction are shared owners, so the only divergence allowed is floating-point
     // rounding. Asserts concrete entropy relationships, not `!is_empty`.
     let cases: [&[u8]; 4] = [
@@ -43,7 +43,7 @@ fn dispatched_tier_matches_scalar_reduction_to_ulps() {
         );
     }
     // A uniform buffer carries zero entropy; a wide, near-uniform hex spread sits
-    // well above the 4.5 high floor — pin both ends through the dispatch.
+    // well above the 4.5 high floor (pin both ends through the dispatch).
     assert_eq!(shannon_entropy_simd(b"AAAAAAAAAAAAAAAA"), 0.0);
     assert!(shannon_entropy_simd(b"9f8e7d6c5b4a39281706fedcba098765") > 3.5);
 }

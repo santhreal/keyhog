@@ -200,7 +200,7 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
     let detector_catalog = uncommented_code(&read(&src.join("detector_catalog.rs")));
     assert!(
         // DET-0: credential shape is a PER-DETECTOR `DetectorSpec::credential_shape`
-        // read from the detector's own spec, compiled per detector — NOT a Tier-B
+        // read from the detector's own spec, compiled per detector. NOT a Tier-B
         // rules-file list with id validation. The compiled rule + its fields stay
         // here; the rules-file load / OnceLock cache / id validation are gone.
         credential_shapes.contains("CredentialShapeRule")

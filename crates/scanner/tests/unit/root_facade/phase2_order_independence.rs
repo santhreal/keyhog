@@ -1,6 +1,6 @@
 //! Does the final finding set depend on the ORDER phase-2 patterns are
 //! extracted? If NOT, an O(text) literal prefilter (which marks the active set
-//! in a different order than the RegexSet) is safe to adopt — the key blocker
+//! in a different order than the RegexSet) is safe to adopt, the key blocker
 //! for a much faster prefilter. Scans each corpus chunk with the fallback
 //! extraction order normal vs reversed and asserts identical findings.
 
@@ -115,7 +115,7 @@ fn phase2_order_independence() {
 }
 
 /// A candidate that ties on EVERY primary Ord key (confidence, severity,
-/// detector, credential) and differs ONLY by byte offset — so the
+/// detector, credential) and differs ONLY by byte offset, so the
 /// `(offset, line)` tie-break is the sole thing that totally orders it.
 fn tied_match(offset: usize) -> RawMatch {
     RawMatch {
@@ -145,7 +145,7 @@ fn tied_match(offset: usize) -> RawMatch {
 /// chunks may not even overflow the cap). When a chunk produces more than
 /// `max_matches_per_chunk` matches, `ScanState::push_match` keeps the top-N by
 /// `RawMatch::Ord` in a bounded heap. If two candidates ever compared Equal at the
-/// survival boundary, eviction among them would fall back to INSERTION ORDER —
+/// survival boundary, eviction among them would fall back to INSERTION ORDER 
 /// which is the phase-2 extraction order the diagnostic test perturbs, and is
 /// HashMap-/thread-nondeterministic in production. These 24 candidates tie on every
 /// primary key and differ only by offset, so only the total-order `(offset, line)`
@@ -177,7 +177,7 @@ fn push_match_eviction_set_is_insertion_order_independent() {
     );
     assert_eq!(
         a, d,
-        "push_match kept a DIFFERENT set for ascending vs descending insertion — \
+        "push_match kept a DIFFERENT set for ascending vs descending insertion. \
          eviction is insertion-order-dependent (RawMatch::Ord is not total): {a:?} vs {d:?}"
     );
 }

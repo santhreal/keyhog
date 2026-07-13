@@ -235,7 +235,7 @@ pub(crate) fn source_offset_from_mapping(
 }
 
 /// The ONE always-compiled owner (was duplicated in `multiline/config.rs`; the code
-/// body was identical — only the comment wording differed).
+/// body was identical (only the comment wording differed)).
 pub(crate) fn source_line_at(source: &str, start: usize) -> Option<&str> {
     if start >= source.len() {
         return None;
@@ -287,13 +287,13 @@ pub(crate) struct LazyRegex {
     /// equivalent combined matcher.
     case_insensitive: bool,
     cell: Arc<std::sync::OnceLock<Arc<Regex>>>,
-    /// Memoized `extract_literal_prefix(src).is_some()` — a per-PATTERN
+    /// Memoized `extract_literal_prefix(src).is_some()`: a per-PATTERN
     /// constant (it depends only on the regex SOURCE, never on the input
     /// being scanned). The scoring hot path (`match_confidence`) needs it
     /// as a `ConfidenceSignals.has_literal_prefix` input on EVERY surviving
     /// candidate; computing it inline re-ran the full char-by-char prefix
-    /// parser — which allocates a `String` (and, on a `(` alternation, an
-    /// extra `chars.clone().collect::<String>()` of the whole tail) — once
+    /// parser, which allocates a `String` (and, on a `(` alternation, an
+    /// extra `chars.clone().collect::<String>()` of the whole tail), once
     /// per match. On a dense corpus where a handful of hot patterns each
     /// fire thousands of times, that is thousands of redundant parses +
     /// allocations of a value that never changes. Cached in this
@@ -301,7 +301,7 @@ pub(crate) struct LazyRegex {
     /// regex source (shared across `Clone`s, populated on first scoring
     /// touch), exactly like the compiled-`Regex` cache above.
     has_literal_prefix: Arc<std::sync::OnceLock<bool>>,
-    /// Memoized `pattern_has_broad_identifier_capture(src)` — the per-PATTERN
+    /// Memoized `pattern_has_broad_identifier_capture(src)`: the per-PATTERN
     /// half of the weak-anchor decision (a `[a-zA-Z0-9_-]`-style capture with a
     /// 0/1 minimum that matches any short identifier). Combined with the
     /// per-DETECTOR [`crate::suppression::WeakAnchorBase`] at the scan call site
@@ -309,7 +309,7 @@ pub(crate) struct LazyRegex {
     /// function of the regex source; cached like `has_literal_prefix`.
     has_broad_identifier_capture: Arc<std::sync::OnceLock<bool>>,
     /// Memoized `regex_has_required_literal_run(src, MIN_DISTINCTIVE_INFIX_CHARS)`
-    /// — whether every match necessarily contains a distinctive required literal
+    ///: whether every match necessarily contains a distinctive required literal
     /// run (the terraform `…\.atlasv1\.…` infix). Such a pattern opens with a
     /// character class (no extractable prefix) and captures the whole match (no
     /// keyword group), so it earns neither existing anchor signal despite being
@@ -393,7 +393,7 @@ impl LazyRegex {
     /// prefilter uses (`extract_literal_prefixes`, the plural), so confidence
     /// and routing agree on what counts as a literal anchor: it strips a leading
     /// inline-flag group (`(?-i)cs_…`), strips a boundary guard
-    /// (`(?:^|[^…])(sk-…)`), and — crucially — recognizes a leading literal
+    /// (`(?:^|[^…])(sk-…)`), and, crucially, recognizes a leading literal
     /// ALTERNATION where the branches diverge (`(?:test_|live_)…` lob,
     /// `(?:hanko_|corbado1_)…` hanko). The earlier `extract_literal_prefix`
     /// (singular) returned only the single COMMON prefix, which is empty when
@@ -480,7 +480,7 @@ impl LazyRegex {
 /// A process-wide never-matching regex used as the fail-closed sentinel when a
 /// `LazyRegex` source that passed construction validation nonetheless fails to
 /// compile on first use. `\b\B` requires a position to be simultaneously a word
-/// boundary and not one, which no position satisfies — so it matches nothing.
+/// boundary and not one, which no position satisfies (so it matches nothing).
 /// The failing detector contributes zero matches (fail closed) while the rest of
 /// the scan proceeds; the failure is surfaced loudly via `warn_prefilter_disabled`.
 fn never_match_sentinel() -> Arc<Regex> {
@@ -513,7 +513,7 @@ pub(crate) struct CompiledPattern {
     /// detector's literal prefix expanded to its unicode look-alikes
     /// (`compiler_build.rs`). Such a variant ALWAYS has its base ASCII prefix in
     /// the AC/confirmed path (the same loop pushes both), so on a pure-ASCII
-    /// chunk — which by definition contains no homoglyph — it can be skipped
+    /// chunk, which by definition contains no homoglyph, it can be skipped
     /// without recall loss (the base AC covers it). This flag, NOT case
     /// sensitivity, is what `homoglyph_ascii_skip` keys on: generic anchorless
     /// fallbacks (generic-password, client_secret) are ALSO case-sensitive but

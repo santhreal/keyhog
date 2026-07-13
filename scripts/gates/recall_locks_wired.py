@@ -8,7 +8,7 @@ file that is neither `#[path]`-included in `all_tests.rs` nor named by a `--test
 step never runs in CI: its assertions are dead weight, and the very
 recall/precision regression it was written to catch can ship unnoticed. (This
 gate exists because ~36 recall locks were authored and committed over many tasks
-but wired NOWHERE — they only ran on the author's laptop.)
+but wired NOWHERE, they only ran on the author's laptop.)
 
 A file is considered wired if its module stem is either:
   * `#[path = "<stem>.rs"]`-included in crates/scanner/tests/all_tests.rs, or

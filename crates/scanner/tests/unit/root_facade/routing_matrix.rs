@@ -456,7 +456,7 @@ fn no_gpu_with_hyperscan_picks_simd() {
 // `cpu_tier_backend = hyperscan_available ? SimdCpu : CpuFallback` (select.rs).
 // Commit 0eb97683a ("Fail closed selected SIMD routes") dropped the standalone
 // ISA branch, so a CPU's AVX2/NEON/AVX512 flags no longer enable a SIMD backend
-// on their own — Hyperscan detects and uses those ISAs internally. Without
+// on their own: Hyperscan detects and uses those ISAs internally. Without
 // Hyperscan there is no SIMD regex engine, so every no-Hyperscan capability mix
 // routes to the scalar CpuFallback.
 

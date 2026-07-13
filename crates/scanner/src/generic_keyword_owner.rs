@@ -16,10 +16,10 @@ use std::sync::Arc;
 /// Compiled generic-assignment keyword → owning generic `Phase2Generic`
 /// detector index. Replaces the per-candidate linear
 /// `detectors.iter().find(...)` scan (O(detectors × keywords) for EVERY generic
-/// value-shape candidate — the hot generic path) in `phase2_generic` with an
+/// value-shape candidate, the hot generic path) in `phase2_generic` with an
 /// O(1) lookup, built ONCE at scanner construction (Tier: compiled).
 ///
-/// Two maps preserve the EXACT original semantics — "the first detector, in
+/// Two maps preserve the EXACT original semantics: "the first detector, in
 /// spec order, that matches the keyword by exact-lowercase OR by
 /// `normalize_assignment_keyword` equivalence": `exact` keys the raw lowercased
 /// keyword, `normalized` keys its normalized form, each recording the FIRST
@@ -83,7 +83,7 @@ impl GenericOwningDetectorIndex {
     /// The owning generic detector's index for a matched assignment `keyword`
     /// (need not be pre-lowercased), or the `GENERIC_SECRET` fallback index when
     /// no generic detector claims the keyword. `None` only when neither a
-    /// keyword owner nor a `GENERIC_SECRET` detector is loaded — the caller then
+    /// keyword owner nor a `GENERIC_SECRET` detector is loaded, the caller then
     /// applies its literal defaults, identical to the old `find(...).or_else(..)`
     /// returning `None`.
     pub(crate) fn owning_index(&self, keyword: &str) -> Option<usize> {
@@ -99,7 +99,7 @@ impl GenericOwningDetectorIndex {
     }
 
     /// Index of the loaded `GENERIC_SECRET` detector, if any. This is the ONE
-    /// cached location every generic-secret lookup resolves through — both the
+    /// cached location every generic-secret lookup resolves through, both the
     /// owning-detector fallback above and `generic_secret_shape_floors` used to
     /// run their own separate linear `detectors.iter().find(id == GENERIC_SECRET)`.
     pub(crate) fn generic_secret_index(&self) -> Option<usize> {
@@ -275,7 +275,7 @@ fn is_assignment_key_byte(byte: u8) -> bool {
 mod tests {
     use super::*;
 
-    /// Callers pass SORTED keys — the real builder emits a `BTreeSet` and every
+    /// Callers pass SORTED keys, the real builder emits a `BTreeSet` and every
     /// ownership lookup `binary_search`es the slice.
     fn owned(keys: &[&str]) -> Vec<Arc<str>> {
         keys.iter().map(|k| Arc::from(*k)).collect()

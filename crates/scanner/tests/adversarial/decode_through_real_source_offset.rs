@@ -1,4 +1,4 @@
-//! Decode-through must report a finding at its REAL, in-bounds source offset —
+//! Decode-through must report a finding at its REAL, in-bounds source offset 
 //! never the structured preprocessor's appended synthetic copy.
 //!
 //! `build_preprocessed_text` appends a copy of an assignment's value after the
@@ -12,7 +12,7 @@
 //! Regression: the determinism total-order on `RawMatch` (offset/line tie-break)
 //! made the dedup deterministically prefer the HIGHER synthetic-append offset.
 //! That offset points past the real chunk, so the cross-chunk boundary straddle
-//! filter (`boundary.rs`) silently dropped the finding — `base64_akia_splice_
+//! filter (`boundary.rs`) silently dropped the finding: `base64_akia_splice_
 //! across_chunks` went to zero matches. The fix sorts decode candidates
 //! offset-ascending before the dedup so the real occurrence always wins.
 

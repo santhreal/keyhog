@@ -16,7 +16,7 @@ reason = "Single-quoted assignment with vonage anchor."
 
 [[negative]]
 text = "VONAGE_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder body — suppression gate strips it."
+reason = "Placeholder body (suppression gate strips it)."
 
 [[negative]]
 text = "54689afc"

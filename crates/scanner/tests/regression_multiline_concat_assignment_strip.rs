@@ -3,7 +3,7 @@
 //! bare continuation fragment whose first quoted literal ends in base64 padding
 //! (`"aGVsbG8=" + "d29ybGQ="`) that `find('=')` matched the padding `=` INSIDE
 //! the literal, discarded the leading fragment, and corrupted the operator split
-//! so the whole concatenation was dropped — a silent recall loss on any secret
+//! so the whole concatenation was dropped, a silent recall loss on any secret
 //! whose reassembly crosses a padded base64 fragment. The fix finds the
 //! assignment `=` only OUTSIDE quoted spans (one shared `strip_assignment_prefix`
 //! for both extractors, replacing two copies of the buggy scan).
@@ -44,7 +44,7 @@ fn pre(text: &str) -> PreprocessedText<'_> {
     )
 }
 
-// ── `+` concat: the bug — base64 padding in a bare continuation fragment ──────
+// ── `+` concat: the bug, base64 padding in a bare continuation fragment ──────
 
 #[test]
 fn plus_bare_fragment_base64_padding_first_literal_preserved() {
@@ -88,7 +88,7 @@ fn plus_bare_fragment_equals_inside_both_literals_preserved() {
 #[test]
 fn plus_assignment_padding_in_value_first_literal_still_joins() {
     // The `key =` assignment `=` is outside quotes and found first, so this WAS
-    // correct before the fix — it must stay correct.
+    // correct before the fix (it must stay correct).
     assert_eq!(
         plus(r#"key = "aGVsbG8=" + "d29ybGQ=""#),
         some("aGVsbG8=d29ybGQ=", false)
@@ -179,7 +179,7 @@ fn dot_single_literal_internal_dots_not_joined() {
 #[test]
 fn full_path_plus_padded_continuation_reassembles_whole_secret() {
     // line0 anchors + continues; line1 is a padded-fragment continuation whose
-    // first literal ends in base64 padding — the exact bug shape.
+    // first literal ends in base64 padding (the exact bug shape).
     let text = "key = \"start\" +\n\"aGVsbG8=\" + \"d29ybGQ=\"\n";
     let p = pre(text);
     assert!(

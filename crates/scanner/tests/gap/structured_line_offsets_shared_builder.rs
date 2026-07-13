@@ -1,7 +1,7 @@
 //! Regression: the structured line resolver shares ONE line-offset builder.
 //!
 //! `structured/parsers/line.rs::resolve_line_number_options` used to carry its
-//! own `build_line_starts(text)` — a byte-for-byte copy of
+//! own `build_line_starts(text)`: a byte-for-byte copy of
 //! `pipeline::compute_line_offsets` (same `bytes.len()/40 + 1` capacity, same
 //! leading `push(0)`, same `memchr_iter(b'\n') -> push(pos + 1)` loop). That
 //! duplicate was deleted; the resolver now calls `crate::compute_line_offsets`
@@ -14,7 +14,7 @@
 //! offset to the correct 1-based line. If a future edit re-introduces a
 //! divergent local builder (a missing leading `0`, an off-by-one `pos` vs
 //! `pos + 1`), the offsets below change and every structured pair's reported
-//! line drifts — this catches it with asserted integers, not shape.
+//! line drifts (this catches it with asserted integers, not shape).
 
 use keyhog_scanner::testing::compute_line_offsets;
 
@@ -53,7 +53,7 @@ fn structured_line_resolver_uses_shared_offset_builder() {
     assert_eq!(
         line_number_for_offset(&offsets, 11),
         3,
-        "offset 11 is line 3 (the 'G' of GAMMA=secret — the keyword anchor)"
+        "offset 11 is line 3 (the 'G' of GAMMA=secret, the keyword anchor)"
     );
     assert_eq!(
         line_number_for_offset(&offsets, 17),
@@ -76,9 +76,9 @@ fn structured_line_resolver_uses_shared_offset_builder() {
 // The fixed vector pins one text's table + lookups; these SWEEP both contracts.
 // `compute_line_offsets` must EXACTLY equal the naive `[0] ++ [i+1 for each '\n']`
 // table (a DIFFERENTIAL keeping the memchr_iter builder behavior-identical to the
-// scalar loop — a divergence drifts every structured pair's reported line). And the
+// scalar loop, a divergence drifts every structured pair's reported line). And the
 // resolver's `partition_point` lookup must map any offset to `1 + (newlines strictly
-// before it)` — the true 1-based line, independent of the table's construction.
+// before it)` (the true 1-based line, independent of the table's construction).
 // Traced against `compute_line_offsets` + `line_number_for_offset`. No proptest before.
 
 use proptest::prelude::*;
@@ -105,7 +105,7 @@ proptest! {
     }
 
     /// The resolver's partition_point lookup maps any offset to `1 + (number of
-    /// newlines strictly before it)` — the correct 1-based line.
+    /// newlines strictly before it)` (the correct 1-based line).
     #[test]
     fn line_number_is_one_plus_preceding_newlines(
         text in "[a-z \n]{0,80}",

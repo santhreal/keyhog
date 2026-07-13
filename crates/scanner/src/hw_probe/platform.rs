@@ -198,7 +198,7 @@ pub(crate) fn linux_total_memory_mb_from_meminfo(content: &str) -> Option<u64> {
 /// Whether a `/proc/sys/kernel/osrelease` string reports a kernel new enough for
 /// io_uring (5.1+, when `IORING_OP`/the syscall surface landed). Pure parse of
 /// the version string so it is testable without a kernel: trims, splits on `.`,
-/// and is conservative — any shape it cannot parse (fewer than two dotted
+/// and is conservative, any shape it cannot parse (fewer than two dotted
 /// components, a non-numeric major/minor) returns `false`, matching the original
 /// `.ok()? … .unwrap_or(false)` fail-closed chain.
 #[cfg(target_os = "linux")]

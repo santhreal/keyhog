@@ -67,7 +67,7 @@ fn single_endpoint_error(endpoint: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// (1) Endpoint SYNTAX refusal — real chunks() production path, no network
+// (1) Endpoint SYNTAX refusal, real chunks() production path, no network
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -152,7 +152,7 @@ fn scheme_relative_endpoint_is_refused() {
 }
 
 // ---------------------------------------------------------------------------
-// (2) AWS-host classification edge cases — pure `endpoint_is_aws`, no network
+// (2) AWS-host classification edge cases, pure `endpoint_is_aws`, no network
 // ---------------------------------------------------------------------------
 
 #[test]

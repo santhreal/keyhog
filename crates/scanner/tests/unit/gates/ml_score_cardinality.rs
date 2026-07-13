@@ -148,7 +148,7 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             && !gpu.contains("*score = 0.0;")
             // The caller's malformed-score arm must surface the mismatch LOUDLY
             // through the SHARED degrade owner (Law 10 + ONE-PLACE), not a bare
-            // tracing::warn! — the backend already owns the length invariant, so a
+            // tracing::warn!, the backend already owns the length invariant, so a
             // caller-side mismatch routes through the same moe_runtime_degrade
             // (hard-fail under --require-gpu, one-shot eprintln otherwise) before
             // recomputing the batch on the CPU MoE.

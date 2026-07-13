@@ -158,7 +158,7 @@ impl RuleSuppressor {
         if self.rules.is_empty() {
             return false;
         }
-        // Law 10: recall-safe (fail-OPEN for suppression) — a finding with no
+        // Law 10: recall-safe (fail-OPEN for suppression), a finding with no
         // file_path yields `""`, which a path-scoped suppression rule will not
         // match, so the finding is LESS likely to be suppressed and MORE likely
         // to be reported. A missing path can never silently drop a real finding.

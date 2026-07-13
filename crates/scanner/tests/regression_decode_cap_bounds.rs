@@ -8,7 +8,7 @@
 //!     input (thousands of distinct base64 blobs) can never make the pipeline
 //!     emit an unbounded chunk stream. On the screen-`None` path every produced
 //!     chunk is returned, so the returned count is EXACTLY the cap (1000) once
-//!     the fan-out would cross it — never 1001+, never a panic.
+//!     the fan-out would cross it (never 1001+, never a panic).
 //!   * `MAX_DECODED_TOTAL_BYTES` (64 MiB): the summed byte length of the
 //!     returned decoded chunks never exceeds 64 MiB, even when the decodable
 //!     input (base64-of-gzip that inflates to 16 MiB per blob) would otherwise
@@ -104,7 +104,7 @@ fn chunk_cap_returns_exactly_1000_on_high_fanout() {
     // 1300 distinct base64 candidates > the 1000 cap. On the screen-`None`
     // path every produced chunk is returned until the (1001st) increment trips
     // the guard and returns WITHOUT pushing, so the returned count is exactly
-    // the cap — deterministic regardless of decoder ordering.
+    // the cap (deterministic regardless of decoder ordering).
     let text = quoted_b64_lines((0..1300).map(|i| format!("SECRETPAYLOAD{i:05}")));
     let out = decode_chunk(&root_chunk(text), 1, false, None, None);
     assert_eq!(out.len(), MAX_DECODED_CHUNKS_PER_ROOT);
@@ -114,8 +114,8 @@ fn chunk_cap_returns_exactly_1000_on_high_fanout() {
 #[test]
 fn chunk_cap_bounds_total_bytes_far_under_byte_cap() {
     // The SAME high-fan-out input: because each decoded chunk is small (a
-    // bounded ±512B splice window around a ~18-byte plaintext), the CHUNK cap —
-    // not the 64 MiB byte cap — is the binding limit here. The returned bytes
+    // bounded ±512B splice window around a ~18-byte plaintext), the CHUNK cap 
+    // not the 64 MiB byte cap, is the binding limit here. The returned bytes
     // stay far under 64 MiB (a few MiB at most for 1000 small chunks).
     let text = quoted_b64_lines((0..1300).map(|i| format!("SECRETPAYLOAD{i:05}")));
     let out = decode_chunk(&root_chunk(text), 1, false, None, None);

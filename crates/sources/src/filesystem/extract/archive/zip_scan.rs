@@ -434,14 +434,14 @@ mod open_safety {
     use crate::filesystem::special_file_test_support::{make_fifo, symlink_to, within_timeout};
     use std::path::PathBuf;
 
-    /// `duplicate_central_zip_entries` (open site #1) — returns Ok(has_dups)/Err.
+    /// `duplicate_central_zip_entries` (open site #1) (returns Ok(has_dups)/Err).
     fn dup_central(path: PathBuf) -> Result<bool, String> {
         within_timeout(move || {
             duplicates::duplicate_central_zip_entries(&path).map(|o| o.is_some())
         })
     }
 
-    /// `extract_zip_archive_from_central_entries` (open site #2) — (chunks, errors).
+    /// `extract_zip_archive_from_central_entries` (open site #2). (chunks, errors).
     fn from_central(path: PathBuf) -> (usize, Vec<String>) {
         within_timeout(move || {
             let mut chunks = 0usize;
@@ -465,7 +465,7 @@ mod open_safety {
         })
     }
 
-    /// `extract_zip_archive` (the entry that chains all three opens) — (chunks, errors).
+    /// `extract_zip_archive` (the entry that chains all three opens). (chunks, errors).
     fn extract(path: PathBuf) -> (usize, Vec<String>) {
         within_timeout(move || {
             let mut chunks = 0usize;
@@ -529,7 +529,7 @@ mod open_safety {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("junk.zip");
         std::fs::write(&path, b"this is not a zip central directory").unwrap();
-        // Opens fine (regular file), then the central-directory parse fails — a
+        // Opens fine (regular file), then the central-directory parse fails, a
         // graceful error, never a hang.
         assert!(dup_central(path).is_err());
     }

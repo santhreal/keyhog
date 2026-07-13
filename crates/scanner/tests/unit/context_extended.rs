@@ -34,7 +34,7 @@ fn x_dominated_above_threshold_is_example() {
 
 #[test]
 fn x_dominated_below_threshold_not_suppressed() {
-    // 8 'x' out of 32 chars = 25% — well below 75%
+    // 8 'x' out of 32 chars = 25%, well below 75%
     let cred = "xxxxxxxxaaaaaaaabbbbbbbbcccccccc";
     assert!(!is_known_example_credential(cred));
 }
@@ -75,14 +75,14 @@ fn sha256_of_empty_is_example() {
 
 #[test]
 fn real_high_entropy_token_not_suppressed() {
-    // Synthetic token with realistic mixed chars — must NOT be suppressed
+    // Synthetic token with realistic mixed chars, must NOT be suppressed
     let cred = "sk-proj-aK7xP9mQ2wE5rT8yU1iO3pA6sD4fGhJkLzBnMcVqWr";
     assert!(!is_known_example_credential(cred));
 }
 
 #[test]
 fn ascending_hex_pairs_is_example() {
-    // Sequential hex placeholders — "0102030405..." pattern
+    // Sequential hex placeholders: "0102030405..." pattern
     let cred = "00010203040506070809101112131415";
     assert!(
         is_known_example_credential(cred),
@@ -129,7 +129,7 @@ fn uppercase_hex_sequence_still_suppresses_without_allocating_lowercase_copy() {
 #[test]
 fn hex_pair_column_source_uses_shared_step_helper() {
     // Anchored to CARGO_MANIFEST_DIR via the canonical helper, not a bare
-    // CWD-relative read of a "src/..." literal — the latter resolved against the
+    // CWD-relative read of a "src/..." literal, the latter resolved against the
     // process working directory and only worked under a plain `cargo test`,
     // failing under nextest / raw-binary runs as a NotFound "flake".
     let source = keyhog_scanner::testing::read_crate_source("src/context/placeholder.rs");
@@ -247,7 +247,7 @@ fn unknown_never_hard_suppresses() {
 #[test]
 fn infer_context_oob_line_index_does_not_panic() {
     let lines = vec!["only one line"];
-    // Line index 5 is past the end — must not panic
+    // Line index 5 is past the end, must not panic
     let _ = infer_context(&lines, 5, None);
 }
 
@@ -262,7 +262,7 @@ fn infer_context_empty_lines_does_not_panic() {
 fn double_quoted_string_is_string_literal() {
     let lines = vec![r#"key = "some_value""#];
     let ctx = infer_context(&lines, 0, None);
-    // Assignment or StringLiteral — not Comment, TestCode, Encrypted, Documentation
+    // Assignment or StringLiteral, not Comment, TestCode, Encrypted, Documentation
     assert!(
         matches!(ctx, CodeContext::Assignment | CodeContext::StringLiteral),
         "double-quoted assignment should be Assignment or StringLiteral, got {ctx:?}"

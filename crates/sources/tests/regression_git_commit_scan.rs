@@ -3,7 +3,7 @@
 //! `GitHistorySource` (added-line reconstruction, `git-history`), and
 //! `GitDiffSource` ref validation (`git-diff`).
 //!
-//! Every assertion pins a CONCRETE expected value — the exact `source_type`
+//! Every assertion pins a CONCRETE expected value, the exact `source_type`
 //! string, the exact committed-file byte length, a 40-char hex commit id, an
 //! error substring, or an exact chunk count. No `is_empty`/`is_some`-only
 //! assertions. The canonical GitHub classic PAT `ghp_0000…2C8GjS` carries a

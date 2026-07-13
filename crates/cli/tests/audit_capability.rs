@@ -1,4 +1,4 @@
-//! Adversarial capability audit (VECTOR 3 — CAPABILITY): archive / compressed
+//! Adversarial capability audit (VECTOR 3: CAPABILITY): archive / compressed
 //! input handling. Every "cannot scan X" is a recall gap: a secret committed
 //! inside that container is invisible to keyhog, and an attacker who knows the
 //! blind spot simply ships the credential in that format.
@@ -8,7 +8,7 @@
 //! `-----BEGIN OPENSSH PRIVATE KEY-----` block, and assert keyhog reports the
 //! finding. The same private-key block scanned as a plain file IS detected
 //! (detector `github-app-private-key`/`ssh-private-key`), and the same block
-//! inside a `.zip` IS detected — both are asserted here as positive controls,
+//! inside a `.zip` IS detected, both are asserted here as positive controls,
 //! so a control failure cannot be confused with the documented gap.
 //!
 //! Each test writes its own fixtures into a TempDir and builds the container by
@@ -25,7 +25,7 @@
 //!   branch for any skipped extension. The archive branch
 //!   (extract.rs:118 `if ext == "zip" || "apk" || "ipa" || "crx" || "jar"`)
 //!   handles zip-family containers via `openpack`, so `.zip` content IS scanned
-//!   — but there is no `tar` unpack branch at all. The comment at
+//!, but there is no `tar` unpack branch at all. The comment at
 //!   filter.rs:51-54 even acknowledges it: "The tar/7z/rar extensions stay
 //!   skipped: no unpack branch handles them." `.tar` is the dominant Linux
 //!   archive (docker layer exports, helm charts, source tarballs), so this is a
@@ -36,7 +36,7 @@
 //!
 //! AUD-capability-2  `.tgz` / `.tar.gz` archives are skipped / not unpacked.
 //!   Evidence: `.tgz` is in SKIP_EXTENSIONS (filter.rs:40) so it never reaches
-//!   any decoder. A `.tar.gz` (extension `gz`) is NOT skipped — it routes to
+//!   any decoder. A `.tar.gz` (extension `gz`) is NOT skipped, it routes to
 //!   `extract_compressed_chunks` (extract.rs:195) which only gunzips the outer
 //!   stream and feeds the raw tar bytes (512-byte tar headers interleaved with
 //!   file content) straight to the scanner WITHOUT untarring, so per-file
@@ -53,7 +53,7 @@
 //!   (extract.rs:342) which calls `ziftsieve::extract_from_bytes(Gzip, ..)` and
 //!   concatenates `block.literals()` per DEFLATE block. A single text file
 //!   holding an OpenSSH private key, gzipped with stock `gzip`, is detected when
-//!   uncompressed but produces ZERO findings once gzipped — the compressed
+//!   uncompressed but produces ZERO findings once gzipped, the compressed
 //!   extraction path runs but never surfaces the secret (literal-only block
 //!   reassembly drops back-referenced bytes and/or the per-block `\n` splicing
 //!   tears the credential). The capability is wired but does not actually work.
@@ -143,7 +143,7 @@ fn require_tool(tool: &str) {
     );
 }
 
-/// AUD-capability-1 — `.tar` content must be scanned, exactly as `.zip` is.
+/// AUD-capability-1: `.tar` content must be scanned, exactly as `.zip` is.
 ///
 /// FAILS NOW: keyhog returns zero findings for a `.tar` holding a private key,
 /// while the identical `.zip` returns the finding. PASSES once a tar unpack
@@ -202,7 +202,7 @@ fn tar_archive_content_is_scanned_like_zip() {
     );
 }
 
-/// AUD-capability-2 — `.tgz` / `.tar.gz` content must be scanned.
+/// AUD-capability-2: `.tgz` / `.tar.gz` content must be scanned.
 ///
 /// FAILS NOW: a gzip-compressed tar holding a private key yields zero findings
 /// (the `.tgz` is skipped outright; a `.gz`-suffixed tarball is gunzipped but
@@ -221,7 +221,7 @@ fn tgz_archive_content_is_scanned() {
         "CONTROL FAILED: plain leak.txt should be detected"
     );
 
-    // .tar.gz (extension `gz`) — NOT in SKIP_EXTENSIONS, so the scanner
+    // .tar.gz (extension `gz`). NOT in SKIP_EXTENSIONS, so the scanner
     // actually opens it via extract_compressed_chunks, gunzips, and scans the
     // raw (still-tarred) bytes. This is the most favourable case for the
     // current code and it STILL misses the secret.
@@ -247,10 +247,10 @@ fn tgz_archive_content_is_scanned() {
     );
 }
 
-/// AUD-capability-3 — plain `.gz`-compressed files must be scanned.
+/// AUD-capability-3 (plain `.gz`-compressed files must be scanned).
 ///
 /// FAILS NOW: a single text file holding an OpenSSH private key, gzipped with
-/// stock `gzip`, yields zero findings — yet the uncompressed file yields one.
+/// stock `gzip`, yields zero findings (yet the uncompressed file yields one).
 /// `extract_compressed_chunks` runs but its literal-block reassembly never
 /// surfaces the secret. PASSES once compressed extraction reconstructs the true
 /// decompressed bytes before scanning.

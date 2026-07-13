@@ -7,7 +7,7 @@ use proptest::prelude::*;
 proptest! {
     // Testing Contract: 10k+ cases. Single test; per case = prefilter primitive
     // ops (AlphabetMask/BigramBloom/AlphabetScreen) + 2 SIMD-vs-scalar parity
-    // passes over <=4KB — no full scan, so 10k stays cheap.
+    // passes over <=4KB (no full scan, so 10k stays cheap).
     #![proptest_config(ProptestConfig::with_cases(10_000))]
 
     #[test]

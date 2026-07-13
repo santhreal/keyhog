@@ -17,7 +17,7 @@
 use std::io::Read;
 
 /// Per-blob inflate output ceiling. A gzip/zlib stream that would expand past
-/// this is truncated at the cap (the leading window is still rescanned — a
+/// this is truncated at the cap (the leading window is still rescanned, a
 /// credential in the first 16 MiB is recovered; a bomb can't OOM us).
 pub(crate) const MAX_INFLATE_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -42,12 +42,12 @@ fn is_zlib_magic(bytes: &[u8]) -> bool {
 ///
 /// Returns `None` (not an error) for non-container bytes, malformed streams,
 /// binary (non-UTF-8) inflate output, AND streams that inflate to nothing (an
-/// empty result has no credential to rescan) — every path is recall-preserving:
+/// empty result has no credential to rescan), every path is recall-preserving:
 /// the caller falls back to its normal handling of the un-inflated bytes.
 #[must_use]
 pub(crate) fn try_inflate_to_text(bytes: &[u8]) -> Option<String> {
     // Preallocate the compressed length: a small but non-trivial floor that skips
-    // the initial `Vec` doubling reallocs for the common (small) case. Bomb-safe —
+    // the initial `Vec` doubling reallocs for the common (small) case. Bomb-safe 
     // the compressed input is tiny even when it would inflate to the cap, and
     // `read_to_end` grows from here only up to `MAX_INFLATE_BYTES`.
     let mut out = Vec::with_capacity(bytes.len());
@@ -76,7 +76,7 @@ pub(crate) fn try_inflate_to_text(bytes: &[u8]) -> Option<String> {
         }
     };
     // An empty inflate (e.g. a degenerate stored block, or the compression of an
-    // empty payload) has nothing to rescan — return `None` so the caller emits no
+    // empty payload) has nothing to rescan, return `None` so the caller emits no
     // empty sub-chunk, consistent with the non-container / malformed / non-UTF-8
     // `None` paths. Recall-neutral: empty text can hold no credential.
     let text = match String::from_utf8(out) {

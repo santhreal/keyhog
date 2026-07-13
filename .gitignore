@@ -40,7 +40,7 @@ benchmarks/results/
 # Retired bench trees. The generators moved to benchmarks/generators/, the
 # committed baselines to benchmarks/baselines/, and the scorer/differential
 # logic to benchmarks/bench/. Only reproducible/generated leftovers (mirror
-# corpus, ad-hoc result dumps) may still sit on disk here — never commit them.
+# corpus, ad-hoc result dumps) may still sit on disk here (never commit them).
 tools/secretbench/
 tools/diff_bench/
 
@@ -80,7 +80,7 @@ detectors/.keyhog-cache.json
 /test_out.log
 /-
 
-# Bazel scaffolding — currently a PoC stub (every per-crate BUILD.bazel
+# Bazel scaffolding, currently a PoC stub (every per-crate BUILD.bazel
 # is comment-only, MODULE.bazel pinned to 0.5.7 while we're shipping
 # 0.5.28). `bazel build //...` does not produce a working keyhog
 # binary today; cargo is the real build system. Untracking until

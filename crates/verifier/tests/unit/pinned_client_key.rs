@@ -1,11 +1,11 @@
 //! Re-homed from the former inline `pinned_key_tests` in
-//! `crates/verifier/src/verify/request.rs` — the `verify_request_no_inline_tests`
+//! `crates/verifier/src/verify/request.rs`: the `verify_request_no_inline_tests`
 //! folder-contract gate forbids inline `#[cfg(test)]` there.
 //!
 //! Pins the pinned-client-cache KEY canonicalization (request.rs
 //! `canonical_pinned_addrs`, added so a round-robin-DNS reorder of the same
-//! A/AAAA set is ONE cache key — a HIT that reuses the reqwest Client + TLS pool
-//! instead of rebuilding one per request — while a genuinely different IP set is
+//! A/AAAA set is ONE cache key, a HIT that reuses the reqwest Client + TLS pool
+//! instead of rebuilding one per request, while a genuinely different IP set is
 //! a distinct key, i.e. no false sharing). The private `PinnedClientKey` is
 //! exercised through the `pinned_keys_equal_for_test` accessor so the type and
 //! its fields stay module-private.

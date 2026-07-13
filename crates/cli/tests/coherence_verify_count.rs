@@ -1,4 +1,4 @@
-//! close-coherence — VERIFY-BLOCK COUNT doc↔corpus coherence.
+//! close-coherence: VERIFY-BLOCK COUNT doc↔corpus coherence.
 //!
 //! Docs intentionally avoid copied detector counts. This gate proves every
 //! shipped `[detector.verify]` block has a URL and rejects stale numeric claims
@@ -21,7 +21,7 @@ fn scan_clean(extra: &[&str]) -> Option<i32> {
     std::fs::write(&path, "clean prose, no secrets here\n").unwrap();
     // Pin an explicit backend: a default `scan` resolves the backend from the
     // persisted autoroute cache and FAILS CLOSED (exit 2) when no decision exists
-    // (Law 10 — it never guesses). This test only checks that the --verify-rate /
+    // (Law 10, it never guesses). This test only checks that the --verify-rate /
     // --verify-batch flags parse and exit 0 on a clean file; it must not depend on
     // an ambient ~/.cache/keyhog/autoroute.json that exists on a dev box but never
     // on a fresh CI runner. `--backend cpu` bypasses autoroute deterministically.
@@ -101,7 +101,7 @@ fn count_verify_corpus(detectors: &Path) -> (usize, usize, usize) {
 }
 
 /// The corpus is the source of truth: every detector advertising a verify block
-/// must carry a URL (otherwise the count is dishonest — a block with no URL is
+/// must carry a URL (otherwise the count is dishonest, a block with no URL is
 /// `unverifiable`, not a live endpoint).
 #[test]
 fn every_verify_block_has_a_url() {
@@ -110,7 +110,7 @@ fn every_verify_block_has_a_url() {
 
     assert_eq!(
         with_verify_url, with_verify,
-        "every `[detector.verify]` block must carry a `url` line — a verify block without a \
+        "every `[detector.verify]` block must carry a `url` line, a verify block without a \
          URL is `unverifiable`, not a live endpoint, so counting it as one is dishonest. \
          {} of {with_verify} verify blocks have a url.",
         with_verify_url
@@ -134,7 +134,7 @@ fn user_docs_do_not_pin_detector_counts() {
 /// verification.md's "Rate limits" section must quote the REAL default verify
 /// rate. The verifier's process-wide limiter defaults to 5 rps (a 200 ms gap),
 /// and the `--verify-rate` flag's clap default is `5.0`. A prior doc said
-/// "100 ms gap" (which would be 10 rps) — wrong. This pins the corrected prose so
+/// "100 ms gap" (which would be 10 rps), wrong. This pins the corrected prose so
 /// it can't drift back: the doc must say "5 requests/second" and "200 ms", and
 /// must NOT carry the stale "100 ms gap".
 #[test]
@@ -156,7 +156,7 @@ fn verification_doc_rate_limit_matches_default_rps() {
         !doc.contains("100 ms gap"),
         "verification.md still carries the stale \"100 ms gap\" claim; 5 rps is a 200 ms gap."
     );
-    // The doc must mention the two flags that tune this — they are real `scan`
+    // The doc must mention the two flags that tune this, they are real `scan`
     // flags, so documenting them closes the wiring gap.
     for flag in ["--verify-rate", "--verify-batch"] {
         assert!(

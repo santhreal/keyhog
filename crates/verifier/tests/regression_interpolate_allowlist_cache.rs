@@ -1,5 +1,5 @@
 //! Regression coverage for the verifier's template-interpolation expansion and
-//! the verification (allowlist) cache — deliberately DISTINCT from
+//! the verification (allowlist) cache, deliberately DISTINCT from
 //! `new_verifier_interpolate.rs` and `new_verifier_allowlist_cache.rs`.
 //!
 //! Focus areas the sibling files do NOT cover:
@@ -69,7 +69,7 @@ fn interpolate_url_repeated_match_encodes_each_occurrence() {
 }
 
 // ===========================================================================
-// undefined placeholders — verbatim / empty, never an expansion or a panic
+// undefined placeholders, verbatim / empty, never an expansion or a panic
 // ===========================================================================
 
 #[test]
@@ -112,7 +112,7 @@ fn interpolate_undefined_companion_renders_empty_in_url() {
 }
 
 // ===========================================================================
-// one-pass inertness — a credential that IS a {{companion.*}} token must not
+// one-pass inertness, a credential that IS a {{companion.*}} token must not
 // be re-expanded into a *different* companion secret.
 // ===========================================================================
 
@@ -121,7 +121,7 @@ fn interpolate_http_value_credential_carrying_token_is_inert() {
     let c = companions(&[("leak", "OTHER_SECRET")]);
     // The scanned credential literally equals a companion token. The single
     // left-to-right pass substitutes it once and never re-reads it, so the
-    // braces survive as inert text — OTHER_SECRET is NOT exfiltrated.
+    // braces survive as inert text. OTHER_SECRET is NOT exfiltrated.
     assert_eq!(
         TestApi.interpolate_http_value("X-Auth: {{match}}", "{{companion.leak}}", &c),
         "X-Auth: {{companion.leak}}",
@@ -130,7 +130,7 @@ fn interpolate_http_value_credential_carrying_token_is_inert() {
 }
 
 // ===========================================================================
-// OOB tokens — id token + no-scheme / hostile-scheme URL sanitization
+// OOB tokens, id token + no-scheme / hostile-scheme URL sanitization
 // ===========================================================================
 
 #[test]
@@ -172,7 +172,7 @@ fn interpolate_oob_url_non_alphabetic_scheme_is_collapsed() {
 }
 
 // ===========================================================================
-// allowlist rejection — exact error string
+// allowlist rejection, exact error string
 // ===========================================================================
 
 #[test]
@@ -202,7 +202,7 @@ fn check_url_allows_builtin_subdomain_exactly_ok() {
 }
 
 // ===========================================================================
-// verification cache — exact cached verdict, overwrite invalidation, queue,
+// verification cache, exact cached verdict, overwrite invalidation, queue,
 // metadata caps.
 // ===========================================================================
 
@@ -242,7 +242,7 @@ fn cache_overwrite_same_key_updates_verdict_in_place() {
         2,
         "overwrite refreshes recency: a new generation marker is enqueued and \
          the old marker becomes stale (skipped lazily by eviction, swept by \
-         reconcile) — the MAP must not grow, the queue may hold one stale marker"
+         reconcile), the MAP must not grow, the queue may hold one stale marker"
     );
 }
 

@@ -70,7 +70,7 @@ fn boundary_reassembles_secret_split_across_two_contiguous_chunks() {
 #[test]
 fn boundary_skips_chunks_with_overlap() {
     // Overlap means the in-chunk scan already covers the seam.
-    // Boundary helper must not fire here — that would double-count.
+    // Boundary helper must not fire here (that would double-count).
     let scanner = CompiledScanner::compile(vec![straddle_detector()]).unwrap();
     let secret = "STRADDLE_ABCDEFGHIJKLMNOPQRST";
     let pad = "x".repeat(100);
@@ -95,7 +95,7 @@ fn boundary_skips_chunks_with_overlap() {
 
 #[test]
 fn boundary_skips_chunks_with_gap() {
-    // Missing data between chunks — can't reassemble what isn't there.
+    // Missing data between chunks (can't reassemble what isn't there).
     let scanner = CompiledScanner::compile(vec![straddle_detector()]).unwrap();
     let chunks = vec![
         make_chunk("padding".into(), 0, "file.txt"),
@@ -163,7 +163,7 @@ fn boundary_dedups_against_existing_match() {
 
 #[test]
 fn boundary_handles_single_chunk() {
-    // No pairs to consider — must return cleanly without panicking.
+    // No pairs to consider (must return cleanly without panicking).
     let scanner = CompiledScanner::compile(vec![straddle_detector()]).unwrap();
     let chunks = vec![make_chunk("alone".into(), 0, "file.txt")];
     let mut per_chunk: Vec<Vec<RawMatch>> = vec![Vec::new()];

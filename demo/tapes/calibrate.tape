@@ -1,7 +1,7 @@
 # Onboarding recording: the visible autoroute calibration phase of the install.
-# `install.sh --calibrate` measures every real workload class on THIS host —
+# `install.sh --calibrate` measures every real workload class on THIS host 
 # stdin, small/large files, many-file trees, decode-heavy, git history/blobs/diff,
-# a loopback web URL, and a live `docker build` image — timing each backend and
+# a loopback web URL, and a live `docker build` image, timing each backend and
 # persisting only a route it can prove fastest (or the sound lowest-overhead
 # tie-break). This is the visual for the README "calibration" section: keyhog's
 # auto route is measured on your hardware, never guessed, and the install refuses

@@ -235,8 +235,8 @@ impl CompiledScanner {
         // plain (homoglyph-variant) batches carry a fast ASCII-folded alternate
         // RegexSet (the homoglyph regex with non-ASCII stripped); on a pure-ASCII
         // chunk it is match-equivalent to the slow unicode-class form, so the
-        // prefilter marks the IDENTICAL set in the IDENTICAL order — recall and
-        // active-set order unchanged — but far faster (the homoglyph unicode
+        // prefilter marks the IDENTICAL set in the IDENTICAL order, recall and
+        // active-set order unchanged, but far faster (the homoglyph unicode
         // RegexSet was measured at ~90% of phase-2 time). `None` on build
         // failure runs them all (recall-safe).
         let phase2_always_active_prefilter = phase2::Phase2AlwaysActivePrefilter::build(
@@ -313,7 +313,7 @@ impl CompiledScanner {
         // every detector field was just fed into `from_detector_strings`
         // above, so each lookup is guaranteed `Some`. The `unwrap_or_else`
         // fallback (interning the source string directly) is unreachable in
-        // practice but keeps the build total — a future detector field that
+        // practice but keeps the build total, a future detector field that
         // somehow missed the interner universe still emits its true string,
         // never an empty or wrong one.
         let metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)> = detectors

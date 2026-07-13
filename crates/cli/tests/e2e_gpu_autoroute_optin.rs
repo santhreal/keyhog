@@ -1,5 +1,5 @@
 //! e2e: the GPU is NOT auto-selected without `--autoroute-gpu`
-//! (TESTING vector 12, lane 9) — the MEASURED-FACT contract, end to end.
+//! (TESTING vector 12, lane 9) (the MEASURED-FACT contract, end to end).
 //!
 //! MEASURED FACT (2026-06-19, RTX 5090): the live region-presence GPU route
 //! still did not beat best CPU/SIMD through 64 MiB, including the required

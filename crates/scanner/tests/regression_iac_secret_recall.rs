@@ -3,7 +3,7 @@
 //! `.tfvars` + provider blocks (HCL `key = "value"`), Helm `values.yaml` and
 //! Ansible vars (YAML `key: value`). keyhog catches these through the generic
 //! password-assignment detector; this lock pins that every such IaC form keeps
-//! surfacing the exact secret bytes through the on-disk scanner — never
+//! surfacing the exact secret bytes through the on-disk scanner, never
 //! `!is_empty`.
 //!
 //! Out of scope by design: the Ansible *Vault* encrypted blob

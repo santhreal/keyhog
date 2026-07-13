@@ -33,7 +33,7 @@ fn reverses_by_unicode_scalar_not_byte() {
 fn requires_a_twelve_long_alnum_run() {
     // Both strings contain `AIKA` (the reverse of the known `AKIA` prefix), so
     // only the alnum-run gate differs. 12 contiguous alnum chars admit; 11 do
-    // not — pinning the exact MIN_REVERSE_ALNUM_RUN boundary.
+    // not (pinning the exact MIN_REVERSE_ALNUM_RUN boundary).
     assert!(looks_reversible("AIKAABCDEFGH")); // 12-char run
     assert!(!looks_reversible("AIKAABCDEFG")); // 11-char run
 }
@@ -47,9 +47,9 @@ fn long_run_without_a_reversed_known_prefix_is_rejected() {
 
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin one example each; these SWEEP them. `reverse_str` is a
-// char-level reversal, so it is an INVOLUTION and equals `chars().rev()` — pinned
+// char-level reversal, so it is an INVOLUTION and equals `chars().rev()`: pinned
 // over arbitrary Unicode. `looks_reversible` needs BOTH gates: a ≥12 contiguous
-// ASCII-alnum run AND a reversed known provider prefix — swept so each gate is
+// ASCII-alnum run AND a reversed known provider prefix, swept so each gate is
 // isolated (the run boundary with the `AIKA` prefix present; a long run of a
 // repeated char with no reversed prefix). Traced against reverse_str +
 // looks_reversible. No proptest before.
@@ -82,7 +82,7 @@ proptest! {
         prop_assert!(looks_reversible(&candidate));
     }
 
-    /// A sub-12 alnum run is rejected even WITH the reversed prefix present — the
+    /// A sub-12 alnum run is rejected even WITH the reversed prefix present, the
     /// run gate is independent.
     #[test]
     fn sub_twelve_run_is_rejected(tail in "[A-Za-z0-9]{0,7}") {
@@ -91,7 +91,7 @@ proptest! {
     }
 
     /// A long alnum run WITHOUT any reversed known prefix (a repeated single char)
-    /// is rejected — the prefix gate is independent.
+    /// is rejected (the prefix gate is independent).
     #[test]
     fn long_run_without_reversed_prefix_is_rejected(n in 12usize..40) {
         let candidate = "1".repeat(n); // >= 12 run, no reversed provider prefix

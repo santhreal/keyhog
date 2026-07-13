@@ -10,7 +10,7 @@
 //! unverified and leaves severity untouched.
 //!
 //! Before this was wired, `into_finding` copied `group.severity` verbatim for
-//! every verdict, so the documented downgrade simply never happened — a stale
+//! every verdict, so the documented downgrade simply never happened, a stale
 //! doc making a false behavioral claim. These tests pin the real, wired behavior
 //! at the single canonical construction point (`keyhog_verifier::into_finding`,
 //! the one place every verified finding is built from a grouped match + verdict)
@@ -71,7 +71,7 @@ fn expected_downgraded(s: Severity) -> Severity {
         Severity::Medium => Severity::Low,
         Severity::Low => Severity::ClientSafe,
         Severity::ClientSafe => Severity::Info,
-        Severity::Info => Severity::Info, // fixed point — never below Info
+        Severity::Info => Severity::Info, // fixed point, never below Info
     }
 }
 

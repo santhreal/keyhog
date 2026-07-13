@@ -18,16 +18,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "statuscake_api_key=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "statuscake_api_key=abcdeEXAMPLEEXAMPLEtuvwx"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "statuscake_api_key=qc8f2a91b7e4d6c3a5f0b8e2d7c4a9f1"
 credential = "qc8f2a91b7e4d6c3a5f0b8e2d7c4a9f1"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

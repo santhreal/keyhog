@@ -170,7 +170,7 @@ trait WriterBackedReporter {
 /// Implements [`WriterBackedReporter`] for a reporter whose only state behind
 /// the trait is a single `writer: W` field. Every reporter in this module is
 /// generic over `W: Write + Send` and exposes its writer identically, so the
-/// impl is purely mechanical — the macro keeps all nine reporters from drifting
+/// impl is purely mechanical, the macro keeps all nine reporters from drifting
 /// to nine subtly different spellings of the same three lines. Invoked as
 /// `impl_writer_backed!(CsvReporter);` inside each reporter's module, where both
 /// `Write` and `WriterBackedReporter` are already in scope.

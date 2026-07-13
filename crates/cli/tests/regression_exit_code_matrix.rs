@@ -4,7 +4,7 @@
 //! `orchestrator::scan_exit_code` live-vs-not-live decision and pins the live
 //! path (exit 10) e2e. This suite is the complementary half: it drives the
 //! REAL binary through every *documented, always-reachable* exit class and
-//! asserts the exact process code —
+//! asserts the exact process code 
 //!
 //!   * clean scan            -> 0   (`EXIT_SUCCESS`)
 //!   * unverified findings   -> 1   (`EXIT_FINDINGS`, never 10 without `--verify`)
@@ -12,7 +12,7 @@
 //!   * `--help` / `--version`-> 0   (clap help/version)
 //!
 //! HOST-INDEPENDENCE (deliberate): every scan here forces `--backend cpu`
-//! (`ScanBackend::CpuFallback` — "pure scalar AC + regex, works everywhere").
+//! (`ScanBackend::CpuFallback`: "pure scalar AC + regex, works everywhere").
 //! It is NOT gated on an accelerator, so `clean -> 0` and `findings -> 1` hold
 //! byte-identically on a no-Hyperscan / no-GPU CI runner. A prior round shipped
 //! `--backend simd` exit assertions that are host-flaky (they fail closed with
@@ -22,7 +22,7 @@
 //! every host.
 //!
 //! TEST-TRUTH: every assertion pins an EXACT `Option<i32>` process exit code, an
-//! EXACT `u8` constant, or an EXACT substring of the rendered help — never a
+//! EXACT `u8` constant, or an EXACT substring of the rendered help, never a
 //! shape (Law 6). `is_empty()`/`len()>0` are never the sole assertion.
 
 use std::path::{Path, PathBuf};
@@ -73,7 +73,7 @@ fn scan(path: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
 }
 
 // ---------------------------------------------------------------------------
-// CODE 0 — clean scans
+// CODE 0, clean scans
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -106,7 +106,7 @@ fn clean_scan_cpu_fallback_alias_also_exits_zero() {
 }
 
 // ---------------------------------------------------------------------------
-// CODE 1 — findings, and the live-code boundary
+// CODE 1, findings, and the live-code boundary
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -163,7 +163,7 @@ fn planted_secret_json_names_the_detector_and_exits_one() {
 }
 
 // ---------------------------------------------------------------------------
-// CODE 2 — user errors: bad path (runtime) and bad args (clap usage)
+// CODE 2, user errors: bad path (runtime) and bad args (clap usage)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -238,7 +238,7 @@ fn unknown_subcommand_exits_two() {
 }
 
 // ---------------------------------------------------------------------------
-// CODE 0 — help / version terminate cleanly
+// CODE 0, help / version terminate cleanly
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -254,7 +254,7 @@ fn top_level_help_exits_zero_and_renders_exit_codes_block() {
         String::from_utf8_lossy(&out.stderr)
     );
     // The help is generated from `exit_codes::DEFINITIONS`, so the EXIT CODES:
-    // table (and the documented findings line) must appear verbatim — coherence
+    // table (and the documented findings line) must appear verbatim, coherence
     // between the printed help and the numeric matrix this file pins.
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(

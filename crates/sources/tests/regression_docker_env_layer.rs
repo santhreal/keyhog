@@ -50,7 +50,7 @@ fn write_manifest(root: &std::path::Path, config_member: &str) {
 
 /// A checksum-valid GitHub classic PAT sitting in a `config.Env` var (the exact
 /// shape a leaked `ENV GH_TOKEN=...` produces) must surface VERBATIM in the
-/// serialized config chunk — the chunk builder does not mangle or truncate it.
+/// serialized config chunk (the chunk builder does not mangle or truncate it).
 #[cfg(feature = "docker")]
 #[test]
 fn canonical_github_pat_in_env_surfaces_verbatim() {
@@ -77,7 +77,7 @@ fn canonical_github_pat_in_env_surfaces_verbatim() {
     );
 }
 
-/// An ENV value packed with URL punctuation (`:` `@` `/` `?` `=` — none of which
+/// An ENV value packed with URL punctuation (`:` `@` `/` `?` `=`: none of which
 /// require JSON escaping) survives serialization byte-for-byte.
 #[cfg(feature = "docker")]
 #[test]
@@ -248,7 +248,7 @@ fn nested_fallback_config_label_uses_forward_slashes() {
 }
 
 /// A bare archive root with no manifest, no OCI layout, and no config JSON yields
-/// zero config chunks — a clean empty result, not an error.
+/// zero config chunks (a clean empty result, not an error).
 #[cfg(feature = "docker")]
 #[test]
 fn bare_root_yields_zero_config_chunks() {
@@ -301,7 +301,7 @@ fn nested_config_member_surfaces_with_slashed_label() {
     );
 }
 
-/// An empty manifest array (`[]`) fails LOUD — the config extraction refuses to
+/// An empty manifest array (`[]`) fails LOUD, the config extraction refuses to
 /// silently treat a zero-entry manifest as "nothing to scan".
 #[cfg(feature = "docker")]
 #[test]
@@ -320,7 +320,7 @@ fn empty_manifest_array_fails_loud() {
 }
 
 /// A manifest entry missing the required `Config` field fails LOUD with the
-/// "invalid docker manifest.json" parse error — never a silently dropped image.
+/// "invalid docker manifest.json" parse error (never a silently dropped image).
 #[cfg(feature = "docker")]
 #[test]
 fn manifest_missing_config_field_fails_loud() {
@@ -419,7 +419,7 @@ fn invalid_metadata_json_fails_loud_with_metadata_message() {
 
 /// The metadata builder pretty-EXPANDS a compact single-line JSON to multi-line
 /// indented text (so line-oriented scanning has real lines), and `size_bytes`
-/// tracks the expanded length — never the compact input length.
+/// tracks the expanded length (never the compact input length).
 #[cfg(feature = "docker")]
 #[test]
 fn compact_metadata_json_is_pretty_expanded_to_multiline() {

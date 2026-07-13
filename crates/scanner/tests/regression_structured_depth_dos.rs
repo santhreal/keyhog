@@ -20,7 +20,7 @@
 use keyhog_scanner::testing;
 
 // ---------------------------------------------------------------------------
-// JSON (tfstate) — the primary recursive parser.
+// JSON (tfstate) (the primary recursive parser).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -112,7 +112,7 @@ fn tfstate_complex_object_output_value_surfaces_nested_secret() {
 
 #[test]
 fn tfstate_array_output_value_surfaces_each_nested_secret() {
-    // `value` is a LIST — e.g. `output "keys" { value = ["k1…", "k2…"] }`. Every
+    // `value` is a LIST, e.g. `output "keys" { value = ["k1…", "k2…"] }`. Every
     // element scalar must surface, indexed into the context path.
     let text = r#"{"outputs":{"keys":{"value":["list-secret-aaa","list-secret-bbb"]}}}"#;
     let pairs = testing::parse_tfstate_tuples(&text);
@@ -252,7 +252,7 @@ fn tfstate_non_object_root_yields_empty() {
 }
 
 // ---------------------------------------------------------------------------
-// YAML (k8s Secret) — the recursive YAML parser + base64 decode-through.
+// YAML (k8s Secret) (the recursive YAML parser + base64 decode-through).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -325,7 +325,7 @@ fn k8s_secret_malformed_yaml_yields_empty() {
 }
 
 // ---------------------------------------------------------------------------
-// YAML (docker-compose) — recursive environment-block discovery.
+// YAML (docker-compose) (recursive environment-block discovery).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -375,7 +375,7 @@ fn compose_deeply_nested_yaml_terminates_empty() {
 }
 
 // ---------------------------------------------------------------------------
-// HCL — line-based parser with explicit lookahead / heredoc bounds.
+// HCL (line-based parser with explicit lookahead / heredoc bounds).
 // ---------------------------------------------------------------------------
 
 #[test]

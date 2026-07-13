@@ -5,7 +5,7 @@
 //! `scan_phase2_patterns` runs each fired phase-2 pattern's capture regex
 //! over the WHOLE chunk. The per-pattern profile (`phase2_pattern_profile`)
 //! shows ~82 patterns active on a 16 KiB chunk, each effectively doing its own
-//! `memchr`/prefilter pass over the chunk for its literal — 82 redundant chunk
+//! `memchr`/prefilter pass over the chunk for its literal: 82 redundant chunk
 //! scans, the dominant 77-85% of phase-2 time.
 //!
 //! ## The optimization
@@ -31,7 +31,7 @@
 //! asserts byte-identical `RawMatch` sets over the corpora + generated inputs).
 //! A pattern whose required-literal set cannot be proven finite/short (pure
 //! char-class bodies, homoglyph unicode cross-products) is NOT eligible and
-//! keeps the whole-chunk path — never a silent recall trade.
+//! keeps the whole-chunk path (never a silent recall trade).
 
 use super::phase2::{ascii_fold_regex_src, gate_prefix_literals, MIN_PREFIX_BYTES};
 use super::phase2_first_bigram::FirstBigramSet;
@@ -65,7 +65,7 @@ pub(crate) struct Phase2AnchorIndex {
     eligible: Vec<bool>,
     /// Per phase-2 index: eligible AND always-active (no >=4-char keyword).
     /// These are gated+located purely by the shared AC, so they are REMOVED
-    /// from the expensive always-active RegexSet prefilter — the main win.
+    /// from the expensive always-active RegexSet prefilter (the main win).
     always_active_eligible: Vec<bool>,
     /// Separate AC over only always-active eligible literals. Sparse
     /// keyword-triggered chunks can use this small index for always-active
@@ -82,7 +82,7 @@ pub(crate) struct Phase2AnchorIndex {
     /// `always_anchor_ac` pattern id -> always-active phase-2 indices.
     always_literal_patterns: Vec<Vec<u32>>,
     /// Per phase-2 index: the anchored regex (Some iff eligible OR plain
-    /// -anchorable — the localized homoglyph path also runs `\A(?:regex)`).
+    /// -anchorable (the localized homoglyph path also runs `\A(?:regex)`)).
     anchored: Vec<Option<AnchoredRegex>>,
     /// Count of eligible patterns (diagnostics).
     eligible_count: usize,
@@ -101,7 +101,7 @@ pub(crate) struct Phase2AnchorIndex {
     /// `plain_anchor_ac` literal id -> plain phase-2 indices.
     plain_literal_patterns: Vec<Vec<u32>>,
     /// Plain patterns with NO usable folded literal: run whole-chunk on ASCII
-    /// chunks (they are few — homoglyph variants almost always have a prefix).
+    /// chunks (they are few (homoglyph variants almost always have a prefix)).
     plain_always_mark: Vec<u32>,
 }
 
@@ -193,8 +193,8 @@ impl Phase2AnchorIndex {
                         // Verify with the FOLDED (ASCII) regex `\A(?:fold)`, not
                         // the unicode one: on the ASCII chunks where this path
                         // runs it is match-equivalent but its DFA is far simpler
-                        // (ASCII classes), so each candidate verify — dominated
-                        // by quick-fails at common-keyword positions — is much
+                        // (ASCII classes), so each candidate verify, dominated
+                        // by quick-fails at common-keyword positions, is much
                         // cheaper. Case-sensitive (the fold carries the case).
                         anchored[idx] = Some(AnchoredRegex::new(&folded_src, false));
                     }
@@ -330,7 +330,7 @@ impl Phase2AnchorIndex {
     ///   * an eligible ALWAYS-ACTIVE pattern is gated solely by anchor presence
     ///     (it left the RegexSet prefilter), so any AC hit activates it;
     ///   * an eligible KEYWORD-TRIGGERED pattern keeps its keyword gate, so it
-    ///     is collected only when `is_active` (its keyword fired) — preserving
+    ///     is collected only when `is_active` (its keyword fired), preserving
     ///     the exact current active-set semantics.
     pub(crate) fn collect_candidates(
         &self,
@@ -413,7 +413,7 @@ impl Phase2AnchorIndex {
         self.plain_anchor_ac.is_some() || !self.plain_always_mark.is_empty()
     }
 
-    /// Plain patterns with no folded leading literal — run whole-chunk on ASCII.
+    /// Plain patterns with no folded leading literal (run whole-chunk on ASCII).
     pub(crate) fn plain_always_mark(&self) -> &[u32] {
         &self.plain_always_mark
     }
@@ -453,7 +453,7 @@ impl Phase2AnchorIndex {
 /// homoglyph variant on pure-ASCII text begins with one of these. Case
 /// -SENSITIVE parse (plain variants match case-sensitively; the fold's ASCII
 /// members carry the case). `None` for an infinite/oversized seq, a member
-/// below the anchor floor, or a non-UTF-8 literal — caller runs whole-chunk.
+/// below the anchor floor, or a non-UTF-8 literal (caller runs whole-chunk).
 fn leading_literals_of_folded(folded: &str) -> Option<Vec<String>> {
     const MAX_VARIANTS: usize = 64;
     let hir = regex_syntax::ParserBuilder::new()

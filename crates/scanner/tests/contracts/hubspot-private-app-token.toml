@@ -24,7 +24,7 @@ reason = "Keyword context without valid credential body."
 [[evasion]]
 text = "pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 credential = "pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-reason = "Adversarial anchor_bare envelope — credential must still surface under this detector."
+reason = "Adversarial anchor_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

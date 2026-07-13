@@ -1,4 +1,4 @@
-//! T-perf-bigtree — PERF-01 deadlock regression guard (LIVENESS, not speed).
+//! T-perf-bigtree: PERF-01 deadlock regression guard (LIVENESS, not speed).
 //!
 //! WHY THIS FILE EXISTS
 //! --------------------
@@ -6,7 +6,7 @@
 //! Linux kernel) HUNG FOREVER. Root cause: `FilesystemSource::chunks()` ran its
 //! file-reader on the GLOBAL rayon pool; each reader task BLOCKED on the bounded
 //! `sync_channel` `send` under backpressure, while the scanner's `par_iter`
-//! needed a worker from that SAME global pool to drain the channel — a
+//! needed a worker from that SAME global pool to drain the channel, a
 //! reader-blocks-on-send ↔ scanner-needs-worker cycle. Small trees drained
 //! before the channel ever saturated, so the SecretBench mirror (15k tiny files)
 //! NEVER exposed it; the whole class was invisible because no large-tree scan
@@ -20,7 +20,7 @@
 //! finishes. So a single GENEROUS watchdog deadline cleanly separates the two
 //! without flaking on slow CI cores (unlike a tight ms bound). The tree is sized
 //! to keep the bounded producer→scanner channel SATURATED for the bulk of the
-//! run — the only state in which the PERF-01 cycle can form — so re-folding the
+//! run, the only state in which the PERF-01 cycle can form, so re-folding the
 //! reader back onto the global pool would hang here.
 //!
 //! The recall assertion (every planted secret surfaces) proves the scan actually
@@ -34,7 +34,7 @@
 //!   KEYHOG_BIGTREE_TIMEOUT_SECS watchdog deadline    (default 300)
 //! The default catches gross regressions on any multicore CI box; nightly /
 //! strict runners crank `KEYHOG_BIGTREE_FILES` to ~94_000 for the full-scale
-//! stress. The backend is pinned to SIMD (`--no-gpu`) for determinism —
+//! stress. The backend is pinned to SIMD (`--no-gpu`) for determinism 
 //! PERF-01 reproduced under BOTH backends, so the channel-topology guard is
 //! backend-independent and SIMD keeps the test runnable on GPU-less CI.
 
@@ -86,7 +86,7 @@ fn build_wide_tree(total: usize) -> (TempDir, std::collections::BTreeSet<String>
             planted.insert(name);
         } else {
             // Benign, low-entropy noise: no assignment-to-token, no long alnum
-            // runs, no secret-shaped literals — pure tree bulk to create the
+            // runs, no secret-shaped literals, pure tree bulk to create the
             // sustained channel backpressure PERF-01 needed.
             let path = sub.join(format!("noise_{i:07}.go"));
             let mut f = std::fs::File::create(&path).expect("create noise");
@@ -138,7 +138,7 @@ fn scan_with_watchdog(root: &Path, out: &Path, deadline: Duration) -> i32 {
                     let _ = child.wait();
                     panic!(
                         "PERF-01 REGRESSION: `keyhog scan` of a {}-file tree did not complete \
-                         within {}s — the source reader pool is starving the scanner's global \
+                         within {}s, the source reader pool is starving the scanner's global \
                          rayon pool again (reader-blocks-on-send ↔ scanner-needs-worker cycle). \
                          Re-check that FilesystemSource::chunks() runs the reader on a DEDICATED \
                          pool (crates/sources/src/filesystem.rs).",
@@ -198,7 +198,7 @@ fn bigtree_scan_completes_under_deadline_with_full_recall() {
     assert_eq!(
         recalled,
         planted.len(),
-        "RECALL: only {}/{} planted AWS keys surfaced — the large-tree scan dropped files \
+        "RECALL: only {}/{} planted AWS keys surfaced, the large-tree scan dropped files \
          from the backpressured tail (a faster-but-lossy scan is not a valid result). \
          Missing example: {:?}",
         recalled,

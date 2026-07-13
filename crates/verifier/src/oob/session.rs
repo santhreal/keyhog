@@ -425,7 +425,7 @@ impl OobSession {
     /// than reporting a false `NotObserved`. Always-compiled `pub(crate)` seam
     /// (like the sibling `*_for_test` accessors) so the re-homed integration test
     /// in `tests/unit/oob_poller_degradation.rs` can drive it through the
-    /// `VerifierTestApi::oob_session_set_degraded_for_test` accessor — the
+    /// `VerifierTestApi::oob_session_set_degraded_for_test` accessor, the
     /// `oob::session` no-inline-tests folder gate forbids the former inline test.
     pub(crate) fn set_degraded_for_test(&self, degraded: bool) {
         self.degraded.store(degraded, Ordering::Release);
@@ -523,8 +523,8 @@ pub(crate) fn poller_is_degraded(consecutive_errors: u32) -> bool {
 
 /// Verdict for a wait that elapsed with no matching interaction. A plain timeout
 /// means the callback never fired (`NotObserved`). But if the poller is degraded
-/// the timeout is UNTRUSTWORTHY — the channel that would have delivered the
-/// callback was down — so we fail closed with `Disabled` (a verification error)
+/// the timeout is UNTRUSTWORTHY, the channel that would have delivered the
+/// callback was down, so we fail closed with `Disabled` (a verification error)
 /// rather than silently downgrading a broken OOB channel to "not observed",
 /// which would misreport a live secret as dead (Law 10).
 pub(crate) fn elapsed_verdict(poller_degraded: bool) -> OobObservation {
@@ -550,7 +550,7 @@ fn spawn_poller(session: Arc<OobSession>) -> JoinHandle<()> {
             // GC at the TOP of every iteration so retention stays bounded even
             // while polls are FAILING. The error arm below `continue`s straight
             // back here, so a GC placed after the poll (where it used to live)
-            // was skipped for the entire duration of a collector outage —
+            // was skipped for the entire duration of a collector outage 
             // `observations` grew unbounded exactly when the poller could no
             // longer drain it.
             if Instant::now() >= next_gc {

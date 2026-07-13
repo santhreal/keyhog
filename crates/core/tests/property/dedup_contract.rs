@@ -1,17 +1,17 @@
-//! Property tier for `keyhog_core::dedup_matches` — report-scope finding
+//! Property tier for `keyhog_core::dedup_matches`: report-scope finding
 //! deduplication. Fixed-vector coverage exists (`new_core_finding_dedup`,
 //! `dedup_decoder_alias`, `gap/redaction_dedup`); this file pins the
 //! output-correctness invariants over arbitrary match sets (proptest, 10k
 //! cases), because dedup sits between detection and the report and a bug here
-//! either DROPS a real secret (recall loss — the whole reason
+//! either DROPS a real secret (recall loss, the whole reason
 //! `DEDUP_LOST_SINGLETON` exists) or FABRICATES/splits a finding:
 //!
 //!   * `DedupScope::None` is a 1:1 passthrough (count + credential set preserved);
 //!   * `DedupScope::Credential` collapses to exactly one finding per distinct
-//!     `(detector_id, credential)` — no key from the input is ever lost, and no
+//!     `(detector_id, credential)`: no key from the input is ever lost, and no
 //!     key not in the input is ever fabricated (the recall-safety contract);
 //!   * output is deterministic w.r.t. INPUT ORDER (dedup sorts internally), so a
-//!     permutation of the same matches yields byte-identical grouping — the
+//!     permutation of the same matches yields byte-identical grouping, the
 //!     property SARIF fingerprints / baselines / CI diffs depend on;
 //!   * a group's surviving confidence is the MAX over the whole group (the
 //!     highest-confidence-winner rule, folded on every duplicate);
@@ -69,7 +69,7 @@ fn build(specs: &[MatchSpec]) -> Vec<RawMatch> {
         .collect()
 }
 
-/// `(detector_id, credential)` key of a spec, as owned strings — the identity
+/// `(detector_id, credential)` key of a spec, as owned strings, the identity
 /// `DedupScope::Credential` collapses on.
 fn spec_key(&(det, cred, ..): &MatchSpec) -> (String, String) {
     (format!("det-{det}"), format!("cred-{cred}"))
@@ -77,7 +77,7 @@ fn spec_key(&(det, cred, ..): &MatchSpec) -> (String, String) {
 
 /// `(detector_id, credential)` keys of a dedup result, in output order. A macro
 /// (not a fn) because `dedup_matches` returns `Vec<DedupedMatch>` and
-/// `DedupedMatch` lives in a private module (`mod dedup`) — its type is
+/// `DedupedMatch` lives in a private module (`mod dedup`), its type is
 /// reachable through the value (fields, methods) but cannot be NAMED in a fn
 /// signature, exactly as `new_core_finding_dedup.rs` uses it inference-only.
 macro_rules! out_keys {
@@ -110,7 +110,7 @@ proptest! {
     }
 
     /// `Credential` scope: exactly one finding per distinct `(detector_id,
-    /// credential)`, and the output key set EQUALS the input key set — no key
+    /// credential)`, and the output key set EQUALS the input key set, no key
     /// lost (recall) and none fabricated. Output keys are all distinct.
     #[test]
     fn prop_credential_scope_collapses_without_loss(
@@ -174,7 +174,7 @@ proptest! {
     }
 
     /// `File` scope partitions by `(detector_id, credential, file)`, so it can
-    /// only ever produce MORE-OR-EQUAL groups than `Credential` scope — never
+    /// only ever produce MORE-OR-EQUAL groups than `Credential` scope, never
     /// fewer (a file split cannot merge two credential groups).
     #[test]
     fn prop_file_scope_never_merges_below_credential_scope(

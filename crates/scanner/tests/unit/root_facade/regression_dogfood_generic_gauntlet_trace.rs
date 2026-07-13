@@ -1,6 +1,6 @@
 //! Regression (KH-L-0412): the generic-bridge VALUE-SHAPE gauntlet
 //! (`generic_value_shape_rejected`, the dominant CredData generic path) was the
-//! LAST silent suppression path — `scan_generic_assignments` did
+//! LAST silent suppression path: `scan_generic_assignments` did
 //! `if generic_value_shape_rejected(..) { continue }` with NO telemetry, so a
 //! generic-secret candidate dropped by any shape gate (identifier / base64-blob /
 //! encoded-binary / placeholder family) was invisible to `--dogfood`, conflated
@@ -58,7 +58,7 @@ fn generic_gauntlet_base64_blob_drop_is_traced() {
     let s = scanner();
     telemetry::testing::reset();
     // A standard-base64 blob under a `secret` keyword: 48 chars, `+`/`/`, padding,
-    // entropy < 4.8 — the generic-path `base64_blob` gate (a protobuf/marshalled-
+    // entropy < 4.8, the generic-path `base64_blob` gate (a protobuf/marshalled-
     // binary decoy class) drops it. No vendor prefix => no named detector fires,
     // so the generic bridge is the only path and the gauntlet is what suppresses.
     let blob = "Yml0Y29pbgABAgMEBQYHCAkKCwwND/7+/f38+/r5+Pf=";

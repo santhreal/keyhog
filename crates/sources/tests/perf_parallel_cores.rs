@@ -1,4 +1,4 @@
-//! PERF tripwire (KEY: parallel_cores) — multicore scaling of the many-small-
+//! PERF tripwire (KEY: parallel_cores), multicore scaling of the many-small-
 //! files ingestion hot path, `keyhog_sources::FilesystemSource::chunks()`.
 //!
 //! HOT PATH & WHY THIS FILE EXISTS
@@ -7,9 +7,9 @@
 //! `FilesystemSource::chunks()` before any scanning happens. Both CLI scan
 //! pipelines consume that one iterator:
 //!   * the fused path (`crates/cli/src/orchestrator/dispatch.rs:570`,
-//!     `scan_sources_fused`) — a single drain thread bridges the `!Send`
+//!     `scan_sources_fused`), a single drain thread bridges the `!Send`
 //!     `chunks()` iterator into a `sync_channel`, then `par_bridge()` scans;
-//!   * the legacy path (`dispatch.rs:200` `scan_sources`) — same `chunks()`,
+//!   * the legacy path (`dispatch.rs:200` `scan_sources`), same `chunks()`,
 //!     one scanner thread.
 //!
 //! `FilesystemSource::chunks()` spawns its OWN dedicated rayon reader pool
@@ -17,7 +17,7 @@
 //! `reader_pool_thread_count(scan_threads) = clamp(scan_threads/2, 2, 16)`
 //! (`filesystem.rs:70-74`). That pool is SEPARATE from the global rayon pool
 //! the consumer scans on, so on an N-core host configured with N scan threads
-//! the process runs **N scan threads + clamp(N/2,2,16) reader threads** — e.g.
+//! the process runs **N scan threads + clamp(N/2,2,16) reader threads**: e.g.
 //! 16 scan + 8 reader = 24 threads contending for 16 cores (50% oversubscribed),
 //! or 32 scan + 16 reader = 48 threads on 16 cores (3x). The OS deschedules
 //! scan workers in favour of reader threads, so the consumer can never reach
@@ -27,7 +27,7 @@
 //! 2026-06-02; 4000 ~1KB files; this test's own A-vs-B harness, best-of-4 min):
 //!
 //!   (B) representative per-chunk work over a PRE-READ Vec<Chunk>:  ~15.3x @ 16t
-//!       (the achievable ceiling — `par_iter` over an owned slice scales near-
+//!       (the achievable ceiling: `par_iter` over an owned slice scales near-
 //!        linearly to physical cores)
 //!   (A) the SAME work driven through `FilesystemSource::chunks()` exactly as
 //!       `scan_sources_fused` does (drain bridge -> sync_channel(fused_depth)
@@ -44,7 +44,7 @@
 //! slice) and REGRESSES at 32t (719ms > 626ms@16t) as the reader pool grows to
 //! 16 and oversubscription hits 3x. The scan engine and the fused-dispatch
 //! shape both scale to ~9-10x in isolation (verified separately), so the cap is
-//! upstream, in this crate's chunk-production path — which is why this tripwire
+//! upstream, in this crate's chunk-production path, which is why this tripwire
 //! lives in `keyhog-sources`, not the scanner.
 //!
 //! FIX (landed) & what this floor now guards
@@ -56,7 +56,7 @@
 //! `tests/unit/filesystem.rs`). That lifted realized efficiency from ~0.48
 //! (oversubscribed) to ~0.72. The residual gap to the pre-read ceiling is the
 //! SINGLE drain thread that bridges the `!Send` `chunks()` iterator into the
-//! channel — inherent to this A/B harness and to `scan_sources_fused`, not a
+//! channel, inherent to this A/B harness and to `scan_sources_fused`, not a
 //! reader-pool defect. This timing floor (`>= 0.55`) is therefore a realized-
 //! gain REGRESSION guard: headroom below the measured ~0.72, far above the
 //! pre-fix ~0.48, so re-introducing reader oversubscription trips it while
@@ -65,7 +65,7 @@
 //! ROBUSTNESS
 //! ----------
 //! The assertion is a RATIO of two IN-PROCESS paths (A and B) measured on the
-//! SAME machine, same corpus, same per-chunk work — so it is independent of CPU
+//! SAME machine, same corpus, same per-chunk work, so it is independent of CPU
 //! clock, disk speed, and absolute timing. Each leg is best-of-4 (keep the MIN
 //! wall) so scheduler noise can only shrink a measured time, never inflate the
 //! ratio spuriously. The cap only manifests with real cores, so the hard
@@ -93,7 +93,7 @@ const FUSED_BATCH: usize = 32;
 /// (a small fixed reader crew, no longer `scan_threads/2`; proven deterministic
 /// in `tests/unit/filesystem.rs`), lifting realized efficiency to ~0.72. The
 /// remaining gap to the ceiling is the SINGLE drain thread that bridges the
-/// `!Send` `chunks()` iterator into the channel — inherent to this A/B harness
+/// `!Send` `chunks()` iterator into the channel, inherent to this A/B harness
 /// (and to `scan_sources_fused`), not a reader-pool defect. This floor is a
 /// realized-gain REGRESSION guard at 0.55 (headroom below the measured ~0.72,
 /// far above the pre-fix ~0.48): re-introducing reader oversubscription trips it.
@@ -107,7 +107,7 @@ fn make_tree() -> tempfile::TempDir {
         let sub = dir.path().join(format!("pkg{}", i / 200));
         std::fs::create_dir_all(&sub).ok();
         let mut f = std::fs::File::create(sub.join(format!("f_{i}.go"))).expect("create file");
-        // ~1KB of source per file — the dominant shape of a real tree (Linux
+        // ~1KB of source per file, the dominant shape of a real tree (Linux
         // kernel: ~94k files, vast majority sub-2KiB).
         let mut s = String::with_capacity(1100);
         s.push_str("package main\n");
@@ -231,7 +231,7 @@ fn via_source(root: &std::path::Path, threads: usize, k: usize) -> (f64, usize) 
 // than pure-CPU path B (pre-read ceiling), so the ratio drops below the floor for
 // a NON-defect. It runs isolated (its own CI step / locally) via `--ignored`,
 // where the host is idle and the scaling floor is meaningful. The threshold and
-// assertion are UNCHANGED — only the scheduling is gated to an isolated run.
+// assertion are UNCHANGED (only the scheduling is gated to an isolated run).
 #[ignore = "multicore scaling floor: run isolated (`--ignored`); flaky under the parallel all-targets load"]
 #[test]
 fn filesystem_source_multicore_scaling_floor() {
@@ -310,16 +310,16 @@ fn filesystem_source_multicore_scaling_floor() {
         "FilesystemSource::chunks() multicore scaling REGRESSED: it retains only \
          {:.0}% of the achievable parallel speedup ({src_speedup:.2}x vs the \
          {ceil_speedup:.2}x the same per-chunk work reaches over a pre-read \
-         slice) at {high} threads — floor is {:.0}%. The reader-pool \
+         slice) at {high} threads, floor is {:.0}%. The reader-pool \
          OVERSUBSCRIPTION that originally capped this (a dedicated rayon pool \
          sized clamp(scan_threads/2,2,16) running ON TOP OF the scan pool) is \
          FIXED: `reader_thread_count` is now a small fixed crew (~scan/4, capped \
          at MAX_READER_THREADS=4; proven host-independently in \
          tests/unit/filesystem.rs) that never scales with the scan pool. A value \
-         this low means that oversubscription crept back — re-check \
+         this low means that oversubscription crept back, re-check \
          crates/sources/src/filesystem.rs `reader_thread_count` / the reader \
          spawn. (The residual gap to the ceiling above this floor is the SINGLE \
-         drain thread bridging the `!Send` chunks() iterator into the channel — \
+         drain thread bridging the `!Send` chunks() iterator into the channel. \
          inherent to this harness and to scan_sources_fused, not a reader defect.)",
         100.0 * efficiency,
         100.0 * MIN_EFFICIENCY,

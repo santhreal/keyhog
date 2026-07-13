@@ -179,7 +179,7 @@ impl CompiledScanner {
     pub(crate) fn has_fragment_assignment_syntax(data: &[u8]) -> bool {
         // One SIMD pass per byte-class instead of one per byte: `memchr2`/
         // `memchr3` find the first occurrence of ANY of their needles, so
-        // `.is_some()` is true iff at least one is present — byte-identical to
+        // `.is_some()` is true iff at least one is present, byte-identical to
         // the OR-of-`memchr` chain, but 2 passes over `data` instead of 5.
         let has_assignment = memchr::memchr2(b'=', b':', data).is_some();
         let has_quote = memchr::memchr3(b'"', b'\'', b'`', data).is_some();
@@ -198,7 +198,7 @@ mod reassembly_owner_tests {
         assert_eq!(REASSEMBLY_MIN_ENTROPY, 3.0);
         assert_eq!(REASSEMBLY_MIN_VALUE_LEN, 16);
         // The synthetic probe wraps the value in the exact assignment the scanner
-        // re-scans — byte-for-byte, including an empty value (no panic).
+        // re-scans (byte-for-byte, including an empty value (no panic)).
         assert_eq!(
             reassembly_probe_data("AKIAIOSFODNN7EXAMPLE"),
             "reassembled_key = \"AKIAIOSFODNN7EXAMPLE\""

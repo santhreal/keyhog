@@ -4,7 +4,7 @@
 //! have characteristic entropy profiles that help separate true positives.
 
 /// BPE "rare-not-random" precision gate (tiktoken cl100k_base bytes-per-token).
-/// Gated on `entropy` — the tokenizer dep rides that feature.
+/// Gated on `entropy`: the tokenizer dep rides that feature.
 #[cfg(feature = "entropy")]
 pub(crate) mod bpe;
 mod isolated;
@@ -30,13 +30,13 @@ pub use scanner::{find_entropy_secrets, find_entropy_secrets_with_threshold};
 /// Threshold for keyword-context entropy detection.
 ///
 /// This is the single-owner default for the per-detector `DetectorSpec::entropy_low` field,
-/// applied only when a detector leaves that field unset — not a global gate applied uniformly.
+/// applied only when a detector leaves that field unset (not a global gate applied uniformly).
 pub const LOW_ENTROPY_THRESHOLD: f64 = 3.0;
 
 /// Default threshold for keyword-independent entropy detection.
 ///
 /// This is the single-owner default for the per-detector `DetectorSpec::entropy_high` field,
-/// applied only when a detector leaves that field unset — not a global gate applied uniformly.
+/// applied only when a detector leaves that field unset (not a global gate applied uniformly).
 pub const HIGH_ENTROPY_THRESHOLD: f64 = 4.5;
 
 /// Floor for mixed alpha+digit tokens that carry stronger evidence than a
@@ -45,7 +45,7 @@ pub const HIGH_ENTROPY_THRESHOLD: f64 = 4.5;
 /// floor but above low-entropy identifiers.
 ///
 /// This is the single-owner default for the per-detector `DetectorSpec::mixed_alnum_floor` field,
-/// applied only when a detector leaves that field unset — not a global gate applied uniformly.
+/// applied only when a detector leaves that field unset (not a global gate applied uniformly).
 pub(crate) const MIXED_ALNUM_TOKEN_THRESHOLD: f64 = 4.0;
 
 pub(crate) const ISOLATED_BARE_ENTROPY_LABEL: &str = "none (isolated-token)";
@@ -56,13 +56,13 @@ pub(crate) const ISOLATED_BARE_ENTROPY_LABEL: &str = "none (isolated-token)";
 /// (`isolated`), which previously pasted the bare literal `20` in each predicate.
 ///
 /// This is the single-owner default for the per-detector `DetectorSpec::keyword_free_min_len` field,
-/// applied only when a detector leaves that field unset — not a global gate applied uniformly.
+/// applied only when a detector leaves that field unset (not a global gate applied uniformly).
 pub(crate) const KEYWORD_FREE_MIN_LEN: usize = 20;
 
 /// Threshold for keyword-independent entropy detection.
 ///
 /// This is the single-owner default for the per-detector `DetectorSpec::entropy_very_high` field,
-/// applied only when a detector leaves that field unset — not a global gate applied uniformly.
+/// applied only when a detector leaves that field unset (not a global gate applied uniformly).
 pub const VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.8;
 /// Threshold for keyword-independent detection in clearly sensitive files.
 pub const SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.5;
@@ -71,7 +71,7 @@ pub const SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.5;
 /// [`EntropyMatch::line`] source line number. Single canonical owner for the
 /// 0→1 line-base convention shared by the line-scoped scanner
 /// (`scanner::find_entropy_secrets_with_threshold`) and the isolated-bare token
-/// path (`isolated::collect_isolated_bare_candidates`) — both add it to their
+/// path (`isolated::collect_isolated_bare_candidates`), both add it to their
 /// enumerated line index, so the convention lives in exactly one place.
 pub(crate) const FIRST_SOURCE_LINE_NUMBER: usize = 1;
 
@@ -81,15 +81,15 @@ pub(crate) const FIRST_SOURCE_LINE_NUMBER: usize = 1;
 ///
 /// An assignment keyword (`api_key=`) or an isolated opaque token is positive
 /// evidence, so the anchored paths run at a LOW named floor by default
-/// (recall-oriented — the anchor, not raw entropy, carries the signal). The
+/// (recall-oriented, the anchor, not raw entropy, carries the signal). The
 /// operator knob therefore engages ONLY when it is *stricter* than the blanket
 /// [`HIGH_ENTROPY_THRESHOLD`]: a caller asking for a bar tighter than the global
-/// high floor is honored verbatim (`Some(threshold)`); at or below HIGH — or
-/// non-finite — the anchored floor applies (`None`) and each caller supplies its
+/// high floor is honored verbatim (`Some(threshold)`); at or below HIGH, or
+/// non-finite, the anchored floor applies (`None`) and each caller supplies its
 /// own floor ([`LOW_ENTROPY_THRESHOLD`] for the keyword path,
 /// [`MIXED_ALNUM_TOKEN_THRESHOLD`] for the isolated path).
 ///
-/// This is a NAMED, TESTED policy — explicitly NOT a silent clamp. The two call
+/// This is a NAMED, TESTED policy, explicitly NOT a silent clamp. The two call
 /// sites (`scanner::keyword_context`, `isolated::isolated_bare_entropy_threshold`)
 /// used to inline byte-divergent copies of this same `> HIGH` test, which is the
 /// exact ONE-PLACE hazard: one owner means a change to the override rule reaches
@@ -130,8 +130,8 @@ fn parse_config_file_extensions(raw: &str) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>
 
 /// `(direct extensions, stem-only extensions)`, loaded once from the bundled
 /// Tier-B `rules/config-file-extensions.toml`. `include_str!` embeds the file at
-/// compile time, so a parse failure is a build defect in the bundled data — not
-/// a runtime hostile-input risk — and fails closed (Law 10), naming the file.
+/// compile time, so a parse failure is a build defect in the bundled data, not
+/// a runtime hostile-input risk (and fails closed (Law 10), naming the file).
 static CONFIG_EXTENSION_LISTS: std::sync::LazyLock<(Vec<Vec<u8>>, Vec<Vec<u8>>)> =
     std::sync::LazyLock::new(|| {
         match parse_config_file_extensions(include_str!(
@@ -184,7 +184,7 @@ fn parse_credential_file_names(raw: &str) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>)
     ))
 }
 
-/// `(prefix-match names, exact-or-config-ext names)` — the credential-store
+/// `(prefix-match names, exact-or-config-ext names)`: the credential-store
 /// filenames the entropy fallback treats as secret files, loaded once from the
 /// bundled Tier-B `rules/credential-file-names.toml`. Fails closed (Law 10),
 /// naming the file, since a parse failure is a build defect in bundled data.
@@ -524,7 +524,7 @@ mod tests {
         assert_eq!(operator_entropy_override(0.0), None);
         // Non-finite is never an override: NaN AND ±infinity all fail the
         // `is_finite()` guard (an infinite entropy threshold is a nonsensical
-        // override input — nothing could ever exceed it), so all return None.
+        // override input (nothing could ever exceed it), so all return None).
         assert_eq!(operator_entropy_override(f64::NAN), None);
         assert_eq!(operator_entropy_override(f64::INFINITY), None);
         assert_eq!(operator_entropy_override(f64::NEG_INFINITY), None);

@@ -2,11 +2,11 @@
 //! (`crates/scanner/src/suppression/shape/{source,public}.rs`).
 //!
 //! More "captured grammar, not a secret" gates:
-//!   • `looks_like_program_identifier` — bare snake_case or camelCase all-alpha name.
-//!   • `looks_like_kebab_config_identifier` — short dash-joined majority-lowercase key.
-//!   • `looks_like_public_reference_selector` — a run of `[sources.IDENT]` selectors.
-//!   • `looks_like_percent_encoded_markup` — percent-encoded XSS markup.
-//!   • `looks_like_html_event_handler_fragment` — a bare `onEvent=` handler attribute.
+//!   • `looks_like_program_identifier`: bare snake_case or camelCase all-alpha name.
+//!   • `looks_like_kebab_config_identifier`: short dash-joined majority-lowercase key.
+//!   • `looks_like_public_reference_selector`: a run of `[sources.IDENT]` selectors.
+//!   • `looks_like_percent_encoded_markup`: percent-encoded XSS markup.
+//!   • `looks_like_html_event_handler_fragment`: a bare `onEvent=` handler attribute.
 
 use keyhog_scanner::testing::{
     looks_like_html_event_handler_fragment_for_test, looks_like_kebab_config_identifier_for_test,
@@ -98,7 +98,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// A program-identifier match IMPLIES the value is entirely `[A-Za-z_]` (all
-    /// alpha or underscore) — a digit or symbol can never be a program identifier.
+    /// alpha or underscore) (a digit or symbol can never be a program identifier).
     #[test]
     fn program_id_match_implies_alpha_underscore(value in "[A-Za-z0-9_$-]{0,24}") {
         if looks_like_program_identifier_for_test(&value) {
@@ -125,7 +125,7 @@ proptest! {
         }
     }
 
-    /// A reference-selector match IMPLIES the value starts with `[sources.` — the
+    /// A reference-selector match IMPLIES the value starts with `[sources.`: the
     /// gate never fires on a non-selector.
     #[test]
     fn selector_match_implies_sources_prefix(value in "[\\[\\]a-zA-Z0-9._]{0,60}") {

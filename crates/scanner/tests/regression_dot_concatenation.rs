@@ -6,7 +6,7 @@
 //!
 //! The `+`-concatenation path (Java/JS/Python/C#) never matched these, so a
 //! secret split across `.` joins slipped through. The dot extractor reassembles
-//! the joined literal so the contiguous secret surfaces — while staying STRICT
+//! the joined literal so the contiguous secret surfaces, while staying STRICT
 //! so the overloaded `.` (member access, floats, path separators, file
 //! extensions) never fabricates a candidate.
 //!
@@ -177,7 +177,7 @@ fn trailing_semicolon_stripped_from_last_segment() {
 #[test]
 fn escaped_quote_inside_literal_does_not_break_join() {
     // The splitter's quote tracking honors `\"`, so the join `.` after the REAL
-    // closing quote is found — the segment is not ended early at the escaped
+    // closing quote is found, the segment is not ended early at the escaped
     // quote.
     let p = pre("$k = \"AAA\\\"BBB\" . \"CCC777\";\n");
     assert!(p.text.contains("BBBCCC777"), "{:?}", p.text);
@@ -226,7 +226,7 @@ fn appended_region_excludes_lhs_keyword_and_identifier() {
 #[test]
 fn runtime_variable_separated_literals_not_reassembled() {
     // Two literals separated by a runtime variable are NOT adjacent, so the
-    // join is not recognized — reassembling them would fabricate a partial value
+    // join is not recognized, reassembling them would fabricate a partial value
     // (`PRE111POST222`) the real secret never had.
     let p = pre("$x = \"PRE111\" . $mid . \"POST222\";\n");
     assert!(!p.text.contains("PRE111POST222"), "{:?}", p.text);
@@ -353,7 +353,7 @@ fn default_config_enables_dot_concatenation() {
 #[test]
 fn e2e_scan_dot_concatenated_aws_key_fires() {
     // `AKIA` and its 16-char body live in SEPARATE quoted literals, so the
-    // contiguous `AKIA…` never appears in the original line — only the dot-concat
+    // contiguous `AKIA…` never appears in the original line, only the dot-concat
     // reassembly produces it. A finding therefore proves the join worked.
     let matches = scan("$key = \"AKIA\" . \"Z7Q2LMN4XKCD9PQR\";\n");
     assert!(

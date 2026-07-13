@@ -1,7 +1,7 @@
 //! Fail-closed weight-buffer parser (`ml_scorer/ml_weights.rs::parse_weights`),
 //! reached via the `keyhog_scanner::testing` facade. Migrated from an inline
 //! `#[cfg(test)]` block to satisfy the `ml_weights_no_inline_tests` gate (and
-//! `ml_weights_no_unwrap_expect` — the unwrap/expect hits were test-body only).
+//! `ml_weights_no_unwrap_expect`: the unwrap/expect hits were test-body only).
 
 use keyhog_scanner::testing::{
     ml_weights_embedded_bytes, ml_weights_total_f32_count,

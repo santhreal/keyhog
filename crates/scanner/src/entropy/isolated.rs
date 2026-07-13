@@ -29,7 +29,7 @@ pub(crate) fn has_isolated_bare_secret_candidate(
 ) -> bool {
     // Stream `text.lines()` straight into `.any()` instead of collecting a
     // `Vec<&str>` first (Law 7: this runs twice per coalesced chunk in
-    // scan_coalesced.rs — the temporary line vector was a pure per-call
+    // scan_coalesced.rs, the temporary line vector was a pure per-call
     // allocation). `text.lines()` yields exactly the same `&str` sequence the
     // collected slice did, so this is byte-for-byte equivalent.
     let threshold = isolated_bare_entropy_threshold(entropy_threshold);
@@ -88,7 +88,7 @@ fn line_has_isolated_bare_secret_candidate(
 /// [`MIXED_ALNUM_TOKEN_THRESHOLD`] floor unless the operator's Tier-A threshold
 /// is stricter than the blanket high floor, in which case the shared
 /// [`operator_entropy_override`] owner honors it verbatim. One owner for the
-/// `> HIGH` override decision, shared with `scanner::keyword_context` — the two
+/// `> HIGH` override decision, shared with `scanner::keyword_context`: the two
 /// sites used to inline divergent copies of the same test.
 fn isolated_bare_entropy_threshold(entropy_threshold: f64) -> f64 {
     operator_entropy_override(entropy_threshold)
@@ -319,7 +319,7 @@ fn visit_isolated_bare_candidates<'a>(
     // `isolated_bare_candidate` call. `isolated_bare_candidate` does
     // `line.trim().trim_matches(...)` + length + whitespace check, which is
     // ~3 byte passes over the full line. For multi-word lines (the common
-    // case in source code — ~99% of lines), the full-line check always
+    // case in source code: ~99% of lines), the full-line check always
     // returns None because the candidate has whitespace. Checking for
     // whitespace first lets us skip straight to per-token scanning, saving
     // ~2 byte passes per line (~24ms across 9 windows at 8 MiB).
@@ -398,7 +398,7 @@ fn isolated_bare_candidate_in_span(
     // giving max_entropy_run = 13 (`compute_value`), which is < 16. Without
     // this check, `symbolic_isolated_bare_candidate` would accept it (2
     // non-alphanumeric graphic chars ≥ 2), and the full Shannon entropy
-    // computation would run — only to reject it for low entropy.
+    // computation would run (only to reject it for low entropy).
     let mut max_ent_run = 0usize;
     let mut cur_ent_run = 0usize;
     for &b in candidate.as_bytes() {
@@ -417,7 +417,7 @@ fn isolated_bare_candidate_in_span(
     isolated_bare_candidate(candidate, min_len).map(|value| {
         // SAFETY: `value` is a subslice of `candidate` (via str::trim/trim_matches inside
         // `isolated_bare_candidate`), and `candidate` is `&line[candidate_start..candidate_end]`
-        // — a direct subslice of `line`. Therefore `value.as_ptr() >= line.as_ptr()` is
+        //: a direct subslice of `line`. Therefore `value.as_ptr() >= line.as_ptr()` is
         // guaranteed; subtraction cannot underflow.
         let offset = value.as_ptr() as usize - line.as_ptr() as usize;
         (value, offset)

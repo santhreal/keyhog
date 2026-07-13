@@ -1,4 +1,4 @@
-//! KH-GAP-140: CLI ships empty `property/` and `concurrent/` mods — STANDARD categories 3/5 missing.
+//! KH-GAP-140: CLI ships empty `property/` and `concurrent/` mods. STANDARD categories 3/5 missing.
 //!
 //! This is the watchdog for the orphaned-test-file class of rot: a directory under
 //! `tests/` may accumulate `#[test]`-bearing `.rs` files while its module manifest

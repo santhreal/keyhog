@@ -3,8 +3,8 @@
 //! The hw_probe threshold byte sizes now share a single `MIB` (= 1024 * 1024)
 //! multiplier (e.g. `GPU_BYTES_BREAKEVEN_SOLO = 1024 * MIB`). Iter 62's table
 //! test pinned the High-tier solo/pattern thresholds; this pins the Mid and Low
-//! tiers — the rows that carry the refactored `1024 * MIB` (low solo = 1 GiB),
-//! `512 * MIB` (mid solo / low min) consts — so the MIB-unit rewrite cannot
+//! tiers, the rows that carry the refactored `1024 * MIB` (low solo = 1 GiB),
+//! `512 * MIB` (mid solo / low min) consts, so the MIB-unit rewrite cannot
 //! silently change any value.
 
 use keyhog_scanner::hw_probe::gpu_routing_profiles;

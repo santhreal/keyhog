@@ -4,7 +4,7 @@
 //! glibc's `getaddrinfo` accepts 2- and 3-part dotted forms by packing the
 //! trailing field into the low bytes (`127.1` → `127.0.0.1`, `10.1` →
 //! `10.0.0.1`, `172.16.1` → `172.16.0.1`). The pre-fix string gate canonicalized
-//! only full dotted-quads and bare integers, so these slipped through — and on
+//! only full dotted-quads and bare integers, so these slipped through, and on
 //! the proxy verification path (which skips the post-resolution IP veto) the
 //! string gate is the *only* SSRF check. These cases must now resolve to their
 //! private/loopback targets and be blocked.

@@ -65,7 +65,7 @@ fn pathless_stdin_chunk_detects_aws_key_on_cpu_fallback() {
     assert_eq!(stdin_path, 1, "stdin-typed chunk with a path must detect");
     assert_eq!(
         stdin_nopath, 1,
-        "stdin chunk (no path) must detect the same AWS key as the file scan — a path-less \
+        "stdin chunk (no path) must detect the same AWS key as the file scan, a path-less \
          chunk is not a license to false-clean"
     );
 }

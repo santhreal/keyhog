@@ -149,7 +149,7 @@ fn every_detector_has_hostile_near_miss_twin() {
                     .map(|m| m.credential.as_ref())
                     .collect();
                 failures.push(format!(
-                    "{label}: near-miss fired on single chunk — text {:?} ({}) captured {:?}",
+                    "{label}: near-miss fired on single chunk, text {:?} ({}) captured {:?}",
                     text,
                     path.display(),
                     captured
@@ -170,7 +170,7 @@ fn every_detector_has_hostile_near_miss_twin() {
                         .map(|m| m.credential.as_ref())
                         .collect();
                     failures.push(format!(
-                        "{label}: near-miss fired across chunk boundary (split {split_idx}) — text {:?} ({}) captured {:?}",
+                        "{label}: near-miss fired across chunk boundary (split {split_idx}), text {:?} ({}) captured {:?}",
                         text,
                         path.display(),
                         captured

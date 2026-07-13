@@ -2,7 +2,7 @@
 //! (the `no_inline_tests_in_verifier_src` gate forbids inline `#[cfg(test)]`).
 //! Pins the SigV4 canonical-URI byte-exact percent-encoding contract: unreserved
 //! chars pass through, every other byte becomes `%XX` UPPERCASE hex, and the
-//! canonical query string sorts by the encoded pair — a single wrong byte here
+//! canonical query string sorts by the encoded pair, a single wrong byte here
 //! corrupts the canonical request and every downstream signature. Exercised
 //! through the `testing` facade so `aws_uri_encode`/`canonical_query_string`
 //! stay `pub(crate)`.
@@ -12,7 +12,7 @@ use keyhog_verifier::testing::{aws_uri_encode, canonical_query_string};
 /// SigV4 canonical-URI encoding is byte-exact by contract: unreserved chars
 /// pass through untouched, every other byte becomes `%XX` with UPPERCASE
 /// hex. These vectors pin that contract so the table-based encoder can never
-/// silently diverge from the old `format!("%{byte:02X}")` output — a single
+/// silently diverge from the old `format!("%{byte:02X}")` output, a single
 /// wrong byte here corrupts the canonical request and every downstream
 /// signature.
 #[test]
@@ -69,7 +69,7 @@ fn every_byte_matches_reference_uppercase_format() {
 #[test]
 fn canonical_query_string_sorts_by_encoded_pair_and_escapes_values() {
     // Routes through `aws_uri_encode` for both key and value, then sorts by
-    // the ENCODED pair and joins with `&` — the canonical query contract.
+    // the ENCODED pair and joins with `&`: the canonical query contract.
     let q = canonical_query_string(&[
         ("b".to_string(), "2".to_string()),
         ("a".to_string(), "1 ".to_string()), // trailing space -> %20

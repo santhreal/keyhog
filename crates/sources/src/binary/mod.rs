@@ -25,7 +25,7 @@ pub(crate) static GHIDRA_DEGRADED_TO_STRINGS: AtomicUsize = AtomicUsize::new(0);
 
 /// How many binaries could not be read at all for strings extraction
 /// (permission denied / I/O error) and were therefore dropped from the scan
-/// entirely — an UNKNOWN, never a clean file (Law 10). Surfaced loudly +
+/// entirely, an UNKNOWN, never a clean file (Law 10). Surfaced loudly +
 /// counted at each drop site.
 pub(crate) static BINARY_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
 
@@ -183,7 +183,7 @@ impl BinarySource {
             Ok(s) if s.success() && output_path.exists() => {
                 self.parse_decompiled_output(&output_path)
             }
-            // Law 10: NOT silent — the operator explicitly enabled Ghidra (deep
+            // Law 10: NOT silent, the operator explicitly enabled Ghidra (deep
             // decompiler analysis); a failure/timeout that silently degrades to
             // shallow strings-only would hide that the deeper analysis was skipped
             // (a recall loss the operator cannot see). Surface it LOUDLY on stderr
@@ -201,7 +201,7 @@ impl BinarySource {
                 };
                 eprintln!(
                     "keyhog: WARNING: Ghidra decompiler analysis failed for {} ({reason}{diagnostic}); \
-                     falling back to shallow strings-only extraction — encoded/split secrets \
+                     falling back to shallow strings-only extraction, encoded/split secrets \
                      this binary may carry will NOT be recovered. Re-run after fixing Ghidra to \
                      restore deep analysis.",
                     self.path.display()
@@ -222,18 +222,18 @@ impl BinarySource {
         // size check and the read an attacker who can write the decompiler's output
         // directory could swap the path for an over-cap file (defeating the cap) or
         // a symlink to an off-target file (redirecting the read). fstat'ing the fd
-        // we just opened — never re-stat'ing the path — closes that window, the same
+        // we just opened, never re-stat'ing the path, closes that window, the same
         // fd-not-path discipline `open_file_safe` applies (O_NOFOLLOW also refuses a
         // symlinked output path outright).
         let file = crate::filesystem::open_file_safe(output_path).map_err(SourceError::Io)?;
         let metadata = file.metadata().map_err(SourceError::Io)?;
         if metadata.len() > self.limits.binary_decompiled_bytes {
-            // Law 10: loud, not silent — the deep-analysis output was discarded
+            // Law 10: loud, not silent, the deep-analysis output was discarded
             // (too large to process) and we fall back to shallow strings. Same
             // recall-loss surfacing + count as the Ghidra-failure arm.
             eprintln!(
                 "keyhog: WARNING: Ghidra decompiled output for {} is {} bytes (> {} cap); \
-                 falling back to shallow strings-only extraction — encoded/split secrets may \
+                 falling back to shallow strings-only extraction, encoded/split secrets may \
                  be missed.",
                 self.path.display(),
                 metadata.len(),
@@ -243,7 +243,7 @@ impl BinarySource {
             return Ok(self.strings_chunks());
         }
 
-        // Reuse the descriptor opened above (positioned at offset 0) — no second
+        // Reuse the descriptor opened above (positioned at offset 0), no second
         // open of `output_path`, so there is no stat→open or open→open race.
         let reader = std::io::BufReader::new(file);
 

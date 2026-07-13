@@ -2,7 +2,7 @@
 //! `filesystem_read_missing_path_err`, which covers the missing-path arm). The
 //! documented contract (safe_read.rs): a file EXCEEDING the effective byte budget
 //! returns `ErrorKind::InvalidData` rather than being read into unbounded memory
-//! — the OOM / TOCTOU-grown-file guard (Law 7). `max_bytes == 0` is the "no caller
+//!, the OOM / TOCTOU-grown-file guard (Law 7). `max_bytes == 0` is the "no caller
 //! budget" sentinel: only the walker's hard 2 GiB ceiling applies, so a small
 //! file still reads. Prior coverage (the inline `#[cfg(all(test, unix))]` mod)
 //! exercised regular/FIFO/symlink/missing but NOT the size cap. The
@@ -21,7 +21,7 @@ fn write_file(bytes: &[u8]) -> (tempfile::TempDir, PathBuf) {
 }
 
 /// A file LARGER than the caller's budget is refused with `InvalidData`, never
-/// read into memory — the core OOM guard.
+/// read into memory (the core OOM guard).
 #[test]
 fn file_exceeding_max_bytes_is_rejected_with_invalid_data() {
     let (_dir, path) = write_file(&[b'x'; 100]);
@@ -35,7 +35,7 @@ fn file_exceeding_max_bytes_is_rejected_with_invalid_data() {
 }
 
 /// BOUNDARY: a file EXACTLY at the budget reads fully (the guard is `size > cap`,
-/// not `>=`) and returns the exact bytes — a legitimate at-limit file is not lost.
+/// not `>=`) and returns the exact bytes (a legitimate at-limit file is not lost).
 #[test]
 fn file_exactly_at_max_bytes_reads_all_bytes() {
     let (_dir, path) = write_file(&[b'y'; 100]);
@@ -56,7 +56,7 @@ fn file_under_max_bytes_reads_all_bytes() {
     assert_eq!(bytes, vec![b'z'; 100]);
 }
 
-/// `max_bytes == 0` is the "no caller budget" sentinel — only the hard 2 GiB
+/// `max_bytes == 0` is the "no caller budget" sentinel, only the hard 2 GiB
 /// ceiling applies, so a small file still reads. `0` must NOT mean "reject
 /// everything" / "read nothing".
 #[test]

@@ -1,7 +1,7 @@
 //! LANE sources-deep Law-10 regression: an S3 object the source DROPS (over the
 //! per-object byte cap, declared a binary content-type, or a body that fails the
 //! UTF-8 decode the content-type promised) must be COUNTED in the shared
-//! `skip_counts()` so end-of-scan coverage reflects the gap — never a silent
+//! `skip_counts()` so end-of-scan coverage reflects the gap, never a silent
 //! `tracing::debug!` + `return Ok(None)`.
 //!
 //! Before the fix `fetch_object_chunk` logged each of these drops at
@@ -36,7 +36,7 @@ static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 fn counter_guard() -> MutexGuard<'static, ()> {
     // These httpmock tests point the cloud endpoint at 127.0.0.1, which the
     // default cloud SSRF endpoint screen now refuses. Opt into the loud,
-    // default-off allowance for the lifetime of this (separate) test binary —
+    // default-off allowance for the lifetime of this (separate) test binary 
     // set while holding COUNTER_LOCK so it can never race a parallel test.
     let guard = COUNTER_LOCK
         .lock()

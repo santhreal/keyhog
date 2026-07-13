@@ -299,7 +299,7 @@ pub fn select_backend_verdict(
     select_backend_for_workload(caps, BackendWorkload::file(workload_bytes, pattern_count))
 }
 
-/// Batch-aware backend routing — a pure, hardware-only library router.
+/// Batch-aware backend routing (a pure, hardware-only library router).
 ///
 /// NOTE on the live CLI path: the shipped scan dispatcher does NOT call this;
 /// it uses the measured, parity-checked `MeasuredBackendRouter`
@@ -308,7 +308,7 @@ pub fn select_backend_verdict(
 /// `--autoroute-gpu` calibration eligibility (GPU region presence is slower
 /// than SIMD on keyhog's workload through the measured range). This function is the deterministic,
 /// side-effect-free dominance heuristic used by the `keyhog backend` report and
-/// by callers that want a backend decision without running the scanner — it
+/// by callers that want a backend decision without running the scanner, it
 /// shares [`cpu_tier_backend`] and [`gpu_could_engage`] with the live router so
 /// the CPU-tier verdict never diverges.
 ///

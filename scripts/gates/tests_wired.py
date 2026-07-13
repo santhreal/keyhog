@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Fail if any standalone test file in an enforced crate is a CI-orphan.
 
-Each crate's CI runs specific test targets — `cargo test -p <crate> --test
+Each crate's CI runs specific test targets: `cargo test -p <crate> --test
 all_tests` (+ a handful of explicit `--test <name>` steps and `--lib`). There is
 NO `cargo test --workspace`/nextest all-target run. So a top-level
 `crates/<crate>/tests/*.rs` compiles as its OWN separate integration-test target
 that runs ONLY if it is reachable from the `all_tests` module tree (as a
 `#[path]` include OR a plain `[pub] mod X;` sibling declaration in the crate-root
-`all_tests.rs` — both wire a sibling `tests/X.rs`) or is named by a `--test`
+`all_tests.rs`: both wire a sibling `tests/X.rs`) or is named by a `--test`
 step. Otherwise its `#[test]`s never run and the regression it guards can ship
 silently.
 
@@ -24,7 +24,7 @@ A file `crates/<crate>/tests/<stem>.rs` is wired iff its stem is:
     (the aggregator crate-root; a sibling `mod` there compiles the top-level
     file), OR
   * named by a `--test <stem>` flag in any .github/workflows/*.yml step, OR
-  * covered by an ALL-TARGETS step for the crate's package — a `cargo test
+  * covered by an ALL-TARGETS step for the crate's package, a `cargo test
     -p <pkg>` invocation with NO target-narrowing flag (`--test`/`--lib`/
     `--doc`/`--bin`/`--example`), which compiles and runs EVERY integration
     target (each top-level file as its own test binary). keyhog-sources uses
@@ -100,8 +100,8 @@ def logical_command_lines(text: str) -> list[str]:
 def runs_all_targets(pkg: str) -> bool:
     """True iff a workflow runs `cargo test -p <pkg>` with no target filter.
 
-    Such a step compiles + runs every integration target — each top-level
-    `tests/*.rs` as its own binary — so it wires them all without aggregation.
+    Such a step compiles + runs every integration target, each top-level
+    `tests/*.rs` as its own binary (so it wires them all without aggregation).
     Continuation lines are folded first (`logical_command_lines`) so a
     multi-line command whose `--test` flags sit on later lines is correctly
     recognised as NARROWED, not all-targets.
@@ -219,7 +219,7 @@ def self_test() -> int:
         ok = False
     # Backslash continuations fold into one logical line, so a multi-line
     # `cargo test -p x \\ --test y` reads as NARROWED (its --test is on line 2),
-    # not as an all-targets run — the bug that would vacuously wire every orphan
+    # not as an all-targets run, the bug that would vacuously wire every orphan
     # the moment scanner (whose strict-runner step is exactly this shape) joins
     # ENFORCED_CRATES.
     folded = logical_command_lines("cargo test -p keyhog-scanner \\\n  --test contracts_runner\nplain")

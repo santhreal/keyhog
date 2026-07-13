@@ -228,7 +228,7 @@ static SCANNER_ID_SEQ: AtomicU64 = AtomicU64::new(0);
 /// TLS). If more distinct threads scan a shard than the seed covered (the
 /// `--batch-pipeline` reader + fused-dispatch threads stack on top of rayon),
 /// `take_scratch` GROWS the pool on demand with a fresh per-database scratch.
-/// On-demand growth runs the identical precise scan — it never skips a shard
+/// On-demand growth runs the identical precise scan, it never skips a shard
 /// or returns a partial marked set, so there is no silent recall loss.
 struct Shard {
     db: BlockDatabase,
@@ -293,7 +293,7 @@ impl Drop for HsScanner {
 /// pattern's OWN case sensitivity (a plain homoglyph variant is
 /// case-sensitive; a detector regex is not) so the marked set matches the
 /// `regex` reference exactly, and it only needs to know "did pattern P match
-/// at all" — so `SINGLEMATCH` fires each pattern once and stops, removing the
+/// at all", so `SINGLEMATCH` fires each pattern once and stops, removing the
 /// broad-pattern callback storm that is why the phase-2 prefilter never used HS.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct HsCompileOpts<'a> {
@@ -306,7 +306,7 @@ pub(crate) struct HsCompileOpts<'a> {
     pub(crate) caseless: Option<&'a [bool]>,
     /// Override the patterns-per-shard target (else the compiled default). The
     /// sharded scan must hit EVERY shard per call, so the per-shard fixed
-    /// overhead is paid `shard_count` times — fine for the phase-1 position
+    /// overhead is paid `shard_count` times, fine for the phase-1 position
     /// scan, but it dominates the set-membership PREFILTER on tiny chunks.
     /// Pass `Some(usize::MAX)` to force a single database so `scan_each` pays
     /// the per-scan overhead exactly once.
@@ -314,7 +314,7 @@ pub(crate) struct HsCompileOpts<'a> {
     /// Set `HS_FLAG_UTF8`. The `regex` crate matches unicode classes as
     /// CODEPOINTS; the homoglyph fallback variants (`[sѕｓ]…`) are unicode.
     /// Without this flag HS treats the pattern as BYTES, expanding every
-    /// unicode class into a byte-alternation — a much larger, slower
+    /// unicode class into a byte-alternation, a much larger, slower
     /// automaton AND byte- (not codepoint-) match semantics. UTF8 mode
     /// matches the `regex` reference and keeps the automaton small.
     pub(crate) utf8: bool,
@@ -788,7 +788,7 @@ impl HsScanner {
     // reuses it lock-free from TLS. When more distinct threads scan a shard than
     // the seed covered (`--batch-pipeline` stacks a reader pool + fused-dispatch
     // threads on top of rayon), `take_scratch` GROWS the pool on demand with a
-    // fresh per-database scratch — the same precise scan, never a partial — so
+    // fresh per-database scratch, the same precise scan, never a partial, so
     // there is no exhaustion failure and no recall-losing degrade to fall into.
     // The `MAX_COMPILE_SHARDS` clamp only bounds the up-front preallocation
     // memory; growth handles any host whose true concurrency exceeds it.

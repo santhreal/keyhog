@@ -2,7 +2,7 @@
 //! validation.
 //!
 //! Two production surfaces are exercised end to end through the crate's public
-//! API and its `#[doc(hidden)]` testing facade — no production visibility is
+//! API and its `#[doc(hidden)]` testing facade, no production visibility is
 //! weakened for these tests:
 //!
 //!   * GitHub clone-URL / org / repo-name validation via
@@ -124,7 +124,7 @@ fn github_clone_url_embedded_credentials_rejected_and_secret_redacted() {
 
 #[test]
 fn github_clone_url_cross_host_rejected_names_expected_origin() {
-    // Host bound to github.com:443 — a look-alike host is a token-forwarding
+    // Host bound to github.com:443, a look-alike host is a token-forwarding
     // gadget and must be refused, naming the expected origin.
     let err = TestApi
         .validate_clone_url("https://evil.example.com/acme/repo.git")
@@ -138,7 +138,7 @@ fn github_clone_url_cross_host_rejected_names_expected_origin() {
 
 #[test]
 fn github_clone_url_non_default_port_rejected() {
-    // Same host, wrong port — `port_or_known_default()` yields 444 != 443, so
+    // Same host, wrong port: `port_or_known_default()` yields 444 != 443, so
     // the origin comparison fails.
     let err = TestApi
         .validate_clone_url("https://github.com:444/acme/repo.git")

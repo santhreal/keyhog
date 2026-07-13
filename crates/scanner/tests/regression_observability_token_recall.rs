@@ -1,5 +1,5 @@
 //! Observability/error-tracking token recall + precision lock: Sentry auth
-//! tokens — both the modern `sntrys_`-prefixed base64 form and the legacy
+//! tokens, both the modern `sntrys_`-prefixed base64 form and the legacy
 //! context-anchored 64-hex form. `sentry-auth-token` had only a single
 //! adversarial reference and no recall lock. Neither form is checksum-gated, so
 //! fabricated high-entropy fixtures surface; this pins both patterns across

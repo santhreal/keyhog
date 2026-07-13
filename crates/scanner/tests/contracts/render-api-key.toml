@@ -16,7 +16,7 @@ reason = "Standard env-var assignment."
 [[positive]]
 text = "Authorization: Bearer rnd_9X3kQp7VbT2hYRzNcMfWj4Dg"
 credential = "rnd_9X3kQp7VbT2hYRzNcMfWj4Dg"
-reason = "Bearer header — Render API auth shape."
+reason = "Bearer header: Render API auth shape."
 
 [[negative]]
 text = "rnd_short"

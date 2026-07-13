@@ -115,7 +115,7 @@ fn every_label_is_one_of_the_four_known_strings() {
 
 // ---------------------------------------------------------------------------
 // Caller agreement: startup_banner must embed the owner's label verbatim.
-// This is the anti-duplication lock — a second inline chain in banner.rs
+// This is the anti-duplication lock, a second inline chain in banner.rs
 // would drift from simd_label and fail here.
 // ---------------------------------------------------------------------------
 
@@ -169,7 +169,7 @@ fn banner_scalar_segment_is_exact() {
 
 #[test]
 fn banner_avx512_segment_is_exact() {
-    // Positive: high tier renders `SIMD: AVX-512` — same owner, full-string pin.
+    // Positive: high tier renders `SIMD: AVX-512`: same owner, full-string pin.
     let c = caps(true, true, false);
     assert_eq!(
         startup_banner(&c, 1, 1),

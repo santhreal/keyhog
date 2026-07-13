@@ -17,7 +17,7 @@ reason = "EG_CLIENT_ID prefix with 64 lowercase hex chars."
 
 [[negative]]
 text = "EPIC_API_KEY=short"
-reason = "Body too short — pattern requires 32-64 lowercase hex chars."
+reason = "Body too short (pattern requires 32-64 lowercase hex chars)."
 
 [[evasion]]
 text = "epic_games_api_key = 7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"

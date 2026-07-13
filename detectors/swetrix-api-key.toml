@@ -19,7 +19,7 @@ group = 1
 # into two patterns. In that alternation the 32-hex value was capture group 1 in
 # the first branch but group 2 in the second, so when the SECOND branch matched
 # (swetrix before the header) group 1 never participated and the extractor fell
-# back to the whole match — a garbage credential (swetrix…X-Api-Key…<key>) that
+# back to the whole match, a garbage credential (swetrix…X-Api-Key…<key>) that
 # then failed the checksum/entropy checks and silently dropped a real key. Each
 # pattern below carries a single group=1 that always participates.
 [[detector.patterns]]

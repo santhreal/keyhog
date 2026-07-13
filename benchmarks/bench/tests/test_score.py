@@ -95,7 +95,7 @@ def test_full_path_with_no_record_resolves_empty_not_same_basename(tmp_path: pat
     record sharing its basename. The same-basename fallback returning the whole
     basename set for a full path is what crashed `ml/harvest_corpus.py`'s
     exact-path guard on CredData, where 60+ files share `b3356305.md` and one
-    lives in a snapshot whose other files ARE labeled — the finding on the
+    lives in a snapshot whose other files ARE labeled, the finding on the
     unlabeled file spuriously "matched 69 corpus files". Regression for the
     harvest ambiguous-path crash."""
     records = [
@@ -129,7 +129,7 @@ def test_full_path_with_no_record_resolves_empty_not_same_basename(tmp_path: pat
 
 def test_per_category_tp_fn_split_and_conservation(tmp_path: pathlib.Path):
     # Ported from the retired tools/secretbench/scoring/test_attribution.py
-    # ::test_per_category_split — the per-category TP/FN split plus the
+    # ::test_per_category_split: the per-category TP/FN split plus the
     # conservation invariant (every overall cell is exactly the sum of its
     # per-category cells), which the other score tests don't assert.
     root = tmp_path

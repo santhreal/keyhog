@@ -62,7 +62,7 @@ struct GpuRegionPerfPoint {
 /// integration test; the gate reads the source and evaluates the constant's
 /// right-hand side instead. The RHS is a `*`-product of terms where each term is
 /// either a `u64` literal (with optional `_` digit separators) OR the name of
-/// another `u64` constant defined in the same file — most importantly the shared
+/// another `u64` constant defined in the same file, most importantly the shared
 /// `MIB` unit. Named terms are resolved recursively against the same source.
 ///
 /// This is what makes the gate robust to unit-constant refactors: writing a
@@ -271,8 +271,8 @@ fn fixed_high_tier_threshold_does_not_treat_a_warm_trace_as_cold_autoroute_proof
 // `eval_threshold_const` is the part that silently broke CI when a threshold was
 // refactored from `128 * 1024 * 1024` to `128 * MIB`: the old literal-only parser
 // panicked on the `MIB` term. These tests pin every term form the evaluator must
-// handle — literals, underscores, named-unit resolution, visibility prefixes,
-// nesting — plus the real constant values, so the gate's own parser can never
+// handle, literals, underscores, named-unit resolution, visibility prefixes,
+// nesting, plus the real constant values, so the gate's own parser can never
 // regress unnoticed the way it just did.
 
 const MIB_LITERAL: u64 = 1024 * 1024;

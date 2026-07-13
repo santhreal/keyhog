@@ -13,7 +13,7 @@
 //!   4. otherwise compacted keyword ends with `key` or `secret` => that result.
 //!
 //! The helper is live (the generic bridge calls it) but had no direct
-//! exact-value test — only a comment in the CredData recall regression. Pin the
+//! exact-value test, only a comment in the CredData recall regression. Pin the
 //! whole tree, especially the `license_key` exclusion vs the `vendor_api_key`
 //! ends-with generalization, and that `ends_with` is a suffix not a prefix.
 
@@ -92,7 +92,7 @@ const STRONG_FAMILY: &[&str] = &[
 /// Separators the compacting comparison drops (plus the empty joiner = no sep).
 const SEPS: &[&str] = &["_", "-", ".", ""];
 
-/// Suffixes that are NOT credential anchors — a keyword ending in one rejects.
+/// Suffixes that are NOT credential anchors (a keyword ending in one rejects).
 const NON_ANCHOR_SUFFIXES: &[&str] = &["vault", "name", "id", "value", "host"];
 
 /// Join a word's chars with `sep` (e.g. `apikey` + `_` → `a_p_i_k_e_y`).
@@ -146,7 +146,7 @@ proptest! {
         prop_assert!(strong_hex(&keyword, value));
     }
 
-    /// `licensekey` is explicitly excluded BEFORE the suffix fallback — any
+    /// `licensekey` is explicitly excluded BEFORE the suffix fallback, any
     /// case/separator spelling rejects, despite ending in `key`.
     #[test]
     fn licensekey_variants_are_excluded(si in 0usize..SEPS.len(), upper in any::<bool>()) {
@@ -156,7 +156,7 @@ proptest! {
     }
 
     /// A compact form ending in `key`/`secret` anchors (unless it is exactly
-    /// `licensekey`) — the vendor-prefixed generalization.
+    /// `licensekey`) (the vendor-prefixed generalization).
     #[test]
     fn compact_ends_with_key_or_secret_anchors(
         pre in "[a-z]{1,10}",
@@ -168,7 +168,7 @@ proptest! {
         prop_assert!(strong_hex(&keyword, H32));
     }
 
-    /// A keyword whose compact form ends in a non-anchor token rejects — `ends_with`
+    /// A keyword whose compact form ends in a non-anchor token rejects. `ends_with`
     /// is a suffix test, and these suffixes are neither `key` nor `secret`.
     #[test]
     fn non_anchor_suffix_keywords_reject(

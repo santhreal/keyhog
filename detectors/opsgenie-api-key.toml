@@ -8,7 +8,7 @@ id = "opsgenie-api-key"
 name = "OpsGenie API Key"
 service = "opsgenie"
 severity = "critical"
-# "api_key" removed: over-broad generic prefilter the regex does NOT need — every
+# "api_key" removed: over-broad generic prefilter the regex does NOT need, every
 # pattern self-anchors on the service name (kept), which is present in any real
 # match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.
 keywords = ["GenieKey", "OPSGENIE", "opsgenie", "api-key"]

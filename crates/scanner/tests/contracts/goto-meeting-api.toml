@@ -24,7 +24,7 @@ reason = "Keyword context without valid credential body."
 [[evasion]]
 text = "GOTO_MEETING_API_KEY=\"JodFX1GOZrhrztAQpiN0k8s0Rc3VgTg9abcd\""
 credential = "JodFX1GOZrhrztAQpiN0k8s0Rc3VgTg9abcd"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

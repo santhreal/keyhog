@@ -9,7 +9,7 @@
 //!   * MIN_PERCENT_ESCAPES   = 4  `%XX` escapes
 //!   * MIN_BACKSLASH_ESCAPES = 2  `\u`/`\x` escapes
 //!
-//! Every assertion pins an exact bool at the on/off boundary — never a fuzzy
+//! Every assertion pins an exact bool at the on/off boundary, never a fuzzy
 //! "looks encoded" check. Host-independent: a pure allocation-free byte scan,
 //! no accelerator involved.
 #![cfg(feature = "decode")]

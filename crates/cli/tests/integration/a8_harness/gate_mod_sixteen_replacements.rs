@@ -3,11 +3,11 @@
 //! Replaces a brittle `assert_eq!(count, 16)` magic-constant tripwire (which
 //! went RED the moment two legitimate gates were added, even though both were
 //! correctly wired) with the invariant the count was a proxy for:
-//!   1. WIRING — every `tests/gate/*.rs` file (except `mod.rs`) is declared as a
+//!   1. WIRING, every `tests/gate/*.rs` file (except `mod.rs`) is declared as a
 //!      `mod <name>;` in `tests/gate/mod.rs`. An unwired gate file is a silently
 //!      dead test; a dangling `mod` would already fail to compile. This never
 //!      breaks when a real gate is added, so it needs no maintenance bump.
-//!   2. RETENTION — the LR1-A8 migration created 16 replacement gates; that
+//!   2. RETENTION, the LR1-A8 migration created 16 replacement gates; that
 //!      baseline set may never be silently dropped. New gates only raise the
 //!      count, so the floor never needs bumping for legitimate additions.
 

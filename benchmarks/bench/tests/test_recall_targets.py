@@ -1,15 +1,15 @@
-"""CredData recall TARGET-SPEC worklist — the failing recall gaps, named.
+"""CredData recall TARGET-SPEC worklist (the failing recall gaps, named).
 
 Distinct from ``test_creddata_recall_matrix`` (a per-secret REGRESSION ratchet
 pinned to today's measured 2504 and therefore GREEN). This module encodes the
 TARGET keyhog must reach but does NOT today, so every assertion here is RED
 until candidate generation closes the gap. Each red is a tracked recall finding
-(Law 6 — a failing contract test is the worklist), never a decoration and never
+(Law 6, a failing contract test is the worklist), never a decoration and never
 weakened to pass (Law 9).
 
 Two target tiers, both scored through the SAME ``KeyhogScanner`` adapter,
 ``CredDataCorpus`` slicing, and ``score.overlap``/``found_record_ids`` truth
-rule the leaderboard uses — so a red here is bit-identical to a leaderboard
+rule the leaderboard uses, so a red here is bit-identical to a leaderboard
 false negative, not a separate yardstick:
 
 1. **Overall recall >= 0.90.** CredData recall is ~0.18 today (2504 of 13918
@@ -27,7 +27,7 @@ false negative, not a separate yardstick:
 
    ``keyword-anchored`` is a CROSS-cutting class (any shape whose value is
    preceded by a credential keyword on its line), so it overlaps the shape
-   classes — it isolates the "a human wrote ``api_key = <value>`` and we still
+   classes: it isolates the "a human wrote ``api_key = <value>`` and we still
    missed it" failure mode that the generation gap is most accountable for.
 
 LOUD on absence (never a silent green):
@@ -37,7 +37,7 @@ LOUD on absence (never a silent green):
 
 The floors are intentionally the PRODUCT targets, not today's measurements: a
 ratchet pins what we have, a target spec pins what we owe. When generation lands
-and a class clears its floor, that class flips green here without any edit — the
+and a class clears its floor, that class flips green here without any edit, the
 worklist shrinks by itself.
 """
 
@@ -65,7 +65,7 @@ _POSITIVES = [r for r in _RECORDS if r.label and not r.ignore]
 # ── miss-class shape classification (mirrors creddata_miss_analysis._shape) ──
 # Each ground-truth value is bucketed by the SAME structural rule the miss
 # ledger uses, so a class floor here is measured against the exact shape pool
-# the surfacing work targets — no second, drifting definition of "what a hex64
+# the surfacing work targets, no second, drifting definition of "what a hex64
 # secret is".
 
 _UUID = re.compile(
@@ -81,7 +81,7 @@ _JWT = re.compile(
     r"eyJ[A-Za-z0-9_-]{6,}\.eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{4,}"
 )
 
-# A credential keyword immediately left of the value's `=`/`:` assignment — the
+# A credential keyword immediately left of the value's `=`/`:` assignment, the
 # same anchor ``creddata_miss_analysis.KEYKW`` uses, so the keyword-anchored
 # class here is the exact pool the keyword-bridge surfacing work is graded on.
 _KEYKW = re.compile(
@@ -112,7 +112,7 @@ def _shape_class(value: str) -> str:
 
 def _line_for(rec) -> str:
     """The on-disk source line a record's value sits on, latin-1 decoded so
-    arbitrary source bytes never raise. '' if the file/line is unreadable —
+    arbitrary source bytes never raise. '' if the file/line is unreadable 
     such a record simply can't be keyword-classified (counts as no-keyword)."""
     try:
         path = _CORPUS.file_root / rec.file_path
@@ -157,7 +157,7 @@ def recalled_ids():
     """Run keyhog ONCE over the full CredData corpus and return the set of
     positive record ids whose secret was surfaced. Zero findings, or a hit-set
     that disagrees with the canonical scorer, is a harness failure (wrong/broken
-    binary) and fails LOUD — it must never read as a recall result, pass OR
+    binary) and fails LOUD, it must never read as a recall result, pass OR
     fail, off a binary that never ran correctly."""
     binary = resolve_keyhog_binary()
     if binary is None:
@@ -171,7 +171,7 @@ def recalled_ids():
 
     if not findings:
         pytest.fail(
-            f"keyhog ({binary}) produced ZERO findings over CredData — a harness "
+            f"keyhog ({binary}) produced ZERO findings over CredData, a harness "
             f"failure (wrong binary / corpus path / scan error), not a recall "
             f"result. scan_root={_CORPUS.scan_root}")
 
@@ -179,7 +179,7 @@ def recalled_ids():
     tp = score(_RECORDS, findings, _CORPUS.file_root).overall.tp
     assert len(found) == tp, (
         f"recall hit-set ({len(found)}) disagrees with the canonical scorer's "
-        f"TP ({tp}) — found_record_ids drifted from score(); fix before trusting "
+        f"TP ({tp}), found_record_ids drifted from score(); fix before trusting "
         f"any recall target verdict")
     return found
 
@@ -199,7 +199,7 @@ _OVERALL_RECALL_TARGET = 0.90
 @pytest.mark.skipif(
     not _AVAILABLE,
     reason="CredData corpus not on disk (benchmarks/corpora/creddata/CredData; "
-           "run `make creddata`) — recall targets cannot be scored")
+           "run `make creddata`), recall targets cannot be scored")
 def test_creddata_overall_recall_meets_target(recalled_ids):
     hit = len(recalled_ids)
     total = len(_POSITIVES)
@@ -209,11 +209,11 @@ def test_creddata_overall_recall_meets_target(recalled_ids):
         f"positives) is below the product target {_OVERALL_RECALL_TARGET:.2f}. "
         f"This is the headline recall gap: {total - hit} real, human-reviewed "
         f"credentials the shipped `keyhog scan` does not surface. RED until "
-        f"candidate generation closes the gap — do NOT lower this target (Law 9).")
+        f"candidate generation closes the gap, do NOT lower this target (Law 9).")
 
 
 # ── TARGET 2: per-miss-class recall floors ─────────────────────────────
-# (class, floor, min_pool) — min_pool guards against grading a class that is
+# (class, floor, min_pool), min_pool guards against grading a class that is
 # too small to be a real target on this corpus revision (none are, today; the
 # guard keeps the spec honest if a future CredData pin shrinks a pool).
 
@@ -227,7 +227,7 @@ _CLASS_FLOORS: list[tuple[str, float, int]] = [
 
 @pytest.mark.skipif(
     not _AVAILABLE,
-    reason="CredData corpus not on disk — per-class recall floors cannot run")
+    reason="CredData corpus not on disk, per-class recall floors cannot run")
 @pytest.mark.parametrize("klass,floor,min_pool", _CLASS_FLOORS,
                          ids=[c for c, _, _ in _CLASS_FLOORS])
 def test_creddata_miss_class_recall_floor(klass, floor, min_pool, recalled_ids):
@@ -235,7 +235,7 @@ def test_creddata_miss_class_recall_floor(klass, floor, min_pool, recalled_ids):
     assert len(recs) >= min_pool, (
         f"miss-class {klass!r} has only {len(recs)} value-anchored positives on "
         f"this CredData pin (< {min_pool}); too small to grade as a recall "
-        f"target — re-bucket or bump the pin, do not silently pass.")
+        f"target, re-bucket or bump the pin, do not silently pass.")
     hit, total, recall = _class_recall(recs, recalled_ids)
     assert recall >= floor, (
         f"CredData {klass!r} recall {recall:.4f} ({hit}/{total}) is below the "
@@ -256,11 +256,11 @@ _KEYWORD_ANCHORED_FLOOR = 0.85
 
 @pytest.mark.skipif(
     not _AVAILABLE,
-    reason="CredData corpus not on disk — keyword-anchored floor cannot run")
+    reason="CredData corpus not on disk, keyword-anchored floor cannot run")
 def test_creddata_keyword_anchored_recall_floor(recalled_ids):
     recs = _KEYWORD_ANCHORED
     assert len(recs) >= 100, (
-        f"keyword-anchored pool is only {len(recs)} positives (< 100) — too "
+        f"keyword-anchored pool is only {len(recs)} positives (< 100), too "
         f"small to grade; the keyword classifier or corpus pin changed.")
     hit, total, recall = _class_recall(recs, recalled_ids)
     assert recall >= _KEYWORD_ANCHORED_FLOOR, (
@@ -269,4 +269,4 @@ def test_creddata_keyword_anchored_recall_floor(recalled_ids):
         f"human wrote directly behind a credential keyword "
         f"(`api_key = <value>`); {total - hit} of them are missed. That is the "
         f"clearest candidate-generation debt the keyword bridge owes. RED until "
-        f"the bridge surfaces them — do NOT weaken this floor (Law 9).")
+        f"the bridge surfaces them, do NOT weaken this floor (Law 9).")

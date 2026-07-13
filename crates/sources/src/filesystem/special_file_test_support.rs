@@ -2,7 +2,7 @@
 //!
 //! The filesystem read boundary (`open_file_safe`) and every entry point above
 //! it must refuse non-regular files (FIFO, socket, device, symlink) WITHOUT
-//! blocking — a plain `open(O_RDONLY)` of a writer-less FIFO hangs forever.
+//! blocking (a plain `open(O_RDONLY)` of a writer-less FIFO hangs forever).
 //! Several test modules under `crate::filesystem` assert that contract (the read
 //! primitive in `read::tests`, the ZIP archive opens in `extract::archive`), so
 //! the FIFO fabrication + no-hang watchdog live here ONCE instead of being copied

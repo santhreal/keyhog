@@ -328,7 +328,7 @@ impl ScanOrchestrator {
                 };
                 crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
                 // Count as GPU-scanned only if routed to GPU AND no runtime degrade
-                // was recorded while dispatching this batch (see snapshot above) —
+                // was recorded while dispatching this batch (see snapshot above) 
                 // a degraded batch actually ran on CPU/SIMD.
                 if gpu_degrade_before
                     .is_some_and(|before| scanner_ref.gpu_degrade_count() == before)

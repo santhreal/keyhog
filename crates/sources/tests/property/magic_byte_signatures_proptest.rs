@@ -15,7 +15,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// No classifier may panic on ANY byte string (incl. empty and headers
-    /// truncated mid-field) — they gate every file read, so a panic here is a
+    /// truncated mid-field), they gate every file read, so a panic here is a
     /// scan-crashing DoS on a crafted file.
     #[test]
     fn classifiers_never_panic_on_arbitrary_bytes(
@@ -32,7 +32,7 @@ proptest! {
 
     /// bzip2 is true IFF the input is exactly `BZh` followed by an ASCII digit
     /// `1..=9` (the block-size). Sweeping the 4th byte across all 256 values pins
-    /// the exact digit range — `0`, `:`, letters, and control bytes all reject.
+    /// the exact digit range: `0`, `:`, letters, and control bytes all reject.
     #[test]
     fn bzip2_header_true_iff_block_size_digit_one_to_nine(
         b in any::<u8>(),
@@ -44,7 +44,7 @@ proptest! {
         prop_assert_eq!(has_bzip2_header_for_test(&input), expected);
     }
 
-    /// A positive BMP result IMPLIES the `BM` prefix and >= 14 bytes — the gate
+    /// A positive BMP result IMPLIES the `BM` prefix and >= 14 bytes, the gate
     /// can never fire without its structural precondition (no magic-less FP).
     #[test]
     fn bmp_true_implies_bm_prefix_and_min_len(

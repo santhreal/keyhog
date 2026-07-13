@@ -1,4 +1,4 @@
-//! R5-D1/R5-D2 dogfood stress regressions — CLI surface / worst-case contracts.
+//! R5-D1/R5-D2 dogfood stress regressions. CLI surface / worst-case contracts.
 
 pub mod concurrent_scans_no_corrupt_json;
 pub mod detectors_help_detector_count_drift;

@@ -1,7 +1,7 @@
 //! `fn`-boundary / test-function look-back contract for `context/inference.rs`,
 //! reached via the `keyhog_scanner::testing` facade. Migrated out of an inline
 //! `#[cfg(test)] mod fn_boundary_tests` block to satisfy the scanner folder
-//! contract (KH-GAP-129 `context_inference_has_no_cfg_test_literal_in_src` — the
+//! contract (KH-GAP-129 `context_inference_has_no_cfg_test_literal_in_src`: the
 //! inline block put a literal `#[cfg(test)]` in src that tripped the gate).
 
 use keyhog_scanner::testing::context::{

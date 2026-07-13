@@ -1,6 +1,6 @@
 # Docs: https://docs.cursor.com/ (API keys issued for the Cursor agent/API)
 # Format: `key_` followed by exactly 64 hex chars (a 256-bit token).
-# Added: home-turf bench (DET-17) — cursor fixtures were false-negatives.
+# Added: home-turf bench (DET-17) (cursor fixtures were false-negatives).
 # Precision: `key_` is a common variable name, but `key_` immediately
 # followed by EXACTLY 64 hex chars (and a word boundary) is a specific,
 # high-entropy shape that ordinary identifiers do not take.

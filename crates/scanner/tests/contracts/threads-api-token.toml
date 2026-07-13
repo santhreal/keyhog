@@ -19,15 +19,15 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "threadid=\":   \"   :=  '   ==\"'  =::      '\"       ' \"'\"  \"    =    :   :          '  '= '   \"  \" \"   \": YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "threadid=\":   \"   :=  '   ==\"'  =::      '\"       ' \"'\"  \"    =    :   :          '  '= '   \"  \" \"   \": 7K4lqEXAMPLEEXAMPLExGZLH"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 # ---- EVASION (adversarial) -----------------------------------------
 
 [[evasion]]
 text = "# access token leaked to log, rotate: THREADS_ACCESS_TOKEN=7K4lq8YH2dZbHWOzNLjPPa3mCnnalyOSJlEGrPQvurQBHIAR9Y6G1D5CEsBOITC7AbByJxV8ZjRQuFECSQ5GnqrGsRSawQJxGZLH"
 credential = "7K4lq8YH2dZbHWOzNLjPPa3mCnnalyOSJlEGrPQvurQBHIAR9Y6G1D5CEsBOITC7AbByJxV8ZjRQuFECSQ5GnqrGsRSawQJxGZLH"
-reason = "Commented-out leaked token; the 100-char value surfaces (caught by the overlapping wordpress-api-token detector after value-dedup — same credential, valid catch)."
+reason = "Commented-out leaked token; the 100-char value surfaces (caught by the overlapping wordpress-api-token detector after value-dedup (same credential, valid catch))."

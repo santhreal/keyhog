@@ -6,7 +6,7 @@ use crate::types::ScannerPreprocessedText;
 /// True iff the value's own line carries a STRONG credential keyword anchor
 /// (`api_key`/`secret`/`token`/`password`/… immediately before a `=`/`:`),
 /// i.e. the value is the right-hand side of a direct `KEYWORD = <value>`
-/// assignment — not merely on a line within ±1 of a credential keyword. The
+/// assignment, not merely on a line within ±1 of a credential keyword. The
 /// canonical-shape generation lift is restricted to this surface so the model
 /// only ever arbitrates a UUID/hex that is genuinely the assigned secret.
 pub(super) fn value_line_has_same_line_credential_keyword(

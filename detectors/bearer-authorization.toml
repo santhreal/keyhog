@@ -5,7 +5,7 @@
 #   labeled positives whose value is the opaque token following the `Bearer`
 #   scheme keyword (`Authorization: Bearer <token>`, `- Bearer <40-hex>`,
 #   `"Bearer r7yzGzH0SW5Xtx1lMFQ5xA6pCS0fZLJlG8P6"`). keyhog was WHOLLY BLIND to
-#   this class (recalled 0 of 75) — there was a `basic-auth-credentials` detector
+#   this class (recalled 0 of 75), there was a `basic-auth-credentials` detector
 #   for the sibling `Basic <base64>` scheme but none for `Bearer`, and the
 #   dominant token shape is a 36-40 char hex/alphanumeric string that the generic
 #   entropy/shape pipeline suppresses as a bare hash digest. The `Bearer` keyword
@@ -13,7 +13,7 @@
 #   surfaces the token that the hash-digest suppression otherwise drops.
 #
 # Why it is STRONG-anchor (structural-password-slot family):
-#   The token lives in a structurally fixed slot — after the `Bearer` scheme
+#   The token lives in a structurally fixed slot, after the `Bearer` scheme
 #   keyword and whitespace. We capture ONLY that slot (group 1). The real tokens
 #   are high-entropy but their SHAPE (bare 40-hex, 32-char base64url) is exactly
 #   what the Tier-B hash-digest / random-byte arms suppress; a JWT bearer
@@ -22,7 +22,7 @@
 #   the suppression pipeline skips the Tier-B randomness/digest floor
 #   (`apply_tier_b=false`) via this detector's `structural_password_slot`, and
 #   placeholder precision is restored WITHOUT that floor by:
-#     * the value is `{16,}` — short placeholders (`token`, `secret`) never match;
+#     * the value is `{16,}`: short placeholders (`token`, `secret`) never match;
 #     * the regex char class excludes `<` `>`, so `Bearer <token>` templates and
 #       `Bearer $TOKEN` markers never match (the `$` / `<` breaks the token run);
 #     * the `dictionary_word_placeholder` gate (api.rs, structural-slot-only)
@@ -47,9 +47,9 @@ keywords = ["Bearer", "bearer"]
 structural_password_slot = true
 
 [[detector.patterns]]
-# `Bearer <token>` — the scheme keyword, whitespace, then a 16+-char token.
+# `Bearer <token>`: the scheme keyword, whitespace, then a 16+-char token.
 #   - `\b` whole-word on `bearer` so `unbearable`/`overbearing` do not trip it.
-#   - value: `[A-Za-z0-9._~+/\-]{16,}` — the RFC 6750 `token68` character set
+#   - value: `[A-Za-z0-9._~+/\-]{16,}`: the RFC 6750 `token68` character set
 #     (base64url + JWT `.` separators); `<` `>` `$` are absent from the class so
 #     `Bearer <token>` / `Bearer $TOKEN` placeholders never match. The `16` floor
 #     drops the short scheme placeholders (`token`, `secret`).
@@ -57,7 +57,7 @@ regex = '''(?i)\bbearer\s+([A-Za-z0-9._~+/\-]{16,})'''
 description = "opaque token following the Bearer authorization scheme keyword"
 group = 1
 
-# No verify block — generic detector, protected resource is host-specific.
+# No verify block (generic detector, protected resource is host-specific).
 
 [[detector.tests]]
 test_positive = "Authorization: Bearer a3f9c1e07b42d85f6098ac1de2f3b4c5d6e7f809"

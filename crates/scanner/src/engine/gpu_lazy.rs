@@ -7,9 +7,9 @@
 //!
 //! Two parallel GPU dispatch builders that once lived here were removed as dead
 //! routes (DEDUP / INSUFFICIENCY):
-//!   * `ac_gpu_program` (a `classic_ac_bounded_ranges` `vyre::Program`) — had
+//!   * `ac_gpu_program` (a `classic_ac_bounded_ranges` `vyre::Program`), had
 //!     zero callers; `GpuLiteralSet` is the single on-GPU AC trigger engine.
-//!   * `rule_pipeline` (the retired `RulePipeline` regex-NFA engine) — its
+//!   * `rule_pipeline` (the retired `RulePipeline` regex-NFA engine), its
 //!     `scan` was never invoked. The cached wrapper, duplicate backend identity,
 //!     diagnostic builder, and fixed-size aliases were deleted as dead surface;
 //!     only adaptive byte-budget sizing remains in [`super::gpu_input_budget`].

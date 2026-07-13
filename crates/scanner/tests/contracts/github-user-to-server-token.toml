@@ -15,7 +15,7 @@ reason = "Token embedded in a Bearer authorization header."
 
 [[negative]]
 text = "ghu_short"
-reason = "Body too short — only 5 chars after ghu_ prefix, regex requires 36."
+reason = "Body too short (only 5 chars after ghu_ prefix, regex requires 36)."
 
 [[evasion]]
 text = "GITHUB_USER_TO_SERVER=ghu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S3cJfHh"

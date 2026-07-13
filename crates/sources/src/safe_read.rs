@@ -14,7 +14,7 @@ use std::path::Path;
 /// hang the caller forever), bounded by a byte cap.
 ///
 /// `max_bytes` is the caller's size budget; `0` means "no caller budget, only
-/// the walker's hard 2 GiB TOCTOU sanity ceiling" — a file exceeding the
+/// the walker's hard 2 GiB TOCTOU sanity ceiling", a file exceeding the
 /// effective cap returns [`std::io::ErrorKind::InvalidData`] rather than being
 /// read into unbounded memory. A file that vanished between a caller's event
 /// and this read surfaces as [`std::io::ErrorKind::NotFound`].
@@ -31,7 +31,7 @@ mod tests {
     use std::io::ErrorKind;
 
     // A regular file reads back byte-for-byte (the guarded read is a drop-in
-    // replacement for `std::fs::read` on the happy path — no recall loss).
+    // replacement for `std::fs::read` on the happy path (no recall loss)).
     #[test]
     fn reads_a_regular_file_exactly() {
         let dir = tempfile::tempdir().unwrap();
@@ -67,7 +67,7 @@ mod tests {
         let link = symlink_to(dir.path(), "link", &secret);
         let result = read_file_safe_bytes(&link, 0);
         assert!(result.is_err(), "a symlink must be refused (O_NOFOLLOW)");
-        // The target is a normal file and reads fine — so the refusal above is
+        // The target is a normal file and reads fine, so the refusal above is
         // the link, not an unreadable target.
         assert_eq!(
             read_file_safe_bytes(&secret, 0).unwrap(),

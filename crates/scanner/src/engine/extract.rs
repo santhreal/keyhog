@@ -216,7 +216,7 @@ impl CompiledScanner {
             // `resolve_value_shaped_group` so the heuristic has one definition.
             // Bind `credential` once from the resolved range: the heuristic always
             // returns a range, so a pre-resolution slice would be a dead store
-            // (overwritten before any read) — exactly the `unused_assignments`
+            // (overwritten before any read), exactly the `unused_assignments`
             // warning this single binding eliminates.
             let credential_range = super::scan_filters::resolve_value_shaped_group(
                 &locs,

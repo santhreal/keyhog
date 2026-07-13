@@ -123,8 +123,8 @@ fn fine_grained_segment_length_boundaries_are_exact() {
 // validators over ARBITRARY entropy bodies (not the fixed `"a".repeat`), using the
 // real `npm_expected_checksum_for_test` = base62(crc32(body),6) checksum owner. For
 // the classic PAT: any 30-char alnum body with its correct checksum is "valid";
-// any single checksum-char change (kept alnum, so the compare — not the charset
-// gate — decides) is "invalid"; a <36 payload is "not-applicable" and a >36 alnum
+// any single checksum-char change (kept alnum, so the compare, not the charset
+// gate, decides) is "invalid"; a <36 payload is "not-applicable" and a >36 alnum
 // payload is "invalid" (the length policy split). For the fine-grained PAT: a
 // correct 22-char-left / 53+6-char-right token is "valid", and any left length !=
 // 22 is "invalid". Traced against GithubClassic/FineGrainedPatValidator. No
@@ -144,7 +144,7 @@ proptest! {
     }
 
     /// Changing any single checksum char (to a different alnum char) breaks the
-    /// checksum compare — "invalid", never a false "valid".
+    /// checksum compare: "invalid", never a false "valid".
     #[test]
     fn classic_any_checksum_char_change_is_invalid(
         body in "[A-Za-z0-9]{30}",

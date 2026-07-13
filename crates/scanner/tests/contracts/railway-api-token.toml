@@ -20,7 +20,7 @@ reason = "Body is not a valid UUID v4 shape."
 [[evasion]]
 text = "Authorization: Bearer backboard.railway=9f3e5b8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
 credential = "9f3e5b8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
-reason = "Backboard subdomain context — keyword `backboard.railway` listed in detector."
+reason = "Backboard subdomain context (keyword `backboard.railway` listed in detector)."
 
 [perf]
 fixture_bytes = 4096

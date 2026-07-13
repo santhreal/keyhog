@@ -3,7 +3,7 @@
 //!
 //! When a detector matches a run of hex that is actually a SUBSTRING of a longer
 //! contiguous hex digest (a SHA-1 = 40 hex, SHA-256 = 64 hex split across the
-//! match boundary), that match is a false positive — the bytes are a hash, not a
+//! match boundary), that match is a false positive, the bytes are a hash, not a
 //! credential. This gate suppresses it, but ONLY when every precondition holds,
 //! so it can never swallow a real standalone token. The exact truth table is
 //! pinned here (an unknown detector id → default `min_len` 16, deterministic
@@ -135,7 +135,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// INVARIANT (suppress): a credential of >= 16 hex chars taken as a strict
-    /// interior slice of a hex run of length >= 40 is ALWAYS a fragment — it has
+    /// interior slice of a hex run of length >= 40 is ALWAYS a fragment, it has
     /// hex context on at least one side and the whole run clears 40.
     #[test]
     fn interior_slice_of_long_hex_run_is_always_a_fragment(

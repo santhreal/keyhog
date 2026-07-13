@@ -844,7 +844,7 @@ fn read_file_windowed_mmap_handles_empty_file() {
 /// Special-file safety at the single read-open boundary (`open_file_safe`).
 ///
 /// A content scanner that walks untrusted trees must (1) NEVER block opening a
-/// FIFO with no writer — a plain `open(O_RDONLY)` hangs forever — and (2) refuse
+/// FIFO with no writer, a plain `open(O_RDONLY)` hangs forever, and (2) refuse
 /// every non-regular file (FIFO, socket, char/block device) rather than read
 /// from it. The fix is `O_NONBLOCK` on the open plus an fstat of the OPENED fd
 /// that fails closed unless `is_file()`. These tests are Unix-only because they
@@ -955,7 +955,7 @@ mod special_files {
     #[test]
     fn open_file_safe_refuses_unix_socket() {
         // A socket is refused at the `open(2)` syscall itself (ENXIO, surfaced as
-        // an `Uncategorized` kind) BEFORE the metadata guard runs — a FIFO/device
+        // an `Uncategorized` kind) BEFORE the metadata guard runs, a FIFO/device
         // instead opens then trips the `is_file()` guard (`InvalidInput`). Either
         // way the contract is the same: a non-regular file never reaches a read.
         let dir = tempfile::tempdir().unwrap();
@@ -1033,7 +1033,7 @@ mod special_files {
         use std::os::unix::io::AsRawFd;
         let dir = tempfile::tempdir().unwrap();
         let path = regular(dir.path(), "locked.txt", b"aws_secret = hunter2longvalue");
-        // A SEPARATE open file description holds an exclusive advisory lock —
+        // A SEPARATE open file description holds an exclusive advisory lock 
         // exactly how a second process (or a torn writer) would. flock treats
         // distinct OFDs independently, so this conflicts even in-process.
         let holder = std::fs::File::open(&path).unwrap();
@@ -1048,7 +1048,7 @@ mod special_files {
             open_file_safe(&path).is_err(),
             "open_file_safe must refuse a file another owner holds exclusively locked"
         );
-        // The mmap read path opens via `open_file_safe`, so it must skip too —
+        // The mmap read path opens via `open_file_safe`, so it must skip too 
         // this directly guards the removal of raw.rs's redundant re-flock.
         assert!(
             read_file_mmap(&path).is_none(),
@@ -1128,7 +1128,7 @@ mod special_files {
 }
 
 /// Special-file safety for the read entry points ABOVE the `open_file_safe`
-/// primitive — the buffered read, the compressed-input read (the path 7z / rar /
+/// primitive, the buffered read, the compressed-input read (the path 7z / rar /
 /// gz / xz / pdf extraction funnels through), the windowed-mmap read (the scan
 /// path for large files), and the capped read. Each routes through
 /// `open_file_safe`, so each must refuse a FIFO / symlink / device / directory
@@ -1246,8 +1246,8 @@ mod higher_read_path_special_files {
 
     // ── read_file_windowed_mmap (windowed scan path) ────────────────────
 
-    // The windowed-mmap path expresses a refusal as `Some(0)` — zero windows
-    // scanned — rather than `None`: per its contract that is an already-counted
+    // The windowed-mmap path expresses a refusal as `Some(0)`: zero windows
+    // scanned, rather than `None`: per its contract that is an already-counted
     // unreadable skip that must NOT invite the caller to reopen and stream the
     // file (a bare `None` means "mmap unavailable, try the non-mmap path"). Either
     // way the special file is opened through `open_file_safe`, refused, and never

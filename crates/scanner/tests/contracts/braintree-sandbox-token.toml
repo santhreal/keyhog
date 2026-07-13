@@ -20,7 +20,7 @@ reason = "Last segment only 6 chars, regex requires 8."
 [[evasion]]
 text = "sandbox_kp4qx7rm_sn5tb8vw_3yzkp4qx"
 credential = "sandbox_kp4qx7rm_sn5tb8vw_3yzkp4qx"
-reason = "Adversarial anchor_bare envelope — credential must still surface under this detector."
+reason = "Adversarial anchor_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

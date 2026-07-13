@@ -2,15 +2,15 @@
 //! parameter must reject its absence with a NAMED, fix-carrying error (the
 //! Engineering-Standard "error messages include context and the fix"), and the
 //! shared `parse_bool_source_param` validator must reject a non-boolean value and
-//! echo the offending token. The `docker` / `s3` match arms are UNCONDITIONAL —
+//! echo the offending token. The `docker` / `s3` match arms are UNCONDITIONAL 
 //! their required-param error fires in the default `git`+`web` feature set,
-//! BEFORE any feature-gated backend construction — so the contract holds even
+//! BEFORE any feature-gated backend construction, so the contract holds even
 //! where those backends are not compiled. Sibling of
 //! `create_source_slack_requires_token`; `optional_usize_source_param`
 //! (numeric-param error) is `#[cfg(any(s3,gcs,azure))]`-only, so its own test
-//! must run under one of those features — tracked in the backlog.
+//! must run under one of those features (tracked in the backlog).
 
-/// docker:IMAGE — an absent image is rejected with the fix-carrying message.
+/// docker:IMAGE (an absent image is rejected with the fix-carrying message).
 #[test]
 fn create_source_docker_requires_an_image_name() {
     match keyhog_sources::create_source("docker", None) {
@@ -26,7 +26,7 @@ fn create_source_docker_requires_an_image_name() {
     }
 }
 
-/// s3:BUCKET — an absent bucket is rejected with the fix-carrying message.
+/// s3:BUCKET (an absent bucket is rejected with the fix-carrying message).
 #[test]
 fn create_source_s3_requires_a_bucket_name() {
     match keyhog_sources::create_source("s3", None) {
@@ -42,7 +42,7 @@ fn create_source_s3_requires_a_bucket_name() {
 }
 
 /// The shared `parse_bool_source_param` rejects a non-boolean value and echoes
-/// the offending token — reached in the DEFAULT feature set through the web
+/// the offending token, reached in the DEFAULT feature set through the web
 /// source's `autoroute_loopback_calibration=<bool>` parameter.
 #[test]
 fn create_source_web_rejects_non_boolean_calibration_flag() {
@@ -59,7 +59,7 @@ fn create_source_web_rejects_non_boolean_calibration_flag() {
 }
 
 /// Positive twin: a VALID boolean calibration flag (`true`) on its own
-/// newline-delimited field, followed by a real URL, builds the web source —
+/// newline-delimited field, followed by a real URL, builds the web source 
 /// proving the validator ADMITS legitimate values and the flag field is consumed
 /// (not mistaken for a URL). Guards against a reject-everything regression a
 /// negative-only test would miss. (Params are `\n`-delimited per

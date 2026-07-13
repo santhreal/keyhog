@@ -1,15 +1,15 @@
 //! `bare_auth_value_allowed` FP-suppression contract
 //! (`crates/scanner/src/adjudicate/generic.rs`).
 //!
-//! A bare `auth = <value>` assignment is weak evidence — `auth` is a common word
+//! A bare `auth = <value>` assignment is weak evidence: `auth` is a common word
 //! and the value is unqualified. This gate decides which such values to keep. It
 //! allows exactly two shapes:
-//!   1. a structured dotted token (JWT / Discord — delegated to
+//!   1. a structured dotted token (JWT / Discord, delegated to
 //!      `is_structured_dotted_token`), or
 //!   2. a DOT-FREE value that has at least one non-alphanumeric byte AND clears
 //!      the secret-strength checks.
-//! Everything else — a plain word, a pure-alphanumeric identifier, or any dotted
-//! value that is not a real structured token — is rejected as a false positive.
+//! Everything else, a plain word, a pure-alphanumeric identifier, or any dotted
+//! value that is not a real structured token (is rejected as a false positive).
 //!
 //! The two structural gates (needs a symbol on the dot-free path; a dotted value
 //! must be a real structured token) are decidable without reproducing the
@@ -66,7 +66,7 @@ fn empty_value_is_rejected() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
-    /// A DOT-FREE, fully alphanumeric value is NEVER allowed — the dot-free branch
+    /// A DOT-FREE, fully alphanumeric value is NEVER allowed, the dot-free branch
     /// requires at least one non-alphanumeric byte, and the structured-token branch
     /// requires a dot. This invariant holds independent of the strength model.
     #[test]
@@ -76,7 +76,7 @@ proptest! {
 
     /// A value containing a dot that is NOT a structured token is never allowed:
     /// branch 2 is fully gated on `!contains('.')`, so any dotted value must pass
-    /// the structured-token allowlist — a `.`-joined pair of plain words cannot.
+    /// the structured-token allowlist (a `.`-joined pair of plain words cannot).
     #[test]
     fn dotted_plain_words_never_allowed(
         a in "[a-z]{1,10}",

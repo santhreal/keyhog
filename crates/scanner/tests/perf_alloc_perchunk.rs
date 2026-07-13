@@ -1,15 +1,15 @@
-//! PERF-alloc_perchunk — allocation churn on the per-chunk hot path.
+//! PERF-alloc_perchunk (allocation churn on the per-chunk hot path).
 //!
 //! KEY: alloc_perchunk
-//! VECTOR: SPEED / OPTIMIZATION (Law 7 — extra copies are production bugs at scale).
+//! VECTOR: SPEED / OPTIMIZATION (Law 7 (extra copies are production bugs at scale)).
 //!
 //! ## The defect
 //!
 //! Every chunk scanned routes through `CompiledScanner::prepare_chunk`
 //! (crates/scanner/src/engine/backend_dispatch.rs:69), which builds a
-//! `ScannerPreprocessedText`. On the overwhelmingly common path — a chunk
+//! `ScannerPreprocessedText`. On the overwhelmingly common path, a chunk
 //! with no structured-config shape and no multiline concatenation indicators
-//! (plain source, .env lines, config without continuation) — it takes the
+//! (plain source, .env lines, config without continuation), it takes the
 //! passthrough branch:
 //!
 //!   crates/scanner/src/engine/backend_dispatch.rs:116
@@ -32,7 +32,7 @@
 //! fresh `String` on every single chunk, even though `prepare_chunk` already
 //! holds a borrow of `chunk.data` for the whole call and the downstream
 //! scan reads `preprocessed.text` immutably. The preprocessed text for a
-//! passthrough chunk is byte-identical to the input — the copy buys nothing.
+//! passthrough chunk is byte-identical to the input (the copy buys nothing).
 //! At fleet scale (hundreds of thousands of files, one chunk each) this is one
 //! whole-file-sized allocation + memcpy per file, hammering the global
 //! allocator on the hot path the engine spends most of its time in.
@@ -53,7 +53,7 @@
 //! (line mappings etc.), far below `N`.
 //!
 //! This is a RATIO/asymptotic assertion on a deterministic allocation COUNTER,
-//! not a wall-clock timing, so it does not flake on slow CI hosts — the byte
+//! not a wall-clock timing, so it does not flake on slow CI hosts, the byte
 //! counts are identical on every machine for a given build.
 //!
 //! Profile: built/run under the workspace `release-fast` characteristics
@@ -64,7 +64,7 @@
 //! ## Measured on the current tree (dev box)
 //!
 //! With N = 256 KiB the passthrough copy makes `growth` track the body size:
-//! growth ~= N (>= 262_144 bytes). The FLOOR is set at N/2 (131_072 bytes) —
+//! growth ~= N (>= 262_144 bytes). The FLOOR is set at N/2 (131_072 bytes) 
 //! the real defect overshoots it by ~2x while leaving generous headroom so
 //! incidental per-scan allocations never trip it. After the borrow fix,
 //! `growth` is a few KiB of line-mapping bookkeeping (well under N/2), so the
@@ -94,7 +94,7 @@ unsafe impl GlobalAlloc for CountingAlloc {
     }
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         if COUNTING.load(Ordering::Relaxed) {
-            // A growing realloc copies `new_size` fresh bytes — count the
+            // A growing realloc copies `new_size` fresh bytes, count the
             // delta so buffer GROWTH (e.g. a Vec doubling) is captured too.
             if new_size > layout.size() {
                 BYTES_ALLOCATED.fetch_add(new_size - layout.size(), Ordering::Relaxed);
@@ -208,7 +208,7 @@ fn passthrough_prepare_does_not_copy_whole_chunk_body() {
     assert!(
         growth < FLOOR_BYTES,
         "PERF-alloc_perchunk-1: per-chunk allocation grows with chunk body \
-         size — the passthrough path copies the whole chunk into a fresh \
+         size: the passthrough path copies the whole chunk into a fresh \
          String.\n  scan({N}B) allocated {min_n} B; scan({}B) allocated {min_2n} B\n  \
          growth (2N - N) = {growth} B  (must be < {FLOOR_BYTES} B = N/2)\n  \
          Defect: ScannerPreprocessedText::passthrough does `text.to_string()` \

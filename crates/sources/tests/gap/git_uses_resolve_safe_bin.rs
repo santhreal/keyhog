@@ -12,7 +12,7 @@ fn git_uses_resolve_safe_bin() {
         src.contains("Command::new(git_bin()?)"),
         "git subprocess must invoke the resolved git_bin() path (git_bin() now \
          returns an owned PathBuf, so the spawn is `Command::new(git_bin()?)` \
-         without a borrow — the security contract is the resolved path, not the \
+         without a borrow, the security contract is the resolved path, not the \
          `&` sigil)"
     );
     for line in src.lines() {

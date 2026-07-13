@@ -16,22 +16,22 @@ use keyhog_scanner::CompiledScanner;
 
 // ── checksum-free firing plaintexts (all are shipped contract positives) ──
 
-/// PEM RSA private key — fires `private-key`, no vendor checksum.
+/// PEM RSA private key (fires `private-key`, no vendor checksum).
 const PEM: &str = "-----BEGIN RSA PRIVATE KEY-----\n\
     MIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu\n\
     KUpRKfFLfRYC9AIKjbJTWit+CqvjWYzvQwECAwEAAQJAIWPaVgC5bA8AjVWdjxNm\n\
     -----END RSA PRIVATE KEY-----";
 const PEM_NEEDLE: &str = "MIIBOgIBAAJBAKj34Gkx";
 
-/// `.npmrc` legacy token — fires `npmrc-auth-token`.
+/// `.npmrc` legacy token (fires `npmrc-auth-token`).
 const NPMRC: &str = "//registry.npmjs.org/:_authToken=s0meL3gacyT0kenValue12345";
 const NPMRC_NEEDLE: &str = "s0meL3gacyT0kenValue12345";
 
-/// `.netrc` triple — fires `netrc-password`.
+/// `.netrc` triple (fires `netrc-password`).
 const NETRC: &str = "machine api.example.com login deploy password Zx9Qw3Rt7Lp2Mk";
 const NETRC_NEEDLE: &str = "Zx9Qw3Rt7Lp2Mk";
 
-/// SSH2/ssh.com private key — fires `ssh2-private-key`.
+/// SSH2/ssh.com private key (fires `ssh2-private-key`).
 const SSH2: &str = "---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----\n\
     Comment: \"2048-bit rsa\"\n\
     P2/56wAAAgISSH2DECODEbodybodybodybodybodybody0001base64base64\n\

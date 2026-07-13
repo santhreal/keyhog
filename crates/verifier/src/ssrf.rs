@@ -97,18 +97,18 @@ pub fn is_private_ip_addr(ip: &IpAddr) -> bool {
 pub fn is_private_url(url_str: &str) -> bool {
     let url = match url::Url::parse(url_str) {
         Ok(u) => u,
-        // Law 10: fail CLOSED — an unparseable URL is treated as private/blocked
+        // Law 10: fail CLOSED, an unparseable URL is treated as private/blocked
         // (`return true`), never allowed through. This is the loud security
         // decision, not a swallowed error: the verifier refuses the request.
-        Err(_) => return true, // LAW10: fail-CLOSED — unparseable URL is blocked, never allowed
+        Err(_) => return true, // LAW10: fail-CLOSED, unparseable URL is blocked, never allowed
     };
 
     if !matches!(url.scheme(), "http" | "https") {
-        return true; // LAW10: fail-CLOSED — verifier/web fetch SSRF gates only allow DNS-screenable http(s) URLs
+        return true; // LAW10: fail-CLOSED, verifier/web fetch SSRF gates only allow DNS-screenable http(s) URLs
     }
 
     let Some(host) = url.host() else {
-        return true; // LAW10: fail-CLOSED — hostless URLs cannot be DNS-screened, so they are blocked
+        return true; // LAW10: fail-CLOSED, hostless URLs cannot be DNS-screened, so they are blocked
     };
 
     match host {
@@ -149,18 +149,18 @@ pub fn is_private_url(url_str: &str) -> bool {
             // that gap; the leading-zero radix-8 parse covers the
             // octal variant for completeness.
             // A host that contains a dot is a *dotted* IPv4 form, never a bare
-            // integer, so it is parsed here — as a standard dotted-quad or an
+            // integer, so it is parsed here, as a standard dotted-quad or an
             // `inet_aton` short form whose fields each carry their OWN radix
             // (`canonicalize_short_form_ipv4` → `parse_ip_field`). Routing every
             // dotted host through this branch is load-bearing: the whole-string
             // `0x` strip in the integer branches below succeeds on a host like
             // `0x7f.1` (strip → `7f.1`) but then fails `from_str_radix` on the
-            // embedded dot, yielding `None` — which on the dot-bearing path would
+            // embedded dot, yielding `None`: which on the dot-bearing path would
             // silently skip the per-field canonicalizer that resolves
             // `0x7f.1` → 127.0.0.1. Because `looks_like_malformed_ip` only fires
             // at ≥4 parts, a 2- or 3-part hex-leading short form
             // (`0x7f.1`, `0x7f.0.1`) would otherwise reach neither gate and slip
-            // past the proxy-path SSRF check (the only gate there — no
+            // past the proxy-path SSRF check (the only gate there, no
             // post-resolution IP veto). Leading with the dot test closes that.
             //
             // The bare-integer branches that follow handle dotless hosts only.
@@ -181,24 +181,24 @@ pub fn is_private_url(url_str: &str) -> bool {
                     Err(_not_standard_ipv4) => canonicalize_short_form_ipv4(d),
                 }
             } else if let Some(hex) = d.strip_prefix("0x").or_else(|| d.strip_prefix("0X")) {
-                // Law 10: a `None` here is NOT a swallowed block-decision — it
+                // Law 10: a `None` here is NOT a swallowed block-decision, it
                 // only means "this token is not a parseable hex integer-IP",
                 // so `maybe_ip` stays `None` and the host is treated as a real
                 // domain. That domain still gets DNS-resolved and re-screened
                 // against `is_private_ip_addr` post-resolution (rebinding
                 // defense). No SSRF target is let through.
-                u32::from_str_radix(hex, 16).ok().map(Ipv4Addr::from) // LAW10: fail-open to domain (see above) — post-resolution veto still gates it
+                u32::from_str_radix(hex, 16).ok().map(Ipv4Addr::from) // LAW10: fail-open to domain (see above), post-resolution veto still gates it
             } else if d.starts_with('0') && d.len() > 1 && d.chars().all(|c| c.is_ascii_digit()) {
-                // Law 10: see above — a failed octal parse yields `None`
+                // Law 10: see above, a failed octal parse yields `None`
                 // (treat as domain), not an allow; post-resolution veto still
                 // gates it.
-                u32::from_str_radix(d, 8).ok().map(Ipv4Addr::from) // LAW10: fail-open to domain (see above) — post-resolution veto still gates it
+                u32::from_str_radix(d, 8).ok().map(Ipv4Addr::from) // LAW10: fail-open to domain (see above), post-resolution veto still gates it
             } else {
                 // Bare decimal integer host (`http://2130706433` → 127.0.0.1).
                 // Law 10: a parse failure yields `None` (treat as domain); the
                 // dotless-domain refusal above already blocks it, and the
                 // post-resolution veto re-screens the resolved path.
-                d.parse::<u32>().ok().map(Ipv4Addr::from) // LAW10: fail-open to domain (see above) — dotless refusal + post-resolution veto still gate it
+                d.parse::<u32>().ok().map(Ipv4Addr::from) // LAW10: fail-open to domain (see above), dotless refusal + post-resolution veto still gate it
             };
             if let Some(ip) = maybe_ip {
                 if verifier_blocks_ip_addr(IpAddr::V4(ip)) {
@@ -277,18 +277,18 @@ fn parse_ip_field(part: &str) -> Option<u32> {
         if hex.is_empty() {
             return None;
         }
-        // Law 10: a `None` field-parse is recall/security-safe — it aborts
+        // Law 10: a `None` field-parse is recall/security-safe, it aborts
         // short-form IPv4 canonicalization (so the host is treated as a domain,
         // not silently allowed). The caller's `looks_like_malformed_ip` +
         // post-resolution `is_private_ip_addr` veto still block evasion forms.
-        u32::from_str_radix(hex, 16).ok() // LAW10: fail-open field-parse (see above) — never an allow
+        u32::from_str_radix(hex, 16).ok() // LAW10: fail-open field-parse (see above), never an allow
     } else if part.len() > 1 && part.starts_with('0') {
-        // Law 10: see above — failed octal field-parse aborts canonicalization
+        // Law 10: see above, failed octal field-parse aborts canonicalization
         // to `None`, never an allow.
-        u32::from_str_radix(part, 8).ok() // LAW10: fail-open field-parse (see above) — never an allow
+        u32::from_str_radix(part, 8).ok() // LAW10: fail-open field-parse (see above), never an allow
     } else {
-        // Law 10: see above — failed decimal field-parse aborts to `None`.
-        part.parse::<u32>().ok() // LAW10: fail-open field-parse (see above) — never an allow
+        // Law 10: see above (failed decimal field-parse aborts to `None`).
+        part.parse::<u32>().ok() // LAW10: fail-open field-parse (see above), never an allow
     }
 }
 

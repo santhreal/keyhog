@@ -12,7 +12,7 @@
 //!
 //! Pinned product contract (read from the code, not assumed):
 //!   * `keyhog scan` honours `.gitignore` by DEFAULT, but only INSIDE a git
-//!     repository — codewalk lowers `respect_gitignore(true)` to
+//!     repository, codewalk lowers `respect_gitignore(true)` to
 //!     `ignore::WalkBuilder` with the crate-default `require_git = true`, so a
 //!     bare `.git/HEAD` marks the repo root and the git binary is never invoked.
 //!     Without a `.git/` the `.gitignore` rules are fully inert (git-aware OFF).
@@ -22,7 +22,7 @@
 //!     therefore does NOT advertise a gitignore-override flag; `scan-system
 //!     --help` does. Both facts are pinned as coherence tests below.
 //!   * `--no-default-excludes` toggles the lock-file/minified/build-output
-//!     classifier ONLY — it is an INDEPENDENT knob from `.gitignore` and must
+//!     classifier ONLY, it is an INDEPENDENT knob from `.gitignore` and must
 //!     NOT re-include a gitignored secret.
 //!   * `.keyhogignore` is a custom ignore file honoured REGARDLESS of git
 //!     presence; `--exclude-paths <glob>` suppresses a matching file too.
@@ -35,7 +35,7 @@
 //! `--no-suppress-test-fixtures` guarantees no invented key is silently dropped
 //! by the public-demo-credential suppression list.
 //!
-//! Truth-law: every assertion pins a concrete value — an exact process exit
+//! Truth-law: every assertion pins a concrete value, an exact process exit
 //! code (0 = clean, 1 = unverified findings), an exact AWS-finding count, an
 //! exact set of finding provenance basenames, or an exact substring
 //! presence/absence in `--help`. No test asserts only `!is_empty()`.
@@ -103,7 +103,7 @@ fn scan(root: &Path, extra: &[&str]) -> (Vec<serde_json::Value>, Option<i32>) {
 
 /// The findings attributable to the literal-anchored AWS access-key detector.
 /// An `AKIA…` key is caught by the named `aws-access-key` detector, or by the
-/// simdsieve fast path `hot-aws_key` when it engages — both are a correct AWS
+/// simdsieve fast path `hot-aws_key` when it engages, both are a correct AWS
 /// detection, so accept either id (matches the e2e_binary contract).
 fn aws_findings(findings: &[serde_json::Value]) -> Vec<&serde_json::Value> {
     findings
@@ -119,7 +119,7 @@ fn aws_findings(findings: &[serde_json::Value]) -> Vec<&serde_json::Value> {
 
 /// The set of file basenames the given findings point at (provenance), read
 /// from each finding's `location.file_path`. Used to pin exactly WHICH file a
-/// surfaced secret came from — the crux of "skipped vs scanned".
+/// surfaced secret came from (the crux of "skipped vs scanned").
 fn provenance_basenames(findings: &[&serde_json::Value]) -> BTreeSet<String> {
     findings
         .iter()
@@ -563,7 +563,7 @@ fn scan_system_help_advertises_respect_gitignore_flag() {
 
 // ---------------------------------------------------------------------------
 // 13. Coherence / gap-pin: `keyhog scan --help` does NOT advertise any
-//     gitignore-override flag (there is none — the override lives on
+//     gitignore-override flag (there is none, the override lives on
 //     scan-system). The anchor assert proves the help actually rendered.
 // ---------------------------------------------------------------------------
 

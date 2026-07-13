@@ -57,7 +57,7 @@ fn clean_fixture() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("notes.txt");
     // Deliberately avoids credential-bridge keywords (secret/key/token/
-    // password/api) so nothing fires — a true negative twin.
+    // password/api) so nothing fires (a true negative twin).
     std::fs::write(
         &path,
         "just ordinary prose with plain everyday words here\n",
@@ -372,7 +372,7 @@ fn exit_codes_match_across_all_formats_when_clean() {
 }
 
 /// The SAME detector id is surfaced by the json, sarif, and csv paths for the
-/// one planted secret — a serializer dropping the finding on one path is a
+/// one planted secret, a serializer dropping the finding on one path is a
 /// silent recall hole this catches.
 #[test]
 fn all_structured_formats_surface_same_detector_id() {

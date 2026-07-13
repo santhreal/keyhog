@@ -236,7 +236,7 @@ struct GitCommitEnumerator {
     log_child: super::GitChild,
     // Capped line reader over `git log` stdout: `read_capped_line` bounds each
     // line at `GIT_PLUMBING_LINE_BYTES` so a hostile repo emitting a
-    // multi-gigabyte single line (no `\n`) cannot exhaust memory — a real
+    // multi-gigabyte single line (no `\n`) cannot exhaust memory, a real
     // commit-id line is ~40-64 bytes, and an over-cap line is a loud truncation
     // error, not a silent OOM (the std `BufRead::lines()` this replaced buffered
     // the whole line unbounded).
@@ -327,7 +327,7 @@ impl GitCommitEnumerator {
                     continue;
                 }
                 // A commit-id line over the plumbing cap is corrupt/hostile git
-                // output (a real object-id line is tiny) — fail LOUDLY, never
+                // output (a real object-id line is tiny), fail LOUDLY, never
                 // silently scan a truncated id (Law 10), matching the sibling
                 // tag-message and fsck plumbing readers.
                 if consumed > super::GIT_PLUMBING_LINE_BYTES {
@@ -1366,7 +1366,7 @@ impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
 
     fn handle_entry_error(&mut self, error: String) -> Result<(), SourceError> {
         // Law 10: a tree entry that fails to parse (corrupt/truncated tree
-        // object) means the blob(s) it would reference are NOT scanned — an
+        // object) means the blob(s) it would reference are NOT scanned, an
         // UNKNOWN, not a clean tree. Surface loudly + count as unreadable so a
         // "0 findings --git" run is not mistaken for full history coverage.
         tracing::warn!(

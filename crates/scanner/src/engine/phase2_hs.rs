@@ -13,17 +13,17 @@ use std::time::Instant;
 /// [`Phase2AlwaysActivePrefilter`].
 ///
 /// Holds TWO compiled sub-databases:
-///   * `full` — every always-active pattern (incl. the ~2.8k homoglyph variants).
+///   * `full`: every always-active pattern (incl. the ~2.8k homoglyph variants).
 ///     Used on non-ASCII chunks, where a unicode look-alike prefix can genuinely
 ///     appear and only the homoglyph variant catches it.
-///   * `ascii_lean` — the NON-homoglyph subset only. On a pure-ASCII chunk the
+///   * `ascii_lean`: the NON-homoglyph subset only. On a pure-ASCII chunk the
 ///     homoglyph variants are inert: their look-alike prefixes cannot appear in
 ///     ASCII bytes, and any match on the ASCII ORIGINAL is already produced by the
-///     base pattern via the AC/confirmed path — the exact invariant the RegexSet
+///     base pattern via the AC/confirmed path, the exact invariant the RegexSet
 ///     path's `homoglyph_ascii_skip` (and its `homoglyph_ascii_skip_parity_default`
 ///     gate) rely on. The full DB is 99.9% homoglyph variants whose char classes
 ///     include the ASCII original (`[AА]` matches ASCII 'A'), so HS's literal
-///     prefilter still activates their expensive NFAs on ASCII — measured 100-215×
+///     prefilter still activates their expensive NFAs on ASCII, measured 100-215×
 ///     slower than the lean DB (`hs_homoglyph_ascii_skip_prize`). `None` when there
 ///     are no homoglyph variants to drop (then `full` is used for ASCII too).
 pub(crate) struct Phase2HsEngine {
@@ -113,7 +113,7 @@ impl HsSubEngine {
             dropped.push((phase2_idx, phase2_patterns[phase2_idx].0.regex.clone()));
         }
         if !dropped.is_empty() {
-            // LAW10: NOT a degrade — these patterns run on the regex host path
+            // LAW10: NOT a degrade, these patterns run on the regex host path
             // (see `mark`/`any_match`) with RECALL IDENTICAL to the HS path, so
             // there is nothing to surface loudly. It is a static capability fact
             // (the same count every build), so a per-scan WARN was pure stderr
@@ -225,8 +225,8 @@ impl Phase2HsEngine {
     /// patterns (extraction filters), identical to the RegexSet path.
     ///
     /// `skip_homoglyph_ascii` MUST be computed by the caller as `chunk.is_ascii()
-    /// && tuning.homoglyph_ascii_skip` — the same predicate the RegexSet path uses
-    /// to skip homoglyph batches — so the two engines stay findings-consistent.
+    /// && tuning.homoglyph_ascii_skip`, the same predicate the RegexSet path uses
+    /// to skip homoglyph batches (so the two engines stay findings-consistent).
     #[inline]
     pub(crate) fn mark(
         &self,
@@ -242,7 +242,7 @@ impl Phase2HsEngine {
     /// companion to [`mark`](Self::mark): one SIMD scan that early-exits at the
     /// first hit (HS native termination), plus the loud host path for the few
     /// HS-incompatible patterns. Recall-identical to `mark(...)` followed by a
-    /// non-empty check — same patterns, same haystack — without building the set.
+    /// non-empty check (same patterns, same haystack (without building the set)).
     #[inline]
     pub(crate) fn any_match(
         &self,

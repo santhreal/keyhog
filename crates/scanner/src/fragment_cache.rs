@@ -83,13 +83,13 @@ impl std::fmt::Debug for ReassembledCandidate {
 /// [`MAX_FRAGMENTS_PER_SCOPE`]. The previous `cluster.remove(0)` dropped the
 /// EARLIEST-ARRIVED fragment, but under the parallel (rayon) scan the order in
 /// which sibling chunks of the same file win the per-shard mutex is a thread
-/// race — so once a scope filled past the cap, *which* fragment survived (and
+/// race, so once a scope filled past the cap, *which* fragment survived (and
 /// therefore which reassembly joins, and which standalone findings they
 /// cannibalize) varied run-to-run on identical input. Evicting the fragment
 /// with the smallest `(line, value)` key is content/position-derived, hence
 /// independent of arrival order; in a SEQUENTIAL scan fragments arrive in
 /// increasing file position, so this is identical to the old `remove(0)`
-/// ("drop oldest") behaviour — it only removes the nondeterminism (Law 7).
+/// ("drop oldest") behaviour (it only removes the nondeterminism (Law 7)).
 fn evict_one(cluster: &mut Vec<SecretFragment>) {
     if let Some(idx) = cluster
         .iter()
@@ -123,11 +123,11 @@ impl FragmentCache {
 
     /// Shared core of both reassembly entry points: record `fragment` into its
     /// `(prefix, scope)` cluster (dedup + deterministic eviction), then emit
-    /// `make(f1, f2)` for every ORDERED near pair — same path and
+    /// `make(f1, f2)` for every ORDERED near pair, same path and
     /// `abs_diff(line) < 100`. `record_and_reassemble` and its stamped variant
     /// differ ONLY in the per-pair output type and the final canonical sort, so
     /// this record/cluster/near-gate logic lives here in ONE owner (was two
-    /// near-identical nested-loop copies — DEDUP).
+    /// near-identical nested-loop copies. DEDUP).
     ///
     /// Reassembly is SAME-FILE only, within a 100-line window. Cross-file /
     /// distant joins were observed to cannibalize standalone findings: a

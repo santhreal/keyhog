@@ -1,4 +1,4 @@
-//! KH-GAP-133: STANDARD Cargo.toml contract — authors email + license SPDX.
+//! KH-GAP-133: STANDARD Cargo.toml contract (authors email + license SPDX).
 
 use super::support::repo_root;
 

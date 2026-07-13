@@ -3,7 +3,7 @@
 //! fail-closed (Law 10): `validate_detector_path_for_scan` refuses to silently
 //! substitute a different corpus than the operator named, and points them at the
 //! fix (omit `--detectors` for the embedded corpus). The contract this guards is
-//! "never silently empty" — satisfied by a loud, actionable error just as well
+//! "never silently empty", satisfied by a loud, actionable error just as well
 //! as by a listing; only a silent empty success is forbidden. (Omitting
 //! `--detectors` entirely falls back to the embedded corpus; that path is
 //! covered by the listing tests.)
@@ -25,7 +25,7 @@ fn detectors_missing_detectors_dir_hostile() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     if output.status.success() {
-        // If it lists, it must list real detectors — never a silent empty success.
+        // If it lists, it must list real detectors (never a silent empty success).
         assert!(
             stdout.contains("aws-access-key") || stdout.contains("detector"),
             "detectors must not silently return empty on bad --detectors; stdout={stdout}"

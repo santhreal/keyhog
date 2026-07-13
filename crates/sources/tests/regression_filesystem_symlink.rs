@@ -93,8 +93,8 @@ fn generic_archive_refusals(errors: &[SourceError]) -> usize {
 fn walk_plain_symlink_escaping_root_is_neither_read_nor_flagged() {
     // A non-archive `.txt` symlink at the scan root points at a real file that
     // lives OUTSIDE the root. Following it would read an off-tree secret (the
-    // link-swap class). The walker must NOT scan the target's content, and —
-    // because the link is not archive-named/-targeted — it must NOT raise the
+    // link-swap class). The walker must NOT scan the target's content, and 
+    // because the link is not archive-named/-targeted, it must NOT raise the
     // archive-symlink refusal either. A real in-root sibling still scans, so a
     // refused link never turns the walk into a no-op.
     let root_dir = tempfile::tempdir().unwrap();
@@ -272,7 +272,7 @@ fn walk_archive_named_symlink_to_plain_target_refused_by_name_and_sibling_scanne
     // The link NAME is `.zip` but its target is a plain in-tree `.txt`. The
     // audit refuses by LINK NAME (never opens the target to check), and the
     // real sibling that the link points at is still scanned exactly once via
-    // its own path — proving the refusal is name-based and does not suppress
+    // its own path, proving the refusal is name-based and does not suppress
     // the genuine file.
     let root_dir = tempfile::tempdir().unwrap();
     let real = root_dir.path().join("real.txt");
@@ -401,7 +401,7 @@ fn include_archive_symlink_is_refused_loudly() {
 fn include_plain_named_symlink_to_archive_target_is_refused() {
     // Adversarial `--include`: link NAME is a harmless `.txt` but the RESOLVED
     // target is an expandable `.har`. The include branch classifies by the
-    // canonicalized target too, so it is refused — a plain link name cannot
+    // canonicalized target too, so it is refused, a plain link name cannot
     // smuggle an archive-expansion of an off-tree target.
     let root_dir = tempfile::tempdir().unwrap();
     let outside_dir = tempfile::tempdir().unwrap();

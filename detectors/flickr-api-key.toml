@@ -27,7 +27,7 @@ group = 1
 # sha256-hex prefixes, sha1-hex digests, and the 32-hex bodies of 113
 # unrelated services. Flickr's spec is "32 character alphanumeric string"
 # with NO distinctive prefix, so contextless attribution to Flickr is
-# never correct — these belong with `generic-secret` / `generic-api-key`,
+# never correct, these belong with `generic-secret` / `generic-api-key`,
 # where the suppression cascade gates them properly. Keywords list
 # narrowed to `FLICKR`/`flickr` so the AC pre-filter no longer admits
 # chunks for the generic `api_key` literal.

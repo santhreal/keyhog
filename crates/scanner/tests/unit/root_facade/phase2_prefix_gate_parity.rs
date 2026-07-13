@@ -5,7 +5,7 @@
 //!
 //! The gate's whole reason to exist is the decode-recursion sub-chunks (most
 //! carry no credential prefix at all), so the generators deliberately include
-//! base64/hex-encoded secrets that only surface through decode-through — those
+//! base64/hex-encoded secrets that only surface through decode-through, those
 //! decoded sub-chunks are exactly where the gate skips the most work, and where
 //! an unsound gate would silently drop recall.
 //!

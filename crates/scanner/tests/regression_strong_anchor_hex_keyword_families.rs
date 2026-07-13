@@ -9,12 +9,12 @@
 //!   secret/token POS  ~10  NEG ~1
 //!
 //! keyhog's `is_strong_keyword_anchored_hex_key` exempts a 32/48-hex value from
-//! the hash-digest suppression ONLY under a strong cryptographic anchor — any
+//! the hash-digest suppression ONLY under a strong cryptographic anchor, any
 //! `*key`/`*secret`-suffixed keyword (so `shared_secret`, `app_secret`,
 //! `webhook_secret` are all captured via the suffix rule), plus an enumerated
 //! exact set, EXCLUDING `licensekey`. It deliberately declines the bare `key`
 //! class (98.7% precision on the curated corpus, but `key = <32hex>` is
-//! indistinguishable from an MD5/ETag/cache-key in real code — the v31-class
+//! indistinguishable from an MD5/ETag/cache-key in real code, the v31-class
 //! catastrophe) and the ambiguous `token`/`salt`/`auth` anchors.
 //!
 //! This locks that boundary end to end so a future change can neither silently
@@ -184,7 +184,7 @@ fn licensekey_carveout_hex32_stays_suppressed() {
     let v = hex(32, 13);
     assert!(
         nothing_surfaces(&format!("license_key = {v}"), &v),
-        "license_key is the explicit *key carve-out — a product license, not a crypto key"
+        "license_key is the explicit *key carve-out, a product license, not a crypto key"
     );
 }
 
@@ -213,7 +213,7 @@ fn shared_secret_hex40_git_sha_length_stays_suppressed() {
     let v = hex(40, 16);
     assert!(
         nothing_surfaces(&format!("shared_secret = {v}"), &v),
-        "a 40-hex (git-SHA length) under shared_secret is not an AES key — stays suppressed"
+        "a 40-hex (git-SHA length) under shared_secret is not an AES key, stays suppressed"
     );
 }
 

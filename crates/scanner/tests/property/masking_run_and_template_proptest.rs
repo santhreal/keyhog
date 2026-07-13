@@ -1,7 +1,7 @@
 //! Masking-run + bracketed-template suppression predicates
 //! (`crates/scanner/src/suppression/shape/canonical.rs`).
 //!
-//! Three precision gates, with one deliberate — and easily-confused — divergence
+//! Three precision gates, with one deliberate, and easily-confused, divergence
 //! this suite pins so a reader cannot assume the two run detectors are the same:
 //!   • `has_three_or_more_consecutive_identical` counts a run of ANY byte,
 //!     dashes INCLUDED (`a---b` → true).
@@ -77,7 +77,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// A NON-dash string is classified IDENTICALLY by both detectors at threshold
-    /// 3 — the divergence is exclusively about dashes.
+    /// 3 (the divergence is exclusively about dashes).
     #[test]
     fn non_dash_input_agrees_across_both_detectors(s in "[a-zA-Z0-9]{0,40}") {
         prop_assert_eq!(
@@ -105,7 +105,7 @@ proptest! {
         }
     }
 
-    /// A template match IMPLIES a recognized wrapper and length <= 80 — the gate
+    /// A template match IMPLIES a recognized wrapper and length <= 80, the gate
     /// never fires on an unbracketed or oversized value.
     #[test]
     fn template_match_implies_wrapper_and_cap(value in ".{0,100}") {

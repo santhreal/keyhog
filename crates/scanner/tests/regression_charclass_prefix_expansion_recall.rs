@@ -9,7 +9,7 @@
 //! the plain `ddn_<64hex>` positive scored below `min_confidence` and dropped
 //! as `below_min_confidence` (contracts_runner: deno-kv MISSED). The plural
 //! extractor now enumerates the class into one concrete literal prefix per
-//! member — the exact analogue of expanding a `(n|p|c)` alternation.
+//! member (the exact analogue of expanding a `(n|p|c)` alternation).
 //!
 //! The precision twin pins that the expansion is FAITHFUL to the class: a token
 //! whose third char is NOT a class member (`ddz_…`, z ∉ [npc]) must not be
@@ -80,7 +80,7 @@ fn deno_kv_ddc_member_surfaces_via_expanded_prefix() {
 #[test]
 fn non_member_third_char_is_not_claimed() {
     // `z` is not in the `[npc]` class, so the regex cannot match and the
-    // detector must not fire — the expansion added triggers for the real
+    // detector must not fire, the expansion added triggers for the real
     // members only, it did not widen the shape to any `dd?_<64hex>`.
     let token = format!("ddz_{HEX64}");
     let matches = matches_for(&token);

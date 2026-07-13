@@ -2,13 +2,13 @@
 //! line break (`=\r\n`). Real-world quoted-printable (Unix-origin MIME,
 //! git-format-patch mail, many encoders) also wraps with a bare `=\n`, and
 //! occasionally a lone `=\r`. Those fell through to the `=XX` hex path, failed,
-//! and injected a spurious `=` + newline — so a secret a QP encoder wrapped
+//! and injected a spurious `=` + newline, so a secret a QP encoder wrapped
 //! across a soft break was corrupted and lost. A literal `=` in QP is always
 //! `=3D`, so a raw `=` before a newline is unambiguously a soft break: removing
 //! all three variants is spec-correct and can never eat a real byte.
 //!
 //! QP decode is gated on `has_qp_escape` (a real `=<hex><hex>` must be present),
-//! so a plain `FOO=\nBAR` config is never QP-decoded — this change is safe.
+//! so a plain `FOO=\nBAR` config is never QP-decoded (this change is safe).
 //!
 //! Source under test: `crates/scanner/src/decode/url.rs::quoted_printable_decode`
 //! via the `keyhog_scanner::testing` facade.
@@ -82,7 +82,7 @@ fn qp_literal_equals_3d_then_soft_break() {
     assert_eq!(decoded("x=3D=\ny"), "x=y");
 }
 
-// ── `=XX` hex octets (regressions — must stay correct) ───────────────────────
+// ── `=XX` hex octets (regressions, must stay correct) ───────────────────────
 
 #[test]
 fn qp_hex_octets_decode() {

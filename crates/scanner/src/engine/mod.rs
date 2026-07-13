@@ -3,7 +3,7 @@
 //! # The one flow
 //!
 //! Every scan is the same pipeline. The ONLY thing that varies is *phase 1*
-//! (which detectors could fire where) — produced on the CPU by Hyperscan or on
+//! (which detectors could fire where), produced on the CPU by Hyperscan or on
 //! the GPU by Vyre's literal region-presence backend. Everything downstream is
 //! shared:
 //!
@@ -85,9 +85,9 @@ pub(crate) mod phase2;
 mod phase2_anchor;
 #[cfg(test)]
 pub(crate) use phase2_anchor::required_prefix_literals as phase2_required_prefix_literals_for_test;
-// Always-on re-export (NOT cfg(test)) so `crate::testing` — which is compiled
+// Always-on re-export (NOT cfg(test)) so `crate::testing`: which is compiled
 // even when the crate is linked as a dependency of the integration-test binary,
-// where `cfg(test)` is false for this crate — can classify confirmed patterns by
+// where `cfg(test)` is false for this crate, can classify confirmed patterns by
 // the SAME required-prefix predicate `ConfirmedAnchorIndex` uses (backlog 4786
 // localization-ceiling analysis).
 pub(crate) use phase2_anchor::{
@@ -203,9 +203,9 @@ pub(crate) const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
 /// prefilter to earn its keep, and dropping one on a bloom miss risks a
 /// false-negative for negligible speed gain.
 ///
-/// Defined once here so the two admission sites that gate on it — the coalesced
+/// Defined once here so the two admission sites that gate on it, the coalesced
 /// phase-1 producer ([`scan_coalesced`]) and the single-chunk entry
-/// ([`compiled_api`]) — can never carry divergent copies of the threshold (each
+/// ([`compiled_api`]), can never carry divergent copies of the threshold (each
 /// used to hardcode a bare `64`).
 pub(crate) const BIGRAM_BLOOM_MIN_CHUNK_BYTES: usize = 64;
 
@@ -238,14 +238,14 @@ pub struct CompiledScanner {
     /// is three `Arc::clone`s (atomic refcount bumps) instead of three CHD
     /// perfect-hash lookups (2x FNV-1a + verify-hash + full string compare per
     /// field). The strings are byte-identical to `static_intern.lookup(...)`
-    /// because they ARE its arena entries — see `perf_locality_intern.rs`.
+    /// because they ARE its arena entries (see `perf_locality_intern.rs`).
     pub(crate) metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)>,
     /// Per-detector `detector_weak_anchor(spec)`, indexed by `detector_index`.
     /// The weak-anchor classification is a function of the detector SPEC ONLY
     /// (its id prefix, `min_confidence`, and a regex-string scan over every
     /// pattern for a broad-identifier capture), so it is constant across every
     /// candidate that detector produces. `process_match` used to recompute it
-    /// per surviving candidate — on a hot detector firing thousands of matches
+    /// per surviving candidate, on a hot detector firing thousands of matches
     /// per chunk that re-ran the classification thousands of times for an
     /// unchanging value. Resolved ONCE at construction; the per-match path
     /// indexes by `entry.detector_index` and then resolves the per-PATTERN
@@ -344,10 +344,10 @@ pub struct CompiledScanner {
     /// Resolved detector-owned hot-pattern slots. Each row bundles the prefix, precise
     /// validator AND its canonical `ac_map` delegate together, so a slot's
     /// validation target and emission target can never be indexed apart and so
-    /// can never drift — they were two parallel `Vec`s read by the same
+    /// can never drift, they were two parallel `Vec`s read by the same
     /// `pattern_idx` before, an unauditable coupling. The hot fast-path runs each
     /// literal-prefix candidate through `slot.validator` before emitting (so it
-    /// can never surface a token the detector's own regex rejects — the length
+    /// can never surface a token the detector's own regex rejects, the length
     /// floor alone let `ghp_…_…`/`xoxp-123-456-789-abc` through) and delegates
     /// the survivor to `ac_map[slot.ac_map_index]` via `process_match`. A slot's
     /// Built once by `compile_helpers::build_hot_pattern_slots`.
@@ -392,7 +392,7 @@ mod max_inner_loop_iters_tests {
     /// The canonical per-pattern hard cap is exactly the value the three engine
     /// walk sites (`extract.rs` ×2, `phase2_anchor_scan.rs`) used to each hardcode.
     /// If this drifts, an adversarial chunk's per-pattern iteration budget changes
-    /// silently for every walk at once — pin the concrete value.
+    /// silently for every walk at once (pin the concrete value).
     #[test]
     fn canonical_cap_is_one_million() {
         assert_eq!(MAX_INNER_LOOP_ITERS, 1_000_000);
@@ -402,7 +402,7 @@ mod max_inner_loop_iters_tests {
     /// iterations, so a walk that runs to the hard cap performs exactly
     /// `MAX_INNER_LOOP_ITERS / HOT_LOOP_DEADLINE_CADENCE` deadline checks. The cap
     /// must be an exact whole multiple of the cadence (last check lands on the cap)
-    /// and yield the concrete 15625 checks — proving the deadline path can still
+    /// and yield the concrete 15625 checks, proving the deadline path can still
     /// abort well before the hard cap is reached.
     #[test]
     fn cap_is_whole_multiple_of_deadline_cadence() {

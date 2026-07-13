@@ -1,15 +1,15 @@
 //! e2e regression suite for keyhog's auxiliary (non-scan) subcommands.
 //!
 //! These lock the operator-visible *contracts* of the small utility commands
-//! that surround the scanner — shell completion, `config --effective`,
-//! `--version`, `--help`, and the parse-error exit code — against concrete,
+//! that surround the scanner, shell completion, `config --effective`,
+//! `--version`, `--help`, and the parse-error exit code, against concrete,
 //! byte-exact expectations. Each assertion pins a specific value (an exact
 //! first line, an exact key, an exact exit code, an exact command set) so a
 //! silent regression in any of them fails the suite loudly rather than being
 //! masked by a `!is_empty()` smoke check.
 //!
 //! The binary is invoked through `CARGO_BIN_EXE_keyhog` (cargo points this at
-//! the freshly built `keyhog` binary for this crate) — the same real-process
+//! the freshly built `keyhog` binary for this crate), the same real-process
 //! pattern every other e2e file here uses. `assert_cmd` is intentionally NOT a
 //! dev-dependency of this crate, so we drive `std::process::Command` directly.
 
@@ -58,7 +58,7 @@ const EXPECTED_SUBCOMMANDS: &[&str] = &[
 ];
 
 // ---------------------------------------------------------------------------
-// completion <shell> — exact shell-specific first line (clap_complete 4.6)
+// completion <shell>, exact shell-specific first line (clap_complete 4.6)
 // ---------------------------------------------------------------------------
 
 /// `keyhog completion bash` emits a bash script whose first line is the
@@ -152,7 +152,7 @@ fn completion_unknown_shell_is_usage_error() {
 }
 
 // ---------------------------------------------------------------------------
-// --version — exact semver + git-hash shape
+// --version, exact semver + git-hash shape
 // ---------------------------------------------------------------------------
 
 /// `keyhog --version` line 1 is exactly `KeyHog v<semver>`, where the semver is
@@ -242,11 +242,11 @@ fn version_short_flag_matches_long_flag_first_line() {
 }
 
 // ---------------------------------------------------------------------------
-// --help — exact subcommand set
+// --help, exact subcommand set
 // ---------------------------------------------------------------------------
 
 /// `keyhog --help` lists exactly the expected subcommand set under `Commands:`
-/// — no more, no fewer. Parsed by taking the first token of every command entry
+///: no more, no fewer. Parsed by taking the first token of every command entry
 /// (a line indented by exactly two spaces) in the Commands block.
 #[test]
 fn help_lists_exact_subcommand_set() {
@@ -289,7 +289,7 @@ fn help_lists_exact_subcommand_set() {
 }
 
 /// The multi-word subcommands are rendered in kebab-case (clap's default), not
-/// camelCase or PascalCase — the exact strings a user must type.
+/// camelCase or PascalCase (the exact strings a user must type).
 #[test]
 fn help_multiword_subcommands_are_kebab_case() {
     let (code, stdout, _stderr) = run(&["--help"]);
@@ -319,7 +319,7 @@ fn help_multiword_subcommands_are_kebab_case() {
 }
 
 // ---------------------------------------------------------------------------
-// config — requires --effective; prints the effective-config keys
+// config, requires --effective; prints the effective-config keys
 // ---------------------------------------------------------------------------
 
 /// `keyhog config` without `--effective` is a user error → exit 2, with the
@@ -334,7 +334,7 @@ fn config_without_effective_is_user_error_with_guidance() {
     );
     // `--effective` is a clap-`required` argument, so clap rejects the missing
     // value with its standard diagnostic (which names the flag) before the
-    // subcommand body runs — assert that exact behavior.
+    // subcommand body runs (assert that exact behavior).
     assert!(
         stderr.contains("required arguments were not provided") && stderr.contains("--effective"),
         "stderr must state --effective is required; got:\n{stderr}"
@@ -426,7 +426,7 @@ fn config_effective_defaults_have_exact_values() {
 }
 
 // ---------------------------------------------------------------------------
-// unknown subcommand — usage-error exit code
+// unknown subcommand, usage-error exit code
 // ---------------------------------------------------------------------------
 
 /// An unrecognized subcommand is a usage error: exit code 2, with clap naming

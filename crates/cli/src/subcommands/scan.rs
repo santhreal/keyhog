@@ -76,7 +76,7 @@ pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
     // route. The orchestrator's `.keyhog.toml` merge runs LATER (inside
     // `ScanOrchestrator::new`) and only on the in-process path, so a policy set
     // via the config file rather than a CLI flag was invisible to
-    // `daemon_route` — letting a config min_confidence floor, a config
+    // `daemon_route`: letting a config min_confidence floor, a config
     // `[lockdown] require = true` fail-closed guard, or a config
     // `show_secrets` be silently bypassed whenever a daemon happened to be
     // live. Merge onto a throwaway clone so the real `args` the orchestrator
@@ -87,8 +87,8 @@ pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
     // orchestrator parses it again in `ScanOrchestrator::new`). It is only
     // load-bearing when a daemon could actually take the scan: `--daemon=on`, or
     // an auto route with a live socket at the address we would connect to. When
-    // no daemon is reachable — the common case (`--daemon=off`, or auto with no
-    // socket) — the route is Forbidden regardless, so skip the probe entirely
+    // no daemon is reachable, the common case (`--daemon=off`, or auto with no
+    // socket), the route is Forbidden regardless, so skip the probe entirely
     // and go straight to the in-process orchestrator, which resolves the config
     // exactly ONCE. `effective_daemon_socket` is the same address `daemon_route`
     // and `run_via_daemon` use, so this gate never diverges from the real route.
@@ -234,7 +234,7 @@ impl EffectivePolicy {
         // (`find_config_file`) walks up from `path`. Without promoting
         // `input` -> `path` here, `apply_config_file` would look in the CWD
         // instead of the scanned file's directory and miss the `.keyhog.toml`
-        // whose policy we are trying to honour — the exact bug this resolves.
+        // whose policy we are trying to honour (the exact bug this resolves).
         if probe.path.is_none() {
             probe.path = probe.input.first().cloned();
         }
@@ -333,7 +333,7 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     // gates below (lockdown protections, secret-output policy, severity hiding,
     // client-safe hiding, or explicit confidence-floor policy). Routing a scan
     // that requests any of those over the daemon would silently change results
-    // or bypass a hard security guard — and the opportunistic route flips on
+    // or bypass a hard security guard, and the opportunistic route flips on
     // merely because a daemon socket exists. Force the in-process path whenever
     // such policy is in play, so behavior never depends on whether a daemon
     // happens to be running.
@@ -342,14 +342,14 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     // operational-controls check below: when a scan requests BOTH a fail-closed
     // security control (lockdown, secret-output) AND an operational control
     // (e.g. `--backend`), the refusal must name the security policy that cannot
-    // be enforced, not merely the operational knob — the operator needs to know
+    // be enforced, not merely the operational knob, the operator needs to know
     // their lockdown / secret-output intent is what the daemon can't honor.
     //
     // Critically, the floor / lockdown-require / show_secrets / severity checks
     // read the EFFECTIVE post-`.keyhog.toml`-merge policy, not just the raw CLI
     // flags: a `.keyhog.toml` `min_confidence`, `[lockdown] require = true`, or
     // `show_secrets` set via the config file (with no matching CLI flag) must
-    // forbid the daemon route too — otherwise scan RESULTS and a fail-closed
+    // forbid the daemon route too, otherwise scan RESULTS and a fail-closed
     // SECURITY GUARD would change purely on whether a daemon is live.
     // `hide_client_safe` has no config-file surface, so the CLI flag is the
     // effective value.
@@ -385,7 +385,7 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     }
 
     // Opportunistic route flips on only when a live daemon is actually at the
-    // socket we'd connect to — the `--daemon-socket` override when present, else
+    // socket we'd connect to, the `--daemon-socket` override when present, else
     // the default. Probing the default while a scan targeted an override socket
     // would mis-route (treat an unrelated daemon as ours, or miss the real one).
     if effective_daemon_socket(args).exists() {
@@ -403,7 +403,7 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
 fn effective_daemon_socket(args: &ScanArgs) -> std::path::PathBuf {
     args.daemon_socket
         .clone()
-        // LAW10: intentional_default — absent --daemon-socket => documented default
+        // LAW10: intentional_default, absent --daemon-socket => documented default
         // socket; Tier-A transport knob, recall-irrelevant.
         .unwrap_or_else(default_socket_path)
 }

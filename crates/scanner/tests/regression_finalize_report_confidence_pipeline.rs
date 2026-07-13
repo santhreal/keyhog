@@ -6,11 +6,11 @@
 //!   floor → calibration multiplier → **checksum decision (LAST, can veto)**.
 //!
 //! Existing coverage (`engine_fallback_confidence_owner`) is a SOURCE-SHAPE
-//! ownership gate — it asserts the tail *routes through* the owner, not what it
+//! ownership gate, it asserts the tail *routes through* the owner, not what it
 //! *computes*. The order is contractual and a reorder is a silent bug: if the
 //! checksum decision did NOT run last, a token with a BAD embedded checksum that
 //! a known-prefix floor already lifted would be emitted as a high-confidence
-//! finding — a false positive on a provably-forged credential. These pin the
+//! finding, a false positive on a provably-forged credential. These pin the
 //! terminal behaviors with concrete values, never `> 0.0`.
 //!
 //! Scope note: `finalize_report_confidence` and the checksum decision it ends on
@@ -24,7 +24,7 @@ use keyhog_scanner::testing::confidence::finalize_report_confidence;
 // `regression_github_pat_boundary::GHP_VALID`): `ghp_` + 30-char entropy + 6
 // base62 CRC. The shipped `GithubClassicPatValidator` returns `Valid` for it.
 const GHP_VALID: &str = "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";
-// The SAME `ghp_` shape but a FABRICATED (wrong) checksum — structurally a PAT,
+// The SAME `ghp_` shape but a FABRICATED (wrong) checksum, structurally a PAT,
 // but the CRC32 does not match the entropy body, so the validator returns
 // `Invalid`. (This is the exact token `backend_parity_matrix` documents as
 // "silently dropped once checksum wiring landed".)
@@ -109,7 +109,7 @@ fn no_checksum_prefix_credential_passes_through_without_veto_or_lift() {
 
 /// End-to-end NaN barrier: a broken upstream score must never be laundered into
 /// a finite mid-tier confidence NOR leak as `Some(NaN)` out of the tail. The
-/// result must be either a drop (`None`) or a finite score — never a NaN that
+/// result must be either a drop (`None`) or a finite score, never a NaN that
 /// would poison every downstream `>=` gate (all comparisons against NaN are
 /// false).
 #[test]
@@ -134,7 +134,7 @@ fn nan_entry_never_leaks_as_some_nan() {
 /// The `allow_encoded_text_lift` flag is WIRED THROUGH the tail (Review Vector 9:
 /// a parsed flag must reach behavior). It feeds
 /// `apply_post_ml_penalties_with_encoded_text_lift`, which only ever RELAXES the
-/// encoded-text penalty — a "lift" adds, never subtracts — so for identical
+/// encoded-text penalty, a "lift" adds, never subtracts, so for identical
 /// inputs the lift-enabled finalize must land at or above the lift-disabled one.
 /// A monotonicity contract (`>=`) that holds whether or not the lift fires for
 /// this input, so it locks the DIRECTION of the wiring without pinning the exact

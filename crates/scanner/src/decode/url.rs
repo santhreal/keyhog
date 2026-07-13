@@ -261,8 +261,8 @@ fn percent_decode(input: &str) -> Result<String, ()> {
             bytes.extend_from_slice(&input_bytes[index..index + pct_idx]);
             index += pct_idx;
 
-            // A `%` without two following hex digits — truncated at end of
-            // input (`…%4`) or non-hex (`%ZZ`) — is a literal byte, not the
+            // A `%` without two following hex digits, truncated at end of
+            // input (`…%4`) or non-hex (`%ZZ`), is a literal byte, not the
             // start of an escape. Earlier code returned Err here, discarding
             // every escape already decoded in this candidate (all-or-nothing
             // recall loss). Treat it as literal and continue, exactly like the
@@ -367,7 +367,7 @@ pub(crate) fn quoted_printable_decode(input: &str) -> Result<String, ()> {
     String::from_utf8(bytes).map_err(|_| ())
 }
 
-/// Tier-B HTML named-entity → replacement decode table — the single owner
+/// Tier-B HTML named-entity → replacement decode table, the single owner
 /// (`rules/html-named-entities.toml`; was an inline `match`). Keyed by the entity
 /// body INCLUDING its terminating `;` (as scanned). Fails closed on an
 /// invalid/empty file or a non-single-character replacement.
@@ -448,7 +448,7 @@ fn html_named_entity_decode(input: &str) -> Result<String, ()> {
 /// malformed. The largest valid Unicode scalar is `U+10FFFF` (7 hex / 7 decimal
 /// digits), so a longer run can never be a valid codepoint; capping bounds the
 /// digit `String` (a `&#000…0;` with a megabyte of zeros would otherwise
-/// allocate unbounded and feed a doomed `u32` parse — unbounded-alloc DoS).
+/// allocate unbounded and feed a doomed `u32` parse (unbounded-alloc DoS)).
 const MAX_NUMERIC_ENTITY_DIGITS: usize = 10;
 
 fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
@@ -568,8 +568,8 @@ pub(crate) fn octal_escape_decode(input: &str) -> Result<String, ()> {
             continue;
         }
 
-        // A `\` not followed by an octal digit — including a trailing `\` at end
-        // of input — is a literal backslash, not the start of an escape. Earlier
+        // A `\` not followed by an octal digit, including a trailing `\` at end
+        // of input, is a literal backslash, not the start of an escape. Earlier
         // code returned Err on a trailing `\`, discarding every octal escape
         // already decoded in this candidate (all-or-nothing recall loss); treat
         // it as a literal and keep going.
@@ -583,7 +583,7 @@ pub(crate) fn octal_escape_decode(input: &str) -> Result<String, ()> {
         // C-style octal escape: 1 to 3 octal digits, greedy. Consume octal
         // digits until a non-octal char or end of input, capping at three. A
         // short escape (`\1`, `\12`) or one truncated by a following non-octal
-        // char must decode to its byte value — earlier code required EXACTLY
+        // char must decode to its byte value, earlier code required EXACTLY
         // three digits and returned Err otherwise, silently dropping the whole
         // candidate (and every other escape in it) from the octal decode-through
         // path. Values above 0o377 wrap mod 256, matching the common C

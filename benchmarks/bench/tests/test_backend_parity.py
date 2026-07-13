@@ -1,7 +1,7 @@
-"""Gate #2 — BACKEND DIFFERENTIAL PARITY (the one gate that catches the most).
+"""Gate #2: BACKEND DIFFERENTIAL PARITY (the one gate that catches the most).
 
-keyhog runs `walk -> match -> emit` through several divergent backends — SimdCpu,
-the platform CPU fallback, plus GPU region presence — and a silent fallback in any one of them drops
+keyhog runs `walk -> match -> emit` through several divergent backends. SimdCpu,
+the platform CPU fallback, plus GPU region presence, and a silent fallback in any one of them drops
 findings only on THAT path, invisibly. The "validator bypass on the fast path"
 bug class is exactly this: the fast path skips a per-match policy the slow path
 applies, so the two disagree and nobody notices.
@@ -257,14 +257,14 @@ def test_fused_autoroute_calibration_cache_replay_matches_simd(tmp_path):
         "and preserve the simd finding set")
 
 
-@pytest.mark.skipif(not _AVAILABLE, reason="CredData corpus not on disk — backend parity cannot run")
+@pytest.mark.skipif(not _AVAILABLE, reason="CredData corpus not on disk, backend parity cannot run")
 def test_deterministic_reference_backend_produces_findings(backend_findings):
     assert backend_findings[_DETERMINISTIC[0]], (
         "CredData deterministic reference backend produced no findings; backend parity "
         "cannot be scored against an empty reference")
 
 
-@pytest.mark.skipif(not _AVAILABLE, reason="CredData corpus not on disk — backend parity cannot run")
+@pytest.mark.skipif(not _AVAILABLE, reason="CredData corpus not on disk, backend parity cannot run")
 @pytest.mark.parametrize("backend", _ACCELERATED)
 def test_accelerated_backend_drops_nothing(backend, backend_findings):
     got = backend_findings[backend]

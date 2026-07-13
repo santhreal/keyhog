@@ -10,9 +10,9 @@ use keyhog_core::{DedupScope, DedupedMatch, RawMatch, VerificationResult, Verifi
 ///
 /// This is the single merge point for the analyzers that derive evidence from
 /// the credential string alone:
-///   - [`keyhog_scanner::jwt::finding_metadata`] — `jwt.alg` / `jwt.iss` / … and
+///   - [`keyhog_scanner::jwt::finding_metadata`]: `jwt.alg` / `jwt.iss` / … and
 ///     the `jwt.alg_none` security anomaly for JWT-shaped tokens.
-///   - [`keyhog_scanner::aws::finding_metadata`] — the offline-decoded
+///   - [`keyhog_scanner::aws::finding_metadata`], the offline-decoded
 ///     `account_id` for `AKIA…` / `ASIA…` AWS access-key IDs.
 ///
 /// A credential is at most one of these shapes, so the maps never collide;
@@ -200,7 +200,7 @@ pub(crate) fn skipped_findings_from_deduped(
 /// PLACE that guarantees `scan` and `watch` apply an IDENTICAL pipeline
 /// (signatures, disabled detectors, test-fixture + self-scan suppression,
 /// allowlist, per-detector / global confidence floors, severity, match
-/// resolution, inline suppression) — they can no longer drift.
+/// resolution, inline suppression) (they can no longer drift).
 pub(crate) struct MatchFilter<'a> {
     pub(crate) signatures: &'a std::collections::HashSet<std::sync::Arc<str>>,
     pub(crate) disabled_detectors: &'a std::collections::HashSet<String>,

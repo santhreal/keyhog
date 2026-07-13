@@ -1,11 +1,11 @@
 //! Shared invariant for the LR2-A8 harness: a test suite's `mod.rs` must
-//! register exactly the set of sibling `*.rs` test files — no orphans (a file
+//! register exactly the set of sibling `*.rs` test files, no orphans (a file
 //! on disk with no `mod` declaration is never compiled or run) and no phantoms
 //! (a `mod` declaration with no matching file).
 //!
 //! This replaces two brittle magic-count gates (`gap_mod_has_ten_modules`,
 //! `contract_mod_has_ten_modules`). A hardcoded module count breaks on every
-//! legitimate add/remove AND — worse — silently tolerates an orphan test file
+//! legitimate add/remove AND, worse, silently tolerates an orphan test file
 //! whenever the count happens to match. That is the exact failure that let four
 //! `gap/` oracles (two of them registered findings, KH-GAP-177/178) and two
 //! SARIF `contract/` tests sit un-wired: written, even tracked as "green" in the
@@ -99,7 +99,7 @@ pub fn assert_suite_fully_wired(suite_rel: &str) {
 
     assert!(
         !files.is_empty(),
-        "no sibling Rust modules found under {} — the walk is broken",
+        "no sibling Rust modules found under {}, the walk is broken",
         suite_dir.display()
     );
 

@@ -4,7 +4,7 @@ use keyhog_scanner::testing::ProbabilisticGate;
 
 #[test]
 fn realistic_secret_passes() {
-    // GitHub PAT shape — varied bigrams, length 40.
+    // GitHub PAT shape (varied bigrams, length 40).
     assert!(ProbabilisticGate::looks_promising(concat!(
         "gh",
         "p_aBcD1234EFgh5678ijklMNop9012qrSTuvWX"
@@ -20,7 +20,7 @@ fn uuid_with_dashes_is_rejected() {
 
 #[test]
 fn short_input_passes_through() {
-    // <16 bytes — gating returns true regardless.
+    // <16 bytes (gating returns true regardless).
     assert!(ProbabilisticGate::looks_promising("ghp_short"));
 }
 

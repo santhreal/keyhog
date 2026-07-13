@@ -53,7 +53,7 @@ fn commit_file(repo_path: &PathBuf, filename: &str, content: &str, message: &str
 /// new-file line, not line 1. The history source collected every added line
 /// of a commit into one chunk and discarded the `@@ … +new_start @@` header,
 /// so a secret introduced at line 80 of a later commit was attributed to line
-/// 1. (A whole-file-add commit hid this — there blob position == file line.)
+/// 1. (A whole-file-add commit hid this, there blob position == file line.)
 /// Now history runs `-U0` and emits one chunk per hunk carrying
 /// `base_line = new_start - 1`.
 #[cfg(feature = "git")]

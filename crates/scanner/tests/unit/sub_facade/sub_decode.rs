@@ -3,7 +3,7 @@
 //!
 //! Asserts exact decoded BYTES (round-trip identity), exact reject behaviour on
 //! malformed input, and the precise boolean gates the decode pipeline relies on
-//! — never `is_ok`/`is_empty` decoration.
+//! (never `is_ok`/`is_empty` decoration).
 
 use keyhog_scanner::decode::hex::find_hex_strings;
 use keyhog_scanner::decode::{base64_decode, find_base64_strings, hex_decode, z85_decode};
@@ -14,7 +14,7 @@ use keyhog_scanner::testing::decode_caesar::{
 use keyhog_scanner::testing::{looks_reversible, reverse_str};
 
 // ---------------------------------------------------------------------------
-// base64_decode — exact bytes, variant handling, reject on malformed
+// base64_decode, exact bytes, variant handling, reject on malformed
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -124,7 +124,7 @@ fn find_hex_strings_finds_long_hex_run() {
 }
 
 // ---------------------------------------------------------------------------
-// z85_decode — round-trip against a known Z85 fixture
+// z85_decode, round-trip against a known Z85 fixture
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -144,7 +144,7 @@ fn z85_non_multiple_of_five_is_rejected() {
 }
 
 // ---------------------------------------------------------------------------
-// caesar_shift — exact rotation, wrap, identity, full cycle
+// caesar_shift, exact rotation, wrap, identity, full cycle
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -178,7 +178,7 @@ fn caesar_shift_inverts() {
 }
 
 // ---------------------------------------------------------------------------
-// matched_caesar_shifts — exactness vs the brute-force shift set
+// matched_caesar_shifts, exactness vs the brute-force shift set
 // ---------------------------------------------------------------------------
 
 #[test]

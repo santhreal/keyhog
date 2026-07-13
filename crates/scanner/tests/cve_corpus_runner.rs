@@ -1,4 +1,4 @@
-//! CVE-corpus replay runner — single-file fixture variant.
+//! CVE-corpus replay runner (single-file fixture variant).
 //!
 //! Loads `crates/scanner/tests/cve_corpus.toml`, a single TOML file
 //! holding an `[[entry]]` array of public-disclosure / CVE shapes.
@@ -14,7 +14,7 @@
 //!  - `cve_corpus.toml` is a single bundled fixture file that asserts
 //!    against a regex pattern of the surfaced credential string, so
 //!    "wrong detector_id but right shape" still counts as recall on
-//!    a real-world leak — what matters at CVE-replay scale is that
+//!    a real-world leak, what matters at CVE-replay scale is that
 //!    the BYTES of the leaked credential surface, not which label
 //!    they surface under.
 //!

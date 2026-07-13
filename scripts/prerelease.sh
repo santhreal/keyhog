@@ -7,7 +7,7 @@
 # so a human can do the final tag/push. A failing gate refuses the bump.
 #
 #   scripts/prerelease.sh                 # gate only (no version change)
-#   scripts/prerelease.sh --bump 0.5.38   # gate, then bump if green
+#   scripts/prerelease.sh --bump X.Y.Z    # gate, then bump if green
 #   scripts/prerelease.sh --skip-rust     # skip the slow per-crate cargo gates
 #
 # Knobs (env or flag): CARGO_TARGET_DIR, PROFILE (release-fast), SKIP_RUST=1.
@@ -111,7 +111,7 @@ PY
 }
 
 CUR="$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
-step "keyhog prerelease — current ${CUR}${BUMP:+ → ${BUMP}} (profile=$PROFILE, skip_rust=$SKIP_RUST)"
+step "keyhog prerelease, current ${CUR}${BUMP:+ → ${BUMP}} (profile=$PROFILE, skip_rust=$SKIP_RUST)"
 
 # ── 1. candidate + bench gates ───────────────────────────────────────────────
 # Bench integration tests must execute the source tree being released. Resolving
@@ -135,7 +135,7 @@ step "bench: scorer/gate unit tests"
 if [ "$CANDIDATE_READY" = "1" ]; then
   check "bench pytest" bash -c "cd benchmarks && python3 -m pytest -q -m 'not target_spec' bench/tests"
 else
-  echo "  FAIL bench pytest — candidate binary is unavailable"
+  echo "  FAIL bench pytest, candidate binary is unavailable"
   fail=1
   FAILED+=("bench pytest prerequisite")
 fi
@@ -168,7 +168,7 @@ else
   echo "  SKIP rust gates (--skip-rust)"
 fi
 
-# ── 4. install smoke — the install-flow gate ─────────────────────────────────
+# ── 4. install smoke, the install-flow gate ─────────────────────────────────
 # Build + install via the system-lib-free `portable` path (the one that works on
 # every OS incl. arm64 macOS), then prove the installed binary actually detects.
 step "install smoke: cargo install (portable) + version + real detection"
@@ -176,12 +176,12 @@ SMOKE="$(mktemp -d)"
 if cargo install --path crates/cli --root "$SMOKE/kh" --no-default-features --features portable --locked -q 2>"$SMOKE/build.log"; then
   KHS="$SMOKE/kh/bin/keyhog"
   check "installed --version" installed_version_smoke "$KHS"
-  # A live-shape AWS access-key pair (no checksum class — fires on shape).
+  # A live-shape AWS access-key pair (no checksum class (fires on shape)).
   printf 'AWS_ACCESS_KEY_ID=AKIA2E0A8F3B244C9986\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY01\n' > "$SMOKE/leak.env"
   check "installed binary detects a planted secret" installed_detection_smoke \
     "$KHS" "$SMOKE/leak.env" "$SMOKE/report.json" "$SMOKE/scan.stdout" "$SMOKE/scan.stderr"
 else
-  printf '  \033[31mFAIL\033[0m cargo install (portable) — tail:\n'; tail -5 "$SMOKE/build.log"; fail=1; FAILED+=("install smoke build")
+  printf '  \033[31mFAIL\033[0m cargo install (portable), tail:\n'; tail -5 "$SMOKE/build.log"; fail=1; FAILED+=("install smoke build")
 fi
 rm -rf "$SMOKE"
 
@@ -214,10 +214,10 @@ fi
 # ── 6. verdict ───────────────────────────────────────────────────────────────
 step "verdict"
 if [ "$fail" = "0" ]; then
-  echo "  PRERELEASE OK${BUMP:+ — bumped to $BUMP}"
+  echo "  PRERELEASE OK${BUMP:+, bumped to $BUMP}"
   echo "  Next (human): review git diff, commit, tag v${BUMP:-$CUR}, push;"
   echo "  watch lanes: ci · bench-nightly · differential-bench · runners-nightly"
 else
-  echo "  PRERELEASE BLOCKED — ${#FAILED[@]} gate(s) failed: ${FAILED[*]}"
+  echo "  PRERELEASE BLOCKED: ${#FAILED[@]} gate(s) failed: ${FAILED[*]}"
 fi
 exit "$fail"

@@ -188,7 +188,7 @@ fn decode_chunk_recovers_planted_caesar_credential() {
 fn decode_chunk_skips_line_with_embedded_credential_url() {
     // The SAME encoded token, but sitting inside a `scheme://user:pass@host`
     // credential URL. The whole line is a credential-URL span, so every
-    // candidate on it is skipped and NOTHING is decoded — the plaintext URL is
+    // candidate on it is skipped and NOTHING is decoded, the plaintext URL is
     // already the credential and the 25-shift fan-out would only manufacture a
     // garbage finding that out-resolves the real connection string.
     let body = format!("db_url = \"postgres://admin:{ENCODED_SHIFT3}@db.example.com:5432/app\"\n");
@@ -217,7 +217,7 @@ fn decode_chunk_skips_source_code_path() {
 #[test]
 fn decode_chunk_refuses_to_recurse_on_own_caesar_output() {
     // A chunk whose source_type already carries `/caesar` (i.e. it is a prior
-    // decode output) must not be re-shifted — one of the 25 shifts would just
+    // decode output) must not be re-shifted, one of the 25 shifts would just
     // rotate it back to the original.
     let body = format!("api_token = \"{ENCODED_SHIFT3}\"\n");
     let out = CaesarDecoder.decode_chunk(&chunk(&body, "filesystem/caesar", Some("secrets.env")));

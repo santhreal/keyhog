@@ -1,5 +1,5 @@
 //! Regression: `collect_propagation` moves `descendant_indices` into the last
-//! pattern slot at each trie node instead of cloning for every pattern (Law 7 —
+//! pattern slot at each trie node instead of cloning for every pattern (Law 7 
 //! the common single-pattern node now does zero clones), and the move changes no
 //! output (Law 6).
 //!
@@ -31,13 +31,13 @@ fn linear_chain_propagation_is_exact_single_pattern_nodes() {
 fn duplicate_prefix_node_clones_then_moves() {
     // "a" appears twice (one node, two pattern indices) with child "ab": indices
     // 0 and 1 both end at the 'a' node, so index 0 clones the descendants and
-    // index 1 moves them — both must receive the same [2].
+    // index 1 moves them (both must receive the same [2]).
     let table = build(&["a".to_string(), "a".to_string(), "ab".to_string()]);
     assert_eq!(
         table,
         vec![
             vec![2], // first "a" (cloned descendants)
-            vec![2], // second "a" (moved descendants) — identical
+            vec![2], // second "a" (moved descendants), identical
             vec![],  // "ab" has no superstring
         ],
         "duplicate-prefix patterns at one node both get the descendant set"
@@ -70,13 +70,13 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// SOUNDNESS + COMPLETENESS: `table[i]` must equal EXACTLY the set of indices
-    /// `j` whose prefix is a strict superstring of `prefixes[i]` — i.e.
+    /// `j` whose prefix is a strict superstring of `prefixes[i]`: i.e.
     /// `prefixes[j].starts_with(prefixes[i]) && prefixes[j].len() > prefixes[i].len()`.
     /// The small `[a-c]` alphabet with lengths 0..5 (empty strings included)
     /// densely generates shared prefixes, duplicates, and chains, so the trie's
     /// descendant-collection is checked against the ground-truth relation on rich
     /// overlap. Also pins the shape (one row per input) and irreflexivity
-    /// (`i ∉ table[i]` — a prefix is never its own strict superstring).
+    /// (`i ∉ table[i]`: a prefix is never its own strict superstring).
     #[test]
     fn propagation_matches_naive_strict_superstring_relation(
         prefixes in prop::collection::vec("[a-c]{0,5}", 0..12),
@@ -99,8 +99,8 @@ proptest! {
     }
 
     /// `build_propagation_table_for_test` must never panic on arbitrary prefixes
-    /// — including empty strings, multi-byte Unicode, and embedded newlines
-    /// (`(?s)`) — since the trie walks `.chars()` and indexes the output by input
+    ///: including empty strings, multi-byte Unicode, and embedded newlines
+    /// (`(?s)`), since the trie walks `.chars()` and indexes the output by input
     /// position. The table length must still equal the input length regardless of
     /// content.
     #[test]

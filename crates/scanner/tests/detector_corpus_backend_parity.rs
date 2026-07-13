@@ -1,6 +1,6 @@
 //! Corpus-wide per-detector BACKEND PARITY (#177/#183). The SIMD trigger bitmap
 //! unions AC-literal + Hyperscan hits; if a detector's trigger is missing from
-//! one backend it fires on CPU but not SIMD (or vice-versa) — a silent recall
+//! one backend it fires on CPU but not SIMD (or vice-versa), a silent recall
 //! divergence. This drives EACH detector's own regex-generated example through
 //! both the CpuFallback and SimdCpu backends and asserts the set of firing
 //! detectors is byte-for-byte identical. ML-independent; run without `ml` while
@@ -60,7 +60,7 @@ fn cpu_and_simd_agree_on_every_detector_example() {
         let cpu = fired_ids(&scanner, &example, ScanBackend::CpuFallback);
         let simd = fired_ids(&scanner, &example, ScanBackend::SimdCpu);
         if cpu != simd {
-            // ASCII parity is the clean invariant — the backends MUST agree.
+            // ASCII parity is the clean invariant (the backends MUST agree).
             // Unicode-heavy inputs diverge in the normalization path (tracked as
             // the CPU/SIMD-unicode-divergence backlog finding); count and surface
             // those loudly (Law 10) rather than assert on them here.

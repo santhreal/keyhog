@@ -1,4 +1,4 @@
-//! Regression e2e — directory-recursion coverage of `keyhog scan`, driven over
+//! Regression e2e, directory-recursion coverage of `keyhog scan`, driven over
 //! the SHIPPED `keyhog` binary with `--daemon=off` and pinned to EXACT values.
 //!
 //! WHAT THIS FILE PINS (and a bug it documents)
@@ -8,12 +8,12 @@
 //! DOES NOT EXIST in keyhog: a literal repo-wide search for `max-depth` /
 //! `max_depth` finds no CLI argument, no config field, and no walker knob. The
 //! only depth flags on `scan` are `--decode-depth` (recursive base64/archive
-//! DECODE depth, 1..=10) and `--fused-depth` (pipeline channel depth) — neither
+//! DECODE depth, 1..=10) and `--fused-depth` (pipeline channel depth), neither
 //! bounds directory recursion. keyhog's filesystem source walks the whole tree
 //! UNCONDITIONALLY; there is no operator control to stop at a directory depth.
 //!
 //! So this file pins the behavior that actually ships:
-//!   * a scan of a root recurses to EVERY depth (1, 2, 3) with no limit — the
+//!   * a scan of a root recurses to EVERY depth (1, 2, 3) with no limit, the
 //!     union of finding locations is exactly the planted files;
 //!   * scoping the ROOT to a subtree is the only way to exclude shallow files
 //!     (scan `root/lvl1` → depth-1 file absent), and that is exact;
@@ -38,7 +38,7 @@
 //! comparison is SIMD-vs-CPU (both always available); it asserts IDENTICAL depth
 //! coverage, so a silent per-backend degrade would fail rather than pass.
 //!
-//! Every assertion pins a concrete load-bearing value — an exact exit code, an
+//! Every assertion pins a concrete load-bearing value, an exact exit code, an
 //! integer finding count, a file-name set, a detector id, a severity string, a
 //! 64-char credential hash, a redacted form, or a 1-based line number. No
 //! assertion uses `is_empty()` / `is_ok()` / `len() > 0` as its only check.
@@ -151,7 +151,7 @@ fn set_of(items: &[&str]) -> BTreeSet<String> {
 }
 
 // ---------------------------------------------------------------------------
-// UNBOUNDED RECURSION — a scan reaches every directory depth (no limit exists)
+// UNBOUNDED RECURSION, a scan reaches every directory depth (no limit exists)
 // ---------------------------------------------------------------------------
 
 /// Default `--dedup credential`: the one folded finding's primary +
@@ -198,7 +198,7 @@ fn dedup_none_yields_exactly_three_findings_one_per_depth() {
 }
 
 /// All three depths carry the SAME token, so every finding's `credential_hash`
-/// is the identical, exact SHA-256 hex — a single-element set.
+/// is the identical, exact SHA-256 hex (a single-element set).
 #[test]
 fn all_depths_share_the_exact_planted_credential_hash() {
     let tree = plant_depth_tree();
@@ -215,7 +215,7 @@ fn all_depths_share_the_exact_planted_credential_hash() {
 }
 
 /// Each finding redacts to `ghp_...DSiF` and the FULL plaintext token never
-/// appears anywhere in stdout — a leak-safety contract independent of depth.
+/// appears anywhere in stdout (a leak-safety contract independent of depth).
 #[test]
 fn every_depth_finding_redacts_and_stdout_omits_plaintext() {
     let tree = plant_depth_tree();
@@ -270,10 +270,10 @@ fn every_depth_finding_is_critical_github_pat() {
 }
 
 // ---------------------------------------------------------------------------
-// ROOT SCOPING — the only real way to exclude shallow files is the START root
+// ROOT SCOPING, the only real way to exclude shallow files is the START root
 // ---------------------------------------------------------------------------
 
-/// Scanning the DEEPEST subdir surfaces only its file — the depth-1 and depth-2
+/// Scanning the DEEPEST subdir surfaces only its file, the depth-1 and depth-2
 /// files above the chosen root are outside the walk. Negative twin of the
 /// unbounded-root case.
 #[test]
@@ -295,7 +295,7 @@ fn scanning_deepest_subdir_finds_only_the_deep_file() {
 }
 
 /// Scanning the MID subtree covers the depth-2 and depth-3 files but NOT the
-/// depth-1 file that sits above the root — the exact set, with an explicit
+/// depth-1 file that sits above the root, the exact set, with an explicit
 /// negative check on `top.env`.
 #[test]
 fn scanning_mid_subtree_excludes_the_top_level_file() {
@@ -337,7 +337,7 @@ fn scanning_a_single_file_root_finds_exactly_that_file() {
     );
 }
 
-/// Sibling directories at the SAME depth are all walked — traversal is not a
+/// Sibling directories at the SAME depth are all walked, traversal is not a
 /// single deepening chain. Root has one depth-1 file and two depth-2 branches.
 #[test]
 fn sibling_dirs_at_the_same_depth_are_both_scanned() {
@@ -369,7 +369,7 @@ fn sibling_dirs_at_the_same_depth_are_both_scanned() {
     );
 }
 
-/// A nested tree with NO secrets exits 0 with an empty JSON array — recursion
+/// A nested tree with NO secrets exits 0 with an empty JSON array, recursion
 /// over clean directories does not fabricate findings.
 #[test]
 fn clean_nested_tree_exits_zero_with_empty_array() {
@@ -389,7 +389,7 @@ fn clean_nested_tree_exits_zero_with_empty_array() {
 }
 
 // ---------------------------------------------------------------------------
-// THE REQUESTED FLAG DOES NOT EXIST — `--max-depth` is rejected (exit 2)
+// THE REQUESTED FLAG DOES NOT EXIST: `--max-depth` is rejected (exit 2)
 // ---------------------------------------------------------------------------
 
 /// `scan --max-depth 1` is an UNKNOWN argument: clap exits 2 (user error), the
@@ -428,7 +428,7 @@ fn max_depth_zero_is_also_rejected_exit_two() {
 }
 
 // ---------------------------------------------------------------------------
-// HOST-INDEPENDENCE — SIMD and CPU walk identically (no silent per-backend gap)
+// HOST-INDEPENDENCE: SIMD and CPU walk identically (no silent per-backend gap)
 // ---------------------------------------------------------------------------
 
 /// The CPU (always-available) path is the source of truth: it must reach all
@@ -436,7 +436,7 @@ fn max_depth_zero_is_also_rejected_exit_two() {
 /// coverage (when the Hyperscan prefilter is present) OR fail closed with exit 3
 /// and the forbidden-silent-fallback message (when it is absent, e.g. the
 /// hyperscan-less `ci` build). What is NOT permitted is a silent per-backend
-/// recall degrade — simd succeeding (exit 1) with a SMALLER coverage set than cpu
+/// recall degrade, simd succeeding (exit 1) with a SMALLER coverage set than cpu
 /// (Law 10). This keeps the test host/build-independent while still catching a
 /// real silent degrade.
 #[test]
@@ -461,11 +461,11 @@ fn simd_and_cpu_backends_yield_identical_depth_coverage() {
 
     match simd_code {
         Some(1) => {
-            // Prefilter present: simd must match cpu exactly — no silent degrade.
+            // Prefilter present: simd must match cpu exactly (no silent degrade).
             let simd_cov = covered_basenames(&simd_out);
             assert_eq!(
                 simd_cov, cpu_cov,
-                "simd depth coverage must equal cpu's — no silent per-backend degrade; \
+                "simd depth coverage must equal cpu's, no silent per-backend degrade; \
                  stdout={simd_out}"
             );
         }

@@ -1,4 +1,4 @@
-//! Regression: scanner checksum registry — CRC32 / base62 verification.
+//! Regression: scanner checksum registry: CRC32 / base62 verification.
 //!
 //! Locks the embedded-checksum gate against silent drift. Every fixture below
 //! is a KNOWN-GOOD value computed independently (Python `zlib.crc32`, the
@@ -12,7 +12,7 @@
 //! families (`glpat-`, `glrt-`, stripe) return `StructurallyValid`, and the
 //! confidence-policy mapping (Valid→floor 0.9, Invalid→drop) holds.
 //!
-//! Uses the `doc(hidden)` `testing::checksum` facade — the same surface the
+//! Uses the `doc(hidden)` `testing::checksum` facade, the same surface the
 //! existing `unit/checksum_extended.rs` target consumes.
 
 use keyhog_scanner::testing::checksum::{
@@ -34,7 +34,7 @@ fn crc32_matches_known_test_vectors() {
         891_568_578,
         "CRC32(\"abc\") reference vector"
     );
-    // CRC32 of a 30-char all-'A' body — reused by the GitHub/npm fixtures below.
+    // CRC32 of a 30-char all-'A' body (reused by the GitHub/npm fixtures below).
     assert_eq!(
         standard_crc32(&[b'A'; 30]),
         830_433_819,
@@ -64,7 +64,7 @@ fn base62_encode_padding_and_carry_boundaries() {
 
 #[test]
 fn crc32_base62_suffix_composes_the_two_primitives() {
-    // suffix == base62(crc32(body)) — the exact suffix GitHub/npm embed.
+    // suffix == base62(crc32(body)) (the exact suffix GitHub/npm embed).
     assert_eq!(
         crc32_base62_suffix(&[b'A'; 30], 6),
         "0uCPlr",

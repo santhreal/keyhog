@@ -1,7 +1,7 @@
 //! Random-input fuzz: 1..16 files with random bytes + random extensions into a
 //! temp dir, drain `FilesystemSource::chunks()` to completion. Beyond the
 //! original no-panic smoke, this now asserts real PROVENANCE invariants (6321):
-//!   * every yielded chunk maps back to a file we actually wrote — no fabricated
+//!   * every yielded chunk maps back to a file we actually wrote, no fabricated
 //!     path, no `..` traversal component escaping the tree;
 //!   * a second independent drain of the same tree yields the identical set of
 //!     chunk paths (enumeration is deterministic, not order-/drop-dependent).
@@ -21,7 +21,7 @@ fn filesystem_fuzz_config() -> ProptestConfig {
         // names/extensions, deliberately kept well under the 10k pure-CPU ceiling
         // because each case spins a real `TempDir`, writes up to 16 files, and
         // drains the source TWICE (I/O-bound). 10k here would dominate the whole
-        // source-crate gate for no added signal — the invariants below are
+        // source-crate gate for no added signal, the invariants below are
         // structural, so they saturate long before 10k.
         cases: 500,
         failure_persistence: Some(Box::new(FileFailurePersistence::Direct(
@@ -74,7 +74,7 @@ proptest! {
                 Some(e) => format!("{i}_{stem}.{e}"),
                 None => format!("{i}_{stem}"),
             };
-            // Random byte slices may not be valid UTF-8 — write them raw so the
+            // Random byte slices may not be valid UTF-8, write them raw so the
             // source's binary-detection path is also covered.
             let _ = std::fs::write(dir.path().join(&name), bytes);
             written.insert(name);
@@ -126,12 +126,12 @@ proptest! {
 
     /// CONTENT RECALL (6385): a plain-text file's bytes must reach the chunk data
     /// VERBATIM. The provenance fuzz above pins WHICH files are yielded but nothing
-    /// about their CONTENT — a truncation or lossy-decode bug in the source read
+    /// about their CONTENT, a truncation or lossy-decode bug in the source read
     /// path (the recurring "validator bypass on fast path" class: gpudeflate data
     /// loss, capped_read truncation) would silently drop the credential bytes before
     /// the scanner ever sees them, and a `!is_empty()` shape check would miss it.
     /// This plants a unique marker in an ASCII `.env` file (a plain, text-classified,
-    /// non-compressed extension — no binary/decompress path) surrounded by random
+    /// non-compressed extension, no binary/decompress path) surrounded by random
     /// ASCII, drains the source, and asserts the marker survives into a chunk. The
     /// file is deliberately kept well under any chunk size so the marker lands in a
     /// single chunk (no cross-chunk split to reassemble).

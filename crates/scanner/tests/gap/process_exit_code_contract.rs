@@ -4,7 +4,7 @@
 //! The scanner has two deep paths that may hard-stop the process (a
 //! caller-required GPU backend being unavailable, and a backend that cannot be
 //! constructed) rather than degrade silently. Their exit codes MUST mirror the
-//! CLI's documented process contract — `keyhog::exit_codes::EXIT_REQUIRE_GPU_UNMET`
+//! CLI's documented process contract: `keyhog::exit_codes::EXIT_REQUIRE_GPU_UNMET`
 //! (12) and `EXIT_SYSTEM_ERROR` (3). The CLI contract test source-string-checks
 //! the mirror; this pins the COMPILED scanner-side values and their distinctness
 //! (the two hard-stop reasons must be distinguishable by exit code).

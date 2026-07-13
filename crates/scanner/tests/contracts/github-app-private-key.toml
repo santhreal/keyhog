@@ -29,7 +29,7 @@ private_key: |
   -----END RSA PRIVATE KEY-----
 """
 credential = "MIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5s"
-reason = "Adversarial yaml_block envelope wrapping a full RSA PEM block — the key body must still surface under this detector."
+reason = "Adversarial yaml_block envelope wrapping a full RSA PEM block (the key body must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

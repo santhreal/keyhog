@@ -6,7 +6,7 @@
 //! This file is DELIBERATELY distinct from `regression_merkle_spec_hash.rs`.
 //! That file pins the digest's role in the cold-start load contract (schema /
 //! parse / spec-change cold starts). This file pins, field by field, WHICH
-//! detector attributes participate in the digest — and, crucially, exercises
+//! detector attributes participate in the digest, and, crucially, exercises
 //! adversarial shapes (delimiter injection, cross-detector field swaps,
 //! duplicate entries) that a single-detector single-field test cannot reach.
 //!
@@ -331,12 +331,12 @@ fn spec_hash_single_detector_severity_change_differs() {
 #[test]
 fn bug_spec_hash_must_change_when_two_detectors_swap_severity() {
     // CONFIRMED DEFECT: `compute_spec_hash` emits the severity key as
-    // `format!("sev:{:?}", d.severity)` — WITHOUT the detector id. So for two
+    // `format!("sev:{:?}", d.severity)`: WITHOUT the detector id. So for two
     // detectors A(High) and B(Low), the key multiset contains {sev:High, sev:Low}
     // regardless of WHICH detector owns which severity. Swapping the two
     // severities (A->Low, B->High) yields the identical sorted key stream and
     // therefore the identical digest. The merkle cache would keep a stale skip
-    // even though every finding's severity — and severity-threshold suppression —
+    // even though every finding's severity, and severity-threshold suppression 
     // just changed (Law 10 silent staleness). Correct behaviour: the digest MUST
     // change. Fix: bind severity to id, e.g. `format!("sev:{}:{:?}", d.id, ..)`.
     let original = compute_spec_hash(&[
@@ -358,7 +358,7 @@ fn bug_spec_hash_must_change_when_pattern_client_safe_toggled() {
     // CONFIRMED DEFECT: the pattern key is `format!("p:{}:{}|g:{}", id, regex, group)`
     // and omits `PatternSpec.client_safe`. Toggling `client_safe` downgrades every
     // match of that pattern to `Severity::ClientSafe` (and it is gated behind
-    // `--hide-client-safe`), which materially changes reported output — yet the
+    // `--hide-client-safe`), which materially changes reported output, yet the
     // digest is unchanged, so the merkle cache keeps a stale skip (Law 10).
     // Correct behaviour: the digest MUST change. Fix: fold `client_safe` (and the
     // other output-affecting pattern fields) into the pattern key.

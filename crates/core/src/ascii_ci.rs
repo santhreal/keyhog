@@ -1,7 +1,7 @@
 //! Shared ASCII case-insensitive primitives: `starts_with` /
 //! `ends_with_ignore_ascii_case` and the `ci_find` byte-substring search.
 //! Single owner (ONE PLACE) for allocation-free case-folded comparisons on the
-//! scanner and verifier hot paths — callers use these instead of allocating a
+//! scanner and verifier hot paths, callers use these instead of allocating a
 //! lowercased copy of each candidate.
 
 /// Returns true when `value` starts with `prefix`, ignoring ASCII case.

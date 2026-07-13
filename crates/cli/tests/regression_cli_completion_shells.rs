@@ -54,7 +54,7 @@ fn bash_emits_keyhog_function_marker() {
 
 #[test]
 fn bash_registers_completion_via_complete_dash_f() {
-    // The bash-*unique* registration line (`complete -F _keyhog ...`) — this is
+    // The bash-*unique* registration line (`complete -F _keyhog ...`), this is
     // what distinguishes a bash script from zsh, which also defines `_keyhog()`.
     let (code, stdout, _stderr) = run_completion("bash");
     assert_eq!(code, Some(0));

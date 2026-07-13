@@ -117,7 +117,7 @@ fn razorpay_wrong_prefix_does_not_fire() {
 #[test]
 fn razorpay_key_secret_with_companion_key_id_surfaces() {
     // `razorpay-key-secret` has a REQUIRED companion: an `rzp_(test|live)_` key id
-    // within 5 lines. That is a precision feature — a bare secret is noise; a
+    // within 5 lines. That is a precision feature, a bare secret is noise; a
     // secret paired with its key id is a real credential. Exercise that path.
     let secret = alnum(28, 7);
     let key_id = format!("rzp_live_{}", alnum(14, 30));

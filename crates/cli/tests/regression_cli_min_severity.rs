@@ -11,7 +11,7 @@
 //!   Info < ClientSafe < Low < Medium < High < Critical  (spec.rs).
 //!
 //! Two real findings are planted, both fire on the CPU/AC-literal path (each
-//! detector carries literal keywords, so this is HOST-INDEPENDENT — no
+//! detector carries literal keywords, so this is HOST-INDEPENDENT, no
 //! Hyperscan/accelerator required) and run under `--backend cpu`:
 //!   * CRITICAL: a bare GitHub classic PAT (`ghp_` + 36 alnum, valid checksum)
 //!     fires `github-classic-pat` (service github, severity `critical`). Its
@@ -398,7 +398,7 @@ fn short_flag_s_matches_long_severity() {
     );
 }
 
-/// ADVERSARIAL: an unknown severity level is a value-enum parse error — a user
+/// ADVERSARIAL: an unknown severity level is a value-enum parse error, a user
 /// error (exit 2), and clap names the offending flag in its diagnostic.
 #[test]
 fn invalid_severity_value_is_user_error_exit_two() {
@@ -416,7 +416,7 @@ fn invalid_severity_value_is_user_error_exit_two() {
 }
 
 /// ADVERSARIAL: filtering must not corrupt the surviving finding. Under
-/// `--severity critical` the github finding keeps its exact identity — service
+/// `--severity critical` the github finding keeps its exact identity, service
 /// `github` and the deterministic sha256 of the planted PAT.
 #[test]
 fn filter_preserves_surviving_finding_identity() {

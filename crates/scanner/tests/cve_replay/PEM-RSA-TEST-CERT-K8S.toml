@@ -1,13 +1,13 @@
 # RSA PRIVATE KEY block shape exactly as it appears in real
 # Kubernetes test-certificate files (cmd/kube-apiserver/app/testing/
-# testdata/*.key — the same shape gitleaks and trufflehog catch
+# testdata/*.key, the same shape gitleaks and trufflehog catch
 # universally on these paths). Keyhog correctly suppresses these in
 # test-fixture paths, but the underlying regex MUST still fire when
 # the same PEM block appears in non-test code (e.g. a YAML config
 # file accidentally committed alongside a key).
 #
 # The fixture below uses a `config.yaml` path, NOT `testdata/`, so
-# keyhog's test-context suppression doesn't apply — this asserts
+# keyhog's test-context suppression doesn't apply, this asserts
 # the engine catches the PEM in production-shaped files.
 
 schema_version = 1
@@ -15,7 +15,7 @@ cve_id = "PEM-RSA-K8S-TEST-CERT-SHAPE"
 source_url = "https://github.com/kubernetes/kubernetes/tree/master/cmd/kube-apiserver/app/testing/testdata"
 detectors = ["private-key", "ssh-private-key", "github-app-private-key"]
 service = "crypto"
-description = "RSA PEM block in non-test config (must fire — same shape as Kubernetes test certs, but pretending to be a real config leak)."
+description = "RSA PEM block in non-test config (must fire (same shape as Kubernetes test certs, but pretending to be a real config leak))."
 leaked_text = """
 apiVersion: v1
 kind: Secret

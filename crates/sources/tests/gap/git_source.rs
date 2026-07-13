@@ -6,7 +6,7 @@
 //! * `decode_git_blob` delegates to the filesystem text decoder, so git blobs
 //!   and filesystem files share the same UTF-8, UTF-16 BOM, lossy fallback, and
 //!   binary rejection contract.
-//! * `stream_git_blobs` (source.rs:97) — `git log --reflog --all`, explicit
+//! * `stream_git_blobs` (source.rs:97): `git log --reflog --all`, explicit
 //!   refs/stash coverage, unreachable commit enumeration, gix tree walk,
 //!   path-aware blob dedup / `seen_commits` dedup, the filesystem-owned
 //!   default-exclude path classifier,
@@ -461,7 +461,7 @@ fn low_c0_control_density_below_threshold_is_kept() {
 #[test]
 fn valid_utf8_blob_kept_byte_for_byte() {
     // Valid UTF-8 (including multibyte) goes through the fast path and is
-    // copied verbatim — no replacement chars.
+    // copied verbatim (no replacement chars).
     let (_t, repo) = init_repo();
     let content = "user=café\nGITHUB=ghp_validUtf8Multibyte000000000001\n";
     commit_file(&repo, "u.txt", content.as_bytes(), "utf8");
@@ -770,7 +770,7 @@ fn untracked_ignored_file_is_not_in_any_tree() {
 fn force_added_ignored_file_is_still_scanned() {
     // `.gitignore` only governs default `git add`. A force-added (`add -f`)
     // ignored file is committed into the tree, and the GitSource walks the
-    // tree — so it IS scanned despite the ignore rule.
+    // tree (so it IS scanned despite the ignore rule).
     let (_t, repo) = init_repo();
     commit_file(&repo, ".gitignore", b"forced.env\n", "ignore rule");
     std::fs::write(

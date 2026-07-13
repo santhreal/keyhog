@@ -38,7 +38,7 @@ pub(super) fn profile_enabled() -> bool {
 /// accumulators and every index/clamp into them share this one capacity. There
 /// are 13 default decoders today, so the cap carries headroom; a decoder past
 /// slot `MAX_PROFILED_DECODERS` is simply not profiled (`record_decoder_run`
-/// drops it) — the `decoder_registry_within_profiler_capacity` gap test guards
+/// drops it), the `decoder_registry_within_profiler_capacity` gap test guards
 /// the default set against silently outgrowing this.
 const MAX_PROFILED_DECODERS: usize = 16;
 
@@ -142,9 +142,9 @@ fn default_decoders() -> Vec<Arc<dyn Decoder>> {
 }
 
 /// The `name()` of each default decoder, in registration order. This is the
-/// canonical decode-pipeline composition — the order is load-bearing (the
+/// canonical decode-pipeline composition, the order is load-bearing (the
 /// `reverse` and `caesar` decoders deliberately run last, after the structural
-/// decoders) — and is pinned by `decoder_registry_default_order` so a reorder
+/// decoders), and is pinned by `decoder_registry_default_order` so a reorder
 /// or addition can't silently shift the pipeline.
 pub(crate) fn default_decoder_names() -> Vec<&'static str> {
     default_decoders().iter().map(|d| d.name()).collect()
@@ -168,7 +168,7 @@ pub(super) fn active_decoders() -> Arc<Vec<Arc<dyn Decoder>>> {
     THREAD_DECODERS.with(|thread_decoders| {
         let thread = thread_decoders.borrow();
         if thread.is_empty() {
-            // Common case: no per-test decoder registered — hand back the shared
+            // Common case: no per-test decoder registered, hand back the shared
             // snapshot with no allocation, matching the non-test fast path.
             base
         } else {

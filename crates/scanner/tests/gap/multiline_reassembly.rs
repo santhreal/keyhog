@@ -128,7 +128,7 @@ fn brace_prefixed_invalid_json_concat_is_preprocessed_valid_json_passes_through(
     // `{ apiKey: "gh" +\n "p_…" }`). A `{`-prefixed buffer with a concat shape
     // that does NOT parse as strict JSON is JS/TS source and is now PREPROCESSED
     // (its string literals joined and appended for scanning) instead of skipped.
-    // The exact join form is a preprocessor artifact — what this pins is that the
+    // The exact join form is a preprocessor artifact, what this pins is that the
     // buffer is no longer passed through unchanged.
     let js = "{ \"a\": \"x\" + \"y\" }\n";
     let p = pre(js);
@@ -857,7 +857,7 @@ fn fragment_cache_three_near_fragments_emit_six_ordered_pairs() {
 }
 
 // ---------------------------------------------------------------------------
-// PreprocessedText::passthrough (config.rs) — constructor used elsewhere
+// PreprocessedText::passthrough (config.rs), constructor used elsewhere
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -988,8 +988,8 @@ fn lone_mid_line_backtick_lacks_per_line_indicator_passthrough() {
 //
 // extract_plus_concatenation must split ONLY on the `+` that JOIN string
 // literals (outside any quoted span). A `+` INSIDE a quoted literal is part of
-// the value — base64 uses `+` in its alphabet and a fragment can even end in
-// one — so a blind `split('+')` truncated those secrets and broke reassembly.
+// the value, base64 uses `+` in its alphabet and a fragment can even end in
+// one (so a blind `split('+')` truncated those secrets and broke reassembly).
 // `result_lines` rebuilds every line of a chunk, so any chunk that carries a
 // real concat indicator routes its other lines (e.g. a base64 value) through
 // this splitter; the bug therefore corrupts real-world config files mixing a
@@ -1200,7 +1200,7 @@ fn var_ref_concatenation_still_resolves() {
 // reassembled literal; escaped `{{`/`}}` collapse to one literal brace. The skip
 // must track string literals INSIDE the expression so a `{`/`}` that appears in
 // a quoted span (f"{d['}']}tail") does not miscount brace depth and leak the
-// expression tail into the secret — the same quote-awareness the `${...}`
+// expression tail into the secret, the same quote-awareness the `${...}`
 // template handler already has.
 // ---------------------------------------------------------------------------
 
@@ -1360,7 +1360,7 @@ fn uppercase_f_prefix_enables_interpolation_skip() {
 
 #[test]
 fn non_fstring_braces_are_preserved_verbatim() {
-    // A plain (non-`f`) string must keep its braces — they are not interpolation.
+    // A plain (non-`f`) string must keep its braces (they are not interpolation).
     let p = pre("tok = \"a{b}c\" \\\n    \"_KCONT\"\n");
     let app = p.text[p.original_end..].to_string();
     assert!(

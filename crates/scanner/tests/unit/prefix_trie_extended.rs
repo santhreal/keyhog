@@ -37,12 +37,12 @@ fn shorter_prefix_propagates_to_longer() {
     let prefixes = vec!["gh".to_string(), "ghp_".to_string()];
     let table = build_propagation_table(&prefixes);
     assert_eq!(table.len(), 2);
-    // table[0] = propagation for "gh" — should include the index for "ghp_"
+    // table[0] = propagation for "gh", should include the index for "ghp_"
     assert!(
         table[0].contains(&1),
         "gh (index 0) should propagate to ghp_ (index 1)"
     );
-    // table[1] = propagation for "ghp_" — "ghp_" is NOT a prefix of "gh"
+    // table[1] = propagation for "ghp_": "ghp_" is NOT a prefix of "gh"
     assert!(
         !table[1].contains(&0),
         "ghp_ (index 1) should not propagate back to gh (index 0)"
@@ -94,7 +94,7 @@ fn identical_prefixes_treated_as_separate_entries() {
     let table = build_propagation_table(&prefixes);
     assert_eq!(table.len(), 2);
     // Both share the same trie node so each is a "sibling descendant" of the
-    // other — the propagation for index 0 includes index 1 and vice versa.
+    // other (the propagation for index 0 includes index 1 and vice versa).
     // Both results are non-empty (they see each other as co-terminals).
 }
 

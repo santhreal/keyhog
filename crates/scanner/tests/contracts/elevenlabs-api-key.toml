@@ -20,7 +20,7 @@ reason = "Body below 32 hex chars after `sk_`."
 [[evasion]]
 text = "xi-api-key: sk_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
 credential = "sk_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
-reason = "Custom xi-api-key header form — prefix detector still anchors."
+reason = "Custom xi-api-key header form (prefix detector still anchors)."
 
 [perf]
 fixture_bytes = 4096

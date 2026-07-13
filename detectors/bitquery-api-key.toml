@@ -8,7 +8,7 @@ id = "bitquery-api-key"
 name = "Bitquery API Key"
 service = "bitquery"
 severity = "high"
-# "api_key", "apikey" removed: over-broad generic prefilter the regex does NOT need — every
+# "api_key", "apikey" removed: over-broad generic prefilter the regex does NOT need, every
 # pattern self-anchors on the service name (kept), which is present in any real
 # match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.
 keywords = ["bitquery", "BITQUERY"]

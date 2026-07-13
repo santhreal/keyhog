@@ -1,7 +1,7 @@
 //! Regression: core severity-threshold suppression.
 //!
 //! Two coupled contracts are exercised here, both host-independent (pure enum
-//! ordering + vyre's CPU rule evaluator — no Hyperscan/SIMD/GPU backend touched,
+//! ordering + vyre's CPU rule evaluator, no Hyperscan/SIMD/GPU backend touched,
 //! so every assertion below holds identically on an accelerator-less CI box):
 //!
 //!   1. `Severity`'s derived `Ord` MUST rank
@@ -17,7 +17,7 @@
 //! The load-bearing adversarial case is `ClientSafe`: it ranks BELOW `Low`, so
 //! `severity_lte = "low"` must also suppress client-safe findings. An earlier
 //! rank table that omitted the `client-safe` tier silently skipped exactly those
-//! findings — that regression is pinned by
+//! findings, that regression is pinned by
 //! [`severity_lte_low_also_suppresses_client_safe_below_it`].
 
 use std::borrow::Cow;
@@ -67,7 +67,7 @@ fn suppressor(toml_body: &str) -> RuleSuppressor {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Severity Ord — the ordering every threshold rides on.
+// 1. Severity Ord (the ordering every threshold rides on).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -128,7 +128,7 @@ fn severity_downgrade_one_steps_exactly_one_tier_and_floors_at_info() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. severity_lte threshold suppression — kept vs suppressed per exact tier.
+// 2. severity_lte threshold suppression (kept vs suppressed per exact tier).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -286,7 +286,7 @@ fn empty_suppressor_keeps_every_severity() {
 #[test]
 fn unknown_severity_lte_label_is_a_schema_error() {
     // A bogus threshold label must fail closed at parse time with a Schema error
-    // naming the offending entry index — never a silently-empty suppressor.
+    // naming the offending entry index (never a silently-empty suppressor).
     let result = "[[suppress]]\nseverity_lte = \"urgent\"\n".parse::<RuleSuppressor>();
     match result {
         Err(RuleSuppressorError::Schema {

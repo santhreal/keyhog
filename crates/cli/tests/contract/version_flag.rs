@@ -30,7 +30,7 @@ fn version_flag_exits_zero_and_prints_semver() {
 
 /// MC-06: build provenance must be surfaced in `--version`. `build.rs` stamps the
 /// git commit and the embedded-detector-set digest, but for a long while nothing
-/// READ them (a Law-11 stamped-but-dead gap) — so `tuned==benched==shipped` was
+/// READ them (a Law-11 stamped-but-dead gap), so `tuned==benched==shipped` was
 /// unverifiable and a stale binary reported the same version string as HEAD.
 /// This pins the surfacing: the commit line and the detector-set line must be
 /// present, and the printed digest + count must match the values the linked

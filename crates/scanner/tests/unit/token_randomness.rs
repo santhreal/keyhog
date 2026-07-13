@@ -21,7 +21,7 @@ fn password_is_confident_dictionary_word() {
 
 #[test]
 fn secret_six_chars_is_confident_dictionary_word() {
-    // Exactly MIN_ALPHA chars — the model is evaluated and `secret` reads
+    // Exactly MIN_ALPHA chars, the model is evaluated and `secret` reads
     // as English, so it is confidently a dictionary word.
     assert_eq!("secret".len(), MIN_ALPHA);
     assert!(is_confident_dictionary_word("secret"));
@@ -57,7 +57,7 @@ fn lowercase_random_token_is_not_dictionary_word() {
 #[test]
 fn six_char_random_token_is_not_dictionary_word() {
     // `hjxzyi` is exactly MIN_ALPHA chars and scores BELOW the English
-    // threshold — random, not dictionary, so it is kept.
+    // threshold (random, not dictionary, so it is kept).
     assert!(!is_confident_dictionary_word("hjxzyi"));
     assert!(is_random_token("hjxzyi"));
 }
@@ -73,12 +73,12 @@ fn mixed_case_random_token_is_not_dictionary_word() {
 fn short_tokens_are_not_confident_dictionary_words() {
     // Below MIN_ALPHA the bigram model returns None: the predicate must be
     // false (it can only DROP what the model is SURE is English), so a short
-    // random userinfo value is never suppressed by this gate — the regex
+    // random userinfo value is never suppressed by this gate, the regex
     // `{6,128}` floor, not this predicate, is what bounds the short case.
     for token in ["pass", "admin", "root", "user", "pwd"] {
         assert!(
             !is_confident_dictionary_word(token),
-            "{token} is below MIN_ALPHA — the predicate must fail-safe to false"
+            "{token} is below MIN_ALPHA, the predicate must fail-safe to false"
         );
     }
 }
@@ -96,7 +96,7 @@ fn empty_and_nonalpha_are_not_dictionary_words() {
 fn single_letter_mask_is_low_diversity() {
     // The exact strong-anchor blind spot: `xxxxxxxx` has improbable English
     // bigrams (so it is NOT a confident dictionary word) but only ONE distinct
-    // letter — a redaction mask, never a real password. The family gate must
+    // letter, a redaction mask, never a real password. The family gate must
     // drop it on this predicate, since the Tier-B repetitive-run gate is
     // skipped for the service-anchored family.
     for mask in ["xxxxxxxx", "aaaaaa", "XXXXXXXX", "00000000", "zzzzzz"] {
@@ -109,8 +109,8 @@ fn single_letter_mask_is_low_diversity() {
 
 #[test]
 fn alternating_two_letter_mask_is_low_diversity() {
-    // `ababab` / `xyxyxy` have exactly 2 distinct letters — below the floor of
-    // 3 — so they are alternating patterns, not random passwords.
+    // `ababab` / `xyxyxy` have exactly 2 distinct letters, below the floor of
+    // 3 (so they are alternating patterns, not random passwords).
     for mask in ["ababab", "xyxyxyxy", "a1a1a1a1"] {
         assert!(
             has_low_letter_diversity(mask),
@@ -121,7 +121,7 @@ fn alternating_two_letter_mask_is_low_diversity() {
 
 #[test]
 fn digit_and_symbol_only_values_are_low_diversity() {
-    // Pure-digit / pure-symbol values have ZERO distinct letters — a sequence
+    // Pure-digit / pure-symbol values have ZERO distinct letters, a sequence
     // or punctuation run in a password slot, dropped by the diversity floor.
     for mask in ["12345678", "00000000", "!@#$%^&*", "--------"] {
         assert!(
@@ -136,7 +136,7 @@ fn genuine_random_passwords_clear_the_diversity_floor() {
     // The recall the family must KEEP: a real short/low-alpha password has ≥ 3
     // distinct letters and must NOT be flagged as a low-diversity mask.
     for pw in [
-        "i8cr1w!",          // 4 distinct letters (i,c,r,w) — the recovery case
+        "i8cr1w!",          // 4 distinct letters (i,c,r,w), the recovery case
         "pxidztpv",         // userinfo random
         "argriyjqr",        // SQL IDENTIFIED BY random
         "Rcuhxw1486",       // PowerShell -Password random
@@ -144,7 +144,7 @@ fn genuine_random_passwords_clear_the_diversity_floor() {
     ] {
         assert!(
             !has_low_letter_diversity(pw),
-            "{pw} has ≥ {MIN_DISTINCT_LETTERS} distinct letters — a real password, not a mask"
+            "{pw} has ≥ {MIN_DISTINCT_LETTERS} distinct letters, a real password, not a mask"
         );
     }
 }
@@ -162,7 +162,7 @@ fn exactly_three_distinct_letters_is_not_low_diversity() {
 fn hex_digests_are_not_dictionary_words() {
     // The exact ripple cause: a pure-hex key's `a..f` adjacencies (`ab`,
     // `be`, `de`, `ea`) read as probable English, but a hex digest carries
-    // NO `g..z` letter, so the predicate must reject it — otherwise the
+    // NO `g..z` letter, so the predicate must reject it, otherwise the
     // placeholder gate would suppress real hex secrets (rollbar/steam/…).
     for hex in [
         "08c0fee0abeb7224113fd958de7528ab",
@@ -254,7 +254,7 @@ fn dictionary_words_are_not_random_tokens() {
 fn token_randomness_cached_verdict_matches_direct_predicate() {
     // for_candidate precomputes evidence for the candidate; querying that exact
     // value must return the cached verdict, and querying a DIFFERENT value must
-    // recompute — both agreeing byte-for-byte with the free `is_random_token`.
+    // recompute (both agreeing byte-for-byte with the free `is_random_token`).
     let randomness = TokenRandomness::for_candidate("pxidztpv");
     assert_eq!(
         randomness.is_random_token("pxidztpv"),
@@ -274,7 +274,7 @@ fn token_randomness_cached_verdict_matches_direct_predicate() {
 #[test]
 fn identifier_gate_lifts_random_token_keeps_dictionary() {
     // The gate stays engaged (true ⇒ suppressed) for a dictionary identifier and
-    // lifts (false ⇒ recovered) for a random token — a thin wrapper over
+    // lifts (false ⇒ recovered) for a random token, a thin wrapper over
     // `!is_random_token`, the single source of truth both call sites share.
     let random = TokenRandomness::for_candidate("pxidztpv");
     assert!(

@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "HCLOUD_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "HCLOUD_TOKEN=c5fd1EXAMPLEEXAMPLEd78db"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "export HCLOUD_TOKEN=c5fd1aee81e06b2f61bfe276214ca7aa8f6051ea71dcaa2e40187610db9d78db"
 credential = "c5fd1aee81e06b2f61bfe276214ca7aa8f6051ea71dcaa2e40187610db9d78db"
-reason = "Adversarial env_export envelope — credential must still surface under this detector."
+reason = "Adversarial env_export envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

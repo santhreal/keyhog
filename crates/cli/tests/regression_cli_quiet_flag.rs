@@ -37,8 +37,8 @@ fn binary() -> PathBuf {
 /// not dropped by keyhog's checksum gate.
 const AWS_KEY: &str = "AKIAQYLPMN5HFIQR7XYA";
 
-/// `redact("AKIAQYLPMN5HFIQR7XYA")` — 20 ASCII chars, edge = (20/8).clamp(1,4)
-/// = 2 — yields first-2 + "..." + last-2. Deterministic, host-independent.
+/// `redact("AKIAQYLPMN5HFIQR7XYA")`: 20 ASCII chars, edge = (20/8).clamp(1,4)
+/// = 2 (yields first-2 + "..." + last-2. Deterministic, host-independent).
 const REDACTED: &str = "AK...YA";
 
 /// Drain a child pipe line-by-line into a shared buffer until EOF (the OS
@@ -214,7 +214,7 @@ fn noisy_watch_banner_names_canonical_root_on_stderr() {
 }
 
 /// With no changes, non-quiet `watch` keeps STDOUT clean: all startup chatter
-/// is on STDERR (the banner), STDOUT carries only findings — of which there are
+/// is on STDERR (the banner), STDOUT carries only findings, of which there are
 /// none yet. Paired positive (banner present) + STDOUT-empty check.
 #[test]
 fn noisy_watch_keeps_startup_chatter_off_stdout() {
@@ -237,7 +237,7 @@ fn noisy_watch_keeps_startup_chatter_off_stdout() {
 }
 
 /// Quiet `watch` still emits the finding on STDOUT with the exact detector id,
-/// severity, confidence, line, and redacted value — proving `--quiet` mutes
+/// severity, confidence, line, and redacted value, proving `--quiet` mutes
 /// only the banner, never the finding stream.
 #[test]
 fn quiet_watch_emits_full_finding_on_stdout() {
@@ -272,8 +272,8 @@ fn quiet_watch_emits_full_finding_on_stdout() {
     );
 }
 
-/// Quiet `watch` writes NOTHING to STDERR — not the banner, not the watched
-/// root — even while findings stream to STDOUT. Negative twin of the banner
+/// Quiet `watch` writes NOTHING to STDERR, not the banner, not the watched
+/// root, even while findings stream to STDOUT. Negative twin of the banner
 /// tests: readiness is gated on the STDOUT finding, then STDERR is asserted
 /// byte-empty.
 #[test]
@@ -310,7 +310,7 @@ fn quiet_watch_stderr_is_empty_even_with_findings() {
 }
 
 /// Quiet `watch` redacts the credential: the finding shows `AK...YA`, and the
-/// full key never leaks to STDOUT. Adversarial — a redaction regression would
+/// full key never leaks to STDOUT. Adversarial, a redaction regression would
 /// print the live secret.
 #[test]
 fn quiet_watch_redacts_credential_never_leaks_full_key() {
@@ -337,7 +337,7 @@ fn quiet_watch_redacts_credential_never_leaks_full_key() {
     );
 }
 
-/// The finding travels on STDOUT, and STDERR never carries it — in quiet mode
+/// The finding travels on STDOUT, and STDERR never carries it, in quiet mode
 /// STDERR is empty. Proves channel separation: findings are stdout data, not
 /// diagnostics.
 #[test]
@@ -361,7 +361,7 @@ fn quiet_watch_finding_is_on_stdout_not_stderr() {
     );
 }
 
-/// The STDOUT finding line is IDENTICAL under `--quiet` and non-quiet — same
+/// The STDOUT finding line is IDENTICAL under `--quiet` and non-quiet, same
 /// tempdir (so the path matches), same key, same line. `--quiet` changes only
 /// STDERR verbosity, never the stdout payload byte-for-byte.
 #[test]
@@ -375,7 +375,7 @@ fn quiet_and_noisy_emit_identical_finding_line() {
     kill(&mut noisy);
     let noisy_line = line_containing(&noisy_out, "aws-access-key");
 
-    // Quiet run on the SAME directory — re-trigger with a fresh write.
+    // Quiet run on the SAME directory (re-trigger with a fresh write).
     let (mut quiet, quiet_out, _quiet_err) = spawn_watch(dir.path(), true);
     let q_found = plant_until_found(&file, 1, &quiet_out, Duration::from_secs(20));
     kill(&mut quiet);
@@ -390,7 +390,7 @@ fn quiet_and_noisy_emit_identical_finding_line() {
         "the aws-access-key finding line must be byte-identical across quiet/noisy"
     );
     // The daemon reports the canonical event path (watch canonicalizes its
-    // root), so build the expected line from the canonicalized file — this
+    // root), so build the expected line from the canonicalized file, this
     // holds on hosts where the tempdir root is itself a symlink.
     let canon_file = file.canonicalize().expect("canonicalize planted file");
     let expected = format!(
@@ -452,7 +452,7 @@ fn quiet_stderr_is_strictly_shorter_than_noisy_stderr() {
 }
 
 /// An invalid `--detectors` path fails BEFORE watching with exit code 2
-/// (EXIT_USER_ERROR, detector-load failure) regardless of `--quiet` — the flag
+/// (EXIT_USER_ERROR, detector-load failure) regardless of `--quiet`: the flag
 /// changes verbosity, not the exit contract. The error names the missing
 /// directory on stderr in both modes.
 #[test]

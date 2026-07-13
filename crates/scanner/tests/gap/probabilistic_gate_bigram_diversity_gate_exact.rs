@@ -3,12 +3,12 @@
 //! `ProbabilisticGate::looks_promising` rejects obvious high-entropy non-secrets
 //! before heavy ML scoring through three layered screens: a `< 16` length
 //! passthrough, a distinct-byte diversity count (`< 5` distinct => reject), a
-//! UUID 8-4-4-4-12 dash-pattern reject, and finally — for candidates `>= 32`
-//! bytes that survive all of the above — a bigram-distribution screen that
+//! UUID 8-4-4-4-12 dash-pattern reject, and finally, for candidates `>= 32`
+//! bytes that survive all of the above, a bigram-distribution screen that
 //! rejects when the distinct-bigram count falls below `len / 4`.
 //!
 //! The migrated inline tests cover the short passthrough, the dashed-UUID
-//! reject, the `< 5` diversity reject (`aaaa…`), and a realistic pass — but the
+//! reject, the `< 5` diversity reject (`aaaa…`), and a realistic pass, but the
 //! bigram branch is SHADOWED on all of those: `aaaa…` dies at the diversity
 //! count (1 distinct byte) long before reaching the bigram screen. This pins
 //! the bigram branch directly with inputs that pass the diversity count (exactly
@@ -70,7 +70,7 @@ fn sufficient_bigram_diversity_and_real_tokens_are_promising() {
 // The fixed vectors above pin the bigram branch precisely. These sweep the gate
 // over generated input to lock the two contracts the LIVE suppression path
 // (`adjudicate/mod.rs:72`: `!looks_promising(credential) ⇒ suppress as
-// ProbabilisticGateNotPromising`) depends on — a false negative here suppresses
+// ProbabilisticGateNotPromising`) depends on, a false negative here suppresses
 // a real secret, so these are recall guarantees, not cosmetics.
 
 use proptest::prelude::*;
@@ -89,7 +89,7 @@ proptest! {
 
     /// RECALL GUARANTEE: any candidate under 16 BYTES is unconditionally
     /// promising (the `s.len() < 16` passthrough returns `true` before any
-    /// screen). The gate therefore can NEVER suppress a short secret — a
+    /// screen). The gate therefore can NEVER suppress a short secret, a
     /// regression that lowered or removed that threshold would silently drop
     /// findings. Swept over every ASCII byte-length 0..=15.
     #[test]
@@ -104,7 +104,7 @@ proptest! {
 
     /// A candidate of >= 16 bytes drawn from at most four distinct letters has
     /// fewer than five distinct bytes, so the diversity screen (`count < 5`)
-    /// rejects it before the UUID/bigram branches — the documented low-diversity
+    /// rejects it before the UUID/bigram branches, the documented low-diversity
     /// noise reject (the `aaaa…`-class redaction-mask family).
     #[test]
     fn long_low_diversity_inputs_are_rejected(s in "[abcd]{16,64}") {

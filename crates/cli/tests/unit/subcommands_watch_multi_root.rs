@@ -1,16 +1,16 @@
 //! Multi-root `keyhog watch` contract.
 //!
 //! `keyhog scan a/ b/ c/` accepts several roots; this gate proves `watch`
-//! mirrors that surface coherently (Law 4 — extend the architecture, do not
+//! mirrors that surface coherently (Law 4, extend the architecture, do not
 //! leave a sibling command behind). Three layers, each asserting concrete
 //! values, never `!is_empty()`:
 //!
-//!   1. clap parsing — multiple positionals land in `WatchArgs::paths`, in
+//!   1. clap parsing, multiple positionals land in `WatchArgs::paths`, in
 //!      order, alongside the `--backend` / `--detectors` / `--quiet` flags.
-//!   2. `resolve_watch_roots` — the shared scan-root folding (canonicalize,
+//!   2. `resolve_watch_roots`: the shared scan-root folding (canonicalize,
 //!      drop nested/duplicate roots, keep order) PLUS the directory-only
 //!      constraint that scan does not impose.
-//!   3. `roots_hint` — the `keyhog scan <hint>` remediation string baked into
+//!   3. `roots_hint`: the `keyhog scan <hint>` remediation string baked into
 //!      every watcher error message.
 
 use clap::Parser;
@@ -86,7 +86,7 @@ fn watch_quiet_flag_before_roots() {
 #[test]
 fn watch_detectors_flag_does_not_consume_a_root() {
     // The `--detectors d` value must bind to the flag, leaving `a` and `b` as
-    // the two positional roots — an interleaved option may not eat a root.
+    // the two positional roots (an interleaved option may not eat a root).
     let args = parse(&["watch", "a", "--detectors", "d", "b"]);
     assert_eq!(args.paths, vec![PathBuf::from("a"), PathBuf::from("b")]);
     assert_eq!(args.detectors, PathBuf::from("d"));
@@ -102,7 +102,7 @@ fn watch_rejects_unknown_flag() {
 }
 
 // ---------------------------------------------------------------------------
-// Layer 2: resolve_watch_roots — shared folding + directory-only constraint.
+// Layer 2: resolve_watch_roots (shared folding + directory-only constraint).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -239,7 +239,7 @@ fn file_root_rejected_as_not_a_directory() {
     std::fs::write(&file, b"plain file, not a watchable tree\n").expect("write file");
     let err = API
         .watch_resolve_roots(&[file.clone()])
-        .expect_err("a file root must be rejected — watch monitors directories");
+        .expect_err("a file root must be rejected, watch monitors directories");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("is not a directory"),
@@ -282,7 +282,7 @@ fn empty_request_yields_empty_set() {
 }
 
 // ---------------------------------------------------------------------------
-// Layer 3: roots_hint — the `keyhog scan <hint>` remediation string.
+// Layer 3: roots_hint (the `keyhog scan <hint>` remediation string).
 // ---------------------------------------------------------------------------
 
 #[test]

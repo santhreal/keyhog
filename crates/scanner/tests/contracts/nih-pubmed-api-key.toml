@@ -25,29 +25,29 @@ reason = "Quoted legacy PUBMED_API_KEY alias anchor retained from the retired al
 
 [[negative]]
 text = "NIH_PUBMED_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "NIH_PUBMED_API_KEY=9Uz0vEXAMPLEEXAMPLEhCEwA"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[negative]]
 text = "PUBMED_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Legacy alias placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Legacy alias placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "PUBMED_API_KEY=OXwZSEXAMPLEEXAMPLEgOCEL"
-reason = "Legacy alias EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "Legacy alias EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "# NIH_PUBMED_API_KEY=9Uz0vRSvRD4VZ7SSmyPz32hJL459hzkhCEwA"
 credential = "9Uz0vRSvRD4VZ7SSmyPz32hJL459hzkhCEwA"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [[evasion]]
 text = "{\"secret\":\"OXwZSOkMRBgbisbc7ES10GHurDfXIKcgOCEL\"}"
 credential = "OXwZSOkMRBgbisbc7ES10GHurDfXIKcgOCEL"
-reason = "Legacy alias JSON envelope — credential must still surface under this detector."
+reason = "Legacy alias JSON envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

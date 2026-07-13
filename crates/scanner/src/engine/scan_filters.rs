@@ -14,7 +14,7 @@
 // no-phase-1-trigger admission gate on the coalesced (`simd`) /
 // region-presence (`gpu`) phase-2 tail. The no-`simd`-no-`gpu` AC+phase-2 path scans every
 // chunk whole and never routes through that gate, so this filter has no caller
-// there — gated to match (Law 11).
+// there (gated to match (Law 11)).
 #[cfg(any(feature = "simd", feature = "gpu"))]
 pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;
@@ -23,12 +23,12 @@ pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
     // time: a panic in a static initializer poisons the LazyLock for the
     // rest of the process and kills every subsequent prefilter call across
     // all threads. On the (build-invariant-violating) `None` path the
-    // consumer returns `true` — scan the chunk unconditionally, so recall is
-    // preserved — but Law 10 forbids doing that SILENTLY, so the init closure
+    // consumer returns `true`: scan the chunk unconditionally, so recall is
+    // preserved, but Law 10 forbids doing that SILENTLY, so the init closure
     // warns loudly exactly once via `prefilter_degrade`.
     static AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
         // The distinctive vendor prefixes (case-sensitive, exact casing) live in
-        // Tier-B `rules/multiline_secret_prefixes.toml` — that file documents WHY
+        // Tier-B `rules/multiline_secret_prefixes.toml`: that file documents WHY
         // each is included and why short fixture-prone prefixes (AKIA, eyJ) are
         // deliberately excluded. `AhoCorasick::new` is case-sensitive by default,
         // which the prefix casing depends on (see the module doc in
@@ -97,7 +97,7 @@ pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
 /// of length >= `DEFAULT_ENTROPY_RUN_BYTES`. The keyword-gated fallback drop in
 /// `scan_coalesced` (no-HS-hit branch) historically required the chunk
 /// to contain a generic-assignment / secret keyword before routing
-/// through `scan_inner` — chunks of pure entropy with NO keyword anchor
+/// through `scan_inner`: chunks of pure entropy with NO keyword anchor
 /// (the `generic-high-entropy-string` corpus shape) silently bailed,
 /// pinning that category's recall at 0.36 on the SecretBench mirror.
 ///
@@ -111,7 +111,7 @@ pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
 /// `is_uuid_v4_shape`, so trip-firing the gate does NOT add FPs - it just
 /// admits the chunk to the entropy fallback for inspection.
 //
-// `any(simd, gpu)`: both callers live behind these features — the
+// `any(simd, gpu)`: both callers live behind these features, the
 // `should_scan_no_hit_chunk` admission gate (`any(simd, gpu)`) and the entropy
 // fallback's cheap precheck (`#[cfg(simd)]` in `phase2_entropy.rs`). Their
 // union is `any(simd, gpu)`; the no-`simd`-no-`gpu` path has neither, so gating
@@ -184,9 +184,9 @@ pub(super) fn looks_like_variable_name(s: &str) -> bool {
 /// Shared by `extract_grouped_matches` (whole-chunk walk) and `extract_anchored`
 /// (phase-2 anchored verification) so this detection-load-bearing heuristic has
 /// exactly one definition instead of two copies that could drift apart. Offsets
-/// are relative to `text`, which each caller supplies as its own search base —
+/// are relative to `text`, which each caller supplies as its own search base 
 /// the full preprocessed text for the whole-chunk walk, or the anchored `slice`
-/// for the phase-2 path — so the returned range re-slices correctly on either.
+/// for the phase-2 path (so the returned range re-slices correctly on either).
 pub(crate) fn resolve_value_shaped_group(
     locs: &regex::CaptureLocations,
     text: &str,
@@ -252,9 +252,9 @@ pub(crate) fn extend_known_prefix_credential<'a>(
 
     // A boundary extension must never DOWNGRADE an already-valid checksum. A
     // known-prefix token whose canonical form passes its checksum is complete;
-    // grabbing a trailing byte that merely abuts it — a base64 `=` that is
+    // grabbing a trailing byte that merely abuts it, a base64 `=` that is
     // really a separator (`pypi-…MNH` followed by `="…"`), or a provider-token
-    // byte from adjacent content — corrupts the token so it fails the checksum
+    // byte from adjacent content, corrupts the token so it fails the checksum
     // and is dropped, losing a real secret. Only the extension is reverted (the
     // canonical token still surfaces); the unicode swap-invariance gate
     // exercises exactly this (homoglyphed companion context whose trailing `=`
@@ -332,7 +332,7 @@ pub(super) fn compute_pattern_signals(
         // than re-comparing the whole preprocessed buffer against `chunk.data`
         // inside the `any` loop. On the passthrough common path the two buffers
         // are the same bytes (a `Cow::Borrowed`), so the slice `!=` is an O(len)
-        // memcmp — doing it per keyword made the keyword-nearby probe
+        // memcmp, doing it per keyword made the keyword-nearby probe
         // O(keywords × len) for nothing.
         let text_differs = preprocessed.text.as_bytes() != chunk.data.as_bytes();
         detector.keywords.iter().any(|keyword| {
@@ -353,9 +353,9 @@ pub(super) fn compute_pattern_signals(
 // (`has_secret_keyword_fast`, `has_generic_assignment_keyword`). They gate which
 // no-phase-1-trigger chunks are still routed into phase-2 reassembly/extraction,
 // so a silent drop from either list is a direct false-negative. These pin the
-// exact triggering contract — every curated vendor prefix, the deliberately-
+// exact triggering contract, every curated vendor prefix, the deliberately-
 // EXCLUDED short prefixes, the case-sensitivity CONTRAST between the two gates,
-// and the fail-open (never-drop) boundaries — white-box because both fns are
+// and the fail-open (never-drop) boundaries, white-box because both fns are
 // `pub(super)` and cfg-gated behind `any(simd, gpu)` (see the allowlist entry in
 #[cfg(all(test, any(feature = "simd", feature = "gpu")))]
 #[path = "../../tests/unit/engine_scan_filters.rs"]

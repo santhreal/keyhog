@@ -6,9 +6,9 @@
 //!
 //! Distinct from `adversarial/docker_oci_manifest_layers.rs` (end-to-end unpack
 //! of a single OCI blob layer) and `docker_oci_classification.rs` (two happy-path
-//! media-type cases): this file drives the *adversarial* classification edges —
+//! media-type cases): this file drives the *adversarial* classification edges 
 //! media-type-vs-body precedence, hybrid/empty/unparseable bodies, decoy
-//! filenames, unreferenced non-layer blobs — and asserts the exact digest label
+//! filenames, unreferenced non-layer blobs, and asserts the exact digest label
 //! that ends up on the rewritten chunk.
 //!
 //! The private classifier + discovery are reached only through the crate's
@@ -155,7 +155,7 @@ fn hybrid_body_with_config_and_manifests_is_not_an_index() {
 }
 
 /// Structural boundaries: an empty object is not an index; a body whose ONLY
-/// distinguishing field is `manifests` — even an empty array — IS an index.
+/// distinguishing field is `manifests`: even an empty array. IS an index.
 #[cfg(feature = "docker")]
 #[test]
 fn structural_boundary_empty_object_vs_manifests_key() {
@@ -297,7 +297,7 @@ fn manifest_discovery_skips_unreferenced_non_layer_blobs() {
 }
 
 /// A manifest that references a layer digest with no backing blob file fails
-/// loud, naming the missing layer — it is never silently dropped.
+/// loud, naming the missing layer (it is never silently dropped).
 #[cfg(feature = "docker")]
 #[test]
 fn manifest_referencing_absent_layer_blob_fails_loud() {

@@ -4,11 +4,11 @@
 //! Dots appear in real credentials (JWT `header.payload.signature`, Discord bot
 //! `id.timestamp.hmac`) AND in ordinary code (`obj.field.method`, `a.b.c.d`
 //! property chains, version strings). The generic-secret and entropy gates use
-//! this predicate to decide which dotted values to TRUST — so it must be a tight
+//! this predicate to decide which dotted values to TRUST, so it must be a tight
 //! shape allowlist: exactly three dot-separated segments matching either the
 //! JWT shape (first segment `eyJ…`, every segment >= 4 base64 chars) or the
-//! Discord length profile (23-28 . 6-8 . 27-38, alnum/`-`/`_`). Anything else —
-//! including a two- or four-segment string — is NOT a structured token.
+//! Discord length profile (23-28 . 6-8 . 27-38, alnum/`-`/`_`). Anything else 
+//! including a two- or four-segment string (is NOT a structured token).
 
 use keyhog_scanner::testing::is_structured_dotted_token_for_test;
 use proptest::prelude::*;
@@ -43,7 +43,7 @@ fn jwt_with_a_short_segment_is_not_structured() {
 
 #[test]
 fn a_discord_shaped_token_is_structured() {
-    // 24 . 7 . 30 alnum chars — inside the (23..=28) . (6..=8) . (27..=38) profile.
+    // 24 . 7 . 30 alnum chars (inside the (23..=28) . (6..=8) . (27..=38) profile).
     let first = "A".repeat(24);
     let second = "B".repeat(7);
     let third = "C".repeat(30);
@@ -73,7 +73,7 @@ fn property_chains_and_wrong_segment_counts_are_rejected() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
-    /// A structured token ALWAYS has exactly three dot-separated segments — any
+    /// A structured token ALWAYS has exactly three dot-separated segments, any
     /// other segment count is rejected outright, whatever the content.
     #[test]
     fn accepted_iff_exactly_three_segments(value in "[a-zA-Z0-9._-]{0,80}") {

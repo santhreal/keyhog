@@ -316,7 +316,7 @@ fn ci_find_at_matches_at_the_very_end() {
 fn ci_find_at_anchors_on_rare_byte_returns_correct_offset() {
     // `api_key` anchors the SIMD skim on its rarest byte `_` (index 3), not the
     // first byte `a`. The returned offset must still be the window START, not the
-    // anchor-byte position — regression guard on the `hit - anchor` arithmetic.
+    // anchor-byte position (regression guard on the `hit - anchor` arithmetic).
     assert_eq!(ci_find_at(b"api_key=v", b"api_key"), Some(0));
     assert_eq!(ci_find_at(b"xxapi_key", b"api_key"), Some(2));
     assert_eq!(ci_find_at(b"PREFIX_API_KEY", b"api_key"), Some(7));
@@ -391,7 +391,7 @@ fn ci_find_all_yields_every_ascending_overlapping_match() {
 
 #[test]
 fn ci_find_all_first_element_agrees_with_ci_find_at() {
-    // `ci_find_at` delegates to `ci_find_iter().next()` — pin they never drift.
+    // `ci_find_at` delegates to `ci_find_iter().next()`: pin they never drift.
     for (h, n) in [
         (&b"xxapi_key"[..], &b"api_key"[..]),
         (&b"_api_key"[..], &b"api_key"[..]),

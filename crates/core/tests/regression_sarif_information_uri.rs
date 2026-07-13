@@ -89,7 +89,7 @@ fn information_uri_is_canonical_repo_with_findings() {
 }
 
 /// Boundary: an empty run (no findings, only `finish()`) still emits the
-/// tool.driver block, and its `informationUri` must be correct too — the
+/// tool.driver block, and its `informationUri` must be correct too, the
 /// streaming reporter builds the driver in `finish()` regardless of count.
 #[test]
 fn information_uri_is_canonical_repo_on_empty_run() {

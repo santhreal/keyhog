@@ -6,22 +6,22 @@
 //! into the operator's report. These tests render adversarial findings through
 //! the REAL production path and pin the universal safety invariants:
 //!
-//!   * A — every format returns `Ok` and emits valid UTF-8 (no panic, no DoS,
+//!   * A, every format returns `Ok` and emits valid UTF-8 (no panic, no DoS,
 //!     no lone surrogate) for arbitrary Unicode-scalar content.
-//!   * B — the JSON / JSONL envelopes always parse (injection cannot break the
+//!   * B, the JSON / JSONL envelopes always parse (injection cannot break the
 //!     document structure), for adversarial content.
-//!   * C — CSV neutralizes EVERY spreadsheet formula-trigger prefix
-//!     (`= + - @ TAB CR`) — the OWASP CSV-injection class — for arbitrary tails.
-//!   * D — the colour-free text report carries NO raw ESC byte and visibly
+//!   * C: CSV neutralizes EVERY spreadsheet formula-trigger prefix
+//!     (`= + - @ TAB CR`) (the OWASP CSV-injection class (for arbitrary tails)).
+//!   * D, the colour-free text report carries NO raw ESC byte and visibly
 //!     replaces it with U+FFFD (terminal-escape-injection defang).
-//!   * F — the structural formats (JSON/JSONL/CSV) are byte-deterministic.
-//!   * G — GitHub-Actions annotations neutralize CR/LF so one finding is one
+//!   * F (the structural formats (JSON/JSONL/CSV) are byte-deterministic).
+//!   * G: GitHub-Actions annotations neutralize CR/LF so one finding is one
 //!     workflow-command line (no forged `::command` injection).
-//!   * H — the HTML report \uXXXX-escapes `<`/`>`/`/` so no finding field can
+//!   * H, the HTML report \uXXXX-escapes `<`/`>`/`/` so no finding field can
 //!     break out of the `<script>` data block (XSS).
-//!   * I — the GitLab SAST report stays valid JSON with one vulnerability per
+//!   * I, the GitLab SAST report stays valid JSON with one vulnerability per
 //!     finding under injection.
-//!   * J — the SARIF report stays valid structured JSON (version, `$schema`,
+//!   * J, the SARIF report stays valid structured JSON (version, `$schema`,
 //!     `tool.driver`, one result per finding) under injection.
 //!
 //! Fixed-vector CSV coverage lives in `regression_csv_formula_injection`; this
@@ -143,7 +143,7 @@ fn adversarial_finding(payload: &str) -> VerifiedFinding {
 }
 
 /// Strategy: arbitrary Unicode-scalar strings up to 48 chars, INCLUDING C0/C1
-/// control characters, ESC, quotes, and format metacharacters — the worst case
+/// control characters, ESC, quotes, and format metacharacters, the worst case
 /// for every reporter's escaping.
 fn adversarial_text() -> impl Strategy<Value = String> {
     prop::collection::vec(any::<char>(), 0..48).prop_map(|v| v.into_iter().collect())
@@ -152,7 +152,7 @@ fn adversarial_text() -> impl Strategy<Value = String> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(2_000))]
 
-    /// A — no format panics or emits invalid UTF-8 on arbitrary content.
+    /// A (no format panics or emits invalid UTF-8 on arbitrary content).
     #[test]
     fn every_format_is_panic_free_and_valid_utf8(payload in adversarial_text()) {
         let findings = [adversarial_finding(&payload)];
@@ -168,7 +168,7 @@ proptest! {
         }
     }
 
-    /// C — CSV guards every formula-trigger prefix, whatever the tail.
+    /// C: CSV guards every formula-trigger prefix, whatever the tail.
     #[test]
     fn csv_neutralizes_every_formula_trigger_prefix(
         trigger in prop::sample::select(vec!['=', '+', '-', '@', '\t', '\r']),
@@ -178,7 +178,7 @@ proptest! {
         let mut f = benign_finding();
         f.location.file_path = Some(Arc::from(payload.as_str()));
         let out = String::from_utf8(render(ReportFormat::Csv, &[f])).unwrap();
-        // The single-quote guard must sit immediately before the payload — bare
+        // The single-quote guard must sit immediately before the payload, bare
         // or inside an RFC-4180 quoted field (TAB/CR force quoting). `rest` has
         // no `,`/`"`, so the guarded run stays a contiguous substring.
         let guarded = format!("'{payload}");
@@ -189,7 +189,7 @@ proptest! {
     }
 }
 
-/// B — the JSON and JSONL envelopes survive injection: the array parses and each
+/// B, the JSON and JSONL envelopes survive injection: the array parses and each
 /// JSONL line parses, so no metacharacter can break out of the document.
 #[test]
 fn json_and_jsonl_envelopes_survive_injection() {
@@ -201,7 +201,7 @@ fn json_and_jsonl_envelopes_survive_injection() {
         "😀\"quote\\backslash",
     ];
     // Distinct hashes so the per-finding count assertion is not confounded by any
-    // hash-based dedup in a reporter — every finding must survive to the output.
+    // hash-based dedup in a reporter (every finding must survive to the output).
     let findings: Vec<_> = payloads
         .iter()
         .enumerate()
@@ -232,12 +232,12 @@ fn json_and_jsonl_envelopes_survive_injection() {
     assert_eq!(lines, findings.len(), "one JSONL object per finding");
 }
 
-/// D — a colour-free text report never leaks a raw ESC byte; the sanitizer makes
+/// D, a colour-free text report never leaks a raw ESC byte; the sanitizer makes
 /// the escape visible as U+FFFD rather than dropping it silently.
 #[test]
 fn color_free_text_report_has_no_raw_escape_byte() {
     // An ESC-laden payload placed in every SCANNED field (file path, commit,
-    // author, date, metadata, redacted credential — all routed through
+    // author, date, metadata, redacted credential, all routed through
     // `sanitize_terminal`). Detector name/id/service come from detector defs,
     // not scanned content, so they stay benign here.
     let esc = "\u{1b}[31mHACK\u{1b}]0;title\u{7}\u{1b}[0m\u{9b}payload";
@@ -267,7 +267,7 @@ fn color_free_text_report_has_no_raw_escape_byte() {
     );
     assert!(
         !out.iter().any(|&b| b == 0x1b),
-        "colour-free text report leaked a raw ESC byte — terminal-escape injection"
+        "colour-free text report leaked a raw ESC byte, terminal-escape injection"
     );
     let s = String::from_utf8(out).unwrap();
     assert!(
@@ -276,7 +276,7 @@ fn color_free_text_report_has_no_raw_escape_byte() {
     );
 }
 
-/// F — the structural formats are byte-for-byte deterministic (rendering the
+/// F, the structural formats are byte-for-byte deterministic (rendering the
 /// same findings twice yields identical bytes). Guards against nondeterministic
 /// ordering or embedded entropy sneaking into a machine-consumed report.
 #[test]
@@ -302,7 +302,7 @@ fn structural_formats_are_byte_deterministic() {
     );
 }
 
-/// G — GitHub-Actions workflow-command injection. Each finding renders to a
+/// G: GitHub-Actions workflow-command injection. Each finding renders to a
 /// single `::error file=…,line=…,title=…::message` line terminated by a newline;
 /// GitHub parses workflow commands line-by-line, so an attacker-controlled field
 /// that smuggled a raw newline could start a SECOND forged command
@@ -347,7 +347,7 @@ fn github_annotations_encode_newlines_no_command_injection() {
         "raw CR must be percent-encoded, never emitted: {out:?}"
     );
     // The smuggled CR/LF survive only as the visible replacement char U+FFFD
-    // (the reporter sanitizes control chars before percent-encoding) — neutralized,
+    // (the reporter sanitizes control chars before percent-encoding), neutralized,
     // never dropped silently, and never as bytes that could start a new command.
     assert!(
         out.contains('\u{FFFD}'),
@@ -355,7 +355,7 @@ fn github_annotations_encode_newlines_no_command_injection() {
     );
 }
 
-/// H — HTML report XSS. The self-contained HTML report inlines the findings as
+/// H: HTML report XSS. The self-contained HTML report inlines the findings as
 /// JSON inside a `<script>` block; `escape_for_script` rewrites `<`, `>`, `/` to
 /// `\uXXXX`, so no attacker-controlled field can close the script tag or inject
 /// live markup. A unique injected `</script><kaboom …>` sentinel must never
@@ -375,14 +375,14 @@ fn html_report_escapes_script_breakout_for_xss() {
     // The raw injected tag / script-close must NOT survive anywhere in the report.
     assert!(
         !out.contains("<kaboom"),
-        "raw injected tag leaked into the HTML report — XSS"
+        "raw injected tag leaked into the HTML report. XSS"
     );
     assert!(
         !out.contains("</script><kaboom"),
-        "script-breakout sequence survived into the HTML report — XSS"
+        "script-breakout sequence survived into the HTML report. XSS"
     );
     // The finding data still round-trips (letters are untouched) but the `<` is
-    // \uXXXX-escaped — proving it was neutralized, not dropped.
+    // \uXXXX-escaped (proving it was neutralized, not dropped).
     assert!(
         out.contains("SENTINEL"),
         "finding data must still be present in escaped form"
@@ -393,7 +393,7 @@ fn html_report_escapes_script_breakout_for_xss() {
     );
 }
 
-/// I — GitLab SAST report is a machine-consumed JSON document; injection must not
+/// I: GitLab SAST report is a machine-consumed JSON document; injection must not
 /// break its structure. It parses as valid JSON with a `vulnerabilities` array,
 /// one element per finding, whatever the finding content.
 #[test]
@@ -428,7 +428,7 @@ fn gitlab_sast_report_is_valid_json_under_injection() {
     );
 }
 
-/// J — SARIF is the format GitHub code-scanning consumes; a malformed SARIF
+/// J: SARIF is the format GitHub code-scanning consumes; a malformed SARIF
 /// under injection breaks the security dashboard. It parses as valid JSON with
 /// the 2.1.0 version, a `$schema`, a `tool.driver`, and one result per finding,
 /// whatever the finding content.

@@ -91,7 +91,7 @@ fn simple(detector: &str, credential: &str, offset: usize, conf: Option<f64>) ->
 }
 
 // ===========================================================================
-// redact() — boundary: 8 vs 9 chars, no middle exposure (ASCII path)
+// redact(), boundary: 8 vs 9 chars, no middle exposure (ASCII path)
 // ===========================================================================
 
 #[test]
@@ -297,7 +297,7 @@ fn redact_property_short_always_masked() {
 }
 
 // ===========================================================================
-// dedup_matches — DedupScope::None
+// dedup_matches: DedupScope::None
 // ===========================================================================
 
 #[test]
@@ -341,7 +341,7 @@ fn dedup_none_empty_input_empty_output() {
 }
 
 // ===========================================================================
-// dedup_matches — DedupScope::Credential (cross-file collapse)
+// dedup_matches: DedupScope::Credential (cross-file collapse)
 // ===========================================================================
 
 #[test]
@@ -392,7 +392,7 @@ fn dedup_credential_primary_is_lowest_offset_within_file() {
         loc("filesystem", Some("a.txt"), Some(2), 500, None),
         Some(0.5),
     );
-    // Feed in reverse (hi first) — sort must still pick offset 5 as primary.
+    // Feed in reverse (hi first) (sort must still pick offset 5 as primary).
     let out = dedup_matches(vec![hi, lo], &DedupScope::Credential);
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].primary_location.offset, 5);
@@ -443,7 +443,7 @@ fn dedup_credential_distinct_secrets_stay_separate() {
 
 #[test]
 fn dedup_credential_distinct_detectors_same_value_stay_separate() {
-    // Key is (detector_id, credential, None) — different detector => separate.
+    // Key is (detector_id, credential, None) (different detector => separate).
     let a = simple("google-api", "AIzaSyValueHere1234", 1, Some(0.5));
     let b = simple("google-maps", "AIzaSyValueHere1234", 1, Some(0.5));
     let out = dedup_matches(vec![a, b], &DedupScope::Credential);
@@ -537,7 +537,7 @@ fn dedup_credential_three_files_two_additional_locations() {
 }
 
 // ===========================================================================
-// dedup_matches — DedupScope::File (per-file grouping)
+// dedup_matches: DedupScope::File (per-file grouping)
 // ===========================================================================
 
 #[test]
@@ -671,7 +671,7 @@ fn dedup_file_none_path_uses_structured_none_and_collapses() {
 }
 
 // ===========================================================================
-// dedup_matches — decoder-alias preference (is_decoder_alias_pair)
+// dedup_matches, decoder-alias preference (is_decoder_alias_pair)
 // ===========================================================================
 
 #[test]
@@ -782,7 +782,7 @@ fn dedup_decoder_alias_two_decoders_not_a_pair() {
     );
     let out = dedup_matches(vec![b64, hex], &DedupScope::Credential);
     assert_eq!(out.len(), 1);
-    // Same (source? no — sources differ) but same (file,line) => is_same_location
+    // Same (source? no, sources differ) but same (file,line) => is_same_location
     // is false because `source` differs, yet not alias-pair. Both line 1 same
     // file: is_same_location compares source too, so they are NOT same loc, and
     // not an alias pair => second becomes additional.
@@ -873,7 +873,7 @@ fn dedup_decoder_alias_different_file_not_a_pair() {
 }
 
 // ===========================================================================
-// dedup_matches — companion merging
+// dedup_matches, companion merging
 // ===========================================================================
 
 #[test]
@@ -944,7 +944,7 @@ fn dedup_companions_merge_idempotent_already_present_segment() {
 }
 
 // ===========================================================================
-// dedup_cross_detector — winner by confidence, then severity, then id
+// dedup_cross_detector, winner by confidence, then severity, then id
 // ===========================================================================
 
 #[test]

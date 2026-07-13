@@ -9,7 +9,7 @@ fn empty_with_zero_suppressions_says_no_secrets_detected() {
     let s = String::from_utf8(buf).unwrap();
     // A scanner cannot prove the ABSENCE of secrets and skipped/unreadable files
     // are not covered at all, so the empty-result message states only what is
-    // true — nothing was detected in what was scanned. It must NOT claim "clean".
+    // true (nothing was detected in what was scanned. It must NOT claim "clean").
     assert!(
         s.contains("No secrets detected in the scanned files"),
         "got: {s}"

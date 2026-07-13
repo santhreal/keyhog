@@ -33,7 +33,7 @@ fn malformed_har_parse_fallback_is_visible_to_operator() {
     // A structured-source raw-text fallback is only PARTIAL coverage: the raw
     // text is scanned (inline values are caught) but the derived
     // request/response/body chunks are not expanded, so an encoded-body secret
-    // could be missed. keyhog fails closed on incomplete source coverage — with
+    // could be missed. keyhog fails closed on incomplete source coverage, with
     // no findings it must NOT report "clean", it exits EXIT_SOURCE_FAILED (13).
     // The gap must still be surfaced to the operator / SARIF (asserted below);
     // fail-closed and gap-visibility are complementary, not alternatives.
@@ -85,7 +85,7 @@ fn malformed_har_parse_fallback_is_visible_in_sarif_notifications() {
     // A structured-source raw-text fallback is only PARTIAL coverage: the raw
     // text is scanned (inline values are caught) but the derived
     // request/response/body chunks are not expanded, so an encoded-body secret
-    // could be missed. keyhog fails closed on incomplete source coverage — with
+    // could be missed. keyhog fails closed on incomplete source coverage, with
     // no findings it must NOT report "clean", it exits EXIT_SOURCE_FAILED (13).
     // The gap must still be surfaced to the operator / SARIF (asserted below);
     // fail-closed and gap-visibility are complementary, not alternatives.

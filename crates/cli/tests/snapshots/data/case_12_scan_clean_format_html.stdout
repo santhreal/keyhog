@@ -988,7 +988,7 @@ function renderTable(findings) {
     if (!metadataItems) metadataItems = '<div style="color: var(--text-muted); font-size:12px;">No provider metadata.</div>';
 
     // The report only ever holds the REDACTED credential (never plaintext), so
-    // there is nothing to unmask — render the redacted value as static text.
+    // there is nothing to unmask (render the redacted value as static text).
     const credRedacted = escapeHtml(finding.credential_redacted);
 
     detailsTr.innerHTML = `

@@ -9,7 +9,7 @@ detector with NO contract, generate a minimal contract with:
 Body synthesis: parses the FIRST regex to find a literal prefix
 or keyword alternation + captured body, generates a satisfying
 string. Patterns too complex (companions, multi-segment anchors)
-are skipped — they get hand-written.
+are skipped (they get hand-written).
 """
 
 from __future__ import annotations
@@ -190,7 +190,7 @@ def synthesize_positive(regex: str, detector_id: str) -> Optional[tuple[str, str
             pass
 
     # Fallback: use rstr with constrained alphabet via post-processing.
-    # rstr emits non-printable garbage for `\s` and `[=:\s"']` — replace
+    # rstr emits non-printable garbage for `\s` and `[=:\s"']`: replace
     # non-printable chars with their printable equivalent, then validate.
     try:
         import rstr  # type: ignore
@@ -363,11 +363,11 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = {_toml_str(neg_text1)}
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = {_toml_str(neg_text2)}
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 """
     return toml
 

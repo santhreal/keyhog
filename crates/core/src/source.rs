@@ -70,9 +70,9 @@ impl From<&str> for Chunk {
 /// ```
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ChunkMetadata {
-    /// `Arc<str>` (not `String`) so cloning a chunk's metadata — done per decode
+    /// `Arc<str>` (not `String`) so cloning a chunk's metadata, done per decode
     /// sub-chunk, where every sub-chunk of a file shares the same `source_type`
-    /// and `path` — is a refcount bump, not a fresh heap allocation + copy of
+    /// and `path`: is a refcount bump, not a fresh heap allocation + copy of
     /// each string. Mirrors the `Arc<str>` convention already used by
     /// `MatchLocation` in `finding.rs`; serialized through the same
     /// `serde_arc_str` helpers so no `serde` `rc` feature is needed.

@@ -3,10 +3,10 @@
 //! Every layer dimension, derived parameter count, flat weight-buffer offset,
 //! and the sigmoid clamp lives here ONCE. Four sites previously kept their own
 //! copies of these numbers:
-//!   - `ml_weights.rs`  — flat `weights.bin` buffer layout (counts + offsets),
-//!   - `ml_scorer.rs`   — const-generic dense-layer widths + sigmoid clamp,
-//!   - `ml_features.rs` — `NUM_FEATURES` (the input width),
-//!   - `gpu/gpu_shader.rs` — the WGSL `const` block + layout offsets (string
+//!   - `ml_weights.rs`: flat `weights.bin` buffer layout (counts + offsets),
+//!   - `ml_scorer.rs`: const-generic dense-layer widths + sigmoid clamp,
+//!   - `ml_features.rs`: `NUM_FEATURES` (the input width),
+//!   - `gpu/gpu_shader.rs`: the WGSL `const` block + layout offsets (string
 //!     literals).
 //! They now IMPORT these consts. The WGSL literals (which must stay literals for
 //! the shader source) are pinned to these values by
@@ -16,7 +16,7 @@
 //! Architecture: gate `Linear(INPUT_DIM, EXPERT_COUNT)` -> Softmax; `EXPERT_COUNT`
 //! experts of `Linear(INPUT_DIM, FC1)` -> ReLU -> `Linear(FC1, FC2)` -> ReLU ->
 //! `Linear(FC2, 1)`; gate-weighted logit sum -> rational Sigmoid. Changing any
-//! primitive below requires a matching `weights.bin` retrain — the buffer-size
+//! primitive below requires a matching `weights.bin` retrain, the buffer-size
 //! check in `ml_weights::parse_weights` fails closed on any stride mismatch.
 
 /// Feature-vector dimensionality = gate/expert input width. Feature 41 is the
@@ -41,7 +41,7 @@ pub(crate) const EXPERT_FC1_OUT: usize = 32;
 /// Expert second hidden width: `Linear(EXPERT_FC1_OUT, EXPERT_FC2_OUT)` -> ReLU.
 pub(crate) const EXPERT_FC2_OUT: usize = 16;
 
-/// Expert output width: `Linear(EXPERT_FC2_OUT, 1)` — a single logit per expert.
+/// Expert output width: `Linear(EXPERT_FC2_OUT, 1)`: a single logit per expert.
 pub(crate) const EXPERT_FC3_OUT: usize = 1;
 
 /// Symmetric saturation bound for the fast rational sigmoid: outside
@@ -83,6 +83,6 @@ pub(crate) const GATE_W_OFF: usize = 0;
 pub(crate) const GATE_B_OFF: usize = GATE_W_OFF + GATE_W_COUNT;
 pub(crate) const EXPERTS_OFF: usize = GATE_B_OFF + GATE_B_COUNT;
 
-/// Total f32 count in `weights.bin` — the buffer-size contract `parse_weights`
+/// Total f32 count in `weights.bin`: the buffer-size contract `parse_weights`
 /// enforces.
 pub(crate) const TOTAL_F32_COUNT: usize = EXPERTS_OFF + EXPERT_COUNT * EXPERT_PARAM_COUNT;

@@ -2,7 +2,7 @@
 //! phase-2 pass on a decode sub-chunk to its decoded span (+margin) instead of
 //! the whole spliced parent context must NEVER change the finding set. The
 //! context outside the span was already scanned (and deduped) by the parent, so
-//! only matches touching the decoded text are new — those start inside the focus
+//! only matches touching the decoded text are new, those start inside the focus
 //! window and are preserved exactly (full splice kept for keyword_nearby / line
 //! offsets / keyword AC). Scans each input with focus ON vs OFF, asserts equal.
 //!
@@ -66,7 +66,7 @@ const DETECTOR_IDS: &[&str] = &[
 const DEFAULT_PARITY_N: usize = 256;
 const DEFAULT_CORPUS_CAP: usize = 0;
 
-// Filler with NO credential prefixes — sometimes carries a "keyword" token so the
+// Filler with NO credential prefixes, sometimes carries a "keyword" token so the
 // keyword_nearby signal interacts with the decoded text (the exact case the focus
 // restriction must keep exact by computing signals over the full splice).
 const FILLER: &[u8] =

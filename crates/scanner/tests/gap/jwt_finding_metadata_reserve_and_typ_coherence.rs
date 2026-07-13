@@ -1,5 +1,5 @@
 //! Regression: `finding_metadata` reserves its per-finding metadata HashMap up
-//! front (Law 7 — no rehash growth on the per-JWT path) and the reserve changes
+//! front (Law 7, no rehash growth on the per-JWT path) and the reserve changes
 //! no output (Law 6). Also pins the `logout+jwt` typ coherence: `is_standard_typ`
 //! accepts it, so it must NOT be flagged as a NonStandardTyp anomaly (the doc
 //! had listed only four standard typ values while the code accepts five).

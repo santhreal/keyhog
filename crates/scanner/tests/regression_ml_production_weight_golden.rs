@@ -2,7 +2,7 @@
 //!
 //! The existing `ml_forward_parity.rs` proves the output-stationary forward
 //! KERNEL is bit-identical to a reference matmul, but it feeds SYNTHETIC random
-//! weights — it never runs the SHIPPED `weights.bin` end to end. The unit tests
+//! weights, it never runs the SHIPPED `weights.bin` end to end. The unit tests
 //! in `unit/ml_scorer.rs` run the real weights but only assert loose PROPERTY
 //! bands (`> 0.7` for a real secret, `< 0.5` for a hash). Neither pins the exact
 //! score the shipped model emits, so a silent `weights.bin` swap, a feature
@@ -45,7 +45,7 @@ const CASES: &[(&str, &str)] = &[
         "The quick brown fox jumps over the lazy dog",
         "// human-readable comment: {}",
     ),
-    // Ambiguous / mid-range cases — sensitive sentinels that catch a SMALL
+    // Ambiguous / mid-range cases, sensitive sentinels that catch a SMALL
     // weight or feature drift (unlike the saturated 0.0/1.0 cases, which only
     // trip on a large change). A JWT, a Stripe test-key shape, a bare 32-hex
     // secret with no vendor prefix, and a base64 credential-length blob in an
@@ -62,22 +62,22 @@ const CASES: &[(&str, &str)] = &[
 /// `score.to_bits()` for each case, captured from the shipped `weights.bin`
 /// (2026-07-04). Human-readable: GitHub PAT → 1.0, AWS example key → 0.7622…,
 /// Slack → 1.0, and the hash / UUID / placeholder / base64 / prose cases → 0.0.
-/// The 0.7622 AWS case is the sensitive sentinel — any weight/feature drift
+/// The 0.7622 AWS case is the sensitive sentinel, any weight/feature drift
 /// shifts it; the saturated 1.0/0.0 cases lock the confident-classification
 /// behavior (a regression large enough to un-saturate them is caught too).
 const GOLDEN_BITS: &[u64] = &[
-    4607182418800017408, // 1.0                — ghp_… GitHub PAT
-    4605040868112465920, // 0.7622401118278503 — AKIA… AWS example key (mid-range sentinel)
-    4607182418800017408, // 1.0                — xoxb-… Slack bot token
-    0,                   // 0.0                — md5 hex digest
-    0,                   // 0.0                — UUID
-    0,                   // 0.0                — your_api_key_here placeholder
-    0,                   // 0.0                — base64 blob (decodes to prose)
-    0,                   // 0.0                — English prose
-    0,                   // 0.0                — demo JWT (jwt.io sub:1234567890 example)
-    0,                   // 0.0                — sk_test_… Stripe TEST key (test→low, correct)
-    0,                   // 0.0                — bare 32-hex, no vendor prefix (hash-ambiguous)
-    4607182418800017408, // 1.0                — base64 → "host_key_2024_production_env" (real cred)
+    4607182418800017408, // 1.0, ghp_… GitHub PAT
+    4605040868112465920, // 0.7622401118278503: AKIA… AWS example key (mid-range sentinel)
+    4607182418800017408, // 1.0, xoxb-… Slack bot token
+    0,                   // 0.0, md5 hex digest
+    0,                   // 0.0: UUID
+    0,                   // 0.0, your_api_key_here placeholder
+    0,                   // 0.0, base64 blob (decodes to prose)
+    0,                   // 0.0: English prose
+    0,                   // 0.0, demo JWT (jwt.io sub:1234567890 example)
+    0,                   // 0.0, sk_test_… Stripe TEST key (test→low, correct)
+    0,                   // 0.0, bare 32-hex, no vendor prefix (hash-ambiguous)
+    4607182418800017408, // 1.0, base64 → "host_key_2024_production_env" (real cred)
 ];
 
 #[test]
@@ -93,7 +93,7 @@ fn production_weights_forward_pass_matches_golden_scores() {
         assert_eq!(
             got.to_bits(),
             GOLDEN_BITS[i],
-            "case {i} ({text:?}): production MoE score drifted — got {got:.17} \
+            "case {i} ({text:?}): production MoE score drifted, got {got:.17} \
              (bits {}), golden {want:.17} (bits {}). The shipped weights.bin, the \
              43-feature extraction order (incl. the SERVICE_CONTEXT feature added \
              in the DET-1 bump), or the gate/expert layout changed. If \
@@ -129,7 +129,7 @@ fn production_weights_scoring_is_deterministic() {
 /// Re-baseline helper: emits the current `to_bits()` goldens for every case.
 /// Ignored so it never runs in the normal suite; run explicitly to capture.
 #[test]
-#[ignore = "capture helper — run explicitly to re-baseline GOLDEN_BITS"]
+#[ignore = "capture helper, run explicitly to re-baseline GOLDEN_BITS"]
 fn capture_production_weight_goldens() {
     let bits: Vec<u64> = CASES
         .iter()

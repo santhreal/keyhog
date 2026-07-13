@@ -7,7 +7,7 @@
 //!   - LOSSLESS: the returned `(guard, rest)` concatenates back to the input, so
 //!     the token offset the caller splices is exact.
 //!   - PRECISE: it fires ONLY when every leading alternative is a boundary token
-//!     — a genuine prefix alternation like `(?:ghp_|github_pat_)` must be left
+//!, a genuine prefix alternation like `(?:ghp_|github_pat_)` must be left
 //!     alone, or the compiler would strip a real prefix and route the detector
 //!     into the slow phase-2 path.
 //! `strip_leading_boundary_guard` is just the `rest` half; pin that they agree.
@@ -59,7 +59,7 @@ fn pattern_without_leading_group_is_untouched() {
 // contracts over generated patterns. The splitter feeds the AC prefilter: a
 // non-lossless split hands the caller a wrong token offset, and a strip that
 // disagrees with split's `rest` half means two callers route a detector
-// differently — both silent recall/perf faults. Driven only through the two
+// differently, both silent recall/perf faults. Driven only through the two
 // public `*_for_test` facades; no proptest covered this before.
 
 use proptest::prelude::*;
@@ -91,7 +91,7 @@ proptest! {
     }
 
     /// Positive path: the real boundary-guard idiom prepended to ANY non-empty
-    /// body MUST split into exactly `(idiom, body)` — the guard's own `)` closes
+    /// body MUST split into exactly `(idiom, body)`: the guard's own `)` closes
     /// it at depth 0 regardless of body content, so the following literal token is
     /// always surfaced to the AC set (the KH recall lever this splitter exists for).
     #[test]
@@ -105,7 +105,7 @@ proptest! {
 
     /// Byte-boundary safety: the splitter parses by byte offset but must only ever
     /// return char-boundary slices, so neither `split` nor `strip` may panic on
-    /// arbitrary Unicode — multi-byte chars inside a leading group, embedded
+    /// arbitrary Unicode, multi-byte chars inside a leading group, embedded
     /// newlines (`(?s)`), or a truncated `(?:` opener.
     #[test]
     fn boundary_guard_split_never_panics_on_arbitrary_unicode(

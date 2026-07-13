@@ -213,7 +213,7 @@ fn load_oci_image_manifests(
 
 /// Whether an index entry points at a nested image index / manifest-list rather
 /// than an image manifest. The declared `mediaType` is authoritative when
-/// present; otherwise the blob is classified structurally — an image index
+/// present; otherwise the blob is classified structurally, an image index
 /// carries `manifests` and no `config`, an image manifest the reverse.
 fn descriptor_points_to_index(descriptor: &OciDescriptor, bytes: &[u8]) -> bool {
     if let Some(media_type) = descriptor.media_type.as_deref() {
@@ -237,7 +237,7 @@ fn descriptor_points_to_index(descriptor: &OciDescriptor, bytes: &[u8]) -> bool 
         Ok(shape) => shape.config.is_none() && shape.manifests.is_some(),
         // LAW10: an unparseable blob is classified as not-an-index, so the caller
         // parses it as an image manifest and surfaces a loud parse error for the
-        // entry — the descriptor is never silently skipped.
+        // entry (the descriptor is never silently skipped).
         Err(_) => false,
     }
 }
@@ -290,7 +290,7 @@ pub(crate) fn verify_oci_blob_sha256(path: &Path, digest: &str) -> Result<(), So
     // Route through the crate's safe opener (O_NONBLOCK + O_NOFOLLOW +
     // regular-file check + advisory lock) like every other sources read path,
     // instead of a raw `File::open`. A malicious OCI layout could place a FIFO
-    // where a blob belongs — a raw open+read would HANG the scan — or a symlink
+    // where a blob belongs, a raw open+read would HANG the scan, or a symlink
     // pointing outside the layout. `open_file_safe` refuses both. ONE opener owner.
     let mut file = crate::filesystem::open_file_safe(path).map_err(SourceError::Io)?;
     let mut hasher = Sha256::new();

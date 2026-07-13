@@ -1,8 +1,8 @@
 //! Board-wide inter-keyword separator canonicalization.
 //!
 //! Detector anchors hand-wrote the separator between keyword words in 17
-//! inconsistent, recall-leaky forms (`[_-]?` — no whitespace; `[_\s]?` — one
-//! separator; `[_]*` — underscore only; over-escaped `[\\s_-]` — a literal
+//! inconsistent, recall-leaky forms (`[_-]?`: no whitespace; `[_\s]?`: one
+//! separator; `[_]*`: underscore only; over-escaped `[\\s_-]`: a literal
 //! backslash/`s` instead of `\s`). `keyhog_core` now collapses every one of them
 //! to a single canonical `[_\-\s]*` at spec-load, so a real secret is never
 //! missed because a leaked file used a tab, a double space, or a hyphen where
@@ -19,7 +19,7 @@ use keyhog_core::{canonicalize_keyword_separators, load_detectors, CANONICAL_SEP
 const SOURCE_TYPE: &str = "kwsep-canonicalization";
 
 /// Every regex, AS LOADED through the production `load_detectors` path, must be a
-/// fixed point of the canonicalizer — i.e. the separator canonicalization is
+/// fixed point of the canonicalizer, i.e. the separator canonicalization is
 /// actually applied (no load path bypasses it) and no recall-leaky form survives
 /// into the compiled corpus. Also asserts the canonical class is applied widely,
 /// so the test cannot pass vacuously on an empty/uncanonicalized corpus.
@@ -54,7 +54,7 @@ fn loaded_corpus_separators_are_all_canonical() {
     );
     assert!(
         offenders.is_empty(),
-        "{} regex(es) carry a non-canonical inter-keyword separator after load — a load path \
+        "{} regex(es) carry a non-canonical inter-keyword separator after load, a load path \
          bypassed canonicalization:\n  {}",
         offenders.len(),
         offenders.join("\n  ")
@@ -128,7 +128,7 @@ fn detectors_fire_under_doubled_keyword_separators() {
         assert_ne!(
             prefix,
             &p.text[..pos],
-            "{id}: contract positive {:?} has no inter-keyword separator to double — \
+            "{id}: contract positive {:?} has no inter-keyword separator to double. \
              pick a different fixture",
             p.text
         );
@@ -158,8 +158,8 @@ fn detectors_fire_under_doubled_keyword_separators() {
     );
 }
 
-/// The over-escape fix: lastfm's anchor was `[\\s_-]` — a literal backslash/`s`,
-/// never whitespace — so `LAST FM=<key>` (a real, space-separated mention) was
+/// The over-escape fix: lastfm's anchor was `[\\s_-]`: a literal backslash/`s`,
+/// never whitespace, so `LAST FM=<key>` (a real, space-separated mention) was
 /// silently missed. Canonicalization rewrites it to `[_\-\s]*`, so the spaced
 /// form now fires. (Its contract positive is the joined `LASTFM=` form, which
 /// matched even with the bug; only a genuine whitespace separator exposes it.)

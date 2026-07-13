@@ -1,10 +1,10 @@
 //! SOUNDNESS + DETERMINISM gate for the Hyperscan always-active prefilter on
-//! LARGE (windowed) chunks — the regime the `hs_prefilter_max_len` default gate
+//! LARGE (windowed) chunks, the regime the `hs_prefilter_max_len` default gate
 //! used to keep on the slow `regex::RegexSet` path.
 //!
 //! `phase2_prefilter_hs_findings_parity` only covers ≤4 KiB mirror files, so
-//! the >1 MiB windowed regime — where the prefilter runs HS over the whole
-//! preprocessed window, including the appended synthetic region — was UNTESTED.
+//! the >1 MiB windowed regime, where the prefilter runs HS over the whole
+//! preprocessed window, including the appended synthetic region (was UNTESTED).
 //! That is exactly where raising the gate had been blocked: a match in the
 //! preprocessor's appended synthetic region aliases the real match at a second
 //! offset, and which alias survived the per-chunk cap / dedup flipped run to run
@@ -12,8 +12,8 @@
 //! byte-identical to the RegexSet reference AND deterministic.
 //!
 //! This builds one ~2 MiB chunk dense with repeated, diverse secrets and asserts:
-//!   1. PARITY  — HS-large finding set == RegexSet finding set (raw + deduped).
-//!   2. DETERMINISM — HS-large produces an identical set across repeated scans.
+//!   1. PARITY: HS-large finding set == RegexSet finding set (raw + deduped).
+//!   2. DETERMINISM: HS-large produces an identical set across repeated scans.
 //! A regression in either is a Law 6 / Law 10 failure and fails the gate.
 #![cfg(feature = "simd")]
 
@@ -32,7 +32,7 @@ use support::paths::detector_dir;
 /// harmless, but keeping this test's phases ordered makes its asserts exact.)
 static TOGGLE_LOCK: Mutex<()> = Mutex::new(());
 
-/// `(detector_id, credential, offset)` — the raw-match identity the prefilter
+/// `(detector_id, credential, offset)`: the raw-match identity the prefilter
 /// swap must preserve exactly.
 type RawKey = (String, String, usize);
 
@@ -109,7 +109,7 @@ fn raw_keys(matches: &[RawMatch]) -> BTreeSet<RawKey> {
 }
 
 /// Run the full user-visible pipeline (resolve → cross-scan credential dedup)
-/// and key on `(detector, credential, primary_offset)` — the reported finding.
+/// and key on `(detector, credential, primary_offset)`: the reported finding.
 fn pipeline_keys(matches: Vec<RawMatch>) -> BTreeSet<RawKey> {
     let resolved = resolve_matches(matches);
     dedup_matches(resolved, &DedupScope::Credential)
@@ -162,7 +162,7 @@ fn hs_large_prefilter_identical_to_regexset_and_deterministic() {
     keyhog_scanner::testing::set_hs_prefilter_max_len(&scanner, Some(usize::MAX - 1));
     let hs_raw = scan_raw(&scanner, &text);
     // Arm B: pin the historical 4 KiB gate so the >1 MiB chunk takes the slow
-    // RegexSet reference. This is the one expensive scan — reuse it for both
+    // RegexSet reference. This is the one expensive scan, reuse it for both
     // parity asserts.
     keyhog_scanner::testing::set_hs_prefilter_max_len(&scanner, Some(4096));
     let regex_raw = scan_raw(&scanner, &text);

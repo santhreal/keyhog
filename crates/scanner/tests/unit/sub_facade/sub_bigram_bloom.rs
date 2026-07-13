@@ -4,13 +4,13 @@
 //! but must NEVER drop a chunk whose bigram is present. These tests assert the
 //! exact no-false-negative contract (every inserted bigram overlaps), the
 //! agreement of the unrolled `maybe_overlaps` with the scalar reference, the
-//! terminal-byte row widening, and the saturation short-circuit — real values,
+//! terminal-byte row widening, and the saturation short-circuit, real values,
 //! never `is_empty`.
 
 use keyhog_scanner::testing::BigramBloom;
 
 // ---------------------------------------------------------------------------
-// from_literal_prefixes — every prefix bigram must overlap (no false negatives)
+// from_literal_prefixes, every prefix bigram must overlap (no false negatives)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -50,7 +50,7 @@ fn empty_prefix_list_rejects_normal_chunks() {
 }
 
 // ---------------------------------------------------------------------------
-// maybe_overlaps vs scalar_overlaps_reference — differential agreement
+// maybe_overlaps vs scalar_overlaps_reference, differential agreement
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -82,7 +82,7 @@ fn unrolled_agrees_with_scalar_reference() {
 }
 
 // ---------------------------------------------------------------------------
-// insert_all — public table population path
+// insert_all, public table population path
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -112,7 +112,7 @@ fn popcount_grows_with_inserts() {
 }
 
 // ---------------------------------------------------------------------------
-// saturation short-circuit — soundness (admit, never drop)
+// saturation short-circuit, soundness (admit, never drop)
 // ---------------------------------------------------------------------------
 
 #[test]

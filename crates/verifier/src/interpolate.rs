@@ -90,7 +90,7 @@ pub(crate) fn sanitize_raw_value(s: &str) -> String {
 /// Resolve a field reference (`resolve_field`) and then strip control bytes
 /// (`sanitize_raw_value`) before the value is placed into an `Authorization`
 /// header or a URL query param. The single owner of the resolve-then-sanitize
-/// pairing every credential-bearing auth arm needs — omitting the sanitize step
+/// pairing every credential-bearing auth arm needs, omitting the sanitize step
 /// is a CR/LF/NUL header-injection bug (see the per-arm notes in `verify::auth`).
 pub(crate) fn resolve_and_sanitize_field(
     field: &str,
@@ -102,7 +102,7 @@ pub(crate) fn resolve_and_sanitize_field(
 
 /// Upper bound on `{{…}}` tokens processed in a single template pass. Bounds
 /// both the companion-ref scan and the interpolation replacement loop from ONE
-/// owner — they walk the same templates, so a retune must move them together.
+/// owner (they walk the same templates, so a retune must move them together).
 /// `pub` (inside this private `interpolate` module) so the `testing` facade can
 /// re-export it and the DoS-bound regression test asserts against this single
 /// owner rather than duplicating the `1024` magic number. The module is private,
@@ -218,7 +218,7 @@ fn resolve_oob_url(companions: &HashMap<String, String>) -> String {
 ///   - `interactsh.url` → host reduced to the DNS charset, scheme preserved.
 ///   - `interactsh.host` / bare `interactsh` / `interactsh.id` → reduced to the
 ///     DNS-hostname charset `[a-z0-9.-]`. A host or id never carries a scheme,
-///     so — unlike the url token — no `scheme://` survives here.
+///     so (unlike the url token (no `scheme://` survives here)).
 fn resolve_placeholder(
     inner: &str,
     credential: &str,
@@ -265,15 +265,15 @@ fn interpolate_with_context(
     // Single left-to-right pass over the TEMPLATE. Each `{{…}}` token is
     // resolved to its (already position-sanitized) value and appended to `out`;
     // literal text between tokens is copied verbatim. The scan never re-reads an
-    // emitted value, so a substituted credential or companion — both untrusted,
-    // scanned content — can never introduce a `{{…}}` token that a later phase
+    // emitted value, so a substituted credential or companion, both untrusted,
+    // scanned content, can never introduce a `{{…}}` token that a later phase
     // would expand.
     //
     // This is the security property the prior three-phase replace (match → OOB →
     // companion) lacked: the header/body path control-strips values but does not
     // percent-encode them, so a `{{match}}` whose scanned value was literally
     // `{{companion.other}}` survived with its braces intact and the following
-    // companion phase expanded it — leaking a *different* companion secret into
+    // companion phase expanded it, leaking a *different* companion secret into
     // the outbound request. One pass with inert substitutions closes that
     // entirely, for every token kind, in both contexts.
     //

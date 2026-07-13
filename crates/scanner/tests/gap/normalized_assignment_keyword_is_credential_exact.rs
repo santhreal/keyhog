@@ -56,7 +56,7 @@ fn a_pass_suffix_is_a_credential_but_bypass_and_compass_are_not() {
     assert!(is_credential("ses_pass"));
     assert!(is_credential("db_pass"));
     assert!(is_credential("mysql_root_pass"));
-    // Boundary safety — the left `_` boundary is what makes this safe:
+    // Boundary safety, the left `_` boundary is what makes this safe:
     //  * no `_` at all (`bypass`, `compass`, `encompass`) never reaches branch 1
     //    and is not an exact compact credential, so it stays a non-credential;
     //  * a `_`-segment other than `pass` (`ci_bypass` -> last segment `bypass`)

@@ -1,4 +1,4 @@
-//! Byte-signature classifier contracts (`src/magic.rs`) — the binary-vs-text
+//! Byte-signature classifier contracts (`src/magic.rs`), the binary-vs-text
 //! detectors that gate `filesystem/read/decode.rs`. A wrong classifier scans a
 //! binary blob as text (FP noise + wasted work) or skips a real text file, so
 //! each format's exact positive and a TIGHT near-miss negative are pinned.
@@ -153,7 +153,7 @@ fn wasm_module_matches_exact_magic() {
 #[test]
 fn blocking_thread_panic_becomes_a_counted_source_error() {
     // A fetch closure that panics must be converted to a named SourceError, never
-    // unwind into (or abort) the caller — otherwise one bad remote source would
+    // unwind into (or abort) the caller, otherwise one bad remote source would
     // crash the whole scan instead of counting a skipped source.
     let msg = blocking_thread_panic_error_message_for_test("s3")
         .expect("a panicking fetch closure must surface an Err, not succeed or unwind");

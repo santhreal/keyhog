@@ -4,11 +4,11 @@ Every adapter yields normalised findings (``{file, line, value, detector}``,
 plus scanner-specific evidence such as ``offset`` and ``confidence``)
 and a :class:`RunStats`. Measurement is uniform across scanners:
 
-* **wall** — a monotonic ``perf_counter`` around the whole invocation.
-* **peak RSS** — ``/usr/bin/time -v -o <file>`` parsed for "Maximum resident
+* **wall** (a monotonic ``perf_counter`` around the whole invocation).
+* **peak RSS**: ``/usr/bin/time -v -o <file>`` parsed for "Maximum resident
   set size", with a ``resource.getrusage(RUSAGE_CHILDREN)`` fallback where
   GNU time is absent (macOS / minimal containers). Never raises.
-* **throughput** — corpus bytes / wall, filled in by the runner which knows
+* **throughput**, corpus bytes / wall, filled in by the runner which knows
   the corpus size.
 
 Findings always go to a ``--output`` file or stdout that GNU time's report
@@ -191,9 +191,9 @@ def run_measured(
             except OSError:
                 pass
     if peak_rss_kb == 0:
-        # Fallback (no GNU time — macOS / minimal containers): RUSAGE_CHILDREN
+        # Fallback (no GNU time, macOS / minimal containers): RUSAGE_CHILDREN
         # ru_maxrss is a MONOTONIC HIGH-WATER MARK across ALL children this
-        # process ever reaped, NOT a per-run figure — once a large scan runs,
+        # process ever reaped, NOT a per-run figure, once a large scan runs,
         # every later fallback measurement in the same process reports at least
         # that peak. GNU time (`/usr/bin/time -v`) is the accurate per-run path
         # and is used whenever present (the whole Linux fleet); treat this value
@@ -236,7 +236,7 @@ def probe_version(binary: str, args: tuple[str, ...] = ("--version",)) -> str:
     records exactly which build produced it (closes the stale-binary
     provenance gap). ``args`` lets a scanner whose version command differs
     (e.g. titus ``version``) reuse this. Returns "" if the binary is absent or
-    the probe fails — never raises."""
+    the probe fails, never raises."""
     if shutil.which(binary) is None and not pathlib.Path(binary).exists():
         return ""
     try:

@@ -62,7 +62,7 @@ pub struct VerificationEngine {
     service_semaphores: Arc<HashMap<Arc<str>, Arc<Semaphore>>>,
     /// Configured per-service concurrency, reused as the fallback bound when a
     /// group's service is absent from `service_semaphores`. Single owner for the
-    /// value — no second hardcoded default that could silently diverge.
+    /// value (no second hardcoded default that could silently diverge).
     pub(crate) max_concurrent_per_service: usize,
     /// Global concurrency limit.
     global_semaphore: Arc<Semaphore>,
@@ -164,7 +164,7 @@ impl Default for VerifyConfig {
 }
 
 /// Resolve a proxy spec into an applied `reqwest::ClientBuilder`. ONLY the
-/// explicit value (from `--proxy` / TOML) is honored — no environment variable
+/// explicit value (from `--proxy` / TOML) is honored, no environment variable
 /// is consulted, and when no proxy is configured the builder is given
 /// `.no_proxy()` so reqwest's ambient proxy-env detection cannot silently
 /// reroute secret-bearing verification + OOB traffic (config-policy mandate +
@@ -208,7 +208,7 @@ fn proxy_mode_from_raw(raw: &str) -> ProxyMode {
 }
 
 /// Returns true iff an explicit proxy is configured (and not a disable
-/// sentinel). No environment variable is consulted — neither the old keyhog
+/// sentinel). No environment variable is consulted, neither the old keyhog
 /// proxy env var nor reqwest's ambient proxy-env vars, because those are
 /// neutralized via `.no_proxy()` and can never route verifier traffic. This is
 /// the signal `resolved_client_for_url()` uses to decide whether to apply DNS
@@ -272,8 +272,8 @@ pub(crate) fn into_finding(
 ) -> VerifiedFinding {
     // Severity shift on verification (docs/src/verification.md "Severity shift"
     // table; docs/src/first-scan.md "downgraded one"). A credential the provider
-    // rejects (`Dead`) or has explicitly revoked (`Revoked`) is still a leak — a
-    // developer typed it into a file once — but it is strictly less urgent than a
+    // rejects (`Dead`) or has explicitly revoked (`Revoked`) is still a leak, a
+    // developer typed it into a file once, but it is strictly less urgent than a
     // credential an attacker can authenticate with right now. Drop exactly one
     // severity tier (`critical → high`, `high → medium`, …) via the canonical
     // `Severity::downgrade_one`; never collapse to a fixed level. `Live` keeps
@@ -315,8 +315,8 @@ pub mod testing {
     /// pinned-client caches) on an internally-built age-stamped map and return the
     /// surviving keys, sorted ascending. Each key doubles as its age-in-seconds
     /// (entry `k` is stamped `base + k`s, so key `0` is the oldest), making the
-    /// survivor set directly observable. Kept here — rather than in the
-    /// integration-test crate — so `dashmap` stays out of the test crate's
+    /// survivor set directly observable. Kept here, rather than in the
+    /// integration-test crate, so `dashmap` stays out of the test crate's
     /// dependency set while the exact production eviction path is what runs.
     pub fn evict_oldest_dashmap_survivors_for_test(ages_secs: &[u64], count: usize) -> Vec<u64> {
         let base = std::time::Instant::now();
@@ -338,7 +338,7 @@ pub mod testing {
 
     // Pinned-client cache-key seams (request.rs `canonical_pinned_addrs` /
     // `pinned_keys_equal_for_test` are `pub(crate)`, so they cannot be re-exported
-    // with `pub use` — wrap them in `pub fn`s here, like the other `_for_test`
+    // with `pub use`: wrap them in `pub fn`s here, like the other `_for_test`
     // accessors, so `tests/unit/pinned_client_key.rs` reaches them without widening
     // the crate's public API).
     pub fn canonical_pinned_addrs(addrs: &[std::net::SocketAddr]) -> Vec<std::net::SocketAddr> {
@@ -838,7 +838,7 @@ pub mod testing {
         ) -> (Vec<(String, String)>, Option<String>) {
             let client = reqwest::Client::new();
             // A fixed, non-routable target: the request is BUILT, never sent, so
-            // no traffic leaves the test — only the assembled header/body bytes
+            // no traffic leaves the test, only the assembled header/body bytes
             // are inspected.
             let builder = client.post("https://verify.example.invalid/probe");
             let specs: Vec<keyhog_core::HeaderSpec> = header_templates

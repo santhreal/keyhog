@@ -97,12 +97,12 @@ fn is_triple_quote_at(bytes: &[u8], idx: usize) -> bool {
 ///
 /// A real docstring/multiline-string opener sits at a string-OPENING position:
 ///   1. it is not preceded by an assignment operator (`x = """data` is runtime
-///      string data, classified as code — preserves the existing contract); and
+///      string data, classified as code, preserves the existing contract); and
 ///   2. the bytes before the triple-quote are not themselves inside an
 ///      unterminated regular quote.
 ///
-/// A single `"""` buried in quote noise — e.g. `key " : """ : ' ": "  SECRET`
-/// in a randomized config dump or a log line — is NOT a docstring opener. The
+/// A single `"""` buried in quote noise, e.g. `key " : """ : ' ": "  SECRET`
+/// in a randomized config dump or a log line, is NOT a docstring opener. The
 /// old `count % 2` heuristic toggled on it and then silently suppressed every
 /// credential below it (a 0.3x multiplier + hard-suppress). Failing to open
 /// here can only REDUCE suppression, so it preserves recall and never adds a
@@ -130,7 +130,7 @@ fn first_docstring_delimiter(trimmed: &str) -> Option<usize> {
     trimmed.find("\"\"\"").or_else(|| trimmed.find("'''"))
 }
 
-/// True when scanning `segment` leaves us OUTSIDE any `"…"`/`'…'` string — the
+/// True when scanning `segment` leaves us OUTSIDE any `"…"`/`'…'` string, the
 /// only position from which a following triple-quote can open a docstring.
 ///
 /// Escaped quotes (`\"`, `\'`) inside a string are NOT string boundaries, so a

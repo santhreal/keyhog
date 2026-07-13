@@ -1,16 +1,16 @@
-//! MC-10 / DF-02 guard — shipped docs must not name a detector id/file that the
+//! MC-10 / DF-02 guard, shipped docs must not name a detector id/file that the
 //! registry can't resolve.
 //!
 //! DF-02 hit `keyhog explain aws-access-key-id` → exit 2 "no detector with id":
 //! the internal design notes cited an id (`aws-access-key-id`) that had drifted from
 //! the canonical registry id (`aws-access-key`). A doc that names a non-resolving
-//! detector is a coherence bug — a reader who copies the id into `keyhog explain`
+//! detector is a coherence bug, a reader who copies the id into `keyhog explain`
 //! gets an error, and an audit keyed on a dead id silently audits nothing.
 //!
 //! Detector files are named `<id>.toml` (the file stem IS the canonical id), so a
 //! `detectors/<stem>.toml` reference in a doc is an implicit id claim. This guard
 //! extracts every such reference from the shipped Markdown docs and asserts each
-//! stem resolves to an embedded detector whose `id == stem` — exactly what
+//! stem resolves to an embedded detector whose `id == stem`: exactly what
 //! `keyhog explain <stem>` needs to succeed. It would have failed on the
 //! `aws-access-key-id` drift.
 

@@ -2,7 +2,7 @@
 //! `tests.rs` module (rather than an inline `#[cfg(test)] mod tests {}` block) so
 //! the `no_inline_tests_in_src` gate stays green while these still reach the
 //! parent module's PRIVATE helpers (`calibration_block`, `core_workload_plan`,
-//! the seeds) via `use super::*` — coverage an out-of-crate integration test
+//! the seeds) via `use super::*`: coverage an out-of-crate integration test
 //! could not provide.
 
 use super::*;

@@ -176,12 +176,12 @@ pub fn find_entropy_secrets_with_threshold(
 /// This closes the root candidate-generation gap for the CredData `UUID` and
 /// `hex64` (AES-256 key) miss classes, where the value is dropped at the
 /// generation source by [`is_canonical_non_secret_shape`] before any candidate
-/// is produced — so no amount of downstream model authority can recover it.
+/// is produced (so no amount of downstream model authority can recover it).
 ///
 /// `allow_canonical_lift` is wired from `ml_enabled && entropy_ml_authoritative`
 /// at the call site (`engine::phase2_entropy`). With it `false` (the default,
 /// the non-ML path, the high-precision preset) the behaviour is byte-identical
-/// to the strict gate — the SecretBench-mirror precision is preserved because
+/// to the strict gate, the SecretBench-mirror precision is preserved because
 /// the lift never engages without the model that earns it. The keyword-FREE
 /// candidate path NEVER lifts: a value with no credential anchor has no positive
 /// evidence, so canonical hash/UUID shapes stay suppressed at the source there.
@@ -229,14 +229,14 @@ pub(crate) fn find_entropy_secrets_with_canonical_lift_and_lines(
     skip_lines: Option<&std::collections::HashSet<usize>>,
     allow_canonical_lift: bool,
 ) -> Vec<EntropyMatch> {
-    // The explicit `keyword_free_threshold` is authoritative here — do NOT
+    // The explicit `keyword_free_threshold` is authoritative here, do NOT
     // re-derive it from the generic-secret spec. The spec's `entropy_very_high`
     // is the single-owner DEFAULT and is read in ONE place, the no-threshold
     // convenience entry `find_entropy_secrets` (which passes it in as this
     // param). Callers that pass an ADJUSTED threshold rely on it: the production
     // `phase2_entropy` lowers it to `SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD`
     // on sensitive paths (a recall boost), and a Tier-A operator can RAISE it for
-    // a stricter scan. A second spec read here silently clobbered both — a dead
+    // a stricter scan. A second spec read here silently clobbered both, a dead
     // knob (WIRING) and a lost sensitive-file recall boost.
     assert!(
         line_offsets.len() >= lines.len(),
@@ -405,7 +405,7 @@ fn scan_keyword_contexts(
 /// Each byte is classified with bit flags:
 /// - bit 0 (1): ASCII whitespace (space, tab, newline, CR)
 /// - bit 1 (2): entropy candidate byte (alphanumeric + -_+/=.:!@#$%^&*)
-/// - bit 2 (4): trigger byte (=, :, ", ', <) — required by `extract_candidates`
+/// - bit 2 (4): trigger byte (=, :, ", ', <), required by `extract_candidates`
 ///
 /// Using a lookup table instead of `is_ascii_alphanumeric()` + `matches!()`
 /// per byte cuts the per-line byte scan from ~3-5 comparisons/byte to a single
@@ -555,7 +555,7 @@ fn scan_keyword_free_candidates(
         }
         // Isolated-bare path: needs a non-whitespace run ≥ isolated_min_len.
         // Use max_nonws_run (not max_entropy_run) because isolated_bare_candidate
-        // accepts tokens with non-entropy bytes like `()` — the byte set is
+        // accepts tokens with non-entropy bytes like `()`: the byte set is
         // wider than is_entropy_candidate_byte. But also require
         // max_entropy_run ≥ isolated_min_len as a fast skip for lines where
         // even the longest entropy run is too short, since the isolated-bare
@@ -845,16 +845,16 @@ fn candidate_plausibility_rejection_stage_with_policy(
         // even with the anchor; a real high-entropy key under a service anchor
         // is matched by its detector regex, not this generic entropy path.
         //
-        // CredData recall lane: when `allow_canonical_shapes` is set — i.e. the
+        // CredData recall lane: when `allow_canonical_shapes` is set, i.e. the
         // MoE is the runtime precision authority AND a strong credential keyword
-        // anchors this line — GENERATE the canonical-shape candidate anyway so
+        // anchors this line: GENERATE the canonical-shape candidate anyway so
         // the model can arbitrate it. The CredData `UUID` and `hex64` (AES-256
         // key) miss classes are dropped HERE at the generation source; with the
         // model in scope the strict drop trades real recall (the value never
         // reaches the scorer) for a precision the MoE already provides. With the
         // flag unset (non-ML path) this is the byte-identical strict gate, so
-        // the SecretBench-mirror precision — where `TOKEN=<32-hex>` is BOTH a
-        // positive and a sha256/git-sha/k8s-uid negative — is unchanged.
+        // the SecretBench-mirror precision, where `TOKEN=<32-hex>` is BOTH a
+        // positive and a sha256/git-sha/k8s-uid negative (is unchanged).
         let canonical_lift = context.allow_canonical_shapes
             && canonical_shape_lift_allowed(candidate, &context.keyword);
         if !canonical_lift && is_canonical_non_secret_shape(candidate) {
@@ -970,7 +970,7 @@ pub(crate) fn keyword_is_key_material(keyword: &str) -> bool {
 /// allocation (Law 7: this runs per canonical-lift candidate). Mirrors the
 /// compact-keyword matcher family in `engine::phase2_generic::keywords`
 /// (`compact_keyword_eq`/`_ends_with`); see the backlog DEDUP task to hoist that
-/// family to a shared low layer — `entropy` must not import `engine`.
+/// family to a shared low layer: `entropy` must not import `engine`.
 fn compact_keyword_contains(keyword: &str, needle: &[u8]) -> bool {
     if needle.is_empty() {
         return true;
@@ -1067,10 +1067,10 @@ fn keyword_context_with_policy(
         .and_then(|s| s.entropy_high)
         .map_or(HIGH_ENTROPY_THRESHOLD, |threshold| threshold);
 
-    // Keyword-anchored floor policy — a NAMED, tested rule, not a silent clamp.
+    // Keyword-anchored floor policy (a NAMED, tested rule, not a silent clamp).
     // Inside a credential-keyword context the keyword IS the positive evidence,
     // so the entropy bar is the LOW floor. The operator's Tier-A threshold
-    // engages only when it is stricter than the blanket HIGH floor — that shared
+    // engages only when it is stricter than the blanket HIGH floor, that shared
     // decision lives in one owner, `operator_entropy_override` (see its doc). It
     // is honored verbatim when it overrides; otherwise the keyword floor is
     // `min(threshold, LOW)` for a finite request (a below-LOW request may still
@@ -1094,7 +1094,7 @@ fn keyword_context_with_policy(
         is_credential_context,
         // The canonical-shape generation lift engages ONLY when the MoE is the
         // runtime precision authority AND a strong credential keyword anchors
-        // the line — both must hold, so a non-credential line never lifts even
+        // the line, both must hold, so a non-credential line never lifts even
         // under the model.
         allow_canonical_shapes: allow_canonical_lift && is_credential_context,
     }

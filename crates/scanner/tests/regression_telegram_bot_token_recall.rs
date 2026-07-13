@@ -194,7 +194,7 @@ fn telegram_seven_digit_id_does_not_fire() {
 
 #[test]
 fn telegram_token_no_colon_separator_does_not_fire() {
-    // Without the `:` separator the digits and token form one run — no match.
+    // Without the `:` separator the digits and token form one run (no match).
     // (Note: an 11+ digit id IS matched via its 10-digit suffix because the
     // regex is unanchored, so the genuine negative is the missing separator.)
     let tok = format!("123456789X{}", token35(14));

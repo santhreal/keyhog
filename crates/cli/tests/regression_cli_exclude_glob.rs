@@ -5,7 +5,7 @@
 //!
 //! This file is DISTINCT from `regression_cli_glob_filters.rs` (which pins the
 //! flat `a.rs`/`b.txt`/`sub` cases): here the fixtures are `.env` files under a
-//! `skip/` directory, and the focus is the *exclude* surface — that
+//! `skip/` directory, and the focus is the *exclude* surface, that
 //! `--exclude-paths '**/skip/**'` drops the nested `skip/**` finding while
 //! keeping the root file, that multiple `--exclude-paths` operands compose, that
 //! a non-matching glob is an honest no-op, and that the flag is spelled
@@ -186,7 +186,7 @@ fn hashes(findings: &[Finding]) -> BTreeSet<String> {
 // ---------------------------------------------------------------------------
 
 /// Baseline: with no exclude, BOTH the root `a.env` and the nested `skip/b.env`
-/// are scanned — exactly two findings mapped to their tokens by hash, exit 1.
+/// are scanned (exactly two findings mapped to their tokens by hash, exit 1).
 #[test]
 fn baseline_finds_root_and_nested_env() {
     let dir = plant_skip_tree();
@@ -238,7 +238,7 @@ fn exclude_skip_globstar_drops_nested_env() {
 }
 
 /// A bare directory name (`skip`, no slash, no metachar) prunes the whole
-/// subtree at any depth — same result as the globstar form. Only `a.env` remains.
+/// subtree at any depth (same result as the globstar form. Only `a.env` remains).
 #[test]
 fn exclude_bare_dirname_prunes_skip_subtree() {
     let dir = plant_skip_tree();
@@ -273,7 +273,7 @@ fn exclude_skip_globstar_prunes_deep_subtree() {
 }
 
 /// Negative twin: an exclude glob that matches NOTHING (`**/other/**`) leaves
-/// both findings intact — the filter must never over-prune.
+/// both findings intact (the filter must never over-prune).
 #[test]
 fn exclude_nonmatching_glob_keeps_both() {
     let dir = plant_skip_tree();
@@ -293,7 +293,7 @@ fn exclude_nonmatching_glob_keeps_both() {
 
 /// A slash-less basename glob (`*.env`) matches at ANY depth (gitignore
 /// semantics), so BOTH the root `a.env` and the nested `skip/b.env` are pruned:
-/// an HONEST empty result — exit 0 and the literal `[]` bytes.
+/// an HONEST empty result (exit 0 and the literal `[]` bytes).
 #[test]
 fn exclude_star_env_matches_any_depth_empties_result() {
     let dir = plant_skip_tree();
@@ -310,7 +310,7 @@ fn exclude_star_env_matches_any_depth_empties_result() {
 }
 
 /// The explicit recursive glob `**/*.env` also strips every `.env` at any depth
-/// — same empty, exit-0 result as the bare `*.env` form.
+///: same empty, exit-0 result as the bare `*.env` form.
 #[test]
 fn exclude_recursive_env_glob_empties_result() {
     let dir = plant_skip_tree();
@@ -397,7 +397,7 @@ fn bare_exclude_flag_is_usage_error() {
 
 /// Field-level pin: after excluding the skip subtree, the surviving a.env
 /// finding lands on line 1, offset 0, severity critical, detector
-/// github-classic-pat, with no additional locations — so the set-level tests
+/// github-classic-pat, with no additional locations, so the set-level tests
 /// above assert against a fully-pinned finding, not a fuzzy shape.
 #[test]
 fn surviving_env_finding_fields_are_pinned() {

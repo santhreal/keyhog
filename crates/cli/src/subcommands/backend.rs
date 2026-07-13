@@ -45,7 +45,7 @@ fn parse_gpu_lowering_gap_rules(raw: &str) -> Result<GpuLoweringGapRules, String
 }
 
 /// The embedded Tier-B classification set. A parse failure or an EMPTY marker
-/// set is a BUILD bug in bundled data — not a runtime condition — so it panics
+/// set is a BUILD bug in bundled data, not a runtime condition, so it panics
 /// in the `LazyLock` init (fail closed). An empty set would silently treat every
 /// GPU self-test error as a hard FAIL, breaking the installer/doctor on hosts
 /// whose scans are actually correct on the AC-kernel path (Law 10: never
@@ -106,7 +106,7 @@ pub(crate) fn run(args: BackendArgs) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// `keyhog backend --autoroute` — render the persisted autoroute calibration
+/// `keyhog backend --autoroute`: render the persisted autoroute calibration
 /// cache so an operator can see which resolved configs and workload buckets are
 /// calibrated (and to which backend), diagnosing a fail-closed scan. Read-only.
 fn run_autoroute_inspection(json: bool) -> Result<ExitCode> {
@@ -530,7 +530,7 @@ fn collect_self_test_report() -> BackendSelfTestReport {
             // host produce the same findings, just without GPU ML acceleration.
             // Report it as a KNOWN limitation (like the vyre_literal_set lowering
             // gap below) instead of a hard FAIL, so `--self-test` and the installer
-            // stay green for a host whose scans are correct — while still naming the
+            // stay green for a host whose scans are correct, while still naming the
             // fault loudly so it gets fixed. A genuine GPU-unavailable/dispatch
             // failure stays a FAIL.
             let parity_degrade = is_moe_parity_degrade(&error);

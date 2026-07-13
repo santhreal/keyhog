@@ -279,7 +279,7 @@ fn replayed_gpu_dfa_admission_matches_cpu_regex_case_policy() {
     );
     assert_eq!(gpu_admitted, vec![true, true, false]);
     // Marking (step-1a): each admitted region records the phase-2 index (0) that
-    // matched — the active set that will replace the CPU always-active RegexSet.
+    // matched (the active set that will replace the CPU always-active RegexSet).
     assert_eq!(gpu_marked, vec![vec![0usize], vec![0usize], vec![]]);
 }
 

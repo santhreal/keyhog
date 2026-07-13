@@ -263,7 +263,7 @@ impl Phase2GpuDfaCatalog {
         // Step-1 marking accumulator: per-region (== per-chunk in the coalesced
         // batch) phase-2 pattern indices the GPU regex-DFA matched, unioned across
         // shards. Only meaningful when `complete` (GPU covered every always-active
-        // pattern) — then the caller can substitute this for the CPU RegexSet mark.
+        // pattern) (then the caller can substitute this for the CPU RegexSet mark).
         let mut marked: Vec<Vec<usize>> = vec![Vec::new(); chunk_count];
         for shard in &self.shards {
             let shard_incomplete = shard.scan_admission_into(

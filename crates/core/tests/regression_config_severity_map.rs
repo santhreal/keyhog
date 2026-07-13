@@ -81,7 +81,7 @@ fn parse_severity(sev_literal: &str) -> Severity {
 
 // ─── shipped on-disk TOML severities (one per tier) ──────────────────────────
 
-/// `aws-access-key.toml` declares `severity = "critical"` — the highest tier.
+/// `aws-access-key.toml` declares `severity = "critical"`: the highest tier.
 #[test]
 fn shipped_aws_access_key_severity_is_critical() {
     assert_eq!(shipped("aws-access-key").severity, Severity::Critical);
@@ -133,7 +133,7 @@ fn parse_client_safe_kebab_severity_string() {
 }
 
 /// Adversarial: the `#[serde(alias = "client_safe")]` underscore spelling maps
-/// to the SAME `ClientSafe` tier as the kebab-case form — the two are not two
+/// to the SAME `ClientSafe` tier as the kebab-case form, the two are not two
 /// different values (ONE-PLACE law).
 #[test]
 fn parse_client_safe_underscore_alias_equals_kebab() {
@@ -172,7 +172,7 @@ regex = "probe_[A-Z0-9]{8}"
 }
 
 /// Adversarial: an unknown severity label (`"urgent"`) is not silently coerced
-/// to any tier — it is rejected as `InvalidToml`.
+/// to any tier (it is rejected as `InvalidToml`).
 #[test]
 fn unknown_severity_label_is_rejected() {
     let toml = detector_toml_with_severity("urgent");
@@ -183,7 +183,7 @@ fn unknown_severity_label_is_rejected() {
     );
 }
 
-/// Adversarial: severity is case-sensitive kebab-case — `"Critical"` (capital
+/// Adversarial: severity is case-sensitive kebab-case. `"Critical"` (capital
 /// C, the Rust `Debug` spelling) is NOT a valid wire label and is rejected,
 /// proving reporters must not round-trip through `format!("{:?}")`.
 #[test]
@@ -199,14 +199,14 @@ fn capitalized_debug_style_severity_is_rejected() {
 // ─── enum invariants backing the map ─────────────────────────────────────────
 
 /// The enum default is `Info` (the `#[default]` variant). This is the value a
-/// caller gets from `Severity::default()`, distinct from — and never a
-/// substitute for — an explicitly-declared TOML severity.
+/// caller gets from `Severity::default()`, distinct from, and never a
+/// substitute for (an explicitly-declared TOML severity).
 #[test]
 fn severity_enum_default_is_info() {
     assert_eq!(Severity::default(), Severity::Info);
 }
 
-/// `Display` renders each tier as its canonical kebab-case wire form — the same
+/// `Display` renders each tier as its canonical kebab-case wire form, the same
 /// strings the TOML uses to declare them, so parse and render are inverses.
 #[test]
 fn severity_display_matches_wire_labels() {
@@ -219,7 +219,7 @@ fn severity_display_matches_wire_labels() {
 }
 
 /// The derived `Ord` ranks tiers Info < ClientSafe < Low < Medium < High <
-/// Critical — the ordering `--min-severity` relies on. A leaked AWS key
+/// Critical, the ordering `--min-severity` relies on. A leaked AWS key
 /// (`Critical`) must sort strictly above an `info` finding.
 #[test]
 fn severity_ordering_is_info_to_critical() {

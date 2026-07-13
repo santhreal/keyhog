@@ -6,7 +6,7 @@
 //! rejected with a NAMED error, never silently ignored (which would scan an
 //! unbounded object set) or panic. This target is gated behind `--features s3`
 //! because the parser and its only callers (`s3`/`gcs`/`azure` arms) are all
-//! `#[cfg(feature = ...)]` — so this file compiles only under those features.
+//! `#[cfg(feature = ...)]`: so this file compiles only under those features.
 //!
 //! Run: `cargo test -p keyhog-sources --features s3 --test regression_s3_numeric_param_validation`.
 #![cfg(feature = "s3")]
@@ -15,7 +15,7 @@ use keyhog_core::SourceError;
 use keyhog_sources::create_source;
 
 /// Extract the error from a `create_source` result. `Box<dyn Source>` does not
-/// implement `Debug`, so `expect_err` is unavailable — this matches instead.
+/// implement `Debug`, so `expect_err` is unavailable (this matches instead).
 fn expect_create_source_err(spec: &str) -> SourceError {
     match create_source("s3", Some(spec)) {
         Ok(_) => panic!("expected an error for spec {spec:?}, but the source built"),
@@ -30,8 +30,8 @@ fn s3_source_builds(spec: &str) -> bool {
 }
 
 /// A benign 4-field S3 spec (bucket/prefix/endpoint/forward) plus a 5th
-/// `max_objects` field. No network is touched — the factory only parses fields
-/// and constructs the source struct — so the numeric-parse branch is reached
+/// `max_objects` field. No network is touched, the factory only parses fields
+/// and constructs the source struct, so the numeric-parse branch is reached
 /// deterministically offline.
 fn s3_spec_with_max_objects(max_objects: &str) -> String {
     format!("mybucket\nlogs/\nhttp://localhost:9000\nfalse\n{max_objects}")
@@ -68,7 +68,7 @@ fn negative_max_objects_is_rejected() {
 
 #[test]
 fn valid_max_objects_builds_the_source() {
-    // A well-formed cap parses cleanly and yields a source (no error) — proving the
+    // A well-formed cap parses cleanly and yields a source (no error), proving the
     // rejection above is specific to malformed input, not a blanket failure of the
     // 5-field spec.
     assert!(
@@ -79,7 +79,7 @@ fn valid_max_objects_builds_the_source() {
 
 #[test]
 fn omitted_max_objects_is_allowed() {
-    // The field is OPTIONAL: a 4-field spec (no max_objects) builds fine — the
+    // The field is OPTIONAL: a 4-field spec (no max_objects) builds fine, the
     // parser returns `None`, not an error.
     assert!(
         s3_source_builds("mybucket\nlogs/\nhttp://localhost:9000\nfalse"),

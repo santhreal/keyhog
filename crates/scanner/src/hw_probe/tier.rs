@@ -22,7 +22,7 @@ pub(crate) enum GpuTier {
     Low,
 }
 
-/// Number of [`GpuTier`] variants (High, Mid, Low) — the width of the
+/// Number of [`GpuTier`] variants (High, Mid, Low), the width of the
 /// [`gpu_routing_profiles`] table that surfaces one profile per tier.
 const GPU_TIER_COUNT: usize = 3;
 

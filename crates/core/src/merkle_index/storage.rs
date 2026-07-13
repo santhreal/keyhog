@@ -381,7 +381,7 @@ impl MerkleIndex {
 
     fn remember_cache_file_fingerprint(&self, path: &Path) {
         if let Ok(fingerprint) = cache_file_fingerprint(path) {
-            // LAW10: fail-closed — a failed post-write fingerprint leaves the cache untrusted; the loader rejects a missing fingerprint instead of trusting stale entries.
+            // LAW10: fail-closed, a failed post-write fingerprint leaves the cache untrusted; the loader rejects a missing fingerprint instead of trusting stale entries.
             *self.cache_file_fingerprint.write() = fingerprint;
         }
     }

@@ -4,7 +4,7 @@
 //! ml/decode-gated code used the imported `Relaxed` alias (its `use` was behind
 //! `#[cfg(any(feature = "decode", feature = "ml"))]`). That split meant the same
 //! ordering was spelled two ways in one file. The import is now unconditional
-//! and every atomic op uses the `Relaxed` alias — byte-identical (the alias
+//! and every atomic op uses the `Relaxed` alias, byte-identical (the alias
 //! resolves to the same enum variant), a pure coherence/dedup normalization.
 //!
 //! This is a source-shape gate (the module is private `mod
@@ -21,7 +21,7 @@ fn profile_src() -> String {
 #[test]
 fn profiler_uses_one_relaxed_ordering_reference() {
     let src = profile_src();
-    // The fully-qualified spelling appears exactly once — the `use` import — and
+    // The fully-qualified spelling appears exactly once, the `use` import, and
     // every atomic op uses the `Relaxed` alias instead.
     assert_eq!(
         src.matches("std::sync::atomic::Ordering::Relaxed").count(),

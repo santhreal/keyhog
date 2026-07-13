@@ -20,7 +20,7 @@ reason = "Body below 32 alnum chars."
 [[evasion]]
 text = "pagerduty.api.key=k7p4qx9rm2sn5tb8vw3yz0a6b8c4d1f3"
 credential = "k7p4qx9rm2sn5tb8vw3yz0a6b8c4d1f3"
-reason = "Dot-style pagerduty.api.key — regex's `[._]?` covers the separator."
+reason = "Dot-style pagerduty.api.key (regex's `[._]?` covers the separator)."
 
 [perf]
 fixture_bytes = 4096

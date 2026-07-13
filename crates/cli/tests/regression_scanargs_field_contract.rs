@@ -18,7 +18,7 @@ use std::path::PathBuf;
 
 /// Parse `keyhog scan <extra...>` through the production parse path and return
 /// the resolved `ScanArgs`. Panics if parsing fails or the subcommand is not
-/// `scan` — the positive-path helper.
+/// `scan`: the positive-path helper.
 fn scan_args(extra: &[&str]) -> ScanArgs {
     let mut argv: Vec<String> = vec!["keyhog".to_string(), "scan".to_string()];
     argv.extend(extra.iter().copied().map(String::from));
@@ -30,7 +30,7 @@ fn scan_args(extra: &[&str]) -> ScanArgs {
 }
 
 /// Parse attempt that is expected to fail; returns the `clap::Error` so tests
-/// can assert the exact `ErrorKind` and message — the negative-path helper.
+/// can assert the exact `ErrorKind` and message (the negative-path helper).
 fn scan_parse_error(extra: &[&str]) -> clap::Error {
     let mut argv: Vec<String> = vec!["keyhog".to_string(), "scan".to_string()];
     argv.extend(extra.iter().copied().map(String::from));

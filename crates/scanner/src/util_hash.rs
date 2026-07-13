@@ -18,7 +18,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-/// FNV-1a offset basis (seed). The ONE place the seed lives — every cache that
+/// FNV-1a offset basis (seed). The ONE place the seed lives, every cache that
 /// keys on this hash depends on the value being identical.
 pub const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
 /// FNV-1a prime. The ONE place the prime lives.
@@ -38,7 +38,7 @@ pub(crate) fn hash_fast(data: &[u8]) -> u64 {
 /// Allocation-free incremental FNV-1a, for content keys composed of MORE THAN
 /// ONE slice (e.g. the ML scorer keys on `text` + separator + `context`).
 /// Folding the slices into one [`FnvHasher`] is byte-for-byte identical to
-/// hashing their concatenation but never allocates the joined buffer — the
+/// hashing their concatenation but never allocates the joined buffer, the
 /// reason this exists instead of `hash_fast(&[a, b].concat())` on a hot path.
 /// Shares the SINGLE seed/prime ([`FNV_OFFSET_BASIS`] / [`FNV_PRIME`]) with
 /// [`hash_fast`], so a single-slice `FnvHasher` and `hash_fast` agree (MC-12).

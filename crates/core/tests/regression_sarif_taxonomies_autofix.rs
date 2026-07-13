@@ -5,11 +5,11 @@
 //!
 //! Every assertion here is a concrete expected value drawn from the actual
 //! source and Tier-B data:
-//!   * `crates/core/src/report/sarif_taxonomies.rs` — the taxonomy JSON.
-//!   * `crates/core/src/report/sarif.rs`            — result properties + fixes.
-//!   * `crates/core/src/auto_fix.rs`                — env-var derivation.
-//!   * `crates/core/data/service-env-vars.toml`     — curated env-var map.
-//!   * `crates/core/data/remediation.toml`          — remediation advice.
+//!   * `crates/core/src/report/sarif_taxonomies.rs`: the taxonomy JSON.
+//!   * `crates/core/src/report/sarif.rs`: result properties + fixes.
+//!   * `crates/core/src/auto_fix.rs`: env-var derivation.
+//!   * `crates/core/data/service-env-vars.toml`: curated env-var map.
+//!   * `crates/core/data/remediation.toml`: remediation advice.
 //!
 //! The whole file drives the real operator path: `write_report` with
 //! `ReportFormat::Sarif`, then `serde_json` value assertions on the emitted
@@ -167,7 +167,7 @@ fn owasp_taxon_has_exact_a07_metadata() {
 }
 
 /// Boundary: an empty run (no findings, only `finish()`) still emits the
-/// taxonomies block with both taxa — a consumer of a "clean" run must still be
+/// taxonomies block with both taxa, a consumer of a "clean" run must still be
 /// able to resolve the taxonomy references the schema promises.
 #[test]
 fn taxonomies_present_on_empty_run() {
@@ -237,7 +237,7 @@ fn autofix_description_is_exact_sentence() {
 
 /// Negative twin for the env-var map: a service that IS in the curated map
 /// (`openai`) must emit the community name `OPENAI_API_KEY`, proving the map is
-/// consulted — the screaming-snake fallback would wrongly produce `OPENAI_KEY`.
+/// consulted (the screaming-snake fallback would wrongly produce `OPENAI_KEY`).
 #[test]
 fn autofix_curated_openai_beats_screaming_snake_fallback() {
     let f = finding_with(
@@ -261,7 +261,7 @@ fn autofix_curated_openai_beats_screaming_snake_fallback() {
 }
 
 /// Fallback path: a service NOT in the curated map derives the deterministic
-/// `<SCREAMING_SNAKE>_KEY` name — `acme-widgets` -> `${ACME_WIDGETS_KEY}`.
+/// `<SCREAMING_SNAKE>_KEY` name: `acme-widgets` -> `${ACME_WIDGETS_KEY}`.
 #[test]
 fn autofix_uncurated_service_uses_screaming_snake_key() {
     let f = finding_with(
@@ -402,7 +402,7 @@ fn driver_rules_include_exact_rule_id_and_help_uri() {
 }
 
 /// Two distinct detectors produce exactly two rules, sorted by id, each with
-/// its own concrete id — no dedup collision, no missing rule.
+/// its own concrete id (no dedup collision, no missing rule).
 #[test]
 fn driver_rules_sorted_and_deduped_across_detectors() {
     let json = render_sarif(&[

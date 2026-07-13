@@ -20,7 +20,7 @@ reason = "Body below 32 chars after `pk_live_` prefix."
 [[evasion]]
 text = "<ClerkProvider publishableKey=\"pk_live_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5\">"
 credential = "pk_live_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
-reason = "JSX/TSX attribute form — the publishable key embedded in a React component."
+reason = "JSX/TSX attribute form (the publishable key embedded in a React component)."
 
 [perf]
 fixture_bytes = 4096

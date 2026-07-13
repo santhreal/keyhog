@@ -4,9 +4,9 @@
 //! `MAX_NESTED_ARCHIVE_DEPTH` (= 8) recursion bound.
 //!
 //! Every test drives the PUBLIC `Source::chunks()` API on an on-disk fixture and
-//! asserts an EXACT observable — an exact `skip_counts()` field value, an exact
+//! asserts an EXACT observable, an exact `skip_counts()` field value, an exact
 //! error substring, an exact emitted-chunk count, or the exact inner secret bytes
-//! — never a shape/`is_empty` check. Positive (in-budget), negative-twin
+//!, never a shape/`is_empty` check. Positive (in-budget), negative-twin
 //! (healthy), boundary (exactly at cap / exactly at budget), and adversarial
 //! (bomb, deep-nest) cases are each covered.
 //!
@@ -37,7 +37,7 @@ static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 /// `extraction_total_budget`). Pinned here so the boundary tests read as one.
 const BUDGET_FACTOR: u64 = 4;
 
-/// `MAX_NESTED_ARCHIVE_DEPTH` in the source — the deepest archive-within-archive
+/// `MAX_NESTED_ARCHIVE_DEPTH` in the source, the deepest archive-within-archive
 /// level any extractor descends. Mirrored so the depth-bound test names it.
 const MAX_NESTED_ARCHIVE_DEPTH: usize = 8;
 
@@ -48,7 +48,7 @@ const MAX_NESTED_ARCHIVE_DEPTH: usize = 8;
 /// uncompressed size can dwarf the per-entry cap or the aggregate budget. The
 /// shared `support::archive::zip_with_entries` only emits Stored entries, whose
 /// on-disk size equals the payload, which would trip the container size gate
-/// first — hence this local Deflated builder.
+/// first (hence this local Deflated builder).
 fn write_deflated_zip(path: &Path, entries: &[(&str, Vec<u8>)]) {
     use zip::write::SimpleFileOptions;
     let file = std::fs::File::create(path).unwrap();
@@ -138,7 +138,7 @@ fn small_zip_extracts_exact_inner_secret() {
 #[test]
 fn healthy_zip_bumps_no_skip_counters() {
     // Negative twin: a well-formed in-budget zip trips NONE of the coverage-gap
-    // counters — no false bomb/over-cap/unreadable alarm.
+    // counters (no false bomb/over-cap/unreadable alarm).
     let _guard = COUNTER_LOCK.lock().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let zip = support::archive::zip_with_entries(&[("a.txt", b"token=GHOSTMARKER_HEALTHY_01\n")]);
@@ -271,7 +271,7 @@ fn zip_total_over_budget_truncates_after_exact_prefix() {
 #[test]
 fn zip_bomb_scanned_bytes_are_bounded_by_budget() {
     // Eight over-budget entries: the guard must still cut at the budget, so the
-    // total scanned bytes never exceed 4x max — the anti-OOM contract — and the
+    // total scanned bytes never exceed 4x max, the anti-OOM contract, and the
     // truncation counter stays a singleton (one break, not one per entry).
     let _guard = COUNTER_LOCK.lock().unwrap();
     let dir = tempfile::tempdir().unwrap();
@@ -439,7 +439,7 @@ fn nested_zip_exceeding_depth_is_refused_and_counted() {
     // one level per layer; at MAX_NESTED_ARCHIVE_DEPTH (8) the extractor refuses
     // to open the next embedded zip, so the innermost secret is NEVER reached.
     // The refusal is surfaced loudly and counted as unreadable (never a silent
-    // clean — Law 10).
+    // clean: Law 10).
     let _guard = COUNTER_LOCK.lock().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let mut bytes = support::archive::zip_with_entries(&[(

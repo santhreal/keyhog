@@ -5,9 +5,9 @@
 //! `candidate_embeds_owned_assignment_key` can ask whether a named detector
 //! owns that key (e.g. is `api_key=…` owned by a generic-keyword detector). It
 //! scans leading "key bytes" (ASCII alphanumeric plus `_`, `-`, `.`) and then
-//! requires the very next byte to be one of `=`, `:`, `~`; otherwise — and when
+//! requires the very next byte to be one of `=`, `:`, `~`; otherwise, and when
 //! the whole string is key bytes (no terminator) or the first byte is already a
-//! non-key byte — it yields `None`.
+//! non-key byte (it yields `None`).
 //!
 //! The helper is live (the only caller is the assignment-owner fast path) but
 //! had zero direct coverage. Pin the exact key slice it returns and every
@@ -54,7 +54,7 @@ fn leading_non_key_byte_yields_none() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin the accepted terminators and the None boundaries; these
 // SWEEP the whole extractor against a full independent re-derivation. Key bytes
-// are ASCII (`[A-Za-z0-9_.-]`), so `end` always lands on a char boundary — the
+// are ASCII (`[A-Za-z0-9_.-]`), so `end` always lands on a char boundary, the
 // slice is panic-free even when a multibyte char follows the key. No proptest
 // before.
 
@@ -93,7 +93,7 @@ proptest! {
         prop_assert_eq!(key(&candidate), oracle_key(&candidate));
     }
 
-    /// The same differential over ARBITRARY Unicode — locks that a multibyte char
+    /// The same differential over ARBITRARY Unicode, locks that a multibyte char
     /// following (or interrupting) the key stops the ASCII key-byte scan at a char
     /// boundary, so the slice never panics and still matches the oracle.
     #[test]

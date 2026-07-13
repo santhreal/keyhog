@@ -33,14 +33,14 @@ const EXTENSIONLESS_BINARY_PREFIX_SNIFF_BYTES: usize = 1024;
 /// three short lines `version …` / `oid sha256:…` / `size …` (~130 bytes; a few
 /// hundred with optional `ext-*` lines), always well under 1 KiB. Gating the
 /// whole-content pointer check on this bound means a large text file never pays
-/// the pointer scan (Law 7) — only genuinely pointer-sized files are examined.
+/// the pointer scan (Law 7) (only genuinely pointer-sized files are examined).
 const GIT_LFS_POINTER_MAX_BYTES: usize = 1024;
 
 /// Bounded, no-follow probe: is the file at `path` a Git-LFS pointer? Reads at
 /// most one pointer's worth of bytes through the same `O_NOFOLLOW` safe open the
 /// real content reader uses, so it cannot be redirected by a symlink swap. The
 /// caller MUST have already confirmed the file is pointer-sized, so this never
-/// reads a large asset — the read is a rounding error (Law 7). A probe that
+/// reads a large asset, the read is a rounding error (Law 7). A probe that
 /// fails to open/read returns `false`, so the caller falls through to its normal
 /// (loud, counted) skip path rather than silently dropping the file (Law 10).
 fn file_is_git_lfs_pointer(path: &Path) -> bool {
@@ -131,8 +131,8 @@ pub(super) fn record_default_excluded_archive_entry(archive_display: &str, entry
 
 /// Decode an extracted archive/compressed entry's bytes into a chunk using the
 /// SAME canonical decoder as the filesystem read path
-/// (`decode_text_file_owned_or_bytes`), so a UTF-16-BOM entry — a Windows
-/// config/log/transcript packed inside a zip / tar / 7z / gz — is transcoded to
+/// (`decode_text_file_owned_or_bytes`), so a UTF-16-BOM entry, a Windows
+/// config/log/transcript packed inside a zip / tar / 7z / gz, is transcoded to
 /// contiguous UTF-8 and its ASCII secrets stay scannable. Raw `String::from_utf8`
 /// fails on the `FF FE` BOM, and the NUL-separated ASCII bytes (`g\0h\0p\0…`)
 /// can't reform an 8-char printable run, so the secret vanished as a silent
@@ -140,7 +140,7 @@ pub(super) fn record_default_excluded_archive_entry(archive_display: &str, entry
 ///   * `Some(Ok(text chunk))` tagged `text_source_type`;
 ///   * `Some(Ok(printable-strings chunk))` tagged `binary_source_type` when the
 ///     entry is genuine binary yet holds >=8-char printable runs;
-///   * `None` for an empty entry, or for a binary entry with no printable run —
+///   * `None` for an empty entry, or for a binary entry with no printable run 
 ///     the latter recorded as a binary coverage skip so it is never a silent
 ///     clean (LAW10).
 ///
@@ -350,7 +350,7 @@ pub(super) fn process_entry(
 
     // Built-in exclusion list (lock/minified/bundled/vendored). Gated on
     // `respect_default_excludes` so `--no-default-excludes` actually reaches this
-    // in-process filter, not just the codewalk glob layer — otherwise a secret in
+    // in-process filter, not just the codewalk glob layer, otherwise a secret in
     // `package-lock.json` stays silently excluded even with the flag set (KH-55).
     let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
     let default_exclude_path = match path.strip_prefix(default_exclude_root) {
@@ -363,7 +363,7 @@ pub(super) fn process_entry(
     }
     // Minified/bundled exclusion (`.min.`/`.bundle.` infixes + `.chunk.js` suffix)
     // is now owned by the Tier-B `default_excludes.toml` and applied by the
-    // `is_default_excluded` check above (DR-056) — no separate inline gate.
+    // `is_default_excluded` check above (DR-056) (no separate inline gate).
 
     let live_metadata = file_live_metadata(&path);
     let file_size = live_metadata.map_or(entry.size, |meta| meta.size_bytes);
@@ -374,7 +374,7 @@ pub(super) fn process_entry(
     if is_skip_extension(ext) {
         // A skip-extension file is normally dropped unread as binary. But Git-LFS
         // commits a pointer file that KEEPS the tracked asset's (binary)
-        // extension — `logo.png`, `model.bin` — while its content is the tiny
+        // extension: `logo.png`, `model.bin`: while its content is the tiny
         // text pointer, not the asset. So a skip-extension file that is
         // pointer-sized may be an unmaterialised LFS pointer whose real blob was
         // never on disk to scan. Probe only pointer-sized files (a real asset is
@@ -449,7 +449,7 @@ pub(super) fn process_entry(
     } else if ext.eq_ignore_ascii_case("tar") {
         // Bare (uncompressed) `.tar`: unpack per-entry exactly as the zip
         // branch does, so a secret committed inside a tarball (docker layer
-        // export, helm chart, source tarball — the dominant Linux/cloud
+        // export, helm chart, source tarball, the dominant Linux/cloud
         // archive) is found just like one inside a `.zip`. `emit_tar_entries`
         // enforces the same per-entry size cap and 4x total-uncompressed
         // (tar-bomb) budget as the zip branch.
@@ -566,7 +566,7 @@ pub(super) fn process_entry(
     // No-follow guard for the GENERAL content read below. The archive/compressed
     // branches above each refuse a symlink path and `return`; the `.har` branch
     // reads via the `O_NOFOLLOW` `read_file_safe` but FALLS THROUGH to here when
-    // the no-follow open failed or the target is not valid HAR — which is exactly
+    // the no-follow open failed or the target is not valid HAR, which is exactly
     // what an `--include`d `creds.har -> ~/.aws/credentials` symlink does: include
     // paths are admitted with `is_file()` (follows links), `O_NOFOLLOW` then
     // rejects the link so the HAR read yields nothing, and control reaches the
@@ -578,7 +578,7 @@ pub(super) fn process_entry(
     if live_metadata.map_or_else(|| is_symlink(&path), |meta| meta.is_symlink) {
         // Law 10: refusing to follow the symlink means this explicitly-included
         // path is NOT scanned. Count it (as unreadable) so end-of-scan coverage
-        // reflects the drop — a refused symlink is a deliberate non-scan, but
+        // reflects the drop, a refused symlink is a deliberate non-scan, but
         // the operator must still see the path was skipped, not silently treated
         // as clean.
         tracing::warn!(
@@ -605,7 +605,7 @@ pub(super) fn process_entry(
     // `file_starts_with_utf16_bom` short-circuits those files out of the windowed
     // branch (the `&&` only pays the probe syscall when the file is large enough
     // to reach it), letting them fall through to the single-chunk
-    // `read_file_mmap` path below — which runs `decode_text_file` over the whole
+    // `read_file_mmap` path below, which runs `decode_text_file` over the whole
     // mapping (correct UTF-16 decode + exact line/col), is bounded by the same
     // 2 GiB mmap sanity cap (an over-cap or TOCTOU-grown file is a loud counted
     // skip), and routes a non-UTF-16 buffer that merely starts with the BOM bytes
@@ -862,7 +862,7 @@ pub(super) fn process_entry(
 
     // Git-LFS pointer coverage (Law 10): if this small text file is actually a
     // Git-LFS pointer, the blob it references lives in LFS storage and is not on
-    // disk — the pointer text is scanned below (and its content-hash `oid`
+    // disk, the pointer text is scanned below (and its content-hash `oid`
     // suppressed by the scanner), but the real content was NOT. Record the
     // coverage gap so an unmaterialised-pointer repo is not reported as a
     // false-clean. Bounded to pointer-sized files so a large text file never

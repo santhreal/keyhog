@@ -19,11 +19,11 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "WEBEX     - _     _         _     _  _    _       -  _-  teams       ---- _      _  --   _      -   __     ---___- __   -   access- -   _  - - token  :\"\"'    :   =:    \"  :\"=\" :::  =\"'=\"\" :\" ''\"  \"': :' '=':'  ='    \" \" :\"  '   ':= = :'YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "WEBEX     - _     _         _     _  _    _       -  _-  teams       ---- _      _  --   _      -   __     ---___- __   -   access- -   _  - - token  :\"\"'    :   =:    \"  :\"=\" :::  =\"'=\"\" :\" ''\"  \"': :' '=':'  ='    \" \" :\"  '   ':= = :'C5F3mEXAMPLEEXAMPLEsO5gb"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = """{"webex_access_token": "C5F3mMhup3zhyd9CX-AOJE9geQEdpztAkN0kGQSoA7oC5jsfsiKM2bp5hs_8epQPzPcGfU6oX-rkn768q4tMrDlKvCG7i5HsO5gb"}"""

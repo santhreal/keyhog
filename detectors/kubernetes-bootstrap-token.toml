@@ -15,7 +15,7 @@ severity = "critical"
 # (kubernetes/kube/k8s/kubelet/kube-controller-manager) were removed: they
 # fire the loose `[a-z0-9]{6}.[a-z0-9]{16}` pattern on any k8s-mentioning PROSE
 # (measured CredData FP: `after1.10goesoutthedoor` in a doc that mentions
-# Kubernetes) with zero recall benefit — a real bootstrap token always sits
+# Kubernetes) with zero recall benefit, a real bootstrap token always sits
 # next to `kubeadm join`, `--token`, `bootstrap-token`, or `token-id`.
 keywords = [
     "bootstrap-token",

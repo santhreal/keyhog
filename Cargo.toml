@@ -147,7 +147,7 @@ urlencoding = "=2.1.3"
 chrono = "=0.4.44"
 
 # OOB verification (interactsh client): RSA-OAEP-SHA256 wrapped AES-256-CFB.
-# Pinned to RustCrypto stack — no openssl/native-tls dependency, pure Rust.
+# Pinned to RustCrypto stack (no openssl/native-tls dependency, pure Rust).
 rsa = { version = "=0.9.7", features = ["sha2"] }
 aes = "=0.8.4"
 cfb-mode = "=0.8.2"

@@ -1,4 +1,4 @@
-//! Entropy-edge runner — on-demand diagnostic pinning the detector entropy
+//! Entropy-edge runner, on-demand diagnostic pinning the detector entropy
 //! floor. NOT a `cargo test` gate.
 //!
 //! Most detectors couple a regex to an entropy floor (≈4.5 bits/byte default).
@@ -9,7 +9,7 @@
 //!
 //! Why `#[ignore]` and not a gate (T-01)
 //! -------------------------------------
-//! Swapping the credential for a synthetic body MEASURES the entropy gate —
+//! Swapping the credential for a synthetic body MEASURES the entropy gate 
 //! that is a recall RATE over a corpus, and detection-accuracy rates are owned
 //! by the differential bench (`benchmarks/bench`), never asserted in
 //! `cargo test` (see the internal design notes T-01). It is also not a sound
@@ -124,7 +124,7 @@ fn entropy_floor_sweep() {
     }
     let overall = (total_hits as f64 / total_runs.max(1) as f64) * 100.0;
     summary.push_str(&format!(
-        "    TOTAL {total_hits}/{total_runs} ({overall:.1}%) — a sharp boundary between rungs \
+        "    TOTAL {total_hits}/{total_runs} ({overall:.1}%), a sharp boundary between rungs \
          pins the entropy floor\n"
     ));
     eprintln!("{summary}");

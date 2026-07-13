@@ -16,7 +16,7 @@ pub(crate) fn is_known_example_credential(credential: &str) -> bool {
     // EXAMPLE/EXAMPLEKEY is a universal documentation convention. Compare the
     // ASCII suffix case-insensitively against the raw bytes instead of
     // allocating a full Unicode `to_uppercase()` copy per candidate (Law 7:
-    // this runs in five per-candidate suppression sites — adjudicate generic/
+    // this runs in five per-candidate suppression sites, adjudicate generic/
     // entropy/mod + suppression::decision x2). The result is byte-identical:
     // the suffixes are pure ASCII, and no non-ASCII char's Unicode uppercase is
     // a bare ASCII letter, so `to_uppercase().ends_with("EXAMPLE")` holds iff
@@ -55,7 +55,7 @@ fn is_empty_input_hash(credential: &str) -> bool {
     // Law 7: this runs at every per-candidate suppression site (see the
     // `is_known_example_credential` note), and the previous unconditional
     // `credential.to_ascii_lowercase()` copied the whole credential for every
-    // candidate — including the vast majority that are not 32/40/64 chars and
+    // candidate, including the vast majority that are not 32/40/64 chars and
     // can never match. `[u8]::eq_ignore_ascii_case` is byte-identical here (all
     // three digests are pure ASCII) and allocates nothing. Only exact lengths
     // match, so a longer string that merely contains a digest never trips it.
@@ -106,7 +106,7 @@ pub(crate) fn is_sequential_placeholder(credential: &str) -> bool {
 }
 
 /// True when `credential`'s body (known-prefix-stripped, len >= 8) is an
-/// overwhelmingly MONOTONIC run — ascending (`12345678`, `abcdefgh`) or
+/// overwhelmingly MONOTONIC run, ascending (`12345678`, `abcdefgh`) or
 /// descending (`87654321`). A real secret's adjacent bytes step ~randomly, so a
 /// body whose adjacent bytes are consecutive above the shared 9/10 ratio is a
 /// sequence/keyboard placeholder.
@@ -115,7 +115,7 @@ pub(crate) fn is_sequential_placeholder(credential: &str) -> bool {
 /// NOT the universal [`is_known_example_credential`]: entropy-* matches are
 /// shape/model-adjudicated so a sequential VALUE is the only evidence and should
 /// suppress; but a STRONG vendor anchor (socure/openai/square `key=`) is proven
-/// by its KEYWORD, so its value shape must not be second-guessed — and vendor
+/// by its KEYWORD, so its value shape must not be second-guessed, and vendor
 /// contract fixtures legitimately use sequential filler tokens
 /// (`sdk_key="abcdefghijklmnopqrstuvwx123456"`). Reuses the same adjacent-step
 /// counter + ratio threshold as the hex-sequence gate (ONE PLACE).
@@ -263,7 +263,7 @@ mod sequential_placeholder_tests {
 
     #[test]
     fn monotonic_runs_are_placeholders() {
-        // Fully-sequential ascending/descending runs of length >= 8 — the
+        // Fully-sequential ascending/descending runs of length >= 8, the
         // generalizable entropy-token FP class (`12345678`). No hardcoded literals.
         for value in [
             "12345678",  // ascending digits
@@ -299,7 +299,7 @@ mod sequential_placeholder_tests {
     /// SCOPING PROOF: the monotonic gate is ENTROPY-only. The UNIVERSAL
     /// is_known_example_credential (used by strong vendor detectors) must NOT
     /// suppress a monotonic value, so a vendor contract fixture whose filler token
-    /// is the alphabet (`sdk_key="abcdefghijklmnopqrstuvwx…"`) still surfaces —
+    /// is the alphabet (`sdk_key="abcdefghijklmnopqrstuvwx…"`) still surfaces 
     /// while the entropy path (which calls is_monotonic_sequence_placeholder) does
     /// suppress it. This is the fix for the contract regression the universal
     /// wiring caused.
@@ -327,7 +327,7 @@ mod placeholder_suppression_adversarial_tests {
     // ---- is_empty_input_hash: the four canonical empty-input digests --------
     #[test]
     fn empty_input_hashes_of_every_length_are_recognized() {
-        // MD5(""), SHA1(""), SHA256(""), SHA512("") — integrity fields, never secrets.
+        // MD5(""), SHA1(""), SHA256(""), SHA512("") (integrity fields, never secrets).
         assert!(is_empty_input_hash("d41d8cd98f00b204e9800998ecf8427e")); // MD5
         assert!(is_empty_input_hash(
             "da39a3ee5e6b4b0d3255bfef95601890afd80709"

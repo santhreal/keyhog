@@ -18,10 +18,10 @@ pub(crate) fn sanitize_git_error_message(stderr: &str) -> String {
 
     // `[^/\s]+@` (not `[^/@\s]+@`): the userinfo runs to the LAST `@` before the
     // path `/` or whitespace, so a git basic-auth password carrying a literal
-    // `@` (`https://user:pa@ss@host/…` — git surfaces raw stderr even though RFC
+    // `@` (`https://user:pa@ss@host/…`: git surfaces raw stderr even though RFC
     // 3986 says `@` should be percent-encoded) is redacted WHOLE. The former
     // `[^/@\s]+` stopped at the FIRST `@`, redacting only `user:pa@` and leaking
-    // the `ss@host` tail — the same first-`@`-vs-last-`@` leak `url_redaction.rs`
+    // the `ss@host` tail, the same first-`@`-vs-last-`@` leak `url_redaction.rs`
     // fixes with `rfind`. The `/`-exclusion still confines the match to the
     // authority so a later `@` in the path is never treated as a userinfo end.
     let url_cred =

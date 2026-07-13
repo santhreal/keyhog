@@ -4,7 +4,7 @@ version = "0.0.0"
 publish = false
 edition = "2024"
 
-# Standalone — NOT part of the keyhog workspace. Reads repo-root
+# Standalone: NOT part of the keyhog workspace. Reads repo-root
 # workflow/docs files without pulling in keyhog crate dependencies.
 [workspace]
 

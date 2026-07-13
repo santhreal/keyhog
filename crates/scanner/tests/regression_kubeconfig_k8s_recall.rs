@@ -1,12 +1,12 @@
 //! #115 Kubernetes credential recall: kubeconfig client auth + Secret manifests.
 //!
 //! The credential-bearing fields of real Kubernetes auth material are:
-//!   * kubeconfig `users[].user.client-key-data` — a PEM client **private key**,
+//!   * kubeconfig `users[].user.client-key-data`: a PEM client **private key**,
 //!     base64-encoded inside the YAML value, so the `-----BEGIN … PRIVATE KEY-----`
 //!     header is invisible to a raw byte scan;
-//!   * kubeconfig `users[].user.token` — a plaintext bearer token (often a JWT);
-//!   * Secret `data:` — base64 values (TLS keys, tokens, `.dockerconfigjson`);
-//!   * Secret `stringData:` — plaintext values.
+//!   * kubeconfig `users[].user.token`: a plaintext bearer token (often a JWT);
+//!   * Secret `data:`: base64 values (TLS keys, tokens, `.dockerconfigjson`);
+//!   * Secret `stringData:`: plaintext values.
 //!
 //! This lock pins that the secret bytes are recovered (exact value / detector,
 //! never `!is_empty`) and that public, non-secret material (a CERTIFICATE block,
@@ -31,7 +31,7 @@ const PEM: &str = "-----BEGIN RSA PRIVATE KEY-----\n\
 const PEM_NEEDLE: &str = "MIIBOgIBAAJBAKj34Gkx";
 
 /// A public X.509 CERTIFICATE block (NOT a private key). Used as the
-/// `client-certificate-data` precision negative — it must never surface as a
+/// `client-certificate-data` precision negative, it must never surface as a
 /// private key.
 const CERT: &str = "-----BEGIN CERTIFICATE-----\n\
     MIIBkTCB+wIJANRrU0E0X0gtMA0GCSqGSIb3DQEBCwUAMBAxDjAMBgNVBAMMBXRl\n\
@@ -109,7 +109,7 @@ fn baseline_raw_pem_in_kubeconfig_path_fires() {
 #[test]
 fn baseline_b64_pem_in_generic_value_surfaces() {
     // The general decode-through recovers a base64-wrapped PEM from an ordinary
-    // `key = "value"` line — the capability this whole suite leans on.
+    // `key = "value"` line (the capability this whole suite leans on).
     let text = format!("decoded_payload = \"{}\"\n", b64(PEM));
     assert!(
         surfaces("config.txt", &text, PEM_NEEDLE),
@@ -353,7 +353,7 @@ fn k8s_secret_invalid_base64_data_no_panic() {
 #[test]
 fn configmap_kind_is_not_decoded_as_secret() {
     // ConfigMap is intentionally not a Secret; a base64 value here is config
-    // data, not a credential — it must not surface as a private key.
+    // data, not a credential (it must not surface as a private key).
     let text = format!(
         "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cm\ndata:\n  ca: {}\n",
         b64(CERT)

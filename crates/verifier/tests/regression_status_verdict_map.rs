@@ -4,8 +4,8 @@
 //! matrix that turns a provider response code into the verdict the operator
 //! sees, and the `SuccessSpec` status gate (`evaluate_success`) is the pure
 //! precursor that decides whether a 2xx is `Live` at all. A silent drift in
-//! either — e.g. treating a 401 as `Dead` (a false "invalid" verdict) or a 403
-//! as retryable (a live credential wrongly reported `RateLimited`) — is a
+//! either, e.g. treating a 401 as `Dead` (a false "invalid" verdict) or a 403
+//! as retryable (a live credential wrongly reported `RateLimited`), is a
 //! correctness bug that ships silently, so every code in the matrix is pinned to
 //! its exact `VerificationResult` variant AND its exact transient/retryable bool.
 //!
@@ -13,7 +13,7 @@
 //! Error(String) | Unverifiable | Skipped`; the task's generic
 //! "Verified/Invalid/Unverified/Unknown" labels map onto it as:
 //!   * 200  → `Live`            (verified; decided upstream, see the 200-boundary test)
-//!   * 403  → `Dead`            (invalid credential — AWS returns 403, not 401, for bad creds)
+//!   * 403  → `Dead`            (invalid credential: AWS returns 403, not 401, for bad creds)
 //!   * 403 + clock skew → `Error` (transient; fix host clock and retry)
 //!   * 429/500/503/redirect/other → `RateLimited` (transient/unknown → retry)
 //!
@@ -77,7 +77,7 @@ fn status_403_skew_marker_match_is_exact_case_sensitive() {
 #[test]
 fn status_403_skew_marker_matches_anywhere_in_body() {
     // The marker is recognized as a substring at any offset, not only as a
-    // whole element — a real STS body wraps it in nested XML.
+    // whole element (a real STS body wraps it in nested XML).
     let body = "prefix noise <Error><Code>RequestTimeTooSkewed</Code></Error> trailing";
     let (result, transient) = classify(403, body);
     assert!(transient);
@@ -87,7 +87,7 @@ fn status_403_skew_marker_matches_anywhere_in_body() {
     );
 }
 
-// ── 401: NOT dead — AWS uses 403 for bad creds, so 401 is an unexpected/retry ─
+// ── 401: NOT dead: AWS uses 403 for bad creds, so 401 is an unexpected/retry ─
 
 #[test]
 fn status_401_unauthorized_maps_to_ratelimited_not_dead() {
@@ -140,7 +140,7 @@ fn redirect_301_and_302_map_to_ratelimited_transient() {
     }
 }
 
-// ── 400: boundary — unexpected 4xx defaults to retryable, never Dead ─────────
+// ── 400: boundary, unexpected 4xx defaults to retryable, never Dead ─────────
 
 #[test]
 fn status_400_bad_request_defaults_to_ratelimited_transient() {
@@ -160,7 +160,7 @@ fn status_200_is_not_the_classifiers_job_and_never_yields_a_failure_dead() {
     // The Live decision for a 200 is made upstream (in `build_sigv4_request`,
     // which parses identity metadata); the failure classifier is only reached
     // for non-200 responses. Calling it with 200 must therefore NOT invent a
-    // `Dead`/conclusive verdict — it falls into the transient default. This
+    // `Dead`/conclusive verdict, it falls into the transient default. This
     // documents the invariant that a 200 is never routed through `classify`.
     let (result, transient) = classify(200, "irrelevant");
     assert_eq!(result, VerificationResult::RateLimited);
@@ -225,7 +225,7 @@ fn success_status_gate_accepts_exactly_200_and_rejects_redirect_and_429() {
 #[test]
 fn success_status_not_excludes_only_the_named_code() {
     // `status_not = 429` rejects exactly a 429 and leaves every other status
-    // (including 200 and 403) passing the status gate — the negative twin of the
+    // (including 200 and 403) passing the status gate, the negative twin of the
     // positive `status` gate.
     let spec = SuccessSpec {
         status_not: Some(429),

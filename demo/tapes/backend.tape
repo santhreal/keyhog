@@ -1,4 +1,4 @@
-# Autoroute backend recording: `keyhog backend` — the hardware probe plus the
+# Autoroute backend recording: `keyhog backend`: the hardware probe plus the
 # size-driven routing decision matrix. Small inputs route to simd-regex
 # (GPU byte thresholds not met); once a chunk crosses the per-tier min_bytes
 # the router switches to gpu-region-presence. This is the visual for the

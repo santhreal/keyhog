@@ -17,7 +17,7 @@ reason = "env0 API Secret with 44 alphanumeric chars."
 
 [[negative]]
 text = "ENV0_API_KEY=short"
-reason = "Body is not a UUID — pattern requires 8-4-4-4-12 hex format."
+reason = "Body is not a UUID (pattern requires 8-4-4-4-12 hex format)."
 
 [[negative]]
 text = "ENV0_API_KEY=a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d-extra"

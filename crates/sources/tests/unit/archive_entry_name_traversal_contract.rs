@@ -7,11 +7,11 @@
 //! traversal / absolute name is refused (and the entry skip-counted) rather than
 //! trusted. The guard is layered: it rejects empty / NUL / backslash names, the
 //! textual `../` family and Windows drive-absolute prefixes, and any `..` /
-//! root / prefix path component — and it does so AT EVERY percent-decoding layer
+//! root / prefix path component, and it does so AT EVERY percent-decoding layer
 //! (up to 10), so `%2e%2e/` and double-encoded `%252e%252e%252f` cannot smuggle
 //! a `../` past a single decode. These tests pin the exact refusal reason for
 //! each class and pin that ordinary relative names (including the non-traversal
-//! lookalikes `..env`, `foo..`, `./foo`) are accepted — over-rejection here
+//! lookalikes `..env`, `foo..`, `./foo`) are accepted, over-rejection here
 //! would silently drop a real archived secret from the scan.
 
 use keyhog_sources::testing::{SourceTestApi, TestApi};
@@ -61,7 +61,7 @@ fn leading_double_dot_in_a_filename_is_accepted() {
 
 #[test]
 fn trailing_double_dot_in_a_filename_is_accepted() {
-    // "foo.." has no path separator before the dots — a normal component.
+    // "foo.." has no path separator before the dots (a normal component).
     assert!(validate("foo..").is_ok());
     assert!(validate("foo..bar/baz").is_ok());
 }

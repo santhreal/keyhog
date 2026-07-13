@@ -1,11 +1,11 @@
-# Tier-B data — scan-system mount filters (Law: no hardcoded lists in code).
+# Tier-B data (scan-system mount filters (Law: no hardcoded lists in code)).
 #
 # `keyhog scan-system` enumerates real mount roots from /proc/mounts and skips
 # pseudo / virtual filesystems, (unless --include-network) network filesystems,
 # and volatile path prefixes. These lists are the shipped BASELINE; they are
 # always applied. To extend them for an exotic host WITHOUT recompiling, drop a
 # `mount_filters.toml` with the same keys into your keyhog config dir
-# (`<config>/keyhog/mount_filters.toml`) — its entries are UNIONED onto this
+# (`<config>/keyhog/mount_filters.toml`), its entries are UNIONED onto this
 # baseline. A user file that exists but does not parse is a hard error, never a
 # silent fall back to defaults (Law 10).
 
@@ -22,7 +22,7 @@ skip_fs_types = [
 # Volatile / synthetic path prefixes skipped regardless of filesystem type.
 skip_path_prefixes = ["/run/", "/proc/", "/sys/", "/dev/", "/snap/"]
 
-# Network filesystems — skipped unless the operator passes --include-network
+# Network filesystems, skipped unless the operator passes --include-network
 # (scanning a mounted NFS/CIFS export can be enormous and is rarely intended).
 network_fs_types = [
   "nfs", "nfs4", "cifs", "smb", "smbfs", "fuse.sshfs", "fuse.rclone",

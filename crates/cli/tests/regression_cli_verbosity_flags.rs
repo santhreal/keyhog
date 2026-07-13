@@ -3,7 +3,7 @@
 //!
 //! Every assertion pins a CONCRETE value, driving the REAL shipped binary
 //! (`env!("CARGO_BIN_EXE_keyhog")`) as a child process with a *captured* (piped,
-//! non-TTY) stdout/stderr — exactly the shape a script or CI redirect sees.
+//! non-TTY) stdout/stderr (exactly the shape a script or CI redirect sees).
 //!
 //! HOST-INDEPENDENCE: none of these assertions depend on Hyperscan/SIMD/GPU.
 //! They exercise the `detectors` listing, `--version`, and `--help` surfaces,
@@ -60,7 +60,7 @@ fn text(v: &[u8]) -> String {
     String::from_utf8_lossy(v).into_owned()
 }
 
-/// True iff the byte stream contains an ANSI escape (`0x1b`) — the single byte
+/// True iff the byte stream contains an ANSI escape (`0x1b`), the single byte
 /// that opens every ANSI/SGR sequence. Its absence proves the stream is plain.
 fn has_esc(v: &[u8]) -> bool {
     v.contains(&ESC)
@@ -101,7 +101,7 @@ fn detectors_listing_is_plain_and_banner_matches_embedded_count() {
 /// `NO_COLOR=1` must not change captured `detectors` output at all: with the
 /// stream already plain (piped), the two runs are byte-for-byte identical, and
 /// neither carries an escape byte. This is the host-independent color contract
-/// — never a silent add of ANSI when NO_COLOR is honored.
+///: never a silent add of ANSI when NO_COLOR is honored.
 #[test]
 fn no_color_does_not_alter_captured_detectors_bytes() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -156,7 +156,7 @@ fn version_bytes_identical_across_no_color_toggle() {
 }
 
 /// `--help` is plain under capture (exit 0, no escapes) and carries the literal
-/// `Usage:` block — clap must not leak color into a piped help stream.
+/// `Usage:` block (clap must not leak color into a piped help stream).
 #[test]
 fn top_level_help_is_plain_with_usage() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -265,8 +265,8 @@ fn detectors_search_no_match_prints_nothing() {
     assert_eq!(text(&out.stdout), "", "no-match search must print nothing");
 }
 
-/// The JSON surface for a no-match search is the empty array `[]\n` exactly —
-/// the machine-readable "quiet" shape — no banner chatter, exit 0, no escapes.
+/// The JSON surface for a no-match search is the empty array `[]\n` exactly 
+/// the machine-readable "quiet" shape (no banner chatter, exit 0, no escapes).
 #[test]
 fn detectors_json_no_match_is_empty_array() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -392,7 +392,7 @@ fn scan_help_documents_quiet_and_no_color_but_not_verbose() {
     );
 }
 
-/// Adversarial: an unknown subcommand is a clap usage error — exit code 2, and
+/// Adversarial: an unknown subcommand is a clap usage error, exit code 2, and
 /// the error goes to a plain (escape-free) stderr under capture, unchanged by
 /// `NO_COLOR`. Confirms color handling never corrupts the error path's exit
 /// contract.

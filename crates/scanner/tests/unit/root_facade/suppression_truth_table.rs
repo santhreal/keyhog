@@ -2,7 +2,7 @@
 //! the public `keyhog_scanner::testing::known_example_suppressed` entry
 //! point (the gate every scan-path finding passes through).
 //!
-//! This file asserts ONLY the boolean decision — it never touches the
+//! This file asserts ONLY the boolean decision, it never touches the
 //! process-global dogfood telemetry, so every test fn here is fully
 //! parallel-safe. The companion file `suppression_reason_trace.rs` (its own
 //! test binary) pins the EXACT `reason` strings the cascade emits; keeping the
@@ -25,13 +25,13 @@ use keyhog_scanner::testing::confidence::placeholder_words;
 use keyhog_scanner::testing::known_example_suppressed;
 
 /// Decision under the default public entry point (no path, unknown context):
-/// `bypass_shape_gates = false`, so the full shape cascade is engaged — exactly
+/// `bypass_shape_gates = false`, so the full shape cascade is engaged, exactly
 /// the path a generic/entropy finding takes on a real scan.
 fn suppressed(credential: &str) -> bool {
     known_example_suppressed(credential, None, CodeContext::Unknown)
 }
 
-/// Deterministic xorshift64* byte source — reproducible random bodies without
+/// Deterministic xorshift64* byte source, reproducible random bodies without
 /// an RNG crate or non-determinism (same seed ⇒ same corpus every run/host).
 struct Rng(u64);
 impl Rng {
@@ -184,7 +184,7 @@ fn dashed_serial_keys_all_suppress() {
 /// {0,2,3}`, so a `% 4 == 1` string can NEVER decode as base64. Constraining
 /// the random-secret bodies to these lengths guarantees the suppression
 /// cascade's base64-decode-and-recheck arm (`try_decode_b64_to_utf8`) returns
-/// `None` for every one of them — so this negative-twin oracle is fully
+/// `None` for every one of them, so this negative-twin oracle is fully
 /// deterministic (no rare "random body coincidentally decoded to a suppressible
 /// payload" flake), not just "usually" clean.
 const NONDECODABLE_LENS: &[usize] = &[29, 33, 37, 41, 45];
@@ -207,7 +207,7 @@ fn random_nonhex_secrets_never_suppress() {
         checked += 1;
         assert!(
             checked < 100_000,
-            "too many re-rolls ({checked}) to reach 2000 clean random bodies — a \
+            "too many re-rolls ({checked}) to reach 2000 clean random bodies, a \
              shape gate is suppressing nearly all random alnum secrets (recall collapse)"
         );
         let len = NONDECODABLE_LENS[(rng.next() as usize) % NONDECODABLE_LENS.len()];
@@ -215,7 +215,7 @@ fn random_nonhex_secrets_never_suppress() {
         // Guard: skip any coincidental suppressible substring (placeholder
         // word, EXAMPLE marker, or a fake-sequence run). With this charset and
         // these lengths a hit is astronomically rare, but keep the oracle
-        // honest — these are the ONLY substrings the cascade keys on for a bare
+        // honest, these are the ONLY substrings the cascade keys on for a bare
         // alnum body, so filtering them makes "not suppressed" a sound recall
         // assertion rather than a probabilistic one.
         let upper = body.to_uppercase();
@@ -231,7 +231,7 @@ fn random_nonhex_secrets_never_suppress() {
         }
         assert!(
             !suppressed(&body),
-            "random non-hex secret body {body:?} (len {len}) was WRONGLY suppressed — \
+            "random non-hex secret body {body:?} (len {len}) was WRONGLY suppressed. \
              a shape gate widened to eat real credentials (recall regression)"
         );
         cases += 1;
@@ -244,7 +244,7 @@ fn random_nonhex_secrets_never_suppress() {
 
 /// Hand-picked REAL vendor-shaped secrets (random, high-entropy bodies behind a
 /// real vendor prefix, or random passwords) that MUST NOT be suppressed by any
-/// shape gate — the recall negative twin in concrete, named form. NB: these are
+/// shape gate, the recall negative twin in concrete, named form. NB: these are
 /// FABRICATED random strings of the right SHAPE, not live credentials. Each was
 /// verified offline against the full cascade (not pure-hex, not a UUID, no
 /// placeholder/EXAMPLE/fake-sequence marker, no 5+ repeat run, and not
@@ -264,7 +264,7 @@ fn named_real_secrets_are_never_suppressed() {
     for credential in REAL_SECRET_TABLE {
         assert!(
             !suppressed(credential),
-            "REAL secret {credential:?} was WRONGLY suppressed — a recall regression: \
+            "REAL secret {credential:?} was WRONGLY suppressed, a recall regression: \
              a shape gate widened to eat a real credential"
         );
         checked += 1;

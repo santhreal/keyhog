@@ -97,7 +97,7 @@ pub fn compute_line_offsets(text: &str) -> Vec<usize> {
     // One SIMD pass over the whole buffer: `memchr_iter` carries its search
     // state across matches, vs re-invoking `memchr` on a fresh `&bytes[start..]`
     // sub-slice per newline. `pos` is the absolute newline index, so `pos + 1`
-    // is the start of the next line — identical output to the prior loop.
+    // is the start of the next line (identical output to the prior loop).
     for pos in memchr::memchr_iter(b'\n', bytes) {
         offsets.push(pos + 1);
     }
@@ -224,7 +224,7 @@ pub(crate) fn find_companion(
                         // any panic from a future backend change or
                         // attacker-induced offset skew.  A None result
                         // means this capture is skipped (companion not
-                        // found) — recall-safe: we do not suppress the
+                        // found), recall-safe: we do not suppress the
                         // primary match, we simply miss the companion value.
                         if let Some(captured) = haystack.get(s..e) {
                             return Some(captured.to_string());
@@ -256,7 +256,7 @@ pub(crate) fn find_companion(
 /// structural/joined segments after that prefix whose `line_number` carries
 /// the ORIGINAL source line (and, for explicit-concat / template reassembly,
 /// a deliberately huge `SYNTHETIC_BASE_LINE`). So `line_number` is *not*
-/// globally monotonic — a `partition_point` over the full vec would silently
+/// globally monotonic, a `partition_point` over the full vec would silently
 /// mis-resolve the window in exactly the structural cases the synthetic line
 /// numbers were chosen to keep out of the window (see
 /// `crates/scanner/src/multiline/structural.rs`).
@@ -264,7 +264,7 @@ pub(crate) fn find_companion(
 /// # The fix: binary-search the monotonic prefix, linear-scan only the tail
 ///
 /// The identity prefix is `line_number`-monotonic, so the first/last lookups
-/// inside it resolve with two `partition_point` searches in `O(log L)` —
+/// inside it resolve with two `partition_point` searches in `O(log L)` 
 /// replacing the old `O(L)` walk over every line of the file. The structural
 /// tail (number of join-chains, bounded and tiny relative to `L`) is folded in
 /// with a short linear pass that respects vec order: a tail hit on the START

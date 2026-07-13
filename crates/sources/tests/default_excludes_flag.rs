@@ -63,7 +63,7 @@ fn make_corpus() -> tempfile::TempDir {
         format!("var t=\"{SENTINEL}\";\n"),
     )
     .unwrap();
-    // A normal file that is NEVER excluded — the control: it must be scanned in
+    // A normal file that is NEVER excluded, the control: it must be scanned in
     // BOTH modes, proving the source actually walks the dir.
     fs::write(
         dir.path().join("config.env"),
@@ -295,7 +295,7 @@ fn default_excludes_drop_lockfiles_then_flag_includes_them() {
 
     // --no-default-excludes (respect = false): the previously-excluded files are
     // now scanned, so the sentinel reaches a chunk. This is the wiring the bug
-    // dropped — the flag previously only touched the glob layer.
+    // dropped (the flag previously only touched the glob layer).
     TestApi.reset_skip_counters();
     let included = scan_dir(dir.path(), false);
     assert!(
@@ -827,7 +827,7 @@ fn default_excludes_apply_inside_rar_archives() {
 }
 
 /// DR-056: minified/bundled bundles are default-excluded via the Tier-B
-/// `rules/default_excludes.toml` — the `.min.`/`.bundle.` INFIXES (case-insensitive)
+/// `rules/default_excludes.toml`: the `.min.`/`.bundle.` INFIXES (case-insensitive)
 /// plus the `.chunk.js` suffix, consolidated from a former inline gate in
 /// `filesystem/extract.rs`. Generated bundles are noise, so any secret-shaped
 /// token in them is dropped; near-miss source files whose names merely CONTAIN
@@ -863,7 +863,7 @@ fn default_excludes_drop_minified_and_bundled_files_by_infix() {
     );
     assert!(
         body_contains(&kept, NEAR_MISS),
-        "near-miss source files (app.js / bundler.ts / chunky.js) must NOT be excluded — real credentials there must still be scanned"
+        "near-miss source files (app.js / bundler.ts / chunky.js) must NOT be excluded, real credentials there must still be scanned"
     );
     assert_eq!(
         skip_counts().excluded,

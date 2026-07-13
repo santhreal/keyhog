@@ -179,7 +179,7 @@ fn serialize_literal_rows(
     // Vyre stamps its literal-set wire envelope header at the front of the
     // serialized blob: a 4-byte magic followed by a little-endian u32 version
     // (`vyre_foundation::serial::envelope` layout). Read the stamped values
-    // straight out of `bytes` — that is the single source of truth for what
+    // straight out of `bytes`: that is the single source of truth for what
     // this artifact actually carries and cannot drift from Vyre's (private)
     // wire constants, which 0.6.4 exposes no public accessor for.
     let (wire_magic, wire_version) = literal_set_wire_header(&bytes).ok_or_else(|| {
@@ -198,8 +198,8 @@ fn serialize_literal_rows(
     }))
 }
 
-/// Parse Vyre's literal-set wire envelope header — a `[u8; 4]` magic followed
-/// by a little-endian `u32` version — from the front of a serialized
+/// Parse Vyre's literal-set wire envelope header, a `[u8; 4]` magic followed
+/// by a little-endian `u32` version, from the front of a serialized
 /// `GpuLiteralSet` blob. Returns `None` when the blob is shorter than the
 /// 8-byte header (Vyre always writes it, so `None` signals a corrupt/truncated
 /// serialization the caller surfaces loudly rather than defaulting).

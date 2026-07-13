@@ -2,9 +2,9 @@
 //! credential with a `gl<type>-` marker; keyhog already covered glpat- / gldt- /
 //! glrt- / glcbt- / glptt-, but six documented prefixes had NO detector:
 //!
-//!   glagent-  Agent for Kubernetes token   (critical — cluster access)
-//!   gloas-    OAuth application secret      (critical — app impersonation)
-//!   glsoat-   SCIM OAuth access token       (high — group provisioning)
+//!   glagent-  Agent for Kubernetes token   (critical, cluster access)
+//!   gloas-    OAuth application secret      (critical, app impersonation)
+//!   glsoat-   SCIM OAuth access token       (high, group provisioning)
 //!   glimt-    incoming-mail token           (medium)
 //!   glffct-   feature-flags client token    (low)
 //!   glft-     feed token                    (medium)
@@ -12,7 +12,7 @@
 //! This lock pins that all eleven prefixes surface the exact token bytes through
 //! the on-disk scanner, that each new prefix attributes to its own detector, and
 //! that the new patterns don't collide (glft- vs glffct-) or fire below their
-//! length floor. Never `!is_empty` — every assertion is on the exact token.
+//! length floor. Never `!is_empty`: every assertion is on the exact token.
 
 mod support;
 

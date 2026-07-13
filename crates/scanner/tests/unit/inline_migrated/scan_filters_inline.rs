@@ -13,7 +13,7 @@ const VALID_PYPI: &str =
 
 #[test]
 fn valid_checksum_token_is_not_extended_over_a_trailing_equals() {
-    // `pypi-…MNH="x"` — the base64-padding extension would append the `=`,
+    // `pypi-…MNH="x"`: the base64-padding extension would append the `=`,
     // breaking the PyPI checksum. The extension must be reverted.
     let data = format!("{VALID_PYPI}=\"x\"");
     let credential = &data[..VALID_PYPI.len()];

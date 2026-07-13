@@ -5,7 +5,7 @@
 //! optionally extended by a user file). This test pins that baseline: it must be
 //! present, parse, and carry the lists the mount enumerator depends on. A
 //! regression here (dropped entry, renamed key, malformed TOML) would silently
-//! change which mounts get scanned — exactly the kind of invisible behavior
+//! change which mounts get scanned, exactly the kind of invisible behavior
 //! shift the Tier-B move was meant to make reviewable.
 
 use std::collections::BTreeSet;
@@ -67,7 +67,7 @@ fn network_types_are_not_also_unconditionally_skipped() {
     for ty in &f.network_fs_types {
         assert!(
             !skip.contains(ty.as_str()),
-            "network fs {ty} is also in skip_fs_types — --include-network could never re-enable it"
+            "network fs {ty} is also in skip_fs_types: --include-network could never re-enable it"
         );
     }
 }

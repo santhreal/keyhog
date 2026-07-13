@@ -511,7 +511,7 @@ fn sarif_result_artifact_location_relative_uri() {
 #[test]
 fn sarif_result_properties_verification_lowercased() {
     // properties.verification comes from the canonical `style::verification_token`
-    // (snake_case, matching the JSON serde representation) — NOT the old
+    // (snake_case, matching the JSON serde representation). NOT the old
     // `format!("{:?}", v).to_lowercase()`, which emitted `ratelimited`/`error("..")`.
     let json = sarif_of(&[finding()]);
     assert_eq!(
@@ -524,7 +524,7 @@ fn sarif_result_properties_verification_lowercased() {
 fn sarif_verification_token_is_snake_case_consistent_with_json() {
     // Regression: SARIF previously derived `verification` from Debug formatting,
     // so RateLimited became "ratelimited" (no underscore) and Error became
-    // `error("msg")` — diverging from JSON's serde snake_case and from the
+    // `error("msg")`: diverging from JSON's serde snake_case and from the
     // junit/csv/github mappings. The canonical token fixes both.
     let mut rl = finding();
     rl.verification = VerificationResult::RateLimited;

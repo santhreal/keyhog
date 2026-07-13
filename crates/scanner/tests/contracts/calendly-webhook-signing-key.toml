@@ -15,7 +15,7 @@ reason = "Uppercase context with single-quoted 32-char signing key."
 
 [[negative]]
 text = "calendly signing_key short"
-reason = "Body below 10 chars — must not match."
+reason = "Body below 10 chars (must not match)."
 
 [[evasion]]
 text = "\"calendly signing_key 'Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S'\""

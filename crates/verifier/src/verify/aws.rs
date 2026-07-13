@@ -40,7 +40,7 @@ pub(crate) async fn build_aws_probe(
     // Sanitize+resolve every credential field the SigV4 probe signs. A captured
     // value can carry a trailing newline / control byte (line-anchored capture),
     // and `valid_aws_format` requires an EXACT 20-char all-alphanumeric access key,
-    // so an unsanitized `AKIA…\n` would be misreported `Dead` — a LIVE key silently
+    // so an unsanitized `AKIA…\n` would be misreported `Dead`: a LIVE key silently
     // missed. This mirrors the sibling `AuthSpec::Query` arm in `auth.rs`, which
     // already resolves + `sanitize_raw_value`s its field. `region` is resolved the
     // same way so a `companion.region` reference actually resolves instead of being
@@ -60,7 +60,7 @@ pub(crate) async fn build_aws_probe(
 
     // Canary short-circuit (fail-closed BEFORE any network egress): an access
     // key whose offline-decoded account belongs to a known canary issuer is a
-    // tripwire — the STS `GetCallerIdentity` probe below would alert whoever
+    // tripwire, the STS `GetCallerIdentity` probe below would alert whoever
     // planted it. Refuse to verify it and surface the canary marker so the
     // operator learns why. Uses the fleet-canonical classifier in
     // `keyhog_core::aws` (same decode + list the scanner attaches as metadata),

@@ -20,7 +20,7 @@ fn r5_handwritten_twin_gap_vs_detector_load() {
         .count();
     assert!(
         handwritten < loaded,
-        "KH-GAP-155: expected handwritten twin gap — {handwritten}/{loaded} covered"
+        "KH-GAP-155: expected handwritten twin gap: {handwritten}/{loaded} covered"
     );
     assert!(
         handwritten >= 50,

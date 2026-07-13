@@ -3,7 +3,7 @@
 //! `ml_scorer::dense_relu_layer_t` computes each ReLU dense layer "output-
 //! stationary" over COLUMN-major (transposed) weights so the inner loop over
 //! outputs vectorizes across lanes. The recall-critical claim is that this is
-//! BIT-IDENTICAL to the row-major scalar dot product it replaced — vectorizing
+//! BIT-IDENTICAL to the row-major scalar dot product it replaced, vectorizing
 //! across outputs must not reassociate any single output's reduction, and Rust
 //! must not contract `a*b + c` into a fused multiply-add (it doesn't, absent
 //! fast-math). A previous AVX2+FMA kernel violated exactly this and regressed
@@ -15,7 +15,7 @@
 //! (fc1: 42→32, fc2: 32→16). It locks the layout-equivalence PRINCIPLE the
 //! production kernel is a faithful implementation of; the production path itself
 //! is additionally validated end-to-end by `contracts_runner` (which is sensitive
-//! to sub-ULP score drift — it is what caught the FMA regression) and by
+//! to sub-ULP score drift, it is what caught the FMA regression) and by
 //! `gpu_parity` (CPU vs GPU value agreement).
 
 /// Deterministic xorshift64* PRNG → f32 in [-1, 1). No external rng dependency,
@@ -110,7 +110,7 @@ fn assert_layout_parity(in_dim: usize, out_dim: usize, draws: usize, seed: u64) 
                 fast[o].to_bits(),
                 "output-stationary kernel diverged from the row-major reference at \
                  draw {draw}, output {o} ({in_dim}→{out_dim}): reference={} fast={}. \
-                 The output-stationary forward kernel is NOT bit-identical — this is \
+                 The output-stationary forward kernel is NOT bit-identical, this is \
                  the recall regression the FMA attempt caused. Do not ship.",
                 reference[o],
                 fast[o],

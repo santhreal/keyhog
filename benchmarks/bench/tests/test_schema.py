@@ -41,7 +41,7 @@ def test_run_result_round_trips_losslessly():
 def test_scanner_config_min_confidence_is_optional_and_off_the_matrix_key():
     """`min_confidence` is the harvest-only report-floor override. Unset (every
     leaderboard config) it is omitted from JSON and absent from `config_id`;
-    set, it round-trips but STILL does not change `config_id` — a harvest scan
+    set, it round-trips but STILL does not change `config_id`: a harvest scan
     must never fork the stable matrix key the README table / gate index on."""
     default = ScannerConfig(backend="simd")
     assert default.min_confidence is None

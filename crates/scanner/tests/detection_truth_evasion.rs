@@ -4,7 +4,7 @@
 //! + decode passes must fold these back to the real credential before matching.
 //! Each case plants a known AWS/Stripe key behind an obfuscation and asserts the
 //! CLEAN value is recovered (Law 6). All ML-independent (normalization/decode
-//! run before scoring), so valid with/without `ml` — run without `ml` while the
+//! run before scoring), so valid with/without `ml`: run without `ml` while the
 //! embedded weights are mid-retrain (see BACKLOG ml-weights finding).
 
 use keyhog_core::{Chunk, ChunkMetadata};

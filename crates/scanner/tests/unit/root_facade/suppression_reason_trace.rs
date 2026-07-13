@@ -9,7 +9,7 @@
 //! matrices in `suppression_truth_table.rs`: those pin "suppressed / not", this
 //! pins WHICH gate did it by its literal `&'static str` reason, so a renamed /
 //! reordered / removed cascade arm flips a specific named row red rather than
-//! passing silently (Law 6 — exact value, never `is_ok`/`!is_empty`).
+//! passing silently (Law 6 (exact value, never `is_ok`/`!is_empty`)).
 //!
 //! The reason strings are the literals emitted by
 //! `crates/scanner/src/suppression/decision.rs` and `suppression/doc_markers.rs`.
@@ -50,7 +50,7 @@ fn assert_reason(credential: &str, expected_reason: &str) {
     let reasons = drain_reasons(&trace);
     assert!(
         !reasons.is_empty(),
-        "{credential:?} suppressed but emitted NO dogfood reason — a silent gate \
+        "{credential:?} suppressed but emitted NO dogfood reason, a silent gate \
          (Law 10). Expected {expected_reason:?}."
     );
     assert_eq!(
@@ -70,15 +70,15 @@ fn assert_not_suppressed(credential: &str) {
     let reasons = drain_reasons(&trace);
     assert!(
         !suppressed,
-        "REAL secret {credential:?} was WRONGLY suppressed by gate(s) {reasons:?} — recall regression"
+        "REAL secret {credential:?} was WRONGLY suppressed by gate(s) {reasons:?}, recall regression"
     );
     assert!(
         reasons.is_empty(),
-        "REAL secret {credential:?} not suppressed but a gate recorded {reasons:?} — spurious event"
+        "REAL secret {credential:?} not suppressed but a gate recorded {reasons:?}, spurious event"
     );
 }
 
-/// `(credential, exact gate reason)` — each row pins the precise cascade arm.
+/// `(credential, exact gate reason)`: each row pins the precise cascade arm.
 const REASON_TABLE: &[(&str, &str)] = &[
     // placeholder words (shared Tier-B vocabulary, recorded as a shape gate)
     ("DUMMY_TOKEN_VALUE_abc123def456", "placeholder_word"),
@@ -95,7 +95,7 @@ const REASON_TABLE: &[(&str, &str)] = &[
     ),
     // mask run (decision.rs §3)
     ("api_keyXXXXXXXXXXXXXXXXXXXXmasked", "mask_run_xxxxx"),
-    // bare hex digests (decision.rs §5b) — 32/40/64-hex
+    // bare hex digests (decision.rs §5b): 32/40/64-hex
     ("a1c3e5f7091b2d4f60718293a4b5c6d7", "bare_hex_digest"),
     (
         "a1b2c3d4e5f60718293a4b5c6d7e8f9012345abc",

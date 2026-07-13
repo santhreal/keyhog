@@ -2,23 +2,23 @@
 //! mapping, endpoint SSRF refusal, and malformed-input errors.
 //!
 //! These lock the CONCRETE contracts of the `gcs` source backend:
-//!   * `is_probably_text_object_key` — which listed object keys are downloaded
+//!   * `is_probably_text_object_key`: which listed object keys are downloaded
 //!     as text vs. prefiltered as binary/container content (host-independent
 //!     pure logic).
-//!   * `is_binary_content_type` — the Content-Type binary screen.
-//!   * `endpoint_is_google` — the googleapis.com host match that gates ambient
+//!   * `is_binary_content_type`: the Content-Type binary screen.
+//!   * `endpoint_is_google`: the googleapis.com host match that gates ambient
 //!     bearer-token forwarding (fail-closed on a malformed endpoint).
 //!   * A listed object maps to EXACTLY `gs://<bucket>/<key>` with `source_type`
 //!     "gcs" and the listed `size_bytes` (driven end-to-end through the public
 //!     `GcsSource::chunks()` production path against a loopback mock server).
 //!   * A private / loopback / link-local endpoint is REFUSED before any socket
 //!     is opened, via the fleet-canonical `keyhog_verifier::ssrf` classifier
-//!     shared with S3/Azure/Web — never a silent degrade.
+//!     shared with S3/Azure/Web (never a silent degrade).
 //!   * Malformed bucket names and malformed listing payloads yield the exact
 //!     operator-facing error string.
 //!
 //! HOST-INDEPENDENCE: no accelerator is touched. The SSRF-refusal and
-//! malformed-input assertions are fully hermetic — they abort inside
+//! malformed-input assertions are fully hermetic, they abort inside
 //! `validate_bucket_name` / `validate_cloud_endpoint` BEFORE any network I/O, so they
 //! are deterministic on every host. The two mock-server tests use a loopback
 //! httpmock endpoint and therefore build their source with
@@ -47,7 +47,7 @@ const GCS_SSRF_REFUSAL: &str =
 
 // The private-endpoint allowance is now per-source Tier-A config
 // (`HttpClientConfig.allow_private_endpoint`), threaded into each source by the
-// `TestApi.gcs_source_with_endpoint*` builders — the SSRF-refusal tests drive
+// `TestApi.gcs_source_with_endpoint*` builders, the SSRF-refusal tests drive
 // `allow_private = false` and the loopback mock tests drive `true`, with no
 // process-global `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` env and so no lock.
 
@@ -180,7 +180,7 @@ fn credential_forward_is_caller_explicit_only() {
 }
 
 // ==========================================================================
-// Endpoint SSRF refusal (reuses keyhog_verifier::ssrf) — hermetic, no network
+// Endpoint SSRF refusal (reuses keyhog_verifier::ssrf), hermetic, no network
 // ==========================================================================
 
 #[test]
@@ -214,7 +214,7 @@ fn ipv6_loopback_endpoint_is_refused() {
 #[test]
 fn ssrf_refusal_is_source_error_other_with_full_wrapper() {
     // Proves the refusal surfaces as `SourceError::Other`, whose Display wraps
-    // the reason with the operator-facing "Fix:" guidance — the exact bytes.
+    // the reason with the operator-facing "Fix:" guidance (the exact bytes).
     let error = single_endpoint_error("http://10.0.0.5");
     assert_eq!(
         error,
@@ -248,7 +248,7 @@ fn userinfo_bearing_endpoint_is_invalid() {
 }
 
 // ==========================================================================
-// Malformed bucket names — exact error strings (hermetic, pre-network)
+// Malformed bucket names, exact error strings (hermetic, pre-network)
 // ==========================================================================
 
 #[test]

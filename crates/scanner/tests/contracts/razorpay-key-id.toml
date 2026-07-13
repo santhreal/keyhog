@@ -11,12 +11,12 @@ severity = "high"
 text = """RAZORPAY_KEY_ID=rzp_test_Kp4Qx7Rm2Sn5Tb
 RAZORPAY_KEY_SECRET=Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3"""
 credential = "rzp_test_Kp4Qx7Rm2Sn5Tb"
-reason = "Standard env-var pair — test key + secret companion satisfied."
+reason = "Standard env-var pair (test key + secret companion satisfied)."
 
 [[positive]]
 text = "razorpay_key_id: rzp_live_KpQxRmSnTbVwYzKp"
 credential = "rzp_live_KpQxRmSnTbVwYzKp"
-reason = "YAML-style live key alone — companion optional."
+reason = "YAML-style live key alone (companion optional)."
 
 [[negative]]
 text = "rzp_test_short"
@@ -25,7 +25,7 @@ reason = "Body fails the {14,} length requirement."
 [[evasion]]
 text = "RAZORPAY_KEY_ID=rzp_test_Kp4Qx7Rm2Sn5Tb\nRAZORPAY_KEY_SECRET=Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3"
 credential = "rzp_test_Kp4Qx7Rm2Sn5Tb"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

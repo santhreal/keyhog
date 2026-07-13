@@ -3,7 +3,7 @@
 //!
 //! Distinct in angle from `regression_z85_reverse_decoders.rs` (which covers the
 //! ZeroMQ `HelloWorld` reference plus the reversibility helpers): this file pins
-//! EXACT decoded bytes for the full Z85 alphabet mapping — every character-class
+//! EXACT decoded bytes for the full Z85 alphabet mapping, every character-class
 //! boundary in the least-significant frame position, higher-position weighting,
 //! fresh multi-frame vectors, the exact `u32::MAX` positive boundary and its
 //! smallest-overflow negative twin, length-modulo refusal, and invalid-symbol
@@ -117,7 +117,7 @@ fn comma_symbol_is_refused() {
 }
 
 /// Whitespace bytes are not Z85 symbols; a 5-byte frame carrying one is refused
-/// (the decoder itself does no whitespace stripping — that happens only in the
+/// (the decoder itself does no whitespace stripping, that happens only in the
 /// span visitor before decode).
 #[test]
 fn whitespace_symbols_are_refused() {

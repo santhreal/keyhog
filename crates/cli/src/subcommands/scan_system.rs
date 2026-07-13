@@ -55,8 +55,8 @@ struct FindingSink {
     capped_warned: bool,
     /// Source/discovery items that could not be yielded (corrupt git object,
     /// perm-denied `.git`, non-UTF-8 / unreadable file mid-walk, or unreadable
-    /// git-discovery subtree). Law 10: dropped scope is unscanned bytes — a
-    /// recall loss — so it is COUNTED and surfaced in the final summary, never
+    /// git-discovery subtree). Law 10: dropped scope is unscanned bytes, a
+    /// recall loss, so it is COUNTED and surfaced in the final summary, never
     /// silently `continue`d past. A non-zero count means the "complete" scan did
     /// not cover everything.
     skipped_chunks: u64,
@@ -431,7 +431,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         );
     }
     // Law 10: if any chunk was unreadable, the "complete" above covered LESS than
-    // the whole tree. Say so loudly — a partial audit that looks clean is worse
+    // the whole tree. Say so loudly, a partial audit that looks clean is worse
     // than no audit.
     if sink.skipped_chunks() > 0 {
         let palette = style::for_stderr();
@@ -726,7 +726,7 @@ fn scan_git_history(
         let _ = (scan_runtime, bytes_scanned, space_cap);
         // LAW10: unused-binding marker; no runtime effect, not a fallback.
         // Law 10: this binary was built WITHOUT the `git` feature, so the git
-        // history of a discovered repo cannot be scanned — those commits are
+        // history of a discovered repo cannot be scanned, those commits are
         // unscanned bytes (a recall loss), not "nothing to do". The banner above
         // announced "git history: yes" and "discovered N git repo(s)", so a
         // trace-only skip would let a partial audit look complete.

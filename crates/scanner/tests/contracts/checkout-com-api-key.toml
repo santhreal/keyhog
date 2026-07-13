@@ -20,7 +20,7 @@ reason = "Body below 24 alnum chars."
 [[evasion]]
 text = "Bearer sk_sbox_kp4qx7rm2sn5tb8vw3yzkp4qx"
 credential = "sk_sbox_kp4qx7rm2sn5tb8vw3yzkp4qx"
-reason = "Bearer prefix before sandbox key — no-context pattern still matches."
+reason = "Bearer prefix before sandbox key (no-context pattern still matches)."
 
 [perf]
 fixture_bytes = 4096

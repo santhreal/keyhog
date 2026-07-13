@@ -113,7 +113,7 @@ impl From<Vec<u8>> for Credential {
     }
 }
 
-/// Constant-time byte-slice equality — the ONE owner of timing-safe secret
+/// Constant-time byte-slice equality, the ONE owner of timing-safe secret
 /// comparison shared by every credential-bearing type in this module
 /// ([`Credential`], [`SensitiveString`]). Compares in time proportional to the
 /// input length regardless of WHERE the first mismatch is, so equality checks
@@ -288,7 +288,7 @@ impl PartialEq for SensitiveString {
     fn eq(&self, other: &Self) -> bool {
         // Timing-safe: `SensitiveString` wraps secret material (zeroized on
         // drop), so its equality must not leak bytes through branch timing any
-        // more than `Credential`'s does — both route through the single
+        // more than `Credential`'s does, both route through the single
         // constant-time owner. Byte-length equality implies char-boundary
         // equality for equal-length UTF-8 comparison purposes here.
         constant_time_bytes_eq(self.as_str().as_bytes(), other.as_str().as_bytes())
@@ -370,7 +370,7 @@ impl<'de> Deserialize<'de> for SensitiveString {
 // `SensitiveString` live in `crates/core/tests/property/credential_contract.rs`.
 // The crate forbids inline cfg-test modules in `credential.rs` (enforced by the
 // `credential_no_inline_tests` / `no_inline_tests_in_src` gates, which reject the
-// literal cfg-test attribute anywhere in this file — hence the paraphrase here).
+// literal cfg-test attribute anywhere in this file (hence the paraphrase here)).
 // The property suite subsumes and strengthens the removed inline cases: the
 // equal-prefix / differing-suffix / length-mismatch / empty cases are covered
 // over 10k arbitrary inputs by `prop_credential_eq_iff_bytes_eq` and

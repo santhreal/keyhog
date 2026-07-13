@@ -1,12 +1,12 @@
 //! Template interpolation must be SINGLE-PASS: a substituted value (the scanned
-//! credential or a companion — both untrusted, attacker-influenceable content)
+//! credential or a companion, both untrusted, attacker-influenceable content)
 //! must never itself be re-scanned for `{{…}}` placeholders.
 //!
 //! The prior three-phase replace (match → interactsh → companion) ran each phase
 //! over the already-substituted string. The header/body context control-strips
 //! values but does NOT percent-encode them, so a `{{match}}` whose scanned value
 //! was literally `{{companion.other}}` kept its braces and the following
-//! companion phase expanded it — exfiltrating a *different* companion secret into
+//! companion phase expanded it, exfiltrating a *different* companion secret into
 //! the outbound request. The same held for a match value carrying
 //! `{{interactsh}}`. These tests pin that no substituted value is ever
 //! re-expanded, in both URL and header/body contexts, while locking every
@@ -71,7 +71,7 @@ fn match_value_interactsh_token_not_expanded_http() {
 
 #[test]
 fn match_value_self_token_not_doubly_expanded() {
-    // A match value of `{{match}}` is emitted once, literally — never recursed.
+    // A match value of `{{match}}` is emitted once, literally (never recursed).
     let out = TestApi.interpolate_http_value("X: {{match}}", "{{match}}", &HashMap::new());
     assert_eq!(out, "X: {{match}}");
 }

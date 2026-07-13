@@ -10,9 +10,9 @@
 #     `vault:`, `AQI`, `CiQ`).
 #
 # Add a prefix to reject a new structured/encrypted format. (Compound rejections
-# that need more than a prefix — JWT 3-part, PEM blocks, `Ag`+length, Windows
-# drive paths, and the `://` substring — stay in code, not here.) Non-empty
-# required (build-time panic). Any addition affects precision — bench on CredData.
+# that need more than a prefix. JWT 3-part, PEM blocks, `Ag`+length, Windows
+# drive paths, and the `://` substring, stay in code, not here.) Non-empty
+# required (build-time panic). Any addition affects precision (bench on CredData).
 prefixes = [
     "/",
     "./",

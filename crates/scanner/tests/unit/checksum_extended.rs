@@ -81,7 +81,7 @@ fn npm_payload_with_special_chars_is_invalid() {
 
 #[test]
 fn stripe_sk_live_short_payload_invalid() {
-    // Payload only 23 chars — below 24 minimum
+    // Payload only 23 chars, below 24 minimum
     let token = "sk_live_".to_string() + &"A".repeat(23);
     assert_eq!(
         StripeTokenValidator.validate(&token),
@@ -200,7 +200,7 @@ fn gitlab_valid_personal_access_token() {
     // glpat- followed by 20 alphanumeric chars (standard personal access token)
     let token = "glpat-".to_string() + &"A".repeat(20);
     let result = GitlabTokenValidator.validate(&token);
-    // Should be Valid or NotApplicable — not Invalid (format is correct)
+    // Should be Valid or NotApplicable, not Invalid (format is correct)
     assert_ne!(
         result,
         ChecksumResult::Invalid,
@@ -228,7 +228,7 @@ fn gitlab_empty_is_not_applicable() {
 
 #[test]
 fn pypi_exactly_20_char_base64_is_invalid_too_short_decoded() {
-    // 20-char URL-safe b64 decodes to ~14 bytes — below 32 minimum
+    // 20-char URL-safe b64 decodes to ~14 bytes, below 32 minimum
     use base64::Engine;
     let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(vec![0u8; 14]);
     let token = format!("pypi-{b64}");

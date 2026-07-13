@@ -54,7 +54,7 @@ static EXTRA_TRUSTED_BIN_DIRS: OnceLock<RwLock<Vec<PathBuf>>> = OnceLock::new();
 /// ambiguity this module exists to avoid.
 pub fn set_extra_trusted_dirs(dirs: Vec<PathBuf>) {
     // Law 10: refuse relative paths (they would make the trust boundary depend
-    // on CWD) but never DROP operator config silently — surface each rejection.
+    // on CWD) but never DROP operator config silently (surface each rejection).
     let mut filtered = Vec::with_capacity(dirs.len());
     for dir in dirs {
         if dir.is_absolute() {
@@ -98,7 +98,7 @@ fn trusted_dirs() -> Vec<PathBuf> {
 ///
 /// A candidate is accepted only when its lexical parent is a trusted dir AND its
 /// real target (following symlinks) is a regular file owned by root or the
-/// current effective uid — see [`is_safe_target`]. That ownership gate narrows
+/// current effective uid, see [`is_safe_target`]. That ownership gate narrows
 /// the symlink-swap vector AT CHECK TIME without breaking legitimate cross-dir
 /// symlinks (e.g. Homebrew's `/opt/homebrew/bin/git -> ../Cellar/.../git`, which
 /// is owned by the installing user). The returned path is the trusted-dir path
@@ -138,7 +138,7 @@ pub fn resolve_safe_bin(name: &str) -> Option<PathBuf> {
 /// The ownership check is the trust boundary: a symlink planted in a
 /// group/user-writable trusted dir (`/usr/local/bin`, `/opt/homebrew/bin`) by
 /// another, lower-privileged user points at a file THAT user owns, so its
-/// uid is neither 0 nor our euid and it is refused — while root-owned system
+/// uid is neither 0 nor our euid and it is refused, while root-owned system
 /// binaries and self-owned package binaries (Homebrew Cellar, `cargo install`
 /// shims) pass. A dangling symlink, a directory, or a device node also fails.
 #[cfg(unix)]

@@ -57,7 +57,7 @@ pub(crate) fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
             // `?im:`, …) through the single shared owner `strip_group_prefix`,
             // instead of a second hand-maintained copy of the same flag-form set.
             // Byte-identical to the old inline chain (same forms, same order), and
-            // now the recognised-flag set has ONE definitional home — so extending
+            // now the recognised-flag set has ONE definitional home, so extending
             // it (e.g. the missing 3-flag `?ims:` form) is a one-place change that
             // this routing path and `extract_group_alternatives`/`expand_*` all
             // pick up together instead of drifting.
@@ -153,15 +153,15 @@ pub(crate) fn leading_literal_run(s: &str) -> String {
 /// Expand a leading alternation whose every branch is a pure literal, extending
 /// each branch with the literal that follows the group.
 ///
-/// `(?:pk|sk)\.[a-f0-9]{32,}` splits into `pk`/`sk` — both below the 3-char
+/// `(?:pk|sk)\.[a-f0-9]{32,}` splits into `pk`/`sk`: both below the 3-char
 /// floor, so the per-branch alternation path declines and the detector carries
 /// no prefix anchor (contracts_runner: locationiq MISSED). The literal `\.`
 /// after the group applies to EVERY branch, so carrying it on yields the real
 /// discriminating prefixes `pk.`/`sk.`.
 ///
 /// Conservative by construction: the leading group must be a top-level
-/// alternation of pure literal runs (a structured branch — nested group, class,
-/// quantifier — is declined, since the post-group tail would not abut its
+/// alternation of pure literal runs (a structured branch, nested group, class,
+/// quantifier, is declined, since the post-group tail would not abut its
 /// literal head), there must be a non-empty trailing literal to add, and EVERY
 /// branch must clear [`MIN_LITERAL_PREFIX_CHARS`] (partial coverage refused).
 pub(crate) fn expand_leading_literal_alternation_with_tail(pattern: &str) -> Option<Vec<String>> {
@@ -209,8 +209,8 @@ pub(crate) const MAX_CHARCLASS_PREFIX_EXPANSION: usize = 8;
 /// Expand a leading literal run interrupted by a SMALL, fully-enumerable
 /// character class into one concrete literal prefix per class member.
 ///
-/// `dd[npc]_[a-f0-9]{64}` carries no extractable prefix — `extract_literal_prefix`
-/// stops at `[` with only `dd` (below the 3-char floor) — even though every
+/// `dd[npc]_[a-f0-9]{64}` carries no extractable prefix: `extract_literal_prefix`
+/// stops at `[` with only `dd` (below the 3-char floor), even though every
 /// concrete branch begins with a perfectly good literal: `ddn_`, `ddp_`,
 /// `ddc_`. A character class whose members are all single literal characters is
 /// semantically an alternation of those characters, so enumerating it is the
@@ -220,10 +220,10 @@ pub(crate) const MAX_CHARCLASS_PREFIX_EXPANSION: usize = 8;
 ///
 /// Conservative by construction:
 ///   * the leading run before `[` must be plain literals (no other metachar);
-///   * the class must be a bare enumeration of single literal chars — no
+///   * the class must be a bare enumeration of single literal chars, no
 ///     negation (`[^…]`), no ranges (`[a-f]`), no POSIX/Perl classes;
 ///   * cardinality ≤ [`MAX_CHARCLASS_PREFIX_EXPANSION`]; and
-///   * EVERY member must yield a prefix ≥ [`MIN_LITERAL_PREFIX_CHARS`] — partial
+///   * EVERY member must yield a prefix ≥ [`MIN_LITERAL_PREFIX_CHARS`], partial
 ///     coverage is refused outright (an unlisted branch would be dead in AC,
 ///     the same hazard the alternation path guards against).
 pub(crate) fn expand_leading_charclass_prefixes(pattern: &str) -> Option<Vec<String>> {
@@ -242,7 +242,7 @@ pub(crate) fn expand_leading_charclass_prefixes(pattern: &str) -> Option<Vec<Str
                     head.push(next);
                     i += 2;
                 } else {
-                    // `\d`, `\w`, … — not a plain literal head.
+                    // `\d`, `\w`, … (not a plain literal head).
                     return None;
                 }
             }
@@ -439,7 +439,7 @@ pub(crate) fn strip_leading_inline_flags(pattern: &str) -> &str {
     }
 }
 
-/// Strip a leading run of zero-width assertions — `^`, `\A`, `\b`, `\B` — that
+/// Strip a leading run of zero-width assertions: `^`, `\A`, `\b`, `\B`: that
 /// anchor the match position but consume no input. The literal that follows
 /// (`\bser\.` → `ser\.`, `^AKIA…` → `AKIA…`) is the detector's real prefix, so
 /// without this the leading assertion broke prefix extraction at the first byte
@@ -461,7 +461,7 @@ pub(crate) fn strip_leading_zero_width_assertions(pattern: &str) -> &str {
 }
 
 pub(crate) fn extract_literal_prefix(pattern: &str) -> Option<String> {
-    // Strip a leading bare inline-flag group — `(?i)`, `(?-i)`, `(?im)` — which
+    // Strip a leading bare inline-flag group: `(?i)`, `(?-i)`, `(?im)`: which
     // sets match modes but consumes no input, so the literal that follows
     // (`(?-i)cs_…` → `cs_…`) is reachable. This is the SAME normalization the
     // routing extractor `extract_literal_prefixes` already applies; the singular
@@ -876,13 +876,13 @@ fn walk_ast(ast: &regex_syntax::ast::Ast, out: &mut Vec<String>) {
 pub(crate) const MIN_DISTINCTIVE_INFIX_CHARS: usize = 8;
 
 /// True iff EVERY match of `pattern` necessarily contains a literal run of at
-/// least `min_len` characters — a required distinctive literal such as the
+/// least `min_len` characters, a required distinctive literal such as the
 /// terraform `…\.atlasv1\.…` infix, whose detector regex opens with a character
 /// class (no extractable prefix) and captures the whole match (no keyword
 /// group), so it earns neither existing anchor signal despite being unmistakably
 /// service-specific.
 ///
-/// Sound by construction — only literals guaranteed in every match are counted:
+/// Sound by construction, only literals guaranteed in every match are counted:
 ///   * a top-level `Concat` contributes its longest run of CONSECUTIVE literal
 ///     nodes;
 ///   * a plain/non-capturing/capturing `Group` is always entered, so it is

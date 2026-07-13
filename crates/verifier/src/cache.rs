@@ -209,7 +209,7 @@ impl VerificationCache {
         // Stamp the entry and its queue marker with one fresh generation. An
         // overwrite REFRESHES the key's recency: the new marker goes to the
         // back, and the old marker (now generation-mismatched) is skipped
-        // lazily by eviction — previously a re-verified credential kept its
+        // lazily by eviction, previously a re-verified credential kept its
         // ORIGINAL queue slot and capacity eviction dropped the freshest
         // entries first, forcing redundant live re-verification.
         let generation = self.generation.fetch_add(1, Ordering::Relaxed);
@@ -327,7 +327,7 @@ impl VerificationCache {
         let mut queue = self.queue.lock();
         while let Some((key, generation)) = queue.pop_front() {
             // A generation mismatch is a STALE marker: the key was refreshed by
-            // a later put and its current marker sits further back. Skip it —
+            // a later put and its current marker sits further back. Skip it 
             // evicting here would drop the freshest entry first.
             if self
                 .entries
@@ -402,7 +402,7 @@ pub(crate) fn evict_oldest_dashmap_entries<K, V>(
     // We only need the `count` OLDEST entries, not a fully sorted list. When
     // `count < len`, `select_nth_unstable_by_key` partitions the oldest `count`
     // into the prefix in O(n) rather than the O(n log n) full sort the whole
-    // cache used to pay on every cap-hit eviction — the lever on a large hot
+    // cache used to pay on every cap-hit eviction, the lever on a large hot
     // cache. The partition leaves `[0, count)` as the smallest-`Instant` (oldest)
     // entries; their internal order is irrelevant since we remove all of them.
     // Same eviction set as the old sort (ties at the boundary are arbitrary in
@@ -426,7 +426,7 @@ fn cache_key(credential: &str, detector_id: &str) -> CacheKey {
 /// Identity/high-value metadata keys retained first when a finding's metadata
 /// exceeds `MAX_METADATA_ENTRIES`. Ordering is stable so the SAME oversized
 /// metadata map always keeps the SAME entries run-to-run (a bare `HashMap`
-/// iterator `.take(16)` kept an arbitrary, nondeterministic subset — `arn`
+/// iterator `.take(16)` kept an arbitrary, nondeterministic subset. `arn`
 /// could survive one scan and vanish the next).
 const PRIORITY_METADATA_KEYS: &[&str] = &[
     "arn",
@@ -447,7 +447,7 @@ fn metadata_priority_rank(key: &str) -> usize {
 
 fn sanitize_metadata(metadata: HashMap<String, String>) -> HashMap<String, String> {
     let mut entries: Vec<(String, String)> = metadata.into_iter().collect();
-    // Priority keys first, then lexicographic — total order, so retention is
+    // Priority keys first, then lexicographic, total order, so retention is
     // deterministic and identity fields are never dropped in favor of noise.
     entries.sort_unstable_by(|(a, _), (b, _)| {
         metadata_priority_rank(a)

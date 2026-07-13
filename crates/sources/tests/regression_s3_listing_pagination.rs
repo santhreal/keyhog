@@ -1,7 +1,7 @@
 //! LANE sources-deep regression: the S3 ListObjectsV2 pagination loop
 //! (`collect_s3_chunks` in `s3/mod.rs`) must
-//!   * walk every page — threading the previous page's `NextContinuationToken`
-//!     (and the caller's `prefix`) into the next request — and yield the EXACT
+//!   * walk every page, threading the previous page's `NextContinuationToken`
+//!     (and the caller's `prefix`) into the next request, and yield the EXACT
 //!     union object count across all pages, and
 //!   * record each per-object coverage gap EXACTLY ONCE even when it is one
 //!     object out of a multi-page listing (a skipped object bumps its counter
@@ -36,7 +36,7 @@ static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 fn counter_guard() -> MutexGuard<'static, ()> {
     // httpmock binds 127.0.0.1, which the cloud SSRF endpoint screen refuses by
     // default. Opt into the loud, default-off private-endpoint allowance for the
-    // lifetime of this separate binary — set while holding COUNTER_LOCK so it
+    // lifetime of this separate binary, set while holding COUNTER_LOCK so it
     // can never race a parallel test in this file.
     let guard = COUNTER_LOCK
         .lock()
@@ -77,7 +77,7 @@ fn truncated_page_with_token(objects: &str, token: &str) -> String {
     )
 }
 
-/// A truncated page whose `NextContinuationToken` element is present but empty —
+/// A truncated page whose `NextContinuationToken` element is present but empty 
 /// the S3-compatible "final page echoed an empty cursor" shape that
 /// `meaningful_continuation_token` normalizes to "exhausted".
 fn truncated_page_empty_token(objects: &str) -> String {
@@ -247,7 +247,7 @@ fn two_page_listing_yields_exact_object_count() {
 }
 
 /// A three-page listing (token, token, terminal) yields the exact union count and
-/// lists each page exactly once — the continuation loop terminates on the final
+/// lists each page exactly once, the continuation loop terminates on the final
 /// non-truncated page.
 #[test]
 fn three_page_listing_yields_exact_object_count() {
@@ -364,7 +364,7 @@ fn continuation_token_threaded_verbatim_to_second_page() {
 
 /// A zero-`Size` object listed across pages is dropped before any GET (S3 lists
 /// zero-byte objects and "directory placeholder" keys), yields no chunk, and
-/// bumps NO skip counter — the empty object is not a coverage gap. The two
+/// bumps NO skip counter, the empty object is not a coverage gap. The two
 /// non-empty text objects around it are still scanned, so the union count is 2.
 #[test]
 fn zero_size_object_across_pages_yields_no_chunk_and_no_skip() {
@@ -603,7 +603,7 @@ fn max_objects_cap_stops_before_second_page_listing() {
 // ---------------------------------------------------------------------------
 
 /// A single binary-extension object living among two pages of text objects is
-/// counted as one binary coverage gap — not once per page, not twice.
+/// counted as one binary coverage gap (not once per page, not twice).
 #[test]
 fn skipped_binary_extension_object_across_pages_counts_once() {
     let _guard = counter_guard();
@@ -952,7 +952,7 @@ fn listing_auth_failure_counts_one_listing_failure() {
 /// A mid-pagination listing failure (page 2 returns 500) is counted as exactly
 /// one unreadable listing skip and surfaces one error row. NOTE: the current
 /// `collect_s3_chunks` propagates the page-2 error with `?`, discarding the
-/// already-collected page-1 chunk — so the result is a single error row. This
+/// already-collected page-1 chunk, so the result is a single error row. This
 /// pins that behavior (the failure is loud + counted, not a silent false-clean).
 #[test]
 fn mid_pagination_listing_failure_counts_one_and_is_surfaced() {

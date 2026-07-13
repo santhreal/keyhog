@@ -7,19 +7,19 @@ homefield-betterleaks``).
 betterleaks (a gitleaks fork) generates its shipped config from
 `cmd/generate/config/rules/*.go`. Every rule embeds two labeled lists:
 
-    tps := []string{ ... }   // true positives  — the rule MUST match these
-    fps := []string{ ... }   // false positives — the rule must NOT match
+    tps := []string{ ... }   // true positives, the rule MUST match these
+    fps := []string{ ... }   // false positives, the rule must NOT match
 
 These are betterleaks' own precision+recall oracle: the regexes were tuned
 to score 100% on exactly these strings. Harvesting them lets us ask the
-only fair "home turf" question — how close does keyhog get to betterleaks
+only fair "home turf" question, how close does keyhog get to betterleaks
 on betterleaks' own truth, and which services does betterleaks cover that
 keyhog misses (a capability gap, not a tuning gap).
 
 Only STATIC string literals are taken. Lines that are Go function calls
 (`utils.GenerateSampleSecret(...)`, `secrets.NewSecret(...)`) or
 concatenations resolve to random values at generate-time and cannot be
-extracted statically, so they are skipped — never guessed. This keeps the
+extracted statically, so they are skipped, never guessed. This keeps the
 corpus free of fabricated fixtures (no fake truth).
 
 Output (split layout the bench loader reads):
@@ -38,7 +38,7 @@ import sys
 
 BETTERLEAKS_MODULE = "github.com/betterleaks/betterleaks@v1.1.1"
 # Split layout under the canonical corpus home: answer key at
-# <home>/manifest.jsonl, neutrally-named scan tree at <home>/corpus/ — see
+# <home>/manifest.jsonl, neutrally-named scan tree at <home>/corpus/, see
 # bench.corpora.homefield / bench.corpora.mirror for why the manifest must
 # sit beside, not inside, the scan tree.
 _HOME = (
@@ -47,7 +47,7 @@ _HOME = (
 
 # A Go double-quoted string that is the WHOLE element (optionally trailed by
 # a comma): the line, stripped, is exactly "..." or "...",. Anchored so a
-# concatenation (`"a"+f()`) or call (`f("a")`) is rejected — those embed a
+# concatenation (`"a"+f()`) or call (`f("a")`) is rejected, those embed a
 # quote but are not standalone literals.
 _DQUOTE_ELEM = re.compile(r'^"((?:[^"\\]|\\.)*)"\s*,?$')
 # Raw (backtick) string element on a single line.
@@ -154,7 +154,7 @@ def _extract_block(lines: list[str], start: int) -> tuple[list[str], int]:
             mr = _RAW_ELEM.match(body)
             if mr:
                 vals.append(mr.group(1))
-            # else: function call / concatenation / brace line — skip
+            # else: function call / concatenation / brace line, skip
         if opened and depth <= 0:
             return vals, i
         i += 1

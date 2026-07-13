@@ -1,7 +1,7 @@
 //! Regression coverage for the Docker image-*reference* admission gate.
 //!
 //! The docker source does NOT split a reference into registry/repo/tag/digest
-//! parts — it admits or rejects the whole reference via `validate_image_name`
+//! parts, it admits or rejects the whole reference via `validate_image_name`
 //! (a compiled, ReDoS-bounded regex plus an unsafe-character prefilter) and then
 //! hands the verbatim string to `docker image save`. That validator is the pure,
 //! host-independent surface: it runs *before* any docker binary is resolved or
@@ -13,7 +13,7 @@
 //! asserts:
 //!   * concrete accept verdicts for real references (`ubuntu:22.04`,
 //!     `gcr.io/proj/img@sha256:...`, `library/ubuntu:22.04`, digest-only,
-//!     uppercase tag, whitespace-padded) — proven by the ABSENCE of any
+//!     uppercase tag, whitespace-padded), proven by the ABSENCE of any
 //!     validation-rejection message (host-independent: a valid name then fails,
 //!     if at all, only on docker-binary/export, never on validation),
 //!   * concrete reject verdicts (`Ubuntu`, short/long/wrong-algo digests,
@@ -38,7 +38,7 @@ use keyhog_sources::DockerImageSource;
 /// Every error message `DockerImageSource::chunks()` yields for `image`.
 ///
 /// A rejected reference short-circuits inside `collect_docker_chunks` before any
-/// docker binary work, so the iterator is `std::iter::once(Err(_))` — exactly
+/// docker binary work, so the iterator is `std::iter::once(Err(_))`: exactly
 /// one element. A valid reference proceeds to docker resolution/export, so it may
 /// yield zero errors (image scanned) or a non-validation docker error.
 fn errors_for(image: &str) -> Vec<String> {
@@ -100,7 +100,7 @@ fn namespaced_repo_with_tag_is_admitted() {
 #[test]
 fn registry_repo_and_digest_is_admitted() {
     // `gcr.io/proj/img@sha256:<64 hex>`: dotted registry host as a path segment,
-    // nested namespace, digest-pinned — a canonical fully-qualified reference.
+    // nested namespace, digest-pinned (a canonical fully-qualified reference).
     let reference = format!("gcr.io/proj/img@sha256:{}", hex64());
     assert_eq!(
         rejected_as_validation(&reference),
@@ -153,7 +153,7 @@ fn uppercase_repository_is_rejected_with_name_echoed() {
 #[test]
 fn registry_with_port_is_rejected() {
     // `localhost:5000/img`: the `:` port separator only the *tag* clause allows,
-    // but a `/` path segment follows it — no regex path matches.
+    // but a `/` path segment follows it (no regex path matches).
     let errors = errors_for("localhost:5000/img");
     assert_eq!(errors.len(), 1, "single validation error expected");
     assert!(

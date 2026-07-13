@@ -3,9 +3,9 @@
 //!
 //! keyhog deliberately suppresses three generic value shapes that flood real
 //! code with false positives when they appear bare:
-//!   * UUID v4 (`8-4-4-4-12` hex)      — request ids, session ids, record ids;
-//!   * 40-hex                          — git SHA-1, MD5+pad, ETag, content hash;
-//!   * 64-hex                          — SHA-256 digests / content addresses.
+//!   * UUID v4 (`8-4-4-4-12` hex), request ids, session ids, record ids;
+//!   * 40-hex, git SHA-1, MD5+pad, ETag, content hash;
+//!   * 64-hex: SHA-256 digests / content addresses.
 //! Those suppressions live in the *generic* lane (bare value, or value under a
 //! bare/ambiguous `key`/`id`/`secret_key` anchor). They are **anchor-gated**:
 //! when the SAME byte shape carries a vendor-specific anchor that a named
@@ -29,9 +29,9 @@
 //!
 //! Every token body below is copied verbatim from the detector's shipped
 //! contract positive, so each "surfaces" assertion exercises a value already
-//! proven to be detectable — the test isolates the anchor variable, not the
+//! proven to be detectable, the test isolates the anchor variable, not the
 //! value. Assertions check the exact surfaced/absent credential bytes via the
-//! shared `surfaces` / `nothing_surfaces` helpers — never `!is_empty`.
+//! shared `surfaces` / `nothing_surfaces` helpers (never `!is_empty`).
 
 mod support;
 use support::contracts::{make_chunk, scanner};
@@ -126,7 +126,7 @@ fn same_uuid_bare_stays_suppressed() {
     assert!(
         nothing_surfaces(HEROKU_UUID, HEROKU_UUID),
         "the SAME UUID with no Heroku anchor is a generic identifier and must stay \
-         suppressed — the carve-out is anchor-gated, not value-gated"
+         suppressed: the carve-out is anchor-gated, not value-gated"
     );
 }
 
@@ -206,7 +206,7 @@ fn deepgram_api_key_anchor_surfaces_hex40_body() {
 fn same_hex40_under_bare_key_stays_suppressed() {
     assert!(
         nothing_surfaces(&format!("key = {CIRCLE_H40}"), CIRCLE_H40),
-        "the SAME 40-hex under a bare `key =` must stay suppressed — bare 40-hex \
+        "the SAME 40-hex under a bare `key =` must stay suppressed, bare 40-hex \
          is indistinguishable from a git SHA-1 / ETag / content hash"
     );
 }
@@ -261,7 +261,7 @@ fn airtable_prefixed_token_surfaces() {
 fn same_hex64_core_under_strong_secret_anchor_stays_suppressed() {
     // The DigitalOcean PAT's 64-hex core, stripped of the `dop_v1_` prefix and
     // placed under a strong `secret_key` anchor, is a SHA-256 shape trap and
-    // must stay suppressed — only the vendor prefix promotes these bytes.
+    // must stay suppressed (only the vendor prefix promotes these bytes).
     assert!(
         nothing_surfaces(&format!("secret_key = {DO_H64_CORE}"), DO_H64_CORE),
         "the bare 64-hex core under `secret_key =` must stay suppressed (sha256 trap)"

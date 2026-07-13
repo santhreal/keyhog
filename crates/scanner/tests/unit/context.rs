@@ -326,7 +326,7 @@ fn configmap_binary_data_deep_secret_like_value_not_suppressed() {
 #[test]
 fn configmap_data_block_after_deep_binary_data_not_suppressed() {
     // A sibling `data:` block after a large binaryData block: its values are
-    // secrets, not binary — the nearest dedent parent is `data:`, not the header.
+    // secrets, not binary (the nearest dedent parent is `data:`, not the header).
     let mut owned = configmap_binary_block(15);
     owned.push("data:".to_string());
     owned.push("  api-token: Z2hwX2FiYw==".to_string());
@@ -702,7 +702,7 @@ fn non_test_fn_with_code_between_attr_and_fn_is_not_test_code() {
 #[test]
 fn test_attr_beyond_block_cap_is_not_test_code() {
     // `#[test]` separated from the fn by more blank lines than ATTR_BLOCK_LOOKBACK
-    // is beyond the bounded walk — an absurd shape rustfmt never emits; the cap
+    // is beyond the bounded walk, an absurd shape rustfmt never emits; the cap
     // trades this for a guaranteed-bounded walk.
     let mut src = vec!["#[test]".to_string()];
     for _ in 0..40 {

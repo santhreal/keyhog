@@ -15,11 +15,11 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "PUSHER=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "PUSHER=7a5c6EXAMPLEEXAMPLE788cb"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "{\"pusher_app_key\":\"7a5c6e6b26ccfcb788cb\"}"

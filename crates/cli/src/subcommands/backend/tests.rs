@@ -9,7 +9,7 @@ use super::*;
 fn tier_b_gpu_lowering_gap_data_drives_classification() {
     // The Tier-B `rules/gpu-lowering-gaps.toml` set must (a) load and be
     // non-empty (fail-closed contract: an empty set would misclassify every GPU
-    // error as a hard FAIL) and (b) actually WIRE into the classifier — every
+    // error as a hard FAIL) and (b) actually WIRE into the classifier, every
     // configured marker, embedded mid-string, must classify as a KNOWN
     // limitation. This replaces the old tautology (`ARRAY == same ARRAY`) with a
     // real behavioral assertion over the loaded data.

@@ -79,7 +79,7 @@ fn dedup_one_none_one_some_takes_some() {
 
 #[test]
 fn same_file_line_two_matches_produce_one_primary_no_additional() {
-    // Two matches at exactly the same (file, line) — must collapse to 1 finding
+    // Two matches at exactly the same (file, line), must collapse to 1 finding
     // with no additional_locations (the second is the same location).
     let m1 = make("det", "FAKE_CRED_DELTA_0000000000", "env.txt", 2, Some(0.8));
     let m2 = make("det", "FAKE_CRED_DELTA_0000000000", "env.txt", 2, Some(0.8));

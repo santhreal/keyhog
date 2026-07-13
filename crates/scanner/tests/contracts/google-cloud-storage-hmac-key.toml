@@ -15,11 +15,11 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "GOOG=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "GOOG=GOOG5EXAMPLEEXAMPLEHZPVO"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[negative]]
 text = "GOOG=GOOG5I75PFW05MEV3YQS371MSJP945GAFH9WQLTHZPVOX"
@@ -28,7 +28,7 @@ reason = "An overlong uppercase run must not be truncated into an HMAC access ID
 [[evasion]]
 text = "# GOOG=GOOG5I75PFW05MEV3YQS371MSJP945GAFH9WQLTHZPVO"
 credential = "GOOG5I75PFW05MEV3YQS371MSJP945GAFH9WQLTHZPVO"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

@@ -1,4 +1,4 @@
-//! Whitespace / BOM / line-ending normalization runner — a credential-
+//! Whitespace / BOM / line-ending normalization runner, a credential-
 //! sufficient secret survives whitespace transforms applied around it.
 //!
 //! Real files arrive with a UTF-8 BOM (`EF BB BF`), CRLF or CR-only line
@@ -13,18 +13,18 @@
 //! credential and never touches the credential bytes, so this is a
 //! *credential-sufficiency invariance* contract (see `support::contracts`): a
 //! credential that fires on its own bytes alone MUST still surface under every
-//! whitespace variant — there is no keyhog policy that suppresses a secret
+//! whitespace variant, there is no keyhog policy that suppresses a secret
 //! because a BOM or tab sits beside it, so any credential-sufficient miss is a
 //! real normalization recall bug. We gate exactly that, all-or-nothing, across
 //! every variant. Companion-required positives are recorded but never gated
-//! (their context survival is an accuracy RATE owned by the bench — the T-01
+//! (their context survival is an accuracy RATE owned by the bench, the T-01
 //! line this rewrite holds).
 //!
 //! Byte-preservation is enforced BY CONSTRUCTION: not every credential is
 //! whitespace-free (a `KakaoAK <hex>` prefix, a connection-string password with
 //! spaces, a PEM block with internal newlines all contain whitespace), so a
 //! naive whole-text `replace(' ', "  ")` / `replace('\n', "\r\n")` would mutate
-//! the credential itself — a different secret, not a normalization miss. We
+//! the credential itself, a different secret, not a normalization miss. We
 //! therefore apply each variant ONLY to the bytes before and after the
 //! credential span (exactly as `unicode_confusable_runner` swaps only companion
 //! context), leaving the credential verbatim. The credential-sufficiency
@@ -49,7 +49,7 @@ enum Variant {
     TrailingWhitespace,
     TabsForSpaces,
     DoubleSpaces,
-    /// ZWSP/ZWJ inserted at line boundaries OUTSIDE the credential — must not
+    /// ZWSP/ZWJ inserted at line boundaries OUTSIDE the credential, must not
     /// affect detection. (Inside-credential zero-width chars are a separate
     /// question owned by `unicode_confusable_runner`.)
     ZwspBoundary,
@@ -85,12 +85,12 @@ impl Variant {
     }
 
     /// Per-segment whitespace transform applied to the bytes BEFORE and AFTER
-    /// the credential span only — it never sees the credential bytes, so
+    /// the credential span only, it never sees the credential bytes, so
     /// byte-preservation holds by construction (see the module header). Line-
     /// based variants use `split_inclusive('\n')` so the segment's own line
     /// endings and any trailing newline are preserved verbatim (the old
     /// `.lines().join("\n")` silently normalized CR/CRLF and dropped a final
-    /// newline — a transform we did not intend).
+    /// newline (a transform we did not intend)).
     fn transform_segment(self, seg: &str) -> String {
         match self {
             Variant::Baseline | Variant::Bom | Variant::LeadingNbsp => seg.to_string(),
@@ -134,7 +134,7 @@ impl Variant {
         let pos = text.find(cred).unwrap_or_else(|| {
             panic!(
                 "fixture invariant violated: credential {cred:?} is not a substring of its own \
-                 positive text — a credential-preserving whitespace variant cannot be located"
+                 positive text, a credential-preserving whitespace variant cannot be located"
             )
         });
         let prefix = self.transform_segment(&text[..pos]);
@@ -156,7 +156,7 @@ fn credential_sufficient_secrets_survive_whitespace_variants() {
     let mut violations: Vec<String> = Vec::new();
 
     // Gate: every credential-sufficient primary must survive EVERY whitespace
-    // variant applied around it. All-or-nothing — no rate.
+    // variant applied around it. All-or-nothing (no rate).
     for (idx, p) in primaries.iter().enumerate() {
         if !sufficient[idx] {
             continue;
@@ -180,7 +180,7 @@ fn credential_sufficient_secrets_survive_whitespace_variants() {
     }
 
     // Companion-required corpus context, counted ONCE at baseline. Their
-    // per-variant survival is a bench-owned RATE, never computed here (T-01) —
+    // per-variant survival is a bench-owned RATE, never computed here (T-01) 
     // matching `line_length_runner`'s baseline-only companion treatment.
     let mut companion_runs = 0usize;
     let mut companion_hits = 0usize;
@@ -209,7 +209,7 @@ fn credential_sufficient_secrets_survive_whitespace_variants() {
         violations.is_empty(),
         "whitespace-normalization credential-sufficiency invariance violated ({} cases): a \
          credential that fires standalone was dropped when a whitespace/BOM/line-ending variant \
-         was applied around it — a normalization recall bug, NOT a fixture artifact:\n  - {}",
+         was applied around it, a normalization recall bug, NOT a fixture artifact:\n  - {}",
         violations.len(),
         violations.join("\n  - "),
     );

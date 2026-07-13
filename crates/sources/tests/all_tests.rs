@@ -11,7 +11,7 @@ pub mod regression;
 pub mod unit;
 
 // NOTE: keyhog-sources deliberately keeps many top-level `tests/*.rs` files OUT
-// of this aggregator — they assert on the process-global skip counters and are
+// of this aggregator, they assert on the process-global skip counters and are
 // designed as their own test binaries so a per-test fixture can reset those
 // atomics without racing sibling source tests in the same process (see e.g.
 // `regression_pdf_coverage_gaps_counted.rs`). Those standalone targets are run

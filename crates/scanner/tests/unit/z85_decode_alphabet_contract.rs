@@ -3,7 +3,7 @@
 //!
 //! Z85 (ZeroMQ Base-85) maps an 85-symbol alphabet to the values `0..=84` and
 //! packs every 5 symbols big-endian into one `u32` (4 output bytes). The decoder
-//! is a hand-written `match` table plus a `u32` overflow guard — exactly the
+//! is a hand-written `match` table plus a `u32` overflow guard, exactly the
 //! shape where a single transcription slip (an off-by-one at a range join, a
 //! wrong punctuation value, a missing overflow check) silently DECODES A SECRET
 //! TO GARBAGE rather than erroring, so the planted credential is never matched
@@ -29,7 +29,7 @@ fn dec(input: &str) -> Vec<u8> {
 /// Decode a single 5-symbol group whose first four symbols are `'0'` (value 0),
 /// returning the trailing byte. With four leading zeros the group's numeric
 /// value equals exactly `z85_val(symbol)` (all `< 85 < 256`), so the decoded
-/// 4-byte group is `[0, 0, 0, z85_val(symbol)]` — a direct probe of one
+/// 4-byte group is `[0, 0, 0, z85_val(symbol)]`: a direct probe of one
 /// alphabet-table entry.
 fn symbol_value(symbol: char) -> u8 {
     let group = format!("0000{symbol}");
@@ -58,7 +58,7 @@ fn canonical_hello_world_reference_vector() {
 
 #[test]
 fn max_u32_group_decodes_to_four_0xff() {
-    // "%nSc0" is the Z85 encoding of u32::MAX — the largest legal 5-tuple.
+    // "%nSc0" is the Z85 encoding of u32::MAX (the largest legal 5-tuple).
     assert_eq!(dec("%nSc0"), vec![0xFF, 0xFF, 0xFF, 0xFF]);
 }
 
@@ -77,7 +77,7 @@ fn all_max_symbol_group_overflows_u32_and_is_rejected() {
 
 #[test]
 fn one_past_max_overflow_is_rejected() {
-    // "%nSc1" = u32::MAX + 1 — the exact overflow boundary, one symbol past the
+    // "%nSc1" = u32::MAX + 1, the exact overflow boundary, one symbol past the
     // largest legal group "%nSc0".
     assert!(z85_decode("%nSc1").is_err());
 }
@@ -204,7 +204,7 @@ fn control_characters_are_rejected() {
 
 #[test]
 fn non_ascii_byte_inside_a_full_group_is_rejected() {
-    // "abcé" is 5 BYTES (a,b,c + é=0xC3 0xA9) — a complete chunk whose 4th byte
+    // "abcé" is 5 BYTES (a,b,c + é=0xC3 0xA9), a complete chunk whose 4th byte
     // (0xC3) is not a Z85 symbol. The alphabet table must reject it.
     let input = "abcé";
     assert_eq!(input.len(), 5, "fixture must be exactly one 5-byte chunk");

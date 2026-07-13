@@ -14,7 +14,7 @@ fn suppression_postprocess_under_standard_modularity_cap() {
     // Advisory cap (Santh STANDARD.md): warn, do not fail CI.
     if lines > CAP {
         eprintln!(
-            "KH-GAP-124: suppression.rs is {lines} lines — exceeds {CAP} LOC cap; \
+            "KH-GAP-124: suppression.rs is {lines} lines, exceeds {CAP} LOC cap; \
          split example/placeholder/repetitive-mask helpers"
         );
     }

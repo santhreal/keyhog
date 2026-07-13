@@ -6,7 +6,7 @@
 //!   - a value containing `.` or shorter than 24 bytes is rejected up front;
 //!   - the keyword must normalize and be a strong anchor: either it carries a
 //!     secret suffix, OR it is one of the encoded-text-secret anchors
-//!     (`password`/`passwd`/`pwd`/`passphrase`/`token`/`secret`/`credential`) —
+//!     (`password`/`passwd`/`pwd`/`passphrase`/`token`/`secret`/`credential`) 
 //!     and `credential`/`passphrase` reach ownership ONLY through that second
 //!     disjunct, since they do not match the secret-suffix family;
 //!   - and the value must decode to printable text (a binary base64 payload is
@@ -97,7 +97,7 @@ fn b64(payload: &str) -> String {
 /// `'s'` (byte 0x73, low 3 bits = 3 → protobuf wire type 3, so `parse_protobuf_wire`
 /// rejects at the first tag and `is_binary_payload` stays false) and carries no
 /// magic header. `decodes_to_printable_text` needs decoded_len≥8, printable≥0.85,
-/// and NOT a binary payload — this satisfies all three for any suffix.
+/// and NOT a binary payload (this satisfies all three for any suffix).
 fn printable_text_payload(suffix: &str) -> String {
     format!("secret-value-{suffix}")
 }

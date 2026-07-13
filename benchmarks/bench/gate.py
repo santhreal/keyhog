@@ -16,7 +16,7 @@ It sits ABOVE :func:`bench.leaderboard.run_leaderboard` (which produces the
 per-scanner RunResult JSONs) and reuses :func:`bench.report.load_results` +
 :func:`bench.report.canonical_leaderboard` so "which row is keyhog, which
 are competitors" is decided by exactly the same newest-wins, default-config
-selection the README leaderboard uses — the gate can never disagree with the
+selection the README leaderboard uses, the gate can never disagree with the
 published table.
 
 Exit code is the gate verdict: ``0`` all checks pass, ``1`` any violation,
@@ -40,7 +40,7 @@ from .schema import DetectorStat, RunResult
 # Per-detector FP-regression tolerances. The overall-F1 baseline gate is blind
 # to a single detector's FP spike that aggregate recall masks (the
 # kubernetes-bootstrap-token retrain shipped +203 FP on one detector while
-# overall CredData F1 *rose* 0.2539→0.2584 — an aggregate gate would have
+# overall CredData F1 *rose* 0.2539→0.2584, an aggregate gate would have
 # passed it). A detector is flagged only when its FP growth clears BOTH an
 # absolute floor (so low-count corpus noise is ignored) AND a relative floor
 # (so proportional drift on an already-large detector is tolerated). A model
@@ -125,7 +125,7 @@ def _detector_fp_regressions(
             continue  # improved or unchanged
         abs_delta = cand - base
         if abs_delta <= max_abs:
-            continue  # within absolute tolerance — corpus noise, not a spike
+            continue  # within absolute tolerance, corpus noise, not a spike
         rel = (abs_delta / base) if base > 0 else float("inf")
         if rel <= max_rel:
             continue  # proportional growth on an already-firing detector
@@ -157,7 +157,7 @@ def evaluate(
     Pure over the already-selected ``rows`` so it is unit-testable without a
     scanner binary or disk. When ``baseline_detectors`` is supplied, the
     per-detector FP-regression check runs in addition to the overall-F1
-    baseline check — catching a single-detector spike the aggregate gate would
+    baseline check, catching a single-detector spike the aggregate gate would
     pass."""
     keyhog = _keyhog_row(rows)
     if keyhog is None or not keyhog.available:
@@ -200,7 +200,7 @@ def evaluate(
                 continue
             cf1 = r.detection.overall.f1()
             # Strictly better: a tie is a gate failure, matching the retired
-            # diff_bench contract — keyhog must lead, not merely match.
+            # diff_bench contract (keyhog must lead, not merely match).
             if cf1 >= kf1:
                 violations.append(
                     f"{r.scanner.name} F1 {cf1:.4f} >= keyhog F1 {kf1:.4f} "
@@ -215,8 +215,8 @@ def _print_table(rows: list[RunResult]) -> None:
     print("-" * 58, file=sys.stderr)
     for r in rows:
         if not r.available:
-            print(f"{r.scanner.name:<14}{'no':<7}{'—':>9}{'—':>9}{'—':>9}"
-                  f"{'—':>10}", file=sys.stderr)
+            print(f"{r.scanner.name:<14}{'no':<7}{': ':>9}{': ':>9}{'. ':>9}"
+                  f"{': ':>10}", file=sys.stderr)
             continue
         o = r.detection.overall
         print(f"{r.scanner.name:<14}{'yes':<7}{o.precision():>9.4f}"

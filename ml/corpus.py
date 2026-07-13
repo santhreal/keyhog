@@ -16,7 +16,7 @@ out base64."
 
 Negative shape lineage follows benchmarks/generators/mirror/negatives.py; the binary
 generators are new (that file's `base64_of_protobuf` produced random bytes, which
-parse as protobuf <0.5% of the time — here we emit a genuine wire message plus
+parse as protobuf <0.5% of the time, here we emit a genuine wire message plus
 real magic-byte containers so the decode feature is exercised honestly).
 """
 
@@ -329,7 +329,7 @@ BARE_TOKEN_KINDS = {"bare-token"}
 PROSE_CONTEXTS = [
     "Session opened with handle {}. See the docs for details.",
     "// request_id={} (trace only, not a credential)",
-    "Cache miss for object {} — recomputing.",
+    "Cache miss for object {}, recomputing.",
     "Generated nonce {} for this render pass.",
     "Job {} queued; status will update shortly.",
 ]
@@ -393,7 +393,7 @@ def generate(n_per_unit: int, seed: int) -> list[dict]:
 
     # base64-of-binary negatives (the decode-feature teacher). Heavy weight, and
     # HALF placed under a secret keyword so the model cannot lean on context
-    # alone — it must use the decode-structure feature to reject them.
+    # alone: it must use the decode-structure feature to reject them.
     binary_weight = 30
     for _ in range(n_per_unit * binary_weight):
         cred = make_binary_negative(rnd)

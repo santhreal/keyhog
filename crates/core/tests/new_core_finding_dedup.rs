@@ -205,7 +205,7 @@ fn raw_match_ord_is_total_to_offset_then_line() {
     // overflows `max_matches_per_chunk`, the bounded heap evicts the LOWEST by
     // this Ord. If two same-secret matches at different positions compared Equal,
     // eviction among them would fall back to insertion order (HashMap-iteration /
-    // rayon-thread nondeterministic) and the kept set would flicker run-to-run —
+    // rayon-thread nondeterministic) and the kept set would flicker run-to-run 
     // and depend on fallback extraction order (`fallback_order_independence`). So
     // the Ord MUST stay total down to (offset, then line); two matches identical
     // in every PRIMARY key but differing in position must NOT compare Equal.

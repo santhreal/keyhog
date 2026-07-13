@@ -63,7 +63,7 @@ fn print_integration_hints(exe: &Path, palette: &Palette) {
     println!("  {dim}- the pre-commit hook in any repo where you ran `keyhog hook install`{reset}");
     // The on-disk cache (compiled GPU rule catalogs + the detector/merkle
     // cache) survives a binary removal and can be ~GB. A premium uninstall
-    // names it with its real, current path so the user can reclaim the space —
+    // names it with its real, current path so the user can reclaim the space 
     // it is NOT auto-deleted (a reinstall reuses it to skip the multi-second
     // catalog recompile), but leaving it unmentioned orphaned it silently.
     if let Some(cache) = dirs::cache_dir().map(|d| d.join("keyhog")) {

@@ -10,7 +10,7 @@ kingfisher ships one YAML per service under
       - "..."
 
 Like the betterleaks generator, these are kingfisher's own
-precision+recall oracle — the rule regexes were authored to score 100%
+precision+recall oracle, the rule regexes were authored to score 100%
 on exactly these strings. Harvesting them lets the bench scorer run
 keyhog and the competitors over kingfisher's home turf (``python -m bench
 leaderboard --corpus homefield-kingfisher``) and answer the only fair
@@ -36,7 +36,7 @@ import yaml
 # Rules dir under a kingfisher checkout, relative to its root.
 _RULES_REL = pathlib.Path("crates") / "kingfisher-rules" / "data" / "rules"
 # Split layout under the canonical corpus home (manifest beside, not inside,
-# the neutrally-named scan tree) — see bench.corpora.homefield.
+# the neutrally-named scan tree) (see bench.corpora.homefield).
 _HOME = (
     pathlib.Path(__file__).resolve().parents[2] / "corpora" / "homefield" / "kingfisher"
 )
@@ -123,7 +123,7 @@ def write_corpus(records: list[dict], home: pathlib.Path = _HOME) -> pathlib.Pat
     if out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    # Answer key beside, not inside, the neutrally-named scan tree — the loader
+    # Answer key beside, not inside, the neutrally-named scan tree, the loader
     # (bench.corpora.homefield) reads <home>/manifest.jsonl.
     manifest = home / "manifest.jsonl"
     with open(manifest, "w") as mf:

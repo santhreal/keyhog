@@ -19,7 +19,7 @@ reason = "Value below the fixed 48-char length; not a greptile key."
 
 [[negative]]
 text = 'api_key = "Bc4UcqgG6mG5ARxNAOH7TV2C/tDWaB7Kpne/pockv3iQcbSN"'
-reason = "No greptile keyword anchor — a bare 48-char base64 must not fire this detector."
+reason = "No greptile keyword anchor (a bare 48-char base64 must not fire this detector)."
 
 [[evasion]]
 text = 'x = {"greptile_api_key":"Bc4UcqgG6mG5ARxNAOH7TV2C/tDWaB7Kpne/pockv3iQcbSN"}'

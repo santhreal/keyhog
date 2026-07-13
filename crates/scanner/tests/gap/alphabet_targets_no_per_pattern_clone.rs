@@ -3,7 +3,7 @@
 //!
 //! `alphabet_targets` (the literal/keyword set fed to `AlphabetScreen` and
 //! `BigramBloom` at scanner-compile time) is `ac_literals` plus every phase-2
-//! pattern's keywords. It used to extend with `keywords.clone()` — materializing
+//! pattern's keywords. It used to extend with `keywords.clone()`: materializing
 //! one throwaway `Vec<String>` per pattern (there are hundreds) and growing the
 //! target by repeated reallocation. It now reserves the exact keyword total once
 //! and clones each keyword straight in via `keywords.iter().cloned()` (Law 7).

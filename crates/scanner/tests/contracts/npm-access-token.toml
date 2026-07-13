@@ -23,7 +23,7 @@ reason = "Standard env-var name from npm-cli docs."
 [[positive]]
 text = "//registry.npmjs.org/:_authToken=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"
 credential = "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"
-reason = "Verbatim `.npmrc` _authToken shape — the #1 npm leak path on GitHub."
+reason = "Verbatim `.npmrc` _authToken shape (the #1 npm leak path on GitHub)."
 
 # ---- NEGATIVES (precision) ------------------------------------------
 
@@ -33,18 +33,18 @@ reason = "Body shorter than 36 chars."
 
 [[negative]]
 text = "npm_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaXXXXXX"
-reason = "Correct length (36 chars after npm_) but invalid CRC32 base62 checksum — must be rejected by the npm checksum validator."
+reason = "Correct length (36 chars after npm_) but invalid CRC32 base62 checksum (must be rejected by the npm checksum validator)."
 
 [[negative]]
 text = "npm install some-package"
-reason = "`npm ` followed by a command, not the `npm_` prefix — must not match."
+reason = "`npm ` followed by a command, not the `npm_` prefix (must not match)."
 
 # ---- EVASIONS (adversarial) -----------------------------------------
 
 [[evasion]]
 text = "# NPM_TOKEN=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"
 credential = "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"
-reason = "Shell-comment `.npmrc` line — engineers stash these in scripts."
+reason = "Shell-comment `.npmrc` line (engineers stash these in scripts)."
 
 [[evasion]]
 text = "Authorization: Bearer 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"

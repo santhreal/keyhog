@@ -28,7 +28,7 @@ fn ignored(globs: &[&str], path: &str) -> bool {
     al.is_path_ignored(path)
 }
 
-/// A safe path segment: lowercase letters only — no `*` (would become a
+/// A safe path segment: lowercase letters only, no `*` (would become a
 /// wildcard), no `/` (segment separator), no `.`/`..` (normalization would alter
 /// it), never empty. So a joined path equals its own literal glob pattern.
 fn seg() -> impl Strategy<Value = String> {
@@ -51,7 +51,7 @@ proptest! {
         prop_assert_eq!(ignored(&[&g], &path), ignored(&[&g], &path));
     }
 
-    /// An empty allowlist ignores NOTHING — no path is ever suppressed.
+    /// An empty allowlist ignores NOTHING (no path is ever suppressed).
     #[test]
     fn prop_empty_allowlist_ignores_nothing(segs in prop::collection::vec(seg(), 1..6)) {
         prop_assert!(!ignored(&[], &segs.join("/")));
@@ -69,7 +69,7 @@ proptest! {
     }
 
     /// `**` alone matches EVERY path (any number of segments, including the empty
-    /// path) — the "ignore everything" escape hatch.
+    /// path) (the "ignore everything" escape hatch).
     #[test]
     fn prop_double_star_matches_any_path(segs in prop::collection::vec(seg(), 0..6)) {
         prop_assert!(ignored(&["**"], &segs.join("/")));

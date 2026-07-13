@@ -1,4 +1,4 @@
-//! Migrated from src/util_hash.rs — FNV-1a reference vectors and the
+//! Migrated from src/util_hash.rs. FNV-1a reference vectors and the
 //! memoize-by-hash compute-once / wholesale-evict semantics (KH-GAP-004).
 
 use keyhog_scanner::testing::{hash_fast, memoize_by_hash};

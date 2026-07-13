@@ -392,13 +392,13 @@ fn is_allowed_detector_or_path_either_suffices() {
 
 #[test]
 fn oversized_glob_does_not_panic() {
-    // 257-segment path — above the MAX_GLOB_SEGMENTS=256 limit
+    // 257-segment path, above the MAX_GLOB_SEGMENTS=256 limit
     let long_path: String = (0..257).map(|_| "seg").collect::<Vec<_>>().join("/");
     let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
         &keyhog_core::testing::TestApi,
         "path:**\n",
     );
-    // Must not panic — just silently skip the oversized match
+    // Must not panic, just silently skip the oversized match
     let _ = al.is_path_ignored(&long_path);
 }
 

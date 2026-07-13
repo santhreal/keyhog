@@ -2,7 +2,7 @@
 //! mentions (`example.com` / `example.org`) so a value that merely references
 //! the reserved domain is not suppressed as a documentation specimen. The marker
 //! DETECTION runs case-insensitively (on the uppercased credential), but the
-//! carve-out used to match `credential` case-SENSITIVELY — so a title-case
+//! carve-out used to match `credential` case-SENSITIVELY, so a title-case
 //! `Example.com` or upper `EXAMPLE.COM` slipped past the carve-out and the
 //! adjacent value was over-suppressed (recall loss). These tests pin that the
 //! carve-out is case-insensitive at every domain case, while the EXAMPLE marker

@@ -1,4 +1,4 @@
-//! Lane 10 — verification-feature DOC↔BINARY coherence.
+//! Lane 10 (verification-feature DOC↔BINARY coherence).
 //!
 //! docs/src/verification.md is the operator's contract for `keyhog scan
 //! --verify`. A prior version of that doc made claims the binary never honored:

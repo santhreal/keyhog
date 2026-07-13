@@ -13,7 +13,7 @@ name = "GitLab Feed Token"
 service = "gitlab"
 severity = "medium"
 # "rss" removed: over-broad prefilter (fires on any RSS/feed URL or "/rss" path)
-# that no regex references — the pattern requires the unambiguous `glft-` prefix
+# that no regex references, the pattern requires the unambiguous `glft-` prefix
 # (keyword "glft-"), so "rss" only forced wasted scan passes. Recall-neutral.
 keywords = ["glft-", "gitlab", "feed_token"]
 

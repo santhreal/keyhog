@@ -1,4 +1,4 @@
-# Honest health-check recording: `keyhog doctor` — host probe (CPU/SIMD/GPU,
+# Honest health-check recording: `keyhog doctor`: host probe (CPU/SIMD/GPU,
 # Hyperscan), install + PATH resolution, embedded detector count, and the
 # four-way self-test: scan engine end-to-end, GPU scan path (AC kernel), GPU
 # literal set, and the GPU MoE shader proven against the CPU reference. This is

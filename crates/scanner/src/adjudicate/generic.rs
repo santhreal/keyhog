@@ -60,7 +60,7 @@ pub(crate) fn keyword_has_word_boundary(line: &str, keyword_start: usize) -> boo
     // SAFETY: keyword_start > 0 is proven above, so keyword_start - 1 is a
     // valid index. bytes.get avoids a panic if keyword_start >= bytes.len()
     // (e.g. a zero-width regex match at end-of-string): treat as no camelCase
-    // hinge (conservative — preserves recall by not suppressing on ambiguity).
+    // hinge (conservative (preserves recall by not suppressing on ambiguity)).
     let prev = match bytes.get(keyword_start - 1) {
         Some(&b) => b,
         None => return true, // keyword_start - 1 out of range: assume boundary
@@ -69,7 +69,7 @@ pub(crate) fn keyword_has_word_boundary(line: &str, keyword_start: usize) -> boo
         return true;
     }
     // LAW10: if keyword_start is out-of-range (attacker-supplied offset past
-    // end of line), default to true (word boundary present) — do NOT suppress
+    // end of line), default to true (word boundary present), do NOT suppress
     // the match on a missing camelCase join; recall is preserved.
     let keyword_first = match bytes.get(keyword_start) {
         Some(&b) => b,
@@ -102,7 +102,7 @@ pub(crate) enum GenericValueShapeStage {
     PureIdentifierNoDigit,
     PureIdentifier,
     WordSeparatedIdentifier,
-    /// Word-like non-secret by tiktoken cl100k_base bytes-per-token — the BPE
+    /// Word-like non-secret by tiktoken cl100k_base bytes-per-token, the BPE
     /// "rare-not-random" gate, the principled superset of the heuristic word-like
     /// stages above (catches dotted API paths / prose the heuristics miss).
     WordLikeLowBpe,

@@ -1,4 +1,4 @@
-//! Unicode-confusable runner — homoglyph evasion coverage.
+//! Unicode-confusable runner (homoglyph evasion coverage).
 //!
 //! A real adversary who wants their credential leak to slip past a
 //! secret scanner can replace ASCII characters in the surrounding
@@ -10,14 +10,14 @@
 //! `аpі_kеу` and any companion-anchored detector misses.
 //!
 //! This runner mutates ONLY the companion-context portion of every
-//! contract positive — never the credential itself.
+//! contract positive (never the credential itself).
 //!
 //! BEHAVIOR contract, not an accuracy rate
 //! ---------------------------------------
 //! The gate asserts a sound PROPERTY, all-or-nothing, never a
 //! recall/precision *rate* over the corpus:
 //!
-//!   *credential-sufficiency invariance* — if a detector fires on the
+//!   *credential-sufficiency invariance*, if a detector fires on the
 //!   credential ALONE (it does not need the companion context), then
 //!   homoglyphing the companion CANNOT break it at any swap density.
 //!   Every such positive MUST surface its credential at every density.
@@ -25,7 +25,7 @@
 //! Positives whose detector REQUIRES companion context (the credential
 //! alone does not fire) are a different question: how well unicode
 //! normalization *recovers* a homoglyphed anchor is genuine evasion
-//! ACCURACY, measured by the differential bench — it is recorded here
+//! ACCURACY, measured by the differential bench, it is recorded here
 //! for visibility but never gated, because forcing it to 100% would be
 //! asserting an accuracy rate in `cargo test` (T-01).
 
@@ -100,7 +100,7 @@ fn scanner() -> CompiledScanner {
 /// auth/bearer/access).
 fn confusable_for(c: char) -> Option<char> {
     Some(match c {
-        // Cyrillic look-alikes — the canonical attack class.
+        // Cyrillic look-alikes (the canonical attack class).
         'a' => '\u{0430}',
         'c' => '\u{0441}',
         'e' => '\u{0435}',
@@ -140,7 +140,7 @@ fn apply_confusable(s: &str, swap_every: usize) -> String {
 }
 
 /// Apply confusable swaps to only the companion-context portion of
-/// the positive text — never the credential bytes. Locates the
+/// the positive text, never the credential bytes. Locates the
 /// credential by `find` and swaps everything BEFORE / AFTER.
 fn swap_companion(text: &str, credential: &str, swap_every: usize) -> String {
     let Some(pos) = text.find(credential) else {
@@ -170,12 +170,12 @@ fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str) -> bool {
         .any(|m| m.credential.as_ref().contains(credential))
 }
 
-/// (swap_every, label) — every Nth confusable-eligible char swapped.
+/// (swap_every, label) (every Nth confusable-eligible char swapped).
 /// `0` is the no-swap control. `1` is the strongest evasion.
 const SWAP_DENSITIES: &[(usize, &str)] = &[(1, "every-char"), (2, "every-2nd"), (4, "every-4th")];
 
 /// BEHAVIOR gate: a detector that fires on the credential ALONE must
-/// remain swap-invariant — homoglyphing companion context it does not
+/// remain swap-invariant, homoglyphing companion context it does not
 /// use cannot drop it. All-or-nothing, no rate. Companion-required
 /// positives are recorded but not gated (evasion accuracy → bench).
 #[test]
@@ -184,7 +184,7 @@ fn credential_sufficient_detectors_are_swap_invariant() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — unicode runner has nothing to drive"
+        "tests/contracts/ has no *.toml, unicode runner has nothing to drive"
     );
 
     let mut credential_sufficient = 0usize;
@@ -225,7 +225,7 @@ fn credential_sufficient_detectors_are_swap_invariant() {
         }
     }
 
-    // Informational only — the companion-recovery rate is evasion
+    // Informational only, the companion-recovery rate is evasion
     // ACCURACY (how well normalization rescues a homoglyphed anchor),
     // owned by the differential bench, never a cargo-test gate.
     let recovery = if companion_runs > 0 {
@@ -285,7 +285,7 @@ fn no_swap_control_matches_contract_positives() {
     eprintln!("unicode no-swap control: {hits}/{total} contract positives surfaced");
     assert!(
         misses.is_empty(),
-        "no-swap control dropped {} contract positive(s) — the runner is mutating bytes it \
+        "no-swap control dropped {} contract positive(s), the runner is mutating bytes it \
          must not, or the contract corpus changed:\n  - {}",
         misses.len(),
         misses.join("\n  - "),

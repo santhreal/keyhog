@@ -65,7 +65,7 @@ pub(crate) fn canonical_query_string(pairs: &[(String, String)]) -> String {
 pub(crate) fn aws_uri_encode(input: &str) -> String {
     // AWS SigV4 canonical-URI encoding: unreserved chars pass through, every
     // other byte becomes `%XX` with UPPERCASE hex. The escaped arm previously
-    // built a throwaway `String` per byte via `format!("%{byte:02X}")` — a heap
+    // built a throwaway `String` per byte via `format!("%{byte:02X}")`: a heap
     // allocation on every escaped byte of every query key/value we sign. Push
     // the two hex nibbles straight from a static table instead: byte-identical
     // output (same uppercase `%XX`), zero per-byte allocation (Law 7).

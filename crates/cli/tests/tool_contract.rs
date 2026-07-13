@@ -1,7 +1,7 @@
 //! Real-tool contract tests: exercise the actual `keyhog` binary end-to-end and
 //! assert TOOL behavior (exit codes, detector load-integrity, output-format
 //! well-formedness). This file asserts NOTHING about detection accuracy
-//! (precision/recall/F1) — that is the SecretBench scorer's job. Keep this
+//! (precision/recall/F1), that is the SecretBench scorer's job. Keep this
 //! boundary: tests verify the tool; the bench measures detection.
 
 use std::fs;
@@ -72,7 +72,7 @@ fn every_detector_toml_is_loaded_by_the_binary() {
     // Load-integrity at the BINARY level: a detector TOML that fails to parse or
     // compile is silently dropped from the embedded set (this is exactly how
     // discord-bot-token went dead). The count the binary reports must equal the
-    // number of detector TOMLs on disk — no silent drops.
+    // number of detector TOMLs on disk (no silent drops).
     let toml_count = fs::read_dir(detectors_dir())
         .expect("detectors dir readable")
         .flatten()
@@ -100,7 +100,7 @@ fn every_detector_toml_is_loaded_by_the_binary() {
 
     assert_eq!(
         reported, toml_count,
-        "binary loaded {reported} detectors but {toml_count} TOMLs exist on disk — a detector was silently dropped (parse/compile failure)"
+        "binary loaded {reported} detectors but {toml_count} TOMLs exist on disk, a detector was silently dropped (parse/compile failure)"
     );
 }
 

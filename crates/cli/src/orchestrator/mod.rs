@@ -183,7 +183,7 @@ impl DefaultScanRuntime {
     /// `keyhog scan` uses (signatures, disabled detectors, test-fixture +
     /// self-scan suppression, allowlist, confidence floors, severity, match
     /// resolution, inline suppression). Fails closed if no filter was installed
-    /// — a missing filter is a wiring bug, never a silent "emit everything".
+    ///: a missing filter is a wiring bug, never a silent "emit everything".
     pub(crate) fn filter_and_resolve(&self, matches: Vec<RawMatch>) -> Result<Vec<RawMatch>> {
         let Some(f) = self.filter.as_ref() else {
             anyhow::bail!(
@@ -309,7 +309,7 @@ pub(crate) fn compile_default_scan_runtime(
 ///
 /// Historically this compiled the raw embedded corpus and never touched
 /// `.keyhog.toml`, so both callers silently ignored configured exclusions,
-/// confidence thresholds, and `[detector.<id>] enabled = false` toggles — a scan
+/// confidence thresholds, and `[detector.<id>] enabled = false` toggles, a scan
 /// and a watch of the same tree could disagree on what is a finding (Law 10).
 /// Now it resolves the config via [`resolve_scan_config`] (rooted at
 /// `filter_root`, matching scan's walk-up), drops disabled detectors before
@@ -385,7 +385,7 @@ pub(crate) fn setup_default_scan_runtime(
     }
 
     // Compile WITH the resolved engine config + tuning so thresholds (decode
-    // window, entropy, min-confidence, ml gate) take effect — not the bare
+    // window, entropy, min-confidence, ml gate) take effect, not the bare
     // compiled defaults the raw `compile()` would leave.
     let scanner = Arc::new(
         CompiledScanner::compile(detectors.clone())
@@ -659,7 +659,7 @@ impl ScanOrchestrator {
         // Low-RAM host adaptation: shrink the decode window and per-chunk match
         // cap on machines with < 4 GiB RAM so a deep-decode scan can't OOM. This
         // DIVERGES from the configured/documented values, so per Law 10 it is
-        // surfaced LOUDLY (once per process) rather than silently applied — the
+        // surfaced LOUDLY (once per process) rather than silently applied, the
         // operator must be able to see why their effective decode window is
         // smaller than what they set. The capped values are also what the
         // `keyhog config --effective` prints (this mutation lands in
@@ -1007,7 +1007,7 @@ fn backend_name_gpu_policy(name: Option<&str>) -> Option<GpuInitPolicy> {
     // Single source of truth for backend-string parsing is the scanner's
     // `parse_backend_str` (case-insensitive, owns every alias). Map its
     // ScanBackend verdict to a GPU-init policy via `backend_gpu_policy` instead
-    // of re-listing every alias here — the two alias lists had already drifted
+    // of re-listing every alias here, the two alias lists had already drifted
     // apart, so a `--backend` value added to one was invisible to the other.
     keyhog_scanner::hw_probe::parse_backend_str(name).map(backend_gpu_policy)
 }

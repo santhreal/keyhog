@@ -102,7 +102,7 @@ fn gpu_could_engage_solo_path_fires_for_one_huge_file() {
     let solo = gpu_solo_bytes_for_tier(GpuTier::High);
     assert_eq!(solo, 256 * MIB, "high-tier solo break-even is 256 MiB");
     // A single 256 MiB file clears the solo cap even with ZERO pattern-count
-    // benefit — the solo branch of the predicate.
+    // benefit (the solo branch of the predicate).
     assert!(
         gpu_could_engage(&caps, solo, 0),
         "a 256 MiB single file clears the high-tier solo cap regardless of \

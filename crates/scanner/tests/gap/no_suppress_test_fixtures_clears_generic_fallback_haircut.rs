@@ -5,7 +5,7 @@
 //!
 //! The bug: `engine/phase2_generic.rs` historically baked the test-context
 //! base confidence (0.25 for `TestCode`, 0.30 for `Documentation`) into
-//! `base_conf` UNCONDITIONALLY — it consulted `scan_comments` for the Comment
+//! `base_conf` UNCONDITIONALLY, it consulted `scan_comments` for the Comment
 //! arm but never `penalize_test_paths`. So a generic high-entropy secret in a
 //! file whose path carried a `fixtures/` (or `tests/`, `testdata/`, …)
 //! component was scored at 0.25 and fell below the 0.40 floor EVEN WITH the
@@ -17,10 +17,10 @@
 //! This test pins BOTH directions of the gate on the production
 //! `CompiledScanner::compile(...).with_config(...).scan(...)` path:
 //!   * penalize ON  (default): the `fixtures/` path DOES haircut the generic
-//!     finding — its confidence is strictly below the neutral-path confidence,
+//!     finding, its confidence is strictly below the neutral-path confidence,
 //!     proving the path penalty is real (not silently removed).
 //!   * penalize OFF (the flag): the `fixtures/` path and the neutral path score
-//!     the generic finding IDENTICALLY — the opt-out clears the haircut.
+//!     the generic finding IDENTICALLY (the opt-out clears the haircut).
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScannerConfig};
@@ -31,7 +31,7 @@ use crate::support::paths::detector_dir;
 /// so this isolates the GENERIC ASSIGNMENT FALLBACK (`engine/phase2_generic.rs`,
 /// the path MC-15 fixed) rather than letting entropy or a named detector claim
 /// the line first. `license_key` is an explicit keyword of the `generic-api-key`
-/// detector, so THAT is the generic-* detector that owns this line — the MC-15
+/// detector, so THAT is the generic-* detector that owns this line, the MC-15
 /// `base_conf` haircut is shared by every generic-* detector through
 /// `confidence::policy::generic_secret_confidence`, so `generic-api-key`
 /// exercises the exact same fix.
@@ -65,8 +65,8 @@ fn generic_confidence(scanner: &CompiledScanner, path: &str) -> Option<f64> {
     let matches: Vec<RawMatch> = scanner.scan(&chunk);
     matches
         .iter()
-        // Pin the ONE generic-* detector that owns this line — `generic-api-key`
-        // via its explicit `license_key` keyword — that is the
+        // Pin the ONE generic-* detector that owns this line. `generic-api-key`
+        // via its explicit `license_key` keyword, that is the
         // `engine/phase2_generic.rs` path whose `base_conf` MC-15 fixed. Isolating
         // one detector (not a max over all) keeps a co-firing detector from
         // masking the haircut; with entropy+ML disabled only `generic-api-key`
@@ -118,7 +118,7 @@ fn fixtures_path_still_haircuts_generic_finding_when_penalize_on() {
             "with penalize ON, the fixtures/ path must haircut the generic finding \
              (fixture={fixture_conf} should be < neutral={neutral})"
         ),
-        // Dropped below the floor by the haircut — an even stronger form of the
+        // Dropped below the floor by the haircut, an even stronger form of the
         // penalty, still consistent with "penalize ON downgrades fixtures".
         None => {}
     }
@@ -126,7 +126,7 @@ fn fixtures_path_still_haircuts_generic_finding_when_penalize_on() {
 
 /// MC-15 FIX: with `penalize_test_paths = false` (the `--no-suppress-test-fixtures`
 /// opt-out), the generic finding scores IDENTICALLY under the `fixtures/` path
-/// and the neutral path — the path-keyed haircut is cleared on the generic
+/// and the neutral path, the path-keyed haircut is cleared on the generic
 /// fallback, matching the named-detector / ML paths.
 #[test]
 fn no_suppress_test_fixtures_clears_generic_fallback_haircut() {

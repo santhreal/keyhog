@@ -3,7 +3,7 @@
 //! `%XX` escape edge cases.
 //!
 //! The percent decoder in this crate is a STRICT RFC-3986 percent decoder: it
-//! ONLY rewrites `%XX` escapes and copies every other byte — including `+` —
+//! ONLY rewrites `%XX` escapes and copies every other byte, including `+` 
 //! through unchanged. It is deliberately NOT an
 //! `application/x-www-form-urlencoded` decoder, so `+` is a literal `+`, never a
 //! space; a real space is only produced by the `%20` escape. Every assertion
@@ -161,7 +161,7 @@ fn trailing_bare_percent_after_valid_escape_decodes_valid_keeps_literal_percent(
     // `%41%` = a valid escape ('A') then a bare, truncated trailing `%`. The
     // decoder is BEST-EFFORT, NOT all-or-nothing: a `%` without two following
     // hex digits is copied through as a LITERAL byte, not treated as an abort
-    // (decode/url.rs lines 264-266 / 293-298 — earlier code returned Err here
+    // (decode/url.rs lines 264-266 / 293-298, earlier code returned Err here
     // and discarded the WHOLE candidate, losing any real secret it carried;
     // that all-or-nothing behavior was deliberately replaced so `%41` still
     // recovers 'A'). `url_decode` only refuses a candidate with NO valid `%XX`
@@ -196,7 +196,7 @@ fn all_non_hex_percent_escape_emits_no_url_layer() {
 #[test]
 fn extraction_retains_plus_within_percent_candidate() {
     // The quoted-value extractor keeps every non-whitespace byte, so the `+`
-    // stays inside the candidate handed to the URL decoder — the precondition
+    // stays inside the candidate handed to the URL decoder, the precondition
     // for `+` surviving decode. Assert the EXACT extracted value string.
     let spans = extract_encoded_value_spans_for_test("x = \"%41+%42secret\"");
     assert!(

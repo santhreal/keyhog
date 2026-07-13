@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 pub mod spec_waiver;
 
-/// Repository root — two levels up from this crate's manifest.
+/// Repository root (two levels up from this crate's manifest).
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")

@@ -22,7 +22,7 @@ use metadata::{
 };
 
 /// Build a [`CodeWalker`] that traverses EVERY entry under a docker image
-/// archive's unpacked tree with no filtering — no gitignore, no hidden/binary
+/// archive's unpacked tree with no filtering, no gitignore, no hidden/binary
 /// skipping, no size cap. Both the layer-archive discovery (`layer`) and the
 /// metadata-less config-JSON fallback (`metadata`) need this identical
 /// exhaustive walk; keeping the [`WalkConfig`] in ONE place stops the two sites
@@ -332,7 +332,7 @@ fn validate_image_name(image: &str) -> Result<String, SourceError> {
         Regex::new(
             r"^(?:(?:[a-z0-9]+(?:(?:[._]|__|[-]{0,128})[a-z0-9]+)*)/)*[a-z0-9]+(?:(?:[._]|__|[-]{0,128})[a-z0-9]+)*(?::[\w][\w.\-]{0,127})?(?:@sha256:[a-f0-9]{64})?$",
         )
-        .ok() // LAW10: a compile failure of this CONSTANT pattern is caught fail-CLOSED by the `else` arm below, which returns a loud Err — never a silent allow
+        .ok() // LAW10: a compile failure of this CONSTANT pattern is caught fail-CLOSED by the `else` arm below, which returns a loud Err, never a silent allow
     });
 
     let Some(image_pattern) = IMAGE_PATTERN.as_ref() else {

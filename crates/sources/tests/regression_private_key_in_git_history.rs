@@ -5,8 +5,8 @@
 //! `GitHistorySource` reconstructs the ADDED lines of each commit's patch. A PEM
 //! /`.ppk` key spans many added lines; if that reconstruction split the block
 //! across chunks (or dropped interior lines) the `private-key` /
-//! `putty-private-key` detectors — whose match must span `-----BEGIN`…`-----END`
-//! (or header…`Private-MAC`) — would never fire, and a key leaked in an old
+//! `putty-private-key` detectors, whose match must span `-----BEGIN`…`-----END`
+//! (or header…`Private-MAC`), would never fire, and a key leaked in an old
 //! commit and "removed" in a later one would be invisible. These tests assert the
 //! whole block lands in ONE history chunk, contiguous, with its commit metadata.
 //!

@@ -4,7 +4,7 @@ use keyhog_scanner::testing::unicode_hardening::*;
 /// Contract: "ghp_\u{202E}secret" normalizes to "ghp_secret".
 #[test]
 fn normalize_removes_rtl_override() {
-    // U+202E Right-to-Left Override — used to flip text display
+    // U+202E Right-to-Left Override, used to flip text display
     let text = "ghp_\u{202E}abcdefghijklmnopqrstuvwxyz1234567890ab";
     let normalized = normalize_homoglyphs(text);
 
@@ -69,7 +69,7 @@ fn normalize_removes_rtl_embedding() {
 /// Contract: "text\u{202C}more" normalizes to "textmore".
 #[test]
 fn normalize_removes_pop_directional_formatting() {
-    // U+202C Pop Directional Formatting — terminates embedding/override
+    // U+202C Pop Directional Formatting, terminates embedding/override
     let text = "ghp_\u{202E}abcd\u{202C}efgh";
     let normalized = normalize_homoglyphs(text);
 

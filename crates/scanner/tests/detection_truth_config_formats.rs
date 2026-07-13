@@ -1,6 +1,6 @@
 //! Detection-truth: realistic FILE-FORMAT embedding (#177/#184). Real leaks live
 //! in .env / YAML / JSON / TOML / Dockerfile / compose / k8s Secrets / XML /
-//! .properties / connection strings / auth headers — not bare `key = value`.
+//! .properties / connection strings / auth headers (not bare `key = value`).
 //! Each test plants a known-firing credential in a realistic format and asserts
 //! the exact value is recovered (Law 6). ML-independent; run without `ml` while
 //! the embedded weights are mid-retrain.

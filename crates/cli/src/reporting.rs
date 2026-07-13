@@ -142,8 +142,8 @@ fn format_gitlab_time(time: DateTime<Utc>) -> String {
 /// [`keyhog_sources::skip_counts`] plus the scanner's telemetry) and are read
 /// exactly once, at end of scan, by [`CoverageCounts::current`]. Threading a
 /// snapshot through [`coverage_gap_summary`] instead of reading the globals
-/// inside it makes that function pure — every category can be exercised
-/// directly in a unit test — and keeps the "where do the numbers come from"
+/// inside it makes that function pure, every category can be exercised
+/// directly in a unit test, and keeps the "where do the numbers come from"
 /// answer in one place.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CoverageCounts {
@@ -231,7 +231,7 @@ pub(crate) enum CoverageSeverity {
 /// end-of-scan summary ([`crate::orchestrator::reporting::report_skip_summary`])
 /// and the structured SARIF/HTML report ([`coverage_gap_summary`]) iterate
 /// [`CoverageGapKind::ALL`], so a category can never exist on one surface and not
-/// the other — a gap visible on the terminal but absent from SARIF is a
+/// the other, a gap visible on the terminal but absent from SARIF is a
 /// structured false-clean (Law 10). The per-surface *wording* legitimately
 /// differs (terse machine reason for SARIF, verbose reason-plus-remedy for the
 /// operator), but the *set* of categories and their severity live here once.
@@ -318,7 +318,7 @@ impl CoverageGapKind {
         }
     }
 
-    /// Terminal severity for the human summary. SARIF ignores this — it reports
+    /// Terminal severity for the human summary. SARIF ignores this, it reports
     /// every non-zero gap identically.
     pub(crate) fn severity(self) -> CoverageSeverity {
         match self {
@@ -513,13 +513,13 @@ impl CoverageGapKind {
 /// Build the SARIF/HTML coverage-gap summary from a [`CoverageCounts`] snapshot.
 /// Each non-zero category becomes one `(reason, count)` pair the reporter
 /// surfaces as a tool-execution notification, so a consuming platform sees the
-/// scan's coverage gaps (unreadable files especially — those are unknowns).
+/// scan's coverage gaps (unreadable files especially (those are unknowns)).
 ///
 /// Every category the human end-of-scan summary can print MUST appear here too:
 /// the structured (SARIF/HTML/JSON) surface silently under-reporting a gap the
-/// human sees is a false-clean (Law 10). This previously drifted — the SARIF
+/// human sees is a false-clean (Law 10). This previously drifted, the SARIF
 /// path omitted unreadable *binaries* and the structured decode-through
-/// oversize skip — so both are explicit entries below.
+/// oversize skip (so both are explicit entries below).
 fn coverage_gap_summary(counts: &CoverageCounts) -> Vec<(String, usize)> {
     CoverageGapKind::ALL
         .iter()

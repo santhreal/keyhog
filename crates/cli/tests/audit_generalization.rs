@@ -1,4 +1,4 @@
-//! Adversarial audit — VECTOR 6 GENERALIZATION (KEY: generalization)
+//! Adversarial audit: VECTOR 6 GENERALIZATION (KEY: generalization)
 //!
 //! Finding: the keyword-anchored entropy gate is a hardcoded magic constant,
 //! NOT derived from the operator-configurable Tier-A
@@ -7,12 +7,12 @@
 //! keyhog documents `--entropy-threshold <BITS>` (and the `.keyhog.toml`
 //! `entropy_threshold` field) as the lever that controls entropy-based
 //! detection:
-//!   * `crates/cli/src/config.rs:52` — "Entropy threshold in bits per byte
+//!   * `crates/cli/src/config.rs:52`: "Entropy threshold in bits per byte
 //!     (default: 4.5)."
-//!   * `.keyhog.toml.example:74-78` — "Entropy threshold in bits per byte
+//!   * `.keyhog.toml.example:74-78`: "Entropy threshold in bits per byte
 //!     (default: 4.5) … 5.5: Conservative (fewer findings, fewer false
 //!     positives)."
-//!   * `crates/core/src/config.rs:22,114` — `entropy_threshold: 4.5`.
+//!   * `crates/core/src/config.rs:22,114`: `entropy_threshold: 4.5`.
 //!
 //! That knob is carried into the engine as `ScannerConfig.entropy_threshold`
 //! (`crates/scanner/src/scanner_config.rs:200`) and it DOES drive the
@@ -100,7 +100,7 @@ fn entropy_findings(findings: &[serde_json::Value]) -> Vec<String> {
 /// The value `aAbBcCdDeEfFgGhH12345678` has Shannon entropy ~4.585 bits/byte
 /// and is reported by the built-in `entropy-api-key` detector at the default
 /// `--entropy-threshold 4.5`. This is a precondition for the two assertions
-/// that follow — if this stops firing, the later tests are vacuous.
+/// that follow (if this stops firing, the later tests are vacuous).
 const GENERIC_FIXTURE: &str = "api_key = \"aAbBcCdDeEfFgGhH12345678\"\n";
 
 /// AUD-generalization-1: raising `--entropy-threshold` from 4.5 to 6.0 must
@@ -137,7 +137,7 @@ fn entropy_threshold_knob_governs_keyword_entropy_gate() {
 }
 
 /// AUD-generalization-2 (boundary/extreme): set `--entropy-threshold` to 8.0,
-/// the documented MAXIMUM ("bits per byte" — byte-level Shannon entropy is
+/// the documented MAXIMUM ("bits per byte", byte-level Shannon entropy is
 /// bounded above by log2(256) = 8.0, and an ASCII token can never approach it).
 /// At this setting NO realistic entropy-gated credential should pass an
 /// entropy-driven gate. Yet `api_key = "<entropy 4.585>"` is still reported and

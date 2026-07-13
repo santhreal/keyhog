@@ -46,7 +46,7 @@ impl Default for ServerOptions {
 ///
 /// This is the everyday default. To point a `scan --daemon` at a daemon bound
 /// to a non-default path (a `daemon start --socket <path>` daemon, e.g. a
-/// systemd unit), pass `scan --daemon-socket <path>` — the blessed CLI override
+/// systemd unit), pass `scan --daemon-socket <path>`: the blessed CLI override
 /// tier. KeyHog deliberately reads no `KEYHOG_*` socket env var (see
 /// docs/src/reference/env.md): socket location is `XDG_RUNTIME_DIR` or a CLI
 /// flag, never an ambient KeyHog-owned environment knob.
@@ -335,8 +335,8 @@ fn remove_daemon_socket_on_shutdown(socket_path: &std::path::Path) -> Result<()>
     }
 }
 
-/// Classify an `accept()` I/O error as transient (recoverable — back off and
-/// keep serving) versus fatal (the listening socket is unusable — shut down).
+/// Classify an `accept()` I/O error as transient (recoverable, back off and
+/// keep serving) versus fatal (the listening socket is unusable (shut down)).
 ///
 /// Transient cases are the ones a momentary spike produces and that clear on
 /// their own once the backlog drains: per-process / system-wide fd exhaustion
@@ -355,7 +355,7 @@ pub(crate) fn is_transient_accept_error(e: &std::io::Error) -> bool {
         return true;
     }
     // EMFILE (24) / ENFILE (23): too many open files. std maps these to
-    // ErrorKind::Other (no stable variant), so match on the raw errno — the
+    // ErrorKind::Other (no stable variant), so match on the raw errno, the
     // single most important transient accept() failure for a daemon under a
     // connection burst, since refusing to recover would let one spike kill it.
     #[cfg(unix)]
@@ -379,7 +379,7 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
         // cannot hold this connection's `connection_limit` permit forever and
         // starve other same-uid clients. keyhog daemon clients do one
         // round-trip then disconnect, so a connection idle past the timeout is
-        // either finished (should have closed) or stuck — closing it is correct
+        // either finished (should have closed) or stuck, closing it is correct
         // and frees the permit.
         let request = match tokio::time::timeout(read_timeout, transport.next()).await {
             Ok(Some(Ok(req))) => req,

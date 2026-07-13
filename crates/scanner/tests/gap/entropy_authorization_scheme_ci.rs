@@ -112,7 +112,7 @@ proptest! {
     }
 
     /// A header name that is not exactly `authorization` (incl. `Proxy-Authorization`)
-    /// yields None — the name match is exact, not a substring.
+    /// yields None (the name match is exact, not a substring).
     #[test]
     fn non_authorization_header_is_none(
         ni in 0usize..OTHER_NAMES.len(),

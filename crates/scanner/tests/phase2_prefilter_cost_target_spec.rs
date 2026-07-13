@@ -1,6 +1,6 @@
 //! SWE-101 TARGET SPEC (intentionally FAILING until fully closed).
 //!
-//! The user's flagship issue: "a fallback must NEVER eat runtime — not
+//! The user's flagship issue: "a fallback must NEVER eat runtime, not
 //! 0.000000001s." The combined no-candidate gate (`phase2_no_candidate_zero_work`)
 //! removes the per-pattern marking work on no-candidate chunks, but the SWE-101
 //! TARGET is stricter: the always-active phase-2 prefilter (`phase2:prefilter`) must
@@ -104,6 +104,6 @@ fn fb_prefilter_under_one_microsecond_per_chunk() {
         per_chunk_ns < TARGET_NS_PER_CHUNK,
         "SWE-101 TARGET NOT YET MET: {per_chunk_ns:.1} ns/chunk on no-candidate input \
          exceeds the < {TARGET_NS_PER_CHUNK:.0} ns/chunk target. Close the residual \
-         per-chunk cost (do NOT relax the threshold — Law 9)."
+         per-chunk cost (do NOT relax the threshold. Law 9)."
     );
 }

@@ -177,7 +177,7 @@ fn matched_shifts_equals_forward_shift_bijection_on_rot13_ghp() {
     assert_eq!(table, expected);
     // Shift 13 (the ROT13 recovery) is definitely among the selected set.
     assert!(table[13]);
-    // At least two shifts are selected here — multi-shift, not single.
+    // At least two shifts are selected here (multi-shift, not single).
     let selected = table.iter().filter(|&&b| b).count();
     assert!(
         selected >= 2,

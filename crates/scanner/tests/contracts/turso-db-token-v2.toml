@@ -19,15 +19,15 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "TURSOAPI TOKEN   \" ==           :':\" ' : :=  : \"    \" \":  = \"  \"    ' = \"  '  ' \" \"   ' ''   '\"  \": 'YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "TURSOAPI TOKEN   \" ==           :':\" ' : :=  : \"    \" \":  = \"  \"    ' = \"  '  ' \" \"   ' ''   '\"  \": 'eyJU3EXAMPLEEXAMPLEPc0bD"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 # ---- EVASION (adversarial) -----------------------------------------
 
 [[evasion]]
 text = "# TURSO_AUTH_TOKEN=eyJU392wf3w4AmX6yLP72s_1rUYhYZWSj9UYKJLuIzr_ulMtybIjXyy1iSP1H_E74oL.eyJB8MkQam9OUqV_yYiSxd32BrO6nOEv_k6I5q_--lX8EmNFFR02589yzf7vs0EprMgUhdZ9lEWu3rKKFnBLuMnZOQBAErME.QQ8ACgDR3OdN5Irt0xYLD93NPc0bD  # db"
 credential = "eyJU392wf3w4AmX6yLP72s_1rUYhYZWSj9UYKJLuIzr_ulMtybIjXyy1iSP1H_E74oL.eyJB8MkQam9OUqV_yYiSxd32BrO6nOEv_k6I5q_--lX8EmNFFR02589yzf7vs0EprMgUhdZ9lEWu3rKKFnBLuMnZOQBAErME.QQ8ACgDR3OdN5Irt0xYLD93NPc0bD"
-reason = "Commented-out config; TURSO_AUTH_TOKEN keyword + JWT surfaces. Value-dedup may attribute it to the sibling turso-embedded-replica-token (which also carries a TURSO_AUTH_TOKEN= pattern) — same credential, valid catch."
+reason = "Commented-out config; TURSO_AUTH_TOKEN keyword + JWT surfaces. Value-dedup may attribute it to the sibling turso-embedded-replica-token (which also carries a TURSO_AUTH_TOKEN= pattern) (same credential, valid catch)."

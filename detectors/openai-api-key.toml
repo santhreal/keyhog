@@ -18,7 +18,7 @@ regex = 'sk-proj-[a-zA-Z0-9_-]{40,164}'
 description = "OpenAI project API key (sk-proj-)"
 
 [[detector.patterns]]
-# Service-account keys (sk-svcacct-) — introduced after the proj- form and
+# Service-account keys (sk-svcacct-), introduced after the proj- form and
 # absent from the original detector, so every `sk-svcacct-…` key fell through
 # to the generic path and scored as a false-negative on betterleaks' own
 # openai fixtures (home-turf bench, DET-17). Same url-safe body as proj keys;
@@ -27,7 +27,7 @@ regex = 'sk-svcacct-[a-zA-Z0-9_-]{40,200}'
 description = "OpenAI service-account API key (sk-svcacct-)"
 
 [[detector.patterns]]
-# Admin keys (sk-admin-) — same story as sk-svcacct- above.
+# Admin keys (sk-admin-) (same story as sk-svcacct- above).
 regex = 'sk-admin-[a-zA-Z0-9_-]{40,200}'
 description = "OpenAI admin API key (sk-admin-)"
 

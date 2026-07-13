@@ -16,7 +16,7 @@ use super::*;
 /// build that compiled no backend choice (portable: no `simd`/`gpu`), and defer to
 /// autoroute (return `None`) whenever a real choice exists. This is what keeps a
 /// portable single-backend build from failing closed (exit 2) on an uncalibrated
-/// workload — the Docker `musl` integration matrix is the end-to-end proof.
+/// workload (the Docker `musl` integration matrix is the end-to-end proof).
 #[test]
 fn sole_compiled_backend_tracks_the_feature_set() {
     let sole = super::sole_compiled_backend();
@@ -210,7 +210,7 @@ fn no_gpu_build_calibrates_on_a_host_that_has_a_physical_gpu() {
         .expect("a no-gpu build must calibrate on a host that has a physical GPU");
 
     // Contrast: a GPU-CAPABLE build whose runtime probe FAILED (gpu_backend
-    // None) must STILL fail closed — the physical GPU IS usable by this build,
+    // None) must STILL fail closed, the physical GPU IS usable by this build,
     // so caching GPU-absent evidence would silently mis-route (Law 10).
     let mut gpu_build_probe_failed = AutorouteHostProfile::from_caps(&gpu_host, None, true);
     gpu_build_probe_failed.cpu_model = Some("test-cpu".to_string());
@@ -576,7 +576,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && serialized.contains("\"trials_ns\"")
             && serialized.contains("\"confidence_interval_95_ns\""),
         // v21 persists PRIMARY evidence only: the per-backend ms, GPU
-        // cold/warm/route, and selected-margin keys are gone from the JSON —
+        // cold/warm/route, and selected-margin keys are gone from the JSON 
         // they are DERIVED from the timing evidence on load, never stored.
         "cache JSON must persist route timing evidence, not only the selected backend"
     );
@@ -1010,7 +1010,7 @@ fn tied_calibration_persists_lowest_overhead_backend_not_an_empty_cache() {
     );
 
     // The SAME tie naming the higher-overhead tied backend (GPU) is NOT the
-    // deterministic tie-break and must be rejected on write — a tampered or
+    // deterministic tie-break and must be rejected on write, a tampered or
     // non-deterministic decision cannot pretend a tie favors the GPU.
     let mut wrong = HashMap::new();
     wrong.insert(
@@ -1063,7 +1063,7 @@ fn missing_autoroute_cache_does_not_require_gpu_runtime_identity() {
 
 /// An outdated cache (older `version`, written before a field was added to the
 /// schema) must be rejected on its schema version with a clear, actionable
-/// message — NOT the opaque serde "missing field …" error a naive full
+/// message: NOT the opaque serde "missing field …" error a naive full
 /// deserialize emits. Reproduces the real upgrade-path symptom: a stale on-disk
 /// cache leaked `missing field decode_density_bucket` into every default scan
 /// instead of a clean "unsupported autoroute cache version" verdict, because the
@@ -2034,7 +2034,7 @@ fn autoroute_cache_rejects_selected_backend_without_timing_evidence() {
         Some(10),
         None,
     );
-    // Drop the CpuFallback timing so the SELECTED backend has no evidence — the
+    // Drop the CpuFallback timing so the SELECTED backend has no evidence, the
     // "missing timing" invariant is kept in v21 (the redundant `cpu_ms` field it
     // once also cleared is gone; ms is derived from `cpu_timing`).
     bad.cpu_timing = None;
@@ -2476,7 +2476,7 @@ fn derived_accessors_match_the_persisted_timing_evidence() {
     // v21 REPLACES the old "reject a cache whose STORED cold/warm fields mismatch
     // the timing" contract: those denormalized fields are gone, so the derived
     // values are computed from the timing on demand and CANNOT disagree with it.
-    // This proves that ONE-PLACE invariant directly — every accessor reflects the
+    // This proves that ONE-PLACE invariant directly, every accessor reflects the
     // persisted timing evidence exactly, with no second copy that could drift.
     let decision =
         AutorouteDecision::new(ScanBackend::Gpu, 8 * 1024 * 1024, 1, 12, Some(9), Some(20));
@@ -2496,7 +2496,7 @@ fn derived_accessors_match_the_persisted_timing_evidence() {
     assert_eq!(decision.gpu_warm_ms(), Some(warm_timing.best_ms()));
     assert_eq!(decision.gpu_route_ns(), Some(route_ns));
 
-    // With no GPU timing, every GPU-derived accessor is `None` — there is no
+    // With no GPU timing, every GPU-derived accessor is `None`: there is no
     // stored copy that could disagree with the (absent) evidence.
     let cpu_only =
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, Some(9), None);
@@ -2568,7 +2568,7 @@ fn autoroute_cache_rejects_selected_backend_with_overlapping_confidence() {
     // SIMD has one lucky 10ms trial but a wide CI centred near 30ms; CPU is a
     // steady 11ms with a tight CI entirely below SIMD's. Routing is decided from
     // confidence intervals, never the single best trial, so CPU is the provably
-    // fastest route and a SIMD selection must be rejected — a lucky outlier can
+    // fastest route and a SIMD selection must be rejected, a lucky outlier can
     // never win over a steadily-faster backend.
     write_tampered_decision_cache(
         &path,
@@ -2754,7 +2754,7 @@ fn bucket_resolution_rejects_neighbours_along_max_file_axis() {
 #[test]
 fn bucket_resolution_fails_closed_when_cpu_neighbours_disagree() {
     // SimdCpu below, CpuFallback above: the backend choice is NOT stable across
-    // the interval, so the in-between bucket must fail closed — never guess one.
+    // the interval, so the in-between bucket must fail closed (never guess one).
     let base = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
@@ -2784,7 +2784,7 @@ fn bucket_resolution_fails_closed_when_cpu_neighbours_disagree() {
 #[test]
 fn bucket_resolution_never_interpolates_across_gpu_buckets() {
     // GPU correctness can vary with input size (cf. #18), so even two agreeing
-    // GPU neighbours must NOT generalize — the in-between bucket fails closed.
+    // GPU neighbours must NOT generalize (the in-between bucket fails closed).
     let base = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
@@ -2970,7 +2970,7 @@ fn bucket_resolution_does_not_interpolate_between_disagreeing_single_file_rungs(
 fn bucket_resolution_does_not_interpolate_single_file_across_a_gpu_rung() {
     // GPU correctness varies with input size, so it can never anchor a diagonal
     // bracket: a single-file query whose only upper neighbour is GPU has just one
-    // CPU side (the lower rung) and stays fail-closed — never a one-sided guess and
+    // CPU side (the lower rung) and stays fail-closed, never a one-sided guess and
     // never a clamp toward GPU.
     let base = test_workload_key();
     let mut decisions = HashMap::new();
@@ -3005,7 +3005,7 @@ fn bucket_resolution_does_not_interpolate_single_file_across_a_gpu_rung() {
 #[test]
 fn bucket_resolution_does_not_clamp_below_a_gpu_floor() {
     // GPU correctness can vary with input size, so a below-floor query whose only
-    // calibrated neighbour is GPU must still fail closed — never clamp to GPU, and
+    // calibrated neighbour is GPU must still fail closed, never clamp to GPU, and
     // no CPU-class evidence exists for this class.
     let base = test_workload_key();
     let mut decisions = HashMap::new();
@@ -3029,7 +3029,7 @@ fn bucket_resolution_does_not_clamp_below_a_gpu_floor() {
 #[test]
 fn bucket_resolution_does_not_clamp_an_uncalibrated_class() {
     // No calibrated bucket shares the request's non-size dimensions: the workload
-    // CLASS itself was never calibrated, so there is no floor to clamp under —
+    // CLASS itself was never calibrated, so there is no floor to clamp under 
     // fail closed rather than invent one.
     let base = test_workload_key();
     let mut decisions = HashMap::new();

@@ -46,7 +46,7 @@ fn reset_sigpipe() {}
 ///
 /// The CLI runs on a `current_thread` tokio runtime. A long synchronous scan
 /// (`subcommands::scan::run`) blocks that single-threaded runtime, so a
-/// `tokio::signal::ctrl_c` task spawned at startup never gets polled — its
+/// `tokio::signal::ctrl_c` task spawned at startup never gets polled, its
 /// signal handler is never registered, SIGINT falls through to the DEFAULT
 /// disposition, and the process dies by signal (status code `None`) with no
 /// "Scan interrupted" message instead of the documented exit 130. Installing a
@@ -55,7 +55,7 @@ fn reset_sigpipe() {}
 ///
 /// The handler touches only async-signal-safe operations: relaxed atomic LOADS
 /// (via [`keyhog::interrupt_counts`]), stack-buffer integer formatting (no
-/// allocation, no locks), `write(2)`, and `_exit` — so it is safe even if
+/// allocation, no locks), `write(2)`, and `_exit`: so it is safe even if
 /// SIGINT lands while the progress ticker holds the stderr lock (an
 /// `eprintln!`-based handler could deadlock there).
 #[cfg(unix)]
@@ -99,7 +99,7 @@ mod interrupt {
         append(&mut buf, &mut len, b" files scanned. ");
         append_usize(&mut buf, &mut len, findings);
         append(&mut buf, &mut len, b" findings.\n");
-        // SAFETY: async-signal-safe primitives only — `write(2)` over a valid
+        // SAFETY: async-signal-safe primitives only: `write(2)` over a valid
         // stack buffer + length, then `_exit` with the documented interrupt
         // code (128 + SIGINT). The code is the compile-time `EXIT_INTERRUPTED`
         // constant (an immediate value, no allocation/locks/Drop glue), so the

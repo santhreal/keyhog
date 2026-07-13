@@ -2,7 +2,7 @@
 //! added to close part of the flagship real-world recall gap (KH-L-0102).
 //!
 //! `basic-auth-credentials` surfaces `Basic <base64>` HTTP Authorization blobs
-//! (the "Auth:Basic Authorization" class — ~600 CredData positives, ~0 caught
+//! (the "Auth:Basic Authorization" class: ~600 CredData positives, ~0 caught
 //! before; this detector lifts that category to recall ~0.82 at precision
 //! ~0.98, with no measured mirror-corpus precision regression).
 //!
@@ -15,7 +15,7 @@
 //! 0.71. The hex length is not a sufficient disambiguator (64 = sha256, 32 =
 //! md5), and the CredData "Key" positives are 95% crypto TEST VECTORS that
 //! keyhog's MoE correctly down-weights as non-leaks. The shape needs ML
-//! context, not a structural rule — tracked for the MoE-retrain lane.
+//! context, not a structural rule (tracked for the MoE-retrain lane).
 //!
 //! The positives below are realistic blobs; assertions check the concrete
 //! surfaced credential (never `!is_empty`).
@@ -32,11 +32,11 @@ fn fires(text: &str, credential: &str) -> bool {
 
 #[test]
 fn basic_auth_header_blob_surfaces() {
-    // base64("username:supersecretpassword123") — a realistic random-ish
+    // base64("username:supersecretpassword123"), a realistic random-ish
     // credential blob (the shape CredData's Basic-Authorization positives
     // carry). The canonical RFC `aladdin:opensesame` specimen is a
     // low-entropy dictionary pair the MoE correctly scores weak, so it is
-    // NOT used here — real blobs surface, textbook examples need not.
+    // NOT used here (real blobs surface, textbook examples need not).
     let cred = "dXNlcm5hbWU6c3VwZXJzZWNyZXRwYXNzd29yZDEyMw==";
     assert!(
         fires(&format!("Authorization: Basic {cred}"), cred),
@@ -59,7 +59,7 @@ fn basic_auth_in_curl_command_surfaces() {
 
 #[test]
 fn basically_word_does_not_trip_basic_auth() {
-    // `\b`-anchored `basic` — the English word "basically" must not match, and
+    // `\b`-anchored `basic`: the English word "basically" must not match, and
     // even if a 16+ base64-ish run followed, there is none here.
     let s = scanner();
     let chunk = make_chunk("This is basically just prose text here.", "source", "p.txt");

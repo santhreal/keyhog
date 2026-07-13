@@ -7,21 +7,21 @@
 //! resolved `SocketAddr` before pinning them), the cloud blocking client did NO
 //! post-DNS IP re-screen. A **public hostname** whose A/AAAA record points at
 //! `169.254.169.254` / `127.0.0.1` / `10.x` / `[::1]` (classic DNS rebinding)
-//! therefore sailed past the string screen and connected — turning the scanner
+//! therefore sailed past the string screen and connected, turning the scanner
 //! into an SSRF proxy for internal / cloud-metadata services.
 //!
 //! The fix adds a resolve-and-veto step to `parse_http_endpoint`: after the
 //! string screen it resolves the endpoint host and refuses the endpoint if ANY
 //! resolved address is one the fleet-canonical
-//! `keyhog_verifier::ssrf::is_private_ip_addr` classifier — the SAME predicate
-//! WebSource's `resolve_and_screen` uses — rejects. The whole screen is disabled
+//! `keyhog_verifier::ssrf::is_private_ip_addr` classifier, the SAME predicate
+//! WebSource's `resolve_and_screen` uses, rejects. The whole screen is disabled
 //! per-source by the `allow_private_endpoint` Tier-A config (not env) so loopback
 //! mock / self-hosted (MinIO / Ceph / httpmock) endpoints still work.
 //!
 //! Two kinds of coverage:
 //!   * **Predicate tests** exercise the shared post-DNS screen predicate
 //!     (`is_private_ip_addr`) directly on the exact resolved-address inputs a
-//!     rebinding host would yield — hermetic, no DNS control needed.
+//!     rebinding host would yield (hermetic, no DNS control needed).
 //!   * **Driven-path tests** drive the real public `S3Source::chunks()`
 //!     production path through `parse_http_endpoint`, asserting the literal-host
 //!     screen refusal (exact message), the opt-in bypass, and that a legitimate
@@ -35,7 +35,7 @@ use keyhog_verifier::ssrf::is_private_ip_addr;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 // ==========================================================================
-// Group A — the shared post-DNS screen predicate, asserted directly on the
+// Group A, the shared post-DNS screen predicate, asserted directly on the
 // resolved-address inputs a DNS-rebinding endpoint host would produce.
 // `is_private_ip_addr` is exactly what `parse_http_endpoint`'s new
 // `screen_resolved_endpoint_host` applies to each resolved `SocketAddr`.
@@ -86,7 +86,7 @@ fn resolved_rfc1918_192_168_is_screened_as_private() {
 
 #[test]
 fn resolved_unspecified_ipv4_is_screened_as_private() {
-    // 0.0.0.0 (INADDR_ANY) routes to the local host on many stacks — a rebind
+    // 0.0.0.0 (INADDR_ANY) routes to the local host on many stacks, a rebind
     // to it is an SSRF vector, so the canonical classifier vetoes it.
     assert!(
         is_private_ip_addr(&IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))),
@@ -104,7 +104,7 @@ fn resolved_ipv6_loopback_is_screened_as_private() {
 
 #[test]
 fn resolved_ipv6_link_local_is_screened_as_private() {
-    // fe80::/10 link-local — the IPv6 analog of the 169.254 rebind target.
+    // fe80::/10 link-local (the IPv6 analog of the 169.254 rebind target).
     assert!(
         is_private_ip_addr(&IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1))),
         "IPv6 link-local fe80::1 must be vetoed as private"
@@ -129,7 +129,7 @@ fn resolved_public_cloudflare_dns_is_not_screened() {
 }
 
 // ==========================================================================
-// Group B — driven `S3Source::chunks()` production path through
+// Group B, driven `S3Source::chunks()` production path through
 // `parse_http_endpoint`. The private-endpoint allowance is per-source Tier-A
 // config (`HttpClientConfig.allow_private_endpoint`), threaded into each source
 // by `TestApi.s3_source_with_endpoint_allow_private`, so each test sets exactly
@@ -145,7 +145,7 @@ const SSRF_STRING_REFUSAL: &str =
     "refusing S3 endpoint: host is a private, loopback, link-local, or cloud-metadata address (SSRF)";
 
 /// Collect all chunk rows produced for `endpoint` with the SSRF endpoint screen
-/// either active (`allow_private = false`) or opted out (`true`) — the Tier-A
+/// either active (`allow_private = false`) or opted out (`true`), the Tier-A
 /// config (`HttpClientConfig.allow_private_endpoint`) replacement for the retired
 /// `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` env, threaded per-source so no
 /// process-global state is touched and the tests need no serialization.
@@ -239,7 +239,7 @@ fn config_allow_private_allows_loopback_endpoint() {
 #[test]
 fn config_screen_active_refuses_loopback_endpoint() {
     // With `allow_private_endpoint = false` (the default) the screen stays active
-    // and 127.0.0.1 is refused with the string-screen reason — the config bool,
+    // and 127.0.0.1 is refused with the string-screen reason, the config bool,
     // not a truthy/falsy env string, is now the single decision input.
     let rows = rows_for("http://127.0.0.1", false);
     assert_eq!(
@@ -262,7 +262,7 @@ fn public_host_passes_both_screens_resolve_step_fails_open() {
     // `.invalid` (RFC 6761) is a public-classified domain that NXDOMAINs. It
     // passes the string screen, and the new resolve step FAILS OPEN on the
     // resolution error (no address -> no SSRF target), so `parse_http_endpoint`
-    // returns Ok and any later failure is a network/DNS error — NOT an SSRF
+    // returns Ok and any later failure is a network/DNS error. NOT an SSRF
     // refusal and NOT an invalid-endpoint rejection.
     let rows = rows_for("https://objectstore.public.invalid", false);
     for row in &rows {

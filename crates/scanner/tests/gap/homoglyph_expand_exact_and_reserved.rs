@@ -1,5 +1,5 @@
 //! Regression: `expand_homoglyphs` reserves its output `String` capacity up
-//! front (Law 7 — no realloc growth while expanding every detector prefix) and
+//! front (Law 7, no realloc growth while expanding every detector prefix) and
 //! the reserve changes no output (Law 6). Also pins the documented example to
 //! the real map output (the doc was stale: it showed fewer glyphs than the map
 //! actually emits).

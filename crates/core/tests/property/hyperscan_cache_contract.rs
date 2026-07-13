@@ -8,7 +8,7 @@
 //! byte-exactly the current magic+version has to be REJECTED. If the validator
 //! ever accepted a stale (old-version), corrupt, or truncated header, the
 //! scanner would load the WRONG compiled patterns and silently scan with reduced
-//! recall — a miss the operator cannot see. So "reject everything but the exact
+//! recall, a miss the operator cannot see. So "reject everything but the exact
 //! header" is a recall-safety invariant, not a nicety.
 //!
 //! Fixed-vector coverage of the write/validate round-trip lives in
@@ -44,7 +44,7 @@ fn written_header_is_valid_and_canonical() {
 #[test]
 fn any_single_byte_mutation_is_rejected() {
     // The validator is EXACT: perturbing any single byte of the canonical header
-    // must make it invalid — a corrupted magic OR a bumped/rolled version — so
+    // must make it invalid, a corrupted magic OR a bumped/rolled version, so
     // the scanner rebuilds from patterns instead of trusting stale bytes.
     let base = canonical_header();
     for pos in 0..base.len() {
@@ -64,7 +64,7 @@ fn any_single_byte_mutation_is_rejected() {
 
 #[test]
 fn wrong_length_is_rejected() {
-    // Any length other than the exact header length is rejected — including a
+    // Any length other than the exact header length is rejected, including a
     // VALID header followed by extra bytes (no prefix acceptance) and any
     // truncation of it.
     let base = canonical_header();
@@ -105,7 +105,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// An arbitrary 8-byte buffer validates IFF it is exactly the canonical
-    /// magic+version — the validator has no other accepting input.
+    /// magic+version (the validator has no other accepting input).
     #[test]
     fn only_the_exact_header_validates(bytes in prop::array::uniform8(any::<u8>())) {
         let valid = hyperscan_cache_header_is_valid(&bytes);
@@ -115,7 +115,7 @@ proptest! {
         prop_assert_eq!(valid, is_canonical);
     }
 
-    /// A right-magic but WRONG-version header is always rejected — the stale-cache
+    /// A right-magic but WRONG-version header is always rejected, the stale-cache
     /// guard: a v1 or v3 serialized database must never be trusted as the current
     /// version.
     #[test]

@@ -29,7 +29,7 @@ fn all_same_char_body_is_suppressed_as_example() {
 
 #[test]
 fn high_entropy_mixed_body_not_suppressed() {
-    // Realistic random-looking credential — must NOT be suppressed
+    // Realistic random-looking credential, must NOT be suppressed
     let cred = "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fGhJk";
     assert!(
         !known_example_suppressed(cred, None, CodeContext::Assignment),
@@ -39,7 +39,7 @@ fn high_entropy_mixed_body_not_suppressed() {
 
 #[test]
 fn example_suffix_credential_is_suppressed() {
-    // Ends with EXAMPLE — universal documentation convention
+    // Ends with EXAMPLE, universal documentation convention
     let cred = "ghp_AAAAAAAAAAAAAAAAAAAEXAMPLE";
     assert!(
         known_example_suppressed(cred, None, CodeContext::Unknown),
@@ -68,7 +68,7 @@ fn x_dominated_credential_above_threshold_suppressed() {
 
 #[test]
 fn x_dominated_below_threshold_not_suppressed() {
-    // Exactly 50% x — below the 75% cutoff
+    // Exactly 50% x, below the 75% cutoff
     let cred = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" // 16 x
         .chars()
         .take(16)

@@ -4,7 +4,7 @@
 //! trait surface, and the `SkipCounts` snapshot/reset functions.
 //!
 //! Every assertion checks a concrete value: which file's bytes reach a chunk,
-//! the source name, the chunk metadata path, the skip-count totals — never a
+//! the source name, the chunk metadata path, the skip-count totals, never a
 //! bare `is_ok()` / `!is_empty()`.
 
 mod support;
@@ -225,7 +225,7 @@ fn default_excludes_drop_lockfile_then_flag_includes_it() {
 // `require_git(false)`, so the `ignore` crate keeps its documented default
 // (`require_git(true)`): a `.gitignore` is authoritative ONLY when a `.git`
 // directory is present at/above the walk root. These tests pin that exact
-// contract from both sides — honored WITH a repo, inert WITHOUT one.
+// contract from both sides (honored WITH a repo, inert WITHOUT one).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -258,7 +258,7 @@ fn gitignore_respected_inside_a_repo_then_overridable() {
 fn gitignore_is_inert_without_a_git_directory() {
     // No `.git` dir: the `ignore` crate's require_git default means the
     // `.gitignore` is NOT honored and the listed file IS scanned. This is the
-    // real, intended contract — a loose `.gitignore` cannot silently hide
+    // real, intended contract, a loose `.gitignore` cannot silently hide
     // secrets from a non-repo scan.
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join(".gitignore"), "secrets.env\n").unwrap();
@@ -274,7 +274,7 @@ fn gitignore_is_inert_without_a_git_directory() {
 #[test]
 fn keyhogignore_is_honored_without_a_git_directory() {
     // `.keyhogignore` is wired as a codewalk custom-ignore filename, which is
-    // NOT gated on require_git — so it excludes matching files even with no
+    // NOT gated on require_git, so it excludes matching files even with no
     // `.git` present. This is the keyhog-native, git-independent ignore path.
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join(".keyhogignore"), "ignored.env\n").unwrap();
@@ -337,7 +337,7 @@ fn skip_counts_total_sums_all_categories() {
         unreadable: 7,
         git_object_unreadable: 29,
         archive_truncated: 11,
-        // Partial-coverage signals — deliberately NOT part of the whole-file
+        // Partial-coverage signals, deliberately NOT part of the whole-file
         // skip total, so non-zero values here must not change total().
         binary_section_name_unresolved: 13,
         source_truncated: 17,

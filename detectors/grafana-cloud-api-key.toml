@@ -2,7 +2,7 @@
 # Format: `glc_<base64>` cloud access-policy tokens, `glsa_<32>_<8 hex>`
 #         service-account tokens, and legacy `eyJrIjoi…` API keys (base64 of
 #         a {"k":"…"} JSON blob). All carry distinctive vendor prefixes.
-# Added: home-turf bench (DET-17) — grafana fixtures were false-negatives.
+# Added: home-turf bench (DET-17) (grafana fixtures were false-negatives).
 
 [detector]
 id = "grafana-cloud-api-key"

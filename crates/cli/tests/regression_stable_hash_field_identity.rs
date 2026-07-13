@@ -1,4 +1,4 @@
-//! Contract for `stable_hash::StableHasher` — the blake3, length-prefixed stable
+//! Contract for `stable_hash::StableHasher`: the blake3, length-prefixed stable
 //! hasher behind orchestrator config-identity (scan-cache-key) computation.
 //! Previously untested directly.
 //!
@@ -6,21 +6,21 @@
 //! same 64-bit digest, so the hasher's job is a total, collision-resistant,
 //! order- and type-sensitive encoding of a config's fields. A false COLLISION
 //! (two distinct configs → same digest) silently serves stale results for the
-//! wrong config — a correctness bug, not a perf one. A false SPLIT (the same
-//! config → different digests across runs) silently defeats the cache — a Law-7
+//! wrong config, a correctness bug, not a perf one. A false SPLIT (the same
+//! config → different digests across runs) silently defeats the cache, a Law-7
 //! performance bug. These pin both directions:
-//!   * determinism  — identical field sequences produce identical digests;
-//!   * domain sep    — the same fields under a different domain differ;
-//!   * field-name/value sensitivity — changing either changes the digest;
-//!   * type-tag sep  — `bool` and `u64` (and `bytes`/`str`) are distinct even
+//!   * determinism, identical field sequences produce identical digests;
+//!   * domain sep, the same fields under a different domain differ;
+//!   * field-name/value sensitivity, changing either changes the digest;
+//!   * type-tag sep: `bool` and `u64` (and `bytes`/`str`) are distinct even
 //!                     when their payload bytes coincide (`false` vs `0`);
-//!   * option totality — `None`, `Some("")`, and `Some("x")` are three digests;
-//!   * width equivalence — `usize` == `u64` of the same magnitude, and
+//!   * option totality: `None`, `Some("")`, and `Some("x")` are three digests;
+//!   * width equivalence: `usize` == `u64` of the same magnitude, and
 //!                     `f64_bits` == `u64` of `to_bits()` (the documented aliases);
-//!   * length-prefix anti-collision — `("ab","")` and `("a","b")` do NOT collide
+//!   * length-prefix anti-collision: `("ab","")` and `("a","b")` do NOT collide
 //!                     (the classic concatenation-ambiguity property that the
 //!                     length prefix in `tagged_bytes` exists to defeat);
-//!   * field-order sensitivity — swapping two fields changes the digest.
+//!   * field-order sensitivity (swapping two fields changes the digest).
 
 use keyhog::testing::StableHashProbe;
 
@@ -73,7 +73,7 @@ fn changing_a_field_value_changes_the_digest() {
 #[test]
 fn bool_false_and_u64_zero_do_not_collide() {
     // Both encode a single zero byte in payload, but the TYPE TAG differs
-    // (`bool` vs `u64` — and the u64 payload is 8 bytes, not 1). A collision
+    // (`bool` vs `u64`: and the u64 payload is 8 bytes, not 1). A collision
     // here would let a boolean flag masquerade as an integer field.
     let as_bool = probe("d").bool("x", false).finish();
     let as_u64 = probe("d").u64("x", 0).finish();
@@ -108,7 +108,7 @@ fn none_and_some_empty_and_some_value_are_three_distinct_digests() {
 
 #[test]
 fn usize_is_equivalent_to_u64_of_the_same_magnitude() {
-    // `field_usize` is documented to delegate to `field_u64` — same digest.
+    // `field_usize` is documented to delegate to `field_u64`: same digest.
     let via_usize = probe("d").usize("n", 42).finish();
     let via_u64 = probe("d").u64("n", 42).finish();
     assert_eq!(

@@ -84,17 +84,17 @@ pub(super) fn evasion_decoder_reason(source_type: Option<&str>) -> Option<&'stat
 }
 
 /// True when `s` is multi-word English prose carrying an interior whitespace run
-/// — the dotenv/properties/log-line extractor sometimes captures an entire RHS
+///: the dotenv/properties/log-line extractor sometimes captures an entire RHS
 /// like `Session opened with handle XYZ. See documentation.` as the credential.
 /// Cheap word-run sanity check: >30 bytes, ≥2 whitespace chars, and at least one
-/// 3+ char all-lowercase token between spaces — characteristic of prose, not a
+/// 3+ char all-lowercase token between spaces, characteristic of prose, not a
 /// credential.
 ///
 /// ONE definition shared by the direct gate (5e0) and the base64-decoded twin
 /// (`decoded_benign_text_reason`), which previously carried byte-identical copies
 /// of this predicate that could silently drift apart (DEDUP, µ-dcn-12). This is
 /// deliberately NOT the same as `shape::looks_like_english_prose` (that one has a
-/// 16-byte floor and an all-lowercase arm) — the two thresholds differ by design.
+/// 16-byte floor and an all-lowercase arm) (the two thresholds differ by design).
 pub(crate) fn looks_like_prose_whitespace_run(s: &str) -> bool {
     s.len() > 30
         && s.chars().filter(|c| c.is_whitespace()).count() >= 2
@@ -112,7 +112,7 @@ pub(super) fn suppression_stage_inner(
     entropy_hint: Option<f64>,
     // Bridge-path-only exemption (KH-L-0110): the caller has proven this is a
     // COMPLETE, delimiter-terminated pure-hex value of canonical key length
-    // (32/48) anchored by a STRONG credential keyword — a real key on CredData
+    // (32/48) anchored by a STRONG credential keyword, a real key on CredData
     // (hex48+kw 1033 POS / 0 NEG; hex32+kw 0.976), invisible to the mirror's
     // len-40/64 hash negatives. When set, skip the bare-hex-digest arm and the
     // later pairwise sequential-hex placeholder arm. The earlier fake-sequence,
@@ -540,12 +540,12 @@ pub(crate) fn decoded_benign_text_reason(credential: &str) -> Option<&'static st
         return Some("decoded_labelled_hash_digest");
     }
     // Same length set as the direct bare-hex arm (32/40/48/56/64/72/128) so a
-    // base64-wrapped md5 (32) / sha1 (40) digest is suppressed too — the old
+    // base64-wrapped md5 (32) / sha1 (40) digest is suppressed too, the old
     // 56|64|72|128 gate here dropped the md5/sha1 lengths and leaked them.
     //
     // This is context-FREE (it only sees the base64 value): a decoded hex32 is
     // indistinguishable from an md5 here, so it CANNOT decide "AES key vs hash".
-    // That discrimination is the CALLER's job — a decoded canonical hex key
+    // That discrimination is the CALLER's job, a decoded canonical hex key
     // assigned to a STRONG credential keyword (`api-key: <b64>`) is exempted
     // BEFORE this arm via `decoded_hex_key_is_strong_anchored`, mirroring the
     // direct path's `is_strong_keyword_anchored_hex_key`. Keeping this arm

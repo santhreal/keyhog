@@ -1,6 +1,6 @@
 //! PERF tripwire: the Caesar decoder's 25x shift fan-out must be gated on its
 //! own *alphabetic-run* precondition, so a benign chunk with no shiftable long
-//! letter run is cheap — WITHOUT regressing the url/html/escape decoders.
+//! letter run is cheap: WITHOUT regressing the url/html/escape decoders.
 //!
 //! ## The defect (file:line evidence)
 //!
@@ -8,12 +8,12 @@
 //! `crates/scanner/src/decode/caesar.rs:100` pays the full decode cost on
 //! EVERY chunk that isn't source-code / a credential-URL line:
 //!
-//!   * line 127 `for candidate in extract_encoded_values(&chunk.data)` — a
+//!   * line 127 `for candidate in extract_encoded_values(&chunk.data)`: a
 //!     full O(n) char-level walk of the chunk that *allocates* one `String`
 //!     per quoted string / `key=value` / base64 run
 //!     (`crates/scanner/src/decode/pipeline/extractor.rs:4`), and
 //!   * line 142-160 `for shift in 1..=25u8 { let decoded =
-//!     caesar_shift(&candidate, shift); ... }` — TWENTY-FIVE fresh
+//!     caesar_shift(&candidate, shift); ... }`: TWENTY-FIVE fresh
 //!     `String::with_capacity(input.len())` allocations + full re-scans
 //!     (`caesar.rs:166`) for every candidate ≥ 16 chars that contains *any*
 //!     alphabetic byte (`caesar.rs:139`).
@@ -27,7 +27,7 @@
 //! any `k` in `1..=25`) can therefore never yield a credential-shaped variant
 //! under any shift, so its entire 25x `caesar_shift` fan-out + re-scan is dead
 //! work. Today the decoder runs that fan-out on every shape-passing candidate
-//! before discovering there was no prefix to find — so benign log/prose/
+//! before discovering there was no prefix to find, so benign log/prose/
 //! `key=value` traffic (the dominant real-world chunk shape) burns the full
 //! fan-out for zero recoverable credentials.
 //!
@@ -55,7 +55,7 @@
 //! The decoder does **~800x** the work a single precondition scan needs to
 //! reject the chunk. A correctly-gated decoder bails after roughly ONE such
 //! scan, i.e. a small single-digit multiple. (Even an undifferentiated benign
-//! prose chunk measured 63-80x — the gate is missed on every benign shape.)
+//! prose chunk measured 63-80x, the gate is missed on every benign shape.)
 //!
 //! ## Why this assertion is robust to CI/machine variance
 //!
@@ -73,7 +73,7 @@
 //! the same contention moment (a 14 ms decode is far likelier to be preempted
 //! in every rep than a 0.2 ms scan, so measuring their minima independently
 //! overstated the ratio and flaked on gated code), and the min-ratio picks the
-//! least-preempted paired sample. This cannot mask a real regression — an
+//! least-preempted paired sample. This cannot mask a real regression, an
 //! ungated decoder runs the fan-out on every rep, so even the min paired ratio
 //! stays >= 50x.
 //!
@@ -106,7 +106,7 @@ fn chunk(data: String) -> Chunk {
         data: data.into(),
         // Neutral non-source path: the Caesar source-code gate
         // (`is_source_code_path`, caesar.rs:42) must NOT short-circuit the
-        // fan-out we are measuring — we want the real benign-traffic cost.
+        // fan-out we are measuring (we want the real benign-traffic cost).
         metadata: ChunkMetadata {
             path: Some("audit.log".into()),
             ..Default::default()
@@ -116,11 +116,11 @@ fn chunk(data: String) -> Chunk {
 
 /// Build a benign chunk of `~target` bytes: dense `key=value` log lines whose
 /// values are LONG (≥16 chars, so each is a Caesar candidate that PASSES the
-/// shift-invariant shape gate — a digit plus an 8+ alphanumeric run) yet
+/// shift-invariant shape gate, a digit plus an 8+ alphanumeric run) yet
 /// contain NO `rot_{-k}(KNOWN_PREFIXES)` needle under any shift. The value
 /// tokens are drawn from `[a-z1-9]` only: no uppercase (every uppercase-prefix
-/// needle — `AKIA`/`ASIA`/`AIza`/`SG.`/`eyJ` — stays uppercase under a shift),
-/// no `_ - .` (every lowercase-prefix needle — `ghp_`/`sk-`/`hf_`/… — keeps its
+/// needle: `AKIA`/`ASIA`/`AIza`/`SG.`/`eyJ`: stays uppercase under a shift),
+/// no `_ - .` (every lowercase-prefix needle: `ghp_`/`sk-`/`hf_`/…, keeps its
 /// punctuation under a shift), and no `0` (the `0x` prefix needles are `0`+a
 /// letter). A Caesar shift only moves letters, so NO shift of any token here can
 /// contain a known prefix; the decoder's rotated-prefix prefilter rejects every
@@ -176,14 +176,14 @@ fn caesar_runfree_chunk_must_be_gated_not_fanned_out() {
     let data = chunk.data.as_ref().as_bytes().to_vec();
     let max_run = longest_alpha_run(&data);
 
-    // Sanity (recall safety): the fixture is genuinely credential-free — NO
-    // shift of any token yields a KNOWN_PREFIXES substring — so the decoder
+    // Sanity (recall safety): the fixture is genuinely credential-free. NO
+    // shift of any token yields a KNOWN_PREFIXES substring, so the decoder
     // produces ZERO output and the rotated-prefix prefilter that skips its
     // fan-out is provably losing nothing. Asserting empty output is a stronger,
     // exact guarantee than the old (unsound) "no 16+ alphabetic run" heuristic:
     // it directly proves there is no recoverable credential to drop. If a
     // future fixture edit sneaks in a token whose shift hits a prefix, the
-    // fan-out would run AND this assert would fire — either way the test stays
+    // fan-out would run AND this assert would fire, either way the test stays
     // honest.
     let produced = decoder.decode_chunk(&chunk);
     assert!(
@@ -246,7 +246,7 @@ fn caesar_runfree_chunk_must_be_gated_not_fanned_out() {
 }
 
 /// RECALL GUARD (the half that keeps the optimization honest). The Caesar gate
-/// must be LOCAL to the Caesar decoder — it must not become a pipeline-wide
+/// must be LOCAL to the Caesar decoder, it must not become a pipeline-wide
 /// "looks-decodable" gate like the reverted `has_decodable_payload`
 /// (crates/scanner/src/decode/pipeline.rs:95), which dropped url/html/escape
 /// recall. A `KNOWN_PREFIXES` credential wrapped in url-percent, HTML numeric
@@ -307,7 +307,7 @@ fn url_html_escape_wrapped_credential_still_decodes() {
         "recall regression: a known-prefix credential wrapped in url/html/escape \
          must still decode through the pipeline (url={url_ok} html={html_ok} \
          x-escape={hx_ok}). The Caesar alphabetic-run gate must be local to \
-         the Caesar decoder, NOT a pipeline-wide skip — see the reverted \
+         the Caesar decoder, NOT a pipeline-wide skip, see the reverted \
          has_decodable_payload at decode/pipeline.rs:95."
     );
 }

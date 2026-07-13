@@ -74,7 +74,7 @@ fn entropy_increases_with_symbol_diversity() {
 
 #[test]
 fn entropy_remainder_bytes_counted_correctly() {
-    // chunks_exact(4) has remainder — test that remainder bytes aren't missed.
+    // chunks_exact(4) has remainder (test that remainder bytes aren't missed).
     // Data: 5 bytes where the 5th is unique (breaks a pure-AB pattern).
     let data = vec![0xAAu8, 0xBB, 0xAA, 0xBB, 0xCC];
     let e = shannon_entropy_scalar(&data);

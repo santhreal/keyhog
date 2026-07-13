@@ -2,11 +2,11 @@
 //!
 //! `FirstBigramSet::may_have_match` is a MAYBE-gate in front of the exact
 //! Aho-Corasick scan: a `false` return SKIPS the AC entirely, so a false
-//! negative is a SILENT RECALL LOSS — a real secret whose literal's first bigram
+//! negative is a SILENT RECALL LOSS, a real secret whose literal's first bigram
 //! is present in the text would never be scanned. This fuzzes the bitmap gate
 //! against an INDEPENDENT `HashSet` oracle over arbitrary ASCII literals + text,
 //! in both case-sensitive and ASCII-case-insensitive modes, asserting EXACT
-//! equivalence (the 1024×u64 bitmap matches the oracle bit-for-bit) — so no
+//! equivalence (the 1024×u64 bitmap matches the oracle bit-for-bit), so no
 //! bitmap index-math bug (`idx >> 6` / `idx & 63`), 4-way-unroll boundary, or
 //! casefold gap can cause a silent skip. The `tests/unit/engine.rs` example test
 //! pins 4 hand-picked cases; this covers the whole space, especially the
@@ -17,7 +17,7 @@ use proptest::prelude::*;
 use std::collections::HashSet;
 
 /// Independent oracle: the set of first-bigram `u16` keys an
-/// `ascii_case_insensitive`-aware build indexes — a `HashSet` reimplementation
+/// `ascii_case_insensitive`-aware build indexes, a `HashSet` reimplementation
 /// of `FirstBigramSet::from_literals`' indexing, deliberately a DIFFERENT data
 /// structure than the bitmap so the differential catches index-math bugs.
 fn oracle_keys(lits: &[Vec<u8>], ci: bool) -> HashSet<u16> {

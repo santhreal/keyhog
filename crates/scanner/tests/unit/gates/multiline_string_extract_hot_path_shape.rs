@@ -8,7 +8,7 @@ fn plus_concatenation_does_not_collect_split_parts() {
 
     // Quote-aware split: extraction must stream segments from the lazy
     // `split_concatenation_operators` iterator (which only breaks on `+` outside
-    // quoted spans), counting parts inline — NOT collect a Vec. A blind
+    // quoted spans), counting parts inline. NOT collect a Vec. A blind
     // `content_to_split.split('+')` is forbidden because it shreds base64 values
     // whose alphabet contains `+`.
     assert!(

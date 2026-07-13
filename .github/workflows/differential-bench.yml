@@ -14,7 +14,7 @@ name: differential-bench
 
 on:
   schedule:
-    # 03:11 UTC nightly — staggered off the hour to avoid the queue
+    # 03:11 UTC nightly, staggered off the hour to avoid the queue
     # spike for actions/runner-images cache.
     - cron: "11 3 * * *"
   workflow_dispatch:
@@ -38,7 +38,7 @@ jobs:
     name: keyhog vs required competitors (F1 gate)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Per-job permissions — see keyhog.yml header note. Top-level
+    # Per-job permissions, see keyhog.yml header note. Top-level
     # `permissions:` rejected at dispatch time on this repo.
     permissions:
       contents: read
@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
-          # Track the latest release rather than pinning a version —
+          # Track the latest release rather than pinning a version 
           # the bench is intentionally measuring "current production
           # keyhog" not a specific tag.
           tag=$(curl -fsSL https://api.github.com/repos/santhsecurity/keyhog/releases/latest | \

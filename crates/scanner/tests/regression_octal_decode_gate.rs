@@ -1,7 +1,7 @@
 //! Regression (Law 10 / recall): the top-level decode-density gate
 //! `decode::has_decodable_payload` must route OCTAL-escaped chunks into
-//! decode-through. Octal digits between backslashes form runs of only 3 — far
-//! below `MIN_DECODABLE_RUN` (24) — so before this fix an octal-ONLY chunk
+//! decode-through. Octal digits between backslashes form runs of only 3, far
+//! below `MIN_DECODABLE_RUN` (24), so before this fix an octal-ONLY chunk
 //! returned false, the whole decode pipeline was skipped, and the registered
 //! octal decoder never ran on it (a secret hidden as `\NNN\NNN…` was silently
 //! missed). This pins that `\NNN` now counts toward the gate at the same
@@ -18,7 +18,7 @@ use keyhog_scanner::testing::has_decodable_payload_for_test as gate;
 fn octal_only_chunk_now_routes_into_decode_through() {
     // Two `\NNN` C-style octal escapes = MIN_BACKSLASH_ESCAPES; nothing else in
     // the chunk reaches any other trigger (each digit run is length 3 << 24).
-    // Before the fix this returned FALSE — octal was fully invisible to the gate.
+    // Before the fix this returned FALSE (octal was fully invisible to the gate).
     assert!(
         gate(b"\\101\\102"),
         "two \\NNN octal escapes must trip the decode gate"
@@ -31,7 +31,7 @@ fn octal_only_chunk_now_routes_into_decode_through() {
 
 #[test]
 fn sub_threshold_and_malformed_octal_do_not_trip_the_gate() {
-    // A SINGLE octal escape is below MIN_BACKSLASH_ESCAPES (2) — parity with how
+    // A SINGLE octal escape is below MIN_BACKSLASH_ESCAPES (2), parity with how
     // a lone `\u`/`\x` also does not trip the gate (one escape decodes to a
     // single byte, never a secret).
     assert!(!gate(b"\\101"), "one octal escape is below threshold");

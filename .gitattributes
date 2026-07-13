@@ -9,4 +9,4 @@
 # `diagnose_*.rs`) have all been de-LFS'd and are stored as text.
 #
 # Guarded by crates/scanner/tests/contract/rust_test_sources_are_not_lfs_pointers.rs
-# — do not re-add `filter=lfs` rules for files under crates/scanner/tests/.
+# (do not re-add `filter=lfs` rules for files under crates/scanner/tests/).

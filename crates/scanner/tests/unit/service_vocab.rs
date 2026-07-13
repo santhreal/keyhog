@@ -3,13 +3,13 @@
 //!
 //! Two surfaces are proven here:
 //!
-//!  * [`build_service_vocabulary`] — the pure builder over an explicit spec
+//!  * [`build_service_vocabulary`], the pure builder over an explicit spec
 //!    slice. Every one of the module's three documented filter rules (length
 //!    floor, generic-family exclusion incl. the substring asymmetry, and
 //!    stem-spread genericity) gets a positive twin and a negative twin on
 //!    synthetic specs we fully control, so the test asserts the exact behavior
-//!    the module doc claims — not merely a non-empty result.
-//!  * [`context_names_service`] — the live Aho-Corasick probe over the embedded
+//!    the module doc claims (not merely a non-empty result).
+//!  * [`context_names_service`], the live Aho-Corasick probe over the embedded
 //!    corpus. It is checked against a naive `contains` oracle (differential:
 //!    the automaton must agree with the O(n·m) reference on every input) plus
 //!    the empty-guard and case-insensitivity boundaries, and the live
@@ -261,7 +261,7 @@ fn live_vocabulary_holds_construction_invariants() {
 fn live_vocabulary_excludes_generic_credential_role_words() {
     // Feature 42's entire purpose is to separate a SPECIFIC service name from a
     // GENERIC credential role word (feature 17 already covers the latter). If any
-    // of these canonical role words — the ones the module doc names — leaked into
+    // of these canonical role words, the ones the module doc names, leaked into
     // the service vocabulary, feature 42 would fire on every `API_KEY=<uuid>`
     // identifier and the split it exists to make would collapse.
     let vocab = service_vocabulary();

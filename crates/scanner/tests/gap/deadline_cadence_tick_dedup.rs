@@ -3,8 +3,8 @@
 //! `expired_on_cadence` and `loop_expired_on_cadence` both gated on the verbatim
 //! `iteration > 0 && iteration.is_multiple_of(cadence)`. That gate is now the
 //! single `cadence_tick` helper both wrappers AND with their deadline check.
-//! Pin the exact truth table of the helper, and — driving each wrapper with an
-//! already-reached deadline so its deadline check is always true — pin that each
+//! Pin the exact truth table of the helper, and, driving each wrapper with an
+//! already-reached deadline so its deadline check is always true, pin that each
 //! wrapper's result equals the gate (so they cannot drift from `cadence_tick`).
 
 use keyhog_scanner::testing::{

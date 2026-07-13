@@ -19,11 +19,11 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "TWITCH client        _        - -    _        -   _   - - _   id::'=  '   \" YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "TWITCH client        _        - -    _        -   _   - - _   id::'=  '   \" ms2uvEXAMPLEEXAMPLEjvoa4"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = """TWITCH_CLIENT_ID=ms2uvf52y6in49bdtvr079w81jvoa4

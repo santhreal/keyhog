@@ -3,7 +3,7 @@
 //! The generic keyword bridge suppresses any value the identifier/type-name
 //! shape gates flag (`pure_identifier_no_digit`, `pure_identifier`,
 //! `type_name_shape`, `word_separated_identifier`). Those gates exist to drop
-//! code references — `password = getUserName`, `secret = configValue` — but they
+//! code references: `password = getUserName`, `secret = configValue`: but they
 //! ALSO drop a large pool of REAL random passwords that happen to be all-letters
 //! with no digit (`GRAPHITE_PASS=gjbubxsu`, `password="ufnlbbavawsdeecn"`,
 //! `ftp://user:pxidztpv`): on CredData ~1114 keyword-anchored positives, measured
@@ -51,7 +51,7 @@ static BIGRAM_LOGPROB: LazyLock<[f32; 676]> = LazyLock::new(|| {
 /// Minimum alphabetic characters before a randomness verdict is meaningful.
 /// Below this, English bigram statistics are too sparse to separate a short
 /// random password from a short identifier, so we return `false` (NOT random ⇒
-/// the identifier gate keeps suppressing — fail safe toward precision).
+/// the identifier gate keeps suppressing (fail safe toward precision)).
 pub(crate) const MIN_ALPHA: usize = 6;
 
 /// Mean adjacent-bigram log-probability at or below which a token's letters are
@@ -63,13 +63,13 @@ const RANDOM_LOGPROB_THRESHOLD: f32 = -6.85;
 
 /// Minimum DISTINCT lowercase letters a value must have for a `random` verdict.
 /// A 1–2 distinct-letter token (`aaaaaaaa`, `xzxzxzxz`, `qqqqwwww`) has
-/// improbable English bigrams — it would pass the log-prob threshold — but it is
+/// improbable English bigrams, it would pass the log-prob threshold, but it is
 /// a repetitive / alternating PATTERN, not a random token. Without this guard the
 /// discriminator is only sound downstream of a caller-side entropy/diversity
 /// floor (the generic bridge has one; the api.rs weak-anchor path does not). The
 /// floor of 3 is data-calibrated: all 1285 CredData random passwords the
 /// discriminator recovers have ≥ 4 distinct letters (min 4, e.g. `ttqqrqjt`),
-/// while every blind-spot pattern has ≤ 2 — so 3 separates them with margin and
+/// while every blind-spot pattern has ≤ 2, so 3 separates them with margin and
 /// drops no real password.
 pub(crate) const MIN_DISTINCT_LETTERS: usize = 3;
 
@@ -168,13 +168,13 @@ impl<'a> TokenRandomness<'a> {
 /// pronounceable dictionary identifier (code reference) OR a low-diversity
 /// repetitive pattern. Fails safe to `false` (treat as NOT random ⇒ keep
 /// suppressing) when the value is too short/sparse to judge or has too few
-/// distinct letters — soundness over reach, independent of any caller-side floor.
+/// distinct letters (soundness over reach, independent of any caller-side floor).
 pub(crate) fn is_random_token(value: &str) -> bool {
     RandomTokenEvidence::analyze(value).is_random_token()
 }
 
 /// `true` iff the bigram model is CONFIDENT that `value` is a pronounceable
-/// English dictionary word — it has at least [`MIN_ALPHA`] alphabetic chars AND
+/// English dictionary word, it has at least [`MIN_ALPHA`] alphabetic chars AND
 /// its mean adjacent-bigram log-probability sits ABOVE the random threshold
 /// (`password`, `secret`, `welcome`, `admin1234`).
 ///
@@ -182,19 +182,19 @@ pub(crate) fn is_random_token(value: &str) -> bool {
 /// negation: `!is_random_token` is also true for a SHORT token the model cannot
 /// judge (`mean_bigram_logprob == None`, the fail-safe). This predicate stays
 /// `false` there, so it can only ever DROP a value the model is sure is English
-/// — it never suppresses a short random password on a fail-safe, and a random
+///: it never suppresses a short random password on a fail-safe, and a random
 /// token (`pxidztpv`, score ≤ −6.85) is below the threshold so it is kept.
 ///
 /// Used by the strong-anchor structural detectors (e.g. `url-credentials`,
 /// whose regex proves a `scheme://user:<x>@host` credential SLOT but cannot
 /// itself tell the literal placeholder word `password` from a real secret) to
 /// drop the dictionary-word placeholders the Tier-B randomness floor would have
-/// caught — without that floor's length penalty on short random passwords.
+/// caught (without that floor's length penalty on short random passwords).
 pub(crate) fn is_confident_dictionary_word(value: &str) -> bool {
     // A real English word carries at least one letter OUTSIDE the hex alphabet
     // (`g..=z`). A pure-hex digest (`08c0fee0abeb…`) is built only from `a..f`
     // plus digits, yet its `a..f` adjacencies (`ab`, `be`, `de`, `ea`) score as
-    // probable English — without this guard the model misreads every hex key as
+    // probable English, without this guard the model misreads every hex key as
     // a dictionary word and the placeholder gate would suppress real hex secrets.
     let has_non_hex_letter = value
         .bytes()
@@ -206,7 +206,7 @@ pub(crate) fn is_confident_dictionary_word(value: &str) -> bool {
 }
 
 /// `true` iff `value` has FEWER than [`MIN_DISTINCT_LETTERS`] distinct ASCII
-/// letters — a repetitive / alternating / digit-only MASK (`xxxxxxxx`, `aaaaaa`,
+/// letters, a repetitive / alternating / digit-only MASK (`xxxxxxxx`, `aaaaaa`,
 /// `ababab`, `12345678`), never a real password.
 ///
 /// This is the soundness companion to [`is_confident_dictionary_word`] for the
@@ -217,7 +217,7 @@ pub(crate) fn is_confident_dictionary_word(value: &str) -> bool {
 /// mask (its bigrams are improbable English, so the model is NOT confident it is
 /// a word), so without this guard the strong anchor would surface the mask as a
 /// false positive. A genuinely-short random password (`i8cr1w!`, 4 distinct
-/// letters) clears the floor and is kept — the same `MIN_DISTINCT_LETTERS = 3`
+/// letters) clears the floor and is kept, the same `MIN_DISTINCT_LETTERS = 3`
 /// boundary [`is_random_token`] uses, so the two paths agree byte-for-byte.
 pub(crate) fn has_low_letter_diversity(value: &str) -> bool {
     RandomTokenEvidence::analyze(value).distinct_letters() < MIN_DISTINCT_LETTERS
@@ -229,7 +229,7 @@ pub(crate) fn has_low_letter_diversity(value: &str) -> bool {
 /// recover the value). The single source of truth for the gate so the scan-time
 /// generic bridge (`phase2_generic_shape`) and the post-process weak-anchor
 /// path (`suppression::api::suppress_named_detector_finding`) agree
-/// byte-for-byte — both wrap the SAME `is_random_token`, never a second copy.
+/// byte-for-byte (both wrap the SAME `is_random_token`, never a second copy).
 ///
 /// Used ONLY for the contiguous gates (`pure_identifier` / `type_name`), whose
 /// own predicates already reject digit-bearing values; the WORD-SEPARATED gate
@@ -246,7 +246,7 @@ pub(crate) fn keep_identifier_gate_with_randomness(
 /// WORD-SEPARATED identifier gate (KH-L-0414). The randomness model is an
 /// ENGLISH-WORD model, and a multi-segment programmer identifier with embedded
 /// digits / uppercase splits into SHORT acronym fragments (`d2i_PKCS7_bio` →
-/// `pkcs`, `curlx_memdup0` → `memdup`) that the model mis-scores as random —
+/// `pkcs`, `curlx_memdup0` → `memdup`) that the model mis-scores as random 
 /// so `is_random_token` alone is unsound here. Real CredData word-separated
 /// passwords are uniformly all-lowercase letters + `_`/`-` separators
 /// (`abxnj_gjvpuqzo`, `aapqhgn-qhuuc-trnmf`); requiring that shape BEFORE

@@ -315,7 +315,7 @@ pub(crate) fn generic_bridge_entropy_below_floor(
 /// (`8`) when the spec omits it. (The detector's `entropy_high` is a
 /// confidence-boost threshold read directly from the spec where confidence is
 /// scored; the base64 value-shape gates own their OWN `HIGH_ENTROPY_BASE64_CUTOFF`
-/// and never borrow this one — the two must not be conflated.)
+/// and never borrow this one, the two must not be conflated.)
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct GenericSecretShapeFloors {
     pub(crate) min_len: usize,
@@ -323,7 +323,7 @@ pub(crate) struct GenericSecretShapeFloors {
 
 /// Select the `generic-secret` detector from the ACTIVE detector set and read its
 /// shape-gate floors. This owns the generic-secret floor VALUE so the generic
-/// value-shape leaf never names the detector id itself — the
+/// value-shape leaf never names the detector id itself, the
 /// `suppression_named_detector_ctx_owner` gate requires generic floor policy to
 /// live in adjudicate, not in engine leaves (ONE PLACE). The `GENERIC_SECRET`
 /// detector is resolved ONCE at scanner build through the shared compiled
@@ -562,7 +562,7 @@ fn record_suppression_telemetry(path: Option<&str>, credential: &str, stage_id: 
         // The example-token gate is the MOST informative reason for a placeholder
         // drop ("this is a known EXAMPLE token"). Record it as an EXAMPLE
         // suppression (kind `example_suppressed`) so it claims the per-credential
-        // dogfood-event dedup slot first — NOT a generic shape event. Recording a
+        // dogfood-event dedup slot first. NOT a generic shape event. Recording a
         // shape event here too would claim the slot first and dedup the example
         // event away, leaving the trace mislabeled `shape_suppressed` (KH-GAP-091).
         record_example_suppression("pipeline", path, credential, reason);
@@ -646,7 +646,7 @@ fn decoded_reverse_placeholder_marker(reversed: &str) -> bool {
         || reversed.contains("YOUR_")
 }
 
-/// A decoded sub-chunk is SYNTHESIZED content — the bytes that fall out of a
+/// A decoded sub-chunk is SYNTHESIZED content, the bytes that fall out of a
 /// base64/hex/url/reverse decode, with NO surrounding keyword or structural
 /// context from the real file. A generic/entropy detector fires on shape/entropy
 /// ALONE, so on decoded content its "evidence" is nothing but the decoded bytes
@@ -656,14 +656,14 @@ fn decoded_reverse_placeholder_marker(reversed: &str) -> bool {
 /// (`PythonlibraryimplementingthefullGithubAPIv3`), XML paths, `OAuth2.0`. On the
 /// full CredData tree, decode-through surfaced +264 such generic/entropy hits
 /// that are ALL non-secrets (measured decode-on−decode-off diff), for ~0 real
-/// TP — pure precision loss. A decoded match must carry its OWN structural
-/// evidence — a required vendor literal / anchored slot that survives the decode
-/// — to be trusted (KH-L-0404 "anchor decoded matches"). The generic/entropy
+/// TP, pure precision loss. A decoded match must carry its OWN structural
+/// evidence, a required vendor literal / anchored slot that survives the decode
+///: to be trusted (KH-L-0404 "anchor decoded matches"). The generic/entropy
 /// family has none. Vendor/key detectors on decoded content (genuine encoded
-/// secrets — backblaze/confluent/wordpress tokens, `-----BEGIN`-headed key
+/// secrets, backblaze/confluent/wordpress tokens, `-----BEGIN`-headed key
 /// bodies) self-anchor on their required literal and are UNAFFECTED: this gate
 /// keys on the detector id only, never the value. Scoped to the decode path
-/// (`#[cfg(feature = "decode")]`) — top-level generic/entropy matches, which DO
+/// (`#[cfg(feature = "decode")]`), top-level generic/entropy matches, which DO
 /// have real file context, are untouched.
 #[cfg(feature = "decode")]
 pub(crate) fn record_decoded_generic_entropy_suppression(

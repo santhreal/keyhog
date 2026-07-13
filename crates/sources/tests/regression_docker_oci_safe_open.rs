@@ -1,10 +1,10 @@
 //! Re-homed from the former inline `safe_open_tests` in
-//! `crates/sources/src/docker/oci.rs` — the `docker_no_inline_tests` Santh
+//! `crates/sources/src/docker/oci.rs`: the `docker_no_inline_tests` Santh
 //! folder-contract gate forbids inline `#[cfg(test)]` under `src/docker/**`.
 //!
 //! Pins the OCI blob-open SECURITY behaviour of `verify_oci_blob_sha256`: it
 //! routes through the crate's safe opener (O_NONBLOCK + O_NOFOLLOW), so it
-//! verifies a regular blob's sha256, rejects a wrong digest, and — critically —
+//! verifies a regular blob's sha256, rejects a wrong digest, and, critically 
 //! REFUSES a symlink blob that a raw `File::open` would have followed. A
 //! malicious OCI layout could place a symlink where a blob belongs, pointing
 //! outside the layout; the no-follow open closes that. Exercised through the
@@ -49,7 +49,7 @@ fn refuses_a_symlink_blob_that_raw_open_would_have_followed() {
     // Direct: verifies.
     assert!(TestApi.verify_oci_blob_sha256_ok(&real, &digest));
     // Via a symlink with the SAME content/digest: refused because the symlink
-    // itself is not opened — the differential from the old raw File::open (which
+    // itself is not opened, the differential from the old raw File::open (which
     // would have followed it and returned Ok).
     let link = dir.path().join("link_blob");
     std::os::unix::fs::symlink(&real, &link).unwrap();

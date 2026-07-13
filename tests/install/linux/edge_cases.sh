@@ -72,45 +72,61 @@ expect_exec()   { if [ -x "$2" ]; then _record_pass "$1"; else _record_fail "$1"
 FIX_DIR=$(mktemp -d -t kh-fix-XXXXXX)
 trap 'rm -rf "$FIX_DIR"' EXIT INT TERM
 
-# Normal: newest release (v9.9.9) has assets.
+# Normal: newest release (v9.9.9) has a complete signed host bundle.
 cat > "$FIX_DIR/releases_normal.json" <<'JSON'
 [
   {
     "tag_name": "v9.9.9",
+    "draft": false,
+    "prerelease": false,
     "assets": [
-      {
-        "name": "keyhog-linux-x86_64",
-        "browser_download_url": "https://github.com/santhsecurity/keyhog/releases/download/v9.9.9/keyhog-linux-x86_64"
-      }
+      { "name": "keyhog-linux-x86_64" },
+      { "name": "keyhog-linux-x86_64.sha256" },
+      { "name": "keyhog-linux-x86_64.minisig" },
+      { "name": "keyhog-linux-x86_64.gpu-literals.tar.gz" },
+      { "name": "keyhog-linux-x86_64.gpu-literals.tar.gz.sha256" },
+      { "name": "keyhog-linux-x86_64.gpu-literals.tar.gz.minisig" }
     ]
   },
   {
     "tag_name": "v9.9.8",
+    "draft": false,
+    "prerelease": false,
     "assets": [
-      {
-        "name": "keyhog-linux-x86_64",
-        "browser_download_url": "https://github.com/santhsecurity/keyhog/releases/download/v9.9.8/keyhog-linux-x86_64"
-      }
+      { "name": "keyhog-linux-x86_64" },
+      { "name": "keyhog-linux-x86_64.sha256" },
+      { "name": "keyhog-linux-x86_64.minisig" },
+      { "name": "keyhog-linux-x86_64.gpu-literals.tar.gz" },
+      { "name": "keyhog-linux-x86_64.gpu-literals.tar.gz.sha256" },
+      { "name": "keyhog-linux-x86_64.gpu-literals.tar.gz.minisig" }
     ]
   }
 ]
 JSON
 
-# Newest release has ZERO assets; installer must skip to v9.9.8.
+# Newest release has only a binary; installer must skip the partial manifest
+# and select the complete stable v9.9.8 bundle.
 cat > "$FIX_DIR/releases_latest_empty.json" <<'JSON'
 [
   {
     "tag_name": "v9.9.9",
+    "draft": false,
+    "prerelease": false,
     "assets": [
+      { "name": "keyhog-linux-x86_64" }
     ]
   },
   {
     "tag_name": "v9.9.8",
+    "draft": false,
+    "prerelease": false,
     "assets": [
-      {
-        "name": "keyhog-linux-x86_64",
-        "browser_download_url": "https://github.com/santhsecurity/keyhog/releases/download/v9.9.8/keyhog-linux-x86_64"
-      }
+      { "name": "keyhog-linux-x86_64" },
+      { "name": "keyhog-linux-x86_64.sha256" },
+      { "name": "keyhog-linux-x86_64.minisig" },
+      { "name": "keyhog-linux-x86_64.gpu-literals.tar.gz" },
+      { "name": "keyhog-linux-x86_64.gpu-literals.tar.gz.sha256" },
+      { "name": "keyhog-linux-x86_64.gpu-literals.tar.gz.minisig" }
     ]
   }
 ]
@@ -119,9 +135,9 @@ JSON
 # Every release has zero assets -> hard error.
 cat > "$FIX_DIR/releases_all_empty.json" <<'JSON'
 [
-  { "tag_name": "v9.9.9", "assets": [
+  { "tag_name": "v9.9.9", "draft": false, "prerelease": false, "assets": [
     ] },
-  { "tag_name": "v9.9.8", "assets": [
+  { "tag_name": "v9.9.8", "draft": false, "prerelease": false, "assets": [
     ] }
 ]
 JSON
@@ -410,7 +426,7 @@ printf '%s  local_keyhog_no_sidecar\n' "$(sha_of "$FIX_DIR/local_keyhog_no_sidec
 #   MOCK_SHA        - "match" | "mismatch" | "absent" | "neterror"
 #     ("absent" = curl exit 22 / HTTP 404 = asset genuinely not published;
 #      "neterror" = curl exit 6 = a network/transport failure, which must NOT
-#      be silently downgraded to "not published" — see tests 6.4ac-6.4ai.)
+#      be silently downgraded to "not published", see tests 6.4ac-6.4ai.)
 #   MOCK_LDD        - "ok" | path-to-missing-lib-name (e.g. "libhyperscan.so.5")
 build_sandbox() {
     os=$1 arch=$2 nv=$3 lib=$4 toolkit=$5
@@ -583,14 +599,14 @@ case "$url" in
         if [ "$served" = "neterror" ]; then echo "mock curl: could not resolve host" >&2; exit 6; fi
         if [ "$served" = "404" ]; then exit 22; fi
         printf '%s' "$served" > "$sd/served"
-        cat "$served" > "$out"
+        if [ -n "$out" ]; then cat "$served" > "$out"; fi
         emit_redirect_url "$url"
         exit 0 ;;
     esac
     if [ "${MOCK_ASSET:-404}" = "404" ]; then exit 22; fi
     served="$MOCK_ASSET"
     printf '%s' "$served" > "$sd/served"
-    cat "$served" > "$out"
+    if [ -n "$out" ]; then cat "$served" > "$out"; fi
     emit_redirect_url "$url"
     exit 0 ;;
   *) exit 22 ;;
@@ -672,8 +688,8 @@ expect_status "2.2 normal install exits 0" 0 "$st"
 expect_nofile "2.3 default latest resolution skips GitHub API when redirect proves tag" "$h/github-api-called"
 rm -rf "$h"; h=$(newhome)
 out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy_v998" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
-expect_match  "2.4 missing latest asset falls back to API release walk" "checking recent releases" "$out"
-expect_match  "2.5 skips asset-less newest, picks v9.9.8" "Release tag:   v9.9.8" "$out"
+expect_match  "2.4 unproven latest bundle falls back to API release walk" "checking recent stable releases" "$out"
+expect_match  "2.5 skips partial newest bundle, picks v9.9.8" "Release tag:   v9.9.8" "$out"
 expect_file   "2.6 asset walk calls GitHub API" "$h/github-api-called"
 rm -rf "$h"; h=$(newhome)
 out=$(GITHUB_TOKEN=ghp_mock_token MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy_v998" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
@@ -681,7 +697,7 @@ expect_status "2.7 authenticated latest-resolution install exits 0" 0 "$st"
 expect_file   "2.8 latest-resolution API sends Authorization when GITHUB_TOKEN is set" "$h/github-api-auth"
 rm -rf "$h"; h=$(newhome)
 out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_all_empty.json" run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "2.9 all-empty releases errors" "No GitHub release" "$out"
+expect_match  "2.9 no complete release errors" "No stable GitHub release" "$out"
 expect_status "2.10 all-empty exits 1" 1 "$st"
 rm -rf "$h"; h=$(newhome)
 out=$(MOCK_LATEST_ASSET=404 run_install "$sb" "$h" -- --no-prompt); st=$?    # MOCK_RELEASES unset => DOWN
@@ -694,7 +710,7 @@ expect_match  "2.14 --version pin skips API" "Release tag:   v1.2.3" "$out"
 rm -rf "$h"; h=$(newhome)
 # A bare semver (no leading v) must normalise to the v-prefixed tag. keyhog
 # tags are all vX.Y.Z, so `--version=9.9.9` building a download URL from the
-# un-prefixed tag 404s — exactly the bug that failed the Windows install smoke
+# un-prefixed tag 404s, exactly the bug that failed the Windows install smoke
 # (the smoke passed "0.5.37", not "v0.5.37"). Assert the resolved tag is v-fixed
 # AND the install completes, so the 404 can never come back silently.
 out=$(KEYHOG_VERSION=9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
@@ -762,7 +778,7 @@ rm -rf "$h"
 # 6.4f-net a network/transport failure fetching the sidecar must NOT be reported
 # as "not published" (Law 10: never conflate a transport failure with a missing
 # asset). curl exit 6 (DNS) != exit 22 (HTTP 404), so the operator is told the
-# sidecar may well exist and a retry may succeed — never to rebuild the workflow.
+# sidecar may well exist and a retry may succeed (never to rebuild the workflow).
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR=neterror run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_match   "6.4f-net sidecar transport failure names the transport error" "network/transport failure, not a missing asset" "$out"
@@ -1140,7 +1156,7 @@ out=$(KEYHOG_VERSION=v1.2.3 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=m
 expect_match "14.1 v-prefixed tag used verbatim" "Release tag:   v1.2.3" "$out"
 rm -rf "$h"; h=$(newhome)
 # A bare numeric --version normalises to the v-prefixed release tag. keyhog
-# tags are all vX.Y.Z, so honoring "2.0.0" verbatim built a 404 download URL —
+# tags are all vX.Y.Z, so honoring "2.0.0" verbatim built a 404 download URL 
 # the regression that failed the Windows install smoke. The resolved tag must
 # carry the v.
 out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --version=2.0.0 --no-prompt)

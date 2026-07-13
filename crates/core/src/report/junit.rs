@@ -54,7 +54,7 @@ impl<W: Write + Send> Reporter for JunitReporter<W> {
 }
 
 fn write_testcase<W: Write>(writer: &mut W, finding: &VerifiedFinding) -> Result<(), ReportError> {
-    // LAW10 (both below): recall-safe — formatting OPTIONAL location fields of
+    // LAW10 (both below): recall-safe, formatting OPTIONAL location fields of
     // an already-detected finding into JUnit XML. A `None` becomes an empty
     // string handled by the `case_name` branches below; the finding is still
     // emitted. No detection happens here.

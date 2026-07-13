@@ -1,6 +1,6 @@
 # Per-detector contract: bearer-authorization
 #
-# Detector regex: `(?i)\bbearer\s+([A-Za-z0-9._~+/\-]{16,})` — the RFC 6750
+# Detector regex: `(?i)\bbearer\s+([A-Za-z0-9._~+/\-]{16,})`: the RFC 6750
 # Bearer auth scheme keyword, whitespace, then a >=16-char `token68` value
 # (group 1). `\b` on `bearer` so `overbearing`/`forbearer` do not trip it; the
 # >=16-char floor keeps `Bearer token` / `Bearer plan` prose from matching.
@@ -21,56 +21,56 @@ severity = "high"
 [[positive]]
 text = "Authorization: Bearer a3f9c1e07b42d85f6098ac1de2f3b4c5d6e7f809"
 credential = "a3f9c1e07b42d85f6098ac1de2f3b4c5d6e7f809"
-reason = "Canonical RFC 6750 Authorization header; 40-hex opaque token — the dominant CredData Bearer shape a bare-hash-digest gate would drop."
+reason = "Canonical RFC 6750 Authorization header; 40-hex opaque token (the dominant CredData Bearer shape a bare-hash-digest gate would drop)."
 
 [[positive]]
 text = "curl -H 'Authorization: Bearer r7yzGzH0SW5Xtx1lMFQ5xA6pCS0fZLJlG8P6' https://api.internal/health"
 credential = "r7yzGzH0SW5Xtx1lMFQ5xA6pCS0fZLJlG8P6"
-reason = "Bearer header embedded in a curl command — 36-char mixed-case opaque token, the real leak shape."
+reason = "Bearer header embedded in a curl command: 36-char mixed-case opaque token, the real leak shape."
 
 [[positive]]
 text = "  - Bearer 9fK2mQ7wZx4bN1vR8tY3uL6pA0sD5eH2jC"
 credential = "9fK2mQ7wZx4bN1vR8tY3uL6pA0sD5eH2jC"
-reason = "YAML list item `- Bearer <token>` — CredData's dominant structural form; strong anchor surfaces it with no keyword=value assignment."
+reason = "YAML list item `- Bearer <token>`: CredData's dominant structural form; strong anchor surfaces it with no keyword=value assignment."
 
 [[positive]]
 text = "headers = { \"Authorization\": \"Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzdmMifQ.Rt8Vy3Bn6Kc4mLp9\" }"
 credential = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzdmMifQ.Rt8Vy3Bn6Kc4mLp9"
-reason = "A JWT bearer token — the `.`-separated base64url is captured whole (dedup'd by value against jwt-token when both fire)."
+reason = "A JWT bearer token (the `.`-separated base64url is captured whole (dedup'd by value against jwt-token when both fire))."
 
 # ---- NEGATIVES (precision) ------------------------------------------
 
 [[negative]]
 text = "Bearer token required for all authenticated API requests."
-reason = "`Bearer ` followed by the 5-char word `token`, not a >=16-char value — below the floor, the regex never matches."
+reason = "`Bearer ` followed by the 5-char word `token`, not a >=16-char value (below the floor, the regex never matches)."
 
 [[negative]]
 text = "Authorization: Bearer <access_token>"
-reason = "An angle-bracket template — `<` is excluded from the value class, so the token run never starts."
+reason = "An angle-bracket template: `<` is excluded from the value class, so the token run never starts."
 
 [[negative]]
 text = "req.headers['Authorization'] = 'Bearer ' + $ACCESS_TOKEN"
-reason = "A shell/template variable reference — the char after `Bearer ` is a quote/`$`, absent from the value class, so nothing is captured."
+reason = "A shell/template variable reference (the char after `Bearer ` is a quote/`$`, absent from the value class, so nothing is captured)."
 
 [[negative]]
 text = "Bearer yourtokenvaluehere is a placeholder, replace it."
-reason = "`yourtokenvaluehere` is a confident English concatenation — the dictionary_word_placeholder gate must drop it."
+reason = "`yourtokenvaluehere` is a confident English concatenation (the dictionary_word_placeholder gate must drop it)."
 
 [[negative]]
 text = "The bearer bond matured after a decade of overbearing oversight."
-reason = "`bearer` in prose; `bond` is 4 chars and `overbearing` has no word boundary before `bearer` — nothing matches."
+reason = "`bearer` in prose; `bond` is 4 chars and `overbearing` has no word boundary before `bearer` (nothing matches)."
 
 # ---- EVASIONS (adversarial) -----------------------------------------
 
 [[evasion]]
 text = "authorization: bearer a3f9c1e07b42d85f6098ac1de2f3b4c5"
 credential = "a3f9c1e07b42d85f6098ac1de2f3b4c5"
-reason = "Lower-cased header + scheme keyword — the (?i) flag must still surface the 32-hex token."
+reason = "Lower-cased header + scheme keyword (the (?i) flag must still surface the 32-hex token)."
 
 [[evasion]]
 text = "# Authorization: Bearer Kc4mLp9Rt8Vy3Bn6h84mLpQw7RtVy1B"
 credential = "Kc4mLp9Rt8Vy3Bn6h84mLpQw7RtVy1B"
-reason = "Commented-out header stashed in a config/script — must still fire."
+reason = "Commented-out header stashed in a config/script (must still fire)."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

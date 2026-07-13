@@ -11,7 +11,7 @@ use std::process::Command;
 use tempfile::TempDir;
 
 /// An uncalibrated cache directory reports "not calibrated yet" in text mode and
-/// exits 0 — never a scary error, since the operator's next step is to calibrate.
+/// exits 0 (never a scary error, since the operator's next step is to calibrate).
 #[test]
 fn backend_autoroute_reports_uncalibrated_cache_cleanly() {
     let cache = TempDir::new().unwrap();
@@ -39,7 +39,7 @@ fn backend_autoroute_reports_uncalibrated_cache_cleanly() {
 }
 
 /// `--json` emits a valid object that marks an absent cache as `present:false`
-/// with an empty `configs` array — a stable shape for scripted health checks.
+/// with an empty `configs` array (a stable shape for scripted health checks).
 #[test]
 fn backend_autoroute_json_is_valid_and_marks_absence() {
     let cache = TempDir::new().unwrap();

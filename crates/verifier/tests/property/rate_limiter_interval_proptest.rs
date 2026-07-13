@@ -2,11 +2,11 @@
 //! (6318 slice 2). A zero inter-request interval means an INFINITE effective
 //! rate: the limiter would impose no spacing at all, defeating the back-pressure
 //! it exists to provide (an abuse / self-DoS vector against the verified
-//! endpoint). `rps_to_nanos` guards EVERY path — non-finite, non-positive,
-//! absurdly large (interval rounds below 1ns), and overflowing `u64` — to a
+//! endpoint). `rps_to_nanos` guards EVERY path, non-finite, non-positive,
+//! absurdly large (interval rounds below 1ns), and overflowing `u64`: to a
 //! strictly-positive interval. The existing `rate_limit_zero_rps_clamps_to_default`
 //! unit test pins three fixed adversarial values (0.0, -42, NaN); this sweep
-//! generalises the invariant to a DENSE stream of arbitrary `f64` bit patterns —
+//! generalises the invariant to a DENSE stream of arbitrary `f64` bit patterns 
 //! covering ±inf, NaN, `f64::MAX`, subnormals, negatives, and every finite
 //! magnitude. It uses the same hand-rolled LCG as the SSRF sweep (this crate
 //! carries no `proptest` dev-dependency) so a failing `rps` is reproducible from
@@ -17,7 +17,7 @@ use keyhog_verifier::rate_limit::RateLimiter;
 use std::time::Duration;
 
 /// Draw a full-range `f64` from two LCG steps: every 64-bit pattern is a valid
-/// `f64`, so this samples NaN, ±inf, subnormals, and the entire finite range —
+/// `f64`, so this samples NaN, ±inf, subnormals, and the entire finite range 
 /// exactly the adversarial space `rps_to_nanos` must survive. Denser and more
 /// hostile than `proptest`'s `any::<f64>()`, which biases toward "nice" values.
 fn draw_f64(state: &mut u32) -> f64 {
@@ -61,7 +61,7 @@ fn rate_limiter_interval_is_never_zero_for_any_rps() {
 #[test]
 fn rate_limiter_interval_positive_across_arbitrary_retune() {
     // No ORDERING of two arbitrary rps values (construct with one, re-tune to the
-    // other) can wedge the interval to zero — the guard is stateless per set.
+    // other) can wedge the interval to zero (the guard is stateless per set).
     let mut state = 0x5EED_1234;
     for _ in 0..SAMPLES {
         let rps_a = draw_f64(&mut state);

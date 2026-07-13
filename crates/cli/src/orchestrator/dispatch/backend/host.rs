@@ -31,7 +31,7 @@ impl AutorouteHostProfile {
         // physically present GPU is NOT part of THIS build's scan identity:
         // collapse the whole GPU dimension (device/runtime/driver/software)
         // instead of recording a present-but-unusable device. This is not a
-        // silent degrade (Law 10) — the build feature set (`push_feature!("gpu")`)
+        // silent degrade (Law 10), the build feature set (`push_feature!("gpu")`)
         // already stamps the cache identity, so a GPU-capable build's cache can
         // never collide with this one; and a GPU-CAPABLE build whose runtime
         // probe fails keeps `hardware_gpu_present` true below and still fails
@@ -115,7 +115,7 @@ impl AutorouteHostProfile {
     }
 }
 
-/// True when an optional identity field is `Some` with non-blank content —
+/// True when an optional identity field is `Some` with non-blank content 
 /// the ONE definition of "this probe field actually resolved" shared by every
 /// `require_exact_identity` check (a `Some("")` is a probe bug, not identity).
 fn field_is_present_nonblank(field: &Option<String>) -> bool {

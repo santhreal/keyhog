@@ -8,9 +8,9 @@
 //! Two production paths reach a pointer and both are locked here:
 //!   * text/unknown-extension pointers (`creds.txt`, no extension) take the
 //!     small-file single-chunk path, where the whole content is already in hand
-//!     — detection there is zero extra I/O and the pointer text is still scanned.
-//!   * skip-extension pointers (`logo.png`, `model.bin`) — the common real case,
-//!     since Git LFS keeps the asset's binary extension — are normally dropped
+//! (detection there is zero extra I/O and the pointer text is still scanned).
+//!   * skip-extension pointers (`logo.png`, `model.bin`), the common real case,
+//!     since Git LFS keeps the asset's binary extension, are normally dropped
 //!     unread as binary; a bounded, size-gated prefix probe recognises the
 //!     pointer so it is attributed precisely instead of counted as plain binary.
 //!
@@ -207,7 +207,7 @@ fn bin_canonical_pointer_records_git_lfs_pointer_gap() {
 #[test]
 fn png_real_small_binary_asset_is_counted_binary_not_pointer() {
     // A genuine small PNG (magic-prefixed, not a pointer) must fail the pointer
-    // probe and fall through to the normal binary skip — no false positive.
+    // probe and fall through to the normal binary skip (no false positive).
     let _guard = counter_guard();
     reset_skipped_over_max_size();
     let mut content = vec![0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n'];
@@ -223,7 +223,7 @@ fn png_real_small_binary_asset_is_counted_binary_not_pointer() {
 #[test]
 fn png_large_asset_is_not_probed_and_counts_binary() {
     // A .png larger than one pointer is a real asset: the size gate skips the
-    // probe entirely (Law 7 — no whole-content read on a large binary), and it is
+    // probe entirely (Law 7, no whole-content read on a large binary), and it is
     // recorded as an ordinary binary skip.
     let _guard = counter_guard();
     reset_skipped_over_max_size();
@@ -307,7 +307,7 @@ fn empty_file_records_no_gap() {
 fn oversized_pointer_text_is_not_counted_but_is_still_scanned() {
     // A "pointer" whose content exceeds one pointer's worth of bytes is not a
     // real pointer (they are ~130 bytes). The size gate skips the whole-content
-    // check so a large text file never pays the pointer scan — yet the file is
+    // check so a large text file never pays the pointer scan, yet the file is
     // still scanned normally.
     let _guard = counter_guard();
     reset_skipped_over_max_size();

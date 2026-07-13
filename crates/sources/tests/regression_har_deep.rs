@@ -2,7 +2,7 @@
 //! (`crates/sources/src/har.rs`), driven through the hidden
 //! `testing::TestApi::expand_har` facade so every assertion checks the exact
 //! rendered chunk text, source_type tag, and `path#url` metadata a finding
-//! carries — not just "non-empty".
+//! carries (not just "non-empty").
 //!
 //! Contract under test (see the module docs in `har.rs`):
 //! - one `wire:har:request` chunk and one `wire:har:response` chunk per entry,
@@ -12,7 +12,7 @@
 //!   response chunk;
 //! - `content.encoding == "base64"` bodies are decoded before scanning;
 //! - a malformed (but HAR-shaped) document returns `None` (caller falls back to
-//!   raw text) and records exactly one structured parse-failure gap — it never
+//!   raw text) and records exactly one structured parse-failure gap, it never
 //!   panics;
 //! - a document whose expanded bodies blow the 4× file-size budget yields an
 //!   exact `SourceError::Other` truncation row rather than unbounded growth;

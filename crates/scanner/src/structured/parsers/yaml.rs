@@ -14,8 +14,8 @@ use serde::Deserialize;
 /// `decode_derived` is true when `text` is not the original file but a buffer
 /// the decode-through pipeline produced by splicing a decoded payload back into
 /// the parent (`ChunkMetadata::decoded_span.is_some()`). On a derived buffer a
-/// YAML parse failure is EXPECTED and loses nothing — the encoded surface was
-/// already decoded and scanned by the pipeline that produced this buffer — so it
+/// YAML parse failure is EXPECTED and loses nothing, the encoded surface was
+/// already decoded and scanned by the pipeline that produced this buffer, so it
 /// must not be counted or announced as a lost decode surface (that would be a
 /// false Law-10 alarm and would inflate the structured-parse-failure telemetry).
 pub(crate) fn parse_k8s_secret(text: &str, decode_derived: bool) -> Vec<ExtractedPair> {
@@ -73,7 +73,7 @@ fn extract_k8s_secret_maps(
             let decoded = match keyhog_core::decode_standard_base64(&encoded) {
                 Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
                 Err(error) => {
-                    // LAW10: supplementary diagnostic only — recall is preserved by the
+                    // LAW10: supplementary diagnostic only, recall is preserved by the
                     // whole-chunk scan, so this debug line is not the sole surface.
                     tracing::debug!(
                         target: "keyhog::structured",
@@ -184,8 +184,8 @@ const SERDE_YAML_PARSE_RECURSION_LIMIT: usize = 128;
 /// At depth > 0 (`decode_derived == true`) the `text` is a buffer the
 /// decode-through pipeline synthesised by splicing an already-decoded payload
 /// back into the parent k8s/compose scaffold. Such a buffer is NOT guaranteed to
-/// be valid YAML — e.g. a base64 `data:` value that decodes to a JWT whose own
-/// base64url header decodes to inline JSON `{"alg":...}.<sig>` is not — yet the
+/// be valid YAML, e.g. a base64 `data:` value that decodes to a JWT whose own
+/// base64url header decodes to inline JSON `{"alg":...}.<sig>` is not, yet the
 /// secret it carried was already surfaced and scanned when the pipeline produced
 /// this buffer. Announcing "decode-through disabled / lost surface" here is a
 /// FALSE alarm, so the failure is logged only as debug detail.
@@ -193,7 +193,7 @@ const SERDE_YAML_PARSE_RECURSION_LIMIT: usize = 128;
 /// `documents_parsed` is how many `---`-separated documents were decoded before
 /// the failing one stopped the stream. libyaml cannot resync a multi-document
 /// YAML past a syntax error (every subsequent `parser.next()` re-returns the same
-/// error), so any documents AFTER the failure are truncated too — surfacing this
+/// error), so any documents AFTER the failure are truncated too, surfacing this
 /// count makes that loss visible instead of silently dropping the tail.
 fn report_yaml_parse_failure(
     error: &serde_yaml::Error,
@@ -272,7 +272,7 @@ fn parse_yaml_documents(
     let mut parse_error = None;
     // A parse error truncates the stream: libyaml cannot resync a multi-document
     // YAML past a syntax error (every subsequent `parser.next()` re-returns the
-    // same error — continuing here would loop forever), so we keep the documents
+    // same error, continuing here would loop forever), so we keep the documents
     // decoded BEFORE the failure and stop. The failing document and any after it
     // are surfaced by `documents_parsed` below rather than dropped silently.
     for document in serde_yaml::Deserializer::from_str(text) {
@@ -372,7 +372,7 @@ fn yaml_scalar_value_text(value: &serde_yaml::Value) -> Option<String> {
 /// Push every `<key>: <scalar>` entry of a YAML mapping as a pending pair with
 /// the standard `<key>: <value>` line anchor and `<key>:` fallback anchor.
 /// Shared by the k8s `stringData:` block and the docker-compose `environment:`
-/// mapping form — both surface raw (non-base64) scalar values identically, so
+/// mapping form, both surface raw (non-base64) scalar values identically, so
 /// the extraction lives in one owner instead of two byte-identical loops.
 fn push_scalar_mapping_pairs(map: &serde_yaml::Mapping, pending: &mut Vec<PendingExtractedPair>) {
     for (k, v) in map {

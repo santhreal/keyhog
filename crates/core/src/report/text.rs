@@ -309,7 +309,7 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
             } else {
                 // Never claim "clean": a scanner cannot prove the ABSENCE of
                 // secrets (only their presence), and skipped/unreadable/binary
-                // files were not covered at all. State only what is true — nothing
+                // files were not covered at all. State only what is true, nothing
                 // was detected in what was scanned. The end-of-scan skip summary
                 // (stderr) reports what was NOT covered.
                 writeln!(

@@ -5,7 +5,7 @@
 //! `is_zero_width` curates the invisible-format codepoints the evasion strip
 //! removes. It previously missed the invisible math operators U+2061–2064, the
 //! Tags block U+E0000–E007F, and the interlinear annotation anchors
-//! U+FFF9–FFFB — all invisible, all credential-splice vectors. This suite pins
+//! U+FFF9–FFFB, all invisible, all credential-splice vectors. This suite pins
 //! that each is now stripped while the *meaningful* Cf chars (Arabic/Syriac
 //! number signs) are preserved (the strip is curated, not a blanket Cf drop).
 //!
@@ -160,7 +160,7 @@ fn contains_evasion_true_for_invisible_operator_and_tag() {
 
 #[test]
 fn arabic_number_sign_0600_is_kept() {
-    // U+0600 (Cf) prefixes Arabic numbers and has a real effect — must survive.
+    // U+0600 (Cf) prefixes Arabic numbers and has a real effect (must survive).
     let normalized = normalize_homoglyphs("amount_\u{0600}123_token");
     assert!(
         normalized.contains('\u{0600}'),

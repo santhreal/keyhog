@@ -1,6 +1,6 @@
 # Output-formats recording: keyhog speaks every CI/SIEM dialect from one scan.
-# Shows the machine-readable stdout payloads — json (pipelines), sarif (code
-# scanning), csv (spreadsheets/BI) — over the same demo/ tree. Diagnostic
+# Shows the machine-readable stdout payloads, json (pipelines), sarif (code
+# scanning), csv (spreadsheets/BI), over the same demo/ tree. Diagnostic
 # stderr (banner, progress, Law-10 notices) is piped away with 2>/dev/null so
 # the frame holds the clean structured payload a downstream tool consumes.
 Output demo/keyhog-formats.gif

@@ -6,12 +6,12 @@
 //! the text tally disagree with the machine formats) is a silent recall/UX bug
 //! this pins shut with concrete integers.
 //!
-//! Fixture strategy — deterministic and HOST-INDEPENDENT:
+//! Fixture strategy, deterministic and HOST-INDEPENDENT:
 //!   * One planted secret shape is used everywhere: a GitHub classic PAT
 //!     (`ghp_` + 36 alnum) with a valid trailing checksum, proven by the
 //!     format/backend parity e2e to fire `github-classic-pat` on its own bytes.
 //!     Because it carries the literal `ghp_` anchor it triggers on the scalar
-//!     Aho-Corasick literal path — it does NOT depend on Hyperscan/SIMD/GPU, so
+//!     Aho-Corasick literal path, it does NOT depend on Hyperscan/SIMD/GPU, so
 //!     every count below reproduces on an accelerator-less host. All runs pin
 //!     `--backend cpu` for the same reason.
 //!   * Distinct FINDING counts are produced by planting the token in N separate
@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
-/// A GitHub classic PAT with a valid trailing checksum — proven (by the
+/// A GitHub classic PAT with a valid trailing checksum, proven (by the
 /// format/backend parity e2e) to fire `github-classic-pat` on its own bytes via
 /// the literal `ghp_` anchor (scalar path; no accelerator required).
 const PLANTED: &str = "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";
@@ -58,7 +58,7 @@ fn clean_file() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
     let p = dir.path().join("notes.txt");
     // No credential-bridge keywords (secret/key/token/password/api) so nothing
-    // fires at all — a true negative twin.
+    // fires at all (a true negative twin).
     std::fs::write(&p, "just ordinary prose with plain everyday words here\n")
         .expect("write clean file");
     (dir, p)
@@ -158,7 +158,7 @@ fn text_single_finding_says_one_secret_found() {
     assert_eq!(text_summary_count(&combined), Some(1), "parsed count == 1");
 }
 
-/// Two findings (2 files, dedup off) -> the PLURAL "2 secrets found" — the
+/// Two findings (2 files, dedup off) -> the PLURAL "2 secrets found", the
 /// singular/plural boundary at N == 2.
 #[test]
 fn text_two_findings_uses_plural_form() {
@@ -235,7 +235,7 @@ fn json_array_length_equals_planted_count() {
     );
 }
 
-/// The text roll-up count and the json array length AGREE for the same scan —
+/// The text roll-up count and the json array length AGREE for the same scan 
 /// a serializer that drops a finding on one path (recall hole) fails here.
 #[test]
 fn text_and_json_counts_agree() {
@@ -354,7 +354,7 @@ fn stream_preview_line_count_equals_finding_count() {
 // ---------------------------------------------------------------------------
 
 /// Passing the SAME file path twice on the command line, even with dedup off,
-/// folds the duplicate root — the summary counts the finding ONCE, not twice.
+/// folds the duplicate root (the summary counts the finding ONCE, not twice).
 #[test]
 fn duplicate_root_does_not_double_count() {
     let (_dir, paths) = plant_tokens(1);

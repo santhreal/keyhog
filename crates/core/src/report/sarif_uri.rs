@@ -32,7 +32,7 @@ pub(crate) fn file_path_to_sarif_uri(path: &str) -> String {
 /// Percent-encode a repo-relative path for a SARIF `artifactLocation.uri`, then
 /// disambiguate the leading-colon case. Per RFC 3986 §4.2 a relative-path
 /// reference whose FIRST segment contains a `:` is indistinguishable from an
-/// absolute URI with a scheme — `a:b.env` parses as scheme `a`, opaque part
+/// absolute URI with a scheme: `a:b.env` parses as scheme `a`, opaque part
 /// `b.env`, so a consumer like GitHub code-scanning never resolves it against the
 /// checkout and the alert is dropped or mis-mapped. Colons are legal in POSIX
 /// filenames, so this is reachable from a real scan. Prefix such a path with
@@ -49,7 +49,7 @@ fn render_relative_uri(rel: &str) -> String {
 }
 
 /// True when the path segment before the first `/` (or the whole reference, if
-/// there is no `/`) contains a `:` — the RFC 3986 §4.2 scheme-ambiguity trigger.
+/// there is no `/`) contains a `:`: the RFC 3986 §4.2 scheme-ambiguity trigger.
 fn first_segment_has_colon(uri: &str) -> bool {
     match uri.split_once('/') {
         Some((first, _)) => first.contains(':'),

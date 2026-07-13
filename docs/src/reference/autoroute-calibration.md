@@ -73,7 +73,7 @@ calibration, even when they do not change which backend is fastest:
   support are read from the scanner library that actually owns and compiled
   those backends, not inferred from similarly named CLI features.
 - Host identity includes OS/architecture, CPU model and topology, memory, CPU
-  instruction support, and—when the scanner can use a physical GPU—the GPU
+  instruction support, and: when the scanner can use a physical GPU: the GPU
   device, runtime backend, and driver/runtime identity. A missing or changed
   required field invalidates the evidence and requires recalibration.
 - Each scan preset (default, `--fast`, `--deep`, `--precision`) is calibrated

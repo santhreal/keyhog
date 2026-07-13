@@ -1,13 +1,13 @@
 //! Regression coverage for core PATH NORMALIZATION semantics.
 //!
 //! Two ONE-PLACE surfaces are exercised here:
-//!   1. `keyhog_core::winpath::{has_windows_drive_prefix, is_windows_absolute}` —
+//!   1. `keyhog_core::winpath::{has_windows_drive_prefix, is_windows_absolute}` 
 //!      the BROAD (drive-prefix) vs STRICT (root-anchored) same-name-divergence
 //!      predicates. This file asserts the RELATIONSHIP between the two and a set
 //!      of boundary bools that are DISTINCT from `tests/unit/winpath.rs` (bare
 //!      `C:\`, bare `C:/`, `AB:/x`, `://x`).
 //!   2. The lexical path canonicaliser reached through the public
-//!      `Allowlist::is_path_ignored` — `normalize_path` collapses `.`/`..`,
+//!      `Allowlist::is_path_ignored`: `normalize_path` collapses `.`/`..`,
 //!      folds backslashes to `/`, strips the leading unix root, and drops
 //!      trailing/duplicate separators, applied to BOTH the ignore pattern and
 //!      the queried path. Every case pins the concrete normalized form by
@@ -24,7 +24,7 @@
 //! `file:///` URI regardless of the process CWD (a Windows path can never be a
 //! child of the unix scan root, so relativisation deterministically declines).
 //! Component classification follows the compile target's rules (unix on the
-//! test host), so a drive letter is a plain path segment here — asserted
+//! test host), so a drive letter is a plain path segment here, asserted
 //! explicitly rather than assumed.
 //!
 //! TEST TRUTH: every assertion is an exact bool / exact `Option<&str>` / exact

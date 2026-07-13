@@ -283,15 +283,15 @@ impl ScanOrchestrator {
             })
             .collect();
 
-        // KH-GAP-096: if a requested source failed ENTIRELY — produced zero
+        // KH-GAP-096: if a requested source failed ENTIRELY, produced zero
         // chunks AND errored (e.g. --git-history / --git-diff on a non-repo or
-        // bad ref, --github-org with a bad token, an unreachable --url) — and
+        // bad ref, --github-org with a bad token, an unreachable --url), and
         // there are no findings, the requested scan never ran. Do NOT fall
         // through to "no findings, all clean" + exit 0: a CI gate would read
         // that as a clean tree when nothing was scanned. Fail closed with a
         // diagnostic. A partial failure (some files unreadable in a tree that
-        // still produced chunks) does NOT trip this — that source produced
-        // data, so FAILED_SOURCES stays 0 — nor does a failed source that runs
+        // still produced chunks) does NOT trip this, that source produced
+        // data, so FAILED_SOURCES stays 0, nor does a failed source that runs
         // alongside another source which DID surface findings (exit 1 wins).
         if findings.is_empty()
             && crate::FAILED_SOURCES.load(std::sync::atomic::Ordering::Relaxed) > 0
@@ -434,7 +434,7 @@ impl ScanOrchestrator {
             // decision (a calibration failure errors out earlier with a non-zero
             // exit). Its exit code therefore reflects CALIBRATION success, never
             // whatever secrets or coverage gaps the throwaway calibration probe
-            // happened to contain — so the installer's calibration phase is not
+            // happened to contain, so the installer's calibration phase is not
             // failed by a decode-heavy probe that legitimately decodes to a
             // secret. A scanner panic still overrides (the scan was unreliable).
             std::process::ExitCode::SUCCESS
@@ -463,8 +463,8 @@ impl ScanOrchestrator {
 ///
 /// Returns [`EXIT_LIVE_CREDENTIALS`] (10) when ANY reported finding was
 /// confirmed [`VerificationResult::Live`] by the verifier, else [`EXIT_SUCCESS`]
-/// (0). Every other verification state — `Skipped` (the default when `--verify`
-/// is off), `Dead`, `Revoked`, `RateLimited`, `Error(..)`, `Unverifiable` — is
+/// (0). Every other verification state: `Skipped` (the default when `--verify`
+/// is off), `Dead`, `Revoked`, `RateLimited`, `Error(..)`, `Unverifiable`: is
 /// NOT live and does not raise the code here (a dead/unverified finding is exit
 /// 1, decided by the caller's findings branch). A single `Live` anywhere in the
 /// set trips 10 even when it is mixed with non-live findings.

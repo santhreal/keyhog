@@ -175,7 +175,7 @@ fn config_effective_example_file_parses_on_default_build() {
 #[test]
 fn config_effective_reflects_bpe_bound_cli_flag_and_toml() {
     // WIRING proof for `entropy_bpe_max_bytes_per_token`: the flag and the TOML
-    // key must reach the resolved ScanConfig and surface in the effective dump —
+    // key must reach the resolved ScanConfig and surface in the effective dump 
     // a flag that only parses is not wired. The default is 2.2 (asserted above);
     // an explicit override must change the emitted value end to end.
     let (stdout, stderr, code) = effective_config(&["--entropy-bpe-max-bytes-per-token", "3.5"]);

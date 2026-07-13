@@ -1,9 +1,9 @@
-//! Adversarial audit — VECTOR 12 (TESTING) + VECTOR 13 (DOGFOODING).
+//! Adversarial audit: VECTOR 12 (TESTING) + VECTOR 13 (DOGFOODING).
 //!
 //! Each test documents a REAL, reproducible defect in the shipped `keyhog`
 //! binary and is written to FAIL against today's code and PASS once the defect
 //! is properly fixed. Every assertion checks observable truth (exact stderr
-//! bytes, stdout JSON, exit code) — never `!is_empty()` or `Ok(())`.
+//! bytes, stdout JSON, exit code) (never `!is_empty()` or `Ok(())`).
 //!
 //! Standalone integration-test file: cargo auto-discovers it as its own test
 //! binary (`autotests = true`), so it shares no `mod` wiring with the other
@@ -28,10 +28,10 @@ fn binary() -> std::path::PathBuf {
 /// A generic key/value secret whose reported confidence sits strictly INSIDE the
 /// `(0.40, 0.99)` band: `--min-confidence 0.40` keeps it, `--min-confidence 0.99`
 /// drops it. The stream/min-confidence contract is only non-vacuous with such a
-/// straddle fixture — a 1.0-confidence finding can never be dropped by any floor.
+/// straddle fixture (a 1.0-confidence finding can never be dropped by any floor).
 /// (As `api_key = "<this>"` it scores ~0.59 via `generic-secret`.) If a detector
 /// retune pushes it to >=0.99 or stops firing, the `run("0.40")`/`run("0.99")`
-/// preconditions below fail loudly — pick a new value back in the band, do not
+/// preconditions below fail loudly, pick a new value back in the band, do not
 /// relax the asserts. The earlier `aAbBcCdDeEfFgGhH12345678` fixture drifted to
 /// `entropy-api-key` confidence 1.0 and made `--min-confidence 0.99` vacuous.
 const FIRING_LOW_CONFIDENCE_SECRET: &str = "hunter2hunter2hunter2xy";
@@ -54,14 +54,14 @@ fn count_stream_lines(stderr: &str) -> usize {
     stderr.lines().filter(|l| l.contains("[stream]")).count()
 }
 
-/// AUD-testing_dogfood-1a — `--stream` must not preview a finding that the
+/// AUD-testing_dogfood-1a: `--stream` must not preview a finding that the
 /// `--min-confidence` floor then drops, so the stream lies about the result.
 ///
 /// FINDING: `--stream` is wired to the RAW scanner matches, not to the
 /// post-filter reported findings. `stream_finding_preview(w, m)` is called on
 /// every `RawMatch` as it comes off the scanner thread
 /// (crates/cli/src/orchestrator/dispatch.rs:220, helper at
-/// crates/cli/src/orchestrator/reporting.rs:9 — it takes a `&RawMatch`),
+/// crates/cli/src/orchestrator/reporting.rs:9, it takes a `&RawMatch`),
 /// which is BEFORE `filter_and_resolve` / `finalize` and the
 /// `--min-confidence` floor in crates/cli/src/orchestrator/run.rs apply.
 ///
@@ -147,11 +147,11 @@ fn stream_preview_must_not_show_findings_dropped_by_min_confidence() {
     );
 }
 
-/// AUD-testing_dogfood-1b — `--stream` previews a credential that keyhog's own
+/// AUD-testing_dogfood-1b: `--stream` previews a credential that keyhog's own
 /// test-fixture suppression list silences, so the stream surfaces a tutorial
 /// copy keyhog deliberately decided is NOT a leak.
 ///
-/// FINDING: same root cause as 1a — the stream fires on raw matches before the
+/// FINDING: same root cause as 1a, the stream fires on raw matches before the
 /// suppression layer. Stripe's published docs example
 /// `sk_live_4eC39HqLyjWDarjtT1zdp7dc` is on the bundled suppression list
 /// (crates/cli/src/test_fixture_suppressions.rs and the --dogfood trace), so
@@ -211,7 +211,7 @@ fn stream_preview_must_not_show_test_fixture_suppressed_credential() {
     );
 }
 
-/// AUD-testing_dogfood-2 — an empty detector directory is a hard user error,
+/// AUD-testing_dogfood-2, an empty detector directory is a hard user error,
 /// not a valid empty corpus that can scan a target and return "no findings".
 ///
 /// This also pins the detector-list coherence fix: scan errors must not cite

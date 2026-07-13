@@ -41,7 +41,7 @@ pub struct DetectorArgs {
     pub dry_run: bool,
     /// Output format for the detector listing. `text` (default) is the grouped,
     /// human-readable summary; `json` emits the structured detector array. This
-    /// is the canonical flag — it matches `scan --format` so the
+    /// is the canonical flag, it matches `scan --format` so the
     /// two surfaces share one convention (CLI-01). Only `text`/`json` apply to a
     /// detector listing, so the format set is intentionally narrower than
     /// `scan`'s. Mutually exclusive with `--audit` / `--fix` (they emit their own

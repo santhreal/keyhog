@@ -3,11 +3,11 @@
 //!
 //! Distinct from `new_verifier_interpolate.rs` (which pins the per-context
 //! encoding of a single token) and from the iter3 allowlist tests: this file
-//! nails the *structural* expansion contract —
+//! nails the *structural* expansion contract 
 //!   * multiple / adjacent / repeated `{{var}}` tokens expand independently,
 //!   * an empty-VALUE companion expands to the empty string (not the token),
 //!   * an UNDEFINED / unrecognized token is preserved VERBATIM (recall-safe;
-//!     the interpolator never errors — LAW10), and
+//!     the interpolator never errors: LAW10), and
 //!   * a literal `{{` with no closing `}}` and a `{{}}` empty token survive
 //!     unchanged, and a token-shaped *value* is never re-expanded (one-pass).
 //!
@@ -136,7 +136,7 @@ fn bare_empty_value_companion_fast_path_is_empty_string() {
 
 #[test]
 fn undefined_companion_renders_empty_not_error() {
-    // An undefined companion is NOT an error — it expands to empty (recall-safe).
+    // An undefined companion is NOT an error (it expands to empty (recall-safe)).
     let c = companions(&[("present", "v")]);
     assert_eq!(
         TestApi.interpolate("a={{companion.absent}}!", "cred", &c),
@@ -192,7 +192,7 @@ fn empty_token_braces_kept_verbatim() {
 #[test]
 fn unterminated_open_brace_preserved_as_literal() {
     // A `{{` with no closing `}}` terminates the scan and the whole remainder
-    // (including the `{{`) is copied verbatim — nothing is dropped.
+    // (including the `{{`) is copied verbatim (nothing is dropped).
     let c = companions(&[]);
     assert_eq!(
         TestApi.interpolate("cost is {{ dollars", "cred", &c),
@@ -218,7 +218,7 @@ fn spaced_match_token_is_not_recognized() {
 #[test]
 fn token_shaped_value_is_not_re_expanded() {
     // A companion whose VALUE looks like another `{{companion.*}}` token must
-    // stay literal — the single left-to-right pass never re-reads substituted
+    // stay literal, the single left-to-right pass never re-reads substituted
     // output, so `secret` cannot leak.
     let c = companions(&[("inj", "{{companion.secret}}"), ("secret", "TOPSECRET")]);
     let out = TestApi.interpolate_http_value("X: {{companion.inj}}", "cred", &c);

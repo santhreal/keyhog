@@ -3,14 +3,14 @@
 //! These tests pin the compiled-in detector corpus to CONCRETE expected values
 //! through the public `keyhog_core` loaders (`load_embedded_detectors_or_fail`,
 //! `embedded_detector_count`, `detector_digest`). They also prove that the
-//! `GENERIC_PASSWORD` detector-id constant an over-eager dead-code lint flags —
-//! in `crates/scanner/src/detector_ids.rs` — is NOT phantom: `generic-password`
+//! `GENERIC_PASSWORD` detector-id constant an over-eager dead-code lint flags 
+//! in `crates/scanner/src/detector_ids.rs`: is NOT phantom: `generic-password`
 //! backs a real embedded detector AND a real entropy-floor family, so removing
 //! the const would orphan a detector TOML's floor family and break the
 //! `detector_id_owner` gate. (`generic-database-url` was removed 2026-07-02: its
 //! scheme://user:pass@host coverage is redundant with `url-credentials` + the
 //! per-engine connection-string detectors, and nothing emitted or floor-keyed
-//! it — a config-present-but-no-emitter half-detector.)
+//! it, a config-present-but-no-emitter half-detector.)
 
 use std::collections::HashMap;
 
@@ -21,7 +21,7 @@ use keyhog_core::{
 
 /// EXACT number of detector TOMLs embedded at build time. This equals the count
 /// of `detectors/*.toml` files (build.rs embeds every `.toml`, one detector per
-/// file). Assert the concrete value — a silent drift means the shipped binary
+/// file). Assert the concrete value, a silent drift means the shipped binary
 /// scans with a different rule set than the tree claims.
 const EXPECTED_EMBEDDED_DETECTOR_COUNT: usize = 923;
 
@@ -168,7 +168,7 @@ fn near_miss_aws_id_is_absent_but_canonical_id_present() {
 #[test]
 fn generic_password_is_a_real_embedded_detector_not_phantom() {
     // Proves GENERIC_PASSWORD ("generic-password") in detector_ids.rs backs a
-    // real embedded detector — it is NOT dead code.
+    // real embedded detector (it is NOT dead code).
     let specs = load_specs();
     let gp = spec_by_id(&specs, "generic-password");
     assert_eq!(gp.name, "Generic Password");
@@ -193,7 +193,7 @@ fn generic_password_is_a_real_embedded_detector_not_phantom() {
 #[test]
 fn generic_detectors_own_their_entropy_floor_in_their_own_toml() {
     // Every generic detector's entropy floor lives in its OWN detectors/*.toml
-    // `entropy_floor` field — there is no separate rules/entropy-floors.toml.
+    // `entropy_floor` field (there is no separate rules/entropy-floors.toml).
     // The four shapeless generic detectors are first-class `phase2-generic`
     // specs (no regex; they fire on keywords + entropy_floor); generic-password
     // is a regex detector that also carries a floor. Exactly these five declare

@@ -2,8 +2,8 @@
 //! (reached via the `keyhog_scanner::testing` re-export).
 //!
 //! Asserts the EXACT extracted (context, value, line) triples for .env, HCL,
-//! tfstate, Jupyter, docker-compose, and k8s-secret inputs — including the
-//! base64 decode of k8s `data:` and quote/comment stripping in .env — never
+//! tfstate, Jupyter, docker-compose, and k8s-secret inputs, including the
+//! base64 decode of k8s `data:` and quote/comment stripping in .env, never
 //! `is_empty` decoration. `ExtractedPair` is `pub(crate)`, so these tests read
 //! its public `.context`/`.value`/`.line` fields without naming the type.
 
@@ -500,7 +500,7 @@ fn docker_compose_deeply_nested_yaml_is_bounded() {
 }
 
 // ---------------------------------------------------------------------------
-// parse_k8s_secret — base64 decode under data:
+// parse_k8s_secret, base64 decode under data:
 // ---------------------------------------------------------------------------
 
 #[test]

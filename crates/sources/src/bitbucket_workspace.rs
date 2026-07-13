@@ -335,8 +335,8 @@ mod tests {
 
         // `:` in the USERNAME is banned: the Basic-auth pre-image is `user:pass`,
         // so a colon in the username forges an extra field / ambiguous split. (A
-        // colon in the TOKEN is legal — everything after the first `:` is the
-        // password — so it must NOT be rejected.)
+        // colon in the TOKEN is legal, everything after the first `:` is the
+        // password, so it must NOT be rejected.)
         let colon = validate_basic_auth("al:ice", "tok").expect_err("colon username rejected");
         assert!(
             colon.to_string().contains("unsafe characters"),

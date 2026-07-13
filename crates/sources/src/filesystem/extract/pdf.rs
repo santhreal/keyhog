@@ -323,7 +323,7 @@ fn decode_stream<'a>(dict: &[u8], stream_bytes: &'a [u8], budget: usize) -> Stre
 }
 
 fn inflate_pdf_stream(stream_bytes: &[u8], budget: usize) -> StreamDecode<'_> {
-    let cap = u64::try_from(budget).unwrap_or(u64::MAX); // LAW10: unreachable on real platforms — only a wider-than-u64 usize target takes this arm, where u64::MAX is the largest stream cap the shared reader can represent.
+    let cap = u64::try_from(budget).unwrap_or(u64::MAX); // LAW10: unreachable on real platforms, only a wider-than-u64 usize target takes this arm, where u64::MAX is the largest stream cap the shared reader can represent.
     let decoder = flate2::read::ZlibDecoder::new(stream_bytes);
     let read = crate::capped_read::read_to_cap_preserving_error(decoder, cap, None);
     match read.error {
@@ -345,12 +345,12 @@ fn stream_dictionary_window(bytes: &[u8], stream_pos: usize) -> &[u8] {
     // always after the prior object's `endobj`/`endstream`. A fixed byte
     // lookback that crosses that boundary leaks an earlier image stream's
     // `/Subtype /Image` into a later text stream's window, so the text stream is
-    // misclassified as an image and silently skipped — a recall loss with no gap
+    // misclassified as an image and silently skipped, a recall loss with no gap
     // surfaced. Clamp the window start to the closest preceding object boundary.
     //
     // The boundary search is bounded to the cap window: a boundary farther back
     // than `DICT_WINDOW_CAP` cannot raise the floor above `cap_start` anyway, and
-    // bounding it keeps this O(cap) per stream — never O(streams × n) on an
+    // bounding it keeps this O(cap) per stream, never O(streams × n) on an
     // adversarial many-stream PDF.
     let cap_start = stream_pos.saturating_sub(DICT_WINDOW_CAP);
     let capped = &bytes[cap_start..stream_pos];
@@ -428,7 +428,7 @@ fn append_pdf_strings(bytes: &[u8], out: &mut String) {
                     None => pos = next_close + 1,
                 }
             }
-            // `<<` opens a dictionary and `>>` closes it — neither is a hex
+            // `<<` opens a dictionary and `>>` closes it, neither is a hex
             // string. Skip the two-byte dict delimiter and keep scanning the
             // interior, so a literal `(...)` or hex `<...>` string that lives
             // INSIDE a dictionary is still reached. Every PDF Info-dictionary

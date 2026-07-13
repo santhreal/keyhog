@@ -96,7 +96,7 @@ pub(crate) struct CandidateMatchScorePolicy<'a> {
     pub(crate) credential: &'a str,
     pub(crate) is_named_detector: bool,
     /// The matched pattern requires a distinctive literal infix (terraform
-    /// `\.atlasv1\.`) — a third anchor form alongside the keyword context anchor
+    /// `\.atlasv1\.`), a third anchor form alongside the keyword context anchor
     /// and the literal prefix, for named detectors that carry neither.
     pub(crate) has_distinctive_inner_literal: bool,
 }
@@ -127,7 +127,7 @@ pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy)
 pub(crate) const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = 0.55;
 
 /// Lift the heuristic confidence of a service-anchored detector match to
-/// [`NAMED_DETECTOR_ANCHOR_FLOOR`] when the match carried a strong anchor — a
+/// [`NAMED_DETECTOR_ANCHOR_FLOOR`] when the match carried a strong anchor, a
 /// required keyword **context anchor** (capture group), a distinctive **literal
 /// prefix** (`cs_`, `pl_`, `tk_`, `sk-`, `ghp_`), or a distinctive **required
 /// literal infix** (terraform `\.atlasv1\.`, whose regex opens with a class and
@@ -137,8 +137,8 @@ pub(crate) const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = 0.55;
 /// `compute_confidence` is a *normalized* weighted sum: it divides the earned
 /// signal weight by the full signal set (literal prefix, context anchor,
 /// entropy, sensitive file, companion, keyword-nearby). A service detector that
-/// earns ONLY the anchor weight — `CROWDIN_API_TOKEN = <40hex>` (context anchor)
-/// or a bare `cs_<34 alnum>` cloudsmith token (literal prefix) — structurally
+/// earns ONLY the anchor weight. `CROWDIN_API_TOKEN = <40hex>` (context anchor)
+/// or a bare `cs_<34 alnum>` cloudsmith token (literal prefix), structurally
 /// cannot earn the others, so its normalized score lands below the `0.40` floor
 /// and the match is dropped as `below_min_confidence`, even though the match
 /// *only fired because the service-specific anchor was present next to a value
@@ -161,11 +161,11 @@ pub(crate) fn apply_named_detector_anchor_floor(
     // IGNORES NaN, so `NaN.max(FLOOR)` would silently manufacture the anchor floor
     // from garbage, and an un-floored NaN would propagate to poison every
     // downstream `>=` gate (every comparison against NaN is false). Collapse NaN to
-    // 0.0 first — loud in debug, fail-closed in release (Law 10) — so a broken
+    // 0.0 first, loud in debug, fail-closed in release (Law 10), so a broken
     // score is never laundered into a mid-tier confidence nor leaked as NaN.
     debug_assert!(
         !confidence.is_nan(),
-        "apply_named_detector_anchor_floor received NaN confidence — broken upstream score"
+        "apply_named_detector_anchor_floor received NaN confidence, broken upstream score"
     );
     let confidence = if confidence.is_nan() { 0.0 } else { confidence };
     if is_named_detector && has_anchor {
@@ -192,9 +192,9 @@ pub(crate) fn candidate_match_score<'a>(
     // An anchored service-detector match is positive evidence the normalized
     // signal sum structurally under-credits; lift it to clear the floor. The
     // anchor is a required keyword group (`has_context_anchor`), a distinctive
-    // literal prefix (`has_literal_prefix` — `cs_`, `pl_`, `tk_`, bare service
+    // literal prefix (`has_literal_prefix`: `cs_`, `pl_`, `tk_`, bare service
     // tokens with no surrounding keyword), OR a distinctive required literal
-    // infix (`has_distinctive_inner_literal` — terraform `\.atlasv1\.`, whose
+    // infix (`has_distinctive_inner_literal`: terraform `\.atlasv1\.`, whose
     // regex opens with a class and captures the whole match so it carries
     // neither of the other two). Applied before the ML branch so it propagates
     // through both the heuristic-only `Final` path and the `Pending` path (whose
@@ -387,12 +387,12 @@ pub(crate) fn entropy_fallback_confidence(entropy: f64, keyword: &str) -> f64 {
     // (`shannon_entropy` is bounded to `[0, 8]`). Critically, `f64::min` IGNORES
     // NaN, so the `0.55.min(entropy / 8.0)` fallback below would silently launder
     // a NaN into a 0.55 mid-tier confidence (Law 10: no silent fallback). Collapse
-    // NaN to the zero-evidence case up front — loudly in debug so a broken upstream
+    // NaN to the zero-evidence case up front, loudly in debug so a broken upstream
     // entropy is caught, conservatively (0.0) in release so it can never be
     // credited as signal.
     debug_assert!(
         !entropy.is_nan(),
-        "entropy_fallback_confidence received NaN entropy — broken upstream entropy computation"
+        "entropy_fallback_confidence received NaN entropy, broken upstream entropy computation"
     );
     let entropy = if entropy.is_nan() { 0.0 } else { entropy };
     // Keyword-free high-entropy candidates carry weaker evidence than

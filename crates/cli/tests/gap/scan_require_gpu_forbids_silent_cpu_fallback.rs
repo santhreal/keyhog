@@ -12,7 +12,7 @@ fn scan_require_gpu_forbids_silent_cpu_fallback_on_gpu_backend() {
         .expect("backend self-test spawn");
     let gpu_broken = self_test.status.code() == Some(4);
     if !gpu_broken {
-        // vyre_literal_set healthy — GPU path should succeed on clean corpus.
+        // vyre_literal_set healthy: GPU path should succeed on clean corpus.
         return;
     }
 

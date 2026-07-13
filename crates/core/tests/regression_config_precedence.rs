@@ -6,7 +6,7 @@
 //! `ScanConfig` itself owns three of those four layers directly: the shipped
 //! `Default`, the `serde`/`toml` deserialize of a `.keyhog.toml`, and the
 //! CLI override the CLI applies by mutating the parsed struct (exactly what
-//! `cli::build_scanner_config` does — see the `ScanConfig::validate` comment in
+//! `cli::build_scanner_config` does, see the `ScanConfig::validate` comment in
 //! `crates/core/src/config.rs`). The environment layer is wired by the CLI on
 //! top of that with the SAME `Option::is_none()`-wins gate used by
 //! `apply_scan_section` (`if args.min_confidence.is_none() { args.min_confidence
@@ -14,9 +14,9 @@
 //! sits above TOML/default.
 //!
 //! The `resolve_*` helpers below implement precisely that gate; every layer's
-//! *value* is produced by REAL core API — `ScanConfig::default()`,
+//! *value* is produced by REAL core API. `ScanConfig::default()`,
 //! `toml::from_str::<ScanConfig>`, `f64`/`usize` parsing of the ambient env
-//! string — and every resolved config is validated through core's real
+//! string, and every resolved config is validated through core's real
 //! `validate()` via the doc(hidden) `testing` facade, which surfaces the
 //! crate-private `ConfigError` as its exact `Display` string. Env parse failure
 //! is surfaced, never silently swallowed (Law 10: no silent fallback).

@@ -2,7 +2,7 @@
 
 Two jobs, both grounded in the *real* CredData on-disk corpus:
 
-1. ``shapes`` — for the recall-dominant miss categories (Key, UUID, Password,
+1. ``shapes``: for the recall-dominant miss categories (Key, UUID, Password,
    Secret, Token, Basic-Auth), slice every labeled value out of its on-disk
    span and bucket it by structural shape (pure hex of canonical key lengths,
    UUID, base64, other), split by whether a credential keyword precedes the
@@ -11,17 +11,17 @@ Two jobs, both grounded in the *real* CredData on-disk corpus:
    negatives (placeholders / false positives) of the *same* shape. A rule that
    fires on the shape inherits exactly that POS/NEG split as its TP/FP ceiling.
 
-2. ``simulate`` — apply a candidate finding-extractor (a set of line regexes)
+2. ``simulate``: apply a candidate finding-extractor (a set of line regexes)
    to every file referenced by the meta CSVs and score the extracted findings
    against ground truth with the SAME value-overlap rule the real bench uses
    (:func:`bench.score.overlap`), so a candidate detector's CredData recall /
    precision delta can be measured in seconds without rebuilding keyhog.
 
-3. ``keywords`` — bucket the mirror-safe lengths by canonical assignment
+3. ``keywords``: bucket the mirror-safe lengths by canonical assignment
    keyword, to separate genuinely-distributed recall headroom from single-
    fixture artifacts before committing to a shape+keyword surfacing rule.
 
-4. ``decompose`` — using a built keyhog binary's ``--dogfood`` suppression
+4. ``decompose``: using a built keyhog binary's ``--dogfood`` suppression
    trace, bucket every T-positive into TP / SUPPRESSED-by-gate (with a per-gate
    reason histogram) / NEVER-CANDIDATE, so recall loss is attributed to
    candidate GENERATION (un-generated) vs suppression (recoverable by gate
@@ -163,7 +163,7 @@ def cmd_keywords(root: pathlib.Path) -> int:
     keyword-set broadening confined to lengths 32/48 cannot regress mirror
     precision. The only real-world FP cost lives on CredData; this command
     surfaces it per canonical keyword so the strong set can be extended only to
-    keywords that clear a precision bar — soundness before reach.
+    keywords that clear a precision bar (soundness before reach).
     """
     cache = _LineCache(root)
     # canon_kw -> {len -> Counter(POS/NEG)}
@@ -227,7 +227,7 @@ def _extract_candidate(line: str, patterns: list[re.Pattern]) -> list[str]:
 
 
 CANDIDATES: dict[str, list[re.Pattern]] = {
-    # `<key-keyword> = <pure hex of 32/48/64>` — canonical AES key lengths.
+    # `<key-keyword> = <pure hex of 32/48/64>`: canonical AES key lengths.
     "crypto_key_hex": [
         re.compile(
             r"(?i)(?:^|[^a-z0-9_])"
@@ -250,7 +250,7 @@ CANDIDATES: dict[str, list[re.Pattern]] = {
             r"[\"'` ]*[=:]\s*[\"'`]?([0-9a-fA-F]{64})(?![0-9a-fA-F])"
         )
     ],
-    # hex64 under the BARE `key`/`secret` anchors only — the more ambiguous tail
+    # hex64 under the BARE `key`/`secret` anchors only, the more ambiguous tail
     # whose precision must be inspected separately before any broadening.
     "crypto_key_hex64_bare": [
         re.compile(
@@ -258,7 +258,7 @@ CANDIDATES: dict[str, list[re.Pattern]] = {
             r"[\"'` ]*[=:]\s*[\"'`]?([0-9a-fA-F]{64})(?![0-9a-fA-F])"
         )
     ],
-    # `<cred-keyword> = <uuid>` — UUID used as a credential (keyword-anchored).
+    # `<cred-keyword> = <uuid>`: UUID used as a credential (keyword-anchored).
     "keyworded_uuid": [
         re.compile(
             r"(?i)(?:^|[^a-z0-9_])"

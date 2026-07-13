@@ -5,7 +5,7 @@
 //! detector. It (1) rejects an out-of-bounds span, (2) checks the exact
 //! `[keyword_start, keyword_end)` slice, then (3) expands the span left and right
 //! over `is_assignment_key_byte` characters and re-checks ONLY the expanded span
-//! — so a regex that captured just `key` inside `vendor_api_key` still resolves
+//!, so a regex that captured just `key` inside `vendor_api_key` still resolves
 //! ownership of the full key.
 //!
 //! The helper had no direct coverage. Pin the bounds guard, the exact-span hit,
@@ -50,7 +50,7 @@ fn out_of_bounds_spans_are_rejected() {
 // The fixed vectors pin the bounds guard, exact hit, and both expansion
 // directions; these SWEEP the safe-domain guarantees. NOTE: the bounds guard
 // checks only LENGTH, not char boundaries, so a mid-codepoint span panics on
-// `&line[start..end]` — filed as a robustness row in BACKLOG (fail-safe fix ready,
+// `&line[start..end]`: filed as a robustness row in BACKLOG (fail-safe fix ready,
 // blocked on the foreign generic_keyword_owner refactor). These properties stay
 // within the char-aligned / out-of-bounds domain callers actually use. No
 // proptest before.
@@ -61,7 +61,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(2_000))]
 
     /// An out-of-bounds span (`start > end` or `end > line.len()`) is rejected
-    /// BEFORE any slice — never owned, never a panic — even on arbitrary Unicode.
+    /// BEFORE any slice (never owned, never a panic (even on arbitrary Unicode)).
     #[test]
     fn out_of_bounds_span_is_never_owned(
         line in "(?s).{0,40}",
@@ -84,7 +84,7 @@ proptest! {
         prop_assert!(!span_owned(&[], &line, lo, hi));
     }
 
-    /// No panic on ANY valid CHAR-ALIGNED span over arbitrary Unicode lines — the
+    /// No panic on ANY valid CHAR-ALIGNED span over arbitrary Unicode lines, the
     /// contract callers uphold (offsets snapped to real char boundaries here).
     #[test]
     fn never_panics_on_char_aligned_spans(

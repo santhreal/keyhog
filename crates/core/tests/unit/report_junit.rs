@@ -50,9 +50,9 @@ fn junit_escapes_apostrophe_in_failure_message() {
 }
 
 /// XML 1.0 §2.2 forbids the C0 control bytes (except tab/LF/CR) even as numeric
-/// character references, so attacker-controlled fields carrying one — a scanned
+/// character references, so attacker-controlled fields carrying one, a scanned
 /// file named with a raw 0x01, a git author name with a 0x07 bell, a redacted
-/// credential byte — must never reach the JUnit output verbatim, or the report a
+/// credential byte, must never reach the JUnit output verbatim, or the report a
 /// CI system ingests is unparseable and the operator's findings silently vanish
 /// from their dashboard. The reporter replaces them with the XML-legal U+FFFD.
 #[test]

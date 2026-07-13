@@ -3,14 +3,14 @@
 //!
 //! Two distinct capped-read surfaces live in the verifier:
 //!
-//!   * `verify::response::read_response_body` — the 1 MiB
+//!   * `verify::response::read_response_body`: the 1 MiB
 //!     `MAX_RESPONSE_BODY_BYTES` cap on the HTTP verification response,
 //!     reachable end to end through the `VerificationEngine`. A body over the
 //!     cap must fail **loud** (`RESPONSE_TOO_LARGE_ERROR`), never silently
 //!     truncate to a live/dead verdict off a partial body; a body **at** the
 //!     cap (`==`, not `>`) must still be read whole; an under-cap body is read
 //!     whole and evaluated.
-//!   * `oob::client::read_capped_bytes` / `MAX_POLL_BODY_BYTES` — the same
+//!   * `oob::client::read_capped_bytes` / `MAX_POLL_BODY_BYTES`: the same
 //!     defensive shape on the interactsh `/poll` path.
 //!
 //! The retry loop's exhaustion contract is also pinned here: when every attempt
@@ -18,7 +18,7 @@
 //! not dropped to a silent empty map), and a truly empty exhaustion emits the
 //! loud `MAX_RETRIES_ERROR` rather than a silent success.
 //!
-//! Every assertion below is a concrete expected value — an exact error string,
+//! Every assertion below is a concrete expected value, an exact error string,
 //! an exact `VerificationResult` variant, an exact request count, or an exact
 //! `(min, max)` delay-bound pair.
 
@@ -183,7 +183,7 @@ async fn over_cap_response_fails_loud_not_silent_verdict() {
 async fn exactly_cap_response_is_read_whole() {
     // Boundary: the guard is `>` cap, so a body of EXACTLY the cap is accepted
     // and read in full. With no success spec, is_live == (status == 200) and a
-    // benign body yields Live — which is only reachable if the whole body was
+    // benign body yields Live, which is only reachable if the whole body was
     // read without tripping the cap.
     let count = Arc::new(AtomicUsize::new(0));
     let exact = vec![b'A'; RESPONSE_CAP];
@@ -299,7 +299,7 @@ async fn transient_500_exhausts_retry_budget_loud() {
 #[tokio::test]
 async fn retry_exhaustion_preserves_last_metadata_and_stays_loud() {
     // The extracted retry loop's exhaustion contract: when all attempts are
-    // transient, the LAST attempt's result and metadata survive — they are not
+    // transient, the LAST attempt's result and metadata survive, they are not
     // dropped to an empty map (the historical silent-loss bug).
     let (result, metadata) = TestApi.retry_loop_preserves_metadata_on_exhaustion().await;
 
@@ -316,7 +316,7 @@ async fn retry_exhaustion_preserves_last_metadata_and_stays_loud() {
 #[tokio::test]
 async fn max_retries_error_is_loud_and_actionable() {
     // The truly-empty exhaustion sentinel must lead with the back-compat phrase
-    // and carry an operator fix — never a silent empty/success.
+    // and carry an operator fix (never a silent empty/success).
     assert!(
         MAX_RETRIES_ERROR.starts_with("max retries exceeded"),
         "downstream .contains(\"max retries exceeded\") checks must keep matching"

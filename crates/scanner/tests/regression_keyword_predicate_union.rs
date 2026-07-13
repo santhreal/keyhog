@@ -11,7 +11,7 @@
 //!     ending in `key`/`secret`/`token`/`password` (so `webhookkey`,
 //!     `idempotencytoken` qualify even though they are not in the compact list).
 //!
-//! Neither set subsumes the other, so the scan must OR them — dropping EITHER
+//! Neither set subsumes the other, so the scan must OR them, dropping EITHER
 //! silently regresses recall (the SIMD-trigger-union class of bug:
 //! backend-parity tests can't catch a missing keyword family). This suite pins:
 //!   1. each set recognizes keywords the OTHER misses (both are load-bearing),

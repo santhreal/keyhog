@@ -10,7 +10,7 @@
 //!   2. It must NEVER surface out-of-tree bytes. `follow_symlinks(false)` +
 //!      codewalk's `is_file()` filter drop symlinks/FIFOs/sockets/devices at the
 //!      walk, and the archive-symlink audit refuses link-swap of expandable
-//!      containers — so a symlink target's secret must never reach a chunk.
+//!      containers (so a symlink target's secret must never reach a chunk).
 //!
 //! Two levels are exercised:
 //!   * the read boundary via the `keyhog_sources::testing` facade
@@ -23,7 +23,7 @@
 //! Every assertion checks a concrete value: an exact `ErrorKind`, an exact
 //! `errno`, the exact returned bytes, the exact chunk count, the exact
 //! `source_type` string, an exact substring of the refusal error, or the exact
-//! `SkipCounts` snapshot — never a bare `is_ok()` / `!is_empty()`.
+//! `SkipCounts` snapshot (never a bare `is_ok()` / `!is_empty()`).
 
 #![cfg(unix)]
 
@@ -54,13 +54,13 @@ fn within_timeout<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
         let _ = tx.send(f());
     });
     rx.recv_timeout(Duration::from_secs(10)).expect(
-        "the filesystem scan hung past 10s — a writer-less FIFO open without O_NONBLOCK blocks \
+        "the filesystem scan hung past 10s, a writer-less FIFO open without O_NONBLOCK blocks \
          forever; open_file_safe's O_NONBLOCK must make it return",
     )
 }
 
 /// Create a FIFO at `path` via `mkfifo(1)` (coreutils, present on every POSIX
-/// host). Panics loudly if creation fails — a missing mkfifo is a misconfigured
+/// host). Panics loudly if creation fails, a missing mkfifo is a misconfigured
 /// test host, not a silent skip.
 fn make_fifo(path: &Path) {
     let status = std::process::Command::new("mkfifo")
@@ -107,7 +107,7 @@ fn read_boundary_fifo_refused_with_invalid_input_and_no_hang() {
 fn read_boundary_dev_null_refused_with_invalid_input() {
     assert!(
         Path::new("/dev/null").exists(),
-        "/dev/null is missing on this host — cannot validate device refusal"
+        "/dev/null is missing on this host, cannot validate device refusal"
     );
     let err = TestApi
         .read_file_safe_capped(Path::new("/dev/null"), 4096)
@@ -124,7 +124,7 @@ fn read_boundary_unix_socket_refused_with_enxio() {
         .read_file_safe_capped(&sock, 4096)
         .expect_err("a unix-domain socket must be refused");
     // A socket is refused at the open(2) syscall itself (ENXIO), BEFORE the
-    // post-open metadata guard runs — distinct errno from the FIFO/device path.
+    // post-open metadata guard runs (distinct errno from the FIFO/device path).
     assert_eq!(
         err.raw_os_error(),
         Some(libc::ENXIO),
@@ -359,7 +359,7 @@ fn scan_full_special_file_matrix_yields_only_the_regular_file() {
 #[test]
 fn scan_special_file_matrix_records_no_skip_gap() {
     // Special files dropped at the WALK (is_file()==false) are not counted as
-    // skips — they never entered the scan set. Hold the exclusive counter scope
+    // skips, they never entered the scan set. Hold the exclusive counter scope
     // so a concurrent test cannot pollute the snapshot we assert.
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
@@ -377,7 +377,7 @@ fn scan_special_file_matrix_records_no_skip_gap() {
     assert_eq!(
         skip_counts(),
         SkipCounts::default(),
-        "walk-dropped special files must bump NO skip counter — every category stays zero"
+        "walk-dropped special files must bump NO skip counter, every category stays zero"
     );
 }
 
@@ -428,7 +428,7 @@ fn scan_archive_symlink_is_refused_with_a_counted_coverage_gap() {
 fn scan_dangling_non_archive_symlink_is_a_silent_noop() {
     // A broken (dangling) NON-archive symlink is classified via read_link (which
     // succeeds on a dangling link), found non-expandable, and dropped at the walk
-    // — no chunk, no error, no skip bump.
+    //: no chunk, no error, no skip bump.
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
 

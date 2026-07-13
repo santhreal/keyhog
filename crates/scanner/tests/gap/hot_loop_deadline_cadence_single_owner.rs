@@ -4,7 +4,7 @@
 //! The generic-assignment extraction loop (`phase2_generic.rs`), the two regex
 //! extract loops (`extract.rs`), and the anchor scan loop (`phase2_anchor_scan.rs`)
 //! each re-check the wall-clock deadline once every N iterations. That N was the
-//! bare literal `64` copied across four files — a drift hazard, since the loops
+//! bare literal `64` copied across four files, a drift hazard, since the loops
 //! must agree (so the timeout is honored at the same rate everywhere). It is now
 //! the single `deadline::HOT_LOOP_DEADLINE_CADENCE` owner.
 //!
@@ -12,7 +12,7 @@
 //! `loop_expired_on_cadence` with an already-reached deadline, the result is the
 //! cadence gate, which must fire exactly on the nonzero multiples of the shared
 //! cadence and nowhere else. The compiled-anchored phase deliberately uses a
-//! tighter cadence and is intentionally not this constant — proven distinct.
+//! tighter cadence and is intentionally not this constant (proven distinct).
 
 use keyhog_scanner::testing::{
     expired_on_cadence_now_for_test, hot_loop_deadline_cadence_for_test,
@@ -102,7 +102,7 @@ proptest! {
     }
 
     /// Iteration 0 is never a boundary; every nonzero multiple of the cadence IS
-    /// one, and (for cadence > 1) one past a multiple is not — constructive over a
+    /// one, and (for cadence > 1) one past a multiple is not, constructive over a
     /// swept multiple index.
     #[test]
     fn nonzero_multiples_are_boundaries_and_zero_is_not(

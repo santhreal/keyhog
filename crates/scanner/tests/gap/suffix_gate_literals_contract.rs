@@ -1,7 +1,7 @@
 //! Regression: the confirmed-pass suffix-gate literal extraction contract.
 //!
 //! `build_confirmed_suffix_gate` skips a confirmed pattern whose required
-//! trailing literal is absent from the chunk — a recall-identical optimization
+//! trailing literal is absent from the chunk, a recall-identical optimization
 //! ONLY if `suffix_gate_literals` extracts a sound required suffix. The builder
 //! was cleaned up to iterate the cached literals by reference (it deep-cloned the
 //! whole `Vec<String>` per pattern), so this pins the extraction contract those
@@ -46,7 +46,7 @@ fn suffix_gate_literals_extracts_only_long_finite_suffixes() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin the floor and a few shapes; these SWEEP the contract. The
 // UNIVERSAL output invariant holds for ANY pattern: at most 4 literals, each ≥6
-// bytes and ASCII-lowercased — a literal that violated this would be an unsound
+// bytes and ASCII-lowercased, a literal that violated this would be an unsound
 // suffix gate (a missed match / recall bug). Plus constructive recall: a pure
 // literal ≥6 is its own lowercased suffix, and a sub-6 literal yields nothing.
 // Traced against `suffix_gate_literals`. No proptest before.
@@ -57,7 +57,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(3_000))]
 
     /// Every returned literal meets the gate contract, for any pattern (alternation
-    /// `|` may produce several) — ≤4, each ≥6 bytes and all-lowercase. Also no panic.
+    /// `|` may produce several): ≤4, each ≥6 bytes and all-lowercase. Also no panic.
     #[test]
     fn every_returned_literal_meets_the_contract(pattern in "[a-zA-Z0-9|]{0,24}") {
         let lits = suffix_lits(&pattern);
@@ -79,7 +79,7 @@ proptest! {
     }
 
     /// A pure literal below the 6-byte floor yields nothing (the pattern runs
-    /// unconditionally — never a missed match).
+    /// unconditionally (never a missed match)).
     #[test]
     fn pure_literal_below_six_is_empty(p in "[a-zA-Z0-9]{1,5}") {
         prop_assert!(suffix_lits(&p).is_empty());

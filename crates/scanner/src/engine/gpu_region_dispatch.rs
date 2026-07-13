@@ -263,7 +263,7 @@ impl CompiledScanner {
             // Surface a GPU under-fire LOUDLY: the GPU DFA missed a real
             // detector match the CPU floor recovered. This is a vyre literal-set
             // recall bug (region attribution / byte-class edge / divergence) the
-            // floor papered over — record it so it is fixed at the source, never
+            // floor papered over, record it so it is fixed at the source, never
             // hidden (Law 10). One-shot per process to avoid log spam.
             if gpu_underfire_recovered > 0 {
                 self.record_gpu_degrade(format!(

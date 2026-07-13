@@ -2,12 +2,12 @@
 //!
 //! ## Why these tests are RED today, and what turns them green
 //! A keyhog scan is two stages:
-//!   * **phase-1 / match** — the literal/regex prefilter (`AlphabetScreen` +
+//!   * **phase-1 / match**: the literal/regex prefilter (`AlphabetScreen` +
 //!     bigram bloom + Hyperscan/AC). On an RTX-5090 host this is ~0.03 s for a
 //!     16 MiB corpus and is effectively FREE; the GPU region-presence route
 //!     only replaces THIS stage, which is why forcing GPU is 1.3-5.3x SLOWER
 //!     end-to-end.
-//!   * **phase-2 / verify** — per-candidate capture / checksum / entropy /
+//!   * **phase-2 / verify**: per-candidate capture / checksum / entropy /
 //!     ML-MoE / companion / suppression / dedup. This is 15-30 s on the same
 //!     corpus and is the WHOLE bottleneck. It runs entirely on the CPU today,
 //!     one candidate at a time.
@@ -16,7 +16,7 @@
 //! encodes that target as executable contracts: it measures the real CPU
 //! `SimdCpu` full-scan baseline in-test, then asserts the *target* full-scan
 //! wall time is at most baseline/10. There is no 10x path today, so every case
-//! here FAILS — each red line is one tracked entry in the 10x worklist, and the
+//! here FAILS, each red line is one tracked entry in the 10x worklist, and the
 //! whole file flips green automatically when batched-GPU phase-2 lands and the
 //! orchestrator routes to it.
 //!
@@ -51,14 +51,14 @@ fn build_scanner() -> CompiledScanner {
 
 /// Synthetic corpus of exactly `target_bytes`, dense with REAL detector-prefix
 /// literals so phase-1 surfaces a heavy candidate stream that phase-2 must
-/// verify — i.e. the corpus exercises the phase-2 bottleneck the 10x targets,
+/// verify, i.e. the corpus exercises the phase-2 bottleneck the 10x targets,
 /// not an all-noise buffer the prefilter rejects for free.
 ///
 /// Each record carries an authentic anchored shape copied from the shipped
 /// detector set (`github_pat_`, `xoxb-`, `sk_live_`, `AKIA`, plus a bare 32-hex
 /// and a UUID) interleaved with realistic source-code filler. The bytes are
-/// deterministic (a fixed LCG over the record index) so the corpus — and thus
-/// the measured ratio — is reproducible run to run.
+/// deterministic (a fixed LCG over the record index) so the corpus, and thus
+/// the measured ratio (is reproducible run to run).
 fn synthetic_corpus(target_bytes: usize) -> String {
     // Authentic anchored record templates. `{H}` is replaced with a
     // per-record hex blob so every record is a DISTINCT credential value (no
@@ -81,7 +81,7 @@ fn synthetic_corpus(target_bytes: usize) -> String {
     let mut out = String::with_capacity(target_bytes + 256);
     let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
     let mut next = || {
-        // SplitMix64 — high-quality deterministic pseudo-random.
+        // SplitMix64 (high-quality deterministic pseudo-random).
         state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = state;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -136,7 +136,7 @@ fn chunk_of(data: String, label: &str) -> Chunk {
         data: data.into(),
         metadata: ChunkMetadata {
             source_type: "target-spec-perf".into(),
-            // NOTE: must not contain `.keyhog` / `detectors` path segments — the
+            // NOTE: must not contain `.keyhog` / `detectors` path segments, the
             // scan entry point skips those (telemetry record_file_skipped), which
             // would make the measured time meaninglessly fast.
             path: Some(format!("corpus/{label}.rs").into()),
@@ -173,7 +173,7 @@ const SPEEDUP_TARGET: f64 = 10.0;
 /// Timed scans per measurement (after one warm-up). A ~10x miss is orders of
 /// magnitude larger than run-to-run jitter, so a single timed scan is a sound
 /// RED signal and keeps these multi-MiB full scans (which run for real in the
-/// normal test set — no `#[ignore]`) within a reasonable wall-clock budget.
+/// normal test set (no `#[ignore]`) within a reasonable wall-clock budget).
 const MEASURE_REPS: usize = 1;
 
 /// One full-scan 10x contract at `mib` MiB. Measures the SimdCpu baseline
@@ -208,14 +208,14 @@ fn assert_fullscan_10x_at(mib: usize) {
     }
     let baseline_secs = median(base);
 
-    // The phase-1 prefilter MUST have surfaced real candidates — otherwise the
+    // The phase-1 prefilter MUST have surfaced real candidates, otherwise the
     // corpus failed to exercise phase-2 and the ratio is meaningless. This is a
     // soundness guard on the TEST, not the target.
     assert!(
         cand_count >= 100,
         "{mib} MiB target-spec corpus surfaced only {cand_count} candidate findings; \
          expected >=100 so the measured time actually reflects phase-2. The corpus \
-         generator regressed — fix the corpus, do not relax the 10x target."
+         generator regressed (fix the corpus, do not relax the 10x target)."
     );
 
     // Fastest path keyhog can offer for this workload today. `select_backend`
@@ -247,7 +247,7 @@ fn assert_fullscan_10x_at(mib: usize) {
         "10x WORKLIST [{mib} MiB]: fastest full-scan path ({}) took {fastest_secs:.4}s but the \
          target is baseline/{SPEEDUP_TARGET:.0} = {target_secs:.4}s (baseline SimdCpu = \
          {baseline_secs:.4}s). Current speedup is {speedup:.2}x, not {SPEEDUP_TARGET:.0}x. \
-         The 10x lives in a BATCHED-GPU phase-2 verify path that does not exist yet — \
+         The 10x lives in a BATCHED-GPU phase-2 verify path that does not exist yet. \
          phase-1/match is already ~free, so routing to GPU region-presence cannot close this. \
          This line stays RED until batched phase-2 lands and select_backend routes here.",
         routed.label()

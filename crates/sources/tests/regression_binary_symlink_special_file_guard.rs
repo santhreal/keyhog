@@ -4,11 +4,11 @@
 //!
 //! Before the fix `read_binary_capped` opened with a raw `std::fs::File::open`,
 //! which:
-//!   * BLOCKS FOREVER on a writer-less FIFO target (no `O_NONBLOCK`) — a single
+//!   * BLOCKS FOREVER on a writer-less FIFO target (no `O_NONBLOCK`), a single
 //!     named pipe handed to the binary source would hang the scan;
 //!   * FOLLOWS a symlinked binary path (no `O_NOFOLLOW`), so a
 //!     `evil.bin -> ~/.aws/credentials` link redirects the read to an off-target
-//!     file — the link-swap class the filesystem path defends against (M17);
+//!     file, the link-swap class the filesystem path defends against (M17);
 //!   * STREAMS a character device (`/dev/zero`) until the read cap instead of
 //!     refusing it.
 //!
@@ -68,13 +68,13 @@ fn within_timeout<T: Send + 'static>(secs: u64, f: impl FnOnce() -> T + Send + '
         let _ = tx.send(f());
     });
     rx.recv_timeout(Duration::from_secs(secs)).expect(
-        "binary read hung past the timeout — a writer-less FIFO open without O_NONBLOCK blocks \
+        "binary read hung past the timeout, a writer-less FIFO open without O_NONBLOCK blocks \
          forever; open_file_safe's O_NONBLOCK must make it return",
     )
 }
 
 /// Create a FIFO at `path` via `mkfifo(1)` (coreutils, present on every POSIX
-/// host). Panics loudly if creation fails — a missing mkfifo is a misconfigured
+/// host). Panics loudly if creation fails, a missing mkfifo is a misconfigured
 /// test host, not a silent skip.
 fn make_fifo(path: &Path) {
     let status = std::process::Command::new("mkfifo")
@@ -287,13 +287,13 @@ fn binary_socket_refusal_counts_one_unreadable() {
 fn binary_dev_zero_is_refused_as_unreadable_not_streamed() {
     // The key NEW behavior: /dev/zero (a char device) is refused as a non-regular
     // file (unreadable), NOT read as an endless zero stream. On the old raw-open
-    // path it read cap bytes of zeros and counted a binary GAP, never unreadable —
+    // path it read cap bytes of zeros and counted a binary GAP, never unreadable 
     // so this `binary_unreadable() == 1` assertion is the crisp lock on the fix.
     let _g = guarded();
     let zero = PathBuf::from("/dev/zero");
     assert!(
         zero.exists(),
-        "/dev/zero is missing on this host — cannot validate device refusal"
+        "/dev/zero is missing on this host, cannot validate device refusal"
     );
     let rows = within_timeout(10, move || scan_rows(zero));
     assert_refused(&rows, "the /dev/zero character device");

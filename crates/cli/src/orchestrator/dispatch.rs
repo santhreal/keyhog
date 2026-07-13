@@ -5,7 +5,7 @@
 //! after `filter_and_resolve` / suppression / `--min-confidence`, so a streamed
 //! `[stream]` line always corresponds to a reported finding (stream count ==
 //! report count). Emitting on raw scanner matches here previewed findings the
-//! report later dropped — a correctness/coherence bug (AUD-testing_dogfood-1).
+//! report later dropped (a correctness/coherence bug (AUD-testing_dogfood-1)).
 
 use super::ScanOrchestrator;
 use crate::orchestrator_config::autoroute_config_digest;
@@ -51,15 +51,15 @@ pub(super) fn record_oversized_coalesced_chunk_skip(chunk: &Chunk) {
 
 /// One classified `source.chunks()` item for the coalesced
 /// ([`CoalescedProducer::produce_sources`]) and fused ([`fused`]) producer loops.
-/// The shared FAIL-CLOSED bookkeeping — the oversized-chunk warning + coverage
-/// receipt and the read-error receipt — lives in [`classify_source_chunk`] so the
+/// The shared FAIL-CLOSED bookkeeping, the oversized-chunk warning + coverage
+/// receipt and the read-error receipt, lives in [`classify_source_chunk`] so the
 /// two loops can NEVER drift on the scan-size ceiling or on which coverage
 /// receipts fire (a drift there would silently under-account coverage on one
 /// path). They differ ONLY in how a scannable chunk is batched onward.
 pub(super) enum ClassifiedSourceChunk {
     /// Within the scan-size ceiling: the caller must batch/scan it.
     Scan(Chunk),
-    /// Oversized (warned + receipted) or a read error (warned + receipted) —
+    /// Oversized (warned + receipted) or a read error (warned + receipted) 
     /// already fully accounted; the caller does nothing further.
     Skip,
 }
@@ -67,7 +67,7 @@ pub(super) enum ClassifiedSourceChunk {
 /// Classify one `source.chunks()` item, performing the shared fail-closed
 /// bookkeeping, and advance the per-source counters. `src_chunks` counts every
 /// chunk the source yielded (scannable OR oversized-skipped); `src_errored`
-/// records that at least one read error occurred — together they drive
+/// records that at least one read error occurred, together they drive
 /// [`finalize_source_outcome`]'s total-failure decision.
 pub(super) fn classify_source_chunk(
     chunk_result: std::result::Result<Chunk, keyhog_core::SourceError>,
@@ -96,7 +96,7 @@ pub(super) fn classify_source_chunk(
 /// Finalize a source after its chunk stream drains: a source that yielded ZERO
 /// chunks AND errored failed entirely, recorded via `record_failed_source` so
 /// `run()` fails closed rather than reporting "clean" off another source's data.
-/// A source that produced ANY chunk — even one later skipped as oversized — is a
+/// A source that produced ANY chunk, even one later skipped as oversized, is a
 /// partial success, not a total failure. Single owner of this rule for both
 /// producer loops.
 pub(super) fn finalize_source_outcome(src_chunks: usize, src_errored: bool) {

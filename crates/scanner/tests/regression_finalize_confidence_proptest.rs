@@ -1,5 +1,5 @@
 //! Property invariants for the report-confidence tail `finalize_report_confidence`
-//! (`confidence::policy`) — the pipeline every finding's confidence passes
+//! (`confidence::policy`), the pipeline every finding's confidence passes
 //! through before emission (post-ML penalties → path → known-prefix floor →
 //! calibration → checksum veto). The example-based contract lives in
 //! `regression_finalize_report_confidence_pipeline`; this is the property
@@ -7,13 +7,13 @@
 //! (entry-confidence × credential × flag) tuples for invariants an example
 //! suite can miss:
 //!
-//!   1. The finalized score, when present, is a FINITE unit-interval value — a
+//!   1. The finalized score, when present, is a FINITE unit-interval value, a
 //!      confidence is a probability; it must never escape `[0, 1]`, go NaN, or
 //!      go infinite no matter what upstream fed it.
 //!   2. A credential with a proven-bad embedded checksum is ALWAYS dropped to
-//!      `None`, for every entry confidence and flag combination — the terminal
+//!      `None`, for every entry confidence and flag combination, the terminal
 //!      checksum veto can never be bypassed by any earlier signal.
-//!   3. A NaN entry never leaks as `Some(non-finite)` — the NaN barrier holds
+//!   3. A NaN entry never leaks as `Some(non-finite)`: the NaN barrier holds
 //!      across the whole flag space.
 //!
 //! `finalize_report_confidence` and the terminal checksum decision are the
@@ -65,7 +65,7 @@ proptest! {
         }
     }
 
-    /// Invariant 2: the terminal checksum veto is absolute — a forged-checksum
+    /// Invariant 2: the terminal checksum veto is absolute, a forged-checksum
     /// PAT is dropped to None for EVERY entry confidence and flag tuple.
     #[test]
     fn bad_checksum_is_always_vetoed(

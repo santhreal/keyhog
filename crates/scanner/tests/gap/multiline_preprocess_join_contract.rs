@@ -4,7 +4,7 @@
 //! scanning so a credential split across `"abc" +` / `"def"` lines surfaces as
 //! one contiguous token. Two invariants are pinned here:
 //!   * `original_end` ALWAYS equals the input byte length, on every return path
-//!     (passthrough and concatenation alike) — the original region length is
+//!     (passthrough and concatenation alike), the original region length is
 //!     never rewritten, so offsets into it stay valid.
 //!   * a passthrough chunk (no concat indicator / structured-doc shape) is
 //!     carried through BYTE-IDENTICALLY (`text == input`), while a real
@@ -18,7 +18,7 @@ use keyhog_scanner::testing::multiline::preprocess_multiline_for_test as preproc
 
 #[test]
 fn passthrough_chunk_is_carried_through_byte_identically() {
-    // A JSON object starts with `{` — a structured-doc shape that passes through
+    // A JSON object starts with `{`: a structured-doc shape that passes through
     // with no join, so the output text equals the input verbatim.
     let input = "{\"key\": \"value\", \"n\": 1}";
     let (text, original_end) = preprocess(input);
@@ -66,7 +66,7 @@ const ALPHABET: &[char] = &['a', 'b', '"', '+', '\n', ' ', '{', '}', ':', '='];
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(2_000))]
 
-    /// `original_end` equals the input byte length on EVERY return path — the
+    /// `original_end` equals the input byte length on EVERY return path, the
     /// original region length is never rewritten, so offsets into it stay valid.
     #[test]
     fn original_end_always_equals_input_len(

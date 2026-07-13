@@ -14,7 +14,7 @@ pub struct CalibrateArgs {
     /// Print every recorded counter and exit (no updates). Read-only: it cannot
     /// be combined with the `--tp`/`--fp` update flags (mixing "show me the
     /// state" with "mutate the state" is contradictory and silently ran the
-    /// update before — clap now rejects it with exit 2).
+    /// update before (clap now rejects it with exit 2)).
     #[arg(long, conflicts_with_all = ["tp", "fp"])]
     pub show: bool,
     /// Override the calibration cache path. Defaults to

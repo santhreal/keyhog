@@ -2,21 +2,21 @@
 //!
 //! The per-detector shape CONSTRAINT (`exact_length` / `prefix` / `body_*`) is a
 //! `keyhog_core::CredentialShape` declared in each detector's own TOML
-//! (`[detector.credential_shape]`, DET-0 — was the centralized
+//! (`[detector.credential_shape]`, DET-0, was the centralized
 //! `rules/detector-credential-shapes.toml` `[[shape]]` list keyed by detector id).
 //! Core owns the data AND its internal-consistency validation
 //! (`CredentialShape::validate`); this module owns the SCANNER side: the compiled
 //! [`CredentialShapeRule`] + its per-credential [`CredentialShapeRule::allows`]
 //! gate, built per detector from that spec. Because the shape now lives on the
 //! detector's own spec, the previous "shape rule for an unknown detector id" class
-//! is impossible by construction — no id list, no id validation.
+//! is impossible by construction (no id list, no id validation).
 
 use keyhog_core::{CredentialShape, DetectorSpec};
 
 /// The PEM armor header that opens every `-----BEGIN … PRIVATE KEY-----` block
 /// (and X.509 certs). SINGLE OWNER: it is the load-bearing prefix of the
 /// `private-key` / `ssh-private-key` / `github-app-private-key` detector
-/// patterns, and scanner logic keys off it in two places — the suppression
+/// patterns, and scanner logic keys off it in two places, the suppression
 /// carve-out (a PEM body must NOT be masking-pattern suppressed, or the detector
 /// silently misses real OPENSSH keys) and the entropy plausibility gate. Both
 /// now read this const via [`is_pem_block`] instead of two bare `"-----BEGIN"`
@@ -109,7 +109,7 @@ impl CredentialShapeRule {
 /// (`DetectorSpec::credential_shape`, DET-0), validated fail-closed
 /// (`CredentialShape::validate`) so a malformed shape is a build error, never a
 /// silent skip. A detector with no `[detector.credential_shape]` maps to `None`
-/// (no shape gate). There is no id list and no "unknown detector" case — the
+/// (no shape gate). There is no id list and no "unknown detector" case, the
 /// shape rides on the detector's own spec, so it cannot name a detector that does
 /// not exist.
 pub(crate) fn build_detector_shape_rules(
@@ -203,7 +203,7 @@ mod tests {
     }
 
     /// The two live detector specs declare their shape in their OWN TOML
-    /// (`[detector.credential_shape]`, DET-0) — read it back from the embedded
+    /// (`[detector.credential_shape]`, DET-0), read it back from the embedded
     /// corpus and pin the exact values. This drift-guard replaces the old
     /// `rules/detector-credential-shapes.toml` parse test.
     #[test]
@@ -350,7 +350,7 @@ mod tests {
     #[test]
     fn unconstrained_rule_allows_everything() {
         // An all-None rule is validation-rejected precisely because `allows` treats
-        // it as permissive — pin that so the validation rule stays load-bearing.
+        // it as permissive (pin that so the validation rule stays load-bearing).
         let rule = make_rule(None, None, None, None);
         assert!(rule.allows(""));
         assert!(rule.allows("anything at all"));
@@ -398,7 +398,7 @@ mod tests {
     #[test]
     fn prefix_without_body_bounds_allows_any_body() {
         // Degenerate (validation-rejected) shape: prefix present, no min/max. The
-        // method allows every body — the reason validation forbids it.
+        // method allows every body (the reason validation forbids it).
         let rule = make_rule(None, Some("sk-"), None, None);
         assert!(rule.allows("sk-"));
         assert!(rule.allows("sk-anything-goes-here"));

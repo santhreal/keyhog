@@ -61,10 +61,10 @@ const BUNDLED_MOUNT_FILTERS: &str = include_str!("../../../data/scan_system/moun
 /// exotic filesystem or path without recompiling.
 ///
 /// No silent fallback (Law 10): the baseline parse is surfaced as an error (a
-/// failure means the embedded data is corrupt — a build bug, caught by the data
+/// failure means the embedded data is corrupt, a build bug, caught by the data
 /// test), and a user file that EXISTS but is unreadable or unparseable is a hard
 /// error. Only the ordinary "no user file present" case uses the baseline alone,
-/// which is the intended default — not a degraded fallback.
+/// which is the intended default (not a degraded fallback).
 fn load_mount_filters() -> Result<MountFilters> {
     let mut filters: MountFilters = toml::from_str(BUNDLED_MOUNT_FILTERS)
         .context("parse bundled scan_system/mount_filters.toml (build bug)")?;

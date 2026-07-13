@@ -25,7 +25,7 @@ reason = "Body below 64 hex chars."
 [[evasion]]
 text = "neon-api-key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
 credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
-reason = "Hyphen-style neon-api-key — regex's `neon.?api.?key` accepts `-`."
+reason = "Hyphen-style neon-api-key (regex's `neon.?api.?key` accepts `-`)."
 
 [perf]
 fixture_bytes = 4096

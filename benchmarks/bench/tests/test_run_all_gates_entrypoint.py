@@ -1,11 +1,11 @@
-"""LANE 2 — the ONE prevention-gate entrypoint (`scripts/gates/run_all.sh`).
+"""LANE 2 (the ONE prevention-gate entrypoint (`scripts/gates/run_all.sh`)).
 
 These tests pin three contracts that the "merge every audit into one" change
 made true, asserting EXACT values (never `is_empty`/`is_ok`):
 
   1. `run_all.sh` exits 0 on a clean tree (source-only mode), and the asset
      gates LOUD-SKIP rather than silently vanish (Law 10).
-  2. EVERY audit keyhog has is referenced by `run_all.sh` — if a gate script is
+  2. EVERY audit keyhog has is referenced by `run_all.sh`: if a gate script is
      added to `scripts/gates/` or an audit is created and NOT wired into the one
      entrypoint, this test fails (the whole point of the merge: one runner, not
      a scatter a human forgets).
@@ -52,12 +52,12 @@ def test_run_all_exists_and_is_executable():
 def test_run_all_source_only_exits_zero_on_clean_tree():
     """GATES_SOURCE_ONLY=1 runs only the fast source/org gates (no corpus, no
     built binary, no network) and MUST exit 0 on a clean tree. This is the
-    hermetic, deterministic clean-tree contract — a new RED here is a real gate
+    hermetic, deterministic clean-tree contract, a new RED here is a real gate
     regression, never something to weaken.
 
     Diagnostic note for a multi-lane integration run: if the ONLY failing gate is
     the complexity/org-audit pair (engine_loc over budget), that is a SIBLING
-    lane's engine churn, not a defect in this entrypoint — the message below names
+    lane's engine churn, not a defect in this entrypoint, the message below names
     it so the integrator reconciles the engine budget before merge rather than
     chasing run_all.sh. The assertion still REQUIRES exit 0 on the settled tree."""
     proc = subprocess.run(
@@ -80,7 +80,7 @@ def test_run_all_source_only_exits_zero_on_clean_tree():
     diag = ""
     if only_complexity:
         diag = ("\n[diagnosis] The failing gate is the engine complexity budget "
-                "(engine_loc OVER), owned by a SIBLING engine lane — not this "
+                "(engine_loc OVER), owned by a SIBLING engine lane, not this "
                 "audit-merge entrypoint. Integrator: reconcile the engine budget "
                 "(trim engine LOC or raise BUDGET in complexity_budget.py) so this "
                 "settled-tree contract is green.")
@@ -178,7 +178,7 @@ def test_required_audit_is_referenced_by_run_all(ref: str):
 
 def test_every_gate_script_is_wired_into_run_all():
     """Any executable gate under scripts/gates/ (except this entrypoint and the
-    baseline data file) must be referenced by run_all.sh — so adding a gate and
+    baseline data file) must be referenced by run_all.sh, so adding a gate and
     forgetting to wire it is a RED build, not silent dead code."""
     text = _run_all_text()
     unwired = []

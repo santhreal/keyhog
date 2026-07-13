@@ -11,13 +11,13 @@
 //! generated and the value cannot be detected however good phase-2 is.
 //!
 //! This file is the executable form of that gap: a TABLE of representative
-//! real-world secret shapes — the exact shapes that dominate CredData's missed
+//! real-world secret shapes, the exact shapes that dominate CredData's missed
 //! positives (keyword-anchored `hex32/48/64`, `uuid`, raw `base64`, header-order
-//! JWTs, URL-embedded credentials, connection-string passwords) — each written
+//! JWTs, URL-embedded credentials, connection-string passwords), each written
 //! as a line a human would actually commit. Every case asserts the scanner
 //! SURFACES the secret's value. They FAIL today because generation does not
 //! produce the candidate; each red line is one tracked entry in the generation
-//! worklist (Law 6 — a failing contract test is a finding). When the
+//! worklist (Law 6, a failing contract test is a finding). When the
 //! keyword-bridge / shape-anchored generation lands, the matching case flips
 //! green with no edit here.
 //!
@@ -29,7 +29,7 @@
 //!
 //! Do NOT weaken these (Law 9): a target spec pins what keyhog owes, not what it
 //! has. If a shape is a deliberate non-target (a true negative we must NOT fire
-//! on), it belongs in a precision test, not here — every line below is a value a
+//! on), it belongs in a precision test, not here, every line below is a value a
 //! human reviewer of CredData labeled a real credential.
 
 mod support;
@@ -52,7 +52,7 @@ fn scanner() -> &'static CompiledScanner {
 
 /// Scan one source line through BOTH production backends (SIMD/CPU prefilter and
 /// the CPU fallback where the keyword bridge runs) and return every captured
-/// credential string. A value is "surfaced" if EITHER backend emits it — the
+/// credential string. A value is "surfaced" if EITHER backend emits it, the
 /// operator path picks a backend per host, so a recall target is met only if the
 /// value is reachable on the path that host would take.
 fn credentials_for(line: &str) -> Vec<String> {
@@ -76,7 +76,7 @@ fn credentials_for(line: &str) -> Vec<String> {
 }
 
 /// True if the scanner surfaced a credential whose captured value overlaps
-/// `value` (either contains the other) — the SAME containment rule the CredData
+/// `value` (either contains the other), the SAME containment rule the CredData
 /// leaderboard scorer (`bench.score.overlap`) uses to attribute a true positive,
 /// so a green here is bit-faithful to a leaderboard recall hit.
 fn surfaces(line: &str, value: &str) -> bool {
@@ -418,7 +418,7 @@ fn miss_table_meets_minimum_worklist_size() {
     assert!(
         MISS_TABLE.len() >= 30,
         "generation-gap worklist shrank to {} rows; a missed shape was removed \
-         without closing it (Law 9) — keep every real-world miss tracked",
+         without closing it (Law 9), keep every real-world miss tracked",
         MISS_TABLE.len()
     );
 }
@@ -508,7 +508,7 @@ fn jwt_class_meets_floor() {
     assert!(
         recall >= 0.90,
         "jwt class recall {recall:.3} ({hit}/{total}) below 0.90 target: \
-         JWTs whose header does not start with `alg` (eyJhbGci) are missed — \
+         JWTs whose header does not start with `alg` (eyJhbGci) are missed. \
          the prefix anchor must broaden to the structural eyJ-header triple"
     );
 }

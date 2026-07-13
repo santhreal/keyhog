@@ -1,7 +1,7 @@
 //! Gap test: `standard_base64_shape` (decode/base64.rs).
 //!
 //! Existing coverage only source-shape-gates this fn (file_gate string match,
-//! decode_base64_classifier_hot_path_shape body grep) — its RETURN VALUES were
+//! decode_base64_classifier_hot_path_shape body grep), its RETURN VALUES were
 //! untested. It is the single source of truth for the standard-base64 shape used
 //! by `looks_like_uniform_base64_blob` / `is_byte_distribution_base64_blob`, so
 //! a drift in the alphabet/padding/remainder rules silently changes those gates.
@@ -55,7 +55,7 @@ fn invalid_length_and_padding_positions_are_rejected() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin one example of each rule; these SWEEP them. The core is a
 // UNIVERSAL CONSISTENCY invariant: whenever `shape` admits a candidate, every
-// field is pinned to an exact independent computation (no mirror-oracle) —
+// field is pinned to an exact independent computation (no mirror-oracle) 
 // `distinct_alnum` equals the count of distinct ASCII-alnum byte VALUES,
 // `has_plus`/`has_slash`/`has_padding` mirror the candidate's bytes, and a Some
 // result never carries a url-safe byte. Then CONSTRUCTIVE positives (plain quad,
@@ -68,7 +68,7 @@ use std::collections::BTreeSet;
 /// Url-safe bytes that force a `None` (mixed/url-safe alphabet).
 const URL_SAFE: &[char] = &['-', '_'];
 
-/// Bytes outside the base64 alphabet entirely — any one aborts the scan.
+/// Bytes outside the base64 alphabet entirely (any one aborts the scan).
 const FOREIGN: &[char] = &[' ', '*', '#', '.', ',', '!'];
 
 /// The count of distinct ASCII-alphanumeric byte VALUES in `s` (matches the
@@ -106,7 +106,7 @@ proptest! {
     }
 
     /// RECALL: a pure-alnum string whose length is a multiple of four is plain
-    /// standard base64 — no padding, no punctuation, distinct-alnum exact.
+    /// standard base64 (no padding, no punctuation, distinct-alnum exact).
     #[test]
     fn pure_alnum_multiple_of_four_is_plain_standard(
         quads in prop::collection::vec("[A-Za-z0-9]{4}", 1..6),

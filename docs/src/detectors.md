@@ -151,7 +151,7 @@ This follows the design precedent established by `min_confidence` (the per-detec
 If a detector leaves one of these fields unset, the typed compiled fallback for
 that mechanism applies. When set, the detector value overrides that fallback.
 An explicitly supplied scan-wide override may have final authority where the
-field's documented precedence says so—for example, the BPE ceiling.
+field's documented precedence says so: for example, the BPE ceiling.
 
 The available per-detector tuning fields are:
 

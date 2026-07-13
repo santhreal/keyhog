@@ -61,7 +61,7 @@ proptest! {
         prop_assert!(is_known_example_credential(&prefixed), "prefixed all-same body");
     }
 
-    /// An x/X-dominated filler (>3/4 x's over >= 16 chars) is masking filler — even
+    /// An x/X-dominated filler (>3/4 x's over >= 16 chars) is masking filler, even
     /// when interspersed with non-x chars so it is not all-same.
     #[test]
     fn x_dominated_filler_is_placeholder(

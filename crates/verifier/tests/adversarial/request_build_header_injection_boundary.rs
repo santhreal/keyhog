@@ -5,15 +5,15 @@
 //! This suite proves the *next* link in the chain: that the real request builder
 //! `verify::request::apply_header_body_templates` actually FEEDS every header
 //! value and the body through that helper, and that the resulting
-//! `reqwest::Request` — the exact object keyhog would put on the wire — carries
+//! `reqwest::Request`: the exact object keyhog would put on the wire, carries
 //! no injected header, no CR/LF or control byte, and no second-order
 //! `{{companion.*}}` expansion.
 //!
 //! Why the extra layer matters (adversarial vector #9, WIRING): a regression that
 //! attached a raw `header.value` (or a `body_template`) WITHOUT interpolation
 //! would leave the helper-only tests green while reopening CR/LF header injection
-//! on the shipped path. The credential here is attacker-controlled — it is the
-//! literal bytes of a secret found in a scanned file — so a `\r\n` in it must
+//! on the shipped path. The credential here is attacker-controlled, it is the
+//! literal bytes of a secret found in a scanned file, so a `\r\n` in it must
 //! never split the request into an extra header. The request is BUILT and
 //! inspected, never sent: no traffic leaves the test.
 

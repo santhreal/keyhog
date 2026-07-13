@@ -20,7 +20,7 @@ reason = "Body below 64 hex chars."
 [[evasion]]
 text = "curl https://api.linode.com/v4/account -H 'Authorization: Bearer 7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d'"
 credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
-reason = "Bearer-header form — pattern 2 explicitly matches Authorization: Bearer <64hex>."
+reason = "Bearer-header form (pattern 2 explicitly matches Authorization: Bearer <64hex>)."
 
 [perf]
 fixture_bytes = 4096

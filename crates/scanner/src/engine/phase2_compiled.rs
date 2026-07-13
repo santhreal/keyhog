@@ -109,8 +109,8 @@ impl CompiledScanner {
     /// byte-identical to the whole-splice scan (`decode_focus_parity`).
     ///
     /// PRECONDITION: `preprocessed.text` must be byte-aligned with `chunk.data`
-    /// (the homoglyph-normalisation no-op passthrough), so `focus` — computed in
-    /// `chunk.data` coordinates — indexes `preprocessed.text` correctly. The
+    /// (the homoglyph-normalisation no-op passthrough), so `focus`: computed in
+    /// `chunk.data` coordinates, indexes `preprocessed.text` correctly. The
     /// caller checks this; a non-passthrough chunk takes the full-scan path.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn scan_phase2_patterns_focused(
@@ -145,7 +145,7 @@ impl CompiledScanner {
             return;
         }
         // If the focus window already covers (almost) the whole chunk, the
-        // restriction buys nothing — run the normal path so we don't pay the
+        // restriction buys nothing, run the normal path so we don't pay the
         // extra slice setup for no gain.
         if fe - fs >= text.len() {
             self.scan_phase2_patterns(
@@ -166,7 +166,7 @@ impl CompiledScanner {
         // Prefer the optimized shared-anchor path (the default), now focus-aware:
         // its AC candidate scan + always-active prefilter run over the window
         // while signals/lines stay full. This is what makes the restriction a net
-        // win — the non-anchor whole-chunk prefilter, even windowed, barely beats
+        // win, the non-anchor whole-chunk prefilter, even windowed, barely beats
         // the anchor path on full text.
         if self.tuning.phase2_anchor_enabled() {
             if let Some(anchor_idx) = &self.phase2_anchor_index {
@@ -265,7 +265,7 @@ impl CompiledScanner {
     }
 
     /// True iff scanning `data` through the phase-2 path would activate at
-    /// least one pattern — i.e. the always-active RegexSet prefilter marks a
+    /// least one pattern, i.e. the always-active RegexSet prefilter marks a
     /// pattern OR a phase-2 keyword occurs in `data`.
     ///
     /// This is the EXACT, cheap necessary condition for a phase-2 match and is
@@ -276,7 +276,7 @@ impl CompiledScanner {
     ///
     /// It runs the SAME `populate_active_phase2` the production scan runs, so
     /// it can never admit a chunk the scan then finds inert nor reject one the
-    /// scan would mark — admission and extraction share one active-set contract.
+    /// scan would mark (admission and extraction share one active-set contract).
     /// Note the earlier coarse form short-circuited to `true` whenever ANY
     /// always-active pattern existed (so it answered "is there unconditional
     /// phase-2 work?", admitting EVERY chunk); running the prefilter answers the
@@ -286,7 +286,7 @@ impl CompiledScanner {
     // no-phase-1-trigger admission gate that exists solely on the coalesced
     // (`simd`) and region-presence (`gpu`) phase-2 tail. A no-`simd`-no-`gpu` build
     // scans every chunk through the AC+phase-2 path unconditionally (no
-    // trigger-skip step), so it never asks this question — gating here keeps
+    // trigger-skip step), so it never asks this question, gating here keeps
     // that profile warning-clean (Law 11) without dropping any chunk (Law 10).
     #[cfg(any(feature = "simd", feature = "gpu"))]
     pub(crate) fn has_active_phase2_patterns_for_chunk(&self, data: &str) -> bool {
@@ -305,7 +305,7 @@ impl CompiledScanner {
         // `match_text == data`), but each side EARLY-EXITS at its first hit
         // instead of building the full marked set. Building that set is the
         // measured #1 scan cost (`phase2:prefilter`), and extraction rebuilds it
-        // when the chunk is admitted — so the gate's own marked set was pure
+        // when the chunk is admitted, so the gate's own marked set was pure
         // redundant work. The cheap keyword AC is tried first, so a
         // keyword-admitted chunk skips the prefilter scan entirely.
         {
@@ -330,7 +330,7 @@ impl CompiledScanner {
             // No always-active prefilter compiled (degraded build): there is no
             // discriminating prefilter to run, so defer to the REAL marking path
             // (`populate_active_phase2`, anchor_mode = false) and admit iff it
-            // produces an active pattern — exactly what the production scan would
+            // produces an active pattern, exactly what the production scan would
             // mark for this chunk. Never a coarse count short-circuit over the
             // always-active index set (that admits EVERY chunk and defeats no-hit
             // admission; see `phase2_always_active_sparse`).
@@ -379,7 +379,7 @@ impl CompiledScanner {
             // the set could not be compiled, fall back to marking all of them.
             // The always-active prefilter marks the patterns that can fire. Its
             // plain (homoglyph) batches use a fast ASCII-folded alternate on
-            // pure-ASCII chunks (identical marking, far faster) — the perf win.
+            // pure-ASCII chunks (identical marking, far faster) (the perf win).
             // When anchor localization is on, the prefilter covers only the
             // non-eligible always-active set (eligible ones are handled by the
             // shared AC); on the legacy path every always-active pattern must be
@@ -394,7 +394,7 @@ impl CompiledScanner {
             let tuning = self.tuning.resolve();
             let t0 = if prof { Some(Instant::now()) } else { None };
             {
-                // The anchorless always-active RegexSet — the detectors that run
+                // The anchorless always-active RegexSet, the detectors that run
                 // on EVERY chunk. This span is the cost the old vague label hid.
                 let _g = super::profile::span(super::profile::P::Phase2Prefilter);
                 match &self.phase2_always_active_prefilter {

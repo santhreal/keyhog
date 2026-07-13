@@ -213,7 +213,7 @@ fn dump_xox_literal_cover() {
 /// The recall-neutral decode-path perf lever (F3, BACKLOG) skips the
 /// generic/entropy subset of this pool during decode rescans, because the
 /// adjudicator's decode-guard already suppresses every generic/entropy finding on
-/// decoded content — so marking that subset there is pure discarded work. This
+/// decoded content, so marking that subset there is pure discarded work. This
 /// test proves how many always-active patterns are NOT generic/entropy: that count
 /// decides whether the decode skip can drop the WHOLE prefilter (`other == 0`) or
 /// must exclude only the generic/entropy subset (`other > 0`) so no-keyword vendor
@@ -253,7 +253,7 @@ fn phase2_always_active_pool_family_composition() {
     assert!(
         real_total + homo_total > 100,
         "always-active pool unexpectedly tiny (real={real_total} homo={homo_total}); \
-         the phase-2 partition or detector corpus changed shape — re-derive F3"
+         the phase-2 partition or detector corpus changed shape, re-derive F3"
     );
 }
 
@@ -297,7 +297,7 @@ fn hs_homoglyph_ascii_skip_prize() {
         let (full_ns, lean_ns, full_n, lean_n) = bench_hs_homoglyph_skip(&scanner, hay, n_calls);
         // Full `mark_matches` = no-candidate gate (anchor_present) + engine dispatch
         // + the HS mark. Comparing to `lean_ns` (HS mark alone) isolates how much of
-        // the prefilter leaf is the gate/anchor overhead vs the HS scan — the
+        // the prefilter leaf is the gate/anchor overhead vs the HS scan, the
         // re-diagnosis of the remaining 83%-of-scan prefilter cost after the lean-DB
         // fix cut the HS mark to a few µs.
         let mark_ns =
@@ -318,7 +318,7 @@ fn hs_homoglyph_ascii_skip_prize() {
 
 /// Recall-neutrality LOCK for the HS homoglyph-ASCII skip: on representative ASCII
 /// haystacks, the lean ASCII sub-DB must differ from the full DB by EXACTLY the
-/// homoglyph variants — it may never drop a non-homoglyph pattern and may never
+/// homoglyph variants, it may never drop a non-homoglyph pattern and may never
 /// over-mark. This is the unit-level proof behind the `homoglyph_ascii_skip`
 /// invariant for the HS path (the full CredData/mirror bench proves it end-to-end).
 /// A live gate (not `#[ignore]`): if a future change makes the lean DB drop a real
@@ -347,11 +347,11 @@ fn hs_homoglyph_ascii_skip_drops_only_homoglyph_variants() {
         assert!(
             non_homoglyph_dropped.is_empty(),
             "lean ASCII HS DB dropped NON-homoglyph pattern(s) {non_homoglyph_dropped:?} on {hay:?} \
-             (full marked {full_n}, lean {lean_n}) — that is a RECALL LOSS, not a homoglyph skip"
+             (full marked {full_n}, lean {lean_n}), that is a RECALL LOSS, not a homoglyph skip"
         );
         assert!(
             lean_extra.is_empty(),
-            "lean ASCII HS DB over-marked {lean_extra:?} on {hay:?} — lean must be a strict subset"
+            "lean ASCII HS DB over-marked {lean_extra:?} on {hay:?}, lean must be a strict subset"
         );
     }
 }

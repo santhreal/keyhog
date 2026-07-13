@@ -54,11 +54,11 @@ pub fn state_file_lock_path(state_path: &Path) -> std::io::Result<PathBuf> {
 
 /// Maximum on-disk calibration cache (`calibration.json`) size.
 ///
-/// The artifact holds one `{alpha, beta}` pair per detector id — control-plane
+/// The artifact holds one `{alpha, beta}` pair per detector id, control-plane
 /// data, not scan input. Multi-megabyte calibration files are corrupt or hostile.
 pub(crate) const CALIBRATION_CACHE_FILE_BYTES: u64 = 16 * 1024 * 1024;
 
-/// Maximum size of a user-authored config file read wholesale into memory —
+/// Maximum size of a user-authored config file read wholesale into memory 
 /// suppression rules (`.keyhogignore`/rule-filter TOML) and allowlists. These are
 /// hand-authored control-plane data; a multi-megabyte one is corrupt or a
 /// resource-exhaustion vector, so the wholesale read is bounded like the caches.

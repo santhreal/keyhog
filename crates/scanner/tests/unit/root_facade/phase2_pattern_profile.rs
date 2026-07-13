@@ -32,7 +32,7 @@ fn phase2_pattern_profile_mirror() {
     let scanner = CompiledScanner::compile(detectors).expect("compile");
 
     let Some(root) = corpus_dir() else {
-        eprintln!("phase2_pattern_profile: mirror corpus absent — skipping");
+        eprintln!("phase2_pattern_profile: mirror corpus absent, skipping");
         return;
     };
     let files = corpus_files(&root, 8000);

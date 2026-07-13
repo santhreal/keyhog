@@ -184,7 +184,7 @@ impl Wrapper {
     /// A DECODE-THROUGH wrapper re-encodes the positive into base64/hex/url so
     /// the decode pipeline must recover the ORIGINAL bytes before scanning. The
     /// decoded chunk is byte-identical to the unwrapped positive (which fires by
-    /// contract), so a miss here is a real decode-through recall bug — there is
+    /// contract), so a miss here is a real decode-through recall bug, there is
     /// no "the format shifted confidence" excuse the structured wrappers have.
     /// These therefore get a strict 0-miss gate, not the soft long-tail band.
     fn is_decode_through(self) -> bool {
@@ -295,7 +295,7 @@ fn every_contract_positive_fires_under_every_format_wrapper() {
 
     for (path, c) in &contracts {
         for (pi, p) in c.positive.iter().enumerate() {
-            // Structured/context wrappers only — the decode-through wrappers
+            // Structured/context wrappers only, the decode-through wrappers
             // (base64/hex/url) are gated strictly and separately by
             // `every_contract_positive_fires_through_decode_wrappers` below.
             for wrapper in Wrapper::ALL
@@ -388,7 +388,7 @@ fn every_contract_positive_fires_under_every_format_wrapper() {
 /// must recover the ORIGINAL bytes and the detector must fire on the SAME
 /// credential. Unlike the structured wrappers above, the decoded chunk is
 /// byte-identical to the unwrapped positive (which fires by contract), so there
-/// is no legitimate "the format shifted confidence" miss — the ONLY tolerated
+/// is no legitimate "the format shifted confidence" miss, the ONLY tolerated
 /// miss is a positive whose encoded form falls below the decoder's extraction
 /// floor. Those are enumerated explicitly in `allowed` so any *new* miss fails
 /// loudly instead of hiding under the 1.5% band the structured gate allows.

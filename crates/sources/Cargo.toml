@@ -23,7 +23,7 @@ status = "alpha"
 [features]
 default = ["git", "web"]
 git = ["gix"]
-# `dep:serde` / `dep:serde_json` removed from these feature gates —
+# `dep:serde` / `dep:serde_json` removed from these feature gates 
 # they're unconditional now (serde for the HAR parser in
 # filesystem.rs::har, which is in the always-on path).
 #
@@ -99,7 +99,7 @@ rars = { workspace = true }
 # True-decompression decoders for the always-on filesystem compressed-input
 # path (filesystem/extract.rs). ziftsieve only extracts DEFLATE literals for
 # its bloom prefilter (drops back-references), so it cannot reconstruct the
-# real decompressed bytes the scanner needs — these do the full inflate.
+# real decompressed bytes the scanner needs (these do the full inflate).
 flate2 = { workspace = true }
 zstd = { workspace = true }
 lz4_flex = { workspace = true }
@@ -131,7 +131,7 @@ io-uring = { workspace = true }
 
 # Feature-gated optional deps. Previously declared inside the
 # `[target.cfg(target_os = "linux")]` block, which silently scoped
-# them to Linux only — every `web` / `github` / `s3` / `gcs` / `docker` /
+# them to Linux only, every `web` / `github` / `s3` / `gcs` / `docker` /
 # `binary` build on Windows or macOS failed with `unresolved
 # import reqwest`. They need to be declared at workspace scope so
 # all OSes that activate the corresponding feature can resolve them.
@@ -149,7 +149,7 @@ workspace = true
 [dependencies.serde]
 workspace = true
 features = ["derive"]
-# `har::HarDocument` derive uses serde unconditionally — the HAR
+# `har::HarDocument` derive uses serde unconditionally, the HAR
 # expansion in filesystem.rs is part of the always-on filesystem
 # source path. The `web`/`github`/`slack` features that previously
 # pulled in serde optionally now share this unconditional dep.

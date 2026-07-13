@@ -1,5 +1,5 @@
 //! Honest GPU literal-set throughput measurement on the real detector literal
-//! set — the oracle for whether on-GPU scanning can beat the CPU path, and by how
+//! set, the oracle for whether on-GPU scanning can beat the CPU path, and by how
 //! much, once the per-dispatch table re-upload is amortized.
 //!
 //! keyhog's GPU phase-1 calls `GpuLiteralSet::scan()` (the BORROWED path), which
@@ -7,10 +7,10 @@
 //! (vyre-libs `scan_into_with_program`, buffers 1-9 are static yet re-uploaded).
 //! For a 16 KB haystack those tables can exceed the haystack, so per-dispatch the
 //! GPU moves `tables + haystack` when only `haystack` changed. This measures:
-//!   1. CPU 1-thread  — `reference_scan` over one big batched haystack.
-//!   2. GPU big-batch — ONE `scan()` over the same big haystack (table upload
+//!   1. CPU 1-thread: `reference_scan` over one big batched haystack.
+//!   2. GPU big-batch: ONE `scan()` over the same big haystack (table upload
 //!      amortized over megabytes → the kernel's throughput ceiling).
-//!   3. GPU 16 KB     — many `scan()`s of 16 KB chunks (the re-upload tax exposed
+//!   3. GPU 16 KB, many `scan()`s of 16 KB chunks (the re-upload tax exposed
 //!      → the per-dispatch overhead the resident API removes).
 //! Ratio (2)/(1) is the kernel headroom; (2)/(3) is the size of the resident
 //! lever keyhog is leaving on the table.
@@ -95,7 +95,7 @@ fn gpu_literal_set_throughput_vs_cpu() {
     let gpu_small_ms = t.elapsed().as_secs_f64() * 1000.0;
     let gpu_small_mbps = (n_chunks * chunk) as f64 / 1e6 / (gpu_small_ms / 1e3);
 
-    // (4) GPU COUNT-only on the big haystack — isolates raw scan throughput from
+    // (4) GPU COUNT-only on the big haystack, isolates raw scan throughput from
     // match-record append/readback (the dense-match path materializes 66k triples
     // through an atomic counter; count-only writes a single u32).
     let t = Instant::now();
@@ -103,7 +103,7 @@ fn gpu_literal_set_throughput_vs_cpu() {
     let gpu_count_ms = t.elapsed().as_secs_f64() * 1000.0;
     let gpu_count_mbps = mb / (gpu_count_ms / 1e3);
 
-    // (5) GPU scan on a SPARSE haystack (random-ish bytes, ~no literal hits) —
+    // (5) GPU scan on a SPARSE haystack (random-ish bytes, ~no literal hits) 
     // the GPU's scan ceiling with negligible match output.
     let mut sparse = vec![0u8; big.len()];
     for (i, b) in sparse.iter_mut().enumerate() {

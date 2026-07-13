@@ -5,8 +5,8 @@ use super::{ChecksumResult, ChecksumValidator};
 /// GitLab PATs: classic tokens are `glpat-` + 20 base64url chars, but the
 /// routable tokens GitLab ships since 16.x (`glpat-`, `glrt-`, `glcbt-`, …)
 /// are LONGER and embed their own CRC32 in a base64-encoded trailer. This
-/// validator does structural checks only — it does not recompute the routable
-/// CRC — so it must not claim checksum proof for structurally valid tokens, or
+/// validator does structural checks only, it does not recompute the routable
+/// CRC, so it must not claim checksum proof for structurally valid tokens, or
 /// claim a token is fabricated merely because its length is not the classic 20:
 /// that false `Invalid` verdict makes the engine DROP every modern GitLab
 /// token (the `atlantis-credentials` / `gitlab-personal-access-token` contract
@@ -29,11 +29,11 @@ const GITLAB_ROUTABLE_BODY_MIN: usize = 16;
 const GITLAB_BODY_MAX: usize = 64;
 
 fn gitlab_body_charset_ok(payload: &str) -> bool {
-    // base64url body chars, plus `.` — the single separator GitLab routable
+    // base64url body chars, plus `.`: the single separator GitLab routable
     // tokens (`glrt-t<n>_<body>.<suffix>`, and the routable `glpat-`/`glcbt-`
     // variants) place between the encoded body and its short CRC suffix.
     // Classic tokens never contain `.` (their detector regex forbids it), so
-    // admitting `.` here cannot turn a classic token Valid — it only stops the
+    // admitting `.` here cannot turn a classic token Valid, it only stops the
     // validator from false-dropping a legitimately `.`-bearing routable token.
     payload
         .chars()

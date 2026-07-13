@@ -2,12 +2,12 @@
 //! the `SourceTestApi` facade). These are the crown-jewel security gates of the
 //! github/gitlab/bitbucket org-scan flows:
 //!
-//!   * `validate_repo_name` — a repo/segment name is joined onto a temp dir
+//!   * `validate_repo_name`: a repo/segment name is joined onto a temp dir
 //!     (`temp_root.join(&repo.name)`); a `/`, `\`, or `..` would let a
 //!     compromised API response write OUTSIDE the sandbox (path traversal).
-//!   * `validate_org_name` — an org/user name is interpolated into the GitHub
+//!   * `validate_org_name`: an org/user name is interpolated into the GitHub
 //!     API URL path; a `/ ? # : @` or control byte would restructure the request.
-//!   * `validate_clone_url` — a clone URL is handed to `git`; a non-`https://`
+//!   * `validate_clone_url`: a clone URL is handed to `git`; a non-`https://`
 //!     scheme (`ext::`, `ssh://`, `file://`, `git://`) is a remote-code-execution
 //!     gadget in git's transport negotiation, and an off-origin host / embedded
 //!     credential / query / fragment is an exfil or confusion vector.
@@ -17,7 +17,7 @@
 //! contract`) pin a handful of hostile inputs. This file SWEEPS the reject/accept
 //! boundary over generated inputs, so a validator loosened in a refactor (a new
 //! allowed char, a dropped scheme check) fails here on a shape nobody hand-wrote.
-//! Every assertion states a contract the source code actually enforces — the
+//! Every assertion states a contract the source code actually enforces, the
 //! accept cases use inputs the validator MUST pass, the reject cases inputs it
 //! MUST refuse, and the accept cases additionally re-derive the security
 //! invariant (no separator / no non-github origin) from the accepted value.
@@ -38,7 +38,7 @@ const REPO_FORBIDDEN_CHARS: &[char] = &[
     ')', '!', '"', '\'', '`', ';', ',', '=', '+', '~', '\0',
 ];
 
-/// Non-`https` transport schemes git would honour — the RCE / off-transport
+/// Non-`https` transport schemes git would honour, the RCE / off-transport
 /// gadgets `validate_clone_url` exists to refuse. Each is spelled without
 /// whitespace so it reaches (and fails) the scheme check rather than the earlier
 /// whitespace guard.
@@ -73,7 +73,7 @@ proptest! {
         );
     }
 
-    /// A repo name carrying ANY out-of-alphabet character is refused — the
+    /// A repo name carrying ANY out-of-alphabet character is refused, the
     /// allow-list is the whole defense, so a single smuggled structural byte
     /// (URL, shell, whitespace, NUL) must break validation.
     #[test]
@@ -167,7 +167,7 @@ proptest! {
         prop_assert!(TestApi.validate_org_name(&over_length).is_err());
     }
 
-    /// Every non-`https` transport scheme is refused — the RCE guard. Combined
+    /// Every non-`https` transport scheme is refused, the RCE guard. Combined
     /// with a generated clean github path so the scheme is the sole reason.
     #[test]
     fn clone_url_rejects_non_https_transport_schemes(idx in 0..RCE_SCHEME_URLS.len()) {

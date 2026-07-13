@@ -5,12 +5,12 @@
 //! byte scan cannot recover (k8s Secret / docker-compose / Terraform state /
 //! Jupyter notebook). `Env`/`HCL` extract plain scalar values the raw scan still
 //! sees, so their oversize skip is lossless and must NOT be counted (Law 10: no
-//! false-loud telemetry). A decode-derived buffer is never counted — its encoded
+//! false-loud telemetry). A decode-derived buffer is never counted, its encoded
 //! surface was already decoded and scanned upstream.
 //!
 //! This pins `structured_oversize_skip_is_counted`, the single predicate
 //! `preprocess` applies at the cap, so the count decision cannot drift from the
-//! format classification. Pure classification — no multi-megabyte fixtures.
+//! format classification. Pure classification (no multi-megabyte fixtures).
 
 use keyhog_scanner::testing::structured_oversize_skip_is_counted;
 

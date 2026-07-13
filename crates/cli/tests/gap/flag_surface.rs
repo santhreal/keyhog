@@ -2,12 +2,12 @@
 //!
 //! Coverage area: flag_surface. Every expected value below is derived by
 //! reading the real CLI source under `crates/cli/src`:
-//!   * `args/scan.rs`          — flag definitions, conflicts, defaults
-//!   * `args.rs`               — `SeverityFilter`, `CliDedupScope`, exit-code text
-//!   * `value_parsers.rs`      — `parse_min_confidence` range, etc.
-//!   * `orchestrator_config.rs`— `build_scanner_config` / preset composition
-//!   * `orchestrator/postprocess.rs` — `--severity` / `--show-secrets` / `--dedup`
-//!   * `orchestrator/run.rs`   — `--hide-client-safe` drop
+//!   * `args/scan.rs`: flag definitions, conflicts, defaults
+//!   * `args.rs`: `SeverityFilter`, `CliDedupScope`, exit-code text
+//!   * `value_parsers.rs`: `parse_min_confidence` range, etc.
+//!   * `orchestrator_config.rs`: `build_scanner_config` / preset composition
+//!   * `orchestrator/postprocess.rs`: `--severity` / `--show-secrets` / `--dedup`
+//!   * `orchestrator/run.rs`: `--hide-client-safe` drop
 //!
 //! `keyhog config --effective` is the ground-truth surface for
 //! engine-config composition: it prints the
@@ -262,7 +262,7 @@ fn severity_low_drops_client_safe_finding() {
 }
 
 /// Every accepted `--severity` spelling parses (value_enum). The CLI enum is
-/// exactly {info, low, medium, high, critical} — `client-safe` is NOT a
+/// exactly {info, low, medium, high, critical}: `client-safe` is NOT a
 /// selectable filter value (it has no `SeverityFilter` variant).
 #[test]
 fn severity_accepts_five_levels_and_rejects_client_safe() {
@@ -618,7 +618,7 @@ fn no_decode_sets_depth_zero() {
 
 /// `--no-entropy` (no preset) disables entropy in the resolved config. The
 /// `if !(fast||deep||precision)` branch in `build_scanner_config` honours the
-/// flag only off the preset path — here there is no preset, so it applies.
+/// flag only off the preset path (here there is no preset, so it applies).
 #[test]
 fn no_entropy_disables_entropy() {
     let (out, err, code) = effective_config(&["scan", "--daemon=off", "--no-entropy"]);
@@ -629,7 +629,7 @@ fn no_entropy_disables_entropy() {
     );
 }
 
-/// Default (no flags) leaves entropy ENABLED and decode depth 10 — confirms
+/// Default (no flags) leaves entropy ENABLED and decode depth 10, confirms
 /// the negatives above are real toggles, not the default state.
 #[test]
 fn default_mode_entropy_on_decode_ten() {
@@ -819,7 +819,7 @@ fn cli_precision_preset_wins_over_toml_fast() {
     );
 }
 
-/// `--fast` preset composition: ml off, entropy off, decode 0 — all three at
+/// `--fast` preset composition: ml off, entropy off, decode 0, all three at
 /// once (`ScannerConfig::fast()` plus `ml_enabled = !fast && !no_ml`).
 #[test]
 fn fast_preset_disables_ml_entropy_decode() {
@@ -1199,7 +1199,7 @@ fn show_secrets_on_prints_plaintext() {
 /// `--show-secrets` conflicts with `--lockdown` at the orchestrator layer
 /// (NOT clap): `finalize` bails with a message naming the conflict, and main
 /// maps the bail to a user error (exit 2). This is a runtime guard, so the
-/// scan must actually run — use a fixture with a finding so `finalize` runs.
+/// scan must actually run (use a fixture with a finding so `finalize` runs).
 #[test]
 fn lockdown_forbids_show_secrets() {
     let (_d, _out, err, code) = scan_file("config.txt", AWS_KEY, &["--lockdown", "--show-secrets"]);

@@ -1,4 +1,4 @@
-//! Contract for `simdsieve_prefilter::build_hot_pattern_validators` — the
+//! Contract for `simdsieve_prefilter::build_hot_pattern_validators`: the
 //! compiler that builds one validator regex per SIMD-sieve hot pattern from the
 //! loaded detector set. Previously untested directly.
 //!
@@ -7,9 +7,9 @@
 //! before it becomes a finding. `build_hot_pattern_validators` produces those
 //! validators, in the same slot order as `HOT_PATTERN_DETECTOR_IDS`, with a slot:
 //!   * `Some(re)` when the corresponding canonical detector is loaded AND has
-//!     patterns — `re` is the `^`-anchored alternation of the detector's regexes;
+//!     patterns: `re` is the `^`-anchored alternation of the detector's regexes;
 //!   * `None` when the detector is absent (operator did not compile it) or has no
-//!     patterns — the hot path then skips the slot rather than emitting a
+//!     patterns, the hot path then skips the slot rather than emitting a
 //!     synthetic finding for a disabled detector.
 //! A wrong `None` on a loaded detector would silently drop it from the hot path;
 //! a validator that is NOT anchored would over-validate mid-string noise.

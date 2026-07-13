@@ -1,4 +1,4 @@
-//! LANE: cli watch/config surface — driven over the SHIPPED binary
+//! LANE: cli watch/config surface, driven over the SHIPPED binary
 //! (`CARGO_BIN_EXE_keyhog`), never the library, so these prove the exact
 //! argument-parsing contract a packager / CI author / editor-integration hits.
 //!

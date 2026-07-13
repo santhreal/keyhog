@@ -1,5 +1,5 @@
-//! Regression: `swetrix-api-key` must capture the ISOLATED 32-hex key — not the
-//! whole match — in BOTH keyword orders.
+//! Regression: `swetrix-api-key` must capture the ISOLATED 32-hex key, not the
+//! whole match (in BOTH keyword orders).
 //!
 //! The detector's second pattern was a single alternation
 //! `X-Api-Key(cap1).*swetrix | swetrix.*X-Api-Key(cap2)`. The 32-hex value was
@@ -68,7 +68,7 @@ fn swetrix_credential(text: &str) -> String {
 
 #[test]
 fn swetrix_header_before_context_captures_only_the_key() {
-    // Branch 1 (X-Api-Key … swetrix) — was already correct; guard it stays so.
+    // Branch 1 (X-Api-Key … swetrix) (was already correct; guard it stays so).
     let cred = swetrix_credential(
         "X-Api-Key: b539e4ae802deaca3a83216dd1580f3e used by the swetrix client",
     );
@@ -80,7 +80,7 @@ fn swetrix_header_before_context_captures_only_the_key() {
 
 #[test]
 fn swetrix_context_before_header_captures_only_the_key() {
-    // Branch 2 (swetrix … X-Api-Key) — the BUG order. Before the alternation was
+    // Branch 2 (swetrix … X-Api-Key), the BUG order. Before the alternation was
     // split, this captured the whole `swetrix…X-Api-Key…<key>` match.
     let cred = swetrix_credential(
         "swetrix analytics client init; X-Api-Key: b539e4ae802deaca3a83216dd1580f3e",

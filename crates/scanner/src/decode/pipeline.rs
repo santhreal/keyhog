@@ -19,7 +19,7 @@ pub(crate) fn decode_chunk(
     // whose triggers it does not cover. Gating the whole fan-out on it silently
     // dropped ~7% of credentials under structured-format wrapping
     // (`every_contract_positive_fires_under_every_format_wrapper`). A correct
-    // superset gate fires on `% & \ " { =` — which saturate real source — so it
+    // superset gate fires on `% & \ " { =`: which saturate real source, so it
     // buys almost nothing; the genuine cost (Caesar's 25× fan-out over the full
     // chunk) belongs gated at the Caesar decoder on its own alphabetic-run
     // precondition, not as a pipeline-wide recall hazard.
@@ -191,9 +191,9 @@ const DEDUP_KEY_SALT: &[u8] = &[0x9e, 0x37, 0x79, 0xb9];
 
 /// 128-bit content key for BFS decode dedup: the crate-canonical FNV-1a in the
 /// low 64 bits, a salted second FNV pass in the high 64 bits. Distinct decoded
-/// payloads collide only if they collide under BOTH passes — over the ≤1000 keys
+/// payloads collide only if they collide under BOTH passes, over the ≤1000 keys
 /// a single root can produce (`MAX_DECODED_CHUNKS_PER_ROOT`), the probability is
-/// ~n²/2¹²⁹, i.e. unreachable — so the dedup never silently drops a genuinely
+/// ~n²/2¹²⁹, i.e. unreachable, so the dedup never silently drops a genuinely
 /// distinct payload (Law 10) while still keying on 16 bytes, not the payload.
 #[inline]
 fn dedup_key(data: &[u8]) -> u128 {

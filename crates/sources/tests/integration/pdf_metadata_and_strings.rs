@@ -1,10 +1,10 @@
 //! Recall + coherence: a PDF carries secrets in TWO places the content-stream
-//! fixtures never reach —
+//! fixtures never reach 
 //!   1. **Document metadata** (the Info dictionary: `/Author`, `/Title`,
 //!      `/Keywords`, `/Producer`, `/Subject`) rendered as literal `(...)` or hex
 //!      `<...>` strings OUTSIDE any stream. A credential pasted into a
 //!      document's properties is a real leak, and #119 claims "embedded text +
-//!      metadata" — these tests prove the metadata half.
+//!      metadata" (these tests prove the metadata half).
 //!   2. The literal/hex **string parser** primitives that back that extraction
 //!      (`parse_literal_string`, `parse_octal_escape`, `parse_hex_string`).
 //!      PDF strings are a classic parsing-hazard surface: balanced UNescaped
@@ -41,7 +41,7 @@ fn pdf_has(chunks: &[Chunk], marker: &str) -> bool {
         .any(|c| c.metadata.source_type.as_ref() == "filesystem/pdf" && c.data.contains(marker))
 }
 
-/// True when ANY emitted chunk (pdf or fallback) carries `marker` — used to
+/// True when ANY emitted chunk (pdf or fallback) carries `marker`: used to
 /// prove a dropped string is dropped everywhere, not merely off the pdf path.
 fn any_chunk_has(chunks: &[Chunk], marker: &str) -> bool {
     chunks.iter().any(|c| c.data.contains(marker))
@@ -111,7 +111,7 @@ fn pdf_multiple_metadata_fields_all_extracted() {
 
 #[test]
 fn pdf_hex_string_metadata_is_decoded() {
-    // /Author <hex> — "KEYHOG_HEX_META" as a hex-encoded metadata string.
+    // /Author <hex>: "KEYHOG_HEX_META" as a hex-encoded metadata string.
     let chunks = scan_pdf(pdf_with_info_dict(
         "/Author <4b4559484f475f4845585f4d455441>",
     ));
@@ -251,7 +251,7 @@ fn pdf_string_without_alphanumeric_is_dropped() {
 
 #[test]
 fn pdf_dict_open_double_angle_not_treated_as_hex_string() {
-    // `<<` opens a dictionary, not a hex string — it must be skipped, and a
+    // `<<` opens a dictionary, not a hex string, it must be skipped, and a
     // co-located hex-string secret still extracted, with no error row.
     let chunks = scan_pdf(pdf_with_info_dict(
         "/Type /Metadata /Author <4b4559484f475f4845585f4d455441>",

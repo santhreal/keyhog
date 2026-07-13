@@ -142,12 +142,12 @@ pub(crate) fn max_repeat_run(credential: &str) -> f64 {
 const DEGENERATE_RUN_LEN: usize = 10;
 
 /// True if `credential` contains a degenerate single-character run (>=
-/// [`DEGENERATE_RUN_LEN`] identical bytes) — a placeholder/padding artifact no
+/// [`DEGENERATE_RUN_LEN`] identical bytes), a placeholder/padding artifact no
 /// real secret body carries. Single source of truth for the run heuristic:
 /// consumed by [`apply_post_ml_penalties`] (both detector classes) AND by
 /// `prefixes::known_prefix_confidence_floor` (so a known-prefix placeholder like
 /// `AKIAXXXXXXXXXXXXXXXX` is NOT floored back to 0.8 after the penalty crushes
-/// it — exactly parallel to the placeholder-word skip).
+/// it (exactly parallel to the placeholder-word skip)).
 pub(crate) fn is_degenerate_repeat(credential: &str) -> bool {
     longest_repeat_run_len(credential) >= DEGENERATE_RUN_LEN
 }
@@ -170,7 +170,7 @@ pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
 const PLACEHOLDER_WORD_PENALTY: f64 = 0.05;
 
 /// Multiplier applied when a value's byte alphabet is so small it is effectively
-/// one repeated symbol (`char_diversity` below the per-class floor) — a padding /
+/// one repeated symbol (`char_diversity` below the per-class floor), a padding /
 /// placeholder artifact, not a real high-entropy secret body. Shared by the named
 /// and generic detector branches (same magnitude, different diversity threshold).
 const LOW_DIVERSITY_PENALTY: f64 = 0.1;
@@ -184,7 +184,7 @@ const DEGENERATE_SHAPE_PENALTY: f64 = 0.1;
 /// Multiplier applied when decode-through proves the value is a DATA ENVELOPE,
 /// not a credential: it base64/hex-decodes to a binary asset (magic bytes) or a
 /// full protobuf message, is a uniform random-base64 blob, or is a double-base64
-/// wrapper. Slammed hardest — no service publishes a secret in this shape — so
+/// wrapper. Slammed hardest, no service publishes a secret in this shape, so
 /// all three data-envelope arms share one factor.
 const DATA_ENVELOPE_PENALTY: f64 = 0.02;
 
@@ -357,7 +357,7 @@ pub(crate) fn apply_path_confidence_penalties(
 mod tests {
     //! Boundary lock for the repeat-run precision heuristics. `is_degenerate_repeat`
     //! is the single source of truth deciding whether a value's longest identical-
-    //! byte run marks it as a placeholder/padding artifact — it denies the
+    //! byte run marks it as a placeholder/padding artifact, it denies the
     //! known-prefix confidence floor and drives the post-ML shape penalty. Its
     //! `DEGENERATE_RUN_LEN = 10` boundary is a real detection contract (9 identical
     //! chars is a plausible key body; 10 is not), so pin it exactly, along with the
@@ -497,7 +497,7 @@ mod tests {
     fn run_len_is_byte_based_not_char_based() {
         // 'é' is two bytes (0xC3 0xA9); a string of three 'é' has alternating bytes,
         // so its longest identical-BYTE run is 1, not 3. Degenerate-run detection is
-        // deliberately byte-based — the placeholders it targets (XXXX, 0000) are
+        // deliberately byte-based, the placeholders it targets (XXXX, 0000) are
         // ASCII, where byte == char.
         assert_eq!(longest_repeat_run_len("\u{e9}\u{e9}\u{e9}"), 1);
     }

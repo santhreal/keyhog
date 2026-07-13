@@ -7,7 +7,7 @@
 //!     pass through to the output (the `pop()` recall guard), and the loud
 //!     `DEDUP_LOST_SINGLETON` counter must stay 0 in correct operation.
 //!  2. `Credential`'s minimal base64 encoder zero-pads short final chunks per
-//!     RFC 4648 (the `chunk.get(1/2).unwrap_or(0)` annotated sites) — proven by
+//!     RFC 4648 (the `chunk.get(1/2).unwrap_or(0)` annotated sites), proven by
 //!     round-tripping every input length 0..=24 through `Credential::From` /
 //!     `expose_*` and asserting the canonical `=` padding shape.
 //!
@@ -50,7 +50,7 @@ fn deduped(detector: &str, credential: &str, hash: [u8; 32]) -> DedupedMatch {
 }
 
 /// A single distinct credential (a singleton group) must survive
-/// cross-detector dedup — the recall guard around `group.pop()`. If the guard
+/// cross-detector dedup, the recall guard around `group.pop()`. If the guard
 /// regressed into a silent skip, the finding would vanish and `len()` would be
 /// 0 instead of 1, AND `DEDUP_LOST_SINGLETON` would tick.
 #[test]
@@ -89,7 +89,7 @@ fn singleton_finding_is_never_dropped() {
 }
 
 /// Multiple DISTINCT singletons (different credential hashes) each pass through
-/// individually — proving the singleton arm is the common path and loses none.
+/// individually (proving the singleton arm is the common path and loses none).
 #[test]
 fn many_distinct_singletons_all_survive() {
     let before = dedup_lost_singleton();
@@ -122,7 +122,7 @@ fn many_distinct_singletons_all_survive() {
     );
 }
 
-/// Two detectors sharing one credential (same hash) collapse to ONE finding —
+/// Two detectors sharing one credential (same hash) collapse to ONE finding 
 /// this exercises the `len() > 1` arm, not the singleton arm, and still emits
 /// exactly one finding with the loser folded into companions.
 #[test]

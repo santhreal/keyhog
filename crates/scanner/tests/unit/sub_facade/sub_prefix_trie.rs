@@ -2,7 +2,7 @@
 //!
 //! The propagation table maps each prefix to the set of OTHER prefixes that are
 //! proper superstrings of it (children in the trie). These tests assert the
-//! exact index sets — order-insensitive — for nested, sibling, duplicate, and
+//! exact index sets, order-insensitive, for nested, sibling, duplicate, and
 //! empty-prefix cases, never just `.len()`.
 
 use keyhog_scanner::testing::build_propagation_table;

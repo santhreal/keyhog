@@ -6,13 +6,13 @@
 //! `fixes[]`/`properties` cross-reference). This file pins the *rule object*
 //! metadata a code-scanning platform renders in its rule catalog:
 //!
-//!   * `tool.driver.{name,version,informationUri}` — the driver identity, with
+//!   * `tool.driver.{name,version,informationUri}`: the driver identity, with
 //!     version/informationUri sourced from the crate manifest (never hardcoded).
-//!   * `rules[i].{shortDescription,fullDescription,help.text,help.markdown}` —
+//!   * `rules[i].{shortDescription,fullDescription,help.text,help.markdown}` 
 //!     the composed human-facing rule copy.
-//!   * `rules[i].helpUri` — prefers the detector `revoke_url`, falls back to
+//!   * `rules[i].helpUri`: prefers the detector `revoke_url`, falls back to
 //!     `docs_url`, and is ABSENT when the remediation has neither.
-//!   * `rules[i].properties.{service,severity,security-severity,tags}` — the
+//!   * `rules[i].properties.{service,severity,security-severity,tags}`: the
 //!     GitHub code-scanning rule properties, exact per severity.
 //!   * rule DEDUP: one rule per unique detector id even across N findings, while
 //!     results stay 1:1 with findings.
@@ -115,7 +115,7 @@ fn driver_rules(json: &serde_json::Value) -> Vec<serde_json::Value> {
 // ---- tool.driver identity ----------------------------------------------------
 
 /// `tool.driver` carries name `"keyhog"`, the crate's own version, and the
-/// crate manifest `repository` URL as `informationUri` — never a hardcoded org.
+/// crate manifest `repository` URL as `informationUri`: never a hardcoded org.
 #[test]
 fn driver_name_version_information_uri_are_manifest_sourced() {
     let json = render_sarif(&[aws_finding()]);
@@ -146,7 +146,7 @@ fn driver_name_version_information_uri_are_manifest_sourced() {
 }
 
 /// An empty run (no findings) still emits a driver with name/version/
-/// informationUri and an EMPTY rules array — the rule catalog is honestly empty.
+/// informationUri and an EMPTY rules array (the rule catalog is honestly empty).
 #[test]
 fn empty_run_driver_present_with_zero_rules() {
     let json = render_sarif(&[]);
@@ -200,7 +200,7 @@ fn rule_help_text_is_detector_remediation_action() {
 }
 
 /// `rules[0].help.markdown` composes action + fenced revoke command + a
-/// "Reference:" line pointing at the revoke_url — the exact multi-part string.
+/// "Reference:" line pointing at the revoke_url (the exact multi-part string).
 #[test]
 fn rule_help_markdown_composes_action_command_and_reference() {
     let json = render_sarif(&[aws_finding()]);
@@ -303,7 +303,7 @@ fn rule_help_uri_absent_for_severity_fallback_remediation() {
 // ---- rule.properties (service / severity / security-severity / tags) --------
 
 /// `rules[0].properties` carries service, kebab severity, the GitHub
-/// code-scanning `security-severity` score, and the single `security` tag —
+/// code-scanning `security-severity` score, and the single `security` tag 
 /// exact values for a High aws finding.
 #[test]
 fn rule_properties_service_severity_security_severity_and_tags() {
@@ -366,7 +366,7 @@ fn rule_security_severity_score_exact_per_severity() {
 // ---- rule dedup / identity ---------------------------------------------------
 
 /// N findings of the SAME detector produce exactly ONE rule (deduped by id) but
-/// N results — rule accumulation is independent of result count.
+/// N results (rule accumulation is independent of result count).
 #[test]
 fn rules_dedupe_one_per_detector_across_n_findings() {
     let json = render_sarif(&[
@@ -405,7 +405,7 @@ fn rules_dedupe_one_per_detector_across_n_findings() {
 }
 
 /// Three distinct detectors produce three rules sorted ascending by id, each
-/// pairing the exact (id, name) — no cross-contamination of names between rules.
+/// pairing the exact (id, name) (no cross-contamination of names between rules).
 #[test]
 fn rules_sorted_by_id_with_correct_id_name_pairs() {
     let json = render_sarif(&[

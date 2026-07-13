@@ -192,7 +192,7 @@ fn every_detector_has_metadata_and_patterns() {
         }
         // A `phase2-generic` detector (generic-secret / generic-api-key /
         // generic-keyword-secret) is a shapeless-secret bridge with NO regex
-        // anchor by design — it fires in phase 2 on keywords + entropy_floor.
+        // anchor by design (it fires in phase 2 on keywords + entropy_floor).
         // `spec.rs` rejects a `kind = "regex"` detector with zero patterns at
         // load time, so only regex detectors reach here with patterns to check.
         if d.patterns.is_empty() && d.kind != keyhog_core::DetectorKind::Phase2Generic {
@@ -294,7 +294,7 @@ fn smoke_scanner_fires_on_canonical_aws_ghp_re_examples() {
         ("resend-api-key", "RESEND_API_KEY=re_aBcDefGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUvWx"),
         // Legacy `sk-` key is exactly 48 chars after the prefix; the detector's
         // trailing `\b` now fails closed on a longer run, so this canonical
-        // fixture must be exactly 48 (previously 52 — an overlong run).
+        // fixture must be exactly 48 (previously 52 (an overlong run)).
         ("openai-api-key", "OPENAI_API_KEY=sk-AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUv"),
     ];
     for (label, text) in cases {

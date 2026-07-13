@@ -11,7 +11,7 @@
 //! `--backend`.
 //!
 //! Every assertion pins an EXACT value (detector id, count, exit code, hash
-//! set, line/offset tuple) — never `!is_empty()`. Deterministic: planted
+//! set, line/offset tuple), never `!is_empty()`. Deterministic: planted
 //! secrets with valid checksums, otherwise-clean fixtures, `--daemon=off` (no
 //! background-process nondeterminism), and a hermetic `HOME`/`XDG_CACHE_HOME`
 //! so the autoroute cache is isolated from the dev host.
@@ -25,7 +25,7 @@
 //!     (`crates/scanner/src/hw_probe/select.rs`): `auto`, `simd`, `simd-regex`,
 //!     `cpu`, `cpu-fallback`, plus the gpu variants. `scalar` is a canonical
 //!     alias inside `parse_backend_str` but is NOT in `BACKEND_OVERRIDE_VALUES`,
-//!     so clap rejects `--backend scalar` (exit 2) — pinned as a coherence gap.
+//!     so clap rejects `--backend scalar` (exit 2) (pinned as a coherence gap).
 //!   * findings present, none verified live -> exit 1 (`EXIT_FINDINGS`); a
 //!     clean scan -> exit 0 (`EXIT_SUCCESS`); a bad flag value -> exit 2
 //!     (`EXIT_USER_ERROR`).
@@ -35,7 +35,7 @@
 //!     FAIL CLOSED at exit 3 ("silent cpu-fallback execution is forbidden")
 //!     rather than silently degrade. `--backend auto` with no calibration either
 //!     fails closed (exit 2, "autoroute calibration required") or completes a
-//!     scan matching cpu (exit 1) — never a silently-wrong result. These tests
+//!     scan matching cpu (exit 1), never a silently-wrong result. These tests
 //!     assert that disjunction so they are green on accel and no-accel hosts.
 
 use std::collections::BTreeSet;
@@ -111,7 +111,7 @@ fn findings(stdout: &str) -> Vec<Value> {
 }
 
 /// Sorted detector-id list across every finding (a MULTISET as a sorted Vec, so
-/// duplicates are preserved — a backend that emits a finding twice is caught).
+/// duplicates are preserved (a backend that emits a finding twice is caught)).
 fn detector_ids(stdout: &str) -> Vec<String> {
     let mut ids: Vec<String> = findings(stdout)
         .iter()
@@ -168,7 +168,7 @@ const EXIT_BACKEND_UNAVAILABLE: i32 = 3;
 /// Host-INDEPENDENT contract for an accelerated backend `b` (simd / simd-regex):
 /// on a host where the accelerator is present it must produce a byte-identical
 /// finding set + exit code to `--backend cpu`; on a host without it, keyhog must
-/// FAIL CLOSED (exit 3, forbidding a silent cpu substitution) — it must NEVER
+/// FAIL CLOSED (exit 3, forbidding a silent cpu substitution), it must NEVER
 /// silently return a degraded/empty result. Returns true iff the accelerator was
 /// actually exercised (so a caller can add availability-only assertions).
 fn assert_accel_matches_cpu_or_fails_closed(home: &Path, path: &Path, b: &str) -> bool {
@@ -344,7 +344,7 @@ fn simd_regex_alias_matches_simd() {
     let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
 
     // `simd-regex` and `simd` are aliases of the SAME engine, so they must give
-    // an identical (exit code, finding set) on ANY host — whether that host runs
+    // an identical (exit code, finding set) on ANY host, whether that host runs
     // the accelerator (exit 1 + plant) or fails closed (exit 3). Alias parity is
     // therefore host-independent WITHOUT assuming the accelerator is present.
     let (code_simd, out_simd, _) = scan(home.path(), &path, Some("simd"), &[]);
@@ -392,7 +392,7 @@ fn two_distinct_secrets_surface_identically_across_cpu_and_simd() {
     );
 
     // simd (available) must surface the SAME two detectors + both hashes;
-    // simd (unavailable) fails closed — never an engine-specific drop.
+    // simd (unavailable) fails closed (never an engine-specific drop).
     assert_accel_matches_cpu_or_fails_closed(home.path(), &path, "simd");
 }
 
@@ -442,7 +442,7 @@ fn scalar_alias_is_rejected_by_the_cli_parser_exit_2() {
     // COHERENCE GAP: `scalar` is a canonical alias inside
     // `keyhog_scanner::hw_probe::parse_backend_str` (-> CpuFallback), whose own
     // doc calls itself "the single source of truth for CLI/config backend
-    // parsing" — yet it is NOT in `BACKEND_OVERRIDE_VALUES`, the list clap
+    // parsing", yet it is NOT in `BACKEND_OVERRIDE_VALUES`, the list clap
     // validates `--backend` against. So the CLI rejects `--backend scalar`
     // before routing ever sees it. This test pins the CURRENT (buggy) behavior:
     // exit 2, not a scan.
@@ -490,8 +490,8 @@ fn auto_backend_without_calibration_never_returns_a_silently_wrong_result() {
     // cache disabled (`--autoroute-cache off`) there is no cached decision, so
     // auto must NEVER return a silently-wrong answer (Law 10). The host-agnostic
     // contract is a disjunction:
-    //   (a) FAIL CLOSED — exit 2 with "autoroute calibration required", OR
-    //   (b) COMPLETE with a correct scan — exit 1 and the SAME finding set as
+    //   (a) FAIL CLOSED, exit 2 with "autoroute calibration required", OR
+    //   (b) COMPLETE with a correct scan, exit 1 and the SAME finding set as
     //       an explicit cpu run (auto legitimately resolved a real engine).
     // What is forbidden is exit 1 with a dropped/empty finding set, or exit 0
     // on a file that plainly carries a secret.

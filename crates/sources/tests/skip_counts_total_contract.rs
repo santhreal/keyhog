@@ -12,13 +12,13 @@ use keyhog_sources::SkipCounts;
 #[test]
 fn total_sums_only_the_five_whole_file_skip_categories() {
     let counts = SkipCounts {
-        // Whole-file skips — these five sum into total(): 1+2+4+8+16 = 31.
+        // Whole-file skips (these five sum into total(): 1+2+4+8+16 = 31).
         over_max_size: 1,
         binary: 2,
         excluded: 4,
         unreadable: 8,
         archive_truncated: 16,
-        // Partial-coverage signals — surfaced separately, MUST NOT be in total().
+        // Partial-coverage signals (surfaced separately, MUST NOT be in total()).
         // Each carries a distinct high bit (>= 32) so any leak into the sum is
         // detectable by the equality below.
         git_object_unreadable: 32,
@@ -42,7 +42,7 @@ fn total_of_default_is_zero() {
 
 #[test]
 fn each_whole_file_category_contributes_independently() {
-    // One whole-file field at a time — each adds exactly its value.
+    // One whole-file field at a time (each adds exactly its value).
     assert_eq!(
         SkipCounts {
             over_max_size: 5,

@@ -130,7 +130,7 @@ fn stdin_json_finding_surfaces_with_exact_detector_id_and_exit_1() {
 }
 
 /// json off stdin: the finding's identity and stdin-specific location fields are
-/// exact — source `stdin`, NO file path, line 1, offset 0, verification skipped.
+/// exact (source `stdin`, NO file path, line 1, offset 0, verification skipped).
 #[test]
 fn stdin_json_exact_identity_and_location_fields() {
     let input = format!("{TOKEN}\n");
@@ -181,7 +181,7 @@ fn stdin_json_exact_identity_and_location_fields() {
 }
 
 /// json off stdin: the credential is redacted (never raw) and the reported
-/// credential_hash equals sha256(TOKEN) verbatim — proving the exact bytes are
+/// credential_hash equals sha256(TOKEN) verbatim, proving the exact bytes are
 /// hashed, not a truncated/salted variant.
 #[test]
 fn stdin_json_redacts_credential_and_hashes_exact_bytes() {
@@ -494,7 +494,7 @@ fn stdin_exit_codes_match_across_formats_when_clean() {
 }
 
 /// The SAME detector id is surfaced by the json, sarif, and csv stdin paths for
-/// the one piped secret — a per-format recall hole this catches.
+/// the one piped secret (a per-format recall hole this catches).
 #[test]
 fn stdin_all_structured_formats_surface_same_detector_id() {
     let input = format!("{TOKEN}\n");

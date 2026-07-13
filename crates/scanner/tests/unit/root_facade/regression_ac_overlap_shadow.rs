@@ -5,7 +5,7 @@
 //! `client_secret="…"` nests the literal `secret` (generic-password pattern 4's
 //! trigger) inside `client_secret` (pattern 5's quoted-JSON literal). A
 //! non-overlapping sweep reports `client_secret`, skips past it, and SHADOWS
-//! `secret`, so generic-password pattern 4 was never AC-confirmed — only the
+//! `secret`, so generic-password pattern 4 was never AC-confirmed, only the
 //! always-active homoglyph variant caught it on ASCII. That blocked the homoglyph
 //! ASCII-skip (skipping the variant dropped the finding). Overlapping triggers
 //! reproduce it via the AC/confirmed path, so the skip is recall-safe and now
@@ -44,7 +44,7 @@ fn shadowed_inner_literal_is_ac_confirmed_with_variant_skipped() {
 
     // Skip the always-active homoglyph variant on ASCII AND force the legacy HS
     // prefilter off, so the pure AC trigger sweep is the ONLY thing that can
-    // confirm generic-password — isolating the overlapping-trigger fix. Before it,
+    // confirm generic-password, isolating the overlapping-trigger fix. Before it,
     // the `secret` literal was shadowed by `client_secret` and this dropped to
     // zero generic-password matches.
     keyhog_scanner::testing::set_phase2_hs(&scanner, Some(false));
@@ -75,9 +75,9 @@ fn shadowed_inner_literal_is_ac_confirmed_with_variant_skipped() {
         "generic-password must extract the secret value, got {:?}",
         gp.unwrap().credential.to_string()
     );
-    // NOTE: the downstream precision win this fix also delivers — `MAILGUN_API_KEY=
+    // NOTE: the downstream precision win this fix also delivers. `MAILGUN_API_KEY=
     // key-…` classifying as mailgun-api-key (CRITICAL) instead of the mislabelled
-    // mailgun-webhook-signing-key (HIGH) — is an EMERGENT full-pipeline property
+    // mailgun-webhook-signing-key (HIGH), is an EMERGENT full-pipeline property
     // (SimdCpu trigger + cross-detector dedup + report finalize), verified against
     // the mirror ground-truth manifest by the corpus differential, not reproducible
     // from a single-line `scanner.scan`, so it is intentionally not asserted here.

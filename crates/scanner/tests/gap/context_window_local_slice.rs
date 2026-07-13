@@ -2,7 +2,7 @@
 //!
 //! For each match the ML/keyword features need the few lines around it. This
 //! slicer borrows that `[line - radius, line + radius]` window straight out of
-//! the source buffer (1-based `line`) with a `memchr` newline walk — no
+//! the source buffer (1-based `line`) with a `memchr` newline walk, no
 //! `Vec<&str>` collect, no `join`. Pin the exact byte slice across three
 //! shapes: a centred window, a single bare line (radius 0), and a window whose
 //! lower bound is clamped to the file start. The trailing newline of the last
@@ -45,7 +45,7 @@ proptest! {
     /// The slicer must never panic on ANY input. Its 8 KiB byte-cap path can land
     /// mid-codepoint and is snapped by `floor_char_boundary`; this locks that
     /// guard. Sweeps arbitrary Unicode text (incl. newlines), line indices (0
-    /// included — the 1-based API saturates), and radii.
+    /// included (the 1-based API saturates), and radii).
     #[test]
     fn local_context_window_never_panics(
         text in "(?s).{0,200}",

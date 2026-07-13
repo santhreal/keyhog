@@ -7,9 +7,9 @@
 //! can silently reroute that traffic or disable certificate checking is a
 //! secret-theft vector.
 //!
-//! Policy (config mandate): ONLY explicit config — the `--proxy` / `--insecure`
+//! Policy (config mandate): ONLY explicit config, the `--proxy` / `--insecure`
 //! CLI flags (and TOML) that populate `HttpClientConfig.proxy` /
-//! `.insecure_tls` — may change behavior. NO environment variable does.
+//! `.insecure_tls`: may change behavior. NO environment variable does.
 //! `KEYHOG_PROXY` / `KEYHOG_INSECURE_TLS` are NOT read, and the builders call
 //! `.no_proxy()` when none is configured so reqwest's ambient `HTTPS_PROXY` /
 //! `HTTP_PROXY` / `ALL_PROXY` auto-detection cannot silently reroute traffic.

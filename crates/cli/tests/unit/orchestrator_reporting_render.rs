@@ -81,7 +81,7 @@ fn all_skipped_says_verification_did_not_run() {
         "posture should be explicit: {line}"
     );
     assert!(line.contains("--verify"), "points at the flag: {line}");
-    // The all-skipped branch emits the prose message, never a count breakdown —
+    // The all-skipped branch emits the prose message, never a count breakdown 
     // so it cannot read as "1 live", and carries no `·` separator.
     assert!(
         !line.contains('·'),

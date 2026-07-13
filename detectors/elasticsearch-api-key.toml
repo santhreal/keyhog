@@ -8,7 +8,7 @@ id = "elasticsearch-api-key"
 name = "Elasticsearch API Key"
 service = "elasticsearch"
 severity = "high"
-# "ApiKey" removed: over-broad generic prefilter the regex does NOT need — every
+# "ApiKey" removed: over-broad generic prefilter the regex does NOT need, every
 # pattern self-anchors on the service name (kept), which is present in any real
 # match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.
 keywords = ["ELASTICSEARCH_API_KEY", "elasticsearch_api_key"]

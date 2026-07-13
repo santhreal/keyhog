@@ -1,7 +1,7 @@
 # Tier-B: path substrings that mark a file as security-sensitive, boosting the
 # confidence of a match found in it. Matched case-insensitively as substrings
 # via a single Aho-Corasick automaton (see confidence/signals.rs). Drop new
-# markers here to extend coverage — no code change required.
+# markers here to extend coverage (no code change required).
 markers = [
   # Sensitive filenames
   ".env",
@@ -24,7 +24,7 @@ markers = [
   "config.json",
   "config.yaml",
   "config.toml",
-  # Sensitive extensions (matched as substrings — extensions are at end of path
+  # Sensitive extensions (matched as substrings, extensions are at end of path
   # and names are distinctive)
   ".pem",
   ".key",

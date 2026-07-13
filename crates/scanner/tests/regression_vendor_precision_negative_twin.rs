@@ -1,5 +1,5 @@
 //! Precision negative-twin for the vendor recall locks. Every recall lock proves
-//! a real credential surfaces; this proves the mirror image — that the same
+//! a real credential surfaces; this proves the mirror image, that the same
 //! detectors do NOT fire on the lookalike non-secrets that share a shape but
 //! lack the vendor's anchor or prefix. Context-anchored detectors must ignore
 //! bare git SHAs / UUIDs / hashes (no anchor → no fire), and distinctive-prefix

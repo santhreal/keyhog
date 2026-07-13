@@ -1,11 +1,11 @@
-//! Regression: KH C10 — the AVX2 entropy path emits FMA3, so the runtime
+//! Regression: KH C10, the AVX2 entropy path emits FMA3, so the runtime
 //! dispatch must require `fma` in addition to `avx2` (else SIGILL on an
 //! AVX2-without-FMA CPU/VM).
 //!
 //! Root cause (the bug this locks against): the AVX2 entropy reduction in
 //! `entropy::fast_x86::shannon_entropy_avx2` is compiled with
 //! `#[target_feature(enable = "avx2,fma")]`. Enabling `fma` LICENSES the
-//! compiler to emit FMA3 instructions (VFMADD231PD) anywhere in that function —
+//! compiler to emit FMA3 instructions (VFMADD231PD) anywhere in that function 
 //! historically via an explicit `_mm256_fmadd_pd` in a vectorized
 //! polynomial-log2, and still today via contraction of the reduction's float
 //! mul-adds. The earlier dispatch in `entropy::fast::shannon_entropy_simd`
@@ -26,7 +26,7 @@
 //! dispatches into a `#[target_feature]` function must enable a SUPERSET of the
 //! features that function declares. We assert that contract against the dispatch
 //! source directly, so the test fails on ANY host if the gate is ever loosened
-//! back to `avx2`-only — while the numeric assertions independently lock the
+//! back to `avx2`-only, while the numeric assertions independently lock the
 //! reduction's correctness on whatever tier this host actually runs.
 
 use keyhog_scanner::testing::entropy_fast::{shannon_entropy_scalar, shannon_entropy_simd};
@@ -109,16 +109,16 @@ fn x86_dispatch_body() -> &'static str {
 fn avx2_reduction_declares_fma_target_feature() {
     // Establishes the premise that makes the dispatch gate's `fma` requirement
     // load-bearing: the AVX2 reduction is compiled with
-    // `#[target_feature(enable = "avx2,fma")]`. That DECLARATION — not any
-    // particular intrinsic in the body — is what licenses the compiler to emit
+    // `#[target_feature(enable = "avx2,fma")]`. That DECLARATION, not any
+    // particular intrinsic in the body, is what licenses the compiler to emit
     // FMA3 (VFMADD231PD) anywhere in the function (e.g. contracting the
     // histogram reduction's `count * log2` mul-add), and is therefore what makes
     // *entering* the function on a no-FMA CPU unsound. The reduction itself was
     // deliberately moved to the shared, bit-exact `entropy_from_histogram` and
     // no longer calls an explicit `_mm256_fmadd_pd` (see entropy/fast_x86.rs
     // doc: the old vectorized polynomial-log2 diverged ~5e-3 bits/byte), so the
-    // gate contract is anchored on the target_feature declaration — the robust
-    // invariant — not on the presence of one intrinsic.
+    // gate contract is anchored on the target_feature declaration, the robust
+    // invariant (not on the presence of one intrinsic).
     //
     // Match a REAL attribute line (trimmed, starts with `#[target_feature`), not
     // a doc-comment that merely mentions the attribute string.
@@ -129,7 +129,7 @@ fn avx2_reduction_declares_fma_target_feature() {
     assert!(
         declares_avx2_fma,
         "the AVX2 reduction must carry a real #[target_feature(enable = \"avx2,fma\")] \
-         attribute — that declaration is what forces the dispatch gate to require fma"
+         attribute: that declaration is what forces the dispatch gate to require fma"
     );
     // And that opt-in must sit on the AVX2 entropy entry point itself, so the
     // gate is guarding the function the runtime actually dispatches into.

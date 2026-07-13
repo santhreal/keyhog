@@ -151,7 +151,7 @@ impl CompiledScanner {
                         // built a Hyperscan prefilter, else CpuFallback, and
                         // never GPU. Hardcoding SimdCpu crashed a
                         // scanner whose patterns expose no anchorable literal
-                        // (an empty detector set, or `[a-z]{16}`-only) — its
+                        // (an empty detector set, or `[a-z]{16}`-only), its
                         // `simd_prefilter` is None, so the SimdCpu trigger
                         // collection fails closed through `backend_unavailable`
                         // (process exit), aborting the whole scan on the
@@ -169,7 +169,7 @@ impl CompiledScanner {
                         // Anchor decoded matches (KH-L-0404): a generic/entropy
                         // detector firing on synthesized decoded bytes rests on
                         // shape alone (decoding readable text yields token-shaped
-                        // fragments it spuriously claims — +264 FP / ~0 TP on
+                        // fragments it spuriously claims: +264 FP / ~0 TP on
                         // CredData). Only self-anchoring vendor/key detectors are
                         // trustworthy on decoded content.
                         if crate::adjudicate::record_decoded_generic_entropy_suppression(

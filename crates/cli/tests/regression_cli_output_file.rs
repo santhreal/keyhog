@@ -1,10 +1,10 @@
 //! Regression: `keyhog scan --output <file>` writes the findings report to the
-//! named file — exactly the bytes that would otherwise go to stdout — WITHOUT
+//! named file, exactly the bytes that would otherwise go to stdout. WITHOUT
 //! changing the process exit code, and reports a bad output path as a clean,
 //! actionable error (never a silent no-op, never a stray partial file).
 //!
 //! Contract pinned here, all via the REAL shipped binary (`--daemon=off`,
-//! `--backend cpu`, `KEYHOG_NO_GPU=1` for host-independence — no accelerator is
+//! `--backend cpu`, `KEYHOG_NO_GPU=1` for host-independence, no accelerator is
 //! assumed):
 //!   * `--output f` writes the report to `f`; `f`'s bytes parse to the SAME JSON
 //!     value that the same scan prints to stdout with no `--output`.
@@ -20,7 +20,7 @@
 //!   * a bad output path (an intermediate component that is a regular file, so
 //!     the parent directory cannot be created) fails with the actionable
 //!     "atomically writing report" context, the report-write error exit code
-//!     `2` (EXIT_USER_ERROR — same code the `-o /dev/null` regression pins for a
+//!     `2` (EXIT_USER_ERROR, same code the `-o /dev/null` regression pins for a
 //!     report-write failure), and writes NO output file.
 //!
 //! Every assertion pins a concrete value (exact bytes / JSON value / detector id
@@ -32,7 +32,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
 
-/// A planted GitHub classic PAT (`ghp_` + 36 alnum) with a valid CRC32 tail —
+/// A planted GitHub classic PAT (`ghp_` + 36 alnum) with a valid CRC32 tail 
 /// the canonical token from the format/backend parity e2e. Fires exactly one
 /// detector, `github-classic-pat` (severity critical, service github).
 const PLANTED: &str = "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";
@@ -97,7 +97,7 @@ fn run(target: &PathBuf, format: &str, out: Option<&PathBuf>) -> (Option<i32>, S
 // ---------------------------------------------------------------------------
 
 /// The JSON report written to `--output` parses to the SAME serde_json Value as
-/// the identical scan printed to stdout — the file path must not alter report
+/// the identical scan printed to stdout, the file path must not alter report
 /// content in any way.
 #[test]
 fn json_output_file_value_equals_stdout_value() {
@@ -391,8 +391,8 @@ fn sarif_output_file_ruleid_and_level() {
 // Bad output path fails closed, actionably, with no stray file
 // ---------------------------------------------------------------------------
 
-/// A bad output path — an intermediate path component that is a regular FILE, so
-/// the parent directory cannot be created — fails with the actionable
+/// A bad output path, an intermediate path component that is a regular FILE, so
+/// the parent directory cannot be created, fails with the actionable
 /// "atomically writing report" context and the report-write error exit code 2
 /// (EXIT_USER_ERROR), and writes NO output file at the requested path.
 #[test]

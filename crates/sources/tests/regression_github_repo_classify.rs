@@ -1,4 +1,4 @@
-//! Regression: GitHub org repo/blob *classification* — the pure, no-network
+//! Regression: GitHub org repo/blob *classification*, the pure, no-network
 //! contracts that decide (a) how a cloned repository blob's on-disk path is
 //! rewritten into an operator-visible `github-org` finding path
 //! (`<org>/<repo>/<relative>`), (b) whether the `api.github.com` /
@@ -13,7 +13,7 @@
 //! classification (`github_org_rewrite_chunk_path`, driven against a real temp
 //! clone tree so `std::fs::canonicalize` runs for real), the concrete
 //! `api.github.com` endpoint the pager composes, and the GitHub-flavored SSRF
-//! host set — none of which those files assert.
+//! host set (none of which those files assert).
 //!
 //! HOST-INDEPENDENCE: every assertion here is pure classification (path string,
 //! `is_private_url` bool, refusal phrase, error message). Nothing depends on an
@@ -113,7 +113,7 @@ fn github_blob_path_classifies_to_org_repo_relative_and_strips_history() {
 #[test]
 fn github_blob_path_classifies_nested_subdirectories_exactly() {
     // A deeply nested blob keeps every interior path segment under the
-    // `<org>/<repo>/` prefix — no segment collapsing, no separator rewriting.
+    // `<org>/<repo>/` prefix (no segment collapsing, no separator rewriting).
     let dir = tempfile::TempDir::new().expect("temp clone root");
     let root = dir.path();
     std::fs::create_dir_all(root.join("a/b/c")).expect("mk nested dirs");
@@ -184,7 +184,7 @@ fn github_blob_outside_clone_root_is_refused_exactly() {
 
 // ---------------------------------------------------------------------------
 // api.github.com endpoint + GitHub-Enterprise-Server SSRF classification
-// (canonical keyhog_verifier::ssrf::is_private_url — never a hand-rolled copy)
+// (canonical keyhog_verifier::ssrf::is_private_url, never a hand-rolled copy)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -402,7 +402,7 @@ fn github_repo_name_dotted_alphabet_accepted_single_dot_refused() {
 fn github_listing_truncated_error_names_org_pages_and_repo_count() {
     // When an org's repo listing exceeds the page budget, the scan must refuse
     // to report a PARTIAL collection clean, with a message naming the org, the
-    // page cap, and the repos seen so far — all exact.
+    // page cap, and the repos seen so far (all exact).
     let err = TestApi.github_org_listing_truncated_error("acme", 500, 5);
     let msg = err.to_string();
     assert!(

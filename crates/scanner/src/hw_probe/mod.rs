@@ -61,7 +61,7 @@ impl ScanBackend {
 }
 
 /// True when this build compiled a scan backend beyond the always-present scalar
-/// [`ScanBackend::CpuFallback`] — Hyperscan (`simd`) and/or the GPU stack (`gpu`).
+/// [`ScanBackend::CpuFallback`]. Hyperscan (`simd`) and/or the GPU stack (`gpu`).
 ///
 /// When this is `false` there is no routing choice: every scan can only run
 /// `CpuFallback`, so autoroute calibration is neither needed nor possible and the

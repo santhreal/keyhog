@@ -1,17 +1,17 @@
 #![cfg(feature = "gpu")]
-//! LANE 1 (GPU CORRECTNESS) — live GPU≡SIMD on a real multi-detector corpus,
+//! LANE 1 (GPU CORRECTNESS), live GPU≡SIMD on a real multi-detector corpus,
 //! pinning the region-presence GPU path in `engine/gpu_region_dispatch.rs`.
 //!
 //! Two contracts the validated trigger production must hold (both Law 10):
 //!
-//! 1. **Finding-set equality** — the GPU path's finding set is IDENTICAL to the
+//! 1. **Finding-set equality**: the GPU path's finding set is IDENTICAL to the
 //!    SIMD path's on a corpus that mixes real secrets, GPU over-fire bait (a
 //!    detector literal with NO valid body), and clean files. The wave-1 masking
 //!    dropped one finding (523 vs 524) by trusting the GPU exclusively; the
 //!    recall floor closes that, so neither backend may have a finding the other
 //!    lacks.
 //!
-//! 2. **No over-firing inflation** — the GPU path's user-visible findings come
+//! 2. **No over-firing inflation**: the GPU path's user-visible findings come
 //!    ONLY from chunks where the detector truly matches. The over-fire-bait chunk
 //!    (`ghp_` literal, no 36-char body) must produce ZERO findings on BOTH
 //!    backends. Region presence is allowed to produce a candidate bit; the shared
@@ -19,7 +19,7 @@
 //!
 //! These run on a live adapter; gated by the explicit require-GPU runtime policy
 //! to hard-fail in CI that mandates a GPU, else skipped (no silent CPU
-//! masquerade — the GPU path is exercised explicitly via `ScanBackend::Gpu`).
+//! masquerade (the GPU path is exercised explicitly via `ScanBackend::Gpu`)).
 //!
 //! Run: cargo test -p keyhog-scanner --features gpu --test gpu_region_overfire_validation -- --nocapture
 
@@ -31,7 +31,7 @@ use support::contracts::test_chunk;
 use support::gpu_gate::require_gpu_or_panic;
 use support::paths::detector_dir;
 
-/// (credential, file_path, offset) — the user-visible finding identity, matching
+/// (credential, file_path, offset), the user-visible finding identity, matching
 /// `gpu_parity.rs`. Detector id is intentionally excluded (a literal can attribute
 /// to a different detector when prefixes overlap; the credential + location is the
 /// product surface).
@@ -82,9 +82,9 @@ fn scanner() -> CompiledScanner {
 }
 
 /// The core lane gate: GPU finding set ≡ SIMD finding set on a corpus that
-/// deliberately includes GPU over-fire bait. Any divergence — a GPU under-fire
+/// deliberately includes GPU over-fire bait. Any divergence, a GPU under-fire
 /// (the 523-vs-524 recall drop) OR a GPU-only finding (over-fire reaching
-/// phase-2) — fails with the exact diff.
+/// phase-2) (fails with the exact diff).
 #[test]
 fn gpu_equals_simd_on_overfire_bait_corpus() {
     require_gpu_or_panic("gpu_equals_simd_on_overfire_bait_corpus");
@@ -94,7 +94,7 @@ fn gpu_equals_simd_on_overfire_bait_corpus() {
     assert_eq!(valid_ghp.len(), 40, "ghp_ token must be 40 chars");
 
     let chunks = vec![
-        // Real GitHub PAT — a finding on BOTH backends.
+        // Real GitHub PAT (a finding on BOTH backends).
         test_chunk(
             &format!("const TOKEN = \"{valid_ghp}\";"),
             "fixtures/real_pat.rs",
@@ -107,12 +107,12 @@ fn gpu_equals_simd_on_overfire_bait_corpus() {
             "note: the prefix ghp_ is mentioned but ghp_short is not a token",
             "fixtures/overfire_bait.md",
         ),
-        // Real AWS key — exercises a second detector class (AKIA).
+        // Real AWS key (exercises a second detector class (AKIA)).
         test_chunk(
             "aws_access_key_id = AKIAQYLPMN5HFIQR7XYA",
             "fixtures/aws.ini",
         ),
-        // Clean file — no detector literal at all.
+        // Clean file (no detector literal at all).
         test_chunk("fn main() { println!(\"hello, world\"); }", "src/clean.rs"),
     ];
 
@@ -222,7 +222,7 @@ fn gpu_equals_simd_with_repeated_real_secrets() {
     );
 }
 
-/// Zero-width interior-evasion parity — the exact recall regression the
+/// Zero-width interior-evasion parity, the exact recall regression the
 /// validated trigger production must NOT introduce. A `ghp_` PAT split by a
 /// zero-width space (`\u{200B}`) does NOT match the detector regex on RAW bytes
 /// but DOES after `prepare_chunk`'s interior-control strip. The SIMD path fires
@@ -257,17 +257,17 @@ fn gpu_equals_simd_on_zero_width_obfuscated_secret() {
     let gpu = keys(&gpu_results);
 
     // SIMD must de-obfuscate and surface the cleaned token (the engine's unicode
-    // hardening contract — see the adversarial unicode_normalization suite).
+    // hardening contract (see the adversarial unicode_normalization suite)).
     assert!(
         simd.iter().any(|(cred, _, _)| cred == &clean),
         "SIMD must surface the de-obfuscated ghp_ token {clean:?}; got {simd:?}"
     );
-    // The GPU path, validating on the PREPROCESSED text, must agree exactly — no
+    // The GPU path, validating on the PREPROCESSED text, must agree exactly, no
     // silent recall loss from validating on raw bytes.
     assert_eq!(
         simd,
         gpu,
-        "GPU≢SIMD on the zero-width-obfuscated secret — the validation oracle must \
+        "GPU≢SIMD on the zero-width-obfuscated secret, the validation oracle must \
          run on preprocessed text, not raw bytes.\n  only SIMD: {:?}\n  only GPU: {:?}",
         simd.difference(&gpu).collect::<Vec<_>>(),
         gpu.difference(&simd).collect::<Vec<_>>(),

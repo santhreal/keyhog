@@ -1,5 +1,5 @@
 //! Detection-truth: cloud provider secrets (#177/#184). Azure storage account
-//! keys and mongodb+srv connection strings — pinned to the specific detector +
+//! keys and mongodb+srv connection strings, pinned to the specific detector +
 //! value (Law 6). ML-independent; run without `ml` while weights are mid-retrain.
 
 use keyhog_core::{Chunk, ChunkMetadata};

@@ -11,7 +11,7 @@
 
 use keyhog_scanner::suppression::decode::try_decode_b64_to_utf8;
 
-/// Minimal standard-alphabet (RFC 4648) base64 encoder with `=` padding — the
+/// Minimal standard-alphabet (RFC 4648) base64 encoder with `=` padding, the
 /// inverse of the standard variant `try_decode_b64_to_utf8` accepts. Kept local
 /// so test inputs are produced from plaintext, never pasted as encoded blobs.
 fn b64_std(input: &[u8]) -> String {

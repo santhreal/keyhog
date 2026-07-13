@@ -5,7 +5,7 @@
 //! protobuf message (a binary-payload signal that keeps a base64-of-protobuf
 //! decoy from scoring as a credential). Wire type 1 (64-bit fixed) and wire
 //! type 5 (32-bit fixed) advance the cursor by a width looked up from
-//! `FIXED_WIRE_WIDTHS` by the runtime wire type, so they share ONE arm — the
+//! `FIXED_WIRE_WIDTHS` by the runtime wire type, so they share ONE arm, the
 //! per-width difference lives in the table, not in duplicated arm bodies. Pin
 //! the exact verdict: a whole-buffer stream of >= 3 fields using BOTH fixed
 //! widths parses true, a truncated fixed-32 field fails closed, and a single
@@ -60,7 +60,7 @@ use proptest::prelude::*;
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(3_000))]
 
-    /// A fully-consumed stream of ≥4 single-byte-varint (wire-0) fields parses —
+    /// A fully-consumed stream of ≥4 single-byte-varint (wire-0) fields parses 
     /// ≥4 fields is ≥8 bytes (the length floor) and ≥3 fields (the count floor).
     #[test]
     fn wire0_fields_stream_parses(
@@ -76,7 +76,7 @@ proptest! {
     }
 
     /// The mixed shape (wire-1 fixed64, wire-5 fixed32, wire-0 varint) parses for
-    /// any field-value bytes — 16 bytes, 3 fields, fully consumed.
+    /// any field-value bytes: 16 bytes, 3 fields, fully consumed.
     #[test]
     fn mixed_fixed_width_stream_parses(
         v64 in prop::collection::vec(any::<u8>(), 8),
@@ -108,7 +108,7 @@ proptest! {
     }
 
     /// A trailing fixed-width field with fewer bytes than its width fails CLOSED,
-    /// even after 4 valid fields (≥8 bytes, ≥3 fields) — the bounds-checked advance
+    /// even after 4 valid fields (≥8 bytes, ≥3 fields), the bounds-checked advance
     /// refuses to read past the end.
     #[test]
     fn truncated_trailing_fixed_field_fails_closed(

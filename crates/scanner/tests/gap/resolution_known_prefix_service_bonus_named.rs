@@ -7,8 +7,8 @@
 //! `KNOWN_PREFIX_SERVICE_BONUS: f64 = 5.0`.
 //!
 //! Pinned behaviorally, not by source shape: two matches that are IDENTICAL in
-//! detector_id, confidence, and credential length — differing only in whether
-//! the credential carries a known prefix — differ in priority by EXACTLY the
+//! detector_id, confidence, and credential length, differing only in whether
+//! the credential carries a known prefix, differ in priority by EXACTLY the
 //! bonus, because every other weighted term cancels in the difference. The
 //! second pair pins the `&&` guard: with a *generic* detector the bonus must
 //! not fire even when the credential has a known prefix.
@@ -60,7 +60,7 @@ fn generic_detector_does_not_receive_the_known_prefix_bonus() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin the bonus at one confidence; these SWEEP it. Every
 // weighted term besides the known-prefix bonus is a function of detector_id,
-// confidence, or credential LENGTH — all identical between the two 16-byte creds —
+// confidence, or credential LENGTH, all identical between the two 16-byte creds 
 // so their difference is EXACTLY the bonus for ANY confidence: 5.0 for a
 // service-anchored detector, 0 for a generic one. A third property pins that the
 // confidence term is positive (priority strictly increases with confidence).
@@ -81,7 +81,7 @@ proptest! {
     }
 
     /// A generic (non-service-anchored) detector receives NO bonus at any
-    /// confidence — the delta is exactly zero.
+    /// confidence (the delta is exactly zero).
     #[test]
     fn generic_detector_gets_no_bonus_for_any_confidence(conf in 0.0f64..=1.0) {
         let with_prefix = match_priority_for_test("generic-password", KNOWN_PREFIX_CRED, Some(conf));

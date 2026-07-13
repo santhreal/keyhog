@@ -13,7 +13,7 @@
 //!   * `LocationIdentity` excludes offset, so same `(file,line)` collapses with
 //!     zero additional locations while a distinct line becomes an additional;
 //!   * output is deterministically sorted by `(detector_id, credential)`;
-//!   * the key is BYTE-EXACT — credential and detector_id are case-sensitive.
+//!   * the key is BYTE-EXACT (credential and detector_id are case-sensitive).
 //!
 //! This is deliberately distinct from `regression_into_matches_dedup_order_
 //! invariant.rs`, which locks the scanner-internal `ScanState::into_matches`
@@ -27,7 +27,7 @@ use keyhog_core::{
 };
 
 /// Build a `RawMatch`. `credential_hash` is left zeroed on purpose: the
-/// `DedupScope::Credential` key is `(detector_id, credential, None)` — the hash
+/// `DedupScope::Credential` key is `(detector_id, credential, None)`: the hash
 /// plays NO role in the collapse decision, and `dedup_matches` recomputes the
 /// effective hash from the credential bytes when it is zero.
 fn rm(
@@ -118,7 +118,7 @@ fn different_credentials_same_detector_stay_two() {
 fn same_credential_different_detector_stay_two() {
     // Detector id IS part of the key, so one shared credential under two
     // detectors must remain two distinct findings from `dedup_matches` (the
-    // separate `dedup_cross_detector` pass is what folds these — not this one).
+    // separate `dedup_cross_detector` pass is what folds these (not this one)).
     let a = hi(
         "google-api-key",
         "AIzaSyShared0000000000000000000000000000",
@@ -216,7 +216,7 @@ fn collapse_lowest_offset_is_primary_distinct_line_is_additional() {
 
 #[test]
 fn same_line_different_offset_collapses_with_zero_additional() {
-    // LocationIdentity is (source, file_path, line, commit) — offset EXCLUDED.
+    // LocationIdentity is (source, file_path, line, commit) (offset EXCLUDED).
     // So two hits on the same (file,line) at different offsets are one finding
     // with NO additional location (the synthetic-preprocessor alias case).
     let out = dedup_matches(
@@ -242,7 +242,7 @@ fn same_line_different_offset_collapses_with_zero_additional() {
 
 #[test]
 fn credential_key_is_case_sensitive_not_folded() {
-    // "secret" vs "SECRET" are DIFFERENT credentials — the key is byte-exact.
+    // "secret" vs "SECRET" are DIFFERENT credentials (the key is byte-exact).
     let out = dedup_matches(
         vec![
             hi("generic-password", "SecretValue00", "a.env", 1, 10, 0.50),
@@ -339,7 +339,7 @@ fn k_repeat_same_key_same_location_collapses_to_one() {
 #[test]
 fn output_sorted_by_detector_then_credential_regardless_of_input_order() {
     // Feed keys in a scrambled order; output must be sorted (detector asc,
-    // credential asc) — the deterministic report ordering SARIF/baselines need.
+    // credential asc) (the deterministic report ordering SARIF/baselines need).
     let out = dedup_matches(
         vec![
             hi("zeta-detector", "zzz_credential00000", "a.env", 1, 10, 0.5),
@@ -408,7 +408,7 @@ fn dedup_output_is_order_independent() {
 #[test]
 fn none_scope_never_collapses_identical_matches() {
     // DedupScope::None is the pass-through contract: every raw match becomes its
-    // own finding, even byte-identical ones — the key is not consulted at all.
+    // own finding, even byte-identical ones (the key is not consulted at all).
     let a = hi(
         "aws-access-key",
         "AKIAnoscope00000000",
@@ -494,7 +494,7 @@ fn none_confidence_and_some_confidence_collapse_to_the_scored_max() {
 #[test]
 fn mixed_batch_has_exact_final_key_multiset() {
     // A realistic mix: dup pairs, distinct-credential siblings, distinct-detector
-    // siblings, and a singleton — pinned to the EXACT surviving key multiset.
+    // siblings, and a singleton (pinned to the EXACT surviving key multiset).
     let out = dedup_matches(
         vec![
             hi("aws-access-key", "AKIAmix000000000001", "a.env", 1, 10, 0.5),

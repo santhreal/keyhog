@@ -263,7 +263,7 @@ pub(crate) mod testing {
     }
 
     /// `(base, watch_extra, git_discovery_extra)` element counts for a parsed
-    /// section — proves an empty user TOML is a no-op section.
+    /// section (proves an empty user TOML is a no-op section).
     pub(crate) fn section_counts(toml: &str) -> std::result::Result<(usize, usize, usize), String> {
         let section = parse_section(toml)?;
         Ok((

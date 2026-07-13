@@ -5,7 +5,7 @@
 //! match boundary (provider-token bytes + up to two trailing base64 `=`
 //! padding chars). When a checksum-valid token like a PyPI token
 //! (`pypi-<base64url>`, checksum-Valid) is immediately followed by a `=`
-//! separator — e.g. `pypi-…MNH="…"` — the padding-extension appended that `=`,
+//! separator, e.g. `pypi-…MNH="…"`: the padding-extension appended that `=`,
 //! turning the canonical 105-char token into a 106-char value that FAILS the
 //! PyPI checksum and was dropped as `checksum_invalid`. The real secret was
 //! lost. (Surfaced by the unicode swap-invariance gate: homoglyphing the

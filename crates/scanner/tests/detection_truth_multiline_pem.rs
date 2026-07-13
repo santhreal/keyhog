@@ -97,7 +97,7 @@ fn rsa_pem_also_flags_ssh_private_key() {
 
 #[test]
 fn pgp_block_is_not_mislabeled_as_ssh() {
-    // A PGP private key is not an SSH key — precision: ssh-private-key must NOT fire.
+    // A PGP private key is not an SSH key (precision: ssh-private-key must NOT fire).
     let ids = detector_ids(&pem("PGP PRIVATE KEY BLOCK"));
     assert!(
         !ids.iter().any(|(id, _, _)| id == "ssh-private-key"),

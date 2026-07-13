@@ -12,7 +12,7 @@ fn uri(path: &str) -> String {
 
 #[test]
 fn leading_colon_segment_is_prefixed_with_dot_slash() {
-    // First segment `a:b.env` would be read as scheme `a` — must become `./a:b.env`.
+    // First segment `a:b.env` would be read as scheme `a`: must become `./a:b.env`.
     assert_eq!(uri("a:b.env"), "./a:b.env");
     // A bare colon-bearing first segment with no slash is the same hazard.
     assert_eq!(uri("weird:name"), "./weird:name");
@@ -21,7 +21,7 @@ fn leading_colon_segment_is_prefixed_with_dot_slash() {
 #[test]
 fn colon_in_a_later_segment_is_left_unchanged() {
     // `dir` is the first segment and has no colon, so `dir/a:b.env` is already an
-    // unambiguous relative reference — no `./` is added.
+    // unambiguous relative reference (no `./` is added).
     assert_eq!(uri("dir/a:b.env"), "dir/a:b.env");
     assert_eq!(uri("nested/deep/x:y.txt"), "nested/deep/x:y.txt");
 }

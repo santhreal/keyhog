@@ -155,7 +155,7 @@ fn inference_is_fast() {
 // ── shipped-model separation contract ───────────────────────────────────────
 //
 // The MoE is AUTHORITATIVE for entropy-fallback candidates by default
-// (`entropy_ml_authoritative` defaults on — core/config.rs), so its ability to
+// (`entropy_ml_authoritative` defaults on, core/config.rs), so its ability to
 // score real high-entropy SECRETS high and structured high-entropy NON-secrets
 // (hashes, UUIDs, JWT headers, mime types, dotted class names) low IS the
 // recall/precision contract: a retrain that erodes that gap silently flips
@@ -173,19 +173,19 @@ fn inference_is_fast() {
 //
 // Two deliberate fidelity choices keep this honest:
 //  * scoring goes through the real default keyword/prefix lists, NOT the
-//    restricted `test_score` lists above — the model is context-sensitive by
+//    restricted `test_score` lists above, the model is context-sensitive by
 //    design (a hash assigned to `api_key =` SHOULD raise suspicion), so the
 //    separation is only meaningful under the production config, exactly as the
 //    probe measures it; and
 //  * each non-secret sits in its natural, non-credential context and each
-//    secret under its real assignment prefix — the discrimination is the
+//    secret under its real assignment prefix, the discrimination is the
 //    model's, on the value, not an artifact of a hand-picked context.
 //
 // Each secret value is assembled from two fragments so this file holds no full
 // credential-shaped literal (dogfood self-scan / push-protection clean).
 
 /// Real high-entropy secrets under their natural secret-keyword assignment
-/// prefixes — must score HIGH. Mirrors `probe_entropy_separation.py::TP`. The
+/// prefixes, must score HIGH. Mirrors `probe_entropy_separation.py::TP`. The
 /// context is the assignment prefix only (e.g. `token = "`), matching the
 /// probe's feature inputs; the value is passed separately as the candidate.
 fn real_secret_battery() -> Vec<(&'static str, String, &'static str)> {
@@ -224,7 +224,7 @@ fn real_secret_battery() -> Vec<(&'static str, String, &'static str)> {
 }
 
 /// Structured high-entropy NON-secrets in their natural, non-credential
-/// contexts — must score LOW. Mirrors `probe_entropy_separation.py::FP`: a
+/// contexts, must score LOW. Mirrors `probe_entropy_separation.py::FP`: a
 /// sha256 digest, an md5 etag, a UUID, a JWT header envelope, a git sha1, a
 /// Java class name, a mime type, and a hex constant.
 fn structured_nonsecret_battery() -> Vec<(&'static str, String, &'static str)> {
@@ -277,7 +277,7 @@ fn structured_nonsecret_battery() -> Vec<(&'static str, String, &'static str)> {
 /// `score_with_config` at runtime for generic/entropy candidates. These are the
 /// exact lists `ml/probe_entropy_separation.py` scores with (its
 /// `config_lists.DEFAULT_LISTS` mirror `ScanConfig::default()`), so this test is
-/// a faithful CI mirror of that oracle. No list is duplicated into the test —
+/// a faithful CI mirror of that oracle. No list is duplicated into the test 
 /// it reads the canonical config.
 fn battery_score(value: &str, context: &str) -> f64 {
     let cfg = ScanConfig::default();
@@ -316,7 +316,7 @@ fn every_structured_nonsecret_scores_below_half() {
     }
 }
 
-/// The load-bearing property: clean separation — the lowest-scoring real secret
+/// The load-bearing property: clean separation, the lowest-scoring real secret
 /// outranks the highest-scoring structured non-secret. A retrain that lets ANY
 /// structured non-secret outscore ANY real secret fails here.
 #[test]
@@ -335,7 +335,7 @@ fn real_secrets_cleanly_separate_from_structured_nonsecrets() {
     );
 }
 
-/// The separation must be a real margin, not a hairline — guards against a slow
+/// The separation must be a real margin, not a hairline, guards against a slow
 /// erosion that keeps ordering but collapses the gap. The probe measures ~0.95;
 /// 0.5 is a conservative floor that still catches a halving of the gap.
 #[test]

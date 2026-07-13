@@ -4,7 +4,7 @@
 //! cache read-only (`run_autoroute_inspection` in
 //! `crates/cli/src/subcommands/backend.rs`, backed by `inspect_autoroute_cache`
 //! in `crates/cli/src/orchestrator/dispatch/backend/store.rs`). It always exits
-//! 0 — even for a missing / corrupt / stale cache — because it is a diagnostic
+//! 0, even for a missing / corrupt / stale cache, because it is a diagnostic
 //! read, not a scan; the loud status text tells the operator what a real scan
 //! would fail closed on.
 //!
@@ -15,9 +15,9 @@
 //! field (works on every platform's cache-dir convention).
 //!
 //! Pinned facts (read from source, asserted exactly):
-//!   * `AUTOROUTE_CACHE_VERSION = 22` (backend.rs) — the schema version an
+//!   * `AUTOROUTE_CACHE_VERSION = 22` (backend.rs), the schema version an
 //!     inspected valid cache reports and an incompatible one is rejected against.
-//!   * `AUTOROUTE_CACHE_FILE_BYTES = 8 * 1024 * 1024` (store.rs:16) — the read
+//!   * `AUTOROUTE_CACHE_FILE_BYTES = 8 * 1024 * 1024` (store.rs:16), the read
 //!     cap; a file one byte over is reported "unreadable".
 //!   * `calibrate-autoroute` sweeps 23 workloads × 4 scan policies (default +
 //!     `--fast`/`--deep`/`--precision`) = 92 probes, and each policy resolves a

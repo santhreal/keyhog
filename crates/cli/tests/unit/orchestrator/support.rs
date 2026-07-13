@@ -55,7 +55,7 @@ pub fn make_detector() -> DetectorSpec {
         keywords: vec!["STATIC_SECRET".into()],
         min_confidence: None,
         // Robust to future DetectorSpec field additions (this exhaustive literal
-        // was already stale — missing allowlist_paths/values, entropy_high, etc.);
+        // was already stale, missing allowlist_paths/values, entropy_high, etc.);
         // fall through to Default for any field not set explicitly above.
         ..Default::default()
     }

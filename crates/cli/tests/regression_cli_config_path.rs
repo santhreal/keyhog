@@ -2,15 +2,15 @@
 //! through the real `keyhog` binary. Complements
 //! `regression_cli_config_file_load.rs` (which centers on `.keyhog.toml`
 //! walk-up discovery and rendering knobs) by exercising the two Tier-A *scan
-//! policy* knobs an operator most often points `--config` at — `min_confidence`
-//! and `severity` — plus the flag's precedence (explicit `--config` beats
+//! policy* knobs an operator most often points `--config` at. `min_confidence`
+//! and `severity`: plus the flag's precedence (explicit `--config` beats
 //! walk-up discovery, and a CLI flag beats the config) and its fail-closed
 //! error surface.
 //!
 //! Every assertion drives the shipped executable (`env!("CARGO_BIN_EXE_keyhog")`)
 //! and checks a CONCRETE effect: exact exit code (0 clean / 1 finding / 2 config
 //! error), exact detector id in the JSON, or the exact operator-visible error
-//! substring — never merely "non-empty".
+//! substring (never merely "non-empty").
 //!
 //! HOST-INDEPENDENCE: every scan pins `--backend cpu`, the scalar path present
 //! on every host, so no assertion depends on Hyperscan / SIMD / GPU. The
@@ -367,7 +367,7 @@ fn cli_min_confidence_flag_overrides_config_value() {
 
 // ---------------------------------------------------------------------------
 // FAIL-CLOSED: a bad `--config` target fails loudly with exit 2 and a message
-// that names the failure AND the fix — never a silent degrade to a default scan.
+// that names the failure AND the fix (never a silent degrade to a default scan).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -437,7 +437,7 @@ fn explicit_config_pointing_at_directory_fails_closed() {
 #[test]
 fn explicit_config_unknown_field_fails_closed() {
     // `deny_unknown_fields`: a typo'd key in the --config file is a TOML parse
-    // error, not a silent ignore — a mis-spelled security knob can never look
+    // error, not a silent ignore, a mis-spelled security knob can never look
     // honored.
     let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
     let (_cfg, cfg_path) = config_file("bogus_key = 1\n");
@@ -523,7 +523,7 @@ fn config_and_no_config_flags_are_mutually_exclusive() {
 // config `min_confidence` merge now share the SAME [0.0, 1.0] bound-checker
 // (`parse_min_confidence`), so the same over-range value fails closed on BOTH
 // surfaces. Previously the config path applied it un-validated and silently
-// zeroed recall — a Law-10 silent failure that this test now guards against.
+// zeroed recall (a Law-10 silent failure that this test now guards against).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -608,7 +608,7 @@ fn config_min_confidence_boundaries_validate() {
     );
 
     // In-range values (the inclusive boundaries and interior) must still be
-    // ACCEPTED — the validator narrows nothing that was already legal. 0.5 keeps
+    // ACCEPTED, the validator narrows nothing that was already legal. 0.5 keeps
     // the confidence-1.0 GitHub PAT finding (a clean scan that still reports),
     // so the config load succeeds (no "invalid .keyhog.toml" error).
     let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 0.5\n");
@@ -632,7 +632,7 @@ fn config_min_confidence_boundaries_validate() {
 fn ml_weight_range_validation_matches_between_cli_and_config() {
     let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
 
-    // CLI --ml-weight now enforces [0.0, 1.0] (it was previously UNVALIDATED — a
+    // CLI --ml-weight now enforces [0.0, 1.0] (it was previously UNVALIDATED, a
     // silent gap, unlike --min-confidence/--ml-threshold): an out-of-range 5.0 is
     // a clap usage error (exit 2) naming the bound.
     let (code, _stdout, stderr) = scan(dir.path(), &["--ml-weight", "5.0", "--format", "json"]);

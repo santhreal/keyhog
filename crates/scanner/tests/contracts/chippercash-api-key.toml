@@ -20,7 +20,7 @@ reason = "Body 22 chars, below 32 minimum."
 [[evasion]]
 text = "chipper_key=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
 credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
-reason = "Dot-separated chipper_key form — regex [_.]? covers underscore."
+reason = "Dot-separated chipper_key form (regex [_.]? covers underscore)."
 
 [perf]
 fixture_bytes = 4096

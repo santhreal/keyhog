@@ -1,4 +1,4 @@
-//! End-to-end scan throughput of the mirror corpus — the headline number the
+//! End-to-end scan throughput of the mirror corpus, the headline number the
 //! phase-2 breakdown doesn't capture (it excludes phase-1 trigger collection,
 //! preprocessing, and post-process decode recursion). Compares ALL fallback +
 //! confirmed optimizations ON vs OFF so the cumulative real-world impact is

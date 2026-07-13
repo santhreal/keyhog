@@ -62,14 +62,14 @@ pub(crate) fn is_sensitive_path(path: &str) -> bool {
                 // Law 10: never silently swallow the build error. The marker
                 // list is Tier-B data (rules/sensitive-path-markers.toml) already
                 // validated as TOML at load, so a build failure can only mean an
-                // INVALID marker (e.g. an empty string) — a data bug. The old
+                // INVALID marker (e.g. an empty string), a data bug. The old
                 // `.ok()` turned that into `None` and then returned `false` for
                 // EVERY path, silently deleting the sensitive-file confidence
                 // signal fleet-wide. Surface it LOUDLY (this hot path forbids
-                // panics — see the `confidence_signals_no_unwrap_expect` gate) and
+                // panics, see the `confidence_signals_no_unwrap_expect` gate) and
                 // fall through to the recall-preserving branch below.
                 eprintln!(
-                    "keyhog: BUG — the sensitive-path marker list failed to \
+                    "keyhog: BUG, the sensitive-path marker list failed to \
                      build an Aho-Corasick automaton ({error}); an invalid marker \
                      is present in rules/sensitive-path-markers.toml. Treating every \
                      path as sensitive (fail toward recall) until the list is fixed."
@@ -81,7 +81,7 @@ pub(crate) fn is_sensitive_path(path: &str) -> bool {
 
     // On a successful build, the automaton answers precisely. On the
     // build-bug-only `None`, fail TOWARD recall: treat the path as sensitive so
-    // the confidence boost is never silently lost — the loud `eprintln!` above
+    // the confidence boost is never silently lost, the loud `eprintln!` above
     // already told the operator why (Law 10: a loud, recall-preserving fallback
     // is permitted; a silent one is not).
     ac.as_ref().is_none_or(|ac| ac.is_match(path))

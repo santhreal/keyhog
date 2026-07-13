@@ -1,4 +1,4 @@
-//! Compound-encoding runner — on-demand diagnostic for N-layer nested
+//! Compound-encoding runner, on-demand diagnostic for N-layer nested
 //! decoding. NOT a `cargo test` gate.
 //!
 //! Real secrets pass through several encoding layers before they reach git: a

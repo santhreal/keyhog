@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "HELLOSIGN_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "HELLOSIGN_API_KEY=81fc3EXAMPLEEXAMPLE4e9a4"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "export HELLOSIGN_API_KEY=81fc3a20ce0cad006fce26868e24bc50b88514eaa4dc7c5d9676e7c1b184e9a4"
 credential = "81fc3a20ce0cad006fce26868e24bc50b88514eaa4dc7c5d9676e7c1b184e9a4"
-reason = "Adversarial env_export envelope — credential must still surface under this detector."
+reason = "Adversarial env_export envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

@@ -3,7 +3,7 @@ use crate::stable_hash::StableHasher;
 
 /// Render an optional path as a value for the effective-config dump: the path's
 /// display form, or `unset_label` (a `<…>` placeholder) when it is `None`. This
-/// is purely a reporting label — the real path (or a deliberate `None`) is
+/// is purely a reporting label, the real path (or a deliberate `None`) is
 /// resolved and validated elsewhere before any disk access, so the placeholder
 /// never stands in for an actual cache read (LAW10). One definition keeps the
 /// four optional-cache fields below from drifting to different spellings of the
@@ -137,7 +137,7 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
             |bytes| bytes.to_string()
         )
     ));
-    // GPU batch input limit has no single compiled default — it is VRAM-adaptive
+    // GPU batch input limit has no single compiled default, it is VRAM-adaptive
     // until a Tier-A override pins it, so report that rather than a fixed number.
     out.push_str(&format!(
         "gpu_batch_input_limit = {}\n",
@@ -164,7 +164,7 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         resolved.exclude_paths.len()
     ));
     out.push_str(&format!("incremental = {}\n", resolved.incremental));
-    // LAW10: display-only — the actual incremental cache path is resolved before use when incremental mode is enabled.
+    // LAW10: display-only (the actual incremental cache path is resolved before use when incremental mode is enabled).
     let incremental_cache = format_optional_path(
         resolved.incremental_cache_path.as_ref(),
         "<platform default>",
@@ -238,11 +238,11 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         "disabled_detectors = {}\n",
         resolved.disabled_detectors.len()
     ));
-    // LAW10: display-only — scan compilation still resolves and validates the platform default before use.
+    // LAW10: display-only (scan compilation still resolves and validates the platform default before use).
     let cache_dir =
         format_optional_path(resolved.hyperscan_cache_dir.as_ref(), "<platform default>");
     out.push_str(&format!("hyperscan_cache_dir = {cache_dir}\n"));
-    // LAW10: display-only — formats the resolved autoroute_cache_path for the
+    // LAW10: display-only, formats the resolved autoroute_cache_path for the
     // effective-config dump ("<disabled>" when absent); does not change routing
     // or scan coverage.
     let autoroute_cache_path =

@@ -1,5 +1,5 @@
 //! KH-GAP-110: README quickstart shows `--baseline` without `--create-baseline`
-//! first — first-time users hit a missing-file error with no Fix: pointer.
+//! first (first-time users hit a missing-file error with no Fix: pointer).
 
 use std::path::PathBuf;
 

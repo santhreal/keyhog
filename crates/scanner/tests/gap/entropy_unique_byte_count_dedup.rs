@@ -31,7 +31,7 @@ fn unique_byte_count_counts_distinct_byte_values() {
 // The fixed vectors above pin representative counts; these SWEEP the primitive
 // against a naive set-cardinality oracle over arbitrary bytes. `unique_byte_count`
 // is the SINGLE distinct-byte owner feeding normalized_entropy's log2(unique)
-// denominator, confidence char_diversity, and the ML unique-byte feature — a
+// denominator, confidence char_diversity, and the ML unique-byte feature, a
 // miscount shifts the entropy score and mis-surfaces candidates, so exactness is
 // recall-critical. No proptest covered it before.
 
@@ -61,7 +61,7 @@ proptest! {
     }
 
     /// DEDUP IDEMPOTENCE: appending copies of the input adds no distinct byte
-    /// values, so the count is invariant under duplication — the exact property
+    /// values, so the count is invariant under duplication, the exact property
     /// the primitive's name promises (it dedups presence, it does not accumulate).
     /// A regression that summed per-occurrence instead of per-distinct-value would
     /// fail here while still passing the single-pass fixed vectors above.

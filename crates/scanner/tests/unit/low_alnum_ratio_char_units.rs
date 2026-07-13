@@ -1,10 +1,10 @@
-//! Boundary contract for `has_low_alnum_ratio` (entropy::plausibility) — the
+//! Boundary contract for `has_low_alnum_ratio` (entropy::plausibility), the
 //! rejection gate that drops a candidate when fewer than half its characters are
 //! alphanumeric. The gate now counts BOTH numerator and denominator in
 //! characters; it previously divided the alphanumeric CHARACTER count by the
 //! BYTE length, which understated the ratio for any value holding multibyte
 //! letters and could wrongly reject a real non-ASCII secret. These tests pin the
-//! ASCII boundary (unchanged), the empty case, and — crucially — the multibyte
+//! ASCII boundary (unchanged), the empty case, and, crucially, the multibyte
 //! cases that distinguish char-based from the old byte-based counting.
 
 use keyhog_scanner::testing::entropy_has_low_alnum_ratio_for_test as has_low_alnum_ratio;
@@ -99,7 +99,7 @@ fn accented_letters_are_not_low() {
 fn all_cjk_ideographs_are_not_low() {
     // 4 ideographs, each 3 bytes (12 bytes total). By CHARACTER count 4/4 ⇒ not
     // low. The old byte-denominator form computed 4/12 = 0.33 and wrongly
-    // flagged this as low — this is the case the fix corrects.
+    // flagged this as low (this is the case the fix corrects).
     assert!(!has_low_alnum_ratio("日本語中"));
 }
 

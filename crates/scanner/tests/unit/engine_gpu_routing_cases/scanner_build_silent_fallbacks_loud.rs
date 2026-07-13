@@ -280,13 +280,13 @@ fn static_prefilter_regexes_handle_build_failure_loudly() {
     //    speed but not recall (the full scan still runs). `checksum/slack.rs`.
     //  - Fail-closed PANIC (Law 10), correct for a compile-time-constant pattern
     //    or embedded Tier-B automaton whose only failure mode is a build/data bug
-    //    AND whose absence would SILENTLY drop recall — so degrading is not an
+    //    AND whose absence would SILENTLY drop recall, so degrading is not an
     //    option and it must refuse to run. `shared_regexes.rs` (ASSIGN_RE),
     //    `unicode_hardening.rs` (evasion-anchor AC). `multiline/structural.rs`
     //    also fail-closes; it is pinned precisely by
     //    `structural_constant_regexes_fail_closed`.
     // (`multiline/config.rs` was previously listed but builds NO static prefilter
-    // — its "prefilter" is a memchr2 fast-path, nothing fallible to guard — so
+    //: its "prefilter" is a memchr2 fast-path, nothing fallible to guard, so
     // requiring a loud handler there was a stale contract.)
     let warn_degrade = ["checksum/slack.rs"];
     let fail_closed = ["shared_regexes.rs", "unicode_hardening.rs"];
@@ -331,14 +331,14 @@ fn structural_constant_regexes_fail_closed() {
     assert!(
         panic_arms >= 2,
         "structural.rs must fail closed (panic) on CONCAT_RE and TVAR_RE build \
-         failure — found {panic_arms} `Err(error) => panic!` arms, expected >= 2"
+         failure: found {panic_arms} `Err(error) => panic!` arms, expected >= 2"
     );
     // And it must NOT reintroduce the warn+degrade path it deliberately dropped:
     // a compile-time constant has no recall-preserving degrade, so warn+None here
     // would silently disable multiline scanning on a build defect.
     assert!(
         !src.contains("warn_prefilter_disabled"),
-        "structural.rs constants must fail closed, not warn+degrade — remove the \
+        "structural.rs constants must fail closed, not warn+degrade, remove the \
          warn_prefilter_disabled call and keep the panic"
     );
 }

@@ -1,4 +1,4 @@
-//! Boundary contract for `contains_non_padding_equals` (decode/base64.rs) — the
+//! Boundary contract for `contains_non_padding_equals` (decode/base64.rs), the
 //! single base64-padding discriminator now shared by both isolated-bare entropy
 //! gates (previously two inline copies in `entropy/isolated.rs` and
 //! `entropy/plausibility.rs`). It answers: does the value hold an `=` that is

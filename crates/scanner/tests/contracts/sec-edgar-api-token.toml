@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "EDGAR_API YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "EDGAR_API vNymNEXAMPLEEXAMPLE09.Cj"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "EDGAR_API vNymNhkRusErbZf8JQ7LhW-77W4yTk1CM2D9LyQG1r-IPu71kc2PGahzHZ_LFgQfK2Rv5ewycQQmqKv3Ox9059uiKFJ17k.BYKt9YjY09.Cj"
 credential = "vNymNhkRusErbZf8JQ7LhW-77W4yTk1CM2D9LyQG1r-IPu71kc2PGahzHZ_LFgQfK2Rv5ewycQQmqKv3Ox9059uiKFJ17k.BYKt9YjY09.Cj"
-reason = "Adversarial anchor_bare envelope — credential must still surface under this detector."
+reason = "Adversarial anchor_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

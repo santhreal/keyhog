@@ -79,7 +79,7 @@ fn retired_aliases_are_rejected_instead_of_silently_remapped() {
 // The fixed vectors pin the advertised-list coherence and canonical mappings;
 // these SWEEP the parser's normalization. `parse_backend_str` trims + lowercases,
 // so every advertised value maps to the SAME backend under arbitrary case and
-// surrounding whitespace — a self-differential over the whole advertised list
+// surrounding whitespace, a self-differential over the whole advertised list
 // (covers `auto`→None too). And a string that cannot be any advertised alias is
 // rejected (None). Traced against `parse_backend_str`. No proptest before.
 

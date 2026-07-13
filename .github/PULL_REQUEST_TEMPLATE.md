@@ -20,7 +20,7 @@ For drive-by typo fixes, the title and one-line summary are enough.
 
 - Detector ID:
 - Sample input (redacted if real):
-- Adversarial twin shipped: yes / no — if no, why?
+- Adversarial twin shipped: yes / no (if no, why)?
 - Recall delta (corpus run): +N / -N
 - Precision delta (corpus run): +N / -N
 

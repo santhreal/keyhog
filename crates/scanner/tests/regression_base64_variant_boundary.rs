@@ -2,8 +2,8 @@
 //! boundaries for the decode-through front door
 //! (`crates/scanner/src/decode/base64.rs`).
 //!
-//! Contract under test (every assertion pins a CONCRETE value — exact decoded
-//! bytes, exact `Err(())`, exact per-byte booleans — never shape):
+//! Contract under test (every assertion pins a CONCRETE value, exact decoded
+//! bytes, exact `Err(())`, exact per-byte booleans, never shape):
 //!   * The standard alphabet (`+` = index 62, `/` = index 63) and the url-safe
 //!     alphabet (`-` = 62, `_` = 63) are DISTINCT byte strings that decode to
 //!     BYTE-IDENTICAL output. A drift that mis-maps `-_` <-> `+/` silently

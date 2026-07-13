@@ -43,7 +43,7 @@ reason = "Prose mentioning the prefix without a body."
 [[evasion]]
 text = "{\"api_key\":\"key-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d\"}"
 credential = "key-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
-reason = "JSON payload — extraction must not consume closing quote/brace."
+reason = "JSON payload (extraction must not consume closing quote/brace)."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

@@ -14,7 +14,7 @@
 //! [`ScanConfig::from_toml_str`] composes deserialize + the now-complete
 //! [`ScanConfig::validate`] into ONE fail-closed load, and every assertion here
 //! pins the EXACT [`ConfigError`] variant (and its offending value), never a bare
-//! boolean — the deserialize step SUCCEEDS on these (the values are valid f64s),
+//! boolean, the deserialize step SUCCEEDS on these (the values are valid f64s),
 //! so it is the validation step that must reject them.
 
 use keyhog_core::{ConfigError, ScanConfig};
@@ -181,7 +181,7 @@ fn infinite_bpe_bound_is_rejected() {
 #[test]
 fn nan_entropy_threshold_is_rejected() {
     // `entropy_threshold = nan` deserializes to f64::NAN, which would make every
-    // `entropy >= threshold` comparison false — a silent whole-surface wipeout.
+    // `entropy >= threshold` comparison false (a silent whole-surface wipeout).
     let err = ScanConfig::from_toml_str(&default_toml_with("entropy_threshold", "nan"))
         .expect_err("a NaN entropy_threshold must be rejected");
     assert!(

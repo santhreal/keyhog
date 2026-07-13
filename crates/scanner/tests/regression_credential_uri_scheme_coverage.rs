@@ -3,7 +3,7 @@
 //! recall test (regression_creddata_url_credentials_recall) only exercises the
 //! db/http/mqtt schemes. Mail, file-transfer, and directory-service URIs leak
 //! credentials just as often (SMTP relays, SFTP drops, LDAP binds), so this pins
-//! that the embedded password surfaces across the FULL real scheme space — and
+//! that the embedded password surfaces across the FULL real scheme space, and
 //! that the precision guards (no-userinfo, dictionary/placeholder/short/template
 //! passwords) hold uniformly regardless of scheme. Non-overlapping with the
 //! existing file: only schemes it does NOT cover are asserted here.
@@ -140,7 +140,7 @@ fn smtp_url_as_env_value_surfaces() {
 
 #[test]
 fn novel_custom_scheme_still_surfaces() {
-    // Generality: an unknown scheme must work — the detector is not an allowlist.
+    // Generality: an unknown scheme must work (the detector is not an allowlist).
     let p = pw(12, 13);
     let text = format!("acmesvc://robot:{p}@api.internal.acme");
     assert!(
@@ -170,7 +170,7 @@ fn ldap_dn_path_without_userinfo_does_not_fire() {
 
 #[test]
 fn sftp_dictionary_password_suppressed() {
-    // "password" is a dictionary word — suppressed regardless of scheme.
+    // "password" is a dictionary word (suppressed regardless of scheme).
     assert!(nothing_surfaces(
         "sftp://user:password@files.partner.com",
         "password"
@@ -196,7 +196,7 @@ fn smtp_five_char_password_below_floor_no_match() {
 
 #[test]
 fn ldap_angle_bracket_template_password_no_match() {
-    // The regex excludes < and >, so a `<...>` placeholder never matches — even a
+    // The regex excludes < and >, so a `<...>` placeholder never matches, even a
     // high-entropy value inside the brackets must not surface (it's a template).
     let p = pw(12, 14);
     let text = format!("ldap://binduser:<{p}>@ldap.corp.local");

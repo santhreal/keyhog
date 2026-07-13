@@ -19,13 +19,13 @@ reason = "Legacy base64 registry token in the canonical .npmrc _authToken slot."
 [[positive]]
 text = "_authToken=s0meL3gacyT0kenValue12345"
 credential = "s0meL3gacyT0kenValue12345"
-reason = "Bare _authToken assignment (no //host/: scope) — still a credential."
+reason = "Bare _authToken assignment (no //host/: scope) (still a credential)."
 
 # ---- NEGATIVES (precision) ------------------------------------------
 
 [[negative]]
 text = "//registry.npmjs.org/:_authToken=${NPM_TOKEN}"
-reason = "Env-var template, not a literal token — the value class excludes ${}."
+reason = "Env-var template, not a literal token (the value class excludes ${})."
 
 [[negative]]
 text = "_authToken=abc1234"
@@ -36,7 +36,7 @@ reason = "Body shorter than the 8-char floor."
 [[evasion]]
 text = "# stashed .npmrc\n//npm.pkg.example.com/:_authToken=Zk9Lm2Qw7Rt4Yp1Xc8Vb3Nh6Jf5Dg0SaWe"
 credential = "Zk9Lm2Qw7Rt4Yp1Xc8Vb3Nh6Jf5Dg0SaWe"
-reason = "Opaque CI token on a shell-commented .npmrc line — credential must still surface."
+reason = "Opaque CI token on a shell-commented .npmrc line (credential must still surface)."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

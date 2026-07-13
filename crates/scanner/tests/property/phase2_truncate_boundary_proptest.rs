@@ -5,7 +5,7 @@
 //! `truncate_src`.
 //!
 //! `regex_prefix_anchorable` decides whether a pattern may be driven from
-//! prefix-anchor positions instead of a whole-chunk walk — the precondition is a
+//! prefix-anchor positions instead of a whole-chunk walk, the precondition is a
 //! FINITE, enumerable required-prefix set with every member >= 3 bytes. A false
 //! TRUE would anchor a pattern lacking such a prefix and silently drop matches
 //! (recall bug); a false FALSE forfeits the fast path (perf).
@@ -13,7 +13,7 @@
 //! `focus_floor_boundary` / `focus_ceil_boundary` snap the decode-focus window to
 //! UTF-8 char boundaries so a slice never splits a multi-byte codepoint (a split
 //! would panic on `&s[..i]`). `truncate_src` truncates on a boundary and appends
-//! `…`. These are classic off-by-one / boundary logic — pinned here by fixed
+//! `…`. These are classic off-by-one / boundary logic, pinned here by fixed
 //! multibyte vectors and boundary-bracketing property tests.
 
 use keyhog_scanner::testing::{
@@ -49,7 +49,7 @@ fn anchorable_false_for_leading_charclass_or_unparseable() {
 
 #[test]
 fn boundary_helpers_snap_around_a_multibyte_codepoint() {
-    // "café" bytes: c(0) a(1) f(2) é(3..5) — byte 4 is INSIDE the 2-byte 'é'.
+    // "café" bytes: c(0) a(1) f(2) é(3..5) (byte 4 is INSIDE the 2-byte 'é').
     let s = "café";
     assert_eq!(s.len(), 5);
     // On an existing boundary: identity for both.
@@ -81,7 +81,7 @@ fn truncate_src_verbatim_when_short_and_boundary_safe_when_long() {
 
 proptest! {
     // Testing Contract: 4k cases; per case = two O(n) boundary scans over a
-    // <=~40-byte string — cheap.
+    // <=~40-byte string (cheap).
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// floor <= idx <= ceil, both land on real char boundaries, floor <= ceil,

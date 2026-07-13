@@ -77,7 +77,7 @@ pub(crate) fn decode_text_file(bytes: &[u8]) -> Option<String> {
     // `from_utf8_lossy` (full O(n) validate + alloc) sequentially - two
     // full passes. The fused path drops one of them on valid UTF-8.
     if let Ok(s) = std::str::from_utf8(bytes) {
-        // LAW10: recall-preserving — invalid UTF-8 falls through to lossy text decode after binary checks.
+        // LAW10: recall-preserving (invalid UTF-8 falls through to lossy text decode after binary checks).
         if looks_binary_header_check(bytes) {
             return None;
         }
@@ -321,7 +321,7 @@ pub(in crate::filesystem::read) fn decode_utf16(bytes: &[u8]) -> Option<String> 
                 // single unpaired surrogate (truncated trailing half, a binary
                 // value spliced into a UTF-16 config, a mid-file corruption)
                 // silently discarded every credential in the file from the text
-                // path. Decode lossily instead — substitute U+FFFD and keep
+                // path. Decode lossily instead, substitute U+FFFD and keep
                 // scanning the valid remainder, matching the crate's UTF-8 lossy
                 // convention (see the stdin lossy-decode path).
                 invalid += 1;
@@ -341,7 +341,7 @@ pub(in crate::filesystem::read) fn decode_utf16(bytes: &[u8]) -> Option<String> 
     // buffer that is *mostly* undecodable is not text at all (a binary file whose
     // first two bytes coincidentally form a BOM). Return None for those so the
     // caller routes them to `looks_binary` rather than scanning a wall of
-    // replacement characters — this preserves the binary-skip precision WITHOUT
+    // replacement characters, this preserves the binary-skip precision WITHOUT
     // reintroducing the single-bad-unit whole-file drop. Threshold is generous
     // toward recall (a file is kept unless >25% of its units are undecodable).
     if total > 0 && invalid.saturating_mul(4) > total {

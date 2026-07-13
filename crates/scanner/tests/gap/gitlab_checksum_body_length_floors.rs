@@ -144,7 +144,7 @@ proptest! {
         prop_assert_eq!(verdict(&tok), "not-applicable");
     }
 
-    /// A body with ANY out-of-charset byte is Invalid regardless of length — the
+    /// A body with ANY out-of-charset byte is Invalid regardless of length, the
     /// charset gate runs before the length classification.
     #[test]
     fn out_of_charset_body_is_invalid(

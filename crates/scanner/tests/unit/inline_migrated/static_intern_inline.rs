@@ -48,7 +48,7 @@ fn returns_same_arc_on_repeated_lookup() {
     let a = intern.lookup("hello-detector").unwrap();
     let b = intern.lookup("hello-detector").unwrap();
     // The Arc itself should be cloned from the same slot, not
-    // re-allocated — pointer-equality is the cheap proof.
+    // re-allocated (pointer-equality is the cheap proof).
     assert!(Arc::ptr_eq(&a, &b));
 }
 

@@ -1,5 +1,5 @@
 //! LR1-A8 replacement gate: `benchmark.rs` must report GPU probe text in the
-//! exact shape `format_gpu_summary` documents — `unavailable` when no adapter is
+//! exact shape `format_gpu_summary` documents: `unavailable` when no adapter is
 //! present, otherwise the adapter name optionally suffixed with ` (NGB)`. This
 //! is the string the `keyhog scan --benchmark` `gpu=` header renders.
 
@@ -15,7 +15,7 @@ fn format_gpu_summary_matches_documented_shape() {
     );
 
     if summary == "unavailable" {
-        // No non-software adapter — the documented no-GPU sentinel. Done.
+        // No non-software adapter (the documented no-GPU sentinel. Done).
         return;
     }
 

@@ -5,7 +5,7 @@
 //! secret obfuscated with confusables still matches. An ASCII glyph in the map is
 //! definitionally invalid: it cannot be Unicode obfuscation, and it only widens
 //! the ASCII-folded class (`[l…]→[lOo]`) to over-match a literal ASCII char in
-//! that position — pure false-positive surface and automaton bloat, and on the
+//! that position, pure false-positive surface and automaton bloat, and on the
 //! anchor path it manufactures junk candidate starts (`sk_live_` → also
 //! `sk_Oive_`). This suite pins the invariant that every glyph is non-ASCII, plus
 //! the surrounding well-formedness, exercised THROUGH the public
@@ -99,7 +99,7 @@ fn expand_is_deterministic() {
 }
 
 // ---------------------------------------------------------------------------
-// The 'l' regression — ASCII 'O'/'o' must be gone, I/l-lookalikes retained.
+// The 'l' regression: ASCII 'O'/'o' must be gone, I/l-lookalikes retained.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -125,7 +125,7 @@ fn l_class_retains_il_lookalikes() {
 #[test]
 fn l_folded_form_is_single_ascii_member() {
     // With the ASCII glyphs gone, the only ASCII member of `[l…]` is 'l', so its
-    // ASCII fold is `[l]` — no longer the over-broad `[lOo]`.
+    // ASCII fold is `[l]`: no longer the over-broad `[lOo]`.
     let ascii_members: Vec<char> = class_members('l')
         .expect("'l' is mapped")
         .into_iter()

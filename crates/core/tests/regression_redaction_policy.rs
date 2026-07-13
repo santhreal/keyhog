@@ -2,8 +2,8 @@
 //!
 //! This complements `regression_sensitive_string_redaction.rs` (which pins the
 //! `redact()` arithmetic in isolation). Here the subject is the POLICY that
-//! wraps that primitive: `RawMatch::to_redacted()` — the only shape that may
-//! cross keyhog's process boundary (kimi-wave1 finding 2.1) — plus the redacted
+//! wraps that primitive: `RawMatch::to_redacted()`: the only shape that may
+//! cross keyhog's process boundary (kimi-wave1 finding 2.1), plus the redacted
 //! `Debug` impls of `RawMatch` and `SensitiveString`.
 //!
 //! Standalone integration crate: only the public API is reachable. Every
@@ -97,7 +97,7 @@ fn redact_edge_one_at_len_twelve() {
 #[test]
 fn redact_preview_length_is_bounded_to_eleven_for_huge_secret() {
     // ADVERSARIAL: a 500-byte secret. edge raw = 62 but .clamp(1,4) pins it at
-    // 4, so the preview is EXACTLY "HEAD...TAIL" (11 chars) — the preview length
+    // 4, so the preview is EXACTLY "HEAD...TAIL" (11 chars), the preview length
     // is bounded regardless of input size (no proportional leak).
     let s = format!("HEAD{}TAIL", "x".repeat(492));
     assert_eq!(s.len(), 500);
@@ -270,7 +270,7 @@ fn rawmatch_debug_preserves_hash_hex_not_plaintext() {
 #[test]
 fn sensitive_string_debug_masks_adversarial_quoted_secret() {
     // ADVERSARIAL: quotes/newline in the secret must not break out of the
-    // redacted form or reveal any content — Debug reports only a byte count.
+    // redacted form or reveal any content. Debug reports only a byte count.
     let secret = "secret\"with\nquotes";
     let ss = SensitiveString::from(secret);
     let dbg = format!("{ss:?}");

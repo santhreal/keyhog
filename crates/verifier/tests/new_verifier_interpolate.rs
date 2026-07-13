@@ -75,7 +75,7 @@ fn resolve_field_literal_passthrough() {
 }
 
 // ===========================================================================
-// sanitize_oob_value — DNS-hostname charset filter
+// sanitize_oob_value: DNS-hostname charset filter
 // ===========================================================================
 
 #[test]
@@ -96,7 +96,7 @@ fn sanitize_oob_folds_uppercase_to_lower() {
 
 #[test]
 fn sanitize_oob_drops_structural_punctuation() {
-    // Slash, colon, query, fragment, at, quotes, angle brackets, space — all dropped.
+    // Slash, colon, query, fragment, at, quotes, angle brackets, space (all dropped).
     assert_eq!(
         TestApi.sanitize_oob_value("evil.com/path?x=1#frag"),
         "evil.compathx1frag"
@@ -120,7 +120,7 @@ fn sanitize_oob_empty_stays_empty() {
 }
 
 // ===========================================================================
-// sanitize_raw_value — control-byte stripping
+// sanitize_raw_value, control-byte stripping
 // ===========================================================================
 
 #[test]
@@ -167,13 +167,13 @@ fn sanitize_raw_keeps_unicode_above_c1() {
 }
 
 // ===========================================================================
-// interpolate — {{match}} fast paths and URL-encoding
+// interpolate: {{match}} fast paths and URL-encoding
 // ===========================================================================
 
 #[test]
 fn interpolate_bare_match_is_raw_sanitized_not_url_encoded() {
     // The exact-match fast path returns the RAW (control-stripped) credential,
-    // NOT URL-encoded — used for header/body values.
+    // NOT URL-encoded (used for header/body values).
     let c = companions(&[]);
     assert_eq!(
         TestApi.interpolate("{{match}}", "a+b/c=d", &c),

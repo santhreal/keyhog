@@ -1,6 +1,6 @@
 //! Regression: base32 decode is NOT part of the keyhog decode pipeline.
 //!
-//! keyhog ships NO base32 (RFC-4648) decoder — the only base-N style decoders in
+//! keyhog ships NO base32 (RFC-4648) decoder, the only base-N style decoders in
 //! the default registry are `base64`, `hex` (base16), and `z85` (base85). This
 //! file pins that fact together with the full canonical composition/order/count
 //! of the default decoder registry, so that:
@@ -16,7 +16,7 @@
 
 use keyhog_scanner::testing::default_decoder_names_for_test as decoder_names;
 
-/// The canonical default decode pipeline — every `name()` in registration order.
+/// The canonical default decode pipeline (every `name()` in registration order).
 /// Mirror of `registry::default_decoders()`; the order is load-bearing (reverse
 /// and caesar run last) and base32 is intentionally absent.
 const EXPECTED: [&str; 13] = [
@@ -91,7 +91,7 @@ fn default_pipeline_is_exact_ordered_composition() {
 
 #[test]
 fn default_pipeline_joined_string_is_exact() {
-    // A single strong byte-for-byte assertion over the whole ordered set — any
+    // A single strong byte-for-byte assertion over the whole ordered set, any
     // rename, reorder, insertion, or deletion (including sneaking in `base32`)
     // changes this exact string.
     let joined = decoder_names().join(",");

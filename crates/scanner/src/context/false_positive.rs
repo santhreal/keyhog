@@ -117,7 +117,7 @@ pub(crate) fn has_disclaimer_comment_bytes(bytes: &[u8]) -> bool {
         let first_upper = first_lower.to_ascii_uppercase();
         // Incremental quote-state cursor, advanced MONOTONICALLY to each marker
         // hit. The old `is_inside_ascii_quotes(bytes, start)` rescanned `[0,
-        // start)` from scratch on every hit — on a line of boundary-passing
+        // start)` from scratch on every hit, on a line of boundary-passing
         // markers (e.g. a run of spaced `// // …`) that is O(n²). `memchr2`
         // yields ascending starts, so advancing one cursor makes the
         // "inside quotes?" test O(1) amortized (O(n) per marker, O(n) overall).
@@ -164,8 +164,8 @@ pub(crate) fn has_disclaimer_comment_bytes(bytes: &[u8]) -> bool {
             }
             // A comment runs to end-of-input, so this marker's tail is a SUPERSET
             // of every later same-type marker's tail. Scanning it once and then
-            // breaking is sufficient — a phrase after any later `//` is already in
-            // this tail — and it is what keeps the scan O(n): the previous
+            // breaking is sufficient, a phrase after any later `//` is already in
+            // this tail, and it is what keeps the scan O(n): the previous
             // "scan the tail per marker hit" made a dense-marker line (`// // …`,
             // every hit boundary-passing and unquoted) O(n²).
             //
@@ -173,7 +173,7 @@ pub(crate) fn has_disclaimer_comment_bytes(bytes: &[u8]) -> bool {
             // …) runs only to end-of-line, so a phrase on a LATER line is NOT
             // inside this comment. The sole production caller passes one line
             // (`current_line_bytes`), but the public test helper does not enforce
-            // it — bounding here keeps the ci_find linear in the line and blocks a
+            // it, bounding here keeps the ci_find linear in the line and blocks a
             // cross-line false disclaimer match if a multi-line buffer is ever
             // passed. No-op on single-line input (no `\n` → tail runs to len()).
             let tail_start = start + m_len;
@@ -433,7 +433,7 @@ fn trim_ascii_bytes(bytes: &[u8]) -> &[u8] {
     let start = bytes
         .iter()
         .position(|byte| !byte.is_ascii_whitespace())
-        .unwrap_or(bytes.len()); // LAW10: no recall impact — all-whitespace trim starts at end; no context is suppressed from this default
+        .unwrap_or(bytes.len()); // LAW10: no recall impact, all-whitespace trim starts at end; no context is suppressed from this default
     let end = bytes
         .iter()
         .rposition(|byte| !byte.is_ascii_whitespace())
@@ -576,7 +576,7 @@ fn nearby_lines_contain(
 ) -> bool {
     // Slice the exact lookback window `[start, line_idx]` instead of
     // `.take(line_idx+1).skip(start)`, which (because `Take` defeats
-    // `slice::Iter`'s O(1) `nth`) walks from line 0 and discards `start` lines —
+    // `slice::Iter`'s O(1) `nth`) walks from line 0 and discards `start` lines 
     // O(line_idx) for a line deep in a file. The slice is O(window). Bounds are
     // clamped so a `line_idx` past the end can never panic (matches the old
     // iterator's saturating behavior).

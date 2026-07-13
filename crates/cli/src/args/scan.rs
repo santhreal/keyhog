@@ -52,8 +52,8 @@ pub enum CliDedupScope {
 
 impl std::fmt::Display for CliDedupScope {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Render the exact CLI spelling from the ONE owner — the `ValueEnum`
-        // derive — so the `--dedup` default (`default_value_t`) can never drift
+        // Render the exact CLI spelling from the ONE owner, the `ValueEnum`
+        // derive, so the `--dedup` default (`default_value_t`) can never drift
         // from the accepted `--dedup` values. Every variant is non-skipped, so
         // `to_possible_value` is always `Some`.
         f.write_str(
@@ -313,12 +313,12 @@ pub struct ScanArgs {
     pub insecure: bool,
 
     /// Allow cloud sources (`--s3-endpoint`, GCS / Azure container URLs) to reach
-    /// an endpoint whose host — literal or DNS-resolved — is private, loopback,
+    /// an endpoint whose host, literal or DNS-resolved, is private, loopback,
     /// link-local, or cloud-metadata. OFF by default: the cloud SSRF screen
     /// refuses every such endpoint. Enable ONLY for a trusted private-network
     /// deployment (self-hosted MinIO / Ceph on an internal gateway). This flag
     /// (or its `[http].allow_private_endpoint` TOML equivalent) is the ONLY way
-    /// to relax the screen — no environment variable can, so an ambient toggle
+    /// to relax the screen, no environment variable can, so an ambient toggle
     /// can never silently turn keyhog into an SSRF proxy for internal services.
     #[cfg(any(
         feature = "web",
@@ -461,7 +461,7 @@ pub struct ScanArgs {
     /// report (text/json/sarif/jsonl) goes to stdout or `--output`. The preview
     /// stream is consistent with that report and the exit code: every streamed
     /// line corresponds to a finding that survived suppression, the confidence
-    /// floor / `--min-confidence`, and baseline filtering — it never previews a
+    /// floor / `--min-confidence`, and baseline filtering, it never previews a
     /// match the report drops.
     #[arg(long)]
     pub stream: bool,
@@ -516,7 +516,7 @@ pub struct ScanArgs {
     #[arg(long, conflicts_with = "batch_pipeline")]
     pub no_batch_pipeline: bool,
 
-    /// Daemon routing: `auto` (default — use a live daemon if one is up, else
+    /// Daemon routing: `auto` (default, use a live daemon if one is up, else
     /// scan in-process), `on` (force the daemon route; fail if none is up), or
     /// `off` (force in-process). Bare `--daemon` means `on`. Use `on` in
     /// pre-commit hooks / IDE save handlers where the ~3 s in-process cold-start
@@ -664,7 +664,7 @@ pub struct ScanArgs {
 
     /// Deep mode: all features enabled. A preset is a BASE: it seeds defaults
     /// (decode-depth 10, entropy + ML on), then any explicit knob you pass
-    /// overrides it — e.g. `--deep --decode-depth 3` runs deep with depth 3, and
+    /// overrides it, e.g. `--deep --decode-depth 3` runs deep with depth 3, and
     /// `--deep --min-confidence 0.9` raises the floor on the deep base.
     #[arg(long, conflicts_with_all = ["fast", "precision", "no_decode", "no_entropy"])]
     pub deep: bool,
@@ -871,7 +871,7 @@ pub struct ScanArgs {
 
     /// Emit a structured `--dogfood` JSON trace to stderr after the
     /// scan: every credential that was matched but suppressed, with the
-    /// reason — both example/test/placeholder markers
+    /// reason, both example/test/placeholder markers
     /// (`kind: example_suppressed`) AND shape/heuristic gates such as
     /// UUID-v4, bare-hex digest, base64 blob, dashed serial, or repetitive
     /// run (`kind: shape_suppressed`, `reason` names the gate). Credentials

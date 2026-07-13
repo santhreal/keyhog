@@ -1,4 +1,4 @@
-//! Regression: GitLab group/project *classification* — the pure, host-independent
+//! Regression: GitLab group/project *classification*, the pure, host-independent
 //! path that parses a GitLab namespace, builds the `/api/v4` group-projects
 //! endpoint, and rejects malformed input, all *before* any socket is opened.
 //!
@@ -13,7 +13,7 @@
 //! `SourceError::Other` refusal string (built with the same `{:?}` formatting the
 //! production code uses, so the expected value is deterministic), the exact
 //! factory arity error, or the exact source name. No accelerator, no git binary,
-//! and no network are required — the group-path validator and the factory param
+//! and no network are required, the group-path validator and the factory param
 //! parser are pure functions reached through the crate's public API and its
 //! `#[doc(hidden)]` testing facade.
 #![cfg(feature = "gitlab")]
@@ -47,7 +47,7 @@ fn group_refusal_message(group: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Namespace (group path) classification — positive
+// Namespace (group path) classification, positive
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -61,7 +61,7 @@ fn group_path_accepts_flat_nested_and_charset_namespaces() {
 }
 
 // ---------------------------------------------------------------------------
-// Namespace classification — negative twins (exact refusal strings)
+// Namespace classification, negative twins (exact refusal strings)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -103,7 +103,7 @@ fn group_path_rejects_trailing_slash() {
 #[test]
 fn group_path_rejects_empty_middle_segment_zero_length() {
     // `root//child` splits to ["root", "", "child"]; the empty middle segment is
-    // a zero-length repo name, refused by the per-segment length guard — NOT the
+    // a zero-length repo name, refused by the per-segment length guard. NOT the
     // top-level slash-placement guard (which only checks leading/trailing).
     let msg = group_refusal_message("root//child");
     assert_eq!(
@@ -165,7 +165,7 @@ fn group_path_rejects_space_and_non_ascii_charset() {
 }
 
 // ---------------------------------------------------------------------------
-// Namespace classification — boundaries
+// Namespace classification, boundaries
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -221,7 +221,7 @@ fn listing_truncated_error_exact_message_and_variant() {
 }
 
 // ---------------------------------------------------------------------------
-// Factory param classification (arity) — distinct from endpoint validation
+// Factory param classification (arity), distinct from endpoint validation
 // ---------------------------------------------------------------------------
 
 #[test]

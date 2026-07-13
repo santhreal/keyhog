@@ -206,7 +206,7 @@ impl CompiledScanner {
             }
             // `confirmed_patterns` is ac_map-only: every production caller
             // filters `idx < ac_map.len()` (backend_triggered.rs). This bound is
-            // load-bearing — `is_stripe_hot_confirmed_pattern` and
+            // load-bearing: `is_stripe_hot_confirmed_pattern` and
             // `stripe_hot_confirmed_by_pattern` are index-parallel to `ac_map`
             // and panic on any phase-2 index. Assert the contract; fail closed
             // (skip) in release rather than index out of bounds.

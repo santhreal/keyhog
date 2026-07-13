@@ -1,9 +1,9 @@
-//! LANE sources-deep regression: the GCS JSON-API *request-building* contract —
+//! LANE sources-deep regression: the GCS JSON-API *request-building* contract 
 //! the EXACT list URL, the EXACT per-object media URL (including percent-encoding
 //! of object keys via `encode_object_key_path`), the ambient-bearer auth policy
 //! (anonymous requests carry NO `Authorization` header; a bearer env on a
 //! non-google endpoint is refused BEFORE any socket), endpoint trailing-slash
-//! normalization, and malformed-bucket refusal — all driven through the public
+//! normalization, and malformed-bucket refusal, all driven through the public
 //! `GcsSource::chunks()` production path against a loopback httpmock endpoint.
 //!
 //! This locks the request-shape internals that `gcs.rs` builds as raw strings:
@@ -15,7 +15,7 @@
 //!     fragment and drop `alt=media`).
 //!   * `gcs_bearer_token` -> env precedence (`GOOGLE_OAUTH_ACCESS_TOKEN` before
 //!     `GCS_BEARER_TOKEN`), empty/control refusals, and the non-google
-//!     credential-drop refusal (fail-closed, no anonymous fallback — Law 10).
+//!     credential-drop refusal (fail-closed, no anonymous fallback. Law 10).
 //!   * `validate_bucket_name` -> boundary refusals (over-length, trailing dash).
 //!
 //! Distinct from `regression_gcs_listing_page.rs` (pagination / nextPageToken /
@@ -290,7 +290,7 @@ fn object_key_with_question_mark_is_percent_encoded_not_query() {
 // ==========================================================================
 
 /// The FIRST listing request targets EXACTLY `/storage/v1/b/<bucket>/o` with
-/// `alt=json`, `maxResults=1000`, and NO `pageToken` — the mock only matches all
+/// `alt=json`, `maxResults=1000`, and NO `pageToken`: the mock only matches all
 /// four constraints simultaneously, so `calls()==1` proves the exact request line.
 #[test]
 fn exact_list_url_alt_json_maxresults_1000_no_pagetoken() {
@@ -369,7 +369,7 @@ fn anonymous_requests_carry_no_authorization_header() {
 /// A `GCS_BEARER_TOKEN` present with a non-google (loopback) endpoint and no
 /// explicit token-forwarding flag is REFUSED before any request: the source
 /// yields exactly one error naming the credential-drop refusal, and the listing
-/// mock is never hit (fail-closed, no anonymous fallback — Law 10).
+/// mock is never hit (fail-closed, no anonymous fallback. Law 10).
 #[test]
 fn gcs_bearer_on_non_google_endpoint_refused_before_any_request() {
     let _g = gcs_bearer_guard("ya29.non-google-secret");

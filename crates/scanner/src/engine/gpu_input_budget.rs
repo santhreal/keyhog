@@ -6,7 +6,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // ---------------------------------------------------------------------------
-// VRAM sizing table — ONE owner for every threshold and byte budget.
+// VRAM sizing table: ONE owner for every threshold and byte budget.
 //
 // The adaptive `gpu_batch_input_limit_for_vram_mb` match arms below are the SOLE
 // readers of these; nothing is a bare magic number inline. The `_UNKNOWN` floor
@@ -32,8 +32,8 @@ const GPU_BATCH_INPUT_LIMIT_LOW: usize = 256 * 1024 * 1024;
 const GPU_BATCH_INPUT_LIMIT_UNKNOWN: usize = 128 * 1024 * 1024;
 
 /// Process-wide GPU batch-input override in bytes. `0` = unset (use the
-/// VRAM-adaptive table). Set ONCE at scan startup — before the first
-/// [`gpu_batch_input_limit`] call caches the value — from resolved config (Tier-A:
+/// VRAM-adaptive table). Set ONCE at scan startup, before the first
+/// [`gpu_batch_input_limit`] call caches the value, from resolved config (Tier-A:
 /// compiled default -> `.keyhog.toml` -> `--gpu-batch-input-limit`). Mirrors the
 /// `REGEX_DFA_LIMIT_OVERRIDE` process-global pattern so the routing/cache-key
 /// path needs no per-call plumbing.
@@ -57,7 +57,7 @@ pub fn set_gpu_batch_input_limit(bytes: usize) {
     GPU_BATCH_INPUT_LIMIT_OVERRIDE.store(bytes, Ordering::Relaxed);
 }
 
-/// Clamp a raw Tier-A override into [`gpu_batch_input_limit_bounds`]. Pure — testable
+/// Clamp a raw Tier-A override into [`gpu_batch_input_limit_bounds`]. Pure, testable
 /// without the process-global, so the clamp contract is proven deterministically.
 pub(crate) fn clamp_gpu_batch_input_limit(bytes: usize) -> usize {
     let (floor, cap) = gpu_batch_input_limit_bounds();
@@ -157,7 +157,7 @@ mod tier_a_tests {
     #[test]
     fn vram_table_reads_only_the_named_owners() {
         // Every arm maps to its named byte-budget owner at the exact threshold
-        // boundary and one MiB below it — no bare magic numbers remain inline.
+        // boundary and one MiB below it (no bare magic numbers remain inline).
         assert_eq!(
             gpu_batch_input_limit_for_vram_mb(Some(VRAM_MB_TIER_HIGH)),
             GPU_BATCH_INPUT_LIMIT_HIGH

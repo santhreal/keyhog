@@ -953,7 +953,7 @@ fn gitlab_sast_planted_finding_has_vulnerability() {
 }
 
 // ---------------------------------------------------------------------------
-// TEXT (TextReporter) — the human default
+// TEXT (TextReporter), the human default
 // ---------------------------------------------------------------------------
 
 /// Empty corpus -> text reporter prints the honest clean-result summary. There
@@ -1322,7 +1322,7 @@ fn format_value_is_case_sensitive() {
 }
 
 /// `--output` for SARIF writes a valid, complete SARIF doc to disk for the
-/// non-empty case, with results resolving into rules — the atomic-write
+/// non-empty case, with results resolving into rules, the atomic-write
 /// path must not truncate or corrupt the streamed document.
 #[test]
 fn sarif_output_file_is_complete_for_planted_finding() {

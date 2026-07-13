@@ -44,7 +44,7 @@ fn hcl_identifier_paths_extract_exact_pairs() {
 #[test]
 fn hcl_invalid_assignment_identifier_is_rejected() {
     // `bad.key` contains `.`, which is not in the HCL identifier class, so the
-    // assignment is rejected and yields no pair — while a sibling valid key does.
+    // assignment is rejected and yields no pair (while a sibling valid key does).
     let hcl = "bad.key = \"should-not-extract\"\ngood_key = \"yes-extract-42\"\n";
     let pairs = keyhog_scanner::testing::parse_hcl_tuples(hcl);
 
@@ -90,7 +90,7 @@ fn hcl_identifier_check_is_single_owner() {
 // (alnum/`_`/`-`) surfaces as (key, value, its 1-based line) in document order;
 // a key carrying a non-identifier char (`.`) is rejected and yields no tuple.
 // Distinct `K{i}` keys keep each line unique; `v_<rand>` quoted values carry no
-// quote/escape chars. Source parsers/hcl.rs is FOREIGN-DIRTY — this round-trip
+// quote/escape chars. Source parsers/hcl.rs is FOREIGN-DIRTY, this round-trip
 // asserts the current observable contract as a regression signal. No proptest
 // before.
 

@@ -1,4 +1,4 @@
-//! `state_file::read_capped` — the shared size-capped state-artifact reader used
+//! `state_file::read_capped`: the shared size-capped state-artifact reader used
 //! by calibration, the merkle index, and the rule/allowlist config loaders.
 //!
 //! Migrated out of an inline `#[cfg(test)] mod tests` in `src/state_file.rs`

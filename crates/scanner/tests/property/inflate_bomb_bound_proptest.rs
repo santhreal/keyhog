@@ -10,10 +10,10 @@
 //!   1. no panic, no OOM, no hang (a regressed cap would blow the box here),
 //!   2. any returned text is <= the cap,
 //!   3. a legitimate small round-trip still inflates correctly (the cap does not
-//!      break the happy path — recall preserved).
+//!      break the happy path (recall preserved)).
 //!
 //! If the `Read::take` guard is ever removed, `huge_bomb_is_capped` OOMs/hangs
-//! instead of passing — the failure is LOUD, exactly as a DoS regression should
+//! instead of passing, the failure is LOUD, exactly as a DoS regression should
 //! be.
 
 #![cfg(feature = "decode")]
@@ -24,7 +24,7 @@ use keyhog_scanner::testing::{
 };
 use proptest::prelude::*;
 
-/// 256 MiB of a single repeated byte — compresses to a few KiB of gzip, but
+/// 256 MiB of a single repeated byte, compresses to a few KiB of gzip, but
 /// would inflate to 256 MiB if uncapped (16x the 16 MiB ceiling).
 const BOMB_PLAINTEXT: usize = 256 * 1024 * 1024;
 
@@ -50,7 +50,7 @@ fn huge_gzip_bomb_is_capped_not_oom() {
     if let Some(text) = out {
         assert!(
             text.len() <= cap + 64 * 1024,
-            "inflate output {} exceeded cap {} — bomb bound regressed",
+            "inflate output {} exceeded cap {}, bomb bound regressed",
             text.len(),
             cap
         );
@@ -108,7 +108,7 @@ fn non_container_and_malformed_inputs_return_none() {
 
 #[test]
 fn empty_inflate_output_returns_none_not_empty_some() {
-    // A gzip/zlib of the empty payload inflates to "" — but an empty result has
+    // A gzip/zlib of the empty payload inflates to "", but an empty result has
     // nothing to rescan, so the decoder collapses it to `None` (consistent with
     // the other non-productive paths), never `Some("")`.
     assert!(

@@ -15,12 +15,12 @@ reason = "Drata token with camel-case Token suffix and 88-char hex body."
 
 [[negative]]
 text = "DRATA_API_KEY=short"
-reason = "Body too short — only 5 hex chars."
+reason = "Body too short (only 5 hex chars)."
 
 [[evasion]]
 text = "DRATA_API_KEY=01ac616f8fd0ba84a167fe482ed4a92c8c8050eed40ef171cc2784d638b34fa7"
 credential = "01ac616f8fd0ba84a167fe482ed4a92c8c8050eed40ef171cc2784d638b34fa7"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

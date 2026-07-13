@@ -1,6 +1,6 @@
 //! Regression contract for the CLI `scan` surface's color / `NO_COLOR`
 //! behavior, driven through the REAL shipped binary (`env!("CARGO_BIN_EXE_keyhog")`)
-//! as a child process with a *captured* (piped, non-TTY) stdout/stderr — exactly
+//! as a child process with a *captured* (piped, non-TTY) stdout/stderr, exactly
 //! the shape a script, CI redirect, or `NO_COLOR`-honoring terminal sees.
 //!
 //! WHY THIS IS HOST-INDEPENDENT (no accelerator assumed):
@@ -10,7 +10,7 @@
 //!     no-accel hosts alike.
 //!   * The color contract itself is host-independent by construction: the text
 //!     reporter (`keyhog_core::report::text`) and the CLI style layer resolve to
-//!     the PLAIN (escape-free) palette whenever stdout is not a TTY — which it
+//!     the PLAIN (escape-free) palette whenever stdout is not a TTY, which it
 //!     never is under a captured pipe (`reporting.rs`: `color = io::stdout().is_terminal()`).
 //!     A captured run MUST therefore be free of ANSI escape bytes REGARDLESS of
 //!     `NO_COLOR`, and `NO_COLOR` must never *add* bytes. That is the strongest
@@ -83,7 +83,7 @@ enum Color {
     /// the others here; the empty-string rule itself lives in
     /// `style::no_color_requested`.
     NoColorEmpty,
-    /// `NO_COLOR` removed from the child env — the default/"colored" posture.
+    /// `NO_COLOR` removed from the child env (the default/"colored" posture).
     Removed,
 }
 
@@ -121,7 +121,7 @@ fn text(v: &[u8]) -> String {
     String::from_utf8_lossy(v).into_owned()
 }
 
-/// True iff the byte stream contains an ANSI escape (`0x1b`) — the single byte
+/// True iff the byte stream contains an ANSI escape (`0x1b`), the single byte
 /// that opens every ANSI/SGR sequence. Its absence proves the stream is plain.
 fn has_esc(v: &[u8]) -> bool {
     v.contains(&ESC)
@@ -210,7 +210,7 @@ fn no_color_text_summary_is_exact_joined_token() {
 // ---------------------------------------------------------------------------
 
 /// With `NO_COLOR` REMOVED (the "colored" posture) a captured/piped text scan is
-/// STILL plain — color auto-disables when stdout is not a TTY. Same exit code and
+/// STILL plain, color auto-disables when stdout is not a TTY. Same exit code and
 /// same concrete summary as the `NO_COLOR=1` run. Proves the color decision is
 /// TTY-gated and host-independent under a pipe.
 #[test]
@@ -471,7 +471,7 @@ fn json_two_secret_detector_set_is_toggle_stable() {
 // ---------------------------------------------------------------------------
 
 /// The scan's stderr (end-of-scan chatter / skip summary) carries no ANSI escape
-/// byte under a pipe, under EITHER `NO_COLOR` posture — color never leaks onto
+/// byte under a pipe, under EITHER `NO_COLOR` posture, color never leaks onto
 /// the diagnostic stream a CI log captures.
 #[test]
 fn scan_stderr_has_no_escape_across_toggle() {
@@ -496,7 +496,7 @@ fn scan_stderr_has_no_escape_across_toggle() {
     );
 }
 
-/// Adversarial: a bad `--backend` value fails closed at clap parse time — exit 2,
+/// Adversarial: a bad `--backend` value fails closed at clap parse time, exit 2,
 /// naming the rejected value on a plain (escape-free) stderr, unchanged by
 /// `NO_COLOR`. Confirms the color layer never corrupts the user-error exit path.
 #[test]

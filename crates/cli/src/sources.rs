@@ -95,7 +95,7 @@ fn source_http_config(_args: &ScanArgs, ua_suffix: &str) -> keyhog_sources::http
 /// recursively by its covering parent, so keeping it would double-report every
 /// file under it. Exact duplicates keep their first occurrence; a nested root is
 /// always absorbed by its ancestor regardless of argument order. Folds are
-/// announced on stderr — never silent (Law 10) — and the surviving roots are
+/// announced on stderr, never silent (Law 10), and the surviving roots are
 /// returned in first-seen order so finding output stays deterministic. An empty
 /// request yields an empty result (the caller then builds no filesystem source,
 /// exactly as a path-less `--stdin`/remote-only scan expects).
@@ -184,7 +184,7 @@ pub(crate) fn build_sources(
     if staged_include_set_exhausted {
         sources.push(Box::new(EmptySource::new("git-staged/excluded")));
     } else {
-        // Each requested root becomes its own filesystem source — the scan
+        // Each requested root becomes its own filesystem source, the scan
         // engine already merges this `Vec<Box<dyn Source>>`, so multi-root
         // (`keyhog scan a/ b/ c/`) needs no engine change. Overlapping/nested
         // roots are folded into their covering parent (loudly) so a subtree is
@@ -635,7 +635,7 @@ fn get_staged_files(repo_path: Option<&std::path::Path>) -> Result<Vec<PathBuf>>
     // DF-03: detect "not a git repository" BEFORE running `git diff --cached`,
     // so the operator gets a clean, actionable message instead of a raw git
     // error leaking out of the diff invocation. `rev-parse --is-inside-work-tree`
-    // is the canonical probe — it succeeds inside a repo (incl. worktrees /
+    // is the canonical probe, it succeeds inside a repo (incl. worktrees /
     // submodules / subdirectories where a bare `.git` filesystem check would
     // miss) and exits non-zero with "fatal: not a git repository" outside one.
     {

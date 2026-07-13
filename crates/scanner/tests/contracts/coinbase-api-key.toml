@@ -15,7 +15,7 @@ reason = "Env-var assignment shape with another valid Coinbase key ID."
 
 [[negative]]
 text = "organizations/teamA/apiKeys/listAll"
-reason = "Body is not hex/UUID — pattern requires [a-f0-9-]+."
+reason = "Body is not hex/UUID (pattern requires [a-f0-9-]+)."
 
 [[evasion]]
 text = "POST /v1/orders HTTP/1.1\\nAuthorization: organizations/7d3e5b8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d/apiKeys/4c9a8f6e-3b7d-1a2c-5e8f-0b9d6a3c4e1f"

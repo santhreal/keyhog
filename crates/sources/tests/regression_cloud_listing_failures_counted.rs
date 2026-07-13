@@ -6,7 +6,7 @@ use keyhog_core::{Chunk, Source, SourceError};
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 // The whole file is `#![cfg(any(azure, gcs, s3))]` and all three providers'
 // tests below assert skip-count deltas, so these are used under every enabled
-// variant — the import must NOT be narrowed to `azure` alone (that made
+// variant, the import must NOT be narrowed to `azure` alone (that made
 // `--features s3` / `gcs` fail with `skip_counts`/`SkipCounts`/`SourceLimits`
 // not in scope).
 use keyhog_sources::{skip_counts, SkipCounts, SourceLimits};
@@ -19,7 +19,7 @@ static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 fn counter_guard() -> MutexGuard<'static, ()> {
     // These httpmock tests point the cloud endpoint at 127.0.0.1, which the
     // default cloud SSRF endpoint screen now refuses. Opt into the loud,
-    // default-off allowance for the lifetime of this (separate) test binary —
+    // default-off allowance for the lifetime of this (separate) test binary 
     // set while holding COUNTER_LOCK so it can never race a parallel test.
     let guard = COUNTER_LOCK
         .lock()

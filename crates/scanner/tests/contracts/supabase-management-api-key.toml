@@ -15,7 +15,7 @@ reason = "Standard env-var assignment for sb_secret_ shape."
 
 [[negative]]
 text = "sb_other_aBcDeFgHiJkLmNoPqRsTuV_AbCdEfGh"
-reason = "Wrong middle keyword — only publishable/secret are valid."
+reason = "Wrong middle keyword (only publishable/secret are valid)."
 
 [[negative]]
 text = "sb_publishable_short_AbCdEfGh"

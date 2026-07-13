@@ -1,6 +1,6 @@
 //! End-to-end CLI contract for the top-level surface plus the `daemon`
 //! start/stop/status subcommand tree, driven through the REAL shipped binary
-//! (`env!("CARGO_BIN_EXE_keyhog")`) — the exact path an operator hits.
+//! (`env!("CARGO_BIN_EXE_keyhog")`) (the exact path an operator hits).
 //!
 //! Every assertion pins a CONCRETE value: an exact stdout line, an exact exit
 //! code, a specific error phrase, or a cross-checked count/contract sourced

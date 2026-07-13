@@ -24,11 +24,11 @@ reason = "32-char hex form (betterleaks homefield ground-truth shape); locks the
 
 [[negative]]
 text = "WANDB_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "WANDB_API_KEY=034b1EXAMPLEEXAMPLE44a55"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 # ---- EVASION (adversarial) -----------------------------------------
 

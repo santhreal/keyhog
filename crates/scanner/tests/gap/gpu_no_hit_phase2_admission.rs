@@ -1,7 +1,7 @@
 //! Static fail-closed guard: the coalesced no-hit admission gate must consult the
 //! real active phase-2 set, so a chunk that fires no Hyperscan literal but does
 //! activate an anchorless / keyword-less fallback detector (asana-pat and ~3100
-//! similar, issue #69) is still driven through phase 2 — regardless of whether the
+//! similar, issue #69) is still driven through phase 2, regardless of whether the
 //! triggers were produced by the CPU Hyperscan prefilter or the GPU region route.
 //!
 //! Both producers feed the SHARED `scan_coalesced_phase2`, whose no-hit branch
@@ -38,8 +38,8 @@ fn no_hit_admission_consults_active_phase2_set() {
          prefixless / keyword-less detector recall on raw and normalized no-literal chunks"
     );
 
-    // The shared coalesced phase-2 tail — fed by BOTH the CPU Hyperscan prefilter
-    // and the GPU region route — must route no-trigger chunks through that gate.
+    // The shared coalesced phase-2 tail, fed by BOTH the CPU Hyperscan prefilter
+    // and the GPU region route (must route no-trigger chunks through that gate).
     assert!(
         scan.contains("scan_coalesced_phase2_with_admission")
             && scan.contains("admitted_by_phase2_gpu")

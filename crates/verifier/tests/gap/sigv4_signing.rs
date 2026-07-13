@@ -79,7 +79,7 @@ fn mirror_string_to_sign(
 }
 
 /// Mirror of the Authorization header grammar in `aws.rs::build_sigv4_request`.
-/// Note: the session token is deliberately NOT in this header — it travels only
+/// Note: the session token is deliberately NOT in this header, it travels only
 /// as the signed `x-amz-security-token` request header.
 fn mirror_auth_header(
     access_key: &str,
@@ -193,7 +193,7 @@ fn sigv4_amz_date_always_16_chars_t_and_z_anchored() {
 
 #[test]
 fn sigv4_amz_date_first_eight_equal_date_stamp() {
-    // The signer reuses date_stamp inside amz_date — they must agree on the
+    // The signer reuses date_stamp inside amz_date, they must agree on the
     // leading YYYYMMDD. A mismatch would corrupt the credential scope.
     for secs in [
         0u64,
@@ -452,7 +452,7 @@ fn sigv4_canonical_headers_trailing_newline_per_header() {
 #[test]
 fn sigv4_canonical_headers_count_matches_signed_headers_count() {
     // The number of canonical-header lines must equal the number of
-    // ';'-separated SignedHeaders entries — both with and without a token.
+    // ';'-separated SignedHeaders entries (both with and without a token).
     for token in [None, Some("session-token-abc")] {
         let (canon, signed) = mirror_signed_headers("host.example", "20240101T000000Z", token);
         let header_lines = canon.trim_end_matches('\n').split('\n').count();
@@ -594,7 +594,7 @@ fn sigv4_auth_header_grammar_for_akia() {
 #[test]
 fn sigv4_auth_header_for_asia_does_not_carry_session_token() {
     // For ASIA temp creds the SignedHeaders list grows, but the session token
-    // itself never appears in the Authorization header — it rides the
+    // itself never appears in the Authorization header, it rides the
     // x-amz-security-token request header only.
     let (date_stamp, _) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let scope = mirror_credential_scope(&date_stamp, "us-east-1", "sts");
@@ -647,7 +647,7 @@ fn sigv4_timestamps_deterministic_repeat() {
 #[test]
 fn sigv4_timestamps_monotonic_lexicographic_over_range() {
     // For increasing unix seconds, amz_date (a zero-padded fixed-width
-    // timestamp) must be lexicographically non-decreasing — a property AWS
+    // timestamp) must be lexicographically non-decreasing, a property AWS
     // relies on for scope/date ordering. Step across many days.
     let mut prev: Option<(u64, String)> = None;
     let mut secs = 0u64;
@@ -688,7 +688,7 @@ fn sigv4_property_components_in_valid_calendar_ranges() {
 #[test]
 fn sigv4_property_seconds_of_day_decompose_exactly() {
     // hour*3600 + minute*60 + second must equal (unix_secs % 86400) for any
-    // input — the time-of-day half of the algorithm, independent of the date.
+    // input (the time-of-day half of the algorithm, independent of the date).
     for secs in [
         0u64,
         1,
@@ -737,7 +737,7 @@ fn sigv4_security_token_with_special_chars_embedded_verbatim() {
 
 #[test]
 fn sigv4_empty_token_string_still_produces_token_header_line() {
-    // The header builder does not itself filter empties — that filtering happens
+    // The header builder does not itself filter empties, that filtering happens
     // upstream in build_aws_probe via `.filter(|t| !t.is_empty())`. So if a
     // Some("") ever reaches the builder, it emits an (empty-valued) line. This
     // pins the builder's documented behavior precisely.
@@ -776,7 +776,7 @@ fn sigv4_full_first_day_hour_marks() {
 
 #[test]
 fn sigv4_minute_and_second_zero_padding() {
-    // 1970-01-01 00:05:09 — verifies single-digit minute/second are zero-padded.
+    // 1970-01-01 00:05:09 (verifies single-digit minute/second are zero-padded).
     let (d, a) = TestApi.format_sigv4_timestamps(5 * 60 + 9);
     assert_eq!(d, "19700101");
     assert_eq!(a, "19700101T000509Z");

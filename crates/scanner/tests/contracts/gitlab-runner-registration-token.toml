@@ -19,7 +19,7 @@ reason = "Body below the 20-char minimum after the prefix; not a runner token."
 
 [[negative]]
 text = 'ref = GR9999999aB3xY7kL9mN2pQ5rS8tU1vW'
-reason = "Wrong prefix number — only the fixed GR1348941 prefix is a runner registration token."
+reason = "Wrong prefix number (only the fixed GR1348941 prefix is a runner registration token)."
 
 [[evasion]]
 text = 'export CI_TOKEN="GR1348941aB3xY7kL9mN2pQ5rS8tU1vW"'

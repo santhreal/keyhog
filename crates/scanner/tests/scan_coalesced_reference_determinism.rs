@@ -22,7 +22,7 @@ use keyhog_core::{Chunk, ChunkMetadata};
 
 /// One fully-comparable projection of a `RawMatch`, mirroring the calibration's
 /// `CanonicalMatch` tuple (chunk index, detector, credential hash, file, line,
-/// offset) — every field the reference-consistency check compares.
+/// offset) (every field the reference-consistency check compares).
 type Record = (usize, String, String, Option<String>, Option<usize>, usize);
 
 fn canonical(results: &[Vec<keyhog_core::RawMatch>]) -> BTreeSet<Record> {
@@ -42,7 +42,7 @@ fn canonical(results: &[Vec<keyhog_core::RawMatch>]) -> BTreeSet<Record> {
     out
 }
 
-/// Build a fixed chunk set from the committed `demo/` tree — the exact corpus
+/// Build a fixed chunk set from the committed `demo/` tree, the exact corpus
 /// whose calibration aborted. The committed files are repeated only as needed
 /// to saturate the rayon pool, so concurrency coverage does not depend on a
 /// private mirror corpus or turn this correctness gate into a scale benchmark.
@@ -99,7 +99,7 @@ fn fixed_chunks() -> Vec<Chunk> {
 
     assert!(
         !chunks.is_empty(),
-        "fixed chunk set is empty — demo/ corpus missing"
+        "fixed chunk set is empty, demo/ corpus missing"
     );
     // Eight deterministic real files provide varied syntax and findings; the
     // repetition below supplies concurrency. Scanning the entire demo tree on

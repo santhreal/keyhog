@@ -175,7 +175,7 @@ impl CompiledScanner {
                 // `bypass`/`compass`/`surpass`/...). The longer keywords
                 // (`password`, `token`, `secret`, `api_key`, ...) deliberately
                 // keep substring matching so concatenated no-separator keys like
-                // `DBPASSWORD=` / `apitoken=` still bridge — measured on CredData,
+                // `DBPASSWORD=` / `apitoken=` still bridge, measured on CredData,
                 // enforcing the boundary on every keyword cost ~36 real positives
                 // for no precision gain. `pass` alone needs the guard because its
                 // false-substring family (`bypass=`/`compass=`) is common.
@@ -226,8 +226,8 @@ impl CompiledScanner {
                 // Entropy gate: reject low-entropy values (variable names, prose).
                 // Routed through the SINGLE threshold-aware
                 // `crate::adjudicate::generic_entropy_floor` owner (via
-                // `generic_bridge_entropy_below_floor`) — the same source of truth
-                // the named-detector generic path uses — so the per-family,
+                // `generic_bridge_entropy_below_floor`), the same source of truth
+                // the named-detector generic path uses, so the per-family,
                 // length-bucketed base floor (Tier-B `entropy_floor` data in each
                 // generic detector's TOML) is identical AND the operator's Tier-A
                 // `--entropy-threshold` tightens this gate too. Raising the knob
@@ -236,7 +236,7 @@ impl CompiledScanner {
                 let entropy = crate::pipeline::match_entropy(value.as_bytes());
                 // KH-L-0110: a complete pure-hex value of canonical key length
                 // (32/48) under a STRONG credential keyword is a real key, not a
-                // hash digest — exempt it from the bare-hex-digest shape gate
+                // hash digest, exempt it from the bare-hex-digest shape gate
                 // (every other gate still applies). See the helper for the
                 // CredData/mirror soundness argument.
                 let allow_canonical_hex_key =
@@ -310,7 +310,7 @@ impl CompiledScanner {
                 // GENERIC_SECRET floor. This per-detector
                 // re-validation MUST honor the knob exactly as the shape-file
                 // gate (`generic_value_shape_rejected` →
-                // `generic_bridge_entropy_below_floor`) does — otherwise the knob
+                // `generic_bridge_entropy_below_floor`) does, otherwise the knob
                 // is silently HALF-WIRED: the shape gate admits the low-entropy
                 // value under the relaxed floor, then this re-check drops it again
                 // under the strict owning-detector floor (the #9 regression).
@@ -360,7 +360,7 @@ impl CompiledScanner {
                     }
                 }
 
-                // BPE "rare-not-random" gate — LAST, so it only tokenizes values
+                // BPE "rare-not-random" gate. LAST, so it only tokenizes values
                 // that survived every cheaper generic shape gate (bounded cost),
                 // mirroring the entropy path. Word-like values (dotted API paths,
                 // prose, XML) are non-secrets. Mirror-safe: verified 0 word-like
@@ -388,7 +388,7 @@ impl CompiledScanner {
                         crate::adjudicate::GenericBridgeSignal::ValueShape(reason),
                     );
                     // A VALUE-SHAPE rejection is about the captured value's shape,
-                    // so the suppression telemetry must be keyed on `value` — NOT
+                    // so the suppression telemetry must be keyed on `value`: NOT
                     // the anchoring `keyword` (matching the `BareAuthUnstructured`
                     // value-based drop above). Keying it on the keyword hid the
                     // gate name (`base64_blob`, …) behind the keyword token, so the

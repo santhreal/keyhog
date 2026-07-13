@@ -8,7 +8,7 @@
 //! entropy/generic sweep if `should_scan_no_hit_chunk` admits it, and that
 //! predicate's `no_hit_text_admits` gates the entropy/generic checks behind
 //! `small_chunk = text.len() <= NO_HIT_ENTROPY_ADMISSION_MAX_BYTES` (32 KiB). The
-//! per-chunk path (`scan`) has NO such size gate — any alphabet-screen-passing
+//! per-chunk path (`scan`) has NO such size gate, any alphabet-screen-passing
 //! chunk runs the full entropy sweep regardless of size. So a >32 KiB no-trigger
 //! chunk carrying an anchorless entropy token is exactly where the two paths
 //! COULD diverge (coalesced silently dropping a finding the per-chunk path keeps).
@@ -18,11 +18,11 @@
 //! 10k cases, `scanner_invariants_full_corpus_proptest`) only feed SMALL inputs
 //! (≤3072 bytes), so they never cross the 32 KiB boundary. This test pins the
 //! boundary explicitly: measured on the shipped binary, both pipelines surface
-//! the same `entropy-token` on a 40 KiB chunk — the coalesced admission gate
+//! the same `entropy-token` on a 40 KiB chunk, the coalesced admission gate
 //! admits the large chunk (chunk windowing / the always-active phase-2 pre-check
 //! fire before the size gate), so parity holds. A future change that made the
 //! `small_chunk` gate authoritative for the whole chunk would drop the token on
-//! the coalesced path and turn this red — a real Law-10 recall divergence between
+//! the coalesced path and turn this red, a real Law-10 recall divergence between
 //! `--backend simd` (per-chunk) and `--backend gpu` / `--batch-pipeline`
 //! (coalesced), which is exactly the M-02 parity surface.
 //!
@@ -59,7 +59,7 @@ static SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
 
 /// A 44-char high-entropy token built from a fixed permutation of the alnum
 /// alphabet. 62 and 37 are coprime, so `(i*37+11) % 62` visits distinct residues
-/// — 44 distinct characters, well above the entropy floor — WITHOUT ever writing
+///: 44 distinct characters, well above the entropy floor. WITHOUT ever writing
 /// a secret-shaped literal into this source file (dogfood-self-scan safe).
 fn entropy_token() -> String {
     const AL: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -98,7 +98,7 @@ fn large_no_hit_chunk_with_entropy_token(token: &str) -> Chunk {
     }
 }
 
-/// (detector_id, credential, offset) — order-independent finding identity.
+/// (detector_id, credential, offset) (order-independent finding identity).
 fn keyset(matches: &[keyhog_core::RawMatch]) -> BTreeSet<(String, String, usize)> {
     matches
         .iter()
@@ -131,7 +131,7 @@ fn coalesced_matches_per_chunk_on_large_no_hit_entropy_chunk() {
     let coalesced = keyset(&coalesced_nested[0]);
 
     // NON-VACUITY (Law 6): the >32 KiB chunk must actually be scanned by BOTH
-    // paths — the anchorless entropy token is found, not silently size-gated away.
+    // paths (the anchorless entropy token is found, not silently size-gated away).
     // A test that passed on two empty sets would be decoration.
     assert!(
         per_chunk
@@ -146,6 +146,6 @@ fn coalesced_matches_per_chunk_on_large_no_hit_entropy_chunk() {
     assert_eq!(
         per_chunk, coalesced,
         "coalesced batch producer diverged from per-chunk on a >32 KiB no-trigger \
-         entropy chunk — the small_chunk admission gate silently dropped/added a finding"
+         entropy chunk, the small_chunk admission gate silently dropped/added a finding"
     );
 }

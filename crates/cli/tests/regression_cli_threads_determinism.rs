@@ -3,7 +3,7 @@
 //! Concurrency must not change what keyhog finds. Scanning the SAME
 //! multi-file corpus with `--threads 1` and `--threads 4` (and every
 //! other worker count) must yield the byte-identical, order-independent
-//! finding set and the same exit code — otherwise the scan is racy and a
+//! finding set and the same exit code, otherwise the scan is racy and a
 //! CI gate would flap on core count. These tests drive the REAL shipped
 //! `keyhog` binary (`env!("CARGO_BIN_EXE_keyhog")`) over a `TempDir`
 //! corpus planted OUTSIDE the workspace (so repo `.gitignore`/test-path
@@ -296,7 +296,7 @@ fn detector_id_multiset_identical_across_thread_counts() {
     let base = sorted_detector_ids(&parse_findings(&run_scan(dir.path(), "1").0));
     let multi = sorted_detector_ids(&parse_findings(&run_scan(dir.path(), "4").0));
 
-    // Multiset (duplicates preserved) — catches a thread count that drops
+    // Multiset (duplicates preserved), catches a thread count that drops
     // or duplicates a detection without changing the unique-hash set.
     assert_eq!(
         base, multi,

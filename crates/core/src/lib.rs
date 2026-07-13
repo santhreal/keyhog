@@ -94,13 +94,13 @@ pub fn embedded_detector_count() -> usize {
 /// Age (seconds) after which an abandoned `*.tmp` working file is considered
 /// stale and safe to remove. ONE owner for the tmp-file hygiene policy shared by
 /// `calibration` (calibration cache) and `merkle_index::tmp_hygiene` (index
-/// build) — both used to define their own `60 * 60` const, which could silently
+/// build), both used to define their own `60 * 60` const, which could silently
 /// drift apart.
 pub(crate) const STALE_TMP_CUTOFF_SECS: u64 = 60 * 60;
 
 /// The `keyhog` path component under the OS cache root. ONE owner for the
 /// cache-root segment shared by the calibration cache, the merkle index, and the
-/// lockdown past-findings gate — a rename here moves all three together so the
+/// lockdown past-findings gate, a rename here moves all three together so the
 /// lockdown scan can never desynchronize from where scan artifacts actually land.
 pub(crate) const KEYHOG_CACHE_SUBDIR: &str = "keyhog";
 
@@ -114,14 +114,14 @@ pub(crate) fn keyhog_cache_root() -> Option<std::path::PathBuf> {
 ///
 /// This is the SINGLE loader every entrypoint shares (the `scan` orchestrator
 /// via `cli::orchestrator_config`, and every other scan entry point) so the
-/// fail-closed contract holds uniformly — there is exactly one way to turn the
+/// fail-closed contract holds uniformly, there is exactly one way to turn the
 /// compiled-in corpus into `DetectorSpec`s.
 ///
 /// Law 10 (NO SILENT FALLBACKS): the embedded set is baked into the binary by
 /// `build.rs`; a TOML that fails to parse is a BUILD/SOURCE bug, never a runtime
 /// condition the operator can act on (the user cannot have edited a compiled-in
 /// string). The old per-callsite `tracing::debug!`-then-`continue` shape silently
-/// dropped the offender — exactly how the dead `discord-bot-token` detector (a
+/// dropped the offender, exactly how the dead `discord-bot-token` detector (a
 /// single-quoted TOML literal that broke parsing) reached a benched release as an
 /// invisible recall hole. So this collects every offender and returns
 /// [`SpecError::EmbeddedCorpusCorrupt`] naming each, making a corrupt corpus a
@@ -180,7 +180,7 @@ pub fn embedded_detector_specs() -> &'static [DetectorSpec] {
 /// shares (entropy plausibility gates, entropy-scanner resolution, adjudication
 /// confidence/length floors). Before this, three separate
 /// `LazyLock<HashMap<String, DetectorSpec>>` statics each called
-/// [`load_embedded_detectors_or_fail`] and rebuilt an identical map — the
+/// [`load_embedded_detectors_or_fail`] and rebuilt an identical map, the
 /// compiled-in corpus was parsed three times at startup (Law 7) and the same
 /// lookup lived in three places (ONE PLACE). The map borrows from
 /// [`embedded_detector_specs`] (the one materialized corpus) rather than holding
@@ -213,7 +213,7 @@ pub fn git_hash() -> &'static str {
 /// Digest identifying the EXACT embedded detector set compiled into this binary
 /// (`<count>-<fnv1a_hex>`). Stamped by `build.rs` via
 /// `cargo:rustc-env=KEYHOG_DETECTOR_DIGEST`. Lets the benchmark and `--version`
-/// assert the running binary's detectors match the on-disk `detectors/` tree —
+/// assert the running binary's detectors match the on-disk `detectors/` tree 
 /// the authoritative answer to "what got compiled in" when cargo's
 /// `rerun-if-changed` can't be trusted across in-place TOML edits.
 #[inline]

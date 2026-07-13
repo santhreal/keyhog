@@ -4,7 +4,7 @@
 //! signature is independent of the ORDER and the CASE in which the client hands
 //! over headers and query parameters. SigV4 canonicalization sorts headers (via a
 //! `BTreeMap`), lowercases their names, collapses value whitespace, and sorts the
-//! encoded query pairs — so permuting or re-casing the inputs must produce a
+//! encoded query pairs, so permuting or re-casing the inputs must produce a
 //! byte-identical `Authorization` and `SignedHeaders`. If it did not, a signed
 //! request would be non-reproducible and AWS would reject the verifier's probe at
 //! random. Uses the SSRF sweep's hand-rolled LCG (no `proptest` dev-dep here);
@@ -26,7 +26,7 @@ const HEADER_NAMES: &[&str] = &[
 ];
 const VALUE_CHARS: &[u8] = b"abcXYZ019 -._";
 
-// Fixed request context — only header/query order+case varies between the two
+// Fixed request context, only header/query order+case varies between the two
 // signings, so any signature difference isolates a canonicalization-order bug.
 const ACCESS_KEY: &str = "AKIDEXAMPLE";
 const SECRET_KEY: &str = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
@@ -102,7 +102,7 @@ fn sigv4_signature_is_invariant_under_header_and_query_reorder_and_case() {
             .iter()
             .map(|n| ((*n).to_string(), build_value(&mut state)))
             .collect();
-        // Query pairs — duplicate keys allowed; the full (k,v) pairs are sorted.
+        // Query pairs (duplicate keys allowed; the full (k,v) pairs are sorted).
         let qcount = (lcg(&mut state) as usize) % 5;
         let query: Vec<(String, String)> = (0..qcount)
             .map(|_| (build_value(&mut state), build_value(&mut state)))
@@ -123,7 +123,7 @@ fn sigv4_signature_is_invariant_under_header_and_query_reorder_and_case() {
 
         assert_eq!(
             auth_a, auth_b,
-            "SigV4 Authorization changed under header/query reorder+recase — \
+            "SigV4 Authorization changed under header/query reorder+recase. \
              canonicalization is not order-stable. headers={headers:?} query={query:?}",
         );
         assert_eq!(

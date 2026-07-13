@@ -21,7 +21,7 @@ fn telemetry_serial_lock_recovers_from_poisoned_test_lock() {
 }
 
 /// `reset_for_scan` is the single per-scan reset owner. It must zero EVERY
-/// coverage-gap counter — the historical bug omitted `STRUCTURED_OVERSIZE_SKIPS`
+/// coverage-gap counter, the historical bug omitted `STRUCTURED_OVERSIZE_SKIPS`
 /// so an oversize-skip count leaked into the next scan's report. Driving the reset
 /// through `ScannerCoverageGapEvent::ALL` makes forgetting a counter impossible.
 /// Migrated from an inline `mod reset_owner_tests` (per-scan counters are

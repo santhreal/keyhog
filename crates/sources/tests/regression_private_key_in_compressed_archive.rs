@@ -1,10 +1,10 @@
 //! #138 cross-source lock (compressed-container half): a MULTI-LINE private key
-//! inside a gzipped tarball (`.tgz` / `.tar.gz` — the dominant npm/release
+//! inside a gzipped tarball (`.tgz` / `.tar.gz`: the dominant npm/release
 //! package format) OR a bare gzipped file (`*.gz`) must be decompressed and
 //! delivered byte-intact, exactly like the plain zip/tar case.
 //!
 //! The compressed path is distinct: bytes are gzip-decompressed first, then
-//! either untarred (tarball) or scanned as a single decompressed leaf — both
+//! either untarred (tarball) or scanned as a single decompressed leaf, both
 //! emit `filesystem/archive` chunks. If decompression reflowed or split the key
 //! block the `private-key` / `putty-private-key` detector could never match, so
 //! a key shipped in a release tarball would silently fall through. These tests
@@ -72,7 +72,7 @@ fn archive_chunk_with<'a>(
 
 /// A bare `.gz` of a single file decompresses to ONE leaf chunk tagged
 /// `filesystem/compressed` (not `filesystem/archive`, which is for tar/zip
-/// entries) — see `extract_compressed_chunks`. These helpers target that leaf.
+/// entries) (see `extract_compressed_chunks`. These helpers target that leaf).
 fn compressed_chunk_with<'a>(
     chunks: &'a [keyhog_core::Chunk],
     needle: &str,
@@ -336,7 +336,7 @@ fn empty_tgz_does_not_panic_and_yields_no_key() {
 #[test]
 fn non_gzip_named_tgz_does_not_panic() {
     // Random bytes named .tgz: gzip decode fails (surfaced as an error, Law 10),
-    // no archive chunk, and crucially no panic — we reach this line.
+    // no archive chunk, and crucially no panic (we reach this line).
     let junk: Vec<u8> = (0u8..=255).cycle().take(4096).collect();
     let (_d, chunks) = scan_archive("bad.tgz", &junk);
     assert!(archive_chunk_with(&chunks, "-----BEGIN RSA PRIVATE KEY-----").is_none());
@@ -345,7 +345,7 @@ fn non_gzip_named_tgz_does_not_panic() {
 #[test]
 fn pem_in_tar_gz_double_extension_surfaces() {
     // The other common naming (`release.tar.gz`, not `.tgz`) routes through the
-    // `.gz` branch then untars — it must surface the key just the same.
+    // `.gz` branch then untars (it must surface the key just the same).
     let (_d, chunks) = scan_archive("release.tar.gz", &tgz("id_rsa.pem", PEM_KEY));
     assert!(
         unpacked_text(&chunks).contains(PEM_INTERIOR_SENTINEL),

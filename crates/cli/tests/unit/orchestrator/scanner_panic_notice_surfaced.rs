@@ -19,7 +19,7 @@ fn a_panicked_scan_produces_an_unmissable_incomplete_notice() {
         .scanner_panic_notice_for_test(true)
         .expect("a mid-scan panic must produce a notice");
     // It must name the incompleteness and warn against reading "0 secrets" as
-    // clean — the whole point of surfacing it (not just a tracing::error).
+    // clean (the whole point of surfacing it (not just a tracing::error)).
     assert!(
         notice.contains("INCOMPLETE") && notice.contains("PARTIAL"),
         "the notice must state the scan was incomplete and results are partial; got: {notice}"

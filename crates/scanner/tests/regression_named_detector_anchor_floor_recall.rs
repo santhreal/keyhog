@@ -1,6 +1,6 @@
 //! Regression: a service-anchored ("named") detector match carrying a strong
-//! anchor — a required keyword **context anchor** (`Splunk=<uuid>`) OR a
-//! distinctive **literal prefix** (`cs_…` cloudsmith, `pl_…` promptlayer) — must
+//! anchor, a required keyword **context anchor** (`Splunk=<uuid>`) OR a
+//! distinctive **literal prefix** (`cs_…` cloudsmith, `pl_…` promptlayer), must
 //! clear the `min_confidence` floor on the strength of that anchor alone.
 //!
 //! `compute_confidence` is a normalized signal sum: it divides earned weight by
@@ -8,7 +8,7 @@
 //! companion, ...). A match that earns ONLY the anchor weight structurally
 //! cannot earn the others, so a real `Splunk=<uuid>` or a bare `cs_<34 alnum>`
 //! token landed below the default `0.40` floor and was dropped as
-//! `below_min_confidence` — the dominant cause of the strict contract-positive
+//! `below_min_confidence`: the dominant cause of the strict contract-positive
 //! misses.
 //!
 //! The fix lifts such matches to [`NAMED_DETECTOR_ANCHOR_FLOOR`] when
@@ -75,7 +75,7 @@ fn named_detector_anchor_floor_lifts_only_named_anchored_matches() {
         NAMED_DETECTOR_ANCHOR_FLOOR,
         "named + anchored match must lift to the floor"
     );
-    // Not named (generic / entropy / weak-anchor): unchanged — the collision-
+    // Not named (generic / entropy / weak-anchor): unchanged, the collision-
     // prone shapes keep the full gate stack.
     assert_eq!(
         apply_named_detector_anchor_floor(0.30, false, true),

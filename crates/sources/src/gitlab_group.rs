@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn validate_token_rejects_control_chars_and_empty() {
-        // A clean PAT passes (a benign non-credential-shaped value — never a
+        // A clean PAT passes (a benign non-credential-shaped value, never a
         // `glpat-`-prefixed literal, which self-scan would flag).
         assert!(validate_token("clean-token-value").is_ok());
 

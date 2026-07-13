@@ -46,13 +46,13 @@ fn shift_25_rotates_bljb_into_akia() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin representative rotations; these SWEEP the algebraic
 // contract the decoder's rotated-prefix soundness proof relies on. `caesar_shift`
-// must be an exact position-wise rotation that composes additively mod 26 — if it
+// must be an exact position-wise rotation that composes additively mod 26, if it
 // were not a clean bijection, the AC rotated-prefix gate could admit or drop
 // candidates unsoundly. No proptest covered it before.
 //
 // SHIFT BOUND: shifts are kept within the non-overflowing range. `caesar_shift`
 // computes `(ch - base + shift) % 26` as u8, so a letter at offset 25 (`z`/`Z`)
-// with `shift >= 231` overflows the add BEFORE the mod (25 + 231 = 256) — a
+// with `shift >= 231` overflows the add BEFORE the mod (25 + 231 = 256), a
 // latent debug-panic on the public facade (filed in BACKLOG; production callers
 // only ever pass 1..=25, so this is not production-reachable). By mod-26, the
 // 0..26 range covers every semantically distinct rotation regardless.
@@ -62,7 +62,7 @@ use proptest::prelude::*;
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
-    /// GROUP LAW: rotations compose additively mod 26 —
+    /// GROUP LAW: rotations compose additively mod 26 
     /// `shift(shift(s, a), b) == shift(s, (a + b) % 26)`. This single invariant
     /// subsumes ROT13 self-inverse (a=b=13 ⇒ 0 ⇒ identity), the forward and
     /// wrap-past-Z cases, and every round-trip. Over arbitrary Unicode `s`

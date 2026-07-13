@@ -141,7 +141,7 @@ fn info_severity_maps_to_note_level() {
 
 /// One document with all six severities: the level column must be exactly the
 /// mapped strings, in order, and the ONLY level values that ever appear are the
-/// three SARIF levels — never a raw "critical"/"high"/"low" leaking through.
+/// three SARIF levels (never a raw "critical"/"high"/"low" leaking through).
 #[test]
 fn all_six_severities_level_column_and_only_three_levels() {
     let json = render_sarif(&[
@@ -441,7 +441,7 @@ fn properties_metadata_flattened_with_prefix() {
         Some("123456789012"),
         "metadata.<key> must flatten into properties with the value verbatim"
     );
-    // The bare (un-prefixed) key must NOT exist — the prefix is load-bearing so
+    // The bare (un-prefixed) key must NOT exist, the prefix is load-bearing so
     // metadata can never collide with a first-class property like `cwe`.
     assert!(
         props.get("account_id").is_none(),

@@ -19,8 +19,8 @@ fn binary() -> PathBuf {
 /// Spawn `keyhog watch [extra] <dir>`, draining its stderr on a background thread
 /// into a shared buffer so a caller can poll for a marker DETERMINISTICALLY
 /// instead of racing a fixed sleep against ~900-detector debug-build compilation
-/// (the old `sleep(300ms)` sampled an empty window — the compile hadn't reached
-/// the banner yet — so a byte-length check passed vacuously on two empty outputs).
+/// (the old `sleep(300ms)` sampled an empty window, the compile hadn't reached
+/// the banner yet (so a byte-length check passed vacuously on two empty outputs)).
 fn spawn_watch_streaming(
     extra: &[&str],
     dir: &std::path::Path,
@@ -136,7 +136,7 @@ fn watch_quiet_flag_suppresses_status_messages() {
 
     // Non-quiet: once ~900-detector compilation finishes, watch.rs prints the
     // "    watching: <root>" banner to stderr. Poll for it deterministically (no
-    // fixed-sleep race — Law 7) instead of sampling a fixed window the debug
+    // fixed-sleep race: Law 7) instead of sampling a fixed window the debug
     // compile blows through. Measure how long it took so the quiet window below
     // can be tied to THIS machine's compile latency.
     let (mut noisy, noisy_buf) = spawn_watch_streaming(&[], dir.path());
@@ -154,7 +154,7 @@ fn watch_quiet_flag_suppresses_status_messages() {
     // Quiet: the banner is gated behind `if !args.quiet`, so it must NEVER appear.
     // Give quiet a window of the observed noisy banner latency + a healthy margin,
     // so a regression that (wrongly) printed the banner under --quiet WOULD have
-    // done so within the window regardless of this machine's compile speed — then
+    // done so within the window regardless of this machine's compile speed, then
     // assert the banner was suppressed. This is the real --quiet contract, not a
     // byte-length proxy (Law 6).
     let (mut quiet, quiet_buf) = spawn_watch_streaming(&["--quiet"], dir.path());
@@ -293,7 +293,7 @@ fn watch_detects_changes_under_every_root() {
     std::fs::write(root_a.path().join("a.env"), PLANTED).expect("write under root A");
     std::fs::write(root_b.path().join("b.env"), PLANTED).expect("write under root B");
 
-    // Both findings must reach stdout — the first AND the second root.
+    // Both findings must reach stdout (the first AND the second root).
     let both_found = wait_until_contains(&stdout_buf, &["a.env", "b.env"], Duration::from_secs(15));
     let _ = child.kill();
 

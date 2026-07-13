@@ -1,7 +1,7 @@
 //! Git-LFS pointer recognition.
 //!
 //! A file tracked by [Git LFS](https://git-lfs.github.com) is committed not as
-//! its real bytes but as a tiny text *pointer* — the actual blob lives in LFS
+//! its real bytes but as a tiny text *pointer*, the actual blob lives in LFS
 //! storage and is only materialised on `git lfs pull`. A canonical pointer is:
 //!
 //! ```text
@@ -17,8 +17,8 @@
 //! Two consumers share this recognition, which is why it lives in `core`:
 //!   * the scanner suppresses the pointer's 64-hex `oid` (it is a content hash,
 //!     not a leaked secret, yet matches a generic high-entropy hex shape), and
-//!   * a source records a coverage gap — the pointer's real blob (`size` bytes)
-//!     was NOT scanned — so a repo of unmaterialised LFS pointers is not
+//!   * a source records a coverage gap, the pointer's real blob (`size` bytes)
+//!     was NOT scanned, so a repo of unmaterialised LFS pointers is not
 //!     reported as a false-clean.
 //!
 //! Recognition is deliberately strict (all three well-formed lines, in order):
@@ -66,7 +66,7 @@ pub fn is_git_lfs_size_line(line: &[u8]) -> bool {
 /// between the anchors, matching real pointers.
 ///
 /// Cheap: an O(n) single pass over the (tiny, &lt;200 byte) pointer, and callers
-/// that scan large files should gate on the size/prefix first — a real pointer
+/// that scan large files should gate on the size/prefix first, a real pointer
 /// begins with [`GIT_LFS_VERSION_LINE`].
 pub fn is_git_lfs_pointer(content: &[u8]) -> bool {
     let mut has_version = false;

@@ -20,6 +20,6 @@ fn cargo_rdme_spec_waiver_has_expiry() {
     );
     assert!(
         spec_waiver_active(WAIVER_REL),
-        "SPEC waiver must not be expired — renew or wire cargo-rdme before expiry"
+        "SPEC waiver must not be expired, renew or wire cargo-rdme before expiry"
     );
 }

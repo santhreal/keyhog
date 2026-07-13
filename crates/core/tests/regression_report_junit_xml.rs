@@ -183,7 +183,7 @@ fn tallies_and_element_counts_scale_with_findings() {
 #[test]
 fn empty_findings_emit_exact_empty_suite() {
     let out = render(&[]);
-    // NB: no `\`-line-continuation — that strips the leading whitespace of the
+    // NB: no `\`-line-continuation, that strips the leading whitespace of the
     // next source line, which would drop the real 2-space indentation below.
     let expected = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n  <testsuite name=\"keyhog\" tests=\"0\" failures=\"0\" errors=\"0\" time=\"0.0\">\n  </testsuite>\n</testsuites>\n";
     assert_eq!(out, expected, "empty-suite bytes wrong");

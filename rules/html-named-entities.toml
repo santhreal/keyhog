@@ -8,7 +8,7 @@
 # Decoding an entity reveals its plaintext to the scanner, so extending this
 # table with more standard HTML5 named entities is a RECALL lever (a secret
 # hidden behind `&#...;`/`&name;` encoding becomes visible). Any addition is a
-# detection change — validate on the CredData corpus before shipping. Each value
+# detection change, validate on the CredData corpus before shipping. Each value
 # MUST be exactly one character; the table must be non-empty (build-time panic).
 
 [entities]

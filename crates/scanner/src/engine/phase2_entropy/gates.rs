@@ -128,7 +128,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // `broker1_keystore_creds` (bat-go docker-compose),
     // `s3_secret_access_key` (alist), train-case HTTP header
     // names, snake_case Go consts, etc.
-    // KH-L-0415: see the `looks_like_pure_identifier` note above — same measured
+    // KH-L-0415: see the `looks_like_pure_identifier` note above, same measured
     // no-op on both corpora, left as the plain gate by documented decision.
     if entropy_match.keyword != crate::entropy::ISOLATED_BARE_ENTROPY_LABEL
         && !(same_line_high_signal_assignment_owner
@@ -205,11 +205,11 @@ pub(crate) fn entropy_match_suppression_stage(
     //
     // CredData recall lane: release this gate ONLY when (a) the lift is
     // engaged for a credential-anchored candidate AND (b) the value is itself
-    // EXACTLY a UUID shape — `KEY = "<uuid>"` where the whole assigned value is
+    // EXACTLY a UUID shape: `KEY = "<uuid>"` where the whole assigned value is
     // the UUID, the CredData `UUID` miss class (LaunchDarkly SDK keys, Heroku
     // UUID keys, PowerBI client secrets are all UUID-bodied). A value that
     // merely CONTAINS a UUID as a substring of a longer payload
-    // (`TOKEN_LIST=<...uuid...>`) is still suppressed — that residual is a
+    // (`TOKEN_LIST=<...uuid...>`) is still suppressed, that residual is a
     // public identifier inside an env list, not a credential, and the MoE has
     // no anchor to arbitrate it. The whole-value UUID under a strong keyword is
     // the one the model can earn.
@@ -378,7 +378,7 @@ pub(crate) fn entropy_match_suppression_stage(
     if decode_evidence.decoded_contains_placeholder() {
         return Some(EntropyShapeStage::DecodedPlaceholder);
     }
-    // BPE "rare-not-random" precision gate — LAST, so it only tokenizes the few
+    // BPE "rare-not-random" precision gate. LAST, so it only tokenizes the few
     // candidates that survived every cheaper shape gate above. Word-like values
     // (dotted API paths like `PInvoke.User32.WM_*`, prose, XML) compress into a
     // handful of common cl100k_base subword tokens; real secrets tokenize into

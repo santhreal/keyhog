@@ -9,7 +9,7 @@ fn per_detector_hostile_near_miss_harness_exists() {
     let runner = tests_dir.join("per_detector_hostile_near_miss_runner.rs");
     assert!(
         runner.is_file(),
-        "KH-GAP-128: missing data-driven per-detector hostile near-miss runner — \
+        "KH-GAP-128: missing data-driven per-detector hostile near-miss runner. \
          only top-10 hand-written near_miss_must_not_fire twins exist"
     );
 }
@@ -42,7 +42,7 @@ fn near_miss_coverage_floor_meets_loaded_detector_count() {
 
     assert!(
         covered >= detectors.len(),
-        "KH-GAP-128: near-miss contract coverage {covered}/{} — \
+        "KH-GAP-128: near-miss contract coverage {covered}/{}. \
          per_detector_hostile_near_miss_runner must cover every loaded detector",
         detectors.len()
     );

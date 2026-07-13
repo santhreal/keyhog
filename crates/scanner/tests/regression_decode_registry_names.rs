@@ -9,7 +9,7 @@
 //! deliberately NOT in the default set (only `z85` from the ascii85/z85 family
 //! is), so a stray addition of them must be caught here.
 //!
-//! Every assertion pins a concrete literal name or index — a reorder, rename,
+//! Every assertion pins a concrete literal name or index, a reorder, rename,
 //! add, or drop turns one of these red. Host-independent: the registry
 //! composition is a pure compile-time vector, no accelerator involved.
 
@@ -186,7 +186,7 @@ fn base58_is_absent() {
 
 #[test]
 fn z85_is_present_at_index_ten() {
-    // z85 is the ONLY member of the ascii85/z85 family that ships by default —
+    // z85 is the ONLY member of the ascii85/z85 family that ships by default 
     // this pins that it is present (and where) so a swap for base32/base58 is caught.
     let names = default_decoder_names_for_test();
     assert_eq!(

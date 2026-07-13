@@ -6,7 +6,7 @@
 //! pass per chunk, so its truth table is load-bearing: a false negative skips
 //! fragment reassembly for that chunk (a recall loss), a false positive only
 //! wastes the cheap line walk. The memchr2/memchr3 rewrite must be exactly the
-//! OR-of-memchr boolean — this pins it.
+//! OR-of-memchr boolean (this pins it).
 
 use keyhog_scanner::testing::has_fragment_assignment_syntax_for_test as present;
 
@@ -34,8 +34,8 @@ fn fragment_prefilter_requires_assignment_and_quote() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vector pins the truth table on 10 examples; this SWEEPS it as a
 // DIFFERENTIAL: the memchr2/memchr3 SIMD implementation must EXACTLY equal the
-// naive OR-of-`contains` boolean — `(has '=' or ':') AND (has '"' or '\'' or '`')`
-// — for every byte string. A divergence is a per-chunk recall bug (false negative
+// naive OR-of-`contains` boolean: `(has '=' or ':') AND (has '"' or '\'' or '`')`
+//: for every byte string. A divergence is a per-chunk recall bug (false negative
 // skips fragment reassembly). Run over arbitrary bytes (edge/negative coverage)
 // and a marker-rich alphabet (balanced true/false). No proptest before.
 

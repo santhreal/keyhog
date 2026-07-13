@@ -226,7 +226,7 @@ fn validate_detector_allowlists(spec: &DetectorSpec, issues: &mut Vec<QualityIss
 
 fn validate_patterns_present(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     match spec.kind {
-        // A phase-1 regex detector is defined by its anchors — no patterns is an error.
+        // A phase-1 regex detector is defined by its anchors (no patterns is an error).
         DetectorKind::Regex => {
             if spec.patterns.is_empty() {
                 issues.push(QualityIssue::Error("no patterns defined".into()));
@@ -413,14 +413,14 @@ fn validate_regex_definition<'a>(
     regex_cache: &mut RegexAstCache<'a>,
 ) {
     let kind = kind.label();
-    // An empty regex is VALID syntax — it parses cleanly and matches the empty
+    // An empty regex is VALID syntax, it parses cleanly and matches the empty
     // string at EVERY position, so a detector carrying one fires on every byte
     // of every file: a catastrophic false-positive flood that the parse check
     // below cannot catch (it compiles fine). Reject it up front, fail closed.
     if regex.is_empty() {
         issues.push(QualityIssue::Error(format!(
             "{kind} {index} regex is empty; an empty pattern matches at every position \
-             (a catastrophic false-positive flood) — define a real anchor or remove the pattern"
+             (a catastrophic false-positive flood), define a real anchor or remove the pattern"
         )));
         return;
     }

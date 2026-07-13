@@ -5,14 +5,14 @@
 //! That was true of the STORED form but not the BUILD: `from_rows` grew both
 //! `data` and `offsets` from empty, reallocating ~log(n) times as ~1000+ rows
 //! were pushed. The four real builders all construct via `From<Vec<Vec<usize>>>`,
-//! which knows the row count AND the total element count up front — so it now
+//! which knows the row count AND the total element count up front, so it now
 //! reserves both vectors exactly and the build does exactly two allocations.
 //!
 //! This pins two things:
-//!   (1) BEHAVIOUR — the build reconstructs the input rows byte-for-byte,
+//!   (1) BEHAVIOUR, the build reconstructs the input rows byte-for-byte,
 //!       including the empty rows CSR specifically optimizes (proves the
 //!       restructure into `from_rows_sized` changed no output);
-//!   (2) SOURCE SHAPE — the `From` path computes the exact `data` capacity from
+//!   (2) SOURCE SHAPE, the `From` path computes the exact `data` capacity from
 //!       the row lengths and both vectors are `with_capacity`-reserved, and the
 //!       concatenation loop lives in exactly one place (`from_rows_sized`), so a
 //!       future edit can't quietly reintroduce the grow-from-empty reallocations
@@ -79,7 +79,7 @@ fn csr_build_is_byte_identical_and_exactly_reserved() {
 // these SWEEP the round-trip over arbitrary ragged rows. The CORRECTNESS CONTRACT
 // of the CSR build is that `from_rows` then row-read reconstructs the EXACT input
 // (each element cast usize→u32), including leading/interior/trailing empty rows
-// and the `n+1` offsets invariant — an off-by-one in the capacity/offset math
+// and the `n+1` offsets invariant, an off-by-one in the capacity/offset math
 // would corrupt row boundaries. Traced against engine/csr.rs. No proptest before.
 
 use proptest::prelude::*;

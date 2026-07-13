@@ -6,7 +6,7 @@
 //! `keyhog_scanner::testing::known_example_suppressed` entry point is exactly
 //! the `MarkerVerdict::Suppress(reason)` this module chose (or, for a
 //! `MarkerVerdict::Allow` / `KeepChecking`, no marker event at all). Each test
-//! pins the LITERAL `&'static str` reason (Law 6 — an exact value, never
+//! pins the LITERAL `&'static str` reason (Law 6, an exact value, never
 //! `is_ok`/`!is_empty`) so a renamed / reordered / removed marker arm flips a
 //! specific named row red instead of passing silently.
 //!
@@ -66,7 +66,7 @@ fn assert_reason(credential: &str, expected_reason: &str) {
     );
     let first = first.unwrap_or_else(|| {
         panic!(
-            "{credential:?} suppressed but emitted NO dogfood reason — a silent gate (Law 10); \
+            "{credential:?} suppressed but emitted NO dogfood reason, a silent gate (Law 10); \
              expected {expected_reason:?}"
         )
     });
@@ -81,11 +81,11 @@ fn assert_not_suppressed(credential: &str) {
     let (suppressed, first) = suppress_and_first_reason(credential);
     assert!(
         !suppressed,
-        "{credential:?} was WRONGLY suppressed by gate {first:?} — recall regression"
+        "{credential:?} was WRONGLY suppressed by gate {first:?}, recall regression"
     );
     assert_eq!(
         first, None,
-        "{credential:?} not suppressed yet a gate recorded {first:?} — spurious event"
+        "{credential:?} not suppressed yet a gate recorded {first:?}, spurious event"
     );
 }
 
@@ -231,7 +231,7 @@ fn testkey_prefix_carveout_exact_prefix_only() {
 
 /// `ghp_EXAMPLE_TOKEN` is suppressed (`contains_EXAMPLE_token`), but the SAME
 /// prefix with `EXAMPLE` as a reserved documentation domain
-/// (`EXAMPLE.COM` / `EXAMPLE.ORG`) is NOT suppressed — the carve-out prevents
+/// (`EXAMPLE.COM` / `EXAMPLE.ORG`) is NOT suppressed, the carve-out prevents
 /// over-suppressing a real secret sitting beside a reserved-domain mention.
 #[test]
 fn reserved_example_domain_carveout() {
@@ -258,7 +258,7 @@ fn real_prefixed_secrets_not_marker_suppressed() {
     assert_not_suppressed("Tr0ub4dor&3xK9!mZqWvP");
 }
 
-/// Ownership boundary: the `xxxxx` mask run is NOT a doc marker — it belongs to
+/// Ownership boundary: the `xxxxx` mask run is NOT a doc marker, it belongs to
 /// `suppression/decision.rs` §3. A token with no doc marker passes through
 /// `check_markers` (KeepChecking) and is suppressed downstream with the distinct
 /// `mask_run_xxxxx` reason, proving the doc-marker module does not own it.

@@ -20,7 +20,7 @@ reason = "Body below 22 alnum chars after prefix."
 [[evasion]]
 text = "x-honeycomb-team: hcai_AbCdEfGhIjKlMnOpQrStUv"
 credential = "hcai_AbCdEfGhIjKlMnOpQrStUv"
-reason = "x-honeycomb-team header form — prefix detector still anchors."
+reason = "x-honeycomb-team header form (prefix detector still anchors)."
 
 [perf]
 fixture_bytes = 4096

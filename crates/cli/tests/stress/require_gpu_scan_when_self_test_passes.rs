@@ -10,7 +10,7 @@ fn require_gpu_scan_when_self_test_passes() {
         .output()
         .expect("backend self-test spawn");
     // `backend --self-test` exits 0 both when the GPU stack PASSES and when it
-    // SKIPS (no adapter, or a build without the `gpu` feature — e.g. ci-lean).
+    // SKIPS (no adapter, or a build without the `gpu` feature (e.g. ci-lean)).
     // This test only has a contract when a GPU genuinely PASSED, so skip unless
     // the self-test ran a real GPU: a SKIP / "no GPU adapter" result means
     // `--require-gpu` is *correctly* allowed to refuse, and asserting exit 0

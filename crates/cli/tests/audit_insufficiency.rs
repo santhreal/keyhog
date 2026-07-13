@@ -1,4 +1,4 @@
-//! Adversarial audit — VECTOR 5 (INSUFFICIENCY) + VECTOR 11 (UTILIZATION).
+//! Adversarial audit: VECTOR 5 (INSUFFICIENCY) + VECTOR 11 (UTILIZATION).
 //!
 //! These are black-box CLI tests: they spawn the real `keyhog` binary and use
 //! the project's own documented coherence surface: `keyhog config --effective`,
@@ -23,7 +23,7 @@
 //! (orchestrator_config.rs:475-491) hands the un-clamped `ScannerConfig`
 //! straight to `CompiledScanner::with_config` (orchestrator/mod.rs:180), and
 //! `with_config` (crates/scanner/src/engine/compile.rs:254-258) merely assigns
-//! the config — no clamp. The same gap exists on the `.keyhog.toml` path
+//! the config, no clamp. The same gap exists on the `.keyhog.toml` path
 //! (config.rs:435-457 fills `args.entropy_threshold` / `args.ml_weight`
 //! straight from the file with no validation).
 //!
@@ -33,15 +33,15 @@
 //!     (parse_min_confidence rejects out-of-range, value_parsers.rs:3-19) and
 //!     `--ml-threshold` (parse_ml_threshold rejects out-of-range,
 //!     value_parsers.rs:45-60). So the only thing that COULD clamp them is
-//!     `sanitise()` — which this path bypasses.
+//!     `sanitise()`: which this path bypasses.
 //!   * The live ML blend in `scan_postprocess.rs:405-413` explicitly documents
 //!     that it relies on `w` "already clamped to [0,1] by
 //!     `ScannerConfig::sanitise`". With `--ml-weight -1.0` the blend becomes
-//!     `-1·ml + 2·heuristic` (a negative ML weight — the exact malformed state
+//!     `-1·ml + 2·heuristic` (a negative ML weight, the exact malformed state
 //!     sanitise() exists to prevent); with `--ml-weight 5.0` it becomes
 //!     `5·ml - 4·heuristic`, which can exceed 1.0.
 //!   * A negative `entropy_threshold` makes the entropy gate `entropy >= thr`
-//!     always true (Shannon entropy is always ≥ 0) — the match-everything FP
+//!     always true (Shannon entropy is always ≥ 0), the match-everything FP
 //!     state sanitise() resets to 4.5.
 //!
 //! EXPECTED FIX: re-run `ScannerConfig::sanitise()` at the end of
@@ -126,7 +126,7 @@ fn scratch_file() -> (tempfile::TempDir, PathBuf) {
     (dir, path)
 }
 
-/// AUD-insufficiency-1 — `--ml-weight 5.0` reaches the engine UN-CLAMPED.
+/// AUD-insufficiency-1: `--ml-weight 5.0` reaches the engine UN-CLAMPED.
 ///
 /// FINDING: `ScannerConfig::sanitise` (scanner_config.rs:144-148) clamps
 /// `ml_weight` to [0.0, 1.0], and `scan_postprocess.rs:405-413` documents that
@@ -154,11 +154,11 @@ fn ml_weight_above_one_is_clamped_to_one() {
     );
 }
 
-/// AUD-insufficiency-2 — `--ml-weight=-1.0` reaches the engine as a NEGATIVE
+/// AUD-insufficiency-2: `--ml-weight=-1.0` reaches the engine as a NEGATIVE
 /// weight.
 ///
 /// FINDING: same root cause as AUD-insufficiency-1. A negative ml_weight turns
-/// the blend `w·ml + (1-w)·heuristic` into `-1·ml + 2·heuristic` — sanitise()
+/// the blend `w·ml + (1-w)·heuristic` into `-1·ml + 2·heuristic`: sanitise()
 /// (scanner_config.rs:144-148) clamps negatives to 0.0 precisely to forbid
 /// this. The override layer bypasses it.
 ///
@@ -178,12 +178,12 @@ fn ml_weight_below_zero_is_clamped_to_zero() {
     );
 }
 
-/// AUD-insufficiency-3 — `--entropy-threshold 99` reaches the engine
+/// AUD-insufficiency-3: `--entropy-threshold 99` reaches the engine
 /// UN-CLAMPED.
 ///
 /// FINDING: `ScannerConfig::sanitise` (scanner_config.rs:156-160) clamps
 /// `entropy_threshold` to [0.0, 8.0] (8.0 is the upper bound for byte-level
-/// Shannon entropy — a threshold above it can never be met, silently disabling
+/// Shannon entropy, a threshold above it can never be met, silently disabling
 /// the entropy detector). `build_scanner_config` (orchestrator_config.rs:400-402)
 /// assigns `config.entropy_threshold = threshold` after the `From`-time
 /// sanitise; nothing re-clamps. `--entropy-threshold` has no clap value_parser
@@ -206,7 +206,7 @@ fn entropy_threshold_above_max_is_clamped_to_eight() {
     );
 }
 
-/// AUD-insufficiency-4 — `--entropy-threshold=-5` reaches the engine NEGATIVE.
+/// AUD-insufficiency-4: `--entropy-threshold=-5` reaches the engine NEGATIVE.
 ///
 /// FINDING: same root cause. A negative entropy threshold makes the entropy
 /// gate `entropy >= threshold` ALWAYS true (Shannon entropy is always ≥ 0),
@@ -226,7 +226,7 @@ fn entropy_threshold_below_zero_is_clamped_non_negative() {
         resolved >= 0.0,
         "--entropy-threshold=-5 must be clamped to a non-negative value \
          (ScannerConfig::sanitise resets negatives to 4.5). A negative \
-         threshold makes `entropy >= threshold` always true — every byte run \
+         threshold makes `entropy >= threshold` always true, every byte run \
          becomes a finding. Oracle reports entropy_threshold = {resolved}.\n\
          block:\n{block}"
     );

@@ -1,11 +1,11 @@
 //! SWE-101 regression gate: the always-active phase-2 prefilter must do **no
 //! per-pattern work** on a chunk that cannot activate any always-active pattern.
 //!
-//! The user's #1 named issue: "phase-2 must NEVER eat runtime — not
+//! The user's #1 named issue: "phase-2 must NEVER eat runtime, not
 //! 0.000000001s." Before the fix, `Phase2AlwaysActivePrefilter::mark_matches`
-//! ran its expensive per-pattern body — the Hyperscan `scan_each` enumeration
+//! ran its expensive per-pattern body, the Hyperscan `scan_each` enumeration
 //! plus its HS-incompatible whole-chunk-regex loop, or the `regex::RegexSet`
-//! batch loop — UNCONDITIONALLY on every chunk (~10µs/chunk over 518k chunks
+//! batch loop: UNCONDITIONALLY on every chunk (~10µs/chunk over 518k chunks
 //! ≈ 5.3s of pure no-candidate overhead). The fix gates the body behind ONE fast
 //! combined Aho-Corasick over every always-active pattern's required-prefix
 //! literal: a no-hit over a pure-ASCII chunk proves nothing can fire, so the body
@@ -13,13 +13,13 @@
 //!
 //! This test PINS that behavior with the live `mark_matches` instrumentation
 //! counters (`phase2_mark_stats`):
-//!   1. ZERO-WORK — a no-candidate chunk increments `MARK_GATE_SKIPS` and adds
+//!   1. ZERO-WORK, a no-candidate chunk increments `MARK_GATE_SKIPS` and adds
 //!      ZERO to `MARK_PERPATTERN_WORK`. A single unit of per-pattern work on a
 //!      no-candidate chunk is the exact SWE-101 regression and fails the gate.
-//!   2. SOUNDNESS / FINDINGS PARITY — scanning a credential-bearing corpus with
+//!   2. SOUNDNESS / FINDINGS PARITY, scanning a credential-bearing corpus with
 //!      the gate ON vs FORCED OFF (`set_no_candidate_gate(Some(false))`) yields a
 //!      BYTE-IDENTICAL finding set, proving the gate is recall-neutral (Law 6/9).
-//!   3. RECALL SURVIVAL — a chunk carrying a real fallback credential still
+//!   3. RECALL SURVIVAL, a chunk carrying a real fallback credential still
 //!      produces its finding through the gated path (the gate never drops a live
 //!      detection), and every `mark_matches` call resolves to exactly one of
 //!      {gate skip, per-pattern body}.
@@ -65,7 +65,7 @@ fn scanner() -> &'static CompiledScanner {
     })
 }
 
-/// `(detector_id, credential, offset)` — the finding identity the gate must
+/// `(detector_id, credential, offset)`: the finding identity the gate must
 /// preserve exactly across gate-on vs gate-off.
 type FindingKey = (String, String, usize);
 
@@ -131,7 +131,7 @@ fn no_candidate_chunk_does_zero_per_pattern_work() {
         skips, calls,
         "every mark_matches call on a no-candidate chunk must hit the combined-gate \
          fast path (skips={skips} calls={calls}); a non-skip means the gate was \
-         absent or did not fire — the per-pattern body ran"
+         absent or did not fire, the per-pattern body ran"
     );
 }
 
@@ -140,7 +140,7 @@ fn always_active_finding_survives_the_gate() {
     let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let scanner = scanner();
     crate::engine::phase2_mark_stats_reset();
-    // asana-pat shape `1/<16-20 digits>/<32 hex>` — a prefix-less / keyword-less
+    // asana-pat shape `1/<16-20 digits>/<32 hex>`: a prefix-less / keyword-less
     // always-active phase-2 detector (issue #69 class), exactly the kind the
     // no-candidate gate must NOT drop: whichever path the gate takes (full body on
     // an anchor hit, or the precise non-anchorable check on the skip path), the
@@ -154,7 +154,7 @@ fn always_active_finding_survives_the_gate() {
     );
 
     // Structural invariant: every `mark_matches` call resolves to EXACTLY one of
-    // {gate skip, per-pattern body} — never both, never neither. A drift here means
+    // {gate skip, per-pattern body}, never both, never neither. A drift here means
     // the counters (and the SWE-101 accounting they pin) are wrong.
     let snap = crate::engine::phase2_mark_stats();
     let (calls, skips, work) = (snap.calls, snap.gate_skips, snap.perpattern_work);
@@ -247,7 +247,7 @@ comment = \"the quick brown fox jumps over the lazy dog repeatedly\"
     keyhog_scanner::testing::set_no_candidate_gate(&scanner, Some(true));
     let on = finding_keys(&scanner, corpus, "mixed.cfg");
 
-    // Gate FORCED OFF — the pre-fix path that runs the per-pattern body on every
+    // Gate FORCED OFF, the pre-fix path that runs the per-pattern body on every
     // chunk. Findings MUST be byte-identical.
     keyhog_scanner::testing::set_no_candidate_gate(&scanner, Some(false));
     let off = finding_keys(&scanner, corpus, "mixed.cfg");

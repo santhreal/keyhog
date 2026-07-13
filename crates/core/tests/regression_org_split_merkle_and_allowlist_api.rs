@@ -251,7 +251,7 @@ fn root_cache_path_exports_use_explicit_owner_names() {
 fn merkle_tmp_hygiene_does_not_flatten_read_dir_errors() {
     // The dir-entry read loop is now owned by the shared sweeper
     // `state_file::sweep_stale_tmp_siblings` (merkle + calibration both delegate
-    // to it — ONE place). The no-silent-drop contract must hold at that owner:
+    // to it: ONE place). The no-silent-drop contract must hold at that owner:
     // each read_dir entry error is matched explicitly and logged, never
     // `.flatten()`-ed away (which would silently skip unreadable entries).
     let state_file_src =
@@ -308,7 +308,7 @@ fn merkle_storage_split_keeps_spec_gate_and_atomic_persist_owner() {
          keyhog prefix that tmp_hygiene sweeps"
     );
     // The shared writer is the single owner that stamps that caller prefix onto
-    // the temp file — verify it there so the delegation can't route through a
+    // the temp file, verify it there so the delegation can't route through a
     // prefix-ignoring writer.
     let state_file_src =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/state_file.rs"))
@@ -346,7 +346,7 @@ fn cache_temp_file_prefix_contract_is_explicit() {
         "tmp hygiene must hand the shared sweeper its explicit keyhog-owned prefixes \
          (current + legacy), never a broad anonymous .tmp match"
     );
-    // Prefix-scoped deletion is enforced in ONE place — the shared sweeper.
+    // Prefix-scoped deletion is enforced in ONE place (the shared sweeper).
     let state_file_src =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/state_file.rs"))
             .expect("state_file source readable");

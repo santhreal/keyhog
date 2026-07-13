@@ -203,13 +203,13 @@ fn metadata_serializes_decoded_span_as_two_element_array() {
 }
 
 /// Pins the serialization CONTRACT that the `Arc<str>` migration had to preserve
-/// (and did — the pre-migration `Option<String>` fields carried NO
+/// (and did, the pre-migration `Option<String>` fields carried NO
 /// `skip_serializing_if` either): `path`/`commit`/`author`/`date` serialize an
 /// ABSENT value as JSON `null` (present key, null value), while
 /// `mtime_ns`/`size_bytes`/`decoded_span` (which DO carry `skip_serializing_if`)
 /// drop out of the object entirely. Nothing else pins the null-for-absent half
 /// of that intentional asymmetry, so a stray `skip_serializing_if` added to a
-/// provenance field — or a serde-helper that emitted absent-as-omitted — would
+/// provenance field, or a serde-helper that emitted absent-as-omitted, would
 /// silently change the wire shape without this guard.
 #[test]
 fn absent_provenance_optionals_serialize_as_null_while_capped_optionals_are_skipped() {
@@ -293,7 +293,7 @@ fn chunk_clone_preserves_data_and_metadata() {
 /// per decoded sub-chunk (`decode/pipeline/splice.rs`), so a copy here would be a
 /// per-blob allocation on the hottest decode path. This pins the shared-pointer
 /// guarantee: after `clone()`, every `Arc<str>` field points at the SAME
-/// allocation as the original — proven by pointer identity, not value equality
+/// allocation as the original, proven by pointer identity, not value equality
 /// (value equality would still pass if the migration had silently reverted to a
 /// copying `String`, so it cannot prove the perf property; `Arc::ptr_eq` can).
 #[test]
@@ -317,7 +317,7 @@ fn chunk_metadata_clone_shares_arc_allocations_not_copies() {
     let cloned = original.clone();
 
     // Every Arc<str> field in the clone points at the SAME heap allocation as the
-    // original — a refcount bump, not a copy. `Arc<str>` never uses inline
+    // original, a refcount bump, not a copy. `Arc<str>` never uses inline
     // storage, so pointer identity is the exact "did we avoid the alloc" proof.
     assert!(
         Arc::ptr_eq(&original.source_type, &cloned.source_type),
@@ -344,7 +344,7 @@ fn chunk_metadata_clone_shares_arc_allocations_not_copies() {
     ));
 
     // The shared allocation is now referenced twice; dropping the clone returns
-    // the count to 1 (no leak, no premature free — the Arc bookkeeping is sound).
+    // the count to 1 (no leak, no premature free (the Arc bookkeeping is sound)).
     assert_eq!(Arc::strong_count(&original.source_type), 2);
     drop(cloned);
     assert_eq!(Arc::strong_count(&original.source_type), 1);
@@ -360,7 +360,7 @@ fn chunk_metadata_clone_shares_arc_allocations_not_copies() {
 /// while rebuilding `source_type` as `parent/decoder`. This pins that the
 /// inherited path/commit/author/date SHARE the parent's allocations (the
 /// per-sub-chunk win) while the freshly-built `source_type` is a DISTINCT
-/// allocation (correct — it differs per decoder, so it cannot be shared).
+/// allocation (correct (it differs per decoder, so it cannot be shared)).
 #[test]
 fn decoded_child_shares_parent_provenance_but_owns_fresh_source_type() {
     use std::sync::Arc;
@@ -403,7 +403,7 @@ fn decoded_child_shares_parent_provenance_but_owns_fresh_source_type() {
         parent.date.as_ref().unwrap(),
         child.date.as_ref().unwrap()
     ));
-    // source_type is a fresh "parent/decoder" string — necessarily a DISTINCT
+    // source_type is a fresh "parent/decoder" string, necessarily a DISTINCT
     // allocation, since it is not equal to the parent's.
     assert_eq!(child.source_type.as_ref(), "filesystem/base64");
     assert!(!Arc::ptr_eq(&parent.source_type, &child.source_type));

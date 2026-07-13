@@ -26,7 +26,7 @@ reason = "Encrypted v3 .ppk with Argon2 KDF header lines between the public blob
 
 [[negative]]
 text = "PuTTY-User-Key-File-2: ssh-rsa"
-reason = "Header line only, no Private-Lines/Private-MAC body — not a key file."
+reason = "Header line only, no Private-Lines/Private-MAC body (not a key file)."
 
 [[negative]]
 text = "See the PuTTY-User-Key-File-2 format in AppendixC for the header layout."
@@ -37,7 +37,7 @@ reason = "Documentation mention of the format keyword, no key material."
 [[evasion]]
 text = "export PPK=\"PuTTY-User-Key-File-2: ssh-ed25519\nEncryption: none\nComment: c\nPublic-Lines: 1\nAAAAC3NzaPubBlob0003\nPrivate-Lines: 1\nEVADEPRIVBODYevadebodyevadebody98765=\nPrivate-MAC: bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55\""
 credential = "EVADEPRIVBODYevadebodyevadebody98765="
-reason = "Shell env-var envelope around a full .ppk — credential must still surface."
+reason = "Shell env-var envelope around a full .ppk (credential must still surface)."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

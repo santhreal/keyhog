@@ -5,7 +5,7 @@
 //! it registers, polls, and deregisters against a collector over HTTPS, and
 //! every failure is funnelled into exactly one [`InteractshError`] variant. That
 //! error is then run through [`redact_interactsh_error`] before it is ever
-//! logged, because a raw `reqwest::Error`'s `Display` bakes in the poll URL —
+//! logged, because a raw `reqwest::Error`'s `Display` bakes in the poll URL 
 //! and the poll URL embeds the session correlation secret. The redaction policy
 //! is deliberately **variant-scoped**:
 //!
@@ -23,7 +23,7 @@
 //! across the register/poll/deregister trio, sub-second timeout rendering, and
 //! adversarial format-injection safety.
 //!
-//! Nothing here opens a socket or touches an accelerator — the classification is
+//! Nothing here opens a socket or touches an accelerator, the classification is
 //! pure and host-independent. The `Transport` branch is intentionally NOT tested
 //! here: constructing a `reqwest::Error` requires the `reqwest` crate, which is a
 //! normal dependency of `keyhog-verifier` and NOT a dev-dependency, so it is
@@ -39,7 +39,7 @@ use std::time::Duration;
 use keyhog_verifier::oob::{redact_interactsh_error, InteractshError};
 
 // ────────────────────────────────────────────────────────────────────────────
-// Group A — exact operator-facing message for each non-transport variant.
+// Group A (exact operator-facing message for each non-transport variant).
 // redact == Display, byte-for-byte, for every variant except `Transport`.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ fn keygen_error_redacts_to_exact_message() {
     );
 }
 
-/// `KeyEncode` is untested by the existing weak boundary test — pin its exact
+/// `KeyEncode` is untested by the existing weak boundary test, pin its exact
 /// message so the RSA-public-key-encoding failure phrase can't silently drift.
 #[test]
 fn keyencode_error_redacts_to_exact_message() {
@@ -75,7 +75,7 @@ fn register_http_status_failure_redacts_to_exact_message() {
     );
 }
 
-/// `Deregister` is untested by the existing weak boundary test — pin its exact
+/// `Deregister` is untested by the existing weak boundary test, pin its exact
 /// message and confirm the phase word is `deregister`, not `register`.
 #[test]
 fn deregister_http_status_failure_redacts_to_exact_message() {
@@ -138,7 +138,7 @@ fn decrypt_error_redacts_to_exact_message() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Group B — timeout rendering. The transport-deadline variant renders the exact
+// Group B, timeout rendering. The transport-deadline variant renders the exact
 // `Duration` via its `Debug` form; pin sub-second and zero boundaries (the
 // existing test only covers a whole-second 7s value).
 // ────────────────────────────────────────────────────────────────────────────
@@ -168,12 +168,12 @@ fn timeout_error_renders_millisecond_and_zero_boundaries_exactly() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Group C — structural invariants of the classification.
+// Group C (structural invariants of the classification).
 // ────────────────────────────────────────────────────────────────────────────
 
 /// The register / deregister / poll trio share the `(HTTP {status}): {body}`
 /// shape, so at an identical status+body they must stay distinguishable purely
-/// by the phase word — losing the phase would hide which lifecycle step failed.
+/// by the phase word (losing the phase would hide which lifecycle step failed).
 #[test]
 fn register_deregister_poll_stay_phase_distinct_at_same_status_and_body() {
     let register = redact_interactsh_error(&InteractshError::Register {
@@ -197,7 +197,7 @@ fn register_deregister_poll_stay_phase_distinct_at_same_status_and_body() {
     assert_eq!(set.len(), 3, "phase word must keep the three distinct");
 }
 
-/// Every non-transport variant must redact to a distinct operator string —
+/// Every non-transport variant must redact to a distinct operator string 
 /// an operator has to be able to tell a keygen failure from a decrypt failure
 /// from an SSRF refusal. A collision here is a real diagnostics bug.
 #[test]
@@ -233,7 +233,7 @@ fn all_ten_non_transport_variants_redact_pairwise_distinct() {
 
 /// Redaction is Transport-scoped ONLY: a non-transport variant is passed through
 /// verbatim even when its payload happens to embed a full URL with a secret
-/// query param. This pins the actual policy — the code trusts every non-transport
+/// query param. This pins the actual policy, the code trusts every non-transport
 /// variant to be constructed without the poll URL, and never scrubs them. If a
 /// future change routed the poll URL into (say) `BadResponse`, this test would
 /// still pass, but the invariant it documents is exactly why that must never
@@ -249,7 +249,7 @@ fn redaction_is_transport_scoped_non_transport_payload_passes_through_verbatim()
 }
 
 /// Adversarial: a body containing brace/format tokens and newlines must be
-/// preserved literally — the message is built with a captured Display, never a
+/// preserved literally, the message is built with a captured Display, never a
 /// second `format!` over attacker-influenced text, so `{}`/`{0}`/`\n` are inert.
 #[test]
 fn error_body_with_format_tokens_and_newlines_is_preserved_verbatim() {

@@ -6,7 +6,7 @@
 //! Root cause this locks against: the identifier/type-name shape gates
 //! (`pure_identifier_no_digit`, `pure_identifier`, `type_name_shape`,
 //! `word_separated_identifier`) in `generic_value_shape_rejected` dropped EVERY
-//! all-letters-no-digit value — suppressing not just `password = getUserName`
+//! all-letters-no-digit value, suppressing not just `password = getUserName`
 //! (a code reference) but also ~1114 real CredData passwords that happen to be
 //! random lowercase strings (`GRAPHITE_PASS=gjbubxsu`, `password="ufnlbbavawsdeecn"`).
 //! The two classes are shape-identical, so the gate is now conditioned on an
@@ -16,7 +16,7 @@
 //!
 //! Measured A/B (vs the pre-change binary): CredData TP +957 / FP +71 (93%
 //! marginal precision; recall 0.181→0.250, precision 0.600→0.665) and mirror
-//! precision HELD 0.9954 ≥ 0.9945 — the dictionary discriminator is what makes
+//! precision HELD 0.9954 ≥ 0.9945, the dictionary discriminator is what makes
 //! the lift sound (lifting unconditionally cost +3554 FP).
 
 mod support;
@@ -62,7 +62,7 @@ fn caught(scanner: &CompiledScanner, line: &str, value: &str) -> bool {
 fn random_lowercase_passwords_under_keyword_are_surfaced() {
     let s = scanner();
     // Real CredData passwords: all-lowercase, no digit, IMPROBABLE English
-    // bigrams (gjb, kr, bx, dz) — the identifier gates dropped these before the
+    // bigrams (gjb, kr, bx, dz), the identifier gates dropped these before the
     // randomness discriminator. Each is keyword-anchored.
     for (line, val) in [
         ("GRAPHITE_PASS=gjbubxsu", "gjbubxsu"),
@@ -87,7 +87,7 @@ fn random_lowercase_passwords_under_keyword_are_surfaced() {
 fn dictionary_identifiers_under_keyword_stay_suppressed() {
     let s = scanner();
     // Pronounceable English/code identifiers under the SAME credential keywords:
-    // these are code references, NOT secrets, and must NOT bridge — the randomness
+    // these are code references, NOT secrets, and must NOT bridge, the randomness
     // discriminator scores them as dictionary (high bigram probability) so the
     // identifier gate still fires. (Lifting these is the +3554-FP class the
     // unconditional lift caused.)
@@ -101,7 +101,7 @@ fn dictionary_identifiers_under_keyword_stay_suppressed() {
     ] {
         assert!(
             !caught(&s, line, val),
-            "dictionary identifier {val:?} (pronounceable) must stay suppressed — \
+            "dictionary identifier {val:?} (pronounceable) must stay suppressed. \
              it is a code reference, not a secret; line {line:?}"
         );
     }

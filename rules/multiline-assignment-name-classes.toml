@@ -1,7 +1,7 @@
 # Tier-B classification vocab for multiline assignment-name analysis
 # (scanner/src/multiline/string_extract.rs). Two independent classes:
 #
-# ambiguous_fragment    = bare assignment names that are AMBIGUOUS on their own —
+# ambiguous_fragment    = bare assignment names that are AMBIGUOUS on their own 
 #   a lone `key`/`token`/... fragment is not strong enough evidence to treat a
 #   split-string fragment as a credential (the containing context must add more).
 #

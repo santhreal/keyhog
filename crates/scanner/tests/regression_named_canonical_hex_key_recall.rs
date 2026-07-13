@@ -1,19 +1,19 @@
 //! Regression: a service-anchored detector whose regex REQUIRED its
 //! service-specific keyword (`ALCHEMY_API_KEY=`, `CROWDIN_API_TOKEN=`,
 //! `DATADOG_API_KEY:`) and captured a canonical-length pure-hex value must
-//! surface that value — the keyword anchor disambiguates the MD5/SHA collision.
+//! surface that value (the keyword anchor disambiguates the MD5/SHA collision).
 //!
 //! These detectors are classified `weak_anchor` (their pure-hex capture is
 //! shape-indistinguishable from a digest), so `bypass_shape_gates` is false and
 //! the `bare_hex_digest` arm of the suppression cascade dropped the value BEFORE
-//! confidence ran — defeating the detectors' own `min_confidence = 0.2`, which
+//! confidence ran, defeating the detectors' own `min_confidence = 0.2`, which
 //! explicitly declares the keyword anchor authoritative. The fix wires the
 //! existing KH-L-0110 `allow_canonical_hex_key` escape hatch (CredData-validated:
 //! hex48+kw 1033 POS / 0 NEG; hex32+kw 0.976) into the named-detector path,
 //! keyed on the detector's service anchor instead of a captured keyword.
 //!
 //! FP-safe by construction: only the `bare_hex_digest` / `algorithmic_placeholder`
-//! arms are exempted — every decoy gate (repetitive runs, fake sequences,
+//! arms are exempted, every decoy gate (repetitive runs, fake sequences,
 //! prefixed-hash labels, UUID, dashed serials) still runs, and only for
 //! `is_service_anchored_detector` ids whose regex required the keyword. The
 //! negative twins below pin that the lift rides on the service-anchored match,
@@ -76,7 +76,7 @@ fn is_canonical_service_hex_key_accepts_only_canonical_hex_lengths() {
     assert!(is_canonical_service_hex_key(&"0123456789abcdef".repeat(4))); // 64 (SHA256)
 
     // Non-canonical lengths the gate also catches (56/72/128 SHA-2 digests)
-    // stay OUT — no service detector requests them as a key body.
+    // stay OUT (no service detector requests them as a key body).
     assert!(!is_canonical_service_hex_key(&"a".repeat(56)));
     assert!(!is_canonical_service_hex_key(&"a".repeat(72)));
     assert!(!is_canonical_service_hex_key(&"a".repeat(128)));
@@ -106,7 +106,7 @@ fn keyword_anchored_pure_hex_key_surfaces() {
         "ALCHEMY_API_KEY=<32hex> must surface; matches={matches:?}"
     );
 
-    // crowdin-api-token: 40-hex under the CROWDIN keyword — the longer SHA1
+    // crowdin-api-token: 40-hex under the CROWDIN keyword, the longer SHA1
     // length must also surface under the service anchor.
     let matches = matches_for("CROWDIN_API_TOKEN = 3b70df2c347b7e02b642198793dc0b8a9827bb4c");
     assert!(
@@ -135,7 +135,7 @@ fn bare_hex_without_service_keyword_does_not_claim_the_named_detector() {
 fn placeholder_hex_under_service_keyword_stays_suppressed() {
     // The exemption relaxes ONLY the bare-hex-digest arm; the repetition decoy
     // gate still runs. An all-zero 32-hex placeholder under the keyword must NOT
-    // surface — it is an obvious decoy, not a real key.
+    // surface (it is an obvious decoy, not a real key).
     let matches = matches_for("ALCHEMY_API_KEY=00000000000000000000000000000000");
     assert!(
         !surfaced(

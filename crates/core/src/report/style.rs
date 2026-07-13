@@ -120,7 +120,7 @@ pub(crate) fn verification_label(result: &VerificationResult, color: bool) -> St
 /// (SARIF, JUnit, CSV, GitHub annotations). Lowercase, with `snake_case` for the
 /// multi-word states so it matches the JSON representation produced by
 /// `#[serde(rename_all = "snake_case")]` on [`VerificationResult`]. This is the
-/// single source of truth: the per-format copies had diverged — SARIF derived
+/// single source of truth: the per-format copies had diverged. SARIF derived
 /// its value from `format!("{:?}", v).to_lowercase()`, emitting `ratelimited`
 /// (no underscore) and `error("..")` (Debug-quoted). JSON keeps the serde object
 /// form for `VerificationResult::Error`, while these string-token formats use

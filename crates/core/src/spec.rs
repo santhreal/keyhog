@@ -21,8 +21,8 @@ pub use validate::{validate_detector, QualityIssue};
 /// serde adapter for every detector `regex` field: deserialize the string, then
 /// collapse its inter-keyword separator classes to the single canonical form
 /// (see [`regex_separator`]). Applied at the spec boundary so the canonical
-/// regex is the ONLY form any downstream consumer — the compiler, AC-literal
-/// extraction, Hyperscan, literal prefixes, the spec hash, the bench — ever
+/// regex is the ONLY form any downstream consumer, the compiler, AC-literal
+/// extraction, Hyperscan, literal prefixes, the spec hash, the bench, ever
 /// sees. A real secret is therefore never missed because a leaked file used a
 /// tab, a double space, or a hyphen where the detector author allowed only one
 /// underscore.
@@ -63,7 +63,7 @@ pub struct DetectorSpec {
     /// and high-entropy blobs fire in phase 2 from `keywords` plus
     /// `entropy_floor`. It may also declare structured regex envelopes while
     /// keeping both paths under one detector owner. Modeled here so those
-    /// detectors are first-class TOML specs — one home for every knob — instead
+    /// detectors are first-class TOML specs, one home for every knob, instead
     /// of engine constants scattered across `detector_ids.rs` and policy files.
     #[serde(default)]
     pub kind: DetectorKind,
@@ -96,7 +96,7 @@ pub struct DetectorSpec {
     /// `key_<64hex>`) is high-confidence by virtue of the prefix even when the
     /// body is low-entropy hex that the generic confidence model scores below
     /// the global floor; the detector author declares that here so the
-    /// detector ships working out of the box. Costs nothing at scan time —
+    /// detector ships working out of the box. Costs nothing at scan time 
     /// it is a single O(1) map lookup at the post-scan floor gate, on an
     /// already-compiled corpus. An operator `.keyhog.toml`
     /// `[detector.<id>] min_confidence` still overrides this self-declared
@@ -104,7 +104,7 @@ pub struct DetectorSpec {
     #[serde(default)]
     pub min_confidence: Option<f64>,
     /// Per-detector low-entropy suppression floor, owned HERE in the detector's
-    /// own TOML — the single source of truth for the generic-detector entropy
+    /// own TOML, the single source of truth for the generic-detector entropy
     /// gate (there is no separate `rules/entropy-floors.toml`, no code table, no
     /// override). Length-bucketed: the FIRST bucket (in listed order) whose
     /// `max_len >= L` sets the floor for a candidate of length `L`; the last
@@ -123,7 +123,7 @@ pub struct DetectorSpec {
     // above. Each is an `Option`/`Vec` that OVERRIDES a single named default
     // (the one remaining owner of the fallback value, `keyhog_scanner::entropy`
     // consts) only when the detector is silent. Reading two places to understand
-    // one detector's behavior is banned — a detector's TOML is the whole story.
+    // one detector's behavior is banned (a detector's TOML is the whole story).
     /// Per-detector HIGH-entropy threshold (bits/byte), the keyword-independent
     /// bar. `None` → the single-owner default `HIGH_ENTROPY_THRESHOLD`.
     #[serde(default)]
@@ -191,25 +191,25 @@ pub struct DetectorSpec {
     /// placeholder gate (drop a captured literal dictionary word like `password`
     /// / `secret`, or a low-letter-diversity mask like `xxxxxxxx`) that a
     /// service-anchored detector's structured capture never needs. A new
-    /// structural-password-slot detector now declares this in its own TOML — no
-    /// code edit — and the whole story lives in the detector file.
+    /// structural-password-slot detector now declares this in its own TOML, no
+    /// code edit (and the whole story lives in the detector file).
     #[serde(default)]
     pub structural_password_slot: bool,
     /// Per-detector "weak anchor" classification, OWNED HERE per the architecture
     /// law above (was a centralized id list in `rules/detector-classification.toml`
-    /// `weak_anchor = [...]`, so a detector's family lived in a second file — the
-    /// rules TOML — not its own).
+    /// `weak_anchor = [...]`, so a detector's family lived in a second file, the
+    /// rules TOML (not its own)).
     ///
     /// `true` marks a SERVICE-anchored detector whose regex capture nonetheless
     /// structurally collides with a generic value (a bare hex/base64 run the
-    /// vendor prefix does not tightly bound — `alchemy-api-key`, `carbon-black-api-key`,
+    /// vendor prefix does not tightly bound: `alchemy-api-key`, `carbon-black-api-key`,
     /// `flickr-api-key`, …), so scanner suppression keeps the Tier-B shape gates
     /// ENGAGED for it (`WeakAnchorBase::Always`) instead of trusting the anchor.
     /// Without this the collision-prone captures would bypass the generic
     /// shape/entropy floors and flood FP. The structural-password-slot family is
     /// deliberately NOT weak_anchor (its slot is syntactic, not a vendor prefix).
-    /// A new weak-anchor detector now declares this in its own TOML — no code
-    /// edit — and the whole story lives in the detector file.
+    /// A new weak-anchor detector now declares this in its own TOML, no code
+    /// edit (and the whole story lives in the detector file).
     #[serde(default)]
     pub weak_anchor: bool,
     /// Per-detector "private-key block" classification, OWNED HERE per the
@@ -217,12 +217,12 @@ pub struct DetectorSpec {
     /// `rules/detector-classification.toml` `private_key_block = [...]`).
     ///
     /// `true` marks a detector whose match SPAN is an enclosing private-key block
-    /// (`private-key`, `ssh-private-key`, `github-app-private-key`) — a multi-line
+    /// (`private-key`, `ssh-private-key`, `github-app-private-key`), a multi-line
     /// PEM/OpenSSH body. Resolution (`resolution::suppress_matches_nested_in_private_key_blocks`)
     /// fully suppresses any lower-specificity child finding nested inside such a
     /// span (an entropy/base64 hit on a line INSIDE the key body is not a second
     /// secret). A new private-key-block detector now declares this in its own TOML
-    /// — no code edit — and the whole story lives in the detector file.
+    ///: no code edit (and the whole story lives in the detector file).
     #[serde(default)]
     pub private_key_block: bool,
     /// Per-detector credential shape constraint (see [`CredentialShape`]), OWNED
@@ -271,7 +271,7 @@ pub struct EntropyFloorBucket {
 /// Per-detector credential SHAPE constraint (`[detector.credential_shape]`),
 /// OWNED HERE per the architecture law (was a centralized
 /// `rules/detector-credential-shapes.toml` `[[shape]]` list keyed by detector
-/// id — a per-detector property in a second file). A candidate whose byte length
+/// id, a per-detector property in a second file). A candidate whose byte length
 /// / prefix / post-prefix body length does not fit the declared shape is
 /// suppressed by the scanner's shape gate (`CredentialShapeRule::allows`). Only a
 /// couple of fixed-format vendor detectors declare it: `aws-access-key` is
@@ -297,7 +297,7 @@ pub struct CredentialShape {
 
 impl CredentialShape {
     /// Validate the internal consistency of a declared shape (the single owner of
-    /// these rules — was `credential_shapes::validate_shape_entries`). `detector_id`
+    /// these rules, was `credential_shapes::validate_shape_entries`). `detector_id`
     /// is only used to build a precise error message. Fails closed so a malformed
     /// per-detector shape is caught at load/build, never silently ignored.
     pub fn validate(&self, detector_id: &str) -> Result<(), String> {
@@ -714,12 +714,12 @@ pub enum Severity {
     Critical,
 }
 
-/// Canonical `kebab-case` severity wire forms in `ORDERED` order — the set an
+/// Canonical `kebab-case` severity wire forms in `ORDERED` order, the set an
 /// unknown-token deserialize error advertises. DERIVED (const-evaluated) from the
 /// single [`Severity::ORDERED`] + [`Severity::as_str`] table so it can never drift
 /// from what the enum actually renders and accepts: a variant added to `ORDERED`
-/// appears here — and in the deserialize accept-list and the unknown-variant
-/// diagnostic — automatically, with no second hand-maintained string list. Lists
+/// appears here, and in the deserialize accept-list and the unknown-variant
+/// diagnostic, automatically, with no second hand-maintained string list. Lists
 /// only the canonical spellings and deliberately omits the private `client_safe`
 /// back-compat alias (still *accepted* on input by the visitor below, never
 /// advertised).
@@ -736,7 +736,7 @@ const SEVERITY_CANONICAL_WIRE_FORMS: [&str; Severity::ORDERED.len()] = {
 // Hand-written `Deserialize` (Serialize stays derived; `rename_all` makes it
 // re-emit the canonical kebab form). Two reasons the derive is not enough:
 //   * a non-string input (number/bool/null) must fail with an `invalid type`
-//     error — the categorically-correct diagnostic — not the derive's
+//     error, the categorically-correct diagnostic, not the derive's
 //     variant-identifier path; and
 //   * an unknown token must advertise ONLY the canonical kebab forms while the
 //     visitor still accepts the `client_safe` snake alias on input.
@@ -764,7 +764,7 @@ impl<'de> serde::Deserialize<'de> for Severity {
             where
                 E: serde::de::Error,
             {
-                // Private back-compat alias — deliberately NOT a canonical wire
+                // Private back-compat alias, deliberately NOT a canonical wire
                 // form (kept out of `as_str`/the advertised set).
                 if value == "client_safe" {
                     return Ok(Severity::ClientSafe);
@@ -842,7 +842,7 @@ impl Severity {
 
     pub(crate) fn from_filter_label(label: &str) -> Option<Self> {
         // Filter labels are lenient (trim + lowercase), unlike the exact
-        // deserializer path above — but both resolve against the SAME single
+        // deserializer path above, but both resolve against the SAME single
         // `as_str` table so a new/renamed wire form is honoured everywhere at
         // once. `client_safe` snake alias is accepted here too.
         let normalized = label.trim().to_ascii_lowercase();

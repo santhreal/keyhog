@@ -1,4 +1,4 @@
-"""keyhog adapter — the full config matrix.
+"""keyhog adapter (the full config matrix).
 
 Maps a :class:`ScannerConfig` to keyhog CLI flags:
 
@@ -8,17 +8,17 @@ Maps a :class:`ScannerConfig` to keyhog CLI flags:
   instead of timing a CPU fallback.
 * **cache** -> ``--incremental`` (merkle skip-cache). ``on`` measures the
   *warm* re-run: the adapter populates the index once, then times the second
-  pass — that's the 10-100x monorepo-re-run speedup, measured honestly.
+  pass: that's the 10-100x monorepo-re-run speedup, measured honestly.
 * **daemon** -> ``--daemon`` / ``--daemon=off``.
 * **mode** -> ``--fast`` for ``fast``, full pipeline otherwise.
 
 Scoring parity flags are always present:
 ``--format json --show-secrets --no-suppress-test-fixtures --no-config``.
-``--no-config`` makes the run hermetic — the compiled shipped defaults are
+``--no-config`` makes the run hermetic, the compiled shipped defaults are
 scored, never a stray ``.keyhog.toml`` on a corpus ancestor (MC-07). Findings
 are written to ``--output`` so GNU time's RSS report never crosses the JSON.
 
-The default config (``variants()[0]``) is ``simd-nocache-nodaemon-full`` —
+The default config (``variants()[0]``) is ``simd-nocache-nodaemon-full`` 
 the deterministic build the README leaderboard cites.
 """
 
@@ -81,11 +81,11 @@ def resolve_keyhog_binary(explicit: str | None = None) -> str | None:
     (recall matrix, backend-parity) so there is ONE resolution order, not
     several that drift: explicit arg / `KEYHOG_BIN` env, else the freshly-built
     release binary, else a `release`/`release-fast` binary in either known cargo
-    target dir. Returns None if no real binary exists (callers fail LOUDLY —
+    target dir. Returns None if no real binary exists (callers fail LOUDLY 
     never silently treat 'no binary' as 'no findings')."""
     import pathlib as _pl
     # An explicit arg / KEYHOG_BIN is honored unconditionally: the operator
-    # pointed at a specific binary, so a missing one must fail LOUDLY at exec —
+    # pointed at a specific binary, so a missing one must fail LOUDLY at exec 
     # never be silently swapped for the freshly-built or archive binary (Law 10).
     cand = explicit or os.environ.get("KEYHOG_BIN")
     if cand:
@@ -108,7 +108,7 @@ def _normalize_keyhog(data: object) -> list[Finding]:
     elif isinstance(data, dict):
         if "findings" not in data:
             # A well-formed dict of an unexpected shape (schema rename/nesting)
-            # would otherwise score recall 0.0 on a success exit — the exact
+            # would otherwise score recall 0.0 on a success exit, the exact
             # silent zero-finding scan _parse fails loud on for corrupt JSON.
             raise RuntimeError(
                 "keyhog JSON object has no 'findings' key "
@@ -167,7 +167,7 @@ class KeyhogScanner(Scanner):
 
     @property
     def binary(self) -> str:
-        # ONE resolution order — the same locator the gate tests use, so the
+        # ONE resolution order, the same locator the gate tests use, so the
         # bench and the tests can never drift. Falls back to a bare PATH lookup
         # only when no real binary is found.
         return resolve_keyhog_binary(self._binary) or self.binary_name
@@ -176,7 +176,7 @@ class KeyhogScanner(Scanner):
 
     def variants(self) -> list[ScannerConfig]:
         # Default first (deterministic leaderboard build), then each axis
-        # flipped once — a representative set without the full 40-row cross
+        # flipped once, a representative set without the full 40-row cross
         # product (the runner's perf tier expands axes explicitly).
         default = ScannerConfig(backend="simd", cache="off", daemon="off", mode="full")
         flips = [
@@ -225,7 +225,7 @@ class KeyhogScanner(Scanner):
                "--backend", cfg.backend,
                "--output", str(output)]
         # Optional report-floor override. None (every leaderboard config) means
-        # the compiled shipped default floor is scored — byte-identical to
+        # the compiled shipped default floor is scored, byte-identical to
         # before this knob existed. The ML harvest sets it LOW so it captures
         # the sub-floor candidates a detector fires on but the default floor
         # hides; without those, a retrain can never learn the hard negatives it
@@ -233,7 +233,7 @@ class KeyhogScanner(Scanner):
         # kubernetes-bootstrap-token +203-FP retrain regression).
         if cfg.min_confidence is not None:
             # Fixed decimal, never repr(): repr(0.00001) == '1e-05', which the
-            # CLI's numeric flag parser rejects — and the harvest path sets this
+            # CLI's numeric flag parser rejects, and the harvest path sets this
             # floor deliberately low.
             cmd += ["--min-confidence", str(float(cfg.min_confidence))]
         cmd += ["--daemon"] if cfg.daemon == "on" else ["--daemon=off"]
@@ -313,7 +313,7 @@ class KeyhogScanner(Scanner):
     @staticmethod
     def _parse(output: pathlib.Path, config_id: str = "") -> list[Finding]:
         # The exit code already confirmed success here, so a read/parse failure
-        # is NOT "zero findings" — it is corrupt output that would silently score
+        # is NOT "zero findings", it is corrupt output that would silently score
         # recall 0. Fail closed loudly (Law 10) rather than swallow it; only a
         # genuinely empty valid file yields [].
         try:

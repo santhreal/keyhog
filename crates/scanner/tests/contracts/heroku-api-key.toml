@@ -2,7 +2,7 @@
 #
 # Format: UUID v4-shaped string, captured via context-anchored regex
 # that requires `HEROKU_API_KEY=` or `heroku_api_key=` to precede.
-# Pure UUID with no context is intentionally not flagged — UUIDs
+# Pure UUID with no context is intentionally not flagged. UUIDs
 # are too generic without a Heroku-specific anchor.
 
 schema_version = 1
@@ -26,11 +26,11 @@ reason = "YAML-style assignment, lowercase variant."
 
 [[negative]]
 text = "9a3b7c2e-4d1f-6a8b-0c5d-9e3f7a1b4c2d"
-reason = "Bare UUID with no Heroku context — must NOT match (UUIDs are too generic without anchor)."
+reason = "Bare UUID with no Heroku context (must NOT match (UUIDs are too generic without anchor))."
 
 [[negative]]
 text = "HEROKU_API_KEY=short"
-reason = "Body not a UUID — must not match."
+reason = "Body not a UUID (must not match)."
 
 [[negative]]
 text = "see Heroku docs for HEROKU_API_KEY format"
@@ -41,7 +41,7 @@ reason = "Prose mentioning the variable name without a value."
 [[evasion]]
 text = "{\"HEROKU_API_KEY\":\"9a3b7c2e-4d1f-6a8b-0c5d-9e3f7a1b4c2d\"}"
 credential = "9a3b7c2e-4d1f-6a8b-0c5d-9e3f7a1b4c2d"
-reason = "JSON payload with the env-var name as key — extraction must not consume the closing quote/brace."
+reason = "JSON payload with the env-var name as key (extraction must not consume the closing quote/brace)."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

@@ -35,7 +35,7 @@ fn scan_dedup_none_reports_all_occurrences() {
         })
         .collect();
     // Law 6: the two DISTINCT planted secrets must each surface as their OWN
-    // detector, not merely "2 findings" — a dedup bug returning the same
+    // detector, not merely "2 findings", a dedup bug returning the same
     // credential twice would satisfy a bare `len() >= 2` count.
     assert!(
         ids.iter().any(|id| id == "aws-access-key"),

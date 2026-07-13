@@ -92,7 +92,7 @@ proptest! {
 
     /// Every returned keyword is ALREADY in normalized form (the selector always
     /// returns a `normalize_assignment_keyword` output). Swept over arbitrary
-    /// Unicode — also the no-panic guarantee for the whole selector.
+    /// Unicode (also the no-panic guarantee for the whole selector).
     #[test]
     fn every_returned_keyword_is_normalized(line in "(?s).{0,48}") {
         if let Some(k) = keyword_for_line(&line) {
@@ -118,7 +118,7 @@ proptest! {
     }
 
     /// FALLBACK: with no credential key, the RIGHTMOST key is selected. `offset`
-    /// is derived (1..len, wrapped) so `left` and `right` are ALWAYS distinct — no
+    /// is derived (1..len, wrapped) so `left` and `right` are ALWAYS distinct, no
     /// `prop_assume` rejection (which would trip the global-reject limit on this
     /// tiny two-key domain).
     #[test]

@@ -1,4 +1,4 @@
-//! Line-length / window-boundary runner — a credential-sufficient secret
+//! Line-length / window-boundary runner, a credential-sufficient secret
 //! surfaces at any BYTE OFFSET, including past the in-memory window cap.
 //!
 //! Minified JS, a base64 blob dumped without wrapping, single-line k8s
@@ -11,7 +11,7 @@
 //! ---------------------------------------
 //! We place a credential-sufficient secret VERBATIM after a filler prefix of
 //! the chosen length and assert it still surfaces. The credential bytes are
-//! left untouched — a multiline PEM keeps its internal newlines; collapsing
+//! left untouched, a multiline PEM keeps its internal newlines; collapsing
 //! them with `replace('\n', " ")` would mutate the credential into a DIFFERENT
 //! string (the bug this rewrite removes, which dropped every `ssh-private-key`
 //! positive at *every* offset including 0). So this is a *credential-
@@ -20,7 +20,7 @@
 //! the buffer it sits. The in-memory `scan(&chunk)` path WINDOWS any chunk over
 //! `MAX_SCAN_CHUNK_BYTES` (1 MiB) into overlapping ≤1 MiB windows
 //! (`WINDOW_OVERLAP_BYTES` = 128 KiB), and `max_file_size` is a filesystem-
-//! walker bound that does NOT apply here — so there is no legitimate
+//! walker bound that does NOT apply here, so there is no legitimate
 //! per-line/per-chunk cap on this path below the 16 MiB decode ceiling, and
 //! every credential-sufficient miss at any offset below is a real windowing
 //! recall bug. We gate exactly that, all-or-nothing.
@@ -28,13 +28,13 @@
 //! Why the seam sample is the LONGEST credentials, not the whole corpus
 //! -------------------------------------------------------------------
 //! The seam offsets generate megabyte chunks; scanning one per gated primary in
-//! a debug build is minutes of wall-clock (Law 7 — the prior version took
+//! a debug build is minutes of wall-clock (Law 7, the prior version took
 //! 315 s). The windowing math bounds exactly what the seam can probe: the
 //! windows of a ~1.5 MiB chunk are [0, 1 MiB] and [1 MiB − 128 KiB, 1.9 MiB],
 //! so any credential no longer than the 128 KiB overlap is FULLY CONTAINED in
 //! some window regardless of where it lands. The only thing the seam adds over
 //! the realistic ladder is "does `scan_windowed` iterate PAST window 1 and find
-//! a credential there" — a single scanner behavior, hardest for the LONGEST
+//! a credential there", a single scanner behavior, hardest for the LONGEST
 //! credential (closest to the containment bound). We therefore run the seam
 //! over the `SEAM_SAMPLE` longest gated credentials. The restriction is logged,
 //! not silent (CLAUDE.md Law 10), and the realistic ladder still gates EVERY
@@ -62,7 +62,7 @@ const REALISTIC_OFFSETS: &[usize] = &[0, 256, 4 * 1024, 16 * 1024, 64 * 1024];
 /// Seam offsets that cross `MAX_SCAN_CHUNK_BYTES` (1 MiB): 1 MiB places the
 /// credential right at the first window's end boundary; 1.5 MiB places it beyond
 /// the first window entirely so only the second overlapping window can reach it.
-/// Both prove `scan_windowed` iterates past window 1. Megabyte chunks — run only
+/// Both prove `scan_windowed` iterates past window 1. Megabyte chunks, run only
 /// over the seam sample, see `SEAM_SAMPLE`.
 const SEAM_OFFSETS: &[usize] = &[1024 * 1024, 1024 * 1024 + 512 * 1024];
 
@@ -79,7 +79,7 @@ const SEAM_SAMPLE: usize = 8;
 /// BEFORE and AFTER it. `(500, 500)` is exactly the reported shape
 /// (`filler·500 + secret + filler·500`); the larger pairs push the trailing
 /// filler further out. Trailing content must not cause a mid-line credential to
-/// be dropped — the in-memory path windows with no per-line cap, so a mid-line
+/// be dropped, the in-memory path windows with no per-line cap, so a mid-line
 /// miss is the same class of windowing recall bug the end-of-line ladder gates.
 const MID_LINE_PAIRS: &[(usize, usize)] =
     &[(500, 500), (4 * 1024, 4 * 1024), (16 * 1024, 4 * 1024)];
@@ -89,12 +89,12 @@ const MID_LINE_PAIRS: &[(usize, usize)] =
 /// single-line config lines routinely carry several secrets at once.
 const MULTI_SECRET_LINE_COUNT: usize = 12;
 
-/// String-VALUE quote delimiters a credential is routinely wrapped in — the
+/// String-VALUE quote delimiters a credential is routinely wrapped in, the
 /// unambiguous "this is a value" context of JSON, YAML, TOML, and source string
 /// literals. A credential-sufficient secret MUST still surface wrapped in either
 /// quote (the overwhelmingly common config/code shape).
 ///
-/// NOTE — deliberately QUOTES ONLY. Bracket-family wraps (`(…)`, `[…]`, `{…}`,
+/// NOTE, deliberately QUOTES ONLY. Bracket-family wraps (`(…)`, `[…]`, `{…}`,
 /// `<…>`, `` `…` ``) are an AMBIGUOUS context: a bare high-entropy base64 blob
 /// inside `foo(…)` or `[…]` may be an argument/array element rather than a
 /// secret, so the generic path treating it as lower-confidence can be intended
@@ -131,8 +131,8 @@ fn credential_sufficient_secrets_survive_long_line_offsets() {
 
     // Place a credential VERBATIM at `offset` bytes and ask whether it
     // surfaces. The credential bytes (including any internal newlines) are never
-    // mutated, so byte-preservation — and therefore the soundness of the
-    // credential-sufficiency invariance — holds by construction.
+    // mutated, so byte-preservation, and therefore the soundness of the
+    // credential-sufficiency invariance (holds by construction).
     let probe = |p: &Primary, offset: usize| -> bool {
         let prefix = &fillers[&offset];
         let text = format!("{prefix} {}", p.credential);
@@ -188,7 +188,7 @@ fn credential_sufficient_secrets_survive_long_line_offsets() {
     }
 
     // Companion-required corpus context, counted ONCE at baseline. Their text
-    // (which carries the keyword anchor) is inlined; this is informational —
+    // (which carries the keyword anchor) is inlined; this is informational 
     // their per-offset survival is a bench-owned RATE, never gated here.
     let mut companion_runs = 0usize;
     let mut companion_hits = 0usize;
@@ -223,7 +223,7 @@ fn credential_sufficient_secrets_survive_long_line_offsets() {
     assert!(
         violations.is_empty(),
         "line-length credential-sufficiency invariance violated ({} cases): a credential that \
-         fires standalone was dropped at a larger byte offset — a per-line/window-cap recall bug \
+         fires standalone was dropped at a larger byte offset, a per-line/window-cap recall bug \
          on the in-memory scan path (which windows, so no legitimate cap applies below 16 MiB):\n  \
          - {}",
         violations.len(),
@@ -232,8 +232,8 @@ fn credential_sufficient_secrets_survive_long_line_offsets() {
 }
 
 /// Complement of the offset ladder: a credential-sufficient secret embedded in
-/// the MIDDLE of a long single line — `filler + secret + filler`, all on one
-/// line — must still surface. The offset ladder only ever places the credential
+/// the MIDDLE of a long single line: `filler + secret + filler`, all on one
+/// line, must still surface. The offset ladder only ever places the credential
 /// at end-of-line, so trailing content past the credential was never gated; a
 /// minified bundle or single-line config dump routinely puts a secret mid-line.
 /// Same all-or-nothing credential-sufficiency invariance: a secret that fires on
@@ -292,7 +292,7 @@ fn credential_sufficient_secrets_survive_embedded_mid_line() {
     assert!(
         violations.is_empty(),
         "mid-line credential-sufficiency invariance violated ({} cases): a credential that fires \
-         standalone was DROPPED when placed in the MIDDLE of a long line with trailing filler — a \
+         standalone was DROPPED when placed in the MIDDLE of a long line with trailing filler, a \
          windowing/tokenisation recall bug for minified / single-line content (the in-memory path \
          windows, so no legitimate per-line cap applies):\n  - {}",
         violations.len(),
@@ -302,7 +302,7 @@ fn credential_sufficient_secrets_survive_embedded_mid_line() {
 
 /// Multi-secret one-line recall: a real `.env` / minified / single-line config
 /// line often carries SEVERAL secrets. Reporting the first must not stop the
-/// scan of the line or evict the rest — EVERY credential-sufficient secret
+/// scan of the line or evict the rest. EVERY credential-sufficient secret
 /// packed onto a single line must surface. Uses DISTINCT detectors (distinct
 /// credential bytes) so no value/detector dedup can mask a genuine drop.
 /// Complementary to the single-secret offset/mid-line ladders above (which each
@@ -366,7 +366,7 @@ fn every_secret_on_a_densely_packed_line_surfaces() {
     assert!(
         violations.is_empty(),
         "multi-secret one-line recall violated ({} of {} dropped): a standalone-firing credential \
-         was not reported when several secrets share a line — the scanner must surface EVERY secret \
+         was not reported when several secrets share a line, the scanner must surface EVERY secret \
          on a line, not just the first:\n  - {}",
         violations.len(),
         chosen.len(),
@@ -374,12 +374,12 @@ fn every_secret_on_a_densely_packed_line_surfaces() {
     );
 }
 
-/// String-value quote recall: a credential is almost never bare — it sits as a
+/// String-value quote recall: a credential is almost never bare, it sits as a
 /// quoted VALUE, `"ghp_…"` / `'glpat-…'` (JSON/YAML/TOML/source string literals).
 /// A quote is the unambiguous "this is a value" context, so a credential-
 /// sufficient secret must still surface wrapped in either quote. Complements the
 /// whitespace/BOM runner (which wraps in WHITESPACE) with the quoted-value case.
-/// (Bracket-family wraps are intentionally excluded — see `WRAP_DELIMS`.)
+/// (Bracket-family wraps are intentionally excluded, see `WRAP_DELIMS`.)
 #[test]
 fn credential_sufficient_secrets_survive_string_value_quotes() {
     let scanner = scanner();
@@ -393,13 +393,13 @@ fn credential_sufficient_secrets_survive_string_value_quotes() {
     let mut violations: Vec<String> = Vec::new();
 
     for (idx, p) in primaries.iter().enumerate() {
-        // Single-line credentials only — a multiline PEM carries its own
+        // Single-line credentials only, a multiline PEM carries its own
         // delimiters and would confound a "wrapped in one pair" probe.
         if !sufficient[idx] || p.credential.contains('\n') {
             continue;
         }
         for &(open, close) in WRAP_DELIMS {
-            // e.g. `"ghp_…"`, `'glpat-…'` — a quoted value with benign filler
+            // e.g. `"ghp_…"`, `'glpat-…'`: a quoted value with benign filler
             // either side so the wrap is mid-content, not at a buffer edge.
             let text = format!("lead {open}{}{close} tail", p.credential);
             let chunk = make_chunk(&text, SOURCE_TYPE, "wrapped.txt");
@@ -425,7 +425,7 @@ fn credential_sufficient_secrets_survive_string_value_quotes() {
     assert!(
         violations.is_empty(),
         "quoted-value credential-sufficiency invariance violated ({} cases): a credential that \
-         fires standalone was DROPPED when wrapped as a quoted string value — the JSON/YAML/source \
+         fires standalone was DROPPED when wrapped as a quoted string value, the JSON/YAML/source \
          norm, so this is a real boundary-handling recall bug:\n  - {}",
         violations.len(),
         violations.join("\n  - "),

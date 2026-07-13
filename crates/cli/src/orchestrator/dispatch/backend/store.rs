@@ -213,7 +213,7 @@ fn describe_feature_list(features: &[String]) -> String {
 
 /// How a raw cache read failed to parse into a trusted [`AutorouteCache`].
 /// The ONE parse pipeline (envelope version gate BEFORE the full payload
-/// deserialize) shared by the reader, the inspection view, and the merge-save —
+/// deserialize) shared by the reader, the inspection view, and the merge-save 
 /// three call sites, three POLICIES, one parse.
 enum CacheParseError {
     /// The bytes are not JSON with the version envelope shape at all.
@@ -265,7 +265,7 @@ pub(super) fn load_autoroute_cache(
     validate_cache_shared_identity(&cache, detector_digest, rules_digest, host_profile)?;
     // Multi-config cache: pick the decisions calibrated for THIS resolved scan
     // config. A missing entry fails closed exactly like the old single-config
-    // digest mismatch — the auto scan refuses to substitute a backend — but
+    // digest mismatch, the auto scan refuses to substitute a backend, but
     // other presets calibrated on the same binary/host stay usable.
     let Some(config) = cache
         .configs
@@ -372,7 +372,7 @@ fn read_autoroute_cache_file(path: &std::path::Path) -> std::io::Result<Vec<u8>>
 pub(super) enum BucketResolution {
     /// The exact workload bucket was calibrated.
     Exact(ScanBackend),
-    /// No exact decision exists — the caller must fail closed.
+    /// No exact decision exists (the caller must fail closed).
     Unresolved,
 }
 
@@ -393,7 +393,7 @@ pub(super) fn resolve_bucket(
 // a fail-closed "no decision for workload bucket ..." error can see exactly which
 // resolved configs and workload buckets ARE calibrated, and whether the cache is
 // stale for this build. This path deliberately does NOT validate host/detector/
-// rules identity — a real scan does that and surfaces a mismatch loudly. It
+// rules identity, a real scan does that and surfaces a mismatch loudly. It
 // deserializes and DISPLAYS, additionally flagging the cheap build-identity drift
 // (binary version / git hash / feature set) that a post-upgrade stale cache shows.
 
@@ -427,7 +427,7 @@ pub(crate) struct AutorouteConfigInspection {
 /// One calibrated (workload bucket -> fastest-correct backend) decision, rendered
 /// for `keyhog backend inspect`. Every numeric field here is DERIVED from the
 /// persisted timing evidence on the source `AutorouteDecision` (which stores no
-/// denormalized copies) — this human-readable projection is where those derived
+/// denormalized copies), this human-readable projection is where those derived
 /// ms / margin values surface.
 #[derive(Debug, Serialize)]
 pub(crate) struct AutorouteDecisionInspection {
@@ -544,7 +544,7 @@ pub(crate) fn inspect_autoroute_cache(path: Option<&std::path::Path>) -> Autorou
                 sample_chunks: decision.sample_chunks,
                 // Human-readable ms + margin live in the inspection view only,
                 // DERIVED from the persisted timing evidence (not stored on the
-                // decision — the ONE-PLACE invariant this schema enforces).
+                // decision (the ONE-PLACE invariant this schema enforces)).
                 simd_ms: decision.simd_ms(),
                 cpu_ms: decision.cpu_ms(),
                 gpu_ms: decision.gpu_ms(),
@@ -566,7 +566,7 @@ pub(crate) fn inspect_autoroute_cache(path: Option<&std::path::Path>) -> Autorou
 /// Render a workload bucket in the same field layout as the fail-closed
 /// "no persisted decision for workload bucket ..." error, so an operator can
 /// match the bucket they were refused against the buckets that ARE calibrated.
-/// Shared by cache inspection and missing-decision diagnostics — one bucket
+/// Shared by cache inspection and missing-decision diagnostics, one bucket
 /// rendering, never a drifting second copy.
 pub(super) fn render_workload_key(key: &WorkloadKey) -> String {
     format!(
@@ -636,7 +636,7 @@ fn validate_decision_route_evidence(
     // Timing-evidence VALIDITY (enough trials, well-formed CI) is a real invariant
     // and stays. The former `X_ms != X_timing.best_ms()` cross-checks are GONE:
     // per-backend ms is now DERIVED from the timing on load (`decision.simd_ms()`
-    // …), so it cannot disagree with its own source — there is nothing to
+    // …), so it cannot disagree with its own source, there is nothing to
     // cross-check. Same for the selected-margin: `selected_margin_ns()` is derived
     // from the timing + resolved backend, so the former stored-vs-recomputed check
     // is structurally impossible to fail and has been removed (ONE-PLACE).
@@ -664,8 +664,8 @@ fn validate_decision_route_evidence(
         return Err("selected backend timing evidence is invalid".into());
     }
     // Soundness gate. The persisted backend must equal the deterministic
-    // resolution of the persisted timing evidence (`resolved_routing_backend`) —
-    // the SAME confidence-interval logic calibration used to select it — so a
+    // resolution of the persisted timing evidence (`resolved_routing_backend`) 
+    // the SAME confidence-interval logic calibration used to select it, so a
     // tampered or non-deterministic cache that names any other backend is
     // rejected. Routing is decided from 95% CIs, never a single `best_ns` trial.
     let Some(resolved) = decision.resolved_routing_backend() else {
@@ -706,10 +706,10 @@ fn validate_gpu_cold_warm_cache_evidence(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // A persisted GPU timing set must be structurally able to produce cold/warm
     // route evidence (enough warm trials); otherwise it could not route and the
-    // cache is corrupt — fail closed (Law 10), never silently drop GPU. The
+    // cache is corrupt, fail closed (Law 10), never silently drop GPU. The
     // cold/warm/route VALUES are derived on demand from this same evidence
     // (`AutorouteDecision::gpu_cold_warm_route`), so there is no stored copy to
-    // cross-check — only this derivability invariant remains. No GPU timing means
+    // cross-check, only this derivability invariant remains. No GPU timing means
     // nothing to derive: trivially valid.
     if let Some(gpu_timing) = decision.gpu_timing.as_ref() {
         if gpu_cold_warm_route_evidence(gpu_timing).is_none() {
@@ -747,7 +747,7 @@ pub(super) fn save_autoroute_cache(
     // freshly measured buckets over any it already had so sequential install
     // probes (separate processes, one bucket each) build up instead of each
     // clobbering the last. An incompatible/corrupt file is superseded wholesale
-    // (loudly — see `read_mergeable_configs`).
+    // (loudly (see `read_mergeable_configs`)).
     let mut configs = read_mergeable_configs(path, detector_digest, rules_digest, host_profile);
     let mut merged: std::collections::BTreeMap<WorkloadKey, AutorouteDecision> =
         std::collections::BTreeMap::new();
@@ -785,7 +785,7 @@ pub(super) fn save_autoroute_cache(
 
 /// Read the per-config decisions from an existing cache that is STILL valid for
 /// this exact binary/host/corpus/rule-set, so a merge-save can preserve other
-/// presets. Returns an empty vec when there is nothing safe to preserve — file
+/// presets. Returns an empty vec when there is nothing safe to preserve, file
 /// absent (expected), an older schema or a different build/host/corpus (an
 /// expected post-rebuild supersede, logged at info), or a present-but-corrupt
 /// file (logged loudly per Law 10 before replacement). It never fails the save;

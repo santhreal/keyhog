@@ -2,20 +2,20 @@
 //! UNDER the `S3Source::chunks()` pagination loop (`s3/mod.rs` +
 //! `cloud/mod.rs`) must each be exact and host-independent:
 //!
-//!   * ENDPOINT/REGION RECOGNITION — `endpoint_is_aws` decides whether an
+//!   * ENDPOINT/REGION RECOGNITION: `endpoint_is_aws` decides whether an
 //!     `--s3-endpoint` (regional / dual-stack / China-partition host) is
 //!     AWS-owned, so ambient `AWS_ACCESS_KEY_ID` SigV4 signing is scoped to AWS
 //!     hosts only. Suffix-confusion hosts (`evil-amazonaws.com`,
 //!     `amazonaws.com.attacker.net`) and unparseable endpoints must be rejected.
-//!   * OBJECT-KEY CLASSIFICATION — `is_probably_text_object_key` decides which
+//!   * OBJECT-KEY CLASSIFICATION: `is_probably_text_object_key` decides which
 //!     listed keys are downloaded and scanned as text vs. dropped as
 //!     binary/container content; the decision is by extension, case-insensitive,
 //!     with dot-files / no-extension keys treated as text.
-//!   * MALFORMED BUCKET => EXACT ERROR — `collect_s3_chunks` validates the
+//!   * MALFORMED BUCKET => EXACT ERROR: `collect_s3_chunks` validates the
 //!     bucket name BEFORE any network call, so an invalid bucket yields exactly
 //!     one `SourceError::Other` whose message names the exact refusal (no HTTP
 //!     request is ever issued; fully offline / host-independent).
-//!   * CONTINUATION TOKEN DRIVES THE NEXT PAGE — a truncated page's
+//!   * CONTINUATION TOKEN DRIVES THE NEXT PAGE, a truncated page's
 //!     `NextContinuationToken` (even one carrying URL-special bytes `=`/`/`/`+`)
 //!     is threaded VERBATIM into the page-2 `continuation-token` query param; a
 //!     NON-truncated page never triggers a second listing even if it carries a
@@ -175,7 +175,7 @@ fn endpoint_is_aws_rejects_unparseable_endpoint() {
     assert!(!TestApi.s3_endpoint_is_aws("http://"));
 }
 
-/// The credential-forward gate is the caller's explicit flag verbatim — no env
+/// The credential-forward gate is the caller's explicit flag verbatim, no env
 /// var can weaken it, so the mapping is the identity function.
 #[test]
 fn credential_forward_allowed_is_identity() {
@@ -216,7 +216,7 @@ fn text_object_key_no_extension_and_dotfile_are_scannable() {
 }
 
 /// Container / compressed extensions are treated as binary and NOT scanned as
-/// text — this is the S3-specific binary-object denylist.
+/// text (this is the S3-specific binary-object denylist).
 #[test]
 fn text_object_key_rejects_container_binary_extensions() {
     for key in [
@@ -363,8 +363,8 @@ fn malformed_bucket_double_dot_yields_exact_invalid_error() {
 // Continuation token drives the next page (httpmock, localhost, anonymous).
 // ---------------------------------------------------------------------------
 
-/// A `NextContinuationToken` carrying URL-special bytes (`=`, `/`, `+`) — the
-/// shape of a real base64 S3 cursor — must be threaded VERBATIM into the page-2
+/// A `NextContinuationToken` carrying URL-special bytes (`=`, `/`, `+`), the
+/// shape of a real base64 S3 cursor, must be threaded VERBATIM into the page-2
 /// `continuation-token` query param. httpmock matches the DECODED param value,
 /// so a page-2 hit count of exactly 1 proves the token round-tripped through
 /// URL-encoding without corruption or double-encoding.
@@ -421,7 +421,7 @@ fn continuation_token_with_url_special_chars_threaded_verbatim() {
 }
 
 /// Adversarial: a NON-truncated (`IsTruncated=false`) page that nonetheless
-/// carries a stray `NextContinuationToken` must NOT trigger a second listing —
+/// carries a stray `NextContinuationToken` must NOT trigger a second listing 
 /// pagination is gated on `IsTruncated`, not on token presence. A page-2 probe
 /// matching ANY continuation token must record zero calls, and the single page
 /// object is still scanned.
@@ -498,7 +498,7 @@ fn run_hostile_listing(body: &str) -> (usize, Vec<String>) {
 /// XXE DEFENSE, END-TO-END: a hostile or compromised S3 endpoint returning a
 /// ListObjectsV2 body carrying `<!DOCTYPE`/`<!ENTITY` markup (classic external
 /// entity, lowercase-doctype evasion, or a bare entity decl) must be rejected by
-/// `parse_s3_listing`'s DTD/entity pre-screen BEFORE deserialization — so NO
+/// `parse_s3_listing`'s DTD/entity pre-screen BEFORE deserialization, so NO
 /// object is scanned and the operator sees the "DTD/entity declarations" refusal
 /// surfaced through `record_unreadable_listing_skip`. This proves the defense on
 /// the shipped source path (stronger than a unit test): a regression that dropped
@@ -515,7 +515,7 @@ fn hostile_xxe_listing_is_rejected_and_scans_nothing() {
             "<IsTruncated>false</IsTruncated>",
             "<Contents><Key>&xxe;</Key><Size>16</Size></Contents></ListBucketResult>",
         ),
-        // Lowercase `<!doctype` — a naive case-sensitive screen would miss this.
+        // Lowercase `<!doctype`: a naive case-sensitive screen would miss this.
         "<!doctype listbucketresult><ListBucketResult/>",
         // Bare entity declaration.
         "<!ENTITY lol \"lol\"><ListBucketResult/>",

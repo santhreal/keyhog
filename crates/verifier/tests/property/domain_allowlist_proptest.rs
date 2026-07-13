@@ -1,6 +1,6 @@
 //! Property / invariant coverage for the verifier's egress DOMAIN ALLOWLIST
 //! matcher (`domain_allowlist::host_is_allowed`, reached via the
-//! `VerifierTestApi` facade — the predicate is `pub(crate)`). This is the gate
+//! `VerifierTestApi` facade, the predicate is `pub(crate)`). This is the gate
 //! that decides whether a VALIDATED credential may be sent to a given host, so a
 //! hole here is a direct credential-exfil vector: a host the matcher wrongly
 //! allows receives a live secret, and a shared-tenant subdomain wrongly allowed
@@ -20,7 +20,7 @@ const SAMPLES: usize = 50_000;
 
 #[test]
 fn exact_apex_is_always_allowed() {
-    // A domain always matches itself exactly — the `host == allowed` fast path,
+    // A domain always matches itself exactly, the `host == allowed` fast path,
     // taken even for shared-tenant suffixes (their apex is legitimate).
     let mut state = 0xA11C_0001;
     for _ in 0..SAMPLES {
@@ -51,7 +51,7 @@ fn empty_host_or_empty_allowlist_is_rejected() {
 
 #[test]
 fn matching_is_ascii_case_insensitive() {
-    // The verdict must not change when either side's ASCII case changes — a
+    // The verdict must not change when either side's ASCII case changes, a
     // case-sensitive matcher would let `API.EXAMPLE.COM` bypass an `example.com`
     // allowlist (or vice-versa).
     let mut state = 0xCA5E_0002;
@@ -131,7 +131,7 @@ fn suffix_without_dot_boundary_is_not_confused_for_subdomain() {
 fn shared_tenant_suffix_allows_only_apex_never_subdomain() {
     // The anti-cross-tenant-exfil guard: a shared-tenant suffix (`myshopify.com`)
     // is a platform apex whose subdomains belong to UNRELATED tenants. The apex
-    // itself is allowed, but no `{store}.myshopify.com` subdomain ever is —
+    // itself is allowed, but no `{store}.myshopify.com` subdomain ever is 
     // otherwise one store's credential could be verified against another's.
     let mut state = 0x5A7E_0007;
     let shared = "myshopify.com".to_string();
@@ -146,7 +146,7 @@ fn shared_tenant_suffix_allows_only_apex_never_subdomain() {
             "shared-tenant subdomain {sub} must be REJECTED (different tenant)"
         );
     }
-    // Contrast: an ordinary domain DOES allow its subdomain — proving the
+    // Contrast: an ordinary domain DOES allow its subdomain, proving the
     // rejection above is specifically the exact-only guard, not a blanket block.
     assert!(TestApi.host_is_allowed("shop.example.com", &["example.com".to_string()]));
 }

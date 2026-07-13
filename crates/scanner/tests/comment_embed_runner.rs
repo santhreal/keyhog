@@ -1,4 +1,4 @@
-//! Comment-embed runner — the `scan_comments` toggle is a sound, wired,
+//! Comment-embed runner, the `scan_comments` toggle is a sound, wired,
 //! monotone behavior switch.
 //!
 //! `# api_key = "ghp_…"` in Python, `// AWS_SECRET="…"` in JS, `/* token=… */`
@@ -16,11 +16,11 @@
 //! IS a sound, rate-free TOOL-BEHAVIOR contract is the toggle itself, asserted
 //! all-or-nothing over the credential-sufficient set:
 //!
-//!   1. **Monotonicity** — enabling `scan_comments` can only ADD comment
+//!   1. **Monotonicity**: enabling `scan_comments` can only ADD comment
 //!      findings, never remove one. For every credential-sufficient positive in
 //!      every comment style, `default-surfaces ⟹ enabled-surfaces`. A single
 //!      counterexample is a real suppression-ordering bug.
-//!   2. **The flag is wired** — there is at least one credential-sufficient
+//!   2. **The flag is wired**: there is at least one credential-sufficient
 //!      positive that the default scanner suppresses in a comment and the
 //!      `scan_comments=true` scanner surfaces. A zero-effect flag is a dead-knob
 //!      wiring bug (CLAUDE.md WIRING / Law 11), caught here rather than shipped.
@@ -106,7 +106,7 @@ fn scan_comments_toggle_is_wired_and_monotone() {
     let n_sufficient = sufficient.iter().filter(|b| **b).count();
 
     // Per style: (default_hits, enabled_hits, gated_runs) over the
-    // credential-sufficient set — informational shape of the toggle's effect.
+    // credential-sufficient set (informational shape of the toggle's effect).
     let mut per_style: BTreeMap<&'static str, (usize, usize, usize)> = BTreeMap::new();
     let mut monotonicity_violations: Vec<String> = Vec::new();
     let mut flag_effect_cases = 0usize;
@@ -163,7 +163,7 @@ fn scan_comments_toggle_is_wired_and_monotone() {
     assert!(
         monotonicity_violations.is_empty(),
         "scan_comments monotonicity violated ({} cases): enabling --scan-comments REMOVED a \
-         comment finding it should only ever add — a suppression-ordering bug:\n  - {}",
+         comment finding it should only ever add, a suppression-ordering bug:\n  - {}",
         monotonicity_violations.len(),
         monotonicity_violations.join("\n  - "),
     );
@@ -172,7 +172,7 @@ fn scan_comments_toggle_is_wired_and_monotone() {
         "scan_comments had ZERO effect across the entire credential-sufficient corpus in every \
          comment style: no credential-sufficient secret that the default scanner suppressed in a \
          comment was surfaced by scan_comments=true. The flag is dead-wired (CLAUDE.md WIRING / \
-         Law 11) — either the config no longer reaches the Comment-context penalty, or comment \
+         Law 11), either the config no longer reaches the Comment-context penalty, or comment \
          context detection broke."
     );
 }

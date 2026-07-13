@@ -7,7 +7,7 @@
 //! real known-prefix credential to 0.8 while refusing placeholders and degenerate
 //! repeats. These tests pin (1) the list's integrity, (2) that body extraction
 //! picks the LONGEST matching prefix independent of list order, and (3) the floor's
-//! grant/deny decisions — the exact recall/precision boundary this module owns.
+//! grant/deny decisions (the exact recall/precision boundary this module owns).
 
 use keyhog_scanner::testing::confidence::{
     known_prefix_body, known_prefix_confidence_floor, KNOWN_PREFIXES,
@@ -43,7 +43,7 @@ fn no_known_prefix_is_empty() {
 #[test]
 fn body_strips_the_longest_matching_prefix_not_the_first() {
     // `sk-` also matches `sk-proj-…`, but `sk-proj-` is longer and must win, so the
-    // body is the token after the full vendor prefix — regardless of which appears
+    // body is the token after the full vendor prefix, regardless of which appears
     // first in KNOWN_PREFIXES.
     assert_eq!(known_prefix_body("sk-proj-ABCDEF"), Some("ABCDEF"));
     assert_eq!(known_prefix_body("sk-ant-ABCDEF"), Some("ABCDEF"));
@@ -78,8 +78,8 @@ fn body_of_empty_credential_is_none() {
 
 #[test]
 fn body_of_a_credential_equal_to_a_prefix_is_empty_not_none() {
-    // Stripping the whole thing leaves an empty body — Some(""), a match with no
-    // body — never None (None means "no known prefix").
+    // Stripping the whole thing leaves an empty body. Some(""), a match with no
+    // body (never None (None means "no known prefix")).
     assert_eq!(known_prefix_body("ghp_"), Some(""));
 }
 

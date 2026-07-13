@@ -1,13 +1,13 @@
 //! E2E (#32): `keyhog calibrate-autoroute` primes the full preset × workload
-//! matrix in one command — the in-binary counterpart to the installer's
+//! matrix in one command, the in-binary counterpart to the installer's
 //! `prime_autoroute_cache` shell loop. Afterward a plain auto scan whose
 //! workload matches a calibrated bucket must resolve a backend for EVERY
 //! documented preset (never fail closed, exit 2), proving the subcommand
 //! persisted the same buckets the shell loop did.
 //!
 //! Unlike the lighter `autoroute_preset_resolution` test (which calibrates and
-//! verifies the same file), this drives the real subcommand end to end — it
-//! sweeps `--deep` too and inherits its env into the child probes — then
+//! verifies the same file), this drives the real subcommand end to end, it
+//! sweeps `--deep` too and inherits its env into the child probes, then
 //! verifies against a SEPARATE file at a calibrated ladder size, so it also
 //! proves the spawn + cache-path plumbing and that decisions persist across
 //! processes.
@@ -23,7 +23,7 @@ use tempfile::TempDir;
 /// Write `bytes` of plain, low-decode-density text. The block is the same
 /// trigger-free seed `calibrate-autoroute` builds its plain single-file probes
 /// from (no decode-trigger bytes like `=`/`"`, no 24-char+ alnum runs), so the
-/// file lands in decode-density bucket 0 — the exact class of the calibrated
+/// file lands in decode-density bucket 0, the exact class of the calibrated
 /// plain single-file rungs. A `=` or a long token would shift it to a different
 /// density class the rungs never calibrate.
 fn write_plain_bytes(path: &std::path::Path, bytes: usize) {
@@ -101,7 +101,7 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
 #[test]
 fn calibrate_autoroute_rejects_cache_off_up_front() {
     // Calibration must persist; `--autoroute-cache off` disables persistence, so
-    // it is rejected up front with ONE clear line — not a flood of per-probe
+    // it is rejected up front with ONE clear line, not a flood of per-probe
     // "did not persist a routing decision" failures (the original dogfood bug).
     let out = Command::new(binary())
         .args(["calibrate-autoroute", "--autoroute-cache", "off"])

@@ -10,7 +10,7 @@ fn gpu_backend_internal_denies_forced_degrade() {
     // route to CPU: `scan_with_backend` and `scan_chunks_with_backend` go through
     // the `deny_silent_selected_backend_degrade` guard, and
     // `scan_with_deadline_and_backend` calls `deny_silent_gpu_degrade` directly.
-    // `warm_backend` is a bool PROBE — it reports readiness (`false`) in-band
+    // `warm_backend` is a bool PROBE, it reports readiness (`false`) in-band
     // rather than hard-stopping, which is NOT a silent fallback (the caller acts
     // on it and the scan itself still fails closed at these guards), so it is
     // intentionally not one of the guard sites.

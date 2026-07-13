@@ -216,7 +216,7 @@ fn gitlab_glrt_15_below_floor_invalid() {
 #[test]
 fn gitlab_glrt_18_between_runner_and_classic_floor_valid() {
     // 18 chars: below the classic glpat floor (20) but at/above the runner
-    // floor (16). For glrt- this MUST be Valid — the distinct floor matters.
+    // floor (16). For glrt- this MUST be Valid (the distinct floor matters).
     let token = format!("glrt-{}", "A".repeat(18));
     assert_eq!(
         GitlabTokenValidator.validate(&token),
@@ -897,7 +897,7 @@ fn aggregator_gitlab_glpat_valid_routes_through() {
 
 // ── Property tier: Stripe band + charset ──────────────────────────────────────
 // GitLab/npm/slack validators each already have a dedicated proptest file; Stripe
-// did NOT. The fixed vectors above pin its boundaries at fixed points — these SWEEP
+// did NOT. The fixed vectors above pin its boundaries at fixed points, these SWEEP
 // the structural contract (stripe.rs: known prefix + `24..=128` ascii-alnum body):
 // a known prefix with an in-band alnum body is StructurallyValid; an under-24 or
 // over-128 alnum body is Invalid; an in-band body carrying a non-alnum byte is

@@ -237,7 +237,7 @@ fn is_private_key_block_detector(
     }
 }
 
-/// Whether a detector carries a service contract — not generic, not entropy,
+/// Whether a detector carries a service contract, not generic, not entropy,
 /// and not the private-key fallback. Single owner:
 /// `detector_ids::is_service_anchored_detector`. This previously recomputed the
 /// same boolean through local `is_entropy_detector` / `is_generic_detector`

@@ -1,5 +1,5 @@
 //! Regression: cross-format COUNT and SEVERITY coherence for the three primary
-//! report formats a CI pipeline consumes — text, JSON array, and SARIF.
+//! report formats a CI pipeline consumes (text, JSON array, and SARIF).
 //!
 //! The contract under test: the SAME `&[VerifiedFinding]` slice, rendered
 //! through [`keyhog_core::write_report`] into each format, must agree on
@@ -480,7 +480,7 @@ fn json_detector_ids_equal_sarif_rule_ids_set() {
 #[test]
 fn json_severity_matches_sarif_level_per_finding() {
     // For every finding, the JSON `severity` and the SARIF `level` at the same
-    // detector id must obey the exact mapping table — verified pairwise.
+    // detector id must obey the exact mapping table (verified pairwise).
     let f = mixed_four();
     let json = json_value(&f);
     let sarif = sarif_value(&f);

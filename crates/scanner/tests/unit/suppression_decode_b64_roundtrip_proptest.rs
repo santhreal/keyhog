@@ -1,20 +1,20 @@
 //! Adversarial totality + roundtrip proptest for
-//! `suppression::decode::try_decode_b64_to_utf8` — the base64 decode-and-recheck
+//! `suppression::decode::try_decode_b64_to_utf8`: the base64 decode-and-recheck
 //! peek the suppression decision tree uses to look inside base64-wrapped
 //! fixtures. `suppression_decode_b64_peek` pins deterministic cases; this sweeps
 //! thousands of inputs and asserts the four contracts:
 //!
 //!   1. TOTALITY: never panics for ANY `&str`. It is a decode path fed
-//!      attacker-controlled candidate text — a crafted input must not crash the
+//!      attacker-controlled candidate text, a crafted input must not crash the
 //!      scanner ([[decode-structured-hotpath-dos-audit]]). The DoS ceiling itself
 //!      is owned by `decode::base64_decode`; here we only prove no panic escapes.
 //!   2. LENGTH FLOOR: any input shorter than 8 BYTES returns `None` (the
 //!      suppression-specific floor at decode.rs:22), regardless of content.
 //!   3. ROUNDTRIP SOUNDNESS (Law 6, not shape): the standard base64 of a valid
 //!      UTF-8 string, once it clears the floor, decodes back to EXACTLY that
-//!      string — proving the peek actually decodes, not merely "returns something".
+//!      string (proving the peek actually decodes, not merely "returns something").
 //!   4. NON-UTF-8 ⟹ None: base64 of bytes that are not valid UTF-8 (any run
-//!      containing `0xFF`) returns `None` — the recall-preserving path that keeps
+//!      containing `0xFF`) returns `None`: the recall-preserving path that keeps
 //!      a binary blob from being mis-read as a plaintext fixture marker.
 
 use keyhog_scanner::suppression::decode::try_decode_b64_to_utf8;
@@ -57,7 +57,7 @@ proptest! {
         s in ".{0,64}",
     ) {
         let result = try_decode_b64_to_utf8(&s);
-        // 2. LENGTH FLOOR — sub-8-byte inputs never decode.
+        // 2. LENGTH FLOOR (sub-8-byte inputs never decode).
         if s.len() < 8 {
             prop_assert!(
                 result.is_none(),

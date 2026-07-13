@@ -22,7 +22,7 @@ reason = "Standard env-var assignment."
 [[positive]]
 text = "X-Shopify-Access-Token: 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"
 credential = "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"
-reason = "Shopify API auth header — official Shopify-defined header name."
+reason = "Shopify API auth header (official Shopify-defined header name)."
 
 # ---- NEGATIVES (precision) ------------------------------------------
 

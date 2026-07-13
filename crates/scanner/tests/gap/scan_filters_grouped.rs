@@ -1,6 +1,6 @@
 //! Gap coverage: grouped-detector credential extraction integrity.
 //!
-//! Coverage area: `crates/scanner/src/engine/scan_filters.rs` —
+//! Coverage area: `crates/scanner/src/engine/scan_filters.rs` 
 //! `extend_known_prefix_credential` + `extend_base64_padding`, exercised
 //! through the public `CompiledScanner::scan` API on REAL detectors.
 //!
@@ -346,7 +346,7 @@ fn segment_colon_space_separator_excluded_from_credential() {
 
 #[test]
 fn segment_quoted_value_credential_excludes_opening_quote() {
-    // `key="value"` — the opening quote is part of the `[=:\s"']+` separator and
+    // `key="value"`: the opening quote is part of the `[=:\s"']+` separator and
     // must not lead the credential. (The trailing quote is outside the capture.)
     let value = format!("{B64_BODY_31}=");
     let creds = scan_creds(&format!("{SEGMENT_KEYWORD}=\"{value}\""));
@@ -460,7 +460,7 @@ fn homebrew_ghp_attributed_with_exact_credential() {
     // Non-emptiness is proven by the exact `any(c == GHP_TOKEN)` truth assert
     // below; a bare shape assert would pass on a junk finding.
     // Whichever detector(s) fire on this exact token, the credential they carry
-    // is the clean token — never the keyword-prefixed whole match.
+    // is the clean token (never the keyword-prefixed whole match).
     for (cred, det) in &pairs {
         assert!(
             !cred.contains(HOMEBREW_KEYWORD),
@@ -479,7 +479,7 @@ fn segment_padded_value_attribution_carries_clean_credential() {
     let pairs = scan_pairs(&format!("{SEGMENT_KEYWORD}={full}"));
     // Non-emptiness is proven by the exact `any(c == &full)` truth assert below;
     // a bare shape assert would pass on a junk finding.
-    // No detector — segment, generic, or decode-through — may surface a
+    // No detector, segment, generic, or decode-through, may surface a
     // credential that embeds the keyword anchor. The grouped-extraction fix is
     // unconditional across attribution.
     for (cred, det) in &pairs {
@@ -551,7 +551,7 @@ fn homebrew_placeholder_ghp_token_not_surfaced() {
 
 #[test]
 fn segment_short_body_below_min_length_not_surfaced() {
-    // 12 base64 chars — well below the detector's `{30,}` floor; the segment
+    // 12 base64 chars, well below the detector's `{30,}` floor; the segment
     // detector must not fire and no spurious keyword-prefixed credential appears.
     let short = "AbCdEf012345";
     let creds = scan_creds(&format!("{SEGMENT_KEYWORD}={short}"));
@@ -622,7 +622,7 @@ fn segment_padding_before_multibyte_char_no_panic() {
 // 9. Property-style loop: across many distinct base64 bodies, the segment
 //    grouped extraction (a) never leaks the keyword and (b) recovers exactly two
 //    pad chars (1 captured + 1 extended) for `=`-terminated 31-char bodies.
-//    Concrete invariant assertions on every generated input — not shape checks.
+//    Concrete invariant assertions on every generated input (not shape checks).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Deterministic 31-char base64-alphabet body from a seed (no `=`); satisfies
@@ -788,7 +788,7 @@ fn homebrew_token_extends_over_dot_separated_token_bytes() {
     // credential (`ghp_`) the helper walks `match_end` forward over `.`-joined
     // token bytes, so the captured credential becomes `ghp_<40>.extra.bytes`.
     // The classic-pat checksum sees a stripped payload longer than 36 chars
-    // (`<36>.extra.bytes`) and returns NotApplicable — NOT Invalid — so the match
+    // (`<36>.extra.bytes`) and returns NotApplicable. NOT Invalid, so the match
     // is not dropped on checksum grounds. The load-bearing invariant regardless
     // of extension length: the slice starts at the credential offset, so the
     // keyword is NEVER prepended.

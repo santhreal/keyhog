@@ -1,7 +1,7 @@
 //! Regression: the ONE real base32 (RFC-4648) decoder keyhog ships.
 //!
 //! keyhog's decode *pipeline* (base64/hex/url/…/z85/reverse/caesar) has NO
-//! base32 stage — that absence is pinned by `regression_base32_decode.rs`. But
+//! base32 stage, that absence is pinned by `regression_base32_decode.rs`. But
 //! keyhog DOES contain a genuine RFC-4648 standard base32 decoder in
 //! `keyhog-core::aws` (`aws_account_from_key_id`), the routine that handles the
 //! only base32-shaped credential keyhog cares about: the 16-char base32 body of
@@ -72,7 +72,7 @@ fn all_a_body_decodes_to_zero_account() {
 #[test]
 fn all_sevens_body_yields_thirteen_digit_account_at_boundary() {
     // Base32 '7' == value 31 (top of the 2..=7 range). An all-'7' body drives the
-    // masked u48 to its maximum 0xFFFFFFFFFF after the >>7, i.e. 1099511627775 —
+    // masked u48 to its maximum 0xFFFFFFFFFF after the >>7, i.e. 1099511627775 
     // which is THIRTEEN decimal digits, not twelve. This pins the true arithmetic
     // upper bound of the decoder and shows the `{:012}` rendering does not (and
     // cannot) truncate an over-max value.
@@ -125,7 +125,7 @@ fn non_base32_digit_in_leading_body_fails_closed() {
 #[test]
 fn lowercase_body_fails_closed() {
     // RFC-4648 base32 is upper-case only; lowercase is out of alphabet. The
-    // decoder must NOT case-fold — a lowercased body fails closed.
+    // decoder must NOT case-fold (a lowercased body fails closed).
     assert_eq!(
         finding_metadata("AKIAy34fzkbokmutvv7a"),
         None,
@@ -152,7 +152,7 @@ fn wrong_prefix_fails_closed() {
 #[test]
 fn wrong_length_fails_closed_both_directions() {
     // Canonical length is exactly 20 (4 prefix + 16 body). One char short or one
-    // char long both fail closed — the length gate is exact, not a minimum.
+    // char long both fail closed (the length gate is exact, not a minimum).
     assert_eq!(
         finding_metadata("AKIAY34FZKBOKMUTVV7"),
         None,
@@ -169,7 +169,7 @@ fn wrong_length_fails_closed_both_directions() {
 fn invalid_char_in_trailing_body_is_not_validated() {
     // Only the FIRST 10 base32 chars (the leading 48 account bits) are decoded and
     // validated; the trailing 6 chars are never read. So an out-of-alphabet byte
-    // in the last position ('0') does NOT fail the decode — the same account still
+    // in the last position ('0') does NOT fail the decode, the same account still
     // comes back. This pins the decoder's partial-validation contract precisely so
     // any future full-body validation change is caught.
     assert_eq!(
@@ -299,7 +299,7 @@ fn parse_canary_account_ids_accepts_valid_rejects_malformed() {
 
 #[test]
 fn baseline_canary_accounts_validate_ok() {
-    // The embedded Tier-B canary baseline must parse into a non-corrupt set —
+    // The embedded Tier-B canary baseline must parse into a non-corrupt set 
     // validate_canary_accounts returns Ok(()) on the shipped data file.
     assert_eq!(
         validate_canary_accounts(),
@@ -320,7 +320,7 @@ fn base32_absent_from_pipeline_but_aws_base32_body_is_handled() {
         "no `base32` decoder may exist in the default pipeline; got {names:?}"
     );
     // …yet the one base32-shaped credential keyhog handles (an AWS key body) IS
-    // decoded — by the dedicated AWS routine, not the generic pipeline. Concrete
+    // decoded, by the dedicated AWS routine, not the generic pipeline. Concrete
     // proof: the same known vector still yields its exact account.
     assert_eq!(
         account_of("ASIAY34FZKBOKMUTVV7A").as_deref(),

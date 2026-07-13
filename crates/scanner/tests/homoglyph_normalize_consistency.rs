@@ -2,7 +2,7 @@
 //! (`homoglyph::homoglyph_map`) and the normalize-path folds
 //! (`unicode_hardening::{cyrillic_to_latin, greek_to_latin, fullwidth_to_ascii}`)
 //! are TWO independent scan paths. If they disagree on a shared codepoint, one
-//! path catches an evasion the other misses — a silent recall/precision split
+//! path catches an evasion the other misses, a silent recall/precision split
 //! (the `С`-under-`S` vs `С`→`C` class, backlog DR-317). This gate walks every
 //! Cyrillic/Greek/fullwidth glyph in the expand map and asserts the normalize
 //! fold agrees, so any NEW drift fails loudly. The currently-known divergences
@@ -15,7 +15,7 @@ use keyhog_scanner::testing::unicode_hardening::{
 };
 
 /// The normalize-path fold for a single confusable glyph, trying each fold
-/// owner in turn. `None` means no normalize path recognizes the glyph — a
+/// owner in turn. `None` means no normalize path recognizes the glyph, a
 /// recall hole relative to the expand map, which DID list it.
 fn normalize_fold(glyph: char) -> Option<char> {
     if let Some(c) = cyrillic_to_latin(glyph) {
@@ -39,7 +39,7 @@ fn normalize_fold(glyph: char) -> Option<char> {
 /// positives) because expanding the homoglyph AC map for common ASCII letters
 /// over-matches on diverse text. So the divergence stays (tracked, guarded here),
 /// and a precision-preserving reconciliation (e.g. length/entropy-gated homoglyph
-/// expansion) is the real fix — NOT a bare map merge. See backlog DR-317.
+/// expansion) is the real fix. NOT a bare map merge. See backlog DR-317.
 const KNOWN_DIVERGENCES: &[(char, char, Option<char>)] = &[
     ('\u{0421}', 'S', Some('C')), // DR-317a: Cyrillic Es visually IS `C`; expand map lists it under `S`.
     ('\u{03BD}', 'n', Some('v')), // DR-317b: Greek nu visually IS `v`; expand map lists it under `n`.
@@ -76,7 +76,7 @@ fn expand_map_agrees_with_normalize_folds_on_every_shared_glyph() {
             }
             unexpected.push(format!(
                 "U+{:04X} listed under expand key '{}' folds to {:?} on the normalize path \
-                 (expected Some('{}')) — new homoglyph-map drift, reconcile both maps + backlog",
+                 (expected Some('{}')), new homoglyph-map drift, reconcile both maps + backlog",
                 glyph as u32, ascii_key, fold, ascii_key
             ));
         }
@@ -101,14 +101,14 @@ fn known_divergences_are_still_present_ratchet() {
             .any(|(k, glyphs)| *k == ascii_key && glyphs.contains(&glyph));
         assert!(
             listed_under_key,
-            "DR-317 waiver stale: U+{:04X} is no longer listed under expand key '{}' — \
+            "DR-317 waiver stale: U+{:04X} is no longer listed under expand key '{}'. \
              the map was reconciled; remove this entry from KNOWN_DIVERGENCES",
             glyph as u32, ascii_key
         );
         assert_eq!(
             normalize_fold(glyph),
             expected_fold,
-            "DR-317 waiver stale: U+{:04X} now folds differently on the normalize path — \
+            "DR-317 waiver stale: U+{:04X} now folds differently on the normalize path. \
              reconciled or drifted; update/remove this KNOWN_DIVERGENCES entry",
             glyph as u32
         );

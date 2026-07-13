@@ -19,15 +19,15 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "whereby token   '   ''\"   '   \"\"     \"'       \"    '\"       ' \"   \" \"  : ''      '      '    \"      '  '  \"   '  '   ''         \" \"\"  ''    \"    \"'   YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "whereby token   '   ''\"   '   \"\"     \"'       \"    '\"       ' \"   \" \"  : ''      '      '    \"      '  '  \"   '  '   ''         \" \"\"  ''    \"    \"'   v976GEXAMPLEEXAMPLEc5q7t"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 # ---- EVASION (adversarial) -----------------------------------------
 
 [[evasion]]
 text = "# whereby_api_key: v976G0WPyYCpR9IBhdSiWoXs4_xYEbLUpELpwl8eXj_OYN06j0JIHk6dQhVml3ay8bFigMc5q7t  # video"
 credential = "v976G0WPyYCpR9IBhdSiWoXs4_xYEbLUpELpwl8eXj_OYN06j0JIHk6dQhVml3ay8bFigMc5q7t"
-reason = "Commented-out config; whereby_api_key keyword + colon separator surfaces the token (a space-only separator is caught by the generic entropy pool — the [=:] separator arm fires the vendor detector)."
+reason = "Commented-out config; whereby_api_key keyword + colon separator surfaces the token (a space-only separator is caught by the generic entropy pool (the [=:] separator arm fires the vendor detector))."

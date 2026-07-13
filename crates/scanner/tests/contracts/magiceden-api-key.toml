@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "MAGIC_EDEN_API_KEY=\"YOUR_API_KEY_HERE_PLACEHOLDER_VALUE\""
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "MAGIC_EDEN_API_KEY=\"71547EXAMPLEEXAMPLE86c0-\""
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "export MAGIC_EDEN_API_KEY=\"715472b2cf72-9213-04277e05-ef7d86c0-\""
 credential = "715472b2cf72-9213-04277e05-ef7d86c0-"
-reason = "Adversarial env_export envelope — credential must still surface under this detector."
+reason = "Adversarial env_export envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

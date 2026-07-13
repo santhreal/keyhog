@@ -1,7 +1,7 @@
 """Home-turf corpora: each competitor's OWN labeled ground truth.
 
 betterleaks (a gitleaks fork) and kingfisher ship their detection rules with
-embedded ``tps``/``fps`` example lists — the exact strings their regexes
+embedded ``tps``/``fps`` example lists, the exact strings their regexes
 were tuned to pass. Harvesting those (``harvest_betterleaks.py`` /
 ``harvest_kingfisher.py``) into a SecretBench-shape ``manifest.jsonl`` lets
 us ask the only fair "home turf" question: how close does keyhog get on a
@@ -10,7 +10,7 @@ capability gap, not a tuning gap).
 
 Same manifest shape and the same split layout as the mirror (answer key at
 ``<home>/manifest.jsonl``, scan tree under a neutrally-named
-``<home>/corpus/`` — see :mod:`bench.corpora.mirror` for why both rules are
+``<home>/corpus/``, see :mod:`bench.corpora.mirror` for why both rules are
 mandatory), so the loader is shared.
 """
 

@@ -22,7 +22,7 @@
 //!      `additional_locations`.
 //!
 //! Dedup identity that decides "same finding, collapse" is
-//! `(source, file_path, line, commit)` — offset is EXCLUDED. Every assertion is
+//! `(source, file_path, line, commit)`: offset is EXCLUDED. Every assertion is
 //! a concrete value (exact len / line / offset / source / f64-eps), never
 //! `is_empty()` / `len() > 0` alone.
 //!

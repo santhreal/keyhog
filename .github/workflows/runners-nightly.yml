@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          # Contract corpus + runner fixtures are LFS-tracked — same
+          # Contract corpus + runner fixtures are LFS-tracked, same
           # requirement as ci.yml strict-runners and Test/fmt jobs.
           lfs: true
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -70,7 +70,7 @@ jobs:
       - name: Perf / timing regression guards (nightly, non-blocking)
         # Allocation- and time-budget guards (oom skip-gate, per-input quadratic
         # guard, perf floors). Too machine-variance-sensitive for the blocking PR
-        # gate, but real regression guards — run nightly on a fresh runner with
+        # gate, but real regression guards, run nightly on a fresh runner with
         # `continue-on-error` so timing jitter never false-reddens the workflow.
         # Wiring them here (each `--test <name>`) also de-orphans them for
         # `scripts/gates/tests_wired.py`. Release profile: budgets assume it.
@@ -92,7 +92,7 @@ jobs:
         # does not exist yet, so those cases fail here and are absorbed); the
         # `gpu_*` files are `--features gpu`-gated (compile to empty without it);
         # and the recall-debt worklists (`capability_target_spec` and the
-        # full-corpus proptests) are DELIBERATELY red — they report the count of
+        # full-corpus proptests) are DELIBERATELY red, they report the count of
         # still-unclosed recall targets (see BACKLOG DR-334). `continue-on-error`
         # keeps them informational while `--test <name>` de-orphans each for
         # `scripts/gates/tests_wired.py`. When a `[self-hosted, gpu]` runner lands,
@@ -128,7 +128,7 @@ jobs:
             --test openai_html_comment_bug_62
 
       - name: Chunk-AD contract validation (nightly)
-        # `chunk_ad_runner` is a corpus harness — it validates the contract TOMLs
+        # `chunk_ad_runner` is a corpus harness, it validates the contract TOMLs
         # named in KEYHOG_CHUNK_IDS. Provision the id list from the shipped
         # detector set so it actually runs in CI instead of being an orphan.
         continue-on-error: true

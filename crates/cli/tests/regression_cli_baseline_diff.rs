@@ -1,4 +1,4 @@
-//! Regression e2e — the `scan` BASELINE surfaces (`--create-baseline`,
+//! Regression e2e, the `scan` BASELINE surfaces (`--create-baseline`,
 //! `--baseline`, `--update-baseline`), driven over the SHIPPED `keyhog` binary
 //! and pinned to EXACT values, plus SARIF `partialFingerprints` stability across
 //! runs and its cross-surface agreement with the baseline credential hash.
@@ -10,7 +10,7 @@
 //!     exits 0 without emitting a findings report (orchestrator/run.rs returns
 //!     early);
 //!   * `--baseline PATH` suppresses any finding whose `(detector_id,
-//!     credential_hash)` pair is already acknowledged — an all-suppressed scan
+//!     credential_hash)` pair is already acknowledged, an all-suppressed scan
 //!     exits 0 with an empty `[]` report, while a NEW pair surfaces and exits 1;
 //!   * `--update-baseline PATH` merges new findings into (or creates) the file,
 //!     growing the entry set and deduping by the identity pair;
@@ -20,7 +20,7 @@
 //! HOST-INDEPENDENCE: every scan pins `--backend cpu` (the always-available,
 //! feature-independent engine) and clears `KEYHOG_BACKEND`, and every planted
 //! secret is an AC-literal-anchored detector (`github-classic-pat` via `ghp_`,
-//! `aws-access-key` via `AKIA`) that fires on the scalar/CPU path — no
+//! `aws-access-key` via `AKIA`) that fires on the scalar/CPU path, no
 //! accelerator is ever assumed. No assertion uses `is_empty()` / `is_ok()` /
 //! `len() > 0` as its only check (Law 6).
 
@@ -32,7 +32,7 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// A GitHub classic PAT with a VALID CRC32 tail — fires `github-classic-pat` at
+/// A GitHub classic PAT with a VALID CRC32 tail, fires `github-classic-pat` at
 /// confidence 0.9 with a passing checksum, so it survives the confidence floor
 /// on the CPU backend. Split-literal so this file is not itself a planted secret
 /// for keyhog's own self-scan.
@@ -104,7 +104,7 @@ fn baseline_detectors(v: &serde_json::Value) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
-// --create-baseline — writes a v1 file, exits 0, records the identity pair
+// --create-baseline, writes a v1 file, exits 0, records the identity pair
 // ---------------------------------------------------------------------------
 
 /// Scanning a single planted PAT with `--create-baseline` writes a version-1
@@ -210,7 +210,7 @@ fn create_baseline_multi_entry_sorted_by_detector_id() {
 }
 
 // ---------------------------------------------------------------------------
-// --baseline — suppresses the acknowledged pair, surfaces new pairs
+// --baseline, suppresses the acknowledged pair, surfaces new pairs
 // ---------------------------------------------------------------------------
 
 /// Re-scanning the SAME file whose finding is already in the baseline suppresses
@@ -329,7 +329,7 @@ fn baseline_suppresses_pat_but_surfaces_new_aws_exit_one() {
 }
 
 /// Suppression matches on the `(detector_id, credential_hash)` PAIR, NOT the file
-/// path or line — the baseline docs say secrets may move. A PAT baselined from
+/// path or line, the baseline docs say secrets may move. A PAT baselined from
 /// file A stays suppressed when the same secret reappears in a DIFFERENT file at
 /// a DIFFERENT line: exit 0, empty report.
 #[test]
@@ -358,7 +358,7 @@ fn baseline_suppression_is_path_independent() {
 }
 
 // ---------------------------------------------------------------------------
-// --update-baseline — creates-if-absent, merges, dedups
+// --update-baseline, creates-if-absent, merges, dedups
 // ---------------------------------------------------------------------------
 
 /// `--update-baseline` against a non-existent path creates it: the first run
@@ -436,12 +436,12 @@ fn update_baseline_grows_and_preserves_existing() {
 }
 
 // ---------------------------------------------------------------------------
-// fail-closed — malformed / wrong-version baseline handed to --baseline
+// fail-closed, malformed / wrong-version baseline handed to --baseline
 // ---------------------------------------------------------------------------
 
 /// Feeding a `scan --format json` FINDINGS report (a top-level JSON array) to
 /// `--baseline` fails CLOSED: exit 2 (EXIT_USER_ERROR) with the actionable
-/// `--create-baseline` hint — it must NOT silently scan without suppression.
+/// `--create-baseline` hint (it must NOT silently scan without suppression).
 #[test]
 fn baseline_findings_report_fails_closed_exit_two() {
     let (_d, f) = file_with("secrets.env", &format!("{PAT}\n"));
@@ -503,7 +503,7 @@ fn baseline_and_create_baseline_conflict_exit_two() {
 }
 
 // ---------------------------------------------------------------------------
-// SARIF partialFingerprints — stability across runs + baseline agreement
+// SARIF partialFingerprints, stability across runs + baseline agreement
 // ---------------------------------------------------------------------------
 
 /// The SARIF `partialFingerprints["keyhog/credentialHash/v1"]` is STABLE: two
@@ -537,7 +537,7 @@ fn sarif_fingerprint_stable_across_two_runs() {
 }
 
 /// Cross-surface truth: the SARIF fingerprint (bare hex) equals the baseline
-/// `credential_hash` with its `sha256:` prefix stripped — the two identity
+/// `credential_hash` with its `sha256:` prefix stripped, the two identity
 /// surfaces describe the exact same credential hash and must never drift.
 #[test]
 fn sarif_fingerprint_equals_baseline_hash_body() {

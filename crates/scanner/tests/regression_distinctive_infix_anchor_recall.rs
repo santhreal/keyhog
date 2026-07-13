@@ -13,7 +13,7 @@
 //! as a third anchor form, lifting the match to NAMED_DETECTOR_ANCHOR_FLOOR.
 //!
 //! The precision twin pins soundness: a token of the same id/secret shape but
-//! WITHOUT the `.atlasv1.` infix must not be claimed — the lift rides on the
+//! WITHOUT the `.atlasv1.` infix must not be claimed, the lift rides on the
 //! required literal, not on the high-entropy body alone.
 
 mod support;
@@ -69,7 +69,7 @@ fn terraform_atlasv1_token_surfaces_on_the_infix_anchor() {
 #[test]
 fn same_shape_without_atlasv1_is_not_claimed() {
     // Same id/secret lengths but the required `.atlasv1.` infix is replaced by a
-    // generic `.something.` — the detector regex cannot match, so it must not
+    // generic `.something.`: the detector regex cannot match, so it must not
     // fire. Proves the lift is anchored on the required literal, not the body.
     let bogus =
         "9X3kQp7VbT2hYR.somethin.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy";

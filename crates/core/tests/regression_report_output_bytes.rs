@@ -333,7 +333,7 @@ fn json_client_safe_severity_is_hyphenated() {
     );
 }
 
-/// Positive: JSONL emits exactly one JSON object per line — two findings yield
+/// Positive: JSONL emits exactly one JSON object per line, two findings yield
 /// two newline-terminated parseable lines, in order.
 #[test]
 fn jsonl_one_object_per_line() {
@@ -357,7 +357,7 @@ fn jsonl_one_object_per_line() {
     assert_eq!(secondv["severity"].as_str(), Some("critical"));
 }
 
-/// Positive: an empty JSON-array run is exactly the two bytes `[]` — the array
+/// Positive: an empty JSON-array run is exactly the two bytes `[]`: the array
 /// reporter opens on construction and closes on finish regardless of count.
 #[test]
 fn json_empty_run_is_bracket_pair() {
@@ -433,7 +433,7 @@ fn text_summary_counts_two_secrets() {
 
 /// Boundary: a single REVOKED finding rolls into the inactive ("dead") tally,
 /// so the summary reads "1 secret found" and "1 dead" with NO "unverified"
-/// bucket — a verified-revoked secret is not liveness-unknown.
+/// bucket (a verified-revoked secret is not liveness-unknown).
 #[test]
 fn text_revoked_counts_as_dead_not_unverified() {
     let finding = finding_with(

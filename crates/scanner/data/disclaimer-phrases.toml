@@ -12,7 +12,7 @@
 #
 # Wording style: prefer DECLARATIVE phrasings ("not a real key"),
 # IMPERATIVE markers ("do not use"), and INSTRUCTIONAL fragments
-# ("replace this with"). Avoid generic words on their own — `fake`,
+# ("replace this with"). Avoid generic words on their own: `fake`,
 # `dummy`, `test` standalone would over-suppress real credentials
 # that happen to be in test code. Always pair with the asset type
 # (key / secret / token / password / credential).

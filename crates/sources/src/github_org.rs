@@ -131,8 +131,8 @@ impl Source for GitHubOrgSource {
 ///
 /// Single owner for the two coupled uses: the `per_page` query parameter and
 /// the "a short page means the last page" terminator (`count < PER_PAGE`).
-/// Changing one without the other silently breaks pagination — either an early
-/// stop that drops repos or an extra empty page — so both read this constant.
+/// Changing one without the other silently breaks pagination, either an early
+/// stop that drops repos or an extra empty page (so both read this constant).
 pub(crate) const REPOS_PER_PAGE: usize = 100;
 
 #[derive(Debug, Deserialize)]

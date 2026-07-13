@@ -20,7 +20,7 @@ reason = "Body below 100 alnum chars after `pcsk_` prefix."
 [[evasion]]
 text = "Api-Key: pcsk_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
 credential = "pcsk_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
-reason = "Api-Key header form — prefix detector still anchors."
+reason = "Api-Key header form (prefix detector still anchors)."
 
 [perf]
 fixture_bytes = 4096

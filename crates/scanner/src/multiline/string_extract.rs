@@ -66,7 +66,7 @@ pub(crate) fn fragment_assignment_name_is_credential_like(var_name: &str) -> boo
     normalized_or_fragment_base_is_credential_like(&normalized)
 }
 
-/// Tier-B multiline assignment-name classification vocab — the single owner for
+/// Tier-B multiline assignment-name classification vocab, the single owner for
 /// both the ambiguous-fragment set and the public-metadata exact/suffix sets
 /// (`rules/multiline-assignment-name-classes.toml`). Was two inline `matches!`
 /// chains. Fails closed on an invalid/empty file (see the data file for the
@@ -323,7 +323,7 @@ pub(crate) fn extract_quoted_content(s: &str, open: char, close: char) -> Option
             // tracking nested braces AND string literals inside the expression
             // so a `{`/`}` that appears INSIDE a quoted span (e.g.
             // `f"{d['}']}tail"`) does not miscount the depth and end the skip
-            // early — which would leak the expression's tail (`']}tail`) into the
+            // early, which would leak the expression's tail (`']}tail`) into the
             // reassembled secret. Mirrors the string-aware `${...}` skip in
             // `extract_template_literal_continuation`.
             let mut brace_depth = 1;
@@ -386,7 +386,7 @@ static VAR_DECL_KEYWORD_PREFIXES: std::sync::LazyLock<Vec<String>> =
     std::sync::LazyLock::new(|| {
         // `include_str!` embeds the file at compile time; no attacker input can
         // reach this parse. A failure here is a build-time defect in the bundled
-        // Tier-B file, not a runtime hostile-input risk — fail closed (Law 10),
+        // Tier-B file, not a runtime hostile-input risk, fail closed (Law 10),
         // naming the file so the build owner knows what to fix.
         match parse_var_decl_keywords(include_str!(
             "../../../../rules/multiline-var-decl-keywords.toml"
@@ -438,7 +438,7 @@ pub(crate) fn filter_line_content(line: &str) -> String {
 /// or `b'.'`); like `"`, `'` and `` ` `` it then always lands on a char
 /// boundary, so every yielded slice is valid UTF-8.
 ///
-/// Yields borrowed slices LAZILY via `from_fn` — no `Vec` allocation, so the hot
+/// Yields borrowed slices LAZILY via `from_fn`: no `Vec` allocation, so the hot
 /// path stays allocation-light.
 #[cfg(feature = "multiline")]
 fn split_concatenation_operators(expr: &str, op: u8) -> impl Iterator<Item = &str> {
@@ -476,13 +476,13 @@ fn split_concatenation_operators(expr: &str, op: u8) -> impl Iterator<Item = &st
     })
 }
 
-/// Byte index of the first `=` that sits OUTSIDE any quoted span — the
+/// Byte index of the first `=` that sits OUTSIDE any quoted span, the
 /// assignment operator that separates a `name = value` line's LHS from its
 /// value. A quote-UNAWARE `str::find('=')` mistakes a base64 padding `=` inside
 /// the value's FIRST quoted literal for the assignment: on a bare continuation
 /// fragment like `"aGVsbG8=" + "d29ybGQ="` it splits at the padding `=` inside
 /// `"aGVsbG8="`, discarding the leading fragment and corrupting the `+`/`.`
-/// operator split so the whole concatenation is dropped — a silent recall loss
+/// operator split so the whole concatenation is dropped, a silent recall loss
 /// on any secret whose reassembly crosses a padded base64 fragment. Tracking
 /// quote state (with backslash escapes, matching [`split_concatenation_operators`])
 /// keeps the value intact. Returns `None` when the line has no unquoted `=` (the
@@ -551,7 +551,7 @@ pub(crate) fn extract_plus_concatenation(line: &str) -> Option<(String, bool)> {
 
     // Split only on join `+` (outside quotes); stream the segments so a single
     // literal that merely contains a `+` (e.g. a base64 value) yields one
-    // segment and — absent a trailing join `+` — is correctly rejected below as
+    // segment and, absent a trailing join `+`: is correctly rejected below as
     // "not a concatenation".
     let mut result = String::new();
     let mut part_count = 0usize;
@@ -573,22 +573,22 @@ pub(crate) fn extract_plus_concatenation(line: &str) -> Option<(String, bool)> {
 /// PHP / Perl join string literals with the `.` operator:
 ///   `$token = "ghp_" . "abcdef" . "012345";`
 ///
-/// Unlike `+`, `.` is heavily overloaded — member access (`obj.field`), float
-/// literals (`3.14`), namespace and path separators, file extensions — so this
+/// Unlike `+`, `.` is heavily overloaded, member access (`obj.field`), float
+/// literals (`3.14`), namespace and path separators, file extensions, so this
 /// extractor is deliberately STRICT to stay precise on three axes:
 ///
 /// 1. It splits ONLY on the `.` that sit OUTSIDE every quoted span (shared
 ///    [`split_concatenation_operators`]); a `.` inside `"a.b"` is value bytes.
 /// 2. It reassembles ONLY segments that ARE a quoted literal. A bare segment
-///    (`$var`, `PHP_EOL`, `trim("x")`) is a runtime value — never literal secret
-///    bytes — so it is dropped, the same philosophy as the `${...}`
+///    (`$var`, `PHP_EOL`, `trim("x")`) is a runtime value, never literal secret
+///    bytes, so it is dropped, the same philosophy as the `${...}`
 ///    template-literal handler. Requiring the segment to *start* with a quote
 ///    (not merely contain one) keeps a function call's string argument from
 ///    being mistaken for a concatenated fragment.
 /// 3. It requires at least two segments to contribute quoted bytes (the
 ///    `"x" . "y"` idiom). That guard is what stops `arr["k"].length`,
 ///    `cfg["db.host"]`, `explode(".", $s)` and `3.14` from reassembling into a
-///    synthetic candidate — each yields at most one quoted literal.
+///    synthetic candidate (each yields at most one quoted literal).
 ///
 /// A trailing join `.` (`$x = "a" .` continued on the next line) sets the
 /// continuation flag so the chain walker pulls the next line, exactly like the
@@ -620,7 +620,7 @@ pub(crate) fn extract_dot_concatenation(line: &str) -> Option<(String, bool)> {
         let part = part.trim();
         // STRICT: only a segment that IS a quoted literal contributes. A bare
         // segment (identifier / variable ref / function call) is runtime, not
-        // literal secret bytes — drop it rather than append the token verbatim.
+        // literal secret bytes (drop it rather than append the token verbatim).
         if !part.starts_with(['"', '\'', '`']) {
             continue;
         }
@@ -642,7 +642,7 @@ pub(crate) fn extract_dot_concatenation(line: &str) -> Option<(String, bool)> {
 /// Extract the content of the FIRST quoted literal in `s` (any of `"`, `'`,
 /// `` ` ``), honoring backslash escapes via [`extract_quoted_content`].
 /// Returns `None` when `s` has no quoted literal. Unlike
-/// [`extract_string_content`], it has NO raw-line fallback — that absence is the
+/// [`extract_string_content`], it has NO raw-line fallback, that absence is the
 /// point: the dot-concat extractor uses it to DROP bare runtime segments rather
 /// than append their source text.
 #[cfg(feature = "multiline")]
@@ -711,7 +711,7 @@ fn extract_python_implicit_concatenation(line: &str) -> Option<(String, bool)> {
             } else {
                 // Unterminated quote: the rest of the line is inside that
                 // literal, so no further literal can start. Stop rather than
-                // restart the scan at every later quote byte — on `\"\"\"...`
+                // restart the scan at every later quote byte, on `\"\"\"...`
                 // (all-escaped quotes) each restart re-walks the escaped tail,
                 // which is the O(n^2) blowup this loop otherwise hits.
                 break;
@@ -754,7 +754,7 @@ fn extract_quoted_strings(line: &str) -> Vec<String> {
                 index = close;
             } else {
                 // Unterminated quote consumes the rest of the line; see
-                // extract_python_implicit_concatenation — stop instead of
+                // extract_python_implicit_concatenation, stop instead of
                 // rescanning every trailing escaped quote (O(n^2)).
                 break;
             }

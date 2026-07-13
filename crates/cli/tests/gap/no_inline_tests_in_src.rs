@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 /// True if the file hosts an inline `#[cfg(test)]`-gated module BLOCK
-/// (`#[cfg(test)] mod <name> { ... }`) — the pattern the Santh folder contract
+/// (`#[cfg(test)] mod <name> { ... }`), the pattern the Santh folder contract
 /// forbids in production source. A COMPLIANT sibling declaration
 /// (`#[cfg(test)] mod tests;`, whose body lives in a separate `tests.rs`) ends
 /// in `;` and is intentionally allowed. Any module NAME is caught, not just

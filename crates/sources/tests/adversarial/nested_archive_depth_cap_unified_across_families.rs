@@ -131,7 +131,7 @@ fn zip_chain_refuses_at_the_canonical_depth_and_never_reaches_the_secret() {
 #[test]
 fn tar_and_zip_families_refuse_at_the_same_depth() {
     // The whole point of the unification: both families cite the identical cap.
-    // Extract the integer each family reports and assert they are equal — this is
+    // Extract the integer each family reports and assert they are equal, this is
     // what regresses the instant someone reintroduces a per-family constant.
     let tar_secret = b"GITHUB_TOKEN=ghp_tarParityTokenCCCCCCCCCCCCCCCCCC00\n";
     let zip_secret = b"GITHUB_TOKEN=ghp_zipParityTokenDDDDDDDDDDDDDDDDDD00\n";

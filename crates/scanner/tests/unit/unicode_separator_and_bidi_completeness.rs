@@ -4,8 +4,8 @@
 //! scan path.
 //!
 //! Two codepoints were previously uncovered and are pinned here:
-//!   - U+1680 OGHAM SPACE MARK (`Zs`) — a space separator.
-//!   - U+061C ARABIC LETTER MARK (`Bidi_Control`, `Cf`) — an invisible
+//!   - U+1680 OGHAM SPACE MARK (`Zs`) (a space separator).
+//!   - U+061C ARABIC LETTER MARK (`Bidi_Control`, `Cf`), an invisible
 //!     directional mark like LRM/RLM.
 //! The enumerated sets below are the authoritative `Zs`/`Zl`/`Zp` and
 //! `Bidi_Control` members (confirmed against `unicodedata`); the contract tests
@@ -16,7 +16,7 @@ use keyhog_scanner::testing::unicode_hardening::{
 };
 use std::borrow::Cow;
 
-/// Every invisible space separator the strip must drop — the full `Zs` set
+/// Every invisible space separator the strip must drop, the full `Zs` set
 /// MINUS the normal ASCII space U+0020 (which is structural, not evasion), plus
 /// the line/paragraph separators `Zl`/`Zp`.
 const SEPARATORS: &[char] = &[

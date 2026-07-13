@@ -1,12 +1,12 @@
-//! LANE 5 (test-cli-e2e) — every subcommand's `--help` surface and the
+//! LANE 5 (test-cli-e2e), every subcommand's `--help` surface and the
 //! bad-subcommand boundary, driven over the SHIPPED binary
 //! (`CARGO_BIN_EXE_keyhog`).
 //!
 //! These are the cheapest, most-load-bearing e2e contracts a packager hits:
 //!   1. EVERY documented subcommand answers `--help` with exit 0 AND the help
-//!      text names the subcommand (`Usage: keyhog <name> …`) — a renamed or
+//!      text names the subcommand (`Usage: keyhog <name> …`), a renamed or
 //!      dropped subcommand, or a help renderer that panics, fails here.
-//!   2. EVERY subcommand answers `-h` (the short alias) identically — clap wires
+//!   2. EVERY subcommand answers `-h` (the short alias) identically, clap wires
 //!      both, but a `mut_subcommand`/`mut_arg` override (the dynamic-detector-
 //!      count help in `args::command`) can silently break one spelling.
 //!   3. The top-level `--help` / `-h` / no-args paths exit 0 and list every
@@ -27,7 +27,7 @@ fn binary() -> std::path::PathBuf {
 }
 
 /// The complete set of subcommands the CLI ships, as the user types them
-/// (clap kebab-cases the enum variants — `ScanSystem` → `scan-system`). This
+/// (clap kebab-cases the enum variants. `ScanSystem` → `scan-system`). This
 /// list is the contract: adding a `Command` variant without adding it here
 /// leaves the new surface untested; removing one here without removing the
 /// variant breaks `every_subcommand_long_help_exits_zero_and_names_itself`.
@@ -101,7 +101,7 @@ fn every_subcommand_short_help_exits_zero() {
 fn short_and_long_help_agree_for_every_subcommand() {
     // `-h` is the terse alias of `--help`; clap derives both. They are not
     // byte-identical (short vs long arg descriptions), but BOTH must carry the
-    // Usage line — the dynamic-help `mut_subcommand` wiring in `args::command`
+    // Usage line, the dynamic-help `mut_subcommand` wiring in `args::command`
     // could regress one spelling while leaving the other intact, which this
     // pins.
     for &sc in SUBCOMMANDS {
@@ -140,7 +140,7 @@ fn top_level_help_lists_every_subcommand_by_name() {
 #[test]
 fn no_args_prints_help_and_exits_zero() {
     // `keyhog` with no subcommand prints the top-level help (main.rs `None`
-    // arm) and exits 0 — the friendly first-run path.
+    // arm) and exits 0 (the friendly first-run path).
     let (code, stdout, _stderr) = run(&[]);
     assert_eq!(code, Some(0), "bare `keyhog` must exit 0");
     assert!(
@@ -182,7 +182,7 @@ fn unknown_top_level_flag_exits_two() {
 fn version_flag_exits_zero_and_prints_version_block() {
     // `-V` / `--version` both fast-path to `print_version_info` (exit 0). The
     // block carries the build provenance every scan must trace to (commit +
-    // detector digest) — assert the labels, not just non-emptiness.
+    // detector digest) (assert the labels, not just non-emptiness).
     for flag in ["-V", "--version"] {
         let (code, stdout, stderr) = run(&[flag]);
         assert_eq!(

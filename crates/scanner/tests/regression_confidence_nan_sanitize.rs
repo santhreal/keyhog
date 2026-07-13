@@ -3,7 +3,7 @@
 //!
 //! `f64::min` / `f64::max` SILENTLY ignore a NaN operand, so before the fix a
 //! NaN entropy fed `0.55.min(NaN) == 0.55` and a NaN confidence fed
-//! `NaN.max(FLOOR) == FLOOR` — a broken/undefined upstream signal laundered into
+//! `NaN.max(FLOOR) == FLOOR`: a broken/undefined upstream signal laundered into
 //! a mid-tier confidence instead of being rejected (Law 10: no silent fallback).
 //!
 //! The contract now has two halves, tested per build mode:
@@ -13,7 +13,7 @@
 //!     be credited as evidence (the entropy floor collapses to 0.0; the un-anchored
 //!     path returns 0.0 instead of propagating a poisonous NaN downstream).
 //!
-//! Legit (non-NaN) inputs must be BIT-IDENTICAL to the pre-fix behavior — the
+//! Legit (non-NaN) inputs must be BIT-IDENTICAL to the pre-fix behavior, the
 //! mode-independent regression asserts below pin that the guard changed nothing
 //! on real values.
 
@@ -55,7 +55,7 @@ fn anchor_floor_legit_values_unchanged() {
 #[test]
 #[should_panic(expected = "NaN entropy")]
 fn nan_entropy_panics_loudly_in_debug() {
-    // Must NOT return 0.55 — a NaN entropy is a broken upstream computation and
+    // Must NOT return 0.55, a NaN entropy is a broken upstream computation and
     // is caught, never laundered.
     let _ = entropy_fallback_confidence_for_test(f64::NAN, false);
 }
@@ -80,7 +80,7 @@ fn nan_entropy_sanitizes_to_zero_in_release() {
 #[cfg(not(debug_assertions))]
 #[test]
 fn nan_confidence_sanitizes_in_release() {
-    // Un-anchored: a NaN must not propagate downstream — it collapses to 0.0.
+    // Un-anchored: a NaN must not propagate downstream (it collapses to 0.0).
     let unanchored = apply_named_detector_anchor_floor(f64::NAN, false, false);
     assert_eq!(unanchored, 0.0);
     assert!(!unanchored.is_nan());

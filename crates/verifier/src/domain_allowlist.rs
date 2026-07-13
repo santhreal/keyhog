@@ -60,7 +60,7 @@ pub(crate) fn builtin_service_domains() -> &'static HashMap<&'static str, &'stat
             services: std::collections::BTreeMap<String, Vec<String>>,
         }
         // Bundled at compile time (`include_str!`), so the allowlist a runtime user
-        // sees is exactly what was built — editing the data file needs no Rust change
+        // sees is exactly what was built, editing the data file needs no Rust change
         // yet cannot be tampered with at runtime (this is a credential-exfil boundary).
         let raw = include_str!("../../../rules/service-verification-domains.toml");
         let parsed: ServicesFile = match toml::from_str(raw) {
@@ -77,7 +77,7 @@ pub(crate) fn builtin_service_domains() -> &'static HashMap<&'static str, &'stat
         );
         // Leak the parsed data to `'static` (a one-time init of conceptually static
         // config) so the map keeps the exact `&'static str` / `&'static [&'static str]`
-        // element types every caller consumes — no return-type or caller change vs the
+        // element types every caller consumes, no return-type or caller change vs the
         // former inline `m.insert` map. `jwt`/`generic` carry an intentionally EMPTY
         // domain list (structural-only, never network-verified); empty is preserved.
         let mut map: HashMap<&'static str, &'static [&'static str]> = HashMap::new();

@@ -18,7 +18,7 @@ fn r5t_detectors_format_json_emits_corpus_and_policy() {
         .expect("detectors --format json must be a JSON array");
 
     // Truth, not shape: the array length must equal the live embedded detector
-    // count the binary itself reports — the two surfaces (JSON array and
+    // count the binary itself reports, the two surfaces (JSON array and
     // `embedded_detector_count`) must agree exactly, never just "non-empty".
     let expected = keyhog_core::embedded_detector_count();
     assert!(expected > 0, "embedded_detector_count() returned 0");

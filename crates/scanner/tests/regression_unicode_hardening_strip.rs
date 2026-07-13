@@ -1,6 +1,6 @@
 //! Regression: Unicode-hardening strip/detect truth table.
 //!
-//! Pins the EXACT behavior of `crates/scanner/src/unicode_hardening.rs` — the
+//! Pins the EXACT behavior of `crates/scanner/src/unicode_hardening.rs`: the
 //! module that strips/replaces the characters an attacker splices into a
 //! credential body to break a detector regex. Every assertion here is a
 //! concrete value: exact stripped bytes, exact `EvasionKind`, exact
@@ -10,7 +10,7 @@
 //!   - `detect_unicode_attacks` classification (kind + replacement + position),
 //!   - `normalize_homoglyphs` / `full_normalize` exact stripped forms,
 //!   - `is_evasion_char` as the observable proxy for the private
-//!     `is_zero_width || is_rtl_override` predicate — including the historical
+//!     `is_zero_width || is_rtl_override` predicate, including the historical
 //!     "is_zero_width still missing U+2061-2064" note, which the CURRENT code
 //!     has CLOSED (`'\u{2060}'..='\u{2064}'` is in the zero-width set), so the
 //!     real current value asserted below is `true`, and the stale gap is noted,
@@ -19,7 +19,7 @@
 //!   - `strip_interior_evasion_controls` anchored strip vs structural-whitespace
 //!     preservation (TSV tabs, CRLF, mid-identifier non-anchoring).
 //!
-//! Exercised through the crate's `testing::unicode_hardening` facade — the same
+//! Exercised through the crate's `testing::unicode_hardening` facade, the same
 //! `pub(crate)` functions the scan path calls, no production visibility widened.
 
 use std::borrow::Cow;
@@ -52,7 +52,7 @@ fn detect_bom_feff_is_zerowidth() {
 
 #[test]
 fn detect_combining_acute_is_decomposed() {
-    // U+0301 COMBINING ACUTE ACCENT — a Grapheme_Extend mark, reported as
+    // U+0301 COMBINING ACUTE ACCENT, a Grapheme_Extend mark, reported as
     // Decomposed (it is stripped on the normalization path), not ZeroWidth.
     let m = uh::detect_unicode_attacks("\u{0301}");
     assert_eq!(m.len(), 1);
@@ -119,7 +119,7 @@ fn normalize_strips_zwj_bom_zwsp_to_clean_token() {
 #[test]
 fn normalize_strips_combining_marks_from_two_blocks() {
     // U+1DC0 (Extended block) + U+FE20 (Combining Half Marks block) both dropped
-    // — neither is in the legacy U+0300–036F block.
+    //: neither is in the legacy U+0300–036F block.
     let evaded = "g\u{1DC0}h\u{FE20}p_x1234567890abcd";
     let out = uh::normalize_homoglyphs(evaded);
     assert_eq!(&*out, "ghp_x1234567890abcd");
@@ -181,14 +181,14 @@ fn is_evasion_char_zero_width_and_rtl_true() {
 
 #[test]
 fn is_evasion_char_invisible_operators_gap_now_closed() {
-    // Historical memory note: "is_zero_width still missing U+2061-2064" — now
+    // Historical memory note: "is_zero_width still missing U+2061-2064", now
     // closed AND the block extended. `is_zero_width` (unicode_hardening.rs) covers
     // the WHOLE `U+2060..=206F` invisible-operator/format/isolate block (2065
     // Reserved/Default_Ignorable, 2066-2069 bidi isolates, 206A-206F deprecated
-    // Cf) — NOT just 2060-2064. It does NOT include the visible-width space
+    // Cf). NOT just 2060-2064. It does NOT include the visible-width space
     // separators (NBSP U+00A0, MMSP U+205F, …); those are a separate
     // `contains_evasion` concern. `is_evasion_char = is_zero_width ||
-    // is_rtl_override`. TEST TRUTH — the whole invisible block is flagged:
+    // is_rtl_override`. TEST TRUTH, the whole invisible block is flagged:
     for cp in 0x2060u32..=0x206F {
         let ch = char::from_u32(cp).unwrap();
         assert!(
@@ -204,7 +204,7 @@ fn is_evasion_char_invisible_operators_gap_now_closed() {
     );
     // NBSP (U+00A0) and MMSP (U+205F) are visible-width SPACE SEPARATORS, NOT in
     // is_zero_width (invisible/zero-advance format chars only), so is_evasion_char
-    // is false for them — a broader `contains_evasion` separator pass handles them.
+    // is false for them (a broader `contains_evasion` separator pass handles them).
     assert!(
         !uh::is_evasion_char('\u{00A0}'),
         "NBSP is a space separator, not in is_zero_width/is_rtl_override"
@@ -272,7 +272,7 @@ fn strip_preserves_structural_tsv_and_crlf() {
 
 #[test]
 fn strip_does_not_anchor_mid_identifier() {
-    // 'xAKIA...' — the AKIA match is preceded by an identifier byte, so the word
+    // 'xAKIA...', the AKIA match is preceded by an identifier byte, so the word
     // boundary check blocks the anchor; the interior TAB is left untouched.
     let evaded = "xAKIAIOSFODNN7\tEXAMPLE";
     let out = uh::strip_interior_evasion_controls(evaded);

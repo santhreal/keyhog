@@ -2,7 +2,7 @@
 """Go/no-go probe for unifying entropy-fallback scoring onto the MoE.
 
 Reconstructs the SHIPPED model (crates/scanner/src/weights.bin) forward pass in
-numpy — byte-identical layout to ml_weights.rs / train_classifier.serialize —
+numpy: byte-identical layout to ml_weights.rs / train_classifier.serialize 
 and scores a battery of (a) real high-entropy SECRETS and (b) structured
 high-entropy NON-secrets, using the Rust serve-path feature extractor.
 
@@ -10,7 +10,7 @@ If the shipped model scores the TP cluster well above the FP cluster, routing
 the entropy fallback through the MoE will suppress entropy FPs while preserving
 real recall. If the clusters overlap, the model needs corpus work first.
 
-This probe scores the MODEL ONLY (no entropy heuristic, no shape gates) — it is
+This probe scores the MODEL ONLY (no entropy heuristic, no shape gates), it is
 the cleanest test of "can the model do the discrimination the entropy heuristic
 currently can't".
 """
@@ -112,12 +112,12 @@ def main():
     fp_vectors = feature_vectors(FP)
     print(f"shipped model: D={D}, {EXPERT_COUNT} experts\n")
     tp_scores, fp_scores = [], []
-    print("== TP (real secrets — want HIGH) ==")
+    print("== TP (real secrets, want HIGH) ==")
     for (t, _c), vec in zip(TP, tp_vectors):
         s = forward(vec, *model)
         tp_scores.append(s)
         print(f"  {s:.3f}  {t[:42]}")
-    print("\n== FP (structured non-secrets — want LOW) ==")
+    print("\n== FP (structured non-secrets, want LOW) ==")
     for (t, _c), vec in zip(FP, fp_vectors):
         s = forward(vec, *model)
         fp_scores.append(s)
@@ -128,7 +128,7 @@ def main():
     print(f"FP  min={fp.min():.3f} mean={fp.mean():.3f} max={fp.max():.3f}")
     print(f"separation (TP.min - FP.max) = {tp.min() - fp.max():+.3f}")
     # A clean separator exists if some threshold puts all TP above all FP.
-    print(f"VERDICT: {'CLEAN SEPARATION' if tp.min() > fp.max() else 'OVERLAP — model needs corpus work'}")
+    print(f"VERDICT: {'CLEAN SEPARATION' if tp.min() > fp.max() else 'OVERLAP, model needs corpus work'}")
 
 
 if __name__ == "__main__":

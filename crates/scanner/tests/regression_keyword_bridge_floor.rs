@@ -8,7 +8,7 @@
 //! `generic-keyword-secret` family floor of **1.5** bits/byte; when it is OFF the
 //! stricter `generic-secret` family floor applies (**2.8** for values of length
 //! <= 24). The band `[1.5, 2.8)` is therefore surfaced ONLY because of the
-//! keyword low-entropy floor — a genuine weak/random password like
+//! keyword low-entropy floor, a genuine weak/random password like
 //! `GRAPHITE_PASS=gjbubxsu` (Shannon entropy exactly 2.5) lives in that band.
 //!
 //! Every entropy value asserted here is the SAME number the engine feeds the
@@ -42,7 +42,7 @@ const BRIDGE_SERVICE: &str = "generic";
 
 /// Compile the full shipped detector set with an explicit
 /// `generic_keyword_low_entropy` toggle. `min_confidence` is pinned to 0.0 so the
-/// ONLY variable between the ON/OFF scanners is the entropy floor selection — the
+/// ONLY variable between the ON/OFF scanners is the entropy floor selection, the
 /// confidence gate never confounds a floor assertion.
 fn scanner_with_keyword_floor(enabled: bool) -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
@@ -80,7 +80,7 @@ fn surfaced(scanner: &CompiledScanner, body: &str, credential: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Group A: entropy math — the exact bits/byte values the floor gate compares.
+// Group A: entropy math (the exact bits/byte values the floor gate compares).
 // These pin WHY each fixture lands where it does relative to the two floors.
 // ---------------------------------------------------------------------------
 
@@ -206,12 +206,12 @@ fn reported_entropy_equals_the_shared_simd_floor_input() {
     let recomputed = shannon_entropy_simd(b"dzdvnffvqp");
     assert!(
         (reported - recomputed).abs() < 1e-9,
-        "the match entropy ({reported}) must equal the crate's shannon_entropy_simd ({recomputed}) — one source of truth for the floor gate"
+        "the match entropy ({reported}) must equal the crate's shannon_entropy_simd ({recomputed}), one source of truth for the floor gate"
     );
 }
 
 // ---------------------------------------------------------------------------
-// Group C: the floor is LOAD-BEARING — flip it and the same value's fate flips.
+// Group C: the floor is LOAD-BEARING (flip it and the same value's fate flips).
 // Only `generic_keyword_low_entropy` differs between the two scanners.
 // ---------------------------------------------------------------------------
 
@@ -226,7 +226,7 @@ fn keyword_floor_toggle_is_load_bearing_for_gjbubxsu() {
     );
     assert!(
         !surfaced(&off, body, "gjbubxsu"),
-        "floor OFF (2.8): entropy 2.5 is below it, value is suppressed — the low-entropy floor is the ONLY reason it surfaced"
+        "floor OFF (2.8): entropy 2.5 is below it, value is suppressed, the low-entropy floor is the ONLY reason it surfaced"
     );
 }
 
@@ -262,7 +262,7 @@ fn krbykalt_just_below_generic_floor_flips_with_the_toggle() {
 
 #[test]
 fn value_above_generic_floor_surfaces_regardless_of_toggle() {
-    // Entropy 3.5 clears BOTH floors, so the keyword toggle must not change it —
+    // Entropy 3.5 clears BOTH floors, so the keyword toggle must not change it 
     // proves the toggle only governs the [1.5, 2.8) band, not all generic values.
     let body = "password = \"ufnlbbavawsdeecn\"\n";
     assert!(
@@ -291,7 +291,7 @@ fn high_precision_preset_disables_the_keyword_floor_and_drops_the_weak_password(
 }
 
 // ---------------------------------------------------------------------------
-// Group D: negative twins — the low floor is NOT a blanket admit.
+// Group D: negative twins (the low floor is NOT a blanket admit).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -311,7 +311,7 @@ fn unrelated_low_entropy_token_is_not_surfaced_without_a_credential_keyword() {
 #[test]
 fn dictionary_word_under_keyword_stays_suppressed_despite_the_low_floor() {
     // `defaultPassword` clears the 1.5 keyword floor on entropy alone, yet it is a
-    // pronounceable dictionary identifier the shape gauntlet rejects — proving the
+    // pronounceable dictionary identifier the shape gauntlet rejects, proving the
     // low floor does not by itself admit a value.
     let s = scanner_with_keyword_floor(true);
     let matches = scan(&s, "password = defaultPassword\n");

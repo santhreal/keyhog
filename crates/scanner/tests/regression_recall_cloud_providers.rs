@@ -1,7 +1,7 @@
 //! Recall lock: the five canonical cloud-provider credential shapes must each
 //! surface through the on-disk `CompiledScanner` with their EXACT detector id,
 //! their EXACT captured credential bytes, and the EXACT 1-based line number the
-//! secret sits on — never a bare `!is_empty`. Every positive is paired with a
+//! secret sits on, never a bare `!is_empty`. Every positive is paired with a
 //! negative twin (wrong case, over-/under-length, or a documentation `EXAMPLE`
 //! token) that must NOT surface under the same detector, proving the recall is
 //! shape-anchored rather than a blanket "anything of this length" catch.
@@ -15,7 +15,7 @@
 //! None of these five prefixes is checksum-validated (the checksum registry
 //! only claims github/gitlab/npm/pypi/slack/stripe), so the fabricated tokens
 //! below pass through `ChecksumResult::NotApplicable` and are judged purely on
-//! shape + anchor + entropy — exactly the production path. The only tokens that
+//! shape + anchor + entropy, exactly the production path. The only tokens that
 //! must be dropped are the doc-marker `EXAMPLE` twins and the shape misses.
 
 mod support;
@@ -291,7 +291,7 @@ fn gcp_service_account_env_var_reference_not_found() {
 #[test]
 fn azure_storage_connection_string_accountkey_exact_value_and_line() {
     // Connection-string `AccountKey=<88 b64>;` form (most common in code). The
-    // detector captures GROUP 1 — the 88-char key only, not the surrounding
+    // detector captures GROUP 1, the 88-char key only, not the surrounding
     // connection string. On line 2.
     let conn = format!(
         "# azure\nDefaultEndpointsProtocol=https;AccountName=demostorage;AccountKey={AZURE_KEY};\

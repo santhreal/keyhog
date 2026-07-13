@@ -7,7 +7,7 @@
 //! pins the concrete guard behaviour at that boundary:
 //!
 //!   * a credential carrying CR / LF (the header-injection primitive) has those
-//!     bytes REMOVED, so no `\r\n` can split one header into two — the injected
+//!     bytes REMOVED, so no `\r\n` can split one header into two, the injected
 //!     bytes collapse into the value, they do not error and do not survive;
 //!   * the full C0 control range (except TAB 0x09), DEL 0x7F, and the C1 range
 //!     0x80..=0x9F are stripped, while TAB, SP, and printable / non-C1 Unicode
@@ -19,7 +19,7 @@
 //!     header, and the body template is sanitized the same way.
 //!
 //! Every assertion pins an EXACT rendered string / byte outcome. No network I/O
-//! occurs — `built_request_header_body_for_test` BUILDS the request and inspects
+//! occurs: `built_request_header_body_for_test` BUILDS the request and inspects
 //! the assembled bytes; it never sends.
 
 use keyhog_verifier::testing::{TestApi, VerifierTestApi};
@@ -49,7 +49,7 @@ fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
 fn crlf_in_credential_is_stripped_to_single_line() {
     // The classic header-injection primitive: CR (0x0D) + LF (0x0A) that would
     // start a forged header line. Both bytes are DROPPED; the surrounding text
-    // collapses onto one line — it does not error, it neutralizes.
+    // collapses onto one line (it does not error, it neutralizes).
     assert_eq!(
         TestApi.sanitize_raw_value("abc\r\nX-Evil: 1"),
         "abcX-Evil: 1",
@@ -121,7 +121,7 @@ fn normal_credential_passes_through_unchanged() {
 #[test]
 fn full_forged_header_block_collapses_to_one_line() {
     // Adversarial: an entire multi-header injection payload. Every CR/LF is
-    // removed, so the result contains no line terminators at all — the forged
+    // removed, so the result contains no line terminators at all, the forged
     // Host / X-Forwarded-For lines cannot exist as separate headers.
     let payload = "secret\r\nHost: attacker.example\r\nX-Forwarded-For: 1.2.3.4\r\n\r\nGET /admin";
     let out = TestApi.sanitize_raw_value(payload);
@@ -177,7 +177,7 @@ fn companion_value_crlf_injection_is_stripped_in_header_context() {
 #[test]
 fn built_request_header_value_has_crlf_removed() {
     // Drives the real `apply_header_body_templates` boundary. The credential's
-    // CR/LF are gone in the BUILT request's header value — proving the sanitizer
+    // CR/LF are gone in the BUILT request's header value, proving the sanitizer
     // is wired into the builder, not just callable in isolation.
     let c = companions(&[]);
     let (headers, _body) = TestApi.built_request_header_body_for_test(
@@ -196,7 +196,7 @@ fn built_request_header_value_has_crlf_removed() {
 #[test]
 fn built_request_never_gains_a_forged_second_header() {
     // The injected `X-Injected-Crlf` name must NOT appear as a distinct header
-    // in the assembled request — CR/LF removal makes a second header impossible.
+    // in the assembled request: CR/LF removal makes a second header impossible.
     let c = companions(&[]);
     let (headers, _body) = TestApi.built_request_header_body_for_test(
         &[("Authorization", "Bearer {{match}}")],

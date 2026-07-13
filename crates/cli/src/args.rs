@@ -133,9 +133,9 @@ pub enum Command {
 /// The static `///` doc-comment on [`DetectorArgs::search`] is deliberately
 /// count-free: clap doc-comments are compile-time string literals and cannot
 /// embed the embedded-detector count without going stale (this is exactly the
-/// drift AUD-coherence-1 documented — a hardcoded "894-strong" while the binary
+/// drift AUD-coherence-1 documented, a hardcoded "894-strong" while the binary
 /// loaded 899). Instead we render the long help here, at runtime, from
-/// [`keyhog_core::embedded_detector_count`] — the *same* slice that backs
+/// [`keyhog_core::embedded_detector_count`], the *same* slice that backs
 /// `keyhog detectors --format json`. The cited corpus size therefore tracks the real
 /// corpus exactly and can never undercount it.
 ///

@@ -28,7 +28,7 @@ fn legacy_runtime_extension_env_is_ignored() {
     )
     .expect("write extension file");
 
-    // SAFETY: single-threaded at this point — this is the only test in this
+    // SAFETY: single-threaded at this point, this is the only test in this
     // binary and it sets the env var before any code path can read the map.
     std::env::set_var("KEYHOG_SERVICE_ENV_VARS", &ext);
 

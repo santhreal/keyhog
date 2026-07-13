@@ -58,7 +58,7 @@ fn homoglyph_map() -> &'static HashMap<char, Vec<char>> {
 /// ASCII key for deterministic iteration. Exposed (via the `testing` facade) so a
 /// cross-map consistency gate can assert this AC/regex-expand map agrees with the
 /// `unicode_hardening` normalize-path folds (`cyrillic_to_latin`/`greek_to_latin`)
-/// on every shared codepoint — the two are separate scan paths that must not drift.
+/// on every shared codepoint (the two are separate scan paths that must not drift).
 pub(crate) fn homoglyph_confusables() -> Vec<(char, Vec<char>)> {
     let mut entries: Vec<(char, Vec<char>)> = homoglyph_map()
         .iter()

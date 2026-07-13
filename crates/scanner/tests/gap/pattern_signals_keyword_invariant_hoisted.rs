@@ -5,14 +5,14 @@
 //! chunk (or in the synthesized preprocessed text, when that differs from the
 //! raw chunk). The "does the preprocessed buffer differ from chunk.data?" test
 //! is invariant across keywords, but it used to live INSIDE the per-keyword
-//! `any(...)` closure — so on the passthrough path (where the two buffers are
+//! `any(...)` closure, so on the passthrough path (where the two buffers are
 //! the same `Cow::Borrowed` bytes) every keyword triggered a full-length slice
 //! `memcmp`, making the probe O(keywords × len).
 //!
 //! It is now hoisted to a single `let text_differs = ...` before the loop. This
 //! gate pins that hoist: the buffer comparison must appear exactly once in the
 //! file (the binding), and the closure must consume the hoisted `text_differs`
-//! flag — so a future edit cannot silently re-inline the per-keyword memcmp.
+//! flag (so a future edit cannot silently re-inline the per-keyword memcmp).
 
 #[test]
 fn keyword_nearby_buffer_comparison_is_hoisted_out_of_the_loop() {

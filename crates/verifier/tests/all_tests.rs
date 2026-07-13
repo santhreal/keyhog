@@ -18,9 +18,9 @@ pub mod unit;
 // is NOT aggregated here (and not named by a `--test <name>` CI step) is a
 // CI-orphan: it compiles as its own separate test target that the CI step never
 // invokes, its `#[test]`s never run, and the regression it guards can ship
-// silently. These were exactly that — including the AWS SigV4 byte-exact
+// silently. These were exactly that, including the AWS SigV4 byte-exact
 // known-answer locks (a wrong signature → false `Dead` verdict) and the SSRF
-// short-form-IP blocklist — so they are pulled into the aggregated target here.
+// short-form-IP blocklist (so they are pulled into the aggregated target here).
 //
 // EXCEPTION: `break_it.rs` is NOT aggregated. It is a fuzz file of engine tests
 // that drive `verify_all` through the PROCESS-GLOBAL `GLOBAL_RATE_LIMITER` on a

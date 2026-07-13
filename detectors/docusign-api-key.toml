@@ -8,7 +8,7 @@ id = "docusign-api-key"
 name = "Docusign Integration Key"
 service = "docusign"
 severity = "critical"
-# "INTEGRATION_KEY" removed: over-broad generic prefilter(s) the regex does NOT need — every
+# "INTEGRATION_KEY" removed: over-broad generic prefilter(s) the regex does NOT need, every
 # pattern requires the service name as a leading anchor (kept). Recall-neutral.
 keywords = ["DOCUSIGN", "ds_integration_key"]
 

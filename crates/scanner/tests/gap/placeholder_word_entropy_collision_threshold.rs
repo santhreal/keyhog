@@ -5,7 +5,7 @@
 //!   * a match with a word boundary on BOTH sides always suppresses;
 //!   * a match with a boundary on only ONE side suppresses only when the
 //!     credential is NOT a long, `+`/`/`-bearing, high-entropy secret that the
-//!     placeholder merely collides with — that collision is gated at the
+//!     placeholder merely collides with, that collision is gated at the
 //!     `HIGH_ENTROPY_MARKER_COLLISION_ENTROPY` floor (4.8 bits/byte).
 //!
 //! Pin all of it, including the exact entropy threshold flip: the SAME
@@ -15,7 +15,7 @@ use keyhog_scanner::testing::placeholder_word_suppresses_for_test as suppresses;
 
 #[test]
 fn both_sided_boundary_always_suppresses() {
-    // " EXAMPLE " — space on both sides — suppresses regardless of entropy.
+    // " EXAMPLE " (space on both sides (suppresses regardless of entropy)).
     assert!(suppresses("foo example bar", "EXAMPLE", None));
 }
 
@@ -27,7 +27,7 @@ fn one_sided_short_credential_suppresses() {
 }
 
 // A 47-char credential carrying `+` and `/`, with EXAMPLE at the start
-// (left boundary only, right neighbour is alphanumeric) — exactly the
+// (left boundary only, right neighbour is alphanumeric), exactly the
 // one-sided high-entropy shape the collision gate guards.
 const COLLISION_CANDIDATE: &str = "EXAMPLEaB+/cD9zaB+/cD9zaB+/cD9zaB+/cD9zaB+/cD9z";
 
@@ -60,7 +60,7 @@ use proptest::prelude::*;
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(2_000))]
 
-    /// One-sided collision candidate BELOW the 4.8 floor still suppresses — the
+    /// One-sided collision candidate BELOW the 4.8 floor still suppresses, the
     /// placeholder wins because the credential is not (yet) entropic enough to be
     /// a real colliding secret.
     #[test]
@@ -68,7 +68,7 @@ proptest! {
         prop_assert!(suppresses(COLLISION_CANDIDATE, "EXAMPLE", Some(e)));
     }
 
-    /// One-sided collision candidate AT/ABOVE the floor does NOT suppress — it is
+    /// One-sided collision candidate AT/ABOVE the floor does NOT suppress, it is
     /// treated as a real high-entropy secret colliding with the word, so the
     /// finding is KEPT (the recall-preserving half of the gate).
     #[test]
@@ -76,7 +76,7 @@ proptest! {
         prop_assert!(!suppresses(COLLISION_CANDIDATE, "EXAMPLE", Some(e)));
     }
 
-    /// A match bounded on BOTH sides always suppresses, regardless of entropy —
+    /// A match bounded on BOTH sides always suppresses, regardless of entropy 
     /// the entropy collision gate is only consulted for one-sided matches.
     #[test]
     fn both_sided_boundary_suppresses_regardless_of_entropy(e in 0.0f64..9.0) {

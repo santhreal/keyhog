@@ -69,7 +69,7 @@ impl CompiledScanner {
         // (unlike `scan_phase2_patterns` below). A decode sub-chunk splices the
         // decoded text in place of the encoded blob, which creates new byte
         // adjacencies at the junction AND new token boundaries inside what was a
-        // contiguous base64 run — so a confirmed/companion detector
+        // contiguous base64 run, so a confirmed/companion detector
         // (cloudflare-api-token, mysql-connection-string, …) can fire on spliced
         // context arbitrarily far from the decoded span where the PARENT (which
         // saw the still-encoded bytes) did not. The decode-focus theorem
@@ -120,10 +120,10 @@ impl CompiledScanner {
         // Decode-recursion FOCUS: a decode sub-chunk carries `decoded_span`, the
         // byte range of the freshly decoded text inside its (mostly already-
         // scanned) parent-context splice. Window the expensive phase-2 pass to
-        // that span + margin instead of the whole splice — the rest of the splice
+        // that span + margin instead of the whole splice, the rest of the splice
         // was scanned (and any finding deduped) by the parent chunk. Requires
         // `preprocessed.text` to be byte-aligned with `chunk.data` (the homoglyph
-        // no-op passthrough) so the span — in `chunk.data` coordinates — indexes
+        // no-op passthrough) so the span, in `chunk.data` coordinates, indexes
         // `preprocessed.text`; otherwise the full scan runs.
         let focus = prepared.chunk.metadata.decoded_span.filter(|_| {
             self.tuning.decode_focus_enabled()
@@ -357,11 +357,11 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             // marks its detector. Concretely `client_secret` (pattern 5's quoted-
             // JSON literal) swallows the `secret` inside it, so generic-password
             // pattern 4 (`(?:…|secret)\s*=\s*"…"`) is never AC-confirmed and only
-            // the always-active homoglyph variant catches it on ASCII — the exact
+            // the always-active homoglyph variant catches it on ASCII, the exact
             // base-AC coverage gap that blocked the homoglyph ASCII-skip. Triggers
             // are position-independent bits (the confirmed pass re-scans the whole
             // chunk and filters by full regex), so marking every literal that
-            // occurs — overlaps included — only ever ADDS sound confirmation work,
+            // occurs, overlaps included, only ever ADDS sound confirmation work,
             // never a false positive, and closes the shadow gap for every backend.
             // Phase-1 is ~1.7% of scan and literals are sparse in real source, so
             // the extra overlap matches are negligible; proven recall-neutral for
@@ -375,7 +375,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
 
     /// Build the keyhog trigger bitmap from a GPU literal-set PRESENCE bitmap
     /// (`scan_presence`): word `w`, bit `b` set means literal pattern `w*32+b`
-    /// occurred. Maps each set bit through `mark_triggered_pattern` — the compact
+    /// occurred. Maps each set bit through `mark_triggered_pattern`: the compact
     /// per-pattern counterpart of consuming per-hit match triples (the triple path
     /// was removed; see `collect_triggered_patterns_gpu`).
     #[inline]
@@ -411,7 +411,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     /// [`Self::triggered_patterns_from_gpu_presence`]: the GPU-union path
     /// (`collect_triggered_patterns_gpu`) already holds the CPU-trigger bitmap, so
     /// marking straight into it avoids allocating and then discarding a SECOND
-    /// per-chunk `Vec<u64>` just to OR it in — the fresh-per-chunk allocation the
+    /// per-chunk `Vec<u64>` just to OR it in, the fresh-per-chunk allocation the
     /// GPU trigger path used to pay on every chunk.
     pub(crate) fn mark_gpu_presence_into(&self, triggered: &mut [u64], presence: &[u32]) {
         for (word_idx, &word) in presence.iter().enumerate() {
@@ -488,7 +488,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     pub(crate) fn degraded_backend_after_gpu_failure(&self) -> ScanBackend {
         // Route to the backend that is ACTUALLY live: `SimdCpu` only when a
         // Hyperscan prefilter is compiled in and built, else the pure-CPU AC
-        // `CpuFallback` — otherwise the operator-visible backend would claim
+        // `CpuFallback`: otherwise the operator-visible backend would claim
         // SimdCpu while silently running the weaker AC path (Law 10). This is
         // compiled even without the `gpu` feature because the generic
         // per-backend trigger dispatcher still typechecks the GPU match arm.

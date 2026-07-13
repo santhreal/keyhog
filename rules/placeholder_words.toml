@@ -41,7 +41,7 @@ words = [
 # boundary is required BEFORE the fragment so real base64 containing the substring
 # is not suppressed.
 instructional_fragments = ["your_", "your-", "insert", "change", "replace"]
-# Plain-substring markers, matched anywhere in the value — they appear buried
+# Plain-substring markers, matched anywhere in the value, they appear buried
 # inside service-prefixed tokens (`ghp_EXAMPLE_TOKEN`, camel/snake-cased) where a
 # word-boundary match would miss them. Real secrets do not contain these literals.
 marker_substrings = [
@@ -76,6 +76,6 @@ marker_substrings = [
 # lowercase; may carry `_`/`-` separators.
 ci_substrings = ["your_", "replace_me", "change_me", "insert_here", "fake_", "dummy_", "mock_"]
 # Whole-value EXACT markers, matched case-sensitively against the raw bytes. Stored
-# lowercase, so — preserving current behavior — only the lowercase whole value
+# lowercase, so, preserving current behavior, only the lowercase whole value
 # suppresses (an uppercase `NULL` is NOT caught by this arm).
 exact_values = ["null", "none", "undefined", "empty", "default", "secret", "password"]

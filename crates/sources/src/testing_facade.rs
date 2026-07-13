@@ -84,7 +84,7 @@ pub mod testing {
         crate::filesystem::filter::validate_rule_value(name, value, rule_list_kind_from_label(kind))
     }
 
-    /// [`crate::filesystem::filter::normalize_rule_list`] for the named kind —
+    /// [`crate::filesystem::filter::normalize_rule_list`] for the named kind 
     /// trims, validates every entry, and rejects duplicates, returning the
     /// normalized list or the first refusal reason.
     pub fn normalize_rule_list_for_test(
@@ -336,7 +336,7 @@ pub mod testing {
         ///
         /// SECURITY NOTE: every `*_with_endpoint*` loopback-mock builder OPTS INTO
         /// private endpoints (`allow_private_endpoint = true`) so the mock at
-        /// `127.0.0.1` is reachable — i.e. it DISABLES the cloud SSRF endpoint
+        /// `127.0.0.1` is reachable, i.e. it DISABLES the cloud SSRF endpoint
         /// screen. A test that must exercise the ACTIVE screen (private/metadata
         /// refusal, public-host acceptance) MUST instead use
         /// `s3_source_with_endpoint_allow_private(bucket, endpoint, false)`, or it
@@ -367,7 +367,7 @@ pub mod testing {
             B: Into<String>,
             E: Into<String>;
         /// Build an S3 source whose SSRF endpoint screen is either default-on
-        /// (`allow_private = false`) or opted-out (`true`) — the config-flag
+        /// (`allow_private = false`) or opted-out (`true`), the config-flag
         /// replacement for the retired `KEYHOG_ALLOW_PRIVATE_CLOUD_ENDPOINT` env,
         /// used by the SSRF-refusal regression tests to drive both paths.
         #[cfg(feature = "s3")]
@@ -392,7 +392,7 @@ pub mod testing {
             B: Into<String>,
             E: Into<String>;
         /// Build an Azure Blob source whose container URL is permitted to be a
-        /// private / loopback endpoint (httpmock binds 127.0.0.1) — the loopback
+        /// private / loopback endpoint (httpmock binds 127.0.0.1), the loopback
         /// config-flag replacement used by the azure listing/drop regressions.
         #[cfg(feature = "azure")]
         fn azure_blob_source<U>(&self, container_url: U) -> crate::AzureBlobSource

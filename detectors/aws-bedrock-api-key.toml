@@ -1,5 +1,5 @@
 # Docs: https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html
-# Format: long-term key — literal prefix `ABSK` + the deterministic base64
+# Format: long-term key, literal prefix `ABSK` + the deterministic base64
 #         header `QmVkcm9ja0FQSUtleS` (the head of base64("BedrockAPIKey…"),
 #         which makes the 22-char anchor effectively unique), followed by a
 #         base64 body; 132 chars total (110-char body after the anchor).
@@ -7,7 +7,7 @@
 #         followed by `[A-Za-z0-9+/]+={0,2}`. Short-term keys
 #         (`bedrock-api-key-` + presigned URL) are ephemeral and their body is
 #         NOT authoritatively bounded, so they are deliberately NOT shipped
-#         here (soundness over reach — a guessed shape would FP).
+#         here (soundness over reach (a guessed shape would FP)).
 # Verify: Bedrock bearer credential (`Authorization: Bearer <key>` /
 #         `AWS_BEARER_TOKEN_BEDROCK`); no standalone checksum.
 # Prefix: ABSK

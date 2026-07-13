@@ -8,7 +8,7 @@
 //!      `partialFingerprints` object with the SINGLE key
 //!      `"keyhog/credentialHash/v1"`.
 //!   2. Its value is the lower-case hex of the finding's SHA-256 credential
-//!      hash — i.e. `hex(sha256(credential_value))`.
+//!      hash (i.e. `hex(sha256(credential_value))`).
 //!   3. Two findings sharing a credential VALUE share the fingerprint byte-for-
 //!      byte (so the platform collapses them to one alert), regardless of file,
 //!      line, severity, or redaction text.
@@ -45,7 +45,7 @@ const GITLAB_VALUE: &str = "glpat-XXXXXXXXXXXXXXXXXXXX";
 const GITLAB_VALUE_SHA256_HEX: &str =
     "156b2cdd8ff1617f07c96a3642465c3f5d0d784fc6fa089ceda2de2dca01cf6e";
 
-/// SHA-256 hex of the EMPTY string — proves the empty credential is NOT the
+/// SHA-256 hex of the EMPTY string, proves the empty credential is NOT the
 /// all-zero sentinel and therefore is still fingerprinted.
 const EMPTY_VALUE_SHA256_HEX: &str =
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -129,7 +129,7 @@ fn partial_fingerprints_has_exact_key() {
 }
 
 /// Positive: the fingerprint VALUE is the exact SHA-256 hex of the credential
-/// value — the load-bearing identity assertion.
+/// value (the load-bearing identity assertion).
 #[test]
 fn fingerprint_value_is_exact_sha256_hex_of_credential() {
     let json = render_sarif(&[finding_for(
@@ -207,7 +207,7 @@ fn fingerprint_is_64_lowercase_hex_chars() {
     );
 }
 
-/// The fingerprint object contains EXACTLY one key — the versioned identity —
+/// The fingerprint object contains EXACTLY one key, the versioned identity 
 /// and nothing else. Guards against accidental extra fingerprints that would
 /// change code-scanning's dedup grouping.
 #[test]
@@ -284,7 +284,7 @@ fn fingerprint_ignores_severity_and_redaction() {
 }
 
 /// Dedup contract (negative twin): two findings with DIFFERENT credential
-/// values produce DIFFERENT fingerprints — distinct leaks stay distinct alerts.
+/// values produce DIFFERENT fingerprints (distinct leaks stay distinct alerts).
 #[test]
 fn different_values_differ_fingerprints() {
     let json = render_sarif(&[
@@ -342,8 +342,8 @@ fn zero_hash_omits_partial_fingerprints() {
     );
 }
 
-/// Adversarial: an EMPTY credential value is NOT the zero sentinel — sha256("")
-/// is a concrete non-zero digest — so it IS fingerprinted with that exact hex.
+/// Adversarial: an EMPTY credential value is NOT the zero sentinel, sha256("")
+/// is a concrete non-zero digest (so it IS fingerprinted with that exact hex).
 #[test]
 fn empty_credential_value_is_fingerprinted_not_sentinel() {
     let json = render_sarif(&[finding_for("", "empty.env", 4, Severity::High, "****")]);
@@ -358,7 +358,7 @@ fn empty_credential_value_is_fingerprinted_not_sentinel() {
 }
 
 /// Mixed run: a real-hash finding and a zero-hash finding in the SAME document
-/// keep their independent behavior — one fingerprinted, one not — proving the
+/// keep their independent behavior, one fingerprinted, one not, proving the
 /// per-result streaming logic does not leak state between results.
 #[test]
 fn mixed_zero_and_real_hash_in_one_run() {

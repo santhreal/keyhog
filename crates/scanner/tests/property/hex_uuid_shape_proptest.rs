@@ -2,12 +2,12 @@
 //! (`crates/scanner/src/suppression/shape/canonical.rs`).
 //!
 //! Two precision gates that keep hash digests and UUIDs out of the findings:
-//!   • `is_uuid_v4_shape` — a canonical 36-char `8-4-4-4-12` UUID (any RFC-4122
+//!   • `is_uuid_v4_shape`: a canonical 36-char `8-4-4-4-12` UUID (any RFC-4122
 //!     version) with UNIFORM-case hex bodies. A standard-shaped UUID is a decoy.
-//!   • `looks_like_bare_hex_digest` — a uniform-case pure-hex value at a hash or
+//!   • `looks_like_bare_hex_digest`: a uniform-case pure-hex value at a hash or
 //!     truncated-hash-prefix length (32/40/48/56/64/72/128). Real keys of those
 //!     widths are base64, not hex, so a pure-hex hit there is a digest FP.
-//! Both reject MIXED case (`aB…`) — a real digest/UUID is emitted uniform-case,
+//! Both reject MIXED case (`aB…`), a real digest/UUID is emitted uniform-case,
 //! and mixed case signals a coincidental non-digest value that other gates judge.
 
 use keyhog_scanner::testing::{is_uuid_v4_shape_for_test, looks_like_bare_hex_digest_for_test};
@@ -74,7 +74,7 @@ fn off_length_or_mixed_case_hex_is_not_a_bare_digest() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
-    /// A UUID match IMPLIES exactly 36 bytes with dashes at 8/13/18/23 — the gate
+    /// A UUID match IMPLIES exactly 36 bytes with dashes at 8/13/18/23, the gate
     /// can never fire on a differently-shaped string.
     #[test]
     fn uuid_match_implies_canonical_layout(value in "[0-9a-fA-F-]{0,40}") {
@@ -86,7 +86,7 @@ proptest! {
     }
 
     /// A uniform-LOWER-case pure-hex string is a bare digest IFF its length is one
-    /// of the seven recognized hash / truncated-prefix widths — exact membership.
+    /// of the seven recognized hash / truncated-prefix widths (exact membership).
     #[test]
     fn lowercase_hex_is_digest_iff_recognized_length(len in 1usize..160) {
         let value = "a".repeat(len);
@@ -94,7 +94,7 @@ proptest! {
         prop_assert_eq!(looks_like_bare_hex_digest_for_test(&value), expected);
     }
 
-    /// A digest hit ALWAYS has a recognized length and is all-hex — no false hit on
+    /// A digest hit ALWAYS has a recognized length and is all-hex, no false hit on
     /// an off-length or non-hex value.
     #[test]
     fn digest_match_implies_hash_length_and_hex(value in "[0-9a-fA-F]{0,140}") {

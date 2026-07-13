@@ -2,7 +2,7 @@
 //! on-GPU detection rewrite targets (the internal design notes). Scans the
 //! mirror corpus (15k real secret-detection fixtures, ~138-byte median) plus a
 //! 16 KiB-concatenated variant, and dumps the accumulated [hot, confirmed,
-//! phase2-capture, generic, entropy, ml] split. CPU backend — phase-2 is
+//! phase2-capture, generic, entropy, ml] split. CPU backend, phase-2 is
 //! backend-independent (proven by `backend_crossover_sweep`), so this isolates
 //! the CPU work the rewrite must move to the GPU.
 //!
@@ -38,14 +38,14 @@ fn phase2_breakdown_mirror() {
     let scanner = CompiledScanner::compile(detectors).expect("compile");
 
     let Some(root) = corpus_dir() else {
-        eprintln!("phase2_breakdown: mirror corpus absent — skipping");
+        eprintln!("phase2_breakdown: mirror corpus absent, skipping");
         return;
     };
     let files = corpus_files(&root, 8000);
     eprintln!("phase2_breakdown: {} mirror files", files.len());
     let total_bytes: usize = files.iter().map(Vec::len).sum();
 
-    // Regime A: raw small files (real ~138-byte median — the per-file overhead
+    // Regime A: raw small files (real ~138-byte median, the per-file overhead
     // regime; one scan_prepared_with_triggered call per file).
     profile_reset();
     for (i, f) in files.iter().enumerate() {

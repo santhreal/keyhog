@@ -1,8 +1,8 @@
 //! Recall + precision lock for the dotfile credential detectors:
-//!   * `npmrc-auth-token` — the `.npmrc` `_authToken=` registry-auth slot, which
+//!   * `npmrc-auth-token`: the `.npmrc` `_authToken=` registry-auth slot, which
 //!     carries legacy base64 tokens, GitHub-Packages PATs, GitLab tokens and
 //!     CI-injected secrets that the `npm_<36>`-only `npm-access-token` misses.
-//!   * `netrc-password`  — the `~/.netrc` / `.authinfo`
+//!   * `netrc-password`: the `~/.netrc` / `.authinfo`
 //!     `machine … login … password <secret>` triple (whitespace-separated, so
 //!     generic key=value detectors miss it).
 //!
@@ -50,13 +50,13 @@ fn netrc(text: &str) -> Option<String> {
 }
 
 // ===========================================================================
-// npmrc-auth-token — RECALL across token vendors.
+// npmrc-auth-token: RECALL across token vendors.
 // ===========================================================================
 
 #[test]
 fn npmrc_legacy_npmtoken_uuid_fires() {
     // The pre-`npm_` legacy `NpmToken.<token>` format is exactly what
-    // `npm-access-token` (`npm_<36>`) misses — the detector's core reason to
+    // `npm-access-token` (`npm_<36>`) misses, the detector's core reason to
     // exist. Exercises the `.` in the value class with a high-entropy body.
     let line = "//registry.npmjs.org/:_authToken=NpmToken.AbCd1234EfGh5678IjKl9012MnOp3456";
     assert_eq!(
@@ -78,7 +78,7 @@ fn npmrc_legacy_base64_token_fires() {
 
 #[test]
 fn npmrc_opaque_ci_token_fires() {
-    // An opaque CI-injected token (no vendor prefix, no checksum shape) — the
+    // An opaque CI-injected token (no vendor prefix, no checksum shape), the
     // common GitHub-Actions/GitLab-CI `.npmrc` case the prefix detectors miss.
     let line = "//npm.pkg.example.com/:_authToken=Zk9Lm2Qw7Rt4Yp1Xc8Vb3Nh6Jf5Dg0SaWe";
     assert_eq!(
@@ -92,7 +92,7 @@ fn npmrc_fabricated_vendor_shape_is_owned_by_the_vendor_detector() {
     // A `npm_<36>` value is the dedicated `npm-access-token`'s shape and is
     // checksum-gated: a fabricated one is dropped at the checksum stage, so it
     // does NOT surface under `npmrc-auth-token`. This pins the ownership
-    // boundary — npmrc-auth-token claims the OPAQUE/legacy slot values the
+    // boundary, npmrc-auth-token claims the OPAQUE/legacy slot values the
     // checksummed vendor detectors don't (a real vendor token still surfaces via
     // its own detector). See the checksum-fixture gotcha in keyhog memory.
     let line = "//registry.npmjs.org/:_authToken=npm_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
@@ -139,7 +139,7 @@ fn npmrc_capture_stops_at_end_of_line() {
 }
 
 // ===========================================================================
-// npmrc-auth-token — PRECISION (templates / empty / short slots stay silent).
+// npmrc-auth-token: PRECISION (templates / empty / short slots stay silent).
 // ===========================================================================
 
 #[test]
@@ -169,7 +169,7 @@ fn npmrc_fires_under_exact_id_and_service() {
 }
 
 // ===========================================================================
-// netrc-password — RECALL across single-line + multi-line layouts.
+// netrc-password: RECALL across single-line + multi-line layouts.
 // ===========================================================================
 
 #[test]
@@ -223,7 +223,7 @@ fn netrc_fires_under_exact_id_and_service() {
 }
 
 // ===========================================================================
-// netrc-password — PRECISION (missing anchor / template / short / placeholder).
+// netrc-password: PRECISION (missing anchor / template / short / placeholder).
 // ===========================================================================
 
 #[test]
@@ -268,7 +268,7 @@ fn netrc_prose_machine_password_does_not_fire() {
 }
 
 // ===========================================================================
-// .pypirc — pypi-api-token (the `pypi-` upload token in the password slot).
+// .pypirc (pypi-api-token (the `pypi-` upload token in the password slot)).
 // ===========================================================================
 
 /// A `pypi-` upload token body in the detector's required {100,128} range:
@@ -309,7 +309,7 @@ fn pypirc_short_pypi_mention_does_not_fire() {
 }
 
 // ===========================================================================
-// .git-credentials — url-credentials (https://user:pass@host userinfo).
+// .git-credentials (url-credentials (https://user:pass@host userinfo)).
 // ===========================================================================
 
 #[test]
@@ -340,7 +340,7 @@ fn git_credentials_empty_userinfo_password_does_not_fire() {
 }
 
 // ===========================================================================
-// .my.cnf — generic-password ([client] password= slot).
+// .my.cnf (generic-password ([client] password= slot)).
 // ===========================================================================
 
 #[test]
@@ -364,7 +364,7 @@ fn mycnf_env_template_does_not_fire() {
 }
 
 // ===========================================================================
-// .pgpass — DOCUMENTED GAP (positional colon password, no literal anchor).
+// .pgpass: DOCUMENTED GAP (positional colon password, no literal anchor).
 // ===========================================================================
 
 const PGPASS: &str = "localhost:5432:mydb:admin:Rk5Mn8Qw2Lp6Vt";
@@ -375,7 +375,7 @@ fn pgpass_password_is_a_documented_gap_not_yet_surfaced() {
     // keyword to anchor; the weak `word:NUMBER:word:word:word` shape cannot
     // justify skipping the entropy floor (netrc earns that via its
     // machine/login/password literals). Closing it cleanly needs a
-    // path/filename trigger — a follow-up. This pins the current behavior so the
+    // path/filename trigger, a follow-up. This pins the current behavior so the
     // gap stays VISIBLE; flip it to a positive lock when the trigger lands.
     let surfaced = scan(PGPASS)
         .iter()

@@ -23,7 +23,7 @@ reason = "Standard env-var assignment."
 [[positive]]
 text = "git push https://oauth2:glpat-aB3kQp7VbT2hYRzNcMfW@gitlab.com/me/repo.git"
 credential = "glpat-aB3kQp7VbT2hYRzNcMfW"
-reason = "URL-embedded credential — common shell-history leak shape."
+reason = "URL-embedded credential (common shell-history leak shape)."
 
 [[positive]]
 text = "PRIVATE-TOKEN: glpat-aB3kQp7VbT2hYRzNcMfW"
@@ -42,7 +42,7 @@ reason = "Prose mentioning the prefix without a token body."
 
 [[negative]]
 text = "glpat_aB3kQp7VbT2hYRzNcMfWj4Dg"
-reason = "Underscore instead of hyphen after `glpat` — must not match."
+reason = "Underscore instead of hyphen after `glpat`: must not match."
 
 # ---- EVASIONS (adversarial) -----------------------------------------
 
@@ -54,7 +54,7 @@ reason = "Inside a C++/JS single-line comment."
 [[evasion]]
 text = "{\"private_token\":\"glpat-aB3kQp7VbT2hYRzNcMfW\"}"
 credential = "glpat-aB3kQp7VbT2hYRzNcMfW"
-reason = "JSON payload — extraction must not consume the closing quote/brace."
+reason = "JSON payload (extraction must not consume the closing quote/brace)."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

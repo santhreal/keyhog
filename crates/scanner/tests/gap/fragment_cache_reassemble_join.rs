@@ -2,7 +2,7 @@
 //!
 //! The reassembly loop glues each near same-path fragment pair via a
 //! `Zeroizing<String>`. That string is now built with
-//! `String::with_capacity(f1.len + f2.len)` instead of growing from empty —
+//! `String::with_capacity(f1.len + f2.len)` instead of growing from empty 
 //! a Law-7 single-allocation fix that also avoids an intermediate realloc
 //! leaving an un-zeroed plaintext copy of the first fragment on the heap. The
 //! glued content and sorted emission order must be byte-for-byte unchanged,
@@ -49,14 +49,14 @@ fn fragments_beyond_the_100_line_window_do_not_join() {
 // `abs(line diff) < 100`, and every same-cluster ordered pair emits `f1.value +
 // f2.value`, sorted by the glued bytes (NOT deduped). So for a same-prefix
 // same-path pair within the window the output is EXACTLY the two concatenations
-// sorted — for any values, any in-window gap. The window boundary is pinned exact
+// sorted, for any values, any in-window gap. The window boundary is pinned exact
 // (gap 99 glues, gap 100 does not), and a cross-prefix pair never glues (distinct
 // clusters). Traced against `record_and_reassemble` (fragment_cache.rs:169-206).
 // No proptest before.
 
 use proptest::prelude::*;
 
-/// The two ordered concatenations of a pair, sorted by bytes — what a same-cluster
+/// The two ordered concatenations of a pair, sorted by bytes, what a same-cluster
 /// in-window pair must produce. ASCII-alnum values make byte-sort == String-sort.
 fn sorted_pair_concats(v1: &str, v2: &str) -> Vec<String> {
     let mut v = vec![format!("{v1}{v2}"), format!("{v2}{v1}")];
@@ -68,7 +68,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(2_000))]
 
     /// Two same-prefix same-path fragments within the < 100-line window glue in
-    /// BOTH orderings, sorted by the glued bytes — any values, any in-window gap.
+    /// BOTH orderings, sorted by the glued bytes (any values, any in-window gap).
     #[test]
     fn same_path_pair_within_window_glues_both_orderings_sorted(
         v1 in "[A-Za-z0-9]{1,12}",

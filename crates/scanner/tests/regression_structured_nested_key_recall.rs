@@ -5,11 +5,11 @@
 //! Real config buries credentials under several container levels
 //! (`[database.production] password = …`, `{"services":{"db":{"auth":{…}}}}`,
 //! `APP__DB__PASSWORD=…`). Two shapes exist:
-//!   * key and value on the SAME line (`password = "<v>"`) — the keyword sits
+//!   * key and value on the SAME line (`password = "<v>"`), the keyword sits
 //!     adjacent to the value regardless of nesting depth, so the per-line
 //!     generic bridge / named detectors fire; nesting is just indentation above.
 //!   * key and value on DIFFERENT lines (HCL `variable "x" { default = "<v>" }`)
-//!     — the structured HCL parser splices `(x, <value>)` so the keyword is
+//!, the structured HCL parser splices `(x, <value>)` so the keyword is
 //!     adjacent again.
 //! This lock pins that BOTH shapes recover the secret at depth, and that
 //! deeply-nested NON-secret keys (host/port) and placeholders do not surface.

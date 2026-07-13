@@ -1,4 +1,4 @@
-//! Audit (VECTOR 7 — DEDUPLICATION): the WebSource SSRF IP-classification
+//! Audit (VECTOR 7: DEDUPLICATION): the WebSource SSRF IP-classification
 //! predicate is a *forked* second copy of the fleet-canonical bogon predicate,
 //! and the fork has diverged in coverage.
 //!
@@ -18,7 +18,7 @@
 //!     `is_private_ip_addr(ip) = is_private_ip_addr_fast(ip) || bogon::ip_addr_is_bogon(*ip)`
 //!     (crates/verifier/src/ssrf.rs:133-135)
 //!
-//! `crates/sources/src/web/ssrf.rs` does the opposite — it re-implements the
+//! `crates/sources/src/web/ssrf.rs` does the opposite, it re-implements the
 //! predicate by hand and does NOT reference `bogon` at all:
 //!     - `is_disallowed_ipv4` (crates/sources/src/web/ssrf.rs:48-56)
 //!     - `is_disallowed_ipv6` (crates/sources/src/web/ssrf.rs:58-71)
@@ -38,15 +38,15 @@
 //! lets through ranges the canonical refuses, so the WebSource SSRF gate can be
 //! pointed at internal infrastructure the verifier would correctly block:
 //!
-//!     * 100.64.0.0/10  Carrier-Grade NAT (RFC 6598) — bogon blocks
+//!     * 100.64.0.0/10  Carrier-Grade NAT (RFC 6598), bogon blocks
 //!                      (`octets[0]==100 && octets[1]&0xc0==0x40`,
 //!                       crates/verifier/src/bogon.rs:121-123); `is_private()`
 //!                       does NOT include CGN, so the fork returns `false`.
 //!                      CGN space hosts real internal / provider services and
 //!                      is a classic SSRF pivot.
-//!     * 198.18.0.0/15  benchmarking (RFC 2544) — bogon blocks; fork misses.
-//!     * 192.0.0.0/24   IETF protocol assignment — bogon blocks; fork misses.
-//!     * 0.0.0.0/8      "this network" (RFC 1122) — bogon blocks the whole /8
+//!     * 198.18.0.0/15  benchmarking (RFC 2544) (bogon blocks; fork misses).
+//!     * 192.0.0.0/24   IETF protocol assignment (bogon blocks; fork misses).
+//!     * 0.0.0.0/8      "this network" (RFC 1122), bogon blocks the whole /8
 //!                      (`v.octets()[0]==0`); the fork only matches the single
 //!                      `0.0.0.0` via `is_unspecified()`, so `0.0.0.1` (a
 //!                      real loopback alias on Linux) slips through.
@@ -57,7 +57,7 @@
 //! crates/sources/src/web/ssrf.rs and route `is_disallowed_ip` through the
 //! canonical `bogon` crate (add `bogon` as a `web`-gated dependency, mirroring
 //! how the verifier consumes it), layering any sources-specific extra checks on
-//! top — exactly as the bogon docs require. Once both call sites resolve to the
+//! top, exactly as the bogon docs require. Once both call sites resolve to the
 //! one canonical predicate, every assertion below passes.
 //!
 //! Tests use only the public, feature-gated `TestApi.is_disallowed_ip`
@@ -69,7 +69,7 @@
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use std::net::{IpAddr, Ipv4Addr};
 
-/// AUD-dedup-1 — Carrier-Grade NAT (100.64.0.0/10) must be refused.
+/// AUD-dedup-1: Carrier-Grade NAT (100.64.0.0/10) must be refused.
 ///
 /// The canonical `bogon::ip_addr_is_bogon` blocks 100.64.0.0/10
 /// (crates/verifier/src/bogon.rs:121-123). The forked WebSource predicate
@@ -86,12 +86,12 @@ fn cgn_100_64_is_refused_like_canonical_bogon() {
         TestApi.is_disallowed_ip(cgn),
         "WebSource SSRF gate accepted CGN address {cgn} that the canonical \
          bogon predicate refuses (100.64.0.0/10, RFC 6598). The sources gate \
-         is a forked copy of bogon that dropped this range — it must delegate \
+         is a forked copy of bogon that dropped this range, it must delegate \
          to the one canonical predicate."
     );
 }
 
-/// AUD-dedup-2 — every range the canonical bogon predicate refuses but the
+/// AUD-dedup-2, every range the canonical bogon predicate refuses but the
 /// forked sources predicate currently lets through.
 ///
 /// Each address here is blocked by `bogon::ip_addr_is_bogon`
@@ -107,19 +107,19 @@ fn forked_gate_matches_canonical_on_reserved_ranges() {
     let must_refuse: &[(Ipv4Addr, &str)] = &[
         (
             Ipv4Addr::new(100, 64, 0, 1),
-            "100.64.0.0/10 CGN (RFC 6598) — bogon.rs:121",
+            "100.64.0.0/10 CGN (RFC 6598), bogon.rs:121",
         ),
         (
             Ipv4Addr::new(198, 18, 0, 1),
-            "198.18.0.0/15 benchmark (RFC 2544) — bogon.rs:127",
+            "198.18.0.0/15 benchmark (RFC 2544), bogon.rs:127",
         ),
         (
             Ipv4Addr::new(192, 0, 0, 1),
-            "192.0.0.0/24 IETF protocol assignment — bogon.rs:124",
+            "192.0.0.0/24 IETF protocol assignment, bogon.rs:124",
         ),
         (
             Ipv4Addr::new(0, 0, 0, 1),
-            "0.0.0.0/8 this-network (RFC 1122) — bogon.rs:112",
+            "0.0.0.0/8 this-network (RFC 1122), bogon.rs:112",
         ),
     ];
 
@@ -131,7 +131,7 @@ fn forked_gate_matches_canonical_on_reserved_ranges() {
 
     assert!(
         leaked.is_empty(),
-        "WebSource SSRF gate diverged from the canonical bogon predicate — it \
+        "WebSource SSRF gate diverged from the canonical bogon predicate, it \
          accepted reserved/non-public ranges the canonical refuses:\n  {}\n\
          These two predicates must be the same single implementation \
          (delegate sources to the bogon crate).",
@@ -139,7 +139,7 @@ fn forked_gate_matches_canonical_on_reserved_ranges() {
     );
 }
 
-/// AUD-dedup-3 — sanity anchor: a genuinely public address must still be
+/// AUD-dedup-3, sanity anchor: a genuinely public address must still be
 /// allowed by BOTH the canonical and the (fixed) sources predicate. This
 /// pins that the expected fix is "use the canonical bogon predicate", not
 /// "block everything". `bogon` allows 8.8.8.8 (bogon.rs:90 doctest:

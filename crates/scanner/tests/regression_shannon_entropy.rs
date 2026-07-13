@@ -12,7 +12,7 @@
 //! HOST-INDEPENDENCE: `shannon_entropy` (cached public entry) and
 //! `shannon_entropy_simd` (raw dispatcher) reduce through the SAME exact
 //! `f64::log2` reduction on every ISA, so the asserted values hold on scalar,
-//! SSE2, AVX2, AVX-512 and Neon alike — no accelerator is assumed.
+//! SSE2, AVX2, AVX-512 and Neon alike (no accelerator is assumed).
 
 use keyhog_scanner::entropy::{normalized_entropy, shannon_entropy};
 use keyhog_scanner::testing::entropy_fast::shannon_entropy_simd;

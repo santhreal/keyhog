@@ -14,7 +14,7 @@
 //! `git log`), and asserts the source surfaced the planted secret with those
 //! EXACT metadata values. Negative twins assert that deletions, unchanged
 //! context, identical refs, and out-of-window commits contribute ZERO added
-//! chunks — so a regression that either drops attribution or over-reports
+//! chunks, so a regression that either drops attribution or over-reports
 //! removed content is caught, not masked by an `!is_empty()` check.
 
 #![cfg(unix)]

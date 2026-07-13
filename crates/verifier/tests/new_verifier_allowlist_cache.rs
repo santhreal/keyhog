@@ -3,10 +3,10 @@
 //! formatter.
 //!
 //! - `domain_allowlist::{builtin_service_domains, effective_allowlist,
-//!   host_is_allowed, check_url_against_spec}` — the credential-exfil guard.
-//! - `cache::VerificationCache` — TTL, eviction, hash-keyed get/put.
-//! - `rate_limit::{RateLimiter, rps math}` — interval math + error backoff.
-//! - `testing::format_sigv4_timestamps` — civil-date conversion.
+//!   host_is_allowed, check_url_against_spec}` (the credential-exfil guard).
+//! - `cache::VerificationCache`: TTL, eviction, hash-keyed get/put.
+//! - `rate_limit::{RateLimiter, rps math}`: interval math + error backoff.
+//! - `testing::format_sigv4_timestamps`: civil-date conversion.
 //!
 //! Each assertion pins a concrete outcome: a specific host allowed/refused, a
 //! cache hit returning the exact stored result, an interval Duration, a
@@ -46,7 +46,7 @@ fn builtin_map_has_known_providers() {
 #[test]
 fn builtin_map_network_excluded_services_are_empty() {
     let m = TestApi.builtin_service_domains();
-    // jwt + generic are structural-only — empty allowlist => never network verify.
+    // jwt + generic are structural-only (empty allowlist => never network verify).
     assert_eq!(m.get("jwt").copied(), Some(&[][..]));
     assert_eq!(m.get("generic").copied(), Some(&[][..]));
 }
@@ -100,7 +100,7 @@ fn effective_allowlist_empty_service_is_none() {
 
 #[test]
 fn effective_allowlist_jwt_service_is_empty_list_not_none() {
-    // jwt maps to an empty slice — Some(vec![]) (a list exists, just empty).
+    // jwt maps to an empty slice. Some(vec![]) (a list exists, just empty).
     let s = spec("jwt", &[]);
     let got = TestApi
         .effective_allowlist(&s)
@@ -354,7 +354,7 @@ fn cache_evict_expired_clears_stale_entries() {
 
 #[test]
 fn cache_respects_max_entries_bound() {
-    // Bound at 2; insert 5 distinct — never exceed the bound.
+    // Bound at 2; insert 5 distinct (never exceed the bound).
     let cache = VerificationCache::with_max_entries(Duration::from_secs(300), 2);
     for i in 0..5 {
         cache.put(
@@ -396,7 +396,7 @@ fn cache_default_ttl_is_usable() {
 }
 
 // ===========================================================================
-// rate_limit::RateLimiter — interval math, no async needed
+// rate_limit::RateLimiter, interval math, no async needed
 // ===========================================================================
 
 #[test]
@@ -463,7 +463,7 @@ async fn rate_limiter_update_limit_sets_per_service_override() {
 }
 
 // ===========================================================================
-// testing::format_sigv4_timestamps — civil-date conversion
+// testing::format_sigv4_timestamps, civil-date conversion
 // ===========================================================================
 
 #[test]

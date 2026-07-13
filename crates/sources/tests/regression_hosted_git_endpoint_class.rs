@@ -1,4 +1,4 @@
-//! Regression: hosted-Git endpoint *classification* — forge host-kind, API
+//! Regression: hosted-Git endpoint *classification*, forge host-kind, API
 //! base composition, and SSRF host refusal.
 //!
 //! This file is deliberately DISTINCT from `regression_hosted_git_endpoint.rs`
@@ -9,14 +9,14 @@
 //!   * which forge a URL binds to (GitHub clone origin = `github.com:443`,
 //!     rejecting the OTHER two forges' hosts as cross-origin token-forwarding
 //!     gadgets), asserted through the crate's `#[doc(hidden)]` testing facade;
-//!   * the exact API base each forge composes its listing request under —
-//!     GitLab's idempotent `/api/v4` suffix and Bitbucket's `/2.0` base —
+//!   * the exact API base each forge composes its listing request under 
+//!     GitLab's idempotent `/api/v4` suffix and Bitbucket's `/2.0` base 
 //!     asserted by driving the real `create_source` factory against a loopback
 //!     `httpmock` server and checking the exact request path;
 //!   * that a private / loopback / metadata / integer-encoded / malformed host
 //!     is classified private, asserted by REUSING the fleet-canonical
 //!     `keyhog_verifier::ssrf::is_private_url` classifier (never a hand-rolled
-//!     copy — Law: ONE PLACE) with exact `bool` expectations.
+//!     copy: Law: ONE PLACE) with exact `bool` expectations.
 //!
 //! Every assertion checks a concrete value: an exact `Ok(())`, an exact refusal
 //! phrase naming the expected origin, an exact request path + call count, or an
@@ -236,7 +236,7 @@ fn gitlab_endpoint_api_v4_suffix_is_not_double_appended() {
     // `normalize_gitlab_api_root` appends `/api/v4` ONLY when the operator did
     // not already supply it. An endpoint that already ends in `/api/v4` must be
     // used as-is: the listing is served only at `/api/v4/groups/acme/projects`
-    // — never a doubled `/api/v4/api/v4/...`.
+    //: never a doubled `/api/v4/api/v4/...`.
     let server = httpmock::MockServer::start();
     let list = server.mock(|when, then| {
         when.method(httpmock::Method::GET)

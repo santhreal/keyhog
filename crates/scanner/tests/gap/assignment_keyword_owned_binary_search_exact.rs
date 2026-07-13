@@ -4,12 +4,12 @@
 //! decides whether a normalized assignment key is already owned by a loaded
 //! named detector, so the broad generic `KEY=value` bridge does not second-guess
 //! it. It is a `binary_search` over a sorted, deduped `&[Arc<str>]` (the real
-//! builder collects through a `BTreeSet`), so ownership is EXACT membership —
+//! builder collects through a `BTreeSet`), so ownership is EXACT membership 
 //! never a prefix, superstring, or substring, and case-sensitive.
 //!
 //! The helper had no direct coverage. The facade sorts/dedups the supplied
 //! keywords through the same `BTreeSet`, so these vectors pass an intentionally
-//! UNSORTED list and still resolve correctly — pinning both the exact-match
+//! UNSORTED list and still resolve correctly, pinning both the exact-match
 //! contract and that the sorted-input precondition is honored. All vectors were
 //! traced as plain set membership.
 
@@ -54,7 +54,7 @@ fn empty_owned_set_and_single_entry_boundaries() {
 // against a naive membership oracle. This gate decides whether the broad generic
 // `KEY=value` bridge defers to a named detector, so a WRONG ownership verdict
 // either double-counts (bridge fires on an owned key) or drops (bridge skips a
-// key the named detector does not actually own) — both recall/precision faults on
+// key the named detector does not actually own), both recall/precision faults on
 // the highest-volume generic path. Driven only through the public facade (which
 // sorts+dedups via BTreeSet before the binary_search); no proptest before.
 
@@ -64,7 +64,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// EXACT MEMBERSHIP: `owned(keys, q)` must equal `keys.contains(q)` for ALL
-    /// inputs — never a prefix/superstring/substring/case-fold match. The same
+    /// inputs, never a prefix/superstring/substring/case-fold match. The same
     /// small `[a-z_]` alphabet for both keys and query yields natural hits AND
     /// misses (and duplicate keys, which the BTreeSet dedups without changing
     /// membership), exercising both branches of the binary_search.
@@ -78,7 +78,7 @@ proptest! {
         prop_assert_eq!(owned(&key_refs, &query), expected);
     }
 
-    /// POSITIVE PATH: every key actually present in the set is owned — a stronger
+    /// POSITIVE PATH: every key actually present in the set is owned, a stronger
     /// guarantee than the differential's incidental hits, catching a sort/dedup
     /// regression that could make the binary_search miss a genuine member.
     #[test]

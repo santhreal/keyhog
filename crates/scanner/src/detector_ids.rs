@@ -25,13 +25,13 @@ pub(crate) const GITHUB_CLASSIC_PAT: &str = "github-classic-pat";
 // phantom `github-fine-grained-pat` const value, which matched NO detector.)
 pub(crate) const GITHUB_PAT_FINE_GRAINED: &str = "github-pat-fine-grained";
 // The GitLab checksum gate's source-of-truth detector. (Superseded the phantom
-// `gitlab-token` const value, which matched NO detector — the glpat- validator
+// `gitlab-token` const value, which matched NO detector, the glpat- validator
 // gates `detectors/gitlab-personal-access-token.toml`.)
 pub(crate) const GITLAB_PERSONAL_ACCESS_TOKEN: &str = "gitlab-personal-access-token";
 pub(crate) const NPM_ACCESS_TOKEN: &str = "npm-access-token";
 pub(crate) const PYPI_API_TOKEN: &str = "pypi-api-token";
-// Always compiled (NOT `simdsieve`-gated): `crate::testing::checksum` — an
-// always-built public support surface — labels the Slack checksum gate with
+// Always compiled (NOT `simdsieve`-gated): `crate::testing::checksum`: an
+// always-built public support surface, labels the Slack checksum gate with
 // this real detector id, so the const must resolve in every feature set.
 // (Superseded the phantom `slack-token` validator label, which named no
 // embedded detector; the xoxb-/xoxp- validator's own docs make
@@ -63,7 +63,7 @@ pub(crate) fn is_private_key_fallback(detector_id: &str) -> bool {
 /// The "structural password slot" family: STRONG-anchor detectors whose regex
 /// proves a syntactic credential SLOT (`scheme://user:<x>@host`,
 /// `IDENTIFIED BY '<x>'`, `--password <x>`) but captures a FREE-FORM value the
-/// way a real password is written — so the dominant SHORT all-lowercase random
+/// way a real password is written, so the dominant SHORT all-lowercase random
 /// passwords surface (the Tier-B randomness floor is skipped) while the
 /// `dictionary_word_placeholder` gate (api.rs) drops the literal placeholder
 /// words (`password`, `secret`) a service-anchored detector's structured capture
@@ -74,7 +74,7 @@ pub(crate) fn is_private_key_fallback(detector_id: &str) -> bool {
 /// `structural_password_slot = true` in its own TOML (see
 /// [`keyhog_core::DetectorSpec::structural_password_slot`]). This predicate reads
 /// that single-owner flag rather than a hardcoded id list, so the family lives in
-/// ONE place — the detector file — and a new member needs no code edit. A
+/// ONE place, the detector file, and a new member needs no code edit. A
 /// synthetic/unknown id (no embedded spec) is never a structural password slot.
 #[inline]
 #[cfg(test)]
@@ -103,7 +103,7 @@ pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
 /// Membership is DECLARED PER-DETECTOR via `DetectorSpec::private_key_block =
 /// true` in each detector's own TOML (DET-0; was the centralized
 /// `rules/detector-classification.toml` `private_key_block` id list). This reads
-/// that single-owner flag. The `Result` is retained for caller compatibility —
+/// that single-owner flag. The `Result` is retained for caller compatibility 
 /// reading an embedded spec field is infallible, so it is always `Ok`.
 #[inline]
 pub(crate) fn is_private_key_block_detector(detector_id: &str) -> Result<bool, String> {
@@ -126,7 +126,7 @@ mod detector_id_corpus_guard {
     //! among them.
     //!
     //! Adding a new detector-id const requires listing it in `corpus_backed_consts`
-    //! (real detector) or `synthetic_consts` (entropy family) — otherwise it is
+    //! (real detector) or `synthetic_consts` (entropy family), otherwise it is
     //! not guarded, which is itself the maintenance contract these tests pin.
 
     use super::*;
@@ -152,7 +152,7 @@ mod detector_id_corpus_guard {
         v
     }
 
-    /// Synthetic finding ids assigned at runtime by the entropy phase — NOT
+    /// Synthetic finding ids assigned at runtime by the entropy phase. NOT
     /// backed by any `detectors/*.toml`. They are legitimate detector-id values
     /// on emitted findings, enumerated here so they are handled explicitly, and
     /// asserted ABSENT from the TOML corpus (a synthetic id colliding with a real
@@ -291,8 +291,8 @@ mod detector_id_corpus_guard {
     /// The structural-password-slot family membership is DECLARED in the detector
     /// TOMLs (`structural_password_slot = true`), read back through
     /// `DetectorSpec::structural_password_slot`. This pins the EXACT member set
-    /// against the embedded corpus, so adding/removing the flag on any detector —
-    /// or a typo'd id — fails loudly here. The four ids are the whole family; they
+    /// against the embedded corpus, so adding/removing the flag on any detector 
+    /// or a typo'd id, fails loudly here. The four ids are the whole family; they
     /// are intentionally NOT scanner-code consts (no scanner path names them
     /// individually), so the list lives once, here, as the guard's expectation.
     #[test]
@@ -329,7 +329,7 @@ mod detector_id_corpus_guard {
     /// (`weak_anchor = true`), read back through `DetectorSpec::weak_anchor`
     /// (DET-0; migrated out of the `rules/detector-classification.toml`
     /// `weak_anchor` list). Pins the EXACT member set against the embedded corpus
-    /// so adding/removing the flag on any detector — or a typo'd id — fails
+    /// so adding/removing the flag on any detector, or a typo'd id, fails
     /// loudly here, preserving the "see the whole family at a glance" view the
     /// centralized list gave.
     #[test]

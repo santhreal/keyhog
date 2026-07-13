@@ -1,24 +1,24 @@
-//! Recall + confidence lock for the `putty-private-key` detector — PuTTY `.ppk`
+//! Recall + confidence lock for the `putty-private-key` detector. PuTTY `.ppk`
 //! private-key files (the native key format of PuTTY / pageant / plink).
 //!
 //! Why this detector exists
 //! ------------------------
 //! A `.ppk` is NOT PEM: it carries no `-----BEGIN` marker, so neither
 //! `private-key` nor `ssh-private-key` ever fires on it. Before this detector a
-//! leaked `.ppk` — which embeds the full private key in its `Private-Lines:`
-//! section — was a total recall hole. The detector anchors on the distinctive
+//! leaked `.ppk`: which embeds the full private key in its `Private-Lines:`
+//! section, was a total recall hole. The detector anchors on the distinctive
 //! `PuTTY-User-Key-File-<version>:` header and closes on the trailing
 //! `Private-MAC:` hex line, requiring an interior `Private-Lines:` count so a
 //! bare format mention is not a finding.
 //!
 //! This suite pins three contracts:
-//!   1. RECALL — every real `.ppk` shape fires (v2/v3, every key type,
+//!   1. RECALL, every real `.ppk` shape fires (v2/v3, every key type,
 //!      encrypted + unencrypted, embedded in a larger file, version-forward).
-//!   2. PRECISION — the structure is load-bearing: header-only, missing
+//!   2. PRECISION, the structure is load-bearing: header-only, missing
 //!      `Private-Lines`, missing/short `Private-MAC`, and a non-PuTTY file that
 //!      merely reuses the `Private-Lines:`/`Private-MAC:` field names all stay
 //!      silent.
-//!   3. CONFIDENCE — the `PuTTY-User-Key-File-` entry added to the scanner's
+//!   3. CONFIDENCE, the `PuTTY-User-Key-File-` entry added to the scanner's
 //!      `KNOWN_PREFIXES` floors a captured `.ppk` to 0.8, clearing the CLI's
 //!      0.3 `min_confidence` gate (the same mechanism that floors PEM blocks via
 //!      `-----BEGIN`), and the placeholder/degenerate guards still apply.
@@ -99,7 +99,7 @@ fn putty_fires(text: &str) -> bool {
 }
 
 // ===========================================================================
-// RECALL — every real .ppk shape fires.
+// RECALL (every real .ppk shape fires).
 // ===========================================================================
 
 #[test]
@@ -182,7 +182,7 @@ fn v2_mac40_sha1_width_fires() {
 }
 
 // ===========================================================================
-// CAPTURE — the match spans header → private body → MAC.
+// CAPTURE (the match spans header → private body → MAC).
 // ===========================================================================
 
 #[test]
@@ -247,7 +247,7 @@ fn two_distinct_ppk_blocks_yield_two_findings() {
 }
 
 // ===========================================================================
-// PRECISION — the structure is load-bearing; partial shapes stay silent.
+// PRECISION (the structure is load-bearing; partial shapes stay silent).
 // ===========================================================================
 
 #[test]
@@ -305,7 +305,7 @@ fn non_putty_file_with_same_field_names_does_not_fire() {
 }
 
 // ===========================================================================
-// CONFIDENCE — the KNOWN_PREFIXES floor clears the CLI min_confidence gate.
+// CONFIDENCE (the KNOWN_PREFIXES floor clears the CLI min_confidence gate).
 // ===========================================================================
 
 #[test]
@@ -346,7 +346,7 @@ fn known_prefix_floor_denies_placeholder_ppk() {
 }
 
 // ===========================================================================
-// IDENTITY — exact detector id + service classification.
+// IDENTITY (exact detector id + service classification).
 // ===========================================================================
 
 #[test]
@@ -359,7 +359,7 @@ fn fires_under_exact_detector_id() {
 #[test]
 fn ppk_is_not_double_reported_by_pem_detectors() {
     // A .ppk carries no `-----BEGIN`, so the PEM `private-key` and
-    // `ssh-private-key` detectors must NOT also fire — no double-report.
+    // `ssh-private-key` detectors must NOT also fire (no double-report).
     let raw = scan(&ppk(2, "ssh-rsa", "solo-key", "SOLOPRIV", MAC64));
     assert!(raw.iter().any(|m| m.detector_id.as_ref() == DETECTOR_ID));
     assert!(

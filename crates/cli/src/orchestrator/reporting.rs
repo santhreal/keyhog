@@ -10,8 +10,8 @@ use crate::style::{terminal_clear_line_prefix, terminal_palette};
 
 /// Emit one redacted `[stream]` preview line per REPORTED finding.
 ///
-/// Wired to the resolved `VerifiedFinding` stream — the same findings the
-/// authoritative report and the exit code are computed from — NOT the raw
+/// Wired to the resolved `VerifiedFinding` stream, the same findings the
+/// authoritative report and the exit code are computed from. NOT the raw
 /// scanner matches. The previous wiring previewed every `RawMatch` as it left
 /// the scanner thread, BEFORE the confidence floor / `--min-confidence` and
 /// the test-fixture suppression that govern the report, so a streamed
@@ -62,7 +62,7 @@ pub(crate) fn stream_report_previews(findings: &[VerifiedFinding]) {
 ///
 /// Law 10: a scanner-thread panic at `dispatch.rs` returns the partial findings
 /// gathered so far AND sets `SCANNER_PANICKED` + a dedicated `EXIT_SCANNER_PANIC`
-/// exit code, but the only terminal output was a `tracing::error!` — filtered
+/// exit code, but the only terminal output was a `tracing::error!`: filtered
 /// out at the default verbosity, exactly like the `tracing::debug!` drops this
 /// sweep replaced. So a crashed scan still printed "Scan complete. Found 0
 /// secrets" as its last word and read as a clean tree. This surfaces the crash
@@ -287,16 +287,16 @@ pub(crate) fn report_completion_summary(
     report_backend_summary(ansi, backend_override);
 }
 
-/// Surface which backend selection ACTUALLY used this scan, and — when a GPU is
-/// present but did not engage — WHY.
+/// Surface which backend selection ACTUALLY used this scan, and, when a GPU is
+/// present but did not engage. WHY.
 ///
 /// The per-batch routing decision was previously logged only at
 /// `tracing::debug!` (target `keyhog::routing`), invisible at the default
-/// `keyhog=warn` verbosity. So a scan that CORRECTLY chose SIMD — which is
+/// `keyhog=warn` verbosity. So a scan that CORRECTLY chose SIMD, which is
 /// measured faster than the current GPU region-presence route for keyhog's
 /// detector set through the measured sweep (host fold/coalesce, dispatch,
 /// readback, and the shared CPU phase-2 tail; see
-/// `measure_fastest_correct_backend`) — read to the operator as "GPU backend
+/// `measure_fastest_correct_backend`), read to the operator as "GPU backend
 /// selection is broken." This prints ONE
 /// completion line stating the backend(s) used and the routing rationale, so the
 /// decision is visible instead of buried (Law 10 / coherence). Reuses the
@@ -309,7 +309,7 @@ pub(crate) fn report_backend_summary(
     use std::sync::atomic::Ordering;
     let total = crate::SCANNED_CHUNKS.load(Ordering::Relaxed);
     if total == 0 {
-        // Nothing was scanned (empty tree, source error, zero chunks) — there is
+        // Nothing was scanned (empty tree, source error, zero chunks), there is
         // no routing decision to report.
         return;
     }
@@ -366,7 +366,7 @@ const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 
 /// Progress/indeterminate bar cell width shared by every phase ticker, so the
 /// determinate scan bar and the indeterminate warm-up/verify/report sweeps line
-/// up to the same column. Single owner — the three tickers must not drift apart.
+/// up to the same column. Single owner (the three tickers must not drift apart).
 const BAR_WIDTH: usize = 22;
 
 /// Smooth determinate bar with 1/8-cell resolution: full `█` cells, one partial
@@ -404,7 +404,7 @@ pub(crate) fn render_progress_bar(frac: f64, width: usize, color: bool) -> Strin
     }
 }
 
-/// Indeterminate "warming up" sweep — a lit band that slides across a dim rail,
+/// Indeterminate "warming up" sweep, a lit band that slides across a dim rail,
 /// shown before the first chunk is dispatched (`TOTAL_CHUNKS == 0`) so the line
 /// is visibly alive during backend warm-up / file discovery instead of a frozen
 /// "scanning 0/0".
@@ -439,7 +439,7 @@ pub(crate) fn fmt_secs(s: f64) -> String {
 }
 
 /// Build one progress line (without the CR/clear prefix) from a counter
-/// snapshot. Pure — so the exact layout is unit-testable and can be visually
+/// snapshot. Pure, so the exact layout is unit-testable and can be visually
 /// iterated with a frame-dump test, instead of needing a multi-second live scan.
 pub(crate) fn render_ticker_line(
     scanned: usize,
@@ -646,7 +646,7 @@ fn terminal_ticker_loop<F>(
 /// visibly alive from the first frame. Two phases, both kept on ONE rewritten
 /// line:
 /// - `TOTAL_CHUNKS == 0` (backend warm-up / file discovery): a brand-coloured
-///   spinner + an indeterminate sweep + the elapsed clock — never a frozen
+///   spinner + an indeterminate sweep + the elapsed clock, never a frozen
 ///   "scanning 0/0".
 /// - chunks streaming: a smooth determinate bar with percent, scanned/total,
 ///   live findings (lit amber the moment the first one lands), throughput
@@ -683,7 +683,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
     // Snapshot every coverage-gap counter once, then render each non-zero
     // category from the ONE canonical set this human summary and the structured
     // SARIF/HTML report share (`crate::reporting::CoverageGapKind`). A category
-    // can therefore never appear on one surface and not the other — a gap
+    // can therefore never appear on one surface and not the other, a gap
     // visible on the terminal but absent from SARIF would be a structured
     // false-clean (Law 10). Adding a category is a compile error until both
     // surfaces handle it.

@@ -24,7 +24,7 @@ impl<W: Write + Send> CsvReporter<W> {
 
 impl<W: Write + Send> Reporter for CsvReporter<W> {
     fn report(&mut self, finding: &VerifiedFinding) -> Result<(), ReportError> {
-        // LAW10 (every optional field below): recall-safe — these format
+        // LAW10 (every optional field below): recall-safe, these format
         // OPTIONAL fields of an already-detected `VerifiedFinding` into CSV
         // cells. A `None` becomes an empty cell; the finding is still emitted in
         // full. No detection happens here, so nothing can be dropped.

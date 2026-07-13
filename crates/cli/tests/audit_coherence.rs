@@ -1,11 +1,11 @@
-//! Adversarial audit — VECTOR 10 (COHERENCE).
+//! Adversarial audit: VECTOR 10 (COHERENCE).
 //!
 //! These are black-box CLI tests: they spawn the real `keyhog` binary and
 //! assert that the numbers/labels it advertises to operators agree with the
 //! numbers/labels the same binary actually emits, and with the documented
 //! contract under `docs/`. Every assertion is drift-proof: it derives the
 //! "expected" value from a live source of truth (the binary's own JSON output,
-//! or the committed docs), never from a hardcoded constant — so the test stays
+//! or the committed docs), never from a hardcoded constant, so the test stays
 //! correct after the corpus grows or shrinks again.
 //!
 //! Each `#[test]` documents one finding: the drift, the file:line evidence,
@@ -63,7 +63,7 @@ fn embedded_detector_count(json: &str) -> usize {
     json.matches("\"companions\":").count()
 }
 
-/// AUD-coherence-1 — `keyhog detectors --help` undercounts the embedded corpus.
+/// AUD-coherence-1: `keyhog detectors --help` undercounts the embedded corpus.
 ///
 /// FINDING: The detector count is 899 everywhere it is computed at runtime:
 ///   - `detectors/*.toml` on disk: 899 files
@@ -89,7 +89,7 @@ fn embedded_detector_count(json: &str) -> usize {
 /// crates/cli/tests/gap/detectors_search_help_detector_count_drift.rs and
 /// crates/cli/tests/stress/detectors_help_detector_count_drift.rs hardcode
 /// "894-strong" and must also become dynamic (assert help count == actual
-/// count) — but those are NOT edited here.
+/// count) (but those are NOT edited here).
 #[test]
 fn detectors_help_count_matches_embedded_json_count() {
     let (help, _e, _c) = run(&["detectors", "--help"]);
@@ -123,7 +123,7 @@ fn detectors_help_count_matches_embedded_json_count() {
     );
 }
 
-/// AUD-coherence-2 — `--help` EXIT CODES omits a documented exit-4 producer.
+/// AUD-coherence-2: `--help` EXIT CODES omits a documented exit-4 producer.
 ///
 /// FINDING: The committed exit-code contract in
 /// docs/src/reference/exit-codes.md defines exit `4` as a *Health/self-test
@@ -179,7 +179,7 @@ fn help_exit_codes_describe_full_exit4_contract() {
     );
 }
 
-/// AUD-coherence-3 — `--help` calls exit 2 "Runtime error"; docs call it "user error".
+/// AUD-coherence-3: `--help` calls exit 2 "Runtime error"; docs call it "user error".
 ///
 /// FINDING: The same exit code 2 is labelled two contradictory ways:
 ///   - `keyhog --help`:
@@ -189,7 +189,7 @@ fn help_exit_codes_describe_full_exit4_contract() {
 ///   - docs/src/first-scan.md:
 ///       "`2`  User error - bad config, bad path, unsupported flag"
 /// The binary's behaviour matches the DOCS' framing: an unknown flag exits 2
-/// and a nonexistent path exits 2 — both are *user* errors, distinct from the
+/// and a nonexistent path exits 2, both are *user* errors, distinct from the
 /// "System error" reserved for exit 3. Calling exit 2 a "Runtime error" in
 /// `--help` while the docs and `exit_codes.rs` (`EXIT_USER_ERROR: u8 = 2`) call it a
 /// user error is a label disagreement on the same code: the two sources of

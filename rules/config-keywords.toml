@@ -1,12 +1,12 @@
 # Tier-B data: the default keyword lists a `ScanConfig` classifies a candidate's
 # KEY / surrounding context with. These are the SHIPPED DEFAULTS; a user config
-# can still override each field at runtime — this file is the one place the
+# can still override each field at runtime, this file is the one place the
 # built-in defaults live (previously inline `vec![...]` in ScanConfig::default).
 #
-#   secret_keywords      — key names that indicate a credential value follows.
-#   test_keywords        — context words marking a value as test / non-production.
-#   placeholder_keywords — words marking a value as an unfilled placeholder.
-#   known_prefixes       — credential prefixes to prioritize during scanning.
+#   secret_keywords: key names that indicate a credential value follows.
+#   test_keywords: context words marking a value as test / non-production.
+#   placeholder_keywords: words marking a value as an unfilled placeholder.
+#   known_prefixes: credential prefixes to prioritize during scanning.
 
 known_prefixes = [
   "AKIA",

@@ -2,7 +2,7 @@
 //!
 //! The bot and user gate regexes are now compiled through one shared
 //! `compile_slack_re` helper (previously two duplicated `match Regex::new {…}`
-//! blocks). Pin the verdicts that helper's regexes produce — in particular that
+//! blocks). Pin the verdicts that helper's regexes produce, in particular that
 //! BOTH bot shapes the detector emits (3-segment and the older 2-segment) are
 //! Valid, the contract the widened regex exists to preserve.
 
@@ -61,7 +61,7 @@ fn non_slack_prefix_is_not_applicable() {
 // The fixed vectors pin one example per shape; these SWEEP the two anchored
 // regexes across their whole valid domain and the structural-reject boundaries.
 // Constructive positives generate strings that satisfy each regex (both bot
-// shapes, both user shapes) — a `letter`-anchored secret keeps the optional
+// shapes, both user shapes), a `letter`-anchored secret keeps the optional
 // numeric group from greedily consuming it, so the parse is unambiguous. Negatives
 // violate exactly ONE bound. Plus the prefix rule (only `xoxb-`/`xoxp-` are in
 // scope). Regexes traced from checksum/slack.rs:42/48. No proptest before.

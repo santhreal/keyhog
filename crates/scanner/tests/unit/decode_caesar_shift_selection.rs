@@ -2,7 +2,7 @@
 //! of `src/decode/caesar.rs` (no-inline-tests gate): the set of decoded chunks
 //! emitted by shifting ONLY the rotated-prefix-matched `k`s must equal,
 //! byte-for-byte, the set emitted by the old exhaustive "try all 25 shifts"
-//! path — across 100k+ generated candidates including ones seeded to force every
+//! path, across 100k+ generated candidates including ones seeded to force every
 //! (prefix, shift) alignment. Divergence means the optimization is dropping (or
 //! inventing) a decoded variant: a recall/precision bug, not a speedup.
 
@@ -48,7 +48,7 @@ fn optimized_emit(candidate: &str) -> BTreeSet<String> {
     out
 }
 
-// Deterministic xorshift64 — no rand dependency, reproducible across runs.
+// Deterministic xorshift64 (no rand dependency, reproducible across runs).
 fn next(state: &mut u64) -> u64 {
     let mut x = *state;
     x ^= x << 13;

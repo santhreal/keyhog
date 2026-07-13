@@ -5,7 +5,7 @@
 //! `group` is meaningful: a pattern can compile cleanly yet declare
 //! `group = 2` on a regex that only has one capture group. At scan time
 //! `extract_grouped_matches` resolves the target group with
-//! `locs.get(group).unwrap_or((full_start, full_end))` — so an out-of-range
+//! `locs.get(group).unwrap_or((full_start, full_end))`: so an out-of-range
 //! group SILENTLY falls back to the WHOLE match (keyword + separator + value)
 //! instead of the secret. That both pollutes the reported credential and
 //! usually fails the detector's checksum, dropping a real secret. Neither shows
@@ -15,7 +15,7 @@
 //! The capture count comes from compiling each pattern through the engine's
 //! EXACT builder via `detector_regex_captures_len_for_test`
 //! (`compiler_compile::shared_regex_compile`), so `captures_len()` is identical
-//! to what the scanner sees at run time — no duplicated builder config, no
+//! to what the scanner sees at run time, no duplicated builder config, no
 //! size-limit mismatch on the corpus's largest patterns.
 //!
 //! `captures_len()` counts the implicit whole-match group 0 plus every explicit

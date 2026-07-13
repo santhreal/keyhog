@@ -3,15 +3,15 @@
 //!
 //! The per-vendor recall locks (email, observability/CI, edge-platform, AI/LLM,
 //! messaging, …) each need the same three things: (1) a deterministic way to
-//! synthesize a credential body of an exact length and alphabet — so a test
-//! never embeds a real secret and always reproduces byte-for-byte — (2) a scan
+//! synthesize a credential body of an exact length and alphabet, so a test
+//! never embeds a real secret and always reproduces byte-for-byte. (2) a scan
 //! wrapper that returns `(detector_id, credential)` pairs, and (3) predicates
 //! that ask whether a value surfaces under a specific detector / any of a set /
 //! at all. Those helpers were previously copy-pasted into every runner; this
 //! module is the single owner.
 //!
 //! The generator is a deterministic LCG (the SplitMix64 seed-mix feeding a PCG
-//! multiplier), NOT a cryptographic RNG — its only job is to produce a stable,
+//! multiplier), NOT a cryptographic RNG, its only job is to produce a stable,
 //! high-alphabet-coverage string per `(n, seed, charset)`. `Math`/`rand`-free so
 //! it works identically on every host and never varies a fixture.
 
@@ -99,7 +99,7 @@ pub fn surfaces_under(text: &str, detector: &str, needle: &str) -> bool {
         .any(|(id, cred)| id == detector && cred.contains(needle))
 }
 
-/// True when `needle` surfaces under any detector in `detectors` — used where a
+/// True when `needle` surfaces under any detector in `detectors`: used where a
 /// value is validly detected by one of several overlapping vendor labels.
 pub fn surfaces_under_any(text: &str, detectors: &[&str], needle: &str) -> bool {
     scan_ids(text)

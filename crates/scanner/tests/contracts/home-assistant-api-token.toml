@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "HOME_ASSISTANT_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "HOME_ASSISTANT_API_TOKEN=TZZU1EXAMPLEEXAMPLESkKv4"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "export HOME_ASSISTANT_API_TOKEN=TZZU1V1fRiBnY5xwsDZXovveco9_68C1kCDSkKv4"
 credential = "TZZU1V1fRiBnY5xwsDZXovveco9_68C1kCDSkKv4"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

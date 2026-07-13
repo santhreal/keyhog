@@ -33,7 +33,7 @@ fn fragments_in_different_directories_do_not_join() {
     ));
     assert!(
         candidates.is_empty(),
-        "cross-directory fragments must not join — got {:?}",
+        "cross-directory fragments must not join, got {:?}",
         candidates
             .iter()
             .map(|c| c.as_str().to_string())

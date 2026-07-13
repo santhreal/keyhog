@@ -20,7 +20,7 @@ reason = "Hostname is not hooks.zapier.com."
 [[evasion]]
 text = "https://hooks.zapier.com/hooks/catch/72839156/Kp4Qx7Rm2Sn5Tb8Vw3Yz/"
 credential = "https://hooks.zapier.com/hooks/catch/72839156/Kp4Qx7Rm2Sn5Tb8Vw3Yz/"
-reason = "Adversarial header_bare envelope — credential must still surface under this detector."
+reason = "Adversarial header_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

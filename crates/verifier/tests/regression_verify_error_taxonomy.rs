@@ -143,7 +143,7 @@ fn every_refusal_is_blocked_prefixed() {
 
 #[test]
 fn refusals_carry_no_fix_marker() {
-    // Refusals are terse by design — a `Fix:` would wrongly imply the operator
+    // Refusals are terse by design, a `Fix:` would wrongly imply the operator
     // can make the blocked host safe to contact.
     for r in REFUSALS {
         assert!(

@@ -5,7 +5,7 @@
 //! `DetectorSpec` flags (`weak_anchor = true` / `private_key_block = true` in each
 //! detector's own TOML), while `stripe_hot_confirmed_prefixes` / `validate` still
 //! come from the Tier-B `rules/detector-classification.toml` prefix list. All four
-//! drive real suppression/resolution behaviour, yet have thin direct coverage —
+//! drive real suppression/resolution behaviour, yet have thin direct coverage 
 //! these pin them through the public facades with EXACT values, including
 //! cross-classification negatives (an id flagged in one family must report `false`
 //! for the other). The values are IDENTICAL to the pre-migration classification

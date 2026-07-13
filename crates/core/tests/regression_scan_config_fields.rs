@@ -52,7 +52,7 @@ fn parse(toml_text: &str) -> ScanConfig {
         .unwrap_or_else(|e| panic!("expected TOML to deserialize into ScanConfig, got: {e}"))
 }
 
-/// The shipped default config must pass validation unchanged — the defaults are
+/// The shipped default config must pass validation unchanged, the defaults are
 /// themselves a validity contract, not merely a starting point to be edited.
 #[test]
 fn default_config_passes_validation() {

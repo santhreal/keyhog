@@ -6,7 +6,7 @@
 //! they must be left untouched and must NOT be reported as evasion, so legitimate
 //! CJK text stays on the zero-allocation fast path. The ONE exception is the
 //! INVISIBLE U+FFA0 HALFWIDTH HANGUL FILLER (zero-advance), which is a documented
-//! credential-splice vector and IS stripped as evasion — see
+//! credential-splice vector and IS stripped as evasion, see
 //! `halfwidth_hangul_filler_ffa0_is_stripped_as_evasion` below.
 //!
 //! Every fullwidth credential-charset char (A–Z, a–z, 0–9, `_ + / = . -`) lives
@@ -156,7 +156,7 @@ fn halfwidth_hangul_filler_ffa0_is_stripped_as_evasion() {
     // (U+FF61–FF9F) this file protects, the FILLER is INVISIBLE (zero-advance). It
     // is grouped in `unicode_hardening`'s invisible-`Lo`-filler strip set with the
     // other Hangul fillers (U+115F/1160/3164) precisely because it renders blank and
-    // is a classic "looks empty" credential-splice vector — `gh<FFA0>p_token` must
+    // is a classic "looks empty" credential-splice vector: `gh<FFA0>p_token` must
     // fold to `ghp_token`. So it MUST be flagged as evasion and stripped, matching
     // `unicode_hardening`'s `hangul_filler_split_credential_is_recovered`.
     let spliced = "token_\u{FFA0}_value";
@@ -173,7 +173,7 @@ fn halfwidth_hangul_filler_ffa0_is_stripped_as_evasion() {
 
 #[test]
 fn fullwidth_white_paren_ff5f_is_kept() {
-    // FF5F is FF5E+1 — just past the ASCII-mappable range.
+    // FF5F is FF5E+1 (just past the ASCII-mappable range).
     assert_kept_and_not_evasion('\u{FF5F}', "fullwidth left white parenthesis");
 }
 
@@ -186,7 +186,7 @@ fn fullwidth_yen_sign_ffe5_is_kept() {
 
 #[test]
 fn pure_katakana_text_is_not_evasion() {
-    // U+30A2 ア (full katakana) + halfwidth — none are ASCII variants.
+    // U+30A2 ア (full katakana) + halfwidth (none are ASCII variants).
     assert!(
         !contains_evasion("\u{FF76}\u{FF77}\u{FF78}"),
         "halfwidth katakana run is not evasion"
@@ -207,7 +207,7 @@ fn katakana_only_text_stays_borrowed() {
 
 #[test]
 fn unassigned_ff00_is_kept() {
-    // FF00 is FF01-1 — just before the range, unassigned, must be kept.
+    // FF00 is FF01-1 (just before the range, unassigned, must be kept).
     let out = normalize_homoglyphs("x\u{FF00}y");
     assert!(
         out.contains('\u{FF00}'),

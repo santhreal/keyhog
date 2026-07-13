@@ -125,7 +125,7 @@ pub(super) fn build_region_presence_batch(
 /// start offsets, and whether the borrowed-single-chunk fast path ran (`true`) or
 /// the folded-scratch path (`false`). The single owner both paths flow through, so
 /// a differential test can prove they present BYTE-IDENTICAL input for the same
-/// case-folded content — a stray NUL separator or a lowercasing divergence between
+/// case-folded content, a stray NUL separator or a lowercasing divergence between
 /// the paths would make the GPU DFA see different bytes and emit different presence
 /// bits (a silent GPU/CPU parity break). Exposed to `crate::testing` for that test.
 pub(crate) fn region_presence_batch_capture(

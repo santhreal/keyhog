@@ -99,7 +99,7 @@ fn sarif_finding_is_valid_and_has_runs() {
         o.chars().take(400).collect::<String>()
     );
     // Law 6: require BOTH the exact version AND the schema, not "either key
-    // present" — a downstream SARIF consumer needs both to validate the document.
+    // present" (a downstream SARIF consumer needs both to validate the document).
     assert_eq!(
         v["version"].as_str(),
         Some("2.1.0"),
@@ -116,7 +116,7 @@ fn sarif_clean_is_valid_and_has_runs() {
     let (_c, o, _e) = scan("clean prose\n", "sarif");
     let v: Value = serde_json::from_str(o.trim()).expect("clean sarif must be valid JSON");
     // Law 6: `runs` must be a real array with a run whose results are present and
-    // EMPTY on a clean scan — not merely that the key exists.
+    // EMPTY on a clean scan (not merely that the key exists).
     let runs = v["runs"]
         .as_array()
         .expect("clean SARIF must carry a runs array");

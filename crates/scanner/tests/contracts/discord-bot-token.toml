@@ -6,7 +6,7 @@ severity = "critical"
 [[positive]]
 text = "DISCORD_BOT_TOKEN=MTAxK3p7QxR4mN9sBv2Ta5Yc.Gd7Wx2A.Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm"
 credential = "MTAxK3p7QxR4mN9sBv2Ta5Yc.Gd7Wx2A.Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm"
-reason = "Real Discord bot token shape: user_id.timestamp.signature — MTA prefix (2022+ ID era), 7-char timestamp segment, 27-char signature. Closes #70 (regex previously required both segments to start with [MN])."
+reason = "Real Discord bot token shape: user_id.timestamp.signature. MTA prefix (2022+ ID era), 7-char timestamp segment, 27-char signature. Closes #70 (regex previously required both segments to start with [MN])."
 
 [[positive]]
 text = "token = \"NDIxK3p7QxR4mN9sBv2Ta5Yc.Hp4Wf3B.Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3LpXr\""
@@ -15,12 +15,12 @@ reason = "Discord token with NDI prefix (different ID era) in code-style assignm
 
 [[negative]]
 text = "MTAabc.Vk9.Kp4"
-reason = "Segments too short — Discord bot tokens require 22-25/6-8/27-38 body lengths."
+reason = "Segments too short: Discord bot tokens require 22-25/6-8/27-38 body lengths."
 
 [[evasion]]
 text = "DISCORD_BOT_TOKEN=MTAxK3p7QxR4mN9sBv2Ta5Yc.Gd7Wx2A.Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm"
 credential = "MTAxK3p7QxR4mN9sBv2Ta5Yc.Gd7Wx2A.Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm"
-reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+reason = "Adversarial env_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

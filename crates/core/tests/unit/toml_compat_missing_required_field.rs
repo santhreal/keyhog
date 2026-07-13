@@ -59,7 +59,7 @@ regex = "test_[A-Z0-9]{8}"
 
 #[test]
 fn missing_patterns_parses_but_is_rejected_by_the_quality_gate() {
-    // Unlike id/name/service/severity (genuinely required — no serde default),
+    // Unlike id/name/service/severity (genuinely required, no serde default),
     // `patterns` IS `#[serde(default)]` so a phase2-generic keyword detector can
     // omit it. Omitting patterns therefore PARSES; the recall-safety requirement
     // (a regex detector must carry an anchor) is enforced at validation time by

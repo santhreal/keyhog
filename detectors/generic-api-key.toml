@@ -1,5 +1,5 @@
-# Generic API-key bridge (phase-2). A shapeless API key — a high-entropy token
-# assigned to an api_key/access_key/secret_key field — has no vendor prefix to
+# Generic API-key bridge (phase-2). A shapeless API key, a high-entropy token
+# assigned to an api_key/access_key/secret_key field, has no vendor prefix to
 # anchor a regex on, so it fires in phase 2, gated by its keywords and entropy
 # policy. Optional JSON envelopes below preserve structured low-entropy values.
 # Every knob lives HERE (Tier-B), not in engine constants: this is the single

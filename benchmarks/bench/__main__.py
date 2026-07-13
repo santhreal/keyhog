@@ -80,7 +80,7 @@ def _report(args: argparse.Namespace) -> int:
         if absent:
             print(
                 f"README is missing BENCH markers for: {', '.join(absent)} "
-                f"(injection cannot run — restore the <!-- BENCH:*:start/end --> markers).",
+                f"(injection cannot run, restore the <!-- BENCH:*:start/end --> markers).",
                 file=sys.stderr,
             )
             return 1
@@ -111,7 +111,7 @@ def _calibrate(args: argparse.Namespace) -> int:
     corpus = resolve_corpus_with_root(args.corpus, args.corpus_root)
     records = corpus.records()
     if not records:
-        raise SystemExit(f"corpus {args.corpus!r} is unlabeled — calibration needs labels")
+        raise SystemExit(f"corpus {args.corpus!r} is unlabeled, calibration needs labels")
     scanner = resolve_scanner(args.scanner, binary=args.scanner_bin)
     if not scanner.available():
         raise SystemExit(f"{args.scanner} binary not found: {scanner.binary}")

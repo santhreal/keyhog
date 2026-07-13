@@ -4,9 +4,9 @@
 //! Docs, UI prompts, and redacted config snippets carry values that LOOK like
 //! secrets but are placeholders (`ghp_1a2b3c4...`, `xxxx1234567890`,
 //! `abcabcabc…`). Two gates recognise them:
-//!   • `looks_like_prefixed_masked_sequence` — a trailing `...`/`…` ellipsis, or an
+//!   • `looks_like_prefixed_masked_sequence`: a trailing `...`/`…` ellipsis, or an
 //!     `xxx`/`***` mask prefix followed by a sequential digit / `abcdefgh` run.
-//!   • `has_repeated_block_mask` — three+ long (>=4) identical-char runs, or a
+//!   • `has_repeated_block_mask`: three+ long (>=4) identical-char runs, or a
 //!     short block that tiles the whole string.
 //! Suppressing a placeholder is safe (real secrets don't have these shapes); the
 //! danger is a too-broad gate, so the accept/reject boundary is pinned exactly.
@@ -80,7 +80,7 @@ proptest! {
     }
 
     /// A masked-sequence match IMPLIES a trailing ellipsis OR an `xxx`/`***` prefix
-    /// — the gate never fires on a value with neither signal.
+    ///: the gate never fires on a value with neither signal.
     #[test]
     fn masked_match_implies_ellipsis_or_mask_prefix(value in "[a-zA-Z0-9*.]{0,40}") {
         if looks_like_prefixed_masked_sequence_for_test(&value) {

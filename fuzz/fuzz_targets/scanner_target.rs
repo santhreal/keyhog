@@ -47,7 +47,7 @@ fn scanner() -> &'static CompiledScanner {
         // Fuzz the scan PIPELINE, not the full detector corpus. Compiling
         // every detector's Hyperscan database is the dominant cost of this
         // target's one-time init, and under libFuzzer's ASan instrumentation it
-        // runs ~15s / ~1.6GB locally — but that init executes INSIDE fuzz unit
+        // runs ~15s / ~1.6GB locally, but that init executes INSIDE fuzz unit
         // #0 (the empty input), so on core/memory-constrained hosted CI runners
         // it ballooned ~80x and blew past libFuzzer's 1200s per-unit timeout,
         // failing the smoke before a single real input was fuzzed. A
@@ -56,7 +56,7 @@ fn scanner() -> &'static CompiledScanner {
         // (decode-through, suppression, scoring, reporting). Full-corpus
         // compile + cross-backend scan parity is covered by the non-fuzz
         // `worst_case_backend_parity` test, which is not under a per-unit
-        // timeout — this smoke is for panics/hangs/OOM in `scan()`, not corpus
+        // timeout, this smoke is for panics/hangs/OOM in `scan()`, not corpus
         // breadth.
         const FUZZ_DETECTOR_CAP: usize = 64;
         let stride = (all.len() / FUZZ_DETECTOR_CAP).max(1);

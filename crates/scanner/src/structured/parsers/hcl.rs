@@ -182,7 +182,7 @@ fn collect_heredoc(lines: &[&str], content_start: usize, marker: &str) -> Option
 
 /// True when `s` is a non-empty HCL identifier: every character is ASCII
 /// alphanumeric, `_`, or `-`. One owner for the char-class shared by variable
-/// names, assignment LHS keys, and heredoc markers — so the three call sites
+/// names, assignment LHS keys, and heredoc markers, so the three call sites
 /// can never drift on what counts as a valid identifier.
 fn is_hcl_identifier(s: &str) -> bool {
     !s.is_empty()
@@ -305,7 +305,7 @@ fn parse_heredoc_marker(s: &str) -> Option<String> {
 /// comment's open and silently dropping every assignment after it. Two comment
 /// parsers that disagree on one token is a ONE-PLACE violation and a latent
 /// recall bug (it was masked only because every current caller happens to receive
-/// input already stripped by `strip_hcl_comments` upstream — a future raw-input
+/// input already stripped by `strip_hcl_comments` upstream, a future raw-input
 /// caller would have lost data). Routing through the single owner removes the
 /// divergence outright: there is now exactly one HCL comment grammar.
 ///

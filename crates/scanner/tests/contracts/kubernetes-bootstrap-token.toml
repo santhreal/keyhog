@@ -6,7 +6,7 @@ severity = "critical"
 [[positive]]
 text = "kubeadm join 10.0.0.1:6443 --token k3m9zq.4r8w2nq3p6vt5b1z --discovery-token-ca-cert-hash sha256:abc"
 credential = "k3m9zq.4r8w2nq3p6vt5b1z"
-reason = "Canonical kubeadm-join command — token format is 6-char id + 16-char secret separated by a literal dot."
+reason = "Canonical kubeadm-join command (token format is 6-char id + 16-char secret separated by a literal dot)."
 
 [[positive]]
 text = "bootstrap-token: 8nq3p6.k7m9zq4r8w2nq3p6\nusages: [signing, authentication]"
@@ -15,7 +15,7 @@ reason = "Bootstrap-token YAML secret block (kubelet auth)."
 
 [[negative]]
 text = "kubeadm version: v1.29.3"
-reason = "Version string only — no token shape present."
+reason = "Version string only (no token shape present)."
 
 [[negative]]
 text = "Kubernetes 1.10 release notes: after1.10goesoutthedoor the cluster API stabilizes."
@@ -24,7 +24,7 @@ reason = "Prose that merely mentions Kubernetes must NOT fire, even though `afte
 [[evasion]]
 text = "kubeadm join 10.0.0.1:6443 --token k3m9zq.4r8w2nq3p6vt5b1z --discovery-token-ca-cert-hash sha256:abc"
 credential = "k3m9zq.4r8w2nq3p6vt5b1z"
-reason = "Adversarial header_bare envelope — credential must still surface under this detector."
+reason = "Adversarial header_bare envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

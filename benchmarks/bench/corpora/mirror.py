@@ -3,7 +3,7 @@
 Wraps the generator (``benchmarks/generators/mirror/generate.py``) and loads
 its ``manifest.jsonl`` into :class:`LabeledRecord`. One record per file
 (single secret), so the per-fixture attribution is identical to the legacy
-scorer — the migration's regression anchor.
+scorer: the migration's regression anchor.
 
 Layout (the home dir holds both the answer key and the scan tree, kept
 apart so no scanner is ever shown the manifest):
@@ -15,7 +15,7 @@ Two fairness/hygiene rules are baked into this split, both learned the hard
 way against the live keyhog binary:
 
 1. **The manifest is OUTSIDE the scan tree.** A scanner that reads
-   ``manifest.jsonl`` finds every labeled secret in plaintext — betterleaks
+   ``manifest.jsonl`` finds every labeled secret in plaintext, betterleaks
    fires 9392 spurious matches on it, kingfisher 7581. ``scan_root`` is the
    ``corpus/`` subtree only.
 2. **The scan dir has a NEUTRAL name** (``corpus``, not ``fixtures``/

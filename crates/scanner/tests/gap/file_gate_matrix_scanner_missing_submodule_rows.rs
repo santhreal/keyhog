@@ -48,7 +48,7 @@ fn matrix_paths(raw: &str) -> Vec<String> {
 
 /// These are the concrete module paths that were absent from FILE_GATE_MATRIX
 /// before the KH-GAP-176 fix.  Each entry in this list must be present in the
-/// matrix — if any is missing the test fails with the specific path.
+/// matrix (if any is missing the test fails with the specific path).
 const PREVIOUSLY_MISSING: &[&str] = &[
     "crates/scanner/src/api.rs",
     "crates/scanner/src/context/placeholder.rs",

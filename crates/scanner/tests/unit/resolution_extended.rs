@@ -360,7 +360,7 @@ fn entropy_detector_with_prefix_treated_as_entropy() {
 
 #[test]
 fn different_files_not_cross_suppressed() {
-    // Named detector in file1, entropy in file2 — different files must not interact
+    // Named detector in file1, entropy in file2, different files must not interact
     let named = make_match_at("aws-key", "AKIAFAKE00000000000X", Some(0.8), "file1.env", 1);
     let entropy = make_match_at("entropy", "AKIAFAKE00000000000X", Some(0.9), "file2.env", 1);
     let resolved = resolve_matches(vec![named, entropy]);

@@ -9,7 +9,7 @@
 //!     extra location (positive);
 //!   * the SAME value at DIFFERENT locations is KEPT (one finding, both
 //!     locations preserved under Credential scope; two findings under File
-//!     scope — the negative twin);
+//!     scope, the negative twin);
 //!   * cross-detector fold collapses N detectors on one value into exactly ONE
 //!     finding with exactly N-1 `cross_detector.*` companions, is FILE-SCOPED,
 //!     breaks confidence ties by severity then detector_id, and emits a

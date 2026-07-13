@@ -154,7 +154,7 @@ fn three_findings_preserve_input_order_and_count() {
 }
 
 /// Adversarial: the streamed comma separators are well-formed even with exactly
-/// two findings (the `first_vulnerability` toggle) — the raw bytes contain the
+/// two findings (the `first_vulnerability` toggle), the raw bytes contain the
 /// separator `},{` between the two objects, not `}{`.
 #[test]
 fn two_findings_are_comma_separated_in_raw_bytes() {
@@ -405,7 +405,7 @@ fn varied_hash_renders_exact_lowercase_hex() {
 
 /// Adversarial: a file path containing JSON metacharacters (`"`, `\`, `{`) is
 /// escaped so the whole document still parses, and `location.file` decodes back
-/// to the exact original bytes — no injection, no truncation.
+/// to the exact original bytes (no injection, no truncation).
 #[test]
 fn file_path_with_json_metacharacters_is_escaped_not_injected() {
     let nasty = "a\"b\\c{\"x\":1}.env";

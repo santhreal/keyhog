@@ -1,8 +1,8 @@
 //! CAPABILITY TARGET-SPEC: unicode / homoglyph evasion recall.
 //!
 //! An attacker (or a copy-paste through a rich-text editor) can swap an ASCII
-//! character in the SURROUNDING context — or, more dangerously, inside the
-//! credential's keyword anchor — for a visually identical Cyrillic / fullwidth
+//! character in the SURROUNDING context, or, more dangerously, inside the
+//! credential's keyword anchor, for a visually identical Cyrillic / fullwidth
 //! homoglyph, or insert a non-breaking space, and a naive regex stops matching.
 //! keyhog ships a unicode-normalization pass (`normalize_homoglyphs`,
 //! crates/scanner/src/unicode_hardening.rs) precisely so this evasion fails. This
@@ -10,7 +10,7 @@
 //! substitutes the CONTEXT around a credential-sufficient token (and inserts a
 //! NBSP separator) and asserts the credential still surfaces.
 //!
-//! Soundness: every variant preserves the credential's own bytes verbatim — only
+//! Soundness: every variant preserves the credential's own bytes verbatim, only
 //! the surrounding ASCII (keyword, separators) is perturbed with confusables
 //! that `normalize_homoglyphs` is documented to fold back to ASCII. A miss is a
 //! normalization-coverage gap (the confusable wasn't in the fold table, or
@@ -18,7 +18,7 @@
 //!
 //! Expected partially RED: the fold table (cyrillic_to_latin + fullwidth) covers
 //! a finite confusable set; characters outside it slip through. Each miss is a
-//! tracked gap to close by widening the table — never weakened to pass (Law 9).
+//! tracked gap to close by widening the table (never weakened to pass (Law 9)).
 
 use crate::target_spec::{join_capped, load_canonicals, scan, sufficient_canonicals, surfaces};
 
@@ -161,7 +161,7 @@ fn credential_survives_fullwidth_context() {
 }
 
 /// Non-breaking-space (U+00A0) separator between the keyword and the credential
-/// — a classic copy-from-PDF/rich-editor artifact. keyhog normalizes NBSP to a
+///: a classic copy-from-PDF/rich-editor artifact. keyhog normalizes NBSP to a
 /// regular space (see regression_unicode_nbsp_separator_normalization); this
 /// asserts that reach across every credential-sufficient detector.
 #[test]

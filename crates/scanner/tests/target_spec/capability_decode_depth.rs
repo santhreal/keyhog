@@ -2,9 +2,9 @@
 //!
 //! Two product claims keyhog makes that real leaks exercise constantly:
 //!
-//!   1. DECODE-THROUGH DEPTH. A secret base64'd (or hex'd) N layers deep — a
+//!   1. DECODE-THROUGH DEPTH. A secret base64'd (or hex'd) N layers deep, a
 //!      k8s Secret value that is base64, embedded in a YAML that is itself
-//!      base64'd into a ConfigMap, stuffed into a JSON blob — must still
+//!      base64'd into a ConfigMap, stuffed into a JSON blob, must still
 //!      surface. The README claims multi-layer decode; this lane plants a
 //!      credential-sufficient token under 1, 2, and 3 encode layers and asserts
 //!      it is recovered at each depth. A miss at depth K is a decode-recursion
@@ -91,7 +91,7 @@ fn credential_sufficient_tokens_survive_three_decode_layers() {
             ratio >= DECODE_TARGET_RECALL,
             "decode-depth {depth}: only {surfaced}/{total} = {ratio:.4} of credential-sufficient \
              tokens were recovered through {depth} base64 layer(s); target {DECODE_TARGET_RECALL:.2}. \
-             The engine is not recursing far enough on a realistic Secret carrier — each lost \
+             The engine is not recursing far enough on a realistic Secret carrier, each lost \
              detector is a decode-recursion gap:\n  - {}",
             join_capped(&failures, 50)
         );
@@ -132,7 +132,7 @@ fn single_token_decode_ladder_reaches_depth_three() {
 
 /// MULTILINE REASSEMBLY: a credential-sufficient token split across 2 lines via
 /// string concatenation must be reassembled and surfaced. Splits the token at
-/// its midpoint into a `"<head>" +\n  "<tail>"` concat — the canonical
+/// its midpoint into a `"<head>" +\n  "<tail>"` concat, the canonical
 /// config-as-code leak shape. Expected partially RED: reassembly is gated on the
 /// fragments looking like a structural cluster, which not every shape triggers.
 #[test]
@@ -182,7 +182,7 @@ fn credential_sufficient_tokens_reassemble_across_two_lines() {
         ratio >= 0.90,
         "multiline reassembly recovered only {surfaced}/{total} = {ratio:.4} of split tokens; \
          target 0.90. A secret broken across two concatenated source lines slips past these \
-         detectors — the config-as-code leak shape:\n  - {}",
+         detectors: the config-as-code leak shape:\n  - {}",
         join_capped(&failures, 50)
     );
 }

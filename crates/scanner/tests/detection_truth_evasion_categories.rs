@@ -63,7 +63,7 @@ fn soft_hyphen_mid_token() {
 
 #[test]
 fn invisible_times_mid_token() {
-    // U+2062 INVISIBLE TIMES — an invisible math operator.
+    // U+2062 INVISIBLE TIMES (an invisible math operator).
     assert_recovers_aws("key = AKIAQ\u{2062}YLPMN5HFIQR7BBB");
 }
 

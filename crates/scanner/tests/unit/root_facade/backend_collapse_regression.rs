@@ -153,7 +153,7 @@ fn cpu_tier_backend_is_the_single_simd_vs_scalar_source() {
 #[test]
 fn select_backend_routes_cpu_tier_through_the_shared_helper() {
     // With the GPU explicitly disabled, `select_backend` must produce EXACTLY
-    // what `cpu_tier_backend` says for the same caps — no separate ladder.
+    // what `cpu_tier_backend` says for the same caps (no separate ladder).
     with_policy(GpuRuntimePolicy::Disabled, None, || {
         for &(hs, simd) in &[(true, true), (true, false), (false, true), (false, false)] {
             let caps = caps_gpu(hs, simd); // GPU present but runtime policy disables it.
@@ -445,7 +445,7 @@ fn removed_dead_gpu_pipelines_stay_removed() {
     //  method def or field, so match the *executable* forms.)
     assert!(
         !code.contains("fn ac_gpu_program"),
-        "ac_gpu_program method was removed as a dead route; do not re-add it — \
+        "ac_gpu_program method was removed as a dead route; do not re-add it. \
          region-presence is the single on-GPU trigger producer"
     );
     assert!(

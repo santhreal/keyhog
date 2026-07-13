@@ -1,7 +1,7 @@
 /// Unit tests for structured-format parsers exposed via `keyhog_scanner::testing`.
 ///
 /// Covers: parse_env, parse_docker_compose, parse_k8s_secret, parse_tfstate,
-/// parse_jupyter — correctness (known-fake key-value pairs), boundary (empty
+/// parse_jupyter, correctness (known-fake key-value pairs), boundary (empty
 /// input, no matching pairs), and hostile inputs (oversized, malformed).
 use keyhog_scanner::testing::{
     parse_docker_compose, parse_env, parse_jupyter, parse_jupyter_derived, parse_k8s_secret,
@@ -140,7 +140,7 @@ fn parse_docker_compose_env_lines_are_batched_and_attributed() {
 #[test]
 fn parse_docker_compose_malformed_yaml_does_not_panic() {
     let text = "{ invalid yaml: [unclosed";
-    // Must not panic — just return empty or parse what it can
+    // Must not panic, just return empty or parse what it can
     let _ = parse_docker_compose(text);
 }
 
@@ -160,7 +160,7 @@ fn parse_k8s_secret_base64_data_extracted() {
     let text = format!("apiVersion: v1\nkind: Secret\ndata:\n  my-key: {b64_val}\n");
     let pairs = parse_k8s_secret(&text);
     // The base64 `data` value must be extracted AND decoded back to the plaintext
-    // secret — not left base64-encoded, and not merely "non-empty".
+    // secret (not left base64-encoded, and not merely "non-empty").
     let my_key = pairs
         .iter()
         .find(|p| p.context == "my-key")
@@ -202,7 +202,7 @@ fn parse_k8s_secret_non_secret_kind_returns_empty() {
     let text = "apiVersion: v1\nkind: ConfigMap\ndata:\n  key: value\n";
     let pairs = parse_k8s_secret(text);
     // A ConfigMap is not a Secret: its `data` is plaintext configuration, not
-    // credential material, so the Secret-specific parser must extract nothing —
+    // credential material, so the Secret-specific parser must extract nothing 
     // extracting a ConfigMap value would be a false-positive source.
     assert!(
         pairs.is_empty(),
@@ -234,10 +234,10 @@ fn parse_tfstate_sensitive_attributes_extracted() {
 }"#;
     let pairs = parse_tfstate(text);
     // The sensitive `master_password` attribute must be extracted with its exact
-    // value — UNCONDITIONALLY. The previous `if !pairs.is_empty()` guard made the
+    // value: UNCONDITIONALLY. The previous `if !pairs.is_empty()` guard made the
     // whole check vacuous: it passed even when the parser extracted nothing.
-    // (The parser surfaces every attribute value as a candidate — including
-    // non-sensitive ones like `cluster_identifier` — and leaves the keep/drop
+    // (The parser surfaces every attribute value as a candidate, including
+    // non-sensitive ones like `cluster_identifier`: and leaves the keep/drop
     // decision to the downstream detectors + entropy screens, so we assert only
     // that the real secret is present, not that others are absent.)
     let master = pairs
@@ -275,7 +275,7 @@ fn parse_jupyter_code_cell_with_assignment_extracted() {
   }]
 }"#;
     let pairs = parse_jupyter(text);
-    // The assignment inside the code cell must be extracted with its value —
+    // The assignment inside the code cell must be extracted with its value 
     // UNCONDITIONALLY (the previous `if !pairs.is_empty()` guard passed even when
     // the parser extracted nothing).
     assert!(
@@ -453,7 +453,7 @@ fn jupyter_output_application_javascript_extracted() {
 
 #[test]
 fn jupyter_output_image_svg_xml_extracted() {
-    // SVG is text and can embed a token in an xlink:href — must be scanned.
+    // SVG is text and can embed a token in an xlink:href (must be scanned).
     assert!(extracts_value(
         &notebook_with_output_data("image/svg+xml", "SECRETSVGVALUE0123"),
         "SECRETSVGVALUE0123"

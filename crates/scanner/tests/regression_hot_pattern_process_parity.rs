@@ -32,10 +32,10 @@ fn scanner_with_cap(max_matches_per_chunk: usize) -> CompiledScanner {
 }
 
 // Recall-correct git-LFS parity: `is_git_lfs_oid_line` suppresses ONLY a real
-// oid — `oid sha256:` followed by EXACTLY 64 hex digits. A valid-shaped
+// oid: `oid sha256:` followed by EXACTLY 64 hex digits. A valid-shaped
 // `sk-proj-` key on an `oid sha256:` line is NOT a git-LFS oid, so suppressing
 // it would hide a real leaked credential (a recall loss). Both the SimdCpu hot
-// path and the CpuFallback regex path must report it — proof the hot path
+// path and the CpuFallback regex path must report it, proof the hot path
 // delegates the SAME false-positive-context decision through process_match
 // (neither over-suppresses). This replaces an earlier test that asserted the
 // opposite; its premise ("the regular path suppresses this") was false, because
@@ -174,16 +174,16 @@ fn hot_path_duplicate_identity_does_not_consume_capped_heap_slot() {
     );
 }
 
-/// DR-322 CONSOLIDATION GUARD — the SIMD prefilter's hot-pattern prefix bytes
+/// DR-322 CONSOLIDATION GUARD, the SIMD prefilter's hot-pattern prefix bytes
 /// (`ghp_`, `AKIA`, `sk_live_`, …) are a re-encoding of detection signal that
 /// ALSO lives verbatim in each family's `detectors/<id>.toml` pattern. The table
 /// is recall-load-bearing (see the SIMD-trigger-union invariant): a prefilter
 /// prefix that silently drifts from its detector pattern is a whole detector
-/// class the SIMD fast path stops triggering — an invisible recall hole no
+/// class the SIMD fast path stops triggering, an invisible recall hole no
 /// output test would catch. This binds every prefix to its authoritative
 /// detector so the detector TOML is the source of truth for the table. It
 /// ASSERTS the existing table (detector ids are already single-owned via
-/// `crate::detector_ids`) — it does not change the recall-load-bearing set.
+/// `crate::detector_ids`) (it does not change the recall-load-bearing set).
 #[test]
 fn hot_pattern_prefixes_are_backed_by_their_detector() {
     let dir = detector_dir();
@@ -203,7 +203,7 @@ fn hot_pattern_prefixes_are_backed_by_their_detector() {
         if !toml.contains(prefix_str) {
             drifted.push(format!(
                 "SIMD hot-pattern prefix {prefix_str:?} is absent from its detector \
-                 {detector_id}.toml — the prefilter literal drifted from the detection \
+                 {detector_id}.toml, the prefilter literal drifted from the detection \
                  pattern that surfaces the credential"
             ));
         }

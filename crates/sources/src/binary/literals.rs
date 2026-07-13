@@ -33,7 +33,7 @@ pub(crate) fn extract_string_literals(line: &str, out: &mut Vec<String>) {
 
 pub(crate) fn unescape_c_string(s: &str) -> String {
     // Fast path: a literal with no backslash has no escapes to expand, so the
-    // char-by-char scan below would just copy it verbatim — a single memcpy is
+    // char-by-char scan below would just copy it verbatim, a single memcpy is
     // faster and is the common case for the bulk of extracted binary literals.
     if !s.contains('\\') {
         return s.to_string();
@@ -74,7 +74,7 @@ pub(crate) fn unescape_c_string(s: &str) -> String {
 
 fn take_hex_byte_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<u8> {
     // Peek-and-convert in one step: `to_digit(16)` IS the hex-digit test, so a
-    // non-hex char yields `None` and is left unconsumed — no separate
+    // non-hex char yields `None` and is left unconsumed, no separate
     // `is_ascii_hexdigit` predicate that could disagree with the conversion and
     // force an infallible `.expect()`.
     let first = chars.peek().and_then(|ch| ch.to_digit(16))?;
@@ -89,7 +89,7 @@ fn take_hex_byte_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) ->
 
 fn take_octal_byte_escape(first: char, chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> u8 {
     // `first` and every `next` are matched against `'0'..='7'`, so each maps to
-    // its value by ASCII offset — total arithmetic, no fallible `to_digit`.
+    // its value by ASCII offset (total arithmetic, no fallible `to_digit`).
     let mut value = (first as u8) - b'0';
     for _ in 0..2 {
         let Some(next) = chars.next_if(|ch| matches!(ch, '0'..='7')) else {

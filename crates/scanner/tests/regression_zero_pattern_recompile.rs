@@ -9,7 +9,7 @@
 //! regexes (multiline / decode / generic-assignment / shared) compile at most
 //! once on first touch. `testing::lazy_regex_compile_events()` counts only those
 //! real first-use compilations. The gate primes a chunk (one scan, which may
-//! compile that chunk's lazy paths once), snapshots the counter, then re-scans —
+//! compile that chunk's lazy paths once), snapshots the counter, then re-scans 
 //! and asserts the counter does not move. Run `--test-threads=1` so the global
 //! counter's deltas are not perturbed by another test compiling concurrently.
 
@@ -22,7 +22,7 @@ use std::sync::OnceLock;
 use support::contracts::{make_chunk, scanner};
 
 /// One shared scanner, warmed once. `warm()` forces first-touch compilation of
-/// the lazy regex caches so that — combined with a per-chunk priming scan — the
+/// the lazy regex caches so that, combined with a per-chunk priming scan, the
 /// measured re-scans operate entirely on already-compiled regexes.
 fn primed() -> &'static CompiledScanner {
     static S: OnceLock<CompiledScanner> = OnceLock::new();
@@ -38,7 +38,7 @@ fn chunk(text: &str) -> Chunk {
 }
 
 /// Scan `text` once to prime its lazy paths, then re-scan it `rounds` times and
-/// assert the process-wide compile-event counter never advanced — i.e. the
+/// assert the process-wide compile-event counter never advanced, i.e. the
 /// re-scans recompiled nothing.
 fn assert_rescan_recompiles_nothing(text: &str, rounds: usize) {
     let s = primed();
@@ -53,7 +53,7 @@ fn assert_rescan_recompiles_nothing(text: &str, rounds: usize) {
     let after = lazy_regex_compile_events();
     assert_eq!(
         after, before,
-        "re-scanning recompiled {} regex(es) for {text:?} — pattern compile is not cached across scans",
+        "re-scanning recompiled {} regex(es) for {text:?}, pattern compile is not cached across scans",
         after - before
     );
 }

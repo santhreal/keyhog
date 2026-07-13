@@ -30,14 +30,14 @@ const HIGH_ENTROPY_PARTIAL_WEIGHT: f64 = 0.12;
 /// finding earns [`MODERATE_ENTROPY_WEIGHT`]. Its `3.0` value coincides with the
 /// entropy *detection* floor [`crate::entropy::LOW_ENTROPY_THRESHOLD`] but is a
 /// deliberately independent scoring knob (same rationale as
-/// [`LOW_ENTROPY_PENALTY_FLOOR`] below) — retuning the detection floor must NOT
+/// [`LOW_ENTROPY_PENALTY_FLOOR`] below), retuning the detection floor must NOT
 /// silently drag this scoring tier with it, so it stays a named local owner.
 const MODERATE_ENTROPY_THRESHOLD: f64 = 3.0;
 const MODERATE_ENTROPY_WEIGHT: f64 = 0.05;
 /// Confidence-scoring floor: below this Shannon entropy (with a long-enough
 /// match) the finding's confidence is penalized. This is the CONFIDENCE penalty
 /// floor and is deliberately distinct from the entropy *detection* floor
-/// [`crate::entropy::LOW_ENTROPY_THRESHOLD`] (3.0) — different concept, so it
+/// [`crate::entropy::LOW_ENTROPY_THRESHOLD`] (3.0), different concept, so it
 /// carries a different name to keep the ONE-PLACE contract (no two same-named
 /// thresholds with different values).
 const LOW_ENTROPY_PENALTY_FLOOR: f64 = 2.0;
@@ -55,7 +55,7 @@ const COMPANION_WEIGHT: f64 = 0.05;
 /// floor the config cannot move.
 const VERY_HIGH_ENTROPY_MARGIN: f64 = VERY_HIGH_ENTROPY_THRESHOLD - HIGH_ENTROPY_THRESHOLD;
 
-/// Sum of every earnable signal weight — the denominator that normalizes the
+/// Sum of every earnable signal weight, the denominator that normalizes the
 /// weighted signal sum into `0.0..=1.0`. Computed once at compile time from the
 /// weight constants above (ONE place to tune weights), replacing the per-call
 /// accumulation the scorer previously ran on the hot path. Only [`ENTROPY_WEIGHT`]

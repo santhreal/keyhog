@@ -2,7 +2,7 @@
 //!
 //! Real secrets are high-entropy across their entire length. Strings 16+ chars
 //! with low uniqueness (< 8 unique characters) or low entropy in the second half
-//! (< 2.5 bits) are typically not credentials—they're identifier patterns or
+//! (< 2.5 bits) are typically not credentials: they're identifier patterns or
 //! repeated structures. This test pins the exact length/uniqueness/entropy boundaries.
 
 use keyhog_scanner::entropy::shannon_entropy;

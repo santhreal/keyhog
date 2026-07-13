@@ -6,15 +6,15 @@ MoE can be trained on the real distribution instead of synthetic data alone.
 Why: the model is trained only on `ml/corpus.py`'s synthetic generators and
 scores real-but-shape-ambiguous secrets (lowercase-heavy tokens, digit-run ids,
 symbol-laden passwords) near ~0.02 because it learned "junk-looking shape =
-non-secret" from synthetic negatives. Feeding it the real distribution — the
-actual candidates keyhog surfaces, labelled by ground truth — is the
+non-secret" from synthetic negatives. Feeding it the real distribution, the
+actual candidates keyhog surfaces, labelled by ground truth, is the
 categorical fix.
 
 For each keyhog finding we emit a corpus record
 `{text, context, label, kind, class, detector_id}`
 matching `ml/corpus.py`'s schema:
   - text    : the finding's credential value (what the model scores)
-  - context : the SERVE ml_context — "file:{path}\n{±5-line window}" — a
+  - context : the SERVE ml_context: "file:{path}\n{±5-line window}", a
               byte-mirror of `crate::pipeline::local_context_window(.., line, 5)`
               + the `file:` prefix, so train == serve.
   - label   : ground-truth overlap (1 = overlaps a labelled positive secret,
@@ -146,7 +146,7 @@ def harvest(corpus_name: str, keyhog_bin: str | None, floor: float) -> list[dict
     if not scanner.available():
         raise SystemExit(f"keyhog binary not found: {scanner.binary}")
     # Harvest at a LOW report floor (not the default ~0.30) so the corpus
-    # captures every candidate the pipeline scores — including the sub-floor
+    # captures every candidate the pipeline scores, including the sub-floor
     # ones the default floor hides. A retrain that only sees above-floor
     # candidates can never learn the hard negatives keyhog currently fires on
     # but scores below threshold; training on those is what stops a retrained

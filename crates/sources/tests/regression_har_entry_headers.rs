@@ -3,7 +3,7 @@
 //!
 //! Distinct from `regression_har_parse.rs` / `regression_har_deep.rs`: this file
 //! pins the behaviour of the request/response **header** render path in
-//! `har.rs::render_request` / `render_response` — the `"{name}: {value}\n"`
+//! `har.rs::render_request` / `render_response`: the `"{name}: {value}\n"`
 //! line format, the request-vs-response chunk separation a leaked credential
 //! lands in, the exact `wire:har:{request,response}` `source_type` tag, the
 //! `{path}#{url}` metadata each header-bearing chunk carries, and the
@@ -76,7 +76,7 @@ fn response_set_cookie_header_secret_surfaces_in_response_chunk() {
 }
 
 /// Negative twin: a secret carried in a REQUEST header must NOT bleed into the
-/// paired response chunk — the two chunks are separate threat models.
+/// paired response chunk (the two chunks are separate threat models).
 #[test]
 fn request_header_secret_absent_from_response_chunk() {
     let har = br#"{"log":{"entries":[{"request":{"method":"GET","url":"https://n.test/x","headers":[{"name":"Authorization","value":"Bearer req_ONLY_SECRET_42"}]},"response":{"status":204}}]}}"#;
@@ -191,7 +191,7 @@ fn multiple_request_headers_preserve_document_order() {
 }
 
 /// Boundary: a header with an empty value renders `name: ` (name, colon, space)
-/// followed by the newline — the value slot is empty but the line is still
+/// followed by the newline, the value slot is empty but the line is still
 /// emitted.
 #[test]
 fn empty_header_value_renders_name_colon_space_then_newline() {
@@ -207,7 +207,7 @@ fn empty_header_value_renders_name_colon_space_then_newline() {
 }
 
 /// Adversarial: two headers with the SAME name (duplicate Authorization) both
-/// render — neither is deduplicated or dropped.
+/// render (neither is deduplicated or dropped).
 #[test]
 fn duplicate_header_name_renders_both_lines() {
     let har = br#"{"log":{"entries":[{"request":{"method":"GET","url":"https://d.test/x","headers":[{"name":"Authorization","value":"Bearer dup_ONE"},{"name":"Authorization","value":"Bearer dup_TWO"}]},"response":{"status":200}}]}}"#;
@@ -221,7 +221,7 @@ fn duplicate_header_name_renders_both_lines() {
     );
 }
 
-/// The header name is rendered VERBATIM — casing is not normalized, so a
+/// The header name is rendered VERBATIM, casing is not normalized, so a
 /// lowercased `authorization` header keeps its exact bytes.
 #[test]
 fn header_name_case_is_preserved_verbatim() {
@@ -265,7 +265,7 @@ fn request_headers_precede_cookies_section() {
 }
 
 /// A header value containing structural characters (colons, semicolons, equals,
-/// spaces — as in a Basic auth or multi-attribute cookie) is preserved byte for
+/// spaces, as in a Basic auth or multi-attribute cookie) is preserved byte for
 /// byte; only the FIRST `": "` (the separator this renderer inserts) delimits
 /// name from value.
 #[test]
@@ -282,7 +282,7 @@ fn header_value_with_colons_and_semicolons_preserved_byte_for_byte() {
 }
 
 /// A header-only request (no query, no postData, no comment) emits exactly one
-/// request line plus its header lines and nothing else — the header path does
+/// request line plus its header lines and nothing else, the header path does
 /// not spuriously append body sections.
 #[test]
 fn header_only_request_emits_no_body_sections() {

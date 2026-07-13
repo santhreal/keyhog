@@ -369,7 +369,7 @@ pub mod regression_zero_pattern_recompile;
 // PURE ci-lean-compatible contract/recall/confidence/detector/phase2 tests that
 // pass standalone; aggregating them here makes the single `--test all_tests` CI
 // step actually run them. Backend-parity/GPU/perf/worklist/env-harness orphans are
-// deliberately NOT here (GPU hosts / release timing / corpus env — BACKLOG DR-334).
+// deliberately NOT here (GPU hosts / release timing / corpus env. BACKLOG DR-334).
 // Keep sorted.
 #[path = "adversarial_a3_decode.rs"]
 pub mod adversarial_a3_decode;

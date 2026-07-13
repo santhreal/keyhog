@@ -32,7 +32,7 @@ fn alternation_keyword_set() -> BTreeSet<String> {
 #[test]
 fn generic_re_keyword_set_equals_the_derived_vocabulary() {
     // ONE HOME: the group-1 literal alternation is exactly the derived
-    // assignment-keyword vocabulary — no more, no less. A second hand-kept
+    // assignment-keyword vocabulary, no more, no less. A second hand-kept
     // keyword list (or a dropped keyword) makes these sets diverge.
     let from_regex = alternation_keyword_set();
     let derived: BTreeSet<String> = assignment_keywords().iter().cloned().collect();
@@ -40,7 +40,7 @@ fn generic_re_keyword_set_equals_the_derived_vocabulary() {
         from_regex, derived,
         "GENERIC_RE keyword alternation diverged from the derived vocabulary"
     );
-    // The set is non-trivial — pin a real lower bound so the equality is not
+    // The set is non-trivial, pin a real lower bound so the equality is not
     // vacuously comparing two empty sets.
     assert!(
         derived.len() >= 40,
@@ -80,7 +80,7 @@ fn every_derived_keyword_captures_its_assigned_value() {
             keyword.to_ascii_lowercase(),
             "keyword capture mismatch for `{keyword}`"
         );
-        // Group 2 is the exact value — a real-value assertion, not !is_empty.
+        // Group 2 is the exact value (a real-value assertion, not !is_empty).
         assert_eq!(
             caps.get(2).unwrap().as_str(),
             value,
@@ -111,7 +111,7 @@ fn shipped_detector_ceiling_captures_long_values_whole_without_prefix_truncation
 fn vendor_prefixed_key_bridges_via_the_structural_arm() {
     let re = build_generic_re_for_test().unwrap();
     // `stripe_publishable_key` is NOT a derived vocab literal, but the vendor
-    // arm (`<vendor>_key`) still admits it — proving the arm survived the move.
+    // arm (`<vendor>_key`) still admits it (proving the arm survived the move).
     let caps = re
         .captures("stripe_publishable_key = Xh8Kd93mZq0Lp2Rt")
         .expect("vendor-prefixed *_key must bridge via the structural arm");
@@ -164,7 +164,7 @@ fn a_malformed_alternation_fails_compilation_so_the_lazylock_panics_closed() {
     // is a hard compile error (which the LazyLock turns into a panic), never a
     // silent `Ok` with a disabled bridge. `(?P<` is an unterminated group.
     assert!(compile_generic_re_for_test("(?P<broken").is_err());
-    // And a valid alternation still yields a usable regex — the Err branch is
+    // And a valid alternation still yields a usable regex, the Err branch is
     // reachable only on genuinely broken input.
     assert!(compile_generic_re_for_test("secret").is_ok());
 }

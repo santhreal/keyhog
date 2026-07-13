@@ -10,7 +10,7 @@
 //! returns `true` iff `chunk` contains at least one bigram whose bit is set,
 //! and `false` otherwise, with ZERO probabilistic slack. Therefore for any
 //! NON-saturated table and a 2-byte chunk `[a, b]`, `maybe_overlaps` equals
-//! exactly `bit(a, b)` — every assertion here is a concrete `bool`.
+//! exactly `bit(a, b)`: every assertion here is a concrete `bool`.
 //!
 //! `from_literal_prefixes` construction rules under test:
 //!   * a >=2-byte literal `L` sets each adjacent bigram of `L`, PLUS the full
@@ -270,7 +270,7 @@ fn clone_preserves_exact_query_results() {
 // The probe bigram (0xC8,0xC9) is provably unset in all three tables below:
 // its row 0xC8 is never set (terminal rows stop at <= 0xA5) and it is not one
 // of the (0xC2,*) interior bigrams. So `false` == honest miss, `true` == the
-// saturation short-circuit — the flip localizes the threshold exactly.
+// saturation short-circuit (the flip localizes the threshold exactly).
 // ─────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -320,9 +320,9 @@ fn crossing_saturation_flips_absent_bigram_to_true() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The exact fixed vectors above pin specific bit-math cases; these SWEEP the
 // three contracts the Layer-0.5 prefilter must uphold across arbitrary input.
-// `maybe_overlaps` is a RECALL gate — a false negative (returning `false` for a
+// `maybe_overlaps` is a RECALL gate, a false negative (returning `false` for a
 // chunk that DOES carry a literal prefix) makes the scanner skip a chunk holding
-// a real secret — so (1) and (2) are recall guarantees, not cosmetics. All three
+// a real secret, so (1) and (2) are recall guarantees, not cosmetics. All three
 // drive ONLY the public facade (`from_literal_prefixes` + `maybe_overlaps`),
 // matching this file's black-box contract; no proptest covered this primitive
 // before. Literal sets are kept small/short so the table never approaches the
@@ -335,7 +335,7 @@ proptest! {
 
     /// RECALL GUARANTEE (no false negatives): a chunk that contains a literal
     /// prefix `lit` (>= 2 bytes) anywhere as a contiguous substring MUST overlap
-    /// — the chunk necessarily carries every adjacent bigram of `lit`, all of
+    ///: the chunk necessarily carries every adjacent bigram of `lit`, all of
     /// which `from_literal_prefixes` set. A regression returning `false` here
     /// would make the prefilter silently drop the chunk (and its secret). The
     /// arbitrary `prefix`/`suffix` place the literal at any offset, including the
@@ -359,7 +359,7 @@ proptest! {
 
     /// RECALL MONOTONICITY under catalog growth: adding more literal prefixes can
     /// only ADD set bits, never clear them, and saturation is monotone in the bit
-    /// count — so a chunk that overlaps a bloom built from `base` MUST still
+    /// count, so a chunk that overlaps a bloom built from `base` MUST still
     /// overlap the bloom built from `base + extra`. This locks the invariant that
     /// registering a NEW detector prefix can never cause the prefilter to start
     /// skipping a chunk it used to scan (a silent recall regression as the

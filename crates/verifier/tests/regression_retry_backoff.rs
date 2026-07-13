@@ -11,7 +11,7 @@
 //! produced by the pure `classify_aws_sts_failure` status classifier.
 //!
 //! Every assertion below pins an EXACT duration bound, bool, count, or message
-//! byte — the whole schedule is computed with no clock and no socket, so these
+//! byte, the whole schedule is computed with no clock and no socket, so these
 //! are deterministic. Distinct from `regression_status_verdict_map.rs` (which
 //! pins the status→verdict variant matrix): this file pins the *timing schedule*
 //! and the *exhaustion contract*, not the verdict vocabulary.
@@ -46,7 +46,7 @@ fn backoff_attempt_zero_is_always_immediate_regardless_of_base() {
 
 #[test]
 fn backoff_zero_base_disables_delay_on_every_attempt() {
-    // A zero base short-circuits to (0, 0) for ALL attempts — this is what the
+    // A zero base short-circuits to (0, 0) for ALL attempts, this is what the
     // metadata-preservation and rate-limit-feedback test loops rely on to run
     // without a real sleep (proving the schedule math is pure/no-network).
     for attempt in [0usize, 1, 2, 3, 5, 11, 1000] {
@@ -147,7 +147,7 @@ fn backoff_jitter_floor_is_one_ms_when_quarter_rounds_to_zero() {
 #[test]
 fn backoff_exponent_caps_at_ten_so_deep_attempts_plateau() {
     // 2^10 = 1024 is the ceiling multiplier; attempt 11 hits it and every
-    // deeper attempt returns the IDENTICAL bounds — the delay can't grow without
+    // deeper attempt returns the IDENTICAL bounds, the delay can't grow without
     // limit and blow past any sane timeout.
     let capped = TestApi.retry_delay_bounds_for_attempt(11, 1);
     assert_eq!(capped, (1024, 1280)); // 1 * 2^10 = 1024; jitter 1024/4 = 256.
@@ -194,7 +194,7 @@ fn backoff_saturates_to_u64_max_without_panicking_on_overflow() {
 fn backoff_bounds_are_deterministic_and_lower_never_exceeds_upper() {
     // The bounds computation is pure: repeated calls with identical arguments
     // return byte-identical tuples (only `retry_loop`'s RNG pick inside the
-    // [lower, upper] window is nondeterministic — never the schedule itself).
+    // [lower, upper] window is nondeterministic (never the schedule itself)).
     for attempt in 0..=15usize {
         let first = TestApi.retry_delay_bounds_for_attempt(attempt, PROD_BASE_MS);
         let second = TestApi.retry_delay_bounds_for_attempt(attempt, PROD_BASE_MS);
@@ -230,7 +230,7 @@ async fn exhaustion_returns_last_transient_error_with_its_metadata_intact() {
     // Regression for the bug where an exhausted loop dropped the final transient
     // attempt's metadata (OOB observation ids, partial fields). With every
     // attempt transient, the loop returns the LAST attempt's Error verdict AND
-    // its metadata verbatim — asserted to the exact message and value, not just
+    // its metadata verbatim, asserted to the exact message and value, not just
     // a matches!(Error(_)) shape.
     let (result, metadata) = TestApi.retry_loop_preserves_metadata_on_exhaustion().await;
     match result {
@@ -299,7 +299,7 @@ fn all_retryable_statuses_report_transient_true_so_the_loop_reprobes() {
 
 #[test]
 fn conclusive_invalid_credential_is_not_transient_so_the_loop_stops() {
-    // Negative twin: a plain STS 403 (invalid credential) is conclusive — the
+    // Negative twin: a plain STS 403 (invalid credential) is conclusive, the
     // loop must NOT re-probe it. `transient == false` short-circuits `retry_loop`
     // on the first attempt, returning the verdict immediately with no backoff.
     let (result, transient) =
@@ -316,7 +316,7 @@ fn conclusive_invalid_credential_is_not_transient_so_the_loop_stops() {
 #[tokio::test]
 async fn retry_loop_records_rate_limited_attempt_as_backpressure() {
     // A single-attempt loop over a RateLimited verdict must raise the limiter's
-    // error count by exactly 1 — the backoff policy is wired to global
+    // error count by exactly 1, the backoff policy is wired to global
     // backpressure, not just per-request sleeps. Runs with base_delay 0 (no real
     // sleep, no network).
     let raised = TestApi.retry_loop_records_rate_limit_feedback().await;

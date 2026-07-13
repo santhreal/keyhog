@@ -1,11 +1,11 @@
-//! Regression e2e — the `keyhog diff <before> <after>` baseline-delta surface,
+//! Regression e2e, the `keyhog diff <before> <after>` baseline-delta surface,
 //! driven over the SHIPPED `keyhog` binary and pinned to EXACT values.
 //!
 //! `diff` compares two baseline JSON files (the `scan --create-baseline` format)
 //! keyed on `(detector_id, credential_hash)` and reports three buckets:
-//!   NEW       — in `after`, not in `before`  (a regression → exit 1).
-//!   RESOLVED  — in `before`, not in `after`  (a fixed leak → does not fail CI).
-//!   UNCHANGED — present in both.
+//!   NEW (in `after`, not in `before`  (a regression → exit 1)).
+//!   RESOLVED (in `before`, not in `after`  (a fixed leak → does not fail CI)).
+//!   UNCHANGED (present in both).
 //! Exit contract: 0 when there are ZERO new entries, `EXIT_FINDINGS` (1) when any
 //! NEW entry exists, `EXIT_USER_ERROR` (2) when a baseline file is missing or
 //! malformed. See `subcommands/diff.rs` + `baseline.rs` + `lib.rs` error mapping.
@@ -18,7 +18,7 @@
 //! report fed in place of a baseline), each of which must exit 2 and name the
 //! offending file.
 //!
-//! Every assertion pins a concrete load-bearing value — an exact exit code, an
+//! Every assertion pins a concrete load-bearing value, an exact exit code, an
 //! integer bucket count, a `summary.*` field, a `detector_id` string, or an
 //! error substring. No assertion uses `is_empty()` / `is_ok()` / `len() > 0` as
 //! its only check (Law 6).
@@ -78,7 +78,7 @@ fn json_of(stdout: &str) -> serde_json::Value {
 }
 
 // ---------------------------------------------------------------------------
-// NEW-only — exit 1, exact new_count (single + multi)
+// NEW-only, exit 1, exact new_count (single + multi)
 // ---------------------------------------------------------------------------
 
 /// AFTER introduces one entry the empty BEFORE never had: exactly one NEW,
@@ -148,7 +148,7 @@ fn new_only_multi_exits_one_with_new_count_three() {
 }
 
 // ---------------------------------------------------------------------------
-// RESOLVED-only — exit 0, exact resolved_count, detector-id sort order
+// RESOLVED-only, exit 0, exact resolved_count, detector-id sort order
 // ---------------------------------------------------------------------------
 
 /// Three entries in BEFORE, none in AFTER: all three are RESOLVED, zero NEW, so
@@ -211,7 +211,7 @@ fn resolved_entries_are_sorted_by_detector_id() {
 }
 
 // ---------------------------------------------------------------------------
-// UNCHANGED — exact `=` count, exit 0
+// UNCHANGED, exact `=` count, exit 0
 // ---------------------------------------------------------------------------
 
 /// BEFORE == AFTER (two identical entries): both are UNCHANGED, zero new/resolved,
@@ -269,7 +269,7 @@ fn identical_baselines_report_unchanged_count_and_exit_zero() {
 }
 
 // ---------------------------------------------------------------------------
-// summary — dual-field consistency + sum invariants
+// summary, dual-field consistency + sum invariants
 // ---------------------------------------------------------------------------
 
 /// BEFORE {A,B,C} vs AFTER {A,D,E}: A unchanged, {B,C} resolved, {D,E} new.
@@ -336,11 +336,11 @@ fn mixed_summary_dual_fields_agree_and_counts_sum() {
 }
 
 // ---------------------------------------------------------------------------
-// key is the (detector_id, credential_hash) PAIR — adversarial twins
+// key is the (detector_id, credential_hash) PAIR, adversarial twins
 // ---------------------------------------------------------------------------
 
 /// Same credential_hash, DIFFERENT detector_id: the identity key is the PAIR,
-/// so the old pairing resolves and the new pairing is NEW — not unchanged.
+/// so the old pairing resolves and the new pairing is NEW (not unchanged).
 /// new_count=1, resolved_count=1, unchanged_count=0, exit 1.
 #[test]
 fn same_hash_different_detector_is_new_not_unchanged() {
@@ -390,7 +390,7 @@ fn same_detector_different_hash_is_new_and_resolved() {
 }
 
 // ---------------------------------------------------------------------------
-// --hide-unchanged — array nulled, summary count still exact
+// --hide-unchanged, array nulled, summary count still exact
 // ---------------------------------------------------------------------------
 
 /// `--hide-unchanged` nulls the `unchanged` JSON array but MUST NOT zero the
@@ -431,11 +431,11 @@ fn hide_unchanged_nulls_array_but_keeps_exact_count() {
 }
 
 // ---------------------------------------------------------------------------
-// empty vs empty — degenerate all-zero
+// empty vs empty, degenerate all-zero
 // ---------------------------------------------------------------------------
 
 /// Two empty baselines: every bucket is 0 and the command exits 0 with the PASS
-/// line — the degenerate "nothing to compare" case must not error.
+/// line (the degenerate "nothing to compare" case must not error).
 #[test]
 fn empty_vs_empty_all_zero_exits_zero() {
     let (_d, bp, ap) = baselines(&baseline_json(""), &baseline_json(""));
@@ -455,7 +455,7 @@ fn empty_vs_empty_all_zero_exits_zero() {
 }
 
 // ---------------------------------------------------------------------------
-// malformed baseline — exit 2, names the file (two shapes)
+// malformed baseline, exit 2, names the file (two shapes)
 // ---------------------------------------------------------------------------
 
 /// A BEFORE file of garbage (unparseable) JSON is a user error: exit 2 and the

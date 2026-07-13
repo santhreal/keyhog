@@ -130,7 +130,7 @@ pub(crate) fn batch_ml_inference_with_timeout(
         // GPU's 64-candidate threshold. `batch_ml_inference` runs INSIDE the
         // already-parallel coalesced/per-chunk scan (rayon outer loop), so a
         // `par_iter` over a 1-7 element inner batch pays rayon split/join
-        // overhead for no parallelism — pure loss on the overwhelmingly common
+        // overhead for no parallelism, pure loss on the overwhelmingly common
         // path. Below the GPU crossover the GPU never engages anyway, so the
         // small-batch path is a single fused serial loop (compute feature ->
         // score, no intermediate Vec, no rayon). Byte-identical results to the
@@ -214,7 +214,7 @@ pub(crate) fn batch_ml_inference_with_timeout(
                         // GPU readback count != batch_size == features.len()), and
                         // this caller builds `features` one-per-candidate, so a
                         // `Some` whose length differs from `candidates` cannot occur
-                        // via the real backend — this arm is unreachable today. Keep
+                        // via the real backend, this arm is unreachable today. Keep
                         // it fail-LOUD instead of a silent CPU fallback (Law 10): if
                         // a future backend change ever breaks that contract, route
                         // the degrade through the SAME owner as every other MoE

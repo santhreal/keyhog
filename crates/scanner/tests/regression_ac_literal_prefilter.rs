@@ -2,9 +2,9 @@
 //! (`AlphabetScreen`, `crates/scanner/src/alphabet_filter.rs`) framed around the
 //! two canonical AC-LITERAL detectors that keyhog anchors on:
 //!
-//!   * `aws-access-key`     — literal keywords `AKIA` / `ASIA`
+//!   * `aws-access-key`: literal keywords `AKIA` / `ASIA`
 //!                            (regex `(?-i)(AKIA|ASIA)[0-9A-Z]{16}\b`)
-//!   * `github-classic-pat` — literal keyword `ghp_`
+//!   * `github-classic-pat`: literal keyword `ghp_`
 //!                            (regex `ghp_[A-Za-z0-9]{36}\b`)
 //!
 //! These are LITERAL-bearing detectors (unlike no-literal detectors such as
@@ -22,7 +22,7 @@
 //! verdict, so the admit/reject probes below run through it to prove the result
 //! does not depend on the accelerator state of the test host.
 //!
-//! Ground-truth alphabet for the union set `["AKIA", "ghp_"]` — letters are
+//! Ground-truth alphabet for the union set `["AKIA", "ghp_"]`: letters are
 //! ASCII case-folded (both `b` and `b ^ 0x20`), the non-letter `_` (0x5F) is
 //! exact:
 //!     letters (case-insensitive): A a K k I i G g H h P p
@@ -32,7 +32,7 @@
 
 use keyhog_scanner::testing::{assert_alphabet_prefilter_backend_parity, AlphabetScreen};
 
-/// Detector ids under test — kept as concrete strings so an assertion message
+/// Detector ids under test, kept as concrete strings so an assertion message
 /// names the exact detector whose literal alphabet a regression would break.
 const AWS_ACCESS_KEY: &str = "aws-access-key";
 const GITHUB_CLASSIC_PAT: &str = "github-classic-pat";
@@ -95,7 +95,7 @@ fn union_admits_aws_only_and_github_only_chunks() {
     assert!(screen.screen(b"zzzKzzz"));
     // Only '_' and 'g'/'h'/'p' (from ghp_) present, no A/K/I.
     assert!(screen.screen(b"log_path"));
-    // Disjoint chunk: 'w','o','r','d',' ','0','1' — none in the union alphabet.
+    // Disjoint chunk: 'w','o','r','d',' ','0','1' (none in the union alphabet).
     assert!(!(screen.screen(b"word 01")));
 }
 
@@ -150,7 +150,7 @@ fn single_byte_target_and_non_target_bytes() {
 fn screen_is_recall_safe_superset_of_case_sensitive_regex() {
     // The `aws-access-key` regex is case-SENSITIVE (`(?-i)`), so lowercase "akia"
     // is NOT a real key. The screen, however, case-folds letters and so still
-    // ADMITS the lowercase twin — a deliberate recall-safe superset (the screen
+    // ADMITS the lowercase twin, a deliberate recall-safe superset (the screen
     // must never drop a chunk the case-sensitive regex might still hit elsewhere).
     let screen = AlphabetScreen::new(&["AKIA".to_string()]);
     assert_eq!(
@@ -166,7 +166,7 @@ fn screen_is_recall_safe_superset_of_case_sensitive_regex() {
 fn asia_variant_keyword_admitted_and_disjoint_rejected() {
     // `aws-access-key` also anchors on the `ASIA` (temporary credential) keyword.
     let screen = AlphabetScreen::new(&["ASIA".to_string()]);
-    // 'S' is unique to ASIA vs AKIA — must be admitted.
+    // 'S' is unique to ASIA vs AKIA (must be admitted).
     assert!(screen.screen(b"xxSxx"));
     // A chunk with none of {A a S s I i} -> reject.
     assert!(!(screen.screen(b"grpht bdo 09")));
@@ -225,7 +225,7 @@ fn large_corpus_single_embedded_key_is_host_independent() {
 
 #[test]
 fn whitespace_and_digit_only_line_rejected() {
-    // Space 0x20, tab 0x09, LF 0x0A, CR 0x0D and digits — none in the union
+    // Space 0x20, tab 0x09, LF 0x0A, CR 0x0D and digits, none in the union
     // alphabet {A a K k I i G g H h P p _}.
     let screen = AlphabetScreen::new(&union_targets());
     assert!(!(screen.screen(b"   \t\n\r 1234567890  ")));
@@ -246,7 +246,7 @@ fn empty_chunk_is_rejected_on_every_backend() {
 #[test]
 fn underscore_membership_exact_del_not_folded() {
     // `_` (0x5F) is a non-letter, so ONLY 0x5F is set for `github-classic-pat`;
-    // its 0x20-flip 0x7F (DEL) must NOT be admitted — non-letters are never folded.
+    // its 0x20-flip 0x7F (DEL) must NOT be admitted (non-letters are never folded).
     let screen = AlphabetScreen::new(&github_targets());
     assert!(screen.screen(b"_"));
     assert_eq!(

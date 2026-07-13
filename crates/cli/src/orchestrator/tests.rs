@@ -16,7 +16,7 @@ fn low_ram_caps_have_expected_values() {
 }
 
 /// The caps are applied via `.min()`, i.e. they clamp DOWN and never raise a
-/// smaller configured value — the exact semantics the low-RAM adaptation
+/// smaller configured value, the exact semantics the low-RAM adaptation
 /// relies on. Prove both directions with the named constants.
 #[test]
 fn low_ram_caps_clamp_down_never_up() {

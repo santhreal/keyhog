@@ -1,7 +1,7 @@
 # Stripe's public-docs demo secret key. Published in Stripe's testing
 # documentation as a sample value for `STRIPE_SECRET_KEY`. The key is
-# not live (Stripe revoked it long ago), but the SHAPE is exact —
-# `sk_live_` prefix + 24+ alphanumeric — so any future regex change
+# not live (Stripe revoked it long ago), but the SHAPE is exact 
+# `sk_live_` prefix + 24+ alphanumeric, so any future regex change
 # that drops Stripe live keys will fail this contract.
 
 schema_version = 1

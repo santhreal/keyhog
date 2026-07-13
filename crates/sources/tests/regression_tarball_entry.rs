@@ -2,7 +2,7 @@
 //! (`extract::process_entry` -> `compressed::emit_tar_entries`).
 //!
 //! A secret committed inside a `.tar` / `.tgz` (docker layer export, helm
-//! chart, npm/source release tarball — the dominant Linux/cloud archive) must
+//! chart, npm/source release tarball, the dominant Linux/cloud archive) must
 //! be unpacked per-entry and delivered with the exact `container//entry` inner
 //! path, and the extractor must be decompression-bomb safe (Law 15): an entry
 //! whose declared uncompressed size exceeds the per-file cap is refused,
@@ -72,7 +72,7 @@ fn archive_chunks(chunks: &[Chunk]) -> Vec<&Chunk> {
 const SMALL_CAP: u64 = 10_000;
 
 /// Build a `.tgz` (gzipped tar) whose first entry is a small benign secret and
-/// whose second entry declares a 20 000-byte body of `filler` — highly
+/// whose second entry declares a 20 000-byte body of `filler`: highly
 /// compressible so the on-disk `.tgz` is a few hundred bytes (passes the
 /// container-size gate) but the inner entry is over `SMALL_CAP`.
 fn tgz_small_secret_plus_oversized(filler_marker: &str) -> Vec<u8> {
@@ -203,7 +203,7 @@ fn tar_entry_secret_arrives_only_via_archive_source_type() {
 #[test]
 fn tar_directory_entry_yields_zero_archive_chunks() {
     // A tar containing ONLY a directory entry (structural metadata, no content)
-    // must yield no archive chunks — the dir header is skipped, not scanned.
+    // must yield no archive chunks (the dir header is skipped, not scanned).
     let mut buf = Vec::new();
     {
         let mut builder = tar::Builder::new(&mut buf);

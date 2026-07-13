@@ -1,5 +1,5 @@
 //! Detection-truth: cross-cutting EDGE scenarios (#177/#184) not covered by the
-//! per-detector self-validation harness — combined evasion, base64url, multiple
+//! per-detector self-validation harness, combined evasion, base64url, multiple
 //! distinct secrets, quoting/whitespace, and repeated-occurrence reporting.
 //! Exact-value assertions (Law 6). ML-independent; run without `ml` while the
 //! embedded weights are mid-retrain.

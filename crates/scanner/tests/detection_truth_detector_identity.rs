@@ -1,6 +1,6 @@
 //! Detection-truth: full finding IDENTITY (#177/#184). Beyond the recovered
 //! value, a finding must name the RIGHT detector, service, severity, and byte
-//! offset — what a report/SARIF consumer keys on. Asserts all of them (Law 6:
+//! offset, what a report/SARIF consumer keys on. Asserts all of them (Law 6:
 //! rule + credential + location). ML-independent named detectors; run without
 //! `ml` while the embedded weights are mid-retrain.
 

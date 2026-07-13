@@ -90,7 +90,7 @@ fn sarif_is_github_code_scanning_compliant() {
         let uri = r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
             .as_str()
             .expect("each result needs artifactLocation.uri");
-        // (1) repo-relative — GitHub maps the alert to the PR file.
+        // (1) repo-relative: GitHub maps the alert to the PR file.
         assert!(
             !uri.starts_with("file:") && !uri.starts_with('/'),
             "artifactLocation.uri must be repo-relative for code-scanning (no file://, no leading /); got {uri:?}"

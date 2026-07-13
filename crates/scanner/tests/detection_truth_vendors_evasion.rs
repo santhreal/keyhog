@@ -2,7 +2,7 @@
 //!
 //! Exact-value assertions (Law 6) through the public scan API. The headline is
 //! the homoglyph case: a Cyrillic-`А` obfuscated AWS key must be normalized to
-//! ASCII and detected — proving the unicode-hardening pass on the scan path.
+//! ASCII and detected (proving the unicode-hardening pass on the scan path).
 //! ML-independent (regex/structural/normalization), so valid with/without `ml`
 //! (run without `ml` while the embedded weights are mid-retrain).
 

@@ -9,7 +9,7 @@ fn homoglyph_cyrillic_e_in_xoxb() {
     let matches = scan_text(text, "homoglyph.env");
     assert!(
         matches.iter().any(|m| m.credential.as_ref().contains(tail)),
-        "Cyrillic-e homoglyph xoxb body must not fully evade — tail {tail:?}; matches={:?}",
+        "Cyrillic-e homoglyph xoxb body must not fully evade, tail {tail:?}; matches={:?}",
         matches
             .iter()
             .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))

@@ -1,6 +1,6 @@
 //! `save`/`save_with_spec` acquire a sibling `.lock` file via the shared state-file lock,
 //! which rejects a cache path with no final component (`/`, or a `..`-terminated
-//! path) with `ErrorKind::InvalidInput` — there is nowhere to place the lock.
+//! path) with `ErrorKind::InvalidInput`: there is nowhere to place the lock.
 //! Crucially the check is the FIRST thing `save_inner` does, before any
 //! filesystem write, so a malformed path fails closed without side effects. Prior
 //! merkle save tests only exercised well-formed `tempdir().join("merkle.idx")`
@@ -29,7 +29,7 @@ fn merkle_save_to_path_without_file_name_is_invalid_input() {
 }
 
 /// A `..`-terminated relative path also has no `file_name`, so it must be
-/// rejected identically — the guard keys on the missing final component, not on
+/// rejected identically, the guard keys on the missing final component, not on
 /// the path being the filesystem root. (The error is returned before
 /// `create_dir_all`, so no `some/dir` tree is materialized.)
 #[test]

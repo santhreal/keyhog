@@ -36,7 +36,7 @@ pub enum SpecError {
         source: toml::de::Error,
     },
     #[error(
-        "{failed_count} of {total} embedded detector(s) failed to parse — the binary \
+        "{failed_count} of {total} embedded detector(s) failed to parse, the binary \
          baked in a CORRUPT detector set, so its recall is silently degraded. This is \
          a build/source bug, not a runtime condition: the embedded corpus is compiled \
          in and cannot have been edited at runtime. Offending detector(s):\n{detail}\n\
@@ -50,7 +50,7 @@ pub enum SpecError {
     },
     #[error(
         "{failed_count} of {total} detector file(s) from {dir} failed to load, \
-         pass the quality gate, or exist at all — that is a partial detector \
+         pass the quality gate, or exist at all, that is a partial detector \
          corpus, so keyhog is refusing to scan without a complete detector \
          corpus (a partial corpus silently drops recall). \
          Offending detector(s):\n{detail}\nFix: repair the named TOML file(s) \
@@ -206,8 +206,8 @@ fn assemble_detector_load(
     }
 
     // Sort before the duplicate-id scan so identical ids are adjacent and one
-    // linear pass finds them. A detector id is a unique key — it selects the
-    // checksum validator, suppression rules, and finding attribution — so two
+    // linear pass finds them. A detector id is a unique key, it selects the
+    // checksum validator, suppression rules, and finding attribution, so two
     // detectors sharing an id silently shadow each other (the loser's
     // patterns/companions never fire). Law 10: surface it, don't let it pass.
     // Folded into the SAME gate as other corpus-integrity failures (fail closed

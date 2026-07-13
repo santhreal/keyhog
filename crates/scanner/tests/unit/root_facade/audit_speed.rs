@@ -21,7 +21,7 @@ use keyhog_scanner::testing::{line_number_for_offset, record_window_match};
 use keyhog_scanner::testing::{CompiledCompanion, ScannerPreprocessedText};
 use regex::Regex;
 
-/// AUD-speed-1 — `find_companion` does an O(L) LINEAR scan of `preprocessed.mappings`
+/// AUD-speed-1: `find_companion` does an O(L) LINEAR scan of `preprocessed.mappings`
 /// per call, where the sibling lookup is already O(log L).
 ///
 /// Evidence:
@@ -38,7 +38,7 @@ use regex::Regex;
 ///   detector that declares companions (twilio-auth-token, etc.), so on an
 ///   L-line file with N companion-bearing matches the cost is O(N*L).
 ///
-///   The mappings are stored in `line_number`-monotonic, contiguous order —
+///   The mappings are stored in `line_number`-monotonic, contiguous order 
 ///   the SAME invariant the sibling `PreprocessedText::line_for_offset`
 ///   (crates/scanner/src/multiline/config.rs:50 and src/types.rs:133)
 ///   already relies on to resolve its lookup with `partition_point` in
@@ -118,7 +118,7 @@ fn find_companion_window_lookup_is_not_linear_in_file_lines() {
     );
 }
 
-/// AUD-speed-2 — windowed per-match line attribution was O(offset) per match.
+/// AUD-speed-2 (windowed per-match line attribution was O(offset) per match).
 ///
 /// `record_window_match` (crates/scanner/src/engine/windowed.rs) used to call
 /// `line_number_for_offset(full_text, offset)`, which counts newlines from the
@@ -130,7 +130,7 @@ fn find_companion_window_lookup_is_not_linear_in_file_lines() {
 ///
 /// Fix: `scan_windowed` precomputes `compute_line_offsets(chunk_text)` once and
 /// `record_window_match` resolves each match's line with `partition_point`
-/// (O(log L)) — byte-identical to the newline count, proven below against the
+/// (O(log L)), byte-identical to the newline count, proven below against the
 /// `line_number_for_offset` reference.
 ///
 /// This drives the real `record_window_match` with end-of-buffer offsets (the
@@ -179,7 +179,7 @@ fn windowed_line_attribution_is_not_linear_in_offset() {
     );
 
     // Speed: many matches near the end of the buffer (each a distinct offset so
-    // dedup keeps them) — the regime where the old O(offset) walk blew up.
+    // dedup keeps them) (the regime where the old O(offset) walk blew up).
     let start = Instant::now();
     let mut sink = 0usize;
     for k in 0..CALLS {

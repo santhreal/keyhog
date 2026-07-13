@@ -155,7 +155,7 @@ fn leaked_build_arg_in_history_created_by_surfaces() {
 
 /// Pretty-serialization: a compact single-line config JSON is expanded to
 /// multi-line, indented text (so line-oriented scanning has real lines), and
-/// `size_bytes` tracks the expanded length — never the compact input length.
+/// `size_bytes` tracks the expanded length (never the compact input length).
 #[cfg(feature = "docker")]
 #[test]
 fn compact_config_json_is_pretty_expanded_to_multiline() {
@@ -275,7 +275,7 @@ fn metadata_less_config_json_surfaces_via_fallback_label() {
 // ---------------------------------------------------------------------------
 
 /// A manifest that references a config member with no backing file fails loud,
-/// naming the missing config — the config is never silently dropped.
+/// naming the missing config (the config is never silently dropped).
 #[cfg(feature = "docker")]
 #[test]
 fn manifest_referencing_absent_config_fails_loud() {
@@ -314,7 +314,7 @@ fn invalid_json_config_fails_loud() {
 }
 
 /// A manifest whose config member escapes the archive root via `..` is rejected
-/// as an unsafe path before any file access — path traversal is refused loud.
+/// as an unsafe path before any file access (path traversal is refused loud).
 #[cfg(feature = "docker")]
 #[test]
 fn config_member_path_traversal_rejected_loud() {
@@ -432,7 +432,7 @@ fn empty_root_yields_zero_metadata_chunks() {
 }
 
 /// A metadata path that exists but is a directory (not a regular file) fails
-/// loud rather than being silently skipped — a symlink/dir decoy cannot hide the
+/// loud rather than being silently skipped, a symlink/dir decoy cannot hide the
 /// metadata from the scan.
 #[cfg(feature = "docker")]
 #[test]

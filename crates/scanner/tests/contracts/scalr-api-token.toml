@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "SCALR_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "SCALR_TOKEN=eyJqEEXAMPLEEXAMPLE-93hJ"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "export SCALR_TOKEN=eyJqEn0DWRqaI8.eyJ2EZmQ0rQI1KS2vAHKhbVxPEJrwHqJUcpDGcDzG5b6ZjeO_rTJlAFLwM_mj9M4z90pm5indkRJqaMe_7qcLhcbk.zatKoCFZ3LnYyOgxIRh6SRcFLfddJzxS8Kk2_emw-BnII8IGYXfjppfEeEqE_K0IGediMBiPhaX7Te67vFmO6XL7wc-93hJ"
 credential = "eyJqEn0DWRqaI8.eyJ2EZmQ0rQI1KS2vAHKhbVxPEJrwHqJUcpDGcDzG5b6ZjeO_rTJlAFLwM_mj9M4z90pm5indkRJqaMe_7qcLhcbk.zatKoCFZ3LnYyOgxIRh6SRcFLfddJzxS8Kk2_emw-BnII8IGYXfjppfEeEqE_K0IGediMBiPhaX7Te67vFmO6XL7wc-93hJ"
-reason = "Adversarial env_export envelope — credential must still surface under this detector."
+reason = "Adversarial env_export envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

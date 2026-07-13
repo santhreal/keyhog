@@ -1,4 +1,4 @@
-//! Boundary contract for `mixed_contiguous_token_floor_met` — the third
+//! Boundary contract for `mixed_contiguous_token_floor_met`: the third
 //! keyword-free ("isolated bare") high-entropy recall floor in
 //! `entropy/isolated.rs`, and the only one with no separator structure to lean
 //! on. It compensates with two extra gates the separator floors omit: the token
@@ -25,7 +25,7 @@ const CONTIGUOUS_OK: &str = "Pxidztpvqkbgxwjz1234";
 /// digit-fragmented token still clears the randomness gate.
 const CONTIGUOUS_OK_SPLIT: &str = "Xz7qkpvbg3wmjzqxhb4j";
 
-/// 22 chars, all alphanumeric, upper + lower + digit, non-hex — but a
+/// 22 chars, all alphanumeric, upper + lower + digit, non-hex, but a
 /// pronounceable English compound, so the randomness gate rejects it.
 const DICTIONARY_22: &str = "Configurationmanager12";
 

@@ -82,7 +82,7 @@ pub(crate) fn resolve_live_verdict(is_live: bool, success_is_explicit: bool, bod
 
 /// Loudly record that the inflight-dedup cap was hit and this (detector,
 /// credential) is being verified WITHOUT the single-in-flight guard. Surfacing
-/// (Law 10): a counter for every bypass plus a process-once warn — the silent
+/// (Law 10): a counter for every bypass plus a process-once warn, the silent
 /// `break None` degrade otherwise hid duplicate live-API probes / rate-limit
 /// bans with no operator-visible cause.
 static INFLIGHT_CAP_BYPASSES: AtomicUsize = AtomicUsize::new(0);
@@ -107,7 +107,7 @@ struct VerifyTaskShared {
     service_semaphores: Arc<HashMap<Arc<str>, Arc<Semaphore>>>,
     /// Fallback per-service concurrency for a group whose service is absent from
     /// `service_semaphores`. Threaded from `VerifyConfig.max_concurrent_per_service`
-    /// so raising the configured cap also raises this fallback (single owner —
+    /// so raising the configured cap also raises this fallback (single owner 
     /// no second hardcoded default).
     max_concurrent_per_service: usize,
     client: Client,
@@ -382,12 +382,12 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
 /// Whether a verification outcome is stable enough to cache across scans.
 ///
 /// Only definitive verdicts and the deterministic local outcomes are cached.
-/// `RateLimited` (always transient — a 429/503 the retry loop could not clear)
+/// `RateLimited` (always transient, a 429/503 the retry loop could not clear)
 /// and `Error` (a transient timeout/reset/"max retries exceeded" that exhausted
 /// retries, OR a deterministic config error) are deliberately NOT cached: the
 /// transient cases must be re-verified on the next scan rather than masking a
 /// live credential for the full cache TTL, and the deterministic errors are
-/// cheap, network-free local recomputes whose caching saves nothing — so
+/// cheap, network-free local recomputes whose caching saves nothing, so
 /// skipping them removes any risk of pinning a misclassified blip.
 ///
 /// This is a positive allowlist: a future `VerificationResult` variant defaults
@@ -411,7 +411,7 @@ impl VerificationEngine {
     ) -> Result<Self, VerifyError> {
         // Cert validation: ON by default, escape hatch ONLY through the
         // explicit `VerifyConfig.insecure_tls` knob (set by the `--insecure`
-        // flag or `.keyhog.toml`; no env var can flip it — config mandate).
+        // flag or `.keyhog.toml`; no env var can flip it (config mandate)).
         // Production paths never flip this. The decompression-bomb + redirect
         // posture is applied by the single `harden_verifier_client_builder`
         // owner shared with both DNS-pinned rebuild paths.

@@ -1,12 +1,12 @@
 //! ORGANIZATION-CONTRACT TARGET SPEC (the org worklist).
 //!
 //! Every test here asserts a CONCRETE organization contract keyhog SHOULD meet
-//! but does NOT yet. Each FAILING assertion is a tracked organization gap — a
+//! but does NOT yet. Each FAILING assertion is a tracked organization gap, a
 //! finding (Law 6: a failing contract test is a finding). These tests are not
 //! decorative: each one parses the REAL tree (lib.rs, Cargo.toml, the gate
 //! scripts, the engine module) and asserts a measured/computed value against a
 //! target. They are VISIBLY RED where the contract is violated and turn GREEN
-//! only when the underlying structure is actually fixed — never by weakening the
+//! only when the underlying structure is actually fixed, never by weakening the
 //! assertion (Law 9).
 //!
 //! Contract families (Adversarial Review Vector 8 ARCHITECTURE + 7 DEDUP):
@@ -15,7 +15,7 @@
 //!     core=10, sources=14, scanner=9 production `pub use` lines. TARGET: <= 3.
 //!   * No dead backend enum arm (`ScanBackend` variant referenced nowhere).
 //!   * no repository-level `vendor/` tree or Cargo path dependency into it
-//!     graph — never a workspace member.
+//!     graph (never a workspace member).
 //!   * The audit entrypoint `scripts/gates/run_all.sh` references EVERY gate
 //!     script under `scripts/gates/`. A gate that exists but is not wired into
 //!     the one entrypoint is a dead route.
@@ -30,7 +30,7 @@
 //! case, so the worklist surfaces both the per-target detail and the rollup.
 //!
 //! Resolution: this test runs from `crates/cli`, so `CARGO_MANIFEST_DIR/../..`
-//! is the repo root. No network, no built corpus, no GPU — a pure source/org
+//! is the repo root. No network, no built corpus, no GPU, a pure source/org
 //! gate that runs anywhere `cargo test` runs.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -61,7 +61,7 @@ const CRATES: [&str; 5] = ["core", "scanner", "sources", "cli", "verifier"];
 /// TARGET: a crate's `lib.rs` should expose at most this many top-level
 /// `pub use` re-export lines. A single curated aggregation point (one
 /// `pub use submodule::*` glob plus a tiny number of hand-picked re-exports)
-/// is the contract. More than this is a fan-out of re-export points — the
+/// is the contract. More than this is a fan-out of re-export points, the
 /// "one re-export point per crate" violation.
 const MAX_REEXPORT_LINES: usize = 3;
 
@@ -188,7 +188,7 @@ fn org_core_reexport_count_is_documented_offender() {
     assert!(
         n <= MAX_REEXPORT_LINES,
         "ORG GAP [core]: measured {n} top-level `pub use` lines (worklist baseline 10). \
-         Target <= {MAX_REEXPORT_LINES}. Still over budget — collapse into one re-export module.",
+         Target <= {MAX_REEXPORT_LINES}. Still over budget, collapse into one re-export module.",
     );
 }
 
@@ -293,7 +293,7 @@ fn assert_backend_variant_live(variant: &str) {
     let variants = scan_backend_variants(&root);
     assert!(
         variants.iter().any(|v| v == variant),
-        "ScanBackend enum no longer declares variant `{variant}` — test fixture stale; \
+        "ScanBackend enum no longer declares variant `{variant}`: test fixture stale; \
          re-derive against hw_probe/mod.rs. Declared: {variants:?}",
     );
     let sites = variant_use_sites(&root, variant);
@@ -304,7 +304,7 @@ fn assert_backend_variant_live(variant: &str) {
     assert!(
         sites >= 2,
         "ORG GAP [backend]: `ScanBackend::{variant}` is referenced at only {sites} \
-         non-definition site(s) across the crates — a (near-)dead enum arm. Either wire \
+         non-definition site(s) across the crates, a (near-)dead enum arm. Either wire \
          it into real selection/dispatch or remove the arm (no dead backend route).",
     );
 }
@@ -340,7 +340,7 @@ fn org_backend_enum_arm_count_matches_label_impl() {
         let arm = format!("Self::{v} =>");
         assert!(
             label_body.contains(&arm),
-            "ORG GAP [backend]: ScanBackend variant `{v}` has no `{arm}` arm in `label()` — \
+            "ORG GAP [backend]: ScanBackend variant `{v}` has no `{arm}` arm in `label()`: \
              a dead/non-exhaustive enum arm. Every backend route must carry a stable label.",
         );
     }
@@ -740,7 +740,7 @@ fn org_silent_fallback_baseline_is_empty_and_shrink_only() {
 /// not itself trip the grep that the gate runs.
 ///
 /// A marker counts ONLY as a real debt ANNOTATION (`// TODO:` / `// FIXME:` /
-/// `// XXX:` / `// HACK:` — the word followed immediately by `:` or a space then
+/// `// XXX:` / `// HACK:`: the word followed immediately by `:` or a space then
 /// text, i.e. an actual annotation) or a STUB MACRO (`todo!(` /
 /// `unimplemented!(`). This deliberately does NOT flag a marker token that is
 /// merely embedded in documentation (e.g. a `XXXXX-XXXXX` placeholder shape the
@@ -964,7 +964,7 @@ fn org_no_engine_file_mixes_multiple_compiled_scanner_impls() {
     assert!(
         offenders.is_empty(),
         "ORG GAP [engine]: {} engine file(s) carry more than {MAX_IMPL_BLOCKS_PER_ENGINE_FILE} \
-         distinct `impl CompiledScanner` block(s) — multiple responsibility clusters in one file. \
+         distinct `impl CompiledScanner` block(s), multiple responsibility clusters in one file. \
          Each cluster of methods should live in its own job-named file (engine/mod.rs documents the \
          intended split):\n{}",
         offenders.len(),
@@ -1002,7 +1002,7 @@ fn org_no_engine_file_mixes_impl_and_freefn_groups() {
     assert!(
         offenders.is_empty(),
         "ORG GAP [engine]: {} engine file(s) mix a `CompiledScanner` impl with a free-function \
-         group (>=3 top-level fns) — two responsibilities in one file. Split the free helpers into \
+         group (>=3 top-level fns), two responsibilities in one file. Split the free helpers into \
          a job-named sibling module:\n{}",
         offenders.len(),
         offenders.join("\n"),
@@ -1156,7 +1156,7 @@ fn assert_pub_surface_within_budget(krate: &str) {
         n <= budget,
         "ORG GAP [{krate}]: crate `keyhog-{krate}` exposes {n} reachable `pub` items, including \
          hidden testing facades and `#[doc(hidden)] pub` probes (budget {budget}). A public \
-         surface this wide almost certainly carries symbols nothing outside tests consumes — prune \
+         surface this wide almost certainly carries symbols nothing outside tests consumes, prune \
          dead/over-broad `pub` (make them `pub(crate)` or private) so the public contract is the \
          minimal real one (Adversarial Vector 11 UTILIZATION).",
     );
@@ -1187,7 +1187,7 @@ fn org_verifier_pub_surface_within_budget() {
     assert_pub_surface_within_budget("verifier");
 }
 
-// ── Self-consistency guards (these PASS — they prove the parser is honest) ──
+// ── Self-consistency guards (these PASS, they prove the parser is honest) ──
 // If these flip RED the harness itself broke and every finding above is suspect.
 
 #[test]

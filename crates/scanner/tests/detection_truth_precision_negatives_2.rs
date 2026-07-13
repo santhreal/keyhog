@@ -1,10 +1,10 @@
 //! Detection-truth: PRECISION negatives, batch 2 (#177/#184). The bench win over
-//! peers is precision — never flagging hashes, IDs, examples, or placeholders.
+//! peers is precision (never flagging hashes, IDs, examples, or placeholders).
 //! Each input is a verified non-secret that the no-ml (heuristic) path already
 //! suppresses; since the no-ml path is strictly MORE permissive than the ml path
 //! (ml only removes candidates), a negative that holds here holds under `ml` too.
 //! Run without `ml` while the embedded weights are mid-retrain. (The one classic
-//! that DOES slip through the heuristic path — a semver build-metadata string —
+//! that DOES slip through the heuristic path, a semver build-metadata string 
 //! is tracked as the entropy-token-semver-FP finding, not asserted here.)
 
 use keyhog_core::{Chunk, ChunkMetadata};
@@ -40,7 +40,7 @@ fn assert_no_finding(text: &str) {
 
 #[test]
 fn ignores_aws_docs_example_access_key_id() {
-    // The canonical AWS documentation example key — a must-suppress.
+    // The canonical AWS documentation example key (a must-suppress).
     assert_no_finding("aws_access_key_id = AKIAIOSFODNN7EXAMPLE");
 }
 
@@ -71,7 +71,7 @@ fn ignores_a_uuid() {
 
 #[test]
 fn ignores_base64_of_plain_text() {
-    // base64("hello world") — decodes to non-secret text.
+    // base64("hello world") (decodes to non-secret text).
     assert_no_finding("data = aGVsbG8gd29ybGQ=");
 }
 

@@ -1,4 +1,4 @@
-//! Verifier proxy edge: ambient HTTP_PROXY is IGNORED — no env var may activate
+//! Verifier proxy edge: ambient HTTP_PROXY is IGNORED, no env var may activate
 //! the proxy (config-policy mandate + security).
 
 use crate::contract::support::with_proxy_contract_env;

@@ -20,7 +20,7 @@ fn source_path_classification_is_case_insensitive_and_separator_agnostic() {
 
     // Program-vs-text distinction: doc/text extensions are decode-noise for
     // Caesar (is_source_code_path TRUE) but are NOT program source for entropy
-    // (is_program_source_code_path FALSE) — the two lists must stay separate.
+    // (is_program_source_code_path FALSE) (the two lists must stay separate).
     for doc in ["README.md", "notes/CHANGES.rst", "a/b/manual.TXT", "x.adoc"] {
         assert!(
             is_source_code_path(Some(doc)),

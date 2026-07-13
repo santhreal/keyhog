@@ -3,7 +3,7 @@
 //! `crate::exit_codes` declares three things that MUST agree: the numeric
 //! constants, the `DEFINITIONS` table (code + label + scan-reachability), and the
 //! human `HELP` text printed under `EXIT CODES:`. Nothing forces them to stay in
-//! sync — a code added to `DEFINITIONS` but forgotten in `HELP` (or a semantic
+//! sync, a code added to `DEFINITIONS` but forgotten in `HELP` (or a semantic
 //! alias pointed at an undefined number) silently drifts the documented contract
 //! from the real one. These tests pin the single source of truth: the numbers, the
 //! alias resolutions, and the exact set-equality between `DEFINITIONS` and `HELP`.

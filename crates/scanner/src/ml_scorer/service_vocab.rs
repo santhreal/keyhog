@@ -1,12 +1,12 @@
 //! Service-name vocabulary for the keyword-specificity ML feature
-//! (`ml_features::SERVICE_CONTEXT_FEATURE_INDEX`, feature 42 — DET-1).
+//! (`ml_features::SERVICE_CONTEXT_FEATURE_INDEX`, feature 42. DET-1).
 //!
 //! # What this feature separates
 //!
 //! The CredData/mirror analysis showed the MoE's dominant confusion is
-//! UUID/opaque-token shapes: `CODECOV_TOKEN = "7b3e5d8c-…"` (a real credential —
+//! UUID/opaque-token shapes: `CODECOV_TOKEN = "7b3e5d8c-…"` (a real credential 
 //! 171 contract positives across 62 detectors carry exactly this shape) versus
-//! `SESSION_ID = "50bcba48-…"` / `API_KEY = "<uuid>"` (an identifier — mirror
+//! `SESSION_ID = "50bcba48-…"` / `API_KEY = "<uuid>"` (an identifier, mirror
 //! labels these negative, and they are 68-76% of the CredData FP flood). The
 //! shape features cannot split these: the VALUE is identical. What differs is
 //! the CONTEXT: real UUID-shaped secrets ride next to a SPECIFIC service name
@@ -18,8 +18,8 @@
 //!
 //! # ONE-PLACE derivation (never a hand-curated list)
 //!
-//! The vocabulary is DERIVED from the embedded detector corpus — the single
-//! definitional home of "which services keyhog knows" — via
+//! The vocabulary is DERIVED from the embedded detector corpus, the single
+//! definitional home of "which services keyhog knows", via
 //! [`keyhog_core::embedded_detector_specs`]. Every detector TOML's prefilter
 //! `keywords` feed in; three deterministic filters remove non-service noise:
 //!
@@ -28,7 +28,7 @@
 //!    collide with random credential bytes in the context window, not names.
 //! 2. **Generic-family exclusion**: any keyword listed by a `generic-*` (or
 //!    future `entropy*`) detector spec is a credential ROLE word by
-//!    definition (api_key, secret, token, password, …) — the exact vocabulary
+//!    definition (api_key, secret, token, password, …), the exact vocabulary
 //!    feature 42 must NOT fire on. SUBSTRINGS of those words are excluded
 //!    too: as a `contains` needle, `api_` fires everywhere `api_key` does,
 //!    making it strictly more generic than the word itself.
@@ -70,7 +70,7 @@ pub(crate) const GENERIC_STEM_SPREAD_LIMIT: usize = 3;
 /// service names: the `generic-*` keyword/entropy surfacing specs and the
 /// `entropy`/`entropy-*` code-defined entropy family. Routes through the
 /// single-owner family predicate in `detector_ids` (ONE PLACE) rather than
-/// re-hardcoding the `generic-`/`entropy-` prefixes here — the detector-id
+/// re-hardcoding the `generic-`/`entropy-` prefixes here, the detector-id
 /// family definition has exactly one home, and the `detector_id_owner` gate
 /// forbids a second inline copy.
 fn is_generic_family(detector_id: &str) -> bool {
@@ -115,7 +115,7 @@ pub(crate) fn build_service_vocabulary(specs: &[keyhog_core::DetectorSpec]) -> V
             keyword.len() >= MIN_SERVICE_KEYWORD_LEN
                 && stems.len() < GENERIC_STEM_SPREAD_LIMIT
                 // A candidate that is a SUBSTRING of a generic role word
-                // (`api_` ⊂ `api_key`) fires everywhere that word does — as a
+                // (`api_` ⊂ `api_key`) fires everywhere that word does, as a
                 // `contains` needle it is strictly MORE generic than the word
                 // itself, so both exact members and substrings are excluded.
                 // (Containing a generic word is fine: `virustotal_api_key`

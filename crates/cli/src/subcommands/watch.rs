@@ -109,8 +109,8 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
 
     // Hold the watcher for the duration of the foreground process. The `notify`
     // crate requires us to keep the handle alive; dropping it stops the watcher.
-    // ONE watcher serves every root — `notify` lets us register additional
-    // paths on the same handle below — so all roots share this channel and the
+    // ONE watcher serves every root: `notify` lets us register additional
+    // paths on the same handle below, so all roots share this channel and the
     // single dedup/scan loop, with no per-root thread or state divergence.
     let mut watcher = notify::recommended_watcher(move |res| {
         // notify hands events on its own thread; forward to the main loop.
@@ -163,7 +163,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
             Ok(e) => e,
             Err(e) => {
                 let palette = style::for_stderr();
-                // Law 10: a watcher error is a DROPPED filesystem event — a save
+                // Law 10: a watcher error is a DROPPED filesystem event, a save
                 // the watcher never told us about means that file went unscanned
                 // (a recall loss). On Linux an inotify queue overflow
                 // (`Error::Generic` / ENOSPC under heavy churn) is the common
@@ -205,7 +205,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
 ///
 /// Shares [`crate::sources::resolve_scan_roots`] with `keyhog scan` so both
 /// entry points validate, canonicalize, fold nested/duplicate roots (loudly,
-/// Law 10), and preserve first-seen order through one resolution contract — no
+/// Law 10), and preserve first-seen order through one resolution contract, no
 /// drift between what `scan` and `watch` consider the same root set. Watch then
 /// adds the single constraint `scan` does not impose: every root must be a
 /// *directory*, because the filesystem watcher monitors trees, not single
@@ -216,8 +216,8 @@ fn resolve_watch_roots(requested: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let folded = crate::sources::resolve_scan_roots(requested)?;
     let mut roots = Vec::with_capacity(folded.len());
     for root in folded {
-        // Canonicalize each surviving root so the watcher registers — and every
-        // finding reports — the absolute real path, exactly as the historical
+        // Canonicalize each surviving root so the watcher registers, and every
+        // finding reports, the absolute real path, exactly as the historical
         // single-root `watch` did. `resolve_scan_roots` keeps the user's
         // spelling (relative, `.`/`..`), which is fine for a one-shot scan but
         // would leave a live watcher printing `./foo` paths. Existence was
@@ -269,7 +269,7 @@ fn content_hash(data: &[u8]) -> u64 {
 /// uses. A raw `std::fs::read` here bypassed three walker protections: (1) no
 /// size cap, so a large (or TOCTOU-grown) file dropped into a watched tree
 /// OOMs the single-threaded watcher; (2) no special-file guard, so a FIFO
-/// created in the tree — which itself fires an inotify CREATE event — is opened
+/// created in the tree, which itself fires an inotify CREATE event, is opened
 /// blocking and HANGS the event loop forever, wedging the whole watcher; (3) no
 /// `O_NOFOLLOW`, so a symlink is followed out of the watched root. `0` selects
 /// the walker's hard 2 GiB TOCTOU sanity cap (watch carries no `--max-file-size`
@@ -288,7 +288,7 @@ fn scan_file(
     // `read_watched_file`) and decode through the SAME path the `keyhog scan`
     // walker uses. `read_to_string` failed on the first non-UTF-8 byte and
     // silently dropped the whole file, so a config with one stray Latin-1 byte
-    // was scanned by `scan` (lossy decode) but invisibly skipped by `watch` — a
+    // was scanned by `scan` (lossy decode) but invisibly skipped by `watch`: a
     // recall divergence between the two entry points (Law 10). Now both share
     // the guarded read + `decode_file_bytes`, so watch recovers the same
     // secrets and can neither hang on a FIFO nor OOM on a huge file.
@@ -296,7 +296,7 @@ fn scan_file(
         Ok(b) => b,
         Err(error) => {
             // A file that VANISHED between the inotify event and our read is a
-            // benign race (nothing to scan) — stay quiet. Any OTHER error
+            // benign race (nothing to scan), stay quiet. Any OTHER error
             // (permission denied, I/O failure) means a file that EXISTS went
             // unscanned: surface it loudly so the recall loss is never silent.
             if error.kind() != std::io::ErrorKind::NotFound {
@@ -322,7 +322,7 @@ fn scan_file(
 
     // `None` => the bytes are binary (no text to scan): an intentional,
     // documented skip that matches the scan walker's binary policy, not a
-    // failure — so no warning, consistent with `keyhog scan`.
+    // failure (so no warning, consistent with `keyhog scan`).
     let Some(data) = keyhog_sources::decode_file_bytes(&bytes) else {
         return Ok(());
     };
@@ -359,7 +359,7 @@ fn scan_file(
     // Route scanner matches through the SAME suppression + resolution pipeline
     // `keyhog scan` uses (allowlist / `.keyhogignore`, inline `keyhog:ignore`,
     // disabled detectors, confidence floors, severity, match resolution) before
-    // printing — otherwise watch would surface findings the user explicitly
+    // printing, otherwise watch would surface findings the user explicitly
     // allowlisted purely because it took a different code path than scan (Law 10).
     let matches = match scan_runtime.filter_and_resolve(raw_matches) {
         Ok(matches) => matches,
@@ -515,14 +515,14 @@ pub(crate) mod testing {
     /// Drive the REAL `keyhog watch` scan + suppression pipeline over `body`
     /// (written to `file_name` under `root`, which also anchors `.keyhog.toml` /
     /// `.keyhogignore` discovery) and return the detector ids that SURVIVE the
-    /// shared filter — the exact set `watch` would print. Forces the CPU backend
+    /// shared filter, the exact set `watch` would print. Forces the CPU backend
     /// so the test needs no autoroute calibration, and writes the body to a real
     /// on-disk file so inline `keyhog:ignore` suppression (which re-reads the
     /// file) exercises the same path production does.
     ///
     /// Test-only: consumed solely by the `#[cfg(test)] mod tests` below, so it is
     /// gated to keep it out of release builds (Law-11 / no dead code in shipped
-    /// binaries) — unlike its `testing`-module siblings, which non-test integration
+    /// binaries), unlike its `testing`-module siblings, which non-test integration
     /// helpers (`crate::testing`) still call.
     #[cfg(test)]
     pub(crate) fn scan_file_surviving_detector_ids(
@@ -533,8 +533,8 @@ pub(crate) mod testing {
         use keyhog_core::{Chunk, ChunkMetadata};
         let file_path = root.join(file_name);
         std::fs::write(&file_path, body)?;
-        // Pass the DEFAULT `detectors` sentinel — the ONLY non-existent path the
-        // scan-config validator whitelists (`validate_detector_path_for_scan`) —
+        // Pass the DEFAULT `detectors` sentinel, the ONLY non-existent path the
+        // scan-config validator whitelists (`validate_detector_path_for_scan`) 
         // so this resolves to the EMBEDDED corpus exactly as `keyhog watch` does
         // with no `--detectors` and no `detectors/` dir present (the cli crate
         // has none). A made-up non-existent path is (correctly) rejected as an

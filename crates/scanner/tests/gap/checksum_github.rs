@@ -567,7 +567,7 @@ proptest! {
         prop_assert_eq!(validate_checksum(&tok), ChecksumResult::Valid);
     }
 
-    /// Corrupting a single checksum char makes the classic validator reject it —
+    /// Corrupting a single checksum char makes the classic validator reject it 
     /// the checksum genuinely discriminates the fabricated body (there is exactly
     /// one valid 6-char checksum per body).
     #[test]

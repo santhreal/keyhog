@@ -17,15 +17,15 @@ impl CompiledScanner {
     /// Verify one eligible phase-2 pattern at its candidate anchor positions
     /// using the `\A`-anchored regex, emitting matches via `process_match`.
     ///
-    /// This reproduces the whole-chunk `find_iter` walk EXACTLY — non
-    /// -overlapping, leftmost, zero-width-skipping — so the produced match set
+    /// This reproduces the whole-chunk `find_iter` walk EXACTLY, non
+    /// -overlapping, leftmost, zero-width-skipping, so the produced match set
     /// is byte-identical to `extract_matches` on the same pattern:
     ///   * `positions` are this pattern's candidate starts (sorted, ascending);
     ///     every real match starts at one of them (the anchor is required).
     ///   * `next_allowed` mirrors the whole-chunk cursor: after a match `[s,e)`
     ///     the next search resumes at `e` (or `s+1` for a zero-width match), so
     ///     candidate positions that fall inside an already-consumed match are
-    ///     skipped — exactly as the cursor-advance loop skips them.
+    ///     skipped (exactly as the cursor-advance loop skips them).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn extract_anchored(
         &self,
@@ -45,20 +45,20 @@ impl CompiledScanner {
         let bytes_total = search_text.len();
         // Per-pattern signal cache: constant across this pattern's matches but
         // expensive (O(K x |chunk|) keyword scan + path AC). Computed at most
-        // once, on the first surviving match — same contract as extract.rs.
+        // once, on the first surviving match (same contract as extract.rs).
         let signals = OnceCell::<(bool, bool)>::new();
         // Fail closed in the LazyLock init (see `AnchoredRegex::compile`): a build
         // failure of the anchored verifier PANICS rather than returning `None`, so
         // `get()` here can never silently drop this pattern's matches (Law 10). The
         // former `let Some(..) else { return }` was the recall-losing swallow this
-        // sweep removed — a build bug now aborts loudly instead of degrading recall
+        // sweep removed, a build bug now aborts loudly instead of degrading recall
         // invisibly on the anchored fast path (which has no whole-chunk fallback).
         let no_context_re = anchored_re.get();
         let mut no_context_locs = no_context_re.capture_locations();
         // Compile the left-context variant only when some candidate position is > 0
         // and therefore actually needs the synthetic preceding character; otherwise
         // it is never consulted. `None` here means "not needed", NOT a swallowed
-        // compile failure — that path panics in the init above.
+        // compile failure (that path panics in the init above).
         let left_context_re = if positions.iter().any(|&(_, pos)| pos > 0) {
             Some(anchored_re.get_with_left_context())
         } else {

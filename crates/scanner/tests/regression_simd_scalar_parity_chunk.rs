@@ -1,8 +1,8 @@
 //! SIMD-vs-scalar single-chunk scan parity.
 //!
-//! The two always-comparable CPU tiers — [`ScanBackend::CpuFallback`] (pure
+//! The two always-comparable CPU tiers. [`ScanBackend::CpuFallback`] (pure
 //! vyre Aho-Corasick + regex "scalar" path) and [`ScanBackend::SimdCpu`] (the
-//! Hyperscan NFA + SIMD prefilter path) — MUST surface the byte-identical
+//! Hyperscan NFA + SIMD prefilter path). MUST surface the byte-identical
 //! finding set for the SAME single chunk. They reach the regex-confirm stage
 //! through DIFFERENT candidate collectors, so a divergence is a real
 //! recall/precision bug in one collector.
@@ -13,7 +13,7 @@
 //!   * exact credential bytes and absolute byte offset on the scalar path,
 //!   * negative-twin suppression (overlong self-delimiting tokens, missing
 //!     companion),
-//!   * control-byte handling — whitespace controls (0x09/0x0A/0x0D) are KEPT so
+//!   * control-byte handling, whitespace controls (0x09/0x0A/0x0D) are KEPT so
 //!     a tab/newline-delimited key still resolves, while non-whitespace controls
 //!     (0x08/0x0C) are sanitized out yet leave the key intact,
 //!   * determinism across repeated scans.
@@ -55,7 +55,7 @@ fn run(sc: &CompiledScanner, ch: &Chunk, backend: ScanBackend) -> Vec<RawMatch> 
     sc.scan_with_backend(ch, backend)
 }
 
-/// `(detector_id, credential, absolute_offset)` triples — the exact parity key.
+/// `(detector_id, credential, absolute_offset)` triples (the exact parity key).
 fn triples(matches: &[RawMatch]) -> BTreeSet<(String, String, usize)> {
     matches
         .iter()
@@ -69,7 +69,7 @@ fn triples(matches: &[RawMatch]) -> BTreeSet<(String, String, usize)> {
         .collect()
 }
 
-/// `(detector_id, credential)` pairs — offset-independent membership checks.
+/// `(detector_id, credential)` pairs (offset-independent membership checks).
 fn pairs(matches: &[RawMatch]) -> BTreeSet<(String, String)> {
     matches
         .iter()
@@ -90,7 +90,7 @@ fn count_detector(matches: &[RawMatch], id: &str) -> usize {
 }
 
 /// Scan the SAME chunk on both CPU backends. The SIMD leg is `None` only when
-/// this build/host has no usable Hyperscan prefilter — forcing `SimdCpu` there
+/// this build/host has no usable Hyperscan prefilter, forcing `SimdCpu` there
 /// would hard-exit the process, so we gate on the side-effect-free
 /// `warm_backend` probe (Law 10: skip is reported loudly).
 fn both(sc: &CompiledScanner, ch: &Chunk) -> (Vec<RawMatch>, Option<Vec<RawMatch>>) {
@@ -109,7 +109,7 @@ fn both(sc: &CompiledScanner, ch: &Chunk) -> (Vec<RawMatch>, Option<Vec<RawMatch
 
 const AWS_KEY: &str = "AKIAQYLPMN5HFIQR7XYA";
 // Canonical valid-checksum classic PAT (github-classic-pat validates the token's
-// trailing CRC — a fabricated random body is silently dropped). Reused across the
+// trailing CRC, a fabricated random body is silently dropped). Reused across the
 // scanner/cli detection suites.
 const GHP_TOKEN: &str = "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";
 const TWILIO_AUTH_TOKEN: &str = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f";
@@ -312,7 +312,7 @@ fn nonws_control_bytes_sanitized_key_found_both() {
     // Placed adjacent to the key they are stripped, leaving the credential
     // intact, so the AWS key still resolves with its exact bytes on both CPU
     // backends. (If the byte were kept, it would fuse into the run and could
-    // perturb the finding — the parity + exact-bytes assertion pins it does not.)
+    // perturb the finding, the parity + exact-bytes assertion pins it does not.)
     let text = format!("AWS=\x0c{AWS_KEY}\x08\n");
     assert!(text.contains('\u{0008}') && text.contains('\u{000c}'));
     let ch = chunk(&text, "nonws_controls.txt");
@@ -407,7 +407,7 @@ fn twilio_companion_pair_surfaces_both() {
 #[test]
 fn twilio_without_companion_suppressed_both() {
     let sc = scanner();
-    // Auth token ALONE — the required account_sid companion is absent, so the
+    // Auth token ALONE, the required account_sid companion is absent, so the
     // finding must be suppressed on either backend (negative twin).
     let text = format!("TWILIO_AUTH_TOKEN={TWILIO_AUTH_TOKEN}\n");
     let ch = chunk(&text, "twilio_lonely.env");

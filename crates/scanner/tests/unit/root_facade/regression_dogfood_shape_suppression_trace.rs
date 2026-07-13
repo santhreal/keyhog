@@ -50,7 +50,7 @@ fn assert_suppressed_with_reason(credential: &str, expected_reason: &str) {
 fn dogfood_trace_names_each_cascade_suppression_gate() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
     // ── shape gates (decision.rs) ──
-    // UUID-v4 (version nibble 4, variant 8/9/a/b) — the dominant CredData/mirror
+    // UUID-v4 (version nibble 4, variant 8/9/a/b), the dominant CredData/mirror
     // recall-conflict shape (KH-L-0405/0406); was silently dropped before wiring.
     assert_suppressed_with_reason("1f48cec7-bbee-4eb7-8e35-3bc1e7a0f2c2", "uuid_v4_shape");
     // Bare hex digest (64-hex, not a known example, no algo label).
@@ -71,7 +71,7 @@ fn dogfood_trace_names_each_cascade_suppression_gate() {
     assert_suppressed_with_reason("DUMMY_TOKEN_VALUE_abc123def456", "placeholder_word");
     // Doc-marker substring buried in a longer token WITHOUT word boundaries
     // (camel/run-on), so the word-boundary placeholder check at the top of
-    // the marker scan misses it and only the substring scan catches it — the
+    // the marker scan misses it and only the substring scan catches it, the
     // exact case that arm exists for (e.g. `ghp_EXAMPLE_TOKEN`-style buried markers).
     assert_suppressed_with_reason("svckeyPLACEHOLDERnotreal42xy", "doc_marker_substring");
 

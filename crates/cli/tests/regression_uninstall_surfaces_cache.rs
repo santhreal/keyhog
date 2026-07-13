@@ -2,10 +2,10 @@
 //!
 //! Dogfood origin: a real `keyhog uninstall --yes` removed the binary and
 //! printed a "manual cleanup" list (PATH export, completions, pre-commit hook)
-//! but said NOTHING about `~/.cache/keyhog` — the compiled GPU rule catalogs +
+//! but said NOTHING about `~/.cache/keyhog`: the compiled GPU rule catalogs +
 //! detector/merkle cache, which can be ~GB. That silently orphaned real disk.
 //! The fix surfaces the cache's real, current path when it exists so the user
-//! can reclaim it (it is deliberately not auto-deleted — a reinstall reuses it
+//! can reclaim it (it is deliberately not auto-deleted, a reinstall reuses it
 //! to skip the multi-second catalog recompile).
 //!
 //! This drives the actual binary with `XDG_CACHE_HOME` pointed at a temp dir

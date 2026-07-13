@@ -1,5 +1,5 @@
 //! KH-GAP-094: `keyhog detectors --help` must cite the SAME corpus size the
-//! binary actually loads — drift-proof, with no hardcoded number.
+//! binary actually loads (drift-proof, with no hardcoded number).
 //!
 //! History: this originally pinned a literal "894-strong" in the help text.
 //! The count is now rendered at runtime from `keyhog_core::embedded_detector_count()`

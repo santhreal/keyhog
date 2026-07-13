@@ -13,17 +13,17 @@ gitignored.
 
 This adapter loads CredData two ways, in priority order:
 
-1. **Pre-built manifest** — if a ``manifest.{jsonl,csv,parquet}`` is present
+1. **Pre-built manifest**: if a ``manifest.{jsonl,csv,parquet}`` is present
    under the corpus root, load it directly (lets a CredData export be dropped
    in without the native download). Optional Parquet support stays lazy.
-2. **Native CredData layout** — otherwise parse ``meta/*.csv`` and slice each
+2. **Native CredData layout**: otherwise parse ``meta/*.csv`` and slice each
    positive's literal secret out of the on-disk file at its ``LineStart`` /
    ``ValueStart..ValueEnd`` span, so the value-overlap scorer works unchanged.
 
 **Labeling** (CredData's own convention, README "Properties"):
 ``GroundTruth`` is ``T`` (real credential → positive) or ``F``/``X`` (false
 positive / placeholder/test/example → negative). We follow that exactly so
-the numbers are comparable to CredSweeper's published CredData scores — this
+the numbers are comparable to CredSweeper's published CredData scores, this
 intentionally diverges from the planning note's "X=ignore"; firing on a
 CredData placeholder is a false positive in CredData's own scoring, and
 keyhog is already run with ``--no-suppress-test-fixtures`` to keep the
@@ -52,7 +52,7 @@ from .base import Corpus, LabeledRecord
 _BENCH_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _DEFAULT_ROOT = _BENCH_ROOT / "corpora" / "creddata" / "CredData"
 
-# Pinned CredData commit — bump deliberately, never float to a branch, so a
+# Pinned CredData commit, bump deliberately, never float to a branch, so a
 # CredData score is always reproducible against an exact dataset revision.
 CREDDATA_REPO = "https://github.com/Samsung/CredData.git"
 CREDDATA_PIN = "f1de3f85dbdf42bf7b3467c0d273a4dfe44d56ee"  # 2026-05-26
@@ -161,7 +161,7 @@ def _slice_value_from_lines(lines: list[str], line_start: int, line_end: int,
         return ""
     # ValueStart == -1 marks a WHOLE-LINE span: the secret is the entire
     # line(s) with no sub-line offset. CredData uses this for multi-line
-    # secrets — PEM/RSA private keys, service-account JSON — whose value has no
+    # secrets: PEM/RSA private keys, service-account JSON, whose value has no
     # column offset. Clamp a negative start to the line beginning (a negative
     # end already falls through to len(line) in both branches below). Treating
     # value_start < 0 as "invalid → empty" silently dropped 1003 real private-key

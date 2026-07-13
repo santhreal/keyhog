@@ -1,4 +1,4 @@
-//! LANE: `keyhog config` init/print surface — driven over the SHIPPED binary
+//! LANE: `keyhog config` init/print surface, driven over the SHIPPED binary
 //! (`CARGO_BIN_EXE_keyhog`), never the library, so every assertion pins the
 //! exact operator-visible contract a packager / CI author hits.
 //!
@@ -6,7 +6,7 @@
 //! surface is `keyhog config --effective`, which PRINTS the fully-resolved scan
 //! configuration (`crate::orchestrator_config::render_effective_config`) to
 //! stdout and exits WITHOUT scanning. There is NO `--print-config` alias and NO
-//! subcommand that WRITES a config file to disk — `ConfigArgs` only has the
+//! subcommand that WRITES a config file to disk. `ConfigArgs` only has the
 //! `required = true` `--effective` bool plus a flattened `ScanArgs` (see
 //! `crates/cli/src/args/config.rs` and `crates/cli/src/subcommands/config.rs`).
 //! These tests therefore pin the PRINT contract, its exact default key/value
@@ -16,7 +16,7 @@
 //! line followed by deterministic `key = value` lines. Values include bare
 //! words (`auto`), sentinels (`<platform default>`), and annotated defaults
 //! (`104857600 (default)`), so the block is greppable/diffable but is NOT a
-//! valid TOML document — no test here claims it parses as TOML.
+//! valid TOML document (no test here claims it parses as TOML).
 //!
 //! HOST-INDEPENDENCE: `config --effective` resolves config only; it never
 //! probes an accelerator. With no `--require-gpu`, the default GPU policy is
@@ -47,8 +47,8 @@ fn run(args: &[&str]) -> (Option<i32>, String, String) {
 }
 
 /// The compiled-in default max-file-size (`keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES`
-/// = 100 MiB). `--effective` reports an unset cap as `<bytes> (default)` — never
-/// "off" — so operators cannot mistake the fall-back cap for "no cap".
+/// = 100 MiB). `--effective` reports an unset cap as `<bytes> (default)`: never
+/// "off" (so operators cannot mistake the fall-back cap for "no cap").
 const DEFAULT_MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 104_857_600
 
 /// The compiled-in default per-regex DFA size limit
@@ -67,7 +67,7 @@ fn config_effective_exits_zero_and_leads_with_header() {
         Some(0),
         "`keyhog config --effective` renders and exits 0 (never scans); stderr={stderr}"
     );
-    // The block LEADS with its exact header line — first bytes, not merely present.
+    // The block LEADS with its exact header line (first bytes, not merely present).
     assert!(
         stdout.starts_with("[effective-config]\n"),
         "effective dump must lead with the `[effective-config]` header line; got:\n{stdout}"
@@ -142,7 +142,7 @@ fn config_effective_default_regex_dfa_limit_reports_annotated_compiled_default()
 #[test]
 fn config_effective_default_threads_render_auto() {
     // `resolved.threads == None` renders "auto" (map_or_else), NOT "0" / a probed
-    // core count — so the dump stays host-independent.
+    // core count (so the dump stays host-independent).
     let (code, stdout, _stderr) = run(&["config", "--effective", "--no-config", "--daemon=off"]);
     assert_eq!(code, Some(0), "config --effective must exit 0");
     assert!(
@@ -164,7 +164,7 @@ fn config_effective_emits_all_core_default_keys() {
         "config --effective must exit 0; stderr={stderr}"
     );
     // Every key here is emitted UNCONDITIONALLY by render_effective_config (none
-    // are feature-gated — `max_commits` is git-gated and deliberately omitted).
+    // are feature-gated: `max_commits` is git-gated and deliberately omitted).
     // Each must appear as a newline-prefixed `key = ` line.
     let required_keys = [
         "backend",

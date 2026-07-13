@@ -51,7 +51,7 @@ fn plain_assignment_is_not_fragment() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin both branches on hand-picked lines; these SWEEP the two
 // directional guarantees. A TRUE verdict DROPS the line from entropy candidate
-// extraction, so a false positive is a silent recall loss — property (1) is the
+// extraction, so a false positive is a silent recall loss, property (1) is the
 // recall guard, (2) the detection guard. Confirmed against the source (a leading
 // `"`/`'` gates the quoted-run branch; the final `ends_with("\\\"")||("-\\")`
 // catches line-continuation glue). No proptest before.
@@ -71,7 +71,7 @@ proptest! {
     }
 
     /// A line whose trimmed form ends with the `-\` line-continuation glue is
-    /// ALWAYS a fragment — the final suffix branch catches it regardless of prefix.
+    /// ALWAYS a fragment (the final suffix branch catches it regardless of prefix).
     #[test]
     fn dash_backslash_continuation_is_always_a_fragment(s in "[a-z0-9 ]{0,15}") {
         let line = format!("{s}-\\");

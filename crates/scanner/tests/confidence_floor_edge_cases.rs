@@ -278,7 +278,7 @@ fn scanner_config_sanitise_nan_min_confidence() {
 /// `ScanConfig::default()`. The values happened to coincide, so a future change
 /// to the shipped entropy default would have silently diverged on the
 /// corrupt-config path. This asserts every scrubbed field equals the canonical
-/// default by IDENTITY — if the shipped default moves, sanitise() moves with it.
+/// default by IDENTITY (if the shipped default moves, sanitise() moves with it).
 #[test]
 fn scanner_config_sanitise_nan_reads_canonical_defaults() {
     use keyhog_core::ScanConfig;
@@ -317,7 +317,7 @@ fn scanner_config_sanitise_nan_reads_canonical_defaults() {
     );
 
     // Above the 8.0 byte-entropy ceiling clamps to 8.0 (a true mathematical
-    // bound, legitimately a constant — NOT a config default).
+    // bound, legitimately a constant: NOT a config default).
     let mut hi_cfg = ScannerConfig::default();
     hi_cfg.entropy_threshold = 99.0;
     hi_cfg.sanitise();

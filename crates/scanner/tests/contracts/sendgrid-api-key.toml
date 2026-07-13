@@ -50,7 +50,7 @@ reason = "Inside a single-line comment."
 [[evasion]]
 text = "{\"api_key\":\"SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF\"}"
 credential = "SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF"
-reason = "JSON payload — extraction must not consume the closing quote/brace."
+reason = "JSON payload (extraction must not consume the closing quote/brace)."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

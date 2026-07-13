@@ -1,7 +1,7 @@
 //! Differential recall gate for the homoglyph ASCII-SKIP optimization.
 //!
 //! On a pure-ASCII chunk, the always-active homoglyph (plain) fallback variants
-//! are skipped entirely instead of folded-and-run — the dominant `phase2:prefilter`
+//! are skipped entirely instead of folded-and-run, the dominant `phase2:prefilter`
 //! cost (~43% of scan on all-ASCII source). This is sound ONLY if skipping them
 //! drops no finding: a homoglyph variant exists for a detector whose BASE literal
 //! prefix is ALSO in the AC/confirmed path (`compiler_build.rs` pushes both), and
@@ -12,7 +12,7 @@
 //! detector specs represented by the parity tokens with skip ON vs OFF and
 //! asserts byte-identical `RawMatch` sets. A divergence names the exact
 //! detector+credential a homoglyph variant catches on ASCII that the base AC does
-//! NOT — i.e. a real coverage gap to close, NOT a reason to weaken the test. A
+//! NOT, i.e. a real coverage gap to close, NOT a reason to weaken the test. A
 //! second test confirms the skip is a no-op on a non-ASCII (homoglyph) chunk.
 
 use super::support;
@@ -175,7 +175,7 @@ fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
 /// As [`scan_both`], but keeps HS ON and scans via `SimdCpu` so the HYPERSCAN
 /// always-active path is exercised. With the fix, the HS engine honors
 /// `homoglyph_ascii_skip` via its lean ASCII sub-DB, so skip-ON and skip-OFF must
-/// still produce byte-identical `RawMatch` sets on ASCII — the end-to-end proof
+/// still produce byte-identical `RawMatch` sets on ASCII, the end-to-end proof
 /// that routing ASCII marking through the lean DB adds no FP and drops no TP.
 fn scan_both_hs(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
     keyhog_scanner::testing::set_phase2_hs(scanner, Some(true));
@@ -202,9 +202,9 @@ fn report(on: &[Key], off: &[Key], input: &[u8]) -> String {
 }
 
 // The SOUNDNESS gate for the `homoglyph_ascii_skip` optimization (now default ON).
-// It PASSES: closing the base-AC coverage gap — phase-1 marks triggers with
+// It PASSES: closing the base-AC coverage gap, phase-1 marks triggers with
 // OVERLAPPING AC matching, so a detector whose base literal is shadowed by a
-// longer literal (e.g. `secret` inside `client_secret`) is still AC-confirmed —
+// longer literal (e.g. `secret` inside `client_secret`) is still AC-confirmed 
 // made skip ≡ fold at the raw-match level on every ASCII chunk. This gate now
 // guards that the skip stays recall-neutral: a divergence means a NEW shadow
 // case the overlapping triggers don't cover, i.e. a real coverage regression,
@@ -273,11 +273,11 @@ fn homoglyph_ascii_skip_parity_default() {
 /// SOUNDNESS gate for the HYPERSCAN homoglyph-ASCII skip (the lean ASCII sub-DB).
 /// Mirrors `homoglyph_ascii_skip_parity_default` but drives the HS/`SimdCpu` path:
 /// with the fix, marking ASCII chunks through the lean DB (which excludes the ~2.8k
-/// homoglyph variants) must yield byte-identical `RawMatch` sets to the full DB — no
+/// homoglyph variants) must yield byte-identical `RawMatch` sets to the full DB, no
 /// FP added, no TP dropped. Before the fix the HS path scanned the full DB on ASCII
 /// (findings-identical but ~100-215× slower); this locks that the speed fix stayed
 /// findings-neutral. A divergence names the exact detector+credential a homoglyph
-/// variant catches on ASCII that the base path does not — a real gap, not a reason
+/// variant catches on ASCII that the base path does not, a real gap, not a reason
 /// to weaken the test.
 #[test]
 fn homoglyph_ascii_skip_parity_hs_backend() {
@@ -294,7 +294,7 @@ fn homoglyph_ascii_skip_parity_hs_backend() {
     }
 
     // Bounded synthetic ASCII sweep through the HS path (kept smaller than the
-    // RegexSet default gate — this tail runs near the lib-test memory ceiling).
+    // RegexSet default gate (this tail runs near the lib-test memory ceiling)).
     let mut rng = Lcg(0x0f0e_0d0c_0b0a_0908);
     let n: usize = std::env::var("KEYHOG_PARITY_N")
         .ok()
@@ -317,14 +317,14 @@ fn homoglyph_ascii_skip_parity_hs_backend() {
 }
 
 /// The skip is gated on `chunk.is_ascii()`, so a chunk containing an actual
-/// non-ASCII homoglyph must run the variant unchanged — the optimization never
+/// non-ASCII homoglyph must run the variant unchanged, the optimization never
 /// touches the case homoglyph detection exists for.
 #[test]
 fn homoglyph_variant_unaffected_on_non_ascii() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
     let scanner = scanner();
     scanner.clear_fragment_cache();
-    // "аpi_key" with a Cyrillic 'а' (U+0430) — a non-ASCII chunk.
+    // "аpi_key" with a Cyrillic 'а' (U+0430) (a non-ASCII chunk).
     let input = "\u{0430}pi_key = \"AbCdEf0123456789xyzABCD\"\n".as_bytes();
     assert!(!input.is_ascii());
     let chunk = chunk_of(input, "nonascii");

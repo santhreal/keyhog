@@ -21,7 +21,7 @@ fn underscore_separator_is_dropped() {
 #[test]
 fn part_segment_and_trailing_digits_are_stripped() {
     // `token_part1` drops the `_`, skips the `part` segment, then the trailing
-    // `1` is trimmed — leaving the shared base that groups the fragments.
+    // `1` is trimmed (leaving the shared base that groups the fragments).
     assert_eq!(extract_prefix("token_part1"), "token");
 }
 
@@ -34,7 +34,7 @@ fn hyphen_separator_is_dropped_and_value_lowercased() {
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin one example of each transform; these SWEEP them. Two
 // kinds of property: (1) OUTPUT INVARIANTS that hold for EVERY input (no
-// separator, no uppercase, no trailing digit, never longer) — these need no
+// separator, no uppercase, no trailing digit, never longer), these need no
 // oracle and catch any transform regression; (2) CONSTRUCTIVE differentials that
 // isolate each documented transform (separator-drop, `part`-strip, trailing-digit
 // trim) by building an input whose prefix is a known clean base. All claims were

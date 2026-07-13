@@ -97,7 +97,7 @@ regex = "demo_[A-Z0-9]{8}"
 "#;
 
 // ===========================================================================
-// SECTION 1: TOML schema — required fields present, parse succeeds
+// SECTION 1: TOML schema, required fields present, parse succeeds
 // ===========================================================================
 
 #[test]
@@ -194,7 +194,7 @@ fn missing_severity_field_is_parse_error() {
 #[test]
 fn missing_patterns_is_a_quality_error_not_a_parse_error() {
     // `patterns` IS `#[serde(default)]` (spec.rs), so omitting the
-    // [[detector.patterns]] table PARSES cleanly — the recall-safety requirement
+    // [[detector.patterns]] table PARSES cleanly, the recall-safety requirement
     // (a regex detector must carry at least one anchor, or it ships zero recall)
     // is enforced by the quality gate `validate_patterns_present`, NOT at parse
     // time. This lets `kind = "phase2-generic"` keyword detectors omit patterns
@@ -257,7 +257,7 @@ group = 1
 }
 
 // ===========================================================================
-// SECTION 2: TOML schema — deny_unknown_fields rejects typos / extras
+// SECTION 2: TOML schema, deny_unknown_fields rejects typos / extras
 // ===========================================================================
 
 #[test]
@@ -274,7 +274,7 @@ fn unknown_detector_file_top_level_field_rejected() {
 
 #[test]
 fn unknown_top_level_detector_field_rejected() {
-    // DetectorSpec has #[serde(deny_unknown_fields)] — a typoed field fails.
+    // DetectorSpec has #[serde(deny_unknown_fields)] (a typoed field fails).
     let toml = format!("{VALID_TOML}sevrity = \"low\"\n");
     let err = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
         &keyhog_core::testing::TestApi,
@@ -395,7 +395,7 @@ fn unknown_success_field_rejected() {
 }
 
 // ===========================================================================
-// SECTION 3: TOML schema — type mismatches
+// SECTION 3: TOML schema, type mismatches
 // ===========================================================================
 
 #[test]
@@ -490,7 +490,7 @@ patterns = "demo_[A-Z]{8}"
 }
 
 // ===========================================================================
-// SECTION 4: severity enum — every variant round-trips from its kebab form
+// SECTION 4: severity enum, every variant round-trips from its kebab form
 // ===========================================================================
 
 #[test]
@@ -570,7 +570,7 @@ fn severity_downgrade_one_steps_exactly_one_tier() {
     assert_eq!(Severity::Medium.downgrade_one(), Severity::Low);
     assert_eq!(Severity::Low.downgrade_one(), Severity::ClientSafe);
     assert_eq!(Severity::ClientSafe.downgrade_one(), Severity::Info);
-    // Info is the floor — it stays put.
+    // Info is the floor (it stays put).
     assert_eq!(Severity::Info.downgrade_one(), Severity::Info);
 }
 
@@ -580,7 +580,7 @@ fn severity_default_is_info() {
 }
 
 // ===========================================================================
-// SECTION 5: forward-compat — new optional blocks parse without schema bumps
+// SECTION 5: forward-compat, new optional blocks parse without schema bumps
 // ===========================================================================
 
 #[test]
@@ -616,7 +616,7 @@ fn detector_test_block_both_fields_optional() {
 #[test]
 fn detector_min_confidence_parses_in_unit_range() {
     // min_confidence is a DETECTOR-level field (DetectorSpec), not a per-pattern
-    // field — PatternSpec has deny_unknown_fields and only allows
+    // field: PatternSpec has deny_unknown_fields and only allows
     // regex/description/group/client_safe. It must sit under [detector], before
     // the [[detector.patterns]] array-of-tables table so TOML still scopes it to
     // the detector table.
@@ -688,7 +688,7 @@ group = 1
 }
 
 // ===========================================================================
-// SECTION 6: quality gate — clean detector + error/warning conditions
+// SECTION 6: quality gate, clean detector + error/warning conditions
 // ===========================================================================
 
 #[test]
@@ -743,7 +743,7 @@ fn pure_character_class_pattern_without_group_is_error() {
 
 #[test]
 fn pure_character_class_with_group_is_accepted() {
-    // A capture group rescues a pure char class — no "pure character class" Error.
+    // A capture group rescues a pure char class (no "pure character class" Error).
     let mut d = clean_detector("grouped");
     d.patterns = vec![PatternSpec {
         regex: "[A-Za-z0-9]{32}".into(),
@@ -808,7 +808,7 @@ fn regex_at_exactly_max_len_is_not_too_large() {
 
 #[test]
 fn nested_quantifier_redos_pattern_is_error() {
-    // (a+)+ — classic catastrophic-backtracking ReDoS — must be flagged.
+    // (a+)+ (classic catastrophic-backtracking ReDoS (must be flagged)).
     let mut d = clean_detector("redos");
     d.patterns = vec![PatternSpec {
         regex: "demo_(a+)+".into(),
@@ -889,7 +889,7 @@ fn pattern_no_prefix_no_group_no_keywords_is_warning() {
 }
 
 // ===========================================================================
-// SECTION 7: quality gate — companions
+// SECTION 7: quality gate, companions
 // ===========================================================================
 
 #[test]
@@ -985,7 +985,7 @@ fn companion_broad_regex_no_literal_is_warning() {
 
 #[test]
 fn companion_with_substantial_literal_is_clean() {
-    // "SECRET_KEY" is a >=3-char literal run and not a pure char class — no
+    // "SECRET_KEY" is a >=3-char literal run and not a pure char class, no
     // companion Warning/Error from the gate.
     let mut d = clean_detector("cok");
     d.companions = vec![CompanionSpec {
@@ -1006,7 +1006,7 @@ fn companion_with_substantial_literal_is_clean() {
 }
 
 // ===========================================================================
-// SECTION 8: quality gate — verify spec / URL exfil / OOB consistency
+// SECTION 8: quality gate, verify spec / URL exfil / OOB consistency
 // ===========================================================================
 
 #[test]
@@ -1178,7 +1178,7 @@ fn verify_oob_with_interactsh_token_is_consistent() {
 }
 
 // ===========================================================================
-// SECTION 9: merkle spec-hash — determinism, order-invariance, change-on-edit
+// SECTION 9: merkle spec-hash, determinism, order-invariance, change-on-edit
 // ===========================================================================
 
 #[test]
@@ -1191,7 +1191,7 @@ fn spec_hash_is_deterministic() {
 
 #[test]
 fn spec_hash_empty_set_is_stable() {
-    // Empty detector set hashes the empty key list — stable, and equal across
+    // Empty detector set hashes the empty key list, stable, and equal across
     // calls. (BLAKE3 of nothing-fed is a fixed 32-byte digest.)
     let h1 = compute_spec_hash(&[]);
     let h2 = compute_spec_hash(&[]);
@@ -1266,7 +1266,7 @@ fn spec_hash_changes_when_pattern_regex_changes() {
 
 #[test]
 fn spec_hash_changes_when_pattern_group_changes() {
-    // p:{regex}|g:{group} — None encodes as empty, Some(1) as "1".
+    // p:{regex}|g:{group}: None encodes as empty, Some(1) as "1".
     let a = clean_detector("grp");
     let mut b = a.clone();
     b.patterns[0].group = Some(1);
@@ -1308,7 +1308,7 @@ fn spec_hash_changes_when_companion_added() {
 
 #[test]
 fn spec_hash_changes_when_companion_required_flips() {
-    // c:{name}|{regex}|w:{within_lines}|r:{required} — required is hashed.
+    // c:{name}|{regex}|w:{within_lines}|r:{required} (required is hashed).
     let mut a = clean_detector("creq");
     a.companions.push(CompanionSpec {
         name: "sk".into(),
@@ -1374,7 +1374,7 @@ fn spec_hash_binds_min_confidence_field() {
     // MIGRATION 2026-07-07: `min_confidence` is now a HASHED per-detector knob
     // (merkle_spec_hash emits `mc:{id}:{bits}` when non-default). It overrides a
     // per-detector suppression threshold, so changing it changes WHICH findings a
-    // scan emits — the exact staleness the merkle cache must notice before it
+    // scan emits, the exact staleness the merkle cache must notice before it
     // trusts a "skip this file" (Law 10 silent staleness, same class as the
     // severity/`client_safe` keys). So changing it MUST change the digest. The
     // sibling macro test `spec_hash_binds_min_confidence` in
@@ -1395,7 +1395,7 @@ fn spec_hash_ignores_description_but_binds_client_safe() {
     // `description` is cosmetic and NOT in the per-pattern key → changing it must
     // NOT change the digest. `client_safe` IS folded in (`cs:` in merkle_spec_hash)
     // because toggling it downgrades every match of the pattern to ClientSafe under
-    // `--hide-client-safe` — a material output change that MUST invalidate the cache.
+    // `--hide-client-safe`: a material output change that MUST invalidate the cache.
     let a = clean_detector("pdesc");
 
     let mut desc_only = a.clone();
@@ -1643,7 +1643,7 @@ regex = "rt_[A-Z0-9]{8}"
         // `min_confidence` is now a HASHED knob (migration 2026-07-07), so the
         // hand-built detector must AGREE with the TOML-loaded one, which omits
         // `min_confidence` (=> None). A non-None here would emit an `mc:` key the
-        // TOML side lacks and diverge the digest — that divergence is CORRECT
+        // TOML side lacks and diverge the digest, that divergence is CORRECT
         // (the field is bound), so this test keeps proving equality only across
         // the genuinely non-hashed fields (name/service).
         min_confidence: None,

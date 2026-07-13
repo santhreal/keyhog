@@ -10,6 +10,6 @@ fn inline_migrated_module_registered_in_unit_harness() {
     assert!(
         content.contains("inline_migrated"),
         "KH-GAP-122: tests/unit/inline_migrated/ exists (12 modules) but is not \
-         `pub mod inline_migrated` in tests/unit/mod.rs — migrated bodies are dead"
+         `pub mod inline_migrated` in tests/unit/mod.rs, migrated bodies are dead"
     );
 }

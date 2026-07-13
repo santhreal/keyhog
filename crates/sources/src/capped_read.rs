@@ -17,7 +17,7 @@ pub(crate) struct CappedReadPrefix {
 /// capacity hint cannot force a giant up-front allocation (see the
 /// decompression-bomb tests below). Cloud/web/hosted-git callers that compute a
 /// capacity hint for `read_to_cap` clamp to the SAME ceiling, so this is the
-/// single owner of that 64 KiB value — they reference it instead of pasting
+/// single owner of that 64 KiB value, they reference it instead of pasting
 /// `64 * 1024` inline.
 pub(crate) const MAX_PREALLOCATED_READ_BYTES: u64 = 64 * 1024;
 
@@ -41,9 +41,9 @@ pub(crate) fn read_to_cap_preserving_error(
     cap: u64,
     capacity_hint: Option<u64>,
 ) -> CappedReadPrefix {
-    let read_limit = cap.checked_add(1).unwrap_or(u64::MAX); // LAW10: recall-preserving — u64::MAX has no representable sentinel byte; reading up to the finite reader cap still reads all reachable bytes.
-    let cap_usize = usize::try_from(cap).unwrap_or(usize::MAX); // LAW10: unreachable on real platforms — a Vec length cannot exceed usize::MAX, so larger caps cannot be crossed by an in-memory read result.
-    let max_addressable_capacity = u64::try_from(usize::MAX).unwrap_or(u64::MAX); // LAW10: unreachable on real platforms — only a wider-than-u64 usize target takes this arm, where every u64 capacity hint is addressable.
+    let read_limit = cap.checked_add(1).unwrap_or(u64::MAX); // LAW10: recall-preserving (u64::MAX has no representable sentinel byte; reading up to the finite reader cap still reads all reachable bytes).
+    let cap_usize = usize::try_from(cap).unwrap_or(usize::MAX); // LAW10: unreachable on real platforms (a Vec length cannot exceed usize::MAX, so larger caps cannot be crossed by an in-memory read result).
+    let max_addressable_capacity = u64::try_from(usize::MAX).unwrap_or(u64::MAX); // LAW10: unreachable on real platforms (only a wider-than-u64 usize target takes this arm, where every u64 capacity hint is addressable).
     let capacity = capacity_hint
         .unwrap_or(0) // LAW10: absent capacity hint only disables Vec preallocation; read_limit still enforces the byte cap
         .min(read_limit)
@@ -169,10 +169,10 @@ mod tests {
     // truncation tests above do NOT exercise:
     //   (1) the underlying reader is wrapped in `take(cap + 1)`, so an UNBOUNDED
     //       decompressor (a tiny input that expands without limit) is pulled at
-    //       most `cap + 1` bytes — memory AND CPU stay bounded, no OOM, no hang;
+    //       most `cap + 1` bytes, memory AND CPU stay bounded, no OOM, no hang;
     //   (2) the initial `Vec` preallocation is clamped to `MAX_PREALLOCATED_READ_BYTES`,
     //       so a hostile capacity hint cannot force a giant up-front allocation.
-    // These tests use `std::io::repeat` (a literally infinite stream — a stricter
+    // These tests use `std::io::repeat` (a literally infinite stream, a stricter
     // bomb than any real flate ratio) and instrumented readers to prove both.
 
     use std::cell::Cell;
@@ -180,7 +180,7 @@ mod tests {
     use std::rc::Rc;
 
     /// Wraps a reader and records, into shared cells, how many bytes it has
-    /// delivered and how many times `read` was called — so a test can prove the
+    /// delivered and how many times `read` was called, so a test can prove the
     /// cap bounds the WORK performed, not just the bytes retained.
     struct Counting<R> {
         inner: R,
@@ -211,7 +211,7 @@ mod tests {
         )
     }
 
-    /// An infinite reader that delivers exactly ONE byte per `read` call — a
+    /// An infinite reader that delivers exactly ONE byte per `read` call, a
     /// stand-in for a streaming decompressor that dribbles output. Lets a test
     /// prove the cap bounds the NUMBER of read calls, not just the bytes retained.
     struct DribbleBomb {
@@ -504,7 +504,7 @@ mod tests {
     #[test]
     fn doubly_wrapped_take_still_bounded_by_cap() {
         // A reader already limited by an outer take must still be re-bounded by the
-        // cap, never the larger of the two — the inner cap wins.
+        // cap, never the larger of the two (the inner cap wins).
         let read = read_to_cap(io::repeat(b'w').take(1_000_000), 256, None).expect("read");
         assert_eq!(read.bytes.len(), 256);
         assert!(read.truncated);
@@ -553,7 +553,7 @@ mod tests {
         ///   1. kept length == `min(input_len, cap)`;
         ///   2. `truncated` is set IFF the input strictly exceeded the cap;
         ///   3. the kept bytes are the EXACT `input[..len]` prefix (never reordered
-        ///      or corrupted — a value-integrity guarantee the scanner depends on);
+        ///      or corrupted, a value-integrity guarantee the scanner depends on);
         ///   4. `read_to_cap` and `read_to_cap_preserving_error` agree byte-for-byte
         ///      on the clean path, and the preserving variant fabricates no error
         ///      for an infallible reader (Law 10: no silent divergence between the

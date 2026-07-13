@@ -11,7 +11,7 @@ use keyhog_scanner::testing::shape::{
 
 #[test]
 fn public_evidence_identifier_stays_case_insensitive_after_zero_alloc_rewrite() {
-    // Taxonomy infixes (was upper.contains, now ci_find) — match in ANY case.
+    // Taxonomy infixes (was upper.contains, now ci_find) (match in ANY case).
     assert!(looks_like_public_evidence_identifier(
         "CWE_79-input-validation"
     ));
@@ -23,7 +23,7 @@ fn public_evidence_identifier_stays_case_insensitive_after_zero_alloc_rewrite() 
     // `-ISSUE-` / `_ISSUE_` infix, case-insensitive.
     assert!(looks_like_public_evidence_identifier("project-ISSUE-1024"));
     assert!(looks_like_public_evidence_identifier("project-issue-1024"));
-    // Authority prose markers (was lower.contains, now ci_find) — any case.
+    // Authority prose markers (was lower.contains, now ci_find) (any case).
     assert!(looks_like_public_evidence_identifier(
         "authority-attestation"
     ));
@@ -39,7 +39,7 @@ fn public_evidence_identifier_stays_case_insensitive_after_zero_alloc_rewrite() 
         "issuetracker-onlypage"
     ));
     assert!(!looks_like_public_evidence_identifier("plainrandomtoken"));
-    // Contains a space (outside [A-Za-z0-9_-.:/=]) — rejected by the guard.
+    // Contains a space (outside [A-Za-z0-9_-.:/=]) (rejected by the guard).
     assert!(!looks_like_public_evidence_identifier(
         "CWE_79 input validation"
     ));
@@ -49,8 +49,8 @@ fn public_evidence_identifier_stays_case_insensitive_after_zero_alloc_rewrite() 
 
 #[test]
 fn public_evidence_crypto_and_fixture_subshapes_stay_case_insensitive() {
-    // Password-KDF algorithm names (crypto arm, now eq_ignore_ascii_case — was
-    // to_ascii_lowercase) — match in any case, exact (not substring).
+    // Password-KDF algorithm names (crypto arm, now eq_ignore_ascii_case, was
+    // to_ascii_lowercase) (match in any case, exact (not substring)).
     assert!(looks_like_public_evidence_identifier("argon2id"));
     assert!(looks_like_public_evidence_identifier("Argon2"));
     assert!(looks_like_public_evidence_identifier("BCRYPT"));
@@ -60,7 +60,7 @@ fn public_evidence_crypto_and_fixture_subshapes_stay_case_insensitive() {
     assert!(!looks_like_public_evidence_identifier("sha256")); // a digest, not a KDF
 
     // `<PREFIX>-…-fixture` provenance labels (fixture arm, now
-    // ends_with_ignore_ascii_case for the suffix — body parts still lowercase).
+    // ends_with_ignore_ascii_case for the suffix (body parts still lowercase)).
     assert!(looks_like_public_evidence_identifier("AB7-foo-fixture"));
     assert!(looks_like_public_evidence_identifier("X9-bar-baz-fixture"));
     // Prefix must be uppercase-led + carry a digit; a lowercase prefix fails.
@@ -79,7 +79,7 @@ fn dotted_source_identifier_stays_case_insensitive_after_zero_alloc_rewrite() {
     assert!(looks_like_dotted_source_identifier("PROCESS.env"));
 
     // Non-receiver path: needs BOTH a camelCase segment AND a credential word
-    // (now via ci_find, case-insensitive) — uppercase keyword still matches.
+    // (now via ci_find, case-insensitive) (uppercase keyword still matches).
     assert!(looks_like_dotted_source_identifier("svc.getSecretKey"));
     assert!(looks_like_dotted_source_identifier("auth.parseTOKENvalue"));
 

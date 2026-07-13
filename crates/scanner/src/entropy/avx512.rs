@@ -7,7 +7,7 @@
 //! The byte-tally pass is a multi-stream scalar histogram (manual ILP, not a
 //! vector gather), shared with every other path via
 //! [`crate::entropy::fast::histogram_8way`]. The 256-bin entropy reduction is
-//! the shared exact [`crate::entropy::fast::entropy_from_histogram`] — counting
+//! the shared exact [`crate::entropy::fast::entropy_from_histogram`], counting
 //! is the memory-bound part, so the reduction is negligible work and is kept
 //! bit-identical across all ISA paths rather than re-derived with a vectorized
 //! polynomial `log2` (which diverged from the scalar reference by ~5e-3
@@ -64,7 +64,7 @@ pub(crate) unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
     }
 
     // The byte tally and the null-byte contract live in the shared
-    // `histogram_8way` (8 independent scalar accumulators — counting is
+    // `histogram_8way` (8 independent scalar accumulators, counting is
     // memory-bound, so there is no AVX-512 histogram to win here); the 256-bin
     // entropy reduction is the shared exact `entropy_from_histogram`.
     let (counts, active_len) = crate::entropy::fast::histogram_8way(chunk);

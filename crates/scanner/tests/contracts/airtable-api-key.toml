@@ -20,7 +20,7 @@ reason = "Body shorter than 64 hex chars."
 [[evasion]]
 text = "Authorization: Bearer pat9X3kQp7VbT2hYR.9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
 credential = "pat9X3kQp7VbT2hYR.9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
-reason = "Bearer header — Airtable API auth shape."
+reason = "Bearer header: Airtable API auth shape."
 
 [perf]
 fixture_bytes = 4096

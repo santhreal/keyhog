@@ -2,7 +2,7 @@
 //! to keep that file under the standard 500-LOC cap.
 //!
 //! MEASUREMENT (`keyhog scan --profile`): per-`scan_inner` `prepare_chunk`
-//! (preprocessing) + phase-1 (`collect_triggered_patterns`) overhead — the part
+//! (preprocessing) + phase-1 (`collect_triggered_patterns`) overhead, the part
 //! the phase-2 profiler does NOT capture, paid once per chunk incl. every decode
 //! sub-chunk. `scan_inner_profile_dump()` prints + resets. Zero-cost unset.
 

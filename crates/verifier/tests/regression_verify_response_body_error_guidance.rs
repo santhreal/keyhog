@@ -169,7 +169,7 @@ fn every_actionable_reason_has_exactly_one_fix_marker() {
 #[test]
 fn no_actionable_reason_is_a_security_refusal() {
     // Security refusals (`blocked: private URL`) are deliberately terse and are
-    // NOT in this actionable family — guard against mixing the categories.
+    // NOT in this actionable family (guard against mixing the categories).
     for msg in ALL_ACTIONABLE {
         assert!(
             !msg.starts_with("blocked:"),

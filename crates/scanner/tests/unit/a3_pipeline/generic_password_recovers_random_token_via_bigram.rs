@@ -4,7 +4,7 @@ use keyhog_scanner::testing::named_detector_suppressed;
 // KH-L-0414: the post-process weak-anchor suppressor
 // (`suppress_named_detector_finding`) applied the SAME
 // `looks_like_pure_identifier` / `looks_like_word_separated_identifier` Tier-B
-// gates that KH-L-0413 lifted on the scan-time generic bridge — so a real random
+// gates that KH-L-0413 lifted on the scan-time generic bridge, so a real random
 // password a generic-* / entropy-* / weakly-anchored named detector flagged was
 // still dropped here as an "identifier". Both call sites now share
 // `token_randomness::keep_identifier_gate`, so the discriminator agrees on both
@@ -50,7 +50,7 @@ fn lowercase_word_separated_random_password_recovered() {
                 None,
                 "generic-secret",
             ),
-            "lowercase word-separated random password {val:?} must be recovered — \
+            "lowercase word-separated random password {val:?} must be recovered. \
              it is the clean all-lowercase shape the discriminator trusts (KH-L-0414)"
         );
     }
@@ -62,7 +62,7 @@ fn word_separated_acronym_identifier_stays_suppressed() {
     // multi-segment programmer identifiers built from acronym fragments score as
     // "random" (`d2i_PKCS7_bio` −7.88, `curlx_memdup0` −7.09, both below the
     // −6.85 threshold) even though they are code, NOT secrets. KH-L-0414
-    // therefore leaves `looks_like_word_separated_identifier` UNCONDITIONAL —
+    // therefore leaves `looks_like_word_separated_identifier` UNCONDITIONAL 
     // these must stay suppressed despite the misleading randomness score.
     for val in ["d2i_PKCS7_bio", "curlx_memdup0", "s3_secret_access_key"] {
         assert!(
@@ -73,7 +73,7 @@ fn word_separated_acronym_identifier_stays_suppressed() {
                 None,
                 "generic-secret",
             ),
-            "word-separated acronym identifier {val:?} must stay suppressed — the \
+            "word-separated acronym identifier {val:?} must stay suppressed, the \
              English bigram model mis-scores its acronyms as random, so this gate \
              is deliberately NOT discriminator-conditioned (KH-L-0414)"
         );
@@ -84,7 +84,7 @@ fn word_separated_acronym_identifier_stays_suppressed() {
 fn low_diversity_patterns_stay_suppressed() {
     // KH-L-0418 soundness guard: a repetitive / alternating PATTERN has
     // improbable English bigrams (it passes the log-prob threshold) but is NOT a
-    // random token. `xzxzxzxz` is the worst case — 2 distinct letters,
+    // random token. `xzxzxzxz` is the worst case: 2 distinct letters,
     // alphanumeric, no 3-consecutive run, so the decision.rs repetitive/symbolic
     // gates miss it; only the distinct-letter guard in `is_random_token` keeps it
     // suppressed (it must read as an identifier, not get lifted as a secret).
@@ -97,7 +97,7 @@ fn low_diversity_patterns_stay_suppressed() {
                 None,
                 "generic-secret",
             ),
-            "low-diversity pattern {val:?} must stay suppressed — it is a \
+            "low-diversity pattern {val:?} must stay suppressed, it is a \
              repetitive pattern, not a random secret (KH-L-0418 diversity guard)"
         );
     }
@@ -106,7 +106,7 @@ fn low_diversity_patterns_stay_suppressed() {
 #[test]
 fn dictionary_identifier_still_suppressed() {
     // Negative twin: pronounceable code references of the SAME shape must STILL
-    // suppress — the discriminator scores them as dictionary (high bigram
+    // suppress, the discriminator scores them as dictionary (high bigram
     // probability), so the identifier gate keeps firing. Lifting these is the
     // +3554-FP class the unconditional lift caused (KH-L-0413).
     for (val, detector) in [
@@ -123,7 +123,7 @@ fn dictionary_identifier_still_suppressed() {
                 None,
                 detector,
             ),
-            "dictionary identifier {val:?} (pronounceable) must stay suppressed — \
+            "dictionary identifier {val:?} (pronounceable) must stay suppressed. \
              it is a code reference, not a secret (KH-L-0414 negative twin)"
         );
     }

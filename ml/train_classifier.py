@@ -156,7 +156,7 @@ def _fit(X, y, tr, va, num_features, epochs, seed):
 
 def train(X, y, num_features, epochs, seed, kinds):
     """Synthetic-only training: random 85/15 split, report on the held-out 15%.
-    Unchanged behaviour — the blended real-distribution path is `train_blended`."""
+    Unchanged behaviour, the blended real-distribution path is `train_blended`."""
     import torch
 
     rng = np.random.default_rng(seed)
@@ -206,14 +206,14 @@ def _required_real_corpus_field(path, line_no, record, field):
 
 def _group_split(files, seed, fracs=(0.70, 0.15, 0.15)):
     """Partition record indices into (train, val, test) by GROUPING on file so a
-    file's records never span splits — the only honest way to measure
+    file's records never span splits, the only honest way to measure
     generalisation to unseen real files (a random split would leak a repo's
     secrets across train and test)."""
     rng = np.random.default_rng(seed)
     uniq = sorted(set(files))
     rng.shuffle(uniq)
     # Contract fixtures (source_file="contract:<det>") are a FIXED known-positive
-    # set the scanner MUST catch — the standalone contract gate tests the full suite, so
+    # set the scanner MUST catch, the standalone contract gate tests the full suite, so
     # they are a memorization requirement, NOT a generalization target. They
     # always train and never enter the held-out; only real-distribution
     # (CredData/homefield) files are split, keeping the held-out recall gate an
@@ -275,7 +275,7 @@ def per_class_eval(probs, labels, kinds, thr=0.5, floor=REAL_RECALL_FLOOR):
 
 def real_eval(probs, labels, classes, detectors=None, thr=0.5):
     """Held-out real-distribution metrics. The headline is recall on real
-    positives clearing the 0.40 report floor — the number the synthetic-only
+    positives clearing the 0.40 report floor, the number the synthetic-only
     model failed (it scored real ambiguous secrets ~0.02)."""
     f1, prec, rec = prf(probs, labels, thr)
     pos = [float(probs[i]) for i, l in enumerate(labels) if l >= 0.5]

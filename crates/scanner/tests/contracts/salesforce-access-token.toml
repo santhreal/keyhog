@@ -15,16 +15,16 @@ reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
 text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "00Dl9EXAMPLEEXAMPLEMXdxB"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "Authorization: Bearer token=\"00Dl9EknYBnvVPAD5pXo5!tqBk6FKee.qQU89ru6oLQ2bJPgvjXk1.gKc4VP7pwxJAhDxk0hQ4WkRQRnOTvzj2R040Zk18jojez.HumrM7hrkdRMU0sSHMXdxB\""
 credential = "00Dl9EknYBnvVPAD5pXo5!tqBk6FKee.qQU89ru6oLQ2bJPgvjXk1.gKc4VP7pwxJAhDxk0hQ4WkRQRnOTvzj2R040Zk18jojez.HumrM7hrkdRMU0sSHMXdxB"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

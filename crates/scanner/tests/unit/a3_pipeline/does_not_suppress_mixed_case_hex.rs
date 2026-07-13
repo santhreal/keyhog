@@ -22,7 +22,7 @@ fn mixed_case_hex_not_hash_digest() {
 }
 
 /// Negative twin: a mixed-case hex value that is ALSO a monotonic ascending
-/// sequence IS suppressed — not as a hash digest (it's mixed-case) but as an
+/// sequence IS suppressed, not as a hash digest (it's mixed-case) but as an
 /// `algorithmic_placeholder` by `is_hex_sequential_placeholder`. This documents
 /// that the two gates are independent: case-mixing escapes the digest gate, but
 /// not the sequential-placeholder gate.

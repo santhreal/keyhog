@@ -1,6 +1,6 @@
 """Perf-only corpus: a large real source tree (the Linux kernel).
 
-No labels — scored on wall time, throughput, and peak RSS alone. This is the
+No labels, scored on wall time, throughput, and peak RSS alone. This is the
 "never wait for something" target: keyhog must scan the whole kernel
 faster than any competitor, and the backend×cache×daemon×mode matrix is
 measured here.

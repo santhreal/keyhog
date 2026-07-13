@@ -1,6 +1,6 @@
 //! Regression: `keyhog scan --format sarif --output <file>` writes a COMPLETE,
-//! GitHub-code-scanning-valid SARIF 2.1.0 document to the named file — the exact
-//! same bytes the identical scan prints to stdout — without changing the process
+//! GitHub-code-scanning-valid SARIF 2.1.0 document to the named file, the exact
+//! same bytes the identical scan prints to stdout, without changing the process
 //! exit code, and fails closed on an unwritable path.
 //!
 //! This is the SARIF-SPECIFIC output-file contract. `regression_cli_output_file`
@@ -14,7 +14,7 @@
 //!     `tool.driver.rules[]` (GitHub silently drops an unresolved ruleId);
 //!   * `results[0].level` == `error` (critical severity);
 //!   * `partialFingerprints["keyhog/credentialHash/v1"]` == the exact credential
-//!     hash — the cross-run dedup identity (project self-scan suppression key);
+//!     hash, the cross-run dedup identity (project self-scan suppression key);
 //!   * the SARIF written to the file parses to the SAME serde_json Value as the
 //!     SARIF the same scan prints to stdout (the file must not alter content);
 //!   * the finding exit code (1) is UNCHANGED by `--output`;
@@ -32,7 +32,7 @@
 //! literal-anchored detectors that fire on the scalar/CPU path, so this runs
 //! with `--backend cpu` + `KEYHOG_NO_GPU=1` and never assumes an accelerator.
 //! Every assert pins a concrete value (exact string / hash / count / exit code /
-//! JSON Value) — never a bare `!is_empty` / `is_ok`.
+//! JSON Value) (never a bare `!is_empty` / `is_ok`).
 
 #![cfg(unix)]
 
@@ -46,7 +46,7 @@ use tempfile::TempDir;
 const PAT: &str = concat!("ghp_", "1234567890123456789012345678902PDSiF");
 /// The detector id (== SARIF ruleId) the planted PAT must carry.
 const PAT_DETECTOR: &str = "github-classic-pat";
-/// The exact hex credential hash for `PAT` — the value carried under the
+/// The exact hex credential hash for `PAT`: the value carried under the
 /// `partialFingerprints` key, and the stable identity GitHub dedups alerts on.
 const PAT_HASH: &str = "7b85310a29300230c865bc48ca1836f15b81bd50ac85e8c0785e8145e98ff175";
 /// The exact SARIF `partialFingerprints` key the reporter emits (versioned).
@@ -65,7 +65,7 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// A tempdir with `dump.txt` carrying a single bare planted PAT — one finding.
+/// A tempdir with `dump.txt` carrying a single bare planted PAT (one finding).
 fn leak_fixture() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("dump.txt");
@@ -73,7 +73,7 @@ fn leak_fixture() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-/// A tempdir with a file that carries no credential-shaped content — zero
+/// A tempdir with a file that carries no credential-shaped content, zero
 /// findings.
 fn clean_fixture() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
@@ -182,7 +182,7 @@ fn sarif_output_file_driver_metadata_is_exact() {
         Some(INFO_URI),
         "tool.driver.informationUri must be the canonical repo URL"
     );
-    // A version string like `1.2.3` — at least one dot, all-numeric-or-dot.
+    // A version string like `1.2.3`: at least one dot, all-numeric-or-dot.
     let ver = v
         .pointer("/runs/0/tool/driver/version")
         .and_then(|x| x.as_str())
@@ -253,7 +253,7 @@ fn sarif_output_file_critical_level_is_error() {
 }
 
 /// `partialFingerprints` in the file carries the exact credential hash under the
-/// versioned key — the cross-run dedup identity.
+/// versioned key (the cross-run dedup identity).
 #[test]
 fn sarif_output_file_partial_fingerprint_is_exact_hash() {
     let (_dir, target) = leak_fixture();
@@ -273,7 +273,7 @@ fn sarif_output_file_partial_fingerprint_is_exact_hash() {
         Some(PAT_HASH),
         "partialFingerprints[{FP_KEY}] must be the exact credential hash; got {fps:?}"
     );
-    // No stray/extra fingerprint keys — exactly one identity entry.
+    // No stray/extra fingerprint keys (exactly one identity entry).
     assert_eq!(
         fps.len(),
         1,
@@ -329,7 +329,7 @@ fn sarif_output_file_rule_has_security_severity_metadata() {
 // ---------------------------------------------------------------------------
 
 /// The SARIF written to `--output` parses to the SAME serde_json Value as the
-/// identical scan printed to stdout — the file path must not alter content.
+/// identical scan printed to stdout (the file path must not alter content).
 #[test]
 fn sarif_output_file_value_equals_stdout_value() {
     let (_dir, target) = leak_fixture();
@@ -573,8 +573,8 @@ fn sarif_output_atomically_replaces_existing_file() {
 // Bad output path fails closed
 // ---------------------------------------------------------------------------
 
-/// An unwritable SARIF output path — an intermediate component that is a regular
-/// FILE, so the parent directory cannot be created — fails with the actionable
+/// An unwritable SARIF output path, an intermediate component that is a regular
+/// FILE, so the parent directory cannot be created, fails with the actionable
 /// "atomically writing report" context, exit 2 (EXIT_USER_ERROR), writes NO
 /// output file, and leaks NO SARIF to stdout.
 #[test]

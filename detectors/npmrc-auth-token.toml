@@ -26,7 +26,7 @@ min_confidence = 0.2
 # Capture ONLY the token (group 1), never the `//host/:` registry prefix. The
 # value class spans the full token alphabet (base64 incl. `=` padding, plus the
 # `._~-` used by `npm_`/`NpmToken.`/`glpat-` shapes). The `{8,}` floor and the
-# class — which excludes `$ { } < >` — reject `_authToken=${NPM_TOKEN}`
+# class: which excludes `$ { } < >`: reject `_authToken=${NPM_TOKEN}`
 # templates and empty/placeholder slots.
 [[detector.patterns]]
 regex = '_authToken\s*=\s*([A-Za-z0-9._+/=~-]{8,})'

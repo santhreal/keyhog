@@ -2,19 +2,19 @@
 //! the decode pipeline (`crates/scanner/src/decode/pipeline.rs`) and the full
 //! scan post-process (`engine/scan_postprocess.rs`).
 //!
-//! Contract under test — every assertion pins a CONCRETE value (exact decoded
+//! Contract under test, every assertion pins a CONCRETE value (exact decoded
 //! bytes, exact detector id, exact credential string, exact finding count,
 //! exact "no-decode" empty set):
 //!   * A single base64 layer over a secret is peeled and the EXACT plaintext
 //!     bytes are recovered (`base64(secret)` -> `secret`).
 //!   * A DOUBLE-wrapped secret `base64(base64(secret))` is recovered at decode
-//!     DEPTH 2 — both the intermediate encoding AND the innermost plaintext
+//!     DEPTH 2, both the intermediate encoding AND the innermost plaintext
 //!     appear in the decoded set.
 //!   * The depth cap is a hard `depth >= max_depth { continue }` bound: with a
 //!     budget of 1 the double-wrapped secret is NOT recovered (only the
 //!     intermediate layer surfaces); a triple wrap needs depth 3, not 2.
 //!   * A too-deep wrap (more layers than the budget) is NOT infinitely recursed
-//!     — the call returns promptly without panicking and does NOT surface the
+//!, the call returns promptly without panicking and does NOT surface the
 //!     base payload.
 //!   * `max_depth == 0` performs NO decode at all (the fast-preset contract).
 //!   * End to end, a nested-base64-wrapped AWS access key is recovered by the
@@ -129,7 +129,7 @@ fn single_layer_recovers_exact_secret_bytes() {
 fn depth1_cap_stops_before_double_wrapped_secret() {
     // Negative twin of the depth-2 recovery: base64(base64(secret)) with a
     // budget of 1 peels exactly ONE layer. The intermediate encoding surfaces,
-    // the innermost plaintext does NOT — the `depth >= max_depth` guard stops
+    // the innermost plaintext does NOT, the `depth >= max_depth` guard stops
     // the second peel.
     let e1 = nest(SECRET, 1);
     let e2 = nest(SECRET, 2);
@@ -204,7 +204,7 @@ fn max_depth_zero_performs_no_decode() {
 #[test]
 fn overdeep_wrap_is_capped_no_panic_and_secret_absent() {
     // Adversarial: 12 base64 layers with a budget of 3 must NOT recurse forever.
-    // The call returns (no panic — reaching the assertions proves it), promptly,
+    // The call returns (no panic, reaching the assertions proves it), promptly,
     // and the deeply-buried secret never surfaces past the cap.
     let bomb = nest(SECRET, 12);
     let start = Instant::now();
@@ -365,7 +365,7 @@ fn scan_depth2_config_recovers_double_wrapped() {
 fn scan_corrupted_inner_layer_does_not_surface_real_secret() {
     // Adversarial: base64 wrap whose INNER layer is corrupted (one base64 char
     // flipped) must NOT reconstruct the real AKIA secret. The outer layer still
-    // decodes, but the inner bytes are garbage — decode-through must not
+    // decodes, but the inner bytes are garbage, decode-through must not
     // hallucinate the plaintext, and must not panic.
     let e1 = nest(SECRET, 1);
     let mut chars: Vec<char> = e1.chars().collect();

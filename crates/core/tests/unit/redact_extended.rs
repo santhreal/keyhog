@@ -74,7 +74,7 @@ fn redact_preserves_first_four_and_last_four() {
 
 #[test]
 fn redact_utf8_short_returns_stars() {
-    // "café" = 4 graphemes but 5 bytes — still ≤ 8 chars → "****"
+    // "café" = 4 graphemes but 5 bytes, still ≤ 8 chars → "****"
     assert_eq!(redact("café"), "****");
 }
 
@@ -90,7 +90,7 @@ fn redact_utf8_nine_graphemes_reveals_edges() {
 
 #[test]
 fn redact_multibyte_char_boundary_safe() {
-    // 20 CJK characters — each is 3 bytes. The fast path only applies to ASCII;
+    // 20 CJK characters, each is 3 bytes. The fast path only applies to ASCII;
     // this exercises the char-count slow path.
     let secret = "一二三四五六七八九十一二三四五六七八九十";
     let result = redact(secret);

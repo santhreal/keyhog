@@ -4,7 +4,7 @@
 //! The gate was an `O(prefixes × |variant|)` fan of `str::contains` calls; it is
 //! now a single linear Aho-Corasick pass (`PLAIN_PREFIX_AC.is_match`). An AC
 //! `is_match` is an unanchored substring test, so it MUST agree with the naive
-//! `any(|p| variant.contains(p))` on every input — this suite pins that
+//! `any(|p| variant.contains(p))` on every input, this suite pins that
 //! equivalence (Law 6: the optimization changes cost, never behavior) plus the
 //! obvious positive/negative anchors. If the two ever diverge (e.g. a prefix
 //! with an internal overlap the AC handles differently), these fail LOUDLY.
@@ -59,7 +59,7 @@ proptest! {
     }
 
     /// The AC gate agrees with the naive scan on input built from the credential
-    /// alphabet (letters/digits/`_`/`-`), where real prefixes actually live —
+    /// alphabet (letters/digits/`_`/`-`), where real prefixes actually live 
     /// this stresses genuine overlaps, not just random Unicode that never hits a
     /// prefix.
     #[test]

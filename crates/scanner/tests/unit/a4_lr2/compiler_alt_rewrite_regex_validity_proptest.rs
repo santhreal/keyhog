@@ -1,7 +1,7 @@
 //! Property invariant for the alternation-prefix rewriter
 //! (`compiler_build::rewrite_alternation_prefix`, the fn whose leading-group
 //! close-finder was hardened for escaped and char-class parens): given a VALID
-//! base regex, the rewrite must NEVER emit a MALFORMED one — it either declines
+//! base regex, the rewrite must NEVER emit a MALFORMED one, it either declines
 //! (`None`) or returns a regex that still compiles.
 //!
 //! This is the exact failure the naive paren scanner produced: `(?:a|b\)c)x`
@@ -17,7 +17,7 @@ use proptest::prelude::*;
 /// Valid regex FRAGMENTS (each compiles standalone and stays balanced), chosen
 /// to stress exactly the escape / char-class handling the close-finder depends
 /// on. Concatenating any sequence yields a valid regex body, so the assembled
-/// `(?:gh<filler>|other)tail` base is always compilable — isolating the rewrite
+/// `(?:gh<filler>|other)tail` base is always compilable, isolating the rewrite
 /// as the only thing that could introduce malformation.
 const FRAGMENTS: &[&str] = &[
     "a", "b", "0", "\\)", "\\(", "[()]", "[a-z]", "-", "_", "\\|",
@@ -28,7 +28,7 @@ proptest! {
 
     /// A valid base regex whose leading `(?:…)` alternation has a branch starting
     /// with the known prefix `gh` must rewrite to a regex that STILL compiles (or
-    /// to `None`) — for every adversarial filler between the prefix and the group
+    /// to `None`), for every adversarial filler between the prefix and the group
     /// close. A `Some` carrying a regex that fails to compile is precisely the
     /// defect the escape/class-aware close-finder fixed.
     #[test]

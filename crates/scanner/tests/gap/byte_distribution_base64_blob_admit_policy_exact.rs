@@ -2,12 +2,12 @@
 //!
 //! `is_byte_distribution_base64_blob` powers the emit-DROP decoy paths
 //! (`looks_like_entropy_random_base64_blob_decoy` / `..generic..`). Unlike its
-//! penalty-path sibling, it must NOT bite real provider tokens — those are pure
+//! penalty-path sibling, it must NOT bite real provider tokens, those are pure
 //! base62 (no `+/`, no padding) or carry at most one punctuation mark. So it
 //! admits ONLY a genuine byte-distribution signal: both `+` and `/`, or padding
 //! with one of them. A uniform random-byte payload almost always produces both;
 //! a single-punctuation secret key never should be dropped. This gate had zero
-//! direct coverage — pin its exact admit/reject decisions.
+//! direct coverage (pin its exact admit/reject decisions).
 
 use keyhog_scanner::testing::is_byte_distribution_base64_blob_for_test as admits;
 
@@ -82,7 +82,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(4_000))]
 
     /// PRECISION JEWEL: a pure base62 blob (`[A-Za-z0-9]`, no `+`/`/`, no padding)
-    /// carries NO byte-distribution signal, so it must NEVER be admitted — the
+    /// carries NO byte-distribution signal, so it must NEVER be admitted, the
     /// admit clause needs `+`&`/` or padding+one, none of which a base62 provider
     /// token has. A regression here would silently DROP real base62-shaped keys.
     /// Holds for any in-band length and either reject path (structural OR clause).
@@ -95,7 +95,7 @@ proptest! {
 
     /// A single url-safe char (`-`/`_`) makes `standard_base64_shape` return
     /// `None` (`has_urlsafe` short-circuit), so the gate cannot fire on a
-    /// non-standard alphabet — a url-safe-encoded secret is never dropped here.
+    /// non-standard alphabet (a url-safe-encoded secret is never dropped here).
     #[test]
     fn url_safe_alphabet_blobs_are_never_admitted(
         rest in "[A-Za-z0-9+/]{20,80}",

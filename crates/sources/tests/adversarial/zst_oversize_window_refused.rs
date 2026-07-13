@@ -6,10 +6,10 @@
 //!
 //! The two legs scan the SAME `.zst` file and differ only in `max_file_size`
 //! (which sets the 4× decompression budget, and hence the window cap):
-//!   * control (budget ≫ window): the frame decodes and the secret is found —
+//!   * control (budget ≫ window): the frame decodes and the secret is found 
 //!     proving the cap never rejects a legitimately-sized frame;
 //!   * guard   (budget < window): the frame is refused and the secret is NOT
-//!     found — proving the oversize window is rejected rather than allocated.
+//!     found (proving the oversize window is rejected rather than allocated).
 //! The secret sits on the FIRST line, so a "not found" in the guard leg can only
 //! mean the frame was refused (a mere output-budget truncation would still keep
 //! the head where the secret lives).
@@ -66,7 +66,7 @@ fn zst_oversize_window_is_refused_under_small_budget() {
     assert!(
         control_found_secret,
         "control: a frame whose window fits the budget must decode and surface \
-         the secret — the window cap must not reject legitimately-sized frames"
+         the secret, the window cap must not reject legitimately-sized frames"
     );
     assert!(
         control_errors.is_empty(),

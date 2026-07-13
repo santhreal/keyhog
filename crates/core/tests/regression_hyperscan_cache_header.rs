@@ -158,7 +158,7 @@ fn cache_filename_composes_exact_prefix_and_suffix() {
     assert_eq!(hyperscan_cache_filename(""), "hs-.db");
     // A realistic sha256-shaped shard key round-trips: the writer name carries
     // the hardening-recognised affixes, and stripping them recovers the key
-    // exactly — the property the lockdown gate relies on.
+    // exactly (the property the lockdown gate relies on).
     let key = "0a1b2c3d4e5f60718293a4b5c6d7e8f9";
     let name = hyperscan_cache_filename(key);
     assert!(

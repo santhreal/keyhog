@@ -49,7 +49,7 @@ struct ServiceEnvFile {
 /// before broader substrings they could otherwise shadow.
 ///
 /// The map is `include_str!`d at compile time, so an invalid document is a BUILD
-/// bug, never a runtime/user condition — identical to `REMEDIATION_MAP`. Failing
+/// bug, never a runtime/user condition, identical to `REMEDIATION_MAP`. Failing
 /// loud (panic in the initializer) is the fail-closed response; degrading to the
 /// screaming-snake derivation would silently ship wrong fix advice (Law 10).
 #[allow(clippy::panic)]
@@ -177,7 +177,7 @@ static REMEDIATION_MAP: LazyLock<RemediationFile> =
 /// The per-severity remediation fallback, resolved once into a rank-indexed total
 /// array. `REMEDIATION_MAP`'s initializer runs `validate_severity_remediation`,
 /// which fails the (compile-time-embedded) load unless every `Severity::ORDERED`
-/// carries a `[[severity]]` entry — so every slot is populated. Resolving it here
+/// carries a `[[severity]]` entry, so every slot is populated. Resolving it here
 /// lets `remediation_for` do an infallible `[rank]` index instead of a fallible
 /// `find(...).expect(...)` on a value the load-time invariant already guarantees.
 static SEVERITY_FALLBACKS: LazyLock<[RemediationFields; Severity::ORDERED.len()]> =
@@ -193,11 +193,11 @@ static SEVERITY_FALLBACKS: LazyLock<[RemediationFields; Severity::ORDERED.len()]
                 Some(entry) => entry.fields.clone(),
                 // Unreachable: REMEDIATION_MAP's initializer enforces the
                 // completeness invariant (it panics on a missing severity). A loud
-                // sentinel — never a silent/empty value — keeps a hypothetical
+                // sentinel, never a silent/empty value, keeps a hypothetical
                 // invariant break visible rather than fail-silent (Law 10).
                 None => RemediationFields {
                     action: format!(
-                        "(internal) remediation map is missing a {} fallback — rebuild keyhog",
+                        "(internal) remediation map is missing a {} fallback, rebuild keyhog",
                         severity.as_str()
                     ),
                     revoke_url: None,
@@ -456,7 +456,7 @@ pub(crate) fn env_var_name_for_service(service: &str) -> String {
         .iter()
         .find(|entry| service_entry_matches(service, &entry.needle, entry.prefix))
         .map(|entry| entry.env.clone())
-        // The default below is not an error fallback — it is the documented
+        // The default below is not an error fallback, it is the documented
         // `<SERVICE>_KEY` mapping for any service the curated Tier-B map does not
         // cover, always producing a deterministic, correct suggestion.
         .unwrap_or_else(|| service_to_screaming_snake(service)) // LAW10: documented default, not a failure path

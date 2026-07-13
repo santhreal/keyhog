@@ -1,6 +1,6 @@
 //! Corpus-wide finding WELL-FORMEDNESS invariants (#177/#185). Independent of
-//! WHICH detector fires: EVERY finding the scanner emits — across the whole
-//! ~900-detector corpus — must be structurally valid. A malformed finding
+//! WHICH detector fires: EVERY finding the scanner emits, across the whole
+//! ~900-detector corpus, must be structurally valid. A malformed finding
 //! (empty service, bogus severity, offset that doesn't point at the credential)
 //! is a reporter/SARIF corruption bug. This generates an example per Regex
 //! detector and asserts the invariants on every resulting finding. ML-
@@ -74,7 +74,7 @@ fn every_corpus_finding_is_well_formed() {
                 "empty detector_id on {example:?}"
             );
             // The reported byte offset must point AT the recovered credential in
-            // the input — a wrong offset misreports the leak site. Scoped to
+            // the input, a wrong offset misreports the leak site. Scoped to
             // ASCII examples: unicode-hardening normalizes whitespace/homoglyphs
             // before matching, which legitimately shifts offsets out of raw-input
             // space (tracked separately as the offset-under-normalization finding).

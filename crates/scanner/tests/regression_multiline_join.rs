@@ -6,19 +6,19 @@
 //! trailing-operator continuation, so the scanner sees the whole credential as
 //! one contiguous span. This file pins the JOIN behaviour end to end:
 //!
-//!   * POSITIVE — a `"AKIA" +` / `"ghp_" .` fragment continued on the next line
+//!   * POSITIVE, a `"AKIA" +` / `"ghp_" .` fragment continued on the next line
 //!     reassembles into the EXACT credential bytes, appended after the untouched
 //!     original body, with `original_end` always equal to the input length.
-//!   * NEGATIVE TWIN — ordinary two-line prose, an unquoted arithmetic `+`, a
+//!   * NEGATIVE TWIN, ordinary two-line prose, an unquoted arithmetic `+`, a
 //!     `.` member access, and a base64 value whose alphabet contains `+`/`.`
 //!     INSIDE a quoted literal are NOT falsely joined (no synthetic candidate).
-//!   * BOUNDARY — `MultilineConfig::max_join_lines` is the join window: a chain
+//!   * BOUNDARY: `MultilineConfig::max_join_lines` is the join window: a chain
 //!     that fits reassembles the whole key; one line past the window truncates
 //!     the join; a window of 1 disables joining entirely.
 //!
 //! HOST-INDEPENDENCE: every function under test is a pure CPU string transform
 //! (no Hyperscan / SIMD / GPU on this path), so these assertions hold
-//! byte-identically on every host — there is no accelerator to be absent.
+//! byte-identically on every host (there is no accelerator to be absent).
 //!
 //! Source under test:
 //!   * crates/scanner/src/multiline/preprocessor.rs
@@ -74,7 +74,7 @@ fn plus_split_two_lines_reassembles_exact_appended_bytes() {
 #[test]
 fn js_object_literal_opening_brace_still_reassembles_split_secret() {
     // Opens with `{` exactly like a JSON config would, but is JS (unquoted key,
-    // `+` concatenation) — precisely the case the first-byte heuristic dropped.
+    // `+` concatenation) (precisely the case the first-byte heuristic dropped).
     let js = "{ token: \"ghp_\" +\n\"abcdef0123456789abcdef01\" }";
     assert!(
         has_concatenation_indicators_for_test(js),
@@ -99,7 +99,7 @@ fn js_object_literal_opening_brace_still_reassembles_split_secret() {
 }
 
 /// Adversarial twin: a buffer that opens with `{` and IS strict JSON (quoted
-/// key, no concat) must still be rejected — the structural discriminator skips
+/// key, no concat) must still be rejected, the structural discriminator skips
 /// genuine JSON data, so the fix does not start preprocessing real config files.
 #[test]
 fn strict_json_object_opening_brace_is_still_rejected() {
@@ -147,7 +147,7 @@ fn plus_extractor_two_literal_join_single_line() {
 /// recognized, and the exact RHS value must be returned.
 #[test]
 fn tier_b_var_decl_keywords_are_stripped_before_value_extraction() {
-    // (line, expected RHS) — one per shipped keyword, across JS/TS, Kotlin/Scala,
+    // (line, expected RHS), one per shipped keyword, across JS/TS, Kotlin/Scala,
     // Java, C++, VB, and Perl declaration syntaxes.
     let cases = [
         ("const apiKey = sk_live_abcdef", "sk_live_abcdef"),
@@ -173,7 +173,7 @@ fn tier_b_var_decl_keywords_are_stripped_before_value_extraction() {
 
 /// Stacked declaration keywords (`static final x = …`) are all stripped, and a
 /// keyword that is only a SUBSTRING of an identifier (`myToken`, `constant`) is
-/// NOT stripped — the prefix carries a trailing space so it only matches a real
+/// NOT stripped, the prefix carries a trailing space so it only matches a real
 /// leading declaration keyword.
 #[test]
 fn tier_b_var_decl_keyword_strip_is_exact_and_stacked() {
@@ -182,7 +182,7 @@ fn tier_b_var_decl_keyword_strip_is_exact_and_stacked() {
         "deadbeefcafef00d",
         "stacked keywords must both be stripped"
     );
-    // `myToken` starts with `my` but not `my ` — must be left intact as the LHS
+    // `myToken` starts with `my` but not `my `: must be left intact as the LHS
     // identifier, so the RHS is still what is returned after the `=`.
     assert_eq!(
         filter_line_content_for_test("myToken = perl_looking_but_not"),
@@ -239,7 +239,7 @@ fn plain_two_line_prose_is_not_falsely_joined() {
 }
 
 /// Adversarial: a base64 value whose alphabet contains `+` INSIDE a single
-/// quoted literal (no join `+` outside quotes) must NOT be split — the `+` is
+/// quoted literal (no join `+` outside quotes) must NOT be split, the `+` is
 /// value bytes, not a join operator, so no candidate is synthesized.
 #[test]
 fn base64_plus_inside_quoted_literal_is_not_split() {

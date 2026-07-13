@@ -26,17 +26,17 @@ use keyhog_scanner::CompiledScanner;
 use proptest::prelude::*;
 
 const BASE64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-/// Base62 (`[A-Za-z0-9]`) — the standard base64 alphabet minus the two
+/// Base62 (`[A-Za-z0-9]`), the standard base64 alphabet minus the two
 /// punctuation chars. The internal-`+` proptest draws its random body from THIS
 /// alphabet, not [`BASE64_ALPHABET`], on purpose: the contract under test is
 /// "an internal `+` does not break the high-entropy run pre-screen", and a
 /// single inserted `+` (no `/`) keeps the body clear of the byte-distribution
 /// random-blob gate, which DELIBERATELY suppresses uniform-random base64 that
-/// carries BOTH `+` and `/` (those are protobuf-of-random-bytes decoys — bench
+/// carries BOTH `+` and `/` (those are protobuf-of-random-bytes decoys, bench
 /// negatives, correctly dropped). Drawing the body from the full base64
 /// alphabet would let a random `/` combine with the inserted `+` to form such a
 /// decoy, making the test assert survival of a value the system is meant to
-/// drop — an unsound, flaky assertion (the prior generator's bug).
+/// drop (an unsound, flaky assertion (the prior generator's bug)).
 const BASE62_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const KEYWORD_FREE_MIN_LEN: usize = 56;
 
@@ -112,10 +112,10 @@ proptest! {
     /// The body is drawn from [`BASE62_ALPHABET`] (no `+`/`/`) and exactly ONE
     /// `+` is inserted, so the value carries `+` but never `/`. That is
     /// deliberate: the byte-distribution random-blob gate suppresses uniform
-    /// base64 carrying BOTH `+` and `/` (protobuf-of-random-bytes decoys — bench
+    /// base64 carrying BOTH `+` and `/` (protobuf-of-random-bytes decoys, bench
     /// negatives), so a body with both would be dropped by design and is not a
     /// valid positive for this contract. Single-`+` keeps the test on its
-    /// actual subject — the run pre-screen — not the blob suppression.
+    /// actual subject (the run pre-screen (not the blob suppression)).
     #[test]
     fn b64_secret_with_internal_plus_surfaces(
         idxs in prop::collection::vec(0u8..62u8, 59).prop_filter(

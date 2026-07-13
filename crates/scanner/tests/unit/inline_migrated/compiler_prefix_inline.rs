@@ -143,7 +143,7 @@ mod charclass_prefix_expansion_tests {
     #[test]
     fn ranges_negation_and_perl_classes_are_not_enumerated() {
         // A range (`[a-f]`), a negation (`[^x]`), and a leading body matcher
-        // are bodies, not enumerable prefixes — declined, no triggers emitted.
+        // are bodies, not enumerable prefixes (declined, no triggers emitted).
         assert_eq!(expand_leading_charclass_prefixes("dd[a-f]_[0-9]{8}"), None);
         assert_eq!(expand_leading_charclass_prefixes("dd[^np]_[0-9]{8}"), None);
         assert_eq!(expand_leading_charclass_prefixes("[a-z]{20}"), None);
@@ -163,7 +163,7 @@ mod charclass_prefix_expansion_tests {
     #[test]
     fn sub_floor_branch_refuses_the_whole_expansion() {
         // Head is empty and the trailing literal is one char, so every branch
-        // would be 2 chars — below the floor. Partial coverage is unsafe, so
+        // would be 2 chars, below the floor. Partial coverage is unsafe, so
         // the entire expansion is refused (no dead branches in AC).
         assert_eq!(expand_leading_charclass_prefixes("[npc]x[0-9]{8}"), None);
     }
@@ -204,7 +204,7 @@ mod zero_width_assertion_strip_tests {
 
     #[test]
     fn flagsmith_word_boundary_prefix_is_recovered() {
-        // `\bser\.[a-zA-Z0-9]{40,}` — the leading `\b` previously broke
+        // `\bser\.[a-zA-Z0-9]{40,}`: the leading `\b` previously broke
         // extraction at the first byte; now `ser.` is the recovered prefix.
         assert_eq!(
             extract_literal_prefixes(r"\bser\.[a-zA-Z0-9]{40,}"),
@@ -223,7 +223,7 @@ mod literal_alternation_tail_tests {
 
     #[test]
     fn locationiq_alternation_carries_the_trailing_dot() {
-        // `(?:pk|sk)\.[a-f0-9]{32,}` — `pk`/`sk` are sub-floor alone; carrying
+        // `(?:pk|sk)\.[a-f0-9]{32,}`: `pk`/`sk` are sub-floor alone; carrying
         // the post-group `\.` recovers the real `pk.`/`sk.` discriminators.
         assert_eq!(
             extract_literal_prefixes(r"(?:pk|sk)\.[a-f0-9]{32,}"),
@@ -304,7 +304,7 @@ mod required_literal_run_tests {
     #[test]
     fn literal_inside_alternation_is_not_required() {
         // Only one branch matches, so neither `atlasv1x` nor `betaaaaa` is
-        // guaranteed — must NOT count as required.
+        // guaranteed (must NOT count as required).
         assert!(!regex_has_required_literal_run(
             r"[0-9]{4}(?:atlasv1x|betaaaaa)?[0-9]{4}",
             8
@@ -327,7 +327,7 @@ mod required_literal_run_tests {
 
     #[test]
     fn optional_group_literal_is_not_required() {
-        // The `?` makes the group optional — its run is not guaranteed.
+        // The `?` makes the group optional (its run is not guaranteed).
         assert!(!regex_has_required_literal_run(
             r"[0-9]{4}(?:\.atlasv1\.)?[0-9]{4}",
             8

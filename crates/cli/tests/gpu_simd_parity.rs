@@ -3,7 +3,7 @@
 //! Auto-routing picks the fastest backend per batch, so the SAME input can be
 //! scanned by the GPU literal/AC engine on one host and by SIMD/Hyperscan on
 //! another (or CI). For that to be safe, both backends MUST return identical
-//! finding sets. This is NOT self-evident — it has regressed twice:
+//! finding sets. This is NOT self-evident, it has regressed twice:
 //!   * Hyperscan is compiled CASELESS for every pattern, but the GPU AC literal
 //!     automaton matched bytes exactly, so a lowercase literal prefix (`csb_`)
 //!     never fired on an uppercase occurrence (`CSB_…`). (Fixed: the GPU
@@ -21,7 +21,7 @@
 //!
 //! On a host without a usable GPU, `--backend gpu` fails closed, so
 //! both runs are SIMD and the test trivially passes (it can never falsely
-//! FAIL). On a GPU host it genuinely exercises the GPU engine — the case this
+//! FAIL). On a GPU host it genuinely exercises the GPU engine, the case this
 //! gate exists for. CLAUDE.md Law 8: on a known-GPU host a green here means
 //! the GPU path was actually compared, not skipped.
 

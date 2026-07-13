@@ -4,7 +4,7 @@
 //! three. The decoder previously required EXACTLY three digits: a short escape
 //! (`\1`, `\12`), an escape truncated by a following non-octal char, or a
 //! trailing `\`, all hit `.ok_or(())?` and returned `Err` for the WHOLE
-//! candidate — silently dropping every OTHER octal escape in the string from the
+//! candidate, silently dropping every OTHER octal escape in the string from the
 //! decode-through path (all-or-nothing recall loss, the same class as the
 //! `+`/`.` concat and quoted-printable soft-break bugs).
 //!
@@ -62,7 +62,7 @@ fn octal_mixed_full_and_short_all_survive() {
 #[test]
 fn octal_short_escape_at_end_after_full_escapes() {
     // `\55` is a 2-digit escape at EOF; before the fix it read two digits, hit
-    // EOF looking for a third, and Err'd — dropping "sk".
+    // EOF looking for a third, and Err'd (dropping "sk").
     assert_eq!(dec(r"\163\153\55"), "sk-");
 }
 
@@ -71,7 +71,7 @@ fn octal_full_then_short_then_full_interleaved() {
     assert_eq!(dec(r"\101\1\102"), "A\u{1}B");
 }
 
-// ── 3-digit escapes (regressions — must stay correct) ────────────────────────
+// ── 3-digit escapes (regressions, must stay correct) ────────────────────────
 
 #[test]
 fn octal_three_digit_escapes_decode() {

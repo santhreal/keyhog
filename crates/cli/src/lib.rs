@@ -4,23 +4,23 @@
 //!
 //! # Module map (by responsibility)
 //!
-//! - **Entry** — `main.rs` (binary), this `lib.rs` (`run()` — the scan
+//! - **Entry**: `main.rs` (binary), this `lib.rs` (`run()`: the scan
 //!   lifecycle: parse → build config → drive sources → scan → report).
-//! - **Argument surface** — [`args`] (clap definitions), [`value_parsers`]
+//! - **Argument surface**: [`args`] (clap definitions), [`value_parsers`]
 //!   (typed flag parsing), [`path_validation`].
-//! - **Subcommands** — [`subcommands`] (scan, explain, detectors, diff,
+//! - **Subcommands**: [`subcommands`] (scan, explain, detectors, diff,
 //!   calibrate, completion, …); long-running modes in [`daemon`].
-//! - **Scan orchestration** — [`orchestrator`] (fan-out, progress, deadlines),
+//! - **Scan orchestration**: [`orchestrator`] (fan-out, progress, deadlines),
 //!   [`orchestrator_config`] (resolve `--fast`/`--deep`/`--precision`/flag
 //!   overrides into one `ScannerConfig`), [`sources`] (CLI flags → input
 //!   sources).
-//! - **Output** — [`reporting`] (findings → text/JSON/SARIF), [`format`]
+//! - **Output**: [`reporting`] (findings → text/JSON/SARIF), [`format`]
 //!   (formatting helpers), and private terminal styling.
-//! - **CI / baselines** — [`baseline`] (diff against a committed baseline),
+//! - **CI / baselines**: [`baseline`] (diff against a committed baseline),
 //!   [`benchmark`].
-//! - **Config & suppression** — [`config`] (`.keyhog.toml` discovery + merge),
+//! - **Config & suppression**: [`config`] (`.keyhog.toml` discovery + merge),
 //!   [`inline_suppression`], [`test_fixture_suppressions`].
-//! - **Install / health** — [`installer`] (hook installer, `doctor`).
+//! - **Install / health**: [`installer`] (hook installer, `doctor`).
 
 mod stable_hash;
 
@@ -33,7 +33,7 @@ pub(crate) static TOTAL_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 pub(crate) static FINDINGS_COUNT: AtomicUsize = AtomicUsize::new(0);
 /// Chunks actually dispatched to GPU region presence (a subset of
 /// [`SCANNED_CHUNKS`]; the remainder ran on the SIMD/CPU path). The orchestrator
-/// bumps this in the coalesced GPU arm — the single place the GPU runs — so the
+/// bumps this in the coalesced GPU arm, the single place the GPU runs, so the
 /// completion summary can state which backend selection used and why,
 /// instead of the decision being buried at `tracing::debug!` (target
 /// `keyhog::routing`). The optimized coalesced scan paths bypass `scan_inner`'s
@@ -44,19 +44,19 @@ pub(crate) static GPU_SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 /// Read at the end of `run()`: if a scan produced ZERO chunks AND a source
 /// errored, the requested scan never actually ran (e.g. `--git-history` /
 /// `--git-diff` on a non-repo, a bad ref, or an unreachable remote), so we
-/// must NOT print "no findings, all clean" and exit 0 — that would tell a CI
+/// must NOT print "no findings, all clean" and exit 0, that would tell a CI
 /// gate the tree is clean when nothing was scanned (KH-GAP-096). Same intent
 /// as `SCANNER_PANICKED`, for the source-failure path.
 pub(crate) static SOURCE_ERRORS: AtomicUsize = AtomicUsize::new(0);
-/// Number of sources that failed *entirely* — produced ZERO chunks AND
+/// Number of sources that failed *entirely*, produced ZERO chunks AND
 /// errored. A source the user explicitly requested (e.g. `--github-org`,
 /// `--git-diff`, `--url`) that yields nothing because the fetch failed means
 /// that scan never ran, even if a co-requested filesystem source succeeded.
 /// `run()` fails closed when this is non-zero and there are no findings, so a
 /// failed remote scan is not masked by a clean local one (the more precise
 /// successor to the `SOURCE_ERRORS && TOTAL_CHUNKS==0` global check). A
-/// partial failure — a tree with some unreadable files that still produced
-/// chunks — does NOT count: that source produced data.
+/// partial failure, a tree with some unreadable files that still produced
+/// chunks (does NOT count: that source produced data).
 pub(crate) static FAILED_SOURCES: AtomicUsize = AtomicUsize::new(0);
 /// Number of times a requested incremental cache could not be persisted after
 /// a scan. Findings are still reported, but a clean scan with a failed cache
@@ -120,7 +120,7 @@ pub(crate) fn record_scanner_panic() -> RecordedScanFailureEvent {
 
 /// Async-signal-safe snapshot of scan progress for the unix SIGINT handler:
 /// `(scanned_chunks, total_chunks, findings)`. Each field is a single relaxed
-/// atomic LOAD — no lock, no allocation — so this is safe to call from inside
+/// atomic LOAD, no lock, no allocation, so this is safe to call from inside
 /// a signal handler (see `main.rs`'s `handle_sigint`). The binary installs a
 /// synchronous OS handler rather than a `tokio::signal::ctrl_c` task because
 /// the CLI runs on a `current_thread` runtime: a long synchronous scan starves
@@ -202,15 +202,15 @@ pub(crate) fn write_banner<W: Write>(
 ///
 /// An autoroute hardware probe (`probe_hardware()` → `gpu_probe()`) leaks a
 /// wgpu/Vulkan instance whose mesa driver worker thread stays alive for the
-/// process lifetime. On a FAST error exit — an early setup error (missing path,
-/// expired `.keyhogignore`) or a fail-closed `autoroute calibration required` —
+/// process lifetime. On a FAST error exit, an early setup error (missing path,
+/// expired `.keyhogignore`) or a fail-closed `autoroute calibration required` 
 /// that thread has not finished initialising, and the ordinary shutdown
 /// (unwind + libc `exit`/`atexit`) lets it run mid-teardown, where it SIGSEGVs
 /// and turns a clean fail-closed exit code into a signal death (exit 139). A
 /// security control that crashes instead of returning its documented code is
 /// untrustworthy. `_exit` skips atexit and all thread teardown, so no driver
 /// thread can run during shutdown; it also skips Rust's buffered-stdout flush,
-/// so we flush both streams first. Only the FAST error/panic exits route here —
+/// so we flush both streams first. Only the FAST error/panic exits route here 
 /// a successful scan runs long enough for the driver to initialise and tear
 /// down cleanly, so it keeps the normal `ExitCode` return.
 fn exit_now(code: u8) -> ! {
@@ -250,14 +250,14 @@ pub async fn cli_main() -> ExitCode {
     }
 
     // Unix installs a synchronous OS SIGINT handler in `main()` (before the
-    // runtime starts) instead — a `tokio::signal::ctrl_c` task never registers
+    // runtime starts) instead, a `tokio::signal::ctrl_c` task never registers
     // on the `current_thread` runtime once a synchronous scan is in flight, so
     // it cannot honor the exit-130 contract. Non-unix (Windows) has no such
     // synchronous handler path here, so keep the async ctrl_c task there.
     #[cfg(not(unix))]
     tokio::spawn(async move {
         if let Ok(()) = tokio::signal::ctrl_c().await {
-            // LAW10: no recall impact — a failed signal hook only loses graceful Ctrl-C handling; scan/report exit semantics stay owned by the main task.
+            // LAW10: no recall impact (a failed signal hook only loses graceful Ctrl-C handling; scan/report exit semantics stay owned by the main task).
             let (scanned, total, findings) = interrupt_counts();
             eprintln!("\nScan interrupted. {scanned}/{total} files scanned. {findings} findings.");
             std::process::exit(i32::from(exit_codes::EXIT_INTERRUPTED));

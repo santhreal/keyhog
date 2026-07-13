@@ -65,12 +65,12 @@ rusty_fork_test! {
     // The warm half of the ship-time precompile contract: a second compile of the
     // SAME patterns into the SAME cache dir must LOAD the persisted shard databases
     // rather than recompile them. This is what makes install-time calibration pay
-    // off — the first real scan reuses the shards the installer warmed.
+    // off (the first real scan reuses the shards the installer warmed).
     //
     // Oracle: `persist_cached_shard` writes via a temp file + atomic rename, so a
     // re-persist REPLACES the shard file and gives it a new inode. A warm load never
     // calls persist, so the inode is untouched. An unchanged inode set therefore
-    // proves the database was served from cache, not recompiled — a behavioral fact,
+    // proves the database was served from cache, not recompiled, a behavioral fact,
     // independent of filesystem mtime resolution.
     #[cfg(unix)]
     #[test]

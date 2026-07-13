@@ -40,7 +40,7 @@ parking_lot = { workspace = true }
 dashmap = { workspace = true }
 url = { workspace = true }
 
-# OOB verification — embedded interactsh client (gated behind --verify-oob).
+# OOB verification (embedded interactsh client (gated behind --verify-oob)).
 rsa = { workspace = true }
 aes = { workspace = true }
 cfb-mode = { workspace = true }

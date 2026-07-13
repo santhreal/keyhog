@@ -1,4 +1,4 @@
-//! Adversarial audit — VECTOR 2 (RESEARCH) + VECTOR 4 (INNOVATION).
+//! Adversarial audit: VECTOR 2 (RESEARCH) + VECTOR 4 (INNOVATION).
 //!
 //! These are **failing** tests that document categorical capability gaps versus
 //! frontier secret scanners (trufflehog, kingfisher). Each test fails today and
@@ -15,7 +15,7 @@
 //!
 //! AUD-research_innovation-1  Offline AWS account-ID decode is missing.
 //!   The AWS account number is mathematically embedded in every modern AKIA/ASIA
-//!   access-key ID and is recoverable with a pure base32-decode + bit-shift — NO
+//!   access-key ID and is recoverable with a pure base32-decode + bit-shift. NO
 //!   network call, NO `--verify`. trufflehog reports this account ID for every AWS
 //!   key (live OR revoked). keyhog only obtains `account_id` from a live STS
 //!   `GetCallerIdentity` response (crates/verifier/src/verify/aws.rs:196-198),
@@ -34,7 +34,7 @@
 //!   attacker's tripwire). keyhog has zero canary signatures: scanning a key that
 //!   decodes to the confirmed canarytokens.org account `052310077262` yields a
 //!   generic `aws-access-key` finding with empty metadata and no `is_canary`
-//!   marker — and on the `--verify` path keyhog would send the request that sets
+//!   marker, and on the `--verify` path keyhog would send the request that sets
 //!   the canary off. Reference: trufflesecurity.com/blog/canaries
 //!   Expected fix: ship a Tier-B canary account-ID list (e.g.
 //!   `rules/aws-canary-accounts.toml`), and when a detected AWS key decodes to a
@@ -48,7 +48,7 @@
 //!   `JwtAnomaly::AlgNone` for a forged unsigned token, but a repo-wide search
 //!   shows NO non-test caller (`grep -rn 'jwt::analyze' crates/` outside
 //!   tests/jwt.rs is empty). Consequently a real `alg=none` forgery is detected
-//!   as a secret yet ships with `metadata: {}` — none of the alg/issuer/expiry
+//!   as a secret yet ships with `metadata: {}`: none of the alg/issuer/expiry
 //!   evidence, and no anomaly flag, ever reaches the operator. This is dead
 //!   frontier capability (Vector 4 innovation + Vector 11 utilization).
 //!   Expected fix: invoke `jwt::analyze` on JWT-shaped matches in the scan
@@ -176,7 +176,7 @@ fn aws_canary_token_is_flagged_so_it_is_not_verified() {
 
 /// AUD-research_innovation-3
 ///
-/// A forged `alg=none` JWT (unsigned, trivially forgeable — the classic JWT
+/// A forged `alg=none` JWT (unsigned, trivially forgeable, the classic JWT
 /// vulnerability) must, when detected as a secret, carry the JWT analysis the
 /// fully-built-but-unwired `keyhog_scanner::jwt` module already produces:
 /// specifically the `alg_none` security anomaly. Today the token is detected but

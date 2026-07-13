@@ -5,14 +5,14 @@
 //! (proptest, 10k cases) because these types are security-critical:
 //!
 //!   * their `Eq`/`Hash` back the engine's credential interning (identical
-//!     secrets collapse to one `Arc` in a `HashMap`/`HashSet`) — a `Hash`/`Eq`
+//!     secrets collapse to one `Arc` in a `HashMap`/`HashSet`), a `Hash`/`Eq`
 //!     inconsistency silently corrupts dedup, so it must hold for EVERY input;
 //!   * their `serde` round-trip had a real corruption bug (kimi-wave2
-//!     §Critical: a UTF-8 value like `b64:SGVsbG8=` was re-decoded as base64) —
+//!     §Critical: a UTF-8 value like `b64:SGVsbG8=` was re-decoded as base64) 
 //!     the property `deserialize(serialize(c)) == c` over arbitrary bytes
 //!     exercises BOTH the `text` and `b64` serialization branches and is the
 //!     durable guard against that whole class;
-//!   * their `Debug`/`Display` are leak guards — the redaction must be exact
+//!   * their `Debug`/`Display` are leak guards, the redaction must be exact
 //!     (fully determined by byte length, never containing the secret).
 //!
 //! Everything here goes through the STABLE PUBLIC API (`From` constructors,
@@ -46,7 +46,7 @@ fn bytes_strat() -> impl Strategy<Value = Vec<u8>> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(10_000))]
 
-    /// Equality is the byte-string biconditional — the correctness half of the
+    /// Equality is the byte-string biconditional, the correctness half of the
     /// constant-time compare (the timing half is structural, held by the single
     /// `constant_time_bytes_eq` owner + its inline no-early-return loop). Covers
     /// both the equal and (far commoner) unequal branch across arbitrary bytes.
@@ -59,7 +59,7 @@ proptest! {
         prop_assert_eq!(Credential::from(&a[..]), Credential::from(&a[..]));
     }
 
-    /// Hash agrees with Eq for EVERY input — the invariant credential interning
+    /// Hash agrees with Eq for EVERY input, the invariant credential interning
     /// depends on. Equal keys (same bytes) MUST hash equal; a `HashSet` must
     /// collapse duplicates and keep distinct values, mirroring the engine's
     /// `Arc` interning at scale rather than for one fixed pair.
@@ -99,7 +99,7 @@ proptest! {
         prop_assert_eq!(hash_of(&c), hash_of(&cloned));
     }
 
-    /// `deserialize(serialize(c)) == c` for arbitrary bytes — the durable guard
+    /// `deserialize(serialize(c)) == c` for arbitrary bytes, the durable guard
     /// against the kimi-wave2 §Critical round-trip corruption. Arbitrary bytes
     /// drive UTF-8 payloads through the `text` tag and non-UTF-8 through `b64`,
     /// so one property covers both encoding branches.
@@ -177,7 +177,7 @@ proptest! {
     }
 
     /// The security asymmetry: `Debug` REDACTS to a length-only form (never the
-    /// bytes — it backs `Chunk::data`, which can be raw secret material), while
+    /// bytes, it backs `Chunk::data`, which can be raw secret material), while
     /// `Display` INTENTIONALLY exposes the content (the auditable surface).
     #[test]
     fn prop_sensitive_debug_redacts_but_display_exposes(s in any::<String>()) {
@@ -201,7 +201,7 @@ fn credential_text_value_that_looks_like_b64_prefix_roundtrips_as_text() {
     // A user-typed credential whose literal value is `b64:SGVsbG8=`. Under the
     // OLD `b64:<base64>` string scheme this round-tripped as the DECODED bytes
     // "Hello" (corruption). The tagged `{"text": …}` form must preserve it
-    // verbatim — equality with the original proves no silent decode happened.
+    // verbatim (equality with the original proves no silent decode happened).
     let literal = Credential::from("b64:SGVsbG8=");
     let json = serde_json::to_string(&literal).expect("serialize");
     // New writers must emit the tagged text form, not the ambiguous legacy one.
@@ -217,7 +217,7 @@ fn credential_text_value_that_looks_like_b64_prefix_roundtrips_as_text() {
 }
 
 // ---------------------------------------------------------------------------
-// CredentialHash — the SHA-256 digest type findings carry for correlation /
+// CredentialHash, the SHA-256 digest type findings carry for correlation /
 // allowlisting. It serializes as a 64-char hex string (`serde_hash_hex`) and its
 // deserializer FAILS CLOSED on any wrong-length or non-hex input (BACKLOG
 // finding.rs:493). A lenient parser here would let a malformed `.keyhogignore`

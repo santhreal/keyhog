@@ -2,11 +2,11 @@
 //!
 //! Pins the EXACT observable contract of two security-load-bearing primitives:
 //!
-//!   * `keyhog_core::redact` — the display-time masking applied to any credential
+//!   * `keyhog_core::redact`: the display-time masking applied to any credential
 //!     string before it reaches a terminal / report. Edge length scales as
 //!     `(char_count / 8).clamp(1, 4)`; strings of <= 8 chars are fully masked
 //!     (`****`); UTF-8 is sliced on CHAR boundaries, never byte boundaries.
-//!   * `keyhog_core::Credential` — the opaque, zeroize-on-drop byte wrapper whose
+//!   * `keyhog_core::Credential`: the opaque, zeroize-on-drop byte wrapper whose
 //!     `Debug`/`Display` refuse to print the bytes (leak guard), whose equality is
 //!     length-checked + constant-time, and whose serde form is a tagged
 //!     `{"text":...}` / `{"b64":...}` object (never the ambiguous legacy prefix).
@@ -22,7 +22,7 @@ use keyhog_core::testing::{CoreTestApi, TestApi};
 use keyhog_core::{redact, Credential, SensitiveString};
 
 // ---------------------------------------------------------------------------
-// redact() — length / masking boundaries
+// redact(), length / masking boundaries
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -83,7 +83,7 @@ fn redact_never_contains_full_secret() {
 }
 
 // ---------------------------------------------------------------------------
-// redact() — UTF-8 char-boundary correctness (byte slicing would panic/corrupt)
+// redact(). UTF-8 char-boundary correctness (byte slicing would panic/corrupt)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -122,7 +122,7 @@ fn redact_unicode_edge_two_distinct_ends() {
 }
 
 // ---------------------------------------------------------------------------
-// Credential — leak-guarded Debug/Display + facade byte access
+// Credential, leak-guarded Debug/Display + facade byte access
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -146,7 +146,7 @@ fn credential_expose_secret_and_str_via_facade() {
 fn credential_non_utf8_bytes_expose_str_is_none() {
     let raw: &[u8] = &[0xff, 0xfe, 0x00, 0x80];
     let cred: Credential = raw.into();
-    // Non-UTF-8 stays fully accessible as bytes but yields None as &str — the
+    // Non-UTF-8 stays fully accessible as bytes but yields None as &str, the
     // loud surface every caller must branch on (Law 10).
     assert_eq!(TestApi.credential_expose_secret(&cred), raw);
     assert_eq!(TestApi.credential_expose_str(&cred), None);
@@ -155,7 +155,7 @@ fn credential_non_utf8_bytes_expose_str_is_none() {
 }
 
 // ---------------------------------------------------------------------------
-// Credential — equality / ordering / hashing
+// Credential, equality / ordering / hashing
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -207,7 +207,7 @@ fn credential_clone_shares_bytes_and_stays_equal() {
 }
 
 // ---------------------------------------------------------------------------
-// Credential — serde tagged form + legacy compatibility
+// Credential, serde tagged form + legacy compatibility
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -255,7 +255,7 @@ fn credential_deserialize_ambiguous_tagged_forms_rejected() {
 }
 
 // ---------------------------------------------------------------------------
-// SensitiveString — Debug redacts, Display intentionally exposes
+// SensitiveString: Debug redacts, Display intentionally exposes
 // ---------------------------------------------------------------------------
 
 #[test]

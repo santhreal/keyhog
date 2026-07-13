@@ -19,7 +19,7 @@ reason = "access_key keyword + quoted high-entropy body."
 
 [[negative]]
 text = "api_key=example"
-reason = "Dictionary body 'example' — entropy ~2.5 below the 3.0 len-bucket floor, generic-api-key must not fire."
+reason = "Dictionary body 'example' (entropy ~2.5 below the 3.0 len-bucket floor, generic-api-key must not fire)."
 
 [[evasion]]
 text = "x-api-key: \"ufnlbbavawsdeecn\""

@@ -5,12 +5,12 @@
 //!
 //! Two holes existed:
 //!   * `read/raw.rs::read_file_mmap` fell back to a bare `read_to_end(&mut file)`
-//!     (no `.take`) when mmap failed — unbounded, so a file grown past the
+//!     (no `.take`) when mmap failed, unbounded, so a file grown past the
 //!     walker's stat between the walk and this read could OOM the process,
 //!     defeating the very `MMAP_TOCTOU_SANITY_CAP_BYTES` ceiling the mmap path
 //!     enforces.
 //!   * `read/bytes.rs::read_file_for_compressed_input` fell back to a bare
-//!     `std::fs::read(path)` — both UNBOUNDED (same OOM) and symlink-FOLLOWING
+//!     `std::fs::read(path)`: both UNBOUNDED (same OOM) and symlink-FOLLOWING
 //!     (re-opening the path with libc defaults, undoing the `O_NOFOLLOW` guard
 //!     the mmap open just applied).
 //!
@@ -38,7 +38,7 @@ fn mmap_fallback_buffered_reads_are_capped() {
     // Locked-file contention is refused at the SHARED open helper, not inside
     // read_file_mmap. The 2026-07 refactor hoisted the advisory flock into
     // `open_file_safe` (documented in raw.rs as "ONE owner of the flock guard"),
-    // so EVERY read path — prefix, buffered, and mmap — inherits the torn-write
+    // so EVERY read path, prefix, buffered, and mmap, inherits the torn-write
     // refusal instead of only the mmap path. Pin that (stronger) structure: the
     // shared opener must take a NON-BLOCKING shared lock and turn contention into
     // an ERROR (fail closed, never a fallback read), and read_file_mmap must
@@ -72,7 +72,7 @@ fn mmap_fallback_buffered_reads_are_capped() {
     // failure handling (open error incl. lock contention, stat error, oversize):
     // each arm must be a visible skip that returns None, with NO buffered/unlocked
     // read. The bounded capped-read fallback is legitimate ONLY after a successful
-    // open+lock, on an mmap() failure — i.e. BELOW this SAFETY landmark.
+    // open+lock, on an mmap() failure (i.e. BELOW this SAFETY landmark).
     let pre_mmap_failure = &raw[open_arm..mmap_start];
     assert!(
         pre_mmap_failure.contains("SourceSkipEvent::Unreadable")

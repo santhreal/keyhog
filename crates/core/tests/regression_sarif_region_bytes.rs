@@ -6,7 +6,7 @@
 //!
 //!   * `region.startLine`  == `location.line`  (1-based, verbatim)
 //!   * `region.charOffset` == `location.offset` (byte offset from chunk start),
-//!     emitted under the SARIF key `charOffset` — NEVER `byteOffset`.
+//!     emitted under the SARIF key `charOffset`: NEVER `byteOffset`.
 //!   * The region object exists iff `line.is_some() || offset != 0`.
 //!     - line present, offset 0  -> region has startLine, NO charOffset
 //!     - line absent,  offset !=0 -> region has charOffset, NO startLine
@@ -129,7 +129,7 @@ fn line_one_offset_zero_boundary_emits_start_line_only() {
 // ---------------------------------------------------------------------------
 
 /// A zero offset alongside a present line emits `startLine` but the reporter
-/// must NOT leak a `charOffset: 0` — offset 0 means "no offset".
+/// must NOT leak a `charOffset: 0`: offset 0 means "no offset".
 #[test]
 fn offset_zero_does_not_leak_charoffset_zero() {
     let json = render_sarif(&[finding_with(Some("a.env"), Some(9), 0, vec![])]);
@@ -173,7 +173,7 @@ fn line_and_nonzero_offset_emit_both_values() {
     );
 }
 
-/// The offset is emitted under the SARIF `charOffset` key — the region must NOT
+/// The offset is emitted under the SARIF `charOffset` key, the region must NOT
 /// carry a `byteOffset` key (keyhog's chosen schema field for offsets).
 #[test]
 fn offset_uses_charoffset_key_not_byteoffset() {
@@ -190,7 +190,7 @@ fn offset_uses_charoffset_key_not_byteoffset() {
     );
 }
 
-/// A large offset (> u32::MAX) survives as an exact u64 in JSON — no
+/// A large offset (> u32::MAX) survives as an exact u64 in JSON, no
 /// truncation of the `usize` offset when serialized.
 #[test]
 fn large_offset_preserved_without_truncation() {
@@ -241,7 +241,7 @@ fn offset_without_line_emits_charoffset_only() {
     assert!(region["startLine"].is_null(), "no line means no startLine");
 }
 
-/// The emitted region carries ONLY startLine/charOffset — never the
+/// The emitted region carries ONLY startLine/charOffset, never the
 /// end-line/column keys the reporter always sets to `None`.
 #[test]
 fn region_omits_end_line_and_columns() {
@@ -329,7 +329,7 @@ fn distinct_lines_same_offset_are_not_deduped() {
 }
 
 /// Byte-identical additional locations collapse to a single relatedLocation
-/// (dedup by the `(file, line, offset)` tuple) — its region startLine is exact.
+/// (dedup by the `(file, line, offset)` tuple) (its region startLine is exact).
 #[test]
 fn identical_related_locations_dedup_to_one_region() {
     let json = render_sarif(&[finding_with(

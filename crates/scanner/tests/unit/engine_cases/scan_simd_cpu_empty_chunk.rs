@@ -6,7 +6,7 @@ fn scan_simd_cpu_empty_chunk() {
     // SIMD/Hyperscan prefilter and `simd_backend_usable()` is true. With a
     // sub-floor literal (e.g. `x`) no prefilter is built, and explicitly
     // requesting `SimdCpu` is a fail-closed `process::exit` (Law 10: no silent
-    // cpu-fallback), not a normal scan — which would abort the whole test binary.
+    // cpu-fallback), not a normal scan (which would abort the whole test binary).
     let d = DetectorSpec {
         tests: Vec::new(),
         id: "a".into(),

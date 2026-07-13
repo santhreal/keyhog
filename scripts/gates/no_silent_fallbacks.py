@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gate #1 — NO SILENT FALLBACKS (Law 10), enforced as a shrink-only ratchet.
+"""Gate #1: NO SILENT FALLBACKS (Law 10), enforced as a shrink-only ratchet.
 
 Law 10 was written in CLAUDE.md the whole time 66 silent fallbacks accumulated.
 A rule a human has to remember is a rule that gets skipped. This gate makes a
@@ -16,7 +16,7 @@ that discard a failure / degrade with no operator-visible surfacing:
     let _ = <expr>     (Result/value explicitly discarded)
   (2) a `tracing::debug!`/`trace!` whose message carries degrade-language
     (fallback / skip / ignore / degrade / disabled / using default / unavailable
-    / dropped / recall) — the idiom Law 10 names FIRST: a debug log "then
+    / dropped / recall), the idiom Law 10 names FIRST: a debug log "then
     continue to a weaker path" is invisible at default verbosity, i.e. silent.
 Each occurrence is a CANDIDATE. `python3 no_silent_fallbacks.py --self-test`
 proves both classes still catch real fallbacks and ignore benign code (Law 6). A candidate is EXEMPT only if its line, or the
@@ -27,7 +27,7 @@ so every real fallback must be loud, recorded, or consciously waived IN THE DIFF
 
 BASELINE RATCHET: the current (unfixed) candidates are recorded in
 `scripts/gates/silent_fallback_baseline.txt`. The gate FAILS if a candidate
-appears that is not in the baseline (a NEW silent fallback) — so new ones can't
+appears that is not in the baseline (a NEW silent fallback), so new ones can't
 land. Fixing or annotating an existing one removes it from the live set; the gate
 also FAILS if the baseline contains entries no longer present UNLESS you
 regenerate it, so the baseline can only SHRINK. The 66 audited violations live in
@@ -62,14 +62,14 @@ IDIOMS = [
     re.compile(r"\.unwrap_or_default\(\)"),
     re.compile(r"\blet\s+_\s*="),
 ]
-# Second idiom class — the one Law 10 names FIRST and the idiom regexes above
+# Second idiom class, the one Law 10 names FIRST and the idiom regexes above
 # MISS: a `tracing::debug!`/`trace!` that is the SOLE surface of a degrade. A
 # debug log "then continue to a weaker path" is invisible at default verbosity,
 # so it is a silent fallback. We can't parse control flow with a regex, so we
 # flag debug/trace lines whose MESSAGE carries degrade-language (fallback / skip
 # / ignore / degrade / disabled / using default / unavailable / failed / dropped
 # / reroute / truncate / exhausted)
-# — the lines most likely to be masking a degrade. A benign diagnostic
+#, the lines most likely to be masking a degrade. A benign diagnostic
 # ("scanning X", "loaded Y") does not match. Each hit is triaged like any other:
 # upgrade to warn!/eprintln! + a counter if it is a real degrade, or annotate
 # `// LAW10: <why this debug is supplementary, the degrade is surfaced elsewhere>`.
@@ -214,7 +214,7 @@ def _line_is_candidate(line: str, next_line: str = "") -> bool:
 
 def self_test() -> int:
     """Prove BOTH idiom classes catch real silent fallbacks and ignore benign
-    code — so a future regex tweak can't silently neuter the gate (Law 6)."""
+    code: so a future regex tweak can't silently neuter the gate (Law 6)."""
     cases = {
         # regex idiom class -> must flag
         'let x = foo().unwrap_or(0);': True,
@@ -314,7 +314,7 @@ def main(argv: list[str]) -> int:
     fixed = baseline - current
 
     if new:
-        print(f"FAIL — {len(new)} NEW silent-fallback candidate(s) in the detection "
+        print(f"FAIL: {len(new)} NEW silent-fallback candidate(s) in the detection "
               f"crates (not in the baseline):\n", file=sys.stderr)
         for k in sorted(new):
             path, _, code = k.partition("::")
@@ -322,7 +322,7 @@ def main(argv: list[str]) -> int:
         print("\nFix each: make the primary path correct, fail closed, or surface "
               "LOUDLY (unconditional eprintln + a counter). If it is genuinely "
               "recall-safe, annotate the line `// LAW10: <why>`. Do NOT add it to "
-              "the baseline — the baseline only shrinks.", file=sys.stderr)
+              "the baseline, the baseline only shrinks.", file=sys.stderr)
         return 1
 
     if fixed:
@@ -330,7 +330,7 @@ def main(argv: list[str]) -> int:
               f"Run --update-baseline to lock in the shrink:")
         for k in sorted(fixed):
             print(f"  - {k.split('::')[0]}")
-    print(f"OK — no new silent fallbacks. {len(current)} known (baseline debt, "
+    print(f"OK, no new silent fallbacks. {len(current)} known (baseline debt, "
           f"shrinking).")
     return 0
 

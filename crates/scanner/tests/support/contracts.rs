@@ -12,8 +12,8 @@
 //!     a SOUND all-or-nothing BEHAVIOR contract instead of an accuracy RATE.
 //!
 //! T-01 contract (see the internal design notes): these runners assert a sound
-//! PROPERTY — a credential that fires on its own bytes alone cannot be removed
-//! by a byte-preserving transform — never a recall/precision/F1 *rate* over a
+//! PROPERTY, a credential that fires on its own bytes alone cannot be removed
+//! by a byte-preserving transform, never a recall/precision/F1 *rate* over a
 //! corpus. Aggregate accuracy rates live ONLY in the differential bench
 //! (`benchmarks/bench`), never in `cargo test`.
 
@@ -60,7 +60,7 @@ pub fn contracts_dir() -> PathBuf {
 }
 
 /// Load every `tests/contracts/*.toml`. A read or parse failure PANICS with the
-/// offending path — a malformed contract is a finding, never something to skip
+/// offending path, a malformed contract is a finding, never something to skip
 /// silently (CLAUDE.md Law 10: no silent fallbacks). The old per-runner loaders
 /// used `let Ok(..) else { continue }`, which silently dropped a corrupt
 /// contract and shrank the corpus invisibly; this is the single fail-closed
@@ -83,7 +83,7 @@ pub fn load_contracts() -> Vec<Contract> {
     }
     assert!(
         !out.is_empty(),
-        "tests/contracts/ has no *.toml — the runner has nothing to drive"
+        "tests/contracts/ has no *.toml, the runner has nothing to drive"
     );
     out
 }
@@ -95,7 +95,7 @@ pub fn scanner() -> CompiledScanner {
     CompiledScanner::compile(detectors).expect("scanner compile")
 }
 
-/// Compile the on-disk detector set with a caller-supplied [`ScanConfig`] — used
+/// Compile the on-disk detector set with a caller-supplied [`ScanConfig`], used
 /// by config-gated behavior contracts (e.g. the `scan_comments` toggle) that
 /// must compare two scanner configurations on the same corpus.
 pub fn scanner_with(config: ScanConfig) -> CompiledScanner {
@@ -153,7 +153,7 @@ pub fn surfaces(scanner: &CompiledScanner, chunk: &Chunk, credential: &str) -> b
 }
 
 /// A credential is *credential-sufficient* when it surfaces from its OWN bytes
-/// alone via a detector keyed on a distinctive PREFIX/SHAPE — no companion
+/// alone via a detector keyed on a distinctive PREFIX/SHAPE, no companion
 /// `api`/`secret`/`key` anchor needed. Only these can be gated all-or-nothing
 /// across a byte-preserving transform: the transform leaves the credential bytes
 /// intact, so a sufficient credential that vanishes is a real recall bug, never
@@ -164,7 +164,7 @@ pub fn surfaces(scanner: &CompiledScanner, chunk: &Chunk, credential: &str) -> b
 /// character *run*, which is intrinsically context-dependent: the SAME credential
 /// bytes that form a clean high-entropy run in isolation dilute below the entropy
 /// gate once embedded in a longer run (e.g. `rediss://default:<cred>@host…`,
-/// `teams api key=<cred>`), where a service-anchored detector — not entropy —
+/// `teams api key=<cred>`), where a service-anchored detector, not entropy 
 /// surfaces the secret. Gating an entropy-only credential all-or-nothing would
 /// therefore assert survival of a context-dependent firing the moment any
 /// transform perturbs the surrounding run (whitespace injected between an anchor
@@ -172,7 +172,7 @@ pub fn surfaces(scanner: &CompiledScanner, chunk: &Chunk, credential: &str) -> b
 /// exactly the accuracy-RATE question this module delegates to the bench. Such
 /// credentials fall through to the companion/informational bucket below: still
 /// recorded for visibility, never gated. (A credential with a distinctive prefix
-/// that *also* happens to be high-entropy stays sufficient — its named detector
+/// that *also* happens to be high-entropy stays sufficient, its named detector
 /// surfaces it here regardless of the entropy fallback.)
 ///
 /// Companion-required positives (a bare UUID, a low-entropy generic body that

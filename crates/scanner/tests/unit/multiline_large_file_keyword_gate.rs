@@ -10,8 +10,8 @@
 
 use keyhog_scanner::testing::multiline::has_concatenation_indicators_for_test as has_concat;
 
-/// Neutral filler — no secret keyword, no concat indicator, no structural lead
-/// char — padded well past the 4096-byte large-file gate so the keyword gate
+/// Neutral filler, no secret keyword, no concat indicator, no structural lead
+/// char, padded well past the 4096-byte large-file gate so the keyword gate
 /// engages. The payload (with the keyword and/or concat indicator) is appended.
 fn large_body_with(payload: &str) -> String {
     let filler = "plain data row\n".repeat(350); // 15 * 350 = 5250 bytes > 4096
@@ -32,7 +32,7 @@ fn large_file_titlecase_secret_passes() {
 
 #[test]
 fn large_file_uppercase_secret_passes() {
-    // All-caps key — missed by the old case-sensitive `ecret` probe.
+    // All-caps key (missed by the old case-sensitive `ecret` probe).
     assert!(has_concat(&large_body_with("SECRET = \"a\" + \"b\"")));
 }
 
@@ -88,7 +88,7 @@ fn large_file_mixed_case_api_key_passes() {
 
 #[test]
 fn large_file_keyword_embedded_in_identifier_passes() {
-    // The keyword need not be standalone — `MY_SECRET_VALUE` contains SECRET.
+    // The keyword need not be standalone. `MY_SECRET_VALUE` contains SECRET.
     assert!(has_concat(&large_body_with(
         "MY_SECRET_VALUE = \"a\" + \"b\""
     )));

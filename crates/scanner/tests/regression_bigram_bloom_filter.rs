@@ -57,7 +57,7 @@ fn github_pat_recall_and_benign_source_rejection() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Absent-bigram (negative) coverage — exact false, no false positives
+// Absent-bigram (negative) coverage, exact false, no false positives
 // ─────────────────────────────────────────────────────────────────────────
 
 /// A bigram never inserted must probe `false`. The direct table guarantees

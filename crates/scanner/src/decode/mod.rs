@@ -133,12 +133,12 @@ pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
                     i += 4;
                     continue;
                 }
-                // C-style octal escape `\NNN` (exactly 3 octal digits) — the
+                // C-style octal escape `\NNN` (exactly 3 octal digits), the
                 // trigger grammar of `OctalEscapeDecoder::contains_octal_escape`.
                 // Without this arm the octal digits between the backslashes form
                 // runs of only 3 (well under MIN_DECODABLE_RUN=24) and no other
                 // arm matches, so an octal-ONLY chunk returned false here and the
-                // whole decode pipeline was skipped — leaving the registered
+                // whole decode pipeline was skipped, leaving the registered
                 // octal decoder unreachable for octal-encoded payloads (a silent
                 // recall hole, Law 10). Counts toward the same backslash-escape
                 // threshold as `\u`/`\x` so octal reaches detection parity with

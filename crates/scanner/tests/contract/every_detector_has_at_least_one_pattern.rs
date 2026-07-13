@@ -1,12 +1,12 @@
-//! Contract: every RUNTIME-LOADED detector can fire — via a regex pattern, or
+//! Contract: every RUNTIME-LOADED detector can fire, via a regex pattern, or
 //! (for the generic/entropy family alone) via keyword + entropy with no pattern.
 //!
 //! This pins the GATED `load_detectors` population (what the scanner actually
 //! runs). The embedded-corpus twin (`detector_registry_truth_matrix.rs`) pins
 //! the same invariant over the ungated embed and additionally guards that the
 //! pattern-less set is EXACTLY the generic family. Both apply the ONE owner of
-//! "is this the pattern-less-by-design family?" — `is_generic_or_entropy_detector`
-//! — so the exemption can never diverge between the two load paths.
+//! "is this the pattern-less-by-design family?": `is_generic_or_entropy_detector`
+//! (so the exemption can never diverge between the two load paths).
 
 use crate::support::paths::detector_dir;
 

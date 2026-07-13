@@ -3,7 +3,7 @@
 //! `find_*_strings` run over attacker-controlled file bytes and `gpu_routing_
 //! profile` / `parse_backend_str` over user/driver strings, so the load-bearing
 //! guarantees are: (1) NEVER panic on any input, and (2) honour their documented
-//! filter/well-formedness contracts for ALL inputs — not just the fixed vectors
+//! filter/well-formedness contracts for ALL inputs, not just the fixed vectors
 //! in the known-answer suites.
 
 use keyhog_scanner::decode::{find_base64_strings, find_hex_strings, is_base64_candidate_byte};
@@ -15,7 +15,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(10_000))]
 
     /// Every base64 run surfaced by discovery must (a) meet the min-length floor
-    /// and (b) contain only base64-alphabet bytes — the two filter predicates in
+    /// and (b) contain only base64-alphabet bytes, the two filter predicates in
     /// `visit_classified_base64_string_spans`. A violation would feed a
     /// non-candidate run into the decode-and-rescan pipeline.
     #[test]
@@ -58,7 +58,7 @@ proptest! {
     }
 
     /// `parse_backend_str` is total: it never panics for arbitrary input (the
-    /// Some/None result is discarded — only crash-freedom is asserted here).
+    /// Some/None result is discarded (only crash-freedom is asserted here)).
     #[test]
     fn parse_backend_str_never_panics(raw in ".{0,40}") {
         let _ = parse_backend_str(&raw);

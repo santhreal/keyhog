@@ -1,13 +1,13 @@
 //! DECISION GATE: can Hyperscan replace the `regex::RegexSet` always-active
-//! phase-2 prefilter — the measured #1 scan cost (`phase2:prefilter` ≈ 44% of scan
-//! in the small-file regime, ~35µs/call) — at a real speedup AND without
+//! phase-2 prefilter, the measured #1 scan cost (`phase2:prefilter` ≈ 44% of scan
+//! in the small-file regime, ~35µs/call), at a real speedup AND without
 //! changing the matched-pattern set (soundness)?
 //!
 //! `build_simd_scanner` compiles ONLY the keyword-triggered `ac_map` into
 //! Hyperscan; every always-active phase-2 pattern runs through `regex::RegexSet`
 //! instead. Hyperscan is built
 //! for thousands of patterns at multi-GB/s, and `SINGLEMATCH` (fire each pattern
-//! at most once) is exactly "does pattern P match at all" — the prefilter's
+//! at most once) is exactly "does pattern P match at all", the prefilter's
 //! question, with no broad-pattern callback storm.
 //!
 //! This A/Bs both engines over the real detector regexes on the real mirror
@@ -40,7 +40,7 @@ const REGEX_BATCH: usize = 256;
 fn build_hs(patterns: &[(usize, String)]) -> (BlockDatabase, BTreeSet<usize>) {
     // SINGLEMATCH only: fire each pattern at most once (prefilter semantics) and
     // let each pattern's INLINE flags (`(?i)` etc.) govern case, exactly as the
-    // `regex::Regex::new(raw)` reference does — so a flag asymmetry can't masquerade
+    // `regex::Regex::new(raw)` reference does, so a flag asymmetry can't masquerade
     // as an HS soundness gap.
     let flags = PatternFlags::SINGLEMATCH;
     // First drop ids HS can't even parse individually, so the batch build only

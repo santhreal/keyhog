@@ -118,7 +118,7 @@ fn env_credential(name: &str) -> Result<Option<String>, SourceError> {
 
 fn infer_s3_region(base_url: &str) -> Option<String> {
     // An unparseable base URL yields `None` (inference declines), which the
-    // caller turns into the `us-east-1` default — there is no region to infer
+    // caller turns into the `us-east-1` default, there is no region to infer
     // from a bad URL, so this is a sound fallback, not a swallowed error.
     let host = reqwest::Url::parse(base_url).ok()?.host_str()?.to_string(); // LAW10: bad URL ⇒ decline inference, caller defaults region, see note
     let parts: Vec<&str> = host.split('.').collect();

@@ -4,7 +4,7 @@
 /// the offending input and the flag name (`invalid value '<got>' for
 /// '<--flag>'`), so this states only what was *expected*: the accepted
 /// range/form plus a concrete valid example. That turns a bare "not a valid
-/// number" — which leaves the user guessing the bounds — into a message that is
+/// number", which leaves the user guessing the bounds, into a message that is
 /// itself the fix. Centralizing the wording keeps every numeric parser's
 /// parse-failure branch consistent instead of drifting across a dozen
 /// hand-written strings.
@@ -28,7 +28,7 @@ const POSITIVE_INTEGER_ACCEPTED: &str = "a positive integer (>= 1)";
 /// callers (`Default` is `0` for every integer type, so `val == T::default()` is
 /// the zero test). Each wrapper supplies only its parse-failure `accepted` phrase,
 /// its out-of-range `constraint` phrase (which names its own flag/unit), and a
-/// concrete `example` — the parse + zero-check now has exactly ONE home instead of
+/// concrete `example`: the parse + zero-check now has exactly ONE home instead of
 /// six byte-identical copies. Mirrors `parse_unit_interval` for the `[0,1]` knobs.
 fn parse_positive_int<T>(
     s: &str,
@@ -50,7 +50,7 @@ where
 }
 
 /// Shared parser for the `[0.0, 1.0]` closed-interval "confidence-style" knobs
-/// (`min_confidence`, `ml_weight`) that are configurable on BOTH surfaces — the
+/// (`min_confidence`, `ml_weight`) that are configurable on BOTH surfaces, the
 /// CLI flag AND the `.keyhog.toml` key. `key_label` is the BARE key name (no
 /// `--`) so the single message reads correctly on either surface (the config
 /// merge reuses these validators via `parse_config_*`). NaN and ±Inf are
@@ -201,7 +201,7 @@ pub(crate) fn parse_positive_thread_count(s: &str) -> Result<usize, String> {
 // (git), `limit_cloud_max_objects` (s3/gcs/azure), `limit_hosted_git_pages`
 // (github/gitlab/bitbucket). Gating this to `git` alone made `--features s3` /
 // `--features github` (no git) fail with `parse_positive_limit_count` not found
-// — the value-parser is referenced by their clap args but was cfg'd out.
+//: the value-parser is referenced by their clap args but was cfg'd out.
 #[cfg(any(
     feature = "git",
     feature = "s3",

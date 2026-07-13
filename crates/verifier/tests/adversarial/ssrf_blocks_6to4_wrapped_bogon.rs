@@ -1,7 +1,7 @@
 //! SSRF adversarial: the 6to4 prefix (`2002::/16`, RFC 3056) embeds an IPv4
 //! address in bits 16..48 (`2002:WWXX:YYZZ::`). Like NAT64, it lets an attacker
-//! smuggle a private/metadata IPv4 inside an IPv6 literal — `2002:a9fe:a9fe::`
-//! decodes to 169.254.169.254 (IMDS) — past a guard that only screens
+//! smuggle a private/metadata IPv4 inside an IPv6 literal: `2002:a9fe:a9fe::`
+//! decodes to 169.254.169.254 (IMDS), past a guard that only screens
 //! dotted-quad. The bogon classifier unwraps the embedded v4 and refuses it when
 //! the embedded address is itself a bogon; these pin that.
 

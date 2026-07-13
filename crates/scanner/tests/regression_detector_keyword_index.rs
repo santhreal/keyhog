@@ -19,7 +19,7 @@
 //!      resolves to is a fact, not a guess.
 //!
 //! Every assertion checks a specific value (exact stem string, exact bool, exact
-//! `Option<String>`, exact detector-id string) — never a bare `is_empty`/`len`.
+//! `Option<String>`, exact detector-id string) (never a bare `is_empty`/`len`).
 
 mod support;
 use keyhog_core::{Chunk, ChunkMetadata};
@@ -72,7 +72,7 @@ fn cpu_ids_for(scanner: &CompiledScanner, text: &str, credential: &str) -> Vec<S
 }
 
 // ===========================================================================
-// Layer 1a — generic_keyword_prefilter_stem: PRIORITY-ORDERED contains chain
+// Layer 1a, generic_keyword_prefilter_stem: PRIORITY-ORDERED contains chain
 //   secret > pass > pwd > token > webhook > key > auth > credential > self
 // ===========================================================================
 
@@ -97,7 +97,7 @@ fn prefilter_stem_secret_wins_over_later_stems() {
 #[test]
 fn prefilter_stem_key_beats_auth() {
     // `auth_key` contains BOTH `key` and `auth`; `key` precedes `auth` in the
-    // chain, so the stem is `key` — the exact precedence the doc-comment pins.
+    // chain, so the stem is `key`: the exact precedence the doc-comment pins.
     assert_eq!(generic_keyword_prefilter_stem_for_test("auth_key"), "key");
     assert_eq!(generic_keyword_prefilter_stem_for_test("apikey"), "key");
     assert_eq!(
@@ -131,7 +131,7 @@ fn prefilter_stem_pass_pwd_token_webhook_auth_credential() {
 
 #[test]
 fn prefilter_stem_unknown_keyword_is_the_keyword_itself() {
-    // No stem substring matches, so the keyword keeps its exact spelling — a
+    // No stem substring matches, so the keyword keeps its exact spelling, a
     // keyword-list expansion can never become invisible to the prefilter.
     assert_eq!(
         generic_keyword_prefilter_stem_for_test("vendorname"),
@@ -144,7 +144,7 @@ fn prefilter_stem_unknown_keyword_is_the_keyword_itself() {
 }
 
 // ===========================================================================
-// Layer 1b — compact keyword comparators (case-fold, drop `_`/`-`/`.`)
+// Layer 1b, compact keyword comparators (case-fold, drop `_`/`-`/`.`)
 // ===========================================================================
 
 #[test]
@@ -173,7 +173,7 @@ fn compact_keyword_ends_with_is_suffix_not_exact() {
 }
 
 // ===========================================================================
-// Layer 1c — normalize_assignment_keyword: case-fold, collapse `_`/`-`/`.`,
+// Layer 1c, normalize_assignment_keyword: case-fold, collapse `_`/`-`/`.`,
 //            trim leading/trailing separators, drop unrecognized bytes.
 // ===========================================================================
 
@@ -217,7 +217,7 @@ fn normalize_assignment_keyword_boundaries() {
 }
 
 // ===========================================================================
-// Layer 1d — normalized_assignment_keyword_has_secret_suffix: last-`_`-segment
+// Layer 1d, normalized_assignment_keyword_has_secret_suffix: last-`_`-segment
 //            set {key,secret,token,password,passwd,pwd} OR ends_with
 //            {key,secret,token,password}.
 // ===========================================================================
@@ -264,7 +264,7 @@ fn secret_suffix_endswith_vs_segment_split_and_negatives() {
 }
 
 // ===========================================================================
-// Layer 1e — leading_assignment_key: pull `key` from `key=`/`key:`/`key~`.
+// Layer 1e (leading_assignment_key: pull `key` from `key=`/`key:`/`key~`).
 // ===========================================================================
 
 #[test]
@@ -288,7 +288,7 @@ fn leading_assignment_key_requires_a_terminator() {
 }
 
 // ===========================================================================
-// Layer 1f — named-detector owner set: binary-search EXACT membership +
+// Layer 1f, named-detector owner set: binary-search EXACT membership +
 //            span boundary expansion.
 // ===========================================================================
 
@@ -354,7 +354,7 @@ fn owner_span_bounds_guard_and_expansion() {
 }
 
 // ===========================================================================
-// Layer 1g — detector-id family predicates.
+// Layer 1g (detector-id family predicates).
 // ===========================================================================
 
 #[test]
@@ -406,7 +406,7 @@ fn is_entropy_detector_family_boundary() {
 }
 
 // ===========================================================================
-// Layer 2 — end-to-end keyword -> detector-id, CpuFallback (no accelerator).
+// Layer 2 (end-to-end keyword -> detector-id, CpuFallback (no accelerator)).
 //   Tokens are contract-verified positives from tests/contracts/*.toml.
 // ===========================================================================
 
@@ -456,7 +456,7 @@ fn password_keyword_maps_to_generic_password() {
 fn github_token_id_is_backend_invariant_cpu_vs_default() {
     // The keyword -> id mapping for a literal-anchored detector must be the same
     // on the always-available CpuFallback and on whatever backend the default
-    // `scan()` selects — no accelerator assumption, pure parity.
+    // `scan()` selects (no accelerator assumption, pure parity).
     let token = "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";
     let scanner = build_scanner();
     let text = format!("GH_TOKEN={token}");

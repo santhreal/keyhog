@@ -2,7 +2,7 @@
 //!
 //! `scan_phase2_with_anchors` verifies anchored `(pattern, pos)` candidates in
 //! two passes: the main shared-anchor candidates and the localized-homoglyph
-//! plain candidates. Both ran a byte-identical loop — group a pattern's
+//! plain candidates. Both ran a byte-identical loop, group a pattern's
 //! contiguous candidate run, then either `extract_anchored` (when the anchored
 //! regex compiled) or fall back to the cursor-bounded `extract_matches_inner`,
 //! with per-pattern profiling. Two copies of the anchored-vs-fallback verify

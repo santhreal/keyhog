@@ -7,7 +7,7 @@
 //!
 //! Before the fix, NONE of these five detectors existed in `detectors/`, so a
 //! real credential of each shape produced ZERO findings on the production
-//! `CompiledScanner::compile(load_detectors(...)).scan(...)` path — a pure
+//! `CompiledScanner::compile(load_detectors(...)).scan(...)` path, a pure
 //! recall hole. (`glrt-` was even listed in the scanner's KNOWN_PREFIXES
 //! confidence floor, yet no detector ever captured it.)
 //!
@@ -38,7 +38,7 @@ use std::sync::OnceLock;
 ///  - Tokens whose prefix is NOT in `KNOWN_PREFIXES` (`PMAK-`, `xapp-`,
 ///    `xoxe-`, `Endpoint=sb://`) instead self-declare `min_confidence = 0.5`
 ///    in their TOML. That value is applied as a FILTER floor by the CLI
-///    orchestrator, not as a lift of the scanner-layer confidence — so for
+///    orchestrator, not as a lift of the scanner-layer confidence, so for
 ///    those we assert the loaded `DetectorSpec::min_confidence` carries the
 ///    floor (see `new_prefix_detectors_declare_min_confidence_floor`), which
 ///    is the load-bearing fact that keeps the finding in production output.
@@ -217,7 +217,7 @@ fn slack_config_refresh_token_fires() {
 fn slack_config_access_token_fires() {
     // xoxe.xoxp- access token: digit + 163-166 upper-alphanumeric chars.
     // Body is varied (not uniform/monotonic) so the sequential-placeholder
-    // suppression does not fire — a real rotation token is high-entropy.
+    // suppression does not fire (a real rotation token is high-entropy).
     let body = "PTGZ4JFEBZ9SDO78XRLGQNBQRMKTSXFVY6PLP4RF9TAST6M01S12KOTQCFC3R784VJME0M2RLW1U9MUGDORPHVLS3BCWFSUBUSUJ0ESM2SIQYKVAXC3KXXSG2N1NHDDDKJC85PUCH7S0M4MP205CO02P1N5MCCQQP7NO0";
     assert_eq!(
         body.len(),
@@ -247,9 +247,9 @@ fn azure_service_bus_connection_string_fires_and_captures_key() {
     let matches = scan(&text);
     let hit = require_hit(&matches, "azure-service-bus-connection-string", &text);
 
-    // Two detector patterns overlap on this line — the SharedAccessKey-form
+    // Two detector patterns overlap on this line, the SharedAccessKey-form
     // pattern captures just the key (group 1), the env-anchor pattern captures
-    // the whole connection string — and overlap resolution keeps one. Either
+    // the whole connection string, and overlap resolution keeps one. Either
     // way the reported credential MUST contain the actual SharedAccessKey
     // secret; that is the load-bearing fact, independent of resolver tie-break.
     assert!(
@@ -268,7 +268,7 @@ fn azure_service_bus_connection_string_fires_and_captures_key() {
 #[test]
 fn azure_service_bus_does_not_collide_with_iot_host() {
     // An azure-devices.net (IoT Hub) host must NOT be claimed by the Service
-    // Bus detector — the two share the `Endpoint=`/`SharedAccessKey` shape but
+    // Bus detector, the two share the `Endpoint=`/`SharedAccessKey` shape but
     // are distinguished by host. Guards against the Service Bus regex being
     // loosened to swallow IoT strings.
     let iot = "Endpoint=sb://my-hub.azure-devices.net/;\
@@ -281,7 +281,7 @@ fn azure_service_bus_does_not_collide_with_iot_host() {
 /// The four new detectors whose prefix is NOT in the scanner's
 /// `KNOWN_PREFIXES` floor list rely on a self-declared `min_confidence` to
 /// survive the CLI orchestrator's filter. Assert each loads with exactly the
-/// declared floor — the load-bearing fact that keeps their findings in
+/// declared floor, the load-bearing fact that keeps their findings in
 /// production output. (Pre-fix the detectors did not exist at all, so this
 /// also fails on the old corpus.)
 #[test]
@@ -332,7 +332,7 @@ fn negative_twins_do_not_fire() {
         "gitlab-runner-authentication-token",
         "glpat-AbCdEfGhIjKlMnOpQrSt12\n",
     );
-    // glrt- with a too-short (19-char) body — below the {20} floor.
+    // glrt- with a too-short (19-char) body (below the {20} floor).
     assert_no_hit(
         "gitlab-runner-authentication-token",
         "token=glrt-abcdefghijklmnopqrs\n", // 19 chars after glrt-
@@ -360,7 +360,7 @@ fn negative_twins_do_not_fire() {
 #[test]
 fn glrt_body_length_boundary() {
     // Exactly 20 chars after `glrt-` must fire (varied body so the
-    // sequential-placeholder suppression cannot interfere — the boundary
+    // sequential-placeholder suppression cannot interfere, the boundary
     // under test is the regex length floor, not entropy).
     let body20 = "Ik2zwEQHfwcepYyNGfB5";
     assert_eq!(body20.len(), 20);
@@ -401,7 +401,7 @@ fn postman_hex_segment_boundary() {
 
 // ----------------------------------------------------------------------------
 // Adversarial / evasion: a credential split across realistic surrounding text
-// (JSON, YAML, shell export) must still be detected — these prefixes are
+// (JSON, YAML, shell export) must still be detected, these prefixes are
 // distinctive enough that surrounding noise must not suppress them.
 // ----------------------------------------------------------------------------
 
@@ -440,7 +440,7 @@ fn prefixes_fire_inside_realistic_surroundings() {
 // A regression that re-narrows a charset or length band trips this.
 // ----------------------------------------------------------------------------
 
-/// Tiny deterministic xorshift PRNG — keeps the test self-contained (no
+/// Tiny deterministic xorshift PRNG, keeps the test self-contained (no
 /// external proptest/rand dep) while still exercising a broad token space.
 struct Rng(u64);
 impl Rng {

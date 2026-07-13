@@ -57,7 +57,7 @@ fn canonical_lift_keyword_material_matches_compacted_contains() {
 // The fixed vectors pin each shape at a handful of keywords; these SWEEP the gate
 // (scanner.rs:canonical_shape_lift_allowed): UUID → true for ANY keyword (early
 // return before the hex arms); a 32-hex value lifts iff the keyword is key material
-// and a 64-hex value lifts iff the keyword is crypto-key material — both as
+// and a 64-hex value lifts iff the keyword is crypto-key material, both as
 // cross-facade DIFFERENTIALS against the tested `is_key_material` / `is_crypto_key`
 // predicates, covering positive AND negative keywords without hardcoding needles;
 // and 40-hex, 128-hex, and non-hex/non-UUID values never lift under any keyword.
@@ -74,7 +74,7 @@ proptest! {
         prop_assert!(canonical_shape_lift_allowed(UUID, &kw));
     }
 
-    /// A 32-hex value lifts iff the keyword is key material — DIFFERENTIAL over any
+    /// A 32-hex value lifts iff the keyword is key material. DIFFERENTIAL over any
     /// keyword against the tested `is_key_material` predicate.
     #[test]
     fn hex32_lift_matches_key_material_oracle(kw in "[a-zA-Z0-9_.-]{0,24}") {
@@ -84,7 +84,7 @@ proptest! {
         );
     }
 
-    /// A 64-hex value lifts iff the keyword is crypto-key material — DIFFERENTIAL
+    /// A 64-hex value lifts iff the keyword is crypto-key material. DIFFERENTIAL
     /// over any keyword (the narrower sha256 discrimination).
     #[test]
     fn hex64_lift_matches_crypto_key_oracle(kw in "[a-zA-Z0-9_.-]{0,24}") {

@@ -8,7 +8,7 @@ severity = "critical"
 [[positive]]
 text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5sT6yU0pN2aG4eH7iO9kB1lM3rV5wX8zC0dQ2fS4gJ6kP8mR0tU2wY4aB6cD8eF0gH2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0\n-----END RSA PRIVATE KEY-----"
 credential = "MIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5s"
-reason = "Full RSA PEM block; the captured credential must include the key body (header-only markers no longer fire — full-block capture keeps distinct keys distinct under credential-scope dedup)."
+reason = "Full RSA PEM block; the captured credential must include the key body (header-only markers no longer fire (full-block capture keeps distinct keys distinct under credential-scope dedup))."
 
 [[positive]]
 text = "PRIVATE_KEY=\"-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5sT6yU0pN2aG4eH7iO9kB1lM3rV5wX8zC0dQ2fS4gJ6kP8mR0tU2wY4aB6cD8eF0gH2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0\n-----END RSA PRIVATE KEY-----\""
@@ -17,16 +17,16 @@ reason = "Quoted-assignment variant of the full-block positive."
 
 [[negative]]
 text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
 text = "-----EXAMPLEEXAMPLE-----"
-reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "export -----BEGIN OPENSSH PRIVATE KEY BLOCK-----ci>Pl//3g_i){edMnfn/'I5e?}/oiz@y+mHKFO|u6=Fwpt<-U2>a-)k GJ`nOz;-----END PRIVATE KEY BLOCK-----"
 credential = "-----BEGIN OPENSSH PRIVATE KEY BLOCK-----ci>Pl//3g_i){edMnfn/'I5e?}/oiz@y+mHKFO|u6=Fwpt<-U2>a-)k GJ`nOz;-----END PRIVATE KEY BLOCK-----"
-reason = "Adversarial envelope — credential must still surface under this detector."
+reason = "Adversarial envelope (credential must still surface under this detector)."
 
 [perf]
 fixture_bytes = 4096

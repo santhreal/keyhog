@@ -1,8 +1,8 @@
 //! Regression e2e: drive the REAL `keyhog` binary through the git pre-commit
 //! HOOK lifecycle and the DAEMON `{start,status,stop}` lifecycle, pinning the
 //! exact bytes each surface emits and the exact exit codes each transition
-//! reports. Everything here shells out to `CARGO_BIN_EXE_keyhog` — no in-process
-//! shortcuts — so a drift in the generated hook script, the operator messages,
+//! reports. Everything here shells out to `CARGO_BIN_EXE_keyhog`: no in-process
+//! shortcuts, so a drift in the generated hook script, the operator messages,
 //! or the exit-code contract fails a concrete assertion.
 //!
 //! Source of truth read while writing these:
@@ -40,7 +40,7 @@ const EXPECTED_HOOK_CONTENT: &str = concat!(
 );
 
 /// Create a real git repository at `dir` so `keyhog hook install` (which runs
-/// `git rev-parse --git-dir`) accepts it. A bare `mkdir .git` is NOT enough —
+/// `git rev-parse --git-dir`) accepts it. A bare `mkdir .git` is NOT enough 
 /// git only recognizes a directory initialized by `git init`.
 fn init_git_repo(dir: &Path) {
     let out = Command::new("git")
@@ -123,7 +123,7 @@ fn hook_install_emits_exact_shebang_exec_and_guard_lines() {
         content.contains("\n    exit 127\n"),
         "missing-keyhog PATH guard must block the commit with exit 127; got:\n{content}"
     );
-    // Exactly one exec line — the hook runs one scan, not several.
+    // Exactly one exec line (the hook runs one scan, not several).
     assert_eq!(
         content.matches("exec keyhog ").count(),
         1,
@@ -182,7 +182,7 @@ fn hook_install_success_message_is_exact() {
 // ---------------------------------------------------------------------------
 
 /// A second `hook install` over KeyHog's own hook is a no-op that exits 0 and
-/// reports "already installed" — it must not error and must not rewrite bytes.
+/// reports "already installed" (it must not error and must not rewrite bytes).
 #[test]
 fn hook_install_twice_reports_already_installed_exit_zero() {
     let dir = TempDir::new().unwrap();
@@ -458,7 +458,7 @@ fn daemon_start_status_stop_reports_exact_lines_and_codes() {
 }
 
 /// A SECOND `daemon start` on a socket already bound by a live daemon must fail
-/// closed with EXIT_USER_ERROR (2) and the exact "already bound" refusal — it
+/// closed with EXIT_USER_ERROR (2) and the exact "already bound" refusal, it
 /// must not clobber the running daemon's socket.
 #[cfg(unix)]
 #[test]

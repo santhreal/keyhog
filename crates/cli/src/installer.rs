@@ -10,11 +10,11 @@
 //!
 //! ## Responsibility split
 //!
-//! - [`release`] — the NETWORK + TRUST half: GitHub release resolution, asset
+//! - [`release`], the NETWORK + TRUST half: GitHub release resolution, asset
 //!   selection, semver comparison, executable-magic sanity check, minisign and
 //!   SHA-256 verification, and the scan-engine self-test. It produces
 //!   *verified bytes*.
-//! - this module — the LOCAL-INSTALL half: resolving the running binary, the
+//! - this module, the LOCAL-INSTALL half: resolving the running binary, the
 //!   atomic / rename-away self-replace, backup + rollback, and reaping the
 //!   orphaned temp artifacts a killed update leaves behind. It consumes the
 //!   verified bytes and commits them to disk recoverably.
@@ -244,15 +244,15 @@ where
 /// Best-effort reap of the temp artifacts a prior `update`/`repair` may have
 /// left beside the binary:
 ///
-/// * `.<name>.keyhog-old-<PID>` — the rename-away STASH from
+/// * `.<name>.keyhog-old-<PID>`: the rename-away STASH from
 ///   `replace_running_binary` (e.g. a Windows update whose old image stayed
 ///   locked until its process exited).
-/// * `.<name>.keyhog-bak-<PID>` — the BACKUP `install_with_rollback` copies
+/// * `.<name>.keyhog-bak-<PID>`: the BACKUP `install_with_rollback` copies
 ///   before swapping. The success/rollback paths delete it, but a process
 ///   KILLED (SIGKILL, power loss, OOM) between the backup copy and its removal
 ///   leaves it orphaned forever; without this it accumulates one stale file
 ///   per crashed update.
-/// * `.<name>-update-<PID>.tmp` — the in-flight staging file `install_binary`
+/// * `.<name>-update-<PID>.tmp`: the in-flight staging file `install_binary`
 ///   writes before the atomic rename; orphaned the same way on a hard kill.
 ///
 /// Called only from `update`/`repair`, never the hot scan path, so it adds no

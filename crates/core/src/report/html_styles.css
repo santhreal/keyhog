@@ -1,4 +1,4 @@
-/* KeyHog interactive report — Santh house style.
+/* KeyHog interactive report: Santh house style.
    Sharp, black & white, one keyhog-yellow accent. Vercel-grade minimalism:
    hairline borders, a faint grid canvas, monospace data, generous whitespace,
    precise custom motion. Zero external dependencies (system font stacks only).
@@ -28,7 +28,7 @@
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
 
-  /* Severity — a warm heat scale (hot = danger) so the breakdown reads at a
+  /* Severity, a warm heat scale (hot = danger) so the breakdown reads at a
      glance and never collapses into one flat colour: red → amber → yellow →
      grey → green. Distinct, on-brand, intuitive. */
   --color-critical:   #ff453a;
@@ -38,7 +38,7 @@
   --color-info:       #6a6a6a;
   --color-client-safe:#30d158;
 
-  /* Verification — a LIVE secret glows yellow ("look here"); dead fades out. */
+  /* Verification, a LIVE secret glows yellow ("look here"); dead fades out. */
   --color-live:         #ffd60a;
   --color-revoked:      #8f8f8f;
   --color-dead:         #5a5a5a;
@@ -319,7 +319,7 @@ header {
 .chart-segment {
   fill: none;
   stroke-width: 12;
-  stroke-linecap: round;               /* rounded arc caps — softer, futuristic */
+  stroke-linecap: round;               /* rounded arc caps, softer, futuristic */
   stroke-dasharray: 0 100;             /* drawn-empty; JS animates each arc in */
   stroke-dashoffset: 0;
   transform: rotate(-90deg);
@@ -523,8 +523,8 @@ tbody tr.finding-row:hover td:first-child { box-shadow: inset 2px 0 0 var(--acce
   gap: 7px;
   font-family: var(--font-mono);
 }
-/* Verification reads as a two-line stack — primary verdict on top, the dim
-   qualifier ("skipped", "no verifier", "active") beneath — so it never wraps
+/* Verification reads as a two-line stack, primary verdict on top, the dim
+   qualifier ("skipped", "no verifier", "active") beneath, so it never wraps
    mid-phrase and mirrors the path cell's filename/dir rhythm. */
 .status-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; line-height: 1.25; }
 .status-primary { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -537,8 +537,8 @@ tbody tr.finding-row:hover td:first-child { box-shadow: inset 2px 0 0 var(--acce
 .dot-error        { background: var(--color-error); }
 .dot-unverifiable { background: var(--color-unverifiable); }
 .dot-skipped      { background: var(--color-skipped); }
-/* "Not attempted" (skipped / unverifiable): render as an UNKNOWN — a hollow
-   dashed ring, never a solid (and never green) dot — so an unverified secret is
+/* "Not attempted" (skipped / unverifiable): render as an UNKNOWN, a hollow
+   dashed ring, never a solid (and never green) dot, so an unverified secret is
    visibly "we did not check this", not mistaken for checked-and-safe. */
 .dot-unattempted {
   background: transparent !important;
@@ -554,7 +554,7 @@ tbody tr.finding-row:hover td:first-child { box-shadow: inset 2px 0 0 var(--acce
 }
 .verify-note { color: var(--accent-primary); font-size: 10px; font-family: var(--font-mono); }
 
-/* Scan-coverage panel — honest account of what was NOT fully scanned, so a
+/* Scan-coverage panel, honest account of what was NOT fully scanned, so a
    findings list is never silently read as a clean bill of health. */
 .coverage-panel { margin-bottom: 18px; }
 .coverage-dot {
@@ -674,7 +674,7 @@ tbody tr.finding-row:hover td:first-child { box-shadow: inset 2px 0 0 var(--acce
 
 #cnt-live.has-live { color: var(--accent-primary); }
 
-/* Risk-posture hero — one-glance verdict for the whole scan. */
+/* Risk-posture hero, one-glance verdict for the whole scan. */
 .risk-hero {
   display: flex;
   align-items: baseline;

@@ -13,12 +13,12 @@
 //!     a subdirectory's `.gitignore` overrides a conflicting rule from a parent
 //!     `.gitignore` because the closer matcher is consulted first.
 //!   * A `!pattern` negation re-includes a file a shallower (or earlier, in the
-//!     same file) rule excluded — and the re-inclusion is scoped to the exact
+//!     same file) rule excluded, and the re-inclusion is scoped to the exact
 //!     pattern/subtree, never leaking to siblings or the parent directory.
 //!   * `with_respect_gitignore(false)` (scan-system) makes the whole nested
 //!     tree scannable so a key stashed behind `.gitignore` cannot hide.
 //!
-//! Host-independence: this is a pure walker/IO contract — no accelerator
+//! Host-independence: this is a pure walker/IO contract, no accelerator
 //! (Hyperscan/SIMD/GPU) is involved, so every assertion is deterministic on any
 //! host. Every assertion pins a concrete value: an exact scanned-file count, an
 //! exact "scanned exactly once" multiplicity (`1`) or "dropped" multiplicity

@@ -311,7 +311,7 @@ fn adv_stripe_secret_key_chunk_boundary_must_not_fire_near_miss() {
     // Near-miss: `sk_live_` + 23 body chars, one short of the `{24,}` the
     // detector requires. Like its sibling chunk-boundary near-misses (aws 19,
     // google 34, github 32), the token sits wholly in chunk_b and must NOT
-    // fire — the prior fixture was a *complete* 48-char key, which correctly
+    // fire, the prior fixture was a *complete* 48-char key, which correctly
     // fires, so the silence assertion was mislabeled.
     assert_detector_silent_across_chunk_boundary(
         "stripe-secret-key",

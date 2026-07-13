@@ -8,7 +8,7 @@ schema_version = 1
 detector_id = "slack-webhook-url"
 service = "slack"
 severity = "critical"
-# README claim (top-level scalar — see every_contract_readme_claim_present):
+# README claim (top-level scalar, see every_contract_readme_claim_present):
 readme_claim = "Slack"
 
 # ---- POSITIVES (recall) ---------------------------------------------
@@ -26,7 +26,7 @@ reason = "Standard env-var assignment."
 [[positive]]
 text = "curl -X POST -H 'Content-type: application/json' --data '{\"text\":\"Hi\"}' https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
 credential = "https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
-reason = "Curl command shape — the most common leak channel in scripts and CI configs."
+reason = "Curl command shape (the most common leak channel in scripts and CI configs)."
 
 # ---- NEGATIVES (precision) ------------------------------------------
 
@@ -47,12 +47,12 @@ reason = "Prose mentioning the URL prefix without a real token."
 [[evasion]]
 text = "# SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
 credential = "https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
-reason = "Commented-out env-var assignment — the env-var keyword + assignment lift confidence above the Comment-context hard-suppress floor. A bare `// URL` shape is intentionally suppressed (engine precision choice; see openai-api-key contract for the same pattern)."
+reason = "Commented-out env-var assignment, the env-var keyword + assignment lift confidence above the Comment-context hard-suppress floor. A bare `// URL` shape is intentionally suppressed (engine precision choice; see openai-api-key contract for the same pattern)."
 
 [[evasion]]
 text = "{\"url\":\"https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx\"}"
 credential = "https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
-reason = "JSON payload — extraction must not consume the closing quote/brace."
+reason = "JSON payload (extraction must not consume the closing quote/brace)."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

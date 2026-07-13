@@ -6,7 +6,7 @@ works on Linux desktop, santhserver, the Windows ThinkPad (via WSL/Git
 Bash), and macOS. The result feeds :class:`bench.schema.Host` so runs from
 every machine aggregate into one OS/CPU/GPU matrix.
 
-``hostname_hash`` is a truncated SHA-256 of the hostname — stable per
+``hostname_hash`` is a truncated SHA-256 of the hostname, stable per
 machine, but not the raw name (keeps committed result files free of bare
 hostnames while still grouping a host's runs).
 """
@@ -111,7 +111,7 @@ def _capture() -> Host:
     """Probe the current host ONCE per process. Host hardware is invariant, but
     the probes spawn nvidia-smi (10s timeout) + sysctl and re-read /proc, and a
     perf-tier matrix asks for the host for every RunResult (build_result,
-    _unavailable_result, results_dir) — dozens of redundant probes without this."""
+    _unavailable_result, results_dir), dozens of redundant probes without this."""
     gpu_name, gpu_vram = _gpu()
     return Host(
         hostname_hash=_hostname_hash(),

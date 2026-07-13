@@ -1,8 +1,8 @@
-//! Multi-secret runner — multiple credentials on one line/file.
+//! Multi-secret runner (multiple credentials on one line/file).
 //!
 //! A `.env` with 8 service credentials, a CI YAML with `env:` for
 //! every service the team uses, a debug dump that prints every key
-//! the worker holds — all real shapes. A detector that fires on the
+//! the worker holds, all real shapes. A detector that fires on the
 //! first credential but misses the next two (because it stops at the
 //! first match per-line, or its span/window happened to cover only
 //! the first) silently drops 50–80% of recall on these files.
@@ -13,7 +13,7 @@
 //! recall/precision *rate* over a corpus (those live in the
 //! differential bench):
 //!
-//!   *credential-sufficiency invariance* — if a detector fires on its
+//!   *credential-sufficiency invariance*, if a detector fires on its
 //!   credential ALONE (a distinctive prefix/shape, no companion
 //!   context needed), then co-locating other secrets on the same
 //!   line/file CANNOT remove that match. Every such credential MUST
@@ -22,7 +22,7 @@
 //! A detector whose credential does NOT fire standalone is
 //! companion-REQUIRED: a bare UUID, or a low-entropy generic body
 //! that needs an `api`/`secret`/`credentials` anchor. Dense
-//! co-location legitimately perturbs that companion attribution —
+//! co-location legitimately perturbs that companion attribution 
 //! how well it survives is evasion ACCURACY owned by the bench, so
 //! those positives are recorded for visibility but never gated.
 //! (Forcing them to 100% would assert an accuracy rate in
@@ -30,10 +30,10 @@
 //!
 //! Two scenarios this runner covers:
 //!
-//! 1. **N positives on N lines** — each contract's first positive is
+//! 1. **N positives on N lines**: each contract's first positive is
 //!    concatenated with the first positive of N other contracts, one
 //!    per line.
-//! 2. **N positives in one paragraph** — same N positives, joined
+//! 2. **N positives in one paragraph**: same N positives, joined
 //!    with `; ` separators on a single line.
 
 mod support;
@@ -156,7 +156,7 @@ fn credential_sufficient_secrets_survive_colocation() {
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml — multi-secret runner has nothing to drive"
+        "tests/contracts/ has no *.toml, multi-secret runner has nothing to drive"
     );
 
     // First positive of every contract that has one, carrying its
@@ -246,7 +246,7 @@ fn credential_sufficient_secrets_survive_colocation() {
         "multi-secret credential-sufficiency invariance violated ({} cases): a credential \
          that fires standalone was dropped when other secrets were co-located. This is a \
          multi-match recall bug (the engine stopped at an earlier match or its window \
-         missed a later secret) — NOT a fixture artifact, because the credential needs no \
+         missed a later secret). NOT a fixture artifact, because the credential needs no \
          companion context:\n  - {}",
         violations.len(),
         violations.join("\n  - "),

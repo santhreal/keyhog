@@ -2,7 +2,7 @@
 //! whose SHAPE is pinned field-by-field against the REAL shipped binary.
 //!
 //! The JSON reporter (`keyhog_core::report::json::JsonArrayReporter`) writes a
-//! TOP-LEVEL ARRAY of finding objects — NOT an object with a `findings` key.
+//! TOP-LEVEL ARRAY of finding objects. NOT an object with a `findings` key.
 //! Each element is a serialized `VerifiedFinding` whose custom `Serialize` impl
 //! (finding.rs) emits, in this exact set:
 //!   detector_id, detector_name, service, severity, credential_redacted,
@@ -196,7 +196,7 @@ fn detector_identity_fields_exact() {
 }
 
 /// severity is the kebab-case token `critical` (Severity::Critical), rendered
-/// as a JSON string — not a number or an object.
+/// as a JSON string (not a number or an object).
 #[test]
 fn severity_field_is_kebab_critical_string() {
     let (_dir, path) = leak_fixture();
@@ -230,7 +230,7 @@ fn credential_redacted_is_masked_form() {
 }
 
 /// credential_hash is the deterministic 64-char lowercase-hex sha256 of the
-/// planted token — a value that is identical on every host (pure hashing).
+/// planted token (a value that is identical on every host (pure hashing)).
 #[test]
 fn credential_hash_is_deterministic_sha256_hex() {
     let (_dir, path) = leak_fixture();
@@ -354,7 +354,7 @@ fn metadata_empty_object_and_additional_locations_empty_array() {
 
 /// confidence, when present, is a JSON number in the unit interval (0, 1].
 /// It is an ML score that varies by build, so it is range-checked rather than
-/// pinned — keeping the test host-independent.
+/// pinned (keeping the test host-independent).
 #[test]
 fn confidence_when_present_is_in_unit_interval() {
     let (_dir, path) = leak_fixture();
@@ -397,7 +397,7 @@ fn remediation_object_carries_revoke_action() {
 // ---------------------------------------------------------------------------
 
 /// A clean file exits 0 and the JSON report is EXACTLY the two-byte empty
-/// array `[]` — the honest empty shape, never `null` or an object.
+/// array `[]`: the honest empty shape, never `null` or an object.
 #[test]
 fn clean_scan_is_exactly_empty_array_exit_zero() {
     let (_dir, path) = clean_fixture();

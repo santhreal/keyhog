@@ -5,27 +5,27 @@
 # When the preprocessor reassembles a `+`/`.`/backslash-split credential, it
 # first normalizes the line `const apiKey = "gh" +` down to the value side by
 # removing the language's declaration keyword prefix (`const `, `let `, …). This
-# list is the single source of truth for that keyword set — previously it was a
+# list is the single source of truth for that keyword set, previously it was a
 # hardcoded chain of `.trim_start_matches("const ") …` calls inline in
 # `string_extract::filter_line_content`, which meant adding a language's keyword
 # required editing Rust source (a Tier-A hardcoding violation). Drop a new
 # keyword here to extend coverage; no rebuild-of-the-list logic changes.
 #
-# Each entry is the bare keyword WITHOUT the trailing space — the space
+# Each entry is the bare keyword WITHOUT the trailing space, the space
 # separator is applied in code so the data stays clean and a keyword can never
 # be accidentally stored without its delimiter. Matching is prefix-only and
 # case-sensitive (source keywords are lexically exact), applied after trimming
 # leading whitespace.
 #
 # Covered languages / keywords:
-#   const / let / var        — JavaScript, TypeScript
-#   val / var                — Kotlin, Scala, Swift
-#   final                    — Java, Dart (final field), Kotlin interop
-#   static                   — C/C++/C#/Java/PHP storage class
-#   string / String          — typed declarations (C#, Java, Go var-shorthand)
-#   auto                     — C++ type inference
-#   dim                      — Visual Basic / VBScript
-#   my                       — Perl lexical
+#   const / let / var: JavaScript, TypeScript
+#   val / var: Kotlin, Scala, Swift
+#   final: Java, Dart (final field), Kotlin interop
+#   static: C/C++/C#/Java/PHP storage class
+#   string / String, typed declarations (C#, Java, Go var-shorthand)
+#   auto: C++ type inference
+#   dim: Visual Basic / VBScript
+#   my: Perl lexical
 keywords = [
   "const",
   "let",

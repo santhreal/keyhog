@@ -42,7 +42,7 @@ impl StructuredFormat {
     /// blocks etc.) the regular byte scan cannot recover. Skipping the structured
     /// pass on these is a real recall gap. `Env`/`Hcl` only extract plain scalar
     /// values the regular scan still sees, so skipping them loses context, not a
-    /// secret — they must NOT be counted as coverage gaps (that would be the
+    /// secret, they must NOT be counted as coverage gaps (that would be the
     /// false-loud telemetry the module forbids).
     fn uses_decode_through(self) -> bool {
         matches!(
@@ -56,8 +56,8 @@ impl StructuredFormat {
 /// *counted* decode-through coverage gap only when the file is a recognised
 /// decode-through format (k8s Secret / compose / tfstate / notebook) AND is not
 /// a decode-derived buffer (whose encoded surface was already decoded and
-/// scanned upstream). `Env`/`Hcl` are context-only — skipping them loses context
-/// the regular byte scan still recovers, not a secret — so they are never
+/// scanned upstream). `Env`/`Hcl` are context-only, skipping them loses context
+/// the regular byte scan still recovers, not a secret, so they are never
 /// counted (Law 10: no false-loud telemetry). Single source of truth shared by
 /// [`preprocess`] and its tests, so the counting decision cannot drift from the
 /// classification it is tested against.
@@ -116,7 +116,7 @@ pub(crate) fn preprocess<'a>(
 }
 
 /// Detect which structured format `text`/`path` is, without parsing it. Pure
-/// path/content sniffing — used both by `detect_and_parse` (to dispatch) and by
+/// path/content sniffing, used both by `detect_and_parse` (to dispatch) and by
 /// the size cap (to decide whether an oversized skip is a real recall gap).
 fn detect_format(text: &str, path: Option<&str>) -> Option<StructuredFormat> {
     // ASCII case-insensitive byte compares - every chunk runs through this

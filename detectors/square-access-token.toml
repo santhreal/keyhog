@@ -1,7 +1,7 @@
 # Docs: https://developer.squareup.com/docs/build-basics/access-tokens
 # Format: Square personal access token `sq0atp-` + 22 [0-9A-Za-z_-]; OAuth
 #         application secret `sq0csp-` + 43 [0-9A-Za-z_-]. (Square, the
-#         payments platform — distinct from Squarespace.)
+#         payments platform, distinct from Squarespace.)
 # Verify: GET connect.squareup.com/v2/locations with Authorization: Bearer
 # Prefix: sq0atp- / sq0csp- (distinctive, no context anchor required)
 #

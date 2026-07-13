@@ -8,7 +8,7 @@
 //! hex keys (`encryption_key = <hex48>`). On the real CredData corpus those are
 //! genuine 96-100% of the time (hex48+kw 1033 POS / 0 NEG, hex32+kw 0.976);
 //! lifting them recovered recall (CredData precision held/up, mirror precision
-//! 0.9954 ≥ the 0.9945 floor — neither corpus plants hex32/hex48 hash-negatives,
+//! 0.9954 ≥ the 0.9945 floor, neither corpus plants hex32/hex48 hash-negatives,
 //! only hex40/hex64, so the lift cannot reproduce the v31 `TOKEN=<hex>`
 //! catastrophe). The exemption is bridge-path + strong-keyword + length-32/48
 //! ONLY; the guards below pin every boundary.
@@ -49,12 +49,12 @@ fn caught(scanner: &CompiledScanner, line: &str, value: &str) -> bool {
 fn strong_keyword_complete_hex32_and_hex48_are_surfaced() {
     let s = scanner();
     // Random (non-sequential, non-repetitive) hex of canonical key lengths under
-    // strong cryptographic-key keywords — real keys on CredData, formerly dropped
+    // strong cryptographic-key keywords, real keys on CredData, formerly dropped
     // by the bare-hex-digest gate. These literals match no named service detector
     // (no vendor prefix), so a hit proves the generic keyword-bridge lift fired.
     // Both must be genuinely non-sequential: the bridge exempts the bare-hex
     // digest gate ONLY, so a value whose bytes increment arithmetically (the old
-    // `a1b2c3d4e5f6…` hex48 fixture) is still — correctly — caught by the
+    // `a1b2c3d4e5f6…` hex48 fixture) is still, correctly, caught by the
     // `algorithmic_placeholder` shape gate and never reaches the lift.
     let hex32 = "3f8a9c2e1b7d4f6a8c0e2d4f6a8b0c1e";
     let hex48 = "9f2c7a14e8b3d05f6a2c91e7b4d83f0a5c6e1b9d7f3a204c";
@@ -75,28 +75,28 @@ fn strong_keyword_complete_hex32_and_hex48_are_surfaced() {
 #[test]
 fn lift_is_bounded_excluded_lengths_keywords_and_decoys_stay_suppressed() {
     let s = scanner();
-    // hex64 (sha256 length) — a mirror hash-negative; NOT exempted. Exactly 64.
+    // hex64 (sha256 length) (a mirror hash-negative; NOT exempted. Exactly 64).
     let hex64 = "a3f5c8e1b9d27406f8a1c3e5b7d9f0214680ace2bdf135790246813579ace2bd";
     assert_eq!(hex64.len(), 64, "fixture must be exactly 64 hex chars");
     assert!(
         !caught(&s, &format!("secret = \"{hex64}\""), hex64),
-        "hex64 (sha256 length) must stay suppressed — it is a mirror hash-negative"
+        "hex64 (sha256 length) must stay suppressed, it is a mirror hash-negative"
     );
-    // hex40 (sha1 / git-commit-sha length) — a mirror hash-negative; NOT exempted.
+    // hex40 (sha1 / git-commit-sha length) (a mirror hash-negative; NOT exempted).
     let hex40 = "3f8a9c2e1b7d4f6a8c0e2d4f6a8b0c1e2d4f6a8b";
     assert_eq!(hex40.len(), 40, "fixture must be exactly 40 hex chars");
     assert!(
         !caught(&s, &format!("secret = \"{hex40}\""), hex40),
-        "hex40 (sha1/git-sha length) must stay suppressed — it is a mirror hash-negative"
+        "hex40 (sha1/git-sha length) must stay suppressed, it is a mirror hash-negative"
     );
-    // Weak keyword `token` — deliberately excluded from the strong set.
+    // Weak keyword `token`: deliberately excluded from the strong set.
     let hex32 = "5a6b7c8d9e0f1a2b3c4d5e6f70819203";
     assert_eq!(hex32.len(), 32);
     assert!(
         !caught(&s, &format!("token = \"{hex32}\""), hex32),
         "weak keyword `token` + hex32 must stay suppressed (not in the strong set)"
     );
-    // Repetitive-run decoy under a strong keyword — the repetitive arm still runs.
+    // Repetitive-run decoy under a strong keyword (the repetitive arm still runs).
     let repetitive32 = "deadc0dedeadc0dedeadc0dedeadc0de";
     assert!(
         !caught(

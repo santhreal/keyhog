@@ -2,12 +2,12 @@
 //!
 //! Every numeric architecture constant in the shader (input dim, expert count,
 //! hidden widths, weight-layout offsets/counts, sigmoid saturation) is
-//! interpolated from [`crate::ml_scorer::model_arch`] — the SAME constants the
-//! CPU/SIMD path uses — so the GPU and CPU scorers can never silently disagree
+//! interpolated from [`crate::ml_scorer::model_arch`], the SAME constants the
+//! CPU/SIMD path uses, so the GPU and CPU scorers can never silently disagree
 //! on the model shape. Before this, the shader hardcoded `INPUT_DIM = 42u`,
 //! `GATE_W_COUNT = 252u`, etc. as literal copies; a bump to `model_arch::
 //! INPUT_DIM` (e.g. adding a feature) left the GPU path reading the old weight
-//! layout with no error — a Law-10 silent divergence. Now a single owner feeds
+//! layout with no error, a Law-10 silent divergence. Now a single owner feeds
 //! both, and [`tests`] asserts no stray numeric literal reappears in the body.
 
 use crate::ml_scorer::model_arch;
@@ -20,7 +20,7 @@ pub(crate) fn moe_shader() -> String {
     // below references only these named consts, so there are no free numeric
     // architecture literals to drift.
     let header = format!(
-        "// MoE architecture constants — GENERATED from model_arch, do not hand-edit.\n\
+        "// MoE architecture constants: GENERATED from model_arch, do not hand-edit.\n\
          const INPUT_DIM: u32 = {input_dim}u;\n\
          const EXPERT_COUNT: u32 = {expert_count}u;\n\
          const HIDDEN1: u32 = {hidden1}u;\n\
@@ -65,7 +65,7 @@ pub(crate) fn moe_shader() -> String {
     format!("{header}{MOE_SHADER_BODY}")
 }
 
-/// The MoE shader body. References ONLY the named consts the header defines —
+/// The MoE shader body. References ONLY the named consts the header defines 
 /// no free numeric architecture literal lives here, so the layout can only be
 /// changed in `model_arch`. WGSL admits module-scope const expressions as array
 /// sizes (`array<f32, HIDDEN1>`), so even the scratch buffers derive from the

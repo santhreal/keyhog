@@ -14,7 +14,7 @@ fn scan_git_staged_empty_exits_two() {
         .status()
         .expect("git init");
     std::fs::write(dir.path().join("tracked.txt"), "hello\n").expect("write");
-    // Index intentionally empty — file exists but is not staged.
+    // Index intentionally empty (file exists but is not staged).
 
     let output = Command::new(binary())
         .args(["scan", "--daemon=off", "--git-staged", "--format", "json"])
@@ -33,5 +33,5 @@ fn scan_git_staged_empty_exits_two() {
 #[cfg(not(feature = "git"))]
 #[test]
 fn scan_git_staged_empty_exits_two() {
-    // Git feature disabled in this build — runtime contract covered in git-enabled CI.
+    // Git feature disabled in this build (runtime contract covered in git-enabled CI).
 }

@@ -4,7 +4,7 @@
 //! generic-assignment value bridge, the Caesar rotated-prefix gate, …) are all
 //! built from **compile-time-constant** literal/regex sources. `AhoCorasick::new`
 //! / `Regex::new` failing on them is therefore not an expected runtime condition
-//! — it is a build-invariant violation. The historical handling was to swallow
+//!, it is a build-invariant violation. The historical handling was to swallow
 //! the error (`.ok()` → `None`) and let the consumer fall back to its safe path
 //! (scan the chunk unconditionally / try every shift). That preserves recall but
 //! does so **silently**: an operator would never learn a prefilter had turned
@@ -29,7 +29,7 @@ use std::fmt::Display;
 pub(crate) fn warn_prefilter_disabled(site: &str, err: &dyn Display) {
     eprintln!(
         "keyhog: PREFILTER DISABLED [{site}]: built-from-constant automaton failed to compile \
-({err}). Falling back to the unconditional scan path — recall is preserved, but the prefilter \
+({err}). Falling back to the unconditional scan path, recall is preserved, but the prefilter \
 no longer prunes work, so this scan and every later one in this process run slower. This is a \
 build-invariant violation (the pattern source is compile-time constant); please report it."
     );

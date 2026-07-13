@@ -13,7 +13,7 @@ use crate::ssrf::{is_private_ip_addr, is_private_url};
 // ── refusal family ────────────────────────────────────────────────────────────
 // Security/policy refusals: deliberately terse and uniformly `blocked:`-prefixed.
 // They are NOT actionable in the operator sense (the credential's host is unsafe
-// to contact), so they do not carry a `Fix:` — the refusal IS the correct outcome.
+// to contact), so they do not carry a `Fix:`: the refusal IS the correct outcome.
 pub const PRIVATE_URL_ERROR: &str = "blocked: private URL";
 pub const HTTPS_ONLY_ERROR: &str = "blocked: HTTPS only";
 /// The host resolved to zero usable addresses; fail closed rather than proceed.
@@ -27,7 +27,7 @@ pub const DNS_NO_ADDRESSES_ERROR: &str = "blocked: DNS returned no addresses";
 /// the `blocked:` refusals above.
 pub fn invalid_url_error(parse_error: impl std::fmt::Display) -> String {
     format!(
-        "invalid URL: {parse_error}. Fix: the verification target URL is malformed — check the \
+        "invalid URL: {parse_error}. Fix: the verification target URL is malformed, check the \
          detector's `[detector.verify] url` (and any credential-interpolated host) in its TOML"
     )
 }
@@ -47,7 +47,7 @@ pub const CONNECTION_FAILED_ERROR: &str = "connection failed: could not open a \
      connection to the endpoint. Fix: check DNS resolution, firewall/egress rules, \
      and proxy settings for the credential's host";
 /// The endpoint tried to redirect, but redirects are disabled (Policy::none) to
-/// keep the pre-connect SSRF screen sound — a redirect target is re-resolved and
+/// keep the pre-connect SSRF screen sound, a redirect target is re-resolved and
 /// would bypass the pin, so it is refused rather than followed.
 pub const REDIRECT_LIMIT_ERROR: &str = "too many redirects: the endpoint issued a \
      redirect, but redirects are disabled for SSRF safety. Fix: set the detector's \
@@ -269,7 +269,7 @@ fn direct_target_client(
 /// returns the same A/AAAA records in a DIFFERENT ORDER per query (round-robin),
 /// which made two logically-identical pins hash to different `PinnedClientKey`s
 /// and rebuild a fresh reqwest `Client` (TLS config + connection pool) on every
-/// request to a round-robin host — the cache never hit. Sorting keys the cache
+/// request to a round-robin host, the cache never hit. Sorting keys the cache
 /// on the IP SET, not its arrival order, so those requests share one client.
 pub(crate) fn canonical_pinned_addrs(addrs: &[SocketAddr]) -> Vec<SocketAddr> {
     let mut sorted = addrs.to_vec();
@@ -279,7 +279,7 @@ pub(crate) fn canonical_pinned_addrs(addrs: &[SocketAddr]) -> Vec<SocketAddr> {
 
 /// Test accessor: whether two client pins that share host/timeout/insecure_tls
 /// but differ in resolved-address ORDER or SET collapse to the SAME
-/// `PinnedClientKey` — the round-robin-DNS cache HIT that `canonical_pinned_addrs`
+/// `PinnedClientKey`: the round-robin-DNS cache HIT that `canonical_pinned_addrs`
 /// exists to produce (equal keys) vs. the no-false-sharing MISS for a genuinely
 /// different IP set (distinct keys). Kept beside the key type so `PinnedClientKey`
 /// and its fields stay module-private while the re-homed cache-key tests

@@ -30,7 +30,7 @@ import sys
 from collections.abc import Iterator
 
 # Import sibling modules without forcing the user to install the
-# package — script lives next to providers/wrappers/negatives.
+# package: script lives next to providers/wrappers/negatives.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 # benchmarks/ on the path so `bench.textstats` (the ONE Shannon-entropy home) is
 # importable without installing the package.
@@ -192,10 +192,10 @@ def make_negative_record(
     idx: int,
 ) -> tuple[dict, str]:
     kind, body = next(negatives.weighted_iter(rnd, 1))
-    # Wrap the FP body in a realistic shape too — same wrapper pool
+    # Wrap the FP body in a realistic shape too, same wrapper pool
     # as positives, so a scanner is judged on the same file
     # population either way. Negatives ALWAYS get a generic key
-    # (no `key_override`) — a base64 protobuf wrapped as
+    # (no `key_override`), a base64 protobuf wrapped as
     # `AWS_SECRET_ACCESS_KEY=` would be a real-world misuse worth
     # flagging, so we keep the bench's negative shapes neutral.
     wrapper_name, extension, wrapper_fn = wrappers.pick_wrapper("env", rnd)

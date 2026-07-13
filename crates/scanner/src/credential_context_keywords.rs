@@ -64,7 +64,7 @@ mod tests {
 
     /// The exact list that lived as the `CREDENTIAL_KEYWORDS` array inside
     /// `entropy::scanner::keyword_context` before this migration. The Tier-B file
-    /// MUST parse to precisely this, in this order — the migration is a pure
+    /// MUST parse to precisely this, in this order, the migration is a pure
     /// relocation with zero behavioural change.
     const LEGACY: &[&str] = &[
         "password",
@@ -195,7 +195,7 @@ mod tests {
         // Pin the exact set: `credential` and `passphrase` were NOT in the legacy
         // list (they are substring-covered elsewhere or handled by the exact
         // assignment table). A future recall change to add them must be a
-        // deliberate, separately-reviewed edit — not an accident this test misses.
+        // deliberate, separately-reviewed edit (not an accident this test misses).
         for absent in ["credential", "credentials", "passphrase", "key", "pass"] {
             assert!(
                 !credential_context_keywords().iter().any(|k| k == absent),

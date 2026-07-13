@@ -2,10 +2,10 @@
 //! traversal, depth handling, symlink refusal, and hidden-file contract.
 //!
 //! The walker's pinned contract (see `filesystem/filter.rs::walker_config`):
-//!   * `follow_symlinks(false)` — a symlink is NEVER traversed, so a symlink
+//!   * `follow_symlinks(false)`: a symlink is NEVER traversed, so a symlink
 //!     cycle can never spin the walk into an infinite loop and a symlinked file
 //!     is never read twice.
-//!   * `skip_hidden(false)` — dotfiles and dot-directories ARE scanned (a
+//!   * `skip_hidden(false)`: dotfiles and dot-directories ARE scanned (a
 //!     leaked key stashed in `.env` must not hide behind a leading dot).
 //!   * The final symlink component is refused at read time via `O_NOFOLLOW`,
 //!     and an archive-extension symlink discovered during the walk is refused
@@ -22,7 +22,7 @@ use std::collections::BTreeSet;
 use std::fs;
 
 /// Drain a source, partitioning chunk rows from surfaced error rows. Never
-/// panics on an error row — several symlink/refusal contracts INTENTIONALLY
+/// panics on an error row, several symlink/refusal contracts INTENTIONALLY
 /// surface a `SourceError`, and swallowing it would hide the loud-refusal
 /// guarantee under test.
 fn drain(src: &FilesystemSource) -> (Vec<Chunk>, Vec<SourceError>) {
@@ -91,7 +91,7 @@ fn nested_tree_walked_to_exact_depth_and_full_file_set() {
         errors.is_empty(),
         "a clean nested tree must surface zero error rows, got: {errors:?}"
     );
-    // Exactly five files discovered — the walker reached the deepest leaf and
+    // Exactly five files discovered, the walker reached the deepest leaf and
     // did not miss or duplicate an intermediate level.
     assert_eq!(
         distinct_paths(&chunks).len(),
@@ -288,7 +288,7 @@ fn node_modules_dir_excluded_by_default_then_included_with_flag() {
 }
 
 // ---------------------------------------------------------------------------
-// Symlink cycle / traversal refusal  (follow_symlinks(false)) — unix only
+// Symlink cycle / traversal refusal  (follow_symlinks(false)), unix only
 // ---------------------------------------------------------------------------
 
 #[cfg(unix)]
@@ -310,7 +310,7 @@ fn symlink_directory_cycle_terminates_and_scans_target_once() {
         files_containing(&chunks, "cycle_target_marker_once"),
         1,
         "the cycle target must be scanned exactly once; a followed symlink loop \
-         would re-scan it (or hang) — the walker must NOT follow symlinks"
+         would re-scan it (or hang), the walker must NOT follow symlinks"
     );
 }
 
@@ -343,7 +343,7 @@ fn symlink_to_plain_file_is_not_read_twice() {
     use std::os::unix::fs::symlink;
     // real.txt + alias.txt -> real.txt. The real file is scanned once; the
     // symlink is either skipped at walk time or refused by O_NOFOLLOW at read
-    // time — either way the content is scanned exactly once, never doubled.
+    // time (either way the content is scanned exactly once, never doubled).
     let dir = tempfile::tempdir().unwrap();
     let real = dir.path().join("real.txt");
     fs::write(&real, "plain_symlink_marker_solo\n").unwrap();
@@ -390,7 +390,7 @@ fn broken_symlink_does_not_abort_walk_of_sibling_files() {
 }
 
 // ---------------------------------------------------------------------------
-// Archive-symlink refusal is LOUD (link-swap exfiltration guard) — unix only
+// Archive-symlink refusal is LOUD (link-swap exfiltration guard), unix only
 // ---------------------------------------------------------------------------
 
 #[cfg(unix)]
@@ -398,7 +398,7 @@ fn broken_symlink_does_not_abort_walk_of_sibling_files() {
 fn archive_extension_symlink_in_walk_is_refused_loudly() {
     use std::os::unix::fs::symlink;
     // `payload.zip` is a symlink to an out-of-tree target. Expanding it would
-    // read+decompress the target — the link-swap exfiltration class. The walker
+    // read+decompress the target, the link-swap exfiltration class. The walker
     // must refuse it with a visible SourceError, never silently skip it, while
     // still scanning the real sibling (partial scan must not read as clean).
     let dir = tempfile::tempdir().unwrap();
@@ -479,7 +479,7 @@ fn plain_named_symlink_to_dir_is_not_flagged_as_archive() {
     );
     // The in-tree file is scanned; the symlinked-in `outside` dir is NOT
     // traversed (follow_symlinks=false), so its content is scanned exactly
-    // once via the real `outside` path only — and here `outside` is itself
+    // once via the real `outside` path only, and here `outside` is itself
     // inside the root, so exactly once.
     assert_eq!(
         files_containing(&chunks, "inside_root_marker"),

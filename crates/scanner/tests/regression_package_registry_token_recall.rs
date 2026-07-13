@@ -152,7 +152,7 @@ fn npm_valid_token_env_anchor_surfaces() {
 #[test]
 fn npm_invalid_checksum_token_does_not_fire() {
     // A `npm_` + 36-alnum token whose trailing 6 chars are not the base62 CRC32 of
-    // the first 30 is fabricated/corrupt — the checksum gate must reject it.
+    // the first 30 is fabricated/corrupt (the checksum gate must reject it).
     let bad = format!("npm_{}", alnum(36, 4));
     // Guard: make sure the random fixture really is checksum-invalid (not a fluke).
     let entropy = &bad[4..34];

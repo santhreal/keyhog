@@ -91,7 +91,7 @@ fn detector_regex_has_trailing_boundary(detector_id: &str, needle: &str) -> bool
 }
 
 // ---------------------------------------------------------------------------
-// AWS access key — positives (must report on every backend)
+// AWS access key, positives (must report on every backend)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -149,7 +149,7 @@ fn aws_key_at_end_of_input_reports() {
 }
 
 // ---------------------------------------------------------------------------
-// AWS access key — negatives (overlong run must fail closed on every backend)
+// AWS access key, negatives (overlong run must fail closed on every backend)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -186,7 +186,7 @@ fn aws_trailing_lowercase_letter_suppressed() {
 }
 
 // ---------------------------------------------------------------------------
-// OpenAI legacy bare `sk-` key — positives
+// OpenAI legacy bare `sk-` key, positives
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -226,7 +226,7 @@ fn openai_legacy_at_end_of_input_reports() {
 }
 
 // ---------------------------------------------------------------------------
-// OpenAI legacy bare `sk-` key — negatives (overlong)
+// OpenAI legacy bare `sk-` key, negatives (overlong)
 // ---------------------------------------------------------------------------
 
 #[test]

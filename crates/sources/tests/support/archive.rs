@@ -165,7 +165,7 @@ pub fn gzip_bytes(plaintext: &[u8]) -> Vec<u8> {
     encoder.finish().expect("finish gzip")
 }
 
-/// Build a gzipped tarball (`.tgz` / `.tar.gz`) from named entries — the dominant
+/// Build a gzipped tarball (`.tgz` / `.tar.gz`) from named entries, the dominant
 /// real-world package/release container (npm tarballs, source releases).
 pub fn tgz_with_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
     gzip_bytes(&tar_with_entries(entries))
