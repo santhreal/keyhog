@@ -6,6 +6,16 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Decode-enabled scans now perform bounded, side-effect-free recovery of static
+  JavaScript XOR and AES-256-CBC expressions whose byte arrays, keys, IVs, and
+  ciphertext are embedded in the source. Literal arrays, Base64-encoded JSON
+  arrays, obfuscated binding names, dead code, and empty-join key/ciphertext
+  fragments are supported; dynamic operands, inconsistent bindings, invalid
+  padding, non-UTF-8 plaintext, and oversized inputs are rejected. Static XOR
+  admission is shared by SIMD and portable CPU scans so backend choice cannot
+  change recovery results. The official P0-P12 recovery benchmark now scores
+  4,368/4,368 exact recoveries with no false positives in full and deep modes;
+  fast remains bounded to 1,344/4,368 by its no-decode contract.
 - JavaScript string arrays followed by an empty-separator `.join("")` now
   recover checksum-valid known-prefix credentials even when the temporary
   variable name is obfuscated. Non-empty separators and arrays without a known

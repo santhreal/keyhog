@@ -13,7 +13,7 @@
 
 use keyhog_scanner::testing::default_decoder_names_for_test as decoder_names;
 
-const EXPECTED_DEFAULT_DECODERS: [&str; 13] = [
+const EXPECTED_DEFAULT_DECODERS: [&str; 14] = [
     "base64",
     "hex",
     "url",
@@ -25,6 +25,7 @@ const EXPECTED_DEFAULT_DECODERS: [&str; 13] = [
     "json",
     "unicode-escape",
     "z85",
+    "javascript-static",
     "reverse",
     "caesar",
 ];
@@ -55,7 +56,7 @@ fn reverse_and_caesar_run_last() {
 #[test]
 fn default_decoder_count_stays_within_profiler_capacity() {
     let count = decoder_names().len();
-    assert_eq!(count, 13, "there are exactly 13 default decoders today");
+    assert_eq!(count, 14, "there are exactly 14 default decoders today");
     // MAX_PROFILED_DECODERS is 16; a default set beyond that would be silently
     // un-profiled past slot 16. This guards the headroom.
     assert!(

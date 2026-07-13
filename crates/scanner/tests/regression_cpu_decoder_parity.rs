@@ -259,7 +259,7 @@ mod decode_feature {
         // LAST, after every structural decoder. Pin the boundary positions and
         // the total count so a reorder or addition can't silently shift it.
         let names = default_decoder_names_for_test();
-        assert_eq!(names.len(), 13);
+        assert_eq!(names.len(), 14);
         assert_eq!(&names[..2], &["base64", "hex"]);
         assert_eq!(&names[names.len() - 2..], &["reverse", "caesar"]);
     }

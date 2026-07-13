@@ -8,6 +8,8 @@ mod base64;
 pub(crate) mod caesar;
 pub(crate) mod hex;
 pub(crate) mod inflate;
+#[cfg(feature = "decode")]
+mod javascript_static;
 mod json;
 mod pipeline;
 pub(crate) mod reverse;
@@ -83,13 +85,33 @@ const MIN_BACKSLASH_ESCAPES: usize = 2;
 /// actually look encoded so normal traffic keeps the fast skip.
 #[cfg(feature = "decode")]
 pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
+    // Static XOR programs can consist entirely of short decimal literals, so
+    // they do not necessarily contain the long base64/hex run recognized by
+    // the byte-density loop below. Without this marker pair the SIMD entry
+    // path can skip decode post-processing while CPU fallback runs it, causing
+    // backend-dependent recall. The full bounded grammar still validates the
+    // source in `javascript_static`; this is admission only.
     let mut run = 0usize;
     let mut percent_escapes = 0usize;
     let mut backslash_escapes = 0usize;
+    let mut has_from_char_code = false;
+    let mut has_xor_operator = false;
     let mut i = 0usize;
 
     while i < data.len() {
         let b = data[i];
+
+        if b == b'^' {
+            has_xor_operator = true;
+            if has_from_char_code {
+                return true;
+            }
+        } else if b == b'f' && data[i..].starts_with(b"fromCharCode") {
+            has_from_char_code = true;
+            if has_xor_operator {
+                return true;
+            }
+        }
 
         if b == b'%'
             && i + 2 < data.len()

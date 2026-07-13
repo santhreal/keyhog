@@ -25,6 +25,7 @@ mechanisms, and their roles are deliberately different:
 | Companion patterns | Requires related fields or fragments near a primary match | Confirms an existing candidate |
 | Structured and multiline extraction | Reassembles assignments and strings that syntax splits across lines or nodes | Yes |
 | Decode-through transforms | Scans supported encoded or transformed representations while preserving source attribution | Yes |
+| Bounded static program recovery | Evaluates recognized side-effect-free JavaScript XOR and AES-256-CBC expressions when every operand is embedded and immutable | Yes |
 | Generic assignment bridge | Extracts values beside credential-role keys when no vendor shape exists | Yes |
 | Shannon entropy | Measures byte-distribution uncertainty for opaque generic values | Yes, on the entropy-discovery path |
 | BPE token efficiency | Rejects language-like values that compress into common subword tokens when the owning detector enables it | No; precision gate |
@@ -38,6 +39,16 @@ candidate classes. Named regexes and generic assignment extraction create
 candidates; companions, validators, BPE, shape/context policy, and confidence
 then confirm, reject, or score them. Verification runs only after a candidate
 survives detection and reporting policy.
+
+Static program recovery is a decode mechanism, not arbitrary code execution.
+KeyHog does not invoke Node.js or evaluate source. It recognizes a bounded
+grammar for cyclic byte-array XOR and Node-style AES-256-CBC decryption,
+resolves only literal numeric arrays, Base64-encoded JSON arrays, buffer
+literals, and empty-separator string joins, then checks binding consistency,
+UTF-8, AES block shape, and PKCS#7 padding before rescanning the recovered
+plaintext. Dynamic values or unsupported syntax produce no derived candidate;
+the original source still follows the normal detector pipeline. The mechanism
+is disabled with decode recursion, including under `--fast`.
 
 BPE is not a replacement name for entropy: it is an independent post-candidate
 signal. BetterLeaks calls the approach

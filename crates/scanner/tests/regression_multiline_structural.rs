@@ -32,12 +32,14 @@
 
 #![cfg(feature = "multiline")]
 
+use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::testing::fragment_cache::FragmentCache;
 use keyhog_scanner::testing::multiline::{
     collect_structural_fragments_for_test, extract_prefix_for_test,
     has_concatenation_indicators_for_test, preprocess_multiline, preprocess_multiline_for_test,
     resolve_template_reference_for_test, MultilineConfig,
 };
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 /// The synthetic base line number the structural `+`-reference resolver stamps
 /// onto reassembled var-reference fragments so they never merge with real
@@ -188,6 +190,40 @@ fn obfuscated_javascript_array_join_reassembles_known_prefix_secret() {
     assert!(
         joined[original_end..].contains(secret),
         "known-prefix array fragments must recover {secret}; got {joined:?}"
+    );
+}
+
+#[test]
+fn production_scan_recovers_obfuscated_javascript_array_join() {
+    let secret = concat!("ghp_", "8ee59b1f3a8b98f8fd4f4bd6d563321t2nrI");
+    let text = concat!(
+        "'use strict';\n",
+        "const _fa1f85493086 = (() => { const _bfff63975e3e = ",
+        "[\"ghp_\", \"8ee59b1f3a8b\", \"98f8fd4f4bd6\", \"d563321t2nrI\"]; ",
+        "return _bfff63975e3e.join(''); })();\n",
+        "module.exports = _fa1f85493086;\n",
+    );
+    let scanner = CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
+        .expect("compile embedded detectors");
+    let chunk = Chunk {
+        data: text.into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("sample.js".into()),
+            ..Default::default()
+        },
+    };
+
+    let matches = scanner.scan_chunks_with_backend(&[chunk], ScanBackend::CpuFallback);
+    assert!(
+        matches
+            .iter()
+            .flatten()
+            .any(
+                |matched| matched.detector_id.as_ref() == "github-classic-pat"
+                    && matched.credential.as_ref() == secret
+            ),
+        "production scan must surface the exact recovered GitHub PAT; got {matches:?}"
     );
 }
 

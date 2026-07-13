@@ -1,6 +1,8 @@
 use crate::decode::base64::{Base64Decoder, Z85Decoder};
 use crate::decode::caesar::CaesarDecoder;
 use crate::decode::hex::HexDecoder;
+#[cfg(feature = "decode")]
+use crate::decode::javascript_static::JavaScriptStaticDecoder;
 use crate::decode::json::JsonDecoder;
 use crate::decode::reverse::ReverseDecoder;
 use crate::decode::url::{
@@ -36,7 +38,7 @@ pub(super) fn profile_enabled() -> bool {
 
 /// Fixed number of per-decoder profiler slots. The `DECODER_NS` / `DECODER_PRODUCED`
 /// accumulators and every index/clamp into them share this one capacity. There
-/// are 13 default decoders today, so the cap carries headroom; a decoder past
+/// are 14 default decoders today, so the cap carries headroom; a decoder past
 /// slot `MAX_PROFILED_DECODERS` is simply not profiled (`record_decoder_run`
 /// drops it), the `decoder_registry_within_profiler_capacity` gap test guards
 /// the default set against silently outgrowing this.
@@ -136,6 +138,10 @@ fn default_decoders() -> Vec<Arc<dyn Decoder>> {
         Arc::new(JsonDecoder),
         Arc::new(UnicodeEscapeDecoder),
         Arc::new(Z85Decoder),
+        // Bounded, side-effect-free JavaScript constant recovery. Keep it after
+        // representation decoders and before the asymmetric evasion decoders.
+        #[cfg(feature = "decode")]
+        Arc::new(JavaScriptStaticDecoder),
         Arc::new(ReverseDecoder),
         Arc::new(CaesarDecoder),
     ]

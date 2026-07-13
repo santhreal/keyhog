@@ -19,7 +19,7 @@ use keyhog_scanner::testing::default_decoder_names_for_test as decoder_names;
 /// The canonical default decode pipeline (every `name()` in registration order).
 /// Mirror of `registry::default_decoders()`; the order is load-bearing (reverse
 /// and caesar run last) and base32 is intentionally absent.
-const EXPECTED: [&str; 13] = [
+const EXPECTED: [&str; 14] = [
     "base64",
     "hex",
     "url",
@@ -31,6 +31,7 @@ const EXPECTED: [&str; 13] = [
     "json",
     "unicode-escape",
     "z85",
+    "javascript-static",
     "reverse",
     "caesar",
 ];
@@ -99,16 +100,16 @@ fn default_pipeline_joined_string_is_exact() {
         joined,
         "base64,hex,url,quoted-printable,html-named-entity,\
 html-numeric-entity,octal-escape,mime-encoded-word,json,\
-unicode-escape,z85,reverse,caesar"
+unicode-escape,z85,javascript-static,reverse,caesar"
     );
 }
 
 #[test]
-fn default_decoder_count_is_thirteen() {
+fn default_decoder_count_is_fourteen() {
     assert_eq!(
         decoder_names().len(),
-        13,
-        "there are exactly 13 default decoders"
+        14,
+        "there are exactly 14 default decoders"
     );
 }
 
@@ -137,8 +138,8 @@ fn hex_is_index_one_second_decoder() {
 
 #[test]
 fn z85_is_index_ten() {
-    // z85 (base85) is the 11th decoder (0-based index 10), immediately before the
-    // reverse/caesar evasion pair.
+    // z85 (base85) is the 11th decoder (0-based index 10), immediately before
+    // static JavaScript recovery and the reverse/caesar evasion pair.
     let names = decoder_names();
     assert_eq!(names.get(10).copied(), Some("z85"));
 }
@@ -171,22 +172,22 @@ fn structural_decoders_precede_evasion_decoders() {
         "reverse({reverse}) must precede caesar({caesar})"
     );
     // Exact positions, not just relative order.
-    assert_eq!((reverse, caesar), (11, 12));
+    assert_eq!((reverse, caesar), (12, 13));
 }
 
 // ---- profiler capacity boundary -------------------------------------------
 
 #[test]
-fn default_count_fits_profiler_and_leaves_three_free_slots() {
+fn default_count_fits_profiler_and_leaves_two_free_slots() {
     // The per-decoder profiler is a fixed [AtomicU64; MAX_PROFILED_DECODERS] with
     // MAX_PROFILED_DECODERS == 16; a decoder past slot 16 is silently un-profiled.
-    // 13 defaults leave exactly 3 free slots of headroom.
+    // 14 defaults leave exactly 2 free slots of headroom.
     let count = decoder_names().len();
     assert!(
         count <= 16,
         "default decoders ({count}) must fit 16 profiler slots"
     );
-    assert_eq!(16 - count, 3, "expected exactly 3 free profiler slots");
+    assert_eq!(16 - count, 2, "expected exactly 2 free profiler slots");
 }
 
 // ---- registry hygiene / adversarial ---------------------------------------

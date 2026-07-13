@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add bounded static JavaScript recovery for embedded XOR and AES-256-CBC
+  expressions. Decode-enabled scans evaluate only the recognized
+  side-effect-free grammar and reject dynamic operands, mismatched bindings,
+  invalid padding, non-UTF-8 plaintext, and oversized inputs. SIMD and portable
+  CPU entry paths share the same static-XOR decode admission.
 - Recover checksum-valid known-prefix credentials assembled from JavaScript
   string arrays followed by an empty-separator `.join("")`, even when the
   temporary variable name is obfuscated. Non-empty separators and arrays that

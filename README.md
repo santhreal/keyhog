@@ -396,7 +396,9 @@ Browse detector authoring and inspection in the
   base64-wrapped envs, helm values, and docker-config `auth:` blobs. The
   structured preprocessor decodes them in place and feeds every
   downstream detector the plaintext, so detectors don't each need to
-  re-implement decoding.
+  re-implement decoding. Decode-enabled scans also recover recognized,
+  side-effect-free JavaScript byte-array XOR and AES-256-CBC expressions when
+  all recovery material is embedded; KeyHog never executes the source.
 - **Multiline reassembly.** `"sk-proj-" + \` continuation in JavaScript,
   YAML multi-line strings, Makefile backslash-continuation, Helm /
   Jinja templated outputs, all reassembled before regex matching.

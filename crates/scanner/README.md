@@ -1,8 +1,9 @@
 # keyhog-scanner
 
 High-performance secret detection engine with a portable CPU reference,
-Hyperscan trigger matching, VYRE GPU region presence, entropy/BPE policy, and
-decode-through scanning.
+Hyperscan trigger matching, VYRE GPU region presence, entropy/BPE policy,
+decode-through scanning, and bounded static recovery of embedded JavaScript
+XOR and AES-256-CBC expressions.
 
 Part of the [KeyHog](https://github.com/santhreal/keyhog) secret scanner.
 

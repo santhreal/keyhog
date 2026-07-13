@@ -4,7 +4,7 @@
 //! The registration ORDER is load-bearing: `base64` must run FIRST (structural,
 //! highest-yield unwrap) and the `reverse` + `caesar` transposition decoders
 //! must run LAST, after every structural decoder, so the pipeline never feeds a
-//! caesar-mangled span into a structural stage. The count is fixed at 13 and
+//! caesar-mangled span into a structural stage. The count is fixed at 14 and
 //! must stay within the profiler's slot capacity. `base32` / `base58` are
 //! deliberately NOT in the default set (only `z85` from the ascii85/z85 family
 //! is), so a stray addition of them must be caught here.
@@ -19,7 +19,7 @@ use keyhog_scanner::testing::default_decoder_names_for_test;
 
 /// The canonical decode-pipeline composition, in registration order. Mirrors
 /// `default_decoders()` verbatim.
-const EXPECTED: [&str; 13] = [
+const EXPECTED: [&str; 14] = [
     "base64",
     "hex",
     "url",
@@ -31,6 +31,7 @@ const EXPECTED: [&str; 13] = [
     "json",
     "unicode-escape",
     "z85",
+    "javascript-static",
     "reverse",
     "caesar",
 ];
@@ -46,12 +47,12 @@ fn full_ordered_vector_matches_canonical() {
 }
 
 #[test]
-fn exactly_thirteen_decoders() {
+fn exactly_fourteen_decoders() {
     let names = default_decoder_names_for_test();
     assert_eq!(
         names.len(),
-        13,
-        "default decoder count must stay 13 (profiler slot capacity)"
+        14,
+        "default decoder count must stay 14 (profiler slot capacity)"
     );
 }
 
@@ -79,8 +80,8 @@ fn caesar_is_last() {
     );
     assert_eq!(
         names.iter().position(|&n| n == "caesar"),
-        Some(12),
-        "caesar must occupy index 12 exactly"
+        Some(13),
+        "caesar must occupy index 13 exactly"
     );
 }
 
@@ -94,8 +95,8 @@ fn reverse_is_second_to_last() {
     );
     assert_eq!(
         names.iter().position(|&n| n == "reverse"),
-        Some(11),
-        "reverse must occupy index 11 exactly"
+        Some(12),
+        "reverse must occupy index 12 exactly"
     );
 }
 
@@ -128,6 +129,7 @@ fn every_structural_decoder_precedes_reverse_and_caesar() {
         "json",
         "unicode-escape",
         "z85",
+        "javascript-static",
     ] {
         let idx = names.iter().position(|n| n == structural).unwrap();
         assert!(
@@ -146,7 +148,7 @@ fn no_duplicate_names() {
         names.len(),
         "decode registry must have no duplicate decoder names"
     );
-    assert_eq!(unique.len(), 13, "unique decoder name count must be 13");
+    assert_eq!(unique.len(), 14, "unique decoder name count must be 14");
 }
 
 #[test]
@@ -202,7 +204,7 @@ fn exact_joined_string() {
     let joined = names.join(",");
     assert_eq!(
         joined,
-        "base64,hex,url,quoted-printable,html-named-entity,html-numeric-entity,octal-escape,mime-encoded-word,json,unicode-escape,z85,reverse,caesar",
+        "base64,hex,url,quoted-printable,html-named-entity,html-numeric-entity,octal-escape,mime-encoded-word,json,unicode-escape,z85,javascript-static,reverse,caesar",
         "joined decode-registry name string drifted"
     );
 }
@@ -223,8 +225,9 @@ fn per_name_index_mapping() {
         ("json", 8),
         ("unicode-escape", 9),
         ("z85", 10),
-        ("reverse", 11),
-        ("caesar", 12),
+        ("javascript-static", 11),
+        ("reverse", 12),
+        ("caesar", 13),
     ];
     for &(name, idx) in expected_index {
         assert_eq!(
@@ -242,6 +245,6 @@ fn name_set_equality_regardless_of_order() {
     let want: std::collections::BTreeSet<&str> = EXPECTED.iter().copied().collect();
     assert_eq!(
         got, want,
-        "the SET of default decoder names must equal the canonical 13-name set"
+        "the SET of default decoder names must equal the canonical 14-name set"
     );
 }

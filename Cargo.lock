@@ -2916,6 +2916,7 @@ dependencies = [
 name = "keyhog-scanner"
 version = "0.5.41"
 dependencies = [
+ "aes 0.8.4",
  "ahash",
  "aho-corasick",
  "base64 0.22.1",

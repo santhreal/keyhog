@@ -60,7 +60,7 @@ A dash means that layer intentionally has no surface.
 | Setting | Default | `.keyhog.toml` key | CLI flag | Effect |
 |---|---|---|---|---|
 | Min confidence | **0.40** | `[scan].min_confidence` | `--min-confidence` | Drop findings scoring below this (0.0-1.0). Bench-tuned for max F1. |
-| Decode depth | **10** | `[scan].decode_depth` | `--decode-depth` | Max recursive decode passes, e.g. `base64(hex(url(secret)))` (1-10). |
+| Decode depth | **10** | `[scan].decode_depth` | `--decode-depth` | Max recursive decode passes, e.g. `base64(hex(url(secret)))` (1-10). A zero value also disables bounded static JavaScript XOR/AES recovery. |
 | Decode size limit | **512KB** | `decode_size_limit` | `--decode-size-limit` | Per-file ceiling for decode-through; larger files skip encoding detection. |
 | Entropy enabled | on | `no_entropy = true` disables | `--no-entropy` | Shannon-entropy detection for novel high-entropy strings. |
 | Entropy in source | off | `entropy_source_files` | `--entropy-source-files` | Run entropy inside `.py`/`.js`/`.go`/… (off by default to cut FPs). |
