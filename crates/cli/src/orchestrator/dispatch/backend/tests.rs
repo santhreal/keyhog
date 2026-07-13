@@ -2481,6 +2481,106 @@ fn autoroute_cache_rejects_non_primary_timing_summary_fields() {
 }
 
 #[test]
+fn autoroute_cache_rejects_unknown_and_incomplete_proof_fields() {
+    let dir = tempfile::tempdir().expect("autoroute strict-schema tempdir");
+    let path = dir.path().join("autoroute.json");
+    let detector_digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        test_workload_key(),
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+    save_autoroute_cache(
+        &path,
+        detector_digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &decisions,
+    )
+    .expect("valid strict-schema fixture");
+    let canonical: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&path).expect("strict-schema fixture must be readable"),
+    )
+    .expect("strict-schema fixture must be JSON");
+
+    for (label, mut tampered) in [
+        ("cache", canonical.clone()),
+        ("features", canonical.clone()),
+        ("host", canonical.clone()),
+        ("config", canonical.clone()),
+        ("workload", canonical.clone()),
+        ("decision", canonical.clone()),
+    ] {
+        let target = match label {
+            "cache" => &mut tampered,
+            "features" => &mut tampered["build_features"],
+            "host" => &mut tampered["host"],
+            "config" => &mut tampered["configs"][0],
+            "workload" => &mut tampered["configs"][0]["decisions"][0][0],
+            "decision" => &mut tampered["configs"][0]["decisions"][0][1],
+            _ => unreachable!("fixed strict-schema case"),
+        };
+        target["unexpected_proof_field"] = serde_json::json!(true);
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&tampered).expect("tampered schema JSON"),
+        )
+        .expect("write tampered strict-schema fixture");
+        let error = load_autoroute_cache(
+            &path,
+            detector_digest,
+            test_rules_digest(),
+            config_digest,
+            &host,
+        )
+        .expect_err("unknown proof field must fail closed")
+        .to_string();
+        assert!(
+            error.contains("unknown field `unexpected_proof_field`"),
+            "{label} unknown field error: {error}"
+        );
+        assert!(
+            inspect_autoroute_cache(Some(&path)).error.is_some(),
+            "inspection must reject unknown {label} proof fields"
+        );
+    }
+
+    for field in [
+        "cli_features",
+        "scanner_features",
+        "sources_features",
+        "verifier_features",
+    ] {
+        let mut tampered = canonical.clone();
+        tampered["build_features"]
+            .as_object_mut()
+            .expect("build features object")
+            .remove(field);
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&tampered).expect("incomplete schema JSON"),
+        )
+        .expect("write incomplete strict-schema fixture");
+        let error = load_autoroute_cache(
+            &path,
+            detector_digest,
+            test_rules_digest(),
+            config_digest,
+            &host,
+        )
+        .expect_err("missing build feature vector must fail closed")
+        .to_string();
+        assert!(
+            error.contains(&format!("missing field `{field}`")),
+            "missing {field} error: {error}"
+        );
+    }
+}
+
+#[test]
 fn backend_timing_evidence_rejects_empty_trial_sets_at_construction() {
     assert!(
         super::evidence::BackendTimingEvidence::from_trial_ns(Vec::new()).is_none(),

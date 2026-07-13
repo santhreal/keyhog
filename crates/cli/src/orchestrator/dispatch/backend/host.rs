@@ -4,6 +4,7 @@ use keyhog_scanner::hw_probe::HardwareCaps;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct AutorouteHostProfile {
     pub(super) os: String,
     pub(super) arch: String,

@@ -61,6 +61,7 @@ pub(super) fn gpu_cold_warm_route_evidence(
 /// because there is no stored copy to drift, which is why the old
 /// `validate_decision_route_evidence` cross-field-mismatch checks no longer exist.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct AutorouteDecision {
     pub(super) backend: String,
     pub(super) sample_bytes: u64,

@@ -12,6 +12,7 @@ const AUTOROUTE_DECODE_MIN_ENCODED_RUN: usize = 24;
 // (decisions are collected through a `BTreeMap<WorkloadKey, _>` on save), so a
 // recalibration that re-measures the same buckets produces a byte-stable file.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct WorkloadKey {
     pub(super) bytes_bucket: u8,
     pub(super) chunks_bucket: u8,
