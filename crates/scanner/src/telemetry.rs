@@ -14,6 +14,7 @@
 //! the lightest container. Long-lived daemon workers use [`ScanTelemetry`]
 //! scopes so concurrent client scans do not share counts/events.
 
+use keyhog_core::ChunkMetadata;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -61,7 +62,11 @@ pub enum DogfoodEvent {
     /// rejected malformed or unsupported literal data. The original source is
     /// still scanned. No source bytes are retained in this event.
     StaticRecoveryRejected {
+        #[serde(default)]
+        source_type: String,
         path: Option<String>,
+        #[serde(default)]
+        commit: Option<String>,
         expression_offset: usize,
         decoder: Cow<'static, str>,
         reason: Cow<'static, str>,
@@ -156,6 +161,24 @@ fn record_dropped_detail(counter: &AtomicUsize) {
         ) {
             Ok(_) => return,
             Err(observed) => current = observed,
+        }
+    }
+}
+
+fn push_dogfood_detail(
+    events: &Mutex<Vec<DogfoodEvent>>,
+    detail_events_dropped: &AtomicUsize,
+    event: DogfoodEvent,
+) -> bool {
+    match events.lock() {
+        Ok(mut events) if events.len() < DOGFOOD_DETAIL_EVENT_LIMIT => {
+            events.push(event);
+            true
+        }
+        Ok(_) | Err(_) => {
+            // LAW10: a full or poisoned detail buffer increments the operator-visible dropped-detail counter below.
+            record_dropped_detail(detail_events_dropped);
+            false
         }
     }
 }
@@ -524,15 +547,16 @@ fn record_example_suppression_in(
     // so dogfood output matches finding output - the bespoke 6-char-prefix
     // helper leaked up to 6 of 8 bytes of short credentials.
     let redacted = keyhog_core::redact(credential).into_owned();
-    if let Ok(mut events) = events.lock() {
-        // LAW10: poisoned dogfood telemetry event buffer loses only a diagnostic trace; finding/reporting behavior is unaffected.
-        events.push(DogfoodEvent::ExampleSuppressed {
+    push_dogfood_detail(
+        events,
+        detail_events_dropped,
+        DogfoodEvent::ExampleSuppressed {
             detector: detector.to_string(),
             path: path.map(str::to_string),
             credential_redacted: redacted,
             reason: Cow::Borrowed(reason),
-        });
-    }
+        },
+    );
 }
 
 /// Insert `credential_hash` into the shared emitted-event set, returning `true`
@@ -609,7 +633,7 @@ pub(crate) fn record_shape_suppression(path: Option<&str>, credential: &str, rea
 /// Record a static-recovery rejection in the dogfood trace. Deduplication keeps
 /// repeated references to the same rejected expression from producing noise.
 pub(crate) fn record_static_recovery_rejection(
-    path: Option<&str>,
+    metadata: &ChunkMetadata,
     expression_offset: usize,
     reason: StaticRecoveryRejection,
 ) {
@@ -621,16 +645,17 @@ pub(crate) fn record_static_recovery_rejection(
         if !mark_static_recovery_event_emitted(
             &t.emitted_suppression_events,
             &t.detail_events_dropped,
-            path,
+            metadata,
             expression_offset,
             reason,
         ) {
             return;
         }
-        if let Ok(mut events) = t.events.lock() {
-            // LAW10: a poisoned lock loses one telemetry event only; scan findings are unchanged.
-            events.push(static_recovery_event(path, expression_offset, reason));
-        }
+        push_dogfood_detail(
+            &t.events,
+            &t.detail_events_dropped,
+            static_recovery_event(metadata, expression_offset, reason),
+        );
         return;
     }
     let t = cell();
@@ -638,25 +663,28 @@ pub(crate) fn record_static_recovery_rejection(
     if !mark_static_recovery_event_emitted(
         &t.emitted_suppression_events,
         &t.detail_events_dropped,
-        path,
+        metadata,
         expression_offset,
         reason,
     ) {
         return;
     }
-    if let Ok(mut events) = t.events.lock() {
-        // LAW10: a poisoned lock loses one telemetry event only; scan findings are unchanged.
-        events.push(static_recovery_event(path, expression_offset, reason));
-    }
+    push_dogfood_detail(
+        &t.events,
+        &t.detail_events_dropped,
+        static_recovery_event(metadata, expression_offset, reason),
+    );
 }
 
 fn static_recovery_event(
-    path: Option<&str>,
+    metadata: &ChunkMetadata,
     expression_offset: usize,
     reason: StaticRecoveryRejection,
 ) -> DogfoodEvent {
     DogfoodEvent::StaticRecoveryRejected {
-        path: path.map(str::to_owned),
+        source_type: metadata.source_type.to_string(),
+        path: metadata.path.as_deref().map(str::to_owned),
+        commit: metadata.commit.as_deref().map(str::to_owned),
         expression_offset,
         decoder: Cow::Borrowed("javascript-static"),
         reason: Cow::Borrowed(reason.as_str()),
@@ -666,17 +694,19 @@ fn static_recovery_event(
 fn mark_static_recovery_event_emitted(
     emitted_events: &Mutex<HashSet<String>>,
     detail_events_dropped: &AtomicUsize,
-    path: Option<&str>,
+    metadata: &ChunkMetadata,
     expression_offset: usize,
     reason: StaticRecoveryRejection,
 ) -> bool {
-    let path = match path {
+    let path = match metadata.path.as_deref() {
         Some(path) => path,
         None => "<unknown>",
     };
     let key = format!(
-        "static-recovery\0{}\0{}\0{}",
+        "static-recovery\0{}\0{}\0{}\0{}\0{}",
+        metadata.source_type,
         path,
+        metadata.commit.as_deref().unwrap_or("<none>"), // LAW10: absent revision is an explicit dedup identity component, not a fallback that changes scan findings.
         expression_offset,
         reason.as_str()
     );
@@ -722,14 +752,15 @@ fn record_shape_suppression_in(
         return;
     }
     let redacted = keyhog_core::redact(credential).into_owned();
-    if let Ok(mut events) = events.lock() {
-        // LAW10: poisoned dogfood telemetry event buffer loses only a diagnostic trace; finding/reporting behavior is unaffected.
-        events.push(DogfoodEvent::ShapeSuppressed {
+    push_dogfood_detail(
+        events,
+        detail_events_dropped,
+        DogfoodEvent::ShapeSuppressed {
             path: path.map(str::to_string),
             credential_redacted: redacted,
             reason: Cow::Borrowed(reason),
-        });
-    }
+        },
+    );
 }
 
 /// Count of example/placeholder credentials suppressed during this scan.
@@ -848,23 +879,16 @@ pub fn line_offset_mapping_mismatch_count() -> usize {
 /// on the daemon side, so `--dogfood` output works in daemon mode.
 pub fn append_events<I: IntoIterator<Item = DogfoodEvent>>(events: I) {
     let t = cell();
-    if let Ok(mut buf) = t.events.lock() {
-        // LAW10: a poisoned replay telemetry event cannot affect findings, and the daemon protocol rejects dogfood capture before this path.
-        for event in events {
-            if buf.len() >= DOGFOOD_DETAIL_EVENT_LIMIT {
-                record_dropped_detail(&t.detail_events_dropped);
-                continue;
+    for event in events {
+        if let DogfoodEvent::StaticRecoveryRejected { reason, .. } = &event {
+            if let Some(reason) = StaticRecoveryRejection::ALL
+                .iter()
+                .find(|candidate| candidate.as_str() == reason.as_ref())
+            {
+                t.static_recovery.record(*reason);
             }
-            if let DogfoodEvent::StaticRecoveryRejected { reason, .. } = &event {
-                if let Some(reason) = StaticRecoveryRejection::ALL
-                    .iter()
-                    .find(|candidate| candidate.as_str() == reason.as_ref())
-                {
-                    t.static_recovery.record(*reason);
-                }
-            }
-            buf.push(event);
         }
+        push_dogfood_detail(&t.events, &t.detail_events_dropped, event);
     }
 }
 
@@ -963,8 +987,20 @@ pub fn reset_for_scan() {
 #[cfg(test)]
 #[doc(hidden)]
 pub mod testing {
+    use std::sync::Arc;
+
     /// Reset all telemetry state. Test-only facade for integration tests.
     pub fn reset() {
         super::reset_for_scan();
+    }
+
+    pub(crate) fn poison_events(telemetry: &Arc<super::ScanTelemetry>) {
+        let telemetry = Arc::clone(telemetry);
+        let _ = std::thread::spawn(move || {
+            // LAW10: this cfg(test) helper has no production runtime effect; it joins an expected panic to poison a disposable scoped buffer.
+            let _events = telemetry.events.lock().expect("lock fresh event buffer");
+            panic!("poison scoped telemetry event buffer");
+        })
+        .join();
     }
 }

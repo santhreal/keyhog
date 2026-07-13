@@ -12,7 +12,7 @@
 
 use super::pipeline::push_decoded_text_chunk;
 use super::Decoder;
-use keyhog_core::Chunk;
+use keyhog_core::{Chunk, ChunkMetadata};
 use regex::Regex;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
@@ -72,13 +72,12 @@ impl Decoder for JavaScriptStaticDecoder {
 
         let mut decoded_chunks = Vec::new();
         let mut emitted = BTreeSet::new();
-        let path = chunk.metadata.path.as_deref();
         let base_offset = chunk.metadata.base_offset;
         if has_xor_expression {
-            recover_xor_plaintexts(&chunk.data, path, base_offset, &mut emitted);
+            recover_xor_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut emitted);
         }
         if has_aes_expression {
-            aes::recover_plaintexts(&chunk.data, path, base_offset, &mut emitted);
+            aes::recover_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut emitted);
         }
         for plaintext in emitted {
             push_decoded_text_chunk(&mut decoded_chunks, chunk, plaintext, self.name());
@@ -89,7 +88,7 @@ impl Decoder for JavaScriptStaticDecoder {
 
 fn recover_xor_plaintexts(
     source: &str,
-    path: Option<&str>,
+    metadata: &ChunkMetadata,
     base_offset: usize,
     emitted: &mut BTreeSet<String>,
 ) {
@@ -132,14 +131,14 @@ fn recover_xor_plaintexts(
         let data = match data {
             Ok(data) => data,
             Err(reason) => {
-                record_static_recovery_rejection(path, expression_offset, *reason);
+                record_static_recovery_rejection(metadata, expression_offset, *reason);
                 continue;
             }
         };
         let key = match key {
             Ok(key) => key,
             Err(reason) => {
-                record_static_recovery_rejection(path, expression_offset, *reason);
+                record_static_recovery_rejection(metadata, expression_offset, *reason);
                 continue;
             }
         };
@@ -156,7 +155,7 @@ fn recover_xor_plaintexts(
             // LAW10: the typed dogfood event records this rejected expression without source bytes.
             Err(_) => {
                 record_static_recovery_rejection(
-                    path,
+                    metadata,
                     expression_offset,
                     StaticRecoveryRejection::XorPlaintextUtf8,
                 );
@@ -333,7 +332,6 @@ fn capture_xor_names<'a>(
         captures.get(7)?.as_str(),
     ))
 }
-
 
 #[cfg(test)]
 #[path = "../../tests/unit/decode_javascript_static.rs"]

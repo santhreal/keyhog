@@ -17,6 +17,12 @@ pub fn pattern_regex_strs(scanner: &crate::CompiledScanner) -> Vec<&str> {
     scanner.pattern_regex_strs()
 }
 
+/// Production scan-window ceiling used by behavioral tests that must force the
+/// real windowed path without duplicating its tuning constant.
+pub fn max_scan_chunk_bytes() -> usize {
+    crate::types::MAX_SCAN_CHUNK_BYTES
+}
+
 /// SPEED/som-window (backlog 4786) lever-ceiling analysis: classify the CONFIRMED
 /// `ac_map` patterns of the embedded detector corpus by how they can be localized
 /// in the scan window, returning

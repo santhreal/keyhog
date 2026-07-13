@@ -6,6 +6,7 @@ use super::{
 };
 use aes::cipher::{BlockDecrypt, KeyInit};
 use aes::Aes256;
+use keyhog_core::ChunkMetadata;
 use regex::Regex;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
@@ -42,7 +43,7 @@ static AES_INLINE_BUFFER_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 pub(super) fn recover_plaintexts(
     source: &str,
-    path: Option<&str>,
+    metadata: &ChunkMetadata,
     base_offset: usize,
     emitted: &mut BTreeSet<String>,
 ) {
@@ -93,25 +94,27 @@ pub(super) fn recover_plaintexts(
         let key = match resolve_binding(key) {
             Ok(key) => key,
             Err(reason) => {
-                record_static_recovery_rejection(path, expression_offset, reason);
+                record_static_recovery_rejection(metadata, expression_offset, reason);
                 continue;
             }
         };
         let iv = match resolve_binding(iv) {
             Ok(iv) => iv,
             Err(reason) => {
-                record_static_recovery_rejection(path, expression_offset, reason);
+                record_static_recovery_rejection(metadata, expression_offset, reason);
                 continue;
             }
         };
         let ciphertext = match resolve_binding(ciphertext) {
             Ok(ciphertext) => ciphertext,
             Err(reason) => {
-                record_static_recovery_rejection(path, expression_offset, reason);
+                record_static_recovery_rejection(metadata, expression_offset, reason);
                 continue;
             }
         };
-        if let Some(plaintext) = decrypt_aes_256_cbc(key, iv, ciphertext, path, expression_offset) {
+        if let Some(plaintext) =
+            decrypt_aes_256_cbc(key, iv, ciphertext, metadata, expression_offset)
+        {
             emitted.insert(plaintext);
         }
     }
@@ -160,14 +163,14 @@ pub(super) fn recover_plaintexts(
         let key_hex = match resolve_binding(key_hex) {
             Ok(key_hex) => key_hex,
             Err(reason) => {
-                record_static_recovery_rejection(path, expression_offset, reason);
+                record_static_recovery_rejection(metadata, expression_offset, reason);
                 continue;
             }
         };
         let payload_base64 = match resolve_binding(payload_base64) {
             Ok(payload) => payload,
             Err(reason) => {
-                record_static_recovery_rejection(path, expression_offset, reason);
+                record_static_recovery_rejection(metadata, expression_offset, reason);
                 continue;
             }
         };
@@ -179,7 +182,7 @@ pub(super) fn recover_plaintexts(
             // LAW10: the typed dogfood event records the malformed literal without source bytes.
             Err(_) => {
                 record_static_recovery_rejection(
-                    path,
+                    metadata,
                     expression_offset,
                     StaticRecoveryRejection::BufferHex,
                 );
@@ -191,7 +194,7 @@ pub(super) fn recover_plaintexts(
             // LAW10: the typed dogfood event records the malformed literal without source bytes.
             Err(_) => {
                 record_static_recovery_rejection(
-                    path,
+                    metadata,
                     expression_offset,
                     StaticRecoveryRejection::BufferHex,
                 );
@@ -202,7 +205,7 @@ pub(super) fn recover_plaintexts(
             Ok(ciphertext) => ciphertext,
             Err(()) => {
                 record_static_recovery_rejection(
-                    path,
+                    metadata,
                     expression_offset,
                     StaticRecoveryRejection::BufferBase64,
                 );
@@ -210,7 +213,7 @@ pub(super) fn recover_plaintexts(
             }
         };
         if let Some(plaintext) =
-            decrypt_aes_256_cbc(&key, &iv, &ciphertext, path, expression_offset)
+            decrypt_aes_256_cbc(&key, &iv, &ciphertext, metadata, expression_offset)
         {
             emitted.insert(plaintext);
         }
@@ -307,7 +310,7 @@ fn decrypt_aes_256_cbc(
     key: &[u8],
     iv: &[u8],
     ciphertext: &[u8],
-    path: Option<&str>,
+    metadata: &ChunkMetadata,
     expression_offset: usize,
 ) -> Option<String> {
     let key: &[u8; 32] = match key.try_into() {
@@ -315,7 +318,7 @@ fn decrypt_aes_256_cbc(
         // LAW10: the typed dogfood event records the invalid key shape without key bytes.
         Err(_) => {
             record_static_recovery_rejection(
-                path,
+                metadata,
                 expression_offset,
                 StaticRecoveryRejection::AesKeyLength,
             );
@@ -327,7 +330,7 @@ fn decrypt_aes_256_cbc(
         // LAW10: the typed dogfood event records the invalid IV shape without IV bytes.
         Err(_) => {
             record_static_recovery_rejection(
-                path,
+                metadata,
                 expression_offset,
                 StaticRecoveryRejection::AesIvLength,
             );
@@ -336,7 +339,7 @@ fn decrypt_aes_256_cbc(
     };
     if ciphertext.is_empty() {
         record_static_recovery_rejection(
-            path,
+            metadata,
             expression_offset,
             StaticRecoveryRejection::AesCiphertextBlockLength,
         );
@@ -348,7 +351,7 @@ fn decrypt_aes_256_cbc(
     }
     if !ciphertext.len().is_multiple_of(16) {
         record_static_recovery_rejection(
-            path,
+            metadata,
             expression_offset,
             StaticRecoveryRejection::AesCiphertextBlockLength,
         );
@@ -374,7 +377,7 @@ fn decrypt_aes_256_cbc(
             .all(|byte| usize::from(*byte) == padding)
     {
         record_static_recovery_rejection(
-            path,
+            metadata,
             expression_offset,
             StaticRecoveryRejection::AesPadding,
         );
@@ -386,7 +389,7 @@ fn decrypt_aes_256_cbc(
         // LAW10: the typed dogfood event records non-UTF8 output without plaintext bytes.
         Err(_) => {
             record_static_recovery_rejection(
-                path,
+                metadata,
                 expression_offset,
                 StaticRecoveryRejection::AesPlaintextUtf8,
             );

@@ -1,10 +1,11 @@
 //! Migrated from src/telemetry.rs
 
 use keyhog_scanner::telemetry::{
-    drain_events, enable_dogfood, example_suppression_count, record_example_suppression,
-    reset_example_suppression_count, testing::reset, with_scan_telemetry, DogfoodEvent,
-    ScanTelemetry,
+    append_events, dogfood_detail_events_dropped, drain_events, enable_dogfood,
+    example_suppression_count, record_example_suppression, reset_example_suppression_count,
+    testing::reset, with_scan_telemetry, DogfoodEvent, ScanTelemetry,
 };
+use std::borrow::Cow;
 use std::sync::{Arc, Barrier};
 
 fn scoped_dogfood_events(f: impl FnOnce()) -> Vec<DogfoodEvent> {
@@ -15,6 +16,68 @@ fn scoped_dogfood_events(f: impl FnOnce()) -> Vec<DogfoodEvent> {
     let events = trace.drain().dogfood_events;
     reset();
     events
+}
+
+#[test]
+fn replay_and_local_details_share_one_exact_capacity() {
+    let _g = super::super::telemetry_serial::lock();
+    reset();
+    append_events(
+        (0..keyhog_scanner::telemetry::DOGFOOD_DETAIL_EVENT_LIMIT).map(|index| {
+            DogfoodEvent::ShapeSuppressed {
+                path: Some(format!("replay-{index}.env")),
+                credential_redacted: "****".to_owned(),
+                reason: Cow::Borrowed("replayed"),
+            }
+        }),
+    );
+    enable_dogfood();
+    record_example_suppression("aws", Some("local.env"), "AKIAEXAMPLE", "local");
+
+    assert_eq!(
+        drain_events().len(),
+        keyhog_scanner::telemetry::DOGFOOD_DETAIL_EVENT_LIMIT
+    );
+    assert_eq!(dogfood_detail_events_dropped(), 1);
+    reset();
+}
+
+#[test]
+fn poisoned_scoped_event_buffer_counts_the_omitted_detail() {
+    let _g = super::super::telemetry_serial::lock();
+    let trace = Arc::new(ScanTelemetry::new());
+    trace.enable_dogfood();
+    crate::telemetry::testing::poison_events(&trace);
+
+    with_scan_telemetry(&trace, || {
+        record_example_suppression("aws", Some("poisoned.env"), "AKIAEXAMPLE", "poisoned");
+    });
+    let snapshot = trace.drain();
+    assert!(snapshot.dogfood_events.is_empty());
+    assert_eq!(snapshot.dogfood_detail_events_dropped, 1);
+}
+
+#[test]
+fn legacy_static_recovery_event_wire_defaults_new_source_identity() {
+    let event: DogfoodEvent = serde_json::from_str(
+        r#"{"kind":"static_recovery_rejected","path":"old.js","expression_offset":7,"decoder":"javascript-static","reason":"json_utf8"}"#,
+    )
+    .expect("deserialize pre-source-identity event");
+    match event {
+        DogfoodEvent::StaticRecoveryRejected {
+            source_type,
+            path,
+            commit,
+            expression_offset,
+            ..
+        } => {
+            assert!(source_type.is_empty());
+            assert_eq!(path.as_deref(), Some("old.js"));
+            assert_eq!(commit, None);
+            assert_eq!(expression_offset, 7);
+        }
+        other => panic!("expected static recovery rejection, got {other:?}"),
+    }
 }
 
 #[test]

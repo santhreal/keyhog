@@ -157,9 +157,10 @@ fn oversized_coalesced_window_workers_inherit_the_request_scope() {
         "String.fromCharCode(...malformed.map((b, i) => ",
         "b ^ xorKey[i % xorKey.length]));\n"
     );
-    let mut source = String::with_capacity(1024 * 1024 + 256);
+    let window_limit = keyhog_scanner::testing::max_scan_chunk_bytes();
+    let mut source = String::with_capacity(window_limit + 256);
     source.push_str(prefix);
-    source.extend(std::iter::repeat_n('x', 1024 * 1024 + 256 - prefix.len()));
+    source.extend(std::iter::repeat_n('x', window_limit + 256 - prefix.len()));
     let chunk = Chunk {
         data: source.into(),
         metadata: ChunkMetadata {

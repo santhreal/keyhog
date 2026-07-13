@@ -214,6 +214,58 @@ fn distinct_rejected_expressions_have_exact_counts_and_offsets() {
 }
 
 #[test]
+fn equal_path_and_offset_rejections_keep_distinct_revision_identity() {
+    let source = concat!(
+        "const bad = [256]; const key = [1]; ",
+        "String.fromCharCode(...bad.map((b, i) => b ^ key[i % key.length]));",
+    );
+    let chunks: Vec<Chunk> = ["commit-a", "commit-b"]
+        .into_iter()
+        .map(|commit| Chunk {
+            data: source.into(),
+            metadata: ChunkMetadata {
+                source_type: "git-history".into(),
+                path: Some("same.js".into()),
+                commit: Some(commit.into()),
+                ..Default::default()
+            },
+        })
+        .collect();
+    let trace = Arc::new(ScanTelemetry::new());
+    trace.enable_dogfood();
+    telemetry::with_scan_telemetry(&trace, || {
+        let findings = scanner().scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback);
+        assert!(findings.iter().all(Vec::is_empty));
+    });
+    let snapshot = trace.drain();
+    let identities: BTreeSet<(&str, Option<&str>)> = snapshot
+        .dogfood_events
+        .iter()
+        .filter_map(|event| match event {
+            DogfoodEvent::StaticRecoveryRejected {
+                source_type,
+                commit,
+                ..
+            } => Some((source_type.as_str(), commit.as_deref())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        identities,
+        BTreeSet::from([
+            ("git-history", Some("commit-a")),
+            ("git-history", Some("commit-b")),
+        ])
+    );
+    assert_eq!(
+        snapshot
+            .static_recovery_rejections
+            .get("literal_byte_array_element"),
+        Some(&2)
+    );
+}
+
+#[test]
 fn aes_key_iv_and_ciphertext_boundaries_emit_exact_reasons() {
     let key = [7u8; 32];
     let iv = [11u8; 16];
