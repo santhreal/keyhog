@@ -228,8 +228,8 @@ fn oob_timeout_and_server_defaults() {
 
 #[cfg(feature = "verify")]
 #[test]
-fn timeout_and_rate_flags_parse_exact_values() {
-    let args = scan_args(&["--timeout", "42", "--verify-concurrency", "7"]);
+fn timeout_and_concurrency_flags_parse_exact_values() {
+    let args = scan_args(&["--verify", "--timeout", "42", "--verify-concurrency", "7"]);
     assert_eq!(args.timeout, Some(42));
     assert_eq!(args.verify_concurrency, Some(7));
 }
@@ -237,14 +237,14 @@ fn timeout_and_rate_flags_parse_exact_values() {
 #[cfg(feature = "verify")]
 #[test]
 fn timeout_non_numeric_value_rejected() {
-    let err = scan_parse_error(&["--timeout", "abc"]);
+    let err = scan_parse_error(&["--verify", "--timeout", "abc"]);
     assert_eq!(err.kind(), ErrorKind::ValueValidation);
 }
 
 #[cfg(feature = "verify")]
 #[test]
 fn zero_verification_concurrency_is_rejected() {
-    let err = scan_parse_error(&["--verify-concurrency", "0"]);
+    let err = scan_parse_error(&["--verify", "--verify-concurrency", "0"]);
     assert_eq!(err.kind(), ErrorKind::ValueValidation);
     assert!(err.to_string().contains("value must be >= 1"));
 }
@@ -260,15 +260,33 @@ fn ambiguous_legacy_rate_flag_is_not_an_alias() {
 #[test]
 fn verify_rate_bounds_rejected_but_valid_accepted() {
     assert!(
-        (scan_args(&["--verify-rate", "50"]).verify_rate - 50.0).abs() < f64::EPSILON,
+        (scan_args(&["--verify", "--verify-rate", "50"]).verify_rate - 50.0).abs() < f64::EPSILON,
         "in-range --verify-rate 50 must parse to 50.0"
     );
 
-    let zero = scan_parse_error(&["--verify-rate", "0"]);
+    let zero = scan_parse_error(&["--verify", "--verify-rate", "0"]);
     assert_eq!(zero.kind(), ErrorKind::ValueValidation);
     assert!(zero.to_string().contains("> 0 rps"), "got: {zero}");
 
-    let over = scan_parse_error(&["--verify-rate", "20000"]);
+    let over = scan_parse_error(&["--verify", "--verify-rate", "20000"]);
     assert_eq!(over.kind(), ErrorKind::ValueValidation);
     assert!(over.to_string().contains("10_000 rps"), "got: {over}");
+}
+
+#[cfg(feature = "verify")]
+#[test]
+fn verification_execution_knobs_require_verification() {
+    for args in [
+        &["--timeout", "5"][..],
+        &["--verify-concurrency", "5"][..],
+        &["--verify-rate", "5"][..],
+    ] {
+        let err = scan_parse_error(args);
+        assert_eq!(
+            err.kind(),
+            ErrorKind::MissingRequiredArgument,
+            "args={args:?}"
+        );
+        assert!(err.to_string().contains("--verify"), "args={args:?}: {err}");
+    }
 }

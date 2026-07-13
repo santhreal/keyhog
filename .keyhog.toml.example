@@ -147,8 +147,8 @@ verify = false
 # Verification timeout in seconds
 timeout = 5
 
-# Max concurrent verification requests per service
-rate = 5
+# Maximum concurrent verification requests per service
+verify_concurrency = 5
 
 # ============================================================================
 # GIT OPTIONS

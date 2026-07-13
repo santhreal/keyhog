@@ -557,12 +557,17 @@ pub struct ScanArgs {
     /// not impose a deadline on scanning; use `--per-chunk-timeout-ms` for the
     /// scanner's optional chunk deadline.
     #[cfg(feature = "verify")]
-    #[arg(long)]
+    #[arg(long, requires = "verify")]
     pub timeout: Option<u64>,
 
     /// Maximum in-flight verification requests per service (default: 5).
     #[cfg(feature = "verify")]
-    #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_usize)]
+    #[arg(
+        long,
+        requires = "verify",
+        value_name = "N",
+        value_parser = crate::value_parsers::parse_positive_usize
+    )]
     pub verify_concurrency: Option<usize>,
 
     /// Steady-state cap for verification calls *per service*, in
@@ -575,6 +580,7 @@ pub struct ScanArgs {
     #[cfg(feature = "verify")]
     #[arg(
         long,
+        requires = "verify",
         value_name = "RPS",
         default_value = "5.0",
         value_parser = crate::value_parsers::parse_verify_rate

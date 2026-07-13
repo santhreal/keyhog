@@ -168,7 +168,7 @@ fn explicit_cli_default_values_win_over_config_sentinels() {
     #[allow(unused_mut)]
     let mut extra_args = vec!["--ml-threshold", "0.5"];
     #[cfg(feature = "verify")]
-    extra_args.extend(["--timeout", "5", "--verify-concurrency", "5"]);
+    extra_args.extend(["--verify", "--timeout", "5", "--verify-concurrency", "5"]);
     #[cfg(feature = "git")]
     extra_args.extend(["--max-commits", "1000"]);
 

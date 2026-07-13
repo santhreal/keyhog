@@ -30,6 +30,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - HTTP-only feature builds no longer compile entropy-only testing façades; the
   public test surface now follows the same SIMD/GPU/entropy feature boundary as
   the implementation it exposes.
+- CLI-only verifier timeout, concurrency, and request-rate knobs now require
+  `--verify` so a mistyped command cannot accept them as silent no-ops. TOML may
+  still store defaults consumed by runs that explicitly enable verification.
 - Documentation and CLI help now distinguish the foreground `watch` process
   from the independently started Unix-socket daemon and describe `--backend
   auto` as persisted routing rather than a forced backend. The scan reference
