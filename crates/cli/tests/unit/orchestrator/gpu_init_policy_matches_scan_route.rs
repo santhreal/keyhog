@@ -258,6 +258,25 @@ fn canonical_calibration_shares_normal_identity_but_gpu_exclusion_is_isolated() 
         gpu_excluded_digest, normal_digest,
         "incomplete diagnostic calibration must not replace normal all-candidate evidence"
     );
+
+    let mut cpu_only_normal = scan_args(&["scan", "--no-config", "--stdin", "--no-gpu"]);
+    let cpu_only_normal_digest = API
+        .autoroute_config_digest_for_args(&mut cpu_only_normal)
+        .expect("CPU-only normal config digest");
+    let mut cpu_only_calibration = scan_args(&[
+        "scan",
+        "--no-config",
+        "--stdin",
+        "--no-gpu",
+        "--autoroute-calibrate",
+    ]);
+    let cpu_only_calibration_digest = API
+        .autoroute_config_digest_for_args(&mut cpu_only_calibration)
+        .expect("CPU-only calibration config digest");
+    assert_eq!(
+        cpu_only_calibration_digest, cpu_only_normal_digest,
+        "GPU exclusion is complete when the resolved runtime policy disables GPU"
+    );
 }
 
 /// Coherence gate: every value the `--backend` flag ADVERTISES (clap

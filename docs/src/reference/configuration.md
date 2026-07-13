@@ -277,8 +277,10 @@ like `--require-gpu`. The resolved value is printed by
 `keyhog calibrate-autoroute`, always supplies GPU candidate admission so every
 eligible backend is a peer. Normal scans do not hash or benchmark from this
 value; they consume persisted fastest-correct decisions. A direct calibration
-that explicitly excludes GPU is stored under a diagnostic-only config identity,
-so its incomplete candidate set cannot replace normal all-candidate evidence.
+that excludes an otherwise eligible GPU is stored under a diagnostic-only
+config identity, so its incomplete candidate set cannot replace normal
+all-candidate evidence. A calibration with GPU disabled by the resolved runtime
+policy shares the matching CPU-only scan identity.
 
 `batch_pipeline` forces the coalesced batch pipeline. Leave it `false` for the
 default fused filesystem route; set it only for calibration, diagnostics, or

@@ -485,11 +485,14 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     );
     // Canonical calibration admits every eligible peer and must share the
     // normal auto-scan identity, including when GPU wins. A low-level
-    // calibration that excludes GPU is intentionally noncanonical: isolate it
-    // so its incomplete candidate set cannot overwrite consumable evidence.
+    // calibration that excludes an otherwise eligible GPU is intentionally
+    // noncanonical. When the resolved runtime policy disables GPU, a CPU-only
+    // candidate set is complete and must replay under the matching normal scan.
     h.field_bool(
         "calibration.excludes_gpu_candidates",
-        resolved.autoroute_calibration && !resolved.autoroute_gpu,
+        resolved.autoroute_calibration
+            && !resolved.autoroute_gpu
+            && resolved.gpu_runtime_policy != keyhog_scanner::gpu::GpuRuntimePolicy::Disabled,
     );
     h.field_option_usize("regex_dfa_limit", resolved.regex_dfa_limit);
     h.field_option_usize("gpu_batch_input_limit", resolved.gpu_batch_input_limit);
