@@ -321,11 +321,52 @@ fn validate_detector_allowlists(spec: &DetectorSpec, issues: &mut Vec<QualityIss
         ("allowlist_paths", &spec.allowlist_paths),
         ("allowlist_values", &spec.allowlist_values),
     ] {
+        let mut first_index_by_pattern = HashMap::new();
         for (index, pattern) in patterns.iter().enumerate() {
+            if pattern.trim().is_empty() {
+                issues.push(QualityIssue::Error(format!(
+                    "detector {:?} {field}[{index}] must not be empty or whitespace-only",
+                    spec.id
+                )));
+                continue;
+            }
+            match first_index_by_pattern.entry(pattern.as_str()) {
+                Entry::Occupied(first) => issues.push(QualityIssue::Error(format!(
+                    "detector {:?} {field}[{index}] duplicates {field}[{}]",
+                    spec.id,
+                    first.get()
+                ))),
+                Entry::Vacant(slot) => {
+                    slot.insert(index);
+                }
+            }
             if let Err(error) = regex::Regex::new(pattern) {
                 issues.push(QualityIssue::Error(format!(
-                    "{field}[{index}] is not a valid regex ({pattern:?}): {error}"
+                    "detector {:?} {field}[{index}] is not a valid regex ({pattern:?}): {error}",
+                    spec.id
                 )));
+            }
+        }
+    }
+
+    let mut first_index_by_stopword = HashMap::new();
+    for (index, stopword) in spec.stopwords.iter().enumerate() {
+        if stopword.trim().is_empty() {
+            issues.push(QualityIssue::Error(format!(
+                "detector {:?} stopwords[{index}] must not be empty or whitespace-only",
+                spec.id
+            )));
+            continue;
+        }
+        let normalized = stopword.to_ascii_lowercase();
+        match first_index_by_stopword.entry(normalized) {
+            Entry::Occupied(first) => issues.push(QualityIssue::Error(format!(
+                "detector {:?} stopwords[{index}] duplicates stopwords[{}] under case-insensitive matching",
+                spec.id,
+                first.get()
+            ))),
+            Entry::Vacant(slot) => {
+                slot.insert(index);
             }
         }
     }

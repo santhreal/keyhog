@@ -538,6 +538,91 @@ fn disabled_detector_bpe_rejects_a_conflicting_ceiling() {
 }
 
 #[test]
+fn empty_detector_suppression_entries_fail_closed_with_field_context() {
+    for (field, value) in [
+        ("allowlist_paths", "\"\""),
+        ("allowlist_values", "\"   \""),
+        ("stopwords", "\"\t\""),
+    ] {
+        let body = VALID_DETECTOR_TOML.replace(
+            "keywords = [\"demo_\"]",
+            &format!("keywords = [\"demo_\"]\n{field} = [{value}]"),
+        );
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_toml(dir.path(), "invalid.toml", &body);
+        let error =
+            load_detectors(dir.path()).expect_err("empty suppression entries must fail closed");
+        let detail = match error {
+            SpecError::DetectorCorpusRejected { detail, .. } => detail,
+            other => panic!("expected DetectorCorpusRejected, got {other:?}"),
+        };
+        assert!(
+            detail.contains("detector \"demo\"")
+                && detail.contains(&format!("{field}[0]"))
+                && detail.contains("empty or whitespace-only"),
+            "error must identify detector, field, index, and fix: {detail}"
+        );
+    }
+}
+
+#[test]
+fn duplicate_detector_suppression_entries_fail_closed() {
+    for (field, values, expected_reason) in [
+        (
+            "allowlist_paths",
+            "\"^fixtures/\", \"^fixtures/\"",
+            "duplicates allowlist_paths[0]",
+        ),
+        (
+            "allowlist_values",
+            "\"^demo$\", \"^demo$\"",
+            "duplicates allowlist_values[0]",
+        ),
+        (
+            "stopwords",
+            "\"Example\", \"example\"",
+            "under case-insensitive matching",
+        ),
+    ] {
+        let body = VALID_DETECTOR_TOML.replace(
+            "keywords = [\"demo_\"]",
+            &format!("keywords = [\"demo_\"]\n{field} = [{values}]"),
+        );
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_toml(dir.path(), "invalid.toml", &body);
+        let error =
+            load_detectors(dir.path()).expect_err("duplicate suppression entries must fail closed");
+        let detail = match error {
+            SpecError::DetectorCorpusRejected { detail, .. } => detail,
+            other => panic!("expected DetectorCorpusRejected, got {other:?}"),
+        };
+        assert!(
+            detail.contains("detector \"demo\"")
+                && detail.contains(&format!("{field}[1]"))
+                && detail.contains(expected_reason),
+            "error must identify the duplicate and its first owner: {detail}"
+        );
+    }
+}
+
+#[test]
+fn distinct_nonempty_detector_suppressions_load() {
+    let body = VALID_DETECTOR_TOML.replace(
+        "keywords = [\"demo_\"]",
+        "keywords = [\"demo_\"]\nallowlist_paths = [\"^fixtures/\", \"^src/\"]\nallowlist_values = [\"^demo$\", \"^sample$\"]\nstopwords = [\"example\", \"placeholder\"]",
+    );
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_toml(dir.path(), "valid.toml", &body);
+    let specs =
+        load_detectors(dir.path()).expect("distinct nonempty suppression entries must load");
+
+    assert_eq!(specs.len(), 1);
+    assert_eq!(specs[0].allowlist_paths.len(), 2);
+    assert_eq!(specs[0].allowlist_values.len(), 2);
+    assert_eq!(specs[0].stopwords, ["example", "placeholder"]);
+}
+
+#[test]
 fn dir_with_invalid_detector_local_policy_is_gate_rejected() {
     let cases = [
         ("entropy_high = nan", "entropy_high"),

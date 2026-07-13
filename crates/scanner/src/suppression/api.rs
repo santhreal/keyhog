@@ -978,6 +978,17 @@ mod weak_anchor_shape_tests {
             Some(crate::adjudicate::StageId::ShapeGate("stopwords"))
         );
 
+        let incidental_stopword = "pxidztpv_stopword_here_nxruoapftabufvcsa";
+        assert!(
+            crate::suppression::token_randomness::is_random_token(incidental_stopword),
+            "fixture must exercise the random-token bypass"
+        );
+        let res = suppress_named_detector_finding_stage(incidental_stopword, ctx_normal_path);
+        assert_eq!(
+            res, None,
+            "a configured stopword inside a random credential must not suppress it"
+        );
+
         let res = suppress_named_detector_finding_stage("normal_secret", ctx_normal_path);
         assert_eq!(res, None);
     }
