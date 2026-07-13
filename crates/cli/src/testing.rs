@@ -200,6 +200,12 @@ pub trait CliTestApi {
     fn looks_like_native_executable(&self, bytes: &[u8]) -> bool;
     fn looks_like_native_executable_for_os(&self, bytes: &[u8], os: &str) -> bool;
     fn verify_release_signature(&self, data: &[u8], signature: &str) -> Result<()>;
+    fn verify_release_checksum(
+        &self,
+        data: &[u8],
+        asset_name: &str,
+        checksum_file: &[u8],
+    ) -> Result<()>;
     fn release_api_base(&self) -> String;
     fn release_api_base_with_override(&self, base: &str) -> String;
     fn release_public_key(&self) -> &'static str;
@@ -689,6 +695,14 @@ impl CliTestApi for TestApi {
     fn verify_release_signature(&self, data: &[u8], signature: &str) -> Result<()> {
         crate::installer::verify_release_signature(data, signature)
     }
+    fn verify_release_checksum(
+        &self,
+        data: &[u8],
+        asset_name: &str,
+        checksum_file: &[u8],
+    ) -> Result<()> {
+        crate::installer::verify_release_checksum(data, asset_name, checksum_file)
+    }
     fn release_api_base(&self) -> String {
         crate::installer::release_api_base(None)
     }
@@ -719,9 +733,25 @@ impl CliTestApi for TestApi {
         Box::pin(async move {
             let asset = crate::installer::Asset {
                 name: name.to_string(),
-                browser_download_url,
+                browser_download_url: browser_download_url.clone(),
             };
-            crate::installer::download_verified_asset(client, &asset).await
+            let release = crate::installer::Release {
+                tag_name: "v0.0.0-test".to_string(),
+                draft: false,
+                prerelease: false,
+                assets: vec![
+                    asset.clone(),
+                    crate::installer::Asset {
+                        name: format!("{name}.minisig"),
+                        browser_download_url: format!("{browser_download_url}.minisig"),
+                    },
+                    crate::installer::Asset {
+                        name: format!("{name}.sha256"),
+                        browser_download_url: format!("{browser_download_url}.sha256"),
+                    },
+                ],
+            };
+            crate::installer::download_verified_asset(client, &release, &asset).await
         })
     }
     fn current_binary(&self) -> Result<PathBuf> {

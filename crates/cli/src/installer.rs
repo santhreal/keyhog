@@ -5,13 +5,14 @@
 //! place is what lets the premium installer commands stay thin and lets the
 //! whole layer be lifted into a published crate later without re-deriving the
 //! GitHub-release resolution, asset selection, version comparison, executable
-//! sanity check, atomic self-replace, and end-to-end scan self-test.
+//! sanity check, signature/checksum verification, atomic self-replace, and
+//! end-to-end scan self-test.
 //!
 //! ## Responsibility split
 //!
 //! - [`release`] — the NETWORK + TRUST half: GitHub release resolution, asset
-//!   selection, semver comparison, executable-magic sanity check, minisign
-//!   signature verification, and the scan-engine self-test. It produces
+//!   selection, semver comparison, executable-magic sanity check, minisign and
+//!   SHA-256 verification, and the scan-engine self-test. It produces
 //!   *verified bytes*.
 //! - this module — the LOCAL-INSTALL half: resolving the running binary, the
 //!   atomic / rename-away self-replace, backup + rollback, and reaping the
@@ -24,10 +25,10 @@
 //! Trust model: every release binary is signed with the keyhog minisign
 //! secret key in the `sign` job of `.github/workflows/release.yml`, and
 //! `download_verified_asset` verifies the downloaded binary against the
-//! embedded [`RELEASE_PUBLIC_KEY`] before self-replacing. A missing `.minisig`
-//! fails CLOSED (refuse to install) since a forged 404 would otherwise bypass
-//! the whole gate. There is no opt-out: no environment variable can disable the
-//! signature gate (config-policy mandate + security).
+//! embedded [`RELEASE_PUBLIC_KEY`] and the release's exact SHA-256 entry before
+//! self-replacing. Missing proof files fail CLOSED (refuse to install) since a
+//! forged 404 would otherwise bypass the gate. There is no opt-out: no ambient
+//! setting can disable release verification.
 
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};

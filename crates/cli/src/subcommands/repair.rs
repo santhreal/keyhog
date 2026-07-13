@@ -67,7 +67,7 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
     let expected_tag = release.tag_name.clone();
     let allow_explicit_downgrade = args.version.is_some();
     println!("  downloading    {} ({})", asset.name, release.tag_name);
-    let bytes = installer::download_verified_asset(&client, asset).await?;
+    let bytes = installer::download_verified_asset(&client, &release, asset).await?;
     let exe = installer::current_binary()?;
     installer::reap_stale_binaries(&exe);
 

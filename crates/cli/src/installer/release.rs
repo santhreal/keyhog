@@ -26,6 +26,7 @@ const RELEASE_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_RELEASE_METADATA_BYTES: usize = 8 * 1024 * 1024;
 const MAX_RELEASE_ASSET_BYTES: usize = 512 * 1024 * 1024;
 const MAX_RELEASE_SIGNATURE_BYTES: usize = 64 * 1024;
+const MAX_RELEASE_CHECKSUM_BYTES: usize = 64 * 1024;
 const MAX_RESPONSE_PREALLOC_BYTES: usize = 64 * 1024;
 
 /// GitHub API base for update/repair release resolution.
@@ -63,7 +64,7 @@ pub(crate) fn verify_release_signature(data: &[u8], signature: &str) -> Result<(
         .map_err(|e| anyhow!("release signature verification failed: {e}"))
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub(crate) struct Release {
     pub tag_name: String,
     #[serde(default)]
@@ -74,7 +75,7 @@ pub(crate) struct Release {
     pub assets: Vec<Asset>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub(crate) struct Asset {
     pub name: String,
     pub browser_download_url: String,
@@ -209,7 +210,21 @@ fn release_has_complete_host_bundle(release: &Release) -> bool {
     ];
     required
         .iter()
-        .all(|name| release.assets.iter().any(|asset| asset.name == *name))
+        .all(|name| find_unique_asset(release, name).is_ok())
+}
+
+fn find_unique_asset<'a>(release: &'a Release, name: &str) -> Result<&'a Asset> {
+    let mut matches = release.assets.iter().filter(|asset| asset.name == name);
+    let asset = matches
+        .next()
+        .ok_or_else(|| anyhow!("release {} has no asset named {name}", release.tag_name))?;
+    if matches.next().is_some() {
+        anyhow::bail!(
+            "release {} contains duplicate assets named {name}; refusing ambiguous release metadata",
+            release.tag_name
+        );
+    }
+    Ok(asset)
 }
 
 /// Pick the one platform asset for this host. Runtime accelerator selection is
@@ -222,23 +237,15 @@ pub(crate) fn select_asset(release: &Release) -> Result<&Asset> {
             std::env::consts::ARCH
         )
     })?;
-    release
-        .assets
-        .iter()
-        .find(|a| a.name == target)
-        .ok_or_else(|| {
-            anyhow!(
-                "release {} has no platform asset named {target}",
-                release.tag_name
-            )
-        })
+    find_unique_asset(release, &target)
 }
 
-/// Download an asset over HTTPS, confirm it's a native executable for this
-/// platform, and verify its minisign signature against the embedded release
-/// public key before handing the bytes back.
+/// Download an asset over HTTPS, confirm it is a native executable for this
+/// platform, and verify both its detached minisign signature and exact
+/// release-manifest SHA-256 entry before handing the bytes back.
 pub(crate) async fn download_verified_asset(
     client: &reqwest::Client,
+    release: &Release,
     asset: &Asset,
 ) -> Result<Vec<u8>> {
     let response = client
@@ -258,12 +265,13 @@ pub(crate) async fn download_verified_asset(
 
     // Signature: the release `sign` job uploads `<asset>.minisig` alongside
     // each binary. Fetch and verify it. A 404 is a hard failure: refuse.
-    let sig_url = format!("{}.minisig", asset.browser_download_url);
+    let signature_name = format!("{}.minisig", asset.name);
+    let signature_asset = find_unique_asset(release, &signature_name)?;
     let sig_resp = client
-        .get(&sig_url)
+        .get(&signature_asset.browser_download_url)
         .send()
         .await
-        .context("download release signature")?;
+        .with_context(|| format!("download release signature {signature_name}"))?;
     if sig_resp.status() == reqwest::StatusCode::NOT_FOUND {
         // Fail CLOSED, unconditionally. A missing .minisig is indistinguishable
         // from an active attacker who serves a tampered binary and returns 404
@@ -285,7 +293,57 @@ pub(crate) async fn download_verified_asset(
     let sig_text = std::str::from_utf8(&sig_bytes).context("release signature is not UTF-8")?;
     verify_release_signature(&bytes, &sig_text)
         .with_context(|| format!("verifying release asset {}", asset.name))?;
+
+    let checksum_name = format!("{}.sha256", asset.name);
+    let checksum_asset = find_unique_asset(release, &checksum_name)?;
+    let checksum_response = client
+        .get(&checksum_asset.browser_download_url)
+        .send()
+        .await
+        .with_context(|| format!("download release checksum {checksum_name}"))?;
+    let checksum_bytes = read_limited_response(
+        checksum_response,
+        MAX_RELEASE_CHECKSUM_BYTES,
+        "release checksum",
+    )
+    .await?;
+    verify_release_checksum(&bytes, &asset.name, &checksum_bytes)?;
     Ok(bytes)
+}
+
+pub(crate) fn verify_release_checksum(
+    data: &[u8],
+    asset_name: &str,
+    checksum_file: &[u8],
+) -> Result<()> {
+    use sha2::{Digest as _, Sha256};
+
+    let text = std::str::from_utf8(checksum_file).context("release checksum is not UTF-8")?;
+    let mut fields = text.split_whitespace();
+    let expected = fields
+        .next()
+        .ok_or_else(|| anyhow!("release checksum for {asset_name} is empty"))?;
+    if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        anyhow::bail!("release checksum for {asset_name} is not a 64-digit SHA-256 digest");
+    }
+    if let Some(label) = fields.next() {
+        let label = label.strip_prefix('*').unwrap_or(label);
+        if label != asset_name {
+            anyhow::bail!(
+                "release checksum labels `{label}` but payload is `{asset_name}`; refusing mismatched manifest"
+            );
+        }
+    }
+    if fields.next().is_some() {
+        anyhow::bail!("release checksum for {asset_name} contains unexpected trailing fields");
+    }
+    let actual = keyhog_core::hex_encode(&Sha256::digest(data));
+    if !actual.eq_ignore_ascii_case(expected) {
+        anyhow::bail!(
+            "release checksum mismatch for {asset_name}: expected {expected}, calculated {actual}"
+        );
+    }
+    Ok(())
 }
 
 async fn read_limited_response(

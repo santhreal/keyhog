@@ -278,7 +278,8 @@ end-to-end self-test - it plants a synthetic secret and confirms the
 binary detects it - so it is the authoritative "will keyhog work here?"
 check (the installer runs it automatically after install). `update` and
 `repair` download the release binary over HTTPS, verify its minisign
-signature against keyhog's embedded public key, and atomically swap the
+signature against keyhog's embedded public key, require its release-manifest
+SHA-256 checksum to match, and atomically swap the
 running binary in place; a tampered or unsigned-mismatched binary is
 refused. On a healthy host `keyhog update` is the one-command upgrade
 path. Implicit update/repair resolution ignores drafts and prereleases and

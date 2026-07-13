@@ -61,7 +61,7 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
 
     let asset = asset?;
     println!("\n  downloading    {}", asset.browser_download_url);
-    let bytes = installer::download_verified_asset(&client, asset).await?;
+    let bytes = installer::download_verified_asset(&client, &release, asset).await?;
     let exe = installer::current_binary()?;
     // Clear any stash left locked by a prior self-replace (Windows keeps the
     // old image locked until its process exits; this is the next run).

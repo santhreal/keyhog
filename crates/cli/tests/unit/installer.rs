@@ -43,20 +43,28 @@ fn release_selection_uses_the_single_linux_asset() {
 
 #[test]
 fn release_selector_has_no_alternate_asset_fallback() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/installer/release.rs"
-    ))
-    .expect("release installer source readable");
-    let selector = src
-        .split("pub(crate) fn select_asset")
-        .nth(1)
-        .and_then(|tail| tail.split("/// Download an asset").next())
-        .expect("select_asset body is present");
+    let canonical = API
+        .asset_name(std::env::consts::OS, std::env::consts::ARCH)
+        .expect("test host has a supported release asset");
+    let alternate = format!("{canonical}-alternate");
+    let error = API
+        .select_release_asset_name("v9.9.9", &[&alternate])
+        .expect_err("an alternate filename must not satisfy exact platform selection");
     assert!(
-        selector.contains("has no platform asset named") && !selector.contains(".or_else("),
-        "select_asset must request exactly one platform artifact"
+        format!("{error:#}").contains(&canonical),
+        "selection error must name the exact required asset: {error:#}"
     );
+}
+
+#[test]
+fn release_selector_rejects_duplicate_asset_names() {
+    let canonical = API
+        .asset_name(std::env::consts::OS, std::env::consts::ARCH)
+        .expect("test host has a supported release asset");
+    let error = API
+        .select_release_asset_name("v9.9.9", &[&canonical, &canonical])
+        .expect_err("duplicate release asset names are ambiguous");
+    assert!(format!("{error:#}").contains("duplicate assets"));
 }
 
 #[test]
@@ -193,6 +201,35 @@ fn release_signature_rejects_malformed_signature() {
         .verify_release_signature(FIXTURE_DATA, "not a minisig file")
         .is_err());
     assert!(API.verify_release_signature(FIXTURE_DATA, "").is_err());
+}
+
+#[test]
+fn release_checksum_binds_digest_and_asset_name() {
+    let digest = "79792c6a6ce7cccb7d14cadf57006754b70a3e90a944cdaaf111ae97f03fbee8";
+    API.verify_release_checksum(
+        FIXTURE_DATA,
+        "keyhog-linux-x86_64",
+        format!("{digest}  keyhog-linux-x86_64\n").as_bytes(),
+    )
+    .expect("matching release checksum");
+
+    assert!(API
+        .verify_release_checksum(
+            b"tampered",
+            "keyhog-linux-x86_64",
+            format!("{digest}  keyhog-linux-x86_64\n").as_bytes(),
+        )
+        .is_err());
+    assert!(API
+        .verify_release_checksum(
+            FIXTURE_DATA,
+            "keyhog-linux-x86_64",
+            format!("{digest}  another-asset\n").as_bytes(),
+        )
+        .is_err());
+    assert!(API
+        .verify_release_checksum(FIXTURE_DATA, "keyhog-linux-x86_64", b"not-a-digest\n")
+        .is_err());
 }
 
 // ── Moved from src/installer.rs (#[cfg(test)] mod rename_away_tests) per the
