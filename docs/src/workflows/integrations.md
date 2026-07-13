@@ -377,7 +377,7 @@ corpus; there is no separate `keyhog-detectors` crate.)
 
 Minimal scan:
 
-```rust
+```rust,ignore
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 
@@ -420,7 +420,7 @@ keyhog-scanner = { version = "0.5", default-features = false, features = ["ml", 
 
 Shell out:
 
-```rust
+```rust,ignore
 use std::process::Command;
 let out = Command::new("keyhog")
     .args(["scan", "--format", "jsonl", "--min-confidence", "0.4", "."])
@@ -501,7 +501,7 @@ exclude        = ["vendor/**", "node_modules/**", "**/*.lock"]
 `.keyhogignore` (or `.keyhogignore.toml`) alongside it - gitignore-
 style path globs plus `detector:<id>` and `hash:<sha256>` entries:
 
-```
+```gitignore
 # silence all hits from this detector
 detector:http-basic-auth
 

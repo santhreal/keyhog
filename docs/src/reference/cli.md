@@ -16,21 +16,25 @@ incomplete.
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
 | `<PATH>...`                   | One or more positional roots. Each may be a file or directory; nested/duplicate roots are folded into their covering parent. `--git-staged` requires a single root. |
+| `--path <PATH>`               | Explicit single-root spelling. Prefer positional roots when scanning several paths. |
 | `--stdin`                     | Read from stdin instead. Default 10 MiB cap; tune with `--limit-stdin-bytes`. |
 | `--exclude-paths <GLOB>...`   | Skip files matching glob. Space-separated list, repeatable. |
+| `--no-default-excludes`       | Disable the shipped lock-file, minified-file, build-output, and similar default exclusions. Explicit exclusions still apply. |
 | `--git-staged`                | Scan git-staged files only (pre-commit mode).  |
 | `--git-history <PATH>`        | Walk commits added-line patches (default: HEAD only). |
 | `--git-blobs <PATH>`          | Scan reachable repository blobs, deduplicated by blob ID. |
 | `--git-diff <BASE_REF>`       | Scan only added lines since `BASE_REF`.        |
 | `--git-diff-path <PATH>`      | Select the repository used by `--git-diff` instead of the current directory. |
+| `--max-commits <N>`           | Bound the number of commits traversed by git-history scanning. |
 | `--docker-image <IMAGE>`      | Scan a saved Docker image archive.             |
 | `--github-org <ORG>`          | Clone and scan every repository in a GitHub organization. Requires `--github-token`. |
 | `--gitlab-group <GROUP>`      | Clone and scan every project in a GitLab group, including subgroups. Requires `--gitlab-token`; use `--gitlab-endpoint` for self-managed GitLab. |
-| `--bitbucket-workspace <WORKSPACE>` | Clone and scan every repository in a Bitbucket Cloud workspace. Requires `--bitbucket-username` and `--bitbucket-token` app password. |
-| `--s3-bucket <BUCKET>`        | Scan an S3 bucket. Use `--s3-prefix` to narrow. |
-| `--gcs-bucket <BUCKET>`       | Scan a Google Cloud Storage bucket. Use `--gcs-prefix` to narrow. |
+| `--bitbucket-workspace <WORKSPACE>` | Clone and scan every repository in a Bitbucket Cloud workspace. Requires `--bitbucket-username` and `--bitbucket-token` app password; `--bitbucket-endpoint` selects the API root. |
+| `--s3-bucket <BUCKET>`        | Scan an S3 bucket. Use `--s3-prefix` to narrow and `--s3-endpoint` for an S3-compatible API. |
+| `--gcs-bucket <BUCKET>`       | Scan a Google Cloud Storage bucket. Use `--gcs-prefix` to narrow and `--gcs-endpoint` for a compatible API. |
 | `--azure-container-url <URL>` | Scan an Azure Blob container URL. Include a SAS query string for private containers; use `--azure-prefix` to narrow. |
 | `--url <URL>...`              | Fetch + scan one or more HTTPS URLs (JS/source-map/WASM/text). |
+| `--source <NAME>`             | Enable a named pluggable custom input source. Repeat as supported by the loaded source registry. |
 
 ### Output
 
@@ -40,7 +44,11 @@ incomplete.
 | `--output <FILE>`             | Write the report to `FILE` instead of stdout.  |
 | `--stream`                    | Stream a one-line redacted preview per finding to stderr as they're found; the full formatted report still lands on stdout/`--output` after verification. |
 | `--show-secrets`              | Show full credentials. Default redacts.        |
+| `--severity <LEVEL>`          | Minimum reported severity: `info`, `low`, `medium`, `high`, or `critical`. |
 | `--min-confidence <FLOAT>`    | Only emit findings >= confidence. 0.0..=1.0.   |
+| `--progress`                  | Force the live progress display. Mutually exclusive with `--quiet`. |
+| `--quiet`                     | Suppress banner, live ticker, and completion summary; coverage warnings and fatal errors remain visible. |
+| `--no-color`                  | Disable report and summary ANSI styling regardless of terminal detection. |
 | `--dogfood`                   | Surface suppression telemetry in output.       |
 
 ### Verification and HTTP transport
@@ -50,10 +58,11 @@ incomplete.
 | `--verify`                    | Call each detector's verify endpoint.          |
 | `--timeout <SECONDS>`         | Set the per-request HTTP verification timeout (default `5`); requires `--verify`. This is not a scan deadline. |
 | `--verify-concurrency <N>`    | Cap in-flight verification requests per service (default `5`, minimum `1`); requires `--verify`. This is concurrency, not requests per second. |
-| `--proxy <URL>`               | Route every outbound KeyHog HTTP client: remote sources and verification: through an explicit proxy (`http://burp:8080`, `socks5://...`). `off` disables all proxying, including TOML configuration; ambient proxy variables are ignored. |
+| `--proxy <URL>`               | Route every outbound KeyHog HTTP client (remote sources and verification) through an explicit proxy (`http://burp:8080`, `socks5://...`). `off` disables all proxying, including TOML configuration; ambient proxy variables are ignored. |
 | `--insecure`                  | Skip TLS certificate verification for every outbound KeyHog HTTP client, including remote sources and verification. Use only in a controlled interception lab. |
 | `--verify-rate <RPS>`         | Cap steady-state verification calls per service (default `5`); requires `--verify`. |
 | `--verify-batch`              | Serialize verification per service; requires `--verify`. |
+| `--allow-script-verify`       | Permit `script:` verification only for a detector corpus the operator trusts; activation is warned because verifier-supplied code executes locally. |
 | `--verify-oob`                | Enable callback-based verification; requires `--verify`. |
 | `--oob-server <HOST>`         | Select the Interactsh collector for OOB verification. |
 | `--oob-timeout <SECS>`        | Bound the per-finding OOB callback wait. |
@@ -63,9 +72,15 @@ incomplete.
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
 | `--fast`                      | Disable entropy discovery, ML scoring, and decode recursion (`max_decode_depth = 0`). Named regex detectors remain loaded; the speedup and recall change are workload-dependent. |
+| `--deep`                      | Seed decode depth 10 with entropy and ML enabled; later compatible flags may tighten those defaults. |
+| `--precision`                 | Seed a high-precision policy: shallow decode, no speculative entropy/ML findings, and confidence floor `0.85`; later compatible flags may override the floor. |
+| `--incremental`               | Skip files whose content hash matches the Merkle index, then update the index after a successful scan. |
+| `--incremental-cache <PATH>`  | Override the Merkle index used by `--incremental`. |
 | `--daemon`                    | Force daemon route for eligible stdin/single-file scans. Unix only; fails if the request needs the in-process pipeline. |
 | `--daemon=auto`               | On Unix, use a reachable compatible daemon when it can honor the exact request; with no socket, run in process, and report failures that occur after selecting the daemon before retrying in process. This is also the absent-flag policy, except that explicit `auto` is rejected on platforms with no daemon transport. |
 | `--daemon=off`                | Force in-process scan even if daemon is up.    |
+| `--daemon-socket <PATH>`      | Connect to the same non-default socket supplied to `daemon start --socket`; rejected with `--daemon=off`. |
+| `--benchmark`                 | Run the built-in backend benchmark corpus and exit instead of scanning the requested source. |
 | `--profile`                   | Emit the scanner-owned hierarchical profile report to stderr at scan end. |
 | `--perf-trace`                | Emit low-level scan/GPU phase timing traces to stderr. |
 
@@ -79,15 +94,30 @@ minus the `limit-` prefix and with dashes changed to underscores.
 | `--limit-stdin-bytes <SIZE>` | Maximum bytes read from `--stdin`. |
 | `--limit-web-response-bytes <SIZE>` | Maximum bytes fetched for one `--url` response. |
 | `--limit-s3-object-bytes <SIZE>` / `--limit-gcs-object-bytes <SIZE>` / `--limit-azure-blob-bytes <SIZE>` | Maximum bytes downloaded for one cloud object/blob. |
+| `--limit-cloud-max-objects <N>` | Maximum objects listed from one S3, GCS, or Azure container before coverage is reported incomplete. |
 | `--limit-docker-tar-entry-bytes <SIZE>` / `--limit-docker-image-config-bytes <SIZE>` / `--limit-docker-tar-total-bytes <SIZE>` | Docker/OCI archive and manifest/config ceilings. |
 | `--limit-git-line-bytes <SIZE>` / `--limit-git-total-bytes <SIZE>` / `--limit-git-blob-bytes <SIZE>` / `--limit-git-chunks <N>` | Git stdout-line, aggregate, per-blob, and chunk-count ceilings. |
 | `--limit-binary-read-bytes <SIZE>` / `--limit-binary-decompiled-bytes <SIZE>` | Binary strings and Ghidra output ceilings. |
+| `--limit-hosted-git-pages <N>` | Maximum API pages listed from one hosted Git organization, group, or workspace. |
 
 ### Detector tuning
 
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
 | `--detectors <DIR>`           | Use the detector TOMLs in `DIR` instead of the embedded corpus. To run a curated subset, copy the detector TOMLs you want into a directory and point `--detectors` at it (there is no per-ID enable/disable flag). |
+| `--no-decode` / `--decode-depth <N>` / `--decode-size-limit <SIZE>` | Disable recursive decoding, set its maximum depth, or bound the input size admitted to decode-through scanning. |
+| `--no-entropy`                | Disable generic entropy discovery. Named detector matching remains active. |
+| `--entropy-source-files`      | Admit entropy discovery in source-code files as well as configuration/data files. |
+| `--entropy-threshold <BITS>`  | Set the scan-wide Shannon bits-per-byte threshold where detector-owned policy does not provide the effective gate. |
+| `--entropy-bpe-max-bytes-per-token <RATIO>` | Set the scan-wide BPE word-likeness ceiling; lower values suppress more word-like entropy candidates. |
+| `--min-secret-len <N>`        | Set the minimum length for entropy-fallback candidates; named detectors retain their shape-specific lengths. |
+| `--no-entropy-ml-scoring`     | Use the bare entropy heuristic rather than MoE scoring for entropy-fallback candidates. No effect when entropy or ML is disabled. |
+| `--no-keyword-low-entropy`    | Require the high-entropy gate even when a credential keyword anchors the value. |
+| `--ml-threshold <FLOAT>`      | Tighten the generic/entropy ML admission floor by composing it with the resolved confidence floor. |
+| `--ml-weight <FLOAT>`         | Set the ML contribution to confidence scoring (`0.0..=1.0`). |
+| `--no-ml`                    | Disable ML-based confidence scoring. |
+| `--no-unicode-norm`          | Disable Unicode normalization; use only for parity diagnostics because it can reduce recall. |
+| `--scan-comments`            | Treat credentials in source comments as first-class findings rather than applying the default comment-context confidence penalty. |
 | `--no-suppress-test-fixtures` | Show findings on bundled example credentials.  |
 | `--baseline <FILE>`           | Compare against a prior scan; show only new.   |
 | `--create-baseline <FILE>`    | Write a new baseline from the current findings and exit. |
@@ -100,17 +130,23 @@ minus the `limit-` prefix and with dashes changed to underscores.
 |---------------------------------------|-----------------------------------------------------------------------|
 | `keyhog scan --backend auto\|gpu\|simd\|cpu` | Use persisted automatic routing (`auto`) or explicitly force one diagnostic backend (`gpu`, `simd`, or `cpu`). Profiles and routing evidence use the descriptive labels `gpu-region-presence`, `simd-regex`, and `cpu-fallback`; retired MegaScan and implementation-name aliases are rejected. |
 | `keyhog scan --gpu-batch-input-limit 512MB` | Override the VRAM-adaptive byte limit for one GPU region-presence batch (clamped to 128 MiB–1 GiB). |
+| `keyhog scan --max-file-size <SIZE>` | Bound one filesystem input (default 100 MiB); larger files are named in the coverage summary. |
+| `keyhog scan --regex-dfa-limit <SIZE>` | Bound each regex lazy-DFA cache (default 1 MiB); lowering the safety ceiling may force complex patterns onto the slower NFA path. |
 | `keyhog scan --no-gpu`                | Short-circuit GPU init at hardware-probe time. The scanner runs as if no GPU adapter existed. |
 | `keyhog scan --require-gpu`           | Fail closed with exit `12` when no usable GPU stack is available. |
 | `keyhog scan --autoroute-calibrate`   | Installer/maintenance mode: benchmark parity-checked autoroute candidates and persist fastest-correct decisions. Normal scans do not use this mode. |
 | `keyhog scan --autoroute-gpu`         | Low-level direct-calibration diagnostic: include eligible GPU candidates. `keyhog calibrate-autoroute` always includes every eligible backend. |
 | `keyhog scan --no-autoroute-gpu`      | Low-level direct-calibration diagnostic: exclude GPU despite TOML. This is not used by canonical calibration. |
+| `keyhog scan --batch-pipeline` / `--no-batch-pipeline` | Explicitly select or reject the coalesced batch pipeline for this diagnostic/configuration identity. |
 | `keyhog scan --per-chunk-timeout-ms <MS>` | Attach an `Instant` deadline to every chunk scan. Default unset = no operator deadline; `[scan].per_chunk_timeout_ms` provides the persistent default. |
 | `keyhog scan --threads <N>`           | Pin the rayon worker count for this run. `.keyhog.toml` `[scan].threads` provides the persistent default. |
 | `keyhog scan --calibration-cache <PATH>` | Apply one explicit per-detector Bayesian confidence cache. Missing or invalid files fail closed. |
 | `keyhog scan --reader-threads <N>`    | Pin dedicated filesystem reader threads. `.keyhog.toml` `[scan].reader_threads` provides the persistent default. |
 | `keyhog scan --fused-batch <N>`       | Pin fused filesystem pipeline batch size. `.keyhog.toml` `[scan].fused_batch` provides the persistent default. |
 | `keyhog scan --fused-depth <N>`       | Pin fused filesystem pipeline channel depth. `.keyhog.toml` `[scan].fused_depth` provides the persistent default. |
+| `keyhog scan --dedup <credential\|file\|none>` | Select report grouping scope. Default `credential`. |
+| `keyhog scan --no-config`             | Run from compiled defaults only: skip walk-up `.keyhog.toml` discovery and reject an explicit `--config`. |
+| `keyhog scan --lockdown`              | Fail closed unless all memory/core-dump/cache protections activate; also forces HTTPS-only verification and forbids disk cache writes. |
 
 Hyperscan database cache location is explicit scan configuration: use
 `keyhog scan --cache-dir <DIR>` or `.keyhog.toml` `[system].cache_dir`.
@@ -201,7 +237,7 @@ daemon route cannot be honored.
 
 | Subcommand         | Effect                                              |
 |--------------------|-----------------------------------------------------|
-| `daemon start`     | Bind the Unix socket, accept connections.           |
+| `daemon start`     | Bind the Unix socket and accept connections. Startup options include `--socket`, `--detectors`, `--cache-dir`, `--backend`, and `--request-timeout-secs`. |
 | `daemon stop`      | Tell the running daemon to shut down.               |
 | `daemon status`    | Print uptime, scans served, active scans, and detector count. |
 
@@ -231,6 +267,9 @@ git checkout pr-branch
 keyhog scan . --format json > pr.json
 keyhog diff baseline.json pr.json
 ```
+
+Pass `--hide-unchanged` to omit the unchanged section from human output, or
+`--json` for a stable CI-readable comparison.
 
 ## `keyhog calibrate`
 
@@ -270,6 +309,12 @@ to inspect that evidence, and `--probe-bytes` only for heuristic what-if work.
 ```sh
 keyhog backend
 ```
+
+`--probe-bytes <N>` and `--patterns <N>` are what-if inputs to the diagnostic
+heuristic matrix only; neither changes the corpus nor predicts persisted
+autoroute. `--self-test` exercises the real GPU paths, with `--require-gpu`
+turning absence into a failure and `--no-gpu` explicitly disabling the probe.
+`--json` is available for self-test and autoroute inspection output.
 
 ## `keyhog scan-system`
 

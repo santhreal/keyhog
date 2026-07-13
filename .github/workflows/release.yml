@@ -285,11 +285,20 @@ jobs:
             echo "signed $f.minisig"
           done
 
-          # A new release stays private until the complete exact manifest is
-          # signed and ready. Existing published releases remain published on
-          # an intentional rerun, but are never the staging transport.
+          # Every release stays private while its asset set is mutated. This
+          # includes reruns: leaving an existing release published while assets
+          # are deleted/replaced exposes a transient partial or mixed manifest.
           created_draft=false
-          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          republish=false
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # A draft left by an interrupted publication must also become
+            # public once this run proves the complete signed manifest.
+            republish=true
+            is_draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+            if [[ "$is_draft" != true ]]; then
+              gh release edit "$tag" --draft=true --repo "$GITHUB_REPOSITORY"
+            fi
+          else
             create_args=(--draft --title "$tag" \
               --notes "Prebuilt keyhog binaries for $tag. See CHANGELOG.md.")
             if [[ "$tag" == *-* ]]; then
@@ -332,7 +341,7 @@ jobs:
             printf 'actual:   %s\n' "${actual[*]}" >&2
             exit 1
           fi
-          if [[ "$created_draft" == true ]]; then
+          if [[ "$created_draft" == true || "$republish" == true ]]; then
             gh release edit "$tag" --draft=false --repo "$GITHUB_REPOSITORY"
           fi
 

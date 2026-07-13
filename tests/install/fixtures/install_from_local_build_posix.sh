@@ -70,6 +70,11 @@ ARTIFACT="$ARTIFACT_DIR/keyhog"
 mkdir -p "$ARTIFACT_DIR"
 cp "$BIN" "$ARTIFACT"
 $sha_tool "$ARTIFACT" | awk -v f="$ARTIFACT" '{print $1"  "f}' > "$ARTIFACT.sha256"
+mkdir -p "$ARTIFACT_DIR/gpu-sidecar/keyhog.gpu-literals"
+printf 'local-build matcher artifact\n' > "$ARTIFACT_DIR/gpu-sidecar/keyhog.gpu-literals/lit-local-build.bin"
+tar -czf "$ARTIFACT.gpu-literals.tar.gz" -C "$ARTIFACT_DIR/gpu-sidecar" keyhog.gpu-literals
+$sha_tool "$ARTIFACT.gpu-literals.tar.gz" | awk -v f="$ARTIFACT.gpu-literals.tar.gz" \
+    '{print $1"  "f}' > "$ARTIFACT.gpu-literals.tar.gz.sha256"
 
 # Seeded credentials as a single base64 blob (same approach as
 # integration-smoke.yml): the test file then contains no recognisable secret
@@ -133,6 +138,9 @@ printf '\nB. --from-file checksum gate\n'
 STAGE="$WORK/stage"; mkdir -p "$STAGE"
 cp "$BIN" "$STAGE/keyhog"
 $sha_tool "$STAGE/keyhog" | awk -v f="$STAGE/keyhog" '{print $1"  "f}' > "$STAGE/keyhog.sha256"
+cp "$ARTIFACT.gpu-literals.tar.gz" "$STAGE/keyhog.gpu-literals.tar.gz"
+$sha_tool "$STAGE/keyhog.gpu-literals.tar.gz" | awk -v f="$STAGE/keyhog.gpu-literals.tar.gz" \
+    '{print $1"  "f}' > "$STAGE/keyhog.gpu-literals.tar.gz.sha256"
 OUT=$(sh "$INSTALL_SH" --from-file="$STAGE/keyhog" --install-dir="$PREFIX" --no-color --yes --no-prompt 2>&1); RC=$?
 { [ "$RC" = "0" ] && printf '%s' "$OUT" | grep -q "SHA256 verified"; } \
     && ok_ "B.1 correct sibling .sha256 verifies + installs" \

@@ -2287,8 +2287,12 @@ fn release_stages_privately_and_publishes_only_the_exact_signed_manifest() {
     assert!(
         publish.contains("gh release create \"$tag\" \"${create_args[@]}\"")
             && publish.contains("create_args=(--draft")
+            && publish.contains("gh release edit \"$tag\" --draft=true")
+            && publish.contains(
+                "republish=true\n            is_draft=\"$(gh release view \"$tag\""
+            )
             && publish.contains("gh release edit \"$tag\" --draft=false"),
-        "a new release must remain a draft until the signed manifest is complete"
+        "new, published-rerun, and interrupted-draft releases must remain private until the signed manifest is complete, then publish"
     );
     assert!(
         publish.contains("staged release manifest is missing")
@@ -2296,6 +2300,27 @@ fn release_stages_privately_and_publishes_only_the_exact_signed_manifest() {
             && publish.contains("wanted[*]")
             && publish.contains("published release manifest does not equal"),
         "publication must fail closed on missing, extra, or mismatched assets"
+    );
+}
+
+#[test]
+fn integration_smoke_defaults_to_latest_stable_without_a_version_literal() {
+    let workflow =
+        fs::read_to_string(integration_smoke_workflow()).expect("read integration-smoke.yml");
+    let input = workflow
+        .split("      version:")
+        .nth(1)
+        .and_then(|tail| tail.split("\n\njobs:").next())
+        .expect("version workflow input exists");
+    assert!(
+        input.contains("default: \"\"") && input.contains("leave blank for latest stable"),
+        "the smoke workflow must not drift behind the latest published stable release"
+    );
+    assert!(
+        workflow.contains("if [[ -n \"$KEYHOG_SMOKE_VERSION\" ]]")
+            && workflow.contains("install_args+=(--version=\"$KEYHOG_SMOKE_VERSION\")")
+            && workflow.contains("IsNullOrWhiteSpace($env:KEYHOG_SMOKE_VERSION)"),
+        "Unix and Windows smokes must pin only when the operator supplied a version"
     );
 }
 

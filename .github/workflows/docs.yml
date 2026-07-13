@@ -47,9 +47,10 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           $HOME/.local/bin/mdbook --version
 
-      - name: Build site
+      - name: Test and build site
         run: |
           cd docs
+          mdbook test
           mdbook build
           # mdbook emits to docs/book/. Move CNAME / .nojekyll if present.
           [ -f CNAME ] && cp CNAME book/CNAME || true

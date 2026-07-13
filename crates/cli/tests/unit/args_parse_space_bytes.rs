@@ -1,5 +1,7 @@
 use clap::{CommandFactory, Parser};
 use keyhog::args::{parse_space_bytes, Cli, Command};
+use std::fs;
+use std::path::PathBuf;
 
 const GIB: u64 = 1024 * 1024 * 1024;
 
@@ -66,4 +68,35 @@ fn scan_system_rejects_unitless_space() {
 #[test]
 fn cli_definition_is_internally_consistent() {
     Cli::command().debug_assert();
+}
+
+#[test]
+fn every_visible_long_flag_is_in_the_cli_reference() {
+    let docs = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/src/reference/cli.md"),
+    )
+    .expect("read canonical CLI reference");
+    let mut pending = vec![("keyhog".to_string(), Cli::command())];
+    let mut missing = Vec::new();
+    while let Some((path, command)) = pending.pop() {
+        missing.extend(
+            command
+                .get_arguments()
+                .filter(|arg| !arg.is_hide_set())
+                .filter_map(|arg| arg.get_long())
+                .filter(|long| !docs.contains(&format!("--{long}")))
+                .map(|long| format!("{path} --{long}")),
+        );
+        pending.extend(command.get_subcommands().map(|subcommand| {
+            (
+                format!("{path} {}", subcommand.get_name()),
+                subcommand.clone(),
+            )
+        }));
+    }
+    missing.sort();
+    assert!(
+        missing.is_empty(),
+        "docs/src/reference/cli.md is missing visible long flags: {missing:?}"
+    );
 }

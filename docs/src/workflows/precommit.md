@@ -12,6 +12,10 @@ From inside a git repo:
 keyhog hook install
 ```
 
+If a non-KeyHog pre-commit hook already exists, installation refuses to replace
+it. Pass `keyhog hook install --force` only when replacement is intentional;
+`keyhog hook uninstall` removes only the KeyHog-owned hook.
+
 That writes a `.git/hooks/pre-commit` script that calls
 `keyhog scan --fast --git-staged --backend cpu` (the same command
 `.pre-commit-hooks.yaml` exposes for the pre-commit framework).

@@ -146,17 +146,21 @@ keyhog scan --stdin < response.txt
 `keyhog scan -` (bare dash) is the same as `--stdin` (grep / wc
 convention).
 
-`--stdin` reads up to ~1 GiB; beyond that, write to a temp file and
-scan the path. Findings from stdin carry the `stdin` source. To get
+`--stdin` reads up to 10 MiB by default. Raise the explicit
+`--limit-stdin-bytes <SIZE>` ceiling when a larger stream is intentional, or
+write the input to a file and scan the path. Findings from stdin carry the
+`stdin` source. To get
 the richer `wire:har:request` / `wire:har:response` provenance tags,
 save the exchange as a `.har` file and scan that instead (see
 [HAR auto-expansion](#har-auto-expansion)).
 
 ## Headers, bodies, URL params - where the secret sits
 
-KeyHog is content-blind: it greps the raw bytes. That means a
-`Bearer ghp_…` in an HTTP header gets the same finding as a
-`"token": "ghp_…"` in a JSON body or a `?token=ghp_…` in the URL.
+The detector engine matches the bytes supplied by each source adapter. A plain
+text capture is scanned as-is; the HAR adapter renders each request and response
+into separate chunks before scanning. A `Bearer ghp_…` in an HTTP header is
+therefore detected by the same detector policy as a `"token": "ghp_…"` in a
+JSON body or a `?token=ghp_…` in the URL.
 
 For an HTTP capture this is usually what you want - the location
 column in the finding gives the byte offset within the capture, and
@@ -167,25 +171,25 @@ Unsupported behavior:
 
 - Parse the HTTP wire format and emit `header:Authorization`
   vs `body:json:$.token` provenance fields.
-- Distinguish a secret in a request from a secret in the response
-  (one is being sent OUT, one is being sent IN - different threat
-  model).
+- Attach field-level provenance such as `header:Authorization`, `body`, or
+  `query` to a finding. HAR findings do distinguish the request and response
+  sides through `source_type`.
 
 ## Unsupported Wire Features
 
 The wire-scanning surface is intentionally narrow. These features are
 not part of the shipped HTTP-wire contract:
 
-1. **mitmproxy `.mitm` flow-dump support.** Same shape as HAR but
-   binary-framed. Use the `mitmproxy-rs` crate to decode.
+1. **mitmproxy `.mitm` flow-dump support.** The binary-framed format is not
+   decoded. Export HAR when request/response provenance matters, or export text
+   and scan it as an ordinary file.
 
 2. **Header / body / URL-param provenance.** HAR expansion emits
    one chunk per request and one chunk per response. It does not attach
    `wire_location: header:<name> | body | query` to each finding, so the
    JSON consumer cannot filter
-   `wire_location == "header:Authorization"` for the highest-
-   signal subset (intentional auth tokens vs accidental body
-   leaks vs URL-logged secrets).
+   `wire_location == "header:Authorization"` for the highest-signal subset
+   (intentional auth tokens vs accidental body leaks vs URL-logged secrets).
 
 3. **Live proxy mode.** KeyHog does not ship `keyhog proxy --listen :8080`
    or an inline HTTP proxy that scans flows while forwarding them.

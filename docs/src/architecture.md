@@ -45,7 +45,7 @@ Dependencies point one way: `core` is the foundation and depends on no other
 keyhog crate; `cli` sits on top and wires the rest together. This DAG is enforced
 by Cargo and must stay acyclic (domain logic never imports CLI/transport/UI).
 
-```
+```text
             ┌─────────────────────────── cli ───────────────────────────┐
             │  binary, subcommands, daemon, watch, baselines, installer  │
             └───────┬───────────────┬───────────────┬───────────────────┘
@@ -150,7 +150,7 @@ each carry their own copy of policy.
 context-specific facts (entropy shape, generic bridge boundaries, named
 detector policy), but they do not invent an untyped final drop reason:
 
-```
+```text
 emission paths (entropy · generic/keyword bridge · weak-anchor · hot fast path · GPU)
         │  each yields CandidateMatch { detector, span, value }
         ▼
@@ -179,7 +179,7 @@ The scanner *serves* a Mixture-of-Experts confidence model embedded at build tim
 (`crates/scanner/src/weights.bin`, `include_bytes!`). It is *trained* out-of-band
 by the Python pipeline in `ml/`:
 
-```
+```text
 ml/harvest_corpus.py   real labelled candidates (CredData), harvested at a LOW
                        report floor so sub-floor hard negatives are captured
         │

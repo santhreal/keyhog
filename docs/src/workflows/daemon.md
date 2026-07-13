@@ -26,6 +26,13 @@ user-only Unix-domain socket; Windows has no daemon transport and rejects daemon
 commands and explicit `--daemon=auto|on`. An absent flag or `--daemon=off`
 uses the in-process scanner.
 
+The service owns its startup configuration. `daemon start --detectors <DIR>`
+selects its detector corpus, `--cache-dir <DIR>` selects its compiled Hyperscan
+cache, and `--backend auto|gpu|simd|cpu` selects persisted autoroute or an
+explicit diagnostic backend for requests the service can accept. Client scan
+flags never rewrite those daemon-owned choices; the handshake rejects a corpus
+or build identity mismatch instead of silently mixing them.
+
 The daemon initializes scanner regex state and runs a bounded real GPU warmup
 before announcing readiness. If an eligible physical GPU degrades during that
 probe, daemon startup fails loudly. Autoroute therefore treats it as a persistent warm

@@ -14,7 +14,7 @@ existing install before downloading and tells you the chosen asset. Linux
 x86_64 has one accelerator-capable binary: Hyperscan plus VYRE's CUDA and WGPU
 drivers. CUDA/NVRTC use dynamic loading, so no build-time toolkit is required
 and the same artifact runs on GPU and CPU-only hosts. Backend probing and
-persisted autoroute evidence: not installer variants: decide execution. macOS and
+persisted autoroute evidence, not installer variants, decide execution. macOS and
 Windows assets use the portable no-system-library build without Hyperscan or GPU
 drivers.
 
@@ -42,10 +42,11 @@ Then it prompts (default in brackets):
 - Install shell completions for bash / zsh / fish? `[y/N]`
 - Wire keyhog as a git pre-commit hook in this dir? `[y/N]`
 
-Each prompt is opt-in. Nothing in your `.bashrc` / `.zshrc` / git
-hooks dir is touched without an explicit "y". There is no shipped
-Claude Code / Cursor agent-hook prompt or `keyhog hook install --agent
-<name>` flag; installer variants are not part of the current release contract.
+The displayed default is authoritative: PATH setup defaults to yes, while
+completion and repository-hook setup default to no. `--yes` accepts those
+defaults without prompting. There is no shipped Claude Code / Cursor agent-hook
+prompt or `keyhog hook install --agent <name>` flag; installer variants are not
+part of the current release contract.
 
 ## One-liner: Windows
 
@@ -79,12 +80,12 @@ iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 `
 
 | Env var / flag                          | Effect                                                        |
 |-----------------------------------------|---------------------------------------------------------------|
-| `KEYHOG_VERSION=v0.5.41` (or `--version=v0.5.41`) | Pin a specific release tag (default: GitHub's latest-asset redirect, with API fallback only when that asset is missing). |
+| `KEYHOG_VERSION=v0.5.41` (or `--version=v0.5.41`) | Pin a specific release tag. With no pin, the installer admits only the newest stable release with this host's complete signed bundle; it probes the latest redirect first, then checks recent releases when that proof is incomplete. |
 | `--install-dir=...`                     | Install into a different directory.            |
 | `GITHUB_TOKEN=...`                      | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
-| `--yes` / `-y`                          | Non-interactive: accept all defaults, no prompts.             |
+| `--yes` / `-y`                          | Accept the displayed defaults without prompting: PATH setup yes, optional completion and repository hook no. |
 | `--no-color`                            | Disable ANSI colors (e.g. for log capture).                   |
-| `--from-file=/path/to/asset`            | Offline / air-gapped install from a pre-downloaded release asset (verified against its sibling `.sha256`, GPU sidecar included). |
+| `--from-file=/path/to/asset`            | Offline / air-gapped install from a pre-downloaded complete host bundle. The installer requires sibling `.sha256` files unless `--insecure` accepts missing checksum proof; verify the downloaded `.minisig` files manually as shown below before invoking the local path. |
 | `--calibrate`                           | Re-run only the post-install autoroute calibration phase on an already-installed binary. |
 | `--insecure`                            | Emergency-only: proceed when signature/checksum *proof is missing*. A present-but-wrong signature or checksum is always fatal, `--insecure` or not. |
 
@@ -116,8 +117,8 @@ working binary behind.
 Release publication uses the same exact manifest: each platform binary, its
 SHA-256 file, the GPU-literal sidecar and checksum, plus detached minisign
 signatures for both payloads. Matrix builds stage those files as private CI
-artifacts; a new GitHub Release remains a draft until the complete manifest is
-signed and validated, then becomes visible atomically.
+artifacts. New releases and published-release reruns remain private while the
+asset set is mutated; only the exact signed manifest is made visible.
 
 `keyhog update` and `keyhog repair` use strict semantic-version precedence.
 Their implicit latest-release lookup ignores drafts and prereleases and skips
@@ -215,8 +216,9 @@ sh keyhog-install.sh --from-file="$ASSET"
 
 On Windows, use
 `./keyhog-install.ps1 -FromFile C:\absolute\path\to\keyhog-windows-x86_64.exe`.
-Keep each payload's `.sha256` sibling beside it. Do not install only the binary
-and silently omit the release-bound GPU literal sidecar.
+Verify each payload's `.minisig` first and keep each `.sha256` sibling beside
+its payload. Do not install only the binary and silently omit the release-bound
+GPU literal sidecar.
 
 ## Build from source
 

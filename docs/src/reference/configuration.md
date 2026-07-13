@@ -8,7 +8,7 @@ override.
 
 Settings resolve in this order, rightmost winning:
 
-```
+```text
 compiled defaults  →  .keyhog.toml  →  CLI flags
 (ScanConfig::default)  (walked up from    (always win)
                         the scan path)

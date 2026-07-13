@@ -178,7 +178,7 @@ confirm() {
     question="$1"
     default="${2:-Y}"
     if [ "$ASSUME_YES" = "1" ]; then
-        return 0
+        case "$default" in Y|y) return 0 ;; *) return 1 ;; esac
     fi
     if [ "$INTERACTIVE" != "1" ]; then
         case "$default" in Y|y) return 0 ;; *) return 1 ;; esac
@@ -351,19 +351,29 @@ resolve_tag_from_api() {
 
     # GitHub emits tag/draft/prerelease before the assets array. Match exact
     # asset names, independent of JSON indentation, without requiring jq.
-    TAG=$(printf '%s' "$releases_json" | awk -v base="$ASSET" '
-        /"tag_name": / {
-            sub(/.*"tag_name": *"/, "")
-            sub(/".*/, "")
-            tag = $0
+    # curl returns compact JSON in production while tests and proxies may
+    # pretty-print it. Split only the release fields we consume into records so
+    # the state machine is independent of whitespace and line layout.
+    normalized_releases=$(printf '%s' "$releases_json" | awk '
+        {
+            gsub(/"(tag_name|draft|prerelease|name)"[[:space:]]*:/, "\n&")
+            print
+        }
+    ')
+    TAG=$(printf '%s' "$normalized_releases" | awk -v base="$ASSET" '
+        /"tag_name"[[:space:]]*:/ {
+            line = $0
+            sub(/.*"tag_name"[[:space:]]*:[[:space:]]*"/, "", line)
+            sub(/".*/, "", line)
+            tag = line
             stable = published = 0
             binary = checksum = signature = sidecar = sidecar_checksum = sidecar_signature = 0
         }
-        /"draft": *false/ { published = 1 }
-        /"prerelease": *false/ { stable = 1 }
-        /"name": / {
+        /"draft"[[:space:]]*:[[:space:]]*false/ { published = 1 }
+        /"prerelease"[[:space:]]*:[[:space:]]*false/ { stable = 1 }
+        /"name"[[:space:]]*:/ {
             name = $0
-            sub(/.*"name": *"/, "", name)
+            sub(/.*"name"[[:space:]]*:[[:space:]]*"/, "", name)
             sub(/".*/, "", name)
             if (name == base) binary = 1
             if (name == base ".sha256") checksum = 1
@@ -2103,11 +2113,11 @@ warn_wizard_command_failure() {
     fi
 }
 
-# Offer to wire keyhog into common entry points. Each is opt-in so we
-# never silently mutate config files the user didn't ask us to touch.
+# Offer to wire keyhog into common entry points. The displayed default is the
+# contract in both interactive and --yes modes: PATH defaults on, while shell
+# completion and the repository hook default off.
 post_install_wizard() {
-    [ "$INTERACTIVE" != "1" ] && return
-    [ "$ASSUME_YES" = "1" ] && return
+    [ "$INTERACTIVE" != "1" ] && [ "$ASSUME_YES" != "1" ] && return
 
     printf '\n%sOptional post-install steps%s\n' "$C_BOLD" "$C_RESET"
 
@@ -2127,11 +2137,10 @@ post_install_wizard() {
         install_completions
     fi
 
-    # Claude Code / Cursor agent-hook wiring has no shipped CLI flag.
-    # The previous prompt called `keyhog hook install --agent claude-code`
-    # which never existed as a flag, so the wizard always graceful-
-    # failed with a misleading "upgrade" message. Drop the prompt until
-    # the feature lands.
+    # Claude Code / Cursor agent-hook wiring has no shipped CLI flag. The
+    # previous prompt called `keyhog hook install --agent claude-code`, which
+    # never existed, and then reported a misleading upgrade message. The
+    # unsupported prompt is intentionally absent.
 
     if confirm "Wire keyhog as a git pre-commit hook in the CURRENT directory?" N; then
         # `[ -d .git ]` is wrong inside a git WORKTREE, where `.git` is a FILE

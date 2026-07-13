@@ -6,6 +6,24 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Unix and PowerShell installers now admit an implicit release only when the
+  exact host binary, checksums, payload signatures, GPU-literal sidecar, and
+  sidecar proofs are all present on a stable published release. Partial,
+  draft, prerelease, and other-platform asset sets are skipped rather than
+  selected from an "any asset exists" heuristic. The manual integration smoke
+  now follows latest stable by default instead of pinning an old version. The
+  POSIX resolver accepts both compact GitHub API JSON and pretty-printed test or
+  proxy responses. Unix `--yes` now honors each displayed wizard default,
+  matching PowerShell: PATH setup is accepted while completion and
+  repository-hook setup remain off.
+- Release workflow reruns now return an already-published release to draft
+  before deleting or replacing assets, then republish only after the exact
+  signed manifest is visible. Consumers can no longer observe a transient
+  partial or mixed-version asset set during a rerun.
+- The canonical CLI reference now covers every live `scan --help` flag and the
+  daemon-owned startup controls. Documentation CI also tests mdBook code-fence
+  semantics before building the site, catching accidentally executable diagrams
+  and malformed example blocks.
 - Scan execution policy in `.keyhog.toml` now has one canonical owner: the
   `[scan]` table. Retired flat spellings such as `format`, `severity`,
   `min_confidence`, `decode_depth`, entropy thresholds, worker sizing, dedup,
@@ -2382,7 +2400,7 @@ builds no longer warn about unused imports.
 
 ## v0.5.2 - 2026-05-06
 
-Reconciliation pass against the parallel `Legendary Hardening` line
+Reconciliation pass against the parallel hardening line
 (v0.3.0 → v0.4.0 → v0.5.0) that lived only on the work-linux clone
 and was never pushed. Both lines diverged at `013257e` (CI fmt scope)
 and independently arrived at near-identical scanner/sources state.
@@ -2505,7 +2523,7 @@ Out-of-band callback verification + broad robustness/detector fixes.
 
 ## v0.3.0 - 2026-05-01
 
-The "legendary" wave: 18 Tier-A perf wins + 12 Tier-B moat innovations from the
+This hardening wave delivered 18 Tier-A perf wins + 12 Tier-B moat innovations from the
 2026-04-26 deep audits, plus a perfection pass that hardened GPU/CPU
 auto-routing across every supported OS. Build is green, scanner test suite
 229+/0, core 33+/0, hw_probe routing 11/0, doctests 38/0.
@@ -2675,7 +2693,7 @@ sweeps. See `git log v0.2.0..v0.2.1` for the commit list.
 
 > The fastest, most accurate secret scanner.
 
-First "legendary bar" release. Highlights:
+First release held to the expanded quality bar. Highlights:
 
 - Embedded 888-detector corpus (no separate `detectors/` directory needed).
 - Hyperscan SIMD regex with disk-cached compiled DB.

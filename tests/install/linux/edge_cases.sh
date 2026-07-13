@@ -60,7 +60,7 @@ expect_nomatch() {
 }
 expect_status() {
     if [ "$2" = "$3" ]; then _record_pass "$1"
-    else _record_fail "$1" "expected exit $2, got $3"; fi
+    else _record_fail "$1" "expected exit $2, got $3" "${4:-}"; fi
 }
 expect_file()   { if [ -e "$2" ]; then _record_pass "$1"; else _record_fail "$1" "missing file: $2"; fi; }
 expect_nofile() { if [ ! -e "$2" ]; then _record_pass "$1"; else _record_fail "$1" "unexpected file: $2"; fi; }
@@ -130,6 +130,13 @@ cat > "$FIX_DIR/releases_latest_empty.json" <<'JSON'
     ]
   }
 ]
+JSON
+
+# The GitHub API commonly emits the same response without presentation
+# whitespace. The installer must not depend on one field per line or a space
+# after `:`.
+cat > "$FIX_DIR/releases_latest_empty_compact.json" <<'JSON'
+[{"tag_name":"v9.9.9","draft":false,"prerelease":false,"assets":[{"name":"keyhog-linux-x86_64"}]},{"tag_name":"v9.9.8","draft":false,"prerelease":false,"assets":[{"name":"keyhog-linux-x86_64"},{"name":"keyhog-linux-x86_64.sha256"},{"name":"keyhog-linux-x86_64.minisig"},{"name":"keyhog-linux-x86_64.gpu-literals.tar.gz"},{"name":"keyhog-linux-x86_64.gpu-literals.tar.gz.sha256"},{"name":"keyhog-linux-x86_64.gpu-literals.tar.gz.minisig"}]}]
 JSON
 
 # Every release has zero assets -> hard error.
@@ -692,8 +699,12 @@ expect_match  "2.4 unproven latest bundle falls back to API release walk" "check
 expect_match  "2.5 skips partial newest bundle, picks v9.9.8" "Release tag:   v9.9.8" "$out"
 expect_file   "2.6 asset walk calls GitHub API" "$h/github-api-called"
 rm -rf "$h"; h=$(newhome)
+out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty_compact.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy_v998" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_status "2.6a compact GitHub JSON install exits 0" 0 "$st" "$out"
+expect_match  "2.6b compact GitHub JSON picks complete stable bundle" "Release tag:   v9.9.8" "$out"
+rm -rf "$h"; h=$(newhome)
 out=$(GITHUB_TOKEN=ghp_mock_token MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy_v998" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_status "2.7 authenticated latest-resolution install exits 0" 0 "$st"
+expect_status "2.7 authenticated latest-resolution install exits 0" 0 "$st" "$out"
 expect_file   "2.8 latest-resolution API sends Authorization when GITHUB_TOKEN is set" "$h/github-api-auth"
 rm -rf "$h"; h=$(newhome)
 out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_all_empty.json" run_install "$sb" "$h" -- --no-prompt); st=$?
@@ -1666,6 +1677,19 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
         _record_fail "21.16 \$HOME-form rc gets no duplicate keyhog PATH block" \
             "markers=$home_markers rc=$(cat "$h/.bashrc" 2>/dev/null)"
     fi
+    rm -rf "$sb" "$h"
+
+    # --yes accepts each displayed default, rather than turning every optional
+    # prompt into yes: PATH is enabled, completion and repository hook remain
+    # off, and no input is consumed.
+    reset_mocks
+    sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
+    yes_cmd="cd $h && env -i PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/yes-state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --install-dir=$h/.local/bin --no-color --yes --no-prompt"
+    out=$(script -qefc "$yes_cmd" /dev/null 2>&1); st=$?
+    expect_status "21.17 --yes install exits without reading input" 0 "$st" "$out"
+    expect_match  "21.18 --yes accepts the PATH default" "export PATH=\"$h/.local/bin:" "$(cat "$h/.bashrc" 2>/dev/null)"
+    expect_nofile "21.19 --yes keeps completion's no default" "$h/.local/share/bash-completion/completions/keyhog"
+    expect_nomatch "21.20 --yes keeps repository hook's no default" "Pre-commit hook installed" "$out"
     rm -rf "$sb" "$h"
 else
     skip "21.1 first bash PATH setup install exits 0" "script(1) PTY helper unavailable"

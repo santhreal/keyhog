@@ -144,7 +144,7 @@ decision is an error; automatic routing never silently substitutes another
 backend.
 
 When comparing settings, record the effective config, detector digest, input
-identity, backend, host/accelerator identity, and complete findings: not only
+identity, backend, host/accelerator identity, and complete findings, not only
 elapsed time or finding count. A faster run with a different result set is a
 detection change or parity failure, not a routing win.
 
