@@ -10,6 +10,11 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "/src/engine/gpu_region_batch.rs"
     ))
     .expect("gpu_region_batch.rs readable");
+    let resident_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/gpu_resident_presence.rs"
+    ))
+    .expect("gpu resident presence readable");
     let gpu_dfa_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/engine/phase2_gpu_dfa.rs"
@@ -71,8 +76,10 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "retained region-dispatch scratch must zero secret bytes and clear logical lengths"
     );
     assert!(
-        dispatch_src.contains("scan_gpu_literal_presence_by_region_with_scratch"),
-        "region dispatch must use VYRE's batched region-presence scratch API"
+        dispatch_src.contains("scan_gpu_literal_presence_by_region_resident")
+            && resident_src.contains("prepare_resident_presence")
+            && resident_src.contains(".scan_into("),
+        "region dispatch must use VYRE's batched resident region-presence API"
     );
     let helper_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),

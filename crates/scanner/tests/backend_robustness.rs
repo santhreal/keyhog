@@ -1,9 +1,8 @@
 //! Backend-robustness sweep - adversarial inputs and stress shapes
 //! that must NEVER panic / OOM / silently drop matches on any backend.
 //!
-//! Each test runs on all 4 backends. Where the GPU adapter is absent
-//! the test silently skips (the helper falls back to SIMD when GPU
-//! init fails). The point is to catch crashes that ONLY surface on
+//! Each test runs on the three production backends. A required GPU that is
+//! unavailable fails visibly. The point is to catch crashes that ONLY surface on
 //! one backend - e.g. a NUL byte that crashes the GPU shader's
 //! C-string buffer handling but not the CPU path.
 //!
@@ -22,7 +21,7 @@ use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Barrier, OnceLock};
 
 fn scanner() -> &'static Arc<CompiledScanner> {
     static SCANNER: OnceLock<Arc<CompiledScanner>> = OnceLock::new();
@@ -45,29 +44,41 @@ fn make_chunk(text: &str, path: &str) -> Chunk {
     }
 }
 
-const ALL_BACKENDS: &[ScanBackend] = &[
-    ScanBackend::SimdCpu,
-    ScanBackend::CpuFallback,
-    ScanBackend::Gpu,
-];
+fn canonical_scan(
+    scanner: &CompiledScanner,
+    chunks: &[Chunk],
+    backend: ScanBackend,
+) -> Vec<Vec<keyhog_core::RawMatch>> {
+    let mut rows = scanner.scan_chunks_with_backend(chunks, backend);
+    for row in &mut rows {
+        row.sort();
+    }
+    rows
+}
+
+fn assert_backend_parity(scanner: &CompiledScanner, chunks: &[Chunk]) {
+    let reference = canonical_scan(scanner, chunks, ScanBackend::CpuFallback);
+    for backend in [ScanBackend::SimdCpu, ScanBackend::Gpu] {
+        assert_eq!(
+            canonical_scan(scanner, chunks, backend),
+            reference,
+            "{backend:?} full findings diverged from the scalar reference"
+        );
+    }
+}
 
 #[test]
-fn r1_embedded_nul_bytes_no_panic_on_any_backend() {
+fn r1_embedded_nul_bytes_backend_parity() {
     let scanner = scanner();
     let chunks = vec![make_chunk(
         "header\0AKIAQYLPMN5HFIQR7XYA\0sk_live_4eC39HqLyjWDarjtT1zdp7dc\0footer",
         "nul.bin",
     )];
-    for backend in ALL_BACKENDS {
-        // Just must not panic. We don't assert findings - different
-        // backends legitimately treat NUL differently (the GPU shader
-        // may terminate on NUL); the contract is "no crash."
-        let _ = scanner.scan_chunks_with_backend(&chunks, *backend);
-    }
+    assert_backend_parity(scanner, &chunks);
 }
 
 #[test]
-fn r2_single_line_no_newline_no_panic() {
+fn r2_single_line_no_newline_backend_parity() {
     let scanner = scanner();
     // 1 MiB on a single line with no `\n`. Stresses line-offset
     // calculation degenerate case (one giant line).
@@ -77,40 +88,33 @@ fn r2_single_line_no_newline_no_panic() {
     }
     text.push_str(concat!("AK", "IAQYLPMN5HFIQR7XYA"));
     let chunks = vec![make_chunk(&text, "longline.txt")];
-    for backend in ALL_BACKENDS {
-        let _ = scanner.scan_chunks_with_backend(&chunks, *backend);
-    }
+    assert_backend_parity(scanner, &chunks);
 }
 
 #[test]
-fn r3_zero_byte_input_no_panic() {
+fn r3_zero_byte_input_backend_parity() {
     let scanner = scanner();
-    let chunks = vec![make_chunk("", "empty.txt")];
-    for backend in ALL_BACKENDS {
-        let r = scanner.scan_chunks_with_backend(&chunks, *backend);
-        assert_eq!(
-            r.len(),
-            1,
-            "result vec must match input vec length on {backend:?}"
-        );
-        assert!(
-            r[0].is_empty(),
-            "empty input must produce no findings on {backend:?}"
-        );
-    }
+    let chunks = vec![
+        make_chunk("", "empty-a.txt"),
+        make_chunk("", "empty-b.txt"),
+        make_chunk("", "empty-c.txt"),
+    ];
+    assert_eq!(
+        canonical_scan(scanner, &chunks, ScanBackend::CpuFallback),
+        vec![Vec::new(), Vec::new(), Vec::new()]
+    );
+    assert_backend_parity(scanner, &chunks);
 }
 
 #[test]
-fn r4_one_byte_input_no_panic() {
+fn r4_one_byte_input_backend_parity() {
     let scanner = scanner();
     let chunks = vec![make_chunk("A", "one.txt")];
-    for backend in ALL_BACKENDS {
-        let _ = scanner.scan_chunks_with_backend(&chunks, *backend);
-    }
+    assert_backend_parity(scanner, &chunks);
 }
 
 #[test]
-fn r5_unicode_storm_no_panic() {
+fn r5_unicode_storm_backend_parity() {
     let scanner = scanner();
     // ZWJ sequences, RTL overrides, combining marks - UTF-8
     // boundary hazards that have historically crashed naive byte-
@@ -118,13 +122,11 @@ fn r5_unicode_storm_no_panic() {
     let storm = "\u{202E}AKIAQYLPMN5HFIQR7XYA\u{202C}é\u{0301}é\u{0301}é\u{0301}🦀🚀\u{200D}🌈\
                  ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX\u{202E}";
     let chunks = vec![make_chunk(storm, "unicode.txt")];
-    for backend in ALL_BACKENDS {
-        let _ = scanner.scan_chunks_with_backend(&chunks, *backend);
-    }
+    assert_backend_parity(scanner, &chunks);
 }
 
 #[test]
-fn r6_many_tiny_chunks_no_panic() {
+fn r6_many_tiny_chunks_backend_parity() {
     let scanner = scanner();
     // 1000 4-byte chunks. Per-chunk dispatch overhead × 1000;
     // catches "GPU batch limit was set to 1" bugs or
@@ -132,60 +134,99 @@ fn r6_many_tiny_chunks_no_panic() {
     let chunks: Vec<Chunk> = (0..1000)
         .map(|i| make_chunk("noi\n", &format!("c{i:04}.txt")))
         .collect();
-    for backend in ALL_BACKENDS {
-        let r = scanner.scan_chunks_with_backend(&chunks, *backend);
-        assert_eq!(
-            r.len(),
-            chunks.len(),
-            "{backend:?} returned {} per-chunk vecs for {} inputs",
-            r.len(),
-            chunks.len()
-        );
-    }
+    assert_backend_parity(scanner, &chunks);
 }
 
 #[test]
 fn r7_concurrent_scans_from_multiple_threads_no_data_race() {
-    // CompiledScanner must be Send + Sync - multi-thread callers
-    // (file walkers, async handlers) rely on this. Crash, panic, or
-    // findings drift across runs is a hard fail.
+    // The resident GPU session owns mutable device buffers, so distinct requests
+    // must remain exact when many callers reach it together.
     let scanner = scanner().clone();
-    let chunks = Arc::new(vec![make_chunk(
-        "const KEY = \"AKIAQYLPMN5HFIQR7XYA\";\n",
-        "shared.rs",
-    )]);
+    let barrier = Arc::new(Barrier::new(16));
+    let suffixes = *b"BCDEFGHJKLMNPQRS";
 
     let handles: Vec<_> = (0..16)
-        .map(|_| {
+        .map(|thread_index| {
             let scanner = scanner.clone();
-            let chunks = chunks.clone();
+            let barrier = barrier.clone();
             std::thread::spawn(move || {
-                // Each thread does both a SimdCpu and a CpuFallback
-                // scan, twice; result count must be stable.
-                let mut counts = Vec::with_capacity(4);
-                for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
-                    for _ in 0..2 {
-                        let r = scanner.scan_chunks_with_backend(&chunks, backend);
-                        counts.push(r[0].len());
+                let suffix = suffixes[thread_index] as char;
+                let key = format!("AKIAQYLPMN5HFIQR7XY{suffix}");
+                let path = format!("concurrent-{thread_index:02}.rs");
+                let chunks = vec![make_chunk(
+                    &format!("const AWS_ACCESS_KEY_ID = \"{key}\";\n"),
+                    &path,
+                )];
+
+                let canonicalize = |mut rows: Vec<Vec<keyhog_core::RawMatch>>| {
+                    for row in &mut rows {
+                        row.sort();
                     }
+                    rows
+                };
+                let reference = canonicalize(
+                    scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback),
+                );
+                let aws: Vec<_> = reference[0]
+                    .iter()
+                    .filter(|finding| finding.detector_id.as_ref() == "aws-access-key")
+                    .collect();
+                assert_eq!(aws.len(), 1, "thread {thread_index}: {reference:?}");
+                assert_eq!(aws[0].credential.as_ref(), key);
+                assert_eq!(aws[0].location.file_path.as_deref(), Some(path.as_str()));
+
+                barrier.wait();
+                let gpu_first =
+                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu));
+                barrier.wait();
+                let gpu_second =
+                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu));
+                let simd =
+                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu));
+                for (backend, actual) in [
+                    ("gpu-first", gpu_first),
+                    ("gpu-second", gpu_second),
+                    ("hyperscan", simd),
+                ] {
+                    assert_eq!(
+                        actual, reference,
+                        "thread {thread_index} {backend} result diverged from scalar reference"
+                    );
                 }
-                counts
+                reference
             })
         })
         .collect();
 
-    let all_counts: Vec<Vec<usize>> = handles
-        .into_iter()
-        .map(|h| h.join().expect("worker thread panicked"))
-        .collect();
-
-    // All threads must report the same count for the same (backend, scan)
-    // index slot - non-stable output is a data race symptom.
-    let first = &all_counts[0];
-    for (idx, counts) in all_counts.iter().enumerate() {
-        assert_eq!(
-            counts, first,
-            "thread {idx} reported {counts:?}, thread 0 reported {first:?} - data race"
-        );
+    for handle in handles {
+        let reference = handle.join().expect("concurrent scanner worker panicked");
+        assert_eq!(reference.len(), 1);
     }
+}
+
+#[test]
+fn r8_empty_regions_around_nonempty_chunks_backend_parity() {
+    let scanner = scanner();
+    let chunks = vec![
+        make_chunk("", "empty-before.txt"),
+        make_chunk(
+            "const AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\";\n",
+            "credential.rs",
+        ),
+        make_chunk("", "empty-middle.txt"),
+        make_chunk("ordinary text\n", "plain.txt"),
+        make_chunk("", "empty-after.txt"),
+    ];
+    let reference = canonical_scan(scanner, &chunks, ScanBackend::CpuFallback);
+    assert_eq!(reference.len(), chunks.len());
+    assert!(reference[0].is_empty());
+    assert!(reference[2].is_empty());
+    assert!(reference[4].is_empty());
+    let aws: Vec<_> = reference[1]
+        .iter()
+        .filter(|finding| finding.detector_id.as_ref() == "aws-access-key")
+        .collect();
+    assert_eq!(aws.len(), 1, "mixed-region scalar oracle: {reference:?}");
+    assert_eq!(aws[0].location.file_path.as_deref(), Some("credential.rs"));
+    assert_backend_parity(scanner, &chunks);
 }

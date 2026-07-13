@@ -18,10 +18,11 @@ warmups_excluded_per_process = 1
 processes = 5
 full_raw_match_parity = true
 gpu_degraded = false
+production_comparable = false
 benchmark_commit = "dced245eb"
 implementation_commit = "8cfe9919c"
 command = "KH_BENCH_ITERS=30 <cargo-target>/release/deps/gpu_vs_hs_8mib-<hash>"
-notes = "Production FilesystemSource topology: one 8 MiB source file becomes nine 1 MiB windows with 128 KiB overlap. Throughput uses the 8 MiB source size, not the duplicated overlap bytes. Every timed call clears cross-file fragment state. The benchmark compares sorted full RawMatch values, verifies every timed result against its warm result, rejects GPU degradation, and fails unless the GPU median beats Hyperscan. The earlier single-8-MiB-chunk measurement is not comparable because it prevented the CPU path from using production Rayon window parallelism."
+notes = "Historical result only. This run used scan_chunks_with_backend for SIMD, not the faster production coalesced Hyperscan entry point, so it does not prove the 8 MiB crossover. The topology, parity, and GPU degradation checks remain valid, but the timing comparison must not be used as release evidence."
 
 [[process_samples]]
 simd_hyperscan_ms = 35.0860

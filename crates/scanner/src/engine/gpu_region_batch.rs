@@ -65,11 +65,21 @@ impl Drop for ZeroRegionPresenceScratch<'_> {
     }
 }
 
-/// The coalesced region-presence haystack is addressed by the GPU with u32
-/// offsets, so one batch may not exceed this many bytes. The dispatch caller
-/// (`scan_coalesced_gpu_region_presence`) splits larger inputs into
-/// region-boundary sub-batches; this builder fails closed if handed one over cap.
-pub(super) const REGION_PRESENCE_BATCH_BYTE_LIMIT: usize = u32::MAX as usize;
+/// VYRE's production byte-scan guard is stricter than the u32 wire ABI. KeyHog
+/// does not yet shard one coalesced request across region-boundary dispatches,
+/// so the builder rejects anything the selected backend cannot execute.
+pub(super) const REGION_PRESENCE_BATCH_BYTE_LIMIT: usize =
+    vyre_libs::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize;
+
+pub(super) fn validate_region_presence_batch_len(total: usize) -> Result<(), String> {
+    if total > REGION_PRESENCE_BATCH_BYTE_LIMIT {
+        return Err(format!(
+            "coalesced GPU region-presence batch is {total} byte(s), above VYRE's {}-byte scan ceiling. Fix: lower the GPU batch cap or split the request at chunk boundaries before dispatch",
+            REGION_PRESENCE_BATCH_BYTE_LIMIT
+        ));
+    }
+    Ok(())
+}
 
 pub(super) fn build_region_presence_batch(
     chunks: &[keyhog_core::Chunk],
@@ -81,11 +91,7 @@ pub(super) fn build_region_presence_batch(
             "coalesced GPU region-presence batch length overflows host usize".to_string()
         })?;
     }
-    if total > REGION_PRESENCE_BATCH_BYTE_LIMIT {
-        return Err(format!(
-            "coalesced GPU region-presence batch is {total} byte(s), above the u32 GPU ABI; split the batch before dispatch"
-        ));
-    }
+    validate_region_presence_batch_len(total)?;
 
     scratch.haystack.clear();
     scratch.region_starts.clear();

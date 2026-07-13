@@ -10,10 +10,10 @@
 //! the actual adapter.
 //!
 //! The fixed tier map remains conservative because it cannot distinguish a
-//! cold one-shot process from a warm daemon. The production-window RTX 5090
-//! baseline proves a warm 8 MiB GPU win (31.4524 ms vs 35.0860 ms Hyperscan),
-//! but not a cold-process win. Persisted autoroute calibration owns aggressive
-//! workload-specific decisions; this heuristic must not substitute for them.
+//! cold one-shot process from a warm daemon. The historical RTX 5090 artifact
+//! used a slower per-chunk SIMD entry point and cannot prove a production 8 MiB
+//! crossover. Persisted autoroute calibration owns workload-specific decisions;
+//! this heuristic must not substitute for them.
 //!
 //! | Tier   | Adapter examples                    | Heuristic starts at |
 //! |--------|-------------------------------------|---------------------|

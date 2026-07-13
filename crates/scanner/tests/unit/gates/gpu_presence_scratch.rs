@@ -36,11 +36,9 @@ fn per_chunk_gpu_presence_reuses_and_zeroes_scratch() {
     );
     assert!(
         scratch_src.contains("zero_scan_dispatch_scratch")
-            && scratch_src.contains("scratch.haystack_bytes.fill(0);")
-            && scratch_src.contains("scratch.haystack_bytes.clear();")
-            && scratch_src.contains("scratch.hit_bytes.fill(0);")
-            && scratch_src.contains("scratch.hit_bytes.clear();"),
-        "reused GPU presence scratch must be zeroed and logically cleared before retention \
+            && scratch_src.contains("scratch.haystack_bytes.zeroize();")
+            && scratch_src.contains("scratch.hit_bytes.zeroize();"),
+        "reused GPU presence scratch must securely zero its full retained allocation \
          (single owner `zero_scan_dispatch_scratch`, shared by every dispatch-scratch guard)"
     );
     assert!(
@@ -61,10 +59,17 @@ fn coalesced_gpu_uses_region_presence_not_per_rule_catalog() {
         "/src/engine/gpu_region_batch.rs"
     ))
     .expect("gpu_region_batch.rs readable");
+    let resident_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/gpu_resident_presence.rs"
+    ))
+    .expect("gpu_resident_presence.rs readable");
 
     assert!(
-        dispatch_src.contains("scan_gpu_literal_presence_by_region_with_scratch"),
-        "coalesced GPU trigger production must use VYRE's batched region-presence API"
+        dispatch_src.contains("scan_gpu_literal_presence_by_region_resident")
+            && resident_src.contains("prepare_resident_presence")
+            && resident_src.contains(".scan_into("),
+        "coalesced GPU trigger production must use VYRE's resident batched region-presence API"
     );
     assert!(
         !dispatch_src.contains("catalog.scan(") && !dispatch_src.contains("megakernel_catalog("),

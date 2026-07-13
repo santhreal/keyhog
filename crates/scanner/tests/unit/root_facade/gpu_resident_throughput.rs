@@ -1,12 +1,9 @@
-//! Honest GPU literal-set throughput measurement on the real detector literal
-//! set, the oracle for whether on-GPU scanning can beat the CPU path, and by how
-//! much, once the per-dispatch table re-upload is amortized.
+//! GPU literal-set throughput attribution on the real detector literal set.
 //!
-//! keyhog's GPU phase-1 calls `GpuLiteralSet::scan()` (the BORROWED path), which
-//! `dispatch_borrowed`s the FULL static DFA/prefilter tables on EVERY call
-//! (vyre-libs `scan_into_with_program`, buffers 1-9 are static yet re-uploaded).
-//! For a 16 KB haystack those tables can exceed the haystack, so per-dispatch the
-//! GPU moves `tables + haystack` when only `haystack` changed. This measures:
+//! Production KeyHog uses VYRE's resident region-presence pipeline. This test
+//! retains direct borrowed literal-set measurements as an attribution baseline
+//! for the table-transfer cost that the production resident path removes. It
+//! measures:
 //!   1. CPU 1-thread: `reference_scan` over one big batched haystack.
 //!   2. GPU big-batch: ONE `scan()` over the same big haystack (table upload
 //!      amortized over megabytes → the kernel's throughput ceiling).
@@ -134,7 +131,7 @@ fn gpu_literal_set_throughput_vs_cpu() {
         gpu_big_mbps / cpu_mbps.max(1e-9)
     );
     eprintln!(
-        "  resident lever (2)/(3)       = {:.1}×  (per-dispatch table re-upload tax)",
+        "  borrowed table tax (2)/(3)   = {:.1}×  (production uses resident region presence)",
         gpu_big_mbps / gpu_small_mbps.max(1e-9)
     );
     eprintln!(

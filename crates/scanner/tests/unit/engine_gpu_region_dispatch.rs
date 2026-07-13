@@ -1,6 +1,7 @@
 use super::super::gpu_region_batch::{
-    build_region_presence_batch, validation_window_range, with_region_presence_batch,
-    RegionPresenceBatchMode, RegionPresenceScratch, ZeroRegionPresenceScratch,
+    build_region_presence_batch, validate_region_presence_batch_len, validation_window_range,
+    with_region_presence_batch, RegionPresenceBatchMode, RegionPresenceScratch,
+    ZeroRegionPresenceScratch, REGION_PRESENCE_BATCH_BYTE_LIMIT,
 };
 use super::*;
 
@@ -50,6 +51,18 @@ fn region_presence_batch_uses_folded_scratch_when_case_fold_changes_bytes() {
         Ok(())
     })
     .expect("folded single-chunk batch");
+}
+
+#[test]
+fn region_presence_batch_enforces_the_real_vyre_scan_ceiling() {
+    assert_eq!(
+        REGION_PRESENCE_BATCH_BYTE_LIMIT,
+        vyre_libs::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize
+    );
+    assert!(validate_region_presence_batch_len(REGION_PRESENCE_BATCH_BYTE_LIMIT).is_ok());
+    let error = validate_region_presence_batch_len(REGION_PRESENCE_BATCH_BYTE_LIMIT + 1)
+        .expect_err("ceiling plus one must fail before allocation");
+    assert!(error.contains("VYRE") && error.contains("Fix:"), "{error}");
 }
 
 #[test]

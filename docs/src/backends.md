@@ -32,6 +32,13 @@ startup eligibility in-band, but a process that must contain a later driver or
 dispatch failure should run the CLI as a subprocess. The no-backend portable
 CPU methods do not acquire an accelerator.
 
+The GPU trigger matcher keeps its immutable VYRE tables resident after the
+first successful batch. Haystack and region capacity grow in bounded bands from
+the actual workload. KeyHog serializes each resident session so concurrent
+requests cannot interleave uploads against the same device buffers. Preparation,
+growth, dispatch, and readback errors remain selected-GPU failures. Teardown
+cleanup errors are logged. There is no borrowed or CPU substitution.
+
 ## What “same results” means
 
 Calibration compares the complete redacted `RawMatch` identity: chunk index;
@@ -72,19 +79,19 @@ GPU trials from the same calibration evidence. See
 
 ## The 8 MiB Hyperscan crossover
 
-The checked RTX 5090 production-window baseline compares the GPU path with the
-real parallel Hyperscan path over one 8 MiB source split into 1 MiB windows with
-128 KiB overlap. It verifies sorted full-match parity, rejects GPU runtime faults,
-excludes one warmup, and aggregates five process medians. The recorded medians
-are 31.4524 ms for GPU and 35.0860 ms for Hyperscan: GPU is about 1.12× faster
-in that warm workload.
+The July 10 RTX 5090 artifact is retained for regression history, but it is not
+release or routing evidence. Its SIMD timing used the generic per-chunk entry
+point instead of the faster production coalesced Hyperscan path. The artifact is
+marked `production_comparable = false` and must not support a crossover claim.
 
-That evidence proves the warm 8 MiB crossover on the recorded host; it does not
-claim that a cold one-shot process, another GPU/driver, dense-match corpus, or
-different detector/config digest has the same winner. Autoroute calibration is
-what converts hardware- and workload-specific measurements into an exact local
-decision. The reproducible metadata lives at
-`benchmarks/baselines/gpu_8mib_crossover_rtx5090_2026-07-10.toml` in the source tree.
+The checked benchmark now sends identical 1 MiB windows with 128 KiB overlap
+through `scan_coalesced_with_backend` for both GPU and Hyperscan. It requires
+sorted full-match parity, rejects GPU degradation, excludes the first complete
+warmup, and fails unless GPU is faster at 8 MiB. A new crossover claim requires
+a `production_comparable = true` artifact from that corrected route with exact
+binary, detector, configuration, host, runtime, workload, and trial identity.
+Autoroute still requires calibration on the deployment host for the exact
+workload class.
 
 ## When automatic routing refuses to scan
 

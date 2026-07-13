@@ -79,6 +79,8 @@ pub(crate) mod gpu_region_batch;
 mod gpu_region_dispatch;
 #[cfg(feature = "gpu")]
 mod gpu_region_dispatch_helpers;
+#[cfg(feature = "gpu")]
+mod gpu_resident_presence;
 mod gpu_stack;
 mod hot_patterns;
 pub(crate) mod phase2;
@@ -228,6 +230,8 @@ pub struct CompiledScanner {
     pub(crate) gpu_backend: Option<Arc<dyn vyre::VyreBackend>>,
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
+    #[cfg(feature = "gpu")]
+    gpu_resident_presence: std::sync::Mutex<gpu_resident_presence::GpuResidentPresenceSlot>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,
     pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,

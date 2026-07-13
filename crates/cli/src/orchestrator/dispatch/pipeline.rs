@@ -4,6 +4,8 @@ const COALESCED_PIPELINE_MAX_DEPTH: usize = 3;
 #[derive(Debug, Clone, Copy)]
 pub(super) struct CoalescedPipelinePlan {
     pub(super) batch_chunk_limit: usize,
+    /// Maximum coalesced haystack bytes, including one NUL region separator
+    /// between adjacent chunks.
     pub(super) batch_bytes_budget: usize,
     pub(super) pipeline_depth: usize,
 }

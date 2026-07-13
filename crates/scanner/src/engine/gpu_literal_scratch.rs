@@ -1,6 +1,7 @@
 //! Thread-local scratch owner for GPU literal-set presence dispatch.
 
 use std::cell::RefCell;
+use zeroize::Zeroize;
 
 thread_local! {
     static GPU_LITERAL_SCAN_SCRATCH: RefCell<vyre_libs::scan::dispatch_io::ScanDispatchScratch> =
@@ -34,10 +35,8 @@ impl Drop for ZeroGpuLiteralScratch<'_> {
 pub(in crate::engine) fn zero_scan_dispatch_scratch(
     scratch: &mut vyre_libs::scan::dispatch_io::ScanDispatchScratch,
 ) {
-    scratch.haystack_bytes.fill(0);
-    scratch.haystack_bytes.clear();
-    scratch.hit_bytes.fill(0);
-    scratch.hit_bytes.clear();
+    scratch.haystack_bytes.zeroize();
+    scratch.hit_bytes.zeroize();
 }
 
 fn with_gpu_literal_scratch<R>(
@@ -66,20 +65,6 @@ pub(super) fn scan_gpu_literal_presence_with_scratch(
     with_gpu_literal_scratch(|scratch| {
         matcher
             .scan_presence_with_scratch(backend, haystack, scratch)
-            .map_err(|error| error.to_string())
-    })
-}
-
-#[cfg(feature = "gpu")]
-pub(super) fn scan_gpu_literal_presence_by_region_with_scratch(
-    matcher: &vyre_libs::scan::GpuLiteralSet,
-    backend: &dyn vyre::VyreBackend,
-    haystack: &[u8],
-    region_starts: &[u32],
-) -> std::result::Result<Vec<u32>, String> {
-    with_gpu_literal_scratch(|scratch| {
-        matcher
-            .scan_presence_by_region_with_scratch(backend, haystack, region_starts, 0, scratch)
             .map_err(|error| error.to_string())
     })
 }

@@ -13,6 +13,14 @@
   produce no known credential prefix remain outside this recovery path.
 - Fail a selected GPU route with exit `12` when runtime dispatch fails,
   rather than completing the scan through an unselected CPU/SIMD backend.
+- Keep immutable VYRE region-presence tables resident across GPU batches.
+  Scanner-owned capacity grows from the live workload, concurrent calls cannot
+  interleave mutable device buffers, and host staging allocations are zeroized.
+- Return one empty result row per empty input chunk without issuing a zero-byte
+  GPU dispatch. Mixed empty and nonempty region batches retain backend parity.
+- Correct the 8 MiB crossover gate and size-pattern sweep to compare explicit
+  production scalar, coalesced Hyperscan, and resident GPU routes with full
+  finding parity. Historical per-chunk SIMD evidence is marked noncomparable.
 - Rename the production GPU health API from the obsolete AC-kernel name to
   `gpu_region_presence_self_test`, matching the live VYRE region-presence path.
   Its structured failure remains available to health reporters while normal
@@ -30,9 +38,9 @@
 - Keep cross-chunk boundary reassembly on the shared portable correctness tail
   instead of making a second hardware-heuristic routing decision.
 - Keep fixed high-tier GPU routing conservative at 128 MiB (256 MiB for a
-  single-file override) because the verified 8 MiB RTX 5090 crossover is warm
-  evidence; exact cold-versus-daemon decisions belong to persisted autoroute
-  calibration.
+  single-file override). The historical 8 MiB RTX 5090 artifact used a slower
+  per-chunk SIMD entry point and is not production crossover evidence. Exact
+  cold-versus-daemon decisions belong to persisted autoroute calibration.
 - GPU MoE buffer pool: reuse input/output/staging wgpu buffers across MoE
   dispatches via a global `LazyLock<Mutex<MoeBufferPool>>`, eliminating
   per-dispatch buffer allocation (the dominant non-GPU overhead for large

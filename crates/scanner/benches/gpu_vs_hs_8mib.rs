@@ -2,11 +2,11 @@
 //!
 //! Same `CompiledScanner` (real detector catalog), same production-style 1 MiB
 //! windows with 128 KiB overlap over an 8 MiB file, same
-//! `scan_chunks_with_backend` entry. The layout lets the Hyperscan path use its
-//! real Rayon parallelism instead of handicapping it behind one oversized
-//! sequential chunk. `SimdCpu`
+//! `scan_coalesced_with_backend` entry. The layout lets the Hyperscan path use
+//! its production coalesced trigger pass and real Rayon parallelism instead of
+//! handicapping it behind one oversized sequential chunk. `SimdCpu`
 //! runs the Hyperscan literal prefilter; `Gpu` routes the batch through VYRE
-//! `GpuLiteralSet::scan_presence_by_region_with_scratch`. Timing includes each
+//! `ResidentPresencePipeline`. Timing includes each
 //! backend's production batching, scheduling, phase 2, and post-processing.
 //!
 //! Pass `-- --perf-trace` to get the region-presence phase breakdown
@@ -35,19 +35,25 @@ fn detectors_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors")
 }
 
-fn make_chunk(data: String, path: &str, base_offset: usize, base_line: usize) -> Chunk {
+fn make_chunk(
+    data: String,
+    path: &str,
+    base_offset: usize,
+    base_line: usize,
+    source_size: usize,
+) -> Chunk {
     Chunk {
         data: data.into(),
         metadata: ChunkMetadata {
             base_offset,
             base_line,
-            source_type: "benchmark".into(),
+            source_type: "filesystem/windowed".into(),
             path: Some(path.into()),
             commit: None,
             author: None,
             date: None,
             mtime_ns: None,
-            size_bytes: None,
+            size_bytes: Some(source_size as u64),
             ..Default::default()
         },
     }
@@ -56,6 +62,7 @@ fn make_chunk(data: String, path: &str, base_offset: usize, base_line: usize) ->
 fn make_chunks(data: String, chunk_bytes: usize, overlap: usize) -> Vec<Chunk> {
     assert!(chunk_bytes > overlap, "window must exceed overlap");
     let stride = chunk_bytes - overlap;
+    let source_size = data.len();
     let mut chunks = Vec::with_capacity(data.len().div_ceil(stride));
     let mut offset = 0usize;
     while offset < data.len() {
@@ -70,6 +77,7 @@ fn make_chunks(data: String, chunk_bytes: usize, overlap: usize) -> Vec<Chunk> {
             "src/bench_8mib.rs",
             offset,
             base_line,
+            source_size,
         ));
         if end == data.len() {
             break;
@@ -122,7 +130,7 @@ fn time_backend(
     // Warm: first GPU call pays the one-time catalog upload + pipeline compile;
     // first SimdCpu call warms caches. Exclude it from the steady-state median.
     scanner.clear_fragment_cache();
-    let mut warm = scanner.scan_chunks_with_backend(chunks, backend);
+    let mut warm = scanner.scan_coalesced_with_backend(chunks, backend);
     canonicalize_results(&mut warm);
     if profile {
         scanner.reset_profile_reports();
@@ -134,7 +142,7 @@ fn time_backend(
         // and does not model a fresh production scan over this workload.
         scanner.clear_fragment_cache();
         let t = Instant::now();
-        let mut r = scanner.scan_chunks_with_backend(chunks, backend);
+        let mut r = scanner.scan_coalesced_with_backend(chunks, backend);
         samples.push(t.elapsed());
         canonicalize_results(&mut r);
         if r != warm {
@@ -249,7 +257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "GPU region-presence backend is unavailable; refusing to benchmark a CPU fallback"
     );
 
-    println!("=== keyhog 8 MiB matching baseline (GPU region presence vs Hyperscan/SimdCpu) ===");
+    println!("=== keyhog matching baseline (GPU region presence vs Hyperscan/SimdCpu) ===");
     let status = scanner.runtime_status();
     println!(
         "input={} MiB  chunks={}  detectors={}  gpu_backend={}  host_threads={}  iters={}  (median of {} steady-state calls, 1 warm-up excluded)",
@@ -317,6 +325,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if perf_trace {
             println!(
                 "crossover gate not enforced under --perf-trace; trace instrumentation is diagnostic and GPU-specific. Rerun without --perf-trace for the production speed gate."
+            );
+        } else if size_mib != 8 {
+            println!(
+                "8 MiB crossover gate not enforced for the requested {size_mib} MiB diagnostic size. Rerun with KH_BENCH_SIZE_MIB=8 for the release gate."
             );
         } else {
             assert!(

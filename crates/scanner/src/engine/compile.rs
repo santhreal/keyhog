@@ -447,6 +447,10 @@ impl CompiledScanner {
             gpu_backend,
             gpu_literals,
             gpu_matcher: OnceLock::new(),
+            #[cfg(feature = "gpu")]
+            gpu_resident_presence: std::sync::Mutex::new(
+                super::gpu_resident_presence::GpuResidentPresenceSlot::Empty,
+            ),
             gpu_last_degrade_reason: std::sync::Mutex::new(None),
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
             static_intern,

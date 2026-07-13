@@ -115,21 +115,20 @@ impl CompiledScanner {
             let mut region_coalesced_bytes = 0usize;
             let mut region_batch_mode = RegionPresenceBatchMode::FoldedScratch;
             let region_dispatch_profile = super::profile::span(super::profile::P::BackendDispatch);
-            let evidence = match with_region_presence_batch(
-                chunks,
-                |haystack, region_starts, batch_mode| {
+            let evidence =
+                match with_region_presence_batch(chunks, |haystack, region_starts, batch_mode| {
                     co_s = t_co.elapsed();
                     region_coalesced_bytes = haystack.len();
                     region_batch_mode = batch_mode;
                     let t_dis = std::time::Instant::now();
                     let result =
-                        super::gpu_literal_scratch::scan_gpu_literal_presence_by_region_with_scratch(
+                        super::gpu_resident_presence::scan_gpu_literal_presence_by_region_resident(
+                            &self.gpu_resident_presence,
                             matcher,
-                            &**backend,
+                            backend,
                             haystack,
                             region_starts,
-                        )
-                        .map_err(|error| format!("region-presence dispatch error: {error}"));
+                        );
                     dis_s = t_dis.elapsed();
                     let presence = result?;
                     Ok(GpuRegionPresenceEvidence {
@@ -137,14 +136,13 @@ impl CompiledScanner {
                         confirmed_anchor_literal_matches: None,
                         generic_keyword_positions: None,
                     })
-                },
-            ) {
-                Ok(evidence) => evidence,
-                Err(error) => {
-                    drop(region_dispatch_profile);
-                    return dispatch_failure(error);
-                }
-            };
+                }) {
+                    Ok(evidence) => evidence,
+                    Err(error) => {
+                        drop(region_dispatch_profile);
+                        return dispatch_failure(error);
+                    }
+                };
             drop(region_dispatch_profile);
             let presence = evidence.presence;
             let confirmed_anchor_literal_matches = evidence.confirmed_anchor_literal_matches;

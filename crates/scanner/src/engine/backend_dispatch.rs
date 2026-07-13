@@ -8,6 +8,13 @@ impl CompiledScanner {
         chunks: &[Chunk],
         backend: ScanBackend,
     ) -> Vec<Vec<RawMatch>> {
+        if chunks.iter().all(|chunk| chunk.data.is_empty()) {
+            for _ in chunks {
+                crate::telemetry::record_file_scanned(0);
+            }
+            return vec![Vec::new(); chunks.len()];
+        }
+
         // Non-GPU backends (and empty batches) run the parallel CPU path. rayon's
         // global pool is configured by the CLI orchestrator (--threads /
         // [scan].threads / physical cores); Hyperscan + AC scans are CPU-bound

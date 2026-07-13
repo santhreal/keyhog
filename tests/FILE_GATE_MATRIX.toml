@@ -1061,6 +1061,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/engine/gpu_resident_presence.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/engine/hot_patterns.rs"
 error = true
 adversarial = true

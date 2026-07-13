@@ -95,3 +95,31 @@ fn coalesced_producer_never_mixes_distinct_sources_in_one_autoroute_batch() {
         .iter()
         .all(|chunk| chunk.metadata.source_type.as_ref() == "web"));
 }
+
+#[test]
+fn coalesced_producer_reserves_region_separators_before_crossing_the_byte_cap() {
+    let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource {
+        name: "filesystem",
+        chunks: vec![
+            source_chunk("filesystem", "one"),
+            source_chunk("filesystem", "two"),
+            source_chunk("filesystem", "x"),
+        ],
+    })];
+    let plan = CoalescedPipelinePlan {
+        batch_chunk_limit: 16,
+        batch_bytes_budget: 8,
+        pipeline_depth: 2,
+    };
+    let (tx, rx) = std::sync::mpsc::sync_channel(2);
+
+    CoalescedBatchProducer::new(tx, plan, None).produce_sources(&sources);
+    let batches: Vec<Vec<Chunk>> = rx.into_iter().collect();
+
+    assert_eq!(batches.len(), 2);
+    assert_eq!(batches[0].len(), 2);
+    assert_eq!(batches[0][0].data.as_ref(), "one");
+    assert_eq!(batches[0][1].data.as_ref(), "two");
+    assert_eq!(batches[1].len(), 1);
+    assert_eq!(batches[1][0].data.as_ref(), "x");
+}

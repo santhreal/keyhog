@@ -4,14 +4,16 @@
 //!   1. At what input size does GPU stop losing to Hyperscan?
 //!   2. How does that crossover shift when the pattern count grows?
 //!
-//! Run with: `cargo bench -p keyhog_scanner --bench size_pattern_sweep`
+//! Run with: `cargo bench -p keyhog-scanner --bench size_pattern_sweep`
 //!
 //! Notes:
-//! - This bench drives `CompiledScanner::scan` end-to-end, so the result
-//!   reflects keyhog's actual routing decisions (CPU SIMD via Hyperscan
-//!   when `simd` feature on, GPU when `KEYHOG_BACKEND=gpu` plus a real
-//!   wgpu adapter, plain CPU regex otherwise). To force a backend, set
-//!   `KEYHOG_BACKEND={cpu,simd,gpu}` before invoking.
+//! - Every cell drives scalar CPU, coalesced Hyperscan, and GPU explicitly.
+//!   Missing accelerated backends fail the run instead of silently producing
+//!   a scalar-only chart with accelerated labels.
+//! - Each timed result is compared with its backend warm result. Every backend
+//!   is also compared with the scalar reference before timing.
+//! - Inputs use the production 1 MiB filesystem windows with 128 KiB overlap,
+//!   including source-size and base-offset metadata.
 //! - The "patterns" axis re-builds the scanner from a slice of the
 //!   embedded detector corpus (~900 detectors); we slice 10 / 100 / 500 to
 //!   expose how dispatch overhead amortizes.
@@ -19,9 +21,10 @@
 use criterion::{
     criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode, Throughput,
 };
-use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec};
-use keyhog_scanner::CompiledScanner;
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::hint::black_box;
+use std::time::{Duration, Instant};
 
 const SIZES: &[usize] = &[
     4 * 1024,         // 4 KB - well below GPU break-even
@@ -31,16 +34,18 @@ const SIZES: &[usize] = &[
     64 * 1024 * 1024, // 64 MB - coalesced-batch territory
 ];
 
-const PATTERN_COUNTS: &[usize] = &[10, 100, 500];
+const DETECTOR_COUNTS: &[usize] = &[10, 100, 500];
+const WINDOW_BYTES: usize = 1024 * 1024;
+const WINDOW_OVERLAP: usize = 128 * 1024;
 
-/// Pull `n` detectors from the embedded corpus. Round-robins through the
-/// list to give a heterogeneous slice (mix of regex shapes), not just the
-/// first n alphabetically.
-fn first_n_detectors(n: usize) -> Vec<DetectorSpec> {
-    keyhog_core::load_embedded_detectors_or_fail()
-        .expect("embedded detector corpus must load")
-        .into_iter()
-        .take(n)
+/// Select `n` detectors at even intervals through the canonical corpus so each
+/// tier spans the alphabetized vendor and regex-shape distribution.
+fn sampled_detectors(n: usize) -> Vec<DetectorSpec> {
+    let all =
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
+    let count = n.min(all.len());
+    (0..count)
+        .map(|index| all[index * all.len() / count].clone())
         .collect()
 }
 
@@ -71,17 +76,50 @@ function authenticate(req, res) {
     s
 }
 
-fn make_chunk(payload: &str) -> Chunk {
-    Chunk {
-        data: payload.to_string().into(),
-        metadata: ChunkMetadata {
-            base_offset: 0,
-            base_line: 0,
-            source_type: "file".into(),
-            path: Some("synthetic.txt".into()),
-            ..Default::default()
-        },
+fn make_chunks(payload: &str) -> Vec<Chunk> {
+    let stride = WINDOW_BYTES - WINDOW_OVERLAP;
+    let mut chunks = Vec::with_capacity(payload.len().div_ceil(stride));
+    let mut offset = 0usize;
+    while offset < payload.len() {
+        let end = (offset + WINDOW_BYTES).min(payload.len());
+        let base_line = 1 + payload.as_bytes()[..offset]
+            .iter()
+            .filter(|&&byte| byte == b'\n')
+            .count();
+        chunks.push(Chunk {
+            data: payload[offset..end].to_string().into(),
+            metadata: ChunkMetadata {
+                base_offset: offset,
+                base_line,
+                source_type: "filesystem/windowed".into(),
+                path: Some("synthetic.txt".into()),
+                size_bytes: Some(payload.len() as u64),
+                ..Default::default()
+            },
+        });
+        if end == payload.len() {
+            break;
+        }
+        offset += stride;
     }
+    chunks
+}
+
+fn canonicalize_results(results: &mut [Vec<RawMatch>]) {
+    for matches in results {
+        matches.sort();
+    }
+}
+
+fn scan_cell(
+    scanner: &CompiledScanner,
+    chunks: &[Chunk],
+    backend: ScanBackend,
+) -> Vec<Vec<RawMatch>> {
+    scanner.clear_fragment_cache();
+    let mut results = scanner.scan_coalesced_with_backend(chunks, backend);
+    canonicalize_results(&mut results);
+    results
 }
 
 fn bench_size_pattern_grid(c: &mut Criterion) {
@@ -89,31 +127,76 @@ fn bench_size_pattern_grid(c: &mut Criterion) {
     group.sample_size(10);
     group.sampling_mode(SamplingMode::Flat);
 
-    for &pcount in PATTERN_COUNTS {
-        let detectors = first_n_detectors(pcount);
+    for &detector_count in DETECTOR_COUNTS {
+        let detectors = sampled_detectors(detector_count);
         if detectors.is_empty() {
-            eprintln!("skip pcount={pcount}: no detectors loaded");
-            continue;
+            panic!("embedded detector corpus was empty; refusing a vacuous crossover chart");
         }
         let scanner = match CompiledScanner::compile(detectors) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("skip pcount={pcount}: compile error {e:?}");
-                continue;
+            Ok(scanner) => scanner,
+            Err(error) => {
+                panic!("compile detector_count={detector_count} for crossover sweep: {error:#}")
             }
         };
+        let pattern_count = scanner.runtime_status().pattern_count;
+        let backends = [
+            ("scalar", ScanBackend::CpuFallback),
+            ("hyperscan", ScanBackend::SimdCpu),
+            ("gpu", ScanBackend::Gpu),
+        ];
+        for (label, backend) in backends {
+            assert!(
+                scanner.warm_backend(backend),
+                "{label} backend is unavailable for detector_count={detector_count}, pattern_count={pattern_count}; refusing to emit an incomplete crossover chart"
+            );
+        }
 
         for &size in SIZES {
             let payload = generate_payload(size);
-            let chunk = make_chunk(&payload);
+            let chunks = make_chunks(&payload);
+            let reference = scan_cell(&scanner, &chunks, ScanBackend::CpuFallback);
 
             group.throughput(Throughput::Bytes(size as u64));
-            group.bench_function(BenchmarkId::new(format!("p{pcount}"), size), |b| {
-                b.iter(|| {
-                    let matches = scanner.scan(black_box(&chunk));
-                    black_box(matches);
-                });
-            });
+            for (label, backend) in backends {
+                let warm = scan_cell(&scanner, &chunks, backend);
+                assert_eq!(
+                    warm, reference,
+                    "{label} full RawMatch parity failed before timing detector_count={detector_count}, pattern_count={pattern_count}, bytes={size}"
+                );
+                let degrade_before = scanner.gpu_degrade_count();
+                group.bench_function(
+                    BenchmarkId::new(
+                        format!("{label}/d{detector_count}-p{pattern_count}"),
+                        size,
+                    ),
+                    |b| {
+                        b.iter_custom(|iterations| {
+                            let mut elapsed = Duration::ZERO;
+                            for _ in 0..iterations {
+                                scanner.clear_fragment_cache();
+                                let started = Instant::now();
+                                let mut matches = scanner
+                                    .scan_coalesced_with_backend(black_box(&chunks), backend);
+                                elapsed += started.elapsed();
+                                canonicalize_results(&mut matches);
+                                assert_eq!(
+                                    matches, warm,
+                                    "{label} produced nondeterministic full RawMatch output for detector_count={detector_count}, pattern_count={pattern_count}, bytes={size}"
+                                );
+                                black_box(matches);
+                            }
+                            elapsed
+                        });
+                    },
+                );
+                if backend == ScanBackend::Gpu {
+                    assert_eq!(
+                        scanner.gpu_degrade_count(),
+                        degrade_before,
+                        "GPU degraded while measuring detector_count={detector_count}, pattern_count={pattern_count}, bytes={size}; refusing to report fallback timing as GPU"
+                    );
+                }
+            }
         }
     }
     group.finish();

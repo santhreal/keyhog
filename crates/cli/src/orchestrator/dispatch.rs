@@ -388,6 +388,12 @@ impl CoalescedBatchProducer {
                 if self.record_unchanged_chunk(&c) {
                     continue;
                 }
+                if self.should_flush_before(&c) {
+                    self.flush_batch();
+                    if !self.pipeline_alive {
+                        break 'sources;
+                    }
+                }
                 self.push_chunk(c);
                 if self.should_flush() {
                     self.flush_batch();
@@ -436,9 +442,24 @@ impl CoalescedBatchProducer {
     }
 
     fn push_chunk(&mut self, c: Chunk) {
-        self.batch_bytes += c.data.len();
+        if !self.batch.is_empty() {
+            self.batch_bytes = self.batch_bytes.saturating_add(1);
+        }
+        self.batch_bytes = self.batch_bytes.saturating_add(c.data.len());
         self.batch.push(c);
         crate::TOTAL_CHUNKS.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn should_flush_before(&self, next: &Chunk) -> bool {
+        if self.batch.is_empty() {
+            return false;
+        }
+        let next_coalesced_bytes = self
+            .batch_bytes
+            .checked_add(1)
+            .and_then(|bytes| bytes.checked_add(next.data.len()));
+        self.batch.len() >= self.plan.batch_chunk_limit
+            || next_coalesced_bytes.is_none_or(|bytes| bytes > self.plan.batch_bytes_budget)
     }
 
     fn should_flush(&self) -> bool {
