@@ -84,3 +84,49 @@ fn scan_exclude_paths_with_git_staged() {
     let findings = parse_json_array(&stdout, "git-staged exclude-paths scan JSON");
     assert!(findings.is_empty());
 }
+
+#[test]
+fn scan_keyhogignore_path_with_git_staged() {
+    let dir = TempDir::new().expect("tempdir");
+    let repo = dir.path();
+    init_git_repo(repo);
+    std::fs::write(
+        repo.join("secret.env"),
+        "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
+    )
+    .unwrap();
+    std::fs::write(repo.join(".keyhogignore"), "path:secret.env\n").unwrap();
+    std::process::Command::new("git")
+        .args(["add", "secret.env"])
+        .current_dir(repo)
+        .status()
+        .expect("git add");
+
+    let output = Command::new(binary())
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--daemon=off",
+            "--git-staged",
+            "--format",
+            "json",
+            "--no-suppress-test-fixtures",
+        ])
+        .current_dir(repo)
+        .arg(".")
+        .output()
+        .expect("spawn");
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "staged scans must honor .keyhogignore paths; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let findings = parse_json_array(
+        &String::from_utf8_lossy(&output.stdout),
+        "git-staged .keyhogignore scan JSON",
+    );
+    assert!(findings.is_empty(), "ignored staged path was reported");
+}

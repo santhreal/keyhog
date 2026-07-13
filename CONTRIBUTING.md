@@ -30,7 +30,7 @@ adversarial test alongside the proving test.
   and perf dashboards.
 - `.github/actions/keyhog/` - the in-tree composite action
   consumers reference as
-  `santhsecurity/keyhog/.github/actions/keyhog@<tag>`.
+  `santhreal/keyhog/.github/actions/keyhog@<tag>`.
 
 ## How to add a new detector
 
@@ -170,10 +170,10 @@ Before opening a PR:
 
 ## Reporting a vulnerability
 
-Do **not** open a public issue for a security report. Use GitHub's
-private advisory flow at
-[/security/advisories/new](https://github.com/santhsecurity/keyhog/security/advisories/new)
-or email **security@santh.dev**.
+Do **not** open a public issue for a security report. Use
+[GitHub private vulnerability reporting](https://github.com/santhreal/keyhog/security/advisories/new)
+first. If that form is unavailable, email **security@santh.dev**; PGP is not
+required.
 
 ## Contributors
 
@@ -183,7 +183,7 @@ everyone who has sent a fix, a detector, or a test:
 
 - [@Eraminel01](https://github.com/Eraminel01) (Edyard) - corrected the
   Anthropic API key detector shape
-  ([#7](https://github.com/santhsecurity/keyhog/pull/7)).
+  ([#7](https://github.com/santhreal/keyhog/pull/7)).
 
 New contributors: add yourself to this list in the same PR as your
 change. One line, newest last: `[@handle](profile) - what you

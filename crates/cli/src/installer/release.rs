@@ -20,7 +20,7 @@ use keyhog_scanner::{hw_probe::ScanBackend, CompiledScanner};
 use serde::Deserialize;
 use std::time::Duration;
 
-pub(crate) const REPO: &str = "santhsecurity/keyhog";
+pub(crate) const REPO: &str = "santhreal/keyhog";
 const RELEASE_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const RELEASE_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_RELEASE_METADATA_BYTES: usize = 8 * 1024 * 1024;

@@ -289,7 +289,6 @@ fn ak_p4_cli_hot_paths_stay_linear() {
         std::fs::read_to_string(root.join("src/orchestrator/mod.rs")).expect("read orchestrator");
     let scan =
         std::fs::read_to_string(root.join("src/subcommands/scan.rs")).expect("read scan command");
-    let sources = std::fs::read_to_string(root.join("src/sources.rs")).expect("read sources");
 
     assert!(
         orchestrator.contains("detectors.retain(|d| !disabled_detectors.contains(d.id.as_str()))"),
@@ -307,19 +306,6 @@ fn ak_p4_cli_hot_paths_stay_linear() {
     assert!(
         !scan.contains("m.location.source = std::sync::Arc::from(\"filesystem\");"),
         "daemon scan-path suppression normalization must not allocate a fresh Arc per finding"
-    );
-    assert!(
-        sources.contains("let normalized_excludes: Vec<Cow<'_, str>> = excludes")
-            && sources.contains("fn slash_normalized_path(path: &Path) -> Cow<'_, str>")
-            && sources.contains("if value.as_bytes().contains(&b'\\\\')")
-            && sources.contains("staged_relative_path_matches_exclude(rel.as_ref(), exclude.as_ref())")
-            && sources.contains(".strip_suffix(exclude)"),
-        "staged-file exclude filtering must borrow the common slash-normalized path and only allocate on backslashes"
-    );
-    assert!(
-        !sources.contains("rel.to_string_lossy().replace('\\\\', \"/\")")
-            && !sources.contains("rel.ends_with(&format!(\"/{exclude}\"))"),
-        "staged-file exclude filtering must not allocate a normalized path or formatted suffix per exclude check"
     );
 }
 

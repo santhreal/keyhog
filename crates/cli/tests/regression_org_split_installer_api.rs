@@ -94,7 +94,7 @@ fn release_signature_verify_rejects_garbage_after_split() {
 
 #[test]
 fn release_public_constants_and_self_test_reachable_after_split() {
-    assert_eq!(API.release_repo(), "santhsecurity/keyhog");
+    assert_eq!(API.release_repo(), "santhreal/keyhog");
     assert!(API.release_public_key().starts_with("RWT"));
     // release_api_base default is always the real GitHub API. The offline
     // lifecycle tests use an explicit hidden argv seam; ambient env must not

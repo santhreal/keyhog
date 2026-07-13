@@ -3,7 +3,7 @@
 //!
 //! `docs/EXECUTION_PLAN.md` was the single internal planning doc. It leaked
 //! operator machine paths across its history and was purged from the public
-//! `santhsecurity/keyhog` repo (authorized governance action; the pre-push
+//! `santhreal/keyhog` repo (authorized governance action; the pre-push
 //! audit hook refuses it). This guard fails loudly if it, or any other retired
 //! planning artifact, is reintroduced by a stray `git add`, so the leak cannot
 //! silently return. The plan's prose strategy lives only in the private Santh

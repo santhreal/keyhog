@@ -4,7 +4,7 @@
 //!
 //! The CLI exposes exactly ONE user-facing scan-glob filter: `--exclude-paths`
 //! (see `crates/cli/src/args/scan.rs`: there is deliberately NO `--include`
-//! glob flag; the `include_paths` machinery is git-staged-only). These tests
+//! glob flag; explicit source include paths are a library-level surface). These tests
 //! pin that real surface end to end:
 //!   * `--exclude-paths '*.txt'` scans only `a.rs` (exact one-finding set).
 //!   * `--exclude-paths '*.rs'`  scans only `b.txt`.
@@ -357,7 +357,7 @@ fn multiple_excludes_compose_to_single_file() {
 
 /// Adversarial: there is NO `--include` scan-glob flag. Passing one is a clap
 /// usage error, exit 2, with the argument named on stderr. This pins that the
-/// filter surface is exclude-only (the include machinery is git-staged-only).
+/// filter surface is exclude-only (explicit includes belong to source construction).
 #[test]
 fn unknown_include_flag_is_usage_error() {
     let dir = plant_flat();

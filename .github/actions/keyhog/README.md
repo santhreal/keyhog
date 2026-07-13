@@ -6,7 +6,7 @@ artifact for download. The job summary shows the scan path, severity floor,
 report name, raw exit code, finding count, and scan duration for fast PR triage.
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
+- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
 ```
 
 That's it. Defaults: scan the whole repo, fail on `high` or above, output
@@ -19,7 +19,7 @@ also keep the artifact so the failed job is still diagnosable.
 ## Full reference
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
+- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
   with:
     path: .                     # file or directory to scan
     severity: high              # info | low | medium | high | critical
@@ -44,7 +44,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 ```
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
+- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
   with:
     baseline: keyhog-baseline.json
 ```
@@ -53,7 +53,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 
 ```yaml
 - id: keyhog
-  uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
+  uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
   with:
     fail-on-findings: 'false'
 

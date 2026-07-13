@@ -9,9 +9,9 @@ labels: ["install", "needs-triage"]
 
 - [ ] `install.sh` (Linux / macOS)
 - [ ] `install.ps1` (Windows)
-- [ ] `cargo install --git https://github.com/santhsecurity/keyhog`
+- [ ] `cargo install --git https://github.com/santhreal/keyhog`
 - [ ] Pre-built tarball from a release page
-- [ ] GitHub Action (`santhsecurity/keyhog/.github/actions/keyhog@…`)
+- [ ] GitHub Action (`santhreal/keyhog/.github/actions/keyhog@…`)
 
 ## Exact command
 

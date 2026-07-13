@@ -8,8 +8,8 @@ src = "src"
 [output.html]
 default-theme = "keyhog"
 preferred-dark-theme = "keyhog"
-git-repository-url = "https://github.com/santhsecurity/keyhog"
-edit-url-template = "https://github.com/santhsecurity/keyhog/edit/main/docs/{path}"
+git-repository-url = "https://github.com/santhreal/keyhog"
+edit-url-template = "https://github.com/santhreal/keyhog/edit/main/docs/{path}"
 site-url = "/keyhog/"
 no-section-label = true
 additional-css = ["theme/css/keyhog.css"]

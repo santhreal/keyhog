@@ -160,7 +160,7 @@ pub struct ScanArgs {
     #[arg(long, value_name = "PATH")]
     pub git_history: Option<PathBuf>,
 
-    /// Scan only staged files in the current git repository
+    /// Scan exact staged index blobs, never substituted working-tree bytes
     #[cfg(feature = "git")]
     #[arg(long)]
     pub git_staged: bool,

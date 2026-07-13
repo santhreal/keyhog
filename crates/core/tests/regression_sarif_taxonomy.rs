@@ -132,11 +132,11 @@ fn driver_name_version_information_uri_are_manifest_sourced() {
         Some(env!("CARGO_PKG_REPOSITORY")),
         "informationUri must be the manifest repository, never a hardcoded org"
     );
-    // Concrete guard: the repository is the santhsecurity canonical, and NOT the
+    // Concrete guard: the repository is the santhreal canonical, and NOT the
     // wrong `github.com/keyhog/keyhog` that a prior shape hardcoded.
     assert_eq!(
         d["informationUri"].as_str(),
-        Some("https://github.com/santhsecurity/keyhog")
+        Some("https://github.com/santhreal/keyhog")
     );
     assert_ne!(
         d["informationUri"].as_str(),

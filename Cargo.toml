@@ -16,8 +16,8 @@ rust-version = "1.89"
 license = "MIT OR Apache-2.0"
 description = "keyhog detects leaked credentials in source trees, git history, archives, and remote sources"
 readme = "README.md"
-repository = "https://github.com/santhsecurity/keyhog"
-homepage = "https://github.com/santhsecurity/keyhog"
+repository = "https://github.com/santhreal/keyhog"
+homepage = "https://github.com/santhreal/keyhog"
 documentation = "https://docs.rs/keyhog"
 keywords = ["secret-scanner", "security", "credentials", "api-keys", "git"]
 categories = ["command-line-utilities", "development-tools"]
@@ -72,6 +72,7 @@ tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 
 # File system
 codewalk = "=0.2.5"
+ignore = "=0.4.28"
 base64 = "=0.22.1"
 bytes = "=1.11.1"
 # Pure-Rust, verify-only minisign: used by `keyhog update` to verify the

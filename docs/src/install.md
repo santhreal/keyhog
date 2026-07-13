@@ -6,7 +6,7 @@ your supported host; platform feature differences are explicit below.
 ## One-liner: Linux / macOS
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
 ```
 
 Drops a binary in `~/.local/bin/keyhog`. The installer detects the platform and
@@ -24,7 +24,7 @@ drivers.
 For shell completions and optional hook setup:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh \
     -o keyhog-install.sh
 sh keyhog-install.sh
 ```
@@ -53,7 +53,7 @@ part of the current release contract.
 PowerShell 5+ (ships with Windows 10/11):
 
 ```powershell
-iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -useb | iex
+iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 -useb | iex
 ```
 
 Drops the binary in `%LOCALAPPDATA%\keyhog\bin\keyhog.exe`. Detects
@@ -64,7 +64,7 @@ current release.
 For the interactive flow:
 
 ```powershell
-iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 `
+iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 `
     -OutFile keyhog-install.ps1
 .\keyhog-install.ps1
 ```
@@ -248,7 +248,7 @@ installer performs that outer-process cleanup for the normal uninstall flow.
 
 If you do not trust pipe-to-shell, download and inspect the installer first, or
 obtain the complete host bundle from the
-[releases page](https://github.com/santhsecurity/keyhog/releases/latest).
+[releases page](https://github.com/santhreal/keyhog/releases/latest).
 
 | Platform              | Asset name                       |
 |-----------------------|----------------------------------|
@@ -294,7 +294,7 @@ combination the prebuilt binaries don't cover (e.g. Ghidra binary
 extraction).
 
 ```sh
-git clone https://github.com/santhsecurity/keyhog
+git clone https://github.com/santhreal/keyhog
 cd keyhog
 cargo build --release -p keyhog
 ./target/release/keyhog --version

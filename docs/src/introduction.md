@@ -84,10 +84,10 @@ Three things, in order of how much they matter:
 
 ```sh
 # Linux / macOS
-curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
 
 # Windows (PowerShell)
-iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -useb | iex
+iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 -useb | iex
 ```
 
 Then:
@@ -102,9 +102,9 @@ walks through what the output means and where to go from there.
 
 ## Where things live
 
-- **Source:** [github.com/santhsecurity/keyhog](https://github.com/santhsecurity/keyhog)
-- **Issues:** [github.com/santhsecurity/keyhog/issues](https://github.com/santhsecurity/keyhog/issues)
-- **Releases:** [github.com/santhsecurity/keyhog/releases](https://github.com/santhsecurity/keyhog/releases)
-- **Security:** report vulnerabilities to `security@santh.dev` (PGP-encrypted preferred - key in repo `SECURITY.md`)
+- **Source:** [github.com/santhreal/keyhog](https://github.com/santhreal/keyhog)
+- **Issues:** [github.com/santhreal/keyhog/issues](https://github.com/santhreal/keyhog/issues)
+- **Releases:** [github.com/santhreal/keyhog/releases](https://github.com/santhreal/keyhog/releases)
+- **Security:** use [GitHub private vulnerability reporting](https://github.com/santhreal/keyhog/security/advisories/new) first. If the form is unavailable, email `security@santh.dev`; PGP is not required. See the [security policy](https://github.com/santhreal/keyhog/blob/main/SECURITY.md).
 
 License: MIT.

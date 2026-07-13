@@ -36,7 +36,7 @@ const HOOK_CONTENT: &str = concat!(
     "# silently turn the installed hook into a stub.\n",
     "if ! command -v keyhog >/dev/null 2>&1; then\n",
     "    echo \"keyhog: not found on PATH - blocking commit because the pre-commit secret scan did not run.\" >&2\n",
-    "    echo \"  Install keyhog (https://github.com/santhsecurity/keyhog), fix PATH,\" >&2\n",
+    "    echo \"  Install keyhog (https://github.com/santhreal/keyhog), fix PATH,\" >&2\n",
     "    echo \"  or remove .git/hooks/pre-commit if this repository should not be protected.\" >&2\n",
     "    exit 127\n",
     "fi\n",

@@ -1,10 +1,10 @@
 # KeyHog installer (Windows, PowerShell 5+).
 #
 # Curl-pipe-iwr quick install:
-#   iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -useb | iex
+#   iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 -useb | iex
 #
 # Interactive install (recommended when you want post-install wizard):
-#   iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -OutFile keyhog-install.ps1
+#   iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 -OutFile keyhog-install.ps1
 #   .\keyhog-install.ps1
 #
 # Modes:
@@ -44,7 +44,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$Repo = 'santhsecurity/keyhog'
+$Repo = 'santhreal/keyhog'
 $Script:ReleasePublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 $Script:InsecureInstall = [bool]$Insecure
 $Script:LatestReleaseAlias = $false

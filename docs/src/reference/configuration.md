@@ -24,7 +24,7 @@ compiled defaults  →  .keyhog.toml  →  CLI flags
   tests pin the operator-visible result.
 - **`.keyhog.toml`** is discovered by walking up from the scan path to the
   filesystem root (first one found wins). Copy
-  [`.keyhog.toml.example`](https://github.com/santhsecurity/keyhog/blob/main/.keyhog.toml.example)
+  [`.keyhog.toml.example`](https://github.com/santhreal/keyhog/blob/main/.keyhog.toml.example)
   to your repo root and delete what you don't need. A malformed `.keyhog.toml`
   fails closed with the path and TOML error before any scan output is written.
   Unknown tables and keys are parse failures, not ignored compatibility shims.

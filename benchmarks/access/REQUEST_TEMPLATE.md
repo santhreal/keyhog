@@ -11,7 +11,7 @@ From: `security@santh.dev`
 Hi Setu, Lorenzo, Bradley, Laurie,
 
 I'm building an open-source secret scanner called **keyhog**
-(<https://github.com/santhsecurity/keyhog>) and would like to
+(<https://github.com/santhreal/keyhog>) and would like to
 evaluate it against the SecretBench dataset and report results
 publicly with full citation.
 

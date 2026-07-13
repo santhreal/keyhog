@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # scan full history, not just HEAD
-      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
+      - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
         with:
           path: .
           severity: high
@@ -77,7 +77,7 @@ git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
 ```
 
 ```yaml
-      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
+      - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
         with:
           baseline: .keyhog-baseline.json
 ```
@@ -111,7 +111,7 @@ keyhog:
   image: ubuntu:24.04
   before_script:
     - apt-get update -qq && apt-get install -y curl libhyperscan-dev
-    - curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+    - curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
   script:
     # Exits non-zero on findings, which fails the job and gates the MR.
     - ~/.local/bin/keyhog scan . --format sarif --output keyhog.sarif
@@ -143,7 +143,7 @@ jobs:
       - run:
           name: Install keyhog
           command: |
-            curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+            curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> $BASH_ENV
       - run:
           name: Scan repo
@@ -167,7 +167,7 @@ pipeline:
     image: alpine:3.20
     commands:
       - apk add --no-cache curl
-      - curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+      - curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
       - $HOME/.local/bin/keyhog scan .
 ```
 

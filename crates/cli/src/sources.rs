@@ -3,24 +3,13 @@
 use crate::args::ScanArgs;
 use crate::orchestrator_config::ResolvedScanConfig;
 use anyhow::{Context, Result};
+use keyhog_core::MerkleIndex;
 use keyhog_core::Source;
-use keyhog_core::{Chunk, MerkleIndex, SourceError};
-#[cfg(any(
-    feature = "git",
-    feature = "github",
-    feature = "gitlab",
-    feature = "bitbucket"
-))]
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
-#[cfg(feature = "git")]
-use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
-
-struct EmptySource {
-    name: &'static str,
-}
 
 /// Resolve a hosted-source credential without letting ambient environment
 /// variables select a source. Callers invoke this only after the operator has
@@ -94,26 +83,6 @@ fn hosted_source_credential<'a>(
         "{env_name} is empty. Fix: set it to the provider credential or unset it and pass the matching token flag."
     );
     Ok(Some(Cow::Owned(value)))
-}
-
-impl EmptySource {
-    fn new(name: &'static str) -> Self {
-        Self { name }
-    }
-}
-
-impl Source for EmptySource {
-    fn name(&self) -> &str {
-        self.name
-    }
-
-    fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        Box::new(std::iter::empty())
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
 }
 
 /// Merge `.keyhogignore` paths and `--exclude-paths`.
@@ -240,27 +209,32 @@ pub(crate) fn build_sources(
     let scan_path = requested_roots.first();
     validate_source_flag_combinations(args, !requested_roots.is_empty())?;
 
-    #[cfg(feature = "git")]
-    let mut staged_files = if args.git_staged {
-        get_staged_files(scan_path.map(PathBuf::as_path))?
-    } else {
-        Vec::new()
-    };
-    #[cfg(feature = "git")]
-    if args.git_staged {
-        filter_staged_files_by_cli_excludes(&mut staged_files, args, &resolved.exclude_paths);
-    }
-
     let merged_ignore_paths = merge_scan_ignore_paths(&resolved.exclude_paths, ignore_paths);
 
     #[cfg(feature = "git")]
-    let staged_include_set_exhausted = args.git_staged && staged_files.is_empty();
+    let use_staged_source = args.git_staged;
 
     #[cfg(not(feature = "git"))]
-    let staged_include_set_exhausted = false;
+    let use_staged_source = false;
 
-    if staged_include_set_exhausted {
-        sources.push(Box::new(EmptySource::new("git-staged/excluded")));
+    if use_staged_source {
+        #[cfg(feature = "git")]
+        {
+            let repo = scan_path.cloned().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "--git-staged requires a repository path. Fix: run inside a repository or pass its path."
+                )
+            })?;
+            sources.push(Box::new(
+                keyhog_sources::GitStagedSource::try_new(repo)
+                    .map_err(|error| {
+                        anyhow::anyhow!("--git-staged input validation failed: {error}")
+                    })?
+                    .with_ignore_paths(merged_ignore_paths.clone())
+                    .with_default_excludes(!resolved.no_default_excludes)
+                    .with_limits(source_limits),
+            ));
+        }
     } else {
         // Each requested root becomes its own filesystem source, the scan
         // engine already merges this `Vec<Box<dyn Source>>`, so multi-root
@@ -268,8 +242,6 @@ pub(crate) fn build_sources(
         // roots are folded into their covering parent (loudly) so a subtree is
         // never walked twice.
         let roots = resolve_scan_roots(&requested_roots)?;
-        #[cfg(feature = "git")]
-        let mut staged_files = staged_files;
         for root in &roots {
             let mut fs_source = keyhog_sources::FilesystemSource::new(root.clone())
                 .with_ignore_paths(merged_ignore_paths.clone())
@@ -284,13 +256,6 @@ pub(crate) fn build_sources(
             }
             if let Some(idx) = merkle.as_ref() {
                 fs_source = fs_source.with_merkle_skip(idx.clone());
-            }
-            #[cfg(feature = "git")]
-            if args.git_staged && !staged_files.is_empty() {
-                // `--git-staged` is single-root (guarded upstream in
-                // `guard_multi_root_combinations`), so this consumes the staged
-                // set on the sole iteration without re-applying it per root.
-                fs_source = fs_source.with_include_paths(std::mem::take(&mut staged_files));
             }
             sources.push(Box::new(fs_source));
             #[cfg(feature = "binary")]
@@ -579,6 +544,14 @@ fn validate_source_flag_combinations(args: &ScanArgs, _has_path_source: bool) ->
         );
     }
 
+    #[cfg(all(feature = "binary", feature = "git"))]
+    if args.binary && args.git_staged {
+        anyhow::bail!(
+            "--binary cannot be combined with --git-staged: a binary scan reads filesystem artifacts, while a staged scan must read exact index blobs. \
+             Fix: run `keyhog scan --git-staged` for the commit boundary and a separate `keyhog scan --binary <PATH>` for working-tree binaries."
+        );
+    }
+
     #[cfg(feature = "github")]
     let github_token_present = args.github_token.is_some()
         || (args.github_org.is_some()
@@ -749,148 +722,4 @@ fn validate_primary_source_flag(
         present.join(", "),
         present.join(", ")
     );
-}
-
-#[cfg(feature = "git")]
-fn get_staged_files(repo_path: Option<&std::path::Path>) -> Result<Vec<PathBuf>> {
-    // SECURITY: kimi-wave1 audit finding 3.PATH-git. Resolve git to a
-    // trusted absolute path; refuse $PATH lookup.
-    let git_bin = keyhog_core::resolve_safe_bin("git")
-        .ok_or_else(|| anyhow::anyhow!("git binary not found in trusted system bin dirs"))?;
-
-    // DF-03: detect "not a git repository" BEFORE running `git diff --cached`,
-    // so the operator gets a clean, actionable message instead of a raw git
-    // error leaking out of the diff invocation. `rev-parse --is-inside-work-tree`
-    // is the canonical probe, it succeeds inside a repo (incl. worktrees /
-    // submodules / subdirectories where a bare `.git` filesystem check would
-    // miss) and exits non-zero with "fatal: not a git repository" outside one.
-    {
-        let mut probe = std::process::Command::new(&git_bin);
-        probe.args(["rev-parse", "--is-inside-work-tree"]);
-        if let Some(path) = repo_path {
-            probe.current_dir(path);
-        }
-        let inside = probe
-            .output()
-            .context("failed to run `git rev-parse --is-inside-work-tree`")?;
-        let is_repo =
-            inside.status.success() && String::from_utf8_lossy(&inside.stdout).trim() == "true";
-        if !is_repo {
-            let where_ = repo_path
-                .map(|p| p.display().to_string())
-                .or_else(|| {
-                    std::env::current_dir()
-                        .ok() // LAW10: cwd probe for an ERROR-MESSAGE string only (the "not a git repository" bail); absent => '.' below, recall-irrelevant
-                        .map(|p| p.display().to_string())
-                })
-                .unwrap_or_else(|| ".".to_string()); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
-            anyhow::bail!(
-                "'{where_}' is not a git repository: `--git-staged` scans the git \
-                 staging area, which only exists inside a repo. Run keyhog from inside \
-                 a git repository (or pass a repo path), or drop `--git-staged` to scan \
-                 the working tree directly."
-            );
-        }
-    }
-
-    let mut cmd = std::process::Command::new(&git_bin);
-    cmd.args(["diff", "--cached", "--name-only", "--diff-filter=ACM"]);
-    if let Some(path) = repo_path {
-        cmd.current_dir(path);
-    }
-
-    let output = cmd
-        .output()
-        .context("failed to run `git diff --cached --name-only --diff-filter=ACM`")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("git diff failed: {stderr}");
-    }
-
-    let base = repo_path
-        .map(PathBuf::from)
-        .or_else(|| std::env::current_dir().ok()) // LAW10: optional env/cwd probe; absent => None (intended config/probe), recall-irrelevant
-        .unwrap_or_else(|| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
-    let base = base.canonicalize().unwrap_or(base); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
-
-    let stdout = String::from_utf8(output.stdout).context("git output is not valid UTF-8")?;
-    let mut files: Vec<PathBuf> = Vec::new();
-    for line in stdout.lines() {
-        if line.is_empty() {
-            continue;
-        }
-        let path = base.join(line);
-        if path.exists() {
-            files.push(path);
-        }
-    }
-
-    if files.is_empty() {
-        anyhow::bail!(
-            "no staged files found in {}. Stage files first with `git add <path>`, \
-             or drop --git-staged to scan the working tree.",
-            base.display()
-        );
-    }
-
-    Ok(files)
-}
-
-#[cfg(feature = "git")]
-fn filter_staged_files_by_cli_excludes(
-    files: &mut Vec<PathBuf>,
-    args: &ScanArgs,
-    excludes: &[String],
-) {
-    if excludes.is_empty() {
-        return;
-    }
-    let normalized_excludes: Vec<Cow<'_, str>> = excludes
-        .iter()
-        .map(|exclude| slash_normalized_str(exclude.as_str()))
-        .collect();
-    let base = args
-        .path
-        .as_deref()
-        .map(PathBuf::from)
-        .or_else(|| std::env::current_dir().ok()) // LAW10: optional env/cwd probe; absent => None (intended config/probe), recall-irrelevant
-        .unwrap_or_else(|| PathBuf::from(".")) // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
-        .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
-    files.retain(|path| {
-        let rel = path.strip_prefix(&base).unwrap_or(path); // LAW10: no prefix/BOM to strip => value unchanged (intended), recall-safe
-        let rel = slash_normalized_path(rel);
-        !normalized_excludes
-            .iter()
-            .any(|exclude| staged_relative_path_matches_exclude(rel.as_ref(), exclude.as_ref()))
-    });
-}
-
-#[cfg(feature = "git")]
-fn slash_normalized_path(path: &Path) -> Cow<'_, str> {
-    let path = path.to_string_lossy();
-    slash_normalized_cow(path)
-}
-
-#[cfg(feature = "git")]
-fn slash_normalized_str(value: &str) -> Cow<'_, str> {
-    slash_normalized_cow(Cow::Borrowed(value))
-}
-
-#[cfg(feature = "git")]
-fn slash_normalized_cow(value: Cow<'_, str>) -> Cow<'_, str> {
-    if value.as_bytes().contains(&b'\\') {
-        Cow::Owned(value.replace('\\', "/"))
-    } else {
-        value
-    }
-}
-
-#[cfg(feature = "git")]
-fn staged_relative_path_matches_exclude(rel: &str, exclude: &str) -> bool {
-    rel == exclude
-        || rel
-            .strip_suffix(exclude)
-            .is_some_and(|prefix| prefix.ends_with('/'))
 }

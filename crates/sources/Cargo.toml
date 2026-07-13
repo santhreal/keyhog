@@ -7,8 +7,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
-repository = "https://github.com/santhsecurity/keyhog"
-homepage = "https://github.com/santhsecurity/keyhog"
+repository = "https://github.com/santhreal/keyhog"
+homepage = "https://github.com/santhreal/keyhog"
 documentation = "https://docs.rs/keyhog-sources"
 keywords.workspace = true
 categories.workspace = true
@@ -22,7 +22,7 @@ status = "alpha"
 
 [features]
 default = ["git", "web"]
-git = ["gix"]
+git = ["gix", "dep:ignore"]
 # `dep:serde` / `dep:serde_json` removed from these feature gates 
 # they're unconditional now (serde for the HAR parser in
 # filesystem.rs::har, which is in the always-on path).
@@ -78,6 +78,7 @@ keyhog-core = { workspace = true }
 # keyhog-sources.
 keyhog-verifier = { workspace = true, optional = true }
 codewalk = { workspace = true }
+ignore = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 rayon = { workspace = true }

@@ -34,6 +34,7 @@ fn git_staged_secret_in_index_exit_one() {
         .current_dir(repo)
         .status()
         .expect("git add");
+    std::fs::write(repo.join("staged.env"), "clean working tree replacement\n").unwrap();
 
     let output = Command::new(binary())
         .args([
@@ -64,6 +65,59 @@ fn git_staged_secret_in_index_exit_one() {
     assert_eq!(
         findings.as_array().map(|a| a.len()),
         Some(1),
-        "expected one staged finding; stdout={stdout}"
+        "the exact staged index blob must be scanned even after the working-tree file changes; stdout={stdout}"
+    );
+}
+
+#[test]
+fn git_staged_from_nested_directory_uses_the_enclosing_index() {
+    let dir = TempDir::new().expect("tempdir");
+    let repo = dir.path();
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(repo)
+        .status()
+        .expect("git init");
+    std::fs::create_dir_all(repo.join("src/nested")).expect("create nested directory");
+    std::fs::write(
+        repo.join("staged.env"),
+        "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n",
+    )
+    .expect("write staged secret");
+    assert!(Command::new("git")
+        .args(["add", "staged.env"])
+        .current_dir(repo)
+        .status()
+        .expect("git add")
+        .success());
+
+    let output = Command::new(binary())
+        .args([
+            "scan",
+            "--daemon=off",
+            "--git-staged",
+            "--format",
+            "json",
+            "--backend",
+            "simd",
+            "--no-suppress-test-fixtures",
+        ])
+        .current_dir(repo.join("src/nested"))
+        .output()
+        .expect("spawn nested staged scan");
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "nested staged scan must find the enclosing index secret; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let findings: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("nested staged scan stdout must be a JSON array");
+    assert_eq!(findings.as_array().map(Vec::len), Some(1));
+    assert_eq!(
+        findings[0]["location"]["file_path"],
+        serde_json::Value::String("staged.env".into()),
+        "staged paths must remain relative to the enclosing worktree root"
     );
 }

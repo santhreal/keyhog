@@ -6,8 +6,10 @@ labels: ["bug", "needs-triage"]
 ---
 
 <!-- Before filing: search existing issues to avoid duplicates.
-     If this looks like a security issue, do NOT file it here, open
-     a private advisory at /security/advisories/new instead. -->
+     If this looks like a security issue, do NOT file it here. Use GitHub
+     private vulnerability reporting first:
+     https://github.com/santhreal/keyhog/security/advisories/new
+     If that form is unavailable, email security@santh.dev; PGP is not required. -->
 
 ## Summary
 

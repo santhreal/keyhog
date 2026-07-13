@@ -81,6 +81,27 @@ fn github_actions_plus_only_base64_protobuf_is_not_reported_with_ml() {
 }
 
 #[test]
+fn repository_relative_ci_paths_suppress_entropy_only_action_references() {
+    const ACTION_REF: &str = "docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435";
+    let body = format!("steps:\n  - uses: {ACTION_REF}\n");
+
+    for path in [
+        ".github/workflows/release.yml",
+        ".github/actions/keyhog/action.yml",
+    ] {
+        let matches = scan(&scanner(true), &body, path);
+        let hits: Vec<_> = matches
+            .iter()
+            .filter(|finding| finding.detector_id.as_ref() == "entropy-token")
+            .collect();
+        assert!(
+            hits.is_empty(),
+            "repository-relative CI path must suppress entropy-only action pins at {path}; hits={hits:?}"
+        );
+    }
+}
+
+#[test]
 fn github_actions_plus_only_base64_protobuf_is_not_reported_without_ml() {
     let body = format!(
         "name: deploy\non: [push]\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    env:\n      API_KEY: {GITHUB_ACTIONS_PLUS_ONLY}\n    steps:\n      - run: ./deploy.sh\n"

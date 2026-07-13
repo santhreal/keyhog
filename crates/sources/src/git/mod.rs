@@ -9,6 +9,7 @@ mod diff;
 mod diff_parser;
 mod history;
 mod source;
+mod staged;
 mod tag_messages;
 
 /// Resolve `git` to an absolute path inside a trusted system bin dir.
@@ -51,6 +52,7 @@ pub(crate) fn git_command() -> Result<Command, SourceError> {
 pub use diff::GitDiffSource;
 pub use history::GitHistorySource;
 pub use source::GitSource;
+pub use staged::GitStagedSource;
 
 pub(crate) use diff_parser::{trim_diff_line_bytes, UnifiedDiffEvent, UnifiedDiffParser};
 pub(crate) use source::max_commits_limit;
@@ -304,6 +306,19 @@ pub(crate) fn read_capped_line<R: std::io::BufRead>(
     buf: &mut Vec<u8>,
     max: usize,
 ) -> std::io::Result<usize> {
+    read_capped_record(reader, buf, max, b'\n')
+}
+
+/// Read through one delimiter while retaining at most `max` bytes. The full
+/// record is always consumed so a caller can report the oversized record and
+/// continue from the next exact boundary without allocating attacker-sized
+/// Git output.
+pub(crate) fn read_capped_record<R: std::io::BufRead>(
+    reader: &mut R,
+    buf: &mut Vec<u8>,
+    max: usize,
+    delimiter: u8,
+) -> std::io::Result<usize> {
     buf.clear();
     let mut consumed = 0usize;
     loop {
@@ -315,15 +330,15 @@ pub(crate) fn read_capped_line<R: std::io::BufRead>(
         if available.is_empty() {
             return Ok(consumed); // EOF
         }
-        let nl = memchr::memchr(b'\n', available);
-        let take = nl.map_or(available.len(), |i| i + 1);
+        let boundary = memchr::memchr(delimiter, available);
+        let take = boundary.map_or(available.len(), |i| i + 1);
         if buf.len() < max {
             let keep = take.min(max - buf.len());
             buf.extend_from_slice(&available[..keep]);
         }
         reader.consume(take);
         consumed += take;
-        if nl.is_some() {
+        if boundary.is_some() {
             return Ok(consumed);
         }
     }

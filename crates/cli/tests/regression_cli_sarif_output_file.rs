@@ -9,7 +9,7 @@
 //! Here every assertion targets the SARIF DOCUMENT that lands in the file:
 //!   * top-level `version` == `2.1.0` and the exact 2.1.0 `$schema` URI;
 //!   * `tool.driver.name` == `keyhog`, `informationUri` ==
-//!     `https://github.com/santhsecurity/keyhog` (from CARGO_PKG_REPOSITORY);
+//!     `https://github.com/santhreal/keyhog` (from CARGO_PKG_REPOSITORY);
 //!   * `results[0].ruleId` == `github-classic-pat` and it RESOLVES into
 //!     `tool.driver.rules[]` (GitHub silently drops an unresolved ruleId);
 //!   * `results[0].level` == `error` (critical severity);
@@ -59,7 +59,7 @@ const AWS_DETECTOR: &str = "aws-access-key";
 const SARIF_SCHEMA: &str =
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json";
 /// The exact `tool.driver.informationUri` (== crate `repository`).
-const INFO_URI: &str = "https://github.com/santhsecurity/keyhog";
+const INFO_URI: &str = "https://github.com/santhreal/keyhog";
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))

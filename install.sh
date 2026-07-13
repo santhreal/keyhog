@@ -3,11 +3,11 @@
 # KeyHog installer (Linux + macOS).
 #
 # Curl-pipe-sh quick install:
-#   curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
 #
 # Interactive install (recommended when you want PATH, shell completion, and
 # pre-commit setup):
-#   curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh -o keyhog-install.sh
+#   curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh -o keyhog-install.sh
 #   sh keyhog-install.sh
 #
 # Modes:
@@ -60,7 +60,7 @@ elif [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
     esac
 fi
 
-REPO="santhsecurity/keyhog"
+REPO="santhreal/keyhog"
 RELEASE_PUBLIC_KEY="RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go"
 INSTALL_DIR="$HOME/.local/bin"
 VERSION="${KEYHOG_VERSION:-}"
@@ -1204,7 +1204,7 @@ verify_install() {
                     err "    Fedora/RHEL:   sudo dnf install -y hyperscan"
                     err "    Arch:          sudo pacman -S vectorscan"
                     err "  Or rebuild from source with no Hyperscan dep:"
-                    err "    cargo install --git https://github.com/santhsecurity/keyhog --no-default-features --features portable"
+                    err "    cargo install --git https://github.com/santhreal/keyhog --no-default-features --features portable"
                     ;;
                 *libssl*|*libcrypto*)
                     err "  Install OpenSSL runtime:"

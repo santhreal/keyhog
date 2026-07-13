@@ -376,7 +376,9 @@ impl CoverageGapKind {
             }
             Self::OverMaxSize => "exceeded --max-file-size",
             Self::Binary => "binary (extension or content sniff)",
-            Self::Excluded => "default-exclusion list (lock/minified/vendored)",
+            Self::Excluded => {
+                "exclusion policy (.keyhogignore, --exclude-paths, or lock/minified/vendored defaults)"
+            }
             Self::NonBinaryUnreadable => "unreadable (permission denied or I/O error)",
             Self::GitObjectUnreadable => {
                 "Git object unreadable or wrong object kind (referenced commit/tree/blob not scanned)"
@@ -458,7 +460,7 @@ impl CoverageGapKind {
                  scanned as text."
             ),
             Self::Excluded => format!(
-                "{n} file(s) skipped: matched the default-exclusion list (lock/minified/vendored)."
+                "{n} file(s) skipped by exclusion policy (.keyhogignore, --exclude-paths, or lock/minified/vendored defaults)."
             ),
             Self::NonBinaryUnreadable => format!(
                 "{n} file(s) NOT scanned: unreadable (permission denied or I/O error). These \
@@ -530,6 +532,8 @@ fn coverage_gap_summary(counts: &CoverageCounts) -> Vec<(String, usize)> {
 
 #[cfg(test)]
 mod coverage_gap_tests;
+#[cfg(test)]
+mod scan_target_tests;
 
 fn scan_targets(args: &ScanArgs) -> Vec<String> {
     let mut targets = Vec::new();
@@ -537,8 +541,14 @@ fn scan_targets(args: &ScanArgs) -> Vec<String> {
     // `scan_roots` (which also absorbs the orchestrator's internal
     // `input -> path` promotion), so the header lists each root once whether the
     // invocation was `--path`, a single positional, or `keyhog scan a/ b/ c/`.
-    for root in args.scan_roots() {
-        push_path_target(&mut targets, "path", Some(&root));
+    #[cfg(feature = "git")]
+    let scans_worktree = !args.git_staged;
+    #[cfg(not(feature = "git"))]
+    let scans_worktree = true;
+    if scans_worktree {
+        for root in args.scan_roots() {
+            push_path_target(&mut targets, "path", Some(&root));
+        }
     }
     if args.stdin {
         targets.push("stdin".to_string());
@@ -556,7 +566,7 @@ fn scan_targets(args: &ScanArgs) -> Vec<String> {
         }
         push_path_target(&mut targets, "git-history", args.git_history.as_ref());
         if args.git_staged {
-            targets.push("git-staged".to_string());
+            push_path_target(&mut targets, "git-staged", args.scan_roots().first());
         }
     }
 

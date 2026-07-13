@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Question or discussion
-    url: https://github.com/santhsecurity/keyhog/discussions
+    url: https://github.com/santhreal/keyhog/discussions
     about: Open-ended questions, ideas, and design discussions belong in Discussions, not issues.
   - name: Security disclosure
-    url: https://github.com/santhsecurity/keyhog/security/advisories/new
+    url: https://github.com/santhreal/keyhog/security/advisories/new
     about: Report a security vulnerability privately. Do NOT open a public issue.

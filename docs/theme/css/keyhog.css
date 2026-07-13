@@ -244,32 +244,16 @@ body, html {
     position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 0.55rem;
     font-weight: 600;
     color: var(--graphite);
     letter-spacing: 0.01em;
     overflow: hidden;
 }
 
-/* A compact keyhole/scan mark gives the docs a recognizable product signature
- * without injecting custom HTML into mdBook's navigation. */
-.menu-title::before {
-    content: "";
-    width: 0.72rem;
-    height: 0.82rem;
-    flex: 0 0 auto;
-    border-radius: 55% 55% 42% 42%;
-    background:
-        radial-gradient(circle at 50% 35%, var(--paper-pure) 0 15%, transparent 17%),
-        linear-gradient(145deg, var(--brand-bright), #d79e00);
-    box-shadow: 0 0 0 1px rgb(13 16 23 / 12%),
-                0 3px 10px rgb(138 101 0 / 20%);
-}
-
 .menu-title::after {
     content: "";
     position: absolute;
-    left: 1.25rem;
+    left: 0;
     right: 0;
     bottom: 0;
     height: 1px;

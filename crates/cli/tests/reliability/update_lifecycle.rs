@@ -96,8 +96,7 @@ fn assert_graceful(code: Option<i32>, stdout: &str, stderr: &str, what: &str) {
 
 fn releases_mock(server: &MockServer, status: u16, body: &str) {
     server.mock(|when, then| {
-        when.method(GET)
-            .path("/repos/santhsecurity/keyhog/releases");
+        when.method(GET).path("/repos/santhreal/keyhog/releases");
         then.status(status)
             .header("content-type", "application/json")
             .body(body);
@@ -270,7 +269,7 @@ fn pinned_missing_tag_404_fails_gracefully() {
     let server = MockServer::start();
     server.mock(|when, then| {
         when.method(GET)
-            .path("/repos/santhsecurity/keyhog/releases/tags/v1.2.3");
+            .path("/repos/santhreal/keyhog/releases/tags/v1.2.3");
         then.status(404).body(r#"{"message":"Not Found"}"#);
     });
     let (code, out, err) = run_update(&server.base_url(), &["--check", "--version", "v1.2.3"]);

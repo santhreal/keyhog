@@ -42,6 +42,10 @@ fn pre_commit_hooks_yaml_matches_canonical_scan_args() {
         yaml.contains("pass_filenames: false"),
         ".pre-commit-hooks.yaml must keep `pass_filenames: false`; a true value appends filenames and aborts every commit with clap exit 2"
     );
+    assert!(
+        yaml.contains("always_run: true"),
+        ".pre-commit-hooks.yaml must run for binary-only change sets so the staged source can report unscanned blobs as coverage gaps"
+    );
 }
 
 #[test]

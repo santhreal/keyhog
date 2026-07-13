@@ -12,7 +12,7 @@ fn repo_root() -> PathBuf {
 }
 
 #[test]
-fn sarif_information_uri_is_santhsecurity_keyhog() {
+fn sarif_information_uri_is_santhreal_keyhog() {
     let demo = repo_root().join("demo/config/demo-secret.env");
     let out = Command::new(binary())
         .args([
@@ -33,7 +33,7 @@ fn sarif_information_uri_is_santhsecurity_keyhog() {
         .as_str()
         .expect("informationUri");
     assert_eq!(
-        uri, "https://github.com/santhsecurity/keyhog",
+        uri, "https://github.com/santhreal/keyhog",
         "SARIF informationUri must match the published repo"
     );
 }

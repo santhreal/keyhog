@@ -4,7 +4,7 @@ High-performance secret detection engine with a portable CPU reference,
 Hyperscan trigger matching, VYRE GPU region presence, entropy/BPE policy, and
 decode-through scanning.
 
-Part of the [KeyHog](https://github.com/santhsecurity/keyhog) secret scanner.
+Part of the [KeyHog](https://github.com/santhreal/keyhog) secret scanner.
 
 ```rust
 use keyhog_core::{Chunk, ChunkMetadata};
@@ -36,5 +36,5 @@ detector TOMLs embedded by `keyhog-core`; scanner configuration supplies the
 operational defaults and explicit overrides. Every backend feeds the same
 extraction, suppression, confidence, decode, and reporting contracts.
 
-See the [main documentation](https://github.com/santhsecurity/keyhog) for the
+See the [main documentation](https://github.com/santhreal/keyhog) for the
 detector schema, backend calibration, parity guarantees, and complete usage.

@@ -53,7 +53,7 @@ jobs:
           KEYHOG_SMOKE_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh -o /tmp/install.sh
+          curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh -o /tmp/install.sh
           install_args=(--yes --no-prompt)
           if [[ -n "$KEYHOG_SMOKE_VERSION" ]]; then
             install_args+=(--version="$KEYHOG_SMOKE_VERSION")
@@ -70,7 +70,7 @@ jobs:
           # PowerShell's -File flag requires a .ps1 extension. New-TemporaryFile
           # returns a .tmp path, which pwsh -File refuses. Save to an explicit
           # .ps1 path under the runner temp dir so the installer actually runs.
-          $url = "https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1"
+          $url = "https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1"
           $tmp = Join-Path $env:RUNNER_TEMP "install.ps1"
           Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
           $installArgs = @('-ExecutionPolicy', 'Bypass', '-File', $tmp, '-Yes')

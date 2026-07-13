@@ -30,7 +30,7 @@ raw git hooks, add the following to `.pre-commit-config.yaml`:
 
 ```yaml
 repos:
-  - repo: https://github.com/santhsecurity/keyhog
+  - repo: https://github.com/santhreal/keyhog
     rev: v0.5.41
     hooks:
       - id: keyhog

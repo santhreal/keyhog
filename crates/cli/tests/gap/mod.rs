@@ -39,7 +39,7 @@ pub mod readme_baseline_quickstart_omits_create;
 pub mod readme_embedded_detectors_api_phantom;
 pub mod readme_exit_codes_match_cli_contract;
 pub mod readme_license_badge_dual_spdx;
-pub mod sarif_information_uri_santhsecurity;
+pub mod sarif_information_uri_santhreal;
 pub mod scan_git_diff_head_worktree_json_shape;
 pub mod scan_help_documents_exit_codes;
 pub mod scan_require_gpu_forbids_silent_cpu_fallback;

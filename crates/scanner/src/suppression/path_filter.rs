@@ -90,8 +90,7 @@ pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
         || contains_path_segment(p, "bower_components")
         || contains_path_segment(p, "jspm_packages")
         || contains_path_segment(p, "site-packages")
-        || p.contains("/dist/vendor")
-        || p.contains("\\dist\\vendor")
+        || contains_path_segment_two(p, "dist", "vendor")
         || contains_path_segment_two(p, "dist", "assets")
         || contains_path_segment_two(p, "vendor", "assets")
         || p.ends_with(".min.js")
@@ -106,7 +105,11 @@ pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
     // directory predominantly holds vendored libraries (bootstrap-*,
     // jquery-*, alertify, datatables, fullcalendar, jsapi). Match the
     // most common vendored filename prefixes.
-    if p.contains("/app/assets/javascripts/")
+    if p.starts_with("app/assets/javascripts/")
+        || p.starts_with("app\\assets\\javascripts\\")
+        || p.starts_with("vendor/javascripts/")
+        || p.starts_with("vendor\\javascripts\\")
+        || p.contains("/app/assets/javascripts/")
         || p.contains("\\app\\assets\\javascripts\\")
         || p.contains("/vendor/javascripts/")
         || p.contains("\\vendor\\javascripts\\")
@@ -128,7 +131,19 @@ pub(crate) fn path_is_ci_workflow_file(path: Option<&str>) -> bool {
     let Some(p) = path else {
         return false;
     };
-    p.contains("/.github/workflows/")
+    // Sources are allowed to report either repository-relative paths (the
+    // staged source does) or absolute paths (the filesystem source normally
+    // does). Keep both forms equivalent so detection truth does not depend on
+    // which source produced the chunk.
+    p.starts_with(".github/workflows/")
+        || p.starts_with(".github\\workflows\\")
+        || p.starts_with(".github/actions/")
+        || p.starts_with(".github\\actions\\")
+        || p.starts_with(".circleci/")
+        || p.starts_with(".circleci\\")
+        || p.starts_with("azure-pipelines")
+        || p.starts_with("bitbucket-pipelines")
+        || p.contains("/.github/workflows/")
         || p.contains("\\.github\\workflows\\")
         || p.contains("/.github/actions/")
         || p.contains("\\.github\\actions\\")
@@ -151,21 +166,18 @@ pub(crate) fn path_is_i18n_file(path: Option<&str>) -> bool {
     let Some(p) = path else {
         return false;
     };
-    p.contains("/locale/")
-        || p.contains("\\locale\\")
-        || p.contains("/locales/")
-        || p.contains("\\locales\\")
-        || p.contains("/i18n/")
-        || p.contains("\\i18n\\")
-        || p.contains("/l10n/")
-        || p.contains("\\l10n\\")
-        || p.contains("/translations/")
-        || p.contains("\\translations\\")
-        || p.contains("/lang/")
-        || p.contains("\\lang\\")
-        || p.contains("/langs/")
-        || p.contains("\\langs\\")
-        || p.ends_with(".po")
+    crate::platform_compat::path_has_any_component(
+        p,
+        &[
+            "locale",
+            "locales",
+            "i18n",
+            "l10n",
+            "translations",
+            "lang",
+            "langs",
+        ],
+    ) || p.ends_with(".po")
         || p.ends_with(".pot")
         || {
             let name = crate::platform_compat::path_basename(p);
@@ -212,6 +224,15 @@ mod tests {
     #[test]
     fn ci_workflow_path_matches_cross_platform_ci_files() {
         assert!(path_is_ci_workflow_file(Some(
+            ".github/workflows/release.yml"
+        )));
+        assert!(path_is_ci_workflow_file(Some(
+            r".github\actions\setup\action.yml"
+        )));
+        assert!(path_is_ci_workflow_file(Some(".circleci/config.yml")));
+        assert!(path_is_ci_workflow_file(Some("azure-pipelines.yml")));
+        assert!(path_is_ci_workflow_file(Some("bitbucket-pipelines.yml")));
+        assert!(path_is_ci_workflow_file(Some(
             "/repo/.github/workflows/release.yml"
         )));
         assert!(path_is_ci_workflow_file(Some(
@@ -224,12 +245,24 @@ mod tests {
 
     #[test]
     fn i18n_path_matches_translation_file_shapes() {
+        assert!(path_is_i18n_file(Some("locale/messages.json")));
+        assert!(path_is_i18n_file(Some(r"translations\messages.json")));
         assert!(path_is_i18n_file(Some("/repo/locale/messages.po")));
         assert!(path_is_i18n_file(Some(r"C:\repo\i18n\strings.json")));
         assert!(path_is_i18n_file(Some(
             "/repo/config/messages_en.properties"
         )));
         assert!(!path_is_i18n_file(Some("/repo/config/messages_en.rs")));
+    }
+
+    #[test]
+    fn vendored_paths_match_repository_relative_sources() {
+        assert!(looks_like_vendored_minified_path(Some(
+            "dist/vendor/library.js"
+        )));
+        assert!(looks_like_vendored_minified_path(Some(
+            "app/assets/javascripts/jquery.js"
+        )));
     }
 
     #[test]

@@ -13,7 +13,8 @@ fn sarif_skip_summary_emits_tool_execution_notifications() {
             ("binary (extension or content sniff)".to_string(), 5),
             ("unreadable (permission denied or I/O error)".to_string(), 2),
             (
-                "default-exclusion list (lock/minified/vendored)".to_string(),
+                "exclusion policy (.keyhogignore, --exclude-paths, or lock/minified/vendored defaults)"
+                    .to_string(),
                 0,
             ), // dropped
         ]);

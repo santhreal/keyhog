@@ -7,7 +7,7 @@
   # libhyperscan-dev (the `simd` feature) - absent on most dev machines, so
   # the hook failed to BUILD on first use for nearly every adopter. Using the
   # installed binary is fast, needs no toolchain, and matches the documented
-  # drop-in recipe (docs/DROP_IN_USAGE.md).
+  # drop-in recipe (docs/src/workflows/precommit.md).
   language: system
   # `keyhog --git-staged` self-discovers the staged blobs and scans their
   # STAGED content (not the working tree). The pre-commit framework otherwise
@@ -17,6 +17,10 @@
   pass_filenames: false
   # Re-run once for the whole commit, not per-file: --git-staged already
   # covers the entire staged set in a single invocation.
+  # Run even when pre-commit classifies every staged path as non-text. The
+  # staged source must then surface those unreadable blobs as coverage gaps;
+  # silently skipping the hook would misreport the commit as checked.
+  always_run: true
   require_serial: true
   types: [text]
   stages: [pre-commit]

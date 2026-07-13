@@ -54,6 +54,7 @@ pub mod scan_git_staged_clean_exits_zero;
 pub mod scan_git_staged_excludes_unstaged_secret;
 pub mod scan_git_staged_finds_staged_secret;
 pub mod scan_git_staged_format_sarif_has_schema;
+pub mod scan_git_staged_hostile_filename;
 pub mod scan_git_staged_no_staged_files_exits_two;
 pub mod scan_git_staged_severity_critical_filter;
 pub mod scan_json_required_fields;

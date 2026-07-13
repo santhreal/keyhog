@@ -3,6 +3,46 @@
 #[cfg(feature = "binary")]
 use crate::e2e::support::binary;
 
+#[cfg(all(feature = "binary", feature = "git"))]
+#[test]
+fn binary_and_staged_modes_fail_instead_of_mixing_input_boundaries() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    assert!(std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(dir.path())
+        .status()
+        .expect("git init")
+        .success());
+    std::fs::write(dir.path().join("staged.txt"), "staged content\n").expect("write fixture");
+    assert!(std::process::Command::new("git")
+        .args(["add", "staged.txt"])
+        .current_dir(dir.path())
+        .status()
+        .expect("git add")
+        .success());
+
+    let output = std::process::Command::new(binary())
+        .args([
+            "scan",
+            "--daemon=off",
+            "--backend",
+            "simd",
+            "--binary",
+            "--git-staged",
+        ])
+        .arg(dir.path())
+        .output()
+        .expect("spawn conflicting scan");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--binary cannot be combined with --git-staged")
+            && stderr.contains("separate"),
+        "input-boundary error must be actionable; stderr={stderr}"
+    );
+}
+
 #[cfg(feature = "binary")]
 #[test]
 fn scan_binary_ghidra_failure_includes_stderr_excerpt() {

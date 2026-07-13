@@ -6,6 +6,23 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- `--git-staged` now reads the exact blob object IDs and bytes from Git's
+  index instead of reopening same-named working-tree files. NUL-delimited raw
+  records preserve newline and non-UTF-8 Unix filenames, staged renames are
+  scanned at their destination path, and `.keyhogignore`, explicit path
+  exclusions, default exclusions, and source limits apply to the index source.
+  Blob results stream into the scanner instead of retaining the aggregate Git
+  byte budget in memory.
+  Binary working-tree extraction must be requested in a separate scan rather
+  than being silently mixed with staged-index semantics. Published pre-commit
+  metadata now invokes the staged scan even for binary-only change sets, so
+  unreadable staged blobs surface as coverage gaps instead of skipping the hook.
+- Installers, package metadata, badges, CI recipes, SARIF identity, update
+  checks, and the documentation now use the repository's canonical
+  `santhreal/keyhog` owner instead of relying on the former-owner redirect.
+  Security reports use GitHub Private Vulnerability Reporting first, with
+  `security@santh.dev` as the no-PGP-required fallback. The docs header now
+  presents the KeyHog wordmark without the adjacent keyhole icon.
 - Hosted Git mass scans can read GitHub, GitLab, and Bitbucket credentials from
   dedicated `KEYHOG_*` environment variables after the operator explicitly
   selects an organization, group, or workspace. Tokens no longer need to

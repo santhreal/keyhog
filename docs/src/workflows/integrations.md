@@ -90,7 +90,7 @@ tool, add this to `.pre-commit-config.yaml`:
 
 ```yaml
 repos:
-  - repo: https://github.com/santhsecurity/keyhog
+  - repo: https://github.com/santhreal/keyhog
     rev: v0.5.41
     hooks:
       - id: keyhog
@@ -138,7 +138,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
+      - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
         with:
           path: .
           severity: high
@@ -193,7 +193,7 @@ jobs:
           fetch-depth: 0          # full history for --git-diff / --git-history
       - name: Install keyhog
         run: |
-          curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+          curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Scan working tree
         id: keyhog
@@ -231,7 +231,7 @@ keyhog:
   image: ubuntu:24.04
   before_script:
     - apt-get update -qq && apt-get install -y -qq curl ca-certificates
-    - curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+    - curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
     - export PATH="$HOME/.local/bin:$PATH"
   script:
     - keyhog scan . --severity high --format gitlab-sast -o keyhog.json
@@ -259,7 +259,7 @@ jobs:
       - run:
           name: Install keyhog
           command: |
-            curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+            curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$BASH_ENV"
       - run:
           name: Scan working tree
@@ -285,7 +285,7 @@ steps:
     image: ubuntu:24.04
     commands:
       - apt-get update -qq && apt-get install -y -qq curl ca-certificates
-      - curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+      - curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
       - export PATH="$HOME/.local/bin:$PATH"
       - keyhog scan . --severity high --format json -o keyhog.json
 ```
@@ -298,7 +298,7 @@ steps:
 steps:
   - label: ":mag: keyhog secret scan"
     command: |
-      curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+      curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
       export PATH="$HOME/.local/bin:$PATH"
       keyhog scan . --severity high --format json -o keyhog.json
     artifact_paths:
@@ -313,7 +313,7 @@ the host:
 ```bash
 # No published registry image yet - build once from the repo (the Dockerfile
 # ships in the repo root), then run the scan:
-docker build -t keyhog:local https://github.com/santhsecurity/keyhog.git
+docker build -t keyhog:local https://github.com/santhreal/keyhog.git
 docker run --rm -v "$PWD":/src keyhog:local \
   scan /src --backend cpu --format text
 ```
@@ -323,7 +323,7 @@ docker run --rm -v "$PWD":/src keyhog:local \
 ```yaml
 services:
   keyhog:
-    build: https://github.com/santhsecurity/keyhog.git
+    build: https://github.com/santhreal/keyhog.git
     volumes:
       - ./:/src:ro
     command: scan /src --backend cpu --format json
@@ -347,7 +347,7 @@ pipeline {
         stage('keyhog') {
             steps {
                 sh '''
-                    curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+                    curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
                     export PATH="$HOME/.local/bin:$PATH"
                     keyhog scan . --severity high --format json -o keyhog.json
                 '''

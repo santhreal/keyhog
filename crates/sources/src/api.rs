@@ -15,7 +15,7 @@ pub use crate::filesystem::FilesystemSource;
 #[cfg(feature = "gcs")]
 pub use crate::gcs::GcsSource;
 #[cfg(feature = "git")]
-pub use crate::git::{GitDiffSource, GitHistorySource, GitSource};
+pub use crate::git::{GitDiffSource, GitHistorySource, GitSource, GitStagedSource};
 #[cfg(feature = "github")]
 pub use crate::github_org::GitHubOrgSource;
 #[cfg(feature = "s3")]

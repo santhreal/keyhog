@@ -596,7 +596,7 @@ case "$url" in
     if [ "$served" = "404" ]; then exit 22; fi
     printf '%s' "$served" > "$sd/served"
     if [ -n "$out" ]; then cat "$served" > "$out"; fi
-    emit_redirect_url "https://github.com/santhsecurity/keyhog/releases/download/${MOCK_LATEST_TAG:-v9.9.9}/$asset_name"
+    emit_redirect_url "https://github.com/santhreal/keyhog/releases/download/${MOCK_LATEST_TAG:-v9.9.9}/$asset_name"
     exit 0 ;;
   *releases/download/*)
     asset_name="${url##*/}"

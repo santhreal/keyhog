@@ -521,8 +521,8 @@ pub struct FilesystemSource {
 impl FilesystemSource {
     /// Create a filesystem source rooted at `root`.
     pub fn new(root: PathBuf) -> Self {
-        // Canonicalize so that discovered file paths are absolute and match
-        // include_paths that are typically absolute (e.g. from git diff).
+        // Canonicalize so discovered file paths and caller-provided explicit
+        // include paths can be compared under one stable root.
         let root = root.canonicalize().unwrap_or(root); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
         Self {
             root,

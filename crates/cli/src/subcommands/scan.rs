@@ -147,9 +147,9 @@ enum DaemonRoute {
 /// keyhog now scans multiple roots per invocation (`keyhog scan a/ b/ c/`):
 /// each becomes its own filesystem source and the engine merges the multi-
 /// source `Vec` it already consumes. The only positional-root mode that breaks
-/// is `--git-staged`, whose staged-file set is resolved from a SINGLE repository
-/// working tree (`get_staged_files(first_root)`); with several roots there is no
-/// one repo to read, and silently staged-filtering only the first root while
+/// is `--git-staged`, whose exact index blobs are resolved from a SINGLE
+/// repository; with several roots there is no one index to read, and silently
+/// staged-scanning only the first root while
 /// walking the rest in full would be a confusing, asymmetric result (Law 10).
 /// Every other source (`--stdin`, `--git-blobs/-diff/-history`, the remote
 /// providers, `--binary`) carries its own origin and composes cleanly, so they

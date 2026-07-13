@@ -161,7 +161,7 @@ runs:
           echo "found=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
-        url="https://github.com/santhsecurity/keyhog/releases/download/v${version}/${asset}"
+        url="https://github.com/santhreal/keyhog/releases/download/v${version}/${asset}"
         echo "Trying $url"
         if curl -fL --retry 2 "$url" -o "$RUNNER_TEMP/$asset" &&
            curl -fL --retry 2 "$url.sha256" -o "$RUNNER_TEMP/$asset.sha256"; then

@@ -2,18 +2,20 @@
 
 ## Reporting a Vulnerability
 
-Please report security vulnerabilities **privately** through GitHub's
-built-in **Private Vulnerability Reporting**:
+Please report security vulnerabilities through GitHub's built-in
+**Private Vulnerability Reporting** first:
 
-1. Go to the repository's **Security** tab.
-2. Click **Report a vulnerability** and fill out the advisory form.
+1. Open [Report a vulnerability](https://github.com/santhreal/keyhog/security/advisories/new).
+2. Fill out and submit the private advisory form.
 
-If private reporting is unavailable for some reason, email
-**security@santh.dev** with:
+If GitHub private reporting is unavailable or the form cannot be submitted,
+email **security@santh.dev** with:
 
 - Affected version / commit SHA
 - Reproduction steps and proof-of-concept (where safe to share)
 - Impact assessment
+
+PGP encryption is not required for email reports.
 
 You will receive an acknowledgement within **5 business days**.
 Coordinated-disclosure timeline is up to **90 days** from

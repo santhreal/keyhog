@@ -1,7 +1,7 @@
 # Contributing
 
 KeyHog is open source. The repo is at
-[github.com/santhsecurity/keyhog](https://github.com/santhsecurity/keyhog).
+[github.com/santhreal/keyhog](https://github.com/santhreal/keyhog).
 Bug reports, feature requests, detector additions, and PRs are all
 welcome.
 
@@ -9,8 +9,8 @@ welcome.
 
 | What                              | How                                                     |
 |-----------------------------------|---------------------------------------------------------|
-| Report a bug                      | [Open an issue](https://github.com/santhsecurity/keyhog/issues/new) with a minimal reproducer. |
-| Report a security issue           | Email `security@santh.dev` (PGP key in `SECURITY.md`). Don't open a public issue. |
+| Report a bug                      | [Open an issue](https://github.com/santhreal/keyhog/issues/new) with a minimal reproducer. |
+| Report a security issue           | Use [GitHub private vulnerability reporting](https://github.com/santhreal/keyhog/security/advisories/new) first. If unavailable, email `security@santh.dev`; PGP is not required. |
 | Add a detector                    | Add one detector TOML with its inline truth pair, then add its adversarial contract. |
 | Fix an FP                         | Find the regex / shape gate that's firing. Tighten it. Add a negative test that would catch the regression. |
 | Document something undocumented   | Edit the canonical page under `docs/src/`; the site rebuilds from that mdBook source. |
@@ -40,7 +40,7 @@ ownership and the end-to-end scan flow before moving code across boundaries.
 ## Building
 
 ```sh
-git clone https://github.com/santhsecurity/keyhog
+git clone https://github.com/santhreal/keyhog
 cd keyhog
 cargo build --release -p keyhog
 ./target/release/keyhog --version

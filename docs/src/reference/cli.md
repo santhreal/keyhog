@@ -15,13 +15,13 @@ or coverage incomplete.
 
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
-| `<PATH>...`                   | One or more positional roots. Each may be a file or directory; nested/duplicate roots are folded into their covering parent. `--git-staged` requires a single root. |
+| `<PATH>...`                   | One or more positional roots. Each may be a file or directory; nested/duplicate roots are folded into their covering parent. `--git-staged` accepts one directory inside one worktree and discovers its repository root. |
 | `--path <PATH>`               | Explicit single-root spelling. Prefer positional roots when scanning several paths. |
-| `--binary`                    | In builds with binary analysis, extract and scan strings from supported binary inputs in addition to ordinary text handling. |
+| `--binary`                    | In builds with binary analysis, extract and scan strings from supported working-tree binary inputs in addition to ordinary text handling. Run it separately from `--git-staged`, whose commit-boundary input is exact index blobs. |
 | `--stdin`                     | Read from stdin instead. Default 10 MiB cap; tune with `--limit-stdin-bytes`. |
 | `--exclude-paths <GLOB>...`   | Skip files matching glob. Space-separated list, repeatable. |
 | `--no-default-excludes`       | Disable the shipped lock-file, minified-file, build-output, and similar default exclusions. Explicit exclusions still apply. |
-| `--git-staged`                | Scan git-staged files only (pre-commit mode).  |
+| `--git-staged`                | Scan exact git index blobs only (pre-commit mode), even when the working-tree copy differs. Honors path exclusions and `.keyhogignore`; accepts the worktree root or any directory beneath it. |
 | `--git-history <PATH>`        | Walk commits added-line patches (default: HEAD only). |
 | `--git-blobs <PATH>`          | Scan reachable repository blobs, deduplicated by blob ID. |
 | `--git-diff <BASE_REF>`       | Scan only added lines since `BASE_REF`.        |

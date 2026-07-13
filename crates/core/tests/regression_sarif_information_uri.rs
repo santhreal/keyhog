@@ -3,7 +3,7 @@
 //!
 //! Root cause of the bug: `SarifReporter::finish` hardcoded
 //! `Some("https://github.com/keyhog/keyhog".to_string())`. The real project
-//! lives at `github.com/santhsecurity/keyhog` (see `repository` in
+//! lives at `github.com/santhreal/keyhog` (see `repository` in
 //! `crates/core/Cargo.toml`). GitHub Code Scanning, Azure DevOps, and IDE
 //! integrations render `informationUri` as the "open tool homepage" link, so
 //! the wrong org sent every consumer to a non-existent repo.
@@ -23,7 +23,7 @@ use std::collections::HashMap;
 /// The canonical repository URL as declared in `crates/core/Cargo.toml`'s
 /// `repository` field. Cargo surfaces this to the compiled crate AND to this
 /// integration-test target (same package) via `CARGO_PKG_REPOSITORY`.
-const EXPECTED_INFORMATION_URI: &str = "https://github.com/santhsecurity/keyhog";
+const EXPECTED_INFORMATION_URI: &str = "https://github.com/santhreal/keyhog";
 
 /// The exact wrong value the bug shipped. The fix must not reintroduce it.
 const BUGGY_INFORMATION_URI: &str = "https://github.com/keyhog/keyhog";
@@ -77,7 +77,7 @@ fn information_uri(json: &serde_json::Value) -> &str {
 }
 
 /// Positive: with at least one finding the driver's `informationUri` is the
-/// canonical santhsecurity repo, byte-for-byte.
+/// canonical santhreal repo, byte-for-byte.
 #[test]
 fn information_uri_is_canonical_repo_with_findings() {
     let json = render_sarif(true);
@@ -167,8 +167,8 @@ fn information_uri_is_well_formed_https_url() {
         "informationUri must be an https GitHub URL, got {uri:?}"
     );
     assert!(
-        uri.contains("/santhsecurity/"),
-        "informationUri must reference the santhsecurity org, got {uri:?}"
+        uri.contains("/santhreal/"),
+        "informationUri must reference the santhreal org, got {uri:?}"
     );
     assert!(
         !uri.ends_with('/') && !uri.is_empty(),

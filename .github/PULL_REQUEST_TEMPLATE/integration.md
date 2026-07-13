@@ -15,7 +15,7 @@ ci: add keyhog secret scanning (SARIF -> code-scanning)
 ### Description
 
 ```markdown
-Adds the [keyhog](https://github.com/santhsecurity/keyhog) secret
+Adds the [keyhog](https://github.com/santhreal/keyhog) secret
 scanner to PR + push CI. Findings upload to GitHub code-scanning as
 SARIF; the job fails the build only on high-severity findings.
 
@@ -60,11 +60,11 @@ live-check a finding against the vendor's API.
 
 Reproduce locally:
 
-    curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
     keyhog scan .
 
-Project: https://github.com/santhsecurity/keyhog
-Other CI recipes: https://github.com/santhsecurity/keyhog/blob/main/docs/src/workflows/integrations.md
+Project: https://github.com/santhreal/keyhog
+Other CI recipes: https://github.com/santhreal/keyhog/blob/main/docs/src/workflows/integrations.md
 ```
 
 ### The workflow file (single new file)
@@ -101,7 +101,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history; drop if you only scan working tree
-      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
+      - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
         with:
           path: .
           severity: high

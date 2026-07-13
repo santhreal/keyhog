@@ -626,7 +626,7 @@ fn github_repo_name_and_clone_url_contracts() {
     let too_long = "x".repeat(101);
     assert!(TestApi.validate_repo_name(&too_long).is_err());
 
-    for ok in ["https://github.com/santhsecurity/keyhog.git"] {
+    for ok in ["https://github.com/santhreal/keyhog.git"] {
         assert!(
             TestApi.validate_clone_url(ok).is_ok(),
             "should accept {ok:?}"
@@ -717,7 +717,7 @@ fn github_org_rewrite_preserves_offsets_and_requires_real_repo_relative_path() {
     assert_eq!(rewritten.metadata.source_type.as_ref(), "github-org");
     assert_eq!(
         rewritten.metadata.path.as_deref(),
-        Some("santhsecurity/keyhog/src/secret.env")
+        Some("santhreal/keyhog/src/secret.env")
     );
     assert_eq!(rewritten.metadata.base_offset, 8192);
     assert_eq!(rewritten.metadata.base_line, 77);

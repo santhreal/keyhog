@@ -83,7 +83,7 @@ fn excluded_surfaces() {
         excluded: 9,
         ..Default::default()
     }));
-    assert_eq!(count_for(&s, "default-exclusion list"), Some(9));
+    assert_eq!(count_for(&s, "exclusion policy"), Some(9));
 }
 
 #[test]

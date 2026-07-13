@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/santhsecurity/keyhog/releases/latest"><img src="https://img.shields.io/github/v/release/santhsecurity/keyhog?style=flat-square&color=ffd60a&label=release&labelColor=0a0a0a" alt="latest release" /></a>&nbsp;
+  <a href="https://github.com/santhreal/keyhog/releases/latest"><img src="https://img.shields.io/github/v/release/santhreal/keyhog?style=flat-square&color=ffd60a&label=release&labelColor=0a0a0a" alt="latest release" /></a>&nbsp;
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-9aa0b4?style=flat-square&labelColor=0a0a0a" alt="MIT OR Apache-2.0" /></a>&nbsp;
-  <a href="https://github.com/santhsecurity/keyhog/actions"><img src="https://img.shields.io/github/actions/workflow/status/santhsecurity/keyhog/ci.yml?style=flat-square&label=CI&labelColor=0a0a0a" alt="CI" /></a>&nbsp;
-  <a href="https://star-history.com/#santhsecurity/keyhog&Date"><img src="https://img.shields.io/github/stars/santhsecurity/keyhog?style=flat-square&color=ffd60a&label=stars&labelColor=0a0a0a" alt="GitHub stars" /></a>
+  <a href="https://github.com/santhreal/keyhog/actions"><img src="https://img.shields.io/github/actions/workflow/status/santhreal/keyhog/ci.yml?style=flat-square&label=CI&labelColor=0a0a0a" alt="CI" /></a>&nbsp;
+  <a href="https://star-history.com/#santhreal/keyhog&Date"><img src="https://img.shields.io/github/stars/santhreal/keyhog?style=flat-square&color=ffd60a&label=stars&labelColor=0a0a0a" alt="GitHub stars" /></a>
 </p>
 
 <p align="center">
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
+      - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
         with: { path: ., severity: high, format: sarif }
 ```
 
@@ -190,13 +190,13 @@ Banner **patterns** is the compiled pattern count shown in the startup banner ab
 
 ```bash
 # Linux / macOS
-curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
 
 # Windows (PowerShell)
-iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -useb | iex
+iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 -useb | iex
 
 # From source - Linux (default = Hyperscan SIMD; needs libhyperscan-dev + pkg-config)
-git clone https://github.com/santhsecurity/keyhog.git
+git clone https://github.com/santhreal/keyhog.git
 cd keyhog && cargo build --release -p keyhog
 
 # From source / crates.io - macOS, Windows, or any host without Hyperscan
@@ -251,7 +251,7 @@ For an interactive install (post-install wizard for PATH, shell completions,
 and a git pre-commit hook), download the script first instead of piping into
 `sh`:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh \
     -o keyhog-install.sh
 sh keyhog-install.sh
 ```
@@ -498,7 +498,7 @@ backend/cache/daemon/OS/GPU matrix.
 ### GitHub Actions
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
+- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
   with:
     path: .
     severity: high       # info | client-safe | low | medium | high | critical
@@ -554,7 +554,7 @@ Or via the `pre-commit` framework:
 
 ```yaml
 repos:
-  - repo: https://github.com/santhsecurity/keyhog
+  - repo: https://github.com/santhreal/keyhog
     rev: v0.5.41
     hooks:
       - id: keyhog
@@ -818,9 +818,10 @@ keyhog completion zsh                        # shell completions (bash/zsh/fish/
   permanent test fixture under
   [`tests/contracts/`](./crates/scanner/tests/contracts/).
 - **Security issue in KeyHog itself?** Don't open a public issue;
-  email `security@santh.dev` (PGP key on the org page).
+  use [GitHub private vulnerability reporting](https://github.com/santhreal/keyhog/security/advisories/new).
+  If that form is unavailable, email `security@santh.dev`; PGP is not required.
 
-[Changelog](./CHANGELOG.md). [Open issues](https://github.com/santhsecurity/keyhog/issues).
+[Changelog](./CHANGELOG.md). [Open issues](https://github.com/santhreal/keyhog/issues).
 
 ## Credits
 
@@ -845,10 +846,10 @@ legal friction.
 If keyhog has saved you from leaking a credential, a star is the
 cheapest way to tell the next person it exists.
 
-<a href="https://star-history.com/#santhsecurity/keyhog&Date">
+<a href="https://star-history.com/#santhreal/keyhog&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=santhsecurity/keyhog&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=santhsecurity/keyhog&type=Date" />
-    <img alt="Star history of santhsecurity/keyhog" src="https://api.star-history.com/svg?repos=santhsecurity/keyhog&type=Date" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=santhreal/keyhog&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=santhreal/keyhog&type=Date" />
+    <img alt="Star history of santhreal/keyhog" src="https://api.star-history.com/svg?repos=santhreal/keyhog&type=Date" />
   </picture>
 </a>

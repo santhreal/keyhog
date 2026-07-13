@@ -345,7 +345,7 @@ jobs:
             gh release edit "$tag" --draft=false --repo "$GITHUB_REPOSITORY"
           fi
 
-  # Publish the container image to GHCR so `docker run ghcr.io/santhsecurity/
+  # Publish the container image to GHCR so `docker run ghcr.io/santhreal/
   # keyhog:<ver>` (and `:latest`) works - the third consumption mode alongside
   # the prebuilt binary and `cargo install`. Standalone (not in any `needs`):
   # a registry hiccup must not block the binary release. Builds from the
@@ -427,7 +427,7 @@ jobs:
             "ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.version }}"
 
   # Move the floating major tag (e.g. `v0`) to this release so adopters can
-  # pin `uses: santhsecurity/keyhog/.github/actions/keyhog@v0` and always get
+  # pin `uses: santhreal/keyhog/.github/actions/keyhog@v0` and always get
   # the latest release without editing their workflow - and our own docs stop
   # drifting to dead exact tags (the @v0.5.36 incident). Lightweight tag, force
   # -moved each release. Standalone so a tag-push failure never blocks assets.
