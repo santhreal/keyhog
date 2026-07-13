@@ -70,6 +70,11 @@ pub trait CoreTestApi {
     ) -> Result<Vec<DetectorSpec>, SpecError>;
     fn load_detectors_from_str(&self, toml_str: &str) -> Result<Vec<DetectorSpec>, SpecError>;
     fn embedded_detector_tomls(&self) -> &'static [(&'static str, &'static str)];
+    fn parse_embedded_detector(
+        &self,
+        name: &str,
+        toml_content: &str,
+    ) -> Result<DetectorSpec, String>;
     fn max_standard_base64_input_bytes(&self) -> usize;
     fn merkle_empty(&self) -> MerkleIndex;
     fn merkle_with_max_entries(&self, max_entries: usize) -> MerkleIndex;
@@ -242,6 +247,14 @@ impl CoreTestApi for TestApi {
 
     fn embedded_detector_tomls(&self) -> &'static [(&'static str, &'static str)] {
         crate::embedded_detector_tomls()
+    }
+
+    fn parse_embedded_detector(
+        &self,
+        name: &str,
+        toml_content: &str,
+    ) -> Result<DetectorSpec, String> {
+        crate::parse_embedded_detector(name, toml_content)
     }
 
     fn max_standard_base64_input_bytes(&self) -> usize {

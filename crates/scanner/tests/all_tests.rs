@@ -121,6 +121,8 @@ pub mod regression_decoded_generic_entropy_guard;
 pub mod regression_deep_preset_recovery;
 #[path = "regression_deepl_bare_key_recall.rs"]
 pub mod regression_deepl_bare_key_recall;
+#[path = "regression_detector_identity_propagation.rs"]
+pub mod regression_detector_identity_propagation;
 #[path = "regression_detector_keyword_index.rs"]
 pub mod regression_detector_keyword_index;
 #[path = "regression_detector_registry_integrity.rs"]

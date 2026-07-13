@@ -331,6 +331,20 @@ fn valid_detector_id_is_preserved_exactly() {
     assert_eq!(specs[0].id.as_bytes(), b"vendor-api-v2");
 }
 
+#[test]
+fn embedded_detector_identity_uses_the_same_fail_closed_gate() {
+    for id in ["", " embedded-id", "embedded-id "] {
+        let body = VALID_DETECTOR_TOML.replace("id = \"demo\"", &format!("id = {id:?}"));
+        let error =
+            CoreTestApi::parse_embedded_detector(&TestApi, "embedded-invalid-id.toml", &body)
+                .expect_err("embedded identity must pass through the quality gate");
+        assert!(
+            error.contains("embedded-invalid-id.toml") && error.contains("detector.id"),
+            "embedded identity error must name its file and field: {error}"
+        );
+    }
+}
+
 /// A directory whose only detector file is malformed rejects the WHOLE corpus
 /// with `DetectorCorpusRejected`, naming the offending file, not a silent skip
 /// that returns an empty (recall-zero) set.

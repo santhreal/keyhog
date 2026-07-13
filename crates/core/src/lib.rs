@@ -130,17 +130,17 @@ pub(crate) fn keyhog_cache_root() -> Option<std::path::PathBuf> {
 pub fn load_embedded_detectors_or_fail() -> Result<Vec<DetectorSpec>, SpecError> {
     let embedded = embedded_detector_tomls();
     let mut detectors = Vec::with_capacity(embedded.len());
-    let mut failed: Vec<(String, String)> = Vec::new();
+    let mut failed = Vec::new();
     for (name, toml_content) in embedded {
-        match toml::from_str::<DetectorFile>(toml_content) {
-            Ok(file) => detectors.push(file.detector),
-            Err(error) => failed.push(((*name).to_string(), error.to_string())),
+        match parse_embedded_detector(name, toml_content) {
+            Ok(detector) => detectors.push(detector),
+            Err(error) => failed.push(error),
         }
     }
     if !failed.is_empty() {
         let detail = failed
             .iter()
-            .map(|(name, error)| format!("  - {name}: {error}"))
+            .map(|error| format!("  - {error}"))
             .collect::<Vec<_>>()
             .join("\n");
         return Err(SpecError::EmbeddedCorpusCorrupt {
@@ -150,6 +150,26 @@ pub fn load_embedded_detectors_or_fail() -> Result<Vec<DetectorSpec>, SpecError>
         });
     }
     Ok(detectors)
+}
+
+fn parse_embedded_detector(name: &str, toml_content: &str) -> Result<DetectorSpec, String> {
+    let file =
+        toml::from_str::<DetectorFile>(toml_content).map_err(|error| format!("{name}: {error}"))?;
+    let errors: Vec<String> = spec::validate_detector(&file.detector)
+        .into_iter()
+        .filter_map(|issue| match issue {
+            spec::QualityIssue::Error(error) => Some(error),
+            spec::QualityIssue::Warning(_) => None,
+        })
+        .collect();
+    if errors.is_empty() {
+        Ok(file.detector)
+    } else {
+        Err(format!(
+            "{name}: detector quality gate rejected the embedded spec: {}",
+            errors.join("; ")
+        ))
+    }
 }
 
 /// Every embedded detector spec, parsed EXACTLY ONCE for the whole process.
