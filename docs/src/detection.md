@@ -26,7 +26,7 @@ mechanisms, and their roles are deliberately different:
 | Structured and multiline extraction | Reassembles assignments and strings that syntax splits across lines or nodes | Yes |
 | Decode-through transforms | Scans supported encoded or transformed representations while preserving source attribution | Yes |
 | Generic assignment bridge | Extracts values beside credential-role keys when no vendor shape exists | Yes |
-| Shannon entropy | Measures byte-distribution uncertainty for opaque generic values | Yes, on the entropy fallback path |
+| Shannon entropy | Measures byte-distribution uncertainty for opaque generic values | Yes, on the entropy-discovery path |
 | BPE token efficiency | Rejects language-like values that compress into common subword tokens when the owning detector enables it | No; precision gate |
 | Shape, placeholder, path, and context policy | Rejects examples, references, prose, identifiers, and context-specific noise | No; precision gates |
 | Checksums and structural validators | Proves or rejects formats that carry intrinsic validity bits or grammar | Adjusts acceptance/confidence |
@@ -227,7 +227,7 @@ Detectors fall into two camps:
   These have HIGH precision: the keyword itself is positive evidence,
   not just a hint.
 
-- **Generic / entropy fallback** (`generic-password`, `entropy-api-key`,
+- **Generic / entropy discovery** (`generic-password`, `entropy-api-key`,
   `entropy-token`). Triggered by entropy + assignment shape only -
   `password = "..."`, `secret: "..."`, JSON `{ "token": "..." }`. Lower
   precision; suppression filters do most of the work.
