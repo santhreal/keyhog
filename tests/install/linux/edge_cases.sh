@@ -670,6 +670,8 @@ expect_match  "1.2 --help shows curl-pipe"   "curl -fsSL"  "$out"
 expect_match  "1.3 --help shows --repair"    "\-\-repair"  "$out"
 expect_match  "1.4 --help shows --diagnose"  "\-\-diagnose" "$out"
 expect_match  "1.5 --help shows --uninstall" "\-\-uninstall" "$out"
+expect_match  "1.5a uninstall names owned cleanup" "installer-owned PATH and completions" "$out"
+expect_nomatch "1.5b uninstall does not promise hook cleanup" "clean up hooks" "$out"
 out=$(sh "$INSTALL_SH" -h 2>&1); expect_status "1.6 -h exits 0" 0 $?
 out=$(sh "$INSTALL_SH" --bogus-flag 2>&1); st=$?
 expect_status "1.7 unknown flag exits 1" 1 "$st"

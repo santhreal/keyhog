@@ -15,7 +15,7 @@
 #   --repair          detect a broken install and re-download
 #   --diagnose        print full host + binary status, make no changes
 #   --calibrate       rerun visible autoroute calibration for the installed binary
-#   --uninstall       remove the binary + optionally clean up hooks
+#   --uninstall       remove the binary plus installer-owned PATH and completions
 #
 # Common flags:
 #   --version=vX.Y.Z    pin a release tag (default: latest stable complete bundle)
