@@ -31,7 +31,8 @@ use keyhog_core::{
     VerificationResult, VerifySpec,
 };
 use keyhog_verifier::testing::{
-    TestApi, VerifierTestApi, BODY_NOT_UTF8_ERROR, MAX_RETRIES_ERROR, RESPONSE_TOO_LARGE_ERROR,
+    TestApi, VerifierTestApi, BODY_NOT_UTF8_ERROR, BODY_READ_FAILED_ERROR, MAX_RETRIES_ERROR,
+    RESPONSE_TOO_LARGE_ERROR,
 };
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -66,6 +67,30 @@ async fn body_server(status: u16, body: Vec<u8>, count: Arc<AtomicUsize>) -> Str
                 out.extend_from_slice(&body);
                 let _ = stream.write_all(&out).await;
                 let _ = stream.flush().await;
+            });
+        }
+    });
+    format!("http://127.0.0.1:{port}")
+}
+
+/// Return a body shorter than its declared length so reqwest surfaces the
+/// transport cause from the response stream.
+async fn truncated_body_server(count: Arc<AtomicUsize>) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let count = count.clone();
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf).await;
+                count.fetch_add(1, Ordering::SeqCst);
+                let _ = stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 32\r\nConnection: close\r\n\r\nshort",
+                    )
+                    .await;
+                let _ = stream.shutdown().await;
             });
         }
     });
@@ -256,7 +281,7 @@ async fn under_cap_error_token_body_is_dead() {
 }
 
 #[tokio::test]
-async fn non_utf8_body_fails_with_exact_utf8_error() {
+async fn non_utf8_body_preserves_the_utf8_cause() {
     // Under-cap but binary: the whole body is read, then UTF-8 decode fails
     // loud rather than silently dropping the body.
     let count = Arc::new(AtomicUsize::new(0));
@@ -265,8 +290,44 @@ async fn non_utf8_body_fails_with_exact_utf8_error() {
 
     let finding = verify_once(detector, "non-utf8").await;
 
-    assert_eq!(expect_error(&finding.verification), BODY_NOT_UTF8_ERROR);
+    let error = expect_error(&finding.verification);
+    assert!(
+        error.starts_with(BODY_NOT_UTF8_ERROR),
+        "the stable operator guidance must remain the error prefix: {error}"
+    );
+    assert!(
+        error.contains("Cause: invalid utf-8 sequence") && error.contains("index 0"),
+        "the concrete UTF-8 failure must survive: {error}"
+    );
     assert_eq!(count.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn truncated_body_preserves_redacted_transport_cause() {
+    let count = Arc::new(AtomicUsize::new(0));
+    let base = truncated_body_server(count.clone()).await;
+    let detector = detector_for("truncated", format!("{base}/{{{{match}}}}"), None);
+
+    let finding = verify_once(detector, "truncated").await;
+
+    let error = expect_error(&finding.verification);
+    assert!(
+        error.starts_with(BODY_READ_FAILED_ERROR),
+        "the stable operator guidance must remain the error prefix: {error}"
+    );
+    assert!(
+        error.contains("Cause:") && error.len() > BODY_READ_FAILED_ERROR.len() + 8,
+        "the concrete response-stream failure must survive: {error}"
+    );
+    assert!(
+        !error.contains("secret-value"),
+        "the request URL and credential must be stripped from the cause: {error}"
+    );
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        3,
+        "transient body reads must consume the three-attempt retry budget"
+    );
 }
 
 // ---------------------------------------------------------------------------

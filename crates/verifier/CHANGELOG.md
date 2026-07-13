@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Preserve redacted response-stream and UTF-8 causes in verification errors
+  while retaining the stable operator-guidance prefixes.
+
 ## 0.2.1
 
 - Align package metadata with the Santh Standard.

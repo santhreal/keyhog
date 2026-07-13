@@ -97,9 +97,14 @@ pub(crate) async fn read_response_body(
     let mut stream = response.bytes_stream();
     let mut body = Vec::with_capacity(capacity_hint);
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| RequestError {
-            result: VerificationResult::Error(BODY_READ_FAILED_ERROR.into()),
-            transient: true,
+        let chunk = chunk.map_err(|error| {
+            let cause = error.without_url();
+            RequestError {
+                result: VerificationResult::Error(format!(
+                    "{BODY_READ_FAILED_ERROR}. Cause: {cause}"
+                )),
+                transient: true,
+            }
         })?;
         if body.len() + chunk.len() > MAX_RESPONSE_BODY_BYTES {
             return Err(RequestError {
@@ -109,8 +114,8 @@ pub(crate) async fn read_response_body(
         }
         body.extend_from_slice(&chunk);
     }
-    String::from_utf8(body).map_err(|_| RequestError {
-        result: VerificationResult::Error(BODY_NOT_UTF8_ERROR.into()),
+    String::from_utf8(body).map_err(|error| RequestError {
+        result: VerificationResult::Error(format!("{BODY_NOT_UTF8_ERROR}. Cause: {error}")),
         transient: false,
     })
 }
