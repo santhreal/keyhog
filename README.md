@@ -566,7 +566,9 @@ regular-file inputs. They return findings before baseline filtering,
 Merkle skip-cache, and live verification; directory, git, remote,
 baseline, `--verify`, backend/GPU/autoroute, and policy-changing scans
 run in-process. `--daemon=on` fails loudly when the daemon cannot honor
-the requested scan exactly.
+the requested scan exactly. The v3 handshake also rejects package, Git-build,
+or detector-rules mismatches, including a same-version daemon started with a
+custom corpus; `--daemon=auto` reports that refusal before running in process.
 
 Use it in IDE save handlers, stdin/single-file hook glue, or per-commit
 CI loops that feed one file at a time. See the

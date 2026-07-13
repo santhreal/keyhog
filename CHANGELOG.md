@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Bumped the daemon wire handshake to v3 and bound scan connections to package,
+  Git build, and canonical detector-rules identity. Same-version daemons started
+  with another detector corpus now fail closed; diagnostic status/stop remain
+  available and status prints the exact mismatch.
 - Serialized autoroute cache read/merge/write cycles with the shared state-file
   lock primitive, preventing concurrent calibration processes from silently
   losing one another's config or workload decisions. Autoroute, the Merkle

@@ -407,6 +407,8 @@ fn daemon_frame_error() {
     let json = serde_json::to_string(&Response::Hello {
         wire_version: WIRE_VERSION,
         keyhog_version: "0.0.0".into(),
+        git_hash: "test".into(),
+        detector_rules_digest: "test".into(),
         detector_count: 0,
         uptime_secs: 0,
     })
@@ -418,7 +420,7 @@ fn daemon_frame_error() {
 #[cfg(unix)]
 #[test]
 fn daemon_protocol_happy() {
-    assert_eq!(WIRE_VERSION, 2);
+    assert_eq!(WIRE_VERSION, 3);
 }
 #[cfg(unix)]
 #[test]

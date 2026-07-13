@@ -111,6 +111,7 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
     // very reason their scans are silently routed in-process.
     let stale = conn.is_stale();
     let daemon_version = conn.daemon_version().to_string();
+    let stale_reason = conn.stale_reason().map(str::to_string);
     match conn.round_trip(&Request::Health).await? {
         Response::Health {
             uptime_secs,
@@ -130,13 +131,14 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
             if stale {
                 let palette = style::for_stderr();
                 eprintln!(
-                    "{} this daemon is running keyhog {} but you are on {}: it holds an \
-                     OLDER detector corpus and the scan route will BYPASS it (run \
-                     in-process) until you restart it: `keyhog daemon stop && keyhog \
-                     daemon start`.",
+                    "{} this daemon's build/corpus identity does not match the client \
+                     (daemon keyhog {}, client {}; {}): scan connections refuse it; \
+                     `--daemon=auto` runs in process and `--daemon=on` fails until you restart it: \
+                     `keyhog daemon stop && keyhog daemon start`.",
                     style::warn("WARN", &palette),
                     daemon_version,
                     env!("CARGO_PKG_VERSION"),
+                    stale_reason.as_deref().unwrap_or("identity mismatch"),
                 );
             }
             Ok(ExitCode::SUCCESS)

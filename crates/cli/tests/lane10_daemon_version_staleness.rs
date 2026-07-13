@@ -4,10 +4,10 @@
 //! The staleness bug this pins: a `keyhog daemon start` left running across a
 //! `keyhog update` keeps its OLD detector corpus + scan pipeline in memory.
 //! The wire version can stay stable across such a release (e.g. 0.5.40 ->
-//! 0.5.41, both wire v2), so the wire-version handshake alone does NOT catch
+//! 0.5.41, with the same compatible wire), so the wire-version handshake alone does NOT catch
 //! it — the upgraded client would route scans to the stale daemon and silently
-//! get old-corpus results. `client::connect` now also gates on the keyhog
-//! version; `client::connect_any_version` (used by `daemon stop`/`status`)
+//! get old-corpus results. `client::connect` now gates on package, Git build,
+//! and detector-rules identity; `client::connect_any_version` (used by `daemon stop`/`status`)
 //! deliberately does not, so an operator can still stop/inspect a stale daemon.
 //!
 //! These tests stand up a real Unix-socket mock daemon that replies to `Hello`
@@ -29,11 +29,33 @@ use tokio::net::UnixListener;
 /// with the given wire + keyhog version, then closes. Returns once the listener
 /// is bound so the client connect cannot race ahead of it.
 async fn spawn_mock_daemon(socket: PathBuf, wire_version: u32, keyhog_version: String) {
+    let detectors = keyhog_core::load_embedded_detectors_or_fail().expect("embedded detectors");
+    let detector_rules_digest =
+        keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+    spawn_mock_daemon_identity(
+        socket,
+        wire_version,
+        keyhog_version,
+        keyhog_core::git_hash().to_string(),
+        detector_rules_digest,
+    )
+    .await;
+}
+
+async fn spawn_mock_daemon_identity(
+    socket: PathBuf,
+    wire_version: u32,
+    keyhog_version: String,
+    git_hash: String,
+    detector_rules_digest: String,
+) {
     spawn_mock_daemon_response(
         socket,
         Response::Hello {
             wire_version,
             keyhog_version,
+            git_hash,
+            detector_rules_digest,
             detector_count: 902,
             uptime_secs: 1,
         },
@@ -111,7 +133,7 @@ async fn connect_fails_closed_on_keyhog_version_mismatch() {
     let err = res.err().unwrap();
     let msg = format!("{err:#}");
     assert!(
-        msg.contains("version mismatch"),
+        msg.contains("identity mismatch") && msg.contains("package version"),
         "error must name the version mismatch as the reason: {msg}"
     );
     assert!(
@@ -122,6 +144,28 @@ async fn connect_fails_closed_on_keyhog_version_mismatch() {
         msg.contains("daemon stop") && msg.contains("daemon start"),
         "error must tell the operator how to clear the stale daemon: {msg}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn connect_fails_closed_on_same_version_different_detector_corpus() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("different-corpus.sock");
+    spawn_mock_daemon_identity(
+        socket.clone(),
+        WIRE_VERSION,
+        env!("CARGO_PKG_VERSION").to_string(),
+        keyhog_core::git_hash().to_string(),
+        "different-detector-rules".to_string(),
+    )
+    .await;
+
+    let error = client::connect(&socket)
+        .await
+        .err()
+        .expect("different detector corpus must be rejected");
+    let message = format!("{error:#}");
+    assert!(message.contains("detector rules daemon=different-detector-rules"));
+    assert!(message.contains("daemon stop") && message.contains("daemon start"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -5,7 +5,7 @@ use keyhog::daemon::protocol::{Request, Response, SourceCoverageGaps, WIRE_VERSI
 use tokio::io::AsyncWriteExt;
 
 #[tokio::test]
-async fn daemon_wire_v2_hello_roundtrip() {
+async fn daemon_wire_v3_hello_roundtrip() {
     let (mut client, mut server) = tokio::io::duplex(64 * 1024);
 
     frame::write_request(&mut client, &Request::Hello)
@@ -22,6 +22,8 @@ async fn daemon_wire_v2_hello_roundtrip() {
         &Response::Hello {
             wire_version: WIRE_VERSION,
             keyhog_version: "test".into(),
+            git_hash: "abc123".into(),
+            detector_rules_digest: "rules123".into(),
             detector_count: 1,
             uptime_secs: 0,
         },

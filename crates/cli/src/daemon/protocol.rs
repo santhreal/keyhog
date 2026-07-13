@@ -14,8 +14,8 @@ use keyhog_scanner::telemetry::DogfoodEvent;
 use serde::{Deserialize, Serialize};
 
 /// Bump on any incompatible wire-format change. Server replies with
-/// its supported version in the [`Hello`] handshake; the client
-/// refuses to talk to a daemon whose version doesn't match.
+/// its supported version and build/corpus identity in the [`Hello`] handshake;
+/// scan clients refuse a daemon whose identity does not match.
 ///
 /// History:
 ///
@@ -28,7 +28,9 @@ use serde::{Deserialize, Serialize};
 ///   propagated its own counts back).
 /// * v2 extension - `ScanResults` carries serde-defaulted source
 ///   coverage gaps so daemon-side skipped input cannot report clean.
-pub const WIRE_VERSION: u32 = 2;
+/// * v3 - `Hello` binds the daemon to its Git build and canonical detector
+///   rules digest, not merely the package version.
+pub const WIRE_VERSION: u32 = 3;
 
 /// Maximum length of a single framed message body. 64 MiB ceiling
 /// matches `MAX_SCAN_CHUNK_BYTES * 64` so a chunk batch fits, but
@@ -67,6 +69,8 @@ pub enum Response {
     Hello {
         wire_version: u32,
         keyhog_version: String,
+        git_hash: String,
+        detector_rules_digest: String,
         detector_count: usize,
         uptime_secs: u64,
     },

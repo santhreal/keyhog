@@ -55,6 +55,16 @@ In `auto` mode an incompatible request simply stays in process. In `on` mode it
 fails with the specific unsupported requirement. This is intentional: daemon
 availability must never change findings or weaken policy silently.
 
+Every scan connection performs a versioned handshake that binds the daemon to
+the client's package version, Git build identity, and canonical embedded
+detector-rules digest. This rejects a daemon left alive across an upgrade and a
+same-version daemon started with a different `--detectors` corpus. `daemon
+status` and `daemon stop` intentionally tolerate an identity mismatch so the
+operator can inspect and terminate it; `status` prints the exact mismatch and
+the strict scan route refuses it. In `--daemon=auto` that refusal is visible on
+stderr before the identical request runs in process. In `--daemon=on` it is an
+error.
+
 ## Autoroute semantics
 
 The daemon does not inherit a client process's backend override. It loads the
@@ -73,5 +83,5 @@ prefer GPU.
 
 `daemon start --request-timeout-secs <N>` bounds the time a client may take to
 finish a request frame (default `300`). `daemon status` reports uptime, scans
-served, active scans, and detector count. A stale socket is removed only after ownership
-and directory trust checks pass.
+served, active scans, detector count, and any build/corpus identity mismatch. A
+stale socket is removed only after ownership and directory trust checks pass.

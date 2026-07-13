@@ -77,6 +77,7 @@ struct ServerState {
     active_scans: AtomicU32,
     shutdown: Arc<Notify>,
     detector_count: usize,
+    detector_rules_digest: String,
     request_read_timeout: Duration,
     backend_override: Option<ScanBackend>,
     // Fragment reassembly is scanner-owned mutable state. Until it becomes an
@@ -100,6 +101,7 @@ impl ServerState {
         router: crate::orchestrator::CachedBackendRouter,
         shutdown: Arc<Notify>,
         detector_count: usize,
+        detector_rules_digest: String,
         options: ServerOptions,
         backend_override: Option<ScanBackend>,
     ) -> Self {
@@ -115,6 +117,7 @@ impl ServerState {
             active_scans: AtomicU32::new(0),
             shutdown,
             detector_count,
+            detector_rules_digest,
             request_read_timeout: options.request_read_timeout,
             backend_override,
             fragment_scan_lock: Arc::new(std::sync::Mutex::new(())),
@@ -152,6 +155,8 @@ pub(crate) async fn run_with_backend_override(
     // start` would otherwise print nothing and look hung. The count is the spec
     // count (pre-compile); the ready line reports the final compiled count.
     announce_daemon_starting(detectors.len());
+    let detector_rules_digest =
+        keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
     let (scanner, router, detector_count) = compile_daemon_scan_runtime(detectors)?;
     let listener = bind_trusted_daemon_socket(&socket_path)?;
     let shutdown = Arc::new(Notify::new());
@@ -160,6 +165,7 @@ pub(crate) async fn run_with_backend_override(
         router,
         shutdown.clone(),
         detector_count,
+        detector_rules_digest,
         options,
         backend_override,
     ));
@@ -407,6 +413,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
         Request::Hello => Response::Hello {
             wire_version: WIRE_VERSION,
             keyhog_version: KEYHOG_VERSION.to_string(),
+            git_hash: keyhog_core::git_hash().to_string(),
+            detector_rules_digest: state.detector_rules_digest.clone(),
             detector_count: state.detector_count,
             uptime_secs: state.uptime_secs(),
         },

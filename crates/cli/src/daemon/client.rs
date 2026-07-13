@@ -18,8 +18,8 @@ use tokio::net::UnixStream;
 const CLIENT_KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
 const DAEMON_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Open a connection to the daemon and confirm BOTH wire compatibility AND
-/// that the daemon is running the SAME keyhog version as this client. Use this
+/// Open a connection to the daemon and confirm wire, build, and detector-corpus
+/// compatibility with this client. Use this
 /// for the scan route: a daemon left running across a `keyhog update` would
 /// otherwise keep serving scans with its OLD detector corpus, silently
 /// returning stale results to the upgraded client. Returns the live stream
@@ -28,7 +28,7 @@ pub async fn connect(socket_path: &Path) -> Result<Client> {
     connect_inner(socket_path, true).await
 }
 
-/// Connect WITHOUT the keyhog-version staleness check — only wire
+/// Connect WITHOUT the build/corpus staleness rejection — only wire
 /// compatibility is enforced. `daemon stop` / `daemon status` use this so an
 /// operator can still stop or inspect a daemon left running across an upgrade
 /// (the whole point of `stop` on a stale daemon is to clear it; refusing on a
@@ -58,6 +58,7 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
     let mut client = Client {
         transport: frame::client_transport(stream),
         daemon_version: String::new(),
+        stale_reason: None,
     };
 
     // Hello handshake gates the connection on wire compatibility. A
@@ -84,28 +85,50 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
         Response::Hello {
             wire_version,
             keyhog_version,
+            git_hash,
+            detector_rules_digest,
             ..
         } if wire_version == WIRE_VERSION => {
             // Staleness gate: the wire version can stay stable across keyhog
             // releases that change the DETECTOR CORPUS or scan pipeline (e.g.
-            // 0.5.40 -> 0.5.41, both wire v2). A daemon started before a
+            // 0.5.40 -> 0.5.41). A daemon started before a
             // `keyhog update` keeps the old scanner in memory and would serve
             // the upgraded client OLD-corpus results — a silent recall/precision
             // divergence the wire check cannot catch. Refuse so the scan path
             // never depends on whether a stale daemon happens to be running.
-            if require_same_version && keyhog_version != CLIENT_KEYHOG_VERSION {
+            let expected_rules_digest = embedded_detector_rules_digest()?;
+            let mut mismatches = Vec::new();
+            if keyhog_version != CLIENT_KEYHOG_VERSION {
+                mismatches.push(format!(
+                    "package version daemon={keyhog_version}, client={CLIENT_KEYHOG_VERSION}"
+                ));
+            }
+            if git_hash != keyhog_core::git_hash() {
+                mismatches.push(format!(
+                    "Git build daemon={git_hash}, client={}",
+                    keyhog_core::git_hash()
+                ));
+            }
+            if detector_rules_digest != expected_rules_digest {
+                mismatches.push(format!(
+                    "detector rules daemon={detector_rules_digest}, client={expected_rules_digest}"
+                ));
+            }
+            let stale_reason = (!mismatches.is_empty()).then(|| mismatches.join("; "));
+            if require_same_version && stale_reason.is_some() {
                 bail!(
-                    "daemon version mismatch: this keyhog is {CLIENT_KEYHOG_VERSION} but the \
-                     daemon at {} is running {keyhog_version}: it holds an OLDER detector \
-                     corpus in memory and would return stale scan results. Restart it with \
+                    "daemon identity mismatch at {}: {}. It may hold a different build, \
+                     detector corpus, or scan pipeline and would return stale scan results. Restart it with \
                      `keyhog daemon stop && keyhog daemon start`, or pass `--daemon=off` to \
                      scan in-process.",
                     socket_path.display(),
+                    stale_reason.as_deref().unwrap_or("unknown identity mismatch"),
                 );
             }
             // Record the daemon's reported version so callers that tolerate a
             // mismatch (`status`) can still surface staleness to the operator.
             client.daemon_version = keyhog_version;
+            client.stale_reason = stale_reason;
             Ok(client)
         }
         Response::Hello {
@@ -136,6 +159,7 @@ pub struct Client {
     /// `connect`/`connect_any_version`. Lets `daemon status` warn loudly when a
     /// daemon left running across an upgrade is now stale.
     daemon_version: String,
+    stale_reason: Option<String>,
 }
 
 impl Client {
@@ -145,12 +169,15 @@ impl Client {
         &self.daemon_version
     }
 
-    /// `true` when the daemon is running a DIFFERENT keyhog version than this
-    /// client — i.e. a daemon left running across a `keyhog update`, now
-    /// serving an older detector corpus. `connect` refuses such a daemon;
-    /// `connect_any_version` tolerates it, so its callers use this to warn.
+    /// `true` when the daemon package, Git build, or detector rules differ from
+    /// this client. `connect` refuses such a daemon; `connect_any_version`
+    /// tolerates it so status/stop can diagnose and clear stale state.
     pub(crate) fn is_stale(&self) -> bool {
-        !self.daemon_version.is_empty() && self.daemon_version != CLIENT_KEYHOG_VERSION
+        self.stale_reason.is_some()
+    }
+
+    pub(crate) fn stale_reason(&self) -> Option<&str> {
+        self.stale_reason.as_deref()
     }
 
     pub(crate) async fn send(&mut self, request: &Request) -> Result<()> {
@@ -173,4 +200,12 @@ impl Client {
         self.send(request).await?;
         self.recv().await
     }
+}
+
+fn embedded_detector_rules_digest() -> Result<String> {
+    let detectors = keyhog_core::load_embedded_detectors_or_fail()
+        .context("daemon client: load embedded detector identity")?;
+    Ok(keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(
+        &detectors,
+    )))
 }
