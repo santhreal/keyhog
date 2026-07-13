@@ -206,12 +206,14 @@ def assert_reported_identity_matches_workspace(raw: str, *, what: str) -> None:
         )
 
 
-def assert_keyhog_binary_current(binary: str) -> str:
+def assert_keyhog_binary_current(binary: str, *, pass_fds: tuple[int, ...] = ()) -> str:
+    popen_kwargs = {"pass_fds": pass_fds} if pass_fds else {}
     proc = subprocess.run(
         [binary, "--version"],
         capture_output=True,
         text=True,
         timeout=30,
+        **popen_kwargs,
     )
     output = (proc.stdout + proc.stderr).strip()
     if proc.returncode != 0:

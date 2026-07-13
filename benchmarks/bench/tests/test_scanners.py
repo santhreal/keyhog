@@ -1,6 +1,9 @@
+import contextlib
+import hashlib
 import json
 import os
 import pathlib
+import shutil
 import sqlite3
 import sys
 import time
@@ -8,10 +11,22 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from bench import scanners
+from bench import executable_snapshot, scanners
 from bench.scanners import keyhog as keyhog_adapter
 from bench.scanners import base
 from bench.schema import ScannerConfig
+
+
+_REAL_BINARY_SNAPSHOT = keyhog_adapter.KeyhogScanner._binary_snapshot
+
+
+@pytest.fixture(autouse=True)
+def _stub_keyhog_binary_snapshot(monkeypatch):
+    @contextlib.contextmanager
+    def snapshot(_scanner):
+        yield pathlib.Path("/snapshot/keyhog"), "a" * 64, "KeyHog test snapshot", ()
+
+    monkeypatch.setattr(keyhog_adapter.KeyhogScanner, "_binary_snapshot", snapshot)
 
 
 def _pid_running(pid: int) -> bool:
@@ -291,13 +306,16 @@ def test_keyhog_gpu_benchmark_rows_use_explicit_gpu_policy(tmp_path):
     scanner = scanners.KeyhogScanner()
 
     gpu_cmd = scanner._cmd(
-        tmp_path, ScannerConfig(backend="gpu"), tmp_path / "gpu.json", None
+        tmp_path, ScannerConfig(backend="gpu"), tmp_path / "gpu.json", None,
+        pathlib.Path("/unused/keyhog"),
     )
     auto_cmd = scanner._cmd(
-        tmp_path, ScannerConfig(backend="auto"), tmp_path / "auto.json", None
+        tmp_path, ScannerConfig(backend="auto"), tmp_path / "auto.json", None,
+        pathlib.Path("/unused/keyhog"),
     )
     simd_cmd = scanner._cmd(
-        tmp_path, ScannerConfig(backend="simd"), tmp_path / "simd.json", None
+        tmp_path, ScannerConfig(backend="simd"), tmp_path / "simd.json", None,
+        pathlib.Path("/unused/keyhog"),
     )
 
     assert "--require-gpu" in gpu_cmd
@@ -316,8 +334,9 @@ def test_keyhog_deep_benchmark_mode_is_explicit_and_matrix_owned(tmp_path):
     deep = ScannerConfig(backend="simd", mode="deep")
     full = ScannerConfig(backend="simd", mode="full")
 
-    deep_cmd = scanner._cmd(tmp_path, deep, tmp_path / "deep.json", None)
-    full_cmd = scanner._cmd(tmp_path, full, tmp_path / "full.json", None)
+    executable = pathlib.Path("/bin/true")
+    deep_cmd = scanner._cmd(tmp_path, deep, tmp_path / "deep.json", None, executable)
+    full_cmd = scanner._cmd(tmp_path, full, tmp_path / "full.json", None, executable)
 
     assert "--deep" in deep_cmd
     assert "--deep" not in full_cmd
@@ -366,6 +385,25 @@ def test_keyhog_warmup_failure_stops_before_timed_scan_and_cleans_artifacts(
     )
     assert not warm_output.parent.exists()
     assert warm_output.parent == incremental.parent
+
+
+def test_keyhog_warmup_and_timed_scan_launch_the_same_snapshot(
+    monkeypatch, tmp_path
+):
+    scanner = scanners.KeyhogScanner(binary="/unused/keyhog")
+    commands = []
+
+    def successful_scan(cmd, **kwargs):
+        commands.append(cmd)
+        pathlib.Path(cmd[cmd.index("--output") + 1]).write_text("[]")
+        return "", "", base.RunStats(exit_code=0)
+
+    monkeypatch.setattr(keyhog_adapter, "run_measured", successful_scan)
+
+    scanner.run(tmp_path, ScannerConfig(backend="simd", cache="on"))
+
+    assert len(commands) == 2
+    assert commands[0][0] == commands[1][0] == "/snapshot/keyhog"
 
 
 def test_keyhog_owned_plaintext_output_is_cleaned_after_parse_failure(
@@ -453,23 +491,154 @@ def test_keyhog_run_binds_digest_and_scan_to_immutable_detector_snapshot(
 
     monkeypatch.setattr(keyhog_adapter, "run_measured", successful_scan)
 
-    findings, stats, digest = scanner.run_with_provenance(
+    findings, stats, provenance = scanner.run_with_provenance(
         tmp_path, ScannerConfig(backend="simd"),
     )
-    second_findings, second_stats, second_digest = scanner.run_with_provenance(
+    second_findings, second_stats, second_provenance = scanner.run_with_provenance(
         tmp_path, ScannerConfig(backend="simd"),
     )
 
     assert findings == []
     assert stats.exit_code == 0
-    assert digest == keyhog_adapter.compute_detector_corpus_sha256(detector_corpus)
+    assert provenance.executable_sha256 == "a" * 64
+    assert provenance.detector_corpus_sha256 == (
+        keyhog_adapter.compute_detector_corpus_sha256(detector_corpus)
+    )
     assert second_findings == []
     assert second_stats.exit_code == 0
-    assert second_digest == digest
+    assert second_provenance == provenance
     assert len(scanned_detector_paths) == 2
     assert scanned_detector_paths[0] == scanned_detector_paths[1]
     assert scanned_detector_paths[0].is_dir()
     assert len(list(snapshot_root.iterdir())) == 1
+
+
+def test_keyhog_binary_snapshot_is_sibling_byte_copy_bound_to_one_opened_source(
+    monkeypatch, tmp_path
+):
+    source = tmp_path / ("keyhog.exe" if os.name == "nt" else "keyhog")
+    initial = b"first executable bytes"
+    source.write_bytes(initial)
+    source.chmod(0o700)
+    scanner = scanners.KeyhogScanner(binary=str(source))
+    snapshots = []
+
+    def assert_current(path, *, pass_fds=()):
+        launch_path = pathlib.Path(path)
+        snapshot = launch_path.resolve()
+        snapshots.append(snapshot)
+        assert snapshot.parent == source.parent
+        if source.suffix:
+            assert snapshot.suffix == source.suffix
+        assert snapshot.read_bytes() == initial
+        if os.name != "nt":
+            assert pass_fds
+        return "KeyHog verified snapshot"
+
+    monkeypatch.setattr(
+        keyhog_adapter.KeyhogScanner, "_binary_snapshot", _REAL_BINARY_SNAPSHOT,
+    )
+    monkeypatch.setattr(keyhog_adapter, "assert_keyhog_binary_current", assert_current)
+
+    with scanner._binary_snapshot() as (snapshot, digest, version, pass_fds):
+        replacement = tmp_path / "replacement"
+        replacement.write_bytes(b"replacement executable bytes")
+        os.replace(replacement, source)
+        restored = tmp_path / "restored"
+        restored.write_bytes(initial)
+        os.replace(restored, source)
+        assert snapshot.read_bytes() == initial
+        assert digest == hashlib.sha256(initial).hexdigest()
+        assert version == "KeyHog verified snapshot"
+        if os.name != "nt":
+            assert pass_fds
+
+    assert snapshots and not snapshots[0].exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor execution required")
+def test_keyhog_binary_snapshot_executes_held_inode_after_path_replacement(tmp_path):
+    source = tmp_path / "keyhog"
+    shutil.copyfile("/bin/true", source)
+    source.chmod(0o700)
+    saved = tmp_path / "saved-snapshot"
+
+    with keyhog_adapter.sibling_executable_snapshot(str(source)) as snapshot:
+        os.replace(snapshot.path, saved)
+        shutil.copyfile("/bin/false", snapshot.path)
+        snapshot.path.chmod(0o500)
+        _stdout, _stderr, stats = base.run_measured(
+            [str(snapshot.launch_path)], pass_fds=snapshot.pass_fds, timeout=10,
+        )
+        assert stats.exit_code == 0
+        snapshot.path.unlink()
+        os.replace(saved, snapshot.path)
+
+
+def test_keyhog_binary_snapshot_rejects_basename_coupled_loader_artifacts(tmp_path):
+    source = tmp_path / ("keyhog.exe" if os.name == "nt" else "keyhog")
+    source.write_bytes(b"executable bytes")
+    source.chmod(0o700)
+    (tmp_path / f"{source.name}.local").write_bytes(b"loader configuration")
+
+    with pytest.raises(RuntimeError, match="basename-coupled loader artifacts"):
+        with executable_snapshot.sibling_executable_snapshot(str(source)):
+            pytest.fail("an unbound runtime bundle must not execute")
+
+
+def test_keyhog_binary_snapshot_reports_protected_install_remedy(
+    monkeypatch, tmp_path
+):
+    source = tmp_path / ("keyhog.exe" if os.name == "nt" else "keyhog")
+    source.write_bytes(b"executable bytes")
+    source.chmod(0o700)
+
+    def deny_snapshot(*args, **kwargs):
+        raise PermissionError("read-only installation")
+
+    monkeypatch.setattr(executable_snapshot.tempfile, "mkstemp", deny_snapshot)
+
+    with pytest.raises(RuntimeError, match="writable private runtime bundle"):
+        with executable_snapshot.sibling_executable_snapshot(str(source)):
+            pytest.fail("a failed snapshot must not execute")
+
+
+def test_keyhog_binary_snapshot_rejects_mutation_and_still_cleans_up(tmp_path):
+    source = tmp_path / ("keyhog.exe" if os.name == "nt" else "keyhog")
+    source.write_bytes(b"executable bytes")
+    source.chmod(0o700)
+    snapshot_path = None
+
+    with pytest.raises(RuntimeError, match="snapshot changed during the scan"):
+        with keyhog_adapter.sibling_executable_snapshot(str(source)) as snapshot:
+            snapshot_path = snapshot.path
+            snapshot.path.chmod(0o700)
+            snapshot.path.write_bytes(b"tampered")
+
+    assert snapshot_path is not None
+    assert not snapshot_path.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions required")
+def test_keyhog_snapshot_cleanup_failure_preserves_scan_error(tmp_path):
+    source = tmp_path / "keyhog"
+    source.write_bytes(b"executable bytes")
+    source.chmod(0o700)
+    snapshot_path = None
+
+    try:
+        with pytest.raises(ValueError, match="scan failed") as caught:
+            with keyhog_adapter.sibling_executable_snapshot(str(source)) as snapshot:
+                snapshot_path = snapshot.path
+                tmp_path.chmod(0o500)
+                raise ValueError("scan failed")
+        assert isinstance(caught.value.__cause__, RuntimeError)
+        assert "failed to remove benchmark snapshot" in str(caught.value.__cause__)
+    finally:
+        tmp_path.chmod(0o700)
+        if snapshot_path is not None and snapshot_path.exists():
+            snapshot_path.chmod(0o700)
+            snapshot_path.unlink()
 
 
 def test_keyhog_warm_runs_are_private_under_concurrency_and_ignore_old_paths(
@@ -519,7 +688,8 @@ def test_keyhog_min_confidence_floor_is_harvest_only(tmp_path):
 
     # Leaderboard default: no override -> no flag, canonical config_id.
     lb = ScannerConfig(backend="simd")
-    cmd_lb = scanner._cmd(root, lb, out, None)
+    executable = pathlib.Path("/bin/true")
+    cmd_lb = scanner._cmd(root, lb, out, None, executable)
     assert "--min-confidence" not in cmd_lb
     assert lb.config_id == "simd-nocache-nodaemon-full"
     assert "min_confidence" not in lb.to_json()
@@ -528,7 +698,7 @@ def test_keyhog_min_confidence_floor_is_harvest_only(tmp_path):
     # config_id MUST be unchanged so the harvest scan can never masquerade as a
     # distinct leaderboard row.
     harvest = ScannerConfig(backend="simd", min_confidence=0.0)
-    cmd_h = scanner._cmd(root, harvest, out, None)
+    cmd_h = scanner._cmd(root, harvest, out, None, executable)
     i = cmd_h.index("--min-confidence")
     assert cmd_h[i + 1] == "0.0"
     assert harvest.config_id == "simd-nocache-nodaemon-full"
@@ -536,7 +706,7 @@ def test_keyhog_min_confidence_floor_is_harvest_only(tmp_path):
 
     # A fractional floor round-trips through the CLI float formatting.
     frac = ScannerConfig(backend="cpu", min_confidence=0.05)
-    cmd_f = scanner._cmd(root, frac, out, None)
+    cmd_f = scanner._cmd(root, frac, out, None, executable)
     j = cmd_f.index("--min-confidence")
     assert cmd_f[j + 1] == "0.05"
     assert ScannerConfig.from_json(frac.to_json()).min_confidence == 0.05

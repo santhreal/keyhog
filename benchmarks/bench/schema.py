@@ -17,9 +17,17 @@ losslessly; ``test_schema.py`` asserts it.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 
 from . import SCHEMA_VERSION
+
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+
+
+def is_sha256(value: object) -> bool:
+    """Return whether a value is one canonical lowercase SHA-256 digest."""
+    return isinstance(value, str) and _SHA256_RE.fullmatch(value) is not None
 
 # ── confidence histogram resolution ───────────────────────────────────
 # Per-detector findings are bucketed into CONF_BINS bins of width
@@ -273,6 +281,7 @@ class Scanner:
     name: str = ""
     version: str = ""
     config: ScannerConfig = field(default_factory=ScannerConfig)
+    executable_sha256: str = ""
     detector_corpus_sha256: str = ""
 
     @property
@@ -282,6 +291,8 @@ class Scanner:
     def to_json(self) -> dict:
         value = {"name": self.name, "version": self.version,
                  "config_id": self.config_id, "config": self.config.to_json()}
+        if self.executable_sha256:
+            value["executable_sha256"] = self.executable_sha256
         if self.detector_corpus_sha256:
             value["detector_corpus_sha256"] = self.detector_corpus_sha256
         return value
@@ -290,6 +301,7 @@ class Scanner:
     def from_json(cls, d: dict) -> "Scanner":
         return cls(name=d.get("name", ""), version=d.get("version", ""),
                    config=ScannerConfig.from_json(d.get("config", {})),
+                   executable_sha256=d.get("executable_sha256", ""),
                    detector_corpus_sha256=d.get("detector_corpus_sha256", ""))
 
 

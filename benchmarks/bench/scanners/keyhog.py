@@ -41,8 +41,9 @@ from ..keyhog_version import (
     assert_keyhog_binary_current,
     detector_corpus_sha256 as compute_detector_corpus_sha256,
 )
+from ..executable_snapshot import sibling_executable_snapshot
 from ..schema import ScannerConfig
-from .base import Finding, RunStats, Scanner, _line, run_measured
+from .base import Finding, MeasurementProvenance, RunStats, Scanner, _line, run_measured
 
 _BACKENDS = ("simd", "cpu", "gpu", "auto")
 _DETERMINISTIC_BACKENDS = {"simd", "cpu"}
@@ -257,6 +258,14 @@ class KeyhogScanner(Scanner):
     def assert_freshness(self) -> str:
         return assert_keyhog_binary_current(self.binary)
 
+    @contextlib.contextmanager
+    def _binary_snapshot(self):
+        with sibling_executable_snapshot(self.binary) as snapshot:
+            version = assert_keyhog_binary_current(
+                str(snapshot.launch_path), pass_fds=snapshot.pass_fds,
+            )
+            yield snapshot.launch_path, snapshot.sha256, version, snapshot.pass_fds
+
     def _detector_snapshot(self) -> tuple[pathlib.Path, str]:
         digest = self.detector_corpus_sha256()
         root = _detector_snapshot_root()
@@ -346,8 +355,9 @@ class KeyhogScanner(Scanner):
 
     def _cmd(self, root: pathlib.Path, cfg: ScannerConfig,
              output: pathlib.Path, incremental_cache: pathlib.Path | None,
+             executable: pathlib.Path,
              detector_corpus: pathlib.Path | None = None) -> list[str]:
-        cmd = [self.binary, "scan",
+        cmd = [str(executable), "scan",
                "--format", "json", "--show-secrets",
                "--no-suppress-test-fixtures",
                # Hermetic config: the leaderboard scores the COMPILED shipped
@@ -397,7 +407,7 @@ class KeyhogScanner(Scanner):
             extra_env: dict[str, str] | None = None,
             extra_args: list[str] | None = None,
             timeout: int = 3600) -> tuple[list[Finding], RunStats]:
-        findings, stats, _digest = self.run_with_provenance(
+        findings, stats, _provenance = self.run_with_provenance(
             root, cfg, output=output, extra_env=extra_env,
             extra_args=extra_args, timeout=timeout,
         )
@@ -409,28 +419,37 @@ class KeyhogScanner(Scanner):
         extra_env: dict[str, str] | None = None,
         extra_args: list[str] | None = None,
         timeout: int = 3600,
-    ) -> tuple[list[Finding], RunStats, str]:
-        """Scan one immutable detector snapshot and return its exact digest."""
+    ) -> tuple[list[Finding], RunStats, MeasurementProvenance]:
+        """Scan immutable executable and detector snapshots with exact identity."""
         snapshot, digest = self._detector_snapshot()
-        findings, stats = self._run_prepared(
-            root, cfg, snapshot, output=output, extra_env=extra_env,
-            extra_args=extra_args, timeout=timeout,
-        )
+        with self._binary_snapshot() as (
+            executable, executable_digest, version, pass_fds,
+        ):
+            findings, stats = self._run_prepared(
+                root, cfg, snapshot, executable, output=output, extra_env=extra_env,
+                extra_args=extra_args, timeout=timeout, pass_fds=pass_fds,
+            )
         observed = compute_detector_corpus_sha256(snapshot)
         if observed != digest:
             raise RuntimeError(
                 f"benchmark detector snapshot changed during the scan: "
                 f"expected SHA-256 {digest}, found {observed}"
             )
-        return findings, stats, digest
+        return findings, stats, MeasurementProvenance(
+            scanner_version=version,
+            executable_sha256=executable_digest,
+            detector_corpus_sha256=digest,
+        )
 
     def _run_prepared(
         self, root: pathlib.Path, cfg: ScannerConfig,
         detector_corpus: pathlib.Path,
+        executable: pathlib.Path,
         output: pathlib.Path | None = None,
         extra_env: dict[str, str] | None = None,
         extra_args: list[str] | None = None,
         timeout: int = 3600,
+        pass_fds: tuple[int, ...] = (),
     ) -> tuple[list[Finding], RunStats]:
         env = self._env(cfg)
         if extra_env:
@@ -456,9 +475,12 @@ class KeyhogScanner(Scanner):
                 inc_cache = run_dir / "merkle.idx"
                 warm_out = run_dir / "warm.json"
                 warm_stdout, warm_stderr, warm_stats = run_measured(
-                    self._cmd(root, cfg, warm_out, inc_cache, detector_corpus),
+                    self._cmd(
+                        root, cfg, warm_out, inc_cache, executable, detector_corpus
+                    ),
                     env=env,
                     timeout=timeout,
+                    pass_fds=pass_fds,
                 )
                 self._require_success(
                     warm_stdout,
@@ -470,10 +492,14 @@ class KeyhogScanner(Scanner):
                 )
                 self._parse(warm_out, config_id=f"{cfg.config_id} warmup")
 
-            cmd = self._cmd(root, cfg, result_output, inc_cache, detector_corpus)
+            cmd = self._cmd(
+                root, cfg, result_output, inc_cache, executable, detector_corpus
+            )
             if extra_args:
                 cmd = [*cmd[:-1], *extra_args, cmd[-1]]
-            stdout, stderr, stats = run_measured(cmd, env=env, timeout=timeout)
+            stdout, stderr, stats = run_measured(
+                cmd, env=env, timeout=timeout, pass_fds=pass_fds,
+            )
             self._require_success(stdout, stderr, stats, cfg, timeout, phase="timed scan")
             findings = self._parse(result_output, config_id=cfg.config_id)
             return findings, stats

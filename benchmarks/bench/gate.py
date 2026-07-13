@@ -40,7 +40,9 @@ from .keyhog_version import (
 )
 from .report import ResultLoadError, canonical_leaderboard, load_results
 from .scanners import SCANNER_NAMES
-from .schema import DetectorStat, RunResult
+from .scanners.keyhog import resolve_keyhog_binary
+from .schema import DetectorStat, RunResult, is_sha256
+from .executable_snapshot import sha256_file
 
 # Per-detector FP-regression tolerances. The overall-F1 baseline gate is blind
 # to a single detector's FP spike that aggregate recall masks (the
@@ -66,6 +68,22 @@ def _keyhog_row(rows: list[RunResult]) -> RunResult | None:
     return None
 
 
+def _current_keyhog_executable_sha256() -> str:
+    binary = resolve_keyhog_binary()
+    if binary is None:
+        raise GateError(
+            "cannot validate benchmark executable provenance: no current KeyHog "
+            "binary was found. Build the release candidate or set KEYHOG_BIN"
+        )
+    try:
+        return sha256_file(pathlib.Path(binary).resolve(strict=True))
+    except OSError as exc:
+        raise GateError(
+            f"cannot hash current KeyHog binary {binary!r}: {exc}. "
+            "Rebuild the release candidate and rerun the gate"
+        ) from exc
+
+
 def _assert_keyhog_results_current(rows: list[RunResult]) -> None:
     """Reject stale keyhog result artifacts before scoring a benchmark gate.
 
@@ -80,9 +98,22 @@ def _assert_keyhog_results_current(rows: list[RunResult]) -> None:
     except KeyhogVersionError as exc:
         raise GateError(f"cannot accept current-source benchmark evidence: {exc}") from exc
     expected_digest: str | None = None
+    expected_executable_digest = _current_keyhog_executable_sha256()
     for row in rows:
         if row.scanner.name != "keyhog":
             continue
+        if not is_sha256(row.scanner.executable_sha256):
+            observed = row.scanner.executable_sha256 or "missing"
+            raise GateError(
+                "invalid keyhog benchmark result: executable SHA-256 "
+                f"is {observed}; rerun `make leaderboard` with immutable execution evidence"
+            )
+        if row.scanner.executable_sha256 != expected_executable_digest:
+            raise GateError(
+                "stale keyhog benchmark result: executable SHA-256 is "
+                f"{row.scanner.executable_sha256}, current={expected_executable_digest}; "
+                "rerun `make leaderboard` with the current binary"
+            )
         try:
             assert_reported_identity_matches_workspace(
                 row.scanner.version,

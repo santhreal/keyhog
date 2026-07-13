@@ -62,6 +62,15 @@ class RunStats:
     timed_out: bool = False
 
 
+@dataclass(frozen=True)
+class MeasurementProvenance:
+    """Exact immutable inputs that produced one measured scanner result."""
+
+    scanner_version: str = ""
+    executable_sha256: str = ""
+    detector_corpus_sha256: str = ""
+
+
 # ── path collapse (verbatim intent from score.py::_scan_roots) ────────
 
 
@@ -127,6 +136,7 @@ def run_measured(
     env: dict | None = None,
     cwd: str | None = None,
     timeout: int = 1800,
+    pass_fds: tuple[int, ...] = (),
 ) -> tuple[str, str, RunStats]:
     """Run ``cmd``, return (stdout, stderr, RunStats). GNU time captures peak
     RSS into a private file so the child's own stdout/stderr stay clean for
@@ -152,6 +162,8 @@ def run_measured(
             popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         else:
             popen_kwargs["start_new_session"] = True
+            if pass_fds:
+                popen_kwargs["pass_fds"] = pass_fds
         process = subprocess.Popen(
             run_cmd,
             stdout=subprocess.PIPE,

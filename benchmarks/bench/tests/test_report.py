@@ -44,7 +44,7 @@ def test_load_results_rejects_incompatible_result_schema(tmp_path, observed):
 
     message = str(exc.value)
     assert str(artifact) in message
-    assert "supported='bench-v1'" in message
+    assert "supported='bench-v2'" in message
     assert "Rerun the benchmark" in message
 
 

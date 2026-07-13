@@ -16,6 +16,9 @@ from bench.schema import ScannerConfig
 @pytest.fixture(autouse=True)
 def _clean_tracked_workspace(monkeypatch):
     monkeypatch.setattr(gate, "assert_workspace_tracked_tree_clean", lambda: None)
+    monkeypatch.setattr(
+        gate, "_current_keyhog_executable_sha256", lambda: "a" * 64,
+    )
 
 
 def _current_keyhog_version_record() -> str:
@@ -29,13 +32,18 @@ def _current_keyhog_version_record() -> str:
 
 def _row(scanner: str, tp: int, fp: int, fn: int, *, available: bool = True,
          error: str = "", per_detector: dict[str, int] | None = None,
-         version: str = "test", detector_corpus_sha256: str = "") -> RunResult:
+         version: str = "test", executable_sha256: str | None = None,
+         detector_corpus_sha256: str = "") -> RunResult:
     detectors = {
         det: DetectorStat(fp=fp_count) for det, fp_count in (per_detector or {}).items()
     }
     return RunResult(
         scanner=ScannerRecord(
             name=scanner, version=version, config=ScannerConfig(),
+            executable_sha256=(
+                "a" * 64 if executable_sha256 is None and scanner == "keyhog"
+                else executable_sha256 or ""
+            ),
             detector_corpus_sha256=detector_corpus_sha256,
         ),
         corpus=CorpusInfo(name="mirror", fixture_count=10, labeled_positives=tp + fn),
@@ -243,7 +251,7 @@ def test_run_gate_is_undecidable_for_incompatible_result_schema(
     assert rc == 2
     error = capsys.readouterr().err
     assert str(artifact) in error
-    assert "supported='bench-v1'" in error
+    assert "supported='bench-v2'" in error
 
 
 def test_run_gate_accepts_current_keyhog_result_artifacts(monkeypatch, tmp_path):
@@ -302,6 +310,47 @@ def test_run_gate_rejects_missing_or_stale_detector_corpus_digest(
         "keyhog", tp=5, fp=0, fn=0,
         version=_current_keyhog_version_record(),
         detector_corpus_sha256=observed,
+    )
+    (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(current.to_json()))
+
+    rc = gate.run_gate(
+        "mirror", ["keyhog"], results_dir=tmp_path, beat_competitors=False,
+    )
+
+    assert rc == 2
+
+
+@pytest.mark.parametrize("observed", ["", "not-a-sha", "A" * 64])
+def test_run_gate_rejects_missing_or_malformed_executable_digest(
+    monkeypatch, tmp_path, observed
+):
+    digest = "f" * 64
+    monkeypatch.setattr(gate, "workspace_detector_corpus_sha256", lambda: digest)
+    current = _row(
+        "keyhog", tp=5, fp=0, fn=0,
+        version=_current_keyhog_version_record(),
+        executable_sha256=observed,
+        detector_corpus_sha256=digest,
+    )
+    (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(current.to_json()))
+
+    rc = gate.run_gate(
+        "mirror", ["keyhog"], results_dir=tmp_path, beat_competitors=False,
+    )
+
+    assert rc == 2
+
+
+def test_run_gate_rejects_well_formed_digest_from_another_executable(
+    monkeypatch, tmp_path
+):
+    digest = "f" * 64
+    monkeypatch.setattr(gate, "workspace_detector_corpus_sha256", lambda: digest)
+    current = _row(
+        "keyhog", tp=5, fp=0, fn=0,
+        version=_current_keyhog_version_record(),
+        executable_sha256="b" * 64,
+        detector_corpus_sha256=digest,
     )
     (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(current.to_json()))
 

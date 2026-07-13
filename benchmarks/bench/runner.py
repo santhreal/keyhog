@@ -12,10 +12,10 @@ from . import hardware
 from .corpora import resolve_corpus
 from .corpora.base import Corpus
 from .scanners import resolve_scanner
-from .scanners.base import Finding, RunStats
+from .scanners.base import Finding, MeasurementProvenance, RunStats
 from .schema import Detection, RunResult
 from .schema import Scanner as ScannerRecord
-from .schema import ScannerConfig, Speed
+from .schema import ScannerConfig, Speed, is_sha256
 from .score import score
 
 
@@ -64,6 +64,7 @@ def build_result(
     corpus: Corpus,
     findings: list[Finding],
     stats: RunStats,
+    executable_sha256: str = "",
     detector_corpus_sha256: str = "",
 ) -> RunResult:
     info = corpus.info()
@@ -81,6 +82,7 @@ def build_result(
             name=scanner_name,
             version=scanner_version,
             config=cfg,
+            executable_sha256=executable_sha256,
             detector_corpus_sha256=detector_corpus_sha256,
         ),
         corpus=info,
@@ -127,9 +129,29 @@ def _run_resolved_scanner(
             detector_corpus_sha256=detector_digest,
         )
     run_with_provenance = getattr(scanner, "run_with_provenance", None)
+    executable_digest = ""
     if callable(run_with_provenance):
         try:
-            findings, stats, detector_digest = run_with_provenance(corpus.scan_root, cfg)
+            findings, stats, provenance = run_with_provenance(corpus.scan_root, cfg)
+            if not isinstance(provenance, MeasurementProvenance):
+                raise TypeError(
+                    "provenance-bound scanner returned no MeasurementProvenance record"
+                )
+            for label, digest in (
+                ("executable", provenance.executable_sha256),
+                ("detector corpus", provenance.detector_corpus_sha256),
+            ):
+                if not is_sha256(digest):
+                    raise ValueError(
+                        f"provenance-bound scanner returned an invalid {label} SHA-256"
+                    )
+            detector_digest = provenance.detector_corpus_sha256
+            executable_digest = provenance.executable_sha256
+            if not provenance.scanner_version:
+                raise ValueError(
+                    "provenance-bound scanner returned no snapshot version identity"
+                )
+            version = provenance.scanner_version
         except Exception as exc:
             return _unavailable_result(
                 scanner, version, cfg, corpus, f"{type(exc).__name__}: {exc}",
@@ -157,20 +179,21 @@ def _run_resolved_scanner(
                 "detector corpus changed during the measured scan; rerun against stable detector bytes",
                 detector_corpus_sha256=detector_digest,
             )
-    try:
-        final_version = _assert_scanner_freshness(scanner)
-    except Exception as exc:
-        return _unavailable_result(
-            scanner, version, cfg, corpus,
-            f"freshness failed after scan: {type(exc).__name__}: {exc}",
-            detector_corpus_sha256=detector_digest,
-        )
-    if final_version is not None and final_version != version:
-        return _unavailable_result(
-            scanner, version, cfg, corpus,
-            "freshness failed after scan: scanner identity changed during measurement",
-            detector_corpus_sha256=detector_digest,
-        )
+    if not callable(run_with_provenance):
+        try:
+            final_version = _assert_scanner_freshness(scanner)
+        except Exception as exc:
+            return _unavailable_result(
+                scanner, version, cfg, corpus,
+                f"freshness failed after scan: {type(exc).__name__}: {exc}",
+                detector_corpus_sha256=detector_digest,
+            )
+        if final_version is not None and final_version != version:
+            return _unavailable_result(
+                scanner, version, cfg, corpus,
+                "freshness failed after scan: scanner identity changed during measurement",
+                detector_corpus_sha256=detector_digest,
+            )
     result = build_result(
         scanner_name=scanner.name,
         scanner_version=version,
@@ -178,6 +201,7 @@ def _run_resolved_scanner(
         corpus=corpus,
         findings=findings,
         stats=stats,
+        executable_sha256=executable_digest,
         detector_corpus_sha256=detector_digest,
     )
     if stats.timed_out:
@@ -223,6 +247,7 @@ def _unavailable_result(
     cfg: ScannerConfig,
     corpus: Corpus,
     error: str,
+    executable_sha256: str = "",
     detector_corpus_sha256: str = "",
 ) -> RunResult:
     return RunResult(
@@ -232,6 +257,7 @@ def _unavailable_result(
             name=scanner.name,
             version=version,
             config=cfg,
+            executable_sha256=executable_sha256,
             detector_corpus_sha256=detector_corpus_sha256,
         ),
         corpus=corpus.info(),

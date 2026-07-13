@@ -5,7 +5,7 @@ from bench.corpora.mirror import MirrorCorpus
 from bench.corpora.ioc_recovery import IocRecoveryCorpus
 from bench.corpora.perf_corpus import KernelCorpus
 from bench.runner import build_result, resolve_corpus_with_root, write_result
-from bench.scanners.base import RunStats
+from bench.scanners.base import MeasurementProvenance, RunStats
 from bench.schema import ScannerConfig
 
 
@@ -36,6 +36,7 @@ def test_build_result_scores_and_computes_throughput(tmp_path):
         corpus=corpus,
         findings=[{"file": str(tmp_path / "one.txt"), "line": 1, "value": "secret-one"}],
         stats=RunStats(wall_ms=500.0, peak_rss_kb=1234, exit_code=1),
+        executable_sha256="a" * 64,
         detector_corpus_sha256="b" * 64,
     )
 
@@ -46,6 +47,7 @@ def test_build_result_scores_and_computes_throughput(tmp_path):
     assert result.finding_count == 1
     assert result.exit_code == 1
     assert result.timed_out is False
+    assert result.scanner.executable_sha256 == "a" * 64
     assert result.scanner.detector_corpus_sha256 == "b" * 64
 
 
@@ -143,7 +145,11 @@ def test_run_once_uses_adapter_provenance_bound_scan(monkeypatch, tmp_path):
             raise AssertionError("unbound scan path must not run")
 
         def run_with_provenance(self, root, cfg):
-            return [], RunStats(exit_code=0), "c" * 64
+            return [], RunStats(exit_code=0), MeasurementProvenance(
+                scanner_version="KeyHog snapshot",
+                executable_sha256="b" * 64,
+                detector_corpus_sha256="c" * 64,
+            )
 
         def exit_success(self, code):
             return code == 0
@@ -157,6 +163,8 @@ def test_run_once_uses_adapter_provenance_bound_scan(monkeypatch, tmp_path):
     result = runner.run_once(scanner_name="keyhog", corpus_name="kernel")
 
     assert result.available is True
+    assert result.scanner.version == "KeyHog snapshot"
+    assert result.scanner.executable_sha256 == "b" * 64
     assert result.scanner.detector_corpus_sha256 == "c" * 64
 
 
@@ -203,7 +211,9 @@ def test_run_once_reports_post_scan_provenance_failure(monkeypatch, tmp_path):
     )
 
 
-def test_run_once_rejects_workspace_edit_during_scan(monkeypatch, tmp_path):
+def test_run_once_snapshot_provenance_does_not_reprobe_mutable_workspace(
+    monkeypatch, tmp_path
+):
     freshness_checks = 0
 
     class FakeScanner:
@@ -228,7 +238,11 @@ def test_run_once_rejects_workspace_edit_during_scan(monkeypatch, tmp_path):
             return ScannerConfig()
 
         def run_with_provenance(self, root, cfg):
-            return [], RunStats(exit_code=0), "a" * 64
+            return [], RunStats(exit_code=0), MeasurementProvenance(
+                scanner_version="KeyHog snapshot",
+                executable_sha256="b" * 64,
+                detector_corpus_sha256="a" * 64,
+            )
 
         def exit_success(self, code):
             return code == 0
@@ -241,13 +255,12 @@ def test_run_once_rejects_workspace_edit_during_scan(monkeypatch, tmp_path):
 
     result = runner.run_once(scanner_name="keyhog", corpus_name="kernel")
 
-    assert result.available is False
-    assert result.error == (
-        "freshness failed after scan: RuntimeError: tracked workspace changed"
-    )
+    assert result.available is True
+    assert freshness_checks == 1
+    assert result.scanner.version == "KeyHog snapshot"
 
 
-def test_run_once_rejects_binary_replacement_during_scan(monkeypatch, tmp_path):
+def test_run_once_records_snapshot_when_source_binary_changes(monkeypatch, tmp_path):
     identities = iter(["KeyHog identity A", "KeyHog identity B"])
 
     class FakeScanner:
@@ -269,7 +282,11 @@ def test_run_once_rejects_binary_replacement_during_scan(monkeypatch, tmp_path):
             return ScannerConfig()
 
         def run_with_provenance(self, root, cfg):
-            return [], RunStats(exit_code=0), "a" * 64
+            return [], RunStats(exit_code=0), MeasurementProvenance(
+                scanner_version="KeyHog snapshot A",
+                executable_sha256="b" * 64,
+                detector_corpus_sha256="a" * 64,
+            )
 
         def exit_success(self, code):
             return code == 0
@@ -282,8 +299,6 @@ def test_run_once_rejects_binary_replacement_during_scan(monkeypatch, tmp_path):
 
     result = runner.run_once(scanner_name="keyhog", corpus_name="kernel")
 
-    assert result.available is False
-    assert result.scanner.version == "KeyHog identity A"
-    assert result.error == (
-        "freshness failed after scan: scanner identity changed during measurement"
-    )
+    assert result.available is True
+    assert result.scanner.version == "KeyHog snapshot A"
+    assert result.scanner.executable_sha256 == "b" * 64

@@ -27,6 +27,9 @@ The release keyhog binary is resolved from `$KEYHOG_BIN`, else the cargo
 target-dir in `$CARGO_TARGET_DIR`, else `~/.cargo/config.toml`, else the repo
 target dir, else `keyhog` on `PATH`. Build it first:
 `make keyhog` or `cargo build --release -p keyhog`.
+The benchmark needs create and delete access beside that binary to protect its
+execution snapshot. For a managed read-only install, copy the verified artifact
+into a private writable runtime directory and set `$KEYHOG_BIN` to that copy.
 The default test/release gate excludes tests marked `target_spec`; those are
 executable product targets, not claims that the current release already meets.
 Run them explicitly with `make targets`.
@@ -48,9 +51,14 @@ Run them explicitly with `make targets`.
 - **Detector provenance:** every KeyHog run scans a private immutable snapshot
   and records the SHA-256 of its exact detector TOML filenames and bytes. The
   gate rejects results whose digest does not match the workspace corpus.
+- **Executable provenance:** every warmup and measured KeyHog command runs the
+  same held-inode byte snapshot beside the resolved runtime. POSIX launches use
+  the inherited descriptor, so path replacement cannot change executed bytes.
+  Results record its SHA-256 and version. The gate requires an exact match with
+  the current candidate binary.
 - **Source freshness:** current-source evidence requires a clean tracked Git
-  tree and an exact recorded HEAD commit. KeyHog measurements check source
-  state before and after scanning, and result-only gates check it before scoring.
+  tree and an exact recorded HEAD commit. KeyHog validates the snapshot before
+  scanning, and result-only gates check workspace identity before scoring.
 
 ## Two fairness rules (baked into every corpus)
 
