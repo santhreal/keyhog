@@ -13,6 +13,10 @@ fn tests_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests")
 }
 
+fn scanner_src_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
+}
+
 fn normalize_path(path: PathBuf) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
@@ -225,6 +229,11 @@ fn manifest_phantoms(dir: &Path) -> Vec<String> {
 pub fn assert_all_scanner_test_module_files_are_wired() {
     let root = tests_root();
     let mut wired = wired_by_rust_modules(&root);
+    // Unit shards may be owned by the production module they exercise through
+    // a `#[cfg(test)] #[path = "../../tests/..."] mod tests;` declaration.
+    // Those are real compiled routes, not orphans, so inspect both sides of the
+    // crate boundary before declaring coverage invisible.
+    wired.extend(wired_by_rust_modules(&scanner_src_root()));
     wired.extend(explicit_cargo_test_targets(&root));
     wired.extend(auto_discovered_root_targets(&root));
 
@@ -260,6 +269,7 @@ pub fn assert_suite_sibling_files_are_wired(suite_rel: &str) {
     let root = tests_root();
     let dir = normalize_path(root.join(suite_rel));
     let mut wired = wired_by_rust_modules(&root);
+    wired.extend(wired_by_rust_modules(&scanner_src_root()));
     wired.extend(explicit_cargo_test_targets(&root));
     wired.extend(auto_discovered_root_targets(&root));
 

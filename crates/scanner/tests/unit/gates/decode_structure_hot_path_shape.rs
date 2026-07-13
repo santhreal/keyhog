@@ -60,7 +60,6 @@ fn decode_evidence_feeds_ml_confidence_and_fallback_paths() {
             "crate::decode_structure::is_encoded_binary(",
             "crate::decode_structure::decoded_contains_placeholder(",
             "crate::decode_structure::decoded_contains_nul_byte(",
-            "crate::decode_structure::decoded_is_hex_key_material(",
             "crate::decode_structure::decoded_is_base64_blob(",
         ] {
             assert!(

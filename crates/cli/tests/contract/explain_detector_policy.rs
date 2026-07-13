@@ -53,6 +53,8 @@ fn explain_generic_secret_prints_detector_owned_entropy_and_bpe_policy() {
         "entropy_low: 3 bits/byte".to_string(),
         format!("bpe_max_bytes_per_token: {bpe_ceiling} UTF-8 bytes/token"),
         "max_len: 512 bytes".to_string(),
+        "canonical_hex_key_material: lengths=[64] keywords=[private_key, signing_secret]"
+            .to_string(),
         "entropy_floor: 2.8 bits/byte through 24 bytes".to_string(),
         "declared policy owner: [detector] in the loaded detector TOML".to_string(),
         "unset optional fields: field defaults or scan policy resolve at scan time; use `config --effective` for scan-fallback/scan-override".to_string(),
@@ -60,6 +62,23 @@ fn explain_generic_secret_prints_detector_owned_entropy_and_bpe_policy() {
         assert!(
             stdout.contains(&expected),
             "explain output is missing {expected:?}:\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn explain_generic_api_key_prints_transport_and_direct_hex_policy() {
+    let output = explain("generic-api-key");
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for expected in [
+        "decoded_hex_key_material_lengths: 32, 48",
+        "canonical_hex_key_material: lengths=[32, 48]",
+        "canonical_hex_key_material: lengths=[64]",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "generic API-key explanation is missing {expected:?}:\n{stdout}"
         );
     }
 }

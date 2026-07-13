@@ -271,6 +271,30 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
     optional_policy!("min_len", d.min_len, " bytes");
     optional_policy!("max_len", d.max_len, " bytes");
 
+    if !d.decoded_hex_key_material_lengths.is_empty() {
+        let lengths = d
+            .decoded_hex_key_material_lengths
+            .iter()
+            .map(usize::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("    decoded_hex_key_material_lengths: {lengths}");
+        declared += 1;
+    }
+    for policy in &d.canonical_hex_key_material {
+        let lengths = policy
+            .lengths
+            .iter()
+            .map(usize::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!(
+            "    canonical_hex_key_material: lengths=[{lengths}] keywords=[{}]",
+            policy.keywords.join(", ")
+        );
+        declared += 1;
+    }
+
     for bucket in &d.entropy_floor {
         match bucket.max_len {
             Some(max_len) => println!(

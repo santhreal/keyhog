@@ -154,6 +154,19 @@ pub struct DetectorSpec {
     /// BPE ceiling.
     #[serde(default)]
     pub bpe_enabled: Option<bool>,
+    /// Exact printable-hex character counts this phase-2 detector may retain
+    /// after transport decoding. Keeping the lengths in detector TOML avoids a
+    /// scanner-wide hardcoded key-width list. An empty list retains no decoded
+    /// digest-shaped values.
+    #[serde(default)]
+    pub decoded_hex_key_material_lengths: Vec<usize>,
+    /// Exact keyword and length combinations under which this phase-2 generic
+    /// detector owns canonical pure-hex key material. This detector-local policy
+    /// distinguishes real 64-hex encryption/signing keys from SHA-256 digests
+    /// without granting every generic `secret=` or `api_key=` assignment the
+    /// same bypass.
+    #[serde(default)]
+    pub canonical_hex_key_material: Vec<CanonicalHexKeyMaterialSpec>,
     /// Per-detector minimum length for an anchor-free (keyword-free/isolated)
     /// candidate. `None` → the single-owner default `KEYWORD_FREE_MIN_LEN`.
     #[serde(default)]
@@ -266,6 +279,65 @@ pub struct EntropyFloorBucket {
     /// Shannon-entropy floor (bits/byte). A candidate scoring below this is
     /// suppressed by the low-entropy gate.
     pub floor: f64,
+}
+
+/// One detector-local pure-hex key-material policy.
+///
+/// A candidate is eligible only when its captured assignment key matches one of
+/// `keywords` after the normal assignment-key case/separator normalization and
+/// its exact character count appears in `lengths`. The scanner still applies
+/// entropy, placeholder, context, and reporting gates.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct CanonicalHexKeyMaterialSpec {
+    /// Exact pure-hex character counts admitted by this policy.
+    #[serde(default)]
+    pub lengths: Vec<usize>,
+    /// Assignment keys owned by this policy. Each must also appear in the
+    /// detector's top-level `keywords` list.
+    #[serde(default)]
+    pub keywords: Vec<String>,
+}
+
+impl DetectorSpec {
+    /// Whether this detector admits transport-decoded pure-hex key material at
+    /// the exact declared character count.
+    pub fn allows_decoded_hex_key_material(&self, value: &str) -> bool {
+        value.bytes().all(|byte| byte.is_ascii_hexdigit())
+            && self.decoded_hex_key_material_lengths.contains(&value.len())
+    }
+
+    /// Whether this detector admits a transport wrapper whose decoded payload
+    /// is pure hex at the exact declared character count.
+    pub fn allows_decoded_hex_key_material_len(&self, decoded_len: Option<usize>) -> bool {
+        decoded_len.is_some_and(|length| self.decoded_hex_key_material_lengths.contains(&length))
+    }
+
+    /// Whether this detector's canonical-hex policy admits an exact assignment
+    /// key and pure-hex value pair.
+    pub fn allows_canonical_hex_key_material(&self, keyword: &str, value: &str) -> bool {
+        if !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return false;
+        }
+        self.canonical_hex_key_material.iter().any(|policy| {
+            policy.lengths.contains(&value.len())
+                && policy
+                    .keywords
+                    .iter()
+                    .any(|owned_keyword| compact_assignment_keywords_equal(keyword, owned_keyword))
+        })
+    }
+}
+
+fn compact_assignment_keywords_equal(left: &str, right: &str) -> bool {
+    compact_assignment_keyword_bytes(left).eq(compact_assignment_keyword_bytes(right))
+}
+
+fn compact_assignment_keyword_bytes(value: &str) -> impl Iterator<Item = u8> + '_ {
+    value
+        .bytes()
+        .filter(|byte| !matches!(byte, b'_' | b'-' | b'.'))
+        .map(|byte| byte.to_ascii_lowercase())
 }
 
 /// Per-detector credential SHAPE constraint (`[detector.credential_shape]`),

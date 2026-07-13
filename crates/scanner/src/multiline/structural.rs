@@ -106,6 +106,7 @@ pub(super) fn collect_structural_fragments(
                         source_line_offsets,
                         index,
                     ),
+                    transport_decoded: false,
                 });
                 current_struct_offset += array_joined.len() + 1;
             }
@@ -170,6 +171,7 @@ pub(super) fn collect_structural_fragments(
                 source_line_offsets,
                 start_line.saturating_sub(1),
             ),
+            transport_decoded: false,
         });
         current_struct_offset += joined.len() + 1;
     }
@@ -206,6 +208,7 @@ pub(super) fn collect_structural_fragments(
             end_offset: current_struct_offset + joined.len(),
             line_number: SYNTHETIC_BASE_LINE + offset_idx,
             original_start_offset: source_line_offset_or_record_gap(source_line_offsets, index),
+            transport_decoded: false,
         });
         current_struct_offset += joined.len() + 1;
     }
@@ -235,6 +238,7 @@ pub(super) fn collect_structural_fragments(
                 end_offset: current_struct_offset + joined.len(),
                 line_number: SYNTHETIC_TEMPLATE_BASE_LINE + offset_idx,
                 original_start_offset: source_line_offset_or_record_gap(source_line_offsets, index),
+                transport_decoded: false,
             });
             current_struct_offset += joined.len() + 1;
         }
@@ -254,6 +258,7 @@ pub(super) fn collect_structural_fragments(
                         source_line_offsets,
                         start_line.saturating_sub(1),
                     ),
+                    transport_decoded: false,
                 });
                 current_struct_offset += joined.len() + 1;
             }

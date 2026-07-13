@@ -419,6 +419,7 @@ fn final_report_candidate_returns_adjudicator_reported_confidence() {
                 file_path: Some("service/config.rs"),
                 is_named_detector: true,
                 allow_encoded_text_lift: false,
+                allow_canonical_hex_key: false,
                 calibration: None,
             },
         ),

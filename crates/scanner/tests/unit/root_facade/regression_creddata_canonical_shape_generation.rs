@@ -1,29 +1,7 @@
-//! Regression (CredData recall lane, candidate GENERATION): the entropy
-//! fallback must GENERATE a candidate for the CredData `UUID` and `hex64`
-//! (AES-256-key) miss classes when a STRONG credential keyword anchors the line
-//! AND the MoE is the runtime precision authority (`ml_enabled &&
-//! entropy_ml_authoritative`), so the model, not a shape gate at the generation
-//! source, arbitrates the value. ~83% of keyhog's CredData misses NEVER
-//! generate a candidate; UUID-bodied and 64-hex (AES-256) keys are dropped at
-//! the generation source by `entropy::scanner::is_canonical_non_secret_shape`
-//! and again by the entropy gauntlet's UUID / bare-hash-digest shape arms,
-//! before any candidate exists, so no downstream model authority could ever
-//! recover them.
-//!
-//! Root cause this locks against (two gates, both candidate-GENERATION-side):
-//!   1. `candidate_is_plausible` calls `is_canonical_non_secret_shape` in
-//!      credential context and DROPS hex32/40/64/128 + UUID before a candidate
-//!      is produced.
-//!   2. `engine::phase2_entropy::gates::entropy_match_suppressed` re-drops the
-//!      survivors via `contains_uuid_v4_substring` + the bare-hash-digest arm of
-//!      `should_suppress_known_example_*` before the ML-pending push.
-//! Both are now released ONLY under the lift (`allow_canonical_shapes` /
-//! `allow_canonical_lift`), which engages exactly when the MoE is authoritative
-//! AND a strong credential keyword sits on the SAME line as the value. The
-//! non-ML path and the SecretBench-mirror precision (where `TOKEN=<32-hex>` is
-//! planted in BOTH the positive and the sha256/git-sha/k8s-uid negative classes)
-//! are byte-identical, because the lift never engages without the model that
-//! earns it.
+//! Regression for model-authoritative canonical key-material generation. A
+//! strong key-material anchor may release narrowly accepted hex key shapes for
+//! MoE arbitration. UUIDs remain identifiers in the generic entropy bridge;
+//! provider-specific UUID credentials belong in detector TOMLs.
 //!
 //! Tests split into (a) GENERATION-gate truth on the pure
 //! `candidate_is_plausible` predicate (the cheapest, most direct pin of the lift
@@ -76,18 +54,23 @@ fn strict_gate_drops_canonical_shapes_under_anchor() {
 }
 
 #[test]
-fn lift_generates_uuid_and_hex64_candidates_under_anchor() {
+fn lift_generates_only_key_material_candidates_under_anchor() {
     // The model-authoritative (lifted) credential context MUST GENERATE the
-    // candidate so the MoE can arbitrate it. This is the core candidate-
-    // generation fix for the CredData `UUID` + `hex64` miss classes.
+    // candidate so the MoE can arbitrate it. UUIDs are deliberately excluded:
+    // generic assignment keywords cannot distinguish them from identifiers.
     let broad_ctx = credential_keyword_context_with_lift("api_key", true);
-    for shape in [UUID_SECRET, HEX32_SECRET] {
-        assert!(
-            candidate_is_plausible(shape, entropy(shape), &broad_ctx, &[]),
-            "lifted credential context must GENERATE canonical-shape candidate \
-             {shape:?} for the MoE to score (CredData recall lane)"
-        );
-    }
+    assert!(!candidate_is_plausible(
+        UUID_SECRET,
+        entropy(UUID_SECRET),
+        &broad_ctx,
+        &[]
+    ));
+    assert!(candidate_is_plausible(
+        HEX32_SECRET,
+        entropy(HEX32_SECRET),
+        &broad_ctx,
+        &[]
+    ));
     let crypto_ctx = credential_keyword_context_with_lift("encryption_key", true);
     assert!(
         candidate_is_plausible(HEX64_SECRET, entropy(HEX64_SECRET), &crypto_ctx, &[]),
@@ -181,27 +164,16 @@ fn caught(scanner: &CompiledScanner, line: &str, value: &str) -> bool {
 }
 
 #[test]
-fn e2e_uuid_under_strong_keyword_is_generated_and_surfaced() {
-    // The whole assigned value is a UUID under a strong credential keyword, the
-    // CredData `UUID` miss class (LaunchDarkly SDK keys, Heroku UUID keys,
-    // PowerBI client secrets). With the lift it must reach the output.
+fn e2e_uuid_under_generic_keyword_stays_suppressed() {
+    // A generic assignment cannot distinguish a UUID credential from a resource
+    // identifier. Provider-specific UUID formats belong to detector TOMLs.
     let s = scanner_with_floor(0.0);
-    assert!(
-        caught(&s, &format!("api_key = \"{UUID_SECRET}\""), UUID_SECRET),
-        "UUID-bodied secret under `api_key=` must be GENERATED + surfaced via the \
-         model-authoritative entropy lift"
-    );
-    // `client_secret` is a default credential keyword (OAuth client secrets are
-    // frequently UUID-bodied), a second anchor proves the lift is not tied to a
-    // single keyword string.
-    assert!(
-        caught(
-            &s,
-            &format!("client_secret = \"{UUID_SECRET}\""),
-            UUID_SECRET
-        ),
-        "UUID-bodied secret under a `client_secret=` anchor must be GENERATED + surfaced"
-    );
+    for keyword in ["api_key", "client_secret"] {
+        assert!(
+            !caught(&s, &format!("{keyword} = \"{UUID_SECRET}\""), UUID_SECRET),
+            "UUID under generic `{keyword}=` must stay suppressed"
+        );
+    }
 }
 
 #[test]
@@ -256,7 +228,7 @@ fn e2e_placeholder_uuid_stays_suppressed_even_under_lift() {
     let zero_uuid = "00000000-0000-0000-0000-000000000000";
     assert!(
         !caught(&s, &format!("api_key = \"{zero_uuid}\""), zero_uuid),
-        "all-zero placeholder UUID must stay content-suppressed under the lift"
+        "all-zero placeholder UUID must stay content-suppressed"
     );
     // EXAMPLE-bearing canonical hex placeholder must also stay dropped: the
     // empty-input MD5 hash is a documentation/integrity placeholder, never a
@@ -270,16 +242,12 @@ fn e2e_placeholder_uuid_stays_suppressed_even_under_lift() {
 
 #[test]
 fn e2e_lift_is_gated_off_when_model_not_authoritative() {
-    // Gating proof: with `entropy_ml_authoritative = false` the lift MUST NOT
-    // engage, so the canonical UUID / hex64 shapes stay suppressed exactly as on
-    // the legacy path, even at a zero floor. This pins that the recall lift is
-    // strictly model-authority-conditioned and cannot leak FPs onto the non-ML
-    // path.
+    // With `entropy_ml_authoritative = false`, the hex-key lift must not engage.
+    // UUIDs stay suppressed with or without model authority.
     let s = scanner_without_lift(0.0);
     assert!(
         !caught(&s, &format!("api_key = \"{UUID_SECRET}\""), UUID_SECRET),
-        "UUID under `api_key=` must STAY suppressed when the MoE is not \
-         authoritative (lift gated off)"
+        "UUID under `api_key=` must stay suppressed"
     );
     assert!(
         !caught(
@@ -302,7 +270,6 @@ fn e2e_keyword_free_canonical_shape_never_lifts() {
     let line = format!("resource_id = \"{UUID_SECRET}\"");
     assert!(
         !caught(&s, &line, UUID_SECRET),
-        "UUID under a NON-credential keyword (`resource_id`) must NOT lift, the \
-         lift requires a strong credential anchor on the value's line"
+        "UUID under a non-credential keyword (`resource_id`) must stay suppressed"
     );
 }

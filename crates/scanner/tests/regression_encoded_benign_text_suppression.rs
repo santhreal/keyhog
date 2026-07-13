@@ -4,9 +4,9 @@
 //! real secrets can be base64-wrapped printable text, while benign resource
 //! identifiers and package hashes are also base64-wrapped printable text. The
 //! suppression contract therefore targets only decoded forms that are
-//! structurally non-secret. Base64-wrapped sha256-style hex digests stay
-//! non-secret, while encoded hex32/hex40/hex48 key material remains recall-owned
-//! until a non-label discriminant can separate keys from git-style digests.
+//! structurally non-secret. Base64-wrapped SHA-1/SHA-256-style hex digests stay
+//! non-secret, while encoded hex32/hex48 key material under API-key anchors
+//! remains recall-owned.
 
 mod support;
 use support::paths::detector_dir;
@@ -45,7 +45,7 @@ fn scan(scanner: &CompiledScanner, body: &str) -> Vec<RawMatch> {
 fn has_generic(matches: &[RawMatch], credential: &str) -> bool {
     matches
         .iter()
-        .any(|m| m.detector_id.as_ref() == "generic-secret" && m.credential.as_ref() == credential)
+        .any(|m| m.detector_id.starts_with("generic-") && m.credential.as_ref() == credential)
 }
 
 #[test]
@@ -78,6 +78,11 @@ fn decoded_iam_arn_license_hash_and_prose_do_not_surface_as_outer_base64_secret(
             "decoded sha256 digest",
         ),
         (
+            "token",
+            "MDYxY2FhNWFiYThmYWEyZmNkY2FjYWM2OGQ3MDBmZGU4ZmFjZWI4Yg==",
+            "decoded sha1 digest",
+        ),
+        (
             "session",
             "U2Vzc2lvbiBvcGVuZWQgd2l0aCBoYW5kbGUgdU9MTEEzbVg2UWxLVG10ekVS",
             "decoded audit prose",
@@ -86,8 +91,8 @@ fn decoded_iam_arn_license_hash_and_prose_do_not_surface_as_outer_base64_secret(
         let body = k8s_secret(key, encoded);
         let matches = scan(&scanner, &body);
         assert!(
-            !has_generic(&matches, encoded),
-            "{label} must not surface as an outer generic-secret finding: {matches:#?}"
+            matches.is_empty(),
+            "{label} must not surface in encoded or decoded form: {matches:#?}"
         );
     }
 }
@@ -95,33 +100,31 @@ fn decoded_iam_arn_license_hash_and_prose_do_not_surface_as_outer_base64_secret(
 #[test]
 fn decoded_real_secret_text_and_canonical_hex_keys_still_surface() {
     let scanner = scanner();
-    for (key, encoded, label) in [
+    for (key, encoded, expected, label) in [
         (
             "api-key",
+            "c3VwZXItc2VjcmV0LWt1YmVybmV0ZXMtYXBpLWtleS12YWx1ZQ==",
             "c3VwZXItc2VjcmV0LWt1YmVybmV0ZXMtYXBpLWtleS12YWx1ZQ==",
             "decoded real secret text",
         ),
         (
             "api-key",
             "M2Y4YTljMmUxYjdkNGY2YThjMGUyZDRmNmE4YjBjMWU=",
+            "3f8a9c2e1b7d4f6a8c0e2d4f6a8b0c1e",
             "decoded hex32 key",
         ),
         (
-            "token",
-            "MDYxY2FhNWFiYThmYWEyZmNkY2FjYWM2OGQ3MDBmZGU4ZmFjZWI4Yg==",
-            "decoded hex40 key material",
-        ),
-        (
             "encryption-key",
-            "YTFiMmMzZDRlNWY2MDcxODI5M2E0YjVjNmQ3ZThmOTAxYTJiM2M0ZDVlNmY3MDgx",
+            "OGYzYTkxYzdkMmU0MGI2ZmE1YzE4Mzc5ZGU0MmI2MGY5YTdjMzFlNWQ4MDQyYmY2",
+            "8f3a91c7d2e40b6fa5c18379de42b60f9a7c31e5d8042bf6",
             "decoded hex48 key",
         ),
     ] {
         let body = k8s_secret(key, encoded);
         let matches = scan(&scanner, &body);
         assert!(
-            has_generic(&matches, encoded),
-            "{label} must keep the outer generic-secret finding: {matches:#?}"
+            has_generic(&matches, expected),
+            "{label} must surface with source attribution: {matches:#?}"
         );
     }
 }

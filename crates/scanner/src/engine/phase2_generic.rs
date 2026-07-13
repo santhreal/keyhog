@@ -212,6 +212,9 @@ impl CompiledScanner {
                     continue;
                 }
                 let value = value_match.as_str();
+                let preprocessed_offset = line_offset + value_match.start();
+                let transport_decoded =
+                    preprocessed.transport_decoded_for_offset(preprocessed_offset);
                 if crate::adjudicate::generic_bridge_bare_auth_rejected(keyword, value) {
                     let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
                         crate::adjudicate::GenericBridgeSignal::BareAuthUnstructured,
@@ -234,17 +237,6 @@ impl CompiledScanner {
                 // above its 4.5 default lifts the floor to that bits/byte value,
                 // suppressing values below it.
                 let entropy = crate::pipeline::match_entropy(value.as_bytes());
-                // KH-L-0110: a complete pure-hex value of canonical key length
-                // (32/48) under a STRONG credential keyword is a real key, not a
-                // hash digest, exempt it from the bare-hex-digest shape gate
-                // (every other gate still applies). See the helper for the
-                // CredData/mirror soundness argument.
-                let allow_canonical_hex_key =
-                    is_strong_keyword_anchored_hex_key(keyword_match.as_str(), value);
-                let allow_encoded_text_secret =
-                    is_strong_keyword_anchored_encoded_text_secret(keyword_match.as_str(), value)
-                        || crate::decode_structure::decodes_to_printable_text(value);
-
                 // O(1) compiled lookup of the owning generic detector (or the
                 // GENERIC_SECRET fallback), replacing a per-candidate linear
                 // `self.detectors.iter().find(...)` scan over every detector.
@@ -254,6 +246,27 @@ impl CompiledScanner {
                     .generic_owning_detector
                     .owning_index(keyword)
                     .map(|index| &self.detectors[index]);
+                // A complete pure-hex value admitted by the owning detector's
+                // exact keyword/length policy is key material rather than a
+                // digest. The legacy structural 32/48 family remains as the
+                // recall-preserving path for previously unseen vendor-prefixed
+                // `*_key` and `*_secret` assignment names.
+                let allow_canonical_hex_key = owning_detector.is_some_and(|detector| {
+                    if transport_decoded {
+                        detector.allows_decoded_hex_key_material(value)
+                    } else {
+                        detector.allows_canonical_hex_key_material(keyword_match.as_str(), value)
+                    }
+                }) || (!transport_decoded
+                    && is_strong_keyword_anchored_hex_key(keyword_match.as_str(), value));
+                let allow_encoded_text_secret =
+                    is_strong_keyword_anchored_encoded_text_secret(keyword_match.as_str(), value)
+                        || crate::decode_structure::decodes_to_printable_text(value);
+                let allow_decoded_hex_key_material = owning_detector.is_some_and(|detector| {
+                    detector.allows_decoded_hex_key_material_len(
+                        crate::decode_structure::evidence(value).decoded_hex_text_len(),
+                    )
+                });
 
                 let owning_detector_min_len = owning_detector
                     .and_then(|d| d.min_len)
@@ -301,6 +314,7 @@ impl CompiledScanner {
                         chunk,
                         allow_canonical_hex_key,
                         allow_encoded_text_secret,
+                        allow_decoded_hex_key_material,
                     )
                 };
 
@@ -366,9 +380,13 @@ impl CompiledScanner {
                 // prose, XML) are non-secrets. Mirror-safe: verified 0 word-like
                 // generic TP on the mirror corpus, so recall is untouched. Gated on
                 // `entropy` (the tokenizer rides that feature); when off, generic
-                // FP simply aren't BPE-filtered.
+                // FP simply aren't BPE-filtered. Detector-owned canonical hex
+                // key material skips this language-likeness test: hexadecimal
+                // subwords tokenize efficiently by construction, and the exact
+                // keyword/length policy is the stronger signal for that shape.
                 #[cfg(feature = "entropy")]
                 if shape_rejected.is_none()
+                    && !allow_canonical_hex_key
                     && !allow_encoded_text_secret
                     && crate::entropy::bpe::enabled_for_detector(owning_detector)
                 {
@@ -459,6 +477,7 @@ impl CompiledScanner {
                         file_path: chunk.metadata.path.as_deref(),
                         is_named_detector: false,
                         allow_encoded_text_lift: allow_encoded_text_secret,
+                        allow_canonical_hex_key,
                         calibration: self.config.calibration.as_deref(),
                     },
                 ) else {
@@ -473,7 +492,6 @@ impl CompiledScanner {
                 // line, plus the line's start in the chunk, plus the
                 // chunk's base offset in the original file (non-zero on
                 // windowed >64 MiB scans).
-                let preprocessed_offset = line_offset + value_match.start();
                 let mapped_line = crate::pipeline::match_line_number(
                     preprocessed,
                     line_offsets,

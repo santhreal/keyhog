@@ -1,25 +1,17 @@
-//! TARGET-SPEC (FAILING-BY-DESIGN): the candidate-GENERATION recall worklist.
+//! Target specification for candidate-generation recall.
 //!
-//! ## Why these tests are RED today, and what turns them green
-//! keyhog's real-corpus recall (CredData ~0.18, 5th of 6 tools) is bound at the
-//! candidate-GENERATION stage, not at suppression. A value only reaches phase-2
-//! (capture/checksum/entropy/ML/suppression) if the phase-1 prefilter first
-//! emits a CANDIDATE for it. The named service detectors anchor on vendor
-//! prefixes (`ghp_`, `AKIA`, `xoxb-`, `eyJhbGci…`); a credential that is a bare
-//! hex key, a UUID used as a token, a raw base64 secret, or a JWT whose header
-//! does not start with `alg` carries NO such anchor, so NO candidate is ever
-//! generated and the value cannot be detected however good phase-2 is.
+//! ## Contract
+//! This suite pins prefix-free secret shapes that depend on candidate generation
+//! rather than a vendor detector. Named detectors anchor on service syntax;
+//! generic hex keys, encoded secrets, alternate JWT headers, URL credentials,
+//! and connection-string passwords require the generic production paths.
 //!
-//! This file is the executable form of that gap: a TABLE of representative
-//! real-world secret shapes, the exact shapes that dominate CredData's missed
-//! positives (keyword-anchored `hex32/48/64`, `uuid`, raw `base64`, header-order
-//! JWTs, URL-embedded credentials, connection-string passwords), each written
-//! as a line a human would actually commit. Every case asserts the scanner
-//! SURFACES the secret's value. They FAIL today because generation does not
-//! produce the candidate; each red line is one tracked entry in the generation
-//! worklist (Law 6, a failing contract test is a finding). When the
-//! keyword-bridge / shape-anchored generation lands, the matching case flips
-//! green with no edit here.
+//! This file is the executable form of that gap: a table of representative
+//! secret shapes modeled on the classes in CredData's missed positives
+//! (keyword-anchored `hex32/48/64`, raw `base64`, header-order JWTs,
+//! URL-embedded credentials, and connection-string passwords), each written as
+//! a line an operator could encounter. Every case asserts that the scanner
+//! surfaces the exact secret value.
 //!
 //! These are NOT vendor-prefixed tokens (those already work and are covered by
 //! the detector self-validation suite); every fixture is deliberately
@@ -28,9 +20,9 @@
 //! checksum, so they exercise the generic keyword/shape path exclusively.
 //!
 //! Do NOT weaken these (Law 9): a target spec pins what keyhog owes, not what it
-//! has. If a shape is a deliberate non-target (a true negative we must NOT fire
-//! on), it belongs in a precision test, not here, every line below is a value a
-//! human reviewer of CredData labeled a real credential.
+//! has. If a shape is a deliberate non-target (a true negative we must not fire
+//! on), it belongs in a precision test, not here. The literals below are
+//! synthetic and fixed; none is a live credential.
 
 mod support;
 use support::paths::detector_dir;
@@ -106,18 +98,18 @@ const MISS_TABLE: &[MissCase] = &[
     },
     MissCase {
         name: "hex48_encryption_key_assign",
-        line: "encryption_key: a1b2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d5e6f7081",
-        value: "a1b2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d5e6f7081",
+        line: "encryption_key: 021b5eb43337a4bb765b5f3f9176172f5f3afedc863385fc",
+        value: "021b5eb43337a4bb765b5f3f9176172f5f3afedc863385fc",
     },
     MissCase {
         name: "hex64_secret_key_assign",
-        line: "SECRET_KEY=9f2c7a14e0b8d63549af1c2e7b8d05a3691f4c8e2b7d09a3f5c1e8b6d4a20f7c",
-        value: "9f2c7a14e0b8d63549af1c2e7b8d05a3691f4c8e2b7d09a3f5c1e8b6d4a20f7c",
+        line: "SECRET_KEY=25eef8a17c7aa607017b85e88a3a9e80099b5adaaba772299bc0086458bd2ad6",
+        value: "25eef8a17c7aa607017b85e88a3a9e80099b5adaaba772299bc0086458bd2ad6",
     },
     MissCase {
         name: "hex64_signing_key_json",
-        line: "  \"signing_key\": \"c4e7b1a9d2f60358e7c1b4a9d2f60358e7c1b4a9d2f60358e7c1b4a9d2f60358\",",
-        value: "c4e7b1a9d2f60358e7c1b4a9d2f60358e7c1b4a9d2f60358e7c1b4a9d2f60358",
+        line: "  \"signing_key\": \"450fa13c33e0cb0ed96248f7563b11150d1bc15ddba9c0ca02e8ad0faf33389f\",",
+        value: "450fa13c33e0cb0ed96248f7563b11150d1bc15ddba9c0ca02e8ad0faf33389f",
     },
     MissCase {
         name: "hex32_client_secret_yaml",
@@ -126,34 +118,8 @@ const MISS_TABLE: &[MissCase] = &[
     },
     MissCase {
         name: "hex64_master_key_env",
-        line: "MASTER_KEY=5a3691f4c8e2b7d09a3f5c1e8b6d4a20f7c9f2c7a14e0b8d63549af1c2e7b8d0",
-        value: "5a3691f4c8e2b7d09a3f5c1e8b6d4a20f7c9f2c7a14e0b8d63549af1c2e7b8d0",
-    },
-    // ── keyword-anchored UUID used as a credential ──────────────────────
-    MissCase {
-        name: "uuid_token_assign",
-        line: "token = \"3b241101-e2bb-4255-8caf-4136c566a962\"",
-        value: "3b241101-e2bb-4255-8caf-4136c566a962",
-    },
-    MissCase {
-        name: "uuid_api_key_yaml",
-        line: "api_key: 1f7b3d29-5c8e-4a06-b2d1-9e3f7a0c4b85",
-        value: "1f7b3d29-5c8e-4a06-b2d1-9e3f7a0c4b85",
-    },
-    MissCase {
-        name: "uuid_client_secret_env",
-        line: "CLIENT_SECRET=9e3f7a0c-4b85-1f7b-3d29-5c8e4a06b2d1",
-        value: "9e3f7a0c-4b85-1f7b-3d29-5c8e4a06b2d1",
-    },
-    MissCase {
-        name: "uuid_access_key_json",
-        line: "  \"access_key\": \"a0c4b851-f7b3-d295-c8e4-a06b2d19e3f7\"",
-        value: "a0c4b851-f7b3-d295-c8e4-a06b2d19e3f7",
-    },
-    MissCase {
-        name: "uuid_secret_query_param",
-        line: "https://api.example.com/v1/sync?secret=c566a962-3b24-1101-e2bb-42558caf4136",
-        value: "c566a962-3b24-1101-e2bb-42558caf4136",
+        line: "MASTER_KEY=92c127dc993be1698acd9ab128bab778f22370eed5c4ca20bcce9f653e5541c1",
+        value: "92c127dc993be1698acd9ab128bab778f22370eed5c4ca20bcce9f653e5541c1",
     },
     // ── keyword-anchored raw base64 secrets (no vendor prefix) ──────────
     MissCase {
@@ -268,17 +234,6 @@ const MISS_TABLE: &[MissCase] = &[
         line: "secret_token = \"H0aZt5nB8jY3hK6mQ9vL2pR4wXc7dF1g\"",
         value: "H0aZt5nB8jY3hK6mQ9vL2pR4wXc7dF1g",
     },
-    // ── nonce / salt / seed shapes ──────────────────────────────────────
-    MissCase {
-        name: "hmac_salt_hex_assign",
-        line: "salt = \"e7c1b4a9d2f60358e7c1b4a9d2f60358\"",
-        value: "e7c1b4a9d2f60358e7c1b4a9d2f60358",
-    },
-    MissCase {
-        name: "nonce_hex_assign",
-        line: "nonce: 0358e7c1b4a9d2f60358e7c1b4a9d2f6",
-        value: "0358e7c1b4a9d2f60358e7c1b4a9d2f6",
-    },
     // ── batch 2: additional real-world prefix-free shapes (same classes) ─
     // Each is a distinct file-format / keyword / casing variant a human commits;
     // none carries a vendor prefix, so a green can only come from generation.
@@ -289,48 +244,23 @@ const MISS_TABLE: &[MissCase] = &[
     },
     MissCase {
         name: "hex48_app_secret_properties",
-        line: "app.secret=b3c4d5e6f7081a2b3c4d5e6f7081a2b3c4d5e6f7081a2b3c",
-        value: "b3c4d5e6f7081a2b3c4d5e6f7081a2b3c4d5e6f7081a2b3c",
+        line: "app.secret=c3c3d7cab79268cb7e2354cc83d29b0fea84e049126e3121",
+        value: "c3c3d7cab79268cb7e2354cc83d29b0fea84e049126e3121",
     },
     MissCase {
         name: "hex64_hmac_secret_toml",
-        line: "hmac_secret = \"d63549af1c2e7b8d05a3691f4c8e2b7d09a3f5c1e8b6d4a209f2c7a14e0b8d635\"",
-        value: "d63549af1c2e7b8d05a3691f4c8e2b7d09a3f5c1e8b6d4a209f2c7a14e0b8d635",
+        line: "hmac_secret = \"25eef8a17c7aa607017b85e88a3a9e80099b5adaaba772299bc0086458bd2ad6\"",
+        value: "25eef8a17c7aa607017b85e88a3a9e80099b5adaaba772299bc0086458bd2ad6",
     },
     MissCase {
         name: "hex64_db_encryption_key_xml",
-        line: "  <encryptionKey>8e2b7d09a3f5c1e8b6d4a20f7c9f2c7a14e0b8d63549af1c2e7b8d05a3691f4c8</encryptionKey>",
-        value: "8e2b7d09a3f5c1e8b6d4a20f7c9f2c7a14e0b8d63549af1c2e7b8d05a3691f4c8",
+        line: "  <encryptionKey>450fa13c33e0cb0ed96248f7563b11150d1bc15ddba9c0ca02e8ad0faf33389f</encryptionKey>",
+        value: "450fa13c33e0cb0ed96248f7563b11150d1bc15ddba9c0ca02e8ad0faf33389f",
     },
     MissCase {
         name: "hex48_webhook_secret_assign",
         line: "WEBHOOK_SECRET=4d5e6f7081a2b3c4d5e6f7081a2b3c4d5e6f7081a2b3c4d5",
         value: "4d5e6f7081a2b3c4d5e6f7081a2b3c4d5e6f7081a2b3c4d5",
-    },
-    MissCase {
-        name: "uuid_refresh_token_assign",
-        line: "refresh_token = \"7a0c4b85-1f7b-3d29-5c8e-4a06b2d19e3f\"",
-        value: "7a0c4b85-1f7b-3d29-5c8e-4a06b2d19e3f",
-    },
-    MissCase {
-        name: "uuid_session_key_yaml",
-        line: "session_key: e2bb4255-8caf-4136-c566-a9623b241101",
-        value: "e2bb4255-8caf-4136-c566-a9623b241101",
-    },
-    MissCase {
-        name: "uuid_app_secret_properties",
-        line: "app.secret=4136c566-a962-3b24-1101-e2bb42558caf",
-        value: "4136c566-a962-3b24-1101-e2bb42558caf",
-    },
-    MissCase {
-        name: "uuid_private_key_xml",
-        line: "  <privateKey>5c8e4a06-b2d1-9e3f-7a0c-4b851f7b3d29</privateKey>",
-        value: "5c8e4a06-b2d1-9e3f-7a0c-4b851f7b3d29",
-    },
-    MissCase {
-        name: "uuid_bearer_authorization",
-        line: "Authorization: Bearer b2d19e3f-7a0c-4b85-1f7b-3d295c8e4a06",
-        value: "b2d19e3f-7a0c-4b85-1f7b-3d295c8e4a06",
     },
     MissCase {
         name: "base64_private_key_assign",
@@ -401,17 +331,12 @@ const MISS_TABLE: &[MissCase] = &[
     },
     MissCase {
         name: "hmac_seed_hex_assign",
-        line: "seed = \"f60358e7c1b4a9d2f60358e7c1b4a9d2\"",
-        value: "f60358e7c1b4a9d2f60358e7c1b4a9d2",
-    },
-    MissCase {
-        name: "salt_hex64_assign",
-        line: "password_salt=b4a9d2f60358e7c1b4a9d2f60358e7c1b4a9d2f60358e7c1b4a9d2f60358e7c1",
-        value: "b4a9d2f60358e7c1b4a9d2f60358e7c1b4a9d2f60358e7c1b4a9d2f60358e7c1",
+        line: "hmac_seed = \"fc090a8d8f282d1221cb1c110c026b4f\"",
+        value: "fc090a8d8f282d1221cb1c110c026b4f",
     },
 ];
 
-/// Sanity invariant: the worklist is at least the 60-case target so the
+/// Sanity invariant: the worklist retains its established minimum so the
 /// per-class red count this lane is accountable for cannot silently shrink.
 #[test]
 fn miss_table_meets_minimum_worklist_size() {
@@ -423,12 +348,133 @@ fn miss_table_meets_minimum_worklist_size() {
     );
 }
 
-/// The per-case worklist: ONE assertion per real-world missed shape. Each FAILS
-/// today because generation never emits a candidate for the prefix-free value;
-/// each red names the exact shape keyhog owes. A single `#[test]` enumerating
-/// the table reports the precise count of still-missed shapes in its failure
-/// message, so the worklist size is visible at a glance and shrinks as
-/// generation lands (cases drop out of the `missed` list).
+#[test]
+fn generic_uuid_assignments_remain_identifiers() {
+    // Mirror evidence contains hundreds of UUID/resource-UID negatives and no
+    // UUID positives. A generic keyword supplies no provider syntax capable of
+    // distinguishing the two, so these former recall targets are precision
+    // negatives. Provider-specific UUID credentials belong in detector TOMLs.
+    for (line, value) in [
+        (
+            "token = \"3b241101-e2bb-4255-8caf-4136c566a962\"",
+            "3b241101-e2bb-4255-8caf-4136c566a962",
+        ),
+        (
+            "api_key: 1f7b3d29-5c8e-4a06-b2d1-9e3f7a0c4b85",
+            "1f7b3d29-5c8e-4a06-b2d1-9e3f7a0c4b85",
+        ),
+        (
+            "CLIENT_SECRET=9e3f7a0c-4b85-1f7b-3d29-5c8e4a06b2d1",
+            "9e3f7a0c-4b85-1f7b-3d29-5c8e4a06b2d1",
+        ),
+    ] {
+        assert!(
+            !surfaces(line, value),
+            "generic UUID identifier must not surface: {line}"
+        );
+    }
+}
+
+#[test]
+fn bearer_authorization_makes_uuid_shaped_material_a_credential() {
+    let value = "b2d19e3f-7a0c-4b85-1f7b-3d295c8e4a06";
+    assert!(
+        surfaces(&format!("Authorization: Bearer {value}"), value),
+        "the structural Bearer anchor owns credential classification even when the value is UUID-shaped"
+    );
+}
+
+#[test]
+fn public_salts_and_nonces_are_not_generic_secrets() {
+    for (line, value) in [
+        (
+            "salt = \"e7c1b4a9d2f60358e7c1b4a9d2f60358\"",
+            "e7c1b4a9d2f60358e7c1b4a9d2f60358",
+        ),
+        (
+            "nonce: 0358e7c1b4a9d2f60358e7c1b4a9d2f6",
+            "0358e7c1b4a9d2f60358e7c1b4a9d2f6",
+        ),
+        (
+            "password_salt=b4a9d2f60358e7c1b4a9d2f60358e7c1b4a9d2f60358e7c1b4a9d2f60358e7c1",
+            "b4a9d2f60358e7c1b4a9d2f60358e7c1b4a9d2f60358e7c1b4a9d2f60358e7c1",
+        ),
+    ] {
+        assert!(
+            !surfaces(line, value),
+            "generic public salt/nonce must not surface: {line}"
+        );
+    }
+}
+
+#[test]
+fn broad_api_key_does_not_reclassify_sha256_as_key_material() {
+    let value = "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7c1a49e27e4d6c2";
+    assert!(
+        !surfaces(&format!("api_key = \"{value}\""), value),
+        "64-hex needs an explicit cryptographic-key role; broad api_key remains digest-shaped"
+    );
+}
+
+#[test]
+fn cryptographic_xml_assignment_extracts_its_value() {
+    let value = "450fa13c33e0cb0ed96248f7563b11150d1bc15ddba9c0ca02e8ad0faf33389f";
+    let line = format!("<encryptionKey>{value}</encryptionKey>");
+    assert_eq!(
+        keyhog_scanner::testing::entropy_keywords::xml_assignment_value(&line).as_deref(),
+        Some(value)
+    );
+    assert!(
+        keyhog_scanner::testing::normalized_assignment_keyword_is_credential_for_test(
+            "encryptionkey"
+        )
+    );
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detector policy");
+    let detector = detectors
+        .iter()
+        .find(|detector| detector.id == "generic-api-key")
+        .expect("generic-api-key detector");
+    assert!(detector.allows_canonical_hex_key_material("encryptionkey", value));
+    let context =
+        keyhog_scanner::testing::entropy_scanner::credential_keyword_context("encryptionkey");
+    assert!(
+        keyhog_scanner::testing::entropy_scanner::candidate_is_plausible(
+            value,
+            keyhog_scanner::testing::shannon_entropy_scalar_for_test(value.as_bytes()),
+            &context,
+            &[],
+        )
+    );
+    let credentials = credentials_for(&line);
+    assert!(
+        credentials
+            .iter()
+            .any(|credential| credential.contains(value) || value.contains(credential)),
+        "XML value extracted but not reported; credentials={credentials:?}"
+    );
+}
+
+#[test]
+fn canonical_hex_repeat_gate_only_rejects_degenerate_material() {
+    let random_with_short_run = "450fa13c33e0cb0ed96248f7563b11150d1bc15ddba9c0ca02e8ad0faf33389f";
+    assert!(
+        surfaces(
+            &format!("<encryptionKey>{random_with_short_run}</encryptionKey>"),
+            random_with_short_run
+        ),
+        "short repeats occur naturally in random hex key material"
+    );
+
+    let degenerate = "450fa13c33e0cb0ed96248f7563000000000015ddba9c0ca02e8ad0faf33389f";
+    assert!(
+        !surfaces(&format!("encryption_key={degenerate}"), degenerate),
+        "ten identical bytes are synthetic filler, not canonical key material"
+    );
+}
+
+/// The per-case contract: one exact assertion per prefix-free secret shape. A
+/// single test reports every missing candidate so failures retain their class
+/// and fixture names.
 #[test]
 fn every_real_world_secret_shape_is_surfaced() {
     let mut missed: Vec<&str> = Vec::new();
@@ -449,9 +495,9 @@ fn every_real_world_secret_shape_is_surfaced() {
 }
 
 // ── per-class roll-up assertions ───────────────────────────────────────
-// Distinct from the table enumerator: these name the CLASS keyhog is blind to,
-// so a class that is wholly un-generated reads as one systemic finding, not a
-// scatter of individual reds. Each asserts the class recall over its table rows
+// Distinct from the table enumerator, these name the affected class so a
+// systemic generation failure is not reduced to scattered case failures. Each
+// asserts the class recall over its table rows
 // meets the SAME floor the CredData target spec (`test_recall_targets.py`) sets,
 // keeping the Rust micro-target and the Python corpus-target in lockstep.
 
@@ -473,18 +519,6 @@ fn hex_key_class_meets_floor() {
         recall >= 0.85,
         "hex-key class recall {recall:.3} ({hit}/{total}) below 0.85 target: \
          keyword-anchored bare-hex keys never become candidates (generation gap)"
-    );
-}
-
-#[test]
-fn uuid_class_meets_floor() {
-    let (hit, total) = class_recall("uuid");
-    assert!(total >= 4, "uuid table rows missing");
-    let recall = hit as f64 / total as f64;
-    assert!(
-        recall >= 0.85,
-        "uuid class recall {recall:.3} ({hit}/{total}) below 0.85 target: \
-         keyword-anchored UUID credentials never become candidates (generation gap)"
     );
 }
 

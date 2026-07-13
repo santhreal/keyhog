@@ -1840,7 +1840,7 @@ pub mod confidence {
     #[cfg(test)]
     pub(crate) fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> f64 {
         crate::confidence::penalties::apply_post_ml_penalties_with_encoded_text_lift(
-            score, credential, is_named, false,
+            score, credential, is_named, false, false,
         )
     }
 
@@ -1876,6 +1876,7 @@ pub mod confidence {
                 is_named_detector,
                 penalize_test_paths,
                 allow_encoded_text_lift,
+                allow_canonical_hex_key: false,
                 calibration: None,
             },
         )
@@ -2311,6 +2312,7 @@ pub mod multiline {
         pub end_offset: usize,
         pub line_number: usize,
         pub original_start_offset: usize,
+        pub transport_decoded: bool,
     }
 
     #[derive(Debug, Clone)]
@@ -2372,6 +2374,7 @@ pub mod multiline {
                     end_offset: mapping.end_offset,
                     line_number: mapping.line_number,
                     original_start_offset: mapping.original_start_offset,
+                    transport_decoded: mapping.transport_decoded,
                 })
                 .collect(),
         )
@@ -2399,6 +2402,7 @@ pub mod multiline {
                 end_offset: mapping.end_offset,
                 line_number: mapping.line_number,
                 original_start_offset: mapping.original_start_offset,
+                transport_decoded: mapping.transport_decoded,
             }],
         };
         pre.source_offset_for_match(source, offset, credential)
@@ -2418,6 +2422,7 @@ pub mod multiline {
                     end_offset: mapping.end_offset,
                     line_number: mapping.line_number,
                     original_start_offset: mapping.original_start_offset,
+                    transport_decoded: mapping.transport_decoded,
                 })
                 .collect(),
         }
@@ -2879,6 +2884,7 @@ fn inner_preprocessed<'a>(
                 end_offset: mapping.end_offset,
                 line_number: mapping.line_number,
                 original_start_offset: mapping.original_start_offset,
+                transport_decoded: mapping.transport_decoded,
             })
             .collect(),
     }
@@ -4549,8 +4555,8 @@ pub(crate) mod decode_structure {
         crate::decode_structure::evidence(candidate).decoded_is_base64_blob()
     }
 
-    pub fn decoded_is_hex_key_material(candidate: &str) -> bool {
-        crate::decode_structure::evidence(candidate).decoded_is_hex_key_material()
+    pub fn decoded_hex_text_len(candidate: &str) -> Option<usize> {
+        crate::decode_structure::evidence(candidate).decoded_hex_text_len()
     }
 
     pub(crate) fn decodes_to_printable_text(candidate: &str) -> bool {

@@ -153,6 +153,8 @@ pub mod regression_entropy_floor_config;
 pub mod regression_entropy_histogram;
 #[path = "regression_entropy_keyword_list.rs"]
 pub mod regression_entropy_keyword_list;
+#[path = "regression_entropy_sentence_handle.rs"]
+pub mod regression_entropy_sentence_handle;
 #[path = "regression_entropy_unique_char_count.rs"]
 pub mod regression_entropy_unique_char_count;
 #[path = "regression_env_file_source.rs"]

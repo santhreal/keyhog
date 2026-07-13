@@ -27,6 +27,7 @@ impl CompiledScanner {
                 file_path: file_path.as_deref(),
                 is_named_detector: pending.is_named_detector,
                 allow_encoded_text_lift: false,
+                allow_canonical_hex_key: pending.allow_canonical_hex_key,
                 calibration: self.config.calibration.as_deref(),
             },
         ) else {
@@ -75,7 +76,6 @@ impl CompiledScanner {
                 self.config.scan_comments,
                 self.config.penalize_test_paths,
             );
-
             self.emit_finalized_pending_match(scan_state, pending, report_conf);
         }
     }

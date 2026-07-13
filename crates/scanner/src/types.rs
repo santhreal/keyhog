@@ -142,6 +142,9 @@ pub(crate) struct LineMapping {
     pub(crate) end_offset: usize,
     pub(crate) line_number: usize,
     pub(crate) original_start_offset: usize,
+    /// The mapped line was synthesized from a transport-decoded structured
+    /// value (for example Kubernetes Secret `data:` base64), not plaintext.
+    pub(crate) transport_decoded: bool,
 }
 
 #[cfg(not(feature = "multiline"))]
@@ -189,6 +192,10 @@ impl<'a> PreprocessedText<'a> {
         source_offset_from_mapping(source, m, offset, credential)
     }
 
+    pub(crate) fn transport_decoded_for_offset(&self, offset: usize) -> bool {
+        transport_decoded_for_offset(&self.mappings, offset)
+    }
+
     pub(crate) fn passthrough(line: impl Into<std::borrow::Cow<'a, str>>) -> Self {
         let line: std::borrow::Cow<'a, str> = line.into();
         let end_offset = line.len();
@@ -201,9 +208,17 @@ impl<'a> PreprocessedText<'a> {
                 start_offset: 0,
                 end_offset,
                 original_start_offset: 0,
+                transport_decoded: false,
             }],
         }
     }
+}
+
+pub(crate) fn transport_decoded_for_offset(mappings: &[LineMapping], offset: usize) -> bool {
+    let idx = mappings.partition_point(|mapping| mapping.start_offset <= offset);
+    idx.checked_sub(1)
+        .and_then(|index| mappings.get(index))
+        .is_some_and(|mapping| offset < mapping.end_offset && mapping.transport_decoded)
 }
 
 /// The ONE always-compiled owner (was duplicated identically in `multiline/config.rs`

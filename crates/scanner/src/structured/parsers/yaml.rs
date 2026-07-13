@@ -88,12 +88,15 @@ fn extract_k8s_secret_maps(
             if key == ".dockerconfigjson" {
                 push_docker_config_passwords(&decoded, pending, &line_anchor, &fallback_anchor);
             }
-            pending.push(PendingExtractedPair::owned_anchor_with_fallback(
-                key,
-                decoded,
-                line_anchor,
-                fallback_anchor,
-            ));
+            pending.push(
+                PendingExtractedPair::owned_anchor_with_fallback(
+                    key,
+                    decoded,
+                    line_anchor,
+                    fallback_anchor,
+                )
+                .transport_decoded(),
+            );
         }
     }
 
@@ -136,12 +139,15 @@ fn push_docker_config_passwords(
         if password.is_empty() {
             continue;
         }
-        pending.push(PendingExtractedPair::owned_anchor_with_fallback(
-            format!("{registry}.password"),
-            password.to_owned(),
-            line_anchor.to_owned(),
-            fallback_anchor.to_owned(),
-        ));
+        pending.push(
+            PendingExtractedPair::owned_anchor_with_fallback(
+                format!("{registry}.password"),
+                password.to_owned(),
+                line_anchor.to_owned(),
+                fallback_anchor.to_owned(),
+            )
+            .transport_decoded(),
+        );
     }
 }
 

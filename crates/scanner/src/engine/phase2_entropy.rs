@@ -136,7 +136,7 @@ impl CompiledScanner {
             crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD
         };
 
-        // With authoritative ML, credential-anchored canonical hash/UUID/serial
+        // With authoritative ML, narrowly accepted credential-anchored hex key
         // candidates may be generated for model arbitration.
         #[cfg(feature = "ml")]
         let allow_canonical_lift = self.config.ml_enabled && self.config.entropy_ml_authoritative;
@@ -170,7 +170,20 @@ impl CompiledScanner {
                 .generic_owning_detector
                 .index_for_id(policy_detector_id)
                 .map(|index| &self.detectors[index]);
-            let bpe_bound = crate::entropy::bpe::enabled_for_detector(policy_detector).then(|| {
+            let transport_decoded = preprocessed.transport_decoded_for_offset(entropy_match.offset);
+            let detector_owned_canonical_hex_key = policy_detector.is_some_and(|detector| {
+                if transport_decoded {
+                    detector.allows_decoded_hex_key_material(&entropy_match.value)
+                } else {
+                    detector.allows_canonical_hex_key_material(
+                        &entropy_match.keyword,
+                        &entropy_match.value,
+                    )
+                }
+            });
+            let bpe_bound = (!detector_owned_canonical_hex_key
+                && crate::entropy::bpe::enabled_for_detector(policy_detector))
+            .then(|| {
                 crate::entropy::bpe::max_bytes_per_token_for_detector(
                     policy_detector,
                     self.config.entropy_bpe_max_bytes_per_token,
@@ -195,14 +208,17 @@ impl CompiledScanner {
                 continue;
             };
 
-            // Pass the lift switch only after generation; the gauntlet still
-            // owns every non-canonical precision gate.
+            // Pass both canonical-key evidence sources after generation: the
+            // optional model-authoritative lift and the owning detector's exact
+            // TOML policy. The gauntlet still owns every unrelated precision
+            // gate.
             if let Some(shape_stage) = entropy_match_suppression_stage(
                 &entropy_match,
                 preprocessed,
                 line_offsets,
                 chunk,
                 allow_canonical_lift,
+                detector_owned_canonical_hex_key,
                 source_entropy_requires_same_line_credential,
                 bpe_bound,
             ) {
@@ -255,7 +271,10 @@ impl CompiledScanner {
             // UNIFIED SCORING. When ML is live, route the entropy candidate
             // through the SAME MoE batch the detector/generic matches use, with
             // the model AUTHORITATIVE (no entropy-magnitude floor, see
-            // `MlPendingMatch::model_authoritative`). The MoE separates real
+            // `MlPendingMatch::model_authoritative`). Exact detector-local TOML
+            // key-material policy is structural evidence, so those candidates
+            // retain their heuristic floor just like the generic assignment
+            // path. The MoE separates otherwise unowned real
             // high-entropy secrets (~0.98) from high-entropy NON-secrets (FQDNs,
             // git SHAs, base64 blobs ~0.01) that the shape gates above don't
             // catch, and `apply_ml_batch_scores` then runs the ONE canonical
@@ -276,12 +295,13 @@ impl CompiledScanner {
                     entropy_match.line,
                     chunk.metadata.path.as_deref(),
                 );
-                scan_state.push_entropy_authoritative_ml_pending(
+                scan_state.push_entropy_ml_pending(
                     raw_match,
                     policy_conf,
                     std::mem::take(&mut entropy_match.value),
                     ml_context,
                     min_confidence_floor,
+                    detector_owned_canonical_hex_key,
                 );
                 continue;
             }
@@ -300,6 +320,7 @@ impl CompiledScanner {
                     file_path: chunk.metadata.path.as_deref(),
                     is_named_detector: false,
                     allow_encoded_text_lift: false,
+                    allow_canonical_hex_key: detector_owned_canonical_hex_key,
                     calibration: self.config.calibration.as_deref(),
                 },
             ) else {

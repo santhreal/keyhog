@@ -15,9 +15,12 @@ pub(crate) fn entropy_match_suppression_stage(
     preprocessed: &ScannerPreprocessedText<'_>,
     line_offsets: &[usize],
     chunk: &Chunk,
-    // ML-authoritative credential anchors may release canonical hash/UUID shape
-    // gates; all other precision gates stay live.
+    // ML-authoritative credential anchors may release narrow canonical hex-key
+    // shapes; UUID and every other precision gate stay live.
     allow_canonical_lift: bool,
+    // Exact owning-detector TOML keyword/length evidence. This is independent
+    // of ML authority and covers structured assignment forms such as XML.
+    detector_owned_canonical_hex_key: bool,
     source_entropy_requires_same_line_credential: bool,
     // Resolved BPE "rare-not-random" bound. `None` means the owning detector
     // explicitly disabled token efficiency; `Some` carries detector policy
@@ -46,12 +49,13 @@ pub(crate) fn entropy_match_suppression_stage(
     }
     let same_line_high_signal_assignment_owner =
         value_line_has_random_byte_blob_owner(entropy_match, preprocessed, line_offsets);
-    let canonical_lift = allow_canonical_lift
-        && same_line_credential_assignment
-        && crate::entropy::scanner::canonical_shape_lift_allowed(
-            &entropy_match.value,
-            &entropy_match.keyword,
-        );
+    let canonical_lift = same_line_credential_assignment
+        && (detector_owned_canonical_hex_key
+            || (allow_canonical_lift
+                && crate::entropy::scanner::canonical_shape_lift_allowed(
+                    &entropy_match.value,
+                    &entropy_match.keyword,
+                )));
     let isolated_bare_token = entropy_match.keyword == crate::entropy::ISOLATED_BARE_ENTROPY_LABEL;
     let lower_dash_app_password = crate::entropy::scanner::lower_dash_app_password_floor_met(
         &entropy_match.value,
@@ -84,7 +88,9 @@ pub(crate) fn entropy_match_suppression_stage(
 
     // Pure identifiers are not entropy credentials; keep this local because the
     // entropy fallback emits directly instead of going through named suppression.
-    if crate::suppression::shape::looks_like_pure_identifier(&entropy_match.value) {
+    if !canonical_lift
+        && crate::suppression::shape::looks_like_pure_identifier(&entropy_match.value)
+    {
         return Some(EntropyShapeStage::PureIdentifier);
     }
     // Whitespace-bearing values are natural-language labels or
@@ -94,6 +100,17 @@ pub(crate) fn entropy_match_suppression_stage(
     // YAML descriptions, log-line excerpts.
     if entropy_match.value.bytes().any(|b| b == b' ' || b == b'\t') {
         return Some(EntropyShapeStage::Whitespace);
+    }
+    // Candidate extraction can isolate the random-looking handle inside a
+    // longer sentence. A sentence-terminal token on a prose-bearing assignment
+    // line is prose, even though the extracted token itself has no whitespace.
+    // This gate requires both signals; punctuation by itself is not classified
+    // as prose here.
+    if entropy_match.value.ends_with(['.', '!', '?'])
+        && entropy_value_line(entropy_match, preprocessed, line_offsets)
+            .is_some_and(crate::suppression::decision::looks_like_prose_whitespace_run)
+    {
+        return Some(EntropyShapeStage::EnglishProse);
     }
     // English-prose suppression: a 16+ char value that is pure
     // lowercase ASCII letters (no digit, no symbol), OR a
@@ -145,12 +162,13 @@ pub(crate) fn entropy_match_suppression_stage(
     // prose, not an entropy-bearing secret. The same public-shape owner is used
     // by generic and weak-anchor postprocess paths so keyword context cannot
     // silently override a value-only public/non-secret shape.
-    if crate::suppression::shape::public_noncredential_shape_with_randomness(
-        &entropy_match.value,
-        crate::suppression::shape::PublicShapeScope::Full,
-        &randomness,
-    )
-    .is_some()
+    if !canonical_lift
+        && crate::suppression::shape::public_noncredential_shape_with_randomness(
+            &entropy_match.value,
+            crate::suppression::shape::PublicShapeScope::Full,
+            &randomness,
+        )
+        .is_some()
     {
         return Some(EntropyShapeStage::PublicNoncredentialShape);
     }
@@ -203,20 +221,10 @@ pub(crate) fn entropy_match_suppression_stage(
     // grabs the whole env-var assignment; the high-entropy payload
     // is just the UUID, which is a public identifier, not a credential.
     //
-    // CredData recall lane: release this gate ONLY when (a) the lift is
-    // engaged for a credential-anchored candidate AND (b) the value is itself
-    // EXACTLY a UUID shape: `KEY = "<uuid>"` where the whole assigned value is
-    // the UUID, the CredData `UUID` miss class (LaunchDarkly SDK keys, Heroku
-    // UUID keys, PowerBI client secrets are all UUID-bodied). A value that
-    // merely CONTAINS a UUID as a substring of a longer payload
-    // (`TOKEN_LIST=<...uuid...>`) is still suppressed, that residual is a
-    // public identifier inside an env list, not a credential, and the MoE has
-    // no anchor to arbitrate it. The whole-value UUID under a strong keyword is
-    // the one the model can earn.
-    let value_is_exact_uuid = crate::suppression::shape::is_uuid_v4_shape(&entropy_match.value);
-    if !(canonical_lift && value_is_exact_uuid)
-        && crate::suppression::shape::contains_uuid_v4_substring(&entropy_match.value)
-    {
+    // Generic entropy never owns UUID-bodied credentials. Exact UUIDs and UUID
+    // substrings are identifiers here; a provider-specific detector TOML must
+    // supply the additional syntax needed to classify one as a secret.
+    if crate::suppression::shape::contains_uuid_v4_substring(&entropy_match.value) {
         return Some(EntropyShapeStage::UuidV4OrSubstring);
     }
     // Email address (gogs TestInit.golden.ini:89 `USER=noreply@gogs.localhost`
@@ -353,7 +361,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // protobuf-wire parse) so it never false-suppresses a
     // real secret. Memoized in `decode_structure`, so the
     // cost is a single bytes-hash + cache lookup.
-    if !high_entropy_punctuation_payload && decode_evidence.is_binary_payload() {
+    if !canonical_lift && !high_entropy_punctuation_payload && decode_evidence.is_binary_payload() {
         return Some(EntropyShapeStage::EncodedBinary);
     }
     // Random-byte base64 decoy coherence for the entropy path. The generic

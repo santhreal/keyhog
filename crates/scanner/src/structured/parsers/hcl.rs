@@ -23,6 +23,7 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
                         context: var_name.clone(),
                         value,
                         line: index + 1,
+                        transport_decoded: false,
                     });
                 }
             }
@@ -47,6 +48,7 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
                                     context: var_name.clone(),
                                     value,
                                     line: line_index + 1,
+                                    transport_decoded: false,
                                 });
                             }
                         }
@@ -59,6 +61,7 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
                                         context: var_name.clone(),
                                         value,
                                         line: line_index + 2,
+                                        transport_decoded: false,
                                     });
                                 }
                                 consumed = next_index.saturating_sub(index);
@@ -79,6 +82,7 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
                                         context: format!("{var_name}.{name}"),
                                         value,
                                         line: line_index + 1,
+                                        transport_decoded: false,
                                     });
                                 }
                             }
@@ -91,6 +95,7 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
                                             context: format!("{var_name}.{name}"),
                                             value,
                                             line: line_index + 2,
+                                            transport_decoded: false,
                                         });
                                     }
                                     consumed = next_index.saturating_sub(index);
@@ -130,6 +135,7 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
                             context: name,
                             value,
                             line: index + 1,
+                            transport_decoded: false,
                         });
                     }
                 }
@@ -140,6 +146,7 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
                                 context: name,
                                 value,
                                 line: index + 2,
+                                transport_decoded: false,
                             });
                         }
                         index = next_index;

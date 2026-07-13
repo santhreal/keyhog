@@ -23,8 +23,8 @@
 
 use keyhog_core::compute_spec_hash;
 use keyhog_core::{
-    CompanionSpec, CredentialShape, DetectorKind, DetectorSpec, EntropyFloorBucket, PatternSpec,
-    Severity, VerifySpec,
+    CanonicalHexKeyMaterialSpec, CompanionSpec, CredentialShape, DetectorKind, DetectorSpec,
+    EntropyFloorBucket, PatternSpec, Severity, VerifySpec,
 };
 
 /// Fully-populated single-pattern detector. `name`/`service` are set equal to
@@ -420,8 +420,9 @@ fn spec_hash_binds_companion_order_within_a_detector() {
 // ── migration-knob field coverage (2026-07-07 per-detector recall/precision) ──
 // Every per-detector knob added in the 2026-07-07 migration (`kind`,
 // `min_confidence`, `entropy_floor`, the four entropy thresholds,
-// `keyword_free_min_len`, `min_len`, `max_len`, the allowlists/stopwords, the three
-// classification flags, `credential_shape`) OVERRIDES a scan-match/suppress
+// BPE and decoded-hex policy, `keyword_free_min_len`, `min_len`, `max_len`, the
+// allowlists/stopwords, the three classification flags, `credential_shape`)
+// OVERRIDES a scan-match/suppress
 // decision, so changing it changes WHICH findings a scan emits. Each MUST enter
 // the digest (Law 10: else the merkle cache keeps a stale skip). Each test flips
 // exactly ONE knob from its default and asserts an EXACT digest inequality; the
@@ -472,6 +473,15 @@ knob_changes_digest!(spec_hash_binds_bpe_max_bytes_per_token, |d| d
     .bpe_max_bytes_per_token =
     Some(2.4));
 knob_changes_digest!(spec_hash_binds_bpe_enabled, |d| d.bpe_enabled = Some(false));
+knob_changes_digest!(spec_hash_binds_decoded_hex_key_material_lengths, |d| d
+    .decoded_hex_key_material_lengths =
+    vec![32, 48]);
+knob_changes_digest!(spec_hash_binds_canonical_hex_key_material, |d| d
+    .canonical_hex_key_material =
+    vec![CanonicalHexKeyMaterialSpec {
+        lengths: vec![64],
+        keywords: vec!["k".into()],
+    }]);
 knob_changes_digest!(spec_hash_binds_keyword_free_min_len, |d| d
     .keyword_free_min_len =
     Some(32));

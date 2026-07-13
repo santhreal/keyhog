@@ -232,6 +232,7 @@ pub(crate) struct ReportAdjudicationPolicy<'a> {
     pub(crate) file_path: Option<&'a str>,
     pub(crate) is_named_detector: bool,
     pub(crate) allow_encoded_text_lift: bool,
+    pub(crate) allow_canonical_hex_key: bool,
     pub(crate) calibration: Option<&'a keyhog_core::Calibration>,
 }
 
@@ -533,6 +534,7 @@ pub(crate) fn finalize_report_candidate(
             is_named_detector: policy.is_named_detector,
             penalize_test_paths: policy.penalize_test_paths,
             allow_encoded_text_lift: policy.allow_encoded_text_lift,
+            allow_canonical_hex_key: policy.allow_canonical_hex_key,
             calibration: policy.calibration,
         },
     ) else {

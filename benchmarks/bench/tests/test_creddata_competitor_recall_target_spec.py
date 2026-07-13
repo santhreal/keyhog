@@ -90,11 +90,12 @@ _COMPETITORS = ("trufflehog", "noseyparker", "kingfisher", "betterleaks", "titus
 
 # Shape classes graded for competitor leadership, each with the minimum pool
 # size below which the class is too small to be a meaningful recall target on
-# this corpus pin (mirrors the min_pool guard in test_recall_targets).
+# this corpus pin (mirrors the min_pool guard in test_recall_targets). UUID is
+# excluded because the pinned UUID labels are identifiers, not credentials;
+# rewarding scanners for flagging them would invert the precision contract.
 _SHAPE_CLASSES: tuple[tuple[str, int], ...] = (
     ("hex64", 50),
     ("hex-other", 50),
-    ("uuid", 50),
     ("base64", 50),
     ("jwt", 20),
 )

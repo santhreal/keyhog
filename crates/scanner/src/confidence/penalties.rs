@@ -188,7 +188,8 @@ const DEGENERATE_SHAPE_PENALTY: f64 = 0.1;
 /// all three data-envelope arms share one factor.
 const DATA_ENVELOPE_PENALTY: f64 = 0.02;
 
-/// Apply post-ML penalties based on hard-coded placeholder heuristics.
+/// Apply post-ML penalties based on placeholder, diversity, repetition, and
+/// decoded-envelope evidence.
 ///
 /// `is_named` is true for service-anchored detectors. For those, the
 /// char-diversity and repeat-run SHAPE penalties are skipped: a 64-char hex
@@ -197,11 +198,16 @@ const DATA_ENVELOPE_PENALTY: f64 = 0.02;
 /// anchor already proved it is real. The placeholder-WORD penalty still
 /// applies to everything (a named token literally containing "EXAMPLE" /
 /// "placeholder" is a doc sample regardless of which detector fired).
+/// Detector-owned canonical hex uses the same narrow exemption for generic
+/// findings: exact assignment-key and length evidence replaces the otherwise
+/// destructive small-alphabet and decoded-envelope signals, while placeholder
+/// and degenerate-repeat penalties remain active.
 pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
     score: f64,
     credential: &str,
     is_named: bool,
     allow_encoded_text_secret: bool,
+    allow_canonical_hex_key: bool,
 ) -> f64 {
     if credential.is_empty() {
         return score;
@@ -243,7 +249,7 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
             adjusted *= DEGENERATE_SHAPE_PENALTY;
         }
     } else {
-        if char_diversity(credential) < 0.3 {
+        if !allow_canonical_hex_key && char_diversity(credential) < 0.3 {
             adjusted *= LOW_DIVERSITY_PENALTY;
         }
         if max_repeat_run(credential) > 0.5 || is_degenerate_repeat(credential) {
@@ -257,7 +263,7 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         // not parse end-to-end as protobuf - so this never fires on a named
         // detector (skipped here) and effectively never on a real generic
         // secret. This is keyhog's decode-through advantage feeding scoring.
-        if decode_evidence.is_binary_payload() {
+        if !allow_canonical_hex_key && decode_evidence.is_binary_payload() {
             adjusted *= DATA_ENVELOPE_PENALTY;
         }
         // Uniform random-base64 blob (44+ chars, all-base64 alphabet, with
@@ -271,7 +277,8 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         // service that publishes a 44+ char raw-base64 secret WITHOUT a
         // service-specific prefix; if it has one, a named detector would
         // have matched it instead of generic-*.
-        if !allow_encoded_text_secret
+        if !allow_canonical_hex_key
+            && !allow_encoded_text_secret
             && crate::decode_structure::looks_like_uniform_base64_blob(credential)
         {
             adjusted *= DATA_ENVELOPE_PENALTY;
@@ -281,7 +288,10 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         // >= 32). The inner bytes are the user-supplied content; the outer
         // wrapper is categorically a data envelope, not a credential. Mirror
         // v32 had 7 such FPs concentrated in yaml/k8s-secret fixtures.
-        if !allow_encoded_text_secret && decode_evidence.decoded_is_base64_blob() {
+        if !allow_canonical_hex_key
+            && !allow_encoded_text_secret
+            && decode_evidence.decoded_is_base64_blob()
+        {
             adjusted *= DATA_ENVELOPE_PENALTY;
         }
     }
@@ -444,7 +454,8 @@ mod tests {
         // (DEGENERATE_SHAPE). '!' is outside the base64 alphabet, so no
         // data-envelope arm fires. Generic detector (is_named = false).
         let value = "!".repeat(16);
-        let scored = apply_post_ml_penalties_with_encoded_text_lift(1.0, &value, false, false);
+        let scored =
+            apply_post_ml_penalties_with_encoded_text_lift(1.0, &value, false, false, false);
         // 1.0 × LOW_DIVERSITY_PENALTY × DEGENERATE_SHAPE_PENALTY = 0.1 × 0.1 = 0.01.
         assert!(
             (scored - 0.01).abs() < 1e-9,

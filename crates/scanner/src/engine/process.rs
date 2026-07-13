@@ -120,14 +120,18 @@ impl CompiledScanner {
         // matched pattern's memoized broad-identifier check. A mismatch in the
         // index-parallel base vector is an internal construction bug and is loud.
         let weak_anchor = self.detector_pattern_weak_anchor(entry);
+        let allow_decoded_hex_key_material = detector.allows_decoded_hex_key_material_len(
+            crate::decode_structure::evidence(credential).decoded_hex_text_len(),
+        );
         let named_suppression_ctx =
-            crate::suppression::NamedDetectorSuppressionCtx::with_weak_anchor(
+            crate::suppression::NamedDetectorSuppressionCtx::with_weak_anchor_and_decoded_hex_policy(
                 chunk.metadata.path.as_deref(),
                 inferred_context,
                 Some(chunk.metadata.source_type.as_ref()),
                 detector.id.as_ref(),
                 weak_anchor,
                 detector.structural_password_slot,
+                allow_decoded_hex_key_material,
             );
         let match_ctx = crate::adjudicate::MatchCtx::for_named_detector(named_suppression_ctx);
         if crate::adjudicate::record_suppression(
@@ -259,6 +263,7 @@ impl CompiledScanner {
                         file_path: chunk.metadata.path.as_deref(),
                         is_named_detector,
                         allow_encoded_text_lift: false,
+                        allow_canonical_hex_key: allow_decoded_hex_key_material,
                         calibration: self.config.calibration.as_deref(),
                     },
                 ) else {
@@ -317,6 +322,7 @@ impl CompiledScanner {
                     ml_context,
                     min_confidence_floor,
                     is_named_detector,
+                    allow_decoded_hex_key_material,
                 );
                 crate::telemetry::record_match_found();
             }

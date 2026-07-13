@@ -86,8 +86,8 @@ pub(crate) fn credential_keyword_context(keyword: &str) -> KeywordContext {
 /// Lift-aware sibling of [`credential_keyword_context`]: builds the same
 /// production credential anchor but with `allow_canonical_shapes` set to
 /// `allow_canonical_lift`. Exposed (doc-hidden, via `testing::entropy_scanner`)
-/// so the CredData recall-lane unit tests can drive `candidate_is_plausible`
-/// through both the strict gate and the model-arbitrated lift.
+/// so unit tests can drive `candidate_is_plausible` through both the strict gate
+/// and the model-arbitrated key-material lift.
 #[doc(hidden)]
 pub(crate) fn credential_keyword_context_with_lift(
     keyword: &str,
@@ -167,16 +167,12 @@ pub fn find_entropy_secrets_with_threshold(
     )
 }
 
-/// CredData recall lane (candidate GENERATION). Identical to
+/// Model-authoritative key-material generation. Identical to
 /// [`find_entropy_secrets_with_threshold`] but with an explicit
 /// `allow_canonical_lift` switch: when `true`, a STRONG credential-anchored line
 /// (`is_credential_context`) is allowed to GENERATE a candidate whose value is a
-/// canonical hash/UUID/serial shape, so the downstream MoE can arbitrate it.
-///
-/// This closes the root candidate-generation gap for the CredData `UUID` and
-/// `hex64` (AES-256 key) miss classes, where the value is dropped at the
-/// generation source by [`is_canonical_non_secret_shape`] before any candidate
-/// is produced (so no amount of downstream model authority can recover it).
+/// narrowly accepted canonical hex key shape, so the downstream MoE can
+/// arbitrate it. UUIDs and serials remain suppressed in this generic path.
 ///
 /// `allow_canonical_lift` is wired from `ml_enabled && entropy_ml_authoritative`
 /// at the call site (`engine::phase2_entropy`). With it `false` (the default,
@@ -184,7 +180,7 @@ pub fn find_entropy_secrets_with_threshold(
 /// to the strict gate, the SecretBench-mirror precision is preserved because
 /// the lift never engages without the model that earns it. The keyword-FREE
 /// candidate path NEVER lifts: a value with no credential anchor has no positive
-/// evidence, so canonical hash/UUID shapes stay suppressed at the source there.
+/// evidence, so canonical hash and UUID shapes stay suppressed at the source.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn find_entropy_secrets_with_canonical_lift(
     text: &str,
@@ -636,6 +632,7 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_an
         );
         for candidate in extract_candidates(
             keyword_line,
+            &context.keyword,
             context.min_len,
             &config.placeholder_keywords,
             context.is_credential_context,
@@ -705,6 +702,7 @@ fn collect_line_candidates_inner(
     let candidates = if crate::telemetry::is_dogfood_enabled() {
         let extracted = extract_candidates_with_rejections(
             line,
+            &context.keyword,
             context.min_len,
             placeholder_keywords,
             context.is_credential_context,
@@ -721,6 +719,7 @@ fn collect_line_candidates_inner(
     } else {
         extract_candidates(
             line,
+            &context.keyword,
             context.min_len,
             placeholder_keywords,
             context.is_credential_context,
@@ -845,18 +844,17 @@ fn candidate_plausibility_rejection_stage_with_policy(
         // even with the anchor; a real high-entropy key under a service anchor
         // is matched by its detector regex, not this generic entropy path.
         //
-        // CredData recall lane: when `allow_canonical_shapes` is set, i.e. the
-        // MoE is the runtime precision authority AND a strong credential keyword
-        // anchors this line: GENERATE the canonical-shape candidate anyway so
-        // the model can arbitrate it. The CredData `UUID` and `hex64` (AES-256
-        // key) miss classes are dropped HERE at the generation source; with the
-        // model in scope the strict drop trades real recall (the value never
-        // reaches the scorer) for a precision the MoE already provides. With the
-        // flag unset (non-ML path) this is the byte-identical strict gate, so
-        // the SecretBench-mirror precision, where `TOKEN=<32-hex>` is BOTH a
-        // positive and a sha256/git-sha/k8s-uid negative (is unchanged).
-        let canonical_lift = context.allow_canonical_shapes
-            && canonical_shape_lift_allowed(candidate, &context.keyword);
+        // Model-authoritative mode may generate only the narrow key-material
+        // shapes accepted by `canonical_shape_lift_allowed`. Exact UUIDs never
+        // lift through this generic path: provider-specific UUID credentials
+        // belong in that provider's detector TOML, where their syntax supplies
+        // evidence that a generic assignment keyword cannot.
+        let detector_owned_lift = spec.is_some_and(|detector| {
+            detector.allows_canonical_hex_key_material(&context.keyword, candidate)
+        });
+        let canonical_lift = detector_owned_lift
+            || (context.allow_canonical_shapes
+                && canonical_shape_lift_allowed(candidate, &context.keyword));
         if !canonical_lift && is_canonical_non_secret_shape(candidate) {
             return Some(StageId::EntropyValueShape(
                 EntropyShapeStage::CanonicalNonSecretShape,
@@ -901,7 +899,12 @@ pub(crate) fn is_canonical_non_secret_shape(value: &str) -> bool {
 /// plausible credential.
 pub(crate) fn canonical_shape_lift_allowed(value: &str, keyword: &str) -> bool {
     if crate::suppression::shape::looks_like_entropy_uuid_shape(value) {
-        return true;
+        // A UUID remains an identifier even beside a generic credential word.
+        // Providers that issue UUID-bodied credentials must declare that exact
+        // syntax in their detector TOML; the generic entropy bridge cannot
+        // distinguish those credentials from resource IDs, Kubernetes UIDs,
+        // and ordinary application identifiers.
+        return false;
     }
     if !value.bytes().all(|b| b.is_ascii_hexdigit()) {
         return false;

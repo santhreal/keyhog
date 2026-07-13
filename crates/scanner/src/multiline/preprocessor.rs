@@ -182,6 +182,7 @@ fn identity_line_mappings(text: &str, original_end: usize) -> Vec<LineMapping> {
             start_offset: offset,
             end_offset: (end + 1).min(original_end),
             original_start_offset: offset,
+            transport_decoded: false,
         });
         offset = end + 1;
     }
@@ -258,6 +259,7 @@ fn process_line_chain(
             end_offset: base_offset + joined.len(),
             line_number: original_start_line,
             original_start_offset: source_line_offset_or_record_gap(source_line_offsets, start_idx),
+            transport_decoded: false,
         }]
     };
 

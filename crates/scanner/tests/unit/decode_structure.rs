@@ -7,7 +7,7 @@
 
 use base64::Engine;
 use keyhog_scanner::testing::decode_structure::{
-    analyze, decoded_contains_nul_byte, decoded_contains_placeholder, decoded_is_hex_key_material,
+    analyze, decoded_contains_nul_byte, decoded_contains_placeholder, decoded_hex_text_len,
     decodes_to_printable_text, is_encoded_binary, looks_like_uniform_base64_blob, DecodeStructure,
 };
 
@@ -245,8 +245,8 @@ fn base64_wrapping_hex_key_material_is_not_a_decoded_placeholder() {
         "base64-wrapped hex key material is encoded printable secret text, not a binary blob"
     );
     assert!(
-        decoded_is_hex_key_material(encoded),
-        "base64-wrapped hex32/hex40/hex48 key material must be an explicit decode fact"
+        decoded_hex_text_len(encoded) == Some(48),
+        "decode evidence must preserve the exact printable-hex width"
     );
 }
 

@@ -72,6 +72,8 @@ resolved scan-wide policy.
 | `mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
 | `bpe_max_bytes_per_token` | A higher ceiling is looser: fewer compressible/word-like candidates are rejected | A lower ceiling is stricter: more language-like values are rejected, with corresponding recall risk |
 | `bpe_enabled = false` | Not applicable | Skips token-efficiency rejection for detectors such as human-chosen passwords |
+| `decoded_hex_key_material_lengths` | Adds only the declared pure-hex widths after transport decoding | Omitted widths remain decoded-digest negatives |
+| `canonical_hex_key_material` | Adds only the declared pure-hex lengths under the declared assignment keys | Omitted keyword/length pairs remain digest-shaped negatives |
 | `min_len` / `keyword_free_min_len` | Longer values are required; short false positives fall, but short real credentials can also fall | Shorter credential shapes become eligible |
 | `max_len` (phase-2 generic) | Longer assignment values remain eligible; increase only when the credential contract permits them | Long assignment values are rejected rather than truncated into an apparently valid finding |
 | `min_confidence` | Raises this detector's reporting floor | Lowers this detector's reporting floor; an operator override can still replace it |
@@ -99,6 +101,16 @@ permissive detector-owned entropy floor appropriate to the credential family,
 then let its BPE, shape, context, and confidence policy reject word-like noise.
 It is not equivalent to blindly replacing entropy with one global BPE number,
 and `bpe_enabled` alone never creates a candidate.
+
+Detector-owned `canonical_hex_key_material` is the deliberate exception to the
+BPE and generic low-diversity/decode-as-data gates. Hexadecimal key bytes
+tokenize efficiently and use a small alphabet for the same mechanical reasons
+hexadecimal digests do, so the exact detector-owned keyword/length contract
+supplies the discriminator. Placeholder, degenerate-repeat, entropy, context,
+and reporting gates remain active. When ML is enabled, this exact TOML match is
+structural positive evidence and therefore preserves the detector heuristic
+floor; the model may raise its score but cannot erase a policy-proven key as if
+it were an unowned entropy candidate.
 
 Scan-wide settings remain operational controls, but they do not all compose the
 same way. Explicit CLI values take precedence over config-file values. An
@@ -261,9 +273,13 @@ Even a regex match isn't always a credential. Stage 4 filters:
   - *Generic / entropy only:* `pure_identifier`,
     `word_separated_identifier`, `scheme_prefixed_uri`,
     `url_or_path_segment`, `contains_uuid_v4_substring`. These shapes
-    CAN be real credentials when paired with a service anchor (PowerBI
-    client_id is a UUID, mongodb-atlas is a URI), so we only apply
-    them to anchorless detectors.
+    can be real credentials when paired with a service or protocol anchor, so
+    named detector TOMLs and structural authorization detectors own those
+    cases. A generic `token=<uuid>` remains an identifier; an
+    `Authorization: Bearer <uuid>` value is a credential because the Bearer
+    envelope supplies the missing evidence. Public salts and nonces are not
+    generic secrets. A detector for a product whose field is genuinely secret
+    despite that name must own the product syntax explicitly.
 - **Path-based suppressions** - vendored bundles (`node_modules/`,
   `wp-includes/`, `bower_components/`), CI workflow files (where
   `${{ secrets.NAME }}` references are syntactic, not credentials),

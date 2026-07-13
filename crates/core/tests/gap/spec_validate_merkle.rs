@@ -26,8 +26,8 @@
 //! comparing `compute_spec_hash` outputs to one another.
 
 use keyhog_core::{
-    compute_spec_hash, validate_detector, CompanionSpec, DetectorFile, DetectorSpec, PatternSpec,
-    QualityIssue, Severity,
+    compute_spec_hash, validate_detector, CanonicalHexKeyMaterialSpec, CompanionSpec, DetectorFile,
+    DetectorKind, DetectorSpec, PatternSpec, QualityIssue, Severity,
 };
 
 // ---------------------------------------------------------------------------
@@ -709,6 +709,113 @@ fn no_patterns_is_error() {
         has_error_containing(&issues, "no patterns defined"),
         "empty patterns => Error 'no patterns defined', got: {issues:?}"
     );
+}
+
+#[test]
+fn decoded_hex_key_material_lengths_require_phase2_generic_kind() {
+    let mut d = clean_detector("decoded-hex-on-regex");
+    d.decoded_hex_key_material_lengths = vec![32, 48];
+    let issues = validate_detector(&d);
+    assert!(
+        has_error_containing(
+            &issues,
+            "decoded_hex_key_material_lengths is only valid for kind = \"phase2-generic\""
+        ),
+        "regex detector must not claim phase-2 decoded-hex policy: {issues:?}"
+    );
+}
+
+#[test]
+fn decoded_hex_key_material_lengths_reject_invalid_and_duplicate_widths() {
+    let mut detector = clean_detector("decoded-hex-widths");
+    detector.kind = DetectorKind::Phase2Generic;
+    detector.patterns.clear();
+    detector.keywords = vec!["api_key".into()];
+    detector.decoded_hex_key_material_lengths = vec![15, 17, 32, 32];
+
+    let issues = validate_detector(&detector);
+    assert!(has_error_containing(
+        &issues,
+        "value 15 must be an even character count of at least 16"
+    ));
+    assert!(has_error_containing(
+        &issues,
+        "value 17 must be an even character count of at least 16"
+    ));
+    assert!(has_error_containing(
+        &issues,
+        "contains duplicate length 32"
+    ));
+}
+
+#[test]
+fn canonical_hex_key_material_requires_owned_valid_policy() {
+    let policy = CanonicalHexKeyMaterialSpec {
+        lengths: vec![64],
+        keywords: vec!["signing_key".into()],
+    };
+
+    let mut regex_detector = clean_detector("canonical-hex-on-regex");
+    regex_detector.canonical_hex_key_material = vec![policy.clone()];
+    let issues = validate_detector(&regex_detector);
+    assert!(has_error_containing(
+        &issues,
+        "canonical_hex_key_material is only valid for kind = \"phase2-generic\""
+    ));
+
+    let mut generic = clean_detector("canonical-hex-generic");
+    generic.kind = DetectorKind::Phase2Generic;
+    generic.patterns.clear();
+    generic.keywords = vec!["signing_key".into()];
+    generic.canonical_hex_key_material = vec![policy];
+    assert!(
+        validate_detector(&generic).is_empty(),
+        "an owned exact keyword/length policy must validate"
+    );
+    let key = "0123456789abcdef".repeat(4);
+    assert!(generic.allows_canonical_hex_key_material("Signing-Key", &key));
+    assert!(generic.allows_canonical_hex_key_material("signing.key", &key));
+    assert!(!generic.allows_canonical_hex_key_material("api_key", &key));
+
+    generic.canonical_hex_key_material[0].keywords = vec!["unowned_key".into()];
+    let issues = validate_detector(&generic);
+    assert!(has_error_containing(
+        &issues,
+        "must also appear in detector.keywords"
+    ));
+}
+
+#[test]
+fn canonical_hex_key_material_rejects_ambiguous_or_invalid_tables() {
+    let mut detector = clean_detector("invalid-canonical-hex");
+    detector.kind = DetectorKind::Phase2Generic;
+    detector.patterns.clear();
+    detector.keywords = vec!["signing_key".into()];
+    detector.canonical_hex_key_material = vec![
+        CanonicalHexKeyMaterialSpec {
+            lengths: vec![15, 32, 32],
+            keywords: vec!["signing-key".into(), "Signing.Key".into(), "bad key".into()],
+        },
+        CanonicalHexKeyMaterialSpec {
+            lengths: vec![32],
+            keywords: vec!["signing_key".into()],
+        },
+    ];
+
+    let issues = validate_detector(&detector);
+    for expected in [
+        "length 15 must be an even character count of at least 16",
+        "contains duplicate length 32",
+        "contains duplicate normalized keyword \"signingkey\"",
+        "keyword \"bad key\" must contain ASCII alphanumerics",
+        "repeats keyword \"Signing.Key\" at length 32",
+        "repeats keyword \"signing_key\" at length 32 across policies",
+    ] {
+        assert!(
+            has_error_containing(&issues, expected),
+            "missing {expected:?} from {issues:?}"
+        );
+    }
 }
 
 #[test]

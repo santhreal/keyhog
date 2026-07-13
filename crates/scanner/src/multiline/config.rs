@@ -99,6 +99,10 @@ impl<'a> PreprocessedText<'a> {
         source_offset_from_mapping(source, m, offset, credential)
     }
 
+    pub(crate) fn transport_decoded_for_offset(&self, offset: usize) -> bool {
+        crate::types::transport_decoded_for_offset(&self.mappings, offset)
+    }
+
     /// Build a preprocessed representation with a one-line identity mapping.
     ///
     /// Takes the text as a [`Cow`] so a byte-identical passthrough chunk can be
@@ -117,6 +121,7 @@ impl<'a> PreprocessedText<'a> {
                 start_offset: offset,
                 end_offset: end + 1,
                 original_start_offset: offset,
+                transport_decoded: false,
             });
             offset = end + 1;
         }

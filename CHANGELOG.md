@@ -6,6 +6,15 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Generic pure-hex key handling is now detector-owned. Phase-2 detector TOMLs
+  declare exact direct-assignment keyword/length pairs and exact
+  transport-decoded hex widths; those declarations participate in detector
+  validation, cache identity, ML/report adjudication, `explain`, and detector
+  JSON. Structured decoding preserves transport provenance, so a direct
+  cryptographic-key allowance cannot reclassify a base64-wrapped SHA digest.
+  Encoded UUIDs, ARNs, hashes, license serials, and prose remain suppressed;
+  generic UUID, salt, and nonce assignments remain identifiers unless a named
+  detector or structural authorization envelope supplies stronger evidence.
 - `--severity client-safe` and `[scan].severity = "client-safe"` now select the
   real tier between `info` and `low`; CLI help, config validation, and the
   reference all expose the same six accepted levels. `config --effective` now

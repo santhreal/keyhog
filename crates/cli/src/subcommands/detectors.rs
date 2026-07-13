@@ -172,6 +172,8 @@ fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
                     "mixed_alnum_floor": d.mixed_alnum_floor,
                     "bpe_enabled": d.bpe_enabled,
                     "bpe_max_bytes_per_token": d.bpe_max_bytes_per_token,
+                    "decoded_hex_key_material_lengths": d.decoded_hex_key_material_lengths,
+                    "canonical_hex_key_material": d.canonical_hex_key_material,
                     "keyword_free_min_len": d.keyword_free_min_len,
                     "min_len": d.min_len,
                     "max_len": d.max_len,

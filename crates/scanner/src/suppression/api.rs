@@ -95,6 +95,7 @@ pub(crate) struct NamedDetectorSuppressionCtx<'a> {
     detector_id: &'a str,
     weak_anchor: bool,
     structural_password_slot: bool,
+    allow_decoded_hex_key_material: bool,
 }
 
 impl<'a> NamedDetectorSuppressionCtx<'a> {
@@ -106,6 +107,26 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
         weak_anchor: bool,
         structural_password_slot: bool,
     ) -> Self {
+        Self::with_weak_anchor_and_decoded_hex_policy(
+            path,
+            context,
+            source_type,
+            detector_id,
+            weak_anchor,
+            structural_password_slot,
+            false,
+        )
+    }
+
+    pub(crate) fn with_weak_anchor_and_decoded_hex_policy(
+        path: Option<&'a str>,
+        context: context::CodeContext,
+        source_type: Option<&'a str>,
+        detector_id: &'a str,
+        weak_anchor: bool,
+        structural_password_slot: bool,
+        allow_decoded_hex_key_material: bool,
+    ) -> Self {
         Self {
             path,
             context,
@@ -113,6 +134,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
             detector_id,
             weak_anchor,
             structural_password_slot,
+            allow_decoded_hex_key_material,
         }
     }
 }
@@ -458,10 +480,11 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // weak_anchor pure-hex case (alchemy / carbon-black / crowdin / …) whose
     // `min_confidence = 0.2` already declares the keyword anchor authoritative
     // the shape gate firing ahead of confidence was defeating that intent.
-    let allow_canonical_hex_key = crate::detector_ids::is_service_anchored_detector(detector_id)
-        && super::shape::is_canonical_service_hex_key(credential);
     let allow_encoded_text_secret = crate::detector_ids::is_generic_detector(detector_id)
         && crate::decode_structure::decodes_to_printable_text(credential);
+    let allow_canonical_hex_key = (crate::detector_ids::is_service_anchored_detector(detector_id)
+        && super::shape::is_canonical_service_hex_key(credential))
+        || ctx.allow_decoded_hex_key_material;
     suppression_stage_inner(
         credential,
         path,

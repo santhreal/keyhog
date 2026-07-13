@@ -67,9 +67,116 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_verify_spec(spec, &mut issues);
     validate_thresholds(spec, &mut issues);
     validate_entropy_floor(spec, &mut issues);
+    validate_decoded_hex_key_material_lengths(spec, &mut issues);
+    validate_canonical_hex_key_material(spec, &mut issues);
     validate_credential_shape(spec, &mut issues);
     validate_detector_allowlists(spec, &mut issues);
     issues
+}
+
+fn validate_decoded_hex_key_material_lengths(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    if spec.decoded_hex_key_material_lengths.is_empty() {
+        return;
+    }
+    if spec.kind != DetectorKind::Phase2Generic {
+        issues.push(QualityIssue::Error(
+            "decoded_hex_key_material_lengths is only valid for kind = \"phase2-generic\"".into(),
+        ));
+    }
+    let mut seen = std::collections::HashSet::new();
+    for &length in &spec.decoded_hex_key_material_lengths {
+        if length < 16 || length % 2 != 0 {
+            issues.push(QualityIssue::Error(format!(
+                "decoded_hex_key_material_lengths value {length} must be an even character count of at least 16"
+            )));
+        }
+        if !seen.insert(length) {
+            issues.push(QualityIssue::Error(format!(
+                "decoded_hex_key_material_lengths contains duplicate length {length}"
+            )));
+        }
+    }
+}
+
+fn validate_canonical_hex_key_material(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    if spec.canonical_hex_key_material.is_empty() {
+        return;
+    }
+    if spec.kind != DetectorKind::Phase2Generic {
+        issues.push(QualityIssue::Error(
+            "canonical_hex_key_material is only valid for kind = \"phase2-generic\"".into(),
+        ));
+    }
+
+    let owned_keywords: std::collections::HashSet<String> = spec
+        .keywords
+        .iter()
+        .filter_map(|keyword| normalize_detector_keyword(keyword))
+        .collect();
+    let mut seen_pairs = std::collections::HashSet::new();
+    for (policy_index, policy) in spec.canonical_hex_key_material.iter().enumerate() {
+        if policy.lengths.is_empty() {
+            issues.push(QualityIssue::Error(format!(
+                "canonical_hex_key_material[{policy_index}].lengths must not be empty"
+            )));
+        }
+        if policy.keywords.is_empty() {
+            issues.push(QualityIssue::Error(format!(
+                "canonical_hex_key_material[{policy_index}].keywords must not be empty"
+            )));
+        }
+        let mut seen_lengths = std::collections::HashSet::new();
+        for &length in &policy.lengths {
+            if length < 16 || length % 2 != 0 {
+                issues.push(QualityIssue::Error(format!(
+                    "canonical_hex_key_material[{policy_index}] length {length} must be an even character count of at least 16"
+                )));
+            }
+            if !seen_lengths.insert(length) {
+                issues.push(QualityIssue::Error(format!(
+                    "canonical_hex_key_material[{policy_index}] contains duplicate length {length}"
+                )));
+            }
+        }
+        let mut seen_keywords = std::collections::HashSet::new();
+        for keyword in &policy.keywords {
+            let Some(normalized) = normalize_detector_keyword(keyword) else {
+                issues.push(QualityIssue::Error(format!(
+                    "canonical_hex_key_material[{policy_index}] keyword {keyword:?} must contain ASCII alphanumerics with only `_`, `-`, or `.` separators"
+                )));
+                continue;
+            };
+            if !seen_keywords.insert(normalized.clone()) {
+                issues.push(QualityIssue::Error(format!(
+                    "canonical_hex_key_material[{policy_index}] contains duplicate normalized keyword {normalized:?}"
+                )));
+            }
+            if !owned_keywords.contains(&normalized) {
+                issues.push(QualityIssue::Error(format!(
+                    "canonical_hex_key_material[{policy_index}] keyword {keyword:?} must also appear in detector.keywords"
+                )));
+            }
+            for &length in &policy.lengths {
+                if !seen_pairs.insert((normalized.clone(), length)) {
+                    issues.push(QualityIssue::Error(format!(
+                        "canonical_hex_key_material repeats keyword {keyword:?} at length {length} across policies"
+                    )));
+                }
+            }
+        }
+    }
+}
+
+fn normalize_detector_keyword(keyword: &str) -> Option<String> {
+    let mut normalized = String::with_capacity(keyword.len());
+    for byte in keyword.bytes() {
+        if byte.is_ascii_alphanumeric() {
+            normalized.push(byte.to_ascii_lowercase() as char);
+        } else if !matches!(byte, b'_' | b'-' | b'.') {
+            return None;
+        }
+    }
+    (!normalized.is_empty()).then_some(normalized)
 }
 
 fn validate_simdsieve_prefixes(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {

@@ -491,10 +491,21 @@ pub(super) fn suppression_stage_inner(
     //            • `MzRiNTIyOWY5NDdlZGZjOTIxMzVlZDNiMWU0MjE1Y2NlNm...`
     //                → 64-char sha256 hex (hash gate)
     //          The `skip_b64_decode_recheck` flag prevents recursion
-    //          when called from a previously-decoded payload.
+    //          when called from a previously-decoded payload. Printable encoded
+    //          secrets bypass only the broad outer blob-shape gate; they still
+    //          take this decoded-content check so encoded UUIDs, ARNs, hashes,
+    //          license serials, and placeholders cannot evade their own gates.
     //          SecretBench-medium 15k seed-0: estimated 3000-5000 of
     //          the 14k FPs come from this exact path.
-    if !skip_b64_decode_recheck && !allow_encoded_text_secret {
+    if !skip_b64_decode_recheck && allow_encoded_text_secret {
+        if let Some(reason) = decoded_benign_text_reason(credential) {
+            if !(allow_canonical_hex_key && reason == "decoded_bare_hash_digest") {
+                return suppress(reason);
+            }
+        }
+        return None;
+    }
+    if !skip_b64_decode_recheck {
         if let Some(decoded) = try_decode_b64_to_utf8(credential) {
             // Sanity bound: the decoded text must look like a sensible
             // payload (printable, not too long, not empty). Random

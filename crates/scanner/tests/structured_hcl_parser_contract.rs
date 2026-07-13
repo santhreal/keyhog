@@ -11,6 +11,7 @@ mod hcl_contract {
         pub context: String,
         pub value: String,
         pub line: usize,
+        pub transport_decoded: bool,
     }
 
     mod parser {

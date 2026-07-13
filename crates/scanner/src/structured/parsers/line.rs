@@ -13,6 +13,7 @@ pub(super) struct PendingExtractedPair {
     value: String,
     line_anchor: LineAnchor,
     fallback_anchor: Option<LineAnchor>,
+    transport_decoded: bool,
 }
 
 impl PendingExtractedPair {
@@ -22,6 +23,7 @@ impl PendingExtractedPair {
             value,
             line_anchor: LineAnchor::Value,
             fallback_anchor: None,
+            transport_decoded: false,
         }
     }
 
@@ -35,6 +37,7 @@ impl PendingExtractedPair {
             value,
             line_anchor: LineAnchor::Owned(line_anchor),
             fallback_anchor: None,
+            transport_decoded: false,
         }
     }
 
@@ -49,7 +52,13 @@ impl PendingExtractedPair {
             value,
             line_anchor: LineAnchor::Owned(line_anchor),
             fallback_anchor: Some(LineAnchor::Owned(fallback_anchor)),
+            transport_decoded: false,
         }
+    }
+
+    pub(super) fn transport_decoded(mut self) -> Self {
+        self.transport_decoded = true;
+        self
     }
 
     fn line_anchor(&self) -> &str {
@@ -165,6 +174,7 @@ pub(super) fn finalize_pending_pairs(
             context: pending_pair.context,
             value: pending_pair.value,
             line,
+            transport_decoded: pending_pair.transport_decoded,
         });
     }
     pairs

@@ -189,6 +189,51 @@ The available per-detector tuning fields are:
     Efficiency, not BPD; KeyHog uses `bpe_...` field names to keep that
     distinction explicit.
 
+### Decoded key material
+*   **`decoded_hex_key_material_lengths`** (integer array, optional;
+    `kind = "phase2-generic"` only): Exact printable-hex character counts this
+    detector may retain after transport decoding. Each width must be even and
+    at least 16, with no duplicates. `generic-api-key.toml` declares `[32, 48]`;
+    broad token/secret detectors declare none, so decoded 40-hex SHA-1 and
+    64-hex SHA-256 shapes remain digest-suppressed. Structured decoders preserve
+    transport provenance, so direct `secret_key=<64hex>` policy cannot silently
+    reclassify a base64-wrapped digest.
+*   **`canonical_hex_key_material`** (array of tables, optional;
+    `kind = "phase2-generic"` only): Declares exact pure-hex character counts
+    and assignment keys that this detector may treat as key material instead of
+    a digest. Each table has non-empty `lengths` and `keywords` arrays; every
+    listed keyword must also appear in the detector's top-level `keywords`.
+    Matching ignores assignment-key case and `_`, `-`, or `.` separators.
+    Direct assignments and structured assignment extraction (including XML)
+    resolve the same policy; there is no format-specific override. For
+    example, `generic-api-key.toml` admits 64-hex only for its explicit
+    cryptographic roles such as `signing_key`, `encryption_key`, and
+    `hmac_secret`, while `generic-secret.toml` owns `private_key` and
+    `signing_secret`. Neither turns a broad `api_key=<sha256>` assignment into a
+    finding. Canonical hex admitted by this policy skips BPE token efficiency
+    and the generic low-diversity/decode-as-data confidence penalties because
+    those mechanisms inherently classify pure hexadecimal as non-secret. The
+    entropy, placeholder, degenerate-repeat, context, and reporting gates still
+    apply. With ML enabled, an exact keyword/length match preserves the
+    detector-derived heuristic floor; authoritative ML veto remains reserved
+    for unowned entropy candidates.
+
+The fields live beside the detector's other top-level phase-2 policy, not in a
+scan-wide suppression table. For example:
+
+```toml
+decoded_hex_key_material_lengths = [32, 48]
+canonical_hex_key_material = [
+  { lengths = [32, 48], keywords = ["api_key", "encryption_key"] },
+  { lengths = [64], keywords = ["encryption_key"] },
+]
+```
+
+`keyhog explain <detector-id>` prints both declarations in the human-readable
+policy view. `keyhog detectors --format json` exposes them under each detector's
+`policy` object, so automation can inspect the same loaded TOML contract the
+scanner uses.
+
 ### Candidate Lengths
 *   **`keyword_free_min_len`** (integer, optional): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Falls back to `KEYWORD_FREE_MIN_LEN` (20) if unset.
 *   **`min_len`** (integer, optional): Per-detector minimum candidate length for any candidate this detector emits. Falls back to no detector-specific floor beyond the path-wide default if unset.

@@ -11,7 +11,7 @@ name = "Generic API Key"
 service = "generic"
 severity = "medium"
 kind = "phase2-generic"
-keywords = ["api_key", "apikey", "api-key", "access_key", "accesskey", "secret_key", "secretkey", "client_secret", "x-api-key", "apitoken", "api_token", "auth_key", "signing_key", "encryption_key", "master_key", "masterkey", "license_key"]
+keywords = ["api_key", "apikey", "api-key", "access_key", "accesskey", "secret_key", "secretkey", "client_secret", "x-api-key", "apitoken", "api_token", "auth_key", "signing_key", "encryption_key", "master_key", "masterkey", "session_key", "hmac_secret", "hmac_seed", "license_key"]
 entropy_high = 4.5
 entropy_low = 3.0
 entropy_very_high = 5.8
@@ -20,6 +20,16 @@ mixed_alnum_floor = 4.0
 # bytes/token under cl100k_base. A 2.3 ceiling admits it while remaining well
 # below the shipped word-like FP taxonomy (3.8+ bytes/token).
 bpe_max_bytes_per_token = 2.3
+# API/encryption-key assignments may carry base64-wrapped 32- or 48-character
+# hex keys. SHA-1/SHA-256 widths remain decoded-digest negatives.
+decoded_hex_key_material_lengths = [32, 48]
+# Canonical pure-hex values are ambiguous with digests, so the owning detector
+# declares exact keyword/length pairs. Broad API-key slots admit 128/192-bit
+# material; only explicit cryptographic-key slots admit SHA-256-shaped 64-hex.
+canonical_hex_key_material = [
+    { lengths = [32, 48], keywords = ["api_key", "access_key", "secret_key", "client_secret", "x-api-key", "auth_key", "signing_key", "encryption_key", "master_key", "session_key", "hmac_secret", "hmac_seed"] },
+    { lengths = [64], keywords = ["signing_key", "encryption_key", "master_key", "secret_key", "session_key", "hmac_secret", "hmac_seed"] },
+]
 min_len = 8
 # API/access keys are bounded tokens. Longer assignment payloads belong to a
 # structured/vendor detector and must not be truncated into a generic key.

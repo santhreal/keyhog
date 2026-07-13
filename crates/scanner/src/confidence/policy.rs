@@ -250,6 +250,7 @@ pub(crate) struct ReportConfidencePolicy<'a> {
     pub(crate) is_named_detector: bool,
     pub(crate) penalize_test_paths: bool,
     pub(crate) allow_encoded_text_lift: bool,
+    pub(crate) allow_canonical_hex_key: bool,
     pub(crate) calibration: Option<&'a keyhog_core::Calibration>,
 }
 
@@ -274,6 +275,7 @@ pub(crate) fn finalize_report_confidence(
         policy.credential,
         policy.is_named_detector,
         policy.allow_encoded_text_lift,
+        policy.allow_canonical_hex_key,
     );
     let confidence = crate::confidence::apply_path_confidence_penalties(
         confidence,

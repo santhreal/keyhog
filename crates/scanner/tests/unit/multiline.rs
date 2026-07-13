@@ -40,6 +40,7 @@ fn source_offset_remap_does_not_panic_on_mid_scalar_offset() {
             end_offset: source.len(),
             line_number: 1,
             original_start_offset: *mid_offset,
+            transport_decoded: false,
         };
         // offset is a position inside the mapped span (>= start_offset, <
         // end_offset) so the remap selects this mapping and reaches the slice.

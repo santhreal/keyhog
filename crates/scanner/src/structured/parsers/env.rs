@@ -31,6 +31,7 @@ pub(crate) fn parse_env(text: &str) -> Vec<ExtractedPair> {
                 context: key.to_string(),
                 value: unquoted,
                 line: line_idx + 1,
+                transport_decoded: false,
             });
         }
     }

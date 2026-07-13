@@ -218,10 +218,31 @@ gates apply (pure-identifier, scheme-URI, UUID, base64-blob, …). See
 [How detection works](./detection.md#stage-4---post-process) for the full list and
 rationale.
 
+Printable base64 is decoded once for the same structural checks. Encoded UUIDs,
+IAM ARNs, labelled and canonical digests, license serials, prose, and placeholder
+text remain non-secrets after transport encoding. The generic API-key detector's
+`decoded_hex_key_material_lengths = [32, 48]` policy keeps those two encoded key
+widths; 40-character SHA-1 and 64-character SHA-256 shapes remain
+digest-suppressed. Structured decoding preserves transport provenance, so a
+direct-assignment allowance cannot leak into a decoded value. Service-specific
+detector TOMLs can supply stronger syntax and bypass only the shape gates their
+anchor proves safe.
+
+For direct pure-hex assignments, a phase-2 detector can declare exact
+`canonical_hex_key_material` keyword/length pairs. The shipped generic API-key
+detector admits 32/48-hex for strong key roles and 64-hex only for its explicit
+cryptographic roles such as `encryption_key`, `signing_key`, and `hmac_secret`;
+the generic-secret detector separately owns `private_key` and `signing_secret`.
+Generic UUID assignments, public salts, and nonces stay suppressed; a named
+detector or structural authorization envelope must provide stronger evidence.
+Canonical policy does not bypass placeholder or degenerate-value checks. Short
+repeated runs remain valid because they occur naturally in random material over
+the 16-symbol hex alphabet; a run of ten identical bytes is treated as filler.
+
 ### Path-based
 
 Specific directories produce findings that are almost always not credentials.
-KeyHog hard-codes a small, high-precision set:
+KeyHog ships a small, high-precision path policy:
 
 | Path pattern | Why |
 |--------------|-----|

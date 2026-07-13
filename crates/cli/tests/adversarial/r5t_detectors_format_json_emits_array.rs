@@ -79,4 +79,19 @@ fn r5t_detectors_format_json_emits_corpus_and_policy() {
         generic_secret["policy"]["max_len"], 512,
         "detector JSON must expose the generic bridge ceiling from its owning TOML"
     );
+
+    let generic_api_key = arr
+        .iter()
+        .find(|detector| detector["id"] == "generic-api-key")
+        .expect("generic-api-key policy in detector listing");
+    assert_eq!(
+        generic_api_key["policy"]["decoded_hex_key_material_lengths"],
+        serde_json::json!([32, 48]),
+        "detector JSON must expose transport-decoded widths from detector TOML"
+    );
+    assert_eq!(
+        generic_api_key["policy"]["canonical_hex_key_material"][1]["lengths"],
+        serde_json::json!([64]),
+        "detector JSON must expose direct canonical-hex policy"
+    );
 }

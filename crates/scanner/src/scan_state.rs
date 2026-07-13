@@ -37,14 +37,21 @@ pub(crate) struct MlPendingMatch {
     /// Whether the original producer classified this as a named detector after
     /// applying weak-anchor exclusions.
     pub(crate) is_named_detector: bool,
-    /// When true, the MoE score is AUTHORITATIVE for this candidate: the final
+    /// The active detector's exact TOML policy proved this candidate is
+    /// canonical hex key material for its assignment keyword and length.
+    /// This evidence must survive batching so the unified finalizer does not
+    /// silently reclassify the value as a digest or low-diversity blob.
+    pub(crate) allow_canonical_hex_key: bool,
+    /// When true, the MoE score is authoritative for this candidate: the final
     /// confidence is the model score directly, NOT `max(heuristic, ml)`. Set for
-    /// entropy phase-2 candidates, whose "heuristic" is bare entropy magnitude -
+    /// unowned entropy phase-2 candidates, whose "heuristic" is bare entropy magnitude -
     /// exactly the signal that mislabels high-entropy non-secrets (FQDNs, git
     /// SHAs, base64 blobs) as findings. Flooring by that heuristic (as the
     /// detector path does, where the regex IS positive evidence) would defeat the
-    /// model's ability to suppress those FPs. Detector/generic matches set this
-    /// false and keep the heuristic floor. See `apply_ml_batch_scores`.
+    /// model's ability to suppress those FPs. Detector/generic matches and
+    /// entropy candidates proven by exact detector-local TOML policy set this
+    /// false and keep their structural-evidence floor. See
+    /// `apply_ml_batch_scores`.
     pub(crate) model_authoritative: bool,
 }
 
@@ -58,6 +65,7 @@ impl MlPendingMatch {
         ml_context: String,
         min_confidence_floor: f64,
         is_named_detector: bool,
+        allow_canonical_hex_key: bool,
     ) -> Self {
         Self {
             raw_match,
@@ -67,16 +75,18 @@ impl MlPendingMatch {
             ml_context,
             min_confidence_floor,
             is_named_detector,
+            allow_canonical_hex_key,
             model_authoritative: false,
         }
     }
 
-    pub(crate) fn entropy_authoritative(
+    pub(crate) fn entropy_candidate(
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
         credential: String,
         ml_context: String,
         min_confidence_floor: f64,
+        allow_canonical_hex_key: bool,
     ) -> Self {
         Self {
             raw_match,
@@ -86,7 +96,8 @@ impl MlPendingMatch {
             ml_context,
             min_confidence_floor,
             is_named_detector: false,
-            model_authoritative: true,
+            allow_canonical_hex_key,
+            model_authoritative: !allow_canonical_hex_key,
         }
     }
 }
@@ -299,6 +310,7 @@ impl ScanState {
         ml_context: String,
         min_confidence_floor: f64,
         is_named_detector: bool,
+        allow_canonical_hex_key: bool,
     ) {
         self.ml_pending.push(MlPendingMatch::detector_candidate(
             raw_match,
@@ -308,24 +320,27 @@ impl ScanState {
             ml_context,
             min_confidence_floor,
             is_named_detector,
+            allow_canonical_hex_key,
         ));
     }
 
     #[cfg(feature = "ml")]
-    pub(crate) fn push_entropy_authoritative_ml_pending(
+    pub(crate) fn push_entropy_ml_pending(
         &mut self,
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
         credential: String,
         ml_context: String,
         min_confidence_floor: f64,
+        allow_canonical_hex_key: bool,
     ) {
-        self.ml_pending.push(MlPendingMatch::entropy_authoritative(
+        self.ml_pending.push(MlPendingMatch::entropy_candidate(
             raw_match,
             heuristic_conf,
             credential,
             ml_context,
             min_confidence_floor,
+            allow_canonical_hex_key,
         ));
     }
 

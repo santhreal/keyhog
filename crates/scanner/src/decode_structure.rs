@@ -72,7 +72,7 @@ const MIN_DECODE_LEN: usize = 16;
 pub(crate) struct DecodeEvidence {
     structure: DecodeStructure,
     decoded_is_base64_blob: bool,
-    decoded_is_hex_key_material: bool,
+    decoded_hex_text_len: Option<usize>,
     #[cfg(any(feature = "entropy", test))]
     decoded_contains_nul_byte: bool,
     decoded_contains_placeholder: bool,
@@ -95,8 +95,8 @@ impl DecodeEvidence {
     }
 
     #[must_use]
-    pub(crate) const fn decoded_is_hex_key_material(self) -> bool {
-        self.decoded_is_hex_key_material
+    pub(crate) const fn decoded_hex_text_len(self) -> Option<usize> {
+        self.decoded_hex_text_len
     }
 
     #[cfg(any(feature = "entropy", test))]
@@ -303,8 +303,13 @@ fn compute_decode_facts(candidate: &str) -> DecodeEvidence {
             && bytes
                 .iter()
                 .all(|&b| crate::decode::is_standard_base64_byte(b)),
-        decoded_is_hex_key_material: matches!(bytes.len(), 32 | 40 | 48)
-            && bytes.iter().all(|byte| byte.is_ascii_hexdigit()),
+        // Preserve the exact decoded hex width; the owning detector TOML decides
+        // which widths are key material. The decode layer must not own a second,
+        // hardcoded credential-width table.
+        decoded_hex_text_len: bytes
+            .iter()
+            .all(|byte| byte.is_ascii_hexdigit())
+            .then_some(bytes.len()),
         #[cfg(any(feature = "entropy", test))]
         decoded_contains_nul_byte: bytes.contains(&0),
         decoded_contains_placeholder: crate::placeholder_words::bytes_contain_placeholder_word(

@@ -20,7 +20,7 @@ fn scan_state_into_matches_dedups_by_borrowed_identity_for_all_sizes() {
             && src.contains("pub(crate) struct RawMatchPriority")
             && src.contains("pub(crate) struct MlPendingMatch")
             && src.contains("fn detector_candidate(")
-            && src.contains("fn entropy_authoritative(")
+            && src.contains("fn entropy_candidate(")
             && src.contains("struct MatchIdentity<'a>")
             && src.contains("impl<'a> From<&'a keyhog_core::RawMatch> for MatchIdentity<'a>")
             && src.contains("fn raw_match_identity_cmp(")

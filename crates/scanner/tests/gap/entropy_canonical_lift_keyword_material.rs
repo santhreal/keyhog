@@ -20,9 +20,10 @@ const UUID: &str = "550e8400-e29b-41d4-a716-446655440000";
 
 #[test]
 fn canonical_lift_keyword_material_matches_compacted_contains() {
-    // A UUID-shaped value lifts under ANY keyword (handled before the hex arms).
-    assert!(canonical_shape_lift_allowed(UUID, "token"));
-    assert!(canonical_shape_lift_allowed(UUID, "whatever"));
+    // A generic keyword cannot distinguish UUID credentials from identifiers.
+    // Provider-specific UUID formats belong in their detector TOMLs.
+    assert!(!canonical_shape_lift_allowed(UUID, "token"));
+    assert!(!canonical_shape_lift_allowed(UUID, "client_secret"));
 
     // 32-hex lifts ONLY under a key-material keyword (key_material list).
     assert!(canonical_shape_lift_allowed(HEX32, "api_key")); // -> "apikey"
@@ -55,8 +56,8 @@ fn canonical_lift_keyword_material_matches_compacted_contains() {
 
 // ── Property tier ────────────────────────────────────────────────────────────
 // The fixed vectors pin each shape at a handful of keywords; these SWEEP the gate
-// (scanner.rs:canonical_shape_lift_allowed): UUID → true for ANY keyword (early
-// return before the hex arms); a 32-hex value lifts iff the keyword is key material
+// (scanner.rs:canonical_shape_lift_allowed): UUID stays suppressed for every
+// generic keyword; a 32-hex value lifts iff the keyword is key material
 // and a 64-hex value lifts iff the keyword is crypto-key material, both as
 // cross-facade DIFFERENTIALS against the tested `is_key_material` / `is_crypto_key`
 // predicates, covering positive AND negative keywords without hardcoding needles;
@@ -68,10 +69,10 @@ use proptest::prelude::*;
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(3_000))]
 
-    /// A UUID-shaped value lifts under ANY keyword (handled before the hex arms).
+    /// A UUID-shaped value never lifts through the generic entropy bridge.
     #[test]
-    fn uuid_lifts_under_any_keyword(kw in "[a-zA-Z0-9_.-]{0,24}") {
-        prop_assert!(canonical_shape_lift_allowed(UUID, &kw));
+    fn uuid_never_lifts_under_generic_keyword(kw in "[a-zA-Z0-9_.-]{0,24}") {
+        prop_assert!(!canonical_shape_lift_allowed(UUID, &kw));
     }
 
     /// A 32-hex value lifts iff the keyword is key material. DIFFERENTIAL over any

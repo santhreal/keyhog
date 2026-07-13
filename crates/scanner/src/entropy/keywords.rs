@@ -18,15 +18,10 @@ pub(crate) struct KeywordContext {
     pub(crate) threshold: f64,
     pub(crate) min_len: usize,
     pub(crate) is_credential_context: bool,
-    /// CredData candidate-generation lift (recall lane). When `true`, a STRONG
-    /// credential-anchored line is allowed to GENERATE a candidate whose value
-    /// is a canonical hash/UUID/serial shape (`is_canonical_non_secret_shape`),
-    /// so the downstream MoE, the precision authority when
-    /// `entropy_ml_authoritative` is on, can arbitrate it instead of the shape
-    /// being hard-dropped at the generation source before the model ever sees
-    /// it. This is the root candidate-GENERATION gap for the CredData `UUID`
-    /// and `hex64` (AES-256 key) miss classes: ~83% of CredData misses never
-    /// generate a candidate, and these two shapes are dropped HERE.
+    /// Model-authoritative key-material lift. When `true`, a strong credential
+    /// anchor may generate narrowly accepted canonical hex key shapes for MoE
+    /// arbitration instead of dropping them at the generation source. UUIDs
+    /// never use this generic bridge; provider detector TOMLs own them.
     ///
     /// Set ONLY when the MoE is the runtime precision authority
     /// (`ml_enabled && entropy_ml_authoritative`) AND the line is in credential
@@ -122,16 +117,13 @@ pub(crate) fn is_likely_innocuous_line(line: &str) -> bool {
 
 pub(super) fn extract_candidates(
     line: &str,
+    keyword: &str,
     min_length: usize,
     placeholder_keywords: &[String],
     is_credential_context: bool,
-    // CredData recall lane: when set (the MoE is authoritative and a strong
-    // credential keyword anchors the line), the extraction-time canonical-shape
-    // gate (`is_known_non_secret`'s UUID + hex32/40/64/128 arms) is released so a
-    // UUID-bodied or 64-hex (AES-256) value is EXTRACTED as a candidate for the
-    // model to arbitrate, instead of being dropped before any candidate exists.
-    // This is the third (and earliest) of the three generation gates the lift
-    // must release for the `UUID`/`hex64` miss classes.
+    // When set, a strong credential anchor may release only the narrow canonical
+    // hex key shapes accepted downstream. UUIDs remain identifiers in this
+    // generic path and provider detector TOMLs own their credential syntax.
     allow_canonical_shapes: bool,
     // Per-detector entropy-gate resolution: the classified generic detector id
     // (`generic-secret`/`generic-api-key`/…) whose `DetectorSpec` overrides the
@@ -141,6 +133,7 @@ pub(super) fn extract_candidates(
 ) -> Vec<String> {
     extract_candidates_internal(
         line,
+        keyword,
         min_length,
         placeholder_keywords,
         is_credential_context,
@@ -163,6 +156,7 @@ pub(super) struct ExtractedCandidates {
 
 pub(super) fn extract_candidates_with_rejections(
     line: &str,
+    keyword: &str,
     min_length: usize,
     placeholder_keywords: &[String],
     is_credential_context: bool,
@@ -171,6 +165,7 @@ pub(super) fn extract_candidates_with_rejections(
 ) -> ExtractedCandidates {
     extract_candidates_internal(
         line,
+        keyword,
         min_length,
         placeholder_keywords,
         is_credential_context,
@@ -182,6 +177,7 @@ pub(super) fn extract_candidates_with_rejections(
 
 fn extract_candidates_internal(
     line: &str,
+    keyword: &str,
     min_length: usize,
     placeholder_keywords: &[String],
     is_credential_context: bool,
@@ -221,9 +217,13 @@ fn extract_candidates_internal(
         }
         let structured_dotted = allow_structured_dotted
             && crate::suppression::shape::is_structured_dotted_token(cleaned);
-        let plausibility_context =
-            PlausibilityContext::new(is_credential_context, allow_canonical_shapes)
-                .with_detector(detector);
+        let detector_owned_canonical_hex_key =
+            detector.is_some_and(|spec| spec.allows_canonical_hex_key_material(keyword, cleaned));
+        let plausibility_context = PlausibilityContext::new(
+            is_credential_context,
+            allow_canonical_shapes || detector_owned_canonical_hex_key,
+        )
+        .with_detector(detector);
         let plausible = structured_dotted
             || if strict {
                 is_secret_plausible(cleaned, placeholder_keywords, plausibility_context)

@@ -44,12 +44,13 @@ impl CompiledScanner {
         value: &str,
         entropy: f64,
         chunk: &Chunk,
-        // KH-L-0110: the keyword bridge proved this is a complete pure-hex value
-        // of canonical key length (32/48) under a STRONG credential keyword.
-        // Threaded into the placeholder/hash suppression below to exempt it from
-        // the bare-hex-digest gate ONLY (every other shape gate here still runs).
+        // The keyword bridge proved this is complete pure-hex key material via
+        // the owning detector's exact keyword/length policy, or via the legacy
+        // structural 32/48 vendor-key family. Threaded into the placeholder/hash
+        // suppression below to exempt only gates that confuse keys with digests.
         allow_canonical_hex_key: bool,
         allow_encoded_text_secret: bool,
+        allow_decoded_hex_key_material: bool,
     ) -> Option<GenericValueShapeStage> {
         if chunk.metadata.source_type.contains("/caesar") {
             return Some(GenericValueShapeStage::CaesarGenericFallback);
@@ -340,8 +341,6 @@ impl CompiledScanner {
         // but generic-secret emits directly via push_match and
         // bypasses it.
         let decode_evidence = crate::decode_structure::evidence(value);
-        let allow_decoded_hex_key_material =
-            allow_encoded_text_secret && decode_evidence.decoded_is_hex_key_material();
         if decode_evidence.decoded_contains_placeholder() && !allow_decoded_hex_key_material {
             return Some(GenericValueShapeStage::DecodedPlaceholder);
         }

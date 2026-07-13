@@ -101,6 +101,26 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             if let Some(v) = d.bpe_enabled {
                 entries.push(format!("bpe-enabled:{}:{v}", d.id));
             }
+            for (length_index, length) in d.decoded_hex_key_material_lengths.iter().enumerate() {
+                entries.push(format!(
+                    "decoded-hex-key-material-length:{}:{length_index}:{length}",
+                    d.id
+                ));
+            }
+            for (policy_index, policy) in d.canonical_hex_key_material.iter().enumerate() {
+                for (length_index, length) in policy.lengths.iter().enumerate() {
+                    entries.push(format!(
+                        "canonical-hex-key-length:{}:{policy_index}:{length_index}:{length}",
+                        d.id
+                    ));
+                }
+                for (keyword_index, keyword) in policy.keywords.iter().enumerate() {
+                    entries.push(format!(
+                        "canonical-hex-key-keyword:{}:{policy_index}:{keyword_index}:{keyword}",
+                        d.id
+                    ));
+                }
+            }
             if let Some(v) = d.keyword_free_min_len {
                 entries.push(format!("kfml:{}:{}", d.id, v));
             }

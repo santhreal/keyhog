@@ -22,6 +22,7 @@ pub(crate) struct ExtractedPair {
     pub context: String,
     pub value: String,
     pub line: usize,
+    pub transport_decoded: bool,
 }
 
 /// A recognised structured format, decoupled from parsing so the size cap can
@@ -207,6 +208,7 @@ struct SynthMapping {
     start_offset: usize,
     end_offset: usize,
     original_start_offset: usize,
+    transport_decoded: bool,
 }
 
 /// Align a synthetic `context: decoded-value` line with the original scalar's
@@ -292,6 +294,7 @@ fn synthesize_preprocessed(text: &str, pairs: Vec<ExtractedPair>) -> (String, Ve
             start_offset: start,
             end_offset: end,
             original_start_offset: start,
+            transport_decoded: false,
         });
     }
 
@@ -306,6 +309,7 @@ fn synthesize_preprocessed(text: &str, pairs: Vec<ExtractedPair>) -> (String, Ve
             start_offset: current_offset,
             end_offset: current_offset + line_len,
             original_start_offset: synthetic_mapping_origin(text, &source_line_offsets, &pair),
+            transport_decoded: pair.transport_decoded,
         });
         final_text.push_str(&pair.context);
         final_text.push_str(SYNTHETIC_PAIR_SEPARATOR);
@@ -332,6 +336,7 @@ fn build_preprocessed_text<'a>(
             start_offset: m.start_offset,
             end_offset: m.end_offset,
             original_start_offset: m.original_start_offset,
+            transport_decoded: m.transport_decoded,
         })
         .collect();
     crate::multiline::PreprocessedText {
@@ -356,6 +361,7 @@ fn build_preprocessed_text<'a>(
             start_offset: m.start_offset,
             end_offset: m.end_offset,
             original_start_offset: m.original_start_offset,
+            transport_decoded: m.transport_decoded,
         })
         .collect();
     crate::types::PreprocessedText {

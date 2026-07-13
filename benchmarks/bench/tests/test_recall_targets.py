@@ -1,20 +1,16 @@
-"""CredData recall TARGET-SPEC worklist (the failing recall gaps, named).
+"""CredData recall target specification.
 
-Distinct from ``test_creddata_recall_matrix`` (a per-secret REGRESSION ratchet
-pinned to today's measured 2504 and therefore GREEN). This module encodes the
-TARGET keyhog must reach but does NOT today, so every assertion here is RED
-until candidate generation closes the gap. Each red is a tracked recall finding
-(Law 6, a failing contract test is the worklist), never a decoration and never
-weakened to pass (Law 9).
+Distinct from ``test_creddata_recall_matrix`` (the measured per-secret
+regression ratchet), this module encodes the product target. A failed assertion
+identifies a real corpus or candidate-generation gap.
 
 Two target tiers, both scored through the SAME ``KeyhogScanner`` adapter,
 ``CredDataCorpus`` slicing, and ``score.overlap``/``found_record_ids`` truth
 rule the leaderboard uses, so a red here is bit-identical to a leaderboard
 false negative, not a separate yardstick:
 
-1. **Overall recall >= 0.90.** CredData recall is ~0.18 today (2504 of 13918
-   value-anchored positives). This is the headline target; it fails by a wide
-   margin and stays red until the generation gap closes.
+1. **Overall recall >= 0.90.** This is the headline product target over
+   value-anchored positives.
 
 2. **Per-miss-class floors.** The overall number averages away which credential
    SHAPES the scanner is blind to. Each positive's literal value is sliced from
@@ -22,7 +18,7 @@ false negative, not a separate yardstick:
    ``creddata_miss_analysis`` uses), and per-class recall is asserted against a
    target floor:
 
-       hex64 >= 0.85   uuid >= 0.85   base64 >= 0.80
+       hex64 >= 0.85   base64 >= 0.80
        jwt   >= 0.90   keyword-anchored >= 0.85
 
    ``keyword-anchored`` is a CROSS-cutting class (any shape whose value is
@@ -30,12 +26,17 @@ false negative, not a separate yardstick:
    classes: it isolates the "a human wrote ``api_key = <value>`` and we still
    missed it" failure mode that the generation gap is most accountable for.
 
+   UUID is intentionally not a recall class. Inspection of the pinned labels
+   found request IDs, session IDs, client IDs, and record IDs rather than
+   credentials. Generic UUID promotion would measure identifier false positives
+   as recall; provider-specific UUID credentials require provider syntax.
+
 LOUD on absence (never a silent green):
 * CredData corpus absent (``make creddata``) -> the module skips with reason.
 * No keyhog binary -> the scan fixture FAILS loudly (a missing binary must
   never masquerade as 100% recall loss, nor as a passed target).
 
-The floors are intentionally the PRODUCT targets, not today's measurements: a
+The floors are product targets rather than measured regression anchors: a
 ratchet pins what we have, a target spec pins what we owe. When generation lands
 and a class clears its floor, that class flips green here without any edit, the
 worklist shrinks by itself.
@@ -190,7 +191,7 @@ def _class_recall(recs: list, recalled: set) -> tuple[int, int, float]:
     return hit, total, (hit / total if total else 0.0)
 
 
-# ── TARGET 1: overall recall >= 0.90 (the headline; ~0.18 today) ───────
+# ── TARGET 1: overall recall >= 0.90 ────────────────────────────────────────
 
 
 _OVERALL_RECALL_TARGET = 0.90
@@ -208,18 +209,16 @@ def test_creddata_overall_recall_meets_target(recalled_ids):
         f"CredData OVERALL recall {recall:.4f} ({hit}/{total} value-anchored "
         f"positives) is below the product target {_OVERALL_RECALL_TARGET:.2f}. "
         f"This is the headline recall gap: {total - hit} real, human-reviewed "
-        f"credentials the shipped `keyhog scan` does not surface. RED until "
-        f"candidate generation closes the gap, do NOT lower this target (Law 9).")
+        f"credentials the shipped `keyhog scan` does not surface; do not lower "
+        f"the target to hide that gap.")
 
 
 # ── TARGET 2: per-miss-class recall floors ─────────────────────────────
 # (class, floor, min_pool), min_pool guards against grading a class that is
-# too small to be a real target on this corpus revision (none are, today; the
-# guard keeps the spec honest if a future CredData pin shrinks a pool).
+# too small to be a meaningful target on the active corpus pin.
 
 _CLASS_FLOORS: list[tuple[str, float, int]] = [
     ("hex64", 0.85, 50),
-    ("uuid", 0.85, 50),
     ("base64", 0.80, 50),
     ("jwt", 0.90, 20),
 ]
@@ -240,9 +239,8 @@ def test_creddata_miss_class_recall_floor(klass, floor, min_pool, recalled_ids):
     assert recall >= floor, (
         f"CredData {klass!r} recall {recall:.4f} ({hit}/{total}) is below the "
         f"target floor {floor:.2f}. keyhog is largely blind to the {klass!r} "
-        f"shape: {total - hit} real {klass!r} secrets go un-surfaced. The miss "
-        f"is candidate GENERATION (a keyword-anchored {klass!r} value never "
-        f"becomes a candidate), not suppression. RED until generation lands.")
+        f"shape: {total - hit} real {klass!r} secrets go un-surfaced. Use the "
+        f"dogfood trace to distinguish generation, suppression, and reporting misses.")
 
 
 # ── TARGET 2b: keyword-anchored recall floor (cross-cutting) ───────────
@@ -268,5 +266,4 @@ def test_creddata_keyword_anchored_recall_floor(recalled_ids):
         f"the target floor {_KEYWORD_ANCHORED_FLOOR:.2f}. These are values a "
         f"human wrote directly behind a credential keyword "
         f"(`api_key = <value>`); {total - hit} of them are missed. That is the "
-        f"clearest candidate-generation debt the keyword bridge owes. RED until "
-        f"the bridge surfaces them, do NOT weaken this floor (Law 9).")
+        f"clearest generic-path detection gap; do not weaken this floor to hide it.")

@@ -79,24 +79,19 @@ enum PlausibilityMode {
 }
 
 fn is_known_non_secret(value: &str, context: PlausibilityContext) -> bool {
-    // UUID / k8s-resource-uid (8-4-4-12 hex). Dropped at extraction so a bare
-    // `TOKEN_LIST=<uuid>` env identifier does not generate. CredData recall lane:
-    // when the lift is engaged (model authoritative + strong credential anchor),
-    // a whole-value UUID is the CredData `UUID` miss class (LaunchDarkly SDK key,
-    // Heroku UUID key, PowerBI client secret) and MUST be extracted as a
-    // candidate for the MoE to arbitrate, so the gate releases here. Off the lift
-    // it is byte-identical.
-    if !context.allow_canonical_shapes
-        && crate::suppression::shape::looks_like_entropy_uuid_shape(value)
-    {
+    // UUID / k8s-resource-uid (8-4-4-12 hex). A generic assignment keyword does
+    // not turn an identifier into a credential. Providers that issue
+    // UUID-bodied secrets own that syntax in their detector TOML.
+    if crate::suppression::shape::looks_like_entropy_uuid_shape(value) {
         return true;
     }
 
     // Pure-hex canonical lengths are usually file/commit/image digests. A
     // credential keyword only earns the narrow key-material carve-out; it does
     // not make sha1/git-sha (40) or sha512 (128) secrets. Hex64 can be extracted
-    // only when the model-authoritative lift is active; the scanner-side owner
-    // then narrows it again to explicit crypto-key anchors.
+    // only when either the model-authoritative lift or the owning detector's
+    // exact canonical-hex policy is active; downstream gates retain that same
+    // evidence instead of reclassifying the key as a digest.
     let hex_len = value.len();
     if crate::suppression::shape::looks_like_entropy_canonical_hex_digest(value) {
         if !context.is_credential_context {

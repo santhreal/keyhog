@@ -160,7 +160,11 @@ pub(crate) fn entropy_fallback_example_suppression_stage(
     if crate::confidence::contains_placeholder_word(value) {
         return Some(EntropyShapeStage::SuppressionStage("placeholder_word"));
     }
-    if crate::suppression::shape::has_three_or_more_consecutive_identical(value) {
+    // A three- or four-byte repeat is ordinary in random 128-256-bit material,
+    // especially with a 16-symbol hex alphabet. Keep the shared absolute
+    // degenerate boundary used by report confidence: long filler runs remain
+    // suppressed, while a random key is not discarded for containing `1111`.
+    if crate::confidence::penalties::is_degenerate_repeat(value) {
         return Some(EntropyShapeStage::SuppressionStage("repetitive_run"));
     }
 
