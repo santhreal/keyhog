@@ -201,3 +201,89 @@ def test_run_once_reports_post_scan_provenance_failure(monkeypatch, tmp_path):
         "detector provenance failed after scan: "
         "OSError: detector storage disappeared"
     )
+
+
+def test_run_once_rejects_workspace_edit_during_scan(monkeypatch, tmp_path):
+    freshness_checks = 0
+
+    class FakeScanner:
+        name = "keyhog"
+
+        def version(self):
+            return "keyhog 0.test"
+
+        def assert_freshness(self):
+            nonlocal freshness_checks
+            freshness_checks += 1
+            if freshness_checks == 2:
+                raise RuntimeError("tracked workspace changed")
+
+        def detector_corpus_sha256(self):
+            return "a" * 64
+
+        def available(self):
+            return True
+
+        def default_config(self):
+            return ScannerConfig()
+
+        def run_with_provenance(self, root, cfg):
+            return [], RunStats(exit_code=0), "a" * 64
+
+        def exit_success(self, code):
+            return code == 0
+
+    monkeypatch.setattr(runner, "resolve_scanner", lambda *args, **kwargs: FakeScanner())
+    monkeypatch.setattr(
+        runner, "resolve_corpus_with_root",
+        lambda *args, **kwargs: KernelCorpus(root=tmp_path),
+    )
+
+    result = runner.run_once(scanner_name="keyhog", corpus_name="kernel")
+
+    assert result.available is False
+    assert result.error == (
+        "freshness failed after scan: RuntimeError: tracked workspace changed"
+    )
+
+
+def test_run_once_rejects_binary_replacement_during_scan(monkeypatch, tmp_path):
+    identities = iter(["KeyHog identity A", "KeyHog identity B"])
+
+    class FakeScanner:
+        name = "keyhog"
+
+        def version(self):
+            return "untrusted early probe"
+
+        def assert_freshness(self):
+            return next(identities)
+
+        def detector_corpus_sha256(self):
+            return "a" * 64
+
+        def available(self):
+            return True
+
+        def default_config(self):
+            return ScannerConfig()
+
+        def run_with_provenance(self, root, cfg):
+            return [], RunStats(exit_code=0), "a" * 64
+
+        def exit_success(self, code):
+            return code == 0
+
+    monkeypatch.setattr(runner, "resolve_scanner", lambda *args, **kwargs: FakeScanner())
+    monkeypatch.setattr(
+        runner, "resolve_corpus_with_root",
+        lambda *args, **kwargs: KernelCorpus(root=tmp_path),
+    )
+
+    result = runner.run_once(scanner_name="keyhog", corpus_name="kernel")
+
+    assert result.available is False
+    assert result.scanner.version == "KeyHog identity A"
+    assert result.error == (
+        "freshness failed after scan: scanner identity changed during measurement"
+    )

@@ -34,7 +34,8 @@ import tempfile
 
 from .keyhog_version import (
     KeyhogVersionError,
-    assert_version_matches_workspace,
+    assert_reported_identity_matches_workspace,
+    assert_workspace_tracked_tree_clean,
     workspace_detector_corpus_sha256,
 )
 from .report import canonical_leaderboard, load_results
@@ -72,12 +73,18 @@ def _assert_keyhog_results_current(rows: list[RunResult]) -> None:
     useful only if they came from the same keyhog version as the workspace being
     gated; otherwise an old leaderboard can make a new tree look green.
     """
+    if not any(row.scanner.name == "keyhog" for row in rows):
+        return
+    try:
+        assert_workspace_tracked_tree_clean()
+    except KeyhogVersionError as exc:
+        raise GateError(f"cannot accept current-source benchmark evidence: {exc}") from exc
     expected_digest: str | None = None
     for row in rows:
         if row.scanner.name != "keyhog":
             continue
         try:
-            assert_version_matches_workspace(
+            assert_reported_identity_matches_workspace(
                 row.scanner.version,
                 what="keyhog benchmark result",
             )

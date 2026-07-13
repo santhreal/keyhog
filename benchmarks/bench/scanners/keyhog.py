@@ -37,7 +37,10 @@ import subprocess
 import sys
 import tempfile
 
-from ..keyhog_version import detector_corpus_sha256 as compute_detector_corpus_sha256
+from ..keyhog_version import (
+    assert_keyhog_binary_current,
+    detector_corpus_sha256 as compute_detector_corpus_sha256,
+)
 from ..schema import ScannerConfig
 from .base import Finding, RunStats, Scanner, _line, run_measured
 
@@ -250,6 +253,9 @@ class KeyhogScanner(Scanner):
 
     def detector_corpus_sha256(self) -> str:
         return compute_detector_corpus_sha256(self._detector_corpus)
+
+    def assert_freshness(self) -> str:
+        return assert_keyhog_binary_current(self.binary)
 
     def _detector_snapshot(self) -> tuple[pathlib.Path, str]:
         digest = self.detector_corpus_sha256()

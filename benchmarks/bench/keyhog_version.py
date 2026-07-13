@@ -79,6 +79,35 @@ def workspace_git_hash(repo_root: pathlib.Path = _REPO_ROOT) -> str:
     return value
 
 
+def assert_workspace_tracked_tree_clean(repo_root: pathlib.Path = _REPO_ROOT) -> None:
+    """Require every tracked workspace byte to match HEAD for release evidence."""
+    try:
+        proc = subprocess.run(
+            [
+                "git", "-C", str(repo_root), "status", "--porcelain=v1", "-z",
+                "--untracked-files=no", "--ignore-submodules=none",
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise KeyhogVersionError(
+            f"cannot inspect tracked workspace state for benchmark freshness: {exc}"
+        ) from exc
+    if proc.returncode != 0:
+        detail = (proc.stdout + proc.stderr)[:500]
+        raise KeyhogVersionError(
+            "cannot inspect tracked workspace state for benchmark freshness: "
+            f"git exited {proc.returncode}, output={detail!r}"
+        )
+    if proc.stdout:
+        raise KeyhogVersionError(
+            "the tracked KeyHog workspace has uncommitted changes, so the candidate "
+            "binary cannot prove it represents the current source. Commit the changes, "
+            "rebuild the release candidate, and rerun the benchmark"
+        )
+
+
 def workspace_detector_digest(repo_root: pathlib.Path = _REPO_ROOT) -> str:
     detector_dir = repo_root / "detectors"
     try:
@@ -127,7 +156,31 @@ def workspace_detector_corpus_sha256(repo_root: pathlib.Path = _REPO_ROOT) -> st
     return detector_corpus_sha256(repo_root / "detectors")
 
 
-def assert_keyhog_binary_current(binary: str) -> None:
+def assert_reported_identity_matches_workspace(raw: str, *, what: str) -> None:
+    assert_version_matches_workspace(raw, what=what)
+    commit_match = _COMMIT_RE.search(raw)
+    if commit_match is None:
+        raise KeyhogVersionError(f"{what} does not report a Commit line; rebuild or rerun it")
+    expected_commit = workspace_git_hash()
+    if commit_match.group(1) != expected_commit:
+        raise KeyhogVersionError(
+            f"stale {what}: commit={commit_match.group(1)}, workspace={expected_commit}; "
+            "rebuild or rerun the benchmark"
+        )
+    detector_match = _DETECTOR_SET_RE.search(raw)
+    if detector_match is None:
+        raise KeyhogVersionError(
+            f"{what} does not report a parseable Detector Set digest; rebuild or rerun it"
+        )
+    expected_detectors = workspace_detector_digest()
+    if detector_match.group(1) != expected_detectors:
+        raise KeyhogVersionError(
+            f"stale {what}: detector_set={detector_match.group(1)}, "
+            f"workspace={expected_detectors}; rebuild after detector TOML changes"
+        )
+
+
+def assert_keyhog_binary_current(binary: str) -> str:
     proc = subprocess.run(
         [binary, "--version"],
         capture_output=True,
@@ -140,26 +193,6 @@ def assert_keyhog_binary_current(binary: str) -> None:
             f"keyhog binary {binary!r} --version failed with exit {proc.returncode}: "
             f"{output}"
         )
-    assert_version_matches_workspace(output, what=f"keyhog binary {binary!r}")
-    commit_match = _COMMIT_RE.search(output)
-    if commit_match is None:
-        raise KeyhogVersionError(
-            f"keyhog binary {binary!r} does not report a Commit line; rebuild it"
-        )
-    expected_commit = workspace_git_hash()
-    if commit_match.group(1) != expected_commit:
-        raise KeyhogVersionError(
-            f"stale keyhog binary {binary!r}: commit={commit_match.group(1)}, "
-            f"workspace={expected_commit}; rebuild the candidate before benchmarking"
-        )
-    detector_match = _DETECTOR_SET_RE.search(output)
-    if detector_match is None:
-        raise KeyhogVersionError(
-            f"keyhog binary {binary!r} does not report a parseable Detector Set digest; rebuild it"
-        )
-    expected_detectors = workspace_detector_digest()
-    if detector_match.group(1) != expected_detectors:
-        raise KeyhogVersionError(
-            f"stale keyhog binary {binary!r}: detector_set={detector_match.group(1)}, "
-            f"workspace={expected_detectors}; rebuild after detector TOML changes"
-        )
+    assert_reported_identity_matches_workspace(output, what=f"keyhog binary {binary!r}")
+    assert_workspace_tracked_tree_clean()
+    return output

@@ -3,10 +3,28 @@ import json
 import pytest
 
 from bench import gate
-from bench.keyhog_version import workspace_keyhog_version
+from bench.keyhog_version import (
+    workspace_detector_digest,
+    workspace_git_hash,
+    workspace_keyhog_version,
+)
 from bench.schema import CorpusInfo, Detection, DetectorStat, Outcome, RunResult
 from bench.schema import Scanner as ScannerRecord
 from bench.schema import ScannerConfig
+
+
+@pytest.fixture(autouse=True)
+def _clean_tracked_workspace(monkeypatch):
+    monkeypatch.setattr(gate, "assert_workspace_tracked_tree_clean", lambda: None)
+
+
+def _current_keyhog_version_record() -> str:
+    return (
+        f"KeyHog v{workspace_keyhog_version()}\n"
+        f"Commit: {workspace_git_hash()}\n"
+        f"Detector Set: 1 ({workspace_detector_digest()})\n"
+        "Build Target: test"
+    )
 
 
 def _row(scanner: str, tp: int, fp: int, fn: int, *, available: bool = True,
@@ -207,7 +225,6 @@ def test_run_gate_rejects_stale_keyhog_result_artifacts(tmp_path):
 
 
 def test_run_gate_accepts_current_keyhog_result_artifacts(monkeypatch, tmp_path):
-    current_version = workspace_keyhog_version()
     digest = "d" * 64
     monkeypatch.setattr(gate, "workspace_detector_corpus_sha256", lambda: digest)
     current = _row(
@@ -215,7 +232,7 @@ def test_run_gate_accepts_current_keyhog_result_artifacts(monkeypatch, tmp_path)
         tp=5,
         fp=0,
         fn=0,
-        version=f"KeyHog v{current_version} Build Target: test",
+        version=_current_keyhog_version_record(),
         detector_corpus_sha256=digest,
     )
     (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(current.to_json()))
@@ -230,16 +247,38 @@ def test_run_gate_accepts_current_keyhog_result_artifacts(monkeypatch, tmp_path)
     assert rc == 0
 
 
+def test_run_gate_rejects_same_version_result_from_another_commit(
+    monkeypatch, tmp_path, capsys
+):
+    digest = "d" * 64
+    monkeypatch.setattr(gate, "workspace_detector_corpus_sha256", lambda: digest)
+    stale_version = _current_keyhog_version_record().replace(
+        f"Commit: {workspace_git_hash()}", f"Commit: {'0' * 40}"
+    )
+    stale = _row(
+        "keyhog", tp=5, fp=0, fn=0,
+        version=stale_version,
+        detector_corpus_sha256=digest,
+    )
+    (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(stale.to_json()))
+
+    rc = gate.run_gate(
+        "mirror", ["keyhog"], results_dir=tmp_path, beat_competitors=False,
+    )
+
+    assert rc == 2
+    assert "commit=" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("observed", ["", "e" * 64])
 def test_run_gate_rejects_missing_or_stale_detector_corpus_digest(
     monkeypatch, tmp_path, observed
 ):
-    current_version = workspace_keyhog_version()
     expected = "f" * 64
     monkeypatch.setattr(gate, "workspace_detector_corpus_sha256", lambda: expected)
     current = _row(
         "keyhog", tp=5, fp=0, fn=0,
-        version=f"KeyHog v{current_version} Build Target: test",
+        version=_current_keyhog_version_record(),
         detector_corpus_sha256=observed,
     )
     (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(current.to_json()))
@@ -252,10 +291,9 @@ def test_run_gate_rejects_missing_or_stale_detector_corpus_digest(
 
 
 def test_run_gate_reports_broken_workspace_detector_corpus(monkeypatch, tmp_path, capsys):
-    current_version = workspace_keyhog_version()
     current = _row(
         "keyhog", tp=5, fp=0, fn=0,
-        version=f"KeyHog v{current_version} Build Target: test",
+        version=_current_keyhog_version_record(),
         detector_corpus_sha256="f" * 64,
     )
     (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(current.to_json()))
@@ -272,3 +310,28 @@ def test_run_gate_reports_broken_workspace_detector_corpus(monkeypatch, tmp_path
     error = capsys.readouterr().err
     assert "repair the workspace detector corpus" in error
     assert "rerun `make leaderboard`" not in error
+
+
+def test_run_gate_rejects_current_source_results_from_dirty_workspace(
+    monkeypatch, tmp_path, capsys
+):
+    current = _row(
+        "keyhog", tp=5, fp=0, fn=0,
+        version=_current_keyhog_version_record(),
+        detector_corpus_sha256="f" * 64,
+    )
+    (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(current.to_json()))
+    monkeypatch.setattr(
+        gate,
+        "assert_workspace_tracked_tree_clean",
+        lambda: (_ for _ in ()).throw(
+            gate.KeyhogVersionError("tracked workspace has uncommitted changes")
+        ),
+    )
+
+    rc = gate.run_gate(
+        "mirror", ["keyhog"], results_dir=tmp_path, beat_competitors=False,
+    )
+
+    assert rc == 2
+    assert "cannot accept current-source benchmark evidence" in capsys.readouterr().err

@@ -48,6 +48,9 @@ Run them explicitly with `make targets`.
 - **Detector provenance:** every KeyHog run scans a private immutable snapshot
   and records the SHA-256 of its exact detector TOML filenames and bytes. The
   gate rejects results whose digest does not match the workspace corpus.
+- **Source freshness:** current-source evidence requires a clean tracked Git
+  tree and an exact recorded HEAD commit. KeyHog measurements check source
+  state before and after scanning, and result-only gates check it before scoring.
 
 ## Two fairness rules (baked into every corpus)
 

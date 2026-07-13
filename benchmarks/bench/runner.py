@@ -40,6 +40,14 @@ def _scanner_detector_corpus_sha256(scanner: _ScannerAdapter) -> str:
     return digest() if callable(digest) else ""
 
 
+def _assert_scanner_freshness(scanner: _ScannerAdapter) -> str | None:
+    check = getattr(scanner, "assert_freshness", None)
+    if callable(check):
+        value = check()
+        return value if isinstance(value, str) and value else None
+    return None
+
+
 def resolve_corpus_with_root(name: str, root: str | pathlib.Path | None = None) -> Corpus:
     if root is None:
         return resolve_corpus(name)
@@ -98,6 +106,15 @@ def _run_resolved_scanner(
 ) -> RunResult:
     """Measure one resolved scanner/config with one provenance contract."""
     try:
+        measured_version = _assert_scanner_freshness(scanner)
+        if measured_version is not None:
+            version = measured_version
+    except Exception as exc:
+        return _unavailable_result(
+            scanner, version, cfg, corpus,
+            f"freshness failed before scan: {type(exc).__name__}: {exc}",
+        )
+    try:
         detector_digest = _scanner_detector_corpus_sha256(scanner)
     except Exception as exc:
         return _unavailable_result(
@@ -140,6 +157,20 @@ def _run_resolved_scanner(
                 "detector corpus changed during the measured scan; rerun against stable detector bytes",
                 detector_corpus_sha256=detector_digest,
             )
+    try:
+        final_version = _assert_scanner_freshness(scanner)
+    except Exception as exc:
+        return _unavailable_result(
+            scanner, version, cfg, corpus,
+            f"freshness failed after scan: {type(exc).__name__}: {exc}",
+            detector_corpus_sha256=detector_digest,
+        )
+    if final_version is not None and final_version != version:
+        return _unavailable_result(
+            scanner, version, cfg, corpus,
+            "freshness failed after scan: scanner identity changed during measurement",
+            detector_corpus_sha256=detector_digest,
+        )
     result = build_result(
         scanner_name=scanner.name,
         scanner_version=version,
