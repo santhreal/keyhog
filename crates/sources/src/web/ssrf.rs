@@ -1,6 +1,7 @@
+use crossbeam_channel::{bounded, Receiver, Sender, TrySendError};
 use keyhog_core::SourceError;
 use std::net::SocketAddr;
-use std::sync::{mpsc, Arc, Mutex, OnceLock};
+use std::sync::{mpsc, Arc, Condvar, Mutex, OnceLock};
 use std::time::Duration;
 use std::time::Instant;
 
@@ -57,6 +58,82 @@ mod tests {
         assert!(
             remaining < Duration::from_secs(1),
             "remaining request timeout must be smaller than the full configured timeout"
+        );
+    }
+
+    #[test]
+    fn dns_queue_runs_all_workers_concurrently() {
+        let (sender, receiver) = bounded(DNS_SCREEN_QUEUE_CAP);
+        let (started_tx, started_rx) = mpsc::sync_channel(DNS_SCREEN_WORKERS);
+        let release = Arc::new((Mutex::new(false), Condvar::new()));
+        let mut workers = Vec::new();
+
+        for _ in 0..DNS_SCREEN_WORKERS {
+            let receiver = receiver.clone();
+            let started_tx = started_tx.clone();
+            let release = Arc::clone(&release);
+            workers.push(std::thread::spawn(move || {
+                dns_worker_loop(receiver, move |host, port, _budget| {
+                    let _ignored = started_tx.send(host);
+                    let (lock, ready) = &*release;
+                    let mut released = lock
+                        .lock()
+                        .map_err(|_| std::io::Error::other("test release mutex was poisoned"))?;
+                    while !*released {
+                        released = ready.wait(released).map_err(|_| {
+                            std::io::Error::other("test release mutex was poisoned")
+                        })?;
+                    }
+                    Ok(vec![SocketAddr::from(([192, 0, 2, 1], port))])
+                });
+            }));
+        }
+        drop(started_tx);
+
+        let mut replies = Vec::new();
+        for index in 0..DNS_SCREEN_WORKERS {
+            let (reply, receiver) = mpsc::sync_channel(1);
+            replies.push(receiver);
+            sender
+                .try_send(DnsJob {
+                    host: format!("worker-{index}.example"),
+                    port: 443,
+                    budget: Duration::from_secs(1),
+                    reply,
+                })
+                .expect("test DNS job must enter the bounded queue");
+        }
+
+        let mut started = Vec::new();
+        let start_deadline = Instant::now() + Duration::from_secs(5);
+        for _ in 0..DNS_SCREEN_WORKERS {
+            let remaining = start_deadline.saturating_duration_since(Instant::now());
+            if let Ok(host) = started_rx.recv_timeout(remaining) {
+                started.push(host);
+            }
+        }
+
+        let (lock, ready) = &*release;
+        if let Ok(mut released) = lock.lock() {
+            *released = true;
+            ready.notify_all();
+        }
+        for receiver in replies {
+            let result = receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("every concurrent worker must return its result")
+                .expect("test resolver must succeed");
+            assert_eq!(result, vec![SocketAddr::from(([192, 0, 2, 1], 443))]);
+        }
+        drop(sender);
+        for worker in workers {
+            worker.join().expect("test DNS worker must exit cleanly");
+        }
+
+        assert_eq!(
+            started.len(),
+            DNS_SCREEN_WORKERS,
+            "all DNS workers must begin before any one is released"
         );
     }
 }
@@ -208,11 +285,11 @@ fn resolve_socket_addrs_with_timeout(
             reply,
         })
         .map_err(|error| match error {
-            mpsc::TrySendError::Full(_) => super::web_unreadable_error(format!(
+            TrySendError::Full(_) => super::web_unreadable_error(format!(
                 "refusing to fetch {}: DNS screening queue is full",
                 redact_url(host)
             )),
-            mpsc::TrySendError::Disconnected(_) => super::web_unreadable_error(format!(
+            TrySendError::Disconnected(_) => super::web_unreadable_error(format!(
                 "refusing to fetch {}: DNS screening workers are unavailable",
                 redact_url(host)
             )),
@@ -261,7 +338,7 @@ struct DnsJob {
 }
 
 struct DnsResolverPool {
-    sender: mpsc::SyncSender<DnsJob>,
+    sender: Sender<DnsJob>,
 }
 
 fn dns_resolver_pool() -> Result<&'static DnsResolverPool, SourceError> {
@@ -276,29 +353,29 @@ fn dns_resolver_pool() -> Result<&'static DnsResolverPool, SourceError> {
 
 impl DnsResolverPool {
     fn start() -> Result<Self, String> {
-        let (sender, receiver) = mpsc::sync_channel(DNS_SCREEN_QUEUE_CAP);
-        let receiver = Arc::new(Mutex::new(receiver));
+        let (sender, receiver) = bounded(DNS_SCREEN_QUEUE_CAP);
         for worker_index in 0..DNS_SCREEN_WORKERS {
-            let receiver = Arc::clone(&receiver);
-            std::thread::Builder::new()
+            let receiver = receiver.clone();
+            if let Err(error) = std::thread::Builder::new()
                 .name(format!("keyhog-web-dns-screen-{worker_index}"))
-                .spawn(move || dns_worker_loop(receiver))
-                .map_err(|error| format!("failed to start DNS worker {worker_index}: {error}"))?;
+                .spawn(move || dns_worker_loop(receiver, resolve_with_abandon))
+            {
+                drop(sender);
+                return Err(format!(
+                    "failed to start DNS worker {worker_index}: {error}"
+                ));
+            }
         }
         Ok(Self { sender })
     }
 }
 
-fn dns_worker_loop(receiver: Arc<Mutex<mpsc::Receiver<DnsJob>>>) {
-    loop {
-        let job = match receiver.lock() {
-            Ok(receiver) => receiver.recv(),
-            Err(_poisoned) => return,
-        };
-        let Ok(job) = job else {
-            return;
-        };
-        let result = resolve_with_abandon(job.host, job.port, job.budget);
+fn dns_worker_loop<F>(receiver: Receiver<DnsJob>, resolve: F)
+where
+    F: Fn(String, u16, Duration) -> std::io::Result<Vec<SocketAddr>>,
+{
+    while let Ok(job) = receiver.recv() {
+        let result = resolve(job.host, job.port, job.budget);
         let _ignored = job.reply.send(result);
     }
 }

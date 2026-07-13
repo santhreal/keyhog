@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Let all four WebSource DNS-screening workers wait on and consume the bounded
+  job queue concurrently instead of serializing receives behind one mutex.
 - Add GitLab group and Bitbucket workspace source backends through a shared
   hosted-git clone/scan owner, moving git-error redaction out of the GitHub-only
   module so every forge source redacts clone failures through the same control.

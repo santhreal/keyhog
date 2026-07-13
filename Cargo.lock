@@ -2977,6 +2977,7 @@ dependencies = [
  "brotli",
  "bzip2",
  "codewalk",
+ "crossbeam-channel",
  "dashmap",
  "flate2",
  "gix",

@@ -82,6 +82,7 @@ ignore = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 rayon = { workspace = true }
+crossbeam-channel = { workspace = true }
 toml = { workspace = true }
 # Concurrent dedup/seen-path maps in the always-on filesystem walker
 # (`filesystem.rs`). Was previously only present transitively via other

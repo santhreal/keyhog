@@ -109,6 +109,7 @@ criterion = { version = "=0.8.2", features = ["html_reports"] }
 
 # Parallelism
 rayon = "=1.12.0"
+crossbeam-channel = "=0.5.15"
 memchr = "=2.8.0"
 parking_lot = "=0.12.5"
 dashmap = "=6.2.1"
