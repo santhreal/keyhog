@@ -338,7 +338,7 @@ fn main_error() {
 #[test]
 fn args_happy() {
     let args = ScanArgs::try_parse_from(["scan", "."]).unwrap();
-    assert_eq!(args.input.as_deref(), Some(std::path::Path::new(".")));
+    assert_eq!(args.input, vec![std::path::PathBuf::from(".")]);
 }
 #[test]
 fn args_error() {

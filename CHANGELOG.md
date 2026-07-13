@@ -6,9 +6,16 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Multi-root positional parsing now uses one visible variadic `PATH` vector;
+  generated help reports `[PATH]...` and the hidden `EXTRA_PATH` compatibility
+  carrier is gone. Mixing stdin shorthand `-` with filesystem roots now fails
+  explicitly instead of producing a split-source request. Library consumers
+  that read `ScanArgs::input` directly should use `ScanArgs::scan_roots()`;
+  `input` now stores the complete ordered positional vector.
 - Documentation and CLI help now distinguish the foreground `watch` process
   from the independently started Unix-socket daemon and describe `--backend
-  auto` as persisted routing rather than a forced backend.
+  auto` as persisted routing rather than a forced backend. The scan reference
+  now states the explicit-versus-absent `--daemon=auto` platform semantics.
 - Daemon wire-v3 scan results now require suppression, dogfood, and coverage
   fields instead of silently defaulting fields inherited from rejected v1/v2
   peers; malformed same-version frames fail closed.

@@ -532,15 +532,22 @@ impl ScanOrchestrator {
         // bare `-` to `--stdin` and drop it from the path slot so the
         // existing stdin-reading source picks up. Falls through cleanly
         // when `--stdin` was already passed.
-        if matches!(args.input.as_deref().and_then(|p| p.to_str()), Some("-"))
-            || matches!(args.path.as_deref().and_then(|p| p.to_str()), Some("-"))
-        {
+        let positional_stdin = args
+            .input
+            .iter()
+            .any(|path| path == std::path::Path::new("-"));
+        if positional_stdin && args.input.len() > 1 {
+            anyhow::bail!(
+                "stdin shorthand `-` cannot be combined with other positional scan roots; use either `keyhog scan -` or scan the filesystem roots without `-`"
+            );
+        }
+        if positional_stdin || matches!(args.path.as_deref().and_then(|p| p.to_str()), Some("-")) {
             args.stdin = true;
-            args.input = None;
+            args.input.clear();
             args.path = None;
         }
         if args.path.is_none() {
-            args.path = args.input.clone();
+            args.path = args.input.first().cloned();
         }
         #[cfg(feature = "git")]
         if args.git_staged && args.path.is_none() {
@@ -557,8 +564,8 @@ impl ScanOrchestrator {
         // `resolve_scan_roots` re-validates during source construction; this runs
         // the SAME validator earlier, so the diagnostic and exit code are identical.
         if !args.stdin {
-            for root in args.path.iter().chain(args.extra_paths.iter()) {
-                crate::path_validation::validate_cli_path_arg(root, "scan path")?;
+            for root in args.scan_roots() {
+                crate::path_validation::validate_cli_path_arg(&root, "scan path")?;
             }
         }
         let mut effective_config = resolve_scan_config(&mut args)?;

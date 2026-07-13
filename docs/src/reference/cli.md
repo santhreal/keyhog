@@ -62,7 +62,8 @@ incomplete.
 |-------------------------------|------------------------------------------------|
 | `--fast`                      | Disable entropy discovery, ML scoring, and decode recursion (`max_decode_depth = 0`). Named regex detectors remain loaded; the speedup and recall change are workload-dependent. |
 | `--daemon`                    | Force daemon route for eligible stdin/single-file scans. Unix only; fails if the request needs the in-process pipeline. |
-| `--daemon=off`                 | Force in-process scan even if daemon is up.    |
+| `--daemon=auto`               | On Unix, use a reachable compatible daemon when it can honor the exact request; with no socket, run in process, and report failures that occur after selecting the daemon before retrying in process. This is also the absent-flag policy, except that explicit `auto` is rejected on platforms with no daemon transport. |
+| `--daemon=off`                | Force in-process scan even if daemon is up.    |
 | `--timeout <SECONDS>`         | Hard per-scan deadline.                        |
 | `--profile`                   | Emit the scanner-owned hierarchical profile report to stderr at scan end. |
 | `--perf-trace`                | Emit low-level scan/GPU phase timing traces to stderr. |

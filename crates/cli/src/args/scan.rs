@@ -82,8 +82,11 @@ impl CliDedupScope {
 ///   * `--daemon=off`     → [`Self::Off`]  (force in-process execution)
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum, Debug)]
 pub enum DaemonMode {
-    /// Use the daemon when a live socket is present, else scan in-process. This
-    /// is the behavior when no `--daemon` flag is given.
+    /// Use a compatible daemon when its socket is reachable; otherwise scan in
+    /// process. A failure after selecting the daemon is reported before the
+    /// in-process retry. This is the behavior when the flag is absent. The
+    /// explicit `--daemon=auto` spelling requires Unix; an absent flag remains
+    /// portable and runs in process where no daemon transport ships.
     Auto,
     /// Force the scan through a running `keyhog daemon`; fail if none is up.
     On,
@@ -111,19 +114,7 @@ pub struct ScanArgs {
     /// (`keyhog scan a/ b/ c/`); nested or duplicate roots fold into their
     /// covering parent. Positional shorthand for `--path` (single root only).
     #[arg(value_name = "PATH", conflicts_with = "path")]
-    pub input: Option<PathBuf>,
-
-    /// Additional positional roots BEYOND the first: `keyhog scan a/ b/ c/`
-    /// binds `a` to [`Self::input`] and `b`, `c` here. Together with `input`
-    /// these form the ordered root set resolved by [`ScanArgs::scan_roots`];
-    /// each becomes its own filesystem source (the scan engine already merges a
-    /// multi-source `Vec`), with overlapping/nested roots folded into their
-    /// covering parent. `hide = true` keeps the documented surface at `[PATH]…`
-    /// and out of `--help`; it carries no `long`, so the CLI-08 long-flag
-    /// snapshot gate never sees it. `conflicts_with = "path"` keeps the
-    /// single-target `--path` flag mutually exclusive with positional roots.
-    #[arg(value_name = "EXTRA_PATH", hide = true, conflicts_with = "path")]
-    pub extra_paths: Vec<PathBuf>,
+    pub input: Vec<PathBuf>,
 
     /// Scan a directory or file
     #[arg(short, long)]
@@ -951,27 +942,16 @@ impl ScanArgs {
     /// source of truth for "which paths" across source construction, daemon
     /// routing, and the scan-target header.
     ///
-    /// `keyhog scan a/ b/ c/` binds `a` to [`Self::input`] and `b`, `c` to the
-    /// hidden [`Self::extra_paths`] catch-all, so a non-empty `extra_paths`
-    /// unambiguously means a positional multi-root request — and clap's
-    /// `conflicts_with = "path"` guarantees `--path` is absent there. Checking
-    /// `extra_paths` FIRST also makes this robust to the orchestrator's internal
-    /// `input -> path` promotion (`ScanOrchestrator::new`): that copy fills
-    /// `path` with the FIRST root only, so reading `path` first would silently
-    /// drop every surplus root. The single-root branch then resolves the one
-    /// root from `--path` (explicit) or the lone positional `input`.
+    /// Positional roots live in one vector, so Clap's generated usage, parsing,
+    /// daemon eligibility, and source construction share the same model. The
+    /// positional vector wins over the orchestrator's internal first-root copy
+    /// into `path`; Clap guarantees a user cannot combine positional roots with
+    /// the explicit single-root `--path` flag.
     #[must_use]
     pub fn scan_roots(&self) -> Vec<PathBuf> {
-        if !self.extra_paths.is_empty() {
-            let mut roots = Vec::with_capacity(1 + self.extra_paths.len());
-            roots.extend(self.input.clone());
-            roots.extend(self.extra_paths.iter().cloned());
-            return roots;
+        if !self.input.is_empty() {
+            return self.input.clone();
         }
-        self.path
-            .clone()
-            .or_else(|| self.input.clone())
-            .into_iter()
-            .collect()
+        self.path.clone().into_iter().collect()
     }
 }

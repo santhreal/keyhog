@@ -15,7 +15,7 @@
 use clap::Parser;
 use keyhog::args::ScanArgs;
 use keyhog::testing::{CliTestApi, API};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -62,24 +62,57 @@ fn no_path_is_zero_roots() {
 }
 
 #[test]
-fn surplus_positionals_land_in_extra_paths() {
+fn all_positionals_land_in_one_ordered_vector() {
     let args = parse(&["scan", "a", "b", "c"]);
-    assert_eq!(args.input.as_deref(), Some(Path::new("a")));
-    let extras: Vec<&str> = args.extra_paths.iter().filter_map(|p| p.to_str()).collect();
-    assert_eq!(extras, vec!["b", "c"]);
+    assert_eq!(
+        args.input,
+        vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")]
+    );
 }
 
 #[test]
 fn scan_roots_survives_orchestrator_input_to_path_promotion() {
-    // `ScanOrchestrator::new` copies the first positional `input` into `path`.
-    // Reading `path` first would then drop every surplus root, so the accessor
-    // must consult `extra_paths` first. Simulate the promotion explicitly.
+    // `ScanOrchestrator::new` copies the first positional root into `path` for
+    // config discovery. The positional vector remains the source of truth.
     let mut args = parse(&["scan", "a", "b", "c"]);
-    args.path = args.input.clone();
+    args.path = args.input.first().cloned();
     assert_eq!(
         args.scan_roots(),
         vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")],
         "promotion must not collapse a multi-root request to its first root",
+    );
+}
+
+#[test]
+fn shipped_help_advertises_the_real_variadic_positional() {
+    let output = Command::new(binary())
+        .args(["scan", "--help"])
+        .output()
+        .expect("run scan help");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Usage: keyhog scan [OPTIONS] [PATH]..."),
+        "generated usage must expose the real multi-root contract: {stdout}"
+    );
+    assert!(
+        !stdout.contains("EXTRA_PATH"),
+        "the removed hidden positional shim must not leak into help: {stdout}"
+    );
+}
+
+#[test]
+fn stdin_shorthand_cannot_hide_inside_a_multi_root_request() {
+    let tmp = TempDir::new().expect("tempdir");
+    let output = Command::new(binary())
+        .args(["scan", "-", tmp.path().to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run mixed stdin/filesystem scan");
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("stdin shorthand `-` cannot be combined with other positional scan roots"),
+        "mixed-source refusal must name the conflicting shorthand and fix: {stderr}"
     );
 }
 

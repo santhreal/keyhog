@@ -77,7 +77,7 @@ fn bare_daemon_does_not_swallow_positional_input() {
     match cli.command {
         Some(Command::Scan(args)) => {
             assert_eq!(args.daemon_mode(), DaemonMode::On);
-            assert_eq!(args.input.as_deref(), Some(std::path::Path::new("src")));
+            assert_eq!(args.input, vec![std::path::PathBuf::from("src")]);
         }
         _ => panic!("expected Scan subcommand"),
     }
@@ -91,7 +91,7 @@ fn space_separated_value_is_rejected_by_require_equals() {
     match cli.command {
         Some(Command::Scan(args)) => {
             assert_eq!(args.daemon_mode(), DaemonMode::On);
-            assert_eq!(args.input.as_deref(), Some(std::path::Path::new("on")));
+            assert_eq!(args.input, vec![std::path::PathBuf::from("on")]);
         }
         _ => panic!("expected Scan subcommand"),
     }

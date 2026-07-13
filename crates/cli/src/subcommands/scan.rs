@@ -236,7 +236,7 @@ impl EffectivePolicy {
         // instead of the scanned file's directory and miss the `.keyhog.toml`
         // whose policy we are trying to honour — the exact bug this resolves.
         if probe.path.is_none() {
-            probe.path = probe.input.clone();
+            probe.path = probe.input.first().cloned();
         }
         // Quiet (diagnostics-free) merge: this probe applies the config to a
         // throwaway clone only to read the resolved routing knobs. The real
@@ -546,10 +546,14 @@ fn effective_single_file_path(args: &ScanArgs) -> Result<Option<&Path>> {
     // Several positional roots are never a daemon single-file candidate. Reading
     // only `path`/`input` here would see the FIRST root, route the scan over the
     // single-path daemon protocol, and silently drop every surplus root (Law 10).
-    if !args.extra_paths.is_empty() {
+    if args.input.len() > 1 {
         return Ok(None);
     }
-    let Some(raw) = args.path.as_deref().or(args.input.as_deref()) else {
+    let Some(raw) = args
+        .path
+        .as_deref()
+        .or_else(|| args.input.first().map(PathBuf::as_path))
+    else {
         return Ok(None);
     };
     let meta = std::fs::metadata(raw)
@@ -783,7 +787,11 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Result<Vec<Ve
 /// bare-filename case falls back to ".".
 #[cfg(unix)]
 fn daemon_allowlist_root(args: &ScanArgs) -> PathBuf {
-    let Some(path) = args.path.as_deref().or(args.input.as_deref()) else {
+    let Some(path) = args
+        .path
+        .as_deref()
+        .or_else(|| args.input.first().map(PathBuf::as_path))
+    else {
         return PathBuf::from(".");
     };
     if path.is_dir() {
