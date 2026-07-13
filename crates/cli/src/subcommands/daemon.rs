@@ -51,6 +51,7 @@ async fn start(
         &detectors_dir,
         detectors_cli_explicit,
     )?;
+    let detectors_dir = crate::orchestrator_config::auto_discover_detectors(&detectors_dir)?;
     crate::orchestrator_config::configure_hyperscan_cache_dir(cache_dir)?;
     let backend_override = crate::orchestrator_config::parse_backend_override(backend.as_deref())?;
 

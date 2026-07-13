@@ -13,7 +13,8 @@ pub(crate) fn run(args: ExplainArgs) -> Result<()> {
         &args.detectors,
         args.detectors_cli_explicit,
     )?;
-    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
+    let detectors_path = crate::orchestrator_config::auto_discover_detectors(&args.detectors)?;
+    let detectors = crate::orchestrator_config::load_detectors_or_embedded(&detectors_path)?;
 
     let requested = args.detector_id.as_str();
     // Historical releases emitted `hot-*` fast-path aliases. Accept the finite
