@@ -511,7 +511,8 @@ node_modules/**
 **/*.lock
 ```
 
-See [keyhogignore-toml.md](keyhogignore-toml.md) for the full schema.
+See the [`.keyhogignore.toml` reference](../reference/keyhogignore-toml.md) for
+the full schema.
 
 ## Exit codes
 
