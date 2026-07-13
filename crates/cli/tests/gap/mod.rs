@@ -7,6 +7,7 @@ pub mod contract_help_missing_exit_code_four;
 pub mod contract_missing_path_stderr_weak_oracle;
 pub mod daemon_start_no_embedded_detector_fallback;
 pub mod detectors_audit_exit_code_three_in_src;
+pub mod detectors_dry_run_leaves_filesystem_unchanged;
 pub mod detectors_list_phantom_subcommand_in_errors;
 pub mod detectors_search_help_detector_count_drift;
 pub mod doc_detector_ids_resolve_in_registry;
