@@ -206,6 +206,17 @@ pub trait CliTestApi {
         asset_name: &str,
         checksum_file: &[u8],
     ) -> Result<()>;
+    fn parse_gpu_literal_sidecar(
+        &self,
+        archive: &[u8],
+        expected_release_tag: &str,
+    ) -> Result<Vec<(String, Vec<u8>)>>;
+    fn install_gpu_literal_files_in_dir(
+        &self,
+        cache_dir: &Path,
+        files: &[(&str, &[u8])],
+        commit: bool,
+    ) -> Result<()>;
     fn release_api_base(&self) -> String;
     fn release_api_base_with_override(&self, base: &str) -> String;
     fn release_public_key(&self) -> &'static str;
@@ -702,6 +713,37 @@ impl CliTestApi for TestApi {
         checksum_file: &[u8],
     ) -> Result<()> {
         crate::installer::verify_release_checksum(data, asset_name, checksum_file)
+    }
+    fn parse_gpu_literal_sidecar(
+        &self,
+        archive: &[u8],
+        expected_release_tag: &str,
+    ) -> Result<Vec<(String, Vec<u8>)>> {
+        crate::installer::parse_gpu_literal_sidecar(archive, expected_release_tag).map(|files| {
+            files
+                .into_iter()
+                .map(|file| (file.name, file.bytes))
+                .collect()
+        })
+    }
+    fn install_gpu_literal_files_in_dir(
+        &self,
+        cache_dir: &Path,
+        files: &[(&str, &[u8])],
+        commit: bool,
+    ) -> Result<()> {
+        let files = files
+            .iter()
+            .map(|(name, bytes)| crate::installer::GpuLiteralFile {
+                name: (*name).to_string(),
+                bytes: (*bytes).to_vec(),
+            })
+            .collect::<Vec<_>>();
+        let transaction = crate::installer::install_gpu_literal_files_in_dir(cache_dir, &files)?;
+        if commit {
+            transaction.commit();
+        }
+        Ok(())
     }
     fn release_api_base(&self) -> String {
         crate::installer::release_api_base(None)

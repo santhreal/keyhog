@@ -240,6 +240,13 @@ pub(crate) fn select_asset(release: &Release) -> Result<&Asset> {
     find_unique_asset(release, &target)
 }
 
+pub(crate) fn select_gpu_literal_asset<'a>(
+    release: &'a Release,
+    binary: &Asset,
+) -> Result<&'a Asset> {
+    find_unique_asset(release, &format!("{}.gpu-literals.tar.gz", binary.name))
+}
+
 /// Download an asset over HTTPS, confirm it is a native executable for this
 /// platform, and verify both its detached minisign signature and exact
 /// release-manifest SHA-256 entry before handing the bytes back.
@@ -248,12 +255,14 @@ pub(crate) async fn download_verified_asset(
     release: &Release,
     asset: &Asset,
 ) -> Result<Vec<u8>> {
-    let response = client
-        .get(&asset.browser_download_url)
-        .send()
-        .await
-        .context("download asset")?;
-    let bytes = read_limited_response(response, MAX_RELEASE_ASSET_BYTES, "release asset").await?;
+    let bytes = download_verified_payload(
+        client,
+        release,
+        asset,
+        MAX_RELEASE_ASSET_BYTES,
+        "release asset",
+    )
+    .await?;
     if !looks_like_native_executable(&bytes) {
         return Err(anyhow!(
             "downloaded asset is not a {} executable ({} bytes) - refusing to install. \
@@ -263,8 +272,40 @@ pub(crate) async fn download_verified_asset(
         ));
     }
 
+    Ok(bytes)
+}
+
+pub(crate) async fn download_verified_gpu_literal_asset(
+    client: &reqwest::Client,
+    release: &Release,
+    asset: &Asset,
+) -> Result<Vec<u8>> {
+    download_verified_payload(
+        client,
+        release,
+        asset,
+        MAX_RELEASE_ASSET_BYTES,
+        "GPU literal sidecar",
+    )
+    .await
+}
+
+async fn download_verified_payload(
+    client: &reqwest::Client,
+    release: &Release,
+    asset: &Asset,
+    max_bytes: usize,
+    label: &str,
+) -> Result<Vec<u8>> {
+    let response = client
+        .get(&asset.browser_download_url)
+        .send()
+        .await
+        .with_context(|| format!("download {label} {}", asset.name))?;
+    let bytes = read_limited_response(response, max_bytes, label).await?;
+
     // Signature: the release `sign` job uploads `<asset>.minisig` alongside
-    // each binary. Fetch and verify it. A 404 is a hard failure: refuse.
+    // each binary and sidecar. Fetch and verify it. A 404 is a hard failure.
     let signature_name = format!("{}.minisig", asset.name);
     let signature_asset = find_unique_asset(release, &signature_name)?;
     let sig_resp = client

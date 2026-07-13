@@ -164,9 +164,8 @@ jobs:
             exit 1
           fi
           # Per-asset SHA256 checksums. install.sh verifies the binary checksum
-          # today; the shipped GPU literal sidecar is checksummed and signed now
-          # so installer/runtime consumption can fail closed instead of trusting
-          # a detached blob once the runtime loader lands.
+          # and the Rust update/repair path verify both payload checksums and
+          # signatures before installing the binary and seeding the scanner cache.
           assets=(
             "${{ matrix.asset }}"
             "${{ matrix.asset }}.gpu-literals.tar.gz"

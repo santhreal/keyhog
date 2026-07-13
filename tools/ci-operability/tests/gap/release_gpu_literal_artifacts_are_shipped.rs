@@ -17,10 +17,15 @@ fn release_workflow_builds_uploads_and_signs_gpu_literal_artifacts() {
         "release.yml must build a GPU literal artifact bundle through the real scanner artifact writer"
     );
     assert!(
-        text.contains("\"$asset.gpu-literals.tar.gz\"")
-            && text.contains("\"$asset.gpu-literals.tar.gz.sha256\"")
-            && text.contains("gh release upload \"$tag\""),
-        "release.yml must upload the GPU literal sidecar and checksum beside each binary"
+        text.contains("${{ matrix.asset }}.gpu-literals.tar.gz")
+            && text.contains("${{ matrix.asset }}.gpu-literals.tar.gz.sha256")
+            && text.contains("name: unsigned-${{ matrix.asset }}")
+            && text.contains("cp -a \"$GITHUB_WORKSPACE/dist/.\" \"$workdir/\"")
+            && text.contains("final+=(\"$payload.minisig\")")
+            && text.contains("gh release upload \"$tag\" \"${final[@]}\"")
+            && text
+                .contains("published release manifest does not equal the signed expected manifest"),
+        "release.yml must stage the GPU literal bundle privately, then publish it only through the exact signed manifest"
     );
 
     let sign_job = text
@@ -29,12 +34,11 @@ fn release_workflow_builds_uploads_and_signs_gpu_literal_artifacts() {
         .and_then(|rest| rest.split("\n  docker:\n").next())
         .expect("release.yml must keep the sign job");
     assert!(
-        sign_job.contains("gh release download \"$tag\"")
-            && sign_job.contains("--pattern 'keyhog-*'")
+        sign_job.contains("payloads+=(\"$base\" \"$base.gpu-literals.tar.gz\")")
             && sign_job.contains("rsign sign")
-            && sign_job.contains("*.sha256|*.minisig) continue ;;")
-            && !sign_job.contains("*.tar.gz"),
-        "release signing must sign uploaded GPU literal sidecars instead of excluding tarballs"
+            && sign_job.contains("for f in \"${payloads[@]}\"")
+            && !sign_job.contains("gh release download \"$tag\""),
+        "release signing must sign the privately staged binary and GPU literal payloads without using a public release as staging transport"
     );
     assert!(
         ci.contains("--test gpu_literal_artifact_writer")

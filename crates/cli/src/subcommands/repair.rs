@@ -68,6 +68,13 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
     let allow_explicit_downgrade = args.version.is_some();
     println!("  downloading    {} ({})", asset.name, release.tag_name);
     let bytes = installer::download_verified_asset(&client, &release, asset).await?;
+    let gpu_literal_asset = installer::select_gpu_literal_asset(&release, asset)?;
+    println!("  gpu literals   {}", gpu_literal_asset.name);
+    let gpu_literal_bytes =
+        installer::download_verified_gpu_literal_asset(&client, &release, gpu_literal_asset)
+            .await?;
+    let gpu_literal_files =
+        installer::parse_gpu_literal_sidecar(&gpu_literal_bytes, &expected_tag)?;
     let exe = installer::current_binary()?;
     installer::reap_stale_binaries(&exe);
 
@@ -80,12 +87,15 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
     //    binary passed its own health check.
     println!("\n{dim}reinstalling and verifying the new binary...{reset}\n");
     match installer::install_with_rollback_checked(&exe, &bytes, |candidate| {
+        let gpu_transaction = installer::install_gpu_literal_files(&gpu_literal_files)?;
         installer::verify_candidate_release(
             candidate,
             &expected_tag,
             env!("CARGO_PKG_VERSION"),
             allow_explicit_downgrade,
-        )
+        )?;
+        gpu_transaction.commit();
+        Ok(())
     }) {
         Ok(()) => {
             println!(

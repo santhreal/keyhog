@@ -152,6 +152,8 @@ serde_json = { workspace = true }
 semver = { workspace = true }
 blake3 = { workspace = true }
 sha2 = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }

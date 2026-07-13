@@ -33,7 +33,9 @@
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 
+mod gpu_artifacts;
 mod release;
+pub(crate) use gpu_artifacts::*;
 pub(crate) use release::*;
 
 fn remove_installer_artifact_best_effort(path: &Path, context: &str) {

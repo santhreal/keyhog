@@ -277,11 +277,11 @@ those GPU checks are skipped on hosts without an eligible accelerator:
 end-to-end self-test - it plants a synthetic secret and confirms the
 binary detects it - so it is the authoritative "will keyhog work here?"
 check (the installer runs it automatically after install). `update` and
-`repair` download the release binary over HTTPS, verify its minisign
-signature against keyhog's embedded public key, require its release-manifest
-SHA-256 checksum to match, and atomically swap the
-running binary in place; a tampered or unsigned-mismatched binary is
-refused. On a healthy host `keyhog update` is the one-command upgrade
+`repair` download the release binary and GPU-literal sidecar over HTTPS,
+verify both minisign signatures against keyhog's embedded public key, require
+both release-manifest SHA-256 checksums to match, and install them as one
+rollback-protected maintenance operation. A tampered, mismatched, or unsafe
+archive is refused. On a healthy host `keyhog update` is the one-command upgrade
 path. Implicit update/repair resolution ignores drafts and prereleases and
 requires the complete signed host bundle; pass `--version <TAG>` to select an
 exact published tag, including a prerelease. Network responses are bounded and

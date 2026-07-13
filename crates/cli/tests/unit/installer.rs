@@ -232,6 +232,81 @@ fn release_checksum_binds_digest_and_asset_name() {
         .is_err());
 }
 
+fn gpu_literal_sidecar(version: &str, name: &str, artifact: &[u8]) -> Vec<u8> {
+    use flate2::{write::GzEncoder, Compression};
+    use std::io::Cursor;
+
+    let manifest = serde_json::json!({
+        "format_version": 1,
+        "keyhog_version": version,
+        "artifacts": [{"file_name": name, "byte_len": artifact.len()}],
+    })
+    .to_string()
+    .into_bytes();
+    let encoder = GzEncoder::new(Vec::new(), Compression::default());
+    let mut archive = tar::Builder::new(encoder);
+    for (path, bytes) in [
+        ("keyhog.gpu-literals/manifest.json", manifest.as_slice()),
+        ("keyhog.gpu-literals/matcher.bin", artifact),
+    ] {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        archive
+            .append_data(&mut header, path, Cursor::new(bytes))
+            .expect("append sidecar entry");
+    }
+    archive
+        .into_inner()
+        .expect("finish tar")
+        .finish()
+        .expect("finish gzip")
+}
+
+#[test]
+fn gpu_literal_sidecar_binds_manifest_version_and_bytes() {
+    let archive = gpu_literal_sidecar("0.5.41", "matcher.bin", b"matcher-v1");
+    let files = API
+        .parse_gpu_literal_sidecar(&archive, "v0.5.41")
+        .expect("valid signed-sidecar payload shape");
+    assert_eq!(
+        files,
+        vec![("matcher.bin".to_string(), b"matcher-v1".to_vec())]
+    );
+    assert!(API.parse_gpu_literal_sidecar(&archive, "v0.5.42").is_err());
+}
+
+#[test]
+fn gpu_literal_cache_transaction_commits_or_restores_exact_bytes() {
+    let dir = tempfile::tempdir().expect("cache tempdir");
+    let existing = dir.path().join("matcher.bin");
+    std::fs::write(&existing, b"old").expect("seed old artifact");
+
+    API.install_gpu_literal_files_in_dir(
+        dir.path(),
+        &[("matcher.bin", b"new"), ("added.bin", b"added")],
+        false,
+    )
+    .expect("stage transaction then roll back");
+    assert_eq!(std::fs::read(&existing).unwrap(), b"old");
+    assert!(!dir.path().join("added.bin").exists());
+    assert!(!dir.path().join(".keyhog-maintenance.lock").exists());
+
+    API.install_gpu_literal_files_in_dir(
+        dir.path(),
+        &[("matcher.bin", b"new"), ("added.bin", b"added")],
+        true,
+    )
+    .expect("commit cache transaction");
+    assert_eq!(std::fs::read(&existing).unwrap(), b"new");
+    assert_eq!(
+        std::fs::read(dir.path().join("added.bin")).unwrap(),
+        b"added"
+    );
+    assert!(!dir.path().join(".keyhog-maintenance.lock").exists());
+}
+
 // ── Moved from src/installer.rs (#[cfg(test)] mod rename_away_tests) per the
 //    no_inline_tests_in_src gate. Cross-platform rename-away self-replace that
 //    backs `keyhog update`/`repair` on Windows; same std::fs::rename semantics

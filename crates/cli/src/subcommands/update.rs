@@ -60,8 +60,14 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
     }
 
     let asset = asset?;
+    let gpu_literal_asset = installer::select_gpu_literal_asset(&release, asset)?;
     println!("\n  downloading    {}", asset.browser_download_url);
     let bytes = installer::download_verified_asset(&client, &release, asset).await?;
+    println!("  gpu literals   {}", gpu_literal_asset.name);
+    let gpu_literal_bytes =
+        installer::download_verified_gpu_literal_asset(&client, &release, gpu_literal_asset)
+            .await?;
+    let gpu_literal_files = installer::parse_gpu_literal_sidecar(&gpu_literal_bytes, &latest)?;
     let exe = installer::current_binary()?;
     // Clear any stash left locked by a prior self-replace (Windows keeps the
     // old image locked until its process exits; this is the next run).
@@ -73,7 +79,10 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
     // leaving the user with a bricked install reporting success.
     println!("\n{dim}verifying the new binary on this host...{reset}\n");
     installer::install_with_rollback_checked(&exe, &bytes, |candidate| {
-        installer::verify_candidate_release(candidate, &latest, current, allow_explicit_downgrade)
+        let gpu_transaction = installer::install_gpu_literal_files(&gpu_literal_files)?;
+        installer::verify_candidate_release(candidate, &latest, current, allow_explicit_downgrade)?;
+        gpu_transaction.commit();
+        Ok(())
     })?;
 
     println!(

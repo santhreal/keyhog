@@ -149,8 +149,8 @@ pub(crate) use backend_prepared::PreparedChunk;
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries;
 pub use gpu_artifacts::{
-    compile_gpu_literal_artifacts, compile_gpu_literal_artifacts_default, GpuLiteralArtifact,
-    GpuLiteralArtifacts,
+    compile_gpu_literal_artifacts, compile_gpu_literal_artifacts_default,
+    gpu_literal_artifact_cache_dir, GpuLiteralArtifact, GpuLiteralArtifacts,
 };
 #[cfg(test)]
 pub(crate) use gpu_forced_helpers::gpu_forced_unavailable_message;

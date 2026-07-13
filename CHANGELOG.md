@@ -12,7 +12,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   deadlines. Draft releases are never installable; exact published prerelease
   tags remain available through `--version`. The Rust maintenance path now
   resolves each proof file from exact release metadata, rejects duplicate asset
-  names, and verifies the binary's SHA-256 manifest entry after minisign.
+  names, and verifies both payload SHA-256 entries after minisign. `update` and
+  `repair` now validate and transactionally seed the signed GPU-literal sidecar
+  through the scanner-owned cache path, rolling matcher changes back with the
+  binary when the candidate health/version gate fails.
 - Consolidated user and contributor documentation into one canonical mdBook
   under `docs/src/`. Removed the duplicate hand-maintained HTML site, moved the
   architecture and integration references into the book, made orphan/duplicate

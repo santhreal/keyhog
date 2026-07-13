@@ -121,6 +121,13 @@ including a prerelease. Release metadata, payloads, and signatures have bounded
 downloads and connection/request deadlines; an oversized or stalled response
 fails without changing the installed binary.
 
+The maintenance commands validate the signed sidecar's archive paths, entry
+types, expansion limits, manifest version, binary-version binding, filenames,
+and byte lengths before changing local state. Matcher files are installed under
+the scanner-owned cache path while the candidate binary is health-checked. A
+failed artifact install or candidate check restores both the previous binary
+and every replaced matcher; concurrent maintenance uses a visible cache lock.
+
 ### Runtime GPU controls
 
 | Control                  | Effect                                                                                                                                                                                                                                       |

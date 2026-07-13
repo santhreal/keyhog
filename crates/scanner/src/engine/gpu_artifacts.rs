@@ -39,6 +39,14 @@ pub struct GpuLiteralArtifacts {
     pub positioned_literal: Option<GpuLiteralArtifact>,
 }
 
+/// Canonical runtime directory for serialized GPU literal matcher artifacts.
+///
+/// Installers use this accessor instead of duplicating the cache-layout
+/// contract owned by the scanner.
+pub fn gpu_literal_artifact_cache_dir() -> Result<std::path::PathBuf> {
+    gpu_cache::gpu_matcher_cache_dir().map_err(|error| ScanError::Gpu(error.to_string()))
+}
+
 /// Compile GPU literal artifacts using shipped-default scanner tuning.
 pub fn compile_gpu_literal_artifacts_default(
     detectors: &[DetectorSpec],
