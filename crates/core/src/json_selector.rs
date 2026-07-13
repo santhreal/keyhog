@@ -232,7 +232,7 @@ pub fn validate(selector: &str) -> Result<(), SelectorError> {
     visit_segments(selector, |_| {})
 }
 
-fn validate_at(errors: &mut Vec<String>, scope: String, selector: Option<&str>) {
+fn validate_at(errors: &mut Vec<String>, scope: std::fmt::Arguments<'_>, selector: Option<&str>) {
     if let Some(selector) = selector {
         if let Err(error) = validate(selector) {
             errors.push(format!("{scope}: {error}"));
@@ -249,7 +249,7 @@ pub fn validate_detector_response_selectors(detector: &crate::DetectorSpec) -> V
     if let Some(success) = &verify.success {
         validate_at(
             &mut errors,
-            "verify.success.json_path".to_string(),
+            format_args!("verify.success.json_path"),
             success.json_path.as_deref(),
         );
         if success.equals.is_some() && success.json_path.is_none() {
@@ -262,14 +262,14 @@ pub fn validate_detector_response_selectors(detector: &crate::DetectorSpec) -> V
     for (metadata_index, metadata) in verify.metadata.iter().enumerate() {
         validate_at(
             &mut errors,
-            format!("verify.metadata[{metadata_index}].json_path"),
+            format_args!("verify.metadata[{metadata_index}].json_path"),
             Some(&metadata.json_path),
         );
     }
     for (step_index, step) in verify.steps.iter().enumerate() {
         validate_at(
             &mut errors,
-            format!("verify.steps[{step_index}].success.json_path"),
+            format_args!("verify.steps[{step_index}].success.json_path"),
             step.success.json_path.as_deref(),
         );
         if step.success.equals.is_some() && step.success.json_path.is_none() {
@@ -280,7 +280,7 @@ pub fn validate_detector_response_selectors(detector: &crate::DetectorSpec) -> V
         for (extract_index, metadata) in step.extract.iter().enumerate() {
             validate_at(
                 &mut errors,
-                format!("verify.steps[{step_index}].extract[{extract_index}].json_path"),
+                format_args!("verify.steps[{step_index}].extract[{extract_index}].json_path"),
                 Some(&metadata.json_path),
             );
         }
