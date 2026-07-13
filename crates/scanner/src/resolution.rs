@@ -249,79 +249,68 @@ pub(crate) fn is_service_specific_detector(detector_id: &str) -> bool {
 }
 
 fn resolve_match_groups(mut matches: Vec<RawMatch>) -> Vec<RawMatch> {
-    // Group by (file_path, line). For a source with no line attribution, build
-    // connected components of overlapping credential spans: slightly different
-    // regex captures of one secret still compete, while disjoint binary findings
-    // remain independent instead of collapsing into a synthetic line zero.
+    // A line is only an attribution boundary. Within it, slightly different
+    // captures of one secret compete, while disjoint credentials remain
+    // independent findings.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     enum GroupLocation {
         Line(usize),
-        Offset(usize),
+        NoLine,
     }
 
     let mut groups: BTreeMap<(Arc<str>, GroupLocation), Vec<RawMatch>> = BTreeMap::new();
-    let mut line_free: BTreeMap<Arc<str>, Vec<RawMatch>> = BTreeMap::new();
     for m in matches.drain(..) {
         let file = m
             .location
             .file_path
             .clone()
             .unwrap_or_else(|| Arc::from("")); // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
-        if let Some(line) = m.location.line {
-            groups
-                .entry((file, GroupLocation::Line(line)))
-                .or_default()
-                .push(m);
-        } else {
-            line_free.entry(file).or_default().push(m);
-        }
+        let location = m
+            .location
+            .line
+            .map_or(GroupLocation::NoLine, GroupLocation::Line);
+        groups.entry((file, location)).or_default().push(m);
     }
 
-    for (file, mut file_matches) in line_free {
-        file_matches.sort_by_key(|matched| {
-            (
-                matched.location.offset,
-                matched
-                    .location
-                    .offset
-                    .saturating_add(matched.credential.as_ref().len()),
-            )
-        });
-
+    let mut resolved = Vec::new();
+    for (_key, mut group) in groups {
+        group.sort_by_key(match_offsets);
         let mut component = Vec::new();
         let mut component_end = 0usize;
-        for matched in file_matches {
+        for matched in group {
             let start = matched.location.offset;
             let end = start.saturating_add(matched.credential.as_ref().len());
             let overlaps = component.first().is_some_and(|first: &RawMatch| {
                 start < component_end || start == first.location.offset
             });
             if !overlaps && !component.is_empty() {
-                let component_start = component[0].location.offset;
-                groups.insert(
-                    (file.clone(), GroupLocation::Offset(component_start)),
-                    std::mem::take(&mut component),
-                );
+                resolve_component(&mut resolved, std::mem::take(&mut component));
                 component_end = 0;
             }
             component_end = component_end.max(end);
             component.push(matched);
         }
         if !component.is_empty() {
-            let component_start = component[0].location.offset;
-            groups.insert((file, GroupLocation::Offset(component_start)), component);
+            resolve_component(&mut resolved, component);
         }
-    }
-
-    let mut resolved = Vec::new();
-    for (_key, group) in groups {
-        if group.len() == SINGLE_MATCH_COUNT {
-            resolved.extend(group);
-            continue;
-        }
-        resolved.extend(best_matches_for_group(group));
     }
     resolved
+}
+
+fn match_offsets(matched: &RawMatch) -> (usize, usize) {
+    let start = matched.location.offset;
+    (
+        start,
+        start.saturating_add(matched.credential.as_ref().len()),
+    )
+}
+
+fn resolve_component(resolved: &mut Vec<RawMatch>, component: Vec<RawMatch>) {
+    if component.len() == SINGLE_MATCH_COUNT {
+        resolved.extend(component);
+    } else {
+        resolved.extend(best_matches_for_group(component));
+    }
 }
 
 fn best_matches_for_group(group: Vec<RawMatch>) -> Vec<RawMatch> {

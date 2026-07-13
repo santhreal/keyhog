@@ -124,6 +124,112 @@ fn overlapping_line_free_matches_still_compete() {
 }
 
 #[test]
+fn disjoint_matches_on_one_line_remain_independent_findings() {
+    let first = make_match_at_offset(
+        "service-a-token",
+        "first-secret-value",
+        Some(0.95),
+        "config.json",
+        1,
+        16,
+    );
+    let second = make_match_at_offset(
+        "service-b-token",
+        "second-secret-value",
+        Some(0.40),
+        "config.json",
+        1,
+        128,
+    );
+
+    let resolved = resolve_matches(vec![first, second]);
+
+    assert_eq!(resolved.len(), 2);
+    assert!(resolved.iter().any(|m| m.location.offset == 16));
+    assert!(resolved.iter().any(|m| m.location.offset == 128));
+}
+
+#[test]
+fn overlapping_matches_on_one_line_still_compete() {
+    let broad = make_match_at_offset(
+        "generic-secret",
+        "prefix-overlapping-secret",
+        Some(0.40),
+        "config.json",
+        1,
+        100,
+    );
+    let specific = make_match_at_offset(
+        "service-token",
+        "overlapping-secret",
+        Some(0.95),
+        "config.json",
+        1,
+        107,
+    );
+
+    let forward = resolve_matches(vec![broad.clone(), specific.clone()]);
+    let reverse = resolve_matches(vec![specific, broad]);
+
+    assert_eq!(
+        forward, reverse,
+        "resolution must not depend on input order"
+    );
+    assert_eq!(forward.len(), 1);
+    assert_eq!(forward[0].detector_id.as_ref(), "service-token");
+}
+
+#[test]
+fn touching_matches_on_one_line_do_not_compete() {
+    let first = make_match_at_offset(
+        "service-a-token",
+        "first-secret",
+        Some(0.95),
+        "config.json",
+        1,
+        32,
+    );
+    let second = make_match_at_offset(
+        "service-b-token",
+        "second-secret",
+        Some(0.40),
+        "config.json",
+        1,
+        32 + "first-secret".len(),
+    );
+
+    let resolved = resolve_matches(vec![second, first]);
+
+    assert_eq!(resolved.len(), 2);
+}
+
+#[test]
+fn transitively_overlapping_matches_form_one_component() {
+    let first = make_match_at_offset("short-a", "aaaaaaaaaa", Some(0.10), "config.json", 1, 0);
+    let bridge = make_match_at_offset("short-b", "bbbbbbbbbb", Some(0.20), "config.json", 1, 8);
+    let winner = make_match_at_offset(
+        "service-highest-priority-token",
+        "cccccccccc",
+        Some(0.99),
+        "config.json",
+        1,
+        16,
+    );
+
+    for input in [
+        vec![winner.clone(), first.clone(), bridge.clone()],
+        vec![bridge, winner, first],
+    ] {
+        let resolved = resolve_matches(input);
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(
+            resolved[0].detector_id.as_ref(),
+            "service-highest-priority-token"
+        );
+    }
+}
+
+#[test]
 fn empty_input_produces_empty_output() {
     let resolved = resolve_matches(vec![]);
     assert!(resolved.is_empty());
