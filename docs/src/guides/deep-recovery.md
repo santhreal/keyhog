@@ -60,16 +60,17 @@ make -C benchmarks ioc-recovery-corpus
 make -C benchmarks ioc-recovery
 ```
 
-The checked deep result reports 4,368 true positives, zero false negatives,
-and zero false positives for the pinned corpus and scanner identity. The
-checked fast result reports 1,344 true positives and 3,024 false negatives.
-These are corpus results, not a claim that every possible program transform is
-supported.
+The committed deep target requires 4,368 true positives, zero false negatives,
+and zero false positives for the pinned corpus and scanner identity. The fast
+comparison reports 1,344 true positives and 3,024 false negatives. These are
+corpus results, not a claim that every possible program transform is supported.
 
-- [Deep scored artifact](../../../benchmarks/results-ioc-recovery/ioc-recovery-keyhog-simd-nocache-nodaemon-deep.json)
-- [Fast scored artifact](../../../benchmarks/results-ioc-recovery/ioc-recovery-keyhog-simd-nocache-nodaemon-fast.json)
+- [Executable deep target](../../../benchmarks/bench/tests/test_ioc_recovery_target_spec.py)
 - [Corpus and scorer contract](../../../benchmarks/README.md#exact-secret-recovery-benchmark)
 
-Each artifact records the mode, backend, cache and daemon state, scanner
-version, corpus size, exact detection totals, wall time, and peak RSS. Compare
-results only when those identities match.
+The reproduction commands write local artifacts under
+`benchmarks/results-ioc-recovery/`. Those artifacts are intentionally ignored
+because timings and hardware identity are host-specific. Each artifact records
+the mode, backend, cache and daemon state, scanner version, corpus size, exact
+detection totals, wall time, and peak RSS. Compare results only when those
+identities match.
