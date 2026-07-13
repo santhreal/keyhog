@@ -2334,8 +2334,8 @@ fn integration_smoke_daemon_path_fails_closed() {
         .and_then(|tail| tail.split("- name: Backend probe").next())
         .expect("daemon smoke step exists");
     assert!(
-        daemon.contains("set -euo pipefail"),
-        "daemon smoke step must fail the workflow on command failures"
+        daemon.contains("if: runner.os != 'Windows'") && daemon.contains("set -euo pipefail"),
+        "daemon lifecycle smoke must be Unix-only and fail the workflow on command failures"
     );
     assert!(
         daemon.contains("keyhog daemon start &") && daemon.contains("daemon_pid=$!"),
@@ -2357,6 +2357,17 @@ fn integration_smoke_daemon_path_fails_closed() {
             "daemon smoke step must not advertise advisory daemon coverage: {retired}"
         );
     }
+    let windows = workflow
+        .split("- name: Daemon is rejected on Windows")
+        .nth(1)
+        .and_then(|tail| tail.split("- name: Backend probe").next())
+        .expect("Windows daemon contract step exists");
+    assert!(
+        windows.contains("if: runner.os == 'Windows'")
+            && windows.contains("$code -ne 2")
+            && windows.contains("unix-only"),
+        "Windows smoke must assert exit 2 and the Unix-only remedy"
+    );
 }
 
 #[test]

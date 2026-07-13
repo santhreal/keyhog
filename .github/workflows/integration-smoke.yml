@@ -170,6 +170,7 @@ jobs:
           test -x .git/hooks/pre-commit || { echo "FAIL: pre-commit not installed"; exit 1; }
 
       - name: Daemon start/status/stop
+        if: runner.os != 'Windows'
         shell: bash
         env:
           NO_COLOR: "1"
@@ -201,6 +202,19 @@ jobs:
           keyhog daemon stop
           wait "$daemon_pid"
           trap - EXIT
+
+      - name: Daemon is rejected on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $output = (& keyhog daemon status 2>&1 | Out-String)
+          $code = $LASTEXITCODE
+          if ($code -ne 2) {
+            throw "expected Windows daemon rejection exit 2, got $code`n$output"
+          }
+          if ($output -notmatch 'unix-only') {
+            throw "Windows daemon rejection omitted the Unix-only remedy:`n$output"
+          }
 
       - name: Backend probe
         shell: bash
