@@ -41,8 +41,8 @@ pub(super) struct ConfigFile {
     pub verify: Option<bool>,
     /// Verification timeout in seconds.
     pub timeout: Option<u64>,
-    /// Max concurrent verification requests per service.
-    pub rate: Option<usize>,
+    /// Maximum concurrent verification requests per service.
+    pub verify_concurrency: Option<usize>,
     /// Maximum git commits to traverse.
     pub max_commits: Option<usize>,
     /// Show full credentials (not redacted).

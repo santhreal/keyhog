@@ -666,15 +666,18 @@ pub(super) fn apply_top_level_scan_fields(
     }
 
     #[cfg(feature = "verify")]
-    if let Some(rate) = config.rate {
-        if args.rate.is_none() {
-            args.rate = Some(rate);
+    if let Some(concurrency) = config.verify_concurrency {
+        if concurrency == 0 {
+            config_errors.push("- verify_concurrency = 0: expected an integer >= 1 (maximum in-flight verification requests per service)".to_string());
+        } else if args.verify_concurrency.is_none() {
+            args.verify_concurrency = Some(concurrency);
         }
     }
     #[cfg(not(feature = "verify"))]
-    if config.rate.is_some() {
+    if config.verify_concurrency.is_some() {
         config_errors.push(
-            "- rate: this key requires the `verify` feature in this keyhog build".to_string(),
+            "- verify_concurrency: this key requires the `verify` feature in this keyhog build"
+                .to_string(),
         );
     }
 

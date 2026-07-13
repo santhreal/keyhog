@@ -41,6 +41,11 @@ or the compiled `scan-fallback`. During scanning, an eligible detector's
 declared BPE ceiling wins over that fallback, while an explicit scan override
 wins over every eligible detector ceiling.
 
+The effective view also prints verification enablement, timeout, concurrency,
+requests/second, TLS, OOB, and proxy policy. Proxy URLs are never echoed:
+`http_proxy` is reported only as `unset`, `off`, or `configured` so credentials
+embedded in a proxy URL cannot leak into logs.
+
 ## Core settings
 
 Each row is the same knob across all three layers. Defaults are
@@ -68,6 +73,8 @@ Each row is the same knob across all three layers. Defaults are
 | Per-chunk timeout | off | `per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |
 | Dedup scope | `credential` | `dedup` | `--dedup` | `credential` / `file` / `none`. |
 | HTTP verification timeout | `5` seconds | `timeout` | `--timeout` | Per-request verifier deadline; it does not bound scanning. Use `per_chunk_timeout_ms` for the optional scanner chunk deadline. |
+| Verification concurrency | `5` per service | `verify_concurrency` | `--verify-concurrency` | Maximum in-flight verification requests per service; zero is rejected. Distinct from the requests/second limiter. |
+| Verification request rate | `5.0` RPS per service | - | `--verify-rate` | Steady-state request-rate ceiling. `--verify-batch` additionally forces concurrency to one. |
 | Max file size | 100 MiB | `max_file_size` | `--max-file-size` | Walker skips files larger than this. |
 | GPU batch input limit | VRAM-adaptive (128 MiB–1 GiB) | `[scan] gpu_batch_input_limit` | `--gpu-batch-input-limit` | Caps bytes admitted to one GPU region-presence batch. Retired MegaScan spellings are rejected; this one name owns CLI, config, effective-config output, and the Rust API. |
 | Severity floor | (all) | `severity` | `--severity` | Minimum severity to report: info/low/medium/high/critical. |

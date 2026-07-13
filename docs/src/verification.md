@@ -101,15 +101,17 @@ tiers.
 `--verify` makes network calls. Two flags shape what the verifier
 talks to:
 
-- `--proxy <url>` -- route all verification through an HTTPS proxy.
+- `--proxy <url>` -- route verification through an explicit HTTP or SOCKS
+  proxy. The same scan-wide flag also routes remote-source HTTP clients.
   Useful in corp networks and interception labs. When unset, no proxy
   is used; ambient `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` /
   `NO_PROXY` variables are ignored so shell or CI state cannot silently
   reroute secret-bearing verifier traffic. Use `--proxy off` to force a
   direct connection when TOML configured a proxy.
-- `--insecure` -- accept self-signed certs. ONLY use against
-  internal endpoints you control. The default is strict TLS verify, and
-  no environment variable can disable certificate verification.
+- `--insecure` -- accept self-signed certificates in verification and
+  remote-source HTTP clients. ONLY use against endpoints you control. The
+  default is strict TLS verification, and no environment variable can disable
+  certificate verification.
 
 The verifier never follows redirects (SSRF defense -- a 302 to a
 private IP could otherwise leak the credential to an internal
@@ -147,6 +149,11 @@ That's slow enough to avoid tripping vendor rate limits for typical
 scans (dozens of findings) and fast enough to feel interactive. Pass
 `--verify-batch` to additionally serialise calls per service (one
 in-flight at a time) on top of the rate cap.
+
+Concurrency is a separate bound: `--verify-concurrency <N>` (or
+`.keyhog.toml` `verify_concurrency`) sets the maximum in-flight verification
+requests per service, default `5`. `--verify-rate` owns the requests/second
+dimension. Zero is invalid rather than silently becoming one.
 
 If you have hundreds of candidates and want parallelism, the right
 approach is to scan first WITHOUT `--verify` to get the candidate

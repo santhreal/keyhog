@@ -15,6 +15,21 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - CLI help and reference documentation now identify `--timeout` as the
   five-second-default per-request verification timeout, not a whole-scan
   deadline, and point scanner deadlines to `--per-chunk-timeout-ms`.
+- The CLI reference now documents that `--proxy` and `--insecure` apply to all
+  outbound HTTP clients, including remote sources and verification, rather
+  than incorrectly describing them as verifier-only controls.
+- Verification concurrency now has one unambiguous spelling:
+  `--verify-concurrency` / `verify_concurrency`. The confusing `--rate` / `rate`
+  spellings are rejected rather than retained as aliases; migrate scripts and
+  TOML to the canonical name. Zero now fails closed instead of being silently
+  clamped to one by the verifier. `--verify-rate` remains the requests/second
+  control.
+- `config --effective` now reports the resolved verifier timeout, concurrency,
+  request rate, TLS, OOB, and proxy policy. Proxy URLs are reduced to
+  `unset`/`off`/`configured` so embedded credentials are never printed.
+- HTTP-only feature builds no longer compile entropy-only testing façades; the
+  public test surface now follows the same SIMD/GPU/entropy feature boundary as
+  the implementation it exposes.
 - Documentation and CLI help now distinguish the foreground `watch` process
   from the independently started Unix-socket daemon and describe `--backend
   auto` as persisted routing rather than a forced backend. The scan reference

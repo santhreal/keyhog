@@ -421,6 +421,34 @@ fn invalid_scan_section_value_names_the_nested_key() {
     );
 }
 
+#[cfg(feature = "verify")]
+#[test]
+fn zero_verification_concurrency_in_config_fails_closed() {
+    let dir = make_scan_dir(Some("verify_concurrency = 0\n"));
+    let (code, _stdout, stderr) = scan(dir.path(), &[]);
+    assert_eq!(code, Some(2), "zero verifier concurrency must fail closed");
+    assert!(
+        stderr.contains("verify_concurrency = 0: expected an integer >= 1"),
+        "error must name the invalid key, value, and accepted range: {stderr}"
+    );
+}
+
+#[cfg(feature = "verify")]
+#[test]
+fn ambiguous_legacy_rate_config_is_rejected() {
+    let dir = make_scan_dir(Some("rate = 7\n"));
+    let (code, _stdout, stderr) = scan(dir.path(), &[]);
+    assert_eq!(
+        code,
+        Some(2),
+        "legacy verifier rate key must not alias concurrency"
+    );
+    assert!(
+        stderr.contains("unknown field `rate`") && stderr.contains("verify_concurrency"),
+        "config error must reject the old key and expose the canonical replacement: {stderr}"
+    );
+}
+
 #[test]
 fn explicit_config_missing_file_fails_closed_with_fix() {
     // `--config` to a non-existent path must fail closed with exit 2 and name the

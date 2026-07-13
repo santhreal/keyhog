@@ -43,14 +43,15 @@ incomplete.
 | `--min-confidence <FLOAT>`    | Only emit findings >= confidence. 0.0..=1.0.   |
 | `--dogfood`                   | Surface suppression telemetry in output.       |
 
-### Verification
+### Verification and HTTP transport
 
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
 | `--verify`                    | Call each detector's verify endpoint.          |
 | `--timeout <SECONDS>`         | Set the per-request HTTP verification timeout (default `5`). This is not a scan deadline. |
-| `--proxy <URL>`               | Route verifier traffic through a proxy (`http://burp:8080`, `socks5://...`). `off` disables all proxying. |
-| `--insecure`                  | Skip TLS cert verification on verifier traffic (don't use outside a lab). |
+| `--verify-concurrency <N>`    | Cap in-flight verification requests per service (default `5`, minimum `1`). This is concurrency, not requests per second. |
+| `--proxy <URL>`               | Route every outbound KeyHog HTTP client—remote sources and verification—through an explicit proxy (`http://burp:8080`, `socks5://...`). `off` disables all proxying, including TOML configuration; ambient proxy variables are ignored. |
+| `--insecure`                  | Skip TLS certificate verification for every outbound KeyHog HTTP client, including remote sources and verification. Use only in a controlled interception lab. |
 | `--verify-rate <RPS>`         | Cap steady-state verification calls per service (default `5`). |
 | `--verify-batch`              | Serialize verification per service; requires `--verify`. |
 | `--verify-oob`                | Enable callback-based verification; requires `--verify`. |

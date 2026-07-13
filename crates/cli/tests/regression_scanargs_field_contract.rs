@@ -1,9 +1,9 @@
 //! Regression contract for the `ScanArgs` field shape.
 //!
-//! A prior `ScanArgs` refactor moved the verifier-only `timeout`/`rate` flags
+//! A prior `ScanArgs` refactor moved the verifier-only timeout/concurrency flags
 //! behind `#[cfg(feature = "verify")]`, but the `all_tests` aggregator (built
 //! for the `ci` profile, which omits `verify`) still referenced `args.timeout`
-//! / `args.rate` unconditionally, so it failed to compile with four
+//! / `args.verify_concurrency` unconditionally, so it failed to compile with four
 //! `no field ... on ScanArgs` errors. These tests pin the CURRENT shape and
 //! parsing contract of `ScanArgs` so a future rename/regate is caught with a
 //! concrete assertion instead of a stale-field compile break.
@@ -204,7 +204,7 @@ fn unknown_flag_is_rejected_as_unknown_argument() {
 fn default_verify_timeout_and_rate_are_none() {
     let args = scan_args(&[]);
     assert_eq!(args.timeout, None);
-    assert_eq!(args.rate, None);
+    assert_eq!(args.verify_concurrency, None);
 }
 
 #[cfg(feature = "verify")]
@@ -229,9 +229,9 @@ fn oob_timeout_and_server_defaults() {
 #[cfg(feature = "verify")]
 #[test]
 fn timeout_and_rate_flags_parse_exact_values() {
-    let args = scan_args(&["--timeout", "42", "--rate", "7"]);
+    let args = scan_args(&["--timeout", "42", "--verify-concurrency", "7"]);
     assert_eq!(args.timeout, Some(42));
-    assert_eq!(args.rate, Some(7));
+    assert_eq!(args.verify_concurrency, Some(7));
 }
 
 #[cfg(feature = "verify")]
@@ -239,6 +239,21 @@ fn timeout_and_rate_flags_parse_exact_values() {
 fn timeout_non_numeric_value_rejected() {
     let err = scan_parse_error(&["--timeout", "abc"]);
     assert_eq!(err.kind(), ErrorKind::ValueValidation);
+}
+
+#[cfg(feature = "verify")]
+#[test]
+fn zero_verification_concurrency_is_rejected() {
+    let err = scan_parse_error(&["--verify-concurrency", "0"]);
+    assert_eq!(err.kind(), ErrorKind::ValueValidation);
+    assert!(err.to_string().contains("value must be >= 1"));
+}
+
+#[cfg(feature = "verify")]
+#[test]
+fn ambiguous_legacy_rate_flag_is_not_an_alias() {
+    let err = scan_parse_error(&["--rate", "7"]);
+    assert_eq!(err.kind(), ErrorKind::UnknownArgument);
 }
 
 #[cfg(feature = "verify")]

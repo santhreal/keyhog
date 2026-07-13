@@ -73,13 +73,13 @@ fn no_verify_build_policy_and_config_keys_are_not_dead_surfaces() {
     );
     assert!(
         scan_args.contains("#[cfg(feature = \"verify\")]\n    #[arg(long)]\n    pub timeout")
-            && scan_args.contains("#[cfg(feature = \"verify\")]\n    #[arg(long)]\n    pub rate"),
+            && scan_args.contains("pub verify_concurrency: Option<usize>"),
         "verifier-only CLI flags must not be accepted in no-verify builds"
     );
     for required in [
         "- verify: this key requires the `verify` feature",
         "- timeout: this key requires the `verify` feature",
-        "- rate: this key requires the `verify` feature",
+        "- verify_concurrency: this key requires the `verify` feature",
         "- max_commits: this key requires the `git` feature",
     ] {
         assert!(
@@ -145,14 +145,14 @@ fn config_top_level_ml_threshold_and_verify_knobs_reach_scan_args() {
     let args = args_for_config(
         "ml_threshold = 0.5\n\
          timeout = 9\n\
-         rate = 7\n\
+         verify_concurrency = 7\n\
          max_commits = 123\n",
     );
     assert_eq!(args.ml_threshold, Some(0.5));
     #[cfg(feature = "verify")]
     assert_eq!(args.timeout, Some(9));
     #[cfg(feature = "verify")]
-    assert_eq!(args.rate, Some(7));
+    assert_eq!(args.verify_concurrency, Some(7));
     #[cfg(feature = "git")]
     assert_eq!(args.max_commits, Some(123));
 }
@@ -168,14 +168,14 @@ fn explicit_cli_default_values_win_over_config_sentinels() {
     #[allow(unused_mut)]
     let mut extra_args = vec!["--ml-threshold", "0.5"];
     #[cfg(feature = "verify")]
-    extra_args.extend(["--timeout", "5", "--rate", "5"]);
+    extra_args.extend(["--timeout", "5", "--verify-concurrency", "5"]);
     #[cfg(feature = "git")]
     extra_args.extend(["--max-commits", "1000"]);
 
     let args = args_for_config_with_extra(
         "ml_threshold = 0.9\n\
          timeout = 30\n\
-         rate = 11\n\
+         verify_concurrency = 11\n\
          max_commits = 222\n",
         &extra_args,
     );
@@ -193,9 +193,9 @@ fn explicit_cli_default_values_win_over_config_sentinels() {
     );
     #[cfg(feature = "verify")]
     assert_eq!(
-        args.rate,
+        args.verify_concurrency,
         Some(5),
-        "explicit --rate 5 must not be overwritten by TOML"
+        "explicit --verify-concurrency 5 must not be overwritten by TOML"
     );
     #[cfg(feature = "git")]
     assert_eq!(

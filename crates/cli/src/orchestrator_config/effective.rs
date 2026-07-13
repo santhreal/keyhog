@@ -60,6 +60,35 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     ));
     out.push_str(&format!("profile = {}\n", s.profile));
     out.push_str(&format!("perf_trace = {}\n", s.perf_trace));
+    out.push_str(&format!("verify = {}\n", resolved.report.verify));
+    out.push_str(&format!(
+        "verify_timeout_secs = {}\n",
+        resolved.verify.timeout_secs
+    ));
+    out.push_str(&format!(
+        "verify_concurrency = {}\n",
+        resolved.verify.max_concurrent_per_service
+    ));
+    out.push_str(&format!("verify_rate_rps = {}\n", resolved.verify.rate));
+    let proxy_policy = match resolved.verify.proxy.as_deref() {
+        None => "unset",
+        Some(value) if value.eq_ignore_ascii_case("off") => "off",
+        Some(_) => "configured",
+    };
+    out.push_str(&format!("http_proxy = {proxy_policy}\n"));
+    out.push_str(&format!(
+        "insecure_tls = {}\n",
+        resolved.verify.insecure_tls
+    ));
+    out.push_str(&format!(
+        "allow_script_verify = {}\n",
+        resolved.verify.allow_script_verify
+    ));
+    out.push_str(&format!("verify_oob = {}\n", resolved.verify.oob.enabled));
+    out.push_str(&format!(
+        "verify_oob_timeout_secs = {}\n",
+        resolved.verify.oob.timeout_secs
+    ));
     out.push_str(&format!("min_confidence = {}\n", resolved.min_confidence));
     out.push_str(&format!("ml_enabled = {}\n", resolved.ml_enabled));
     out.push_str(&format!("ml_weight = {}\n", s.ml_weight));

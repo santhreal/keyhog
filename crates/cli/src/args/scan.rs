@@ -560,10 +560,10 @@ pub struct ScanArgs {
     #[arg(long)]
     pub timeout: Option<u64>,
 
-    /// Max concurrent verification requests per service
+    /// Maximum in-flight verification requests per service (default: 5).
     #[cfg(feature = "verify")]
-    #[arg(long)]
-    pub rate: Option<usize>,
+    #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_usize)]
+    pub verify_concurrency: Option<usize>,
 
     /// Steady-state cap for verification calls *per service*, in
     /// requests-per-second. Default 5.0. Drop this to be polite to

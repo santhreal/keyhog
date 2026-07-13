@@ -61,7 +61,8 @@ impl ResolvedVerifyPolicy {
             max_concurrent_per_service: if args.verify_batch {
                 1
             } else {
-                args.rate.unwrap_or(VERIFY_MAX_CONCURRENT_DEFAULT) // LAW10: absent verify concurrency => documented default; explicit CLI/TOML values remain Some and win
+                args.verify_concurrency
+                    .unwrap_or(VERIFY_MAX_CONCURRENT_DEFAULT) // LAW10: absent verify concurrency => documented default; explicit CLI/TOML values remain Some and win
             },
             timeout_secs: args.timeout.unwrap_or(VERIFY_TIMEOUT_DEFAULT_SECS), // LAW10: absent verify timeout => documented default; explicit CLI/TOML values remain Some and win
             proxy: args.proxy.clone(),
@@ -75,7 +76,40 @@ impl ResolvedVerifyPolicy {
         }
     }
 
-    #[cfg(not(feature = "verify"))]
+    #[cfg(all(
+        not(feature = "verify"),
+        any(
+            feature = "web",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket",
+            feature = "s3",
+            feature = "gcs",
+            feature = "azure"
+        )
+    ))]
+    pub(super) fn from_scan_args(args: &ScanArgs) -> Self {
+        // HTTP transport policy also belongs to remote sources. A build without
+        // live verification must still report and honor it.
+        Self {
+            proxy: args.proxy.clone(),
+            insecure_tls: args.insecure,
+            ..Self::disabled()
+        }
+    }
+
+    #[cfg(all(
+        not(feature = "verify"),
+        not(any(
+            feature = "web",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket",
+            feature = "s3",
+            feature = "gcs",
+            feature = "azure"
+        ))
+    ))]
     pub(super) fn from_scan_args(_args: &ScanArgs) -> Self {
         Self::disabled()
     }

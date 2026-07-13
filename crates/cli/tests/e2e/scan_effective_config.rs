@@ -97,6 +97,15 @@ fn config_effective_prints_and_exits_without_source() {
         "autoroute_calibration = false",
         "profile = false",
         "perf_trace = false",
+        "verify = false",
+        "verify_timeout_secs = 5",
+        "verify_concurrency = 5",
+        "verify_rate_rps = 5",
+        "http_proxy = unset",
+        "insecure_tls = false",
+        "allow_script_verify = false",
+        "verify_oob = false",
+        "verify_oob_timeout_secs = 30",
         "min_confidence = 0.4",
         "entropy_bpe_max_bytes_per_token = 2.2",
         "entropy_bpe_policy = scan-fallback",
@@ -113,6 +122,38 @@ fn config_effective_prints_and_exits_without_source() {
             "effective config missing `{required}`; stdout={stdout}"
         );
     }
+}
+
+#[cfg(feature = "verify")]
+#[test]
+fn config_effective_reports_verifier_policy_without_exposing_proxy_credentials() {
+    let (stdout, stderr, code) = effective_config(&[
+        "--verify",
+        "--timeout",
+        "9",
+        "--verify-concurrency",
+        "7",
+        "--verify-rate",
+        "2.5",
+        "--proxy",
+        "http://user:password@127.0.0.1:8080",
+        "--insecure",
+    ]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    for required in [
+        "verify = true",
+        "verify_timeout_secs = 9",
+        "verify_concurrency = 7",
+        "verify_rate_rps = 2.5",
+        "http_proxy = configured",
+        "insecure_tls = true",
+    ] {
+        assert!(stdout.contains(required), "missing {required:?}: {stdout}");
+    }
+    assert!(
+        !stdout.contains("user") && !stdout.contains("password"),
+        "effective config must report proxy policy without leaking URL credentials: {stdout}"
+    );
 }
 
 #[test]

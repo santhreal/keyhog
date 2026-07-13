@@ -3546,6 +3546,7 @@ pub mod entropy_scanner {
 /// a high-entropy token that carries NO surrounding secret keyword, so each has a
 /// carefully-tuned entropy + shape threshold. Exposed so the thresholds can be
 /// pinned at their boundaries against silent recall regression.
+#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
 pub mod entropy_isolated {
     /// `entropy >= 3.65`, `len >= 20`, contains `_`, every non-`_` byte is
     /// ASCII-alphanumeric, and the token has upper + lower + digit.
