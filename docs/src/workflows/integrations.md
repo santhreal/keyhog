@@ -484,18 +484,18 @@ keyhog scan . --create-baseline .keyhog-baseline.json
 keyhog scan . --baseline .keyhog-baseline.json
 ```
 
-For per-file/per-line allowlists, the moving parts live in two
-separate files (the parser is flat, not the nested `[allowlist]` /
-`[performance]` tables an earlier version of this doc advertised):
+For per-file/per-line allowlists, the moving parts live in two separate files.
+Scan execution policy has one canonical `[scan]` owner; unknown tables and
+retired flat spellings fail closed:
 
-`.keyhog.toml` at the repo root - flat key/value, every field
-mirrors a CLI flag:
+`.keyhog.toml` at the repo root:
 
 ```toml
-severity        = "high"
-min_confidence  = 0.4
-threads         = 8
-exclude_paths   = ["vendor/**", "node_modules/**", "**/*.lock"]
+[scan]
+severity       = "high"
+min_confidence = 0.4
+threads        = 8
+exclude        = ["vendor/**", "node_modules/**", "**/*.lock"]
 ```
 
 `.keyhogignore` (or `.keyhogignore.toml`) alongside it - gitignore-

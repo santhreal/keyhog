@@ -1,16 +1,12 @@
 use std::path::PathBuf;
 
-/// On-disk `.keyhog.toml` configuration file that mirrors CLI arguments.
-/// CLI flags always override values from the config file.
+/// On-disk `.keyhog.toml` root. Each setting has one table/key owner, and CLI
+/// flags override the corresponding file value.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct ConfigFile {
     /// Path to detector TOMLs directory.
     pub detectors: Option<String>,
-    /// Minimum severity to report: info, low, medium, high, critical.
-    pub severity: Option<String>,
-    /// Output format: text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit.
-    pub format: Option<String>,
     /// Enable fast mode (no entropy discovery, ML scoring, or decode recursion).
     pub fast: Option<bool>,
     /// Enable deep mode (all features).
@@ -21,22 +17,6 @@ pub(super) struct ConfigFile {
     pub no_decode: Option<bool>,
     /// Skip entropy-based detection.
     pub no_entropy: Option<bool>,
-    /// Minimum confidence score (0.0 - 1.0).
-    pub min_confidence: Option<f64>,
-    /// Minimum ML confidence score for generic entropy secrets (0.0 - 1.0).
-    pub ml_threshold: Option<f64>,
-    /// Number of parallel scanning threads.
-    pub threads: Option<usize>,
-    /// Dedicated filesystem reader threads.
-    pub reader_threads: Option<usize>,
-    /// Fused filesystem pipeline chunk batch size.
-    pub fused_batch: Option<usize>,
-    /// Fused filesystem pipeline channel depth.
-    pub fused_depth: Option<usize>,
-    /// Hard deadline per chunk scan in milliseconds.
-    pub per_chunk_timeout_ms: Option<u64>,
-    /// Deduplication scope: credential, file, none.
-    pub dedup: Option<String>,
     /// Whether to verify discovered credentials.
     pub verify: Option<bool>,
     /// Verification timeout in seconds.
@@ -47,36 +27,20 @@ pub(super) struct ConfigFile {
     pub max_commits: Option<usize>,
     /// Show full credentials (not redacted).
     pub show_secrets: Option<bool>,
-    /// Enable incremental Merkle-cache scanning.
-    pub incremental: Option<bool>,
-    /// Override the incremental Merkle-cache file path.
-    pub incremental_cache: Option<PathBuf>,
-    /// Maximum depth for recursive decoding.
-    pub decode_depth: Option<usize>,
     /// Maximum file size for decode-through scanning.
     pub decode_size_limit: Option<String>,
     /// Enable entropy scanning in source code files.
     pub entropy_source_files: Option<bool>,
-    /// Entropy threshold in bits per byte.
-    pub entropy_threshold: Option<f64>,
-    /// BPE "rare-not-random" suppression bound in bytes-per-token (default 2.2).
-    pub entropy_bpe_max_bytes_per_token: Option<f64>,
-    /// Minimum credential length for entropy-fallback candidates.
-    pub min_secret_len: Option<usize>,
     /// Admit credential-keyword-anchored generic values on a relaxed entropy floor.
     pub generic_keyword_low_entropy: Option<bool>,
     /// Disable Unicode normalization.
     pub no_unicode_norm: Option<bool>,
     /// Disable ML-based confidence scoring.
     pub no_ml: Option<bool>,
-    /// Explicit paths or glob patterns to exclude from scanning.
-    pub exclude_paths: Option<Vec<String>>,
     /// Maximum file size to scan.
     pub max_file_size: Option<String>,
     /// Per-regex lazy-DFA cache ceiling.
     pub regex_dfa_limit: Option<String>,
-    /// GPU batch-input buffer byte budget (overrides the VRAM-adaptive default).
-    pub gpu_batch_input_limit: Option<String>,
     /// ML weight for confidence scoring, 0.0-1.0.
     pub ml_weight: Option<f64>,
     /// Known secret prefixes used to boost confidence.
@@ -87,7 +51,7 @@ pub(super) struct ConfigFile {
     pub test_keywords: Option<Vec<String>>,
     /// Keywords indicating a placeholder value.
     pub placeholder_keywords: Option<Vec<String>>,
-    /// `[scan]` - runtime scan policy. Mirrors top-level scalar fields.
+    /// `[scan]` - canonical runtime scan policy.
     pub scan: Option<ScanSection>,
     /// `[allowlist]` - `.keyhogignore` discovery + governance metadata.
     pub allowlist: Option<AllowlistSection>,
@@ -107,8 +71,7 @@ pub(super) struct ConfigFile {
     pub tuning: Option<TuningSection>,
 }
 
-/// Canonical `[scan]` table. Each field has a legacy flat top-level equivalent;
-/// duplicate flat+nested definitions fail closed during config validation.
+/// Canonical `[scan]` table. Scan-policy keys have one on-disk owner here.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct ScanSection {
@@ -117,7 +80,7 @@ pub(super) struct ScanSection {
     pub ml_threshold: Option<f64>,
     /// Shannon entropy threshold in bits per byte.
     pub entropy_threshold: Option<f64>,
-    /// BPE word-likeness ceiling; mirrors the top-level compatibility key.
+    /// BPE word-likeness ceiling.
     pub entropy_bpe_max_bytes_per_token: Option<f64>,
     pub decode_depth: Option<usize>,
     pub min_secret_len: Option<usize>,

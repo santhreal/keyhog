@@ -117,32 +117,30 @@ fn config_disabling_detectors_suppresses_the_planted_key() {
 }
 
 #[test]
-fn config_format_json_takes_effect_on_default_output() {
-    // Default CLI output is the pretty text report; `format = "json"` in the
-    // config flips it to the machine-readable JSON array.
-    let dir = make_scan_dir(Some("format = \"json\"\n"));
-    let (code, stdout, _stderr) = scan(dir.path(), &[]);
-    assert_eq!(
-        code,
-        Some(1),
-        "planted key still fires; format only changes rendering"
-    );
-    assert_eq!(
-        stdout.as_bytes().first().copied(),
-        Some(b'['),
-        "config `format = \"json\"` must render a JSON array (leading '[').\n\
-         --- stdout ---\n{stdout}"
-    );
-    assert!(
-        stdout.contains("\"detector_id\":\"aws-access-key\""),
-        "the JSON body must contain the aws-access-key finding.\n--- stdout ---\n{stdout}"
-    );
+fn retired_flat_scan_key_fails_closed() {
+    for (config, key, canonical) in [
+        ("format = \"json\"\n", "format", "format"),
+        (
+            "exclude_paths = [\"planted.txt\"]\n",
+            "exclude_paths",
+            "exclude",
+        ),
+    ] {
+        let dir = make_scan_dir(Some(config));
+        let (code, _stdout, stderr) = scan(dir.path(), &[]);
+        assert_eq!(code, Some(2), "retired flat scan keys must fail closed");
+        assert!(
+            stderr.contains(&format!("unknown field `{key}`"))
+                && stderr.contains(&format!("move top-level `{key}` to `[scan].{canonical}`")),
+            "the parse error must identify the retired key and canonical table; stderr={stderr}"
+        );
+    }
 }
 
 #[test]
 fn config_scan_section_format_json_is_honored() {
     // The `[scan]` nested table is the README-canonical surface and must be
-    // honored identically to the flat top-level `format` key.
+    // the canonical output-format owner.
     let dir = make_scan_dir(Some("[scan]\nformat = \"json\"\n"));
     let (code, stdout, _stderr) = scan(dir.path(), &[]);
     assert_eq!(code, Some(1), "planted key fires; only rendering changed");
@@ -162,7 +160,7 @@ fn config_scan_section_format_json_is_honored() {
 fn config_show_secrets_reveals_full_credential() {
     // Default: credential is redacted to "AK...YA". `show_secrets = true` in the
     // config must reveal the full token in the JSON.
-    let redacted = make_scan_dir(Some("format = \"json\"\n"));
+    let redacted = make_scan_dir(Some("[scan]\nformat = \"json\"\n"));
     let (_c, stdout_default, _e) = scan(redacted.path(), &[]);
     assert!(
         stdout_default.contains("\"credential_redacted\":\"AK...YA\""),
@@ -174,7 +172,7 @@ fn config_show_secrets_reveals_full_credential() {
         "negative twin: the full secret must NOT leak by default.\n--- stdout ---\n{stdout_default}"
     );
 
-    let dir = make_scan_dir(Some("show_secrets = true\nformat = \"json\"\n"));
+    let dir = make_scan_dir(Some("show_secrets = true\n[scan]\nformat = \"json\"\n"));
     let (code, stdout, _stderr) = scan(dir.path(), &[]);
     assert_eq!(
         code,
@@ -190,15 +188,15 @@ fn config_show_secrets_reveals_full_credential() {
 }
 
 #[test]
-fn config_exclude_paths_suppresses_the_planted_file() {
-    // `exclude_paths` in the config drops the planted file from the walk, so the
+fn config_scan_exclude_suppresses_the_planted_file() {
+    // `[scan].exclude` drops the planted file from the walk, so the
     // scan is clean.
-    let dir = make_scan_dir(Some("exclude_paths = [\"planted.txt\"]\n"));
+    let dir = make_scan_dir(Some("[scan]\nexclude = [\"planted.txt\"]\n"));
     let (code, stdout, stderr) = scan(dir.path(), &["--format", "json"]);
     assert_eq!(
         code,
         Some(0),
-        "config `exclude_paths` must exclude the only fixture file → exit 0.\n\
+        "config `[scan].exclude` must exclude the only fixture file → exit 0.\n\
          --- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
     );
     assert_eq!(
@@ -216,13 +214,13 @@ fn config_exclude_paths_suppresses_the_planted_file() {
 fn cli_format_flag_overrides_config_format() {
     // Config asks for JSON; the explicit `--format text` CLI flag wins (CLI is
     // the highest-precedence layer), so the output is the text report, NOT JSON.
-    let dir = make_scan_dir(Some("format = \"json\"\n"));
+    let dir = make_scan_dir(Some("[scan]\nformat = \"json\"\n"));
     let (code, stdout, _stderr) = scan(dir.path(), &["--format", "text"]);
     assert_eq!(code, Some(1), "planted key still fires");
     assert_ne!(
         stdout.as_bytes().first().copied(),
         Some(b'['),
-        "`--format text` must override config `format = \"json\"`: output must NOT \
+        "`--format text` must override config `[scan].format = \"json\"`: output must NOT \
          be a JSON array.\n--- stdout ---\n{stdout}"
     );
     assert!(
@@ -319,9 +317,9 @@ fn explicit_config_path_outside_scan_dir_is_loaded() {
 
 #[test]
 fn malformed_toml_syntax_fails_closed_with_helpful_message() {
-    // `severity = ` is a syntax error. The scan must fail closed (exit 2) and the
+    // `[scan].severity = ` is a syntax error. The scan must fail closed (exit 2) and the
     // message must name the failure AND the fix — not silently scan on defaults.
-    let dir = make_scan_dir(Some("severity = \n"));
+    let dir = make_scan_dir(Some("[scan]\nseverity = \n"));
     let (code, _stdout, stderr) = scan(dir.path(), &[]);
     assert_eq!(
         code,
@@ -367,7 +365,7 @@ fn unknown_config_field_fails_closed() {
 fn invalid_severity_value_lists_the_valid_values() {
     // A semantically invalid enum string TOML parsing cannot catch: fail closed
     // with a message that enumerates the accepted values.
-    let dir = make_scan_dir(Some("severity = \"bogus\"\n"));
+    let dir = make_scan_dir(Some("[scan]\nseverity = \"bogus\"\n"));
     let (code, _stdout, stderr) = scan(dir.path(), &[]);
     assert_eq!(
         code,
@@ -375,8 +373,9 @@ fn invalid_severity_value_lists_the_valid_values() {
         "an invalid `severity` value must fail closed with exit 2.\n--- stderr ---\n{stderr}"
     );
     assert!(
-        stderr
-            .contains("- severity = \"bogus\": expected one of info, low, medium, high, critical"),
+        stderr.contains(
+            "- [scan].severity = \"bogus\": expected one of info, low, medium, high, critical"
+        ),
         "error must quote the bad value and list the valid severities.\n--- stderr ---\n{stderr}"
     );
 }
@@ -384,7 +383,7 @@ fn invalid_severity_value_lists_the_valid_values() {
 #[test]
 fn invalid_format_value_lists_the_valid_formats() {
     // Same semantic-validation contract for the `format` enum.
-    let dir = make_scan_dir(Some("format = \"xmlish\"\n"));
+    let dir = make_scan_dir(Some("[scan]\nformat = \"xmlish\"\n"));
     let (code, _stdout, stderr) = scan(dir.path(), &[]);
     assert_eq!(
         code,
@@ -393,7 +392,7 @@ fn invalid_format_value_lists_the_valid_formats() {
     );
     assert!(
         stderr.contains(
-            "- format = \"xmlish\": expected one of text, json, jsonl, sarif, csv, \
+            "- [scan].format = \"xmlish\": expected one of text, json, jsonl, sarif, csv, \
              github-annotations, gitlab-sast, html, junit"
         ),
         "error must quote the bad value and list the valid formats.\n--- stderr ---\n{stderr}"

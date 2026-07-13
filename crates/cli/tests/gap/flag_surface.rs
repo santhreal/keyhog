@@ -889,11 +889,11 @@ fn ml_threshold_unset_is_noop_explicit_default_raises_floor() {
 
 #[test]
 fn ml_threshold_config_file_raises_floor_and_cli_wins() {
-    let (_dir, out, err, code) = effective_config_with_toml("ml_threshold = 0.5\n", &[]);
+    let (_dir, out, err, code) = effective_config_with_toml("[scan]\nml_threshold = 0.5\n", &[]);
     assert_eq!(code, Some(0), "stderr={err}");
     assert!(
         out.contains("min_confidence = 0.5"),
-        "top-level TOML ml_threshold must raise the floor to 0.5; got {out}"
+        "[scan].ml_threshold must raise the floor to 0.5; got {out}"
     );
 
     let (_dir, nested_out, nested_err, nested_code) =
@@ -905,7 +905,7 @@ fn ml_threshold_config_file_raises_floor_and_cli_wins() {
     );
 
     let (_dir, cli_out, cli_err, cli_code) =
-        effective_config_with_toml("ml_threshold = 0.9\n", &["--ml-threshold", "0.5"]);
+        effective_config_with_toml("[scan]\nml_threshold = 0.9\n", &["--ml-threshold", "0.5"]);
     assert_eq!(cli_code, Some(0), "stderr={cli_err}");
     assert!(
         cli_out.contains("min_confidence = 0.5"),

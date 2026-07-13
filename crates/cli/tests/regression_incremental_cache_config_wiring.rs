@@ -19,27 +19,6 @@ fn args_for_config(contents: &str, extra_args: &[&str]) -> ScanArgs {
 }
 
 #[test]
-fn top_level_incremental_cache_config_reaches_scan_args() {
-    let args = args_for_config(
-        r#"
-        incremental = true
-        incremental_cache = "/tmp/keyhog-custom-merkle.idx"
-        "#,
-        &[],
-    );
-
-    assert!(
-        args.incremental,
-        "top-level incremental=true must reach ScanArgs"
-    );
-    assert_eq!(
-        args.incremental_cache,
-        Some(PathBuf::from("/tmp/keyhog-custom-merkle.idx")),
-        "top-level incremental_cache must reach ScanArgs"
-    );
-}
-
-#[test]
 fn scan_table_incremental_cache_config_reaches_scan_args() {
     let args = args_for_config(
         r#"
@@ -65,6 +44,7 @@ fn scan_table_incremental_cache_config_reaches_scan_args() {
 fn cli_incremental_cache_wins_over_config_cache() {
     let args = args_for_config(
         r#"
+        [scan]
         incremental = true
         incremental_cache = "/tmp/keyhog-config-merkle.idx"
         "#,

@@ -163,23 +163,6 @@ fn require_gpu_flag_keeps_auto_filesystem_gpu_policy_open() {
 }
 
 #[test]
-fn autoroute_config_digest_includes_gpu_autoroute_opt_in() {
-    with_route_policy_lock(|| {
-        let args = scan_args(&["scan", "--path", "."]);
-        let scanner = API.build_scanner_config(&args);
-
-        let without_gpu_probe = API.autoroute_config_digest_for_scanner(scanner.clone());
-        let with_gpu_probe =
-            API.autoroute_config_digest_for_scanner_with_autoroute_gpu(scanner, true);
-
-        assert_ne!(
-            without_gpu_probe, with_gpu_probe,
-            "autoroute cache identity must distinguish calibration with and without GPU candidates"
-        );
-    });
-}
-
-#[test]
 fn autoroute_config_digest_distinguishes_detector_local_from_explicit_bpe_policy() {
     let detector_local = keyhog_scanner::ScannerConfig::default();
     let mut explicit_same_value = detector_local.clone();

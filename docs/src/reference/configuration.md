@@ -48,46 +48,48 @@ embedded in a proxy URL cannot leak into logs.
 
 ## Core settings
 
-Each row is the same knob across all three layers. Defaults are
-`ScanConfig::default()`.
+This table maps each operator-facing knob to its TOML owner and CLI spelling.
+Defaults come from the owning typed configuration (`ScanConfig::default()` for
+scanner policy and the corresponding source/system policy type elsewhere).
+A dash means that layer intentionally has no surface.
 
 | Setting | Default | `.keyhog.toml` key | CLI flag | Effect |
 |---|---|---|---|---|
-| Min confidence | **0.40** | `min_confidence` | `--min-confidence` | Drop findings scoring below this (0.0-1.0). Bench-tuned for max F1. |
-| Decode depth | **10** | `decode_depth` | `--decode-depth` | Max recursive decode passes, e.g. `base64(hex(url(secret)))` (1-10). |
+| Min confidence | **0.40** | `[scan].min_confidence` | `--min-confidence` | Drop findings scoring below this (0.0-1.0). Bench-tuned for max F1. |
+| Decode depth | **10** | `[scan].decode_depth` | `--decode-depth` | Max recursive decode passes, e.g. `base64(hex(url(secret)))` (1-10). |
 | Decode size limit | **512KB** | `decode_size_limit` | `--decode-size-limit` | Per-file ceiling for decode-through; larger files skip encoding detection. |
 | Entropy enabled | on | `no_entropy = true` disables | `--no-entropy` | Shannon-entropy detection for novel high-entropy strings. |
 | Entropy in source | off | `entropy_source_files` | `--entropy-source-files` | Run entropy inside `.py`/`.js`/`.go`/… (off by default to cut FPs). |
-| Entropy threshold | **4.5** | `[scan].entropy_threshold` (top-level alias accepted) | `--entropy-threshold` | Bits/byte cutoff (3.5 aggressive … 5.5 conservative). The byte-entropy domain is `[0.0, 8.0]`; non-finite and out-of-range requests fail closed instead of being silently clamped. |
-| BPE word-like bound | **2.2** | `[scan].entropy_bpe_max_bytes_per_token` (top-level alias accepted) | `--entropy-bpe-max-bytes-per-token` | With no explicit scan setting, detector TOML `bpe_max_bytes_per_token` wins over this compiled fallback. Setting either scan TOML form or the CLI flag explicitly becomes the visible Tier-A override for every eligible detector (CLI wins). Defining both TOML aliases in one file fails closed as ambiguous; keep the canonical `[scan]` key. Invalid, zero, negative, NaN, and infinite bounds also fail closed. A surviving candidate above its resolved cl100k_base UTF-8 bytes-per-token ceiling is word-like and dropped. Lower = higher precision/lower recall. Detector families for which token efficiency is inappropriate declare `bpe_enabled = false` in their own TOML and skip tokenization. `config --effective` reports `entropy_bpe_policy = scan-override` for explicit scan values and `scan-fallback` otherwise. |
-| Entropy min length | **16** | `min_secret_len` | `--min-secret-len` | Minimum credential length for entropy-fallback candidates. Named detectors keep their own shape-specific length gates. |
+| Entropy threshold | **4.5** | `[scan].entropy_threshold` | `--entropy-threshold` | Bits/byte cutoff (3.5 aggressive … 5.5 conservative). The byte-entropy domain is `[0.0, 8.0]`; non-finite and out-of-range requests fail closed instead of being silently clamped. |
+| BPE word-like bound | **2.2** | `[scan].entropy_bpe_max_bytes_per_token` | `--entropy-bpe-max-bytes-per-token` | With no explicit scan setting, detector TOML `bpe_max_bytes_per_token` wins over this compiled fallback. A `[scan]` value or the CLI flag becomes the visible Tier-A override for every eligible detector (CLI wins). Invalid, zero, negative, NaN, and infinite bounds fail closed. A surviving candidate above its resolved cl100k_base UTF-8 bytes-per-token ceiling is word-like and dropped. Lower = higher precision/lower recall. Detector families for which token efficiency is inappropriate declare `bpe_enabled = false` in their own TOML and skip tokenization. `config --effective` reports `entropy_bpe_policy = scan-override` for explicit scan values and `scan-fallback` otherwise. |
+| Entropy min length | **16** | `[scan].min_secret_len` | `--min-secret-len` | Minimum credential length for entropy-fallback candidates. Named detectors keep their own shape-specific length gates. |
 | Keyword low-entropy | on | `generic_keyword_low_entropy` | `--no-keyword-low-entropy` | Admit credential-keyword-anchored values (`PASSWORD=`, `*_PASS=`, `secret:` …) on a low entropy floor; precision is carried by the ML model. Surfaces real-world config passwords. Disabling raises precision but drops real recall. |
 | ML enabled | on | `no_ml = true` disables | `--no-ml` | ML confidence gating. Disabling raises FPs and hurts recall. |
 | ML weight | **0.5** | `ml_weight` | `--ml-weight` | Blend weight of the ML score vs heuristics (0.0-1.0). |
 | Unicode norm | on | `no_unicode_norm = true` disables | `--no-unicode-norm` | Normalise homoglyphs before matching (anti-evasion). |
 | Scan comments | off | - | `--scan-comments` | Treat secrets in code comments at full confidence (default downgrades them). |
-| Threads | #cores | `threads` | `--threads` | Parallel scan workers. |
-| Reader threads | scan-pool-derived | `reader_threads` | `--reader-threads` | Dedicated filesystem read workers. |
-| Fused batch | `32` | `fused_batch` | `--fused-batch` | Chunk batch size for the fused filesystem pipeline. |
-| Fused depth | worker-count-derived | `fused_depth` | `--fused-depth` | Bounded channel depth for fused filesystem batches. |
-| Per-chunk timeout | off | `per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |
-| Dedup scope | `credential` | `dedup` | `--dedup` | `credential` / `file` / `none`. |
+| Threads | #cores | `[scan].threads` | `--threads` | Parallel scan workers. |
+| Reader threads | scan-pool-derived | `[scan].reader_threads` | `--reader-threads` | Dedicated filesystem read workers. |
+| Fused batch | `32` | `[scan].fused_batch` | `--fused-batch` | Chunk batch size for the fused filesystem pipeline. |
+| Fused depth | worker-count-derived | `[scan].fused_depth` | `--fused-depth` | Bounded channel depth for fused filesystem batches. |
+| Per-chunk timeout | off | `[scan].per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |
+| Dedup scope | `credential` | `[scan].dedup` | `--dedup` | `credential` / `file` / `none`. |
 | HTTP verification timeout | `5` seconds | `timeout` | `--timeout` | Per-request verifier deadline; it does not bound scanning. Use `per_chunk_timeout_ms` for the optional scanner chunk deadline. |
 | Verification concurrency | `5` per service | `verify_concurrency` | `--verify-concurrency` | Maximum in-flight verification requests per service; zero is rejected. Distinct from the requests/second limiter. |
 | Verification request rate | `5.0` RPS per service | - | `--verify-rate` | Steady-state request-rate ceiling. `--verify-batch` additionally forces concurrency to one. |
 | Max file size | 100 MiB | `max_file_size` | `--max-file-size` | Walker skips files larger than this. |
-| GPU batch input limit | VRAM-adaptive (128 MiB–1 GiB) | `[scan] gpu_batch_input_limit` | `--gpu-batch-input-limit` | Caps bytes admitted to one GPU region-presence batch. Retired MegaScan spellings are rejected; this one name owns CLI, config, effective-config output, and the Rust API. |
-| Severity floor | (all) | `severity` | `--severity` | Minimum severity to report: info/low/medium/high/critical. |
-| Output format | `text` | `format` | `--format` | text/json/jsonl/sarif/csv/github-annotations/gitlab-sast/html/junit. |
+| GPU batch input limit | VRAM-adaptive (128 MiB–1 GiB) | `[scan].gpu_batch_input_limit` | `--gpu-batch-input-limit` | Caps bytes admitted to one GPU region-presence batch. Retired MegaScan spellings are rejected; this one name owns CLI, config, effective-config output, and the Rust API. |
+| Severity floor | (all) | `[scan].severity` | `--severity` | Minimum severity to report: info/low/medium/high/critical. |
+| Output format | `text` | `[scan].format` | `--format` | text/json/jsonl/sarif/csv/github-annotations/gitlab-sast/html/junit. |
 | Show secrets | off | `show_secrets` | `--show-secrets` | Print plaintext credentials. **Never enable in CI/logs.** |
-| Incremental cache | off | `incremental` / `incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache; 10-100× on CI re-runs. |
-| Hyperscan cache dir | platform cache dir | `[system] cache_dir` | `--cache-dir` | Compiled-database cache directory. Must be an absolute user-owned path under the home directory or per-user keyhog temp cache root. |
-| Autoroute cache file | platform cache file | `[system] autoroute_cache` | `--autoroute-cache` | Persisted fastest-correct backend decisions. Use an absolute file path or `off` to disable persistence and force auto-route cache misses to fail loudly. |
-| Bayesian calibration cache | off | `[system] calibration_cache` | `--calibration-cache` | Explicit per-detector confidence calibration file written by `keyhog calibrate`. Missing or damaged explicit files fail closed before scanning. |
-| GPU runtime policy | `auto` | `[system] gpu` | `--no-gpu` / `--require-gpu` | `auto` probes when routing can use GPU, `off` skips GPU init, and `required` fails closed when no usable GPU stack is available. Printed by `keyhog config --effective` and included in autoroute scan identity. |
-| Low-level calibration GPU control | off | `[system] autoroute_gpu` | `--autoroute-gpu` / `--no-autoroute-gpu` | Applies only to direct `scan --autoroute-calibrate` diagnostics. The canonical `keyhog calibrate-autoroute` command always measures every eligible backend, including GPU. Normal scans only consume persisted evidence. |
-| Coalesced batch pipeline | off | `[system] batch_pipeline` | `--batch-pipeline` / `--no-batch-pipeline` | Diagnostic/calibration route that bypasses the fused filesystem pipeline. Printed by `keyhog config --effective` and included in autoroute scan identity. |
-| AWS canary issuer extensions | embedded baseline | `[aws] canary_accounts` / `knockoff_accounts` | - | Extra 12-digit AWS account IDs treated as canary-token issuers during offline access-key metadata classification and verification suppression. |
+| Incremental cache | off | `[scan].incremental` / `[scan].incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache; 10-100× on CI re-runs. |
+| Hyperscan cache dir | platform cache dir | `[system].cache_dir` | `--cache-dir` | Compiled-database cache directory. Must be an absolute user-owned path under the home directory or per-user keyhog temp cache root. |
+| Autoroute cache file | platform cache file | `[system].autoroute_cache` | `--autoroute-cache` | Persisted fastest-correct backend decisions. Use an absolute file path or `off` to disable persistence and force auto-route cache misses to fail loudly. |
+| Bayesian calibration cache | off | `[system].calibration_cache` | `--calibration-cache` | Explicit per-detector confidence calibration file written by `keyhog calibrate`. Missing or damaged explicit files fail closed before scanning. |
+| GPU runtime policy | `auto` | `[system].gpu` | `--no-gpu` / `--require-gpu` | `auto` probes when routing can use GPU, `off` skips GPU init, and `required` fails closed when no usable GPU stack is available. Printed by `keyhog config --effective` and included in autoroute scan identity. |
+| Low-level calibration GPU control | off | `[system].autoroute_gpu` | `--autoroute-gpu` / `--no-autoroute-gpu` | Applies only to direct `scan --autoroute-calibrate` diagnostics. The canonical `keyhog calibrate-autoroute` command always measures every eligible backend, including GPU. Normal scans only consume persisted evidence. |
+| Coalesced batch pipeline | off | `[system].batch_pipeline` | `--batch-pipeline` / `--no-batch-pipeline` | Diagnostic/calibration route that bypasses the fused filesystem pipeline. Printed by `keyhog config --effective` and included in autoroute scan identity. |
+| AWS canary issuer extensions | embedded baseline | `[aws].canary_accounts` / `[aws].knockoff_accounts` | - | Extra 12-digit AWS account IDs treated as canary-token issuers during offline access-key metadata classification and verification suppression. |
 | Scanner tuning | compiled scanner defaults | `[tuning]` | - | Detection/recall route gates that affect engine work selection. These are explicit config so autoroute calibration identity includes them; ambient `KEYHOG_*` tuning env vars are ignored. |
 | Backend | `auto` | - | `--backend` | `auto`/`gpu`/`simd`/`cpu`. Profiles and persisted evidence use the descriptive engine labels `gpu-region-presence`/`simd-regex`/`cpu-fallback`; retired MegaScan and implementation-name aliases are rejected. Auto uses a persisted installer-calibrated fastest-correct decision for the exact workload bucket; missing/stale/incomplete calibration is an error, not permission to substitute another backend. |
 
@@ -99,22 +101,22 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 
 | Limit | Default | `.keyhog.toml` key | CLI flag |
 |---|---:|---|---|
-| Stdin bytes | 10 MiB | `[limits] stdin_bytes` | `--limit-stdin-bytes` |
-| Web response bytes | 10 MiB | `[limits] web_response_bytes` | `--limit-web-response-bytes` |
-| S3 object bytes | 10 MiB | `[limits] s3_object_bytes` | `--limit-s3-object-bytes` |
-| GCS object bytes | 10 MiB | `[limits] gcs_object_bytes` | `--limit-gcs-object-bytes` |
-| Azure blob bytes | 10 MiB | `[limits] azure_blob_bytes` | `--limit-azure-blob-bytes` |
-| Cloud listed objects | 100000 | `[limits] cloud_max_objects` | `--limit-cloud-max-objects` |
-| Docker tar entry bytes | 128 MiB | `[limits] docker_tar_entry_bytes` | `--limit-docker-tar-entry-bytes` |
-| Docker config/manifest bytes | 16 MiB | `[limits] docker_image_config_bytes` | `--limit-docker-image-config-bytes` |
-| Docker tar total bytes | 8 GiB | `[limits] docker_tar_total_bytes` | `--limit-docker-tar-total-bytes` |
-| Git stdout line bytes | 10 MiB | `[limits] git_line_bytes` | `--limit-git-line-bytes` |
-| Git aggregate bytes | 256 MiB | `[limits] git_total_bytes` | `--limit-git-total-bytes` |
-| Git blob bytes | 10 MiB | `[limits] git_blob_bytes` | `--limit-git-blob-bytes` |
-| Git emitted chunks | 500000 | `[limits] git_chunks` | `--limit-git-chunks` |
-| Hosted-git listing pages | 1000 | `[limits] hosted_git_pages` | `--limit-hosted-git-pages` |
-| Binary strings bytes | 64 MiB | `[limits] binary_read_bytes` | `--limit-binary-read-bytes` |
-| Ghidra output bytes | 50 MiB | `[limits] binary_decompiled_bytes` | `--limit-binary-decompiled-bytes` |
+| Stdin bytes | 10 MiB | `[limits].stdin_bytes` | `--limit-stdin-bytes` |
+| Web response bytes | 10 MiB | `[limits].web_response_bytes` | `--limit-web-response-bytes` |
+| S3 object bytes | 10 MiB | `[limits].s3_object_bytes` | `--limit-s3-object-bytes` |
+| GCS object bytes | 10 MiB | `[limits].gcs_object_bytes` | `--limit-gcs-object-bytes` |
+| Azure blob bytes | 10 MiB | `[limits].azure_blob_bytes` | `--limit-azure-blob-bytes` |
+| Cloud listed objects | 100000 | `[limits].cloud_max_objects` | `--limit-cloud-max-objects` |
+| Docker tar entry bytes | 128 MiB | `[limits].docker_tar_entry_bytes` | `--limit-docker-tar-entry-bytes` |
+| Docker config/manifest bytes | 16 MiB | `[limits].docker_image_config_bytes` | `--limit-docker-image-config-bytes` |
+| Docker tar total bytes | 8 GiB | `[limits].docker_tar_total_bytes` | `--limit-docker-tar-total-bytes` |
+| Git stdout line bytes | 10 MiB | `[limits].git_line_bytes` | `--limit-git-line-bytes` |
+| Git aggregate bytes | 256 MiB | `[limits].git_total_bytes` | `--limit-git-total-bytes` |
+| Git blob bytes | 10 MiB | `[limits].git_blob_bytes` | `--limit-git-blob-bytes` |
+| Git emitted chunks | 500000 | `[limits].git_chunks` | `--limit-git-chunks` |
+| Hosted-git listing pages | 1000 | `[limits].hosted_git_pages` | `--limit-hosted-git-pages` |
+| Binary strings bytes | 64 MiB | `[limits].binary_read_bytes` | `--limit-binary-read-bytes` |
+| Ghidra output bytes | 50 MiB | `[limits].binary_decompiled_bytes` | `--limit-binary-decompiled-bytes` |
 
 > Library note: `ScanConfig::max_file_size` and `ScanConfig::dedup` are scan
 > pipeline settings, not regex-engine settings. The CLI applies them through
@@ -143,22 +145,20 @@ are one-directional and cannot weaken a precision bar: under `--precision`,
 re-enable it under a preset that turned it off. Everything else takes effect as
 written.
 
-## Nested tables
+## Policy tables
 
-`.keyhog.toml` also accepts nested tables. They must appear **after** all
-flat top-level keys (a TOML rule). Define a scan knob through either its flat
-compatibility alias or its canonical nested key, never both. Duplicate aliases
-fail closed with an error naming the canonical `[scan]` key, rather than silently
-discarding either value.
+Each setting has one TOML owner. Scan-policy settings live under `[scan]`;
+other tables own their respective source, detector, system, and security
+policies. Unknown or retired flat spellings fail closed instead of being
+silently accepted. When migrating an older file, move scan keys under `[scan]`
+and rename the old `exclude_paths` key to `[scan].exclude`.
 
 ### `[scan]`
 
-A readable grouping for the scan scalars (`severity`, `min_confidence`,
-`decode_depth`, `format`, `exclude`, `threads`, `reader_threads`, `fused_batch`,
-`fused_depth`, `per_chunk_timeout_ms`, `dedup`), exactly equivalent to setting
-each one flat at the top level, and the form the rest of the docs show for
-readability. Pick one form per key; duplicate flat and nested definitions fail
-closed (per [Nested tables](#nested-tables) above).
+The canonical owner for scan execution and reporting policy. This includes
+`severity`, `min_confidence`, `ml_threshold`, `decode_depth`, entropy policy,
+`format`, `exclude`, worker and fused-pipeline sizing, chunk timeout, dedup,
+incremental scanning, and the GPU batch-input limit.
 
 ```toml
 [scan]

@@ -344,11 +344,6 @@ pub trait CliTestApi {
     fn render_effective_config_for_scanner(&self, scanner: ScannerConfig) -> String;
     fn autoroute_config_digest_for_args(&self, args: &mut ScanArgs) -> Result<u64>;
     fn autoroute_config_digest_for_scanner(&self, scanner: ScannerConfig) -> u64;
-    fn autoroute_config_digest_for_scanner_with_autoroute_gpu(
-        &self,
-        scanner: ScannerConfig,
-        autoroute_gpu: bool,
-    ) -> u64;
     fn ml_threshold_default(&self) -> f64;
 
     fn explicit_backend_override(
@@ -1044,15 +1039,6 @@ impl CliTestApi for TestApi {
     }
     fn autoroute_config_digest_for_scanner(&self, scanner: ScannerConfig) -> u64 {
         let resolved = crate::orchestrator_config::resolved_scan_config_for_scanner(scanner);
-        crate::orchestrator_config::autoroute_config_digest(&resolved)
-    }
-    fn autoroute_config_digest_for_scanner_with_autoroute_gpu(
-        &self,
-        scanner: ScannerConfig,
-        autoroute_gpu: bool,
-    ) -> u64 {
-        let mut resolved = crate::orchestrator_config::resolved_scan_config_for_scanner(scanner);
-        resolved.autoroute_gpu = autoroute_gpu;
         crate::orchestrator_config::autoroute_config_digest(&resolved)
     }
     fn ml_threshold_default(&self) -> f64 {

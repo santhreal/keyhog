@@ -262,7 +262,11 @@ fn daemon_route_honors_config_min_confidence_floor() {
     let daemon = Daemon::start();
     let work = TempDir::new().expect("work tempdir");
 
-    write_fixture(work.path(), ".keyhog.toml", "min_confidence = 0.99\n");
+    write_fixture(
+        work.path(),
+        ".keyhog.toml",
+        "[scan]\nmin_confidence = 0.99\n",
+    );
     let path = write_fixture(
         work.path(),
         "config.txt",

@@ -181,15 +181,6 @@ fn config_fast_noop_fields(config: &ConfigFile) -> Vec<&'static str> {
     if config.entropy_source_files == Some(true) {
         fields.push("entropy_source_files");
     }
-    if config.entropy_threshold.is_some() {
-        fields.push("entropy_threshold");
-    }
-    if config.entropy_bpe_max_bytes_per_token.is_some() {
-        fields.push("entropy_bpe_max_bytes_per_token");
-    }
-    if config.min_secret_len.is_some() {
-        fields.push("min_secret_len");
-    }
     if config.generic_keyword_low_entropy == Some(false) {
         fields.push("generic_keyword_low_entropy = false");
     }
@@ -215,105 +206,6 @@ fn config_fast_noop_fields(config: &ConfigFile) -> Vec<&'static str> {
         fields.push("[scan].entropy_bpe_max_bytes_per_token");
     }
     fields
-}
-
-/// Reject a scan knob defined through both its legacy flat alias and canonical
-/// `[scan]` key. Choosing either value silently makes the other operator input
-/// inert, and equality today can become a conflict when one side is edited.
-/// CLI flags still override TOML; this gate concerns ambiguity inside one file.
-pub(super) fn validate_scan_alias_conflicts(config: &ConfigFile, config_errors: &mut Vec<String>) {
-    let Some(scan) = config.scan.as_ref() else {
-        return;
-    };
-    macro_rules! reject_duplicate {
-        ($flat:expr, $nested:expr, $name:literal) => {
-            if $flat && $nested {
-                config_errors.push(format!(
-                    "- {0}: defined both as top-level `{0}` and canonical `[scan].{0}`; keep only `[scan].{0}`",
-                    $name
-                ));
-            }
-        };
-    }
-    reject_duplicate!(
-        config.severity.is_some(),
-        scan.severity.is_some(),
-        "severity"
-    );
-    reject_duplicate!(config.format.is_some(), scan.format.is_some(), "format");
-    reject_duplicate!(
-        config.min_confidence.is_some(),
-        scan.min_confidence.is_some(),
-        "min_confidence"
-    );
-    reject_duplicate!(
-        config.ml_threshold.is_some(),
-        scan.ml_threshold.is_some(),
-        "ml_threshold"
-    );
-    reject_duplicate!(config.threads.is_some(), scan.threads.is_some(), "threads");
-    reject_duplicate!(
-        config.reader_threads.is_some(),
-        scan.reader_threads.is_some(),
-        "reader_threads"
-    );
-    reject_duplicate!(
-        config.fused_batch.is_some(),
-        scan.fused_batch.is_some(),
-        "fused_batch"
-    );
-    reject_duplicate!(
-        config.fused_depth.is_some(),
-        scan.fused_depth.is_some(),
-        "fused_depth"
-    );
-    reject_duplicate!(
-        config.per_chunk_timeout_ms.is_some(),
-        scan.per_chunk_timeout_ms.is_some(),
-        "per_chunk_timeout_ms"
-    );
-    reject_duplicate!(config.dedup.is_some(), scan.dedup.is_some(), "dedup");
-    reject_duplicate!(
-        config.incremental.is_some(),
-        scan.incremental.is_some(),
-        "incremental"
-    );
-    reject_duplicate!(
-        config.incremental_cache.is_some(),
-        scan.incremental_cache.is_some(),
-        "incremental_cache"
-    );
-    reject_duplicate!(
-        config.gpu_batch_input_limit.is_some(),
-        scan.gpu_batch_input_limit.is_some(),
-        "gpu_batch_input_limit"
-    );
-    reject_duplicate!(
-        config.decode_depth.is_some(),
-        scan.decode_depth.is_some(),
-        "decode_depth"
-    );
-    reject_duplicate!(
-        config.entropy_threshold.is_some(),
-        scan.entropy_threshold.is_some(),
-        "entropy_threshold"
-    );
-    reject_duplicate!(
-        config.entropy_bpe_max_bytes_per_token.is_some(),
-        scan.entropy_bpe_max_bytes_per_token.is_some(),
-        "entropy_bpe_max_bytes_per_token"
-    );
-    reject_duplicate!(
-        config.min_secret_len.is_some(),
-        scan.min_secret_len.is_some(),
-        "min_secret_len"
-    );
-    if config.exclude_paths.is_some() && scan.exclude.is_some() {
-        config_errors.push(
-            "- exclude: defined both as top-level `exclude_paths` and canonical `[scan].exclude`; keep only `[scan].exclude`"
-                .to_string(),
-        );
-    }
 }
 
 /// Apply a `.keyhog.toml` positive-integer scan knob: reject `0` with a "use a
@@ -345,9 +237,7 @@ pub(super) fn apply_scan_section(
     scan: Option<ScanSection>,
 ) {
     // `[scan]` nested table - the surface the README documents as canonical.
-    // Mirrors the flat top-level scalars and fills only fields still at their
-    // default. `validate_scan_alias_conflicts` rejects a file that defines both
-    // forms, so this fallback behavior applies only after an explicit CLI value.
+    // Fills only fields still at their CLI defaults; command-line flags win.
     if let Some(scan) = scan {
         if let Some(ref s) = scan.severity {
             match parse_severity_filter(s) {
@@ -518,39 +408,6 @@ pub(super) fn apply_top_level_scan_fields(
         }
     }
 
-    if let Some(ref format_str) = config.format {
-        match parse_output_format(format_str) {
-            Some(fmt) => {
-                // Only override if the user didn't set --format (defaults to Text).
-                if !args.format_cli_explicit
-                    && matches!(args.format, crate::args::OutputFormat::Text)
-                {
-                    args.format = fmt;
-                }
-            }
-            None => config_errors.push(super::invalid_config_value(
-                "format",
-                format_str,
-                OUTPUT_FORMAT_ACCEPTED,
-            )),
-        }
-    }
-
-    if let Some(ref severity_str) = config.severity {
-        match parse_severity_filter(severity_str) {
-            Some(severity) => {
-                if args.severity.is_none() {
-                    args.severity = Some(severity);
-                }
-            }
-            None => config_errors.push(super::invalid_config_value(
-                "severity",
-                severity_str,
-                SEVERITY_ACCEPTED,
-            )),
-        }
-    }
-
     if let Some(no_decode) = config.no_decode {
         if !args.no_decode && !cli_preset_selected {
             args.no_decode = no_decode;
@@ -578,64 +435,6 @@ pub(super) fn apply_top_level_scan_fields(
     if let Some(precision) = config.precision {
         if !args.fast && !args.deep && !args.precision {
             args.precision = precision;
-        }
-    }
-
-    if let Some(min_conf) = config.min_confidence {
-        let parsed = parse_config_min_confidence(config_errors, "min_confidence", min_conf);
-        if args.min_confidence.is_none() {
-            args.min_confidence = parsed;
-        }
-    }
-
-    if let Some(threshold) = config.ml_threshold {
-        let parsed_threshold = parse_config_ml_threshold(config_errors, "ml_threshold", threshold);
-        if args.ml_threshold.is_none() {
-            args.ml_threshold = parsed_threshold;
-        }
-    }
-
-    if let Some(threads) = config.threads {
-        apply_positive_int_field(config_errors, &mut args.threads, "threads", threads);
-    }
-    if let Some(threads) = config.reader_threads {
-        apply_positive_int_field(
-            config_errors,
-            &mut args.reader_threads,
-            "reader_threads",
-            threads,
-        );
-    }
-    if let Some(batch) = config.fused_batch {
-        apply_positive_int_field(config_errors, &mut args.fused_batch, "fused_batch", batch);
-    }
-    if let Some(depth) = config.fused_depth {
-        apply_positive_int_field(config_errors, &mut args.fused_depth, "fused_depth", depth);
-    }
-    if let Some(timeout_ms) = config.per_chunk_timeout_ms {
-        apply_positive_int_field(
-            config_errors,
-            &mut args.per_chunk_timeout_ms,
-            "per_chunk_timeout_ms",
-            timeout_ms,
-        );
-    }
-
-    if let Some(ref dedup_str) = config.dedup {
-        match parse_dedup_scope(dedup_str) {
-            Some(scope) => {
-                // credential is the clap default
-                if !args.dedup_cli_explicit
-                    && matches!(args.dedup, crate::args::CliDedupScope::Credential)
-                {
-                    args.dedup = scope;
-                }
-            }
-            None => config_errors.push(super::invalid_config_value(
-                "dedup",
-                dedup_str,
-                DEDUP_SCOPE_ACCEPTED,
-            )),
         }
     }
 
@@ -700,23 +499,6 @@ pub(super) fn apply_top_level_scan_fields(
         }
     }
 
-    if let Some(incremental) = config.incremental {
-        if !args.incremental {
-            args.incremental = incremental;
-        }
-    }
-
-    if args.incremental_cache.is_none() {
-        args.incremental_cache = config.incremental_cache.take();
-    }
-
-    if let Some(depth) = config.decode_depth {
-        let parsed_depth = parse_config_decode_depth(config_errors, "decode_depth", depth);
-        if args.decode_depth.is_none() {
-            args.decode_depth = parsed_depth;
-        }
-    }
-
     if let Some(ref limit_str) = config.decode_size_limit {
         let parsed_size = parse_config_byte_size(config_errors, "decode_size_limit", limit_str);
         if args.decode_size_limit.is_none() {
@@ -730,34 +512,6 @@ pub(super) fn apply_top_level_scan_fields(
         if !args.entropy_source_files {
             args.entropy_source_files = entropy_source;
         }
-    }
-
-    if let Some(entropy_threshold) = config.entropy_threshold {
-        let parsed_threshold =
-            parse_config_entropy_threshold(config_errors, "entropy_threshold", entropy_threshold);
-        if args.entropy_threshold.is_none() {
-            args.entropy_threshold = parsed_threshold;
-        }
-    }
-
-    if let Some(bpe_bound) = config.entropy_bpe_max_bytes_per_token {
-        let parsed_bound = parse_config_entropy_bpe_bound(
-            config_errors,
-            "entropy_bpe_max_bytes_per_token",
-            bpe_bound,
-        );
-        if args.entropy_bpe_max_bytes_per_token.is_none() {
-            args.entropy_bpe_max_bytes_per_token = parsed_bound;
-        }
-    }
-
-    if let Some(min_secret_len) = config.min_secret_len {
-        apply_positive_int_field(
-            config_errors,
-            &mut args.min_secret_len,
-            "min_secret_len",
-            min_secret_len,
-        );
     }
 
     if config.generic_keyword_low_entropy == Some(false) && !args.no_keyword_low_entropy {
@@ -801,23 +555,8 @@ pub(super) fn apply_top_level_scan_fields(
         }
     }
 
-    if let Some(ref limit_str) = config.gpu_batch_input_limit {
-        let parsed_size = parse_config_byte_size(config_errors, "gpu_batch_input_limit", limit_str);
-        if args.gpu_batch_input_limit.is_none() {
-            if let Some(size) = parsed_size {
-                args.gpu_batch_input_limit = Some(size);
-            }
-        }
-    }
-
     if let Some(limits) = config.limits.take() {
         apply_limits_section(args, config_errors, limits);
-    }
-
-    if let Some(paths) = config.exclude_paths.take() {
-        if args.exclude_paths.is_none() {
-            args.exclude_paths = Some(paths);
-        }
     }
 
     if let Some(prefixes) = config.known_prefixes.take() {

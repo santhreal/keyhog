@@ -72,7 +72,7 @@ fn no_verify_build_policy_and_config_keys_are_not_dead_surfaces() {
         "no-verify builds must resolve verifier policy explicitly disabled"
     );
     assert!(
-        scan_args.contains("#[cfg(feature = \"verify\")]\n    #[arg(long)]\n    pub timeout")
+        scan_args.contains("#[cfg(feature = \"verify\")]\n    #[arg(long, requires = \"verify\")]\n    pub timeout")
             && scan_args.contains("pub verify_concurrency: Option<usize>"),
         "verifier-only CLI flags must not be accepted in no-verify builds"
     );
@@ -123,30 +123,19 @@ fn sanitise_thread_count_passes_through_sane_values() {
 }
 
 #[test]
-fn config_top_level_min_secret_len_reaches_scan_args() {
-    let args = args_for_config("min_secret_len = 29\n");
-    assert_eq!(args.min_secret_len, Some(29));
-}
-
-#[test]
 fn config_scan_min_secret_len_reaches_scan_args() {
     let args = args_for_config("[scan]\nmin_secret_len = 33\n");
     assert_eq!(args.min_secret_len, Some(33));
 }
 
 #[test]
-fn config_top_level_min_secret_len_wins_over_scan_table() {
-    let args = args_for_config("min_secret_len = 29\n[scan]\nmin_secret_len = 33\n");
-    assert_eq!(args.min_secret_len, Some(29));
-}
-
-#[test]
-fn config_top_level_ml_threshold_and_verify_knobs_reach_scan_args() {
+fn config_scan_ml_threshold_and_top_level_verify_knobs_reach_scan_args() {
     let args = args_for_config(
-        "ml_threshold = 0.5\n\
-         timeout = 9\n\
+        "timeout = 9\n\
          verify_concurrency = 7\n\
-         max_commits = 123\n",
+         max_commits = 123\n\
+         [scan]\n\
+         ml_threshold = 0.5\n",
     );
     assert_eq!(args.ml_threshold, Some(0.5));
     #[cfg(feature = "verify")]
@@ -173,10 +162,11 @@ fn explicit_cli_default_values_win_over_config_sentinels() {
     extra_args.extend(["--max-commits", "1000"]);
 
     let args = args_for_config_with_extra(
-        "ml_threshold = 0.9\n\
-         timeout = 30\n\
+        "timeout = 30\n\
          verify_concurrency = 11\n\
-         max_commits = 222\n",
+         max_commits = 222\n\
+         [scan]\n\
+         ml_threshold = 0.9\n",
         &extra_args,
     );
 
@@ -208,8 +198,7 @@ fn explicit_cli_default_values_win_over_config_sentinels() {
 #[test]
 fn explicit_cli_default_format_wins_over_toml() {
     let args = args_for_config_with_extra(
-        "format = \"json\"\n\
-         [scan]\n\
+        "[scan]\n\
          format = \"sarif\"\n",
         &["--format", "text"],
     );
@@ -224,8 +213,7 @@ fn explicit_cli_default_format_wins_over_toml() {
 #[test]
 fn explicit_cli_default_dedup_wins_over_toml() {
     let args = args_for_config_with_extra(
-        "dedup = \"file\"\n\
-         [scan]\n\
+        "[scan]\n\
          dedup = \"none\"\n",
         &["--dedup", "credential"],
     );

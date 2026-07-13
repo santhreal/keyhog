@@ -6,6 +6,12 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Scan execution policy in `.keyhog.toml` now has one canonical owner: the
+  `[scan]` table. Retired flat spellings such as `format`, `severity`,
+  `min_confidence`, `decode_depth`, entropy thresholds, worker sizing, dedup,
+  incremental-cache controls, `exclude_paths`, and the GPU batch-input limit
+  are rejected as unknown instead of retained as compatibility aliases. Move
+  those keys under `[scan]`; rename `exclude_paths` to `[scan].exclude`.
 - Multi-root positional parsing now uses one visible variadic `PATH` vector;
   generated help reports `[PATH]...` and the hidden `EXTRA_PATH` compatibility
   carrier is gone. Mixing stdin shorthand `-` with filesystem roots now fails

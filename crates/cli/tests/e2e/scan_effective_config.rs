@@ -203,16 +203,15 @@ fn config_effective_reflects_bpe_bound_cli_flag_and_toml() {
         "an explicit TOML BPE value must visibly override detector-local policy; stdout={stdout}"
     );
 
-    // Defining both aliases is ambiguous and must fail closed instead of
-    // silently discarding the canonical nested value.
+    // Retired flat spellings fail closed rather than acting as compatibility
+    // aliases for the canonical table.
     let (stdout, stderr, code) = effective_config_with_toml(
         "entropy_bpe_max_bytes_per_token = 1.8\n[scan]\nentropy_bpe_max_bytes_per_token = 1.9\n",
     );
     assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
     assert!(
-        stderr.contains("defined both as top-level `entropy_bpe_max_bytes_per_token`")
-            && stderr.contains("keep only `[scan].entropy_bpe_max_bytes_per_token`"),
-        "duplicate aliases must name the conflict and canonical fix; stderr={stderr}"
+        stderr.contains("unknown field `entropy_bpe_max_bytes_per_token`"),
+        "retired flat scan policy must fail closed; stderr={stderr}"
     );
 
     // Presence is semantic even when the numeric value equals the compiled
@@ -251,9 +250,9 @@ fn config_effective_rejects_invalid_bpe_bounds_on_cli_and_toml() {
     }
 
     for toml in [
-        "entropy_bpe_max_bytes_per_token = 0.0\n",
+        "[scan]\nentropy_bpe_max_bytes_per_token = 0.0\n",
         "[scan]\nentropy_bpe_max_bytes_per_token = -1.0\n",
-        "entropy_bpe_max_bytes_per_token = nan\n",
+        "[scan]\nentropy_bpe_max_bytes_per_token = nan\n",
         "[scan]\nentropy_bpe_max_bytes_per_token = inf\n",
     ] {
         let (stdout, stderr, code) = effective_config_with_toml(toml);
@@ -293,9 +292,9 @@ fn config_effective_validates_entropy_threshold_on_every_surface() {
     }
 
     for toml in [
-        "entropy_threshold = -1.0\n",
+        "[scan]\nentropy_threshold = -1.0\n",
         "[scan]\nentropy_threshold = 8.1\n",
-        "entropy_threshold = nan\n",
+        "[scan]\nentropy_threshold = nan\n",
         "[scan]\nentropy_threshold = inf\n",
     ] {
         let (stdout, stderr, code) = effective_config_with_toml(toml);
@@ -430,13 +429,6 @@ fn config_effective_prints_per_chunk_timeout_cli_and_toml() {
         "--per-chunk-timeout-ms must be visible in resolved config; stdout={stdout}"
     );
 
-    let (stdout, stderr, code) = effective_config_with_toml("per_chunk_timeout_ms = 5678\n");
-    assert_eq!(code, Some(0), "stderr={stderr}");
-    assert!(
-        stdout.contains("per_chunk_timeout_ms = 5678"),
-        "top-level per_chunk_timeout_ms must reach resolved config; stdout={stdout}"
-    );
-
     let (stdout, stderr, code) =
         effective_config_with_toml("[scan]\nper_chunk_timeout_ms = 9012\n");
     assert_eq!(code, Some(0), "stderr={stderr}");
@@ -543,10 +535,11 @@ fn config_effective_baked_values_equal_explicit_flags() {
     let config_path = dir.path().join(".keyhog.toml");
     std::fs::write(
         &config_path,
-        "min_confidence = 0.7\n\
-         decode_depth = 3\n\
-         decode_size_limit = \"256KB\"\n\
-         no_ml = true\n",
+        "decode_size_limit = \"256KB\"\n\
+         no_ml = true\n\
+         [scan]\n\
+         min_confidence = 0.7\n\
+         decode_depth = 3\n",
     )
     .expect("write config");
 
@@ -642,15 +635,14 @@ fn retired_megascan_input_names_are_rejected() {
 }
 
 #[test]
-fn gpu_batch_limit_rejects_ambiguous_flat_and_scan_values() {
+fn gpu_batch_limit_rejects_retired_flat_spelling() {
     let (stdout, stderr, code) = effective_config_with_toml(
         "gpu_batch_input_limit = \"256MB\"\n[scan]\ngpu_batch_input_limit = \"512MB\"\n",
     );
     assert_eq!(code, Some(2), "stdout={stdout}; stderr={stderr}");
     assert!(
-        stderr.contains("defined both as top-level `gpu_batch_input_limit`")
-            && stderr.contains("keep only `[scan].gpu_batch_input_limit`"),
-        "ambiguous migration config must name the canonical fix; stderr={stderr}"
+        stderr.contains("unknown field `gpu_batch_input_limit`"),
+        "retired flat spelling must fail closed; stderr={stderr}"
     );
 }
 
@@ -691,7 +683,8 @@ fn config_effective_prints_source_policy_controls() {
         &config_path,
         format!(
             "max_file_size = \"5MB\"\n\
-             exclude_paths = [\"target/\", \"*.pem\"]\n\
+             [scan]\n\
+             exclude = [\"target/\", \"*.pem\"]\n\
              incremental = true\n\
              incremental_cache = {}\n",
             toml::Value::String(cache_path.to_string_lossy().to_string())
@@ -1062,10 +1055,9 @@ fn config_effective_rejects_fast_with_entropy_only_toml_knobs() {
          no_decode = true\n\
          no_entropy = true\n\
          entropy_source_files = true\n\
-         entropy_threshold = 5.0\n\
-         min_secret_len = 24\n\
          generic_keyword_low_entropy = false\n\
          [scan]\n\
+         entropy_threshold = 5.0\n\
          min_secret_len = 32\n",
     );
 
@@ -1080,7 +1072,6 @@ fn config_effective_rejects_fast_with_entropy_only_toml_knobs() {
         "no_entropy",
         "entropy_source_files",
         "entropy_threshold",
-        "min_secret_len",
         "generic_keyword_low_entropy = false",
         "[scan].min_secret_len",
         "fast mode disables entropy/decode",
@@ -1099,10 +1090,9 @@ fn config_effective_rejects_precision_with_entropy_only_toml_knobs() {
          no_decode = true\n\
          no_entropy = true\n\
          entropy_source_files = true\n\
-         entropy_threshold = 5.0\n\
-         min_secret_len = 24\n\
          generic_keyword_low_entropy = false\n\
          [scan]\n\
+         entropy_threshold = 5.0\n\
          min_secret_len = 32\n",
     );
 
@@ -1117,7 +1107,6 @@ fn config_effective_rejects_precision_with_entropy_only_toml_knobs() {
         "no_entropy",
         "entropy_source_files",
         "entropy_threshold",
-        "min_secret_len",
         "generic_keyword_low_entropy = false",
         "[scan].min_secret_len",
         "precision mode disables entropy/decode",
@@ -1332,16 +1321,7 @@ fn config_effective_rejects_missing_explicit_config_path() {
 #[test]
 fn config_effective_rejects_invalid_config_enums_and_min_length() {
     let (stdout, stderr, code) = effective_config_with_toml(
-        "format = \"yaml\"\n\
-         severity = \"urgent\"\n\
-         dedup = \"global\"\n\
-         decode_depth = 11\n\
-         min_secret_len = 0\n\
-         reader_threads = 0\n\
-         fused_batch = 0\n\
-         fused_depth = 0\n\
-         per_chunk_timeout_ms = 0\n\
-         [scan]\n\
+        "[scan]\n\
          format = \"xml\"\n\
          severity = \"panic\"\n\
          dedup = \"all\"\n\
@@ -1362,15 +1342,6 @@ fn config_effective_rejects_invalid_config_enums_and_min_length() {
         "invalid config must not print config: {stdout}"
     );
     for required in [
-        "format = \"yaml\"",
-        "severity = \"urgent\"",
-        "dedup = \"global\"",
-        "decode_depth = 11",
-        "min_secret_len = 0",
-        "reader_threads = 0",
-        "fused_batch = 0",
-        "fused_depth = 0",
-        "per_chunk_timeout_ms = 0",
         "[scan].format = \"xml\"",
         "[scan].severity = \"panic\"",
         "[scan].dedup = \"all\"",

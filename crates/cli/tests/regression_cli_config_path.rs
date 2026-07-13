@@ -123,7 +123,7 @@ fn explicit_config_min_confidence_suppresses_below_threshold() {
 
     // A `tool.toml` at min_confidence = 0.95 sits ABOVE the 0.9 finding, so the
     // explicit --config load drops it → clean scan, empty JSON array, exit 0.
-    let (_cfg, cfg_path) = config_file("min_confidence = 0.95\n");
+    let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 0.95\n");
     let cfg = cfg_path.to_str().unwrap();
     let (code, stdout, stderr) = scan(dir.path(), &["--format", "json", "--config", cfg]);
     assert_eq!(
@@ -145,7 +145,7 @@ fn explicit_config_min_confidence_boundary_is_inclusive() {
 
     // At the EXACT finding confidence (0.9) the filter is inclusive (>=), so the
     // finding is kept.
-    let (_c1, at_path) = config_file("min_confidence = 0.9\n");
+    let (_c1, at_path) = config_file("[scan]\nmin_confidence = 0.9\n");
     let (code, stdout, stderr) = scan(
         dir.path(),
         &["--format", "json", "--config", at_path.to_str().unwrap()],
@@ -162,7 +162,7 @@ fn explicit_config_min_confidence_boundary_is_inclusive() {
     );
 
     // A hair above the finding confidence drops it.
-    let (_c2, above_path) = config_file("min_confidence = 0.900001\n");
+    let (_c2, above_path) = config_file("[scan]\nmin_confidence = 0.900001\n");
     let (code, stdout, _e) = scan(
         dir.path(),
         &["--format", "json", "--config", above_path.to_str().unwrap()],
@@ -184,7 +184,7 @@ fn explicit_config_min_confidence_top_keeps_only_perfect_confidence() {
     std::fs::write(dir.path().join("aws.txt"), AWS_KEY_LINE).expect("write aws");
     std::fs::write(dir.path().join("gh.txt"), GITHUB_PAT_LINE).expect("write gh");
 
-    let (_cfg, cfg_path) = config_file("min_confidence = 1.0\n");
+    let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 1.0\n");
     let (code, stdout, stderr) = scan(
         dir.path(),
         &["--format", "json", "--config", cfg_path.to_str().unwrap()],
@@ -229,7 +229,7 @@ fn explicit_config_severity_filter_drops_lower_severity() {
 
     // `severity = "critical"` raises the report floor ABOVE the finding's `high`,
     // so the explicit --config filters it out → exit 0, empty array.
-    let (_cfg, cfg_path) = config_file("severity = \"critical\"\n");
+    let (_cfg, cfg_path) = config_file("[scan]\nseverity = \"critical\"\n");
     let (code, stdout, stderr) = scan(
         dir.path(),
         &["--format", "json", "--config", cfg_path.to_str().unwrap()],
@@ -253,7 +253,7 @@ fn explicit_config_severity_at_or_below_keeps_finding() {
 
     // `severity = "high"` (== the finding's severity) keeps it; the floor is
     // inclusive of the named level.
-    let (_c1, high_path) = config_file("severity = \"high\"\n");
+    let (_c1, high_path) = config_file("[scan]\nseverity = \"high\"\n");
     let (code, stdout, stderr) = scan(
         dir.path(),
         &["--format", "json", "--config", high_path.to_str().unwrap()],
@@ -270,7 +270,7 @@ fn explicit_config_severity_at_or_below_keeps_finding() {
     );
 
     // `severity = "medium"` (below high) also keeps it.
-    let (_c2, med_path) = config_file("severity = \"medium\"\n");
+    let (_c2, med_path) = config_file("[scan]\nseverity = \"medium\"\n");
     let (code, stdout, _e) = scan(
         dir.path(),
         &["--format", "json", "--config", med_path.to_str().unwrap()],
@@ -296,8 +296,11 @@ fn explicit_config_overrides_discovered_keyhog_toml() {
     // A `.keyhog.toml` in the scan dir sets min_confidence = 0.99 (would drop the
     // 0.9 PAT). An explicit `--config` at 0.5 must WIN → the PAT survives.
     let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
-    std::fs::write(dir.path().join(".keyhog.toml"), "min_confidence = 0.99\n")
-        .expect("write discovered config");
+    std::fs::write(
+        dir.path().join(".keyhog.toml"),
+        "[scan]\nmin_confidence = 0.99\n",
+    )
+    .expect("write discovered config");
 
     // Control: the discovered 0.99 alone suppresses the finding.
     let (code, stdout, stderr) = scan(dir.path(), &["--format", "json"]);
@@ -314,7 +317,7 @@ fn explicit_config_overrides_discovered_keyhog_toml() {
     );
 
     // Explicit --config at 0.5 overrides the discovered 0.99 → PAT reported.
-    let (_cfg, cfg_path) = config_file("min_confidence = 0.5\n");
+    let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 0.5\n");
     let (code, stdout, stderr) = scan(
         dir.path(),
         &["--format", "json", "--config", cfg_path.to_str().unwrap()],
@@ -337,7 +340,7 @@ fn cli_min_confidence_flag_overrides_config_value() {
     // Config asks for a low floor (0.5); the explicit `--min-confidence 0.99`
     // CLI flag is the highest-precedence layer and wins, dropping the 0.9 PAT.
     let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
-    let (_cfg, cfg_path) = config_file("min_confidence = 0.5\n");
+    let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 0.5\n");
     let (code, stdout, stderr) = scan(
         dir.path(),
         &[
@@ -467,7 +470,7 @@ fn explicit_config_invalid_severity_value_lists_valid_values() {
     // A semantically invalid enum string TOML parsing cannot catch: fail closed
     // with a message that quotes the bad value and enumerates the valid ones.
     let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
-    let (_cfg, cfg_path) = config_file("severity = \"nope\"\n");
+    let (_cfg, cfg_path) = config_file("[scan]\nseverity = \"nope\"\n");
     let (code, _stdout, stderr) = scan(
         dir.path(),
         &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
@@ -479,7 +482,9 @@ fn explicit_config_invalid_severity_value_lists_valid_values() {
          --- stderr ---\n{stderr}"
     );
     assert!(
-        stderr.contains("- severity = \"nope\": expected one of info, low, medium, high, critical"),
+        stderr.contains(
+            "- [scan].severity = \"nope\": expected one of info, low, medium, high, critical"
+        ),
         "error must quote the bad value and list the valid severities.\n--- stderr ---\n{stderr}"
     );
 }
@@ -489,7 +494,7 @@ fn config_and_no_config_flags_are_mutually_exclusive() {
     // clap rejects `--config` together with `--no-config` before any scan runs;
     // this is a usage error (exit 2) with a message naming the conflict.
     let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
-    let (_cfg, cfg_path) = config_file("min_confidence = 0.5\n");
+    let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 0.5\n");
     let output = Command::new(binary())
         .arg("scan")
         .arg("--daemon=off")
@@ -544,7 +549,7 @@ fn min_confidence_range_validation_matches_between_cli_and_config() {
     // (exit 2) instead of being silently honored and zeroing recall. A regression
     // that drops this validation (silently accepting 5.0 → empty scan, exit 0)
     // will flip this assertion.
-    let (_cfg, cfg_path) = config_file("min_confidence = 5.0\n");
+    let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 5.0\n");
     let (code, _stdout, stderr) = scan(
         dir.path(),
         &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
@@ -567,11 +572,11 @@ fn min_confidence_range_validation_matches_between_cli_and_config() {
 }
 
 #[test]
-fn config_min_confidence_boundaries_and_scan_section_all_validate() {
+fn config_min_confidence_boundaries_validate() {
     let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
 
-    // Negative (below the floor) is rejected on the flat top-level key.
-    let (_cfg, cfg_path) = config_file("min_confidence = -0.5\n");
+    // Negative values are rejected by the canonical scan key.
+    let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = -0.5\n");
     let (code, _stdout, stderr) = scan(
         dir.path(),
         &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
@@ -579,16 +584,14 @@ fn config_min_confidence_boundaries_and_scan_section_all_validate() {
     assert_eq!(
         code,
         Some(2),
-        "flat min_confidence = -0.5 (below floor) must fail closed.\n--- stderr ---\n{stderr}"
+        "[scan].min_confidence = -0.5 (below floor) must fail closed.\n--- stderr ---\n{stderr}"
     );
     assert!(
         stderr.contains("min_confidence must be between 0.0 and 1.0"),
-        "negative flat value must be rejected with the bound.\n--- stderr ---\n{stderr}"
+        "negative scan value must be rejected with the bound.\n--- stderr ---\n{stderr}"
     );
 
-    // The nested `[scan]` table shares the SAME validator: an over-range value
-    // there is rejected identically (proving both apply sites route through
-    // `parse_config_min_confidence`, not just the flat one).
+    // An over-range value is rejected by the same shared CLI/config validator.
     let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 2.0\n");
     let (code, _stdout, stderr) = scan(
         dir.path(),
@@ -608,7 +611,7 @@ fn config_min_confidence_boundaries_and_scan_section_all_validate() {
     // ACCEPTED — the validator narrows nothing that was already legal. 0.5 keeps
     // the confidence-1.0 GitHub PAT finding (a clean scan that still reports),
     // so the config load succeeds (no "invalid .keyhog.toml" error).
-    let (_cfg, cfg_path) = config_file("min_confidence = 0.5\n");
+    let (_cfg, cfg_path) = config_file("[scan]\nmin_confidence = 0.5\n");
     let (code, _stdout, stderr) = scan(
         dir.path(),
         &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
@@ -697,10 +700,8 @@ fn config_threads_zero_is_rejected_matching_reader_threads_and_cli() {
         "CLI --threads 0 must be rejected with exit 2.\n--- stderr ---\n{stderr}"
     );
 
-    // Flat config `threads = 0` now fails closed too. It was silently accepted
-    // while its sibling `reader_threads = 0` was already rejected — an intra-config
-    // inconsistency AND a divergence from the CLI's own >= 1 rule.
-    let (_cfg, cfg_path) = config_file("threads = 0\n");
+    // Canonical `[scan].threads = 0` fails closed like the CLI.
+    let (_cfg, cfg_path) = config_file("[scan]\nthreads = 0\n");
     let (code, _stdout, stderr) = scan(
         dir.path(),
         &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
@@ -716,24 +717,8 @@ fn config_threads_zero_is_rejected_matching_reader_threads_and_cli() {
         "config threads = 0 must name the positive-integer fix.\n--- stderr ---\n{stderr}"
     );
 
-    // The nested [scan].threads shares the guard (proves both apply sites fixed).
-    let (_cfg, cfg_path) = config_file("[scan]\nthreads = 0\n");
-    let (code, _stdout, stderr) = scan(
-        dir.path(),
-        &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
-    );
-    assert_eq!(
-        code,
-        Some(2),
-        "[scan].threads = 0 must fail closed too.\n--- stderr ---\n{stderr}"
-    );
-    assert!(
-        stderr.contains("[scan].threads = 0: use a positive integer"),
-        "[scan].threads = 0 must name the positive-integer fix.\n--- stderr ---\n{stderr}"
-    );
-
     // An in-range thread count still loads (validator narrows nothing legal).
-    let (_cfg, cfg_path) = config_file("threads = 2\n");
+    let (_cfg, cfg_path) = config_file("[scan]\nthreads = 2\n");
     let (code, _stdout, stderr) = scan(
         dir.path(),
         &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
@@ -745,18 +730,13 @@ fn config_threads_zero_is_rejected_matching_reader_threads_and_cli() {
     );
 }
 
-/// UNIFICATION LOCK for the `apply_positive_int_field` dedup: every
-/// positive-integer scan knob must reject `0` through the ONE shared guard on
-/// BOTH the flat and `[scan]` config forms. Before the dedup this reject-0 guard
-/// was pasted 12 times (6 fields × 2 surfaces) and a field could silently skip it
-/// — `threads` did exactly that (accepted `0` while its sibling `reader_threads`
-/// rejected it) until RECONCILE#14. This sweeps all six fields on both surfaces;
-/// if any field is ever un-wired from the shared helper (or a divergent second
-/// copy reappears that forgets the check), the missing rejection fails here. The
+/// Every positive-integer `[scan]` knob rejects `0` through one shared guard.
+/// This sweeps all six canonical fields; if any field is ever unwired from the
+/// shared helper, the missing rejection fails here. The
 /// exit-2 + exact-message assertions also pin that `per_chunk_timeout_ms = 0` and
 /// `min_secret_len = 0` are genuine errors, not silent "disable" sentinels.
 #[test]
-fn every_positive_int_config_knob_rejects_zero_on_both_surfaces() {
+fn every_positive_int_scan_config_knob_rejects_zero() {
     let dir = scan_dir_with("gh.txt", GITHUB_PAT_LINE);
     for field in [
         "threads",
@@ -766,24 +746,6 @@ fn every_positive_int_config_knob_rejects_zero_on_both_surfaces() {
         "per_chunk_timeout_ms",
         "min_secret_len",
     ] {
-        // Flat form: `<field> = 0`.
-        let (_cfg, cfg_path) = config_file(&format!("{field} = 0\n"));
-        let (code, _out, stderr) = scan(
-            dir.path(),
-            &["--config", cfg_path.to_str().unwrap(), "--format", "json"],
-        );
-        assert_eq!(
-            code,
-            Some(2),
-            "flat config `{field} = 0` must fail closed with exit 2.\n--- stderr ---\n{stderr}"
-        );
-        assert!(
-            stderr.contains(&format!("{field} = 0: use a positive integer")),
-            "flat `{field} = 0` must name the positive-integer fix.\n--- stderr ---\n{stderr}"
-        );
-
-        // Nested form: `[scan]\n<field> = 0` — the `[scan].`-prefixed label proves
-        // the OTHER apply site is wired to the same guard.
         let (_cfg, cfg_path) = config_file(&format!("[scan]\n{field} = 0\n"));
         let (code, _out, stderr) = scan(
             dir.path(),

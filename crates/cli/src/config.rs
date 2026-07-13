@@ -18,6 +18,27 @@ use sections::{
     apply_tuning_section,
 };
 
+const RETIRED_FLAT_SCAN_KEYS: &[&str] = &[
+    "severity",
+    "format",
+    "min_confidence",
+    "ml_threshold",
+    "threads",
+    "reader_threads",
+    "fused_batch",
+    "fused_depth",
+    "per_chunk_timeout_ms",
+    "dedup",
+    "incremental",
+    "incremental_cache",
+    "gpu_batch_input_limit",
+    "decode_depth",
+    "entropy_threshold",
+    "entropy_bpe_max_bytes_per_token",
+    "min_secret_len",
+    "exclude_paths",
+];
+
 pub(super) fn invalid_config_value(field: &str, value: &str, detail: &str) -> String {
     format!("- {field} = {value:?}: {detail}")
 }
@@ -127,10 +148,29 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
                     "failed to parse .keyhog.toml: {error}"
                 );
             }
+            let parsed_table = raw.parse::<toml::Table>().ok();
+            let retired_key = parsed_table.as_ref().and_then(|table| {
+                RETIRED_FLAT_SCAN_KEYS
+                    .iter()
+                    .copied()
+                    .find(|key| table.contains_key(*key))
+            });
+            let fix = retired_key.map_or_else(
+                || {
+                    "correct the TOML syntax or run with --no-config for a hermetic default scan"
+                        .to_string()
+                },
+                |key| {
+                    let canonical = if key == "exclude_paths" { "exclude" } else { key };
+                    format!(
+                        "move top-level `{key}` to `[scan].{canonical}`; scan policy has one TOML owner"
+                    )
+                },
+            );
             return config_file_error(
                 &config_path,
                 format_args!("failed to parse TOML: {error}"),
-                "correct the TOML syntax or run with --no-config for a hermetic default scan",
+                &fix,
             );
         }
     };
@@ -194,7 +234,6 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     )))]
     apply_http_section(args, &mut config_errors, config.http.as_ref());
 
-    scan::validate_scan_alias_conflicts(&config, &mut config_errors);
     apply_top_level_scan_fields(args, &mut config_errors, &mut config);
     apply_scan_section(args, &mut config_errors, config.scan.take());
 

@@ -9,28 +9,6 @@
 # Path to detector TOML directory (default: "detectors")
 detectors = "detectors"
 
-# Minimum severity to report: info, low, medium, high, critical
-severity = "medium"
-
-# Output format: text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit
-format = "text"
-
-# Number of parallel scanning threads (default: number of CPU cores)
-threads = 8
-
-# Dedicated filesystem reader threads (default: derived from scan workers)
-# reader_threads = 2
-
-# Fused filesystem pipeline batch shape (defaults: batch 32, depth auto)
-# fused_batch = 32
-# fused_depth = 4
-
-# Optional hard deadline per chunk scan in milliseconds (default: off)
-per_chunk_timeout_ms = 30000
-
-# Deduplication scope: credential, file, none
-dedup = "credential"
-
 # ============================================================================
 # SCANNING MODES
 # ============================================================================
@@ -61,13 +39,6 @@ no_entropy = false
 # ADVANCED ENCODING OPTIONS
 # ============================================================================
 
-# Maximum depth for recursive decoding (1-10, default: 10)
-# - 2: Fast, basic detection
-# - 4: catches double/triple encoding
-# - 8: catches sophisticated evasion
-# - 10: Maximum (default) - catches state-level adversaries
-decode_depth = 10
-
 # Maximum file size for decode-through scanning (default: 512KB)
 # Files larger than this skip encoding detection for performance
 # Accepts: "32KB", "1MB", "10MB", "100MB"
@@ -81,16 +52,6 @@ decode_size_limit = "512KB"
 # Disabled by default to reduce false positives in code
 entropy_source_files = false
 
-# Entropy threshold in bits per byte (default: 4.5)
-# - 3.5: Aggressive (more findings, more false positives)
-# - 4.5: Balanced (default)
-# - 5.5: Conservative (fewer findings, fewer false positives)
-entropy_threshold = 4.5
-
-# Minimum credential length for entropy-fallback candidates (default: 16).
-# Named detectors keep their own shape-specific length gates.
-min_secret_len = 16
-
 # Admit credential-keyword-anchored values (PASSWORD=, *_PASS=, secret:,
 # api_key= ...) on a far lower entropy floor than the bare generic gate. The
 # keyword key is the evidence; precision is carried by the ML model + shape
@@ -103,15 +64,6 @@ generic_keyword_low_entropy = true
 # ============================================================================
 # CONFIDENCE & ML OPTIONS
 # ============================================================================
-
-# Minimum confidence score to report findings (0.0 - 1.0, default: 0.40)
-# Bench-tuned on the SecretBench mirror (max F1). NOTE: the floor is
-# currently non-monotonic in precision around 0.50 (a scan-time/ML
-# entanglement, see the internal design notes); 0.40 is the measured optimum.
-# - 0.30: Aggressive (more findings, more false positives)
-# - 0.40: Balanced (default)
-# - 0.85: Conservative (fewer findings, fewer false positives)
-min_confidence = 0.40
 
 # Disable ML-based confidence scoring
 # WARNING: increases false positives, hurts recall on hand-crafted
@@ -169,15 +121,32 @@ max_commits = 1000
 show_secrets = false
 
 # ============================================================================
-# INCREMENTAL SCAN (v0.3.0+)
+# CANONICAL SCAN POLICY
 # ============================================================================
 
-# Persist a BLAKE3 Merkle index of file hashes; subsequent runs skip
-# unchanged files entirely. 10–100× speedup on CI re-runs.
-# CLI override: `--incremental` (with optional `--incremental-cache <path>`).
-# Default cache path: `~/.cache/keyhog/merkle.idx` (platform-aware via `dirs`).
-# incremental = false
-# incremental_cache = "~/.cache/keyhog/merkle.idx"
+# Scan-policy keys live only in this table; retired flat spellings are
+# rejected so every setting has one predictable owner.
+[scan]
+severity = "info"                 # info reports every severity
+format = "text"                   # text | json | jsonl | sarif | csv | ...
+min_confidence = 0.40             # 0.0-1.0; raise toward 0.85 for precision
+# ml_threshold = 0.5              # explicit 0.5 raises the 0.40 report floor
+decode_depth = 10                 # recursive decode passes, 1-10
+entropy_threshold = 4.5           # Shannon bits/byte, 0.0-8.0
+# An explicit BPE ceiling overrides detector-local BPE tuning, even at 2.2.
+# entropy_bpe_max_bytes_per_token = 2.2
+min_secret_len = 16               # entropy-fallback candidates only
+exclude = ["**/test/fixtures/**", "vendor/"]
+# threads = 8                     # default: host physical-core count
+# reader_threads = 2              # default: derived from scan workers
+# fused_batch = 32
+# fused_depth = 4                 # default: derived from worker count
+# per_chunk_timeout_ms = 30000    # default: no chunk deadline
+dedup = "credential"              # credential | file | none
+# Incremental mode persists a BLAKE3 Merkle index and skips unchanged files.
+# incremental = true
+# incremental_cache = "/home/alice/.cache/keyhog/merkle.idx"
+# gpu_batch_input_limit = "512MB" # omit for the VRAM-adaptive default
 
 # ============================================================================
 # SOURCE LIMITS
@@ -287,25 +256,8 @@ gpu_moe_timeout_ms = 30000
 # detection on file save. No config knob — invoke as a separate command.
 
 # ============================================================================
-# NESTED TABLES  (must come AFTER every flat key above — TOML rule)
+# ADDITIONAL POLICY TABLES
 # ============================================================================
-# Scan-policy flat keys above also have nested equivalents. Use either shape,
-# never both for one knob: duplicate aliases fail closed and name `[scan]` as
-# the canonical fix. Full reference:
-# docs/src/reference/configuration.md
-
-# [scan] — runtime scan policy (mirrors the flat scalars above).
-# [scan]
-# severity = "high"
-# min_confidence = 0.40
-# format = "sarif"
-# exclude = ["**/test/fixtures/**", "vendor/"]
-# threads = 8
-# reader_threads = 2
-# fused_batch = 32
-# fused_depth = 4
-# per_chunk_timeout_ms = 30000
-# dedup = "credential"
 
 # [detector.<id>] — per-detector overrides keyed by detector id
 # (`keyhog detectors` lists ids; `keyhog explain <id>` shows one).
