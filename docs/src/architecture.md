@@ -1,4 +1,4 @@
-# keyhog architecture: the whole pipeline, one page
+# Architecture
 
 This is the **map**: where everything lives and how a byte becomes a finding.
 It links to the authoritative in-code docs rather than restating them, so there
@@ -9,7 +9,7 @@ is one source of truth per fact. Read this first; then jump to the cited module.
 - Touching detection? The detector format is data, not code; see
   [`detectors/`](#detectors--data-not-code).
 - Touching the scan engine? Its own header doc is the deepest map:
-  [`crates/scanner/src/engine/mod.rs`](../crates/scanner/src/engine/mod.rs)
+  [`crates/scanner/src/engine/mod.rs`](../../crates/scanner/src/engine/mod.rs)
   ("# The one flow" + "# Where each method lives").
 
 ---
@@ -30,8 +30,7 @@ everything else is data, tooling, docs, or eval harness.
 | `fuzz/` | `cargo-fuzz` targets (structure-aware, one sink per target). |
 | `tools/` | Build-time generators (`gen_contracts.py`, `gen_companion_contracts.py`). Large *gitignored* SecretBench corpus. |
 | `scripts/` | Maintained dev/release entrypoints and organization/product-truth gates. One-off corpus rewrite scripts do not ship. |
-| `docs/` | Contributor references plus canonical mdBook source under `docs/src/`. |
-| `site/` | Published docs site (HTML); `architecture.html` is the long-form version of this page. |
+| `docs/src/` | The single canonical documentation set, built and deployed as mdBook. |
 | `demo/` | Self-contained demo deployment (app + infra + scripts). |
 | `metrics/` | Star and project-health metrics. |
 
@@ -81,7 +80,7 @@ by Cargo and must stay acyclic (domain logic never imports CLI/transport/UI).
 
 The end-to-end flow, stage by stage, each pointing at the crate/module that owns
 it. The scan engine's own header doc
-([`engine/mod.rs`](../crates/scanner/src/engine/mod.rs)) is the authoritative,
+([`engine/mod.rs`](../../crates/scanner/src/engine/mod.rs)) is the authoritative,
 method-level version of steps 2-4.
 
 1. **Acquire bytes:** a source yields file-path + content chunks.
@@ -146,49 +145,33 @@ keyword bridge, the weak-anchor post-pass, or the hot-pattern fast path surfaced
 it. Phase-2 has several emission paths; they exist for *speed and recall*, not to
 each carry their own copy of policy.
 
-**The rule.** Every emission path produces `CandidateMatch`es and funnels them
-through one adjudicator. Paths *find*; they do not *decide*. The adjudicator runs
-a single ordered policy, each stage a pure `fn(value, ctx) -> StageOutcome`:
+**The rule.** Emission paths produce `CandidateMatch` values and typed signals;
+`adjudicate_match` owns the ordered suppression verdict. Path owners may compute
+context-specific facts (entropy shape, generic bridge boundaries, named
+detector policy), but they do not invent an untyped final drop reason:
 
 ```
 emission paths (entropy · generic/keyword bridge · weak-anchor · hot fast path · GPU)
         │  each yields CandidateMatch { detector, span, value }
         ▼
-adjudicate_match(CandidateMatch, MatchCtx)            ← the ONLY funnel
-   1. public_noncredential_shape(value, ctx)   one gate list, every `looks_like_*`
-   2. example / placeholder suppression(value, ctx)   one entry point
-   3. checksum_adjusted_confidence(value)
-   4. apply_path_confidence_penalties(ctx)     comment / path / context
+adjudicate_match(CandidateMatch, MatchCtx)
+   1. explicit/process signals
+   2. generic/entropy/hot-pattern signals
+   3. named-detector suppression
+   4. final report-floor policy
         ▼
    Verdict::Suppressed(stage_name)  |  Verdict::Reported(confidence)
 ```
 
-`MatchCtx` carries every input a stage needs (`value, detector, span, path,
-entropy, anchor_kind, in_comment, …`) so no stage is silently starved of data;
-the reason a path could otherwise reach for a weaker overload. The `Verdict`
-names the deciding stage, which is exactly what `--dogfood` prints, so every
-suppression is explainable in one place. Adding a gate is a one-line edit to
-`public_noncredential_shape` and applies to *all* paths by construction.
+`MatchCtx` carries one explicit signal family at a time. The `Verdict` names the
+deciding `StageId`, which is what dogfood telemetry records. Shared shape policy
+lives under `suppression::shape`; path-specific callers convert its result into
+the matching typed signal before adjudication.
 
-**Why this shape.** Per-match policy split across paths drifts: a richer path
-gains a gate the others lack, and a value's fate starts depending on its path:
-a silent override (Law 10). One funnel makes the whole policy readable top to
-bottom and makes divergence impossible to introduce. Enforcement is mechanical:
-no `looks_like_*` / `checksum_adjusted_confidence` / `should_suppress_known_example_*`
-call may exist outside the adjudicator (grep-contract tests), and a cross-path
-test feeds the same tricky value through every path and asserts one identical
-verdict.
-
-> Status: `adjudicate_match` exists and many drop decisions now emit typed
-> `StageId`s through the adjudicator, including hot-pattern min-length and
-> policy/validator/checksum suppression plus exact named-detector shape/path
-> suppression reasons.
-> Named-detector adjudication also preserves exact shared-cascade and
-> decode-through suppression reasons instead of using a generic bucket.
-> Some policy stages still execute from their emission-path owners instead of
-> one full verdict that owns suppression and report confidence end to end. Any
-> emission path must route policy decisions through the adjudicator stage model,
-> not a silent local subset.
+**Why this shape.** Candidate discovery necessarily differs by detector family,
+but the final vocabulary and ordering of suppression decisions must not. Typed
+signals preserve the context each path needs while keeping one auditable verdict
+pipeline and one telemetry reason per decision.
 
 ### The ML model (`weights.bin`)
 
@@ -231,9 +214,3 @@ summary shown by `keyhog --version`.
 | Change output format / exit codes | `crates/cli/src/format.rs`, `reporting.rs` |
 | Add a benchmark / change the gate | `benchmarks/bench/` |
 | Verify a perf or detection claim | `benchmarks/` (the README numbers regenerate from here) |
-
----
-
-*The long-form, diagram-rich version of this page (hardware routing matrix,
-profiling tips) is [`site/architecture.html`](../site/architecture.html). When
-they disagree, this file, checked next to the code, wins.*

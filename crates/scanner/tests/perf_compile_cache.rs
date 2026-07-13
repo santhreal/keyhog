@@ -37,7 +37,7 @@
 //! The full/half ratio of ~1.9 is the structural signature of a SERIAL
 //! compile: doubling the pattern count doubles the wall-clock, because no
 //! second core is doing any of the build. The docs cite the cold compile as
-//! ~3 s per invocation (site/daemon docs); the disk cache already collapses
+//! repeated compile cost; the disk cache already collapses
 //! cross-process cold-start to ~21 ms, but a daemon/watch process that loads
 //! a fresh (uncached) detector set per job still eats the full serial build.
 //!

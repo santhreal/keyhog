@@ -153,37 +153,19 @@ curl -fsSL ...install.sh | KEYHOG_VERSION=v0.5.41 sh
 Update the pin via a Renovate / Dependabot config or just bump it
 by hand when a new release lands.
 
-## Caching the install
-
-The install script downloads a ~25 MB binary. On GitHub Actions, cache
-it across runs:
-
-```yaml
-      - name: Cache keyhog
-        id: cache-keyhog
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/bin/keyhog
-          key: keyhog-${{ runner.os }}-v0.5.41
-      - name: Install keyhog
-        if: steps.cache-keyhog.outputs.cache-hit != 'true'
-        run: curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | KEYHOG_VERSION=v0.5.41 sh
-```
-
-The `if: cache-hit != 'true'` guard is what makes the cache pay off - without
-it the install step re-downloads on every run and the cache does nothing. Bump
-both the cache key and the pinned `KEYHOG_VERSION` together when you upgrade.
-
 ## Scan history once per release, not per PR
 
 A full git-history scan is the right thing to run on `main` post-merge
 and on release tags, but it's overkill for every PR. A typical setup:
 
-| Trigger        | Scan                            | Cost                                |
-|----------------|----------------------------------|-------------------------------------|
-| Pull request   | `keyhog scan .` (working tree)  | ~5 s on a typical repo              |
-| Push to main   | `keyhog scan --git-history .`   | ~30 s on a year-old repo, scales linearly |
-| Release tag    | `keyhog scan --git-history . --verify` | Adds 100 ms per finding for live verification |
+| Trigger        | Scan                            | Purpose |
+|----------------|----------------------------------|---------|
+| Pull request   | `keyhog scan .` (working tree)  | Fast feedback over proposed files |
+| Push to main   | `keyhog scan --git-history .`   | Cover reachable repository history |
+| Release tag    | `keyhog scan --git-history . --verify` | Add explicit live verification before publication |
+
+Duration depends on history size, changed bytes, verification endpoints,
+rate limits, runner hardware, and cache state. Record it from the actual job.
 
 The PR scan keeps the dev feedback loop fast. The post-merge history
 scan catches anything that slipped through pre-commit + PR review.

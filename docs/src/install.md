@@ -45,7 +45,7 @@ Then it prompts (default in brackets):
 Each prompt is opt-in. Nothing in your `.bashrc` / `.zshrc` / git
 hooks dir is touched without an explicit "y". There is no shipped
 Claude Code / Cursor agent-hook prompt or `keyhog hook install --agent
-<name>` flag; the prompt was removed in v0.5.34.
+<name>` flag; installer variants are not part of the current release contract.
 
 ## One-liner: Windows
 

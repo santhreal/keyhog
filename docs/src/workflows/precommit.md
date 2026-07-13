@@ -13,7 +13,7 @@ keyhog hook install
 ```
 
 That writes a `.git/hooks/pre-commit` script that calls
-`keyhog scan --fast --git-staged --backend simd` (the same command
+`keyhog scan --fast --git-staged --backend cpu` (the same command
 `.pre-commit-hooks.yaml` exposes for the pre-commit framework).
 If a `pre-commit` hook already exists in the repo, `keyhog hook
 install` refuses to overwrite it - remove it (or run
@@ -50,9 +50,9 @@ is about to commit), not the working tree. Why this matters:
   form, not the working-tree form. The scanner sees what `git
   commit` would commit.
 
-The walk only includes files that are part of THIS commit, so it's
-fast even on huge repos. A typical commit touches a few files and
-the scan is under 50 ms.
+The walk only includes files that are part of this commit. Runtime depends on
+the staged bytes, detector corpus, binary, and host; use the command's reported
+duration to characterize a repository.
 
 ## What happens on a finding
 
@@ -74,7 +74,7 @@ $ git commit -m "add staging config"
   1. Revoke active secrets in the provider's dashboard.
 ```
 
-The hook is just `exec keyhog scan --fast --git-staged --backend simd`, so
+The hook is just `exec keyhog scan --fast --git-staged --backend cpu`, so
 this is the ordinary scan report over the *staged* blobs. Exit code is `1`,
 so git aborts the commit and your work-in-progress stays in the index. Your
 options:
@@ -111,17 +111,15 @@ This way the next contributor doesn't have to learn the trick.
 
 ## Performance
 
-Pre-commit scans are designed for sub-100 ms latency on typical
-commits. If yours feels slow:
+If a pre-commit scan feels slow:
 
 - `keyhog daemon start` (unix only). The daemon holds the compiled
   scanner in memory for editor-save or hook glue that scans stdin or
   one regular file. The default staged-file hook uses the in-process
   orchestrator because git source expansion, baseline policy, and
   verification are not daemon work.
-- `--fast` skips the entropy / ML scorer. Removes ~20% of detectors
-  but ~50% of scan time. Worth it for the pre-commit path; the full
-  scan still runs in CI.
+- `--fast` selects the documented reduced-cost scan policy. Keep the full scan
+  in CI so decoded, entropy, and deeper paths remain covered.
 
 ## Uninstall
 

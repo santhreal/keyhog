@@ -48,7 +48,7 @@ cargo build --release -p keyhog
 For development:
 
 ```sh
-cargo build               # debug build, ~30 s
+cargo build               # debug build
 cargo test -p keyhog-scanner --lib
 ```
 

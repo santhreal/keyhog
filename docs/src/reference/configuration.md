@@ -77,7 +77,7 @@ Each row is the same knob across all three layers. Defaults are
 | Autoroute cache file | platform cache file | `[system] autoroute_cache` | `--autoroute-cache` | Persisted fastest-correct backend decisions. Use an absolute file path or `off` to disable persistence and force auto-route cache misses to fail loudly. |
 | Bayesian calibration cache | off | `[system] calibration_cache` | `--calibration-cache` | Explicit per-detector confidence calibration file written by `keyhog calibrate`. Missing or damaged explicit files fail closed before scanning. |
 | GPU runtime policy | `auto` | `[system] gpu` | `--no-gpu` / `--require-gpu` | `auto` probes when routing can use GPU, `off` skips GPU init, and `required` fails closed when no usable GPU stack is available. Printed by `keyhog config --effective` and included in autoroute scan identity. |
-| Autoroute GPU candidates | off | `[system] autoroute_gpu` | `--autoroute-gpu` / `--no-autoroute-gpu` | Allows calibration to include GPU candidates for eligible workload buckets. Normal scans still require persisted fastest-correct evidence; this never benchmarks during production scans. |
+| Low-level calibration GPU control | off | `[system] autoroute_gpu` | `--autoroute-gpu` / `--no-autoroute-gpu` | Applies only to direct `scan --autoroute-calibrate` diagnostics. The canonical `keyhog calibrate-autoroute` command always measures every eligible backend, including GPU. Normal scans only consume persisted evidence. |
 | Coalesced batch pipeline | off | `[system] batch_pipeline` | `--batch-pipeline` / `--no-batch-pipeline` | Diagnostic/calibration route that bypasses the fused filesystem pipeline. Printed by `keyhog config --effective` and included in autoroute scan identity. |
 | AWS canary issuer extensions | embedded baseline | `[aws] canary_accounts` / `knockoff_accounts` | - | Extra 12-digit AWS account IDs treated as canary-token issuers during offline access-key metadata classification and verification suppression. |
 | Scanner tuning | compiled scanner defaults | `[tuning]` | - | Detection/recall route gates that affect engine work selection. These are explicit config so autoroute calibration identity includes them; ambient `KEYHOG_*` tuning env vars are ignored. |
@@ -243,10 +243,11 @@ explicit GPU backends, `off` behaves like `--no-gpu`, and `required` behaves
 like `--require-gpu`. The resolved value is printed by
 `keyhog config --effective` and is part of the autoroute scan identity.
 
-`autoroute_gpu` controls whether calibration runs may include GPU candidates
-for eligible workload buckets. It is off by default; installers pass
-`--autoroute-gpu` during the visible calibration phase. Normal scans never
-benchmark from this value; they consume persisted fastest-correct decisions.
+`autoroute_gpu` is a low-level control for direct
+`scan --autoroute-calibrate` diagnostics. The supported maintenance command,
+`keyhog calibrate-autoroute`, always supplies GPU candidate admission so every
+eligible backend is a peer. Normal scans do not hash or benchmark from this
+value; they consume persisted fastest-correct decisions.
 
 `batch_pipeline` forces the coalesced batch pipeline. Leave it `false` for the
 default fused filesystem route; set it only for calibration, diagnostics, or

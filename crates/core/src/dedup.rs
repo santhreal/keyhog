@@ -3,7 +3,7 @@
 //!
 //! This module provides the canonical [`DedupedMatch`] type and
 //! [`dedup_matches`] function. The full finding-identity taxonomy is documented
-//! in `docs/ARCHITECTURE.md` under "Finding identity and dedup"; keep this
+//! in `docs/src/architecture.md` under "Finding identity and dedup"; keep this
 //! module focused on operator-visible report grouping, not window-overlap raw
 //! hit dedup.
 

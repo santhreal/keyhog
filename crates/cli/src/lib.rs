@@ -1,6 +1,6 @@
 //! KeyHog CLI: the user-facing binary that wires sources → scanner → verifier →
 //! reporter together. This crate is the top of the dependency DAG (see
-//! `docs/ARCHITECTURE.md`); it owns orchestration and I/O, never detection logic.
+//! `docs/src/architecture.md`); it owns orchestration and I/O, never detection logic.
 //!
 //! # Module map (by responsibility)
 //!

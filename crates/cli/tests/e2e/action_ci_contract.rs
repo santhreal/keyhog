@@ -1650,10 +1650,7 @@ fn consumer_docs_state_release_assets_fail_closed_before_source_build() {
     let docs = [
         repo.join("README.md"),
         repo.join(".github/actions/keyhog/README.md"),
-        repo.join("site/pages/ci.html"),
-        repo.join("site/ci.html"),
-        repo.join("site/pages/quickstart.html"),
-        repo.join("site/quickstart.html"),
+        repo.join("docs/src/workflows/integrations.md"),
     ];
     let retired_claims = [
         "Auto-downloads a prebuilt binary; falls back to cargo build when no release asset matches",

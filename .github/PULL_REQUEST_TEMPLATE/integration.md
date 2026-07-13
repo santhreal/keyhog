@@ -1,4 +1,4 @@
-# Integration PR template
+# KeyHog integration PR template
 
 Copy-paste-ready material for opening a PR that adds keyhog to a
 third-party repo's CI. Two files (the workflow + an optional baseline)
@@ -31,15 +31,14 @@ of this repo, including:
 - credentials in git history (with `fetch-depth: 0`).
 
 **Cost to CI.**
-- ~20 MB single binary download (cacheable via `actions/cache`).
-- ~400 ms cold-start on hosted runners (GPU auto-disabled).
-- ~10 s wall-clock end-to-end for a ~5,000-file repo; ~1 s for
-  changed-files-only scans.
+- One platform release binary download (cacheable).
+- A visible one-time autoroute calibration when no explicit diagnostic backend
+  is requested.
+- Workload-dependent scan time reported in the Action job summary.
 - Single `libhyperscan5` apt package on Ubuntu runners.
 - No Python, no JVM, no Docker daemon, no daemon process.
 
-**False-positive expectations.** Measured ~5 FPs per 100k LOC after
-the first run. If your repo has known-test-fixture credentials,
+**False-positive expectations.** If your repo has known-test-fixture credentials,
 commit a baseline once (see "Adoption" below) and the action only
 fails on NEW findings going forward.
 
@@ -53,8 +52,8 @@ a baseline locally and include it:
 
 Then the action gates only on findings ABSENT from the baseline.
 
-**Trust.** keyhog is MIT/Apache-2.0 dual-licensed, ~22 MB single
-static binary, audited release pipeline (minisign-signed binaries,
+**Trust.** keyhog is MIT/Apache-2.0 dual-licensed with an audited release
+pipeline (minisign-signed binaries,
 SBOM artifact). No telemetry or "phone home"; the only network
 calls are when you explicitly run `keyhog scan --verify` to
 live-check a finding against the vendor's API.
@@ -65,7 +64,7 @@ Reproduce locally:
     keyhog scan .
 
 Project: https://github.com/santhsecurity/keyhog
-Drop-in recipes for other CI systems: https://github.com/santhsecurity/keyhog/blob/main/docs/DROP_IN_USAGE.md
+Other CI recipes: https://github.com/santhsecurity/keyhog/blob/main/docs/src/workflows/integrations.md
 ```
 
 ### The workflow file (single new file)
@@ -77,9 +76,8 @@ Drop at `.github/workflows/keyhog.yml`:
 # scanning; the job fails only on high-severity findings (info / low /
 # medium surface in code-scanning without blocking the merge).
 #
-# Cost on hosted runners: ~20 MB binary download (cacheable), ~400 ms
-# cold-start (GPU auto-disabled), ~10 s wall-clock for a 5k-file repo.
-# Single `libhyperscan5` apt package, no Python / JVM / Docker.
+# The Action reports measured duration and calibrates eligible backends on the
+# runner before its default auto scan.
 #
 # Adoption: if this is the first run on a repo with existing findings,
 # generate `.keyhog-baseline.json` once (keyhog scan --create-baseline)
@@ -110,23 +108,6 @@ jobs:
           format: sarif
           baseline: .keyhog-baseline.json   # remove if you didn't commit one
 ```
-
-### Optional: cache the binary across runs
-
-If your repo runs CI dozens of times a day, cache the downloaded
-binary so each run avoids the ~20 MB fetch:
-
-```yaml
-      - name: Cache keyhog
-        id: cache-keyhog
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/bin/keyhog
-          key: keyhog-${{ runner.os }}-v0.5.41
-```
-
-Place this step before the keyhog action; the composite action's
-download step is a no-op when the binary already exists on PATH.
 
 ## After the PR lands
 

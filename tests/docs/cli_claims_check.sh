@@ -4,8 +4,8 @@
 #
 # crates/scanner/tests/readme_claims.rs gates the README's NUMERIC claims
 # (899 detectors, pattern counts, ...). Nothing gated the mdBook (docs/src)
-# and marketing site (site/pages) CLI surface - which is exactly where these
-# hallucinated flags shipped and pointed users at commands that error:
+# CLI surface. This is where hallucinated flags can point users at commands
+# that error:
 #
 #   --disable-detectors / --enable-detectors  no per-ID toggle exists; the real
 #                                             control is --detectors <dir>
@@ -29,7 +29,7 @@
 
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-DOCS=("$ROOT/README.md" "$ROOT/docs/src" "$ROOT/site/pages")
+DOCS=("$ROOT/README.md" "$ROOT/docs/src")
 fail=0
 
 # Confirmed-nonexistent CLI surface. `keyhog scan --quiet` (not bare --quiet,

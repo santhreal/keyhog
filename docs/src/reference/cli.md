@@ -101,8 +101,8 @@ minus the `limit-` prefix and with dashes changed to underscores.
 | `keyhog scan --no-gpu`                | Short-circuit GPU init at hardware-probe time. The scanner runs as if no GPU adapter existed. |
 | `keyhog scan --require-gpu`           | Fail closed with exit `12` when no usable GPU stack is available. |
 | `keyhog scan --autoroute-calibrate`   | Installer/maintenance mode: benchmark parity-checked autoroute candidates and persist fastest-correct decisions. Normal scans do not use this mode. |
-| `keyhog scan --autoroute-gpu`         | Allow calibration mode to include GPU candidates for eligible workload buckets. Normal scans still require persisted fastest-correct evidence. |
-| `keyhog scan --no-autoroute-gpu`      | Override TOML `autoroute_gpu = true` for a single run. |
+| `keyhog scan --autoroute-gpu`         | Low-level direct-calibration diagnostic: include eligible GPU candidates. `keyhog calibrate-autoroute` always includes every eligible backend. |
+| `keyhog scan --no-autoroute-gpu`      | Low-level direct-calibration diagnostic: exclude GPU despite TOML. This is not used by canonical calibration. |
 | `keyhog scan --per-chunk-timeout-ms <MS>` | Attach an `Instant` deadline to every chunk scan. Default unset = no operator deadline; `[scan].per_chunk_timeout_ms` provides the persistent default. |
 | `keyhog scan --threads <N>`           | Pin the rayon worker count for this run. `.keyhog.toml` `[scan].threads` provides the persistent default. |
 | `keyhog scan --calibration-cache <PATH>` | Apply one explicit per-detector Bayesian confidence cache. Missing or invalid files fail closed. |

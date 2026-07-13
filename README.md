@@ -40,24 +40,24 @@ jobs:
         with: { path: ., severity: high, format: sarif }
 ```
 
-Cost to your CI: ~20 MB binary download (cacheable), ~400 ms cold-start
-on hosted runners (GPU auto-disabled, SIMD path), ~10 s wall-clock for
-a 5,000-file repo. Single `libhyperscan5` apt package, no Python, no
-JVM, no Docker daemon. Findings auto-upload to GitHub code-scanning as
-SARIF; adopt without breaking an existing tree by committing a baseline
+Release refs download the platform asset; branch/SHA refs build the checked-out
+source. With no explicit diagnostic backend, the Action visibly calibrates the
+runner before its default auto scan. The job summary reports measured duration;
+cost varies with the runner, cache, configuration, and repository. Findings
+auto-upload to GitHub code-scanning as SARIF; adopt without breaking an existing tree by committing a baseline
 (`keyhog scan --create-baseline .keyhog-baseline.json`) so the action
 fails only on NEW secrets.
 
-For ultra-lean CI installs there's now `cargo install keyhog
---no-default-features --features ci`: 13 MB binary (vs 22 MB full),
-~140 ms cold-start, no Hyperscan dependency, no wgpu/Vulkan probe,
-no libstdc++ link. Same 922 detectors, same ML/entropy/decode/multiline
+For system-library-free CI installs use `cargo install keyhog
+--no-default-features --features ci`: no Hyperscan dependency, no wgpu/Vulkan
+probe, and no libstdc++ link. It retains the same embedded detector and
+ML/entropy/decode/multiline
 data paths. Use this profile in self-built CI images where binary size
 or container cold-start matters; the prebuilt installer above stays the
 default for a turnkey single-binary download.
 
-GitLab CI, CircleCI, Drone, BuildKite, Jenkins, Bazel, pre-commit, Husky,
-lefthook recipes: [`docs/DROP_IN_USAGE.md`](docs/DROP_IN_USAGE.md).
+GitLab CI, CircleCI, Drone, BuildKite, Jenkins, pre-commit, Husky, and
+lefthook recipes: [integration recipes](docs/src/workflows/integrations.md).
 
 ### How it works
 
@@ -197,15 +197,17 @@ cargo install keyhog --no-default-features --features portable
 ```
 
 > `install.sh` / `install.ps1` (signed prebuilt) is the recommended path: it
-> selects the right platform asset and is a ~20 MB download in ~1 s,
-> versus a ~3-minute source build. For a source build, note that the **default**
+> selects and verifies the platform asset before installation. Download and
+> build time depend on the network, host, and cache. For a source build, note that the **default**
 > features link Hyperscan (a system lib available on Linux x86_64); on **macOS**
 > (incl. Apple Silicon) and any host without the Hyperscan dev libraries, build
 > with `--no-default-features --features portable` - the vyre CPU path, every
 > detection feature, no system-lib or pkg-config dependency.
 
-Works on **Linux**, **macOS** (Intel + Apple Silicon), **Windows**. Zero
-configuration. `keyhog scan .` works out of the box.
+Works on **Linux**, **macOS** (Intel + Apple Silicon), and **Windows**. The
+verified installers calibrate multi-backend builds before enabling default
+automatic scans; a source build must run `keyhog calibrate-autoroute` first or
+use an explicit diagnostic backend.
 
 The installer selects one asset per OS/architecture. The Linux x86_64 binary
 contains Hyperscan plus both VYRE CUDA and WGPU drivers; CUDA/NVRTC are loaded
@@ -246,7 +248,7 @@ curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.s
 sh keyhog-install.sh
 ```
 
-Daemon mode (sub-100 ms pre-commit scans) is Unix only. Everything
+Daemon mode is Unix only. Everything
 else works identically on Windows.
 
 ## Keep keyhog healthy and up to date
@@ -366,8 +368,9 @@ remediation guide, so a finding is never a black box:
   <img src="demo/keyhog-explain.gif" alt="keyhog explain github-classic-pat: detector spec dump (pattern ghp_[A-Za-z0-9]{36}, keyword, verification URL) followed by the github rotation guide and step-by-step remediation" width="860" />
 </p>
 
-Browse the full catalog at [`/site/detectors.html`](./site/detectors.html) -
-loads all 922 with severity + service + keyword filter.
+Browse detector authoring and inspection in the
+[detector reference](docs/src/detectors.md), or query the installed corpus with
+`keyhog detectors --search <term> --verbose`.
 
 ## Why higher recall, fewer false positives
 
@@ -508,9 +511,9 @@ build deps (skips the Hyperscan/Ghidra build step):
 - run: keyhog scan . --format sarif --severity high > keyhog.sarif
 ```
 
-Other CIs (GitLab, CircleCI, Drone, BuildKite, Jenkins), pre-commit
-recipes, Husky / lefthook, and the full SARIF schema:
-[`site/ci.html`](./site/ci.html) and [`docs/DROP_IN_USAGE.md`](docs/DROP_IN_USAGE.md).
+Other CIs, hook recipes, and SARIF behavior live in the canonical
+[CI guide](docs/src/workflows/ci.md) and
+[integration recipes](docs/src/workflows/integrations.md).
 
 ### Pre-commit hook
 
@@ -537,18 +540,16 @@ repos:
       - id: keyhog
 ```
 
-## Daemon mode (105× faster re-scan)
+## Daemon mode
 
-Every keyhog invocation pays a ~2 s cold start in the default desktop
-build (Hyperscan compile + GPU adapter probe). The lean ci profile
-above drops that to ~140 ms by skipping both. For pre-commit and
-IDE save handlers where even 140 ms is too much, run keyhog as a
-daemon: the cost is paid once per host, every subsequent scan is
-**~7 ms**:
+The daemon keeps the compiled scanner and calibrated backend state warm for
+eligible repeated stdin and single-file scans. Actual latency depends on the
+binary, corpus, host, accelerator state, cache warmth, and input size; measure
+it on the deployment host instead of relying on copied benchmark numbers.
 
 ```bash
 keyhog daemon start                    # Unix socket on $XDG_RUNTIME_DIR
-keyhog scan --stdin --daemon < .env    # 7 ms instead of 740 ms
+keyhog scan --stdin --daemon < .env
 keyhog daemon status
 keyhog daemon stop
 ```
@@ -561,13 +562,13 @@ run in-process. `--daemon=on` fails loudly when the daemon cannot honor
 the requested scan exactly.
 
 Use it in IDE save handlers, stdin/single-file hook glue, or per-commit
-CI loops that feed one file at a time. systemd / launchd unit examples in
-[`site/daemon.html`](./site/daemon.html).
+CI loops that feed one file at a time. See the
+[daemon workflow](docs/src/workflows/daemon.md) for routing and lifecycle semantics.
 
 Watch-mode for IDEs:
 
 ```bash
-keyhog watch ./src                     # inotify/FSEvents/RDCW; sub-100 ms per save
+keyhog watch ./src                     # inotify/FSEvents/RDCW
 ```
 
 ## System-wide credential triage
@@ -643,7 +644,8 @@ scanner is `Send + Sync`; share one across rayon workers. Streaming
 source helpers in `keyhog-sources` (file-system, git, stdin, Docker,
 S3, GCS, Azure Blob, GitHub org, GitLab group, Bitbucket workspace). Live verification in `keyhog-verifier`.
 
-Full API surface + stability policy: [`site/api.html`](./site/api.html).
+The library boundary is documented in the
+[architecture guide](docs/src/architecture.md) and crate-level Rust docs.
 
 ## Configuration
 
@@ -679,7 +681,6 @@ autoroute_cache = "/home/alice/.cache/keyhog/autoroute.json"  # or "off"
 calibration_cache = "/home/alice/.cache/keyhog/calibration.json"
 batch_pipeline = false                                       # true only for diagnostics/calibration
 gpu = "auto"                                                 # auto | off | required
-autoroute_gpu = false                                        # true only for calibration candidates
 
 [aws]
 canary_accounts = []           # extra 12-digit canary issuer accounts
@@ -733,7 +734,7 @@ approval to be renewed or removed before the scan can proceed.
 
 ## Architecture
 
-> **Contributor map:** [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) is the
+> **Contributor map:** [Architecture](./docs/src/architecture.md) is the
 > one-page guide to the whole repo: every top-level directory, the crate
 > layering, and the bytes→finding pipeline with each stage pointing at the
 > module that owns it. Start there to navigate the code.
@@ -746,7 +747,7 @@ crates/
   verifier/   Live credential verification for detectors with an active `[detector.verify]` endpoint
   cli/        CLI binary, daemon, watch, baselines, calibrate, hook installer
 detectors/    922 TOML files (data, not code)
-site/         Documentation site (17 pages, GitHub-Pages-ready)
+docs/src/     Canonical mdBook documentation deployed to GitHub Pages
 benchmarks/   Reproducible eval harness: corpus generators, scanner adapters, scorer, gate, README report generator
 tools/        Contract generators (gen_contracts.py, gen_companion_contracts.py)
 ```
@@ -763,9 +764,9 @@ Two-phase coalesced scan:
 Result: a multi-GB monorepo scans in seconds. Determinism is part of
 the contract . same input → same output, byte-exact, every time.
 
-Full architecture writeup, hardware routing matrix, profiling tips:
-[`site/architecture.html`](./site/architecture.html) and
-[`site/performance.html`](./site/performance.html).
+The full pipeline, routing ownership, and profiling entrypoints live in the
+[architecture guide](docs/src/architecture.md) and
+[backend reference](docs/src/backends.md).
 
 ## Other useful subcommands
 

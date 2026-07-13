@@ -6,7 +6,7 @@
 //! # Module map (by pipeline stage)
 //!
 //! The modules below are declared in dependency order, but they READ in pipeline
-//! order — the same bytes→finding flow as [`docs/ARCHITECTURE.md`] and the
+//! order — the same bytes→finding flow as [`docs/src/architecture.md`] and the
 //! method-level map in [`engine`] (`engine::mod` "# The one flow"). To find a
 //! responsibility, locate its stage:
 //!

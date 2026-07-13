@@ -144,7 +144,7 @@ keyhog scan --stdin < response.txt
 ```
 
 `keyhog scan -` (bare dash) is the same as `--stdin` (grep / wc
-convention; added in v0.5.28).
+convention).
 
 `--stdin` reads up to ~1 GiB; beyond that, write to a temp file and
 scan the path. Findings from stdin carry the `stdin` source. To get

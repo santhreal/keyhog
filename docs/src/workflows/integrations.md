@@ -1,4 +1,4 @@
-# Drop-in usage
+# Integration recipes
 
 Copy-paste integrations for KeyHog. Every snippet here is a complete,
 self-contained config: drop it in the indicated file, commit, and it
@@ -20,7 +20,6 @@ If you only need one section, jump to:
 - [BuildKite](#buildkite)
 - [Docker / Docker Compose](#docker--docker-compose)
 - [Jenkins](#jenkins)
-- [Bazel](#bazel)
 - [As a library (Rust)](#as-a-library-rust)
 - [Embedded in another CLI](#embedded-in-another-cli)
 - [SARIF for GitHub Advanced Security](#sarif-for-github-advanced-security)
@@ -147,11 +146,16 @@ jobs:
           baseline: .keyhog-baseline.json   # optional, see below
 ```
 
-Cost to your CI: ~20 MB binary download (cacheable), ~400 ms cold-start
-in CI (auto-disables GPU on hosted runners), ~10 s wall-clock for a
-5,000-file repo, single `libhyperscan5` apt package auto-installed on
-Ubuntu runners. No Python, no JVM, no Docker daemon. SARIF auto-uploads
-to GitHub code-scanning.
+The Action downloads the platform release asset for release refs, verifies its
+checksum, visibly calibrates every eligible backend when `backend` is omitted,
+and uploads SARIF. Branch and SHA refs build the checked-out Action source.
+Runtime and download size vary by release, host, cache warmth, and repository;
+the job summary records the measured duration.
+
+Release tags and explicit `version:` inputs require the matching published
+asset and checksum and fail closed if either is unavailable. Only branch/SHA
+Action refs may build from source, so a tagged workflow cannot silently execute
+different code from the requested release.
 
 Use `fail-on-findings: 'false'` when you want ordinary findings to be
 advisory during rollout. If you also set `verify: 'true'`, any
@@ -167,9 +171,9 @@ keyhog scan --create-baseline .keyhog-baseline.json
 git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
 ```
 
-### Manual (no composite-action dependency)
+### Manual installation
 
-If you want the install step explicit, this is equivalent:
+If you want the install step explicit, use the verified installer:
 
 ```yaml
 name: keyhog
@@ -189,10 +193,7 @@ jobs:
           fetch-depth: 0          # full history for --git-diff / --git-history
       - name: Install keyhog
         run: |
-          mkdir -p "$HOME/.local/bin"
-          curl -fsSL https://github.com/santhsecurity/keyhog/releases/latest/download/keyhog-linux-x86_64 \
-            -o "$HOME/.local/bin/keyhog"
-          chmod +x "$HOME/.local/bin/keyhog"
+          curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Scan working tree
         run: keyhog scan . --format sarif -o keyhog.sarif --min-confidence 0.3
@@ -360,32 +361,6 @@ pipeline {
     }
 }
 ```
-
-## Bazel
-
-`BUILD.bazel`:
-
-```python
-load("@rules_rust//rust:defs.bzl", "rust_binary")
-
-# Pre-built binary check
-sh_test(
-    name = "keyhog_scan",
-    srcs = ["//tools:keyhog_scan.sh"],
-    args = ["--min-confidence", "0.3"],
-    tags = ["secret-scan"],
-)
-```
-
-`tools/keyhog_scan.sh`:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-keyhog scan "$@" $(bazel info workspace)
-```
-
-Run with `bazel test //:keyhog_scan`.
 
 ## As a library (Rust)
 
@@ -569,16 +544,16 @@ keyhog scan . --deep --min-confidence 0.3
 # Pin worker count to host CPU
 keyhog scan . --threads $(nproc)
 
-# Force GPU when an RTX is present (5x faster on 60+ MB scans)
+# Force GPU for a diagnostic/benchmark run
 keyhog scan . --backend gpu
 
 # Stream findings to a file (no buffer) for very large scans
 keyhog scan . --format jsonl >> findings.jsonl
 ```
 
-`--fast` typically runs in under 200 ms on a 100-file commit and is
-the right default for pre-commit. `--deep` adds ~30% wall time but
-catches multi-line and decoded secrets the fast path skips.
+`--fast` is the reduced-cost pre-commit policy. `--deep` enables the documented
+deeper paths for release/security gates. Measure both on the actual repository;
+the relative cost is workload- and hardware-dependent.
 
 ## Troubleshooting
 

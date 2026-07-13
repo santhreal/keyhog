@@ -16,14 +16,6 @@ const CONFIG_DOC: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../docs/src/reference/configuration.md"
 ));
-const SITE_IGNORE_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../site/pages/ignore.html"
-));
-const SITE_IGNORE_BUILT: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../site/ignore.html"
-));
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
@@ -64,8 +56,6 @@ fn docs_state_allowlist_governance_and_expiry_fail_closed() {
         ("README.md", README),
         ("docs/src/suppressions.md", SUPPRESSIONS_DOC),
         ("docs/src/reference/configuration.md", CONFIG_DOC),
-        ("site/pages/ignore.html", SITE_IGNORE_SOURCE),
-        ("site/ignore.html", SITE_IGNORE_BUILT),
     ];
     for (path, doc) in docs {
         for stale in [
@@ -95,10 +85,8 @@ fn docs_state_allowlist_governance_and_expiry_fail_closed() {
         "configuration.md must state [allowlist] governance is enforced"
     );
     assert!(
-        README.contains("Entries past `expires` fail allowlist load")
-            && SITE_IGNORE_SOURCE.contains("fail allowlist load")
-            && SITE_IGNORE_BUILT.contains("fail allowlist load"),
-        "README and ignore site pages must state expired allowlist entries fail closed"
+        README.contains("Entries past `expires` fail allowlist load"),
+        "README must state expired allowlist entries fail closed"
     );
 }
 

@@ -8,28 +8,20 @@ use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
 #[test]
-fn daemon_site_docs_do_not_claim_forced_daemon_fallback() {
-    let docs = [
-        (
-            "site/pages/daemon.html",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../site/pages/daemon.html"
-            )),
-        ),
-        (
-            "site/daemon.html",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../site/daemon.html"
-            )),
-        ),
-    ];
+fn daemon_docs_do_not_claim_forced_daemon_fallback() {
+    let docs = [(
+        "docs/src/workflows/daemon.md",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/src/workflows/daemon.md"
+        )),
+    )];
     for (path, doc) in docs {
+        let doc = doc.to_ascii_lowercase();
         for stale in [
             "client falls back",
-            "falls back\nto an in-process scan",
-            "daemon wasn't\nreachable",
+            "falls back to an in-process scan",
+            "daemon wasn't reachable",
         ] {
             assert!(
                 !doc.contains(stale),
@@ -38,11 +30,10 @@ fn daemon_site_docs_do_not_claim_forced_daemon_fallback() {
         }
         for required in [
             "--daemon=on",
-            "hard\ncontract",
-            "actionable error",
+            "require the daemon route",
+            "is an error",
             "--daemon=auto",
-            "opportunistically use a live daemon",
-            "--daemon=off",
+            "use a reachable daemon only when it can honor the request",
             "--daemon=off",
         ] {
             assert!(

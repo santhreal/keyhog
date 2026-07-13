@@ -6,6 +6,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Consolidated user and contributor documentation into one canonical mdBook
+  under `docs/src/`. Removed the duplicate hand-maintained HTML site, moved the
+  architecture and integration references into the book, made orphan/duplicate
+  documentation a source gate, and corrected Action, daemon, hook, autoroute,
+  performance, and installation claims against shipped behavior.
 - Made GPU an ordinary peer in canonical autoroute calibration and removed the
   calibration-only GPU switch from persisted scan identity. Fresh GitHub
   Action scans now calibrate before using `auto`; independent daemon/watch

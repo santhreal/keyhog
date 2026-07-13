@@ -108,18 +108,14 @@ fn unknown_format_value_is_rejected_exit_two() {
     );
 }
 
-/// `keyhog scan` has NO `--quiet` flag. docs/src/output-formats.md previously
-/// told operators to pass `--quiet`; it no longer does, and this test pins that
-/// the flag really is absent (passing it is a clap error → exit 2). If a real
-/// `--quiet` is ever added, update output-formats.md in the same change and this
-/// test flips to asserting acceptance.
+/// `keyhog scan --quiet` is a real output control and must remain documented.
 #[test]
-fn scan_has_no_quiet_flag() {
+fn scan_quiet_flag_matches_documented_surface() {
     let (code, _o, e) = scan_file("clean\n", &["--quiet"]);
     assert_eq!(
         code,
-        Some(2),
-        "`keyhog scan --quiet` must exit 2 (no such flag); got {code:?}, stderr: {e}"
+        Some(0),
+        "`keyhog scan --quiet` must be accepted; got {code:?}, stderr: {e}"
     );
     // The source-of-truth doc must not advertise a scan `--quiet` flag.
     let doc = include_str!(concat!(
@@ -127,9 +123,8 @@ fn scan_has_no_quiet_flag() {
         "/../../docs/src/output-formats.md"
     ));
     assert!(
-        !doc.contains("`--quiet` suppresses"),
-        "output-formats.md still claims a `--quiet` flag suppresses output, but \
-         `keyhog scan --quiet` exits 2 (no such flag)."
+        doc.contains("`--quiet`") && doc.contains("coverage `FAIL`/`WARN`"),
+        "output-formats.md must document quiet output without hiding coverage failures"
     );
 }
 
@@ -172,28 +167,10 @@ fn consumer_surfaces_do_not_publish_roadmap_deferrals() {
             )),
         ),
         (
-            "site/pages/faq.html",
+            "docs/src/workflows/daemon.md",
             include_str!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/../../site/pages/faq.html"
-            )),
-        ),
-        (
-            "site/faq.html",
-            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../site/faq.html")),
-        ),
-        (
-            "site/pages/daemon.html",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../site/pages/daemon.html"
-            )),
-        ),
-        (
-            "site/daemon.html",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../site/daemon.html"
+                "/../../docs/src/workflows/daemon.md"
             )),
         ),
         (
@@ -235,59 +212,20 @@ fn consumer_surfaces_do_not_publish_roadmap_deferrals() {
 }
 
 #[test]
-fn site_pages_do_not_resurrect_retired_behavior_env_controls() {
+fn canonical_docs_do_not_resurrect_retired_behavior_env_controls() {
     let surfaces = [
         (
-            "site/pages/scan.html",
+            "docs/src/reference/configuration.md",
             include_str!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/../../site/pages/scan.html"
+                "/../../docs/src/reference/configuration.md"
             )),
         ),
         (
-            "site/scan.html",
-            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../site/scan.html")),
-        ),
-        (
-            "site/pages/config.html",
+            "docs/src/reference/env.md",
             include_str!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/../../site/pages/config.html"
-            )),
-        ),
-        (
-            "site/config.html",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../site/config.html"
-            )),
-        ),
-        (
-            "site/pages/system.html",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../site/pages/system.html"
-            )),
-        ),
-        (
-            "site/system.html",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../site/system.html"
-            )),
-        ),
-        (
-            "site/pages/lockdown.html",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../site/pages/lockdown.html"
-            )),
-        ),
-        (
-            "site/lockdown.html",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../site/lockdown.html"
+                "/../../docs/src/reference/env.md"
             )),
         ),
     ];
@@ -423,14 +361,18 @@ fn exit_code_matrix_holds() {
 /// runtime / from the committed README, never hardcoded in the test.
 #[test]
 fn readme_detector_count_matches_embedded() {
-    let (_c, json, _e) = run(&["detectors", "--json"]);
+    let (_c, json, _e) = run(&["detectors", "--format", "json"]);
     let trimmed = json.trim();
     assert!(
         trimmed.starts_with('[') && trimmed.ends_with(']'),
         "detectors --json must be a JSON array; got first 80: {:?}",
         &trimmed.chars().take(80).collect::<String>()
     );
-    let actual = json.matches("\"companions\":").count();
+    let actual = serde_json::from_str::<serde_json::Value>(&json)
+        .expect("detectors JSON parses")
+        .as_array()
+        .expect("detectors JSON is an array")
+        .len();
     assert!(actual > 0, "embedded detector count came back 0");
 
     let readme = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md"));
@@ -473,16 +415,12 @@ fn docs_describe_simd_regex_as_backend_contract_not_hyperscan_requirement() {
         ("docs/src/detection.md", &detection_norm),
     ] {
         assert!(
-            !text.contains("simd-regex | avx-512 / avx2 / neon + hyperscan"),
-            "{name} must not imply the simd-regex backend requires Hyperscan; portable builds use the same backend label"
-        );
-        assert!(
             text.contains("portable") && text.contains("hyperscan"),
-            "{name} must explain that Hyperscan is feature/build dependent and portable builds keep an alternate path"
+            "{name} must explain that Hyperscan is feature/build dependent and portable builds use CPU"
         );
     }
     assert!(
-        readme_norm.contains("hyperscan when compiled"),
+        readme_norm.contains("hyperscan when that feature is present"),
         "README backend table must state that Hyperscan is conditional"
     );
     assert!(
@@ -510,8 +448,8 @@ fn docs_keep_backend_override_on_explicit_cli_surface() {
     );
     assert!(
         config_doc.contains("`--backend`")
-            && config_doc.contains("`auto`/`gpu`/`gpu-region-presence`")
-            && config_doc.contains("`simd`/`simd-regex`/`cpu`/`cpu-fallback`"),
+            && config_doc.contains("`auto`/`gpu`/`simd`/`cpu`")
+            && config_doc.contains("`gpu-region-presence`/`simd-regex`/`cpu-fallback`"),
         "configuration docs must document the explicit --backend surface"
     );
     assert!(

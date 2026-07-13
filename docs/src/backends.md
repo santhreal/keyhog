@@ -26,11 +26,11 @@ is the owner of persisted automatic routing.
 
 ## What “same results” means
 
-Calibration compares canonical full `RawMatch` records, not only detector IDs or
-finding counts. A candidate is rejected if its matches differ from the
-Hyperscan reference, if repeated reference trials are inconsistent, or if the
-GPU reports a runtime degradation. Normal automatic scans do not benchmark or
-silently replace a rejected backend.
+Calibration compares canonical match identity: chunk index, detector id,
+credential hash, file path, line, and byte offset. A candidate is rejected if
+that identity differs from the Hyperscan reference, if repeated reference trials
+are inconsistent, or if required GPU timing evidence is invalid. Normal
+automatic scans do not benchmark or silently replace a rejected backend.
 
 This parity contract covers match bytes and offsets before the common
 suppression, confidence, verification, deduplication, and reporter stages. The
@@ -42,10 +42,11 @@ before both the reporting-floor decision and serialized output.
 ## Why size alone is insufficient
 
 Two inputs with the same byte count can have different winners. Autoroute also
-keys evidence by chunk count, largest source size and whether that size is full
-source metadata or a payload fallback, detector/pattern shape, decode density,
-source family, resolved configuration, build features, and exact host identity.
-It does not interpolate a nearby bucket.
+keys evidence by stable logarithmic ranges for bytes, chunk count, largest
+source size, and decode density, plus detector/pattern shape, source family,
+resolved configuration, build features, and host identity. It does not
+interpolate from a neighbouring range key; a measured key nevertheless covers
+the values grouped into that range.
 
 Runtime lifetime matters too. A one-shot process includes GPU first-dispatch
 cost. A ready daemon has already initialized accelerator state and uses the warm

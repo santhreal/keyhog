@@ -6,7 +6,7 @@ artifact for download. The job summary shows the scan path, severity floor,
 report name, raw exit code, finding count, and scan duration for fast PR triage.
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
 ```
 
 That's it. Defaults: scan the whole repo, fail on `high` or above, output
@@ -19,7 +19,7 @@ also keep the artifact so the failed job is still diagnosable.
 ## Full reference
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
   with:
     path: .                     # file or directory to scan
     severity: high              # info | low | medium | high | critical
@@ -44,7 +44,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 ```
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
   with:
     baseline: keyhog-baseline.json
 ```
@@ -53,7 +53,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 
 ```yaml
 - id: keyhog
-  uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
+  uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
   with:
     fail-on-findings: 'false'
 
@@ -69,14 +69,12 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 | `duration-ms` | Wall-clock scan duration in milliseconds from the action wrapper. |
 | `report`   | Path to the produced report file. |
 
-## What it costs your CI
+## Runtime and dependencies
 
 | Resource | Value |
 | --- | --- |
-| Prebuilt binary download | ~20 MB binary plus `.sha256`; checksum verified before execution |
-| Cold-start (Hyperscan compile + ML weights load) | ~2 s the first run, ~500 ms warm (Hyperscan DB cached in `~/.cache/keyhog`) |
-| Per-file scan throughput | ~500 MB/s on hosted runners (AVX-512 SIMD + Hyperscan) |
-| Wall-clock for a 5k-file repo | typically under 10 s end-to-end |
+| Prebuilt binary download | Release binary plus `.sha256`; checksum verified before execution |
+| Scan duration | Reported by the Action as `duration-ms`; varies by host, cache, config, and input |
 | Runtime dependencies | `libhyperscan5` (auto-installed via apt on Ubuntu runners); none on macOS/Windows |
 | Toolchains required | none for release-tag prebuilts; Rust only for branch/SHA source builds |
 | GPU | optional; install-time calibration measures every backend available on the runner and persists the fastest correct route |
@@ -103,7 +101,7 @@ source backends) is included.
 
 ## Recipes
 
-See [`docs/DROP_IN_USAGE.md`](../../../docs/DROP_IN_USAGE.md) for
+See [integration recipes](../../../docs/src/workflows/integrations.md) for
 pre-commit hooks, Husky, lefthook, GitLab CI, CircleCI, Drone, Jenkins,
-BuildKite, Bazel, Docker, library integration, and SARIF/Slack/Discord
+BuildKite, Docker, library integration, and SARIF/Slack/Discord
 webhook recipes.

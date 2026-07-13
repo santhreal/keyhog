@@ -43,7 +43,5 @@ pub mod sarif_information_uri_santhsecurity;
 pub mod scan_git_diff_head_worktree_json_shape;
 pub mod scan_help_documents_exit_codes;
 pub mod scan_require_gpu_forbids_silent_cpu_fallback;
-pub mod site_api_embedded_detectors_phantom;
-pub mod site_hooks_phantom_install_flags;
 pub mod stream_progress_line_within_file;
 pub mod watch_duplicate_findings_on_create;

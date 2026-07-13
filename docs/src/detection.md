@@ -133,7 +133,13 @@ stale; it does not relax a detector to make a backend faster.
 
 ### Strict Backend Parity
 
-KeyHog supports three search backends: pure Rust CPU RegexSet, SIMD/Hyperscan (`simd-regex`), and GPU/Vyre region-presence. The `keyhog calibrate-autoroute` command determines the fastest backend based on hardware, config digest, and workload sizes. **Hardware/backend selection is purely a throughput optimization and must preserve identical findings.** Parity is guaranteed; a missing or invalid calibration table will raise a status error (fail-closed) rather than silently degrading scanning accuracy.
+KeyHog supports three search backends: pure Rust CPU, SIMD/Hyperscan
+(`simd-regex`), and GPU/VYRE region presence. Portable builds retain the
+pure-Rust trigger path without Hyperscan. `keyhog calibrate-autoroute` measures
+every eligible backend for the host/config/workload key and rejects candidates
+whose canonical match identity differs from the reference. A missing or invalid
+decision is an error; automatic routing never silently substitutes another
+backend.
 
 When comparing settings, record the effective config, detector digest, input
 identity, backend, host/accelerator identity, and complete findings—not only

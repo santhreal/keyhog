@@ -10,6 +10,7 @@
 
 # Core concepts
 
+- [Architecture](./architecture.md)
 - [How detection works](./detection.md)
 - [Detectors](./detectors.md)
 - [Backends and routing](./backends.md)
@@ -22,6 +23,7 @@
 - [Daemon and warm scans](./workflows/daemon.md)
 - [Pre-commit hook](./workflows/precommit.md)
 - [CI integration](./workflows/ci.md)
+- [Integration recipes](./workflows/integrations.md)
 
 # Reference
 

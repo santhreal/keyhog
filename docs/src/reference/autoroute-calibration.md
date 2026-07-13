@@ -9,9 +9,12 @@
 KeyHog scans with the **fastest backend that is proven correct** for your
 hardware and workload: Hyperscan/SIMD, scalar CPU, or GPU. It does not guess.
 Autoroute is *not* a fallback hierarchy: at install time KeyHog measures every
-eligible backend, keeps only those that return findings **byte-identical to the
-reference scanner**, and records the fastest survivor. Normal scans then do a
-zero-cost table lookup; they never benchmark mid-scan.
+eligible backend, rejects candidates whose canonical match identity differs
+from the reference (chunk, detector id, credential hash, file, line, and byte
+offset), and records the fastest survivor. Normal scans then do a zero-cost
+table lookup; they never benchmark mid-scan. Report metadata outside that
+identity is produced by the shared post-processing/reporting tail rather than
+by backend-specific extraction.
 
 Because the decision is *measured*, it must be recorded before `--backend auto`
 (the default) can run. A fresh install has no recorded decisions yet, so until
@@ -90,10 +93,12 @@ calibration, even when they do not change which backend is fastest:
 this identity; pair it with `keyhog backend --autoroute --json` to verify that a single
 setting change in `ScanConfig` produced a new `config_digest` row.
 
-Every lookup is exact at the complete workload-key level. A neighbouring size
-bucket—even one with the same CPU winner—is not evidence that the same backend
-is fastest here. Uncalibrated buckets therefore fail closed; KeyHog never
-interpolates or clamps them to a CPU/GPU substitute.
+Every lookup is exact at the complete workload-key level. Size, chunk-count,
+maximum-file, and decode-density dimensions use stable logarithmic ranges; the
+decision proves the measured representative for that full range key, not every
+individual byte length inside it. A neighbouring range is not evidence for this
+one. Uncalibrated keys fail closed; KeyHog never interpolates or clamps them to
+a CPU/GPU substitute.
 
 ## One-shot scans and the daemon
 
