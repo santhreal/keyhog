@@ -172,8 +172,10 @@ unavailable result instead of being timed as a silent CPU fallback.
 
 `make -C benchmarks targets` includes the executable deep-mode target: all
 4,368 expected plaintexts recovered exactly, with no blind P0-P12 phase. It is
-marked `target_spec`, so an unmet capability stays visibly red without
-misrepresenting the current release as having already reached it.
+marked `target_spec` because it is an explicit, expensive capability gate. The
+checked v0.5.41 SIMD/deep artifact currently satisfies it with 4,368 true
+positives, zero false negatives, and zero false positives. The artifact records
+the exact commit and detector-set identity.
 
 ## Tiers
 

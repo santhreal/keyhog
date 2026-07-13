@@ -311,7 +311,8 @@ impl ScannerConfig {
 
     /// High-precision mass-scan preset: minimise false positives at the cost of
     /// some recall, for scanning huge corpora where every FP is expensive to
-    /// triage. Fully offline and fast (no ML, no entropy sweep, shallow decode).
+    /// triage. Fully offline, with ML confidence scoring, no entropy sweep, and
+    /// shallow decode.
     ///
     /// - `entropy_enabled = false`: generic high-entropy matching is the single
     ///   largest FP source; precision mode drops it entirely.
