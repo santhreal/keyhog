@@ -12,6 +12,7 @@
 use keyhog_core::RawMatch;
 use keyhog_scanner::telemetry::DogfoodEvent;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Bump on any incompatible wire-format change. Server replies with
 /// its supported version and build/corpus identity in the [`Hello`] handshake;
@@ -29,10 +30,13 @@ use serde::{Deserialize, Serialize};
 /// * v2 extension - `ScanResults` gained source coverage gaps so
 ///   daemon-side skipped input cannot report clean.
 /// * v3 - `Hello` binds the daemon to its Git build and canonical detector
-///   rules digest, not merely the package version. All suppression, dogfood,
-///   and coverage fields are required; malformed frames cannot synthesize
-///   clean-looking zero values.
-pub const WIRE_VERSION: u32 = 3;
+///   rules digest, not merely the package version. The original suppression,
+///   dogfood-event, and coverage fields are required; malformed frames cannot
+///   synthesize clean-looking zero values.
+/// * v4 - `ScanResults` carries exact static-recovery rejection aggregates and
+///   the omitted-detail count. These cannot default because reconstructing exact
+///   totals from a bounded detail list would silently undercount.
+pub const WIRE_VERSION: u32 = 4;
 
 /// Maximum length of a single framed message body. 64 MiB ceiling
 /// matches `MAX_SCAN_CHUNK_BYTES * 64` so a chunk batch fits, but
@@ -50,13 +54,18 @@ pub enum Request {
     /// Scan a single chunk of in-memory text. Returns matches
     /// directly. Use this for the pre-commit / stdin / HAR-line case
     /// where the client already has the bytes in hand.
-    ScanText { path: Option<String>, text: String },
+    ScanText {
+        path: Option<String>,
+        text: String,
+        dogfood: bool,
+    },
     /// Scan a filesystem path (a regular file) using the daemon's
     /// pre-compiled scanner. Path resolution happens on the daemon
     /// side; relative paths resolve against `working_dir`.
     ScanPath {
         path: String,
         working_dir: Option<String>,
+        dogfood: bool,
     },
     /// Liveness + cheap status (uptime, scans served, detector count).
     Health,
@@ -89,10 +98,9 @@ pub enum Response {
     /// example/test keys suppressed") fires even when the suppression
     /// happened on the other side of the socket.
     ///
-    /// `dogfood_events` is reserved for a protocol-owned dogfood mode. The
-    /// shipped CLI currently keeps `--dogfood` on the in-process scanner route
-    /// because daemon scanners are precompiled and cannot honor per-request
-    /// dogfood capture without a protocol-owned request field.
+    /// `dogfood_events` and its exact aggregates are populated only when the
+    /// request enables dogfood capture. The daemon installs one request-scoped
+    /// telemetry owner, so concurrent clients cannot share detail state.
     ScanResults {
         path: Option<String>,
         /// Security: each `RawMatch` carries the *unredacted* plaintext
@@ -107,13 +115,18 @@ pub enum Response {
         /// under that 0600 guarantee - never trust this field to be
         /// redacted on the wire.
         matches: Vec<RawMatch>,
-        /// Scanner-side example suppression count. Required by wire v3; the
+        /// Scanner-side example suppression count. Required since wire v3; the
         /// strict Hello handshake rejects older peers before scan traffic.
         engine_example_suppressions: u64,
-        /// Per-decision dogfood events captured on the daemon side. Required by
-        /// wire v3 even though the current request policy leaves it empty.
-        /// Empty until the protocol has an explicit per-request dogfood field.
+        /// Per-decision dogfood events captured on the daemon side.
         dogfood_events: Vec<DogfoodEvent>,
+        /// Exact per-reason static-recovery rejection-attempt counts. Populated
+        /// only when this request enables dogfood capture. Counts remain
+        /// complete after the bounded detail buffer fills.
+        static_recovery_rejections: BTreeMap<String, u64>,
+        /// Number of daemon-side detail events omitted after the bounded trace
+        /// filled. Required in wire v4 so a client never invents a zero count.
+        dogfood_detail_events_dropped: u64,
         /// Source coverage gaps recorded inside the daemon
         /// while expanding a `ScanPath` request. The client process cannot read
         /// the daemon's process-local counters directly, so missing this field

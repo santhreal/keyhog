@@ -406,7 +406,7 @@ fn daemon_frame_error() {
 #[cfg(unix)]
 #[test]
 fn daemon_protocol_happy() {
-    assert_eq!(WIRE_VERSION, 3);
+    assert_eq!(WIRE_VERSION, 4);
 }
 #[cfg(unix)]
 #[test]

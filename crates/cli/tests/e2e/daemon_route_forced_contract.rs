@@ -438,6 +438,7 @@ async fn daemon_ignores_keyhog_dogfood_env_for_wire_events() {
     let request = Request::ScanText {
         path: Some("demo.env".into()),
         text: "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n".into(),
+        dogfood: false,
     };
     let response = API
         .daemon_client_round_trip(&mut client, &request)
@@ -449,6 +450,8 @@ async fn daemon_ignores_keyhog_dogfood_env_for_wire_events() {
             matches,
             engine_example_suppressions,
             dogfood_events,
+            static_recovery_rejections,
+            dogfood_detail_events_dropped,
             ..
         } => {
             assert!(
@@ -463,9 +466,107 @@ async fn daemon_ignores_keyhog_dogfood_env_for_wire_events() {
                 dogfood_events.is_empty(),
                 "daemon must ignore ambient KEYHOG_DOGFOOD and avoid hidden event capture; got {dogfood_events:?}"
             );
+            assert!(
+                static_recovery_rejections.is_empty(),
+                "ambient dogfood must not leak aggregate capture into a request scope"
+            );
+            assert_eq!(
+                dogfood_detail_events_dropped, 0,
+                "ambient dogfood must not create omitted request details"
+            );
         }
         other => panic!("expected ScanResults, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn daemon_request_transports_exact_static_recovery_dogfood_state() {
+    let daemon = DaemonGuard::start();
+    let socket = daemon.runtime_dir().join("keyhog.sock");
+    let mut client = keyhog::daemon::client::connect(&socket)
+        .await
+        .expect("connect daemon");
+    let text = format!(
+        "{}const malformed = [256]; const xorKey = [1]; \
+         String.fromCharCode(...malformed.map((b, i) => b ^ xorKey[i % xorKey.length]));\n",
+        aws_key_line()
+    );
+    let response = API
+        .daemon_client_round_trip(
+            &mut client,
+            &Request::ScanText {
+                path: Some("dogfood.js".into()),
+                text,
+                dogfood: true,
+            },
+        )
+        .await
+        .expect("dogfood scan text");
+
+    match response {
+        Response::ScanResults {
+            static_recovery_rejections,
+            dogfood_events,
+            dogfood_detail_events_dropped,
+            ..
+        } => {
+            assert_eq!(
+                static_recovery_rejections.get("literal_byte_array_element"),
+                Some(&1)
+            );
+            assert_eq!(
+                dogfood_events
+                    .iter()
+                    .filter(|event| matches!(
+                        event,
+                        keyhog_scanner::telemetry::DogfoodEvent::StaticRecoveryRejected { .. }
+                    ))
+                    .count(),
+                1
+            );
+            assert_eq!(dogfood_detail_events_dropped, 0);
+        }
+        other => panic!("expected ScanResults, got {other:?}"),
+    }
+}
+
+#[test]
+fn forced_daemon_dogfood_prints_the_request_trace() {
+    let daemon = DaemonGuard::start();
+    let input = format!(
+        "{}const malformed = [256]; const xorKey = [1]; \
+         String.fromCharCode(...malformed.map((b, i) => b ^ xorKey[i % xorKey.length]));\n",
+        aws_key_line()
+    );
+    let out = daemon_stdin_scan(daemon.runtime_dir(), None, &["--dogfood"], input.as_bytes());
+
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "the planted secret must keep the normal finding exit code; output={}",
+        combined_output(&out)
+    );
+    let stderr = String::from_utf8(out.stderr).expect("dogfood stderr is UTF-8");
+    let payload = stderr
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .find(|value| value.get("dogfood").is_some())
+        .unwrap_or_else(|| panic!("daemon dogfood JSON missing from stderr: {stderr}"));
+    let dogfood = &payload["dogfood"];
+    assert_eq!(
+        dogfood["static_recovery_rejections"]["literal_byte_array_element"],
+        1
+    );
+    assert_eq!(dogfood["detail_events_dropped"], 0);
+    assert_eq!(
+        dogfood["events"]
+            .as_array()
+            .expect("dogfood events array")
+            .iter()
+            .filter(|event| event["kind"] == "static_recovery_rejected")
+            .count(),
+        1
+    );
 }
 
 fn combined_output(out: &std::process::Output) -> String {

@@ -103,7 +103,9 @@ CPU backend to make the retry succeed.
 The fast path accepts exactly one input: `--stdin` or one regular file. The
 client still applies the shared finding finalization needed by eligible scans,
 including inline suppression, allowlist/rule suppression, match resolution, and
-deduplication.
+deduplication. `--dogfood` is also request-scoped: the daemon captures bounded
+detail plus exact static-recovery aggregates for that client only, then the
+client renders the same stderr trace as an in-process scan.
 
 The in-process orchestrator is required for directories, multiple inputs, Git
 modes, remote/cloud/container/binary sources, baselines, Merkle skip state, live
@@ -140,8 +142,9 @@ status` and `daemon stop` intentionally tolerate an identity mismatch so the
 operator can inspect and terminate it; `status` prints the exact mismatch and
 the strict scan route refuses it. In `--daemon=auto` that refusal is visible on
 stderr before the identical request runs in process. In `--daemon=on` it is an
-error. Scan-result frames require suppression telemetry, dogfood telemetry, and
-source-coverage fields; missing fields are malformed protocol data, not
+error. Wire v4 scan-result frames require suppression telemetry, exact dogfood
+aggregates, bounded dogfood details, and source-coverage fields. Missing fields
+are malformed protocol data, not
 permission to synthesize zeroes that could hide incomplete scanning.
 
 ## Autoroute semantics

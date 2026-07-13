@@ -60,6 +60,7 @@ async fn scan_path_request_roundtrips() {
     let sent = Request::ScanPath {
         path: "src/main.rs".into(),
         working_dir: Some("/tmp/project".into()),
+        dogfood: true,
     };
     frame::write_request(&mut client, &sent)
         .await
@@ -69,9 +70,14 @@ async fn scan_path_request_roundtrips() {
         .expect("read ScanPath")
         .expect("a frame");
     match got {
-        Request::ScanPath { path, working_dir } => {
+        Request::ScanPath {
+            path,
+            working_dir,
+            dogfood,
+        } => {
             assert_eq!(path, "src/main.rs");
             assert_eq!(working_dir.as_deref(), Some("/tmp/project"));
+            assert!(dogfood);
         }
         other => panic!("expected ScanPath, got {other:?}"),
     }
@@ -204,6 +210,7 @@ async fn a_body_delivered_one_byte_at_a_time_reassembles_into_the_exact_frame() 
     let sent = Request::ScanText {
         path: Some("trickle.txt".into()),
         text: "a slowly delivered scan body".into(),
+        dogfood: true,
     };
     let wire = wire_bytes_for(&sent).await;
     assert!(
@@ -236,9 +243,14 @@ async fn a_body_delivered_one_byte_at_a_time_reassembles_into_the_exact_frame() 
         .expect("a fully reassembled frame");
     feed.await.expect("feeder task");
     match got {
-        Request::ScanText { path, text } => {
+        Request::ScanText {
+            path,
+            text,
+            dogfood,
+        } => {
             assert_eq!(path.as_deref(), Some("trickle.txt"));
             assert_eq!(text, "a slowly delivered scan body");
+            assert!(dogfood);
         }
         other => panic!("trickled frame did not reassemble to the original: {other:?}"),
     }

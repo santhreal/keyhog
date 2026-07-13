@@ -488,10 +488,9 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
         || args.no_ml
         || args.scan_comments
         || args.benchmark
-        || args.dogfood
     {
         return Some(
-            "this scan sets scan-mode, engine, benchmark, or dogfood options that require the in-process scanner",
+            "this scan sets scan-mode, engine, or benchmark options that require the in-process scanner",
         );
     }
     if args.backend.is_some()
@@ -566,6 +565,10 @@ fn effective_single_file_path(args: &ScanArgs) -> Result<Option<&Path>> {
 
 #[cfg(unix)]
 async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
+    crate::reset_scan_runtime_state();
+    if args.dogfood {
+        keyhog_scanner::telemetry::enable_dogfood();
+    }
     let wall_start = chrono::Utc::now();
     let socket = effective_daemon_socket(args);
     let mut conn = client::connect(&socket).await.with_context(|| {
@@ -582,7 +585,11 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
     let (matches, source_coverage_gaps) = if args.stdin {
         let text = read_stdin_to_string(args)?;
         let resp = conn
-            .round_trip(&Request::ScanText { path: None, text })
+            .round_trip(&Request::ScanText {
+                path: None,
+                text,
+                dogfood: args.dogfood,
+            })
             .await?;
         unwrap_scan_results(resp)?
     } else if let Some(path) = effective_single_file_path(args)? {
@@ -593,6 +600,7 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
             .round_trip(&Request::ScanPath {
                 path: path.to_string_lossy().into_owned(),
                 working_dir,
+                dogfood: args.dogfood,
             })
             .await?;
         unwrap_scan_results(resp)?
@@ -614,6 +622,9 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
         keyhog_core::embedded_detector_count(),
     );
     crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
+    if args.dogfood {
+        crate::orchestrator::reporting::dump_dogfood_trace();
+    }
 
     if !source_coverage_gaps.is_empty() {
         let palette = crate::style::for_stderr();
@@ -664,6 +675,8 @@ fn unwrap_scan_results(resp: Response) -> Result<(Vec<RawMatch>, SourceCoverageG
             matches,
             engine_example_suppressions,
             dogfood_events,
+            static_recovery_rejections,
+            dogfood_detail_events_dropped,
             source_coverage_gaps,
             ..
         } => {
@@ -671,16 +684,28 @@ fn unwrap_scan_results(resp: Response) -> Result<(Vec<RawMatch>, SourceCoverageG
             // counters. The reporter and `dump_dogfood_trace()` both
             // read these, so without the merge the count would stay
             // at 0 (the OnceLock cell here is distinct from the
-            // daemon's). Wire v3 requires this telemetry on every
-            // ScanResults frame; the Hello handshake rejects older
-            // peers before a scan request is sent.
+            // daemon's). Wire v4 requires exact aggregates on every
+            // ScanResults frame; the Hello handshake rejects older peers
+            // before a scan request is sent.
+            // Validate the reason vocabulary before mutating any client-side
+            // telemetry. A newer daemon must not leave partial replay state in
+            // this process when its aggregate schema is incompatible.
+            keyhog_scanner::telemetry::merge_daemon_aggregates(
+                &static_recovery_rejections,
+                dogfood_detail_events_dropped,
+            )
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "daemon returned incompatible dogfood telemetry: {error}. Restart it with `keyhog daemon stop && keyhog daemon start`, or pass `--daemon=off`."
+                )
+            })?;
             if engine_example_suppressions > 0 {
                 keyhog_scanner::telemetry::add_example_suppressions(
                     engine_example_suppressions as usize,
                 );
             }
             if !dogfood_events.is_empty() {
-                keyhog_scanner::telemetry::append_events(dogfood_events);
+                keyhog_scanner::telemetry::append_daemon_events(dogfood_events);
             }
             Ok((matches, source_coverage_gaps))
         }

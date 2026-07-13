@@ -426,13 +426,26 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             active_scans: state.active_scans.load(Ordering::Relaxed),
             detector_count: state.detector_count,
         },
-        Request::ScanText { path, text } => scan_text(state, path, text).await,
-        Request::ScanPath { path, working_dir } => scan_path(state, path, working_dir).await,
+        Request::ScanText {
+            path,
+            text,
+            dogfood,
+        } => scan_text(state, path, text, dogfood).await,
+        Request::ScanPath {
+            path,
+            working_dir,
+            dogfood,
+        } => scan_path(state, path, working_dir, dogfood).await,
         Request::Shutdown => Response::Shutdown,
     }
 }
 
-async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> Response {
+async fn scan_text(
+    state: &ServerState,
+    path: Option<String>,
+    text: String,
+    dogfood: bool,
+) -> Response {
     state.active_scans.fetch_add(1, Ordering::Relaxed);
     let scanner = state.scanner.clone();
     let router = state.router.clone();
@@ -440,6 +453,9 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
     let fragment_scan_lock = state.fragment_scan_lock.clone();
     let chunk_path = path.clone();
     let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    if dogfood {
+        telemetry.enable_dogfood();
+    }
     // Hand the actual scan to a blocking thread - calibrated backend scanning
     // is CPU-heavy and not async-aware. Without `spawn_blocking` a
     // large scan would stall the tokio reactor and block every
@@ -466,21 +482,17 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
                 Ok(matches)
             },
         )?;
-        let (engine_example_suppressions, dogfood_events) = drain_daemon_scan_telemetry(&telemetry);
-        Ok((matches, engine_example_suppressions, dogfood_events))
+        let telemetry = telemetry.drain();
+        Ok((matches, telemetry))
     })
     .await;
     state.active_scans.fetch_sub(1, Ordering::Relaxed);
     state.scans_served.fetch_add(1, Ordering::Relaxed);
 
     match res {
-        Ok(Ok((matches, engine_example_suppressions, dogfood_events))) => Response::ScanResults {
-            path,
-            matches,
-            engine_example_suppressions,
-            dogfood_events,
-            source_coverage_gaps: SourceCoverageGaps::default(),
-        },
+        Ok(Ok((matches, telemetry))) => {
+            scan_results_response(path, matches, telemetry, SourceCoverageGaps::default())
+        }
         Ok(Err(e)) => Response::Error {
             message: format!("daemon: scan_text failed: {e:#}"),
         },
@@ -526,7 +538,12 @@ pub fn resolve_scan_target(path: &str, working_dir: Option<&str>) -> Result<Path
     }
 }
 
-async fn scan_path(state: &ServerState, path: String, working_dir: Option<String>) -> Response {
+async fn scan_path(
+    state: &ServerState,
+    path: String,
+    working_dir: Option<String>,
+    dogfood: bool,
+) -> Response {
     let resolved = match resolve_scan_target(&path, working_dir.as_deref()) {
         Ok(target) => target,
         Err(message) => return Response::Error { message },
@@ -539,23 +556,18 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
     let fragment_scan_lock = state.fragment_scan_lock.clone();
     let resolved_owned = resolved.clone();
     let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    if dogfood {
+        telemetry.enable_dogfood();
+    }
     type ScanOutput = (
         Vec<RawMatch>,
-        u64,
-        Vec<keyhog_scanner::telemetry::DogfoodEvent>,
+        keyhog_scanner::telemetry::ScanTelemetrySnapshot,
         SourceCoverageGaps,
     );
     let res = tokio::task::spawn_blocking(move || -> Result<ScanOutput> {
         let (chunks, source_coverage_gaps) = daemon_scan_path_chunks(&resolved_owned)?;
         if chunks.is_empty() {
-            let (engine_example_suppressions, dogfood_events) =
-                drain_daemon_scan_telemetry(&telemetry);
-            return Ok((
-                Vec::new(),
-                engine_example_suppressions,
-                dogfood_events,
-                source_coverage_gaps,
-            ));
+            return Ok((Vec::new(), telemetry.drain(), source_coverage_gaps));
         }
         let matches = keyhog_scanner::telemetry::with_scan_telemetry(
             &telemetry,
@@ -574,34 +586,42 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
                 Ok(per_chunk.into_iter().flatten().collect())
             },
         )?;
-        let (engine_example_suppressions, dogfood_events) = drain_daemon_scan_telemetry(&telemetry);
-        Ok((
-            matches,
-            engine_example_suppressions,
-            dogfood_events,
-            source_coverage_gaps,
-        ))
+        Ok((matches, telemetry.drain(), source_coverage_gaps))
     })
     .await;
     state.active_scans.fetch_sub(1, Ordering::Relaxed);
     state.scans_served.fetch_add(1, Ordering::Relaxed);
 
     match res {
-        Ok(Ok((matches, engine_example_suppressions, dogfood_events, source_coverage_gaps))) => {
-            Response::ScanResults {
-                path: Some(resolved.to_string_lossy().into_owned()),
-                matches,
-                engine_example_suppressions,
-                dogfood_events,
-                source_coverage_gaps,
-            }
-        }
+        Ok(Ok((matches, telemetry, source_coverage_gaps))) => scan_results_response(
+            Some(resolved.to_string_lossy().into_owned()),
+            matches,
+            telemetry,
+            source_coverage_gaps,
+        ),
         Ok(Err(e)) => Response::Error {
             message: format!("daemon: scan_path failed: {e:#}"),
         },
         Err(e) => Response::Error {
             message: format!("daemon: scan task panicked or was cancelled: {e:#}"),
         },
+    }
+}
+
+fn scan_results_response(
+    path: Option<String>,
+    matches: Vec<RawMatch>,
+    telemetry: keyhog_scanner::telemetry::ScanTelemetrySnapshot,
+    source_coverage_gaps: SourceCoverageGaps,
+) -> Response {
+    Response::ScanResults {
+        path,
+        matches,
+        engine_example_suppressions: telemetry.example_suppressions,
+        dogfood_events: telemetry.dogfood_events,
+        static_recovery_rejections: telemetry.static_recovery_rejections,
+        dogfood_detail_events_dropped: telemetry.dogfood_detail_events_dropped,
+        source_coverage_gaps,
     }
 }
 
@@ -658,17 +678,6 @@ fn source_coverage_gaps_since(before: keyhog_sources::SkipCounts) -> SourceCover
             .saturating_sub(before.archive_duplicate_scan_unavailable),
         git_lfs_pointer: after.git_lfs_pointer.saturating_sub(before.git_lfs_pointer),
     }
-}
-
-fn drain_daemon_scan_telemetry(
-    telemetry: &keyhog_scanner::telemetry::ScanTelemetry,
-) -> (u64, Vec<keyhog_scanner::telemetry::DogfoodEvent>) {
-    // Drain telemetry alongside the matches so the client can merge per-scan
-    // counts into its own process-local counters. Each daemon request owns a
-    // `ScanTelemetry` scope, so concurrent requests cannot observe or reset one
-    // another's counts/events.
-    let snapshot = telemetry.drain();
-    (snapshot.example_suppressions, snapshot.dogfood_events)
 }
 
 #[doc(hidden)]

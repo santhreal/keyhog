@@ -2,10 +2,11 @@
 
 use keyhog::daemon::frame;
 use keyhog::daemon::protocol::{Request, Response, SourceCoverageGaps, WIRE_VERSION};
+use std::collections::BTreeMap;
 use tokio::io::AsyncWriteExt;
 
 #[tokio::test]
-async fn daemon_wire_v3_hello_roundtrip() {
+async fn daemon_wire_v4_hello_roundtrip() {
     let (mut client, mut server) = tokio::io::duplex(64 * 1024);
 
     frame::write_request(&mut client, &Request::Hello)
@@ -72,6 +73,7 @@ async fn daemon_scan_text_roundtrip_carries_matches() {
         &Request::ScanText {
             path: Some("test.txt".into()),
             text: concat!("AK", "IAQYLPMN5HFIQR7XYA").into(),
+            dogfood: false,
         },
     )
     .await
@@ -86,6 +88,8 @@ async fn daemon_scan_text_roundtrip_carries_matches() {
             matches: vec![sample],
             engine_example_suppressions: 0,
             dogfood_events: vec![],
+            static_recovery_rejections: BTreeMap::new(),
+            dogfood_detail_events_dropped: 0,
             source_coverage_gaps: Default::default(),
         },
     )
@@ -102,32 +106,46 @@ async fn daemon_scan_text_roundtrip_carries_matches() {
 }
 
 #[test]
-fn daemon_wire_v3_requires_every_scan_result_integrity_field() {
-    for (json, missing) in [
-        (
-            r#"{"kind":"scan_results","path":null,"matches":[]}"#,
-            "engine_example_suppressions",
-        ),
-        (
-            r#"{"kind":"scan_results","path":null,"matches":[],"engine_example_suppressions":0}"#,
-            "dogfood_events",
-        ),
-        (
-            r#"{"kind":"scan_results","path":null,"matches":[],"engine_example_suppressions":0,"dogfood_events":[]}"#,
-            "source_coverage_gaps",
-        ),
-        (
-            r#"{"kind":"scan_results","path":null,"matches":[],"engine_example_suppressions":0,"dogfood_events":[],"source_coverage_gaps":{}}"#,
-            "over_max_size",
-        ),
+fn daemon_wire_v4_requires_every_scan_result_integrity_field() {
+    let complete = Response::ScanResults {
+        path: None,
+        matches: vec![],
+        engine_example_suppressions: 0,
+        dogfood_events: vec![],
+        static_recovery_rejections: BTreeMap::new(),
+        dogfood_detail_events_dropped: 0,
+        source_coverage_gaps: SourceCoverageGaps::default(),
+    };
+    let complete = serde_json::to_value(complete).expect("serialize complete response");
+
+    for missing in [
+        "engine_example_suppressions",
+        "dogfood_events",
+        "source_coverage_gaps",
+        "static_recovery_rejections",
+        "dogfood_detail_events_dropped",
     ] {
-        let error = serde_json::from_str::<Response>(json)
-            .expect_err("wire-v3 ScanResults must reject omitted integrity fields");
+        let mut incomplete = complete.clone();
+        incomplete
+            .as_object_mut()
+            .expect("response object")
+            .remove(missing);
+        let error = serde_json::from_value::<Response>(incomplete)
+            .expect_err("wire-v4 ScanResults must reject omitted integrity fields");
         assert!(
             error.to_string().contains(missing),
             "missing {missing} must be named in the frame error: {error}"
         );
     }
+
+    let mut incomplete = complete;
+    incomplete["source_coverage_gaps"]
+        .as_object_mut()
+        .expect("coverage object")
+        .remove("over_max_size");
+    let error = serde_json::from_value::<Response>(incomplete)
+        .expect_err("wire-v4 must reject incomplete source coverage");
+    assert!(error.to_string().contains("over_max_size"));
 }
 
 #[test]
@@ -137,6 +155,8 @@ fn daemon_scan_results_source_coverage_gaps_roundtrip_exactly() {
         matches: vec![],
         engine_example_suppressions: 0,
         dogfood_events: vec![],
+        static_recovery_rejections: BTreeMap::from([("json_base64".into(), 3)]),
+        dogfood_detail_events_dropped: 7,
         source_coverage_gaps: SourceCoverageGaps {
             binary: 1,
             ..Default::default()
@@ -147,10 +167,14 @@ fn daemon_scan_results_source_coverage_gaps_roundtrip_exactly() {
     match decoded {
         Response::ScanResults {
             source_coverage_gaps,
+            static_recovery_rejections,
+            dogfood_detail_events_dropped,
             ..
         } => {
             assert_eq!(source_coverage_gaps.binary, 1);
             assert_eq!(source_coverage_gaps.total(), 1);
+            assert_eq!(static_recovery_rejections["json_base64"], 3);
+            assert_eq!(dogfood_detail_events_dropped, 7);
         }
         other => panic!("expected ScanResults, got {other:?}"),
     }
