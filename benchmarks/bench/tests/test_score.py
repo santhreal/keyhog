@@ -1,5 +1,7 @@
 import pathlib
 
+import pytest
+
 from bench.corpora.base import LabeledRecord
 from bench.score import (
     _build_file_index,
@@ -26,6 +28,49 @@ def test_overlap_matches_containment_escapes_and_base64():
     assert overlap("line1\\nline2", "line1\nline2")
     assert overlap("c2VjcmV0LXZhbHVl", "secret-value")
     assert not overlap("alpha", "omega")
+
+
+def test_exact_recovery_records_reject_encoded_or_containing_values(tmp_path):
+    record = LabeledRecord(
+        id="recovered",
+        secret="secret-value",
+        label=True,
+        category="recovery/p01-base64",
+        file_path="sample.js",
+        match_mode="exact",
+    )
+
+    encoded = score(
+        [record],
+        [{"file": "sample.js", "value": "c2VjcmV0LXZhbHVl"}],
+        tmp_path,
+    )
+    containing = score(
+        [record],
+        [{"file": "sample.js", "value": "prefix-secret-value-suffix"}],
+        tmp_path,
+    )
+    exact = score(
+        [record],
+        [{"file": "sample.js", "value": "secret-value"}],
+        tmp_path,
+    )
+
+    assert (encoded.overall.tp, encoded.overall.fp, encoded.overall.fn) == (0, 1, 1)
+    assert (containing.overall.tp, containing.overall.fp, containing.overall.fn) == (0, 1, 1)
+    assert (exact.overall.tp, exact.overall.fp, exact.overall.fn) == (1, 0, 0)
+
+
+def test_labeled_record_rejects_unknown_match_contract():
+    with pytest.raises(ValueError, match="unsupported match_mode"):
+        LabeledRecord(
+            id="bad-contract",
+            secret="secret-value",
+            label=True,
+            category="recovery",
+            file_path="sample.js",
+            match_mode="contains",
+        )
 
 
 def test_score_counts_tp_fp_fn_and_ignore_records(tmp_path: pathlib.Path):

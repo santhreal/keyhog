@@ -244,7 +244,7 @@ def found_record_ids(
             continue
         value = f.get("value") or ""
         for rec in by_key[key]:
-            if rec.label and not rec.ignore and overlap(value, rec.secret):
+            if rec.label and not rec.ignore and _record_matches(rec, value):
                 found.add(rec.id)
     return found
 
@@ -260,6 +260,17 @@ def _max_conf(a: float | None, b: float | None) -> float | None:
     if b is None:
         return a
     return a if a >= b else b
+
+
+def _record_matches(record: LabeledRecord, value: str) -> bool:
+    """Apply the corpus-owned recovered-value contract."""
+    if record.match_mode == "exact":
+        return value == record.secret
+    if record.match_mode != "overlap":
+        raise ValueError(
+            f"record {record.id!r} has unknown match_mode {record.match_mode!r}"
+        )
+    return overlap(value, record.secret)
 
 
 def score(
@@ -303,7 +314,7 @@ def score(
         # Did it overlap a positive secret on this file?
         matched_positive = False
         for rec in recs:
-            if rec.label and not rec.ignore and overlap(value, rec.secret):
+            if rec.label and not rec.ignore and _record_matches(rec, value):
                 hit_ids.add(rec.id)
                 matched_positive = True
                 hits = record_hits[rec.id]

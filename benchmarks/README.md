@@ -15,6 +15,8 @@ hand-edited.
 ```bash
 make mirror     # generate the 15k synthetic SecretBench-mirror corpus (off-git, neutral layout)
 make bench      # run every scanner on the mirror -> results/<host>/
+make ioc-recovery-corpus # generate the deterministic P0-P12 recovery corpus
+make ioc-recovery # compare keyhog full, fast, and deep on exact recovery
 make report     # render reports/ + inject the leaderboard into ../README.md
 make analyze    # print top FP/FN examples for detector tuning
 make test       # pytest the package (scorer truth, loaders, injection idempotence)
@@ -32,8 +34,10 @@ Run them explicitly with `make targets`.
 ## What it measures
 
 - **Detection:** TP / FP / FN → precision / recall / F1, overall and
-  per-category, by the SecretBench containment rule (a finding's surfaced
-  value contains or is contained-in a labeled secret).
+  per-category. General secret corpora use the SecretBench containment rule.
+  Recovery records require the scanner to surface the exact recovered
+  plaintext, so an encoded value or a larger containing string earns no
+  recovery credit.
 - **Speed:** wall time + throughput (MB/s) + peak RSS (`/usr/bin/time -v`),
   per run.
 - **Host:** OS / kernel / CPU / cores / RAM / GPU + VRAM, captured per run so
@@ -74,8 +78,10 @@ benchmarks/
   bench/                  importable package
     schema.py             RunResult + nested records (the common contract)
     hardware.py           host capture
-    score.py              overlap/attribution scorer (bit-identical to legacy score.py)
-    corpora/              mirror · homefield · creddata · perf(kernel) adapters
+    score.py              corpus-owned exact or overlap attribution scorer
+    corpus_integrity.py   manifest and scan-tree digest verification
+    generator_checksums.py shared checksum-valid synthetic-token primitives
+    corpora/              mirror · homefield · creddata · ioc-recovery · perf adapters
     scanners/             keyhog (+config matrix) · betterleaks · kingfisher · trufflehog · titus · noseyparker
     runner.py             one (scanner,config,corpus) measurement -> RunResult
     leaderboard.py        the matrix: run many scanners/configs, write results/<host>/, rank
@@ -86,7 +92,8 @@ benchmarks/
   generators/             corpus generators (not git-ignored)
     mirror/               synthetic SecretBench-shape generator (generate.py + providers/negatives/wrappers)
     homefield/            competitor home-turf harvesters (harvest_betterleaks.py · harvest_kingfisher.py)
-  corpora/                generated data (git-ignored; reproducible via `make mirror` / `make creddata`)
+    ioc_recovery/         deterministic P0-P12 JavaScript recovery generator
+  corpora/                generated data (git-ignored; reproducible through Make targets)
   results/<host>/         one RunResult JSON per run (git-ignored; regenerable)
   reports/                generated markdown (committed): leaderboard.md · perf.md · recall-gap.md
   baselines/              committed known-good scoreboard anchors (regression history)
@@ -100,12 +107,73 @@ benchmarks/
 | `homefield-betterleaks` | betterleaks' own `tps`/`fps` rule examples | yes | harvested |
 | `homefield-kingfisher` | kingfisher's own rule examples | yes | harvested |
 | `creddata` | [Samsung/CredData](https://github.com/Samsung/CredData) (~11k files, pinned commit) | yes (T=pos, F/X=neg) | `make creddata` |
+| `ioc-recovery` | 336 sources across P0-P12 JavaScript concealment phases (4,368 fixtures) | yes, exact plaintext | `make ioc-recovery-corpus` |
 | `kernel` | Linux kernel tree | no (perf only) | set `KEYHOG_BENCH_KERNEL` |
 
 Benchmarked tools and datasets are credited with their licenses in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Competitor corpora and
 CredData are **gitignored / fetched locally**; keyhog redistributes none of
 their data.
+
+## Exact secret recovery benchmark
+
+`ioc-recovery` is an official corpus in the same adapter, runner, scorer,
+result, and reporting system as every other KeyHog benchmark. It adapts the
+P0-P12 progression from [*Benchmarking Large Language Models for IoC Recovery
+under Adversarial Code Obfuscation and
+Encryption*](https://arxiv.org/abs/2605.06910) to deterministic synthetic,
+checksum-valid GitHub-token-shaped values:
+
+| phase | transformation |
+|---|---|
+| P0 | plaintext baseline |
+| P1-P4 | Base64, identifier changes, dead code, and structural changes |
+| P5-P6 | XOR and AES-256-CBC with embedded recovery material |
+| P7-P12 | XOR or AES combined with the simple, dead-code, and structural transforms |
+
+The paper evaluates 336 programs across these 13 phases. KeyHog's generator
+therefore emits 4,368 JavaScript fixtures by default. The paper's published
+HTML currently contains an unresolved `github-repo` placeholder where its
+artifact link should be, so this corpus is a reproducible methodology
+adaptation, not a claim of byte-for-byte identity with unavailable source
+files. It uses no third-party dataset bytes.
+
+Every value is synthetic and deterministic. P5-P12 embed the key and recovery
+logic in the program, matching the program-analysis task rather than creating
+a brute-force benchmark. Generation requires Node.js for its standard
+`crypto` implementation of AES-256-CBC. The generator verifies each encrypted
+value round-trips before publishing the corpus, and the test suite executes all
+13 phase variants against their exact expected plaintext.
+
+Run the mode comparison with:
+
+```bash
+make -C benchmarks ioc-recovery
+```
+
+The result directory contains ordinary `RunResult` JSON for `full`, `fast`,
+and `deep`. Phase categories (`recovery/p00-*` through `recovery/p12-*`) make
+the exact capability boundary visible instead of collapsing it into one
+aggregate score.
+
+The Make target holds the backend at deterministic SIMD so differences isolate
+scan policy. A GPU host can measure the backend and mode cross-product without
+changing the corpus or scorer:
+
+```bash
+cd benchmarks
+python -m bench leaderboard --corpus ioc-recovery --scanners keyhog \
+  --matrix backend,mode --out results-ioc-recovery-backends
+```
+
+Each row records host hardware and the full config identity. Explicit GPU rows
+use `--require-gpu`, so an unavailable or failed accelerator is reported as an
+unavailable result instead of being timed as a silent CPU fallback.
+
+`make -C benchmarks targets` includes the executable deep-mode target: all
+4,368 expected plaintexts recovered exactly, with no blind P0-P12 phase. It is
+marked `target_spec`, so an unmet capability stays visibly red without
+misrepresenting the current release as having already reached it.
 
 ## Tiers
 
@@ -148,6 +216,7 @@ vectors without manual babysitting:
   after a real gain, never down to hide one).
 - **leaderboard + speed/RSS:** `bench-nightly` (nightly): renders the tables.
 - **strict recall under evasion:** `runners-nightly` (the Rust strict matrix).
+- **exact secret recovery:** `bench-nightly` (the P0-P12 full/fast/deep matrix).
 - **test depth:** `ci` (`all_tests`, property, e2e on every push).
 
 `loop` deliberately does **not** `--inject` the README: the published tables are
@@ -178,6 +247,7 @@ Scoring passes `--no-gpu` for the deterministic SIMD path on the default
 of timing a CPU fallback. GPU↔SIMD parity is a separate release gate. The
 CredData corpus is
 pinned to an exact commit so a score is reproducible against a fixed dataset
-revision. The scorer is bit-identical to the now-retired
-`tools/secretbench/scoring/score.py` it replaced (its attribution + per-category
-conservation rules are regression-anchored in `bench/tests/test_score.py`).
+revision. The overlap scorer remains bit-identical to the now-retired
+`tools/secretbench/scoring/score.py` it replaced. Exact mode is deliberately
+stricter for recovery corpora. Both contracts and their per-category
+conservation rules are regression-anchored in `bench/tests/`.

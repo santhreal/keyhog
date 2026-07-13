@@ -6,6 +6,13 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- The unified benchmark harness now includes an official deterministic secret
+  recovery corpus adapted from the P0-P12 methodology in arXiv:2605.06910.
+  Its 4,368 generated JavaScript fixtures cover plaintext, Base64, identifier,
+  dead-code, structural, XOR, and AES-256-CBC variants; answer keys remain
+  outside the scan tree, exact scoring rejects encoded or containing aliases,
+  and one target compares `full`, `fast`, and `deep` through ordinary
+  `RunResult` output.
 - `--git-staged` now reads the exact blob object IDs and bytes from Git's
   index instead of reopening same-named working-tree files. NUL-delimited raw
   records preserve newline and non-UTF-8 Unix filenames, staged renames are

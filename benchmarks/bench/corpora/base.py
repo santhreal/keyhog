@@ -46,6 +46,17 @@ class LabeledRecord:
     line_start: int = 0
     line_end: int = 0
     ignore: bool = False
+    # ``overlap`` preserves the historical SecretBench scoring contract
+    # (containment/escape/Base64 aliases). Recovery corpora use ``exact`` so
+    # reporting an encoded representation cannot earn plaintext credit.
+    match_mode: str = "overlap"
+
+    def __post_init__(self) -> None:
+        if self.match_mode not in {"overlap", "exact"}:
+            raise ValueError(
+                f"record {self.id!r} has unsupported match_mode "
+                f"{self.match_mode!r}; expected 'overlap' or 'exact'"
+            )
 
 
 class Corpus(ABC):
@@ -165,6 +176,7 @@ def load_jsonl_manifest(path: pathlib.Path) -> list[LabeledRecord]:
                 file_path=r.get("on_disk_path") or r.get("file_path", ""),
                 line_start=int(r.get("start_line", 0) or 0),
                 line_end=int(r.get("end_line", 0) or 0),
+                match_mode=r.get("match_mode", "overlap"),
             ))
     return out
 
@@ -178,6 +190,9 @@ def resolve_corpus(name: str, **kw) -> Corpus:
     if name == "mirror":
         from .mirror import MirrorCorpus
         return MirrorCorpus(**kw)
+    if name in ("ioc-recovery", "ioc_recovery"):
+        from .ioc_recovery import IocRecoveryCorpus
+        return IocRecoveryCorpus(**kw)
     if name in ("homefield-betterleaks", "homefield_betterleaks", "betterleaks-homefield"):
         from .homefield import HomefieldCorpus
         return HomefieldCorpus(turf="betterleaks", **kw)
@@ -191,6 +206,6 @@ def resolve_corpus(name: str, **kw) -> Corpus:
         from .perf_corpus import KernelCorpus
         return KernelCorpus(**kw)
     raise SystemExit(
-        f"unknown corpus {name!r}; known: mirror, homefield-betterleaks, "
-        f"homefield-kingfisher, creddata, kernel"
+        f"unknown corpus {name!r}; known: mirror, ioc-recovery, "
+        f"homefield-betterleaks, homefield-kingfisher, creddata, kernel"
     )

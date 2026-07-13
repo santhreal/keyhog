@@ -249,6 +249,20 @@ def test_keyhog_gpu_benchmark_rows_use_explicit_gpu_policy(tmp_path):
     assert scanner._env(ScannerConfig(backend="gpu")) == {}
 
 
+def test_keyhog_deep_benchmark_mode_is_explicit_and_matrix_owned(tmp_path):
+    scanner = scanners.KeyhogScanner(binary="/bin/true")
+    deep = ScannerConfig(backend="simd", mode="deep")
+    full = ScannerConfig(backend="simd", mode="full")
+
+    deep_cmd = scanner._cmd(tmp_path, deep, tmp_path / "deep.json", None)
+    full_cmd = scanner._cmd(tmp_path, full, tmp_path / "full.json", None)
+
+    assert "--deep" in deep_cmd
+    assert "--deep" not in full_cmd
+    assert {cfg.mode for cfg in scanner.matrix(["mode"])} == {"full", "fast", "deep"}
+    assert deep.config_id == "simd-nocache-nodaemon-deep"
+
+
 def test_keyhog_scanner_reports_timeout_as_timeout(monkeypatch, tmp_path):
     scanner = scanners.KeyhogScanner(binary="/unused/keyhog")
     timed_out = base.RunStats(exit_code=-1, timed_out=True)

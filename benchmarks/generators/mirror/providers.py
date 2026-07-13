@@ -32,6 +32,7 @@ def _rand_chars(rnd: random.Random, alphabet: str, length: int) -> str:
 
 
 from alphabets import B62, B64, B64URL, HEX  # noqa: E402
+from bench.generator_checksums import crc32_base62  # noqa: E402
 
 
 # Tokens for several detector families (github classic/fine-grained PATs,
@@ -41,42 +42,6 @@ from alphabets import B62, B64, B64URL, HEX  # noqa: E402
 # for production scans but artificially floors bench recall on these
 # families. Generate real checksums so the bench measures detector
 # logic, not the fixture's CRC bookkeeping.
-
-_GH_BASE62_DIGITS = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-
-
-def _crc32_iso_hdlc(data: bytes) -> int:
-    # Standard CRC-32 (ISO HDLC), same polynomial and reflection that
-    # keyhog's `checksum::github::crc32` uses (0xEDB88320, reflected).
-    # Hand-rolled rather than `zlib.crc32` to keep the per-byte path
-    # explicit + auditable against the Rust impl.
-    crc = 0xFFFFFFFF
-    for byte in data:
-        crc ^= byte
-        for _ in range(8):
-            if crc & 1:
-                crc = (crc >> 1) ^ 0xEDB88320
-            else:
-                crc >>= 1
-    return crc ^ 0xFFFFFFFF
-
-
-def _base62_encode_u32(value: int, width: int) -> str:
-    # Left-pad to `width` with '0'. Matches `checksum::github::base62_encode_u32`.
-    if value == 0:
-        return "0" * width
-    digits = []
-    while value > 0:
-        digits.append(chr(_GH_BASE62_DIGITS[value % 62]))
-        value //= 62
-    while len(digits) < width:
-        digits.append("0")
-    return "".join(reversed(digits))
-
-
-def _crc32_base62(entropy: str, width: int = 6) -> str:
-    return _base62_encode_u32(_crc32_iso_hdlc(entropy.encode()), width)
-
 
 # ── provider-shape builders (one per credential family) ────────────
 
@@ -126,7 +91,7 @@ def github_classic_pat(rnd: random.Random) -> str:
     # as `Invalid` and dropped them in scan.rs:723 before emit, flooring
     # github_classic_pat recall on the bench at 0%.
     entropy = _rand_chars(rnd, B62, 30)
-    crc = _crc32_base62(entropy, 6)
+    crc = crc32_base62(entropy, 6)
     return "g" + "h" + "p" + "_" + entropy + crc
 
 
@@ -138,7 +103,7 @@ def github_fine_grained_pat(rnd: random.Random) -> str:
     # rotated through GitHub's emit path.
     left = _rand_chars(rnd, B62, 22)
     right_entropy = _rand_chars(rnd, B62, 53)
-    right_crc = _crc32_base62(right_entropy, 6)
+    right_crc = crc32_base62(right_entropy, 6)
     right = right_entropy + right_crc
     return "g" + "i" + "t" + "h" + "u" + "b" + "_" + "p" + "a" + "t" + "_" + left + "_" + right
 
@@ -146,21 +111,21 @@ def github_fine_grained_pat(rnd: random.Random) -> str:
 def github_oauth(rnd: random.Random) -> str:
     # gho_ tokens follow the same checksum design as ghp_ classic PATs.
     entropy = _rand_chars(rnd, B62, 30)
-    crc = _crc32_base62(entropy, 6)
+    crc = crc32_base62(entropy, 6)
     return "g" + "h" + "o" + "_" + entropy + crc
 
 
 def github_app_install(rnd: random.Random) -> str:
     # ghs_ tokens follow the same checksum design as ghp_ classic PATs.
     entropy = _rand_chars(rnd, B62, 30)
-    crc = _crc32_base62(entropy, 6)
+    crc = crc32_base62(entropy, 6)
     return "g" + "h" + "s" + "_" + entropy + crc
 
 
 def github_user_to_server(rnd: random.Random) -> str:
     # ghu_ tokens follow the same checksum design as ghp_ classic PATs.
     entropy = _rand_chars(rnd, B62, 30)
-    crc = _crc32_base62(entropy, 6)
+    crc = crc32_base62(entropy, 6)
     return "g" + "h" + "u" + "_" + entropy + crc
 
 
@@ -253,7 +218,7 @@ def npm_token(rnd: random.Random) -> str:
     # Same CRC scheme as github_classic_pat (the npm token rotated to
     # this design when GitHub acquired npm).
     entropy = _rand_chars(rnd, B62, 30)
-    crc = _crc32_base62(entropy, 6)
+    crc = crc32_base62(entropy, 6)
     return "npm" + "_" + entropy + crc
 
 

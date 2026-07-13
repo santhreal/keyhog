@@ -38,7 +38,7 @@ class _ScannerAdapter(Protocol):
 def resolve_corpus_with_root(name: str, root: str | pathlib.Path | None = None) -> Corpus:
     if root is None:
         return resolve_corpus(name)
-    if name == "mirror" or name.startswith("homefield"):
+    if name in ("mirror", "ioc-recovery", "ioc_recovery") or name.startswith("homefield"):
         return resolve_corpus(name, corpus_dir=root)
     return resolve_corpus(name, root=root)
 

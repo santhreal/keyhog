@@ -39,6 +39,20 @@ CredData is **not committed** to this repo: `make creddata` downloads it at a
 pinned commit (`benchmarks/corpora/` is gitignored). We ship only loader code
 and the pinned reference, never the dataset bytes.
 
+## Recovery benchmark methodology
+
+The `ioc-recovery` corpus adapts the P0-P12 experimental progression described
+in Jaime Morales, Sergio Pastrana, and Juan Tapiador, [*Benchmarking Large
+Language Models for IoC Recovery under Adversarial Code Obfuscation and
+Encryption*](https://arxiv.org/abs/2605.06910), licensed
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+The KeyHog repository ships its own generator and no dataset bytes from the
+paper. The paper's HTML currently leaves its code/data citation as an
+unresolved `github-repo` placeholder, so the generated corpus is explicitly a
+methodology adaptation using deterministic synthetic credentials. It does not
+claim byte-for-byte identity with the paper's unavailable artifact.
+
 ## Home-turf harvested fixtures
 
 `benchmarks/corpora/homefield/{betterleaks,kingfisher}/` are harvested by

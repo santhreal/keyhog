@@ -7,6 +7,8 @@
 #   make test              # pytest the bench package
 #   make host              # print host hardware JSON
 #   make mirror            # generate the 15k synthetic mirror corpus if absent
+#   make ioc-recovery-corpus  # generate the 4,368-file P0-P12 recovery corpus
+#   make ioc-recovery         # compare KeyHog full/fast/deep on recovery phases
 #   make creddata          # print Samsung/CredData corpus info
 #   make kernel-info       # print perf corpus info
 #   make run               # run SCANNER=keyhog CORPUS=mirror once
@@ -34,6 +36,8 @@ CORPUS           ?= mirror
 OUTPUT           ?= -
 OUT              ?= results
 ANALYZE_TOP      ?= 15
+IOC_RECOVERY_SAMPLES ?= 336
+IOC_RECOVERY_OUT ?= results-ioc-recovery
 
 # Gate / loop knobs. The loop measures every available scanner but gates
 # keyhog against the required competitors plus the committed regression anchor;
@@ -48,7 +52,7 @@ ifneq ($(strip $(KEYHOG_BIN)),)
 export KEYHOG_BIN
 endif
 
-.PHONY: help test targets host mirror creddata kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
+.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery creddata kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
 
 help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
@@ -64,6 +68,13 @@ host:
 
 mirror:
 	cd $(BENCH_DIR) && $(PY) -m bench.corpora.mirror --ensure
+
+ioc-recovery-corpus:
+	cd $(BENCH_DIR) && $(PY) -m bench.corpora.ioc_recovery --ensure --samples "$(IOC_RECOVERY_SAMPLES)"
+
+ioc-recovery: ioc-recovery-corpus
+	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus ioc-recovery \
+		--scanners keyhog --matrix mode --out "$(IOC_RECOVERY_OUT)"
 
 creddata:
 	cd $(BENCH_DIR) && $(PY) -m bench.corpora.creddata
@@ -125,7 +136,6 @@ keyhog:
 	cd $(REPO_ROOT) && cargo build --release -p keyhog --bin keyhog
 
 clean:
-	# `bench/**/__pycache__` is a bash globstar, but make runs recipes with /bin/sh
-	# where `**` collapses to a single-level `*` and misses nested __pycache__.
-	# `find` is POSIX and recurses to every depth.
-	cd $(BENCH_DIR) && find bench -type d -name __pycache__ -prune -exec rm -rf {} +; rm -rf .pytest_cache
+	# Make uses /bin/sh, so use POSIX find instead of a bash globstar. Clean both
+	# the importable package and generator modules at every nesting depth.
+	cd $(BENCH_DIR) && find bench generators -type d -name __pycache__ -prune -exec rm -rf {} +; rm -rf .pytest_cache

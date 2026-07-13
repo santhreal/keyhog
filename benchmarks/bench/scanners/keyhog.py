@@ -10,7 +10,8 @@ Maps a :class:`ScannerConfig` to keyhog CLI flags:
   *warm* re-run: the adapter populates the index once, then times the second
   pass: that's the 10-100x monorepo-re-run speedup, measured honestly.
 * **daemon** -> ``--daemon`` / ``--daemon=off``.
-* **mode** -> ``--fast`` for ``fast``, full pipeline otherwise.
+* **mode** -> ``--fast`` / ``--deep`` for the two explicit presets, full
+  pipeline otherwise.
 
 Scoring parity flags are always present:
 ``--format json --show-secrets --no-suppress-test-fixtures --no-config``.
@@ -185,6 +186,7 @@ class KeyhogScanner(Scanner):
             ScannerConfig(backend="simd", cache="on", daemon="off", mode="full"),
             ScannerConfig(backend="simd", cache="off", daemon="on", mode="full"),
             ScannerConfig(backend="simd", cache="off", daemon="off", mode="fast"),
+            ScannerConfig(backend="simd", cache="off", daemon="off", mode="deep"),
         ]
         return [default, *flips]
 
@@ -195,7 +197,7 @@ class KeyhogScanner(Scanner):
             "backend": list(_BACKENDS),
             "cache": ["off", "on"],
             "daemon": ["off", "on"],
-            "mode": ["full", "fast"],
+            "mode": ["full", "fast", "deep"],
         }
         defaults = {"backend": "simd", "cache": "off", "daemon": "off", "mode": "full"}
         active = [a for a in axes if a in choices]
@@ -239,6 +241,8 @@ class KeyhogScanner(Scanner):
         cmd += ["--daemon"] if cfg.daemon == "on" else ["--daemon=off"]
         if cfg.mode == "fast":
             cmd.append("--fast")
+        elif cfg.mode == "deep":
+            cmd.append("--deep")
         if cfg.backend in _DETERMINISTIC_BACKENDS:
             cmd.append("--no-gpu")
         elif cfg.backend in _REQUIRE_GPU_BACKENDS:

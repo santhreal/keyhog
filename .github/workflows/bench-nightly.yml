@@ -1,11 +1,11 @@
 name: bench-nightly
 
 # Runs the unified benchmark package (benchmarks/bench) over the synthetic
-# mirror corpus once a day: generates the corpus, runs keyhog + trufflehog,
-# scores them with the single canonical scorer, renders the leaderboard +
-# per-detector reports, and uploads them as artifacts. A `workflow_dispatch`
-# run accepts corpus-size + seed overrides so a reviewer can reproduce a
-# specific scoreboard locally with the same seed.
+# mirror corpus once a day and runs KeyHog's P0-P12 recovery matrix: generates
+# both corpora, runs the scanners, scores them with the single canonical
+# scorer, renders the mirror leaderboard and per-detector reports, and uploads
+# the results. A `workflow_dispatch` run accepts mirror corpus-size + seed
+# overrides so a reviewer can reproduce a specific scoreboard locally.
 #
 # This replaces the retired tools/secretbench scoring scripts: benchmarks/bench
 # is the ONE source of accuracy truth (corpus generation, scoring, leaderboard,
@@ -92,16 +92,25 @@ jobs:
           cd benchmarks && python3 -m bench leaderboard \
             --corpus mirror --scanners keyhog,trufflehog --out results
 
+      - name: Generate exact recovery corpus
+        run: make -C benchmarks ioc-recovery-corpus
+
+      - name: Run exact recovery mode matrix
+        env:
+          KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
+        run: make -C benchmarks ioc-recovery
+
       - name: Render leaderboard + per-detector reports
         run: |
           cd benchmarks && python3 -m bench report \
             --results results --reports reports --corpus mirror
 
-      - name: Upload leaderboard + reports
+      - name: Upload benchmark results and reports
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: bench-mirror-leaderboard
+          name: bench-unified-results
           path: |
             benchmarks/results/**
+            benchmarks/results-ioc-recovery/**
             benchmarks/reports/**
           retention-days: 30

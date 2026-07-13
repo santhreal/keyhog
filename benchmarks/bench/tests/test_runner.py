@@ -1,6 +1,7 @@
 import json
 
 from bench.corpora.mirror import MirrorCorpus
+from bench.corpora.ioc_recovery import IocRecoveryCorpus
 from bench.corpora.perf_corpus import KernelCorpus
 from bench.runner import build_result, resolve_corpus_with_root, write_result
 from bench.scanners.base import RunStats
@@ -69,3 +70,11 @@ def test_resolve_corpus_with_root_maps_mirror_to_corpus_dir(tmp_path):
 
     assert isinstance(corpus, MirrorCorpus)
     assert corpus.root == tmp_path
+
+
+def test_resolve_corpus_with_root_maps_ioc_recovery_to_corpus_dir(tmp_path):
+    corpus = resolve_corpus_with_root("ioc-recovery", tmp_path)
+
+    assert isinstance(corpus, IocRecoveryCorpus)
+    assert corpus.root == tmp_path
+    assert corpus.scan_root == tmp_path / "corpus"
