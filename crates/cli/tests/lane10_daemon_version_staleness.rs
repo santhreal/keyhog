@@ -21,9 +21,11 @@ use keyhog::daemon::protocol::{Request, Response, WIRE_VERSION};
 use keyhog::testing::{CliTestApi as _, API};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::process::Command;
 use std::time::{Duration, Instant};
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::UnixListener;
+use tokio::sync::oneshot;
 
 /// Spawn a one-shot mock daemon on `socket` that answers exactly one `Hello`
 /// with the given wire + keyhog version, then closes. Returns once the listener
@@ -115,6 +117,74 @@ async fn spawn_stuck_handshake_daemon(socket: PathBuf) -> tokio::task::JoinHandl
     });
     tokio::time::sleep(Duration::from_millis(20)).await;
     handle
+}
+
+async fn spawn_stop_protocol_mismatch_daemon(
+    socket: PathBuf,
+) -> (
+    tokio::task::JoinHandle<()>,
+    oneshot::Receiver<()>,
+    oneshot::Sender<()>,
+) {
+    if let Some(parent) = socket.parent() {
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
+            .expect("chmod mock daemon parent 0700");
+    }
+    let detectors = keyhog_core::load_embedded_detectors_or_fail().expect("embedded detectors");
+    let detector_rules_digest =
+        keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+    let detector_count = detectors.len();
+    let listener = UnixListener::bind(&socket).expect("bind mock daemon socket");
+    std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))
+        .expect("chmod mock daemon socket 0600");
+    let (accepted_tx, accepted_rx) = oneshot::channel();
+    let (release_tx, release_rx) = oneshot::channel();
+    let handle = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept stop client");
+        let (reader, writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
+        let mut writer = BufWriter::new(writer);
+
+        assert!(matches!(
+            frame::read_request(&mut reader).await,
+            Ok(Some(Request::Hello))
+        ));
+        frame::write_response(
+            &mut writer,
+            &Response::Hello {
+                wire_version: WIRE_VERSION,
+                keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
+                git_hash: keyhog_core::git_hash().to_string(),
+                detector_rules_digest,
+                detector_count,
+                uptime_secs: 1,
+            },
+        )
+        .await
+        .expect("write Hello response");
+
+        assert!(matches!(
+            frame::read_request(&mut reader).await,
+            Ok(Some(Request::Shutdown))
+        ));
+        frame::write_response(
+            &mut writer,
+            &Response::Health {
+                uptime_secs: 1,
+                scans_served: 0,
+                active_scans: 0,
+                detector_count,
+            },
+        )
+        .await
+        .expect("write protocol-mismatch response");
+
+        let (probe, _) = listener.accept().await.expect("accept ownership probe");
+        let _ = accepted_tx.send(());
+        let _ = release_rx.await;
+        drop(probe);
+    });
+    (handle, accepted_rx, release_tx)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -295,4 +365,46 @@ async fn connect_times_out_when_daemon_never_answers_hello() {
         started.elapsed() < Duration::from_secs(3),
         "internal handshake timeout should fire before the outer test guard"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn daemon_stop_protocol_mismatch_preserves_live_socket_and_gives_valid_guidance() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("incompatible-stop.sock");
+    let (daemon, accepted, release) = spawn_stop_protocol_mismatch_daemon(socket.clone()).await;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_keyhog"))
+        .args(["daemon", "stop", "--socket"])
+        .arg(&socket)
+        .output()
+        .expect("run keyhog daemon stop");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "protocol mismatch must be a user-visible failure: {stderr}"
+    );
+    assert!(
+        stderr.contains("daemon stop: protocol mismatch (got Health)")
+            && stderr.contains("Shutdown was not confirmed")
+            && stderr.contains("socket was left untouched")
+            && stderr.contains("matching KeyHog version or the service manager"),
+        "stop must give truthful recovery guidance: {stderr}"
+    );
+    assert!(
+        !stderr.contains("--force"),
+        "stop must not advertise a nonexistent destructive override: {stderr}"
+    );
+    let probe = tokio::net::UnixStream::connect(&socket)
+        .await
+        .expect("failed stop must leave the live daemon socket bound");
+    tokio::time::timeout(Duration::from_secs(1), accepted)
+        .await
+        .expect("ownership probe must reach the original listener")
+        .expect("original listener must acknowledge the ownership probe");
+    drop(probe);
+
+    let _ = release.send(());
+    daemon.await.expect("mock daemon task");
 }

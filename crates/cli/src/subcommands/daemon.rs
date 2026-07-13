@@ -81,9 +81,9 @@ async fn stop(socket: Option<PathBuf>) -> Result<ExitCode> {
         }
         other => {
             anyhow::bail!(
-                "daemon stop: protocol mismatch (got {}). Restart with \
-                 `keyhog daemon stop --force || true && keyhog daemon start` \
-                 to clear stuck state.",
+                "daemon stop: protocol mismatch (got {}). Shutdown was not confirmed, and the \
+                 incompatible daemon socket was left untouched. Stop the daemon with the matching \
+                 KeyHog version or the service manager that started it before starting a replacement.",
                 response_kind(&other)
             )
         }
