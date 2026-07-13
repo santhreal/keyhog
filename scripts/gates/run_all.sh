@@ -41,6 +41,7 @@
 #                                              # (the regression test + any box
 #                                              # without the corpus/binaries use this)
 set -uo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 rc=0
@@ -153,10 +154,10 @@ echo "== Gates #2 + #3: backend parity + recall floor (bench pytest) =="
 if [ "$GATES_SOURCE_ONLY" = "1" ]; then
   skip "GATES_SOURCE_ONLY=1 (backend parity + recall floor pytest not run)."
 elif [ -d benchmarks/corpora/creddata/CredData/meta ]; then
-  ( cd benchmarks && python3 -m pytest \
+  ( cd benchmarks && python3 -B -m pytest -p no:cacheprovider \
       bench/tests/test_backend_parity.py \
       bench/tests/test_creddata_recall_matrix.py::test_creddata_recall_does_not_regress_below_floor \
-      -q --no-header -p no:cacheprovider ) || rc=1
+      -q --no-header ) || rc=1
 else
   skip "CredData corpus not present (run \`make creddata\` to enable #2/#3)."
 fi

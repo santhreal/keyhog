@@ -18,6 +18,7 @@
 # unreachable. Disable it file-wide (must precede the first command) for this pattern.
 # shellcheck disable=SC2317
 set -uo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO" || exit 1
@@ -133,7 +134,7 @@ fi
 
 step "bench: scorer/gate unit tests"
 if [ "$CANDIDATE_READY" = "1" ]; then
-  check "bench pytest" bash -c "cd benchmarks && python3 -m pytest -q -m 'not target_spec' bench/tests"
+  check "bench pytest" bash -c "cd benchmarks && PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests"
 else
   echo "  FAIL bench pytest, candidate binary is unavailable"
   fail=1

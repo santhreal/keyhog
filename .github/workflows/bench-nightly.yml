@@ -74,7 +74,7 @@ jobs:
       - name: Benchmark regression tests
         env:
           KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
-        run: cd benchmarks && python3 -m pytest -q -m 'not target_spec' bench/tests
+        run: cd benchmarks && PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests
 
       - name: Generate mirror corpus
         env:

@@ -14,7 +14,7 @@ made true, asserting EXACT values (never `is_empty`/`is_ok`):
      crate counts the merge produced.
 
 Run from the benchmarks/ dir like every other bench test:
-    python3 -m pytest bench/tests/test_run_all_gates_entrypoint.py
+    python3 -B -m pytest -p no:cacheprovider bench/tests/test_run_all_gates_entrypoint.py
 """
 
 from __future__ import annotations

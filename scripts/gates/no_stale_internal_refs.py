@@ -70,6 +70,13 @@ ALLOWED = {
     "scripts/gates/no_stale_internal_refs.py",
 }
 
+# Narrow policy references that remain valid. Keep these pattern-specific so a
+# policy file cannot accidentally become exempt from every retired-artifact
+# check merely because it documents the one local ledger contract.
+ALLOWED_PATTERN_HITS = {
+    ("AGENTS.md", "BACKLOG.md"),
+}
+
 SKIP_DIRS = {
     ".git",
     "target",
@@ -140,7 +147,7 @@ def collect() -> list[tuple[str, int, str, str]]:
         text = path.read_text(errors="replace")
         for lineno, line in enumerate(text.splitlines(), start=1):
             for pattern in PATTERNS:
-                if pattern in line:
+                if pattern in line and (rel, pattern) not in ALLOWED_PATTERN_HITS:
                     hits.append((rel, lineno, pattern, line.strip()))
             for marker in CONTENT_PATTERNS:
                 if marker.search(line):
@@ -177,6 +184,18 @@ def self_test() -> int:
         if got != want:
             print(f"self-test mismatch want={want} got={got}: {line}", file=sys.stderr)
             ok = False
+    if ("AGENTS.md", "BACKLOG.md") not in ALLOWED_PATTERN_HITS:
+        print(
+            "self-test mismatch: AGENTS.md must be allowed to state the local ledger policy",
+            file=sys.stderr,
+        )
+        ok = False
+    if ("README.md", "BACKLOG.md") in ALLOWED_PATTERN_HITS:
+        print(
+            "self-test mismatch: public docs must not point readers at the local ledger",
+            file=sys.stderr,
+        )
+        ok = False
     print("self-test PASS" if ok else "self-test FAIL", file=sys.stderr)
     return 0 if ok else 1
 

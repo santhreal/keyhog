@@ -58,10 +58,10 @@ help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
 
 test:
-	cd $(BENCH_DIR) && $(PY) -m pytest -q -m 'not target_spec' bench/tests
+	cd $(BENCH_DIR) && PYTHONDONTWRITEBYTECODE=1 $(PY) -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests
 
 targets:
-	cd $(BENCH_DIR) && $(PY) -m pytest -q -m target_spec bench/tests
+	cd $(BENCH_DIR) && PYTHONDONTWRITEBYTECODE=1 $(PY) -B -m pytest -p no:cacheprovider -q -m target_spec bench/tests
 
 host:
 	cd $(BENCH_DIR) && $(PY) -m bench host
@@ -120,7 +120,7 @@ cross-device-gate:
 # baseline) fails the target non-zero. This is the local mirror of the
 # bench-nightly + differential-bench workflows.
 loop:
-	cd $(BENCH_DIR) && $(PY) -m pytest -q -m 'not target_spec' bench/tests
+	cd $(BENCH_DIR) && PYTHONDONTWRITEBYTECODE=1 $(PY) -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests
 	cd $(BENCH_DIR) && $(PY) -m bench.corpora.mirror --ensure
 	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus "$(CORPUS)" --scanners "$(SCANNERS)" --out "$(OUT)"
 	cd $(BENCH_DIR) && $(PY) -m bench calibrate --corpus "$(CORPUS)" --emit-toml "$(CALIBRATION_OUT)"
