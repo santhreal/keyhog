@@ -12,6 +12,30 @@ const DNS_SCREEN_QUEUE_CAP: usize = 64;
 mod tests {
     use super::*;
 
+    struct WorkerRelease(Arc<(Mutex<bool>, Condvar)>);
+
+    impl WorkerRelease {
+        fn new() -> Self {
+            Self(Arc::new((Mutex::new(false), Condvar::new())))
+        }
+
+        fn signal(&self) {
+            let (lock, ready) = &*self.0;
+            let mut released = match lock.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            *released = true;
+            ready.notify_all();
+        }
+    }
+
+    impl Drop for WorkerRelease {
+        fn drop(&mut self) {
+            self.signal();
+        }
+    }
+
     #[test]
     fn dns_resolution_timeout_is_operator_visible() {
         let (_sender, receiver) = mpsc::sync_channel(1);
@@ -65,13 +89,13 @@ mod tests {
     fn dns_queue_runs_all_workers_concurrently() {
         let (sender, receiver) = bounded(DNS_SCREEN_QUEUE_CAP);
         let (started_tx, started_rx) = mpsc::sync_channel(DNS_SCREEN_WORKERS);
-        let release = Arc::new((Mutex::new(false), Condvar::new()));
+        let release = WorkerRelease::new();
         let mut workers = Vec::new();
 
         for _ in 0..DNS_SCREEN_WORKERS {
             let receiver = receiver.clone();
             let started_tx = started_tx.clone();
-            let release = Arc::clone(&release);
+            let release = Arc::clone(&release.0);
             workers.push(std::thread::spawn(move || {
                 dns_worker_loop(receiver, move |host, port, _budget| {
                     let _ignored = started_tx.send(host);
@@ -108,16 +132,14 @@ mod tests {
         let start_deadline = Instant::now() + Duration::from_secs(5);
         for _ in 0..DNS_SCREEN_WORKERS {
             let remaining = start_deadline.saturating_duration_since(Instant::now());
-            if let Ok(host) = started_rx.recv_timeout(remaining) {
-                started.push(host);
-            }
+            started.push(
+                started_rx
+                    .recv_timeout(remaining)
+                    .expect("every DNS worker must start before release"),
+            );
         }
 
-        let (lock, ready) = &*release;
-        if let Ok(mut released) = lock.lock() {
-            *released = true;
-            ready.notify_all();
-        }
+        release.signal();
         for receiver in replies {
             let result = receiver
                 .recv_timeout(Duration::from_secs(5))

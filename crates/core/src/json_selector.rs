@@ -23,12 +23,11 @@ impl SelectorError {
         let preview_end = if selector.len() <= MAX_ERROR_SELECTOR_PREVIEW_BYTES {
             selector.len()
         } else {
-            selector
-                .char_indices()
-                .map(|(index, _)| index)
-                .take_while(|index| *index <= MAX_ERROR_SELECTOR_PREVIEW_BYTES)
-                .last()
-                .unwrap_or(0)
+            let mut boundary = MAX_ERROR_SELECTOR_PREVIEW_BYTES;
+            while !selector.is_char_boundary(boundary) {
+                boundary -= 1;
+            }
+            boundary
         };
         Self {
             selector_preview: selector[..preview_end].to_string(),

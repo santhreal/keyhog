@@ -78,6 +78,15 @@ fn bounds_selector_size_depth_and_error_output() {
     assert!(rendered.contains(&format!("{} bytes", oversized.len())));
     assert!(rendered.len() < 500, "error preview must stay bounded");
 
+    let oversized_unicode = format!("$.{}", "é".repeat(MAX_SELECTOR_BYTES));
+    let unicode_error = validate(&oversized_unicode).expect_err("oversized Unicode selector");
+    let unicode_rendered = unicode_error.to_string();
+    assert!(unicode_rendered.contains(&format!("{} bytes", oversized_unicode.len())));
+    assert!(
+        unicode_rendered.len() < 500,
+        "Unicode error preview must stay on a bounded character boundary"
+    );
+
     let too_deep = format!("${}", ".a".repeat(MAX_SELECTOR_SEGMENTS + 1));
     assert!(validate(&too_deep).is_err());
 }
