@@ -30,6 +30,28 @@ fn xor_program(encoded_arrays: bool, valid_callback: bool) -> String {
     )
 }
 
+fn hex_xor_program() -> String {
+    let key = [19u8, 71, 211, 4, 99, 28, 8];
+    let data: Vec<u8> = SECRET
+        .as_bytes()
+        .iter()
+        .zip(key.iter().cycle())
+        .map(|(byte, key_byte)| byte ^ key_byte)
+        .collect();
+    let literals = |values: &[u8]| {
+        values
+            .iter()
+            .map(|value| format!("0x{value:02x}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    format!(
+        "const _d = [{}]; const _k = [{}]; return String.fromCharCode(..._d.map((b, i) => b ^ _k[i % _k.length]));",
+        literals(&data),
+        literals(&key)
+    )
+}
+
 fn decode(source: String) -> Vec<Chunk> {
     decode_at(source, 0)
 }
@@ -59,6 +81,22 @@ fn recovers_static_xor_byte_arrays() {
     let decoded = decode(xor_program(false, true));
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].data.as_ref(), SECRET);
+}
+
+#[test]
+fn recovers_static_xor_hex_byte_arrays() {
+    let decoded = decode(hex_xor_program());
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].data.as_ref(), SECRET);
+}
+
+#[test]
+fn rejects_out_of_range_hex_byte_array_elements() {
+    let source = concat!(
+        "const _d = [0x100]; const _k = [0x01]; ",
+        "return String.fromCharCode(..._d.map((b, i) => b ^ _k[i % _k.length]));"
+    );
+    assert!(decode(source.to_string()).is_empty());
 }
 
 #[test]

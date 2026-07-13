@@ -13,6 +13,9 @@
   side-effect-free grammar and reject dynamic operands, mismatched bindings,
   invalid padding, non-UTF-8 plaintext, and oversized inputs. SIMD and portable
   CPU entry paths share the same static-XOR decode admission.
+- Accept decimal and hexadecimal byte literals in bounded JavaScript XOR arrays.
+  Mixed-radix values preserve exact recovery while overflow and expressions
+  remain rejected without evaluation.
 - Recover checksum-valid known-prefix credentials assembled from JavaScript
   string arrays followed by an empty-separator `.join("")`, even when the
   temporary variable name is obfuscated. Non-empty separators and arrays that

@@ -28,7 +28,7 @@ const MAX_STATIC_EXPRESSIONS: usize = 64;
 
 static LITERAL_ARRAY_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r"(?m)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\[([0-9,\x20\t\r\n]+)\]",
+        r"(?m)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\[((?:[\x20\t\r\n]*(?:0[xX][0-9A-Fa-f]+|[0-9]+)[\x20\t\r\n]*,)*[\x20\t\r\n]*(?:0[xX][0-9A-Fa-f]+|[0-9]+)[\x20\t\r\n]*,?[\x20\t\r\n]*)\]",
         "literal byte-array assignment",
     )
 });
@@ -253,7 +253,11 @@ fn parse_byte_array(body: &str) -> Option<Result<Vec<u8>, StaticRecoveryRejectio
             record_static_limit("literal byte-array element ceiling");
             return None;
         }
-        match value.parse::<u8>() {
+        let parsed = value
+            .strip_prefix("0x")
+            .or_else(|| value.strip_prefix("0X"))
+            .map_or_else(|| value.parse::<u8>(), |hex| u8::from_str_radix(hex, 16));
+        match parsed {
             Ok(value) => bytes.push(value),
             Err(_) => return Some(Err(StaticRecoveryRejection::LiteralByteArrayElement)), // LAW10: a referenced binding emits a recorded dogfood event; no source bytes are retained.
         }

@@ -12,6 +12,14 @@ const XOR_LITERAL: &str = concat!(
     "return String.fromCharCode(...data.map((b, i) => b ^ key[i % key.length]));",
 );
 
+const XOR_HEX_LITERAL: &str = concat!(
+    "const data = [0xb1,0x6d,0x07,0xab,0xe8,0x3e,0xe3,0x80,0xe7,0x67,0x43,",
+    "0x97,0xba,0x62,0xb7,0xd4,0xb0,0x34,0x45,0xc5,0xbd,0x3f,0xea,0xd6,",
+    "0xb0,0x63,0x16,0x97,0xef,0x61,0xeb,0xd6,0xb4,0x66,0x45,0x93,0xb7,",
+    "0x4e,0xb8,0xf7]; const key = [0xd6,0x05,0x77,0xf4,0xde,0x07,0xd2,0xb2]; ",
+    "return String.fromCharCode(...data.map((b, i) => b ^ key[i % key.length]));",
+);
+
 const XOR_BASE64_ARRAYS: &str = concat!(
     "const _d = JSON.parse(Buffer.from(\"WzE3NywgMTA5LCA3LCAxNzEsIDIzMiwgNjIsIDIyNywg",
     "MTI4LCAyMzEsIDEwMywgNjcsIDE1MSwgMTg2LCA5OCwgMTgzLCAyMTIsIDE3NiwgNTIsIDY5LCAx",
@@ -75,6 +83,7 @@ fn deep_scan_recovers_every_supported_static_program_shape() {
     let scanner = scanner(ScannerConfig::thorough());
     for source in [
         XOR_LITERAL,
+        XOR_HEX_LITERAL,
         XOR_BASE64_ARRAYS,
         AES_BOUND_BUFFERS,
         AES_JOINED_BUFFERS,
@@ -93,6 +102,7 @@ fn simd_scan_recovers_every_supported_static_program_shape() {
     let scanner = scanner(ScannerConfig::thorough());
     for source in [
         XOR_LITERAL,
+        XOR_HEX_LITERAL,
         XOR_BASE64_ARRAYS,
         AES_BOUND_BUFFERS,
         AES_JOINED_BUFFERS,
