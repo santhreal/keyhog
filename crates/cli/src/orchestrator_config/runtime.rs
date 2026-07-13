@@ -82,6 +82,49 @@ pub(crate) fn gpu_runtime_policy_from_args(
     }
 }
 
+pub(crate) fn gpu_runtime_policy_for_backend_override(
+    backend: Option<keyhog_scanner::ScanBackend>,
+) -> Result<keyhog_scanner::gpu::GpuRuntimePolicy> {
+    let policy = match backend {
+        Some(keyhog_scanner::ScanBackend::Gpu) => keyhog_scanner::gpu::GpuRuntimePolicy::Required,
+        Some(keyhog_scanner::ScanBackend::SimdCpu | keyhog_scanner::ScanBackend::CpuFallback) => {
+            keyhog_scanner::gpu::GpuRuntimePolicy::Disabled
+        }
+        None => keyhog_scanner::gpu::GpuRuntimePolicy::Auto,
+        Some(backend) => anyhow::bail!(
+            "daemon GPU runtime policy is undefined for backend {}; update the daemon policy mapping",
+            backend.label()
+        ),
+    };
+    Ok(policy)
+}
+
+#[cfg(test)]
+mod daemon_gpu_policy_tests {
+    use super::gpu_runtime_policy_for_backend_override;
+    use keyhog_scanner::{gpu::GpuRuntimePolicy, ScanBackend};
+
+    #[test]
+    fn explicit_daemon_backend_owns_the_matching_gpu_policy() {
+        assert_eq!(
+            gpu_runtime_policy_for_backend_override(Some(ScanBackend::Gpu)).unwrap(),
+            GpuRuntimePolicy::Required,
+        );
+        assert_eq!(
+            gpu_runtime_policy_for_backend_override(Some(ScanBackend::SimdCpu)).unwrap(),
+            GpuRuntimePolicy::Disabled,
+        );
+        assert_eq!(
+            gpu_runtime_policy_for_backend_override(Some(ScanBackend::CpuFallback)).unwrap(),
+            GpuRuntimePolicy::Disabled,
+        );
+        assert_eq!(
+            gpu_runtime_policy_for_backend_override(None).unwrap(),
+            GpuRuntimePolicy::Auto,
+        );
+    }
+}
+
 /// True when the operator explicitly selected a CPU-only backend
 /// (`--backend cpu`/`--backend simd`). Such a scan never acquires the GPU, so
 /// the resolved policy is `Disabled`: this keeps `gpu_probe()` from creating a

@@ -9,11 +9,12 @@ Maps a :class:`ScannerConfig` to keyhog CLI flags:
 * **cache** -> ``--incremental`` (merkle skip-cache). ``on`` measures the
   *warm* re-run: the adapter populates the index once, then times the second
   pass: that's the 10-100x monorepo-re-run speedup, measured honestly.
-* **daemon** -> ``--daemon`` / ``--daemon=off``.
+* **daemon** -> an owned private daemon for one-file perf rows, or
+  ``--daemon=off`` for normal scans.
 * **mode** -> ``--fast`` / ``--deep`` for the two explicit presets, full
   pipeline otherwise.
 
-Scoring parity flags are always present:
+Labeled-corpus in-process scoring parity flags are present:
 ``--format json --show-secrets --no-suppress-test-fixtures --no-config`` plus
 an explicit repository detector corpus. ``--no-config`` blocks ancestor config
 discovery, while ``--detectors`` blocks installed-corpus discovery. Findings are
@@ -33,7 +34,6 @@ import os
 import pathlib
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 
@@ -41,6 +41,7 @@ from ..keyhog_version import (
     assert_keyhog_binary_current,
     detector_corpus_sha256 as compute_detector_corpus_sha256,
 )
+from ..keyhog_daemon import OwnedKeyhogDaemon, validate_daemon_benchmark
 from ..executable_snapshot import sibling_executable_snapshot
 from ..schema import ScannerConfig
 from .base import Finding, MeasurementProvenance, RunStats, Scanner, _line, run_measured
@@ -359,7 +360,6 @@ class KeyhogScanner(Scanner):
              detector_corpus: pathlib.Path | None = None) -> list[str]:
         cmd = [str(executable), "scan",
                "--format", "json", "--show-secrets",
-               "--no-suppress-test-fixtures",
                # Hermetic config: the leaderboard scores the COMPILED shipped
                # defaults, never a stray `.keyhog.toml` that happens to sit on
                # an ancestor of the corpus (which lives inside the repo tree).
@@ -369,6 +369,8 @@ class KeyhogScanner(Scanner):
                "--detectors", str(detector_corpus or self._detector_corpus),
                "--backend", cfg.backend,
                "--output", str(output)]
+        if not root.is_file():
+            cmd.append("--no-suppress-test-fixtures")
         # Optional report-floor override. None (every leaderboard config) means
         # the compiled shipped default floor is scored, byte-identical to
         # before this knob existed. The ML harvest sets it LOW so it captures
@@ -381,7 +383,7 @@ class KeyhogScanner(Scanner):
             # CLI's numeric flag parser rejects, and the harvest path sets this
             # floor deliberately low.
             cmd += ["--min-confidence", str(float(cfg.min_confidence))]
-        cmd += ["--daemon"] if cfg.daemon == "on" else ["--daemon=off"]
+        cmd.append("--daemon=off")
         if cfg.mode == "fast":
             cmd.append("--fast")
         elif cfg.mode == "deep":
@@ -425,10 +427,27 @@ class KeyhogScanner(Scanner):
         with self._binary_snapshot() as (
             executable, executable_digest, version, pass_fds,
         ):
-            findings, stats = self._run_prepared(
-                root, cfg, snapshot, executable, output=output, extra_env=extra_env,
-                extra_args=extra_args, timeout=timeout, pass_fds=pass_fds,
-            )
+            if cfg.daemon == "on":
+                findings, stats, daemon_pid, daemon_requests = self._run_daemon_prepared(
+                    root,
+                    cfg,
+                    snapshot,
+                    executable,
+                    output=output,
+                    extra_env=extra_env,
+                    extra_args=extra_args,
+                    timeout=timeout,
+                    pass_fds=pass_fds,
+                )
+                execution_route = "daemon"
+            else:
+                findings, stats = self._run_prepared(
+                    root, cfg, snapshot, executable, output=output, extra_env=extra_env,
+                    extra_args=extra_args, timeout=timeout, pass_fds=pass_fds,
+                )
+                execution_route = "in_process"
+                daemon_pid = 0
+                daemon_requests = 0
         observed = compute_detector_corpus_sha256(snapshot)
         if observed != digest:
             raise RuntimeError(
@@ -439,7 +458,75 @@ class KeyhogScanner(Scanner):
             scanner_version=version,
             executable_sha256=executable_digest,
             detector_corpus_sha256=digest,
+            execution_route=execution_route,
+            daemon_pid=daemon_pid,
+            daemon_requests=daemon_requests,
         )
+
+    def _run_daemon_prepared(
+        self,
+        root: pathlib.Path,
+        cfg: ScannerConfig,
+        detector_corpus: pathlib.Path,
+        executable: pathlib.Path,
+        output: pathlib.Path | None = None,
+        extra_env: dict[str, str] | None = None,
+        extra_args: list[str] | None = None,
+        timeout: int = 3600,
+        pass_fds: tuple[int, ...] = (),
+    ) -> tuple[list[Finding], RunStats, int, int]:
+        validate_daemon_benchmark(root, cfg.backend, cfg.cache, cfg.mode)
+        if cfg.min_confidence is not None:
+            raise RuntimeError(
+                "daemon benchmark rows do not support min-confidence because "
+                "that policy is not bound into daemon startup identity"
+            )
+        if extra_env:
+            raise RuntimeError(
+                "daemon benchmark rows do not accept adapter extra_env; "
+                "the server and client environment must remain provenance-bound"
+            )
+        if extra_args:
+            raise RuntimeError(
+                "daemon benchmark rows do not accept adapter extra_args; "
+                "client flags must remain within the proven daemon contract"
+            )
+
+        with tempfile.TemporaryDirectory(
+            prefix="keyhog-bench-daemon-output-"
+        ) as run_dir_raw:
+            run_dir = pathlib.Path(run_dir_raw)
+            result_output = output or (run_dir / "result.json")
+            warm_output = run_dir / "warm.json"
+            with OwnedKeyhogDaemon(
+                executable,
+                pass_fds,
+                detector_corpus,
+                cfg.backend,
+                timeout,
+            ) as daemon:
+                daemon.run_client(root, warm_output, timeout)
+                self._parse(warm_output, config_id=f"{cfg.config_id} warmup")
+                if daemon.status() != (1, 0):
+                    raise RuntimeError(
+                        "owned benchmark daemon did not record exactly one completed "
+                        "warmup request"
+                    )
+                stats = daemon.run_client(root, result_output, timeout)
+                findings = self._parse(result_output, config_id=cfg.config_id)
+                evidence = daemon.evidence()
+                if evidence.scans_served != 2:
+                    raise RuntimeError(
+                        "owned benchmark daemon did not record exactly one timed request "
+                        "after warmup"
+                    )
+                if evidence.active_scans != 0:
+                    raise RuntimeError(
+                        "owned benchmark daemon still had an active request after the "
+                        "timed client completed"
+                    )
+                stats.peak_rss_kb = evidence.peak_rss_kb
+                return findings, stats, evidence.pid, evidence.scans_served
 
     def _run_prepared(
         self, root: pathlib.Path, cfg: ScannerConfig,
@@ -554,13 +641,3 @@ class KeyhogScanner(Scanner):
                 f"(exit was success): {exc}"
             ) from exc
         return _normalize_keyhog(data)
-
-    # ── daemon lifecycle (used by the perf matrix for daemon=on rows) ──
-
-    def start_daemon(self) -> None:
-        subprocess.run([self.binary, "daemon", "start"], check=False,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    def stop_daemon(self) -> None:
-        subprocess.run([self.binary, "daemon", "stop"], check=False,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

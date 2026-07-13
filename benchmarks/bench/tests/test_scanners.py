@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from bench import executable_snapshot, scanners
+from bench import executable_snapshot, keyhog_daemon, scanners
 from bench.scanners import keyhog as keyhog_adapter
 from bench.scanners import base
 from bench.schema import ScannerConfig
@@ -329,6 +329,20 @@ def test_keyhog_gpu_benchmark_rows_use_explicit_gpu_policy(tmp_path):
     assert scanner._env(ScannerConfig(backend="gpu")) == {}
 
 
+def test_keyhog_single_file_perf_command_keeps_daemon_fixture_policy(tmp_path):
+    input_file = tmp_path / "workload.txt"
+    input_file.write_text("public workload", encoding="utf-8")
+    cmd = scanners.KeyhogScanner()._cmd(
+        input_file,
+        ScannerConfig(backend="simd"),
+        tmp_path / "result.json",
+        None,
+        pathlib.Path("/unused/keyhog"),
+    )
+
+    assert "--no-suppress-test-fixtures" not in cmd
+
+
 def test_keyhog_deep_benchmark_mode_is_explicit_and_matrix_owned(tmp_path):
     scanner = scanners.KeyhogScanner(binary="/bin/true")
     deep = ScannerConfig(backend="simd", mode="deep")
@@ -511,6 +525,208 @@ def test_keyhog_run_binds_digest_and_scan_to_immutable_detector_snapshot(
     assert scanned_detector_paths[0] == scanned_detector_paths[1]
     assert scanned_detector_paths[0].is_dir()
     assert len(list(snapshot_root.iterdir())) == 1
+
+
+def test_keyhog_daemon_commands_keep_server_and_client_ownership_separate(tmp_path):
+    executable = tmp_path / "keyhog"
+    socket_path = tmp_path / "daemon.sock"
+    detectors = tmp_path / "detectors"
+    input_file = tmp_path / "input.txt"
+    output = tmp_path / "result.json"
+
+    server = keyhog_daemon.daemon_server_command(
+        executable, socket_path, detectors, "gpu",
+    )
+    client = keyhog_daemon.daemon_client_command(
+        executable, socket_path, input_file, output,
+    )
+
+    assert server == [
+        str(executable), "daemon", "start", "--socket", str(socket_path),
+        "--detectors", str(detectors), "--backend", "gpu",
+    ]
+    assert client == [
+        str(executable), "scan", "--format", "json", "--no-config",
+        "--daemon=on", "--daemon-socket", str(socket_path),
+        "--output", str(output), str(input_file),
+    ]
+    forbidden_client_flags = {
+        "--backend", "--detectors", "--show-secrets", "--no-gpu",
+        "--require-gpu", "--incremental", "--fast", "--deep",
+        "--no-suppress-test-fixtures",
+    }
+    assert forbidden_client_flags.isdisjoint(client)
+
+
+@pytest.mark.parametrize(
+    "backend,cache,mode,message",
+    [
+        ("auto", "off", "full", "explicit"),
+        ("simd", "on", "full", "incremental cache"),
+        ("simd", "off", "deep", "only full mode"),
+    ],
+)
+def test_keyhog_daemon_validation_rejects_unproven_axes(
+    tmp_path, backend, cache, mode, message,
+):
+    input_file = tmp_path / "input.txt"
+    input_file.write_text("public benchmark bytes", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match=message):
+        keyhog_daemon.validate_daemon_benchmark(input_file, backend, cache, mode)
+
+
+def test_keyhog_daemon_validation_rejects_directory_corpus(tmp_path):
+    with pytest.raises(RuntimeError, match="one regular file"):
+        keyhog_daemon.validate_daemon_benchmark(tmp_path, "simd", "off", "full")
+
+
+def test_keyhog_daemon_status_requires_served_and_active_counts(monkeypatch):
+    daemon = keyhog_daemon.OwnedKeyhogDaemon(
+        pathlib.Path("/snapshot/keyhog"), (), pathlib.Path("/detectors"), "simd", 30,
+    )
+    completed = type(
+        "Completed", (),
+        {"stdout": "keyhog daemon: uptime 7s · 2 scans served · 0 active · 4 detectors"},
+    )()
+    monkeypatch.setattr(daemon, "_assert_owned_peer", lambda: None)
+    monkeypatch.setattr(daemon, "_admin", lambda *_args, **_kwargs: completed)
+
+    assert daemon.status() == (2, 0)
+
+
+def test_keyhog_daemon_rejects_partial_coverage_even_with_findings(monkeypatch, tmp_path):
+    daemon = keyhog_daemon.OwnedKeyhogDaemon(
+        pathlib.Path("/snapshot/keyhog"), (), pathlib.Path("/detectors"), "simd", 30,
+    )
+    monkeypatch.setattr(daemon, "_assert_owned_peer", lambda: None)
+    monkeypatch.setattr(
+        keyhog_daemon,
+        "run_measured",
+        lambda *_args, **_kwargs: (
+            "",
+            "warning: daemon input coverage was incomplete (1 source gap(s))",
+            base.RunStats(exit_code=1),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="partial-file throughput"):
+        daemon.run_client(tmp_path / "input", tmp_path / "output", 30)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="owned daemon lifecycle is Unix only")
+def test_keyhog_daemon_startup_timeout_reaps_owned_process(tmp_path):
+    executable = tmp_path / "never-ready"
+    executable.write_text("#!/bin/sh\nsleep 60\n", encoding="utf-8")
+    executable.chmod(0o700)
+    daemon = keyhog_daemon.OwnedKeyhogDaemon(
+        executable, (), tmp_path / "detectors", "simd", 0,
+    )
+
+    with pytest.raises(TimeoutError, match="was not ready"):
+        with daemon:
+            raise AssertionError("unreachable")
+
+    assert daemon._process is not None
+    assert daemon._process.poll() is not None
+    assert daemon._tempdir is None
+
+
+def test_keyhog_daemon_spawn_failure_cleans_private_artifacts(tmp_path):
+    daemon = keyhog_daemon.OwnedKeyhogDaemon(
+        tmp_path / "missing-keyhog", (), tmp_path / "detectors", "simd", 30,
+    )
+
+    with pytest.raises(FileNotFoundError):
+        with daemon:
+            raise AssertionError("unreachable")
+
+    assert daemon._stderr_handle is None
+    assert daemon._tempdir is None
+
+
+def test_keyhog_daemon_cleanup_preserves_primary_failure(monkeypatch):
+    daemon = keyhog_daemon.OwnedKeyhogDaemon(
+        pathlib.Path("/snapshot/keyhog"), (), pathlib.Path("/detectors"), "simd", 30,
+    )
+    monkeypatch.setattr(
+        daemon, "_stop_and_reap", lambda: (_ for _ in ()).throw(OSError("stop failed")),
+    )
+    monkeypatch.setattr(
+        daemon, "_close_artifacts", lambda: (_ for _ in ()).throw(OSError("close failed")),
+    )
+    primary = ValueError("scan failed")
+
+    with pytest.raises(ValueError, match="scan failed") as caught:
+        daemon.__exit__(ValueError, primary, primary.__traceback__)
+
+    assert isinstance(caught.value.__cause__, RuntimeError)
+    assert "stop failed" in str(caught.value.__cause__)
+    assert "close failed" in str(caught.value.__cause__)
+
+
+def test_keyhog_daemon_run_records_owned_pid_and_exact_request_count(
+    monkeypatch, tmp_path,
+):
+    detector_corpus = tmp_path / "detectors"
+    detector_corpus.mkdir()
+    (detector_corpus / "one.toml").write_text(
+        "[detector]\nid = 'one'\n", encoding="utf-8",
+    )
+    input_file = tmp_path / "input.txt"
+    input_file.write_text("public benchmark bytes", encoding="utf-8")
+    scanner = scanners.KeyhogScanner(
+        binary="/unused/keyhog", detector_corpus=detector_corpus,
+    )
+    monkeypatch.setenv("KEYHOG_BENCH_SNAPSHOT_DIR", str(tmp_path / "snapshots"))
+    instances = []
+
+    class FakeOwnedDaemon:
+        def __init__(self, executable, pass_fds, detectors, backend, timeout):
+            self.pid = 4242
+            self.requests = 0
+            self.args = (executable, pass_fds, detectors, backend, timeout)
+            instances.append(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def run_client(self, root, output, timeout):
+            assert root == input_file
+            assert timeout == 3600
+            self.requests += 1
+            output.write_text("[]", encoding="utf-8")
+            return base.RunStats(wall_ms=12.5, peak_rss_kb=1, exit_code=0)
+
+        def status(self):
+            return self.requests, 0
+
+        def evidence(self):
+            return keyhog_daemon.DaemonEvidence(
+                pid=self.pid,
+                scans_served=self.requests,
+                active_scans=0,
+                peak_rss_kb=8192,
+            )
+
+    monkeypatch.setattr(keyhog_adapter, "OwnedKeyhogDaemon", FakeOwnedDaemon)
+
+    findings, stats, provenance = scanner.run_with_provenance(
+        input_file,
+        ScannerConfig(backend="simd", cache="off", daemon="on", mode="full"),
+    )
+
+    assert findings == []
+    assert stats.wall_ms == 12.5
+    assert stats.peak_rss_kb == 8192
+    assert provenance.execution_route == "daemon"
+    assert provenance.daemon_pid == 4242
+    assert provenance.daemon_requests == 2
+    assert len(instances) == 1
+    assert instances[0].args[3] == "simd"
 
 
 def test_keyhog_binary_snapshot_is_sibling_byte_copy_bound_to_one_opened_source(

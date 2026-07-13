@@ -8,6 +8,20 @@ from bench.corpora import resolve_corpus
 from bench.corpora.creddata import CredDataCorpus
 from bench.corpora.homefield import HomefieldCorpus
 from bench.corpora.mirror import MirrorCorpus
+from bench.corpora.perf_corpus import DaemonFileCorpus
+
+
+def test_daemon_file_corpus_measures_exact_input_file(tmp_path):
+    input_file = tmp_path / "workload.bin"
+    input_file.write_bytes(b"benchmark bytes")
+
+    corpus = DaemonFileCorpus(input_file)
+    info = corpus.info()
+
+    assert corpus.scan_root == input_file
+    assert corpus.records() == []
+    assert info.fixture_count == 1
+    assert info.bytes == len(b"benchmark bytes")
 
 
 def test_mirror_corpus_loads_manifest_jsonl(tmp_path):

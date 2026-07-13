@@ -3430,10 +3430,11 @@
       "mode": "full"
     },
     "config_id": "simd-nocache-nodaemon-full",
+    "execution_route": "in_process",
     "name": "keyhog",
     "version": "KeyHog v0.5.37 Build Target: x86_64-linux ML Model Version: moe-v1-83688a6a6cb77f70"
   },
-  "schema_version": "bench-v2",
+  "schema_version": "bench-v3",
   "speed": {
     "peak_rss_kb": 0,
     "throughput_mb_s": 0.0,

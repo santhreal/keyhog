@@ -54,6 +54,14 @@ async fn start(
     let detectors_dir = crate::orchestrator_config::auto_discover_detectors(&detectors_dir)?;
     crate::orchestrator_config::configure_hyperscan_cache_dir(cache_dir)?;
     let backend_override = crate::orchestrator_config::parse_backend_override(backend.as_deref())?;
+    let gpu_policy =
+        crate::orchestrator_config::gpu_runtime_policy_for_backend_override(backend_override)?;
+    keyhog_scanner::gpu::set_gpu_runtime_policy(gpu_policy);
+    if gpu_policy == keyhog_scanner::gpu::GpuRuntimePolicy::Required {
+        keyhog_scanner::gpu::require_gpu_preflight()
+            .map_err(anyhow::Error::msg)
+            .context("daemon start: required GPU preflight failed")?;
+    }
 
     let socket = socket.unwrap_or_else(default_socket_path); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
                                                              // Use the same load-or-embedded fallback that `scan`, `watch`, `scan-system`

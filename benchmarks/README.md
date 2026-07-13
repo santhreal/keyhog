@@ -41,13 +41,17 @@ Run them explicitly with `make targets`.
   Recovery records require the scanner to surface the exact recovered
   plaintext, so an encoded value or a larger containing string earns no
   recovery credit.
-- **Speed:** wall time + throughput (MB/s) + peak RSS (`/usr/bin/time -v`),
-  per run.
+- **Speed:** wall time + throughput (MB/s) + peak RSS per run. In-process rows
+  use `/usr/bin/time -v`. Daemon rows time the warm client request and read the
+  owned server's `VmHWM`, since the server owns scanner memory.
 - **Host:** OS / kernel / CPU / cores / RAM / GPU + VRAM, captured per run so
   desktop / santhserver / Windows-ThinkPad / macOS results aggregate into one
   matrix.
 - **Config:** keyhog's `backend × cache × daemon × mode` axes; each competitor
   carries its own knob (kingfisher confidence, etc.) in the same `config_id`.
+- **Execution route:** each KeyHog result records whether execution was
+  in-process or daemon-served. A daemon result also records the owned server
+  PID and exactly two served requests (one warmup, one timed scan).
 - **Detector provenance:** every KeyHog run scans a private immutable snapshot
   and records the SHA-256 of its exact detector TOML filenames and bytes. The
   gate rejects results whose digest does not match the workspace corpus.
@@ -125,6 +129,7 @@ benchmarks/
 | `creddata` | [Samsung/CredData](https://github.com/Samsung/CredData) (~11k files, pinned commit) | yes (T=pos, F/X=neg) | `make creddata` |
 | `ioc-recovery` | 336 sources across P0-P12 JavaScript concealment phases (4,368 fixtures) | yes, exact plaintext | `make ioc-recovery-corpus` |
 | `kernel` | Linux kernel tree | no (perf only) | set `KEYHOG_BENCH_KERNEL` |
+| `daemon-file` | one regular file for owned-daemon latency | no (perf only) | set `KEYHOG_BENCH_DAEMON_FILE` |
 
 Benchmarked tools and datasets are credited with their licenses in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Competitor corpora and
@@ -193,12 +198,37 @@ checked v0.5.41 SIMD/deep artifact currently satisfies it with 4,368 true
 positives, zero false negatives, and zero false positives. The artifact records
 the exact commit and detector-set identity.
 
+## Daemon measurements
+
+Daemon performance uses a separate unlabeled, single-file corpus because the
+production daemon accepts stdin or one regular file and redacts credentials
+in the client report. Raw matches cross the private user-only socket, but the
+CLI forbids plaintext rendering on this route. It does not accept directory
+trees or benchmark-only plaintext scoring flags. Linux measurements launch the immutable executable
+snapshot as a foreground server on a private socket, verify the peer PID with
+`SO_PEERCRED`, require request counters `0 -> 1 -> 2`, and stop and reap that
+exact process. Active requests must return to zero after each client. The
+default user daemon is never contacted.
+
+Only explicit `simd`, `cpu`, and `gpu` backends are eligible. `auto` lacks a
+persisted selected-backend receipt. Cache, fast, deep, and confidence axes are
+also unavailable because those policies are not bound into daemon startup.
+Unsupported combinations produce unavailable rows with the exact reason.
+Explicit CPU and SIMD daemon backends disable all GPU runtime work. Explicit
+GPU daemon backends require GPU preflight and hard-fail on runtime degradation.
+
+```bash
+cd benchmarks
+KEYHOG_BENCH_DAEMON_FILE=/path/to/representative-file \
+  python -m bench leaderboard --corpus daemon-file --scanners keyhog \
+  --matrix backend,daemon --out results-daemon
+```
+
 ## Tiers
 
 - `quick`: every scanner at its default config (the README leaderboard).
-- `perf`: keyhog's full `backend × cache × daemon × mode` matrix on one
-  corpus, for the speed/RSS table:
-  `python -m bench.leaderboard --tier perf --corpus kernel --scanners keyhog --matrix backend,cache,daemon,mode`.
+- `perf`: keyhog's in-process `backend × cache × mode` matrix on a tree corpus,
+  plus the constrained daemon matrix above on `daemon-file`.
 
 ## Gate (CI forcing function)
 

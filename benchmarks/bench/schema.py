@@ -283,6 +283,9 @@ class Scanner:
     config: ScannerConfig = field(default_factory=ScannerConfig)
     executable_sha256: str = ""
     detector_corpus_sha256: str = ""
+    execution_route: str = ""
+    daemon_pid: int = 0
+    daemon_requests: int = 0
 
     @property
     def config_id(self) -> str:
@@ -295,6 +298,12 @@ class Scanner:
             value["executable_sha256"] = self.executable_sha256
         if self.detector_corpus_sha256:
             value["detector_corpus_sha256"] = self.detector_corpus_sha256
+        if self.execution_route:
+            value["execution_route"] = self.execution_route
+        if self.daemon_pid:
+            value["daemon_pid"] = self.daemon_pid
+        if self.daemon_requests:
+            value["daemon_requests"] = self.daemon_requests
         return value
 
     @classmethod
@@ -302,7 +311,10 @@ class Scanner:
         return cls(name=d.get("name", ""), version=d.get("version", ""),
                    config=ScannerConfig.from_json(d.get("config", {})),
                    executable_sha256=d.get("executable_sha256", ""),
-                   detector_corpus_sha256=d.get("detector_corpus_sha256", ""))
+                   detector_corpus_sha256=d.get("detector_corpus_sha256", ""),
+                   execution_route=d.get("execution_route", ""),
+                   daemon_pid=int(d.get("daemon_pid", 0)),
+                   daemon_requests=int(d.get("daemon_requests", 0)))
 
 
 # ── corpus: which dataset + its size ──────────────────────────────────

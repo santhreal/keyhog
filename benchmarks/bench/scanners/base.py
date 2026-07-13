@@ -69,6 +69,9 @@ class MeasurementProvenance:
     scanner_version: str = ""
     executable_sha256: str = ""
     detector_corpus_sha256: str = ""
+    execution_route: str = ""
+    daemon_pid: int = 0
+    daemon_requests: int = 0
 
 
 # ── path collapse (verbatim intent from score.py::_scan_roots) ────────

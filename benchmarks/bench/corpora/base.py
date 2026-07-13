@@ -133,6 +133,11 @@ class Corpus(ABC):
         root = self.scan_root
         if not root.exists():
             return 0
+        if root.is_file():
+            try:
+                return root.stat().st_size
+            except OSError:
+                return 0
         for p in root.rglob("*"):
             try:
                 if p.is_file():
@@ -145,6 +150,8 @@ class Corpus(ABC):
         root = self.scan_root
         if not root.exists():
             return 0
+        if root.is_file():
+            return 1
         n = 0
         for p in root.rglob("*"):
             try:
@@ -205,7 +212,10 @@ def resolve_corpus(name: str, **kw) -> Corpus:
     if name == "kernel":
         from .perf_corpus import KernelCorpus
         return KernelCorpus(**kw)
+    if name in ("daemon-file", "daemon_file"):
+        from .perf_corpus import DaemonFileCorpus
+        return DaemonFileCorpus(**kw)
     raise SystemExit(
         f"unknown corpus {name!r}; known: mirror, ioc-recovery, "
-        f"homefield-betterleaks, homefield-kingfisher, creddata, kernel"
+        f"homefield-betterleaks, homefield-kingfisher, creddata, kernel, daemon-file"
     )

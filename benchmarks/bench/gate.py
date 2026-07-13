@@ -102,6 +102,25 @@ def _assert_keyhog_results_current(rows: list[RunResult]) -> None:
     for row in rows:
         if row.scanner.name != "keyhog":
             continue
+        expected_route = (
+            "daemon" if row.scanner.config.daemon == "on" else "in_process"
+        )
+        if row.scanner.execution_route != expected_route:
+            observed = row.scanner.execution_route or "missing"
+            raise GateError(
+                "invalid keyhog benchmark result: execution route is "
+                f"{observed}, expected {expected_route}; rerun the benchmark"
+            )
+        if expected_route == "daemon":
+            if row.scanner.daemon_pid <= 0 or row.scanner.daemon_requests != 2:
+                raise GateError(
+                    "invalid keyhog daemon benchmark result: expected an owned "
+                    "positive PID and exactly two served requests"
+                )
+        elif row.scanner.daemon_pid != 0 or row.scanner.daemon_requests != 0:
+            raise GateError(
+                "invalid keyhog in-process benchmark result: unexpected daemon evidence"
+            )
         if not is_sha256(row.scanner.executable_sha256):
             observed = row.scanner.executable_sha256 or "missing"
             raise GateError(

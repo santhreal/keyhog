@@ -22,9 +22,12 @@ def test_run_result_round_trips_losslessly():
         scanner=Scanner(
             name="keyhog",
             version="0.5.37",
-            config=ScannerConfig(backend="simd", cache="off", daemon="off", mode="full"),
+            config=ScannerConfig(backend="simd", cache="off", daemon="on", mode="full"),
             executable_sha256="b" * 64,
             detector_corpus_sha256="a" * 64,
+            execution_route="daemon",
+            daemon_pid=4242,
+            daemon_requests=2,
         ),
         corpus=CorpusInfo(name="mirror", fixture_count=3, labeled_positives=2, bytes=128),
         detection=Detection(overall=Outcome(tp=2, fp=1, fn=0)),
@@ -38,10 +41,13 @@ def test_run_result_round_trips_losslessly():
     decoded = RunResult.from_json(encoded)
 
     assert decoded.to_json() == encoded
-    assert decoded.scanner.config_id == "simd-nocache-nodaemon-full"
+    assert decoded.scanner.config_id == "simd-nocache-daemon-full"
     assert decoded.scanner.executable_sha256 == "b" * 64
     assert decoded.scanner.detector_corpus_sha256 == "a" * 64
-    assert decoded.result_filename() == "mirror-keyhog-simd-nocache-nodaemon-full.json"
+    assert decoded.scanner.execution_route == "daemon"
+    assert decoded.scanner.daemon_pid == 4242
+    assert decoded.scanner.daemon_requests == 2
+    assert decoded.result_filename() == "mirror-keyhog-simd-nocache-daemon-full.json"
 
 
 @pytest.mark.parametrize("observed", [None, "bench-v999"])
@@ -52,7 +58,7 @@ def test_run_result_rejects_missing_or_unsupported_schema(observed):
     else:
         payload["schema_version"] = observed
 
-    with pytest.raises(ValueError, match="supported='bench-v2'"):
+    with pytest.raises(ValueError, match="supported='bench-v3'"):
         RunResult.from_json(payload, source="fixture.json")
 
 

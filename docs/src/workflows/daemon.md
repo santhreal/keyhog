@@ -79,8 +79,9 @@ path failures also exit `2`, including a missing socket, permission denial,
 invalid path/data, connection refusal, or an already-bound socket. Other
 low-level operating-system I/O failures exit `3`, and a selected GPU dispatch
 that fails during the real warmup exits `12`. An explicit CPU or SIMD daemon
-does not warm or require the GPU; the GPU warmup is mandatory only for daemon
-autoroute or an explicit GPU daemon.
+disables all GPU runtime work. An explicit GPU daemon requires the GPU for its
+full lifetime, so a later dispatch failure cannot degrade to CPU. GPU warmup is
+mandatory only for daemon autoroute or an explicit GPU daemon.
 
 ## What `--daemon` means
 

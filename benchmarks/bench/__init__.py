@@ -17,6 +17,6 @@ functions that need them.
 
 from __future__ import annotations
 
-SCHEMA_VERSION = "bench-v2"
+SCHEMA_VERSION = "bench-v3"
 
 __all__ = ["SCHEMA_VERSION"]

@@ -44,6 +44,31 @@ class KernelCorpus(Corpus):
         return self._root.is_dir()
 
 
+class DaemonFileCorpus(Corpus):
+    """Unlabeled single-file workload eligible for the daemon transport."""
+
+    name = "daemon-file"
+
+    def __init__(self, root: str | pathlib.Path | None = None):
+        selected = root or os.environ.get("KEYHOG_BENCH_DAEMON_FILE")
+        if selected is None:
+            raise ValueError(
+                "daemon-file corpus requires --corpus-root or "
+                "KEYHOG_BENCH_DAEMON_FILE pointing to one regular file"
+            )
+        self._root = pathlib.Path(selected)
+
+    @property
+    def root(self) -> pathlib.Path:
+        return self._root
+
+    def _load_records(self) -> list[LabeledRecord]:
+        return []
+
+    def exists(self) -> bool:
+        return self._root.is_file()
+
+
 def _main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Perf corpus (kernel) info.")
     ap.add_argument("--root", default=None)

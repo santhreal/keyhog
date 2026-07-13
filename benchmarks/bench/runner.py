@@ -66,6 +66,9 @@ def build_result(
     stats: RunStats,
     executable_sha256: str = "",
     detector_corpus_sha256: str = "",
+    execution_route: str = "",
+    daemon_pid: int = 0,
+    daemon_requests: int = 0,
 ) -> RunResult:
     info = corpus.info()
     throughput = 0.0
@@ -84,6 +87,9 @@ def build_result(
             config=cfg,
             executable_sha256=executable_sha256,
             detector_corpus_sha256=detector_corpus_sha256,
+            execution_route=execution_route,
+            daemon_pid=daemon_pid,
+            daemon_requests=daemon_requests,
         ),
         corpus=info,
         detection=detection,
@@ -107,6 +113,15 @@ def _run_resolved_scanner(
     corpus: Corpus,
 ) -> RunResult:
     """Measure one resolved scanner/config with one provenance contract."""
+    if scanner.name == "keyhog" and cfg.daemon == "on" and corpus.is_labeled():
+        return _unavailable_result(
+            scanner,
+            version,
+            cfg,
+            corpus,
+            "daemon benchmark rows require an unlabeled perf corpus because the "
+            "production daemon CLI forbids plaintext credential rendering",
+        )
     try:
         measured_version = _assert_scanner_freshness(scanner)
         if measured_version is not None:
@@ -130,6 +145,9 @@ def _run_resolved_scanner(
         )
     run_with_provenance = getattr(scanner, "run_with_provenance", None)
     executable_digest = ""
+    execution_route = ""
+    daemon_pid = 0
+    daemon_requests = 0
     if callable(run_with_provenance):
         try:
             findings, stats, provenance = run_with_provenance(corpus.scan_root, cfg)
@@ -152,6 +170,26 @@ def _run_resolved_scanner(
                     "provenance-bound scanner returned no snapshot version identity"
                 )
             version = provenance.scanner_version
+            execution_route = provenance.execution_route
+            daemon_pid = provenance.daemon_pid
+            daemon_requests = provenance.daemon_requests
+            if scanner.name == "keyhog":
+                expected_route = "daemon" if cfg.daemon == "on" else "in_process"
+                if execution_route != expected_route:
+                    raise ValueError(
+                        f"provenance execution route {execution_route!r} does not match "
+                        f"requested {expected_route!r} route"
+                    )
+                if execution_route == "daemon":
+                    if daemon_pid <= 0 or daemon_requests != 2:
+                        raise ValueError(
+                            "daemon provenance requires an owned positive PID and exactly "
+                            "two served requests"
+                        )
+                elif daemon_pid != 0 or daemon_requests != 0:
+                    raise ValueError(
+                        "in-process provenance cannot contain daemon execution evidence"
+                    )
         except Exception as exc:
             return _unavailable_result(
                 scanner, version, cfg, corpus, f"{type(exc).__name__}: {exc}",
@@ -203,6 +241,9 @@ def _run_resolved_scanner(
         stats=stats,
         executable_sha256=executable_digest,
         detector_corpus_sha256=detector_digest,
+        execution_route=execution_route,
+        daemon_pid=daemon_pid,
+        daemon_requests=daemon_requests,
     )
     if stats.timed_out:
         result.error = "scanner timed out"

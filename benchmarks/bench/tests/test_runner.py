@@ -85,6 +85,36 @@ def test_resolve_corpus_with_root_maps_ioc_recovery_to_corpus_dir(tmp_path):
     assert corpus.scan_root == tmp_path / "corpus"
 
 
+def test_runner_rejects_daemon_scoring_on_labeled_corpus(tmp_path):
+    (tmp_path / "manifest.jsonl").write_text(
+        json.dumps(
+            {
+                "id": "one",
+                "secret": "secret-one",
+                "label": True,
+                "category": "api",
+                "on_disk_path": "one.txt",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "one.txt").write_text("secret-one\n", encoding="utf-8")
+
+    class FakeScanner:
+        name = "keyhog"
+
+    result = runner._run_resolved_scanner(
+        FakeScanner(),
+        "keyhog test",
+        ScannerConfig(backend="simd", daemon="on"),
+        MirrorCorpus(corpus_dir=tmp_path),
+    )
+
+    assert result.available is False
+    assert "production daemon CLI forbids plaintext" in result.error
+
+
 def test_run_once_rejects_detector_corpus_mutation(monkeypatch, tmp_path):
     digests = iter(["a" * 64, "b" * 64])
 
@@ -149,6 +179,7 @@ def test_run_once_uses_adapter_provenance_bound_scan(monkeypatch, tmp_path):
                 scanner_version="KeyHog snapshot",
                 executable_sha256="b" * 64,
                 detector_corpus_sha256="c" * 64,
+                execution_route="in_process",
             )
 
         def exit_success(self, code):
@@ -242,6 +273,7 @@ def test_run_once_snapshot_provenance_does_not_reprobe_mutable_workspace(
                 scanner_version="KeyHog snapshot",
                 executable_sha256="b" * 64,
                 detector_corpus_sha256="a" * 64,
+                execution_route="in_process",
             )
 
         def exit_success(self, code):
@@ -286,6 +318,7 @@ def test_run_once_records_snapshot_when_source_binary_changes(monkeypatch, tmp_p
                 scanner_version="KeyHog snapshot A",
                 executable_sha256="b" * 64,
                 detector_corpus_sha256="a" * 64,
+                execution_route="in_process",
             )
 
         def exit_success(self, code):

@@ -45,6 +45,7 @@ def _row(scanner: str, tp: int, fp: int, fn: int, *, available: bool = True,
                 else executable_sha256 or ""
             ),
             detector_corpus_sha256=detector_corpus_sha256,
+            execution_route="in_process" if scanner == "keyhog" else "",
         ),
         corpus=CorpusInfo(name="mirror", fixture_count=10, labeled_positives=tp + fn),
         detection=Detection(overall=Outcome(tp=tp, fp=fp, fn=fn),
@@ -251,7 +252,7 @@ def test_run_gate_is_undecidable_for_incompatible_result_schema(
     assert rc == 2
     error = capsys.readouterr().err
     assert str(artifact) in error
-    assert "supported='bench-v2'" in error
+    assert "supported='bench-v3'" in error
 
 
 def test_run_gate_accepts_current_keyhog_result_artifacts(monkeypatch, tmp_path):
@@ -275,6 +276,35 @@ def test_run_gate_accepts_current_keyhog_result_artifacts(monkeypatch, tmp_path)
     )
 
     assert rc == 0
+
+
+def test_current_result_gate_rejects_missing_execution_route(monkeypatch):
+    digest = "d" * 64
+    monkeypatch.setattr(gate, "workspace_detector_corpus_sha256", lambda: digest)
+    current = _row(
+        "keyhog", tp=5, fp=0, fn=0,
+        version=_current_keyhog_version_record(),
+        detector_corpus_sha256=digest,
+    )
+    current.scanner.execution_route = ""
+
+    with pytest.raises(gate.GateError, match="execution route is missing"):
+        gate._assert_keyhog_results_current([current])
+
+
+def test_current_result_gate_rejects_daemon_route_without_owned_evidence(monkeypatch):
+    digest = "d" * 64
+    monkeypatch.setattr(gate, "workspace_detector_corpus_sha256", lambda: digest)
+    current = _row(
+        "keyhog", tp=0, fp=0, fn=0,
+        version=_current_keyhog_version_record(),
+        detector_corpus_sha256=digest,
+    )
+    current.scanner.config.daemon = "on"
+    current.scanner.execution_route = "daemon"
+
+    with pytest.raises(gate.GateError, match="owned positive PID"):
+        gate._assert_keyhog_results_current([current])
 
 
 def test_run_gate_rejects_same_version_result_from_another_commit(
