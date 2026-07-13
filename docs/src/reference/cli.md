@@ -230,6 +230,14 @@ keyhog watch src/ config/         # watch several roots in one process
 keyhog watch                      # watch the current directory
 ```
 
+| Argument | Type | Default | Purpose |
+|----------|------|---------|---------|
+| `[PATH]...` | directory path(s) | `.` | Watch one or more directory trees. Nested and duplicate roots fold into their covering parent. |
+| `--detectors <PATH>` | directory path | installed or embedded corpus | Replace corpus discovery with an explicit detector TOML directory. An explicitly named missing or invalid directory is an error. |
+| `--cache-dir <DIR>` | directory path | unset | Override the Hyperscan compiled-database cache directory. |
+| `--backend <BACKEND>` | `auto`, `gpu`, `simd`, or `cpu` | `auto` | Use persisted autoroute evidence or force one diagnostic backend. Missing or stale evidence in `auto` mode fails closed. |
+| `--quiet` | flag | off | Print findings while suppressing watcher startup and status lines. |
+
 ## `keyhog hook <install|uninstall>`
 
 Manages the git pre-commit hook. See
@@ -356,6 +364,23 @@ keyhog scan-system --include-network                # also walk NFS/SMB/sshfs
 keyhog scan-system --space 50G --no-git-history     # cap + skip history walks
 keyhog scan-system --lockdown                       # forbids --include-network
 ```
+
+| Option | Type | Default | Purpose |
+|--------|------|---------|---------|
+| `--space <SIZE>` | positive byte size with `K`, `M`, `G`, or `T` suffix | `50G` | Stop before scanning a file that would exceed the cumulative byte ceiling. |
+| `--include-network` | flag | off | Include NFS, SMB, sshfs, and other network mounts. Incompatible with `--lockdown`. |
+| `--no-git-history` | flag | off | Skip repository discovery and historical Git object scanning. |
+| `--respect-gitignore` | flag | off | Honor Git ignore rules. The default system audit scans ignored working-tree files. |
+| `--output <PATH>` | file path | unset | Atomically write the redacted finding array as JSON. Without it, findings use the text diagnostic stream. |
+| `--detectors <PATH>` | directory path | installed or embedded corpus | Replace corpus discovery with an explicit detector TOML directory. An explicitly named missing or invalid directory is an error. |
+| `--cache-dir <DIR>` | directory path | unset | Override the Hyperscan compiled-database cache directory. |
+| `--threads <N>` | positive integer | automatic | Set the scanner worker count. Automatic mode uses the resolved runtime default. |
+| `--lockdown` | flag | off | Require stronger memory and process protections and refuse network mounts. |
+
+`scan-system` always runs its own in-process scanner, whether the daemon is
+active or inactive. It uses persisted autoroute evidence and has no explicit
+backend override. Missing, stale, or incomplete evidence fails closed before
+scanning.
 
 ## `keyhog completion <bash|zsh|fish|powershell|elvish>`
 
