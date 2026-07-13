@@ -17,6 +17,8 @@ pub mod regression;
 pub mod regression_ac_literal_prefilter;
 #[path = "regression_ac_overlap_shadow.rs"]
 pub mod regression_ac_overlap_shadow;
+#[path = "regression_active_detector_suppression_policy.rs"]
+pub mod regression_active_detector_suppression_policy;
 #[path = "regression_ai_provider_key_recall.rs"]
 pub mod regression_ai_provider_key_recall;
 #[path = "regression_ai_vendor_prefix_token_recall.rs"]

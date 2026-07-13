@@ -244,10 +244,8 @@ impl CompiledScanner {
                 // `self.detectors.iter().find(...)` scan over every detector.
                 // `generic_owning_detector` preserves the exact original
                 // first-match-by-exact-or-normalized-keyword semantics.
-                let owning_detector = self
-                    .generic_owning_detector
-                    .owning_index(keyword)
-                    .map(|index| &self.detectors[index]);
+                let owning_detector_index = self.generic_owning_detector.owning_index(keyword);
+                let owning_detector = owning_detector_index.map(|index| &self.detectors[index]);
                 // A complete pure-hex value admitted by the owning detector's
                 // exact keyword/length policy is key material rather than a
                 // digest. The legacy structural 32/48 family remains as the
@@ -404,6 +402,18 @@ impl CompiledScanner {
                         chunk.metadata.path.as_deref(),
                         value,
                         &generic_ctx,
+                    );
+                    continue;
+                }
+
+                if let Some(stage_id) = owning_detector_index
+                    .and_then(|index| self.detector_suppression_by_index.get(index))
+                    .and_then(|policy| policy.full_stage(chunk.metadata.path.as_deref(), value))
+                {
+                    crate::adjudicate::record_suppression(
+                        chunk.metadata.path.as_deref(),
+                        value,
+                        &crate::adjudicate::MatchCtx::for_stage(stage_id),
                     );
                     continue;
                 }

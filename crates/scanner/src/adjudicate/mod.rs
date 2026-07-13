@@ -359,7 +359,6 @@ pub(crate) struct MatchCtx<'a> {
 }
 
 impl<'a> MatchCtx<'a> {
-    #[cfg(any(feature = "simdsieve", test))]
     pub(crate) const fn for_stage(stage_id: StageId) -> Self {
         Self {
             explicit_stage: Some(stage_id),

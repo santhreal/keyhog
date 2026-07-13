@@ -257,6 +257,10 @@ pub struct CompiledScanner {
     /// `LazyRegex`). This keeps a strong pattern (`servicenow instance=…`) from
     /// inheriting a weak sibling pattern's (`servicenow user=…`) shape gates.
     pub(crate) detector_weak_anchor_base_by_index: Vec<crate::suppression::WeakAnchorBase>,
+    /// Active detector-owned path, value, and stopword suppression policy,
+    /// indexed by `detector_index`. Compiled from the exact corpus supplied to
+    /// this scanner, so custom detectors never inherit or miss embedded policy.
+    pub(crate) detector_suppression_by_index: crate::suppression::CompiledDetectorSuppressions,
     /// Normalized assignment-key names owned by service-specific named
     /// detectors, e.g. `segment_write_key`. The generic assignment bridge uses
     /// this to avoid emitting a weaker generic finding for an LHS that a loaded

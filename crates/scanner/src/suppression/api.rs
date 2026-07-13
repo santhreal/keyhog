@@ -3,6 +3,7 @@
 //! call site, then delegate the rest to [`super::decision::suppression_stage_inner`].
 
 use super::decision::suppression_stage_inner;
+use super::detector_policy::DetectorSuppressionPolicy;
 use super::path_filter::{
     looks_like_raw_base64_file_path, looks_like_secret_scanner_source,
     looks_like_vendored_minified_path,
@@ -93,6 +94,7 @@ pub(crate) struct NamedDetectorSuppressionCtx<'a> {
     context: context::CodeContext,
     source_type: Option<&'a str>,
     detector_id: &'a str,
+    detector_rules: Option<&'a DetectorSuppressionPolicy>,
     weak_anchor: bool,
     structural_password_slot: bool,
     allow_decoded_hex_key_material: bool,
@@ -112,6 +114,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
             context,
             source_type,
             detector_id,
+            test_detector_suppression_rules(detector_id),
             weak_anchor,
             structural_password_slot,
             false,
@@ -123,6 +126,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
         context: context::CodeContext,
         source_type: Option<&'a str>,
         detector_id: &'a str,
+        detector_rules: Option<&'a DetectorSuppressionPolicy>,
         weak_anchor: bool,
         structural_password_slot: bool,
         allow_decoded_hex_key_material: bool,
@@ -132,6 +136,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
             context,
             source_type,
             detector_id,
+            detector_rules,
             weak_anchor,
             structural_password_slot,
             allow_decoded_hex_key_material,
@@ -162,6 +167,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     let context = ctx.context;
     let source_type = ctx.source_type;
     let detector_id = ctx.detector_id;
+    let detector_rules = ctx.detector_rules;
     let weak_anchor = ctx.weak_anchor;
     let structural_password_slot = ctx.structural_password_slot;
     let randomness = TokenRandomness::for_candidate(credential);
@@ -171,7 +177,8 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // so they run FIRST. The broad per-detector STOPWORD substring heuristic is
     // the least-specific reason and runs LAST (just before `suppression_stage_inner`)
     // so a precise structural gate claims the drop with its own reason.
-    if let Some(stage_id) = suppress_per_detector_allowlist(detector_id, path, credential) {
+    if let Some(stage_id) = detector_rules.and_then(|rules| rules.allowlist_stage(path, credential))
+    {
         return Some(stage_id);
     }
 
@@ -460,7 +467,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // dropped here just the same, only later), except the randomness guard inside
     // deliberately RECOVERS random credentials that merely embed a stopword.
     if let Some(stage_id) =
-        suppress_per_detector_stopwords(detector_id, path, credential, &randomness)
+        detector_rules.and_then(|rules| rules.stopword_stage(path, credential, &randomness))
     {
         return Some(stage_id);
     }
@@ -735,148 +742,19 @@ fn is_full_alpha_identifier_class(body: &str) -> bool {
     full_alpha
 }
 
-struct CompiledDetectorSuppressionRules {
-    allowlist_paths: Vec<regex::Regex>,
-    allowlist_values: Vec<regex::Regex>,
-    stopwords: Vec<String>,
+#[cfg(test)]
+fn test_detector_suppression_rules(
+    detector_id: &str,
+) -> Option<&'static DetectorSuppressionPolicy> {
+    static RULES: std::sync::LazyLock<DetectorSuppressionPolicy> =
+        std::sync::LazyLock::new(DetectorSuppressionPolicy::test_fixture);
+    (detector_id == "test-detector").then_some(&RULES)
 }
 
-static DETECTOR_SUPPRESSIONS: std::sync::LazyLock<
-    std::collections::HashMap<String, CompiledDetectorSuppressionRules>,
-> = std::sync::LazyLock::new(|| {
-    let mut map = std::collections::HashMap::new();
-
-    #[cfg(test)]
-    {
-        map.insert(
-            "test-detector".to_string(),
-            CompiledDetectorSuppressionRules {
-                allowlist_paths: vec![regex::Regex::new(".*allowlisted_path.*").unwrap()],
-                allowlist_values: vec![regex::Regex::new("^allowlisted_value_.*").unwrap()],
-                stopwords: vec!["stopword_here".to_string()],
-            },
-        );
-    }
-
-    let specs = match keyhog_core::load_embedded_detectors_or_fail() {
-        Ok(specs) => specs,
-        Err(error) => {
-            panic!("failed to load embedded detectors for allowlist/stopword suppression: {error}")
-        }
-    };
-    for spec in specs {
-        let allowlist_paths = spec
-            .allowlist_paths
-            .iter()
-            .map(|pat| match regex::Regex::new(pat) {
-                Ok(regex) => regex,
-                Err(err) => panic!(
-                    "detector '{}' has invalid allowlist_path regex '{}': {}",
-                    spec.id, pat, err
-                ),
-            })
-            .collect();
-        let allowlist_values = spec
-            .allowlist_values
-            .iter()
-            .map(|pat| match regex::Regex::new(pat) {
-                Ok(regex) => regex,
-                Err(err) => panic!(
-                    "detector '{}' has invalid allowlist_value regex '{}': {}",
-                    spec.id, pat, err
-                ),
-            })
-            .collect();
-        map.insert(
-            spec.id.clone(),
-            CompiledDetectorSuppressionRules {
-                allowlist_paths,
-                allowlist_values,
-                stopwords: spec.stopwords.clone(),
-            },
-        );
-    }
-    map
-});
-
-/// Operator OVERRIDE gate: a detector's configured `allowlist_paths` /
-/// `allowlist_values` are explicit "never flag this" declarations, so they win
-/// over every shape/structure gate and run FIRST. Kept separate from the broad
-/// stopword heuristic ([`suppress_per_detector_stopwords`]), which is the
-/// least-specific reason and must run LAST so a precise structural gate
-/// (`email_address`, `exact_placeholder_value`, …) claims the drop with its own
-/// informative reason instead of a coincidental substring hit.
-fn suppress_per_detector_allowlist(
-    detector_id: &str,
-    path: Option<&str>,
-    credential: &str,
-) -> Option<crate::adjudicate::StageId> {
-    let rules = DETECTOR_SUPPRESSIONS.get(detector_id)?;
-    let shape_stage = |reason| Some(crate::adjudicate::StageId::ShapeGate(reason));
-
-    if let Some(p) = path {
-        for re in &rules.allowlist_paths {
-            if re.is_match(p) {
-                crate::adjudicate::record_example_suppression(
-                    "pipeline",
-                    path,
-                    credential,
-                    "allowlist_paths",
-                );
-                return shape_stage("allowlist_paths");
-            }
-        }
-    }
-    for re in &rules.allowlist_values {
-        if re.is_match(credential) {
-            crate::adjudicate::record_example_suppression(
-                "pipeline",
-                path,
-                credential,
-                "allowlist_values",
-            );
-            return shape_stage("allowlist_values");
-        }
-    }
-    None
-}
-
-/// Per-detector STOPWORD gate: a broad case-insensitive SUBSTRING heuristic for
-/// placeholder captures (`example`, `test`, `demo`, `changeme`). It is the
-/// least-specific suppression reason, so it runs AFTER every structural gate
-/// (see [`suppress_per_detector_allowlist`] for why order matters): a value that
-/// is really an email or an exact placeholder gets that precise reason, not a
-/// coincidental `stopwords` hit.
-///
-/// Randomness guard: when the capture is a genuine RANDOM token the stopword is
-/// a coincidental fragment of the entropy body: `sk_test_4eC39HqLyjWDarjtT1zdp7dc`
-/// is a real Stripe test key that merely CONTAINS `test`, not a placeholder, so
-/// a random credential BYPASSES stopword suppression. This wraps the SAME shared
-/// `is_random_token` model the identifier / word-separated gates use (ONE
-/// discriminator, no second copy): a low-entropy dictionary value
-/// (`contains_stopword_here_secret`) still suppresses; a high-entropy credential
-/// that happens to embed a stopword is recovered.
-fn suppress_per_detector_stopwords(
-    detector_id: &str,
-    path: Option<&str>,
-    credential: &str,
-    randomness: &TokenRandomness<'_>,
-) -> Option<crate::adjudicate::StageId> {
-    let rules = DETECTOR_SUPPRESSIONS.get(detector_id)?;
-    if rules.stopwords.is_empty() || randomness.is_random_token(credential) {
-        return None;
-    }
-    for word in &rules.stopwords {
-        if keyhog_core::contains_ignore_ascii_case(credential, word) {
-            crate::adjudicate::record_example_suppression(
-                "pipeline",
-                path,
-                credential,
-                "stopwords",
-            );
-            return Some(crate::adjudicate::StageId::ShapeGate("stopwords"));
-        }
-    }
+#[cfg(not(test))]
+const fn test_detector_suppression_rules(
+    _detector_id: &str,
+) -> Option<&'static DetectorSuppressionPolicy> {
     None
 }
 

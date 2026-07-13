@@ -41,6 +41,9 @@ impl CompiledScanner {
         let credential_shape_by_detector_index =
             crate::credential_shapes::build_detector_shape_rules(&detectors)
                 .map_err(crate::error::ScanError::Config)?;
+        let detector_suppression_by_index =
+            crate::suppression::CompiledDetectorSuppressions::compile(&detectors)
+                .map_err(crate::error::ScanError::Config)?;
         // GPU is unconditional in the build; runtime probe decides whether to
         // actually use it. `gpu_available` is set by hw_probe based on adapter
         // detection (excluding software renderers like llvmpipe/lavapipe).
@@ -456,6 +459,7 @@ impl CompiledScanner {
             static_intern,
             metadata_by_index,
             detector_weak_anchor_base_by_index,
+            detector_suppression_by_index,
             generic_named_assignment_keywords,
             generic_assignment_re,
             generic_owning_detector,

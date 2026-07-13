@@ -129,6 +129,7 @@ impl CompiledScanner {
                 inferred_context,
                 Some(chunk.metadata.source_type.as_ref()),
                 detector.id.as_ref(),
+                self.detector_suppression_by_index.get(entry.detector_index),
                 weak_anchor,
                 detector.structural_password_slot,
                 allow_decoded_hex_key_material,
