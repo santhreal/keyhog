@@ -20,6 +20,23 @@ fn absent_flag_resolves_to_auto() {
 }
 
 #[test]
+fn explicit_auto_remains_distinguishable_from_the_absent_default() {
+    for (argv, expected) in [
+        (&["keyhog", "scan", "."][..], None),
+        (
+            &["keyhog", "scan", "--daemon=auto", "."][..],
+            Some(DaemonMode::Auto),
+        ),
+    ] {
+        let cli = Cli::try_parse_from(argv).expect("args parse");
+        match cli.command {
+            Some(Command::Scan(args)) => assert_eq!(args.daemon, expected),
+            _ => panic!("expected Scan subcommand"),
+        }
+    }
+}
+
+#[test]
 fn bare_daemon_flag_resolves_to_on() {
     // Bare `--daemon` is the concise spelling for "force on".
     assert_eq!(
@@ -42,6 +59,13 @@ fn explicit_values_resolve_one_to_one() {
         daemon_mode_of(&["keyhog", "scan", "--daemon=auto", "."]),
         DaemonMode::Auto
     );
+}
+
+#[test]
+fn only_auto_and_on_require_the_unix_daemon_transport() {
+    assert!(DaemonMode::Auto.may_use_daemon_transport());
+    assert!(DaemonMode::On.may_use_daemon_transport());
+    assert!(!DaemonMode::Off.may_use_daemon_transport());
 }
 
 #[test]

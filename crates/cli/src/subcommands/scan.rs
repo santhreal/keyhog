@@ -18,10 +18,8 @@ use crate::exit_codes::{EXIT_CREDENTIALS_FOUND, EXIT_SOURCE_FAILED};
 // Daemon module is unix-only - Windows has no `tokio::net::UnixListener`
 // or `std::os::unix::net::UnixStream`, so the whole `crate::daemon`
 // subtree is `#[cfg(unix)]`. See `lib.rs` for the rationale. On
-// Windows, the `--daemon` flag and daemon selection in
-// `daemon_route` short-circuit to `Forbidden` (or emit a clear
-// "daemon is unix-only" error if the user explicitly passed
-// `--daemon`).
+// Windows, an absent daemon flag or explicit `--daemon=off` runs in-process;
+// explicit `--daemon=auto|on` fails loudly because no daemon transport exists.
 #[cfg(unix)]
 use crate::daemon::client;
 #[cfg(unix)]
@@ -52,14 +50,21 @@ pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
     }
 
     // On Windows, the daemon route is never available (the `crate::daemon`
-    // module is cfg(unix)). If the user explicitly passed `--daemon`,
-    // refuse loudly so they don't silently get the in-process path; if
-    // they didn't, fall straight through to the orchestrator.
+    // module is cfg(unix)). If the user explicitly requested `auto` or `on`,
+    // refuse loudly so the request is not silently rewritten as `off`. An
+    // absent flag and explicit `off` both
+    // mean the only supported Windows execution path: in-process.
     #[cfg(not(unix))]
     {
-        if args.daemon_mode() == DaemonMode::On {
+        let mode = args.daemon_mode();
+        if args.daemon.is_some() && mode.may_use_daemon_transport() {
+            let requested = if mode == DaemonMode::Auto {
+                "auto"
+            } else {
+                "on"
+            };
             bail!(
-                "`--daemon=on` is a unix-only flag (the daemon serves scans \
+                "`--daemon={requested}` is a unix-only mode (the daemon serves scans \
                  over a Unix-domain socket). Drop the flag to run \
                  in-process, or pass `--daemon=off` to be explicit."
             );

@@ -17,7 +17,8 @@ The default socket is `$XDG_RUNTIME_DIR/keyhog.sock`, falling back to
 `~/.cache/keyhog/server.sock`. Use matching `daemon start --socket <PATH>` and
 `scan --daemon-socket <PATH>` options for another location. The transport is a
 user-only Unix-domain socket; Windows has no daemon transport and rejects daemon
-commands and `--daemon=on` explicitly.
+commands and explicit `--daemon=auto|on`. An absent flag or `--daemon=off`
+uses the in-process scanner.
 
 The daemon initializes scanner regex state and runs a bounded real GPU warmup
 before announcing readiness. If an eligible physical GPU degrades during that

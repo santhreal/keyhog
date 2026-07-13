@@ -71,8 +71,9 @@ iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 `
 > **Heads up.** The Unix daemon mode is unavailable on Windows (it
 > relies on Unix-domain sockets). `keyhog scan`, `keyhog detectors`,
 > `keyhog watch`, `keyhog hook`, etc. all work the same. The `daemon`
-> subcommand and the `--daemon` flag emit an explicit "unix-only"
-> error so nothing silently regresses.
+> subcommand and explicit `--daemon=auto|on` emit an explicit "unix-only"
+> error so nothing silently regresses. `--daemon=off` remains a valid portable
+> declaration of in-process scanning.
 
 ## Installer overrides
 

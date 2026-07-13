@@ -208,9 +208,9 @@ reclaims the connection slot. Default: `300`.
 Default socket path: `$XDG_RUNTIME_DIR/keyhog.sock`, or
 `~/.cache/keyhog/server.sock` if `XDG_RUNTIME_DIR` is unset.
 
-On Windows: every `daemon` subcommand prints "daemon mode is
-unix-only" and exits non-zero. No Windows daemon transport ships; use
-`keyhog scan <path>` for in-process scans on Windows.
+On Windows: every `daemon` subcommand and explicit `scan --daemon=auto|on`
+prints a Unix-only error and exits non-zero. No Windows daemon transport ships;
+an absent daemon flag or explicit `--daemon=off` runs the in-process scanner.
 
 See [Daemon and warm scans](../workflows/daemon.md) for the complete `auto` /
 `on` / `off` contract, request eligibility, warm autoroute behavior, and socket

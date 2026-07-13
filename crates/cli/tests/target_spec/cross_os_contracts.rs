@@ -141,6 +141,14 @@ fn daemon_is_unix_only_with_explicit_windows_guidance() {
         !src.contains("not yet implemented") && !src.contains("tracked but not yet"),
         "the Windows daemon guidance must state the current shipped contract, not roadmap language"
     );
+
+    let scan = read("crates/cli/src/subcommands/scan.rs");
+    assert!(
+        scan.contains("args.daemon.is_some() && mode.may_use_daemon_transport()")
+            && scan.contains("`--daemon={requested}` is a unix-only mode")
+            && scan.contains("pass `--daemon=off` to be explicit"),
+        "Windows scans must reject explicit daemon auto/on rather than silently rewriting them to in-process; explicit off remains portable"
+    );
 }
 
 // ===========================================================================

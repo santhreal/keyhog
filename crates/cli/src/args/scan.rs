@@ -91,6 +91,14 @@ pub enum DaemonMode {
     Off,
 }
 
+impl DaemonMode {
+    /// Whether this policy may open the Unix daemon transport. An explicit
+    /// `Auto` or `On` therefore requires Unix; `Off` is portable.
+    pub const fn may_use_daemon_transport(self) -> bool {
+        !matches!(self, Self::Off)
+    }
+}
+
 #[derive(Parser, Clone)]
 pub struct ScanArgs {
     /// Detector TOML directory
@@ -527,6 +535,8 @@ pub struct ScanArgs {
     /// Socket: the daemon route connects to the default socket
     /// ($XDG_RUNTIME_DIR/keyhog.sock) unless `--daemon-socket <path>` points it
     /// at a daemon bound elsewhere (`daemon start --socket <path>`).
+    /// Unix only: Windows rejects explicit `auto` and `on`; explicit `off` is
+    /// accepted as a portable declaration of in-process execution.
     ///
     #[arg(
         long,

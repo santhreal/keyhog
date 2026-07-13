@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Windows now rejects explicit `scan --daemon=auto|on` instead of silently
+  replacing the requested daemon-capable policy with in-process execution;
+  an absent flag and portable `--daemon=off` continue to run in process.
 - Corrected install guidance to distinguish host-specific release artifacts,
   removed a stale Claude/Cursor hook claim, documented PowerShell flag parity,
   and made manual installs use the exact signed binary plus GPU-sidecar bundle

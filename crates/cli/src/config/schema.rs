@@ -11,7 +11,7 @@ pub(super) struct ConfigFile {
     pub severity: Option<String>,
     /// Output format: text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit.
     pub format: Option<String>,
-    /// Enable fast mode (pattern matching only).
+    /// Enable fast mode (no entropy discovery, ML scoring, or decode recursion).
     pub fast: Option<bool>,
     /// Enable deep mode (all features).
     pub deep: Option<bool>,
@@ -107,7 +107,8 @@ pub(super) struct ConfigFile {
     pub tuning: Option<TuningSection>,
 }
 
-/// `[scan]` nested table. Fields here map 1:1 to the flat top-level scalars.
+/// Canonical `[scan]` table. Each field has a legacy flat top-level equivalent;
+/// duplicate flat+nested definitions fail closed during config validation.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct ScanSection {
