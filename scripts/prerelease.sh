@@ -3,11 +3,11 @@
 #
 # This is NOT a publisher: it never tags, pushes, or uploads. It proves a
 # candidate is releasable (tests + bench gate + coherence + an install
-# smoke-test), and with `--bump X.Y.Z` rolls the workspace version + CHANGELOG
-# so a human can do the final tag/push. A failing gate refuses the bump.
+# smoke-test). With `--bump X.Y.Z`, it first rolls every canonical versioned
+# surface, then gates that exact candidate so the evidence matches the tag.
 #
 #   scripts/prerelease.sh                 # gate only (no version change)
-#   scripts/prerelease.sh --bump X.Y.Z    # gate, then bump if green
+#   scripts/prerelease.sh --bump X.Y.Z    # bump the candidate, then gate it
 #   scripts/prerelease.sh --skip-rust     # skip the slow per-crate cargo gates
 #
 # Knobs (env or flag): CARGO_TARGET_DIR, PROFILE (release-fast), SKIP_RUST=1.
@@ -111,8 +111,115 @@ raise SystemExit(1)
 PY
 }
 
+# Portable in-place sed. GNU `sed -i` and BSD/macOS `sed -i` have incompatible
+# argument rules, so use a temporary file and preserve the original inode.
+sed_inplace() {
+  local script="$1" file="$2" tmp
+  tmp="$(mktemp "${TMPDIR:-/tmp}/prerelease-sed.XXXXXX")" || return 1
+  if sed "$script" "$file" >"$tmp"; then
+    cat "$tmp" >"$file"
+  else
+    rm -f "$tmp"
+    return 1
+  fi
+  rm -f "$tmp"
+}
+
+apply_version_bump() {
+  local current="$1" next="$2" today current_re
+  local -a versioned_files=(
+    README.md
+    .github/actions/keyhog/README.md
+    docs/src/install.md
+    docs/src/introduction.md
+    docs/src/workflows/integrations.md
+    docs/src/workflows/ci.md
+    docs/src/first-scan.md
+    docs/src/workflows/precommit.md
+  )
+
+  if ! [[ "$next" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "invalid --bump version '$next'; expected X.Y.Z" >&2
+    return 2
+  fi
+  if [ "$next" = "$current" ]; then
+    echo "--bump version already equals workspace version $current" >&2
+    return 2
+  fi
+  if [ "$(grep -c '^## \[Unreleased\]$' CHANGELOG.md)" -ne 1 ]; then
+    echo "CHANGELOG.md must contain exactly one '## [Unreleased]' heading" >&2
+    return 1
+  fi
+  if [ "$(grep -c "^version = \"$current\"$" Cargo.toml)" -ne 1 ] \
+     || [ "$(grep -c "=$current\"" Cargo.toml)" -ne 4 ]; then
+    echo "Cargo.toml does not contain the expected workspace version and four exact internal pins" >&2
+    return 1
+  fi
+  for file in "${versioned_files[@]}"; do
+    if ! grep -q "v$current" "$file"; then
+      echo "$file does not contain the current canonical version v$current" >&2
+      return 1
+    fi
+  done
+
+  current_re="${current//./\\.}"
+  sed_inplace "s/^version = \"$current_re\"/version = \"$next\"/" Cargo.toml || return 1
+  sed_inplace "s/=$current_re\"/=$next\"/g" Cargo.toml || return 1
+
+  python3 - "$current" "$next" Cargo.lock <<'PY' || return 1
+import os
+import pathlib
+import sys
+
+current, next_version, raw_path = sys.argv[1:]
+path = pathlib.Path(raw_path)
+lines = path.read_text().splitlines(keepends=True)
+workspace = {"keyhog", "keyhog-core", "keyhog-scanner", "keyhog-sources", "keyhog-verifier"}
+updated = set()
+package = None
+for index, line in enumerate(lines):
+    if line == "[[package]]\n":
+        package = None
+    elif line.startswith('name = "') and line.rstrip().endswith('"'):
+        package = line[len('name = "'):-2]
+    elif package in workspace and line == f'version = "{current}"\n':
+        lines[index] = f'version = "{next_version}"\n'
+        updated.add(package)
+
+missing = sorted(workspace - updated)
+if missing:
+    raise SystemExit(f"Cargo.lock did not contain expected {current} workspace packages: {missing}")
+tmp = path.with_name(path.name + ".prerelease-tmp")
+tmp.write_text("".join(lines))
+os.chmod(tmp, path.stat().st_mode)
+os.replace(tmp, path)
+PY
+
+  for file in "${versioned_files[@]}"; do
+    sed_inplace "s/v$current_re/v$next/g" "$file" || return 1
+  done
+
+  today="$(date -u +%Y-%m-%d)"
+  sed_inplace "0,/^## \[Unreleased\]$/s//## [$next] - $today/" CHANGELOG.md || return 1
+
+  if rg -n "v$current" "${versioned_files[@]}"; then
+    echo "canonical release docs still contain v$current" >&2
+    return 1
+  fi
+  if [ "$(grep -c '^## \[Unreleased\]$' CHANGELOG.md)" -ne 0 ]; then
+    echo "CHANGELOG.md still contains an Unreleased heading after bump" >&2
+    return 1
+  fi
+  echo "  bumped workspace, lockfile, changelog, and canonical docs to $next"
+}
+
 CUR="$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
 step "keyhog prerelease, current ${CUR}${BUMP:+ → ${BUMP}} (profile=$PROFILE, skip_rust=$SKIP_RUST)"
+
+if [ -n "$BUMP" ]; then
+  step "candidate: bump $CUR → $BUMP"
+  apply_version_bump "$CUR" "$BUMP" || exit $?
+fi
 
 # ── 1. candidate + bench gates ───────────────────────────────────────────────
 # Bench integration tests must execute the source tree being released. Resolving
@@ -154,6 +261,8 @@ check "bench gate" bash -c "cd benchmarks && python3 -m bench gate \
 # stale generated claims is not release evidence.
 step "coherence: README bench tables fresh"
 check "README bench tables up to date" make -C benchmarks report-check
+check "locked metadata matches manifests" bash -c "cargo metadata --locked --no-deps --format-version 1 >/dev/null"
+check "documentation truth" python3 -B scripts/gates/docs_truth.py
 
 # ── 3. Rust test gates (CI-faithful) ─────────────────────────────────────────
 if [ "$SKIP_RUST" != "1" ]; then
@@ -186,33 +295,7 @@ else
 fi
 rm -rf "$SMOKE"
 
-# ── 5. version bump (only if every gate passed) ──────────────────────────────
-if [ -n "$BUMP" ]; then
-  step "bump $CUR → $BUMP"
-  if [ "$fail" != "0" ]; then
-    echo "  REFUSING to bump: ${#FAILED[@]} gate(s) failed (${FAILED[*]})"; exit 1
-  fi
-  # Portable in-place sed: GNU `sed -i` takes no arg but BSD/macOS `sed -i`
-  # requires a backup-suffix arg (`sed -i ''`), so a bare `sed -i "…" file`
-  # silently breaks a release cut from macOS. Route both through a temp file
-  # (no flavor dependency, no stray .bak litter, preserves the file perms/inode).
-  sed_inplace() {
-    local script="$1" file="$2" tmp
-    tmp="$(mktemp "${TMPDIR:-/tmp}/prerelease-sed.XXXXXX")" || return 1
-    if sed "$script" "$file" >"$tmp"; then cat "$tmp" >"$file"; else rm -f "$tmp"; return 1; fi
-    rm -f "$tmp"
-  }
-  # Workspace package version + the internal `=X.Y.Z` path-dep pins.
-  sed_inplace "s/^version = \"$CUR\"/version = \"$BUMP\"/" Cargo.toml
-  sed_inplace "s/=$CUR\"/=$BUMP\"/g" Cargo.toml
-  # CHANGELOG: rename the top `## Unreleased` to `## $BUMP - <date>`.
-  TODAY="$(date -u +%Y-%m-%d)"
-  sed_inplace "0,/^## Unreleased$/s//## $BUMP - $TODAY/" CHANGELOG.md
-  echo "  bumped Cargo.toml + rolled CHANGELOG (## $BUMP - $TODAY)"
-  echo "  verify: cargo build -p keyhog --bin keyhog && target/$PROFILE/keyhog --version"
-fi
-
-# ── 6. verdict ───────────────────────────────────────────────────────────────
+# ── 5. verdict ───────────────────────────────────────────────────────────────
 step "verdict"
 if [ "$fail" = "0" ]; then
   echo "  PRERELEASE OK${BUMP:+, bumped to $BUMP}"
