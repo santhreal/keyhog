@@ -59,7 +59,9 @@ token efficiency are the two separate signals documented here.
 Detection policy belongs in the detector TOML whenever the choice is specific
 to a credential type. Scan-wide CLI/TOML values are operational overrides for
 controlled comparisons or a corpus-wide policy; they are not a second hidden
-detector definition. `keyhog explain <detector-id>` shows the resolved policy.
+detector definition. `keyhog explain <detector-id>` shows the policy declared by
+that detector TOML and its provenance; `keyhog config --effective` shows the
+resolved scan-wide policy.
 
 | Detector TOML field | If increased / enabled | If decreased / disabled |
 |---|---|---|
@@ -83,7 +85,7 @@ detector definition. `keyhog explain <detector-id>` shows the resolved policy.
     3.  Global Override: `[scan].entropy_bpe_max_bytes_per_token` in `.keyhog.toml` or `--entropy-bpe-max-bytes-per-token` CLI override.
 *   **Confidence Floor Precedence**:
     1.  Compiled Default: `0.40`.
-    2.  Global Scan Floor: `min_confidence` in `.keyhog.toml` or `--min-confidence` CLI override.
+    2.  Global Scan Floor: `[scan].min_confidence` in `.keyhog.toml` or `--min-confidence` CLI override.
     3.  Detector TOML Floor: `min_confidence` (self-declared by the detector author).
     4.  Operator Override: `[detector.<id>].min_confidence` in `.keyhog.toml` (highest authority).
 *   **Entropy Threshold Precedence**:

@@ -91,7 +91,7 @@ pub struct DetectorSpec {
     /// Self-declared per-detector confidence floor, in `[0.0, 1.0]`.
     ///
     /// When set, findings from THIS detector use this floor instead of the
-    /// global `--min-confidence` / `[scan] min_confidence`. A detector with a
+    /// global `--min-confidence` / `[scan].min_confidence`. A detector with a
     /// distinctive vendor prefix (e.g. sourcegraph `sgp_<40hex>`, cursor
     /// `key_<64hex>`) is high-confidence by virtue of the prefix even when the
     /// body is low-entropy hex that the generic confidence model scores below
@@ -164,8 +164,8 @@ pub struct DetectorSpec {
     pub min_len: Option<usize>,
     /// Per-detector maximum byte length for phase-2 generic assignment values.
     /// Values above this ceiling are rejected whole; they are never truncated
-    /// into an apparently valid credential. Omission retains the 128-byte
-    /// compatibility ceiling.
+    /// into an apparently valid credential. Omission uses the typed 128-byte
+    /// compiled fallback.
     #[serde(default)]
     pub max_len: Option<usize>,
     /// Per-detector path-exclusion regexes (betterleaks-style allowlist): a match

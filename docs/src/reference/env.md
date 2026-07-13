@@ -64,11 +64,11 @@ controls. The common replacements are:
 | Need | Now set via |
 |------|-------------|
 | Backend override | `--backend <auto\|gpu\|simd\|cpu>` |
-| GPU routing requirement or disablement | `--require-gpu`, `--no-gpu`, or `[system] gpu = "required"` / `"off"` |
-| Direct diagnostic calibration GPU control | `--autoroute-gpu`, `--no-autoroute-gpu`, or `[system] autoroute_gpu`; canonical `keyhog calibrate-autoroute` measures all eligible peers |
+| GPU routing requirement or disablement | `--require-gpu`, `--no-gpu`, or `[system].gpu = "required"` / `"off"` |
+| Direct diagnostic calibration GPU control | `--autoroute-gpu`, `--no-autoroute-gpu`, or `[system].autoroute_gpu`; canonical `keyhog calibrate-autoroute` measures all eligible peers |
 | Scanner concurrency and per-chunk limits | `--threads` plus `[scan].threads`, `reader_threads`, `per_chunk_timeout_ms`, `fused_batch`, and `fused_depth` |
 | Detector directory | `--detectors` or top-level `detectors` |
-| Cache and trusted binary roots | `[system] cache_dir`, `autoroute_cache`, and `trusted_bin_dirs` |
+| Cache and trusted binary roots | `[system].cache_dir`, `[system].autoroute_cache`, and `[system].trusted_bin_dirs` |
 | Detection tuning | `[tuning]` |
 | AWS canary and knockoff account lists | `[aws] canary_accounts` / `knockoff_accounts` |
 | Verifier/source proxy and lab TLS override | `--proxy <URL>`, `[http] proxy`, `--insecure`, or `[http] insecure_tls` |

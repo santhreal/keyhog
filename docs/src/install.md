@@ -140,12 +140,12 @@ and every replaced matcher; concurrent maintenance uses a visible cache lock.
 |--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `keyhog scan --no-gpu`   | Disable GPU initialization for this resolved scan configuration. Automatic routing still requires persisted calibration for that configuration; use an explicit CPU/SIMD backend only for diagnostics. |
 | `keyhog scan --require-gpu` | Hard-fail (`exit 12`) when the GPU stack is unavailable. This is a diagnostic/CI assertion, separate from autoroute. Autoroute itself is not a fallback hierarchy: it selects the fastest measured-correct backend from all eligible candidates. |
-| `.keyhog.toml [system] gpu = "off"` | Persist the CPU/SIMD-only policy for a repository. Use `"required"` for self-hosted GPU runners where a GPU regression must fail closed.                                                                                         |
+| `.keyhog.toml [system].gpu = "off"` | Persist the CPU/SIMD-only policy for a repository. Use `"required"` for self-hosted GPU runners where a GPU regression must fail closed.                                                                                         |
 | `keyhog scan --backend gpu\|simd\|cpu` | Force a specific live scan engine regardless of autoroute. Diagnostic and benchmark override only; it does not prove autoroute correctness.                                                                                                  |
 
 The GitHub Action calibrates the actual runner and admits only usable physical
 accelerators. On self-hosted GPU runners, `--require-gpu` or
-`[system] gpu = "required"` turns accelerator availability into an explicit
+`[system].gpu = "required"` turns accelerator availability into an explicit
 fail-closed requirement; it does not choose GPU over a faster calibrated peer.
 
 ## Repair, diagnose, uninstall

@@ -139,11 +139,19 @@ makes the documented API call with the captured credential and:
 
 ## Per-detector recall/precision knobs
 
-Under KeyHog's architecture, there is no global or overall entropy, length, or recall/precision gate applied uniformly to every candidate. Instead, every threshold, filter, allowlist, and tuning parameter that affects whether a candidate match is reported is a **per-detector field**, owned directly inside the detector's TOML file under the `[detector]` table.
+Credential-family policy belongs in the individual detector TOML whenever the
+schema provides a detector field. This is where stable entropy bands, length
+bounds, BPE behavior, confidence floors, allowlists, and shape classifications
+are tuned for one secret type. Scan-wide CLI and `[scan]` settings remain
+explicit operational overrides for corpus-wide policy and controlled
+comparisons; they are not hidden detector definitions.
 
 This follows the design precedent established by `min_confidence` (the per-detector confidence floor) and `entropy_floor` (the low-entropy suppression floor).
 
-If a detector leaves these fields unset, KeyHog falls back to single-owner global defaults (e.g. the default thresholds defined in the scanner's entropy module). However, if set, the detector's TOML configuration overrides the defaults.
+If a detector leaves one of these fields unset, the typed compiled fallback for
+that mechanism applies. When set, the detector value overrides that fallback.
+An explicitly supplied scan-wide override may have final authority where the
+field's documented precedence says so—for example, the BPE ceiling.
 
 The available per-detector tuning fields are:
 
@@ -183,7 +191,7 @@ The available per-detector tuning fields are:
 ### Candidate Lengths
 *   **`keyword_free_min_len`** (integer, optional): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Falls back to `KEYWORD_FREE_MIN_LEN` (20) if unset.
 *   **`min_len`** (integer, optional): Per-detector minimum candidate length for any candidate this detector emits. Falls back to no detector-specific floor beyond the path-wide default if unset.
-*   **`max_len`** (integer, optional; `kind = "phase2-generic"` only): Inclusive maximum byte length for one generic assignment value. The candidate generator is compiled from the largest ceiling in the loaded detector corpus, then the owning detector rejects an overlength value whole; it never reports a truncated prefix. It must be at least the generic path minimum of 8 and no smaller than `min_len`. An omitted value uses the compatibility ceiling of 128 bytes. Keep this in the owning generic detector TOML so API keys, passphrases, and generic payloads can use different ceilings. Regex-backed patterns keep their own explicit repetition bounds.
+*   **`max_len`** (integer, optional; `kind = "phase2-generic"` only): Inclusive maximum byte length for one generic assignment value. The candidate generator is compiled from the largest ceiling in the loaded detector corpus, then the owning detector rejects an overlength value whole; it never reports a truncated prefix. It must be at least the generic path minimum of 8 and no smaller than `min_len`. An omitted value uses the typed 128-byte compiled fallback. Keep this in the owning generic detector TOML so API keys, passphrases, and generic payloads can use different ceilings. Regex-backed patterns keep their own explicit repetition bounds.
 
 The generic assignment bridge exists only when the loaded corpus contains at
 least one `phase2-generic` detector. A focused custom corpus without one compiles

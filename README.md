@@ -398,7 +398,7 @@ Browse detector authoring and inspection in the
   checksum (GitHub CRC32, npm, Slack), and a small ML classifier
   (~30k params). Default threshold `0.40` (the canonical
   `ScanConfig::default()` floor; same as the `--min-confidence` default
-  and the `[scan] min_confidence` example below) filters low-quality
+  and the `[scan].min_confidence` example below) filters low-quality
   matches without hiding real secrets.
 - **Bayesian per-detector calibration.** `keyhog calibrate --fp generic-api-key`
   writes a Beta(α,β) posterior. Scans use it only when `--calibration-cache`
@@ -503,8 +503,8 @@ CWE-798 + OWASP A07:2021 taxa on every finding.
 ### CI never needs a GPU
 
 **Hosted CI should run pure CPU/SIMD unless it has a real GPU.**
-Use `keyhog scan --no-gpu` or `.keyhog.toml` `[system] gpu = "off"` on
-hosted runners. Use `--require-gpu` or `[system] gpu = "required"` on
+Use `keyhog scan --no-gpu` or `.keyhog.toml` `[system].gpu = "off"` on
+hosted runners. Use `--require-gpu` or `[system].gpu = "required"` on
 self-hosted GPU runners where a driver regression must fail closed.
 Detection results are identical on CPU and GPU - the GPU only changes
 throughput, never which secrets are found.

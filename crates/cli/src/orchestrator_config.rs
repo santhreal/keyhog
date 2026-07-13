@@ -29,7 +29,7 @@ pub(crate) use scanner::build_scanner_config;
 use scanner::{build_scanner_config_from_input, ScannerConfigInput};
 
 /// The single resolved scan configuration: the END of the precedence chain
-/// `compiled-default -> [scan] table -> flat ConfigFile fields -> CLI flags`,
+/// `compiled defaults -> each setting's unique ConfigFile owner -> CLI flags`,
 /// already merged into the engine's [`ScannerConfig`] PLUS the post-scan policy
 /// the live worker needs (the per-detector confidence floors and the global
 /// floor / ml gate read in `orchestrator/postprocess.rs`).

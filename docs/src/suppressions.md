@@ -185,8 +185,8 @@ own source tree.
 
 ### Confidence and severity floors
 
-- `--min-confidence <f>` (or `[scan] min_confidence`) drops findings below a
-  score. A per-detector `[detector.<id>] min_confidence` takes precedence for
+- `--min-confidence <f>` (or `[scan].min_confidence`) drops findings below a
+  score. A per-detector `[detector.<id>].min_confidence` takes precedence for
   that detector.
 - `--severity <level>` drops findings below a severity rank.
 - `--hide-client-safe` drops the client-safe tier (public-by-design keys).

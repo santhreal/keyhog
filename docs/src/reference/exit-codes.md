@@ -121,7 +121,7 @@ The reason this is `11` rather than `2`:
 ## `12` (required GPU unavailable)
 
 Returned before scanning when the operator explicitly required GPU execution
-(`--require-gpu` or `[system] gpu = "required"`) but the host cannot provide a
+(`--require-gpu` or `[system].gpu = "required"`) but the host cannot provide a
 usable GPU path. This is distinct from `2` so CI can tell "bad input" from "GPU
 runner regressed or was scheduled on the wrong host" without scraping stderr.
 
