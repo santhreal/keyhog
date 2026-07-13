@@ -233,9 +233,11 @@ impl CompiledScanner {
                 // the named-detector generic path uses, so the per-family,
                 // length-bucketed base floor (Tier-B `entropy_floor` data in each
                 // generic detector's TOML) is identical AND the operator's Tier-A
-                // `--entropy-threshold` tightens this gate too. Raising the knob
-                // above its 4.5 default lifts the floor to that bits/byte value,
-                // suppressing values below it.
+                // `--entropy-threshold` tightens this gate too. The shared owner
+                // compares the raw scan setting with the selected detector's
+                // `entropy_high`, then lifts the floor when the setting is
+                // stricter. This bridge must not pre-resolve against a global
+                // threshold because detector-local calibration can differ.
                 let entropy = crate::pipeline::match_entropy(value.as_bytes());
                 // O(1) compiled lookup of the owning generic detector (or the
                 // GENERIC_SECRET fallback), replacing a per-candidate linear
@@ -274,11 +276,6 @@ impl CompiledScanner {
                 let owning_detector_max_len = owning_detector
                     .and_then(|detector| detector.max_len)
                     .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT); // LAW10: documented numeric default for omitted per-detector max_len
-                let owning_detector_entropy_high = owning_detector
-                    .and_then(|d| d.entropy_high)
-                    .map_or(crate::entropy::HIGH_ENTROPY_THRESHOLD, |threshold| {
-                        threshold
-                    });
                 let owning_detector_id = owning_detector
                     .map(|d| d.id.as_str())
                     .map_or(crate::detector_ids::GENERIC_SECRET, |id| id);
@@ -291,14 +288,6 @@ impl CompiledScanner {
                 let owning_detector_severity = owning_detector
                     .map(|d| d.severity)
                     .map_or(keyhog_core::Severity::Medium, |severity| severity);
-
-                let entropy_threshold = if self.config.entropy_threshold.is_finite()
-                    && self.config.entropy_threshold > crate::entropy::HIGH_ENTROPY_THRESHOLD
-                {
-                    owning_detector_entropy_high.max(self.config.entropy_threshold)
-                } else {
-                    owning_detector_entropy_high
-                };
 
                 // KH-L-0412: the generic-bridge shape gauntlet was the last
                 // SILENT suppression path. Record the firing gate's name so a
@@ -347,7 +336,7 @@ impl CompiledScanner {
                         crate::adjudicate::GenericValueShapeStage::EntropyBelowFloor => {
                             if !crate::adjudicate::generic_entropy_below_floor(
                                 entropy,
-                                entropy_threshold,
+                                self.config.entropy_threshold,
                                 floor_detector,
                                 value.len(),
                             ) {
@@ -364,7 +353,7 @@ impl CompiledScanner {
                     } else if !allow_encoded_text_secret
                         && crate::adjudicate::generic_entropy_below_floor(
                             entropy,
-                            entropy_threshold,
+                            self.config.entropy_threshold,
                             floor_detector,
                             value.len(),
                         )

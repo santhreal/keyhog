@@ -167,6 +167,8 @@ pub mod regression_finalize_confidence_proptest;
 pub mod regression_finalize_report_confidence_pipeline;
 #[path = "regression_generic_bridge_padded_log_field.rs"]
 pub mod regression_generic_bridge_padded_log_field;
+#[path = "regression_generic_detector_entropy_override.rs"]
+pub mod regression_generic_detector_entropy_override;
 #[path = "regression_github_app_pem_boundary.rs"]
 pub mod regression_github_app_pem_boundary;
 #[path = "regression_github_pat_boundary.rs"]

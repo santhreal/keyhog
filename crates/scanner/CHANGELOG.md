@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Resolve generic assignment entropy overrides against the owning detector's
+  TOML `entropy_high` policy instead of the global fallback threshold.
 - Make `ScannerConfig::thorough()` a distinct bounded recovery policy. It scans
   entropy candidates in source files, retains heuristic evidence alongside ML,
   removes comment confidence penalties, and admits one complete 1 MiB
