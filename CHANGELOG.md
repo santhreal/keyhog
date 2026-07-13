@@ -11,6 +11,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   architecture and integration references into the book, made orphan/duplicate
   documentation a source gate, and corrected Action, daemon, hook, autoroute,
   performance, and installation claims against shipped behavior.
+- Made new GitHub Releases atomic: platform jobs stage unsigned bundles as
+  private workflow artifacts, the signing job validates and signs one exact
+  manifest, and only then publishes the draft. Manual dispatch now proves and
+  checks out `refs/tags/<version>` so a same-named branch cannot supply release
+  bytes.
 - Made GPU an ordinary peer in canonical autoroute calibration and removed the
   calibration-only GPU switch from persisted scan identity. Fresh GitHub
   Action scans now calibrate before using `auto`; independent daemon/watch

@@ -2257,27 +2257,45 @@ fn release_workflow_validates_manual_tag_before_shell_outputs() {
         workflow.contains("KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}"),
         "validated release tag output should enter follow-up shell steps through env"
     );
+    assert!(
+        workflow.contains("Prove the release ref is a tag")
+            && workflow.contains("git/ref/tags/$KEYHOG_RELEASE_TAG")
+            && workflow.contains("ref: refs/tags/${{ steps.tag.outputs.tag }}"),
+        "manual releases must prove and checkout an exact tag, never a same-named branch"
+    );
 }
 
 #[test]
-fn release_upload_create_race_fails_closed() {
+fn release_stages_privately_and_publishes_only_the_exact_signed_manifest() {
     let workflow = fs::read_to_string(release_workflow()).expect("read release.yml");
-    let upload = workflow
-        .split("- name: Upload to release")
+    let build = workflow
+        .split("\n  build:")
         .nth(1)
-        .and_then(|tail| tail.split("# Sign every uploaded binary").next())
-        .expect("release upload step exists");
+        .and_then(|tail| tail.split("\n  sign:").next())
+        .expect("build job exists");
+    let publish = workflow
+        .split("- name: Sign, validate, and publish the exact release manifest")
+        .nth(1)
+        .and_then(|tail| tail.split("\n  docker:").next())
+        .expect("signed publish step exists");
     assert!(
-        upload.contains("if ! gh release create"),
-        "release upload must handle matrix create races explicitly"
+        build.contains("Stage unsigned release bundle")
+            && build.contains("actions/upload-artifact@")
+            && !build.contains("gh release upload"),
+        "matrix jobs must stage privately instead of exposing unsigned release assets"
     );
     assert!(
-        upload.contains("gh release view \"$tag\" --repo \"$GITHUB_REPOSITORY\" >/dev/null"),
-        "release upload must prove the release exists after a failed create"
+        publish.contains("gh release create \"$tag\" \"${create_args[@]}\"")
+            && publish.contains("create_args=(--draft")
+            && publish.contains("gh release edit \"$tag\" --draft=false"),
+        "a new release must remain a draft until the signed manifest is complete"
     );
     assert!(
-        !upload.contains("|| true"),
-        "release upload must not hide release-create failures behind `|| true`"
+        publish.contains("staged release manifest is missing")
+            && publish.contains("actual[*]")
+            && publish.contains("wanted[*]")
+            && publish.contains("published release manifest does not equal"),
+        "publication must fail closed on missing, extra, or mismatched assets"
     );
 }
 

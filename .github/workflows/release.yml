@@ -30,7 +30,7 @@ jobs:
     # Per-job permissions: see keyhog.yml header note. Top-level
     # `permissions:` rejected at dispatch time on this repo.
     permissions:
-      contents: write  # required by gh release upload to attach assets
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -97,9 +97,22 @@ jobs:
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
           echo "Building release assets for $tag"
 
+      - name: Prove the release ref is a tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ref="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$KEYHOG_RELEASE_TAG" --jq '.ref')"
+          if [[ "$ref" != "refs/tags/$KEYHOG_RELEASE_TAG" ]]; then
+            echo "ERROR: release input does not resolve to the exact tag refs/tags/$KEYHOG_RELEASE_TAG" >&2
+            exit 2
+          fi
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ steps.tag.outputs.tag }}
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
         with:
@@ -172,35 +185,19 @@ jobs:
             cat "$asset.sha256"
           done
 
-      - name: Upload to release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
-          KEYHOG_RELEASE_ASSET: ${{ matrix.asset }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="$KEYHOG_RELEASE_TAG"
-          asset="$KEYHOG_RELEASE_ASSET"
-          # Two matrix jobs can race on release creation. If create loses that
-          # race, prove the release now exists; any other failure stays fatal.
-          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            if ! gh release create "$tag" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$tag" \
-              --notes "Prebuilt keyhog binaries for $tag. See CHANGELOG.md."; then
-              gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null
-            fi
-          fi
-          gh release upload "$tag" \
-            "$asset" \
-            "$asset.sha256" \
-            "$asset.gpu-literals.tar.gz" \
-            "$asset.gpu-literals.tar.gz.sha256" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+      - name: Stage unsigned release bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unsigned-${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            ${{ matrix.asset }}
+            ${{ matrix.asset }}.sha256
+            ${{ matrix.asset }}.gpu-literals.tar.gz
+            ${{ matrix.asset }}.gpu-literals.tar.gz.sha256
 
-  # Sign every uploaded binary/sidecar with the keyhog minisign secret key. Runs once
+  # Sign every staged binary/sidecar with the keyhog minisign secret key. Runs once
   # on a single runner after all build arms finish, so the signing secret is
   # exposed to exactly one job. `keyhog update` verifies these `.minisig`
   # files against the embedded public key (installer::RELEASE_PUBLIC_KEY)
@@ -210,7 +207,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # gh release upload to attach the .minisig files
+      contents: write  # publish the complete signed draft manifest
     steps:
       - name: Resolve tag
         id: tag
@@ -233,11 +230,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
         with:
           toolchain: '1.89'
+      - name: Download staged release bundles
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: unsigned-*
+          path: dist
+          merge-multiple: true
       - name: Install rsign2
         shell: bash
         run: cargo install rsign2 --version 0.6.6 --locked
 
-      - name: Sign release assets and upload signatures
+      - name: Sign, validate, and publish the exact release manifest
         env:
           GH_TOKEN: ${{ github.token }}
           KEYHOG_MINISIGN_SECRET_KEY: ${{ secrets.KEYHOG_MINISIGN_SECRET_KEY }}
@@ -252,6 +255,7 @@ jobs:
           fi
           tag="$KEYHOG_RELEASE_TAG"
           workdir="$(mktemp -d)"
+          cp -a "$GITHUB_WORKSPACE/dist/." "$workdir/"
           cd "$workdir"
           bases=(
             keyhog-linux-x86_64
@@ -268,15 +272,45 @@ jobs:
               "$base.gpu-literals.tar.gz" "$base.gpu-literals.tar.gz.sha256"
             )
           done
-          # A rerun must not preserve or sign retired filenames. Delete only
-          # KeyHog-owned release assets outside the exact current manifest.
+          for asset in "${expected[@]}"; do
+            if [[ ! -f "$asset" ]]; then
+              echo "ERROR: staged release manifest is missing $asset" >&2
+              exit 1
+            fi
+          done
+          # The stored secret is base64 of the minisign .key file.
+          printf '%s' "$KEYHOG_MINISIGN_SECRET_KEY" | base64 -d > sec.key
+          trap 'shred -u sec.key 2>/dev/null || rm -f sec.key' EXIT
+          for f in "${payloads[@]}"; do
+            rsign sign -W -s sec.key -x "$f.minisig" "$f" </dev/null
+            echo "signed $f.minisig"
+          done
+
+          # A new release stays private until the complete exact manifest is
+          # signed and ready. Existing published releases remain published on
+          # an intentional rerun, but are never the staging transport.
+          created_draft=false
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            create_args=(--draft --title "$tag" \
+              --notes "Prebuilt keyhog binaries for $tag. See CHANGELOG.md.")
+            if [[ "$tag" == *-* ]]; then
+              create_args+=(--prerelease)
+            fi
+            gh release create "$tag" "${create_args[@]}" --repo "$GITHUB_REPOSITORY"
+            created_draft=true
+          fi
+
           mapfile -t published < <(gh api --paginate \
             "repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
             --jq '.assets[].name')
+          final=("${expected[@]}")
+          for payload in "${payloads[@]}"; do
+            final+=("$payload.minisig")
+          done
           for asset in "${published[@]}"; do
             keep=false
-            for wanted in "${expected[@]}"; do
-              if [[ "$asset" == "$wanted" || "$asset" == "$wanted.minisig" ]]; then
+            for wanted in "${final[@]}"; do
+              if [[ "$asset" == "$wanted" ]]; then
                 keep=true
                 break
               fi
@@ -286,18 +320,22 @@ jobs:
                 --repo "$GITHUB_REPOSITORY" --yes
             fi
           done
-          for asset in "${expected[@]}"; do
-            gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
-              --pattern "$asset" --dir .
-          done
-          # The stored secret is base64 of the minisign .key file.
-          printf '%s' "$KEYHOG_MINISIGN_SECRET_KEY" | base64 -d > sec.key
-          trap 'shred -u sec.key 2>/dev/null || rm -f sec.key' EXIT
-          for f in "${payloads[@]}"; do
-            rsign sign -W -s sec.key -x "$f.minisig" "$f" </dev/null
-            gh release upload "$tag" "$f.minisig" --repo "$GITHUB_REPOSITORY" --clobber
-            echo "signed + uploaded $f.minisig"
-          done
+          gh release upload "$tag" "${final[@]}" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+
+          mapfile -t actual < <(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
+            --jq '.assets[].name' | sort)
+          mapfile -t wanted < <(printf '%s\n' "${final[@]}" | sort)
+          if [[ "${actual[*]}" != "${wanted[*]}" ]]; then
+            echo "ERROR: published release manifest does not equal the signed expected manifest" >&2
+            printf 'expected: %s\n' "${wanted[*]}" >&2
+            printf 'actual:   %s\n' "${actual[*]}" >&2
+            exit 1
+          fi
+          if [[ "$created_draft" == true ]]; then
+            gh release edit "$tag" --draft=false --repo "$GITHUB_REPOSITORY"
+          fi
 
   # Publish the container image to GHCR so `docker run ghcr.io/santhsecurity/
   # keyhog:<ver>` (and `:latest`) works - the third consumption mode alongside
@@ -335,7 +373,7 @@ jobs:
           printf 'version=%s\n' "${tag#v}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ steps.tag.outputs.tag }}
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
           fetch-depth: 0
       - name: Decide whether this is the newest stable release
         id: floating
@@ -414,7 +452,7 @@ jobs:
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ steps.tag.outputs.tag }}
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
           fetch-depth: 0
       - name: Decide whether this is the newest stable release
         id: floating

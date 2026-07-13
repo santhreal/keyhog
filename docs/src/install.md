@@ -107,19 +107,25 @@ the new one is moved into place and restored automatically if the new binary
 fails its post-install self-test, so a failed or interrupted install leaves a
 working binary behind.
 
+Release publication uses the same exact manifest: each platform binary, its
+SHA-256 file, the GPU-literal sidecar and checksum, plus detached minisign
+signatures for both payloads. Matrix builds stage those files as private CI
+artifacts; a new GitHub Release remains a draft until the complete manifest is
+signed and validated, then becomes visible atomically.
+
 ### Runtime GPU controls
 
 | Control                  | Effect                                                                                                                                                                                                                                       |
 |--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `keyhog scan --no-gpu`   | Force the CPU + SIMD path; skip every GPU init (saves cold-start on hosts with no usable GPU).                                                                                                                                               |
+| `keyhog scan --no-gpu`   | Disable GPU initialization for this resolved scan configuration. Automatic routing still requires persisted calibration for that configuration; use an explicit CPU/SIMD backend only for diagnostics. |
 | `keyhog scan --require-gpu` | Hard-fail (`exit 12`) when the GPU stack is unavailable. This is a diagnostic/CI assertion, separate from autoroute. Autoroute itself is not a fallback hierarchy: it selects the fastest measured-correct backend from all eligible candidates. |
 | `.keyhog.toml [system] gpu = "off"` | Persist the CPU/SIMD-only policy for a repository. Use `"required"` for self-hosted GPU runners where a GPU regression must fail closed.                                                                                         |
 | `keyhog scan --backend gpu\|simd\|cpu` | Force a specific live scan engine regardless of autoroute. Diagnostic and benchmark override only; it does not prove autoroute correctness.                                                                                                  |
 
-Hosted CI runners normally have no useful GPU. Use `--no-gpu` or
-`[system] gpu = "off"` there. On self-hosted GPU runners, use
-`--require-gpu` or `[system] gpu = "required"` so a driver regression fails
-closed instead of running as a CPU-only scan.
+The GitHub Action calibrates the actual runner and admits only usable physical
+accelerators. On self-hosted GPU runners, `--require-gpu` or
+`[system] gpu = "required"` turns accelerator availability into an explicit
+fail-closed requirement; it does not choose GPU over a faster calibrated peer.
 
 ## Repair, diagnose, uninstall
 
