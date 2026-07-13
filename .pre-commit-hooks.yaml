@@ -9,7 +9,7 @@
   # installed binary is fast, needs no toolchain, and matches the documented
   # drop-in recipe (docs/src/workflows/precommit.md).
   language: system
-  # `keyhog --git-staged` self-discovers the staged blobs and scans their
+  # `keyhog scan --git-staged` self-discovers the staged blobs and scans their
   # STAGED content (not the working tree). The pre-commit framework otherwise
   # appends the changed filenames as positional args, and `keyhog scan` takes
   # only ONE positional [PATH] - a second filename aborts with clap exit 2

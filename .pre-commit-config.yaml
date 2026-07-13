@@ -18,22 +18,13 @@ repos:
         description: Scan staged files for secrets using KeyHog
         entry: scripts/pre-commit
         language: script
-        # Pass all staged files to the hook
+        # The script scans the staged set itself. Do not append filenames.
         pass_filenames: false
         # Always run (even if no files match patterns)
         always_run: true
         stages: [pre-commit]
         # Require the binary to be built
         require_serial: true
-
-  # Alternative: pull the hook straight from the published keyhog repo.
-  # Requires keyhog already on PATH (the hook uses language: system; install
-  # via the one-line installer in the README first).
-  # - repo: https://github.com/santhreal/keyhog
-  #   rev: v0.5.37
-  #   hooks:
-  #     - id: keyhog
-  #       args: ['--min-confidence', '0.5']
 
   # Standard pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks

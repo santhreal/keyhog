@@ -36,7 +36,7 @@ const EXPECTED_HOOK_CONTENT: &str = concat!(
     "    echo \"  or remove .git/hooks/pre-commit if this repository should not be protected.\" >&2\n",
     "    exit 127\n",
     "fi\n",
-    "exec keyhog scan --fast --git-staged --backend simd\n",
+    "exec keyhog scan --fast --git-staged --backend cpu\n",
 );
 
 /// Create a real git repository at `dir` so `keyhog hook install` (which runs
@@ -116,7 +116,7 @@ fn hook_install_emits_exact_shebang_exec_and_guard_lines() {
         "first line must be the POSIX shebang"
     );
     assert!(
-        content.contains("\nexec keyhog scan --fast --git-staged --backend simd\n"),
+        content.contains("\nexec keyhog scan --fast --git-staged --backend cpu\n"),
         "hook must exec the canonical scan verbatim; got:\n{content}"
     );
     assert!(
