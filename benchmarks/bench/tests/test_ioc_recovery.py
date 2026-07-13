@@ -1,4 +1,5 @@
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -126,6 +127,7 @@ def test_ioc_recovery_adapter_excludes_answer_key_and_loads_exact_records(tmp_pa
         reloaded.records()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="fake sleeping Node uses a POSIX shell")
 def test_ioc_recovery_generator_times_out_node_and_removes_staging(
     monkeypatch, tmp_path
 ):
@@ -141,3 +143,56 @@ def test_ioc_recovery_generator_times_out_node_and_removes_staging(
 
     assert not output.exists()
     assert list(tmp_path.glob(".recovery-*")) == []
+
+
+def test_ioc_recovery_timeout_termination_covers_posix_and_windows_branches(
+    monkeypatch,
+):
+    class Stream:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class Process:
+        def __init__(self):
+            self.pid = 123
+            self.stdin = Stream()
+            self.stdout = Stream()
+            self.stderr = Stream()
+            self.killed = False
+            self.waited = False
+
+        def kill(self):
+            self.killed = True
+
+        def wait(self, timeout):
+            assert timeout == ioc_generator.NODE_AES_REAP_SECONDS
+            self.waited = True
+
+    killed_groups = []
+    monkeypatch.setattr(
+        ioc_generator.os,
+        "killpg",
+        lambda pid, sig: killed_groups.append((pid, sig)),
+    )
+
+    posix_process = Process()
+    ioc_generator._terminate_process(posix_process, posix=True)
+    assert killed_groups == [(123, ioc_generator.signal.SIGKILL)]
+    assert not posix_process.killed
+    assert posix_process.waited
+    assert all(
+        stream.closed
+        for stream in (
+            posix_process.stdin,
+            posix_process.stdout,
+            posix_process.stderr,
+        )
+    )
+
+    windows_process = Process()
+    ioc_generator._terminate_process(windows_process, posix=False)
+    assert windows_process.killed
+    assert windows_process.waited

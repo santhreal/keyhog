@@ -49,6 +49,7 @@ PHASES: tuple[tuple[int, str], ...] = (
 )
 
 NODE_AES_TIMEOUT_SECONDS = 30
+NODE_AES_REAP_SECONDS = 5
 
 PAPER_TITLE = (
     "Benchmarking Large Language Models for IoC Recovery under Adversarial "
@@ -142,14 +143,7 @@ def _aes_materials(seed: int, secrets: list[str]) -> list[tuple[str, str, str]]:
             json.dumps(rows), timeout=NODE_AES_TIMEOUT_SECONDS
         )
     except subprocess.TimeoutExpired as exc:
-        try:
-            if os.name == "posix":
-                os.killpg(process.pid, signal.SIGKILL)
-            else:
-                process.kill()
-        except ProcessLookupError:
-            pass
-        process.communicate()
+        _terminate_process(process)
         raise SystemExit(
             f"Node AES generation exceeded {NODE_AES_TIMEOUT_SECONDS}s and was terminated"
         ) from exc
@@ -165,6 +159,30 @@ def _aes_materials(seed: int, secrets: list[str]) -> list[tuple[str, str, str]]:
             f"Node AES generation returned {len(ciphertexts)} rows for {len(secrets)} samples"
         )
     return [(*keys[index], ciphertext) for index, ciphertext in enumerate(ciphertexts)]
+
+
+def _terminate_process(process: subprocess.Popen, *, posix: bool | None = None) -> None:
+    """Bound termination and reap even when a detached child retains pipes."""
+    use_process_group = os.name == "posix" if posix is None else posix
+    try:
+        if use_process_group:
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+    except ProcessLookupError:
+        pass
+
+    # Never call unbounded communicate() here. A descendant that escaped the
+    # process group can retain stdout/stderr and prevent EOF forever. Closing
+    # our pipe endpoints makes generator progress independent of that process.
+    for stream in (process.stdin, process.stdout, process.stderr):
+        if stream is not None:
+            stream.close()
+    try:
+        process.wait(timeout=NODE_AES_REAP_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=NODE_AES_REAP_SECONDS)
 
 
 def _dead_code(seed: int, sample: int) -> str:

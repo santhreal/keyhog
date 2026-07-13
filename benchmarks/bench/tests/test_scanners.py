@@ -385,6 +385,32 @@ def test_keyhog_owned_plaintext_output_is_cleaned_after_parse_failure(
     assert not output_paths[0].parent.exists()
 
 
+def test_keyhog_caller_output_without_cache_does_not_require_tempdir(
+    monkeypatch, tmp_path
+):
+    scanner = scanners.KeyhogScanner(binary="/unused/keyhog")
+    output = tmp_path / "caller-owned.json"
+
+    def forbid_tempdir(*args, **kwargs):
+        raise AssertionError("caller-owned non-cache run must not allocate a tempdir")
+
+    def successful_scan(cmd, **kwargs):
+        pathlib.Path(cmd[cmd.index("--output") + 1]).write_text("[]")
+        return "", "", base.RunStats(exit_code=0)
+
+    monkeypatch.setattr(keyhog_adapter.tempfile, "TemporaryDirectory", forbid_tempdir)
+    monkeypatch.setattr(keyhog_adapter, "run_measured", successful_scan)
+    findings, stats = scanner.run(
+        tmp_path,
+        ScannerConfig(backend="simd", cache="off"),
+        output=output,
+    )
+
+    assert findings == []
+    assert stats.exit_code == 0
+    assert output.read_text() == "[]"
+
+
 def test_keyhog_warm_runs_are_private_under_concurrency_and_ignore_old_paths(
     monkeypatch, tmp_path
 ):

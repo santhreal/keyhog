@@ -25,6 +25,7 @@ the deterministic build the README leaderboard cites.
 
 from __future__ import annotations
 
+import contextlib
 import itertools
 import json
 import math
@@ -326,12 +327,19 @@ class KeyhogScanner(Scanner):
         # adapter-owned artifact in one private, unique directory and let the
         # context manager remove it on success, timeout, scanner failure, or
         # parse/schema failure. Caller-owned output remains caller-owned.
-        with tempfile.TemporaryDirectory(prefix="keyhog-bench-") as run_dir_raw:
-            run_dir = pathlib.Path(run_dir_raw)
-            result_output = output or run_dir / "result.json"
+        owns_artifacts = output is None or cfg.cache == "on"
+        run_dir_context = (
+            tempfile.TemporaryDirectory(prefix="keyhog-bench-")
+            if owns_artifacts
+            else contextlib.nullcontext(None)
+        )
+        with run_dir_context as run_dir_raw:
+            run_dir = pathlib.Path(run_dir_raw) if run_dir_raw is not None else None
+            result_output = output or (run_dir / "result.json")
             inc_cache = None
             if cfg.cache == "on":
                 # Warmup and timed pass share only this run's private index.
+                assert run_dir is not None
                 inc_cache = run_dir / "merkle.idx"
                 warm_out = run_dir / "warm.json"
                 warm_stdout, warm_stderr, warm_stats = run_measured(
