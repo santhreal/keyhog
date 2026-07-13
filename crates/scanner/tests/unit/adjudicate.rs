@@ -61,6 +61,54 @@ fn process_stage_preserves_aws_length_before_hex_context_order() {
 }
 
 #[test]
+fn process_stage_enforces_detector_minimum_length() {
+    let credential = "Q7vN2xK8cP4mR9tW";
+    let signals = ProcessCandidateSignals::from_match(
+        "custom-min-length",
+        Some(32),
+        None,
+        credential,
+        credential,
+        0,
+        credential.len(),
+    );
+
+    assert_eq!(
+        adjudicate_match(
+            CandidateMatch::new(credential),
+            &MatchCtx::for_process_signals(signals)
+        ),
+        Verdict::Suppressed(StageId::BelowDetectorMinLength)
+    );
+    assert_eq!(
+        StageId::BelowDetectorMinLength.as_str(),
+        "below_detector_min_length"
+    );
+}
+
+#[test]
+fn process_stage_keeps_candidate_at_detector_minimum_length() {
+    let credential = "Q7vN2xK8cP4mR9tW3zH6yL5sD8fJ1bG0";
+    let signals = ProcessCandidateSignals::from_match(
+        "custom-min-length",
+        Some(32),
+        None,
+        credential,
+        credential,
+        0,
+        credential.len(),
+    );
+
+    assert_eq!(
+        adjudicate_match(
+            CandidateMatch::new(credential),
+            &MatchCtx::for_process_signals(signals)
+        ),
+        Verdict::Reported(None)
+    );
+}
+
+#[test]
 fn process_stage_suppresses_anthropic_legacy_length() {
     let credential = "sk-ant-api03-short";
     let shape = crate::credential_shapes::CredentialShapeRule::prefix_body_range_for_test(

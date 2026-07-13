@@ -59,6 +59,9 @@ impl ProcessCandidateSignals {
         credential_start: usize,
         match_end: usize,
     ) -> Self {
+        if detector_min_len.is_some_and(|min_len| credential.len() < min_len) {
+            return Self::suppress(StageId::BelowDetectorMinLength);
+        }
         if credential_shape.is_some_and(|shape| !shape.allows(credential)) {
             return Self::suppress(StageId::DetectorCredentialShapeInvalid);
         }
