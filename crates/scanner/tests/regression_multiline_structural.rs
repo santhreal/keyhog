@@ -173,6 +173,78 @@ fn r_paste_function_concat_reassembles_whole_secret() {
     assert_eq!(original_end, text.len());
 }
 
+#[test]
+fn obfuscated_javascript_array_join_reassembles_known_prefix_secret() {
+    let secret = "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";
+    let text = "const _a = (() => { const _b = [\"ghp_\", \"69121b4cdeef\", \
+                \"f121c88dffac\", \"1f9dbc2giIjE\"]; return _b.join(''); })();";
+
+    assert!(
+        has_concatenation_indicators_for_test(text),
+        "empty-separator JavaScript array join must enter structural recovery"
+    );
+    let (joined, original_end) = preprocess_multiline_for_test(text);
+    assert_eq!(original_end, text.len());
+    assert!(
+        joined[original_end..].contains(secret),
+        "known-prefix array fragments must recover {secret}; got {joined:?}"
+    );
+}
+
+#[test]
+fn obfuscated_javascript_array_join_without_secret_prefix_is_not_emitted() {
+    let joined_value = "ordinarymetadatavalue";
+    let text = "const _a = (() => { const _b = [\"ordinary\", \"metadata\", \
+                \"value\"]; return _b.join(\"\"); })();";
+
+    assert!(has_concatenation_indicators_for_test(text));
+    let (joined, original_end) = preprocess_multiline_for_test(text);
+    assert!(
+        !joined[original_end..].contains(joined_value),
+        "non-credential array metadata must not become a synthetic candidate"
+    );
+}
+
+#[test]
+fn non_empty_javascript_array_join_is_not_a_concat_indicator() {
+    let text = "const values = [\"alpha\", \"beta\"].join(',');";
+    assert!(!has_concatenation_indicators_for_test(text));
+}
+
+#[test]
+fn unrelated_empty_join_does_not_authorize_known_prefix_array() {
+    let secret = "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";
+    let text = concat!(
+        "const harmless = [\"alpha\", \"beta\"].join('');\n",
+        "const _b = [\"ghp_\", \"69121b4cdeef\", \"f121c88dffac\", ",
+        "\"1f9dbc2giIjE\"].join('-');",
+    );
+
+    assert!(has_concatenation_indicators_for_test(text));
+    let (joined, original_end) = preprocess_multiline_for_test(text);
+    assert!(
+        !joined[original_end..].contains(secret),
+        "an empty join on another array must not authorize recovery"
+    );
+}
+
+#[test]
+fn dynamic_array_elements_do_not_emit_partial_known_prefix_candidate() {
+    let partial = "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";
+    let text = concat!(
+        "const runtime = getPart(); ",
+        "const _b = [\"ghp_\", runtime, \"69121b4cdeeff121c88dffac1f9dbc2giIjE\"]",
+        ".join('');",
+    );
+
+    assert!(has_concatenation_indicators_for_test(text));
+    let (joined, original_end) = preprocess_multiline_for_test(text);
+    assert!(
+        !joined[original_end..].contains(partial),
+        "dropping a dynamic array element must not fabricate a credential"
+    );
+}
+
 // ── A `+`-split credential reassembled across two real source lines ──────────
 
 /// The canonical "secret split across lines" case: `api_key = "AKIA" +` on line

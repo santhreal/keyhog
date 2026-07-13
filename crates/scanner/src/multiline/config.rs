@@ -229,6 +229,7 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     let has_template = memchr::memchr(b'`', bytes).is_some();
     // Function-style string concatenation (R paste()/paste0(), Rust concat!()).
     let has_paste = has_function_concat_marker(text);
+    let has_empty_array_join = text.contains('[') && has_empty_string_join_marker(text);
     let has_implicit = has_implicit_concat_marker(bytes);
     let has_var_ref_concat =
         memchr::memchr(b'+', bytes).is_some() && has_var_ref_concatenation(text);
@@ -237,6 +238,7 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
         && !has_backslash_cont
         && !has_template
         && !has_paste
+        && !has_empty_array_join
         && !has_implicit
         && !has_var_ref_concat
     {
@@ -258,6 +260,7 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
             || trimmed.starts_with('+')
             || trimmed.starts_with("+ ")
             || has_function_concat_marker(trimmed)
+            || has_empty_string_join_marker(trimmed)
             || starts_parenthesized_implicit_block(trimmed)
             || trimmed.contains("\" +")
             || trimmed.contains("' +")
@@ -291,6 +294,29 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
         }
     }
 
+    false
+}
+
+/// Detect JavaScript's static empty-separator array join: `.join('')`,
+/// `.join("")`, or the whitespace-equivalent forms. A non-empty separator is
+/// not a secret-fragment concatenation and is deliberately excluded.
+#[cfg(feature = "multiline")]
+pub(super) fn has_empty_string_join_marker(text: &str) -> bool {
+    let mut remaining = text;
+    while let Some(index) = remaining.find(".join") {
+        remaining = &remaining[index + ".join".len()..];
+        let Some(arguments) = remaining.trim_start().strip_prefix('(') else {
+            continue;
+        };
+        let arguments = arguments.trim_start();
+        let after_empty = arguments
+            .strip_prefix("''")
+            .or_else(|| arguments.strip_prefix("\"\""))
+            .or_else(|| arguments.strip_prefix("``"));
+        if after_empty.is_some_and(|rest| rest.trim_start().starts_with(')')) {
+            return true;
+        }
+    }
     false
 }
 

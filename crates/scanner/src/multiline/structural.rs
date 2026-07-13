@@ -1,5 +1,6 @@
 use super::config::{
-    source_line_offset_or_record_gap, starts_parenthesized_implicit_block, LineMapping,
+    has_empty_string_join_marker, source_line_offset_or_record_gap,
+    starts_parenthesized_implicit_block, LineMapping,
 };
 use super::string_extract::{
     extract_prefix, extract_quoted_content, fragment_assignment_name_is_credential_like,
@@ -92,11 +93,17 @@ pub(super) fn collect_structural_fragments(
         std::collections::HashMap::new();
 
     for (index, line) in lines.iter().enumerate() {
-        if inline_array_assignment_name(line)
-            .is_some_and(fragment_assignment_name_is_credential_like)
-        {
-            let array_joined = join_inline_array_strings(line);
-            if array_joined.len() >= MIN_INLINE_ARRAY_FRAGMENT_LEN {
+        if let Some(target_name) = inline_array_assignment_name(line) {
+            let (array_joined, contains_only_static_strings) = join_inline_array_strings(line);
+            let target_is_credential = fragment_assignment_name_is_credential_like(target_name);
+            let joined_has_known_prefix =
+                crate::confidence::known_prefix_confidence_floor(&array_joined).is_some();
+            let known_prefix_static_join = contains_only_static_strings
+                && inline_array_has_matching_empty_join(line)
+                && joined_has_known_prefix;
+            if array_joined.len() >= MIN_INLINE_ARRAY_FRAGMENT_LEN
+                && (target_is_credential || known_prefix_static_join)
+            {
                 structural_joined.push(array_joined.clone());
                 structural_mappings.push(LineMapping {
                     start_offset: current_struct_offset,
@@ -414,7 +421,7 @@ fn is_related_variable(v1: &str, v2: &str) -> bool {
     v1 == v2 || extract_prefix(v1) == extract_prefix(v2)
 }
 
-fn join_inline_array_strings(line: &str) -> String {
+fn join_inline_array_strings(line: &str) -> (String, bool) {
     // Only join the quoted literals INSIDE the `[...]` array body. Scanning the
     // whole line would splice a quoted LHS key (`"api_key": ["a", "b"]`) or a
     // bare single-string assignment (`key = "value"`, no array) into the
@@ -422,11 +429,11 @@ fn join_inline_array_strings(line: &str) -> String {
     // duplicates of secrets the per-line chain already handles. No `[` means
     // this is not an inline array.
     let Some(open) = line.find('[') else {
-        return String::new();
+        return (String::new(), false);
     };
-    let inner = match line.rfind(']') {
-        Some(close) if close > open => &line[open + 1..close],
-        _ => &line[open + 1..],
+    let (inner, closed) = match line.rfind(']') {
+        Some(close) if close > open => (&line[open + 1..close], true),
+        _ => (&line[open + 1..], false),
     };
 
     let mut array_joined = String::new();
@@ -434,6 +441,7 @@ fn join_inline_array_strings(line: &str) -> String {
     let mut quote_char = '\0';
     let mut current_str = String::new();
     let mut escaped = false;
+    let mut contains_only_static_strings = closed;
 
     for ch in inner.chars() {
         if !in_str {
@@ -441,6 +449,8 @@ fn join_inline_array_strings(line: &str) -> String {
                 in_str = true;
                 quote_char = ch;
                 escaped = false;
+            } else if !ch.is_whitespace() && ch != ',' {
+                contains_only_static_strings = false;
             }
         } else if escaped {
             current_str.push(ch);
@@ -457,7 +467,57 @@ fn join_inline_array_strings(line: &str) -> String {
         }
     }
 
-    array_joined
+    if in_str || (inner.contains("${") && inner.contains('`')) {
+        contains_only_static_strings = false;
+    }
+
+    (array_joined, contains_only_static_strings)
+}
+
+/// Require the empty `.join("")` to consume the exact array being recovered.
+/// This prevents an unrelated join elsewhere in a multiline chunk from
+/// authorizing a known-prefix array that uses a non-empty separator or is never
+/// joined at all.
+fn inline_array_has_matching_empty_join(line: &str) -> bool {
+    let Some(open) = line.find('[') else {
+        return false;
+    };
+    let Some(close) = line.rfind(']').filter(|close| *close > open) else {
+        return false;
+    };
+    let after_array = &line[close + 1..];
+
+    let direct_suffix = after_array.trim_start();
+    if direct_suffix.starts_with(".join") && has_empty_string_join_marker(direct_suffix) {
+        return true;
+    }
+
+    let before_array = &line[..open];
+    let Some(separator) = before_array.rfind(['=', ':']) else {
+        return false;
+    };
+    let binding = before_array[..separator]
+        .rsplit(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$')))
+        .find(|part| !part.is_empty());
+    let Some(binding) = binding else {
+        return false;
+    };
+
+    after_array.match_indices(binding).any(|(index, _)| {
+        let boundary_before = index == 0
+            || !after_array.as_bytes()[index - 1].is_ascii_alphanumeric()
+                && !matches!(after_array.as_bytes()[index - 1], b'_' | b'$');
+        let suffix = &after_array[index + binding.len()..];
+        let boundary_after = suffix
+            .as_bytes()
+            .first()
+            .is_none_or(|byte| !byte.is_ascii_alphanumeric() && !matches!(byte, b'_' | b'$'));
+        let suffix = suffix.trim_start();
+        boundary_before
+            && boundary_after
+            && suffix.starts_with(".join")
+            && has_empty_string_join_marker(suffix)
+    })
 }
 
 const PARENTHESIZED_IMPLICIT_SCAN_LINES: usize = 16;

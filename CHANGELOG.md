@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- JavaScript string arrays followed by an empty-separator `.join("")` now
+  recover checksum-valid known-prefix credentials even when the temporary
+  variable name is obfuscated. Non-empty separators and arrays without a known
+  credential prefix remain excluded from this structural recovery path.
 - The unified benchmark harness now includes an official deterministic secret
   recovery corpus adapted from the P0-P12 methodology in arXiv:2605.06910.
   Its 4,368 generated JavaScript fixtures cover plaintext, Base64, identifier,

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Recover checksum-valid known-prefix credentials assembled from JavaScript
+  string arrays followed by an empty-separator `.join("")`, even when the
+  temporary variable name is obfuscated. Non-empty separators and arrays that
+  produce no known credential prefix remain outside this recovery path.
 - Fail a selected GPU route with exit `12` when runtime dispatch fails,
   rather than completing the scan through an unselected CPU/SIMD backend.
 - Rename the production GPU health API from the obsolete AC-kernel name to
