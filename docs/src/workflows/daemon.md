@@ -89,7 +89,7 @@ same as `--daemon=auto`:
 
 | Policy | Compatible daemon active | Daemon inactive, stale, or request incompatible |
 |---|---|---|
-| `--daemon=auto` (default on Unix) | Send an eligible request to the daemon. If IPC or daemon execution fails, report it and retry the same eligible workflow in process. | Stay or retry in process after reporting a connection/identity failure; an incompatible request is kept in process without sending it. |
+| `--daemon=auto` (default on Unix) | Send an eligible request to the daemon. Connection, handshake, request, or daemon-execution failure is reported before retrying in process. Once a valid scan result is accepted, client finalization or report failure is returned without rescanning. | Stay or retry in process after reporting a connection or identity failure. An incompatible request stays in process without being sent. |
 | `--daemon=on` or bare `--daemon` | Require the daemon response. | Fail with the specific availability, identity, or eligibility error. No in-process substitution occurs. |
 | `--daemon=off` | Do not connect; run in process. | Run in process. |
 
@@ -97,6 +97,11 @@ An automatic in-process retry is still an automatic scan: it uses the one-shot
 autoroute decision for its real workload. If that decision is missing or stale,
 the retry fails closed with `autoroute calibration required`; it does not pin a
 CPU backend to make the retry succeed.
+
+The retry boundary is the accepted daemon result. Allowlist loading, match
+finalization, output creation, serialization, and report writes happen after
+that boundary. An error in any of those client-side steps is returned directly,
+so a partial report can never trigger a second scan or mix two attempts.
 
 ## Small requests the daemon can serve
 

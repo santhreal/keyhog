@@ -78,7 +78,7 @@ or coverage incomplete.
 | `--incremental`               | Skip files whose content hash matches the Merkle index, then update the index after a successful scan. |
 | `--incremental-cache <PATH>`  | Override the Merkle index used by `--incremental`. |
 | `--daemon`                    | Force daemon route for eligible stdin/single-file scans. Unix only; fails if the request needs the in-process pipeline. |
-| `--daemon=auto`               | On Unix, use a reachable compatible daemon when it can honor the exact request; with no socket, run in process, and report failures that occur after selecting the daemon before retrying in process. This is also the absent-flag policy, except that explicit `auto` is rejected on platforms with no daemon transport. |
+| `--daemon=auto`               | On Unix, use a reachable compatible daemon when it can honor the exact request. With no socket, run in process. Connection, handshake, request, and daemon-execution failures are reported before an in-process retry. After a valid daemon result is accepted, finalization or report errors return directly without rescanning. This is also the absent-flag policy, except that explicit `auto` is rejected on platforms with no daemon transport. |
 | `--daemon=off`                | Force in-process scan even if daemon is up.    |
 | `--daemon-socket <PATH>`      | Connect to the same non-default socket supplied to `daemon start --socket`; rejected with `--daemon=off`. |
 | `--benchmark`                 | Run the built-in backend benchmark corpus and exit instead of scanning the requested source. |

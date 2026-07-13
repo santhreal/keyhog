@@ -104,8 +104,8 @@ pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
         let policy = EffectivePolicy::resolve(&args);
         match daemon_route(&args, &policy) {
             DaemonRoute::Required => run_via_daemon(&policy.effective_args).await,
-            DaemonRoute::Opportunistic => match run_via_daemon(&policy.effective_args).await {
-                Ok(exit) => Ok(exit),
+            DaemonRoute::Opportunistic => match acquire_via_daemon(&policy.effective_args).await {
+                Ok(scan) => finish_daemon_scan(scan, &policy.effective_args),
                 Err(e) => {
                     if policy.effective_args.daemon_mode() == DaemonMode::Auto {
                         let palette = crate::style::for_stderr();
@@ -565,6 +565,19 @@ fn effective_single_file_path(args: &ScanArgs) -> Result<Option<&Path>> {
 
 #[cfg(unix)]
 async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
+    let scan = acquire_via_daemon(args).await?;
+    finish_daemon_scan(scan, args)
+}
+
+#[cfg(unix)]
+struct DaemonScan {
+    matches: Vec<RawMatch>,
+    source_coverage_gaps: SourceCoverageGaps,
+    wall_start: chrono::DateTime<chrono::Utc>,
+}
+
+#[cfg(unix)]
+async fn acquire_via_daemon(args: &ScanArgs) -> Result<DaemonScan> {
     crate::reset_scan_runtime_state();
     if args.dogfood {
         keyhog_scanner::telemetry::enable_dogfood();
@@ -611,6 +624,20 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
         );
     };
 
+    Ok(DaemonScan {
+        matches,
+        source_coverage_gaps,
+        wall_start,
+    })
+}
+
+#[cfg(unix)]
+fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
+    let DaemonScan {
+        matches,
+        source_coverage_gaps,
+        wall_start,
+    } = scan;
     let findings = finalize_for_report(matches, args)?;
     let report_finished_at = chrono::Utc::now();
     let report_metadata = crate::reporting::ReportMetadata::from_scan_run(

@@ -381,6 +381,38 @@ fn forced_daemon_scan_path_expands_har_base64_response() {
 }
 
 #[test]
+fn automatic_daemon_does_not_rescan_after_report_failure() {
+    let daemon = DaemonGuard::start();
+    let work = TempDir::new().expect("work dir");
+    let path = work.path().join("leak.env");
+    std::fs::write(&path, aws_key_line()).expect("write fixture");
+
+    let out = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
+        .args(["scan", "--daemon=auto", "--format", "json", "--output"])
+        .arg(work.path())
+        .arg(&path)
+        .output()
+        .expect("spawn keyhog scan");
+
+    let combined = combined_output(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "report failure must preserve the command error exit; output={combined}"
+    );
+    assert!(
+        combined.contains("failed") || combined.contains("directory"),
+        "report failure must stay operator-visible; output={combined}"
+    );
+    assert!(
+        !combined.contains("daemon auto route unavailable")
+            && !combined.contains("running in-process scanner"),
+        "a report failure occurs after the daemon result was accepted and must not trigger a second scan; output={combined}"
+    );
+}
+
+#[test]
 fn forced_daemon_stdin_honors_cli_byte_limit() {
     let daemon = DaemonGuard::start();
 
