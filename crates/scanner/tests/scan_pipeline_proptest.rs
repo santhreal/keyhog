@@ -12,7 +12,7 @@ use proptest::prelude::*;
 use std::sync::LazyLock;
 
 // One shared compiled scanner for the whole test binary (CompiledScanner is Sync
-//: its caches are Mutex/atomic-backed). Reused across all proptest cases.
+// its caches are Mutex/atomic-backed). Reused across all proptest cases.
 static SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
     CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
         .expect("scanner compile")

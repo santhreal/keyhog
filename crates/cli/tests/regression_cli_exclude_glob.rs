@@ -310,7 +310,7 @@ fn exclude_star_env_matches_any_depth_empties_result() {
 }
 
 /// The explicit recursive glob `**/*.env` also strips every `.env` at any depth
-///: same empty, exit-0 result as the bare `*.env` form.
+/// same empty, exit-0 result as the bare `*.env` form.
 #[test]
 fn exclude_recursive_env_glob_empties_result() {
     let dir = plant_skip_tree();

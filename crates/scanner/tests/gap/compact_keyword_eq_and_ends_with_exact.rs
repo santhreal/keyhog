@@ -100,7 +100,7 @@ proptest! {
     }
 
     /// POSITIVE PATH: a keyword always `eq`s AND `ends_with`s its OWN compaction
-    ///: the reflexive anchor a sort/fold regression would break. (Dropping ASCII
+    /// the reflexive anchor a sort/fold regression would break. (Dropping ASCII
     /// separators from valid UTF-8 keeps it valid UTF-8, so the round-trip holds.)
     #[test]
     fn a_keyword_equals_and_ends_with_its_own_compaction(

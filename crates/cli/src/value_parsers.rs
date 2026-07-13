@@ -201,7 +201,7 @@ pub(crate) fn parse_positive_thread_count(s: &str) -> Result<usize, String> {
 // (git), `limit_cloud_max_objects` (s3/gcs/azure), `limit_hosted_git_pages`
 // (github/gitlab/bitbucket). Gating this to `git` alone made `--features s3` /
 // `--features github` (no git) fail with `parse_positive_limit_count` not found
-//: the value-parser is referenced by their clap args but was cfg'd out.
+// the value-parser is referenced by their clap args but was cfg'd out.
 #[cfg(any(
     feature = "git",
     feature = "s3",

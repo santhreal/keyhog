@@ -119,7 +119,7 @@ fn normalize_strips_zwj_bom_zwsp_to_clean_token() {
 #[test]
 fn normalize_strips_combining_marks_from_two_blocks() {
     // U+1DC0 (Extended block) + U+FE20 (Combining Half Marks block) both dropped
-    //: neither is in the legacy U+0300–036F block.
+    // neither is in the legacy U+0300–036F block.
     let evaded = "g\u{1DC0}h\u{FE20}p_x1234567890abcd";
     let out = uh::normalize_homoglyphs(evaded);
     assert_eq!(&*out, "ghp_x1234567890abcd");

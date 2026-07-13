@@ -219,7 +219,7 @@ fn daemon_rejects_oversized_frame_length_prefix() {
 
 /// Wiring (#9): a daemon bound to a non-default socket (`daemon start --socket`)
 /// must be reachable by a scan via `scan --daemon --daemon-socket <same path>`
-///: proving the CLI override symmetrically targets the daemon's bind and the
+/// proving the CLI override symmetrically targets the daemon's bind and the
 /// scan client's connect. Before `--daemon-socket`, a fixed-location daemon
 /// (e.g. a systemd unit on `/run/keyhog/keyhog.sock`) was unreachable by scans:
 /// `scan --daemon` only ever resolved `default_socket_path()`, so a

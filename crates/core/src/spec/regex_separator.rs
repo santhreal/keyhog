@@ -6,7 +6,7 @@
 //! Detector authors hand-write the separator that sits *between keyword words*
 //! of an anchor (`api`‹sep›`key`, `google`‹sep›`meet`, `D1`‹sep›`TOKEN`). Across
 //! the shipped corpus that separator was written in **17 inconsistent forms**
-//!: `[_-]?` (no whitespace at all, so `client id` is missed), `[_\s]?` (a
+//! `[_-]?` (no whitespace at all, so `client id` is missed), `[_\s]?` (a
 //! single optional separator, so `api  key` is missed), `[_]*` (underscore
 //! only), exact-one `[_-]`, and even genuinely broken **over-escaped** classes
 //! like `[_\\s-]` whose `\\s` matches a *literal backslash and the letter `s`*

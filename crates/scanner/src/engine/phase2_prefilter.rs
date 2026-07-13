@@ -717,7 +717,7 @@ impl Phase2AlwaysActivePrefilter {
             // (compiler_build.rs pushes both) AND that path now CONFIRMS it even
             // when the literal is shadowed by a longer one, because phase-1 marks
             // triggers with OVERLAPPING AC matching (collect_triggered_patterns_cpu)
-            //: the missing half that previously let the always-active variant be
+            // the missing half that previously let the always-active variant be
             // the sole matcher for e.g. generic-password on `client_secret="…"`. A
             // chunk with no non-ASCII bytes has no homoglyph for the variant to
             // catch, so on ASCII it adds nothing the base AC doesn't. This removes

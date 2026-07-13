@@ -53,7 +53,7 @@ static X86_ENTROPY_TIER: OnceLock<X86EntropyTier> = OnceLock::new();
 ///    declares `avx512f,avx512bw`; soundness needs only those two. The gate ALSO
 ///    requires `avx512dq` as deliberate forward-headroom, so a future dq-using
 ///    re-vectorization of the reduction needs no gate change (entropy/avx512.rs)
-///: a sound over-gate, not a current intrinsic need. KH C10/M9.
+/// a sound over-gate, not a current intrinsic need. KH C10/M9.
 ///  - the AVX2 reduction (`fast_x86::shannon_entropy_avx2`) declares `avx2,fma`,
 ///    which licenses the compiler to emit FMA3 (VFMADD231PD) in its body, so
 ///    `fma` is required in addition to `avx2` (else SIGILL on an AVX2-without-FMA

@@ -515,7 +515,7 @@ pub(crate) fn batch_score_features(
     }
 
     // The GPU compute shader MUST reproduce the CPU MoE (`ml_scorer::score_features`
-    //: the reference every confidence floor is tuned and benched against) within
+    // the reference every confidence floor is tuned and benched against) within
     // tolerance. A shader miscompile, weights-packing mismatch, or driver bug that
     // makes the GPU score DIVERGE from CPU would silently change findings vs the
     // CPU/SIMD path (a Law-10 recall bug: a real secret the CPU scores ~1.0 gets a

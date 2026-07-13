@@ -101,7 +101,7 @@ fn detectors_listing_is_plain_and_banner_matches_embedded_count() {
 /// `NO_COLOR=1` must not change captured `detectors` output at all: with the
 /// stream already plain (piped), the two runs are byte-for-byte identical, and
 /// neither carries an escape byte. This is the host-independent color contract
-///: never a silent add of ANSI when NO_COLOR is honored.
+/// never a silent add of ANSI when NO_COLOR is honored.
 #[test]
 fn no_color_does_not_alter_captured_detectors_bytes() {
     let dir = tempfile::tempdir().expect("tempdir");

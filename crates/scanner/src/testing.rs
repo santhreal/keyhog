@@ -968,7 +968,7 @@ pub fn shannon_entropy_scalar_for_test(data: &[u8]) -> f64 {
 }
 
 /// The once-resolved SIMD dispatcher [`crate::entropy::fast::shannon_entropy_simd`]
-///: whatever tier this CPU selected. Must equal the scalar reference.
+/// whatever tier this CPU selected. Must equal the scalar reference.
 pub fn shannon_entropy_simd_for_test(data: &[u8]) -> f64 {
     crate::entropy::fast::shannon_entropy_simd(data)
 }
@@ -1215,7 +1215,7 @@ pub fn standard_base64_shape_for_test(candidate: &str) -> Option<(bool, bool, bo
 
 /// `contains_non_padding_equals`: the single base64-padding discriminator shared
 /// by the isolated-bare entropy candidate gate and the leading-slash secret gate
-///: `true` iff the value holds an `=` that is not valid trailing base64 padding
+/// `true` iff the value holds an `=` that is not valid trailing base64 padding
 /// (a third-or-later trailing `=`, or any `=` before the padding run).
 pub fn contains_non_padding_equals(value: &str) -> bool {
     crate::decode::contains_non_padding_equals(value)
@@ -2593,7 +2593,7 @@ pub fn looks_like_prefixed_hash_digest_for_test(value: &str) -> bool {
 }
 
 /// Test seam for [`crate::suppression::shape::looks_like_prefixed_masked_sequence`]
-///: a placeholder body: trailing `...` / `…`, OR an `xxx`/`***` mask prefix
+/// a placeholder body: trailing `...` / `…`, OR an `xxx`/`***` mask prefix
 /// followed by a sequential digit/alpha run (`xxxx1234567890`, `***abcdefgh`).
 pub fn looks_like_prefixed_masked_sequence_for_test(value: &str) -> bool {
     crate::suppression::shape::looks_like_prefixed_masked_sequence(value)
@@ -2639,54 +2639,54 @@ pub fn looks_like_trimmed_aws_iam_arn_for_test(value: &str) -> bool {
 }
 
 /// Test seam for [`crate::suppression::shape::has_three_or_more_consecutive_identical`]
-///: a masking-run detector that counts a run of ANY byte, dashes INCLUDED.
+/// a masking-run detector that counts a run of ANY byte, dashes INCLUDED.
 pub fn has_three_or_more_consecutive_identical_for_test(value: &str) -> bool {
     crate::suppression::shape::has_three_or_more_consecutive_identical(value)
 }
 
 /// Test seam for [`crate::suppression::shape::has_n_or_more_consecutive_identical`]
-///: the parameterized run detector that EXCLUDES dashes (legitimate delimiters in
+/// the parameterized run detector that EXCLUDES dashes (legitimate delimiters in
 /// PEM/UUID/JWT). Deliberately diverges from the three-or-more variant on dash runs.
 pub fn has_n_or_more_consecutive_identical_for_test(value: &str, n: usize) -> bool {
     crate::suppression::shape::has_n_or_more_consecutive_identical(value, n)
 }
 
 /// Test seam for [`crate::suppression::shape::looks_like_bracketed_template_placeholder`]
-///: a `{…}` / `<…>` / `${…}` wrapper no longer than the placeholder cap (80 bytes).
+/// a `{…}` / `<…>` / `${…}` wrapper no longer than the placeholder cap (80 bytes).
 pub fn looks_like_bracketed_template_placeholder_for_test(value: &str) -> bool {
     crate::suppression::shape::looks_like_bracketed_template_placeholder(value)
 }
 
 /// Test seam for [`crate::suppression::shape::source::looks_like_program_identifier`]
-///: a bare snake_case (`my_program`) or camelCase (`myProgram`) all-alpha program
+/// a bare snake_case (`my_program`) or camelCase (`myProgram`) all-alpha program
 /// name; identifier grammar, not a secret.
 pub fn looks_like_program_identifier_for_test(value: &str) -> bool {
     crate::suppression::shape::source::looks_like_program_identifier(value)
 }
 
 /// Test seam for [`crate::suppression::shape::source::looks_like_kebab_config_identifier`]
-///: a short (<= 24) dash-joined majority-lowercase config key (`log-level`) with
+/// a short (<= 24) dash-joined majority-lowercase config key (`log-level`) with
 /// no base64-ish `+`/`/`/`=` chars.
 pub fn looks_like_kebab_config_identifier_for_test(value: &str) -> bool {
     crate::suppression::shape::source::looks_like_kebab_config_identifier(value)
 }
 
 /// Test seam for [`crate::suppression::shape::public::looks_like_public_reference_selector`]
-///: a value made entirely of `[sources.IDENT]` TOML-table selectors (IDENT =
+/// a value made entirely of `[sources.IDENT]` TOML-table selectors (IDENT =
 /// 3-80 upper/digit/`_`); a config reference, not a credential.
 pub fn looks_like_public_reference_selector_for_test(value: &str) -> bool {
     crate::suppression::shape::public::looks_like_public_reference_selector(value)
 }
 
 /// Test seam for [`crate::suppression::shape::public::looks_like_percent_encoded_markup`]
-///: percent-encoded XSS markup (encoded `<`…`>` around a script/handler keyword);
+/// percent-encoded XSS markup (encoded `<`…`>` around a script/handler keyword);
 /// an attack payload the scanner captured, not a secret.
 pub fn looks_like_percent_encoded_markup_for_test(value: &str) -> bool {
     crate::suppression::shape::public::looks_like_percent_encoded_markup(value)
 }
 
 /// Test seam for [`crate::suppression::shape::public::looks_like_html_event_handler_fragment`]
-///: a bare `oneventname=` HTML event-handler attribute; executable grammar, not a secret.
+/// a bare `oneventname=` HTML event-handler attribute; executable grammar, not a secret.
 pub fn looks_like_html_event_handler_fragment_for_test(value: &str) -> bool {
     crate::suppression::shape::public::looks_like_html_event_handler_fragment(value)
 }
@@ -2700,7 +2700,7 @@ pub fn is_canonical_service_hex_key_for_test(value: &str) -> bool {
 }
 
 /// Test seam for [`crate::suppression::shape::looks_like_truncated_uuid_v4_suffix`]
-///: a UUID v4 with its 2 leading hex chars dropped (34 chars, `6-4-4-4-12`,
+/// a UUID v4 with its 2 leading hex chars dropped (34 chars, `6-4-4-4-12`,
 /// version `4` at 12 + variant `8/9/a/b` at 17, uniform-case hex).
 pub fn looks_like_truncated_uuid_v4_suffix_for_test(value: &str) -> bool {
     crate::suppression::shape::looks_like_truncated_uuid_v4_suffix(value)

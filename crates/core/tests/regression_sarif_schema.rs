@@ -238,7 +238,7 @@ fn runs_is_single_element_array() {
 }
 
 /// `runs[0]` (no coverage gaps) carries EXACTLY `results`, `tool`, `taxonomies`
-///: and specifically NO `invocations` when there is nothing to report.
+/// and specifically NO `invocations` when there is nothing to report.
 #[test]
 fn run0_keys_are_results_tool_taxonomies_when_no_skips() {
     let json = render_sarif(&[finding_for(

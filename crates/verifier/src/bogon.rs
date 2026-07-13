@@ -138,7 +138,7 @@ pub(crate) fn ip_addr_is_bogon(ip: IpAddr) -> bool {
             // 0.0.0.1 / 0.0.0.0, neither of which matches the IPv4
             // loopback predicate (127/8). Without this short-circuit
             // the v4 fallback would let `::1` past the SSRF guard
-            //: a real bug the original donor copy carried before
+            // a real bug the original donor copy carried before
             // 2026-05-23.
             if v.is_loopback() || v.is_unspecified() {
                 return true;

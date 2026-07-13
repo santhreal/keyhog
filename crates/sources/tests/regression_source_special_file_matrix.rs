@@ -428,7 +428,7 @@ fn scan_archive_symlink_is_refused_with_a_counted_coverage_gap() {
 fn scan_dangling_non_archive_symlink_is_a_silent_noop() {
     // A broken (dangling) NON-archive symlink is classified via read_link (which
     // succeeds on a dangling link), found non-expandable, and dropped at the walk
-    //: no chunk, no error, no skip bump.
+    // no chunk, no error, no skip bump.
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
 

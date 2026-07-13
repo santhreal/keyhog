@@ -398,7 +398,7 @@ pub(crate) const DECODE_FOCUS_MARGIN: usize = 64;
 // boundaries inside what was a contiguous base64/hex run. A confirmed /
 // companion-anchored detector can therefore fire on spliced context arbitrarily
 // far from the decoded span where the parent, which saw the still-encoded bytes
-//: did not, so the "outside the decoded span is a parent duplicate" theorem that
+// did not, so the "outside the decoded span is a parent duplicate" theorem that
 // makes the phase-2 focus sound does NOT hold for confirmed detectors. A
 // symmetric `[ds-M, de+M]` window with M=256 still dropped real cloudflare-api-token
 // and mysql-connection-string findings on the mirror corpus; the only provably

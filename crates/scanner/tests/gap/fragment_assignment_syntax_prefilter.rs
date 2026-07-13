@@ -35,7 +35,7 @@ fn fragment_prefilter_requires_assignment_and_quote() {
 // The fixed vector pins the truth table on 10 examples; this SWEEPS it as a
 // DIFFERENTIAL: the memchr2/memchr3 SIMD implementation must EXACTLY equal the
 // naive OR-of-`contains` boolean: `(has '=' or ':') AND (has '"' or '\'' or '`')`
-//: for every byte string. A divergence is a per-chunk recall bug (false negative
+// for every byte string. A divergence is a per-chunk recall bug (false negative
 // skips fragment reassembly). Run over arbitrary bytes (edge/negative coverage)
 // and a marker-rich alphabet (balanced true/false). No proptest before.
 

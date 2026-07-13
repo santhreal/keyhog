@@ -286,7 +286,7 @@ fn static_prefilter_regexes_handle_build_failure_loudly() {
     //    also fail-closes; it is pinned precisely by
     //    `structural_constant_regexes_fail_closed`.
     // (`multiline/config.rs` was previously listed but builds NO static prefilter
-    //: its "prefilter" is a memchr2 fast-path, nothing fallible to guard, so
+    // its "prefilter" is a memchr2 fast-path, nothing fallible to guard, so
     // requiring a loud handler there was a stale contract.)
     let warn_degrade = ["checksum/slack.rs"];
     let fail_closed = ["shared_regexes.rs", "unicode_hardening.rs"];

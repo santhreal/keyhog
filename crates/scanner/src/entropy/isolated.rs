@@ -417,7 +417,7 @@ fn isolated_bare_candidate_in_span(
     isolated_bare_candidate(candidate, min_len).map(|value| {
         // SAFETY: `value` is a subslice of `candidate` (via str::trim/trim_matches inside
         // `isolated_bare_candidate`), and `candidate` is `&line[candidate_start..candidate_end]`
-        //: a direct subslice of `line`. Therefore `value.as_ptr() >= line.as_ptr()` is
+        // a direct subslice of `line`. Therefore `value.as_ptr() >= line.as_ptr()` is
         // guaranteed; subtraction cannot underflow.
         let offset = value.as_ptr() as usize - line.as_ptr() as usize;
         (value, offset)

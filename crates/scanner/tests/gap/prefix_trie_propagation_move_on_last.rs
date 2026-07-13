@@ -99,7 +99,7 @@ proptest! {
     }
 
     /// `build_propagation_table_for_test` must never panic on arbitrary prefixes
-    ///: including empty strings, multi-byte Unicode, and embedded newlines
+    /// including empty strings, multi-byte Unicode, and embedded newlines
     /// (`(?s)`), since the trie walks `.chars()` and indexes the output by input
     /// position. The table length must still equal the input length regardless of
     /// content.

@@ -62,7 +62,7 @@ use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 // ---------------------------------------------------------------------------
 
 /// `hex::encode(Sha256::digest(b"Action=GetCallerIdentity&Version=2011-06-15"))`
-///: the payload hash the signer puts on the last line of the canonical
+/// the payload hash the signer puts on the last line of the canonical
 /// request (`aws.rs` line ~136).
 const STS_BODY_SHA256: &str = "ab821ae955788b0e33ebd34c208442ccfc2d406e2edc5e7a39bd6458fbb4f843";
 

@@ -182,7 +182,7 @@ pub(crate) fn is_random_token(value: &str) -> bool {
 /// negation: `!is_random_token` is also true for a SHORT token the model cannot
 /// judge (`mean_bigram_logprob == None`, the fail-safe). This predicate stays
 /// `false` there, so it can only ever DROP a value the model is sure is English
-///: it never suppresses a short random password on a fail-safe, and a random
+/// it never suppresses a short random password on a fail-safe, and a random
 /// token (`pxidztpv`, score ≤ −6.85) is below the threshold so it is kept.
 ///
 /// Used by the strong-anchor structural detectors (e.g. `url-credentials`,

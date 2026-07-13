@@ -96,7 +96,7 @@ fn missing_companion_refs_dedups_a_repeated_missing_ref() {
 /// scanned unboundedly: `missing_companion_refs` stops after exactly
 /// `MAX_TEMPLATE_TOKENS` tokens. We plant `MAX+76` DISTINCT missing names (so no
 /// dedup collision masks the count) and assert: (a) exactly `MAX` names come back
-///: proving the loop halted at the bound rather than walking all of them; (b)
+/// proving the loop halted at the bound rather than walking all of them; (b)
 /// the FIRST ref (`m0`) is present but (c) a ref PAST the bound (`m{MAX+75}`) is
 /// absent, the definitive proof the scan stopped early instead of processing the
 /// whole template. Asserts against the single `MAX_TEMPLATE_TOKENS` owner, never a

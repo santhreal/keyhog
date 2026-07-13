@@ -309,7 +309,7 @@ pub(crate) struct LazyRegex {
     /// function of the regex source; cached like `has_literal_prefix`.
     has_broad_identifier_capture: Arc<std::sync::OnceLock<bool>>,
     /// Memoized `regex_has_required_literal_run(src, MIN_DISTINCTIVE_INFIX_CHARS)`
-    ///: whether every match necessarily contains a distinctive required literal
+    /// whether every match necessarily contains a distinctive required literal
     /// run (the terraform `…\.atlasv1\.…` infix). Such a pattern opens with a
     /// character class (no extractable prefix) and captures the whole match (no
     /// keyword group), so it earns neither existing anchor signal despite being

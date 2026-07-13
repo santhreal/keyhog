@@ -57,7 +57,7 @@ fn every_embedded_detector_parses() {
 /// T-05: the parseable embedded count must equal the embedded slice length, so
 /// an embed-time drop (slice shorter than expected) or a parse failure (covered
 /// above) cannot pass as a healthy load. Pinning the count to the slice length
-///: rather than a magic number (keeps the gate honest as the corpus grows).
+/// rather than a magic number (keeps the gate honest as the corpus grows).
 #[test]
 fn embedded_parseable_count_equals_slice_len() {
     let embedded = embedded_detector_tomls();

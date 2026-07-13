@@ -183,7 +183,7 @@ impl DefaultScanRuntime {
     /// `keyhog scan` uses (signatures, disabled detectors, test-fixture +
     /// self-scan suppression, allowlist, confidence floors, severity, match
     /// resolution, inline suppression). Fails closed if no filter was installed
-    ///: a missing filter is a wiring bug, never a silent "emit everything".
+    /// a missing filter is a wiring bug, never a silent "emit everything".
     pub(crate) fn filter_and_resolve(&self, matches: Vec<RawMatch>) -> Result<Vec<RawMatch>> {
         let Some(f) = self.filter.as_ref() else {
             anyhow::bail!(

@@ -80,7 +80,7 @@ proptest! {
     }
 
     /// A masked-sequence match IMPLIES a trailing ellipsis OR an `xxx`/`***` prefix
-    ///: the gate never fires on a value with neither signal.
+    /// the gate never fires on a value with neither signal.
     #[test]
     fn masked_match_implies_ellipsis_or_mask_prefix(value in "[a-zA-Z0-9*.]{0,40}") {
         if looks_like_prefixed_masked_sequence_for_test(&value) {

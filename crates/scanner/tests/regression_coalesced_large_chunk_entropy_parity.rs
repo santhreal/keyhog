@@ -59,7 +59,7 @@ static SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
 
 /// A 44-char high-entropy token built from a fixed permutation of the alnum
 /// alphabet. 62 and 37 are coprime, so `(i*37+11) % 62` visits distinct residues
-///: 44 distinct characters, well above the entropy floor. WITHOUT ever writing
+/// 44 distinct characters, well above the entropy floor. WITHOUT ever writing
 /// a secret-shaped literal into this source file (dogfood-self-scan safe).
 fn entropy_token() -> String {
     const AL: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";

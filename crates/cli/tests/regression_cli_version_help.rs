@@ -183,7 +183,7 @@ fn help_long_flag_exits_zero_on_stdout() {
 }
 
 /// The top-level `Usage:` line is byte-exactly `Usage: keyhog [OPTIONS] [COMMAND]`
-///: binary name `keyhog`, options-then-optional-command shape.
+/// binary name `keyhog`, options-then-optional-command shape.
 #[test]
 fn help_usage_line_is_exact() {
     let (code, stdout, _e) = run(&["--help"]);

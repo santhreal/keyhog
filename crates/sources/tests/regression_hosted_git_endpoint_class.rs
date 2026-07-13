@@ -236,7 +236,7 @@ fn gitlab_endpoint_api_v4_suffix_is_not_double_appended() {
     // `normalize_gitlab_api_root` appends `/api/v4` ONLY when the operator did
     // not already supply it. An endpoint that already ends in `/api/v4` must be
     // used as-is: the listing is served only at `/api/v4/groups/acme/projects`
-    //: never a doubled `/api/v4/api/v4/...`.
+    // never a doubled `/api/v4/api/v4/...`.
     let server = httpmock::MockServer::start();
     let list = server.mock(|when, then| {
         when.method(httpmock::Method::GET)

@@ -33,7 +33,7 @@ use tiktoken_rs::{cl100k_base, CoreBPE};
 /// (F1 ≈ 0.421–0.424).
 ///
 /// The VALUE has exactly one owner, [`keyhog_core::DEFAULT_ENTROPY_BPE_MAX_BYTES_PER_TOKEN`]
-///: it lives in the lower `keyhog-core` crate so `ScanConfig` can default to it
+/// it lives in the lower `keyhog-core` crate so `ScanConfig` can default to it
 /// without a scanner↔core cycle. This is the historical name re-bound to that one
 /// owner for the gate's compiled default and the tests below; a per-scan override
 /// (`ScanConfig::entropy_bpe_max_bytes_per_token`, Tier-A TOML + CLI) is threaded

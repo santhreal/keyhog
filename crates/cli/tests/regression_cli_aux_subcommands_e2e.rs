@@ -246,7 +246,7 @@ fn version_short_flag_matches_long_flag_first_line() {
 // ---------------------------------------------------------------------------
 
 /// `keyhog --help` lists exactly the expected subcommand set under `Commands:`
-///: no more, no fewer. Parsed by taking the first token of every command entry
+/// no more, no fewer. Parsed by taking the first token of every command entry
 /// (a line indented by exactly two spaces) in the Commands block.
 #[test]
 fn help_lists_exact_subcommand_set() {

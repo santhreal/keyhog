@@ -222,7 +222,7 @@ pub struct DetectorSpec {
     /// fully suppresses any lower-specificity child finding nested inside such a
     /// span (an entropy/base64 hit on a line INSIDE the key body is not a second
     /// secret). A new private-key-block detector now declares this in its own TOML
-    ///: no code edit (and the whole story lives in the detector file).
+    /// no code edit (and the whole story lives in the detector file).
     #[serde(default)]
     pub private_key_block: bool,
     /// Per-detector credential shape constraint (see [`CredentialShape`]), OWNED

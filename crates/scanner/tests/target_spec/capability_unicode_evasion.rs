@@ -161,7 +161,7 @@ fn credential_survives_fullwidth_context() {
 }
 
 /// Non-breaking-space (U+00A0) separator between the keyword and the credential
-///: a classic copy-from-PDF/rich-editor artifact. keyhog normalizes NBSP to a
+/// a classic copy-from-PDF/rich-editor artifact. keyhog normalizes NBSP to a
 /// regular space (see regression_unicode_nbsp_separator_normalization); this
 /// asserts that reach across every credential-sufficient detector.
 #[test]

@@ -658,7 +658,7 @@ fn decoded_reverse_placeholder_marker(reversed: &str) -> bool {
 /// that are ALL non-secrets (measured decode-on−decode-off diff), for ~0 real
 /// TP, pure precision loss. A decoded match must carry its OWN structural
 /// evidence, a required vendor literal / anchored slot that survives the decode
-///: to be trusted (KH-L-0404 "anchor decoded matches"). The generic/entropy
+/// to be trusted (KH-L-0404 "anchor decoded matches"). The generic/entropy
 /// family has none. Vendor/key detectors on decoded content (genuine encoded
 /// secrets, backblaze/confluent/wordpress tokens, `-----BEGIN`-headed key
 /// bodies) self-anchor on their required literal and are UNAFFECTED: this gate

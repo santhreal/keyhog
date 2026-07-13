@@ -1,7 +1,7 @@
 //! SSRF adversarial: the NAT64 well-known prefix (`64:ff9b::/96`, RFC 6052)
 //! embeds an IPv4 address in its low 32 bits. An attacker who controls a URL the
 //! verifier fetches can hide a private/metadata IPv4 inside a NAT64 IPv6 literal
-//!: `http://[64:ff9b::169.254.169.254]/` reaches cloud IMDS on any host with a
+//! `http://[64:ff9b::169.254.169.254]/` reaches cloud IMDS on any host with a
 //! NAT64 resolver, bypassing a guard that only screens dotted-quad IPv4. The
 //! bogon classifier unwraps the embedded v4 and refuses it; these pin that.
 

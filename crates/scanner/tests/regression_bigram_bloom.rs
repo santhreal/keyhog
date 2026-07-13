@@ -335,7 +335,7 @@ proptest! {
 
     /// RECALL GUARANTEE (no false negatives): a chunk that contains a literal
     /// prefix `lit` (>= 2 bytes) anywhere as a contiguous substring MUST overlap
-    ///: the chunk necessarily carries every adjacent bigram of `lit`, all of
+    /// the chunk necessarily carries every adjacent bigram of `lit`, all of
     /// which `from_literal_prefixes` set. A regression returning `false` here
     /// would make the prefilter silently drop the chunk (and its secret). The
     /// arbitrary `prefix`/`suffix` place the literal at any offset, including the

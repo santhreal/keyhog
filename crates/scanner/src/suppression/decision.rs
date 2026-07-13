@@ -84,7 +84,7 @@ pub(super) fn evasion_decoder_reason(source_type: Option<&str>) -> Option<&'stat
 }
 
 /// True when `s` is multi-word English prose carrying an interior whitespace run
-///: the dotenv/properties/log-line extractor sometimes captures an entire RHS
+/// the dotenv/properties/log-line extractor sometimes captures an entire RHS
 /// like `Session opened with handle XYZ. See documentation.` as the credential.
 /// Cheap word-run sanity check: >30 bytes, ≥2 whitespace chars, and at least one
 /// 3+ char all-lowercase token between spaces, characteristic of prose, not a

@@ -674,7 +674,7 @@ fn every_positive_scans_deterministically_over_the_corpus() {
                 let mut again = scanner.scan(&chunk);
                 again.sort();
                 // Full `RawMatch` equality (every field, floats via total_cmp)
-                //: the strongest possible identity, not just the fingerprint.
+                // the strongest possible identity, not just the fingerprint.
                 if first != again {
                     let other = scan_fingerprint(&again);
                     divergences.push(format!(

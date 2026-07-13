@@ -62,7 +62,7 @@ fn force_on_and_force_off_are_distinct_resolutions() {
 #[test]
 fn a_forced_override_wins_over_the_default_when_they_differ() {
     // Forcing the OPPOSITE of the default must actually change the resolved value
-    //: proves the override takes precedence over the compiled default.
+    // proves the override takes precedence over the compiled default.
     assert_eq!(
         localizer(Some(!TUNING_LOCALIZER_DEFAULT)),
         !TUNING_LOCALIZER_DEFAULT
