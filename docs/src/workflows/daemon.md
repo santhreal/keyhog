@@ -5,6 +5,12 @@ is useful for editor saves, hooks, and other workflows where compiling the
 detector corpus costs more than scanning one file. It is not a second scanner
 implementation and it does not replace the full scan orchestrator.
 
+`keyhog watch` is separate: it is a foreground filesystem-event loop with its
+own compiled scanner, not a daemon client or daemon-managed process. Starting a
+watcher does not create the Unix socket, and `daemon status` does not report it.
+Use `watch` for continuous directory monitoring; use `scan --daemon` for an
+eligible stdin or single-file request sent to the separately started service.
+
 ## Start, inspect, and stop
 
 ```sh

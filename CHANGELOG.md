@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Documentation and CLI help now distinguish the foreground `watch` process
+  from the independently started Unix-socket daemon and describe `--backend
+  auto` as persisted routing rather than a forced backend.
 - Daemon wire-v3 scan results now require suppression, dogfood, and coverage
   fields instead of silently defaulting fields inherited from rejected v1/v2
   peers; malformed same-version frames fail closed.

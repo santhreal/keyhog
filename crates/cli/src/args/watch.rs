@@ -5,9 +5,9 @@ use clap::Parser;
 #[derive(Parser)]
 pub struct WatchArgs {
     /// Director(ies) to watch recursively. Pass several to monitor multiple
-    /// roots in one daemon (`keyhog watch src/ config/`); nested or duplicate
-    /// roots fold into their covering parent, mirroring `keyhog scan`. Each root
-    /// must be a directory. Defaults to the current directory.
+    /// roots in one foreground watcher (`keyhog watch src/ config/`); nested or
+    /// duplicate roots fold into their covering parent, mirroring `keyhog scan`.
+    /// Each root must be a directory. Defaults to the current directory.
     #[arg(value_name = "PATH", default_value = ".")]
     pub paths: Vec<PathBuf>,
     /// Detector TOML directory. Falls back to embedded corpus if missing.
@@ -16,10 +16,10 @@ pub struct WatchArgs {
     /// Override the Hyperscan compiled-database cache directory.
     #[arg(long, value_name = "DIR")]
     pub cache_dir: Option<PathBuf>,
-    /// Force a specific scan backend instead of using persisted autoroute.
-    /// Values: `auto`, `gpu`, `simd`, or `cpu`. Without it (and without installer calibration for
-    /// this binary) every change scan fails closed with an autoroute-calibration
-    /// error, exactly as `keyhog scan` does.
+    /// Select persisted autoroute (`auto`) or explicitly force one diagnostic
+    /// backend (`gpu`, `simd`, or `cpu`). Without it (and without installer
+    /// calibration for this binary) every change scan fails closed with an
+    /// autoroute-calibration error, exactly as `keyhog scan` does.
     #[arg(
         long,
         value_name = "BACKEND",

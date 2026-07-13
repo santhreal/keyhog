@@ -1,4 +1,4 @@
-//! `keyhog watch <path>` - daemon mode.
+//! `keyhog watch <path>` - foreground filesystem watch mode.
 //!
 //! Tier-B moat innovation #7 from the internal design notes: compile-once,
 //! scan-many. The detector corpus + Hyperscan database are built ONCE at
@@ -95,7 +95,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
             detector_count
         );
         // One status line per watched root so the operator can confirm every
-        // tree the daemon is actually monitoring, not just the first.
+        // tree the watcher is actually monitoring, not just the first.
         for root in &watch_roots {
             eprintln!("    watching: {}", root.display());
         }
@@ -107,8 +107,8 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     let notify_channel_closed_for_callback = AtomicBool::new(false);
     let roots_hint_for_callback = roots_hint.clone();
 
-    // Hold the watcher for the duration of the daemon. The `notify` crate
-    // requires us to keep the handle alive; dropping it stops the watcher.
+    // Hold the watcher for the duration of the foreground process. The `notify`
+    // crate requires us to keep the handle alive; dropping it stops the watcher.
     // ONE watcher serves every root — `notify` lets us register additional
     // paths on the same handle below — so all roots share this channel and the
     // single dedup/scan loop, with no per-root thread or state divergence.
@@ -167,7 +167,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
                 // the watcher never told us about means that file went unscanned
                 // (a recall loss). On Linux an inotify queue overflow
                 // (`Error::Generic` / ENOSPC under heavy churn) is the common
-                // case: events are coalesced/lost and the daemon's recall silently
+                // case: events are coalesced/lost and the watcher's recall silently
                 // degrades. A trace-only warning is invisible without RUST_LOG, so
                 // surface it LOUDLY on stderr and tell the operator what to do.
                 eprintln!(
@@ -201,7 +201,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
 }
 
 /// Resolve the requested watch roots into the canonical directory set the
-/// daemon will monitor.
+/// foreground watcher will monitor.
 ///
 /// Shares [`crate::sources::resolve_scan_roots`] with `keyhog scan` so both
 /// entry points validate, canonicalize, fold nested/duplicate roots (loudly,
@@ -220,7 +220,7 @@ fn resolve_watch_roots(requested: &[PathBuf]) -> Result<Vec<PathBuf>> {
         // finding reports — the absolute real path, exactly as the historical
         // single-root `watch` did. `resolve_scan_roots` keeps the user's
         // spelling (relative, `.`/`..`), which is fine for a one-shot scan but
-        // would leave a live daemon printing `./foo` paths. Existence was
+        // would leave a live watcher printing `./foo` paths. Existence was
         // already validated upstream, so this only normalizes the spelling; a
         // failure here is a genuine TOCTOU race, surfaced loudly (Law 10),
         // never swallowed.
@@ -268,7 +268,7 @@ fn content_hash(data: &[u8]) -> u64 {
 /// Read a changed file through the SAME guarded read the `keyhog scan` walker
 /// uses. A raw `std::fs::read` here bypassed three walker protections: (1) no
 /// size cap, so a large (or TOCTOU-grown) file dropped into a watched tree
-/// OOMs the single-threaded daemon; (2) no special-file guard, so a FIFO
+/// OOMs the single-threaded watcher; (2) no special-file guard, so a FIFO
 /// created in the tree — which itself fires an inotify CREATE event — is opened
 /// blocking and HANGS the event loop forever, wedging the whole watcher; (3) no
 /// `O_NOFOLLOW`, so a symlink is followed out of the watched root. `0` selects

@@ -574,7 +574,8 @@ Use it in IDE save handlers, stdin/single-file hook glue, or per-commit
 CI loops that feed one file at a time. See the
 [daemon workflow](docs/src/workflows/daemon.md) for routing and lifecycle semantics.
 
-Watch-mode for IDEs:
+Watch mode is a separate foreground filesystem-event loop; it does not connect
+to the daemon socket or appear in `keyhog daemon status`. For IDEs:
 
 ```bash
 keyhog watch ./src                     # inotify/FSEvents/RDCW
