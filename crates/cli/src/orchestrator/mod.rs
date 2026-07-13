@@ -391,6 +391,7 @@ pub(crate) fn setup_default_scan_runtime(
 ) -> Result<DefaultScanRuntime> {
     use clap::Parser;
     crate::runtime_preflight::validate_scan_runtime_config()?;
+    let detectors_path = auto_discover_detectors(detectors_path)?;
 
     // Resolve `.keyhog.toml` exactly as `keyhog scan` does. A synthetic default
     // `ScanArgs` carries only what this runtime can honor (detector dir, cache
@@ -401,7 +402,7 @@ pub(crate) fn setup_default_scan_runtime(
     let mut synthetic = ScanArgs::try_parse_from(["keyhog-scan"]).context(
         "internal: constructing default ScanArgs for watch/scan-system config resolution",
     )?;
-    synthetic.detectors = detectors_path.to_path_buf();
+    synthetic.detectors = detectors_path.clone();
     synthetic.cache_dir = cache_dir;
     synthetic.threads = threads;
     synthetic.path = filter_root.map(std::path::Path::to_path_buf);
@@ -410,7 +411,7 @@ pub(crate) fn setup_default_scan_runtime(
     let hw = keyhog_scanner::hw_probe::probe_hardware();
     configure_threads(effective_config.threads, hw.physical_cores);
 
-    let mut detectors = crate::orchestrator_config::load_detectors_or_embedded(detectors_path)?;
+    let mut detectors = crate::orchestrator_config::load_detectors_or_embedded(&detectors_path)?;
 
     // Apply `[detector.<id>] enabled = false`: drop the disabled detectors before
     // compilation so they never fire (mirrors `ScanOrchestrator::new`).
@@ -457,7 +458,7 @@ pub(crate) fn setup_default_scan_runtime(
             .map_err(|error| {
                 crate::orchestrator_config::detector_compile_failed(
                     subcommand_name,
-                    detectors_path,
+                    &detectors_path,
                     &error,
                 )
             })?

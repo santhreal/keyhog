@@ -540,12 +540,59 @@ fn watch_uses_toml_worker_count() {
     std::fs::write(dir.path().join(".keyhog.toml"), "[scan]\nthreads = 2\n").expect("write config");
 
     let (mut child, _out, err) = spawn_watch(dir.path(), false);
-    let ready = wait_until_contains(&err, &["workers: 2"], Duration::from_secs(20));
+    let ready = wait_until_contains(&err, &["workers: 2"], Duration::from_secs(60));
     kill(&mut child);
 
     assert!(
         ready,
         "watch must configure and surface the TOML worker count; stderr=\n{}",
+        snapshot(&err)
+    );
+}
+
+#[test]
+fn watch_auto_discovers_installed_detector_corpus() {
+    let home = TempDir::new().expect("home tempdir");
+    let root = TempDir::new().expect("watch tempdir");
+    let detectors = home.path().join(".keyhog/detectors");
+    std::fs::create_dir_all(&detectors).expect("create installed detector directory");
+    std::fs::write(
+        detectors.join("installed-only.toml"),
+        r#"[detector]
+id = "installed-only"
+name = "Installed Only"
+service = "test"
+severity = "high"
+keywords = ["INSTALLED_ONLY"]
+
+[[detector.patterns]]
+regex = "INSTALLED_ONLY=(?P<secret>[A-Za-z0-9]{20})"
+description = "installed detector"
+group = 1
+"#,
+    )
+    .expect("write installed detector");
+
+    let mut child = Command::new(binary())
+        .arg("watch")
+        .arg(root.path())
+        .args(["--backend", "cpu"])
+        .current_dir(root.path())
+        .env("HOME", home.path())
+        .env("XDG_DATA_HOME", home.path().join("xdg-data"))
+        .env("XDG_DATA_DIRS", home.path().join("xdg-data-dirs"))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn keyhog watch");
+    let _out = drain_pipe(child.stdout.take().expect("stdout piped"));
+    let err = drain_pipe(child.stderr.take().expect("stderr piped"));
+    let ready = wait_until_contains(&err, &["1 detectors compiled"], Duration::from_secs(60));
+    kill(&mut child);
+
+    assert!(
+        ready,
+        "watch must compile the auto-discovered installed corpus, not embedded rules; stderr=\n{}",
         snapshot(&err)
     );
 }
