@@ -515,7 +515,7 @@ async fn raw_credential_never_appears_in_any_emitted_finding_string() {
         Some(format!("{base}/?token={{{{match}}}}")),
         vec![MetadataSpec {
             name: "account".into(),
-            json_path: "/account".into(),
+            json_path: "$.account".into(),
         }],
     );
     let engine = permissive_engine(spec);

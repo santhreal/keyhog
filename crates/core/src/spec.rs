@@ -40,7 +40,7 @@ where
 pub struct MetadataSpec {
     /// Field name in the finding metadata map.
     pub name: String,
-    /// GJSON path to extract from the verification response body.
+    /// `$`-rooted response selector, such as `$.account.email` or `$.orgs[0].name`.
     pub json_path: String,
 }
 
@@ -756,7 +756,7 @@ pub struct SuccessSpec {
     /// Response body must NOT contain this substring.
     pub body_not_contains: Option<String>,
     #[serde(default)]
-    /// GJSON path to check in response body.
+    /// `$`-rooted response selector to check in the JSON response body.
     pub json_path: Option<String>,
     #[serde(default)]
     /// Expected value at \`json_path\`.

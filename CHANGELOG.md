@@ -6,6 +6,13 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Verification response selectors now use one validated `$`-rooted grammar in
+  detector TOMLs and runtime evaluation. Success checks and metadata extraction
+  now agree on object keys, array indexes, and bounded parsing. Invalid
+  selectors fail detector loading or verifier construction, and malformed JSON
+  from an otherwise successful response is reported as a verification error.
+  Programmatic users must migrate RFC 6901 `/account/email` selectors to
+  `$.account.email`.
 - Make `--deep` a distinct bounded recovery preset. It enables entropy discovery
   in source files, keeps heuristic evidence alongside ML instead of allowing an
   ML-only entropy veto, removes comment confidence penalties, raises

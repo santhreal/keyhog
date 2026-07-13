@@ -564,8 +564,6 @@ pub(crate) async fn verify_credential(
         success.is_some_and(success_spec_is_explicit),
         &body,
     );
-    let mut metadata = extract_metadata(&spec.metadata, &body);
-
     let http_only_result = if is_actually_live {
         VerificationResult::Live
     } else if retryable_status {
@@ -579,6 +577,21 @@ pub(crate) async fn verify_credential(
         VerificationResult::Dead
     };
     let transient = retryable_status;
+
+    let mut metadata = if is_actually_live {
+        match extract_metadata(&spec.metadata, &body) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                return VerificationAttempt {
+                    result: error.into_verification_error(),
+                    metadata: HashMap::new(),
+                    transient: false,
+                };
+            }
+        }
+    } else {
+        HashMap::new()
+    };
 
     let verification_result = match oob_ctx {
         None => http_only_result,

@@ -619,6 +619,11 @@ fn validate_verify_spec(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         // verify.service defaults to the detector's service - empty is fine
         validate_verify_urls(verify, issues);
         validate_verify_success_statuses(verify, issues);
+        issues.extend(
+            crate::json_selector::validate_detector_response_selectors(spec)
+                .into_iter()
+                .map(QualityIssue::Error),
+        );
         check_oob_consistency(verify, issues);
     }
     check_reserved_companion_names(spec, issues);

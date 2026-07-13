@@ -34,7 +34,7 @@ status = 200
 
 [[detector.verify.metadata]]
 name = "email"
-json_path = "email"
+json_path = "$.email"
 
 [[detector.tests]]
 test_positive = "FASTLY_API_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"

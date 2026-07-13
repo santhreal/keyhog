@@ -73,7 +73,7 @@ fn body_not_contains_rejects_when_the_substring_present() {
 #[test]
 fn json_path_without_equals_requires_a_present_non_null_value() {
     let spec = SuccessSpec {
-        json_path: Some("/valid".into()),
+        json_path: Some("$.valid".into()),
         ..Default::default()
     };
     assert!(
@@ -92,23 +92,17 @@ fn json_path_without_equals_requires_a_present_non_null_value() {
         !eval(&spec, 200, r#"{"valid":null}"#),
         "explicit null => not success"
     );
-    assert!(
-        !eval(&spec, 200, r#"{"other":1}"#),
-        "pointer miss => not success"
-    );
+    assert!(!eval(&spec, 200, r#"{"other":1}"#));
 }
 
 #[test]
-fn json_path_pointer_resolves_nested_paths() {
+fn json_path_selector_resolves_nested_paths() {
     let spec = SuccessSpec {
-        json_path: Some("/data/account/active".into()),
+        json_path: Some("$.data.account.active".into()),
         ..Default::default()
     };
     assert!(eval(&spec, 200, r#"{"data":{"account":{"active":true}}}"#));
-    assert!(
-        !eval(&spec, 200, r#"{"data":{"account":{}}}"#),
-        "missing leaf => not success"
-    );
+    assert!(!eval(&spec, 200, r#"{"data":{"account":{}}}"#));
 }
 
 // ── json_path WITH `equals`: exact contract-string compare ───────────────────
@@ -117,7 +111,7 @@ fn json_path_pointer_resolves_nested_paths() {
 fn json_path_equals_compares_the_contract_string_exactly() {
     // String value -> raw string.
     let s = SuccessSpec {
-        json_path: Some("/status".into()),
+        json_path: Some("$.status".into()),
         equals: Some("active".into()),
         ..Default::default()
     };
@@ -132,7 +126,7 @@ fn json_path_equals_compares_the_contract_string_exactly() {
 
     // Bool value -> "true"/"false".
     let b = SuccessSpec {
-        json_path: Some("/enabled".into()),
+        json_path: Some("$.enabled".into()),
         equals: Some("true".into()),
         ..Default::default()
     };
@@ -147,7 +141,7 @@ fn json_path_equals_compares_the_contract_string_exactly() {
 
     // Number value -> decimal string.
     let n = SuccessSpec {
-        json_path: Some("/quota".into()),
+        json_path: Some("$.quota".into()),
         equals: Some("42".into()),
         ..Default::default()
     };
@@ -163,7 +157,7 @@ fn json_path_equals_compares_the_contract_string_exactly() {
 #[test]
 fn json_path_on_non_json_body_is_a_contract_error() {
     let spec = SuccessSpec {
-        json_path: Some("/valid".into()),
+        json_path: Some("$.valid".into()),
         ..Default::default()
     };
     let result = TestApi.evaluate_success_result_for_test(&spec, 200, "this is not json");
@@ -173,7 +167,7 @@ fn json_path_on_non_json_body_is_a_contract_error() {
     );
     let msg = result.unwrap_err();
     assert!(
-        msg.contains("/valid") && msg.to_ascii_lowercase().contains("json"),
+        msg.contains("$.valid") && msg.to_ascii_lowercase().contains("json"),
         "error must name the json_path and the JSON-parse failure, got: {msg}"
     );
 }

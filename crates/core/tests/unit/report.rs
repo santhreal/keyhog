@@ -43,6 +43,20 @@ fn text_reporter_output() {
 }
 
 #[test]
+fn text_reporter_preserves_verification_error_reason() {
+    let mut finding = sample_finding();
+    finding.verification =
+        VerificationResult::Error("success selector $.account.live could not be evaluated".into());
+    let mut buf = Vec::new();
+    let mut reporter = TextReporter::with_color(&mut buf, false);
+    reporter.report(&finding).unwrap();
+    reporter.finish().unwrap();
+    let output = String::from_utf8(buf).unwrap();
+    assert!(output.contains("Verify error:"));
+    assert!(output.contains("success selector $.account.live could not be evaluated"));
+}
+
+#[test]
 fn jsonl_reporter_output() {
     let mut buf = Vec::new();
     let mut reporter = JsonlReporter::new(&mut buf);

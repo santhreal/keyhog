@@ -75,20 +75,27 @@ impl<W: Write + Send> Reporter for HtmlReporter<W> {
     }
 
     fn finish(&mut self) -> Result<(), ReportError> {
-        // VerifiedFinding::verification serializes its unit variants as plain
-        // strings ("dead"/"live"/…) but the Error(String) variant as an object
-        // ({"error":"…"}). The report JS treats `verification` as a string
-        // everywhere (f.verification.toLowerCase()), so an Error finding crashed
-        // the page (blank render). Flatten the object form to the bare "error"
-        // discriminant, uniform with the other variants, before inlining, so
-        // every finding renders. (Full error text is still in json/csv/sarif.)
+        // Unit verification variants serialize as strings, while Error(String)
+        // serializes as an object. Keep a string discriminant for filtering and
+        // copy the message to a detail field before the report is inlined.
         let mut findings_value = serde_json::to_value(&self.findings)?;
         if let Some(arr) = findings_value.as_array_mut() {
             for finding in arr {
-                if let Some(v) = finding.get_mut("verification") {
-                    if v.as_object().is_some_and(|o| o.contains_key("error")) {
-                        *v = serde_json::Value::String("error".to_string());
-                    }
+                let error = finding
+                    .get("verification")
+                    .and_then(serde_json::Value::as_object)
+                    .and_then(|object| object.get("error"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string);
+                if let (Some(object), Some(error)) = (finding.as_object_mut(), error) {
+                    object.insert(
+                        "verification".to_string(),
+                        serde_json::Value::String("error".to_string()),
+                    );
+                    object.insert(
+                        "verification_error".to_string(),
+                        serde_json::Value::String(error),
+                    );
                 }
             }
         }

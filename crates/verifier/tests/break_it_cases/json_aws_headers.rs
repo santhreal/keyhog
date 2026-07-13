@@ -38,7 +38,7 @@ async fn test_verify_json_path_exhaustion() {
         verify: Some(VerifySpec {
             url: Some(url),
             success: Some(SuccessSpec {
-                json_path: Some("/a/a/a".to_string()),
+                json_path: Some("$.a.a.a".to_string()),
                 status: None,
                 status_not: None,
                 body_contains: None,

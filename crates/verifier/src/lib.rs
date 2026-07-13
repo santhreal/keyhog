@@ -52,6 +52,10 @@ pub enum VerifyError {
         "failed to resolve verification field: {0}. Fix: use `match` or `companion.<name>` fields that exist in the detector spec"
     )]
     FieldResolution(String),
+    #[error(
+        "invalid detector verification response contract: {0}. Fix: correct the owning detector TOML before enabling live verification"
+    )]
+    DetectorConfig(String),
 }
 
 /// Live-verification engine with shared client, cache, and concurrency limits.
@@ -706,7 +710,7 @@ pub mod testing {
             &self,
             specs: &[keyhog_core::MetadataSpec],
             body: &str,
-        ) -> HashMap<String, String>;
+        ) -> Result<HashMap<String, String>, String>;
         fn retryable_http_status_for_test(&self, status: u16) -> bool;
         fn success_spec_is_explicit_for_test(&self, spec: &keyhog_core::SuccessSpec) -> bool;
         fn resolve_live_verdict_for_test(
@@ -1134,8 +1138,8 @@ pub mod testing {
             &self,
             specs: &[keyhog_core::MetadataSpec],
             body: &str,
-        ) -> HashMap<String, String> {
-            crate::verify::extract_metadata(specs, body)
+        ) -> Result<HashMap<String, String>, String> {
+            crate::verify::extract_metadata(specs, body).map_err(|error| error.to_string())
         }
 
         fn retryable_http_status_for_test(&self, status: u16) -> bool {

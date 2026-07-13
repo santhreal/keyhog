@@ -58,6 +58,28 @@ Each detector's `verify` block in its TOML defines:
 - `success.status` (HTTP status code, default `200`)
 - optional `success.body_contains` (substring the response body must
   contain)
+- optional `success.json_path` and `success.equals` for structured JSON
+  responses
+- optional `metadata` selectors for response fields attached to live findings
+
+Response selectors use one `$`-rooted grammar:
+
+- `$` selects the full response value.
+- `$.account.email` selects exact, case-sensitive object keys.
+- `$.orgs[0].name` selects a zero-based array item.
+- `$["account.name"]` selects a key that contains a dot.
+
+Wildcards, filters, recursive descent, RFC 6901 `/path` forms, whitespace
+outside quoted keys, and implicit roots are rejected when the detector loads.
+Selectors are limited to 1,024 bytes, 64 segments, and array indexes up to
+1,000,000. A success selector
+that is absent or resolves to `null` does not satisfy the success contract.
+`equals` compares strings, numbers, and booleans exactly and requires a
+`json_path`. Metadata fields are optional enrichment, so a valid selector miss
+omits that field. Invalid selector syntax is a detector configuration error. A
+malformed successful JSON response is a verification error rather than a dead
+credential. Direct verification metadata and multi-step `extract` fields use
+the same grammar.
 
 The verifier:
 1. Renders the URL with the credential substituted in

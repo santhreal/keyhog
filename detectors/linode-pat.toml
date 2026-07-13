@@ -33,11 +33,11 @@ status = 200
 
 [[detector.verify.metadata]]
 name = "company"
-json_path = "company"
+json_path = "$.company"
 
 [[detector.verify.metadata]]
 name = "email"
-json_path = "email"
+json_path = "$.email"
 
 [[detector.tests]]
 test_positive = "LINODE_TOKEN=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"

@@ -49,6 +49,8 @@ pub mod git_lfs;
 /// Security hardening: memory zeroization and process isolation helpers.
 mod hardening;
 mod hyperscan_cache;
+/// Detector verification response selector grammar and evaluator.
+pub mod json_selector;
 /// Structured reporting (JSON, SARIF, Text).
 mod report;
 /// Safe absolute-path resolution for external binaries.

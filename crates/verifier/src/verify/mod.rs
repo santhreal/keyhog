@@ -409,6 +409,16 @@ impl VerificationEngine {
         detectors: &[keyhog_core::DetectorSpec],
         config: VerifyConfig,
     ) -> Result<Self, VerifyError> {
+        for detector in detectors {
+            let errors = keyhog_core::json_selector::validate_detector_response_selectors(detector);
+            if !errors.is_empty() {
+                return Err(VerifyError::DetectorConfig(format!(
+                    "detector {:?}: {}",
+                    detector.id,
+                    errors.join("; ")
+                )));
+            }
+        }
         // Cert validation: ON by default, escape hatch ONLY through the
         // explicit `VerifyConfig.insecure_tls` knob (set by the `--insecure`
         // flag or `.keyhog.toml`; no env var can flip it (config mandate)).

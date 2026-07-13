@@ -1,6 +1,6 @@
 use keyhog_core::{
-    validate_detector, AuthSpec, CompanionSpec, DetectorSpec, HttpMethod, PatternSpec,
-    QualityIssue, Severity, StepSpec, SuccessSpec, VerifySpec,
+    validate_detector, AuthSpec, CompanionSpec, DetectorSpec, HttpMethod, MetadataSpec,
+    PatternSpec, QualityIssue, Severity, StepSpec, SuccessSpec, VerifySpec,
 };
 
 fn detector_with_pattern(regex: &str) -> DetectorSpec {
@@ -287,6 +287,78 @@ fn rejects_step_success_statuses_outside_http_range() {
     assert!(issues.iter().any(|issue| matches!(
         issue,
         QualityIssue::Error(message) if message.contains("verify.steps[0].success.status=700")
+    )));
+}
+
+#[test]
+fn rejects_invalid_response_selectors_at_every_verification_surface() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        url: Some("https://example.com/verify".into()),
+        success: Some(SuccessSpec {
+            json_path: Some("/legacy-pointer".into()),
+            ..Default::default()
+        }),
+        metadata: vec![MetadataSpec {
+            name: "account".into(),
+            json_path: "account.email".into(),
+        }],
+        steps: vec![StepSpec {
+            name: "probe".into(),
+            method: HttpMethod::Get,
+            url: "https://example.com/verify".into(),
+            auth: AuthSpec::None {},
+            headers: Vec::new(),
+            body: None,
+            success: SuccessSpec {
+                json_path: Some("$.items[*]".into()),
+                ..Default::default()
+            },
+            extract: vec![MetadataSpec {
+                name: "owner".into(),
+                json_path: "$.owner.".into(),
+            }],
+        }],
+        ..Default::default()
+    });
+
+    let errors: Vec<_> = validate_detector(&detector)
+        .into_iter()
+        .filter_map(|issue| match issue {
+            QualityIssue::Error(message) => Some(message),
+            QualityIssue::Warning(_) => None,
+        })
+        .collect();
+    for scope in [
+        "verify.success.json_path",
+        "verify.metadata[0].json_path",
+        "verify.steps[0].success.json_path",
+        "verify.steps[0].extract[0].json_path",
+    ] {
+        assert!(
+            errors.iter().any(|error| error.contains(scope)),
+            "missing selector error for {scope}: {errors:?}"
+        );
+    }
+}
+
+#[test]
+fn rejects_equals_without_a_response_selector() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        url: Some("https://example.com/verify".into()),
+        success: Some(SuccessSpec {
+            equals: Some("true".into()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("verify.success.equals requires verify.success.json_path")
     )));
 }
 

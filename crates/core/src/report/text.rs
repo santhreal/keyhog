@@ -174,6 +174,16 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
             verify_suffix,
         )?;
 
+        if let VerificationResult::Error(message) = &finding.verification {
+            writeln!(
+                self.writer,
+                "  {} {} {}",
+                report_style::paint("│", border_ansi, self.color),
+                report_style::dim("Verify error:", self.color),
+                sanitize_terminal(message),
+            )?;
+        }
+
         // Commit info
         if let Some(commit) = &finding.location.commit {
             writeln!(

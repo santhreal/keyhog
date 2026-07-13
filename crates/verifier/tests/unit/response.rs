@@ -1,5 +1,6 @@
-use keyhog_core::SuccessSpec;
+use keyhog_core::{AuthSpec, DetectorSpec, SuccessSpec, VerifySpec};
 use keyhog_verifier::testing::{TestApi, VerifierTestApi};
+use keyhog_verifier::{VerificationEngine, VerifyConfig};
 
 fn json_success(path: &str, equals: Option<&str>) -> SuccessSpec {
     SuccessSpec {
@@ -12,7 +13,7 @@ fn json_success(path: &str, equals: Option<&str>) -> SuccessSpec {
 
 #[test]
 fn success_json_equals_accepts_boolean_scalar_values() {
-    let spec = json_success("/valid", Some("true"));
+    let spec = json_success("$.valid", Some("true"));
 
     assert!(TestApi.evaluate_success_for_test(&spec, 200, r#"{"valid":true}"#));
     assert!(
@@ -22,8 +23,41 @@ fn success_json_equals_accepts_boolean_scalar_values() {
 }
 
 #[test]
+fn shipped_rooted_success_selector_matches_cloudflare_shape() {
+    let spec = json_success("$.success", Some("true"));
+    assert!(TestApi.evaluate_success_for_test(
+        &spec,
+        200,
+        r#"{"success":true,"result":{"status":"active"}}"#
+    ));
+    assert!(!TestApi.evaluate_success_for_test(&spec, 200, r#"{"success":false,"result":null}"#));
+}
+
+#[test]
+fn verification_engine_rejects_programmatic_invalid_selectors() {
+    let detector = DetectorSpec {
+        id: "invalid-selector-contract".into(),
+        verify: Some(VerifySpec {
+            auth: Some(AuthSpec::None {}),
+            success: Some(SuccessSpec {
+                json_path: Some("/legacy-pointer".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let error = VerificationEngine::new(&[detector], VerifyConfig::default())
+        .err()
+        .expect("invalid programmatic selector must fail construction");
+    let message = error.to_string();
+    assert!(message.contains("invalid-selector-contract"), "{message}");
+    assert!(message.contains("verify.success.json_path"), "{message}");
+}
+
+#[test]
 fn success_json_equals_accepts_numeric_scalar_values() {
-    let spec = json_success("/remaining", Some("0"));
+    let spec = json_success("$.remaining", Some("0"));
 
     assert!(TestApi.evaluate_success_for_test(&spec, 200, r#"{"remaining":0}"#));
     assert!(
@@ -34,41 +68,50 @@ fn success_json_equals_accepts_numeric_scalar_values() {
 
 #[test]
 fn success_json_path_presence_treats_false_and_zero_as_present() {
-    let bool_spec = json_success("/enabled", None);
-    let number_spec = json_success("/remaining", None);
+    let bool_spec = json_success("$.enabled", None);
+    let number_spec = json_success("$.remaining", None);
 
     assert!(TestApi.evaluate_success_for_test(&bool_spec, 200, r#"{"enabled":false}"#));
     assert!(TestApi.evaluate_success_for_test(&number_spec, 200, r#"{"remaining":0}"#));
 }
 
 #[test]
+fn success_json_path_null_never_satisfies_equals() {
+    let spec = json_success("$.value", Some("null"));
+
+    assert!(
+        !TestApi.evaluate_success_for_test(&spec, 200, r#"{"value":null}"#),
+        "JSON null is absence and must not satisfy an equals contract"
+    );
+}
+
+#[test]
 fn success_json_path_malformed_body_is_error_not_dead() {
-    let spec = json_success("/valid", Some("true"));
+    let spec = json_success("$.valid", Some("true"));
 
     let error = TestApi
         .evaluate_success_result_for_test(&spec, 200, r#"{"valid":true"#)
         .expect_err("malformed JSON must not collapse to a false/dead success result");
 
     assert!(
-        error.contains("response body is not valid JSON for success json_path `/valid`"),
+        error.contains("response body is not valid JSON for success selector `$.valid`"),
         "error must name the broken success contract and path, got {error:?}"
     );
 }
 
 #[test]
 fn success_json_path_missing_key_remains_non_match() {
-    let spec = json_success("/missing", Some("true"));
+    let spec = json_success("$.missing", Some("true"));
 
     assert_eq!(
         TestApi.evaluate_success_result_for_test(&spec, 200, r#"{"valid":true}"#),
-        Ok(false),
-        "valid JSON with a missing success path is a normal non-match, not an evaluation error"
+        Ok(false)
     );
 }
 
 #[test]
 fn success_json_equals_keeps_string_exact_match_contract() {
-    let spec = json_success("/status", Some("true"));
+    let spec = json_success("$.status", Some("true"));
 
     assert!(TestApi.evaluate_success_for_test(&spec, 200, r#"{"status":"true"}"#));
     assert!(

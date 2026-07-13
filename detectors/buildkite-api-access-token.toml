@@ -27,7 +27,7 @@ status = 200
 
 [[detector.verify.metadata]]
 name = "name"
-json_path = "name"
+json_path = "$.name"
 
 [[detector.tests]]
 test_positive = "bkua_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"

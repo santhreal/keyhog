@@ -180,7 +180,16 @@ pub(crate) async fn verify_multi_step(
             };
         }
 
-        let step_metadata = extract_metadata(&step.extract, &body);
+        let step_metadata = match extract_metadata(&step.extract, &body) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                return VerificationAttempt {
+                    result: error.into_verification_error(),
+                    metadata: all_metadata,
+                    transient: false,
+                };
+            }
+        };
         for (k, v) in &step_metadata {
             current_companions.insert(format!("{}.{}", step.name, k), v.clone());
         }

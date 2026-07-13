@@ -38,7 +38,7 @@ fn success_spec_is_explicit_only_when_a_condition_is_set() {
         ..Default::default()
     }));
     assert!(TestApi.success_spec_is_explicit_for_test(&SuccessSpec {
-        json_path: Some("/ok".into()),
+        json_path: Some("$.ok".into()),
         ..Default::default()
     }));
     assert!(TestApi.success_spec_is_explicit_for_test(&SuccessSpec {

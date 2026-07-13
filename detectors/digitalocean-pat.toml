@@ -27,11 +27,11 @@ status = 200
 
 [[detector.verify.metadata]]
 name = "email"
-json_path = "account.email"
+json_path = "$.account.email"
 
 [[detector.verify.metadata]]
 name = "uuid"
-json_path = "account.uuid"
+json_path = "$.account.uuid"
 
 [[detector.tests]]
 test_positive = "dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"

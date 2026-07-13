@@ -23,12 +23,12 @@ type = "none"
 
 [detector.verify.success]
 status = 200
-json_path = "ok"
+json_path = "$.ok"
 equals = "true"
 
 [[detector.verify.metadata]]
 name = "bot_name"
-json_path = "result.username"
+json_path = "$.result.username"
 
 [[detector.tests]]
 test_positive = "TELEGRAM_BOT_TOKEN=612543247:aJRI90OF9-juNtbtBMOHM7jaF-HcmtNbAnx"

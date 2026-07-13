@@ -31,11 +31,11 @@ status = 200
 
 [[detector.verify.metadata]]
 name = "login"
-json_path = "login"
+json_path = "$.login"
 
 [[detector.verify.metadata]]
 name = "name"
-json_path = "name"
+json_path = "$.name"
 
 [[detector.tests]]
 test_positive = "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"

@@ -42,11 +42,17 @@ pub(crate) struct ResponseContractError {
 }
 
 impl ResponseContractError {
-    fn invalid_json(json_path: &str, error: serde_json::Error) -> Self {
+    fn invalid_json(scope: &str, json_path: &str, error: serde_json::Error) -> Self {
         Self {
             message: format!(
-                "response body is not valid JSON for success json_path `{json_path}`: {error}"
+                "response body is not valid JSON for {scope} selector `{json_path}`: {error}"
             ),
+        }
+    }
+
+    fn invalid_selector(scope: &str, error: keyhog_core::json_selector::SelectorError) -> Self {
+        Self {
+            message: format!("{scope}: {error}"),
         }
     }
 
@@ -136,9 +142,14 @@ pub(crate) fn evaluate_success(
     }
     if let Some(ref json_path) = spec.json_path {
         let json = serde_json::from_str::<serde_json::Value>(body)
-            .map_err(|error| ResponseContractError::invalid_json(json_path, error))?;
-        if let Some(val) = json.pointer(json_path) {
-            return Ok(spec.equals.as_ref().map_or(!val.is_null(), |expected| {
+            .map_err(|error| ResponseContractError::invalid_json("success", json_path, error))?;
+        if let Some(val) = keyhog_core::json_selector::select(&json, json_path)
+            .map_err(|error| ResponseContractError::invalid_selector("success selector", error))?
+        {
+            if val.is_null() {
+                return Ok(false);
+            }
+            return Ok(spec.equals.as_ref().map_or(true, |expected| {
                 json_value_to_contract_string(val) == *expected
             }));
         }
@@ -250,17 +261,30 @@ fn json_value_is_truthy_error(value: &serde_json::Value) -> bool {
     }
 }
 
-pub(crate) fn extract_metadata(specs: &[MetadataSpec], body: &str) -> HashMap<String, String> {
+pub(crate) fn extract_metadata(
+    specs: &[MetadataSpec],
+    body: &str,
+) -> Result<HashMap<String, String>, ResponseContractError> {
     let mut metadata = HashMap::new();
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
-        // LAW10: non-JSON verifier bodies simply have no JSON metadata; verification result still uses response status/body rules.
-        for spec in specs {
-            if let Some(val) = json.pointer(&spec.json_path) {
-                metadata.insert(spec.name.clone(), json_value_to_contract_string(val));
-            }
+    let Some(first) = specs.first() else {
+        return Ok(metadata);
+    };
+    let json = serde_json::from_str::<serde_json::Value>(body).map_err(|error| {
+        ResponseContractError::invalid_json("metadata", &first.json_path, error)
+    })?;
+    for spec in specs {
+        let selected =
+            keyhog_core::json_selector::select(&json, &spec.json_path).map_err(|error| {
+                ResponseContractError::invalid_selector(
+                    &format!("metadata {:?} selector", spec.name),
+                    error,
+                )
+            })?;
+        if let Some(val) = selected {
+            metadata.insert(spec.name.clone(), json_value_to_contract_string(val));
         }
     }
-    metadata
+    Ok(metadata)
 }
 
 fn json_value_to_contract_string(value: &serde_json::Value) -> String {

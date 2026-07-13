@@ -61,6 +61,9 @@ status = 200
 That's the whole contract for one service. Every other detector
 follows the same shape.
 
+Verification success and metadata `json_path` fields use the single rooted
+response-selector grammar documented in [Verification](./verification.md#what-live-means).
+
 Each shipped detector also owns a canonical positive/negative truth pair:
 
 ```toml
