@@ -70,7 +70,7 @@ Forced --backend simd is rejected instead of silently running another backend."
     }
 
     /// Exit before a caller-selected backend can silently run a different path.
-    pub(crate) fn deny_silent_selected_backend_degrade(&self, backend: ScanBackend) {
+    pub(crate) fn require_selected_backend_stack(&self, backend: ScanBackend) {
         if backend == ScanBackend::SimdCpu && !self.simd_backend_usable() {
             crate::process_exit::backend_unavailable(
                 "simd-regex selected but the SIMD/Hyperscan prefilter is unavailable; \
@@ -78,7 +78,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
 `--backend cpu-fallback` explicitly.",
             );
         }
-        gpu_forced::deny_silent_gpu_degrade(self, backend);
+        gpu_forced::require_selected_gpu_stack(self, backend);
     }
 
     /// Number of loaded detectors.
@@ -385,13 +385,10 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         }
     }
 
-    /// Cumulative count of runtime GPU dispatch degrades recorded by this
-    /// scanner (via `record_gpu_degrade`). Cheap (one relaxed atomic load) so the
-    /// per-batch dispatch loop can snapshot it before/after a GPU arm and tell
-    /// whether THAT batch actually ran on the GPU or degraded to CPU/SIMD, the
-    /// completion summary's "chunks on GPU" must reflect real execution, not the
-    /// router's CHOICE (Law 10 telemetry truth). `runtime_status()` also carries
-    /// this value but recomputes digests, so it is too heavy to poll per batch.
+    /// Cumulative count of runtime GPU dispatch failures and recall-floor
+    /// faults/recoveries recorded by this scanner (via the private runtime-fault recorder). Cheap
+    /// (one relaxed atomic load) so routing and calibration can reject poisoned
+    /// GPU evidence without recomputing the digests in `runtime_status()`.
     pub fn gpu_degrade_count(&self) -> u64 {
         self.gpu_degrade_count
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -476,7 +473,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         // hard-stop lives where it MUST: `--require-gpu` is caught by the CLI
         // preflight (`gpu::require_gpu_preflight`) before any scan, and a forced
         // backend that reaches GPU dispatch fails closed via
-        // `deny_silent_selected_backend_degrade` inside `scan_with_backend`
+        // `require_selected_backend_stack` inside `scan_with_backend`
         // (the `par_iter` closure with no `Result` channel, the ONLY place the
         // M12 process-exit is justified). Exiting here instead broke the `-> bool`
         // contract and killed the whole process (exit 12) on any GPU-less warm.
@@ -489,6 +486,11 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     }
 
     /// Scan a chunk using a caller-selected backend.
+    ///
+    /// This infallible API treats backend selection as a process contract. It
+    /// terminates with exit `3` when selected SIMD is unavailable or exit `12`
+    /// when a selected GPU stack or runtime dispatch cannot be honored; it
+    /// never returns findings produced by another backend.
     pub fn scan_with_backend(
         &self,
         chunk: &Chunk,
@@ -498,12 +500,16 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     }
 
     /// Scan multiple chunks using a caller-selected backend.
+    ///
+    /// This infallible API has the same hard process contract as
+    /// [`Self::scan_with_backend`]: unavailable SIMD exits `3`, and unavailable
+    /// or failed GPU execution exits `12` instead of substituting CPU/SIMD.
     pub fn scan_chunks_with_backend(
         &self,
         chunks: &[Chunk],
         backend: crate::hw_probe::ScanBackend,
     ) -> Vec<Vec<RawMatch>> {
-        self.deny_silent_selected_backend_degrade(backend);
+        self.require_selected_backend_stack(backend);
         profile::add_bytes(chunks.iter().map(|c| c.data.len() as u64).sum());
         profile::add_files(chunks.len() as u64);
         self.scan_chunks_with_backend_internal(chunks, backend)
@@ -540,7 +546,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         if crate::deadline::expired(deadline) {
             return Vec::new();
         }
-        self.deny_silent_selected_backend_degrade(selected_backend);
+        self.require_selected_backend_stack(selected_backend);
         // Direct-match prefilters: skip chunks that carry none of any
         // detector's literal bytes (`AlphabetScreen`) or bigrams (bloom). A
         // FULLY-ENCODED secret carries none of those - its plaintext prefix

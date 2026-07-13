@@ -374,7 +374,7 @@ fn invalid_severity_value_lists_the_valid_values() {
     );
     assert!(
         stderr.contains(
-            "- [scan].severity = \"bogus\": expected one of info, low, medium, high, critical"
+            "- [scan].severity = \"bogus\": expected one of info, client-safe, low, medium, high, critical"
         ),
         "error must quote the bad value and list the valid severities.\n--- stderr ---\n{stderr}"
     );
@@ -413,7 +413,7 @@ fn invalid_scan_section_value_names_the_nested_key() {
     );
     assert!(
         stderr.contains(
-            "- [scan].severity = \"nope\": expected one of info, low, medium, high, critical"
+            "- [scan].severity = \"nope\": expected one of info, client-safe, low, medium, high, critical"
         ),
         "error must attribute the failure to the nested `[scan].severity` key.\n\
          --- stderr ---\n{stderr}"

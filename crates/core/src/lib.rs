@@ -68,7 +68,7 @@ mod calibration;
 mod merkle_index;
 mod merkle_spec_hash;
 /// Declarative `.keyhogignore.toml` rule-based finding suppression.
-/// Wraps vyre's CPU rule evaluator with a TOML schema scoped to
+/// Wraps VYRE's CPU rule evaluator with a TOML schema scoped to
 /// keyhog's finding shape (detector / service / severity / path /
 /// credential_hash predicates).
 mod rule_filter;

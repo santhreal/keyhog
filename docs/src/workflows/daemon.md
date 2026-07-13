@@ -19,12 +19,19 @@ keyhog daemon status
 keyhog daemon stop
 ```
 
-The default socket is `$XDG_RUNTIME_DIR/keyhog.sock`, falling back to
-`~/.cache/keyhog/server.sock`. Use matching `daemon start --socket <PATH>` and
-`scan --daemon-socket <PATH>` options for another location. The transport is a
-user-only Unix-domain socket; Windows has no daemon transport and rejects daemon
-commands and explicit `--daemon=auto|on`. An absent flag or `--daemon=off`
-uses the in-process scanner.
+The default socket is `$XDG_RUNTIME_DIR/keyhog.sock` when
+`XDG_RUNTIME_DIR` is set. Otherwise KeyHog uses the OS user cache directory:
+`~/.cache/keyhog/server.sock` on Linux or
+`~/Library/Caches/keyhog/server.sock` on macOS. If the OS cache directory is
+unavailable (for example, a container without `HOME`), the fallback is the OS
+temporary directory plus `keyhog/server.sock`. Use matching
+`daemon start --socket <PATH>` and `scan --daemon-socket <PATH>` options for
+another location. The transport is a user-only Unix-domain socket. Windows has
+no daemon transport: it rejects daemon
+commands and explicit `--daemon=auto|on`, while an absent flag or
+`--daemon=off` uses the in-process scanner. On Unix, an absent flag has the
+documented `auto` behavior and can use a compatible daemon at the selected
+socket.
 
 The service owns its startup configuration. `daemon start --detectors <DIR>`
 selects its detector corpus, `--cache-dir <DIR>` selects its compiled Hyperscan
@@ -34,12 +41,25 @@ flags never rewrite those daemon-owned choices; the handshake rejects a corpus
 or build identity mismatch instead of silently mixing them.
 
 The daemon initializes scanner regex state and runs a bounded real GPU warmup
-before announcing readiness. If an eligible physical GPU degrades during that
-probe, daemon startup fails loudly. Autoroute therefore treats it as a persistent warm
-runtime: GPU decisions use calibrated warm trials. An in-process one-shot scan
-uses the same calibration record but includes the measured first-dispatch GPU
-cost. This distinction prevents a warm daemon result from making a cold CLI scan
-choose GPU incorrectly.
+before announcing readiness. If an eligible physical GPU cannot complete that
+probe, daemon startup fails loudly instead of substituting CPU/SIMD. Autoroute
+therefore treats it as a persistent warm runtime: GPU decisions use calibrated
+warm trials. An in-process one-shot scan uses the same calibration record but
+includes the
+measured first-dispatch GPU cost. This distinction prevents a warm daemon result
+from making a cold CLI scan choose GPU incorrectly.
+
+An explicit daemon backend is validated before the readiness line. For example,
+`daemon start --backend gpu` is rejected when this build/host has no eligible
+physical GPU, and `--backend simd` is rejected without a live Hyperscan
+prefilter; neither request is silently relabeled. Pre-readiness argument,
+configuration, or capability rejection exits `2`. Operator-correctable socket
+path failures also exit `2`, including a missing socket, permission denial,
+invalid path/data, connection refusal, or an already-bound socket. Other
+low-level operating-system I/O failures exit `3`, and a selected GPU dispatch
+that fails during the real warmup exits `12`. An explicit CPU or SIMD daemon does not warm or require the GPU;
+the GPU warmup is mandatory only for daemon autoroute or an explicit GPU
+daemon.
 
 ## What `--daemon` means
 

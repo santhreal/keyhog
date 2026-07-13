@@ -203,19 +203,12 @@ fn severity_high_keeps_critical_finding_boundary() {
     );
 }
 
-/// `--severity` with a `client-safe` finding (Sentry DSN). `SeverityFilter`
-/// has NO `ClientSafe` variant; its lowest level is `Info`. Since
-/// `Severity::Info < Severity::ClientSafe` in the Ord, `--severity info`
-/// (the lowest selectable floor) does NOT drop a ClientSafe finding.
+/// `--severity info` is below `client-safe`, so it preserves a Sentry DSN.
 #[test]
 fn severity_info_floor_keeps_client_safe_finding() {
     // First confirm the Sentry DSN is detected at all (without a filter).
     let (_d0, base_out, _e0, base_code) = scan_file("app.txt", SENTRY_DSN, &[]);
-    if base_code != Some(1) {
-        // Corpus may not detect this DSN shape; skip the differential silently
-        // rather than assert a value the engine did not produce.
-        return;
-    }
+    assert_eq!(base_code, Some(1), "baseline Sentry DSN must be detected");
     let base = parse_findings(&base_out);
     assert!(
         base.iter().any(|f| f["severity"] == "client-safe"),
@@ -232,6 +225,24 @@ fn severity_info_floor_keeps_client_safe_finding() {
     assert!(
         findings.iter().any(|f| f["severity"] == "client-safe"),
         "--severity info must keep client-safe findings; got {out}"
+    );
+}
+
+/// Boundary: a `client-safe` floor preserves a finding at exactly that tier.
+#[test]
+fn severity_client_safe_keeps_client_safe_finding() {
+    let (_d, out, err, code) = scan_file("app.txt", SENTRY_DSN, &["--severity", "client-safe"]);
+    assert_eq!(
+        code,
+        Some(1),
+        "ClientSafe must meet the equal ClientSafe floor; stderr={err}"
+    );
+    let findings = parse_findings(&out);
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding["severity"] == "client-safe"),
+        "--severity client-safe must preserve the Sentry DSN; got {out}"
     );
 }
 
@@ -261,12 +272,11 @@ fn severity_low_drops_client_safe_finding() {
     );
 }
 
-/// Every accepted `--severity` spelling parses (value_enum). The CLI enum is
-/// exactly {info, low, medium, high, critical}: `client-safe` is NOT a
-/// selectable filter value (it has no `SeverityFilter` variant).
+/// Every report severity is a selectable `--severity` floor, including the
+/// boundary between `info` and `low`.
 #[test]
-fn severity_accepts_five_levels_and_rejects_client_safe() {
-    for level in ["info", "low", "medium", "high", "critical"] {
+fn severity_accepts_every_report_level() {
+    for level in ["info", "client-safe", "low", "medium", "high", "critical"] {
         let (_d, _o, err, code) = scan_file("config.txt", "plain text\n", &["--severity", level]);
         assert_eq!(
             code,
@@ -274,19 +284,6 @@ fn severity_accepts_five_levels_and_rejects_client_safe() {
             "--severity {level} on clean input must parse and exit 0; stderr={err}"
         );
     }
-    // `client-safe` is not a valid value for the flag -> clap rejects (exit 2).
-    let (_d, _o, err, code) =
-        scan_file("config.txt", "plain text\n", &["--severity", "client-safe"]);
-    assert_eq!(
-        code,
-        Some(2),
-        "`--severity client-safe` must be a clap error; stderr={err}"
-    );
-    assert!(
-        err.to_lowercase().contains("invalid value")
-            || err.to_lowercase().contains("possible values"),
-        "clap must name the invalid --severity value; stderr={err}"
-    );
 }
 
 /// `--severity garbage` is rejected at the clap layer with exit 2.

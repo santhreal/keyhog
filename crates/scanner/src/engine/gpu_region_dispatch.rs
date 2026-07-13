@@ -18,7 +18,7 @@ use super::gpu_region_batch::{
     set_trigger_bit, trigger_bit_is_set, validate_detector_match, with_region_presence_batch,
     RegionPresenceBatchMode,
 };
-use super::gpu_region_dispatch_helpers::{mib_per_second, report_phase2_gpu_admission_loss};
+use super::gpu_region_dispatch_helpers::mib_per_second;
 #[cfg(test)]
 use super::phase2_gpu_dfa::build_phase2_gpu_admission_workload;
 #[cfg(test)]
@@ -28,8 +28,6 @@ use super::phase2_gpu_dfa::{
     validate_phase2_gpu_trigger_rows, Phase2GpuAdmissionWorkload,
 };
 use super::*;
-use crate::hw_probe::ScanBackend;
-
 struct GpuRegionPresenceEvidence {
     presence: Vec<u32>,
     confirmed_anchor_literal_matches: Option<Vec<Vec<(u32, u32)>>>,
@@ -51,49 +49,37 @@ impl CompiledScanner {
     /// Coalesced GPU region-presence scan: one GPU dispatch over the whole
     /// `chunks` batch produces the per-chunk trigger bitmap, then the SHARED
     /// coalesced phase-2 tail runs the identical per-chunk extraction every
-    /// other backend uses. Degrades LOUDLY to the per-chunk SIMD/CPU path when
-    /// the matcher/backend is unavailable, or dispatch errors - never a silent
-    /// empty result.
+    /// other backend uses. If the matcher/backend is unavailable or dispatch
+    /// fails, the selected GPU route terminates with exit `12`; it never
+    /// substitutes an unselected CPU/SIMD path.
     pub(crate) fn scan_coalesced_gpu_region_presence(
         &self,
         chunks: &[keyhog_core::Chunk],
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
+        match self.try_scan_coalesced_gpu_region_presence(chunks) {
+            Ok(results) => results,
+            Err(error) => super::gpu_forced::fail_selected_gpu_dispatch_error(self, error),
+        }
+    }
+
+    /// Result-returning production GPU path for health diagnostics. Normal scan
+    /// entry points use `scan_coalesced_gpu_region_presence`, which maps this
+    /// structured failure to the public exit-12 contract. The backend self-test
+    /// consumes the error in-band so it can emit its complete JSON report and
+    /// documented health-check exit code.
+    pub(crate) fn try_scan_coalesced_gpu_region_presence(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+    ) -> std::result::Result<
+        Vec<Vec<keyhog_core::RawMatch>>,
+        super::gpu_forced::SelectedGpuDispatchError,
+    > {
         if chunks.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
-        let degrade = |reason: String| -> Vec<Vec<keyhog_core::RawMatch>> {
-            super::gpu_forced::deny_silent_gpu_degrade_with_reason(
-                self,
-                ScanBackend::Gpu,
-                Some(&reason),
-            );
-            // Degrade to the backend that is ACTUALLY live, not a hardcoded
-            // `SimdCpu`: with the `simd` feature compiled but no Hyperscan
-            // prefilter built (`simd_prefilter == None`), routing through
-            // `SimdCpu` would itself silently re-degrade to the pure-CPU AC
-            // path inside `scan_with_backend`. `degraded_backend_after_gpu_failure`
-            // returns `SimdCpu` only when the prefilter is live and
-            // `CpuFallback` otherwise, so the operator-visible backend matches
-            // what runs (Law 10).
-            let degraded = self.degraded_backend_after_gpu_failure();
-            // Record the reason so operators (and the GPU self-test) can see WHY
-            // the GPU path fell back, not just that it did.
-            self.record_gpu_degrade(reason.clone());
-            tracing::warn!(
-                target: "keyhog::gpu",
-                %reason,
-                ?degraded,
-                "coalesced GPU region-presence scan degraded off GPU (loud, recall-preserving)",
-            );
-            use rayon::prelude::*;
-            let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
-                .par_iter()
-                .map(|chunk| self.scan_with_backend(chunk, degraded))
-                .collect();
-            super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
-            results
-        };
+        let dispatch_failure =
+            |reason: String| Err(super::gpu_forced::SelectedGpuDispatchError::new(reason));
 
         // The shared coalesced phase-2 tail is `#[cfg(feature = "simd")]` (it is
         // the Hyperscan path's extraction). `gpu` implies `simd` at the feature
@@ -107,13 +93,13 @@ impl CompiledScanner {
             let kh = super::profile::perf_trace_enabled();
             let t_matcher = std::time::Instant::now();
             let Some(matcher) = self.gpu_matcher() else {
-                return degrade(
+                return dispatch_failure(
                     "gpu literal matcher not built for coalesced region scan".to_string(),
                 );
             };
             let matcher_s = t_matcher.elapsed();
             let Some(backend) = self.gpu_backend.as_ref() else {
-                return degrade(
+                return dispatch_failure(
                     "no gpu backend acquired for coalesced region dispatch".to_string(),
                 );
             };
@@ -156,7 +142,7 @@ impl CompiledScanner {
                 Ok(evidence) => evidence,
                 Err(error) => {
                     drop(region_dispatch_profile);
-                    return degrade(error);
+                    return dispatch_failure(error);
                 }
             };
             drop(region_dispatch_profile);
@@ -170,7 +156,7 @@ impl CompiledScanner {
                 match self.simd_prefilter.as_ref() {
                     Some(scanner) => Some(self.compute_coalesced_triggers(chunks, scanner)),
                     None => {
-                        return degrade(
+                        return dispatch_failure(
                             "gpu_recall_floor requested but no SIMD prefilter is live".to_string(),
                         );
                     }
@@ -181,7 +167,7 @@ impl CompiledScanner {
 
             let expected_presence_words = chunks.len().saturating_mul(presence_words);
             if presence.len() != expected_presence_words {
-                return degrade(format!(
+                return dispatch_failure(format!(
                     "region-presence readback length mismatch: got {} u32 word(s), need {}",
                     presence.len(),
                     expected_presence_words
@@ -198,7 +184,7 @@ impl CompiledScanner {
                 .enumerate()
             {
                 if let Some((word_idx, stray_bits)) = self.gpu_presence_stray_tail_bits(row) {
-                    return degrade(format!(
+                    return dispatch_failure(format!(
                         "region-presence readback row {row_idx} has out-of-range detector bit(s): word {word_idx} bits 0x{stray_bits:08x} beyond {} literal(s)",
                         gpu_literal_count
                     ));
@@ -261,12 +247,12 @@ impl CompiledScanner {
             let floor_s = t_floor.elapsed();
 
             // Surface a GPU under-fire LOUDLY: the GPU DFA missed a real
-            // detector match the CPU floor recovered. This is a vyre literal-set
+            // detector match the CPU floor recovered. This is a VYRE literal-set
             // recall bug (region attribution / byte-class edge / divergence) the
             // floor papered over, record it so it is fixed at the source, never
             // hidden (Law 10). One-shot per process to avoid log spam.
             if gpu_underfire_recovered > 0 {
-                self.record_gpu_degrade(format!(
+                self.record_gpu_runtime_fault(format!(
                     "GPU region-presence under-fire recovered {gpu_underfire_recovered} \
                      (chunk, detector) pair(s) via CPU recall floor"
                 ));
@@ -275,7 +261,7 @@ impl CompiledScanner {
                     eprintln!(
                         "keyhog: GPU region-presence under-fired on {gpu_underfire_recovered} \
                          (chunk, detector) pair(s) recovered by gpu_recall_floor coverage - fix \
-                         the vyre literal-set path before treating GPU-only as parity-safe."
+                         the VYRE literal-set path before treating GPU-only as parity-safe."
                     );
                 }
                 tracing::warn!(
@@ -286,7 +272,7 @@ impl CompiledScanner {
             }
 
             if let Err(error) = validate_phase2_gpu_trigger_rows(chunks.len(), triggers.len()) {
-                return degrade(error.to_string());
+                return dispatch_failure(error.to_string());
             }
             let mut phase2_gpu_row_needed = Vec::with_capacity(chunks.len());
             for (idx, chunk) in chunks.iter().enumerate() {
@@ -326,13 +312,7 @@ impl CompiledScanner {
                                 Err(error) => {
                                     let reason =
                                         format!("phase-2 GPU admission dispatch failed: {error}");
-                                    super::gpu_forced::deny_silent_gpu_degrade_with_reason(
-                                        self,
-                                        ScanBackend::Gpu,
-                                        Some(&reason),
-                                    );
-                                    report_phase2_gpu_admission_loss(error);
-                                    None
+                                    return dispatch_failure(reason);
                                 }
                             }
                         }
@@ -352,13 +332,7 @@ impl CompiledScanner {
                             Err(error) => {
                                 let reason =
                                     format!("phase-2 GPU admission dispatch failed: {error}");
-                                super::gpu_forced::deny_silent_gpu_degrade_with_reason(
-                                    self,
-                                    ScanBackend::Gpu,
-                                    Some(&reason),
-                                );
-                                report_phase2_gpu_admission_loss(error);
-                                None
+                                return dispatch_failure(reason);
                             }
                         }
                     }
@@ -447,7 +421,7 @@ impl CompiledScanner {
                     full_recall_floor,
                 );
             }
-            results
+            Ok(results)
         }
     }
 }

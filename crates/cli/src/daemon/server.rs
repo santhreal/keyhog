@@ -39,17 +39,17 @@ impl Default for ServerOptions {
     }
 }
 
-/// Default socket path. Prefers `$XDG_RUNTIME_DIR/keyhog.sock`
-/// (per-user, tmpfs-backed, auto-cleaned on logout) and falls back
-/// to `~/.cache/keyhog/server.sock` when the runtime dir isn't
-/// exported (e.g. inside Docker containers, CI runners).
+/// Default socket path. Prefers `$XDG_RUNTIME_DIR/keyhog.sock` (per-user,
+/// tmpfs-backed, auto-cleaned on logout), then the OS user-cache directory,
+/// then the OS temporary directory plus `keyhog/server.sock` when neither
+/// location is available (for example in minimal containers).
 ///
 /// This is the everyday default. To point a `scan --daemon` at a daemon bound
 /// to a non-default path (a `daemon start --socket <path>` daemon, e.g. a
 /// systemd unit), pass `scan --daemon-socket <path>`: the blessed CLI override
 /// tier. KeyHog deliberately reads no `KEYHOG_*` socket env var (see
-/// docs/src/reference/env.md): socket location is `XDG_RUNTIME_DIR` or a CLI
-/// flag, never an ambient KeyHog-owned environment knob.
+/// docs/src/reference/env.md): socket location follows this resolver or a CLI
+/// flag; there is no ambient KeyHog-owned socket environment knob.
 pub fn default_socket_path() -> PathBuf {
     if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") {
         let mut p = PathBuf::from(runtime_dir);
@@ -157,7 +157,8 @@ pub(crate) async fn run_with_backend_override(
     announce_daemon_starting(detectors.len());
     let detector_rules_digest =
         keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
-    let (scanner, router, detector_count) = compile_daemon_scan_runtime(detectors)?;
+    let (scanner, router, detector_count) =
+        compile_daemon_scan_runtime(detectors, backend_override)?;
     let listener = bind_trusted_daemon_socket(&socket_path)?;
     let shutdown = Arc::new(Notify::new());
     let state = Arc::new(ServerState::new(
@@ -183,6 +184,7 @@ pub(crate) async fn run_with_backend_override(
 
 fn compile_daemon_scan_runtime(
     detectors: Vec<DetectorSpec>,
+    backend_override: Option<ScanBackend>,
 ) -> Result<(
     Arc<CompiledScanner>,
     crate::orchestrator::CachedBackendRouter,
@@ -191,7 +193,7 @@ fn compile_daemon_scan_runtime(
     let scan_runtime = crate::orchestrator::compile_default_scan_runtime(detectors, |error| {
         anyhow::anyhow!("daemon: compiling scanner from detector specs: {error}")
     })?
-    .prepare_persistent_daemon()?;
+    .prepare_persistent_daemon(backend_override)?;
     let detector_count = scan_runtime.detector_count();
     // The daemon is long-lived and serves many scan requests; pay the lazy
     // regex compile once, up front and in parallel, so no client request eats a

@@ -4,7 +4,7 @@ mod bench_nightly_missing_hyperscan_install;
 mod cargo_rdme_spec_waiver_has_expiry;
 mod ci_yml_not_santh_standard_template;
 mod ci_yml_spec_waiver_has_expiry;
-mod core_cargo_unpinned_deps;
+mod workspace_cargo_unpinned_deps;
 mod execution_plan_no_retired_registry;
 mod fuzz_not_wired_in_ci;
 mod macos_ci_skips_hyperscan_default_build;

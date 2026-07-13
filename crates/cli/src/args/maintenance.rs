@@ -34,11 +34,11 @@ pub struct BackendArgs {
     #[arg(long)]
     pub patterns: Option<usize>,
 
-    /// Run the GPU self-tests (MoE compute kernel + vyre literal-set
-    /// diagnostic + production AC-kernel dispatch). Prints PASS/FAIL
+    /// Run the GPU self-tests (MoE compute kernel + VYRE direct-match
+    /// diagnostic + production region-presence dispatch). Prints PASS/FAIL
     /// with adapter info and exits with code 4 on failure so CI can
-    /// gate a release on real GPU functionality. No-op on systems
-    /// without a non-software adapter.
+    /// gate a release on real GPU functionality. Reports SKIP and exits zero
+    /// without a non-software adapter unless --require-gpu is set.
     #[arg(long)]
     pub self_test: bool,
 

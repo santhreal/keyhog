@@ -1,9 +1,9 @@
 //! Lane 3 - VYRE INTEGRATION coherence regression tests.
 //!
-//! Keyhog consumes Vyre from crates.io, not from a path mirror and not from any
+//! KeyHog consumes VYRE from crates.io, not from a path mirror and not from any
 //! retired repository `vendor/` snapshot. These tests pin the registry contract:
-//! all five runtime Vyre crates are exact `=0.6.4` pins, they stay in lockstep,
-//! no Vyre dependency carries `path =`, and repository `vendor/` does not exist.
+//! all five runtime VYRE crates are exact `=0.6.4` pins, they stay in lockstep,
+//! no VYRE dependency carries `path =`, and repository `vendor/` does not exist.
 
 use std::path::{Path, PathBuf};
 use toml::Value;
@@ -244,7 +244,7 @@ fn repository_vendor_tree_is_absent_and_never_a_build_dependency() {
     assert_eq!(
         offending,
         Vec::<String>::new(),
-        "Vyre must not resolve through vendor snapshots, third_party mirrors, or the Santh live tree"
+        "VYRE must not resolve through vendor snapshots, third_party mirrors, or the Santh live tree"
     );
 }
 
@@ -275,6 +275,6 @@ fn vyre_docs_match_registry_pin_contract() {
     assert_eq!(
         offending,
         Vec::<String>::new(),
-        "Vyre-facing docs must describe crates.io =0.6.4 pins, not retired path mirrors"
+        "VYRE-facing docs must describe crates.io =0.6.4 pins, not retired path mirrors"
     );
 }

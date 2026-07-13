@@ -30,7 +30,8 @@ fn gpu_stack_usable_false_without_literals() {
     );
     assert!(
         message.contains("silent CPU fallback is forbidden")
-            && message.contains("choose --backend simd/auto"),
-        "forced GPU message must name the operator controls, got {message:?}"
+            && message.contains("choose --backend simd/cpu")
+            && message.contains("recalibrate autoroute"),
+        "forced GPU message must name valid recovery controls without suggesting auto can bypass broken calibration, got {message:?}"
     );
 }

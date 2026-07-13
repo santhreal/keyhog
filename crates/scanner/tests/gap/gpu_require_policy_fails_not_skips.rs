@@ -2,7 +2,7 @@
 //! panic/fail instead of returning early with an implicit skip.
 //!
 //! GPU-feature-gated, mirroring `tests/integration/gpu.rs` and
-//! `tests/gap/gpu_forced_backend_no_silent_degrade.rs`: the require-GPU gate
+//! `tests/gap/selected_gpu_backend_executes_or_fails.rs`: the require-GPU gate
 //! only has meaning when the GPU stack is compiled in. Under the lean `ci-lean`
 //! aggregator (`--no-default-features --features ci-lean`, no `gpu`)
 //! `gpu_available()` is a const-false stub, so this test would panic on a

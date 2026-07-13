@@ -19,10 +19,12 @@ pipeline.
 | GPU literal artifacts and cache | `keyhog-scanner::engine::{gpu_artifacts,gpu_cache}` | Compiles and caches detector-derived literal programs under detector, binary, backend, and runtime identity. |
 | GPU regex-DFA admission | `keyhog-scanner::engine::phase2_gpu_dfa` | Narrows eligible prefixless phase-two work; host extraction remains authoritative. |
 | Metadata interning | `keyhog-scanner::static_intern` | Freezes detector metadata for allocation-light scan state. |
-| Declarative rule evaluation | `keyhog-core::allowlist` | Evaluates `.keyhogignore.toml` rules through the shared rule representation. |
+| Declarative rule evaluation | `keyhog-core::rule_filter` | Evaluates `.keyhogignore.toml` rules through the shared rule representation. |
 
-The portable build retains the VYRE CPU libraries used by these shared data
-structures while omitting WGPU/CUDA drivers and their startup probes.
+The portable build retains the CPU-side VYRE support libraries used by these
+shared primitives while omitting WGPU/CUDA drivers and their startup probes.
+Those libraries are not a separate scan backend: `cpu-fallback` remains
+KeyHog's Aho-Corasick trigger path plus Rust-regex extraction.
 
 ## Backend and parity contract
 
@@ -44,7 +46,7 @@ Use these operator surfaces instead of implementation-specific environment
 variables:
 
 ```console
-keyhog backend --json
+keyhog backend
 keyhog backend --self-test --json
 keyhog calibrate-autoroute
 keyhog scan PATH --backend gpu --profile
@@ -52,14 +54,15 @@ keyhog scan PATH --backend gpu --profile
 
 `--backend gpu` is a diagnostic/benchmark override. It proves neither automatic
 selection nor a valid calibration record. GPU initialization, runtime, parity,
-and calibration failures remain visible in the command result and exit status;
-KeyHog does not silently substitute a CPU backend.
+and calibration failures remain visible in the command result and exit status.
+A selected GPU route that fails dispatch exits `12`; KeyHog does not silently
+substitute a CPU/SIMD backend.
 
 ## Feature boundaries
 
 | Build feature | VYRE surface |
 |---|---|
-| `portable` | CPU-side VYRE libraries only; no WGPU or CUDA driver |
+| `portable` | CPU-side VYRE support primitives only; no VYRE scan backend, WGPU, or CUDA driver |
 | `gpu` | Runtime-probed WGPU and CUDA drivers behind the shared GPU contract |
 
 The retired per-rule megakernel catalog and environment-selected GPU side routes

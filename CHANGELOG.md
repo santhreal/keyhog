@@ -6,6 +6,49 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- `--severity client-safe` and `[scan].severity = "client-safe"` now select the
+  real tier between `info` and `low`; CLI help, config validation, and the
+  reference all expose the same six accepted levels. `config --effective` now
+  prints the resolved format, severity, dedup, secret visibility,
+  client-safe/test-fixture policy, and lockdown instead of omitting report
+  policy from the claimed effective view.
+- Library and backend documentation now states the explicit-backend process
+  contract: the infallible finding-vector APIs exit `3` for unavailable
+  selected SIMD and `12` for unavailable or failed selected GPU execution,
+  rather than returning findings from an unselected engine.
+- The documented `.keyhogignore.toml` `literal_true = true` escape hatch now
+  works and is behavior-tested, while empty tables and `literal_true = false`
+  alone remain rejected as accidental match-everything policy.
+- `backend --self-test --require-gpu` now fails with exit `4` and a visible
+  `gpu_adapter` failure when no eligible physical GPU exists; ordinary no-GPU
+  self-tests retain their explicit skip report and exit `0`.
+- Autoroute build identity now includes the compiled GitLab and Bitbucket
+  source backends, so persisted routing evidence cannot be reused by a binary
+  with a different remote-source capability set.
+- Coalesced scans now flush at source boundaries, preventing an uncalibrated
+  mixed-source workload key when a local, forge, web, cloud, or container
+  source follows another source in the same command.
+- A GPU route that fails during dispatch now exits `12` instead of warning and
+  completing through CPU/SIMD. This applies equally to explicit GPU selection
+  and persisted autoroute decisions.
+- GPU health reporting now names the live production route
+  `gpu_region_presence` instead of the retired `vyre_ac_kernel` label. The
+  scanner library self-test is `gpu_region_presence_self_test`, and
+  `backend --self-test --json` uses the same name for its production-path
+  probe. Dispatch failures remain structured so the health command emits its
+  complete report and exit `4`; normal selected-GPU scans exit `12`.
+- The VYRE direct match-triple self-test is now explicitly diagnostic. Its
+  classified limitation reports `known` and other failures report `warning`;
+  production GPU eligibility is owned by the `gpu_region_presence` probe, so a
+  working scan route is no longer disabled by an unused direct-mode failure.
+- Daemon backend overrides are validated before readiness. Explicit GPU/SIMD
+  requests fail instead of being relabeled when their engine is unavailable,
+  while explicit CPU/SIMD daemons no longer require a healthy GPU warmup that
+  their requests cannot use.
+- Every direct workspace dependency now resolves through an exact root pin,
+  including scanner SIMD/tokenizer test dependencies, source archive support,
+  and the optional CLI allocator. Package builds no longer rely on compatible
+  version ranges that can move independently of `Cargo.lock`.
 - Unix and PowerShell installers now admit an implicit release only when the
   exact host binary, checksums, payload signatures, GPU-literal sidecar, and
   sidecar proofs are all present on a stable published release. Partial,
@@ -85,8 +128,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Refined autoroute byte, chunk-count, and maximum-file classification from
   paired powers of two to one power-of-two band per key, bumped the cache schema
   to v22 to prevent old numeric-key aliasing, and expanded the Rust, Unix, and
-  PowerShell calibration ladders across every band from 512 B through 32 MiB.
-  The measured 8 MiB GPU/Hyperscan crossover now has its own exact band.
+  PowerShell calibration ladders across every byte band from 1 B through 32 MiB
+  and every default-batch chunk-count band. The measured 8 MiB GPU/Hyperscan
+  crossover now has its own exact band.
 - Bumped the daemon wire handshake to v3 and bound scan connections to package,
   Git build, and canonical detector-rules identity. Same-version daemons started
   with another detector corpus now fail closed; diagnostic status/stop remain
@@ -225,8 +269,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - **Autoroute requires exact workload evidence.** Normal auto scans no longer
   interpolate between agreeing CPU buckets or clamp below the measured floor.
   The core calibration ladder now represents every stable plain-file size bucket
-  from 512 bytes through 32 MiB across all four scan policies; any other missing
-  workload key fails closed with recalibration guidance.
+  from 1 byte through 32 MiB and every default-batch chunk-count bucket across
+  all four scan policies; any other missing workload key fails closed with
+  recalibration guidance.
 
 - **Moved path-filter lists to TOML.** Inline suppression lists `NEEDLES` and `VENDORED_JS_PREFIXES` in `crates/scanner/src/suppression/path_filter.rs` are moved to a Tier-B data file `rules/path-filter-lists.toml` using `LazyLock` loading.
 - **Moved ML feature markers to TOML.** Inline marker lists `COMMENT_PREFIXES`, `BINARY_MARKERS`, `CI_MARKERS`, `INFRA_MARKERS`, `SOURCE_MARKERS`, `SOURCE_EXTENSIONS`, and `CONFIG_MARKERS` in `crates/scanner/src/ml_scorer/ml_features.rs` are moved to a Tier-B data file `rules/ml-feature-markers.toml` using `LazyLock` loading.

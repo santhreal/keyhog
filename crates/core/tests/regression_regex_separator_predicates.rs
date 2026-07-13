@@ -379,17 +379,29 @@ fn unknown_field_is_rejected() {
     }
 }
 
-/// COHERENCE BUG: the module doc and the empty-entry error message both tell
-/// users to write `literal_true = true` for an explicit match-everything rule,
-/// but `SuppressEntry` has `deny_unknown_fields` and no `literal_true` field,
-/// so that advice is itself rejected as an unknown field. This test pins the
-/// ACTUAL current behavior (an error) so the contradiction is visible.
+/// The deliberately noisy escape hatch documented in the parser error really
+/// is unconditional. This proves behavior, not merely schema acceptance.
 #[test]
-fn documented_literal_true_escape_hatch_is_itself_rejected() {
-    let res = RuleSuppressor::from_str("[[suppress]]\nliteral_true = true\n");
-    match res {
-        Err(RuleSuppressorError::Toml(_)) => {} // current (buggy) behavior: unknown field
-        Err(other) => panic!("expected Toml unknown-field error, got {other:?}"),
-        Ok(_) => panic!("literal_true unexpectedly parsed as a valid rule"),
-    }
+fn literal_true_explicitly_suppresses_every_finding() {
+    let suppressor = parse("[[suppress]]\nliteral_true = true\n");
+    let finding = finding(
+        "github-pat",
+        "github",
+        Severity::Critical,
+        "src/production.rs",
+        "unique-hash",
+    );
+    assert!(suppressor.matches(&finding));
+}
+
+/// `literal_true = false` is not a condition and cannot smuggle an empty,
+/// match-everything rule through the empty-table guard.
+#[test]
+fn literal_true_false_alone_is_rejected() {
+    let error = RuleSuppressor::from_str("[[suppress]]\nliteral_true = false\n")
+        .expect_err("false is not an unconditional predicate");
+    assert!(matches!(
+        error,
+        RuleSuppressorError::Schema { rule_index: 0, .. }
+    ));
 }

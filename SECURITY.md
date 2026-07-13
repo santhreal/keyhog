@@ -41,8 +41,8 @@ fix ships.
 ## RustSec Advisory Assessment (v0.5.41)
 
 A `cargo audit` of `Cargo.lock` surfaces five accepted advisories total (one
-vulnerability and four informational warnings across the workspace and Vyre).
-Each was reviewed against keyhog's actual usage of the affected crate
+vulnerability and four informational warnings across the workspace and VYRE).
+Each was reviewed against KeyHog's actual usage of the affected crate
 and given an explicit accept-with-rationale decision or a fix path.
 The accepts are reflected in the `[advisories]` ignore list at the
 workspace-root `audit.toml`; `cargo audit` exits clean with that file
@@ -79,7 +79,7 @@ unsound API isn't called.
 **Risk:** `rand::rng()` interaction with custom `tracing` logger has a
 data race when the global rng is replaced.
 
-**Why not applicable:** keyhog does not replace the global rng. `rand`
+**Why not applicable:** KeyHog does not replace the global rng. `rand`
 is pulled transitively via `num-bigint-dig` → `rsa`; both use only the
 default `OsRng` seed path. Our tracing logger does not call into rand.
 
@@ -96,13 +96,14 @@ library code, and the release build pins and audits its exact source version.
 **Risk:** bincode is unmaintained upstream; security defects
 against it will not be patched.
 
-**Why not applicable now:** keyhog itself does not depend on bincode
-directly. It is only pulled in transitively through the published Vyre
+**Why not applicable now:** KeyHog itself does not depend on bincode
+directly. It is only pulled in transitively through the published VYRE
 GPU stack, which uses bincode for serializing compiled GPU pattern
 databases. The serialization surface is local disk caches keyed under
 `$KEYHOG_CACHE_DIR`; there is no untrusted network input deserialized
-through bincode. KeyHog pins the exact Vyre and bincode versions and treats the
-cache as local state rather than a network interchange format.
+through bincode. KeyHog pins the exact VYRE versions, records the resolved
+bincode version in `Cargo.lock`, and treats the cache as local state rather than
+a network interchange format.
 
 ### Resolved in v0.5.3
 
@@ -125,7 +126,6 @@ git objects (Severity 6.8 / medium).
 adds collision detection. No source changes needed in keyhog's git
 source layer.
 
-The gix bump also coordinated with two transitive dep updates that
-its newer versions required: `smallvec` 1.14.0 → 1.15.1 (in vyre's
-vendored workspace pin) and `memmap2` 0.9.9 → 0.9.10 (workspace
-pin).
+The gix bump also coordinated with two transitive dependency updates required
+by its newer versions: `smallvec` 1.14.0 → 1.15.1 and `memmap2` 0.9.9 →
+0.9.10.

@@ -67,7 +67,7 @@ pub(super) fn compile_gpu_literal_set(
     .map_err(|panic| {
         let detail = catch_unwind_panic_detail(panic);
         crate::error::ScanError::Gpu(format!(
-            "GPU literal-set compile panicked for cache prefix {cache_prefix} with {} patterns: {detail}. Fix: reduce literal rows, increase Vyre's DFA budget, or shard the literal set; matcher disabled for this scanner build.",
+            "GPU literal-set compile panicked for cache prefix {cache_prefix} with {} patterns: {detail}. Fix: reduce literal rows, increase VYRE's DFA budget, or shard the literal set; matcher disabled for this scanner build.",
             literal_refs.len()
         ))
     })?;

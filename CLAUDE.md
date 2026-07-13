@@ -1,4 +1,4 @@
-# Keyhog CLAUDE
+# KeyHog CLAUDE
 
 ## Objective
 

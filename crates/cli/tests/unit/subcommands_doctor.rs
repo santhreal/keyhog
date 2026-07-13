@@ -33,7 +33,7 @@ fn doctor_gpu_self_test_failure_is_unhealthy() {
         "/src/subcommands/doctor.rs"
     ));
     let gpu_branch = source
-        .split("match keyhog_scanner::gpu::vyre_ac_kernel_self_test()")
+        .split("match keyhog_scanner::gpu::gpu_region_presence_self_test()")
         .nth(1)
         .and_then(|tail| {
             tail.split("match keyhog_scanner::gpu::vyre_gpu_self_test()")
@@ -53,7 +53,7 @@ fn doctor_gpu_self_test_failure_is_unhealthy() {
 }
 
 #[test]
-fn doctor_runs_gpu_literal_self_test_and_aligns_known_lowering_with_backend() {
+fn doctor_keeps_direct_literal_diagnostic_nonfatal() {
     let source = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/subcommands/doctor.rs"
@@ -71,13 +71,13 @@ fn doctor_runs_gpu_literal_self_test_and_aligns_known_lowering_with_backend() {
         gpu_branch.contains("_vyre_match_leader")
             && gpu_branch.contains("canonical pre-emit lowering")
             && gpu_branch.contains("subgroup_ballot")
-            && gpu_branch.contains("warned = true")
+            && gpu_branch.matches("warned = true").count() >= 2
             && gpu_branch.contains("style::warn(\"WARN\"")
-            && gpu_branch.contains("scans use the AC kernel path")
-            && gpu_branch.contains("healthy = false")
-            && gpu_branch.contains("style::fail(\"FAIL\"")
-            && gpu_branch.contains("GPU routes are unavailable until fixed"),
-        "doctor must run the literal-set GPU self-test, warn for the known vyre lowering gap, and fail hard on unknown literal-set GPU faults"
+            && gpu_branch.contains("production region-presence path is checked separately")
+            && gpu_branch.contains("production scan eligibility is determined by the region-presence probe above")
+            && !gpu_branch.contains("healthy = false")
+            && !gpu_branch.contains("style::fail(\"FAIL\""),
+        "the direct VYRE diagnostic must remain visible but nonfatal; production region presence owns scan eligibility"
     );
 }
 

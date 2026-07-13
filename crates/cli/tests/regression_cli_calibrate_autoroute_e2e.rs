@@ -19,8 +19,8 @@
 //!     inspected valid cache reports and an incompatible one is rejected against.
 //!   * `AUTOROUTE_CACHE_FILE_BYTES = 8 * 1024 * 1024` (store.rs:16), the read
 //!     cap; a file one byte over is reported "unreadable".
-//!   * `calibrate-autoroute` sweeps 23 workloads × 4 scan policies (default +
-//!     `--fast`/`--deep`/`--precision`) = 92 probes, and each policy resolves a
+//!   * `calibrate-autoroute` sweeps 34 workloads × 4 scan policies (default +
+//!     `--fast`/`--deep`/`--precision`) = 136 probes, and each policy resolves a
 //!     DISTINCT config digest, so the primed cache holds exactly 4 configs.
 
 use std::path::{Path, PathBuf};
@@ -429,10 +429,10 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
         String::from_utf8_lossy(&calibrate.stderr)
     );
     let cal_stdout = String::from_utf8_lossy(&calibrate.stdout);
-    // 23 workloads × 4 policies = 92 probes across 4 scan policies.
+    // 34 workloads × 4 policies = 136 probes across 4 scan policies.
     assert!(
-        cal_stdout.contains("92 core workload probes"),
-        "summary reports the exact 92-probe sweep; stdout={cal_stdout}"
+        cal_stdout.contains("136 core workload probes"),
+        "summary reports the exact 136-probe sweep; stdout={cal_stdout}"
     );
     assert!(
         cal_stdout.contains("4 scan policies"),
@@ -446,7 +446,7 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
         "calibration must persist the cache at {cache_path:?}"
     );
 
-    // 3. JSON inspection reports a present, in-build, version-20 cache with
+    // 3. JSON inspection reports a present, in-build, current-schema cache with
     //    exactly the 4 policy configs, each holding >=1 workload decision.
     let (code, value) = inspect_json(home.path());
     assert_eq!(code, 0);

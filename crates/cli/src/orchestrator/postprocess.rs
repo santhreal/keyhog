@@ -52,7 +52,7 @@ fn keyhog_repo_root() -> Option<&'static std::path::Path> {
             loop {
                 let cargo = dir.join("Cargo.toml");
                 if cargo.is_file() {
-                    // Read just the first 4 KiB. Keyhog's root Cargo.toml
+                    // Read just the first 4 KiB. KeyHog's root Cargo.toml
                     // declares `members = ["crates/core", "crates/scanner", ...]`
                     // in the first dozen lines. Anything bigger is almost
                     // certainly not the keyhog manifest.

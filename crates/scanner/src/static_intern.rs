@@ -13,7 +13,7 @@
 //!
 //! ## Lookup backing: single-hash `ahash` map (PERF-locality_intern-1)
 //!
-//! The interner previously used vyre's CHD perfect hash. CHD is O(1) in the
+//! The interner previously used VYRE's CHD perfect hash. CHD is O(1) in the
 //! big-O sense, but its constant factor is FOUR full-key traversals per lookup:
 //! two seeded FNV-1a passes (bucket + slot), one xxHash-style verify pass, and a
 //! final byte-for-byte `arc == s` compare. FNV-1a folds one byte per loop

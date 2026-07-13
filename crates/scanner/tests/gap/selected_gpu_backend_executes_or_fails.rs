@@ -1,4 +1,5 @@
-//! KH-GAP-002: forced GPU backend must not silently scan with CPU without signal.
+//! KH-GAP-002: a selected GPU backend must execute through the GPU route or
+//! terminate the scan with a visible failure.
 //!
 //! GPU-feature-gated: this asserts `warm_backend(Gpu)` succeeds, which is only
 //! possible on a build that compiled the GPU stack (`--features gpu`, exercised
@@ -27,7 +28,7 @@ fn chunk(text: &str) -> Chunk {
 }
 
 #[test]
-fn gpu_backend_warm_reports_availability() {
+fn selected_gpu_backend_executes_or_fails() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
     let gpu_ready = scanner.warm_backend(ScanBackend::Gpu);
@@ -35,7 +36,7 @@ fn gpu_backend_warm_reports_availability() {
     if !gpu_ready {
         panic!(
             "KH-GAP-002: selected GPU backend but warm_backend(Gpu) returned false - \
-             silent CPU fallback is forbidden without explicit error"
+             CPU substitution is forbidden; report the unavailable GPU stack"
         );
     }
 
@@ -43,9 +44,9 @@ fn gpu_backend_warm_reports_availability() {
         &[chunk("const K = \"AKIAQYLPMN5HFIQR7XYA\";")],
         ScanBackend::Gpu,
     );
-    let count: usize = results.iter().map(|c| c.len()).sum();
-    assert!(
-        count > 0,
-        "GPU-warmed scanner must find canonical AWS key on fixture, got {count} matches"
+    let count: usize = results.iter().map(|chunk| chunk.len()).sum();
+    assert_eq!(
+        count, 1,
+        "the selected GPU route must return exactly the canonical AWS finding"
     );
 }

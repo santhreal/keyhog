@@ -32,10 +32,11 @@ fn calibration_bytes_are_exact_block_prefix_runs() {
 #[test]
 fn workload_plan_matches_the_installer_ladder() {
     let plan = core_workload_plan();
-    // 2 stdin + 18 single-file (incl. decode-heavy) + 3 file-tree workloads.
-    assert_eq!(plan.len(), 23);
+    // 2 stdin + 27 single-file (incl. decode-heavy) + 5 file-tree workloads.
+    assert_eq!(plan.len(), 34);
     let labels: Vec<&str> = plan.iter().map(Workload::label).collect();
     assert!(labels.contains(&"empty stdin workload"));
+    assert!(labels.contains(&"1 B workload"));
     assert!(labels.contains(&"1 KiB workload"));
     assert!(labels.contains(&"16 KiB workload"));
     assert!(labels.contains(&"256 KiB workload"));
@@ -58,6 +59,15 @@ fn workload_plan_matches_the_installer_ladder() {
     assert_eq!(
         plain_file_bytes,
         [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32,
+            64,
+            128,
+            256,
             512,
             1024,
             2 * 1024,
@@ -77,6 +87,19 @@ fn workload_plan_matches_the_installer_ladder() {
             32 * 1024 * 1024,
         ],
         "plain probes must represent every power-of-two file-size band through 32 MiB"
+    );
+
+    let tree_counts: Vec<usize> = plan
+        .iter()
+        .filter_map(|workload| match workload {
+            Workload::Tree { files, .. } => Some(*files),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        tree_counts,
+        [2, 4, 8, 16, 32],
+        "tree probes must represent every chunk-count band in the default 32-chunk batch"
     );
 }
 

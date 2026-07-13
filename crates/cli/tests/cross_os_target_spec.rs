@@ -14,7 +14,7 @@
 //!   * a portability target that tracks the concrete cross-OS BUILD blocker the
 //!     dogfood surfaced: `vyre*` dependencies must be registry pins or
 //!     repo-contained paths, never tree-escaping Santh NFS paths. It is green
-//!     now that Keyhog pins the published Vyre `0.6.2` crates.
+//!     now that KeyHog pins the published VYRE `0.6.4` crates.
 
 #[path = "target_spec/cross_os_contracts.rs"]
 mod cross_os_contracts;

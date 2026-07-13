@@ -46,12 +46,15 @@ keyhog calibrate-autoroute
 ```
 
 This drives the core stdin + filesystem workload ladder across every scan
-preset. Plain single-file probes cover every power-of-two size band from 512 bytes
-through 32 MiB (512 B, then every power of two from 1 KiB through 32 MiB), plus
-decode-heavy and many-file shapes. It does **not**
+preset. Plain single-file probes cover every power-of-two size band from 1 byte
+through 32 MiB. File-tree probes cover every chunk-count band through the
+default 32-chunk fused batch, plus decode-heavy and many-file shapes. It does **not**
 cover the git / docker / web source probes; those need environment orchestration
 (a repo, a running daemon, a served URL) that only the installer's
-`--calibrate` mode performs. If you scan those sources and hit
+`--calibrate` mode performs. The installers construct those fixtures and invoke
+the low-level `scan --autoroute-calibrate` probe mode; that scan flag records one
+caller-supplied workload but does not build or sweep the external fixtures. If
+you scan those sources and hit
 `autoroute calibration required`, re-run `install.sh --calibrate` /
 `install.ps1 -Calibrate` rather than the subcommand. Decisions are written,
 parity-checked, to the autoroute cache
@@ -71,7 +74,11 @@ calibration, even when they do not change which backend is fastest:
 
 - Build identity records the CLI and dependency feature sets. GPU and SIMD
   support are read from the scanner library that actually owns and compiled
-  those backends, not inferred from similarly named CLI features.
+  those backends, not inferred from similarly named CLI features. Source
+  capability identity separately records each compiled filesystem, archive,
+  forge, cloud, container, and web source feature (including GitHub, GitLab,
+  and Bitbucket), while verifier identity records whether live verification is
+  compiled. A binary with a different capability set cannot reuse the evidence.
 - Host identity includes OS/architecture, CPU model and topology, memory, CPU
   instruction support and, when the scanner can use a physical GPU, the GPU
   device, runtime backend, and driver/runtime identity. A missing or changed
@@ -118,7 +125,7 @@ Both routes consume the same parity-checked primary evidence; they derive the
 appropriate decision for their runtime instead of sharing one misleading
 "GPU time." CPU, Hyperscan/SIMD, and GPU remain peers in both cases. See
 [Daemon and warm scans](../workflows/daemon.md) for request eligibility,
-fallback, policy, socket, and timeout semantics.
+in-process retry policy, socket, and timeout semantics.
 
 ## When an auto scan reports `calibration required`
 

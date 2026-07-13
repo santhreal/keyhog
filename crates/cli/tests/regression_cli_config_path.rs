@@ -483,7 +483,7 @@ fn explicit_config_invalid_severity_value_lists_valid_values() {
     );
     assert!(
         stderr.contains(
-            "- [scan].severity = \"nope\": expected one of info, low, medium, high, critical"
+            "- [scan].severity = \"nope\": expected one of info, client-safe, low, medium, high, critical"
         ),
         "error must quote the bad value and list the valid severities.\n--- stderr ---\n{stderr}"
     );

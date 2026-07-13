@@ -96,13 +96,17 @@ impl CompiledScanner {
 
     /// High-throughput coalesced scan: all files scanned in parallel, zero
     /// overhead for non-hit files.
+    ///
+    /// Backend selection is a hard process contract: unavailable selected SIMD
+    /// exits `3`, and unavailable or failed selected GPU execution exits `12`.
+    /// The method never completes through an unselected backend.
     pub fn scan_coalesced_with_backend(
         &self,
         chunks: &[keyhog_core::Chunk],
         backend: crate::hw_probe::ScanBackend,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
         if backend == crate::hw_probe::ScanBackend::SimdCpu {
-            self.deny_silent_selected_backend_degrade(backend);
+            self.require_selected_backend_stack(backend);
             return self.scan_coalesced_simd(chunks);
         }
         self.scan_chunks_with_backend(chunks, backend)

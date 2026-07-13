@@ -88,3 +88,39 @@ fn is_moe_parity_degrade_matches_only_the_parity_marker() {
     ));
     assert!(!is_moe_parity_degrade(""));
 }
+
+#[test]
+fn require_gpu_turns_adapter_absence_into_a_failed_health_report() {
+    let caps = HardwareCaps {
+        physical_cores: 8,
+        logical_cores: 16,
+        has_avx2: true,
+        has_avx512: false,
+        has_neon: false,
+        gpu_available: false,
+        gpu_name: None,
+        gpu_vram_mb: None,
+        gpu_runtime_identity: None,
+        gpu_is_software: false,
+        total_memory_mb: Some(32 * 1024),
+        io_uring_available: true,
+        hyperscan_available: true,
+    };
+
+    let optional = unavailable_gpu_self_test_report(&caps, false);
+    assert!(optional.ok);
+    assert_eq!(optional.status, BackendSelfTestStatus::Skip);
+    assert_eq!(optional.exit_code, EXIT_SUCCESS);
+    assert_eq!(optional.probes[0].status, BackendSelfTestStatus::Skip);
+
+    let required = unavailable_gpu_self_test_report(&caps, true);
+    assert!(!required.ok);
+    assert_eq!(required.status, BackendSelfTestStatus::Fail);
+    assert_eq!(required.exit_code, EXIT_BACKEND_SELF_TEST_FAILED);
+    assert_eq!(required.probes[0].name, "gpu_adapter");
+    assert_eq!(required.probes[0].status, BackendSelfTestStatus::Fail);
+    assert!(required.probes[0]
+        .message
+        .as_deref()
+        .is_some_and(|message| message.contains("--require-gpu requested")));
+}

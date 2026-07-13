@@ -1,8 +1,8 @@
 //! Offline GPU literal artifact compiler.
 //!
 //! This module is intentionally free of GPU device acquisition. It derives the
-//! exact literal rows the runtime scanner would feed to Vyre and serializes
-//! them with Vyre's own wire format, so install/release calibration can persist
+//! exact literal rows the runtime scanner would feed to VYRE and serializes
+//! them with VYRE's own wire format, so install/release calibration can persist
 //! matcher artifacts without reimplementing scanner compile semantics.
 
 use super::{gpu_cache, phase2_anchor, phase2_generic, scan_postprocess};
@@ -15,18 +15,18 @@ use keyhog_core::DetectorSpec;
 use std::sync::Arc;
 use vyre_libs::scan::GpuLiteralSet;
 
-/// Serialized Vyre literal matcher plus the cache identity used by runtime.
+/// Serialized VYRE literal matcher plus the cache identity used by runtime.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GpuLiteralArtifact {
-    /// Runtime cache filename stem, including Keyhog's matcher prefix.
+    /// Runtime cache filename stem, including KeyHog's matcher prefix.
     pub cache_key: String,
     /// Number of literal rows compiled into the matcher.
     pub pattern_count: usize,
-    /// Vyre `GpuLiteralSet` wire bytes.
+    /// VYRE `GpuLiteralSet` wire bytes.
     pub bytes: Vec<u8>,
-    /// Vyre wire magic stamped into `bytes`.
+    /// VYRE wire magic stamped into `bytes`.
     pub wire_magic: [u8; 4],
-    /// Vyre wire version stamped into `bytes`.
+    /// VYRE wire version stamped into `bytes`.
     pub wire_version: u32,
 }
 
@@ -54,7 +54,7 @@ pub fn compile_gpu_literal_artifacts_default(
     compile_gpu_literal_artifacts(detectors, &ScannerTuningConfig::default())
 }
 
-/// Compile the exact Vyre literal artifacts for a detector set and tuning.
+/// Compile the exact VYRE literal artifacts for a detector set and tuning.
 ///
 /// This does not probe hardware and does not initialize wgpu/CUDA. It does run
 /// the scanner compiler because literal rows depend on the same routing
@@ -167,24 +167,24 @@ fn serialize_literal_rows(
     .map_err(|panic| {
         let detail = super::gpu_lazy_helpers::catch_unwind_panic_detail(panic);
         ScanError::Gpu(format!(
-            "GPU literal artifact compile panicked for cache prefix {cache_prefix} with {pattern_count} patterns: {detail}. Fix: reduce literal rows, increase Vyre's DFA budget, or shard the literal set."
+            "GPU literal artifact compile panicked for cache prefix {cache_prefix} with {pattern_count} patterns: {detail}. Fix: reduce literal rows, increase VYRE's DFA budget, or shard the literal set."
         ))
     })?;
     let bytes = matcher.to_bytes().map_err(|error| {
         ScanError::Gpu(format!(
-            "failed to serialize GPU literal artifact for cache prefix {cache_prefix} with {pattern_count} patterns: {error}. Fix: upgrade Vyre or rebuild the artifact with a compatible keyhog binary."
+            "failed to serialize GPU literal artifact for cache prefix {cache_prefix} with {pattern_count} patterns: {error}. Fix: upgrade VYRE or rebuild the artifact with a compatible KeyHog binary."
         ))
     })?;
 
-    // Vyre stamps its literal-set wire envelope header at the front of the
+    // VYRE stamps its literal-set wire envelope header at the front of the
     // serialized blob: a 4-byte magic followed by a little-endian u32 version
     // (`vyre_foundation::serial::envelope` layout). Read the stamped values
     // straight out of `bytes`: that is the single source of truth for what
-    // this artifact actually carries and cannot drift from Vyre's (private)
+    // this artifact actually carries and cannot drift from VYRE's (private)
     // wire constants, which 0.6.4 exposes no public accessor for.
     let (wire_magic, wire_version) = literal_set_wire_header(&bytes).ok_or_else(|| {
         ScanError::Gpu(format!(
-            "GPU literal artifact for cache prefix {cache_prefix} serialized to {} bytes, too short for Vyre's 8-byte wire envelope header. Fix: upgrade Vyre or rebuild the artifact with a compatible keyhog binary.",
+            "GPU literal artifact for cache prefix {cache_prefix} serialized to {} bytes, too short for VYRE's 8-byte wire envelope header. Fix: upgrade VYRE or rebuild the artifact with a compatible KeyHog binary.",
             bytes.len()
         ))
     })?;
@@ -198,10 +198,10 @@ fn serialize_literal_rows(
     }))
 }
 
-/// Parse Vyre's literal-set wire envelope header, a `[u8; 4]` magic followed
+/// Parse VYRE's literal-set wire envelope header, a `[u8; 4]` magic followed
 /// by a little-endian `u32` version, from the front of a serialized
 /// `GpuLiteralSet` blob. Returns `None` when the blob is shorter than the
-/// 8-byte header (Vyre always writes it, so `None` signals a corrupt/truncated
+/// 8-byte header (VYRE always writes it, so `None` signals a corrupt/truncated
 /// serialization the caller surfaces loudly rather than defaulting).
 fn literal_set_wire_header(bytes: &[u8]) -> Option<([u8; 4], u32)> {
     let header = bytes.get(..8)?;

@@ -843,12 +843,6 @@ fn engine_scan_gpu_happy() {
     assert!(scanner.warm_backend(ScanBackend::CpuFallback));
 }
 #[test]
-fn engine_scan_gpu_error() {
-    use keyhog_scanner::hw_probe::testing::ScanBackend;
-    let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-}
-
-#[test]
 fn gpu_moe_readback_has_no_fixed_millisecond_sleep_floor() {
     let src = include_str!("../../src/gpu/backend.rs");
     assert!(

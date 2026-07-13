@@ -15,12 +15,13 @@ pub enum DaemonAction {
     /// serves scan requests over a Unix socket. Blocks until
     /// `daemon stop` is invoked.
     Start {
-        /// Override the default socket path
-        /// ($XDG_RUNTIME_DIR/keyhog.sock or ~/.cache/keyhog/server.sock).
+        /// Override the default socket path. KeyHog otherwise uses
+        /// $XDG_RUNTIME_DIR/keyhog.sock, then the OS user-cache directory,
+        /// then the OS temporary directory.
         ///
         /// A daemon started here is reachable by `daemon stop`/`status --socket`
-        /// AND by scans via `keyhog scan --daemon --daemon-socket <same path>`
-        /// pass the matching path so a fixed-location daemon (e.g. a systemd
+        /// AND by scans via `keyhog scan --daemon --daemon-socket <same path>`.
+        /// Pass the matching path so a fixed-location daemon (e.g. a systemd
         /// unit) actually serves scans, not just admin commands.
         #[arg(long, value_name = "PATH")]
         socket: Option<PathBuf>,

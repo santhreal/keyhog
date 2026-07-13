@@ -47,6 +47,41 @@ fn autoroute_build_identity_tracks_dependency_owned_backend_features() {
         keyhog_scanner::hw_probe::simd_backend_compiled(),
         "persisted autoroute identity must record the scanner dependency's actual SIMD backend"
     );
+
+    for (feature, enabled) in [
+        ("binary", cfg!(feature = "binary")),
+        ("azure", cfg!(feature = "azure")),
+        ("docker", cfg!(feature = "docker")),
+        ("gcs", cfg!(feature = "gcs")),
+        ("github", cfg!(feature = "github")),
+        ("git", cfg!(feature = "git")),
+        ("gitlab", cfg!(feature = "gitlab")),
+        ("bitbucket", cfg!(feature = "bitbucket")),
+        ("s3", cfg!(feature = "s3")),
+        ("web", cfg!(feature = "web")),
+    ] {
+        assert_eq!(
+            identity.sources_features.iter().any(|name| name == feature),
+            enabled,
+            "persisted autoroute identity must match the compiled `{feature}` source backend"
+        );
+    }
+
+    for (feature, enabled) in [
+        ("gitlab", cfg!(feature = "gitlab")),
+        ("bitbucket", cfg!(feature = "bitbucket")),
+    ] {
+        assert_eq!(
+            identity.cli_features.iter().any(|name| name == feature),
+            enabled,
+            "persisted autoroute identity must match the CLI `{feature}` feature"
+        );
+    }
+    assert_eq!(
+        identity.verifier_features.iter().any(|name| name == "live"),
+        cfg!(feature = "verify"),
+        "web-source support alone must not claim that live verification is compiled"
+    );
 }
 
 #[test]
@@ -398,7 +433,7 @@ fn eight_mib_crossover_has_an_exact_power_of_two_band() {
 
 #[test]
 fn calibration_tree_representatives_cover_default_fused_residual_chunk_keys() {
-    let representative_counts = [1usize, 4, 16, 32];
+    let representative_counts = [1usize, 2, 4, 8, 16, 32];
     let representative_keys = representative_counts
         .iter()
         .map(|&count| {

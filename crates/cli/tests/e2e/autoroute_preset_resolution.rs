@@ -2,7 +2,7 @@
 //! after calibration, a default `scan <preset>` must never fail closed (exit 2)
 //! once `--autoroute-calibrate` has run for that preset on the same workload.
 //!
-//! Each preset resolves its own config digest, and they coexist in the v20
+//! Each preset resolves its own config digest, and they coexist in the current
 //! multi-config cache (so calibrating `--precision` must not clobber the default
 //! decision, and vice versa). This is the standalone-CI counterpart to the
 //! Docker integration matrix's bake: it catches a preset whose digest is never
@@ -57,7 +57,7 @@ fn every_documented_preset_resolves_after_calibration() {
     let target = work.path().join("data.env");
     std::fs::write(&target, "api_key = \"abcdefghijklmnopqrstuvwx\"\n").unwrap();
 
-    // Calibrate every preset into the shared v20 multi-config cache.
+    // Calibrate every preset into the shared multi-config cache.
     for preset in presets {
         let code = scan(cache.path(), &target, preset, true);
         assert!(

@@ -1,4 +1,4 @@
-use crate::args::{CliDedupScope, ScanArgs, SeverityFilter};
+use crate::args::{CliDedupScope, OutputFormat, ScanArgs, SeverityFilter};
 use crate::orchestrator_config::{VERIFY_MAX_CONCURRENT_DEFAULT, VERIFY_TIMEOUT_DEFAULT_SECS};
 use std::path::PathBuf;
 
@@ -12,6 +12,7 @@ pub(crate) struct ResolvedAllowlistConfig {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedReportPolicy {
+    pub(crate) format: OutputFormat,
     pub(crate) severity: Option<SeverityFilter>,
     pub(crate) dedup: CliDedupScope,
     pub(crate) verify: bool,
@@ -24,6 +25,7 @@ pub(crate) struct ResolvedReportPolicy {
 impl ResolvedReportPolicy {
     pub(super) fn from_scan_args(args: &ScanArgs) -> Self {
         Self {
+            format: args.format.clone(),
             severity: args.severity.clone(),
             dedup: args.dedup.clone(),
             verify: scan_verify_enabled(args),

@@ -5,10 +5,9 @@ use clap::Parser;
 /// Generates the stdin + filesystem workload ladder a real scan can hit, then
 /// runs `keyhog scan --autoroute-calibrate` once per (scan-policy preset ×
 /// workload) so every bucket the auto router will look up is persisted before
-/// the scan path goes live. This is the de-shelled core of what the installers
-/// used to hand-roll in POSIX sh and PowerShell; the external source classes
-/// (git / docker / web), which need environment orchestration this command
-/// deliberately does not own, stay with the installer.
+/// the scan path goes live. External source classes that need repositories,
+/// services, containers, or remote endpoints remain installer-owned because
+/// this command deliberately does not own that environment orchestration.
 #[derive(Parser)]
 pub struct CalibrateAutorouteArgs {
     /// Override the persistent autoroute cache file every probe writes to.

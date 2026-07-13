@@ -1323,7 +1323,7 @@ prime_autoroute_cache() {
     # Calibrate the documented scan-policy presets too. Each preset changes
     # scanner fields hashed into the autoroute config digest, so `keyhog scan .
     # --fast` resolves a DIFFERENT digest than the default and needs its own
-    # calibrated decisions or it fails closed (exit 2). The v20 multi-config
+    # calibrated decisions or it fails closed (exit 2). The current multi-config
     # cache lets the default policy and every preset coexist in one file. The
     # empty first entry is the default policy; only presets the installed binary
     # actually exposes are calibrated (a released build may predate one).
@@ -1386,12 +1386,12 @@ prime_autoroute_cache() {
         fi
     fi
 
-    # One representative for every power-of-two file-size band from 512 B
+    # One representative for every power-of-two file-size band from 1 B
     # through 32 MiB. Autoroute never interpolates an unmeasured band.
-    byte_sizes="512"
+    byte_sizes="1 2 4 8 16 32 64 128 256 512"
     kib_sizes="1 2 4 8 16 32 64 128 256 512"
     mib_sizes="1 2 4 8 16 32"
-    many_file_counts="4 16 32"
+    many_file_counts="2 4 8 16 32"
     # The stdin + filesystem "core" probes run once per scan-policy preset
     # (default + each supported preset); the external-source probes
     # (git/docker/web) calibrate the default policy only.
@@ -1974,7 +1974,7 @@ make_calibration_git_repo() {
     mkdir -p "$dir" || return 1
     "$git_cmd" init -q "$dir" || return 1
     "$git_cmd" -C "$dir" config user.email keyhog-calibration@example.invalid || return 1
-    "$git_cmd" -C "$dir" config user.name "Keyhog Autoroute Calibration" || return 1
+    "$git_cmd" -C "$dir" config user.name "KeyHog Autoroute Calibration" || return 1
     "$git_cmd" -C "$dir" config commit.gpgsign false || return 1
     make_calibration_probe_kib "$dir/probe.txt" 4 || return 1
     "$git_cmd" -C "$dir" add probe.txt || return 1

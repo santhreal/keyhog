@@ -40,12 +40,12 @@ then confirm, reject, or score them. Verification runs only after a candidate
 survives detection and reporting policy.
 
 BPE is not a replacement name for entropy: it is an independent post-candidate
-signal. BetterLeaks calls the approach
+signal. Betterleaks calls the approach
 [Token Efficiency](https://github.com/betterleaks/betterleaks#notable-features);
 KeyHog uses the same broad BPE idea while keeping its own detector schema,
 thresholds, pipeline, and behavioral evidence.
 
-Terminology matters here: BetterLeaks' public documentation names the feature
+Terminology matters here: Betterleaks' public documentation names the feature
 **Token Efficiency** and describes BPE tokenization as a natural-language false
 positive filter; it does not present “BPD” as a separate score. KeyHog names its
 related mechanism **BPE token efficiency**, uses `cl100k_base`, measures UTF-8
@@ -192,7 +192,7 @@ attributed back to the original source.
    into Hyperscan databases; portable builds use the pure-Rust trigger path.
    One scan pass returns "which detector IDs have a candidate match."
 
-   GPU-capable builds add vyre's region-presence literal-set backend. There is
+   GPU-capable builds add VYRE's region-presence literal-set backend. There is
    no universal model-name or byte threshold at which KeyHog silently switches
    to it. `--backend auto` requires an exact persisted calibration decision for
    the current binary, detector/config digest, host/device/driver, workload

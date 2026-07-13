@@ -9,9 +9,20 @@ use std::path::PathBuf;
 
 use super::SourceLimitArgs;
 
+fn fmt_value_enum<T: ValueEnum>(
+    value: &T,
+    formatter: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match value.to_possible_value() {
+        Some(possible) => formatter.write_str(possible.get_name()),
+        None => Err(std::fmt::Error),
+    }
+}
+
 #[derive(Clone, Debug, ValueEnum)]
 pub enum SeverityFilter {
     Info,
+    ClientSafe,
     Low,
     Medium,
     High,
@@ -22,11 +33,18 @@ impl SeverityFilter {
     pub fn to_severity(&self) -> keyhog_core::Severity {
         match self {
             Self::Info => keyhog_core::Severity::Info,
+            Self::ClientSafe => keyhog_core::Severity::ClientSafe,
             Self::Low => keyhog_core::Severity::Low,
             Self::Medium => keyhog_core::Severity::Medium,
             Self::High => keyhog_core::Severity::High,
             Self::Critical => keyhog_core::Severity::Critical,
         }
+    }
+}
+
+impl std::fmt::Display for SeverityFilter {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt_value_enum(self, formatter)
     }
 }
 
@@ -43,6 +61,12 @@ pub enum OutputFormat {
     Junit,
 }
 
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt_value_enum(self, formatter)
+    }
+}
+
 #[derive(Clone, Debug, ValueEnum, PartialEq)]
 pub enum CliDedupScope {
     Credential,
@@ -51,16 +75,8 @@ pub enum CliDedupScope {
 }
 
 impl std::fmt::Display for CliDedupScope {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Render the exact CLI spelling from the ONE owner, the `ValueEnum`
-        // derive, so the `--dedup` default (`default_value_t`) can never drift
-        // from the accepted `--dedup` values. Every variant is non-skipped, so
-        // `to_possible_value` is always `Some`.
-        f.write_str(
-            clap::ValueEnum::to_possible_value(self)
-                .expect("CliDedupScope variants are never skipped")
-                .get_name(),
-        )
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt_value_enum(self, formatter)
     }
 }
 
@@ -489,8 +505,8 @@ pub struct ScanArgs {
     #[arg(long, conflicts_with = "require_gpu")]
     pub no_gpu: bool,
 
-    /// Require a usable GPU stack before scanning; fail closed if GPU init or
-    /// self-test is unavailable.
+    /// Require a usable GPU stack before scanning and keep GPU execution as a
+    /// hard contract; unavailable initialization or runtime dispatch exits 12.
     #[arg(long, conflicts_with = "no_gpu")]
     pub require_gpu: bool,
 
@@ -523,9 +539,10 @@ pub struct ScanArgs {
     /// dominates the actual scan; the daemon holds a compiled scanner so each
     /// invocation is sub-ms IPC + scan. See `keyhog daemon start --help`.
     ///
-    /// Socket: the daemon route connects to the default socket
-    /// ($XDG_RUNTIME_DIR/keyhog.sock) unless `--daemon-socket <path>` points it
-    /// at a daemon bound elsewhere (`daemon start --socket <path>`).
+    /// Socket: the daemon route connects to the shared default resolution
+    /// (`$XDG_RUNTIME_DIR`, then the OS cache directory, then the OS temporary
+    /// directory) unless `--daemon-socket <path>` points it at a daemon bound
+    /// elsewhere (`daemon start --socket <path>`).
     /// Unix only: Windows rejects explicit `auto` and `on`; explicit `off` is
     /// accepted as a portable declaration of in-process execution.
     ///
@@ -541,8 +558,9 @@ pub struct ScanArgs {
 
     /// Connect the daemon route to a daemon bound on a non-default socket.
     ///
-    /// By default `scan --daemon` connects to `$XDG_RUNTIME_DIR/keyhog.sock`.
-    /// Pass the same path a daemon was started on
+    /// By default `scan --daemon` uses `$XDG_RUNTIME_DIR/keyhog.sock`, then the
+    /// OS user-cache directory, then the OS temporary directory. Pass the same
+    /// path a daemon was started on
     /// (`keyhog daemon start --socket <path>`) to reach a fixed-location daemon
     /// (e.g. a shared/system or systemd-managed instance). Combining it with
     /// `--daemon=off` is rejected as contradictory.
@@ -604,7 +622,7 @@ pub struct ScanArgs {
     #[arg(long, requires = "verify")]
     pub allow_script_verify: bool,
 
-    /// Min severity to report: info, low, medium, high, critical
+    /// Min severity to report: info, client-safe, low, medium, high, critical
     #[arg(short, long, value_enum)]
     pub severity: Option<SeverityFilter>,
 
@@ -711,11 +729,11 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_entropy: bool,
 
-    /// Score entropy-fallback candidates with the bare entropy heuristic instead
+    /// Score entropy-discovery candidates with the bare entropy heuristic instead
     /// of routing them through the MoE (the model is authoritative by default).
     /// The default ML path is a recall-safe precision win on the
-    /// real-distribution-trained model; this opt-out restores the legacy
-    /// heuristic emit. No effect when `--no-entropy` or `--no-ml` is set.
+    /// real-distribution-trained model; this opt-out selects bare entropy-only
+    /// scoring. No effect when `--no-entropy` or `--no-ml` is set.
     #[arg(long)]
     pub no_entropy_ml_scoring: bool,
 
@@ -840,7 +858,7 @@ pub struct ScanArgs {
     )]
     pub entropy_bpe_max_bytes_per_token: Option<f64>,
 
-    /// Minimum credential length for entropy-fallback candidates (default: 16).
+    /// Minimum credential length for entropy-discovery candidates (default: 16).
     /// Named detectors keep their own shape-specific length gates.
     #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_min_secret_len)]
     pub min_secret_len: Option<usize>,

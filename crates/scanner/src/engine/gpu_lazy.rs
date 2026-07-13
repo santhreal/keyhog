@@ -1,6 +1,6 @@
 //! Lazy compile and hot-loop dispatch scratch for the GPU literal-set matcher.
 //!
-//! This builds Keyhog's GPU literal-set primitive. The main matcher is the
+//! This builds KeyHog's GPU literal-set primitive. The main matcher is the
 //! literal-presence phase-1 prefilter. It is not a final matcher:
 //! downstream phase-2 extraction confirms every candidate via its full regex.
 //! The retired per-rule megakernel catalog is not a production engine module.

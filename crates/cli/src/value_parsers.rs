@@ -338,7 +338,8 @@ pub(crate) fn parse_byte_size(s: &str) -> Result<usize, String> {
 /// Accepted-spelling description for [`parse_severity_filter`], surfaced in
 /// config rejection messages. One owner so the accepted list cannot drift from
 /// the match arms below or get re-pasted per call site.
-pub(crate) const SEVERITY_ACCEPTED: &str = "expected one of info, low, medium, high, critical";
+pub(crate) const SEVERITY_ACCEPTED: &str =
+    "expected one of info, client-safe, low, medium, high, critical";
 
 /// Parse a severity string into the CLI filter enum. Shared by the flat
 /// top-level `severity` field and the `[scan]` nested table in `.keyhog.toml`
@@ -347,6 +348,7 @@ pub(crate) fn parse_severity_filter(s: &str) -> Option<crate::args::SeverityFilt
     use crate::args::SeverityFilter as S;
     match s.to_lowercase().as_str() {
         "info" => Some(S::Info),
+        "client-safe" => Some(S::ClientSafe),
         "low" => Some(S::Low),
         "medium" => Some(S::Medium),
         "high" => Some(S::High),

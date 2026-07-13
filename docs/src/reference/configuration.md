@@ -1,8 +1,11 @@
 # Configuration
 
-keyhog runs with **zero configuration**: `keyhog scan .` works out of the
-box on the canonical tuned defaults. Everything on this page is optional
-override.
+A verified-installer KeyHog release runs with **zero hand-written
+configuration**: the installer calibrates every eligible backend, after which
+`keyhog scan .` uses the canonical tuned defaults. A freshly built
+multi-backend binary must first run `keyhog calibrate-autoroute`; a portable
+single-backend build has no routing choice. Everything on this page is an
+optional policy override, not a substitute for required autoroute evidence.
 
 ## Precedence
 
@@ -41,10 +44,11 @@ or the compiled `scan-fallback`. During scanning, an eligible detector's
 declared BPE ceiling wins over that fallback, while an explicit scan override
 wins over every eligible detector ceiling.
 
-The effective view also prints verification enablement, timeout, concurrency,
-requests/second, TLS, OOB, and proxy policy. Proxy URLs are never echoed:
-`http_proxy` is reported only as `unset`, `off`, or `configured` so credentials
-embedded in a proxy URL cannot leak into logs.
+The effective view also prints report format, severity floor, dedup scope,
+secret visibility, client-safe/test-fixture policy, lockdown, verification
+enablement, timeout, concurrency, requests/second, TLS, OOB, and proxy policy.
+Proxy URLs are never echoed: `http_proxy` is reported only as `unset`, `off`,
+or `configured` so credentials embedded in a proxy URL cannot leak into logs.
 
 ## Core settings
 
@@ -62,7 +66,7 @@ A dash means that layer intentionally has no surface.
 | Entropy in source | off | `entropy_source_files` | `--entropy-source-files` | Run entropy inside `.py`/`.js`/`.go`/… (off by default to cut FPs). |
 | Entropy threshold | **4.5** | `[scan].entropy_threshold` | `--entropy-threshold` | Bits/byte cutoff (3.5 aggressive … 5.5 conservative). The byte-entropy domain is `[0.0, 8.0]`; non-finite and out-of-range requests fail closed instead of being silently clamped. |
 | BPE word-like bound | **2.2** | `[scan].entropy_bpe_max_bytes_per_token` | `--entropy-bpe-max-bytes-per-token` | With no explicit scan setting, detector TOML `bpe_max_bytes_per_token` wins over this compiled fallback. A `[scan]` value or the CLI flag becomes the visible Tier-A override for every eligible detector (CLI wins). Invalid, zero, negative, NaN, and infinite bounds fail closed. A surviving candidate above its resolved cl100k_base UTF-8 bytes-per-token ceiling is word-like and dropped. Lower = higher precision/lower recall. Detector families for which token efficiency is inappropriate declare `bpe_enabled = false` in their own TOML and skip tokenization. `config --effective` reports `entropy_bpe_policy = scan-override` for explicit scan values and `scan-fallback` otherwise. |
-| Entropy min length | **16** | `[scan].min_secret_len` | `--min-secret-len` | Minimum credential length for entropy-fallback candidates. Named detectors keep their own shape-specific length gates. |
+| Entropy min length | **16** | `[scan].min_secret_len` | `--min-secret-len` | Minimum credential length for entropy-discovery candidates. Named detectors keep their own shape-specific length gates. |
 | Keyword low-entropy | on | `generic_keyword_low_entropy` | `--no-keyword-low-entropy` | Admit credential-keyword-anchored values (`PASSWORD=`, `*_PASS=`, `secret:` …) on a low entropy floor; precision is carried by the ML model. Surfaces real-world config passwords. Disabling raises precision but drops real recall. |
 | ML enabled | on | `no_ml = true` disables | `--no-ml` | ML confidence gating. Disabling raises FPs and hurts recall. |
 | ML weight | **0.5** | `ml_weight` | `--ml-weight` | Blend weight of the ML score vs heuristics (0.0-1.0). |
@@ -79,7 +83,7 @@ A dash means that layer intentionally has no surface.
 | Verification request rate | `5.0` RPS per service | - | `--verify-rate` | Steady-state request-rate ceiling. `--verify-batch` additionally forces concurrency to one. |
 | Max file size | 100 MiB | `max_file_size` | `--max-file-size` | Walker skips files larger than this. |
 | GPU batch input limit | VRAM-adaptive (128 MiB–1 GiB) | `[scan].gpu_batch_input_limit` | `--gpu-batch-input-limit` | Caps bytes admitted to one GPU region-presence batch. Retired MegaScan spellings are rejected; this one name owns CLI, config, effective-config output, and the Rust API. |
-| Severity floor | (all) | `[scan].severity` | `--severity` | Minimum severity to report: info/low/medium/high/critical. |
+| Severity floor | (all) | `[scan].severity` | `--severity` | Minimum severity to report: info/client-safe/low/medium/high/critical. |
 | Output format | `text` | `[scan].format` | `--format` | text/json/jsonl/sarif/csv/github-annotations/gitlab-sast/html/junit. |
 | Show secrets | off | `show_secrets` | `--show-secrets` | Print plaintext credentials. **Never enable in CI/logs.** |
 | Incremental cache | off | `[scan].incremental` / `[scan].incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache; 10-100× on CI re-runs. |
@@ -91,6 +95,10 @@ A dash means that layer intentionally has no surface.
 | Coalesced batch pipeline | off | `[system].batch_pipeline` | `--batch-pipeline` / `--no-batch-pipeline` | Diagnostic/calibration route that bypasses the fused filesystem pipeline. Printed by `keyhog config --effective` and included in autoroute scan identity. |
 | AWS canary issuer extensions | embedded baseline | `[aws].canary_accounts` / `[aws].knockoff_accounts` | - | Extra 12-digit AWS account IDs treated as canary-token issuers during offline access-key metadata classification and verification suppression. |
 | Scanner tuning | compiled scanner defaults | `[tuning]` | - | Detection/recall route gates that affect engine work selection. These are explicit config so autoroute calibration identity includes them; ambient `KEYHOG_*` tuning env vars are ignored. |
+| Confidence prefixes | embedded scanner set | `known_prefixes` | - | Replace the scan-wide list of credential prefixes that raise confidence. Empty entries fail closed. Prefer detector TOML shape/keyword policy for one secret type. |
+| Secret-context keywords | embedded scanner set | `secret_keywords` | - | Replace the scan-wide positive context words used by generic confidence scoring. Empty entries fail closed. |
+| Test-context keywords | embedded scanner set | `test_keywords` | - | Replace the scan-wide test/mock context words used by confidence policy. Empty entries fail closed. |
+| Placeholder keywords | embedded scanner set | `placeholder_keywords` | - | Replace the scan-wide placeholder markers used by confidence policy. Empty entries fail closed. |
 | Backend | `auto` | - | `--backend` | `auto`/`gpu`/`simd`/`cpu`. Profiles and persisted evidence use the descriptive engine labels `gpu-region-presence`/`simd-regex`/`cpu-fallback`; retired MegaScan and implementation-name aliases are rejected. Auto uses a persisted installer-calibrated fastest-correct decision for the exact workload bucket; missing/stale/incomplete calibration is an error, not permission to substitute another backend. |
 
 ## Source limits
@@ -147,11 +155,13 @@ written.
 
 ## Policy tables
 
-Each setting has one TOML owner. Scan-policy settings live under `[scan]`;
-other tables own their respective source, detector, system, and security
-policies. Unknown or retired flat spellings fail closed instead of being
-silently accepted. When migrating an older file, move scan keys under `[scan]`
-and rename the old `exclude_paths` key to `[scan].exclude`.
+Each setting has one TOML owner. The main reporting, entropy, routing-identity,
+and worker settings live under `[scan]`; the core-settings table above names
+the few canonical root keys (presets, verification, decode/ML switches, and
+scan-wide keyword lists). Other tables own source, detector, system, and
+security policy. Unknown keys and retired duplicate spellings fail closed.
+When migrating an older file, move the retired flat scan keys named by the
+parser under `[scan]` and rename `exclude_paths` to `[scan].exclude`.
 
 ### `[scan]`
 

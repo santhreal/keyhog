@@ -17,7 +17,7 @@ and prints findings. The exit code carries the verdict:
 | `3`       | System error - local I/O or detector-corpus audit failure |
 | `10`      | Live credential confirmed under `--verify` |
 | `11`      | Scanner thread panicked; re-run before trusting results |
-| `12`      | Required GPU unavailable                   |
+| `12`      | Selected or required GPU became unavailable |
 | `13`      | Requested source failed or coverage incomplete |
 
 So a CI step that should fail the build when a credential leaks is just:

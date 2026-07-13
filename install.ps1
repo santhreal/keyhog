@@ -1058,7 +1058,7 @@ function Invoke-AutorouteCalibration {
             # Calibrate the documented scan-policy presets too: each changes scanner
             # fields hashed into the config digest, so `keyhog scan . --fast` resolves a
             # DIFFERENT digest than the default and needs its own decisions or it fails
-            # closed. The v20 multi-config cache lets the default + every preset coexist;
+            # closed. The current multi-config cache lets the default + every preset coexist;
             # only presets this build's `scan --help` actually exposes are calibrated.
             $autoroutePresets = @()
             foreach ($presetFlag in @('--fast', '--deep', '--precision')) {
@@ -1130,16 +1130,18 @@ function Invoke-AutorouteCalibration {
                 Stderr = Join-Path $tmpDir 'stderr-stdin-64kib.txt'
             }
             # One representative for every power-of-two file-size band from
-            # 512 B through 32 MiB. Autoroute never interpolates an unmeasured band.
-            $probe512 = Join-Path $tmpDir 'probe-512b.txt'
-            New-CalibrationProbeBytes -Path $probe512 -Bytes 512
-            $workloads += [pscustomobject]@{
-                Label = '512 B workload'
-                Target = $probe512
-                Mode = 'path'
-                Out = Join-Path $tmpDir 'out-512b.json'
-                Stdout = Join-Path $tmpDir 'stdout-512b.txt'
-                Stderr = Join-Path $tmpDir 'stderr-512b.txt'
+            # 1 B through 32 MiB. Autoroute never interpolates an unmeasured band.
+            foreach ($bytes in @(1, 2, 4, 8, 16, 32, 64, 128, 256, 512)) {
+                $probe = Join-Path $tmpDir "probe-${bytes}b.txt"
+                New-CalibrationProbeBytes -Path $probe -Bytes $bytes
+                $workloads += [pscustomobject]@{
+                    Label = "${bytes} B workload"
+                    Target = $probe
+                    Mode = 'path'
+                    Out = Join-Path $tmpDir "out-${bytes}b.json"
+                    Stdout = Join-Path $tmpDir "stdout-${bytes}b.txt"
+                    Stderr = Join-Path $tmpDir "stderr-${bytes}b.txt"
+                }
             }
             foreach ($kib in @(1, 2, 4, 8, 16, 32, 64, 128, 256, 512)) {
                 $probe = Join-Path $tmpDir "probe-${kib}kib.txt"
@@ -1175,7 +1177,7 @@ function Invoke-AutorouteCalibration {
                 Stdout = Join-Path $tmpDir 'stdout-decode-heavy-256kib.txt'
                 Stderr = Join-Path $tmpDir 'stderr-decode-heavy-256kib.txt'
             }
-            foreach ($fileCount in @(4, 16, 32)) {
+            foreach ($fileCount in @(2, 4, 8, 16, 32)) {
                 $tree = Join-Path $tmpDir "many-${fileCount}x4k"
                 New-CalibrationTreeKiB -Path $tree -Files $fileCount -KiB 4
                 $workloads += [pscustomobject]@{
@@ -1452,7 +1454,7 @@ function New-CalibrationGitRepository {
     New-Item -ItemType Directory -Force -Path $Path | Out-Null
     Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('init', '-q', $Path)
     Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'config', 'user.email', 'keyhog-calibration@example.invalid')
-    Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'config', 'user.name', 'Keyhog Autoroute Calibration')
+    Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'config', 'user.name', 'KeyHog Autoroute Calibration')
     Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'config', 'commit.gpgsign', 'false')
     New-CalibrationProbeKiB -Path (Join-Path $Path 'probe.txt') -KiB 4
     Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'add', 'probe.txt')

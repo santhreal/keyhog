@@ -236,29 +236,26 @@ impl CompiledScanner {
     ) -> Vec<u64> {
         let _g = profile::span(profile::P::Phase1Triggers);
         match backend {
-            ScanBackend::Gpu => self.collect_triggered_patterns_gpu(text, backend),
+            ScanBackend::Gpu => self.collect_triggered_patterns_gpu(text),
             ScanBackend::SimdCpu => self.collect_triggered_patterns_simd(text),
             ScanBackend::CpuFallback => self.collect_triggered_patterns_cpu(text),
         }
     }
 
-    /// Per-chunk GPU trigger production; every degrade records the reason and
-    /// routes through the explicit GPU-failure policy.
-    fn collect_triggered_patterns_gpu(&self, text: &str, backend: ScanBackend) -> Vec<u64> {
-        let degrade = |reason: String| -> Vec<u64> {
-            self.record_gpu_degrade(reason.clone());
-            super::gpu_forced::deny_silent_gpu_degrade_with_reason(self, backend, Some(&reason));
-            self.collect_triggered_patterns_for_backend(
-                text,
-                self.degraded_backend_after_gpu_failure(),
-            )
+    /// Per-chunk GPU trigger production. Every dispatch failure records its
+    /// concrete reason and terminates the selected route.
+    fn collect_triggered_patterns_gpu(&self, text: &str) -> Vec<u64> {
+        let dispatch_failure = |reason: String| -> Vec<u64> {
+            super::gpu_forced::fail_selected_gpu_dispatch(self, &reason)
         };
 
         let Some(matcher) = self.gpu_matcher() else {
-            return degrade("gpu literal matcher not built for this scanner".to_string());
+            return dispatch_failure("gpu literal matcher not built for this scanner".to_string());
         };
         let Some(gpu_backend) = self.gpu_backend.as_ref() else {
-            return degrade("no gpu backend acquired for per-chunk trigger dispatch".to_string());
+            return dispatch_failure(
+                "no gpu backend acquired for per-chunk trigger dispatch".to_string(),
+            );
         };
         // Presence bitmap is the phase-1 path: no per-hit triples and no match
         // cap, with the same pattern-id mapping.
@@ -270,14 +267,14 @@ impl CompiledScanner {
             Ok(presence) => {
                 let expected_presence_words = self.gpu_presence_literal_count().div_ceil(32).max(1);
                 if presence.len() != expected_presence_words {
-                    return degrade(format!(
+                    return dispatch_failure(format!(
                         "per-chunk GPU presence readback length mismatch: got {} u32 word(s), need {}",
                         presence.len(),
                         expected_presence_words
                     ));
                 }
                 if let Some((word_idx, stray_bits)) = self.gpu_presence_stray_tail_bits(&presence) {
-                    return degrade(format!(
+                    return dispatch_failure(format!(
                         "per-chunk GPU presence readback has out-of-range detector bit(s): word {word_idx} bits 0x{stray_bits:08x} beyond {} literal(s)",
                         self.gpu_presence_literal_count()
                     ));
@@ -290,7 +287,7 @@ impl CompiledScanner {
                 self.mark_gpu_presence_into(&mut triggered, &presence);
                 triggered
             }
-            Err(error) => degrade(format!("gpu presence scan failed: {error}")),
+            Err(error) => dispatch_failure(format!("gpu presence scan failed: {error}")),
         }
     }
 
@@ -483,15 +480,5 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
                 }
             }
         }
-    }
-
-    pub(crate) fn degraded_backend_after_gpu_failure(&self) -> ScanBackend {
-        // Route to the backend that is ACTUALLY live: `SimdCpu` only when a
-        // Hyperscan prefilter is compiled in and built, else the pure-CPU AC
-        // `CpuFallback`: otherwise the operator-visible backend would claim
-        // SimdCpu while silently running the weaker AC path (Law 10). This is
-        // compiled even without the `gpu` feature because the generic
-        // per-backend trigger dispatcher still typechecks the GPU match arm.
-        self.live_cpu_backend()
     }
 }

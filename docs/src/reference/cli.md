@@ -8,8 +8,8 @@ directory) and emits findings. Pass several roots in a single run
 a root nested inside another is folded into its covering parent (announced
 on stderr) so no subtree is scanned twice. Exit code: `0` clean, `1` findings
 present, `2` user error, `3` system error, `10` live credential, `11` scanner
-panic, `12` required GPU unavailable, `13` requested source failed or coverage
-incomplete.
+panic, `12` selected or required GPU unavailable, `13` requested source failed
+or coverage incomplete.
 
 ### Input selection
 
@@ -17,6 +17,7 @@ incomplete.
 |-------------------------------|------------------------------------------------|
 | `<PATH>...`                   | One or more positional roots. Each may be a file or directory; nested/duplicate roots are folded into their covering parent. `--git-staged` requires a single root. |
 | `--path <PATH>`               | Explicit single-root spelling. Prefer positional roots when scanning several paths. |
+| `--binary`                    | In builds with binary analysis, extract and scan strings from supported binary inputs in addition to ordinary text handling. |
 | `--stdin`                     | Read from stdin instead. Default 10 MiB cap; tune with `--limit-stdin-bytes`. |
 | `--exclude-paths <GLOB>...`   | Skip files matching glob. Space-separated list, repeatable. |
 | `--no-default-excludes`       | Disable the shipped lock-file, minified-file, build-output, and similar default exclusions. Explicit exclusions still apply. |
@@ -44,7 +45,7 @@ incomplete.
 | `--output <FILE>`             | Write the report to `FILE` instead of stdout.  |
 | `--stream`                    | Stream a one-line redacted preview per finding to stderr as they're found; the full formatted report still lands on stdout/`--output` after verification. |
 | `--show-secrets`              | Show full credentials. Default redacts.        |
-| `--severity <LEVEL>`          | Minimum reported severity: `info`, `low`, `medium`, `high`, or `critical`. |
+| `--severity <LEVEL>`          | Minimum reported severity: `info`, `client-safe`, `low`, `medium`, `high`, or `critical`. |
 | `--min-confidence <FLOAT>`    | Only emit findings >= confidence. 0.0..=1.0.   |
 | `--progress`                  | Force the live progress display. Mutually exclusive with `--quiet`. |
 | `--quiet`                     | Suppress banner, live ticker, and completion summary; coverage warnings and fatal errors remain visible. |
@@ -110,8 +111,8 @@ minus the `limit-` prefix and with dashes changed to underscores.
 | `--entropy-source-files`      | Admit entropy discovery in source-code files as well as configuration/data files. |
 | `--entropy-threshold <BITS>`  | Set the scan-wide Shannon bits-per-byte threshold where detector-owned policy does not provide the effective gate. |
 | `--entropy-bpe-max-bytes-per-token <RATIO>` | Set the scan-wide BPE word-likeness ceiling; lower values suppress more word-like entropy candidates. |
-| `--min-secret-len <N>`        | Set the minimum length for entropy-fallback candidates; named detectors retain their shape-specific lengths. |
-| `--no-entropy-ml-scoring`     | Use the bare entropy heuristic rather than MoE scoring for entropy-fallback candidates. No effect when entropy or ML is disabled. |
+| `--min-secret-len <N>`        | Set the minimum length for entropy-discovery candidates; named detectors retain their shape-specific lengths. |
+| `--no-entropy-ml-scoring`     | Use the bare entropy heuristic rather than MoE scoring for entropy-discovery candidates. No effect when entropy or ML is disabled. |
 | `--no-keyword-low-entropy`    | Require the high-entropy gate even when a credential keyword anchors the value. |
 | `--ml-threshold <FLOAT>`      | Tighten the generic/entropy ML admission floor by composing it with the resolved confidence floor. |
 | `--ml-weight <FLOAT>`         | Set the ML contribution to confidence scoring (`0.0..=1.0`). |
@@ -128,12 +129,12 @@ minus the `limit-` prefix and with dashes changed to underscores.
 
 | Control                               | Effect                                                                |
 |---------------------------------------|-----------------------------------------------------------------------|
-| `keyhog scan --backend auto\|gpu\|simd\|cpu` | Use persisted automatic routing (`auto`) or explicitly force one diagnostic backend (`gpu`, `simd`, or `cpu`). Profiles and routing evidence use the descriptive labels `gpu-region-presence`, `simd-regex`, and `cpu-fallback`; retired MegaScan and implementation-name aliases are rejected. |
+| `keyhog scan --backend auto\|gpu\|simd\|cpu` | Use persisted automatic routing (`auto`) or explicitly force one diagnostic backend (`gpu`, `simd`, or `cpu`). Profiles and routing evidence use the descriptive labels `gpu-region-presence`, `simd-regex`, and `cpu-fallback`; retired MegaScan and implementation-name aliases are rejected. A selected GPU route that becomes unusable exits `12` instead of substituting CPU/SIMD. |
 | `keyhog scan --gpu-batch-input-limit 512MB` | Override the VRAM-adaptive byte limit for one GPU region-presence batch (clamped to 128 MiB–1 GiB). |
 | `keyhog scan --max-file-size <SIZE>` | Bound one filesystem input (default 100 MiB); larger files are named in the coverage summary. |
 | `keyhog scan --regex-dfa-limit <SIZE>` | Bound each regex lazy-DFA cache (default 1 MiB); lowering the safety ceiling may force complex patterns onto the slower NFA path. |
 | `keyhog scan --no-gpu`                | Short-circuit GPU init at hardware-probe time. The scanner runs as if no GPU adapter existed. |
-| `keyhog scan --require-gpu`           | Fail closed with exit `12` when no usable GPU stack is available. |
+| `keyhog scan --require-gpu`           | Fail closed with exit `12` when GPU is unavailable before scanning or a selected GPU dispatch fails at runtime. |
 | `keyhog scan --autoroute-calibrate`   | Installer/maintenance mode: benchmark parity-checked autoroute candidates and persist fastest-correct decisions. Normal scans do not use this mode. |
 | `keyhog scan --autoroute-gpu`         | Low-level direct-calibration diagnostic: include eligible GPU candidates. `keyhog calibrate-autoroute` always includes every eligible backend. |
 | `keyhog scan --no-autoroute-gpu`      | Low-level direct-calibration diagnostic: exclude GPU despite TOML. This is not used by canonical calibration. |
@@ -164,9 +165,12 @@ operator explicitly passes `--allow-s3-credential-forward` or
 
 ## `keyhog config --effective [SCAN FLAGS]`
 
-Prints the resolved scan configuration and exits without scanning. This is the
-operator-visible way to prove what the scanner would run after compiled
-defaults, `.keyhog.toml`, and CLI overrides are merged.
+Prints the resolved scan and report policy and exits without scanning. This is
+the operator-visible way to prove what KeyHog would run after compiled defaults,
+`.keyhog.toml`, and CLI overrides are merged. The output includes report format,
+severity floor, dedup scope, secret visibility, client-safe/test-fixture policy,
+and lockdown alongside backend, detector, scanner, source-limit, verification,
+and cache settings.
 
 `config --effective` accepts the same config-affecting flags as `scan`, including
 `--config`, `--fast`, `--deep`, `--precision`, source limits, detector paths,
@@ -245,8 +249,11 @@ daemon route cannot be honored.
 may sit without completing a request frame before the daemon closes it and
 reclaims the connection slot. Default: `300`.
 
-Default socket path: `$XDG_RUNTIME_DIR/keyhog.sock`, or
-`~/.cache/keyhog/server.sock` if `XDG_RUNTIME_DIR` is unset.
+Default socket path: `$XDG_RUNTIME_DIR/keyhog.sock` when that directory is set;
+otherwise the OS user cache directory (`~/.cache/keyhog/server.sock` on Linux
+or `~/Library/Caches/keyhog/server.sock` on macOS), with the OS temporary
+directory plus `keyhog/server.sock` as the last fallback. Every daemon command
+and scan client resolves the same default.
 
 On Windows: every `daemon` subcommand and explicit `scan --daemon=auto|on`
 prints a Unix-only error and exits non-zero. No Windows daemon transport ships;
@@ -312,9 +319,18 @@ keyhog backend
 
 `--probe-bytes <N>` and `--patterns <N>` are what-if inputs to the diagnostic
 heuristic matrix only; neither changes the corpus nor predicts persisted
-autoroute. `--self-test` exercises the real GPU paths, with `--require-gpu`
-turning absence into a failure and `--no-gpu` explicitly disabling the probe.
-`--json` is available for self-test and autoroute inspection output.
+autoroute. On an eligible GPU host, `--self-test` reports three named probes: `moe_kernel` for GPU
+confidence scoring, `vyre_literal_set` for VYRE's direct match-triple
+diagnostic, and `gpu_region_presence` for the production scan route. The last
+probe owns scan eligibility. A direct-mode limitation is reported as `known`
+when classified and `warning` otherwise, but only a production-path or required
+GPU capability failure makes the health report fail. When no eligible physical
+GPU exists, the normal self-test emits one `gpu_adapter` probe with status
+`skip` and exits `0`; `--require-gpu` changes that probe to `fail` and exits
+`4`. `--no-gpu` explicitly requests the skip without initializing a GPU.
+`--json` is available for self-test
+and autoroute inspection output. A failed self-test emits the complete report
+and exits `4`; a normal scan whose selected GPU route fails exits `12`.
 
 ## `keyhog scan-system`
 

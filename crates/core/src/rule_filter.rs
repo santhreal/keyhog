@@ -2,7 +2,7 @@
 //!
 //! Loads a `.keyhogignore.toml` file alongside the legacy line-based
 //! `.keyhogignore`. Each `[[suppress]]` table compiles into a vyre
-//! `RuleFormula` evaluated per-finding via vyre's CPU evaluator
+//! `RuleFormula` evaluated per-finding via VYRE's CPU evaluator
 //! (`vyre_libs::rule::evaluate_formula`). Findings whose rules
 //! evaluate to `true` are dropped from the report - same semantics
 //! as the line-based allowlist, just composable.
@@ -30,11 +30,11 @@
 //! Within one `[[suppress]]` the named fields combine with AND.
 //! Across multiple `[[suppress]]` tables they combine with OR (any
 //! suppress matching the finding drops it). All conditions are
-//! optional; a `[[suppress]]` table with no condition matches every
-//! finding (use `LiteralTrue` if you want that explicit).
+//! optional; a `[[suppress]]` table with no condition is rejected.
+//! Use `literal_true = true` to request an explicit match-everything rule.
 //!
 //! Why this lives in `keyhog-core`: the rule engine is general
-//! infra (it consumes vyre's CPU evaluator) but the schema is
+//! infra (it consumes VYRE's CPU evaluator) but the schema is
 //! keyhog-specific (FindingContext shape). The vyre side stays
 //! consumer-agnostic.
 
@@ -57,11 +57,17 @@ pub struct RuleSuppressor {
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SuppressEntry {
+    /// Explicit match-everything predicate. Kept noisy on purpose: an empty
+    /// table is rejected so a missing/typoed condition cannot suppress every
+    /// finding accidentally.
+    #[serde(default)]
+    literal_true: bool,
     /// Detector ID exact match (e.g. `"aws-access-key"`).
     detector: Option<String>,
     /// Service exact match (e.g. `"stripe"`).
     service: Option<String>,
-    /// Severity equals - case-insensitive (info / low / medium / high / critical).
+    /// Severity equals - case-insensitive
+    /// (info / client-safe / low / medium / high / critical).
     severity: Option<String>,
     /// Severity ≤ - finding's severity must be at most this rank.
     severity_lte: Option<String>,
@@ -195,6 +201,10 @@ const NO_CONDITIONS_ERR: &str = "no conditions specified in [[suppress]] entry; 
 
 fn entry_to_formula(entry: &SuppressEntry) -> Result<RuleFormula, String> {
     let mut conditions: Vec<RuleCondition> = Vec::new();
+
+    if entry.literal_true {
+        conditions.push(RuleCondition::LiteralTrue);
+    }
 
     if let Some(d) = entry.detector.as_deref() {
         conditions.push(eq_field("detector_id", d));

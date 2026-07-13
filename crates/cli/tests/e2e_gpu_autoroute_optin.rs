@@ -115,7 +115,7 @@ fn forcing_backend_gpu_reports_a_forced_line_not_an_auto_selection() {
         assert!(
             matches!(code, Some(2) | Some(12))
                 && (stderr.contains("selected but GPU stack unavailable")
-                    || stderr.contains("Required GPU unavailable")
+                    || stderr.contains("Selected GPU unavailable")
                     || stderr.contains("--require-gpu")),
             "--backend gpu without a usable GPU must fail closed with a visible \
              diagnostic; code={code:?} stderr={stderr}"

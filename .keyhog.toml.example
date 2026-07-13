@@ -16,9 +16,9 @@ detectors = "detectors"
 # Fast mode: pattern matching only, maximum speed
 # Use for pre-commit hooks and quick scans
 # WARNING: --fast disables decode + entropy + ML simultaneously, the largest
-# detection blind spot keyhog ships. Encoded secrets (base64, hex, URL),
+# detection blind spot KeyHog ships. Encoded secrets (base64, hex, URL),
 # novel high-entropy strings, and ML-only catches will all be missed.
-# This flag is REFUSED in --lockdown mode (kimi-wave3 §5).
+# This flag is refused in --lockdown mode.
 fast = false
 
 # Deep mode: all features enabled, maximum recall
@@ -124,10 +124,10 @@ show_secrets = false
 # CANONICAL SCAN POLICY
 # ============================================================================
 
-# Scan-policy keys live only in this table; retired flat spellings are
-# rejected so every setting has one predictable owner.
+# The scan-policy keys below live only in this table; their retired duplicate
+# flat spellings are rejected so every setting has one predictable owner.
 [scan]
-severity = "info"                 # info reports every severity
+severity = "info"                 # info | client-safe | low | medium | high | critical
 format = "text"                   # text | json | jsonl | sarif | csv | ...
 min_confidence = 0.40             # 0.0-1.0; raise toward 0.85 for precision
 # ml_threshold = 0.5              # explicit 0.5 raises the 0.40 report floor
@@ -135,7 +135,7 @@ decode_depth = 10                 # recursive decode passes, 1-10
 entropy_threshold = 4.5           # Shannon bits/byte, 0.0-8.0
 # An explicit BPE ceiling overrides detector-local BPE tuning, even at 2.2.
 # entropy_bpe_max_bytes_per_token = 2.2
-min_secret_len = 16               # entropy-fallback candidates only
+min_secret_len = 16               # entropy-discovery candidates only
 exclude = ["**/test/fixtures/**", "vendor/"]
 # threads = 8                     # default: host physical-core count
 # reader_threads = 2              # default: derived from scan workers

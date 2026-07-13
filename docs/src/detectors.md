@@ -185,7 +185,7 @@ The available per-detector tuning fields are:
     ceiling, or compose both gates when byte-distribution and language-likeness
     each reject different noise. It is not a candidate generator: the
     detector's regex or phase-2 assignment/entropy discovery path must first
-    produce a candidate. BetterLeaks' public documentation calls this Token
+    produce a candidate. Betterleaks' public documentation calls this Token
     Efficiency, not BPD; KeyHog uses `bpe_...` field names to keep that
     distinction explicit.
 
@@ -199,7 +199,7 @@ least one `phase2-generic` detector. A focused custom corpus without one compile
 without that bridge; KeyHog does not silently inject the bundled generic rules.
 
 ### Allowlists & Exclusions
-*   **`allowlist_paths`** (array of strings, optional): Per-detector path-exclusion regexes (betterleaks-style allowlist). Any candidate match whose file path matches any of these regexes is suppressed.
+*   **`allowlist_paths`** (array of strings, optional): Per-detector path-exclusion regexes (Betterleaks-style allowlist). Any candidate match whose file path matches any of these regexes is suppressed.
 *   **`allowlist_values`** (array of strings, optional): Per-detector value-exclusion regexes. Any candidate secret value matching any of these regexes is suppressed (useful for filtering out test, example, or placeholder values).
 *   **`stopwords`** (array of strings, optional): Per-detector literal stopwords. A matched value equal to or containing any of these strings (case-insensitive) is suppressed.
 

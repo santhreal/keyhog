@@ -266,7 +266,7 @@ pub trait CliTestApi {
         requested: &str,
         lowered: &str,
     ) -> anyhow::Error;
-    fn render_failing_ac_probe_json(&self) -> Result<String>;
+    fn render_failing_region_presence_probe_json(&self) -> Result<String>;
     fn doctor_canonicalize_for_shadow_check(&self, path: PathBuf) -> PathBuf;
     fn canonical_scan_args(&self) -> &'static str;
     fn hook_content(&self) -> &'static str;
@@ -861,8 +861,8 @@ impl CliTestApi for TestApi {
     ) -> anyhow::Error {
         crate::subcommands::explain::testing::explain_not_found(detectors, requested, lowered)
     }
-    fn render_failing_ac_probe_json(&self) -> Result<String> {
-        crate::subcommands::backend::testing::render_failing_ac_probe_json()
+    fn render_failing_region_presence_probe_json(&self) -> Result<String> {
+        crate::subcommands::backend::testing::render_failing_region_presence_probe_json()
     }
     fn doctor_canonicalize_for_shadow_check(&self, path: PathBuf) -> PathBuf {
         crate::subcommands::doctor::testing::canonicalize_for_shadow_check(path)

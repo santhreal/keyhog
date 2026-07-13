@@ -409,6 +409,14 @@ For directory-tree / git / docker walking, drive `keyhog-sources`
 or shell out to the CLI - `CompiledScanner` is one chunk at a time
 by design.
 
+The no-backend `scan` and `scan_coalesced` methods are deterministic portable
+CPU calls. Explicit `scan_with_backend` and `scan_coalesced_with_backend` calls
+are infallible at the type level and therefore enforce selection as a process
+contract: missing selected SIMD exits `3`, while unavailable or failed selected
+GPU execution exits `12`. They do not substitute another engine. Probe startup
+eligibility with `warm_backend`; isolate the CLI in a subprocess when the host
+application must survive a later accelerator runtime failure.
+
 For finer-grained control of individual detector features:
 
 ```toml
@@ -519,10 +527,11 @@ the full schema.
 - `0` - no findings
 - `1` - findings at or above `--severity` / `--min-confidence`
 - `2` - user error (bad flag, missing/unreadable path, config error)
-- `3` - system error (local environment failure: low-level I/O, or GPU/hardware init)
+- `3` - system error (low-level I/O other than operator-correctable
+  not-found/permission-denied cases, or GPU/hardware init)
 - `10` - live credentials confirmed (only under `--verify`)
 - `11` - scanner thread panicked mid-scan (state unreliable)
-- `12` - required GPU unavailable
+- `12` - selected or required GPU unavailable
 - `13` - requested source failed or input coverage was incomplete
 - `130` - interrupted (SIGINT / Ctrl-C)
 
@@ -562,7 +571,7 @@ on stderr but does not turn the final report into an unbuffered writer.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `error: GPU requested but not available` | `--backend gpu` on a non-GPU host | Use a calibrated `--backend auto` route or choose `--backend simd` explicitly; auto fails closed when exact calibration evidence is missing |
+| Exit `12` with a selected-GPU diagnostic | Required, explicit, or autoroute-selected GPU execution could not start or complete | Run `keyhog backend --self-test`, recalibrate autoroute after fixing the GPU stack, or select another backend explicitly; KeyHog never substitutes CPU/SIMD inside the failed route |
 | Findings count drops vs prior run | `.keyhog-baseline.json` is up-to-date or `.keyhog.toml` widened | `git diff .keyhog-baseline.json .keyhog.toml` |
 | Pre-commit hook is slow | Scanning the whole repo on every commit | Use `--git-staged` not `scan .` |
 | SARIF upload rejects file | `min_confidence` too low; thousands of findings | Raise to ≥0.3 for SARIF specifically |

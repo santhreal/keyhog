@@ -4,7 +4,7 @@
 //!
 //! Every scan is the same pipeline. The ONLY thing that varies is *phase 1*
 //! (which detectors could fire where), produced on the CPU by Hyperscan or on
-//! the GPU by Vyre's literal region-presence backend. Everything downstream is
+//! the GPU by VYRE's literal region-presence backend. Everything downstream is
 //! shared:
 //!
 //! ```text

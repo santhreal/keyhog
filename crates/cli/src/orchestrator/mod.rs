@@ -34,6 +34,22 @@ const LOW_RAM_MAX_MATCHES_PER_CHUNK: usize = 500;
 /// is capped at (never raised to) this on a low-RAM host.
 const LOW_RAM_MAX_DECODE_BYTES: usize = 256 * 1024;
 
+fn daemon_requires_gpu(
+    backend_override: Option<keyhog_scanner::ScanBackend>,
+    gpu_expected: bool,
+) -> Result<bool> {
+    match backend_override {
+        None => Ok(gpu_expected),
+        Some(keyhog_scanner::ScanBackend::Gpu) => Ok(true),
+        Some(keyhog_scanner::ScanBackend::SimdCpu | keyhog_scanner::ScanBackend::CpuFallback) => {
+            Ok(false)
+        }
+        Some(unknown) => anyhow::bail!(
+            "daemon backend {unknown:?} is not supported by this KeyHog build; choose auto, gpu, simd, or cpu"
+        ),
+    }
+}
+
 pub(crate) use postprocess::render_credential;
 /// Offline (no-verify, no-network) structural metadata for a finding's
 /// credential. Single source of truth shared by every scan-output route so the
@@ -225,10 +241,13 @@ impl DefaultScanRuntime {
         self.scanner.warm();
     }
 
-    /// Prepare the compile-once runtime for daemon semantics. Autoroute may use
-    /// warm GPU timing only after the daemon has initialized the accelerator
-    /// stack before accepting requests.
-    pub(crate) fn prepare_persistent_daemon(mut self) -> Result<Self> {
+    /// Prepare the compile-once runtime for daemon semantics. Autoroute and an
+    /// explicit GPU daemon require a proven warm accelerator before accepting
+    /// requests; explicit CPU/SIMD daemons do not acquire an unused GPU route.
+    pub(crate) fn prepare_persistent_daemon(
+        mut self,
+        backend_override: Option<keyhog_scanner::ScanBackend>,
+    ) -> Result<Self> {
         self.scanner.warm();
         let simd_ready = self
             .scanner
@@ -237,15 +256,27 @@ impl DefaultScanRuntime {
         let gpu_expected = keyhog_scanner::hw_probe::gpu_backend_compiled()
             && hw.gpu_available
             && !hw.gpu_is_software;
-        let gpu_ready = self.scanner.warm_backend(keyhog_scanner::ScanBackend::Gpu);
-        if gpu_expected && !gpu_ready {
+        if backend_override == Some(keyhog_scanner::ScanBackend::Gpu) && !gpu_expected {
+            anyhow::bail!(
+                "daemon --backend gpu cannot be honored on this host/build; no eligible physical GPU path is available. Run `keyhog backend --self-test` or choose --backend simd/cpu"
+            );
+        }
+        if backend_override == Some(keyhog_scanner::ScanBackend::SimdCpu) && !simd_ready {
+            anyhow::bail!(
+                "daemon --backend simd cannot be honored because the Hyperscan/SIMD prefilter is unavailable. Run `keyhog backend --self-test` or choose --backend cpu"
+            );
+        }
+        let gpu_must_be_ready = daemon_requires_gpu(backend_override, gpu_expected)?;
+        let gpu_ready =
+            gpu_must_be_ready && self.scanner.warm_backend(keyhog_scanner::ScanBackend::Gpu);
+        if gpu_must_be_ready && !gpu_ready {
             anyhow::bail!(
                 "daemon GPU initialization failed on a host with an eligible physical GPU; \
                  refusing to serve warm autoroute decisions. Run `keyhog backend --self-test` \
                  or start a build/configuration without GPU eligibility"
             );
         }
-        if gpu_expected {
+        if gpu_must_be_ready {
             let warmup = keyhog_core::Chunk {
                 data: "keyhog daemon accelerator warmup\n".into(),
                 metadata: keyhog_core::ChunkMetadata {
@@ -271,6 +302,7 @@ impl DefaultScanRuntime {
             simd_ready,
             gpu_ready,
             gpu_expected,
+            gpu_must_be_ready,
             "persistent daemon backends initialized"
         );
         self.router = self.router.for_persistent_daemon();
@@ -921,6 +953,7 @@ impl ScanOrchestrator {
                 },
                 source_limits: keyhog_sources::SourceLimits::default(),
                 report: crate::orchestrator_config::ResolvedReportPolicy {
+                    format: crate::args::OutputFormat::Text,
                     severity: None,
                     dedup: crate::args::CliDedupScope::Credential,
                     verify: false,

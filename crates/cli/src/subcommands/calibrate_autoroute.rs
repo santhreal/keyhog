@@ -86,6 +86,51 @@ fn core_workload_plan() -> Vec<Workload> {
             bytes: 64 * 1024,
         },
         Workload::File {
+            label: "1 B workload",
+            bytes: 1,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "2 B workload",
+            bytes: 2,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "4 B workload",
+            bytes: 4,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "8 B workload",
+            bytes: 8,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "16 B workload",
+            bytes: 16,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "32 B workload",
+            bytes: 32,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "64 B workload",
+            bytes: 64,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "128 B workload",
+            bytes: 128,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "256 B workload",
+            bytes: 256,
+            decode_heavy: false,
+        },
+        Workload::File {
             label: "512 B workload",
             bytes: 512,
             decode_heavy: false,
@@ -176,8 +221,18 @@ fn core_workload_plan() -> Vec<Workload> {
             decode_heavy: true,
         },
         Workload::Tree {
+            label: "2 x 4 KiB files workload",
+            files: 2,
+            kib: 4,
+        },
+        Workload::Tree {
             label: "4 x 4 KiB files workload",
             files: 4,
+            kib: 4,
+        },
+        Workload::Tree {
+            label: "8 x 4 KiB files workload",
+            files: 8,
             kib: 4,
         },
         Workload::Tree {
@@ -194,8 +249,8 @@ fn core_workload_plan() -> Vec<Workload> {
 }
 
 /// Build `total` bytes of calibration content by repeating `seed`'s 1 KiB block.
-/// `total` is always a whole KiB multiple here, so the probe is byte-for-byte a
-/// run of identical blocks (the same shape the installer's `awk` loop emits).
+/// The final repetition is truncated for sub-KiB and non-aligned probes, matching
+/// the installers' exact-byte probe writers.
 fn calibration_bytes(seed: &str, total: usize) -> Vec<u8> {
     let block = calibration_block(seed);
     if total == 0 {
@@ -254,7 +309,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     let p = crate::style::for_stdout();
     if !args.quiet {
         println!(
-            "{bold}Autoroute calibration{reset} {dim}\u{2014} {total} core workload probes across {passes} scan {policy_word}{reset}",
+            "{bold}Autoroute calibration{reset} {dim}({total} core workload probes across {passes} scan {policy_word}){reset}",
             bold = p.bold,
             reset = p.reset,
             dim = p.dim,

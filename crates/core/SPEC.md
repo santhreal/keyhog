@@ -1,6 +1,6 @@
 # keyhog-core SPEC
 
-`keyhog-core` defines the shared data model for Keyhog. It owns detector specifications, match and finding types, source traits, allowlist handling, report structures, and detector validation.
+`keyhog-core` defines the shared data model for KeyHog. It owns detector specifications, match and finding types, source traits, allowlist handling, report structures, and detector validation.
 
 ## Guarantees
 

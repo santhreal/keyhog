@@ -17,8 +17,10 @@
 
 **keyhog** scans source trees, git history, Docker images, GitHub/GitLab/Bitbucket
 repository collections, S3/GCS/Azure Blob buckets, and running systems for leaked credentials. **922 embedded detectors**,
-decode-through (base64/hex/url/protobuf), confidence scoring, SARIF output,
-zero runtime configuration. Default `keyhog scan .` works out of the box.
+decode-through (base64/hex/url/protobuf), confidence scoring, and SARIF output
+without hand-written runtime configuration. After verified-install calibration,
+`keyhog scan .` works with the canonical defaults; a source-built multi-backend
+binary first runs `keyhog calibrate-autoroute`.
 
 <p align="center">
   <img src="demo/keyhog-scan.gif" alt="keyhog scan: boxed findings with severity, confidence, file:line, and remediation, then a results summary and an honest coverage-gap line" width="860" />
@@ -61,7 +63,7 @@ lefthook recipes: [integration recipes](docs/src/workflows/integrations.md).
 
 ### How it works
 
-keyhog compiles its 922 detectors into a shared trigger/extraction plan,
+KeyHog compiles its 922 detectors into a shared trigger/extraction plan,
 uses Hyperscan when that feature is present, decodes nested encodings before
 matching, and can apply explicit per-detector Bayesian Beta(α,β) confidence
 calibration. Hardware acceleration is an explicit backend selection layer;
@@ -71,15 +73,15 @@ contract:
 | Layer / Backend | When | How |
 |---|---|---|
 | `simdsieve` prefilter | AVX-512 / AVX2 / NEON | Layer 1: skims every file for 12 high-value literal prefixes in one SIMD pass: AWS `AKIA`/`ASIA`, GitHub `ghp_`, OpenAI `sk-proj-`, Slack `xoxb-`/`xoxp-`, SendGrid `SG.`, Square `sq0csp-`, and Stripe `sk_live_`/`sk_test_`/`rk_live_`/`rk_test_` |
-| `gpu-region-presence` | discrete GPU + persisted calibration proof | vyre literal-set region-presence pass on GPU via WGPU (cross-platform) or optional CUDA backend, followed by the shared CPU validation tail |
+| `gpu-region-presence` | discrete GPU + persisted calibration proof | VYRE literal-set region-presence pass on GPU via WGPU (cross-platform) or optional CUDA backend, followed by the shared CPU validation tail |
 | `simd-regex` | Hyperscan compiled and live | parallel Hyperscan trigger scan plus full-regex extraction; portable builds do not expose this backend and report `cpu-fallback` instead |
-| `cpu-fallback` | no SIMD, no GPU | Aho-Corasick prefix + Rust `regex` extraction |
+| `cpu-fallback` | portable build or explicit CPU selection | Aho-Corasick prefix + Rust `regex` extraction |
 
 ### Autoroute Contract
 
 The goal of autoroute is simple and strict: for every scan, on every supported
 OS, architecture, CPU, GPU, driver stack, detector set, config, and workload
-shape, keyhog must pick the fastest backend that returns the same findings.
+shape, KeyHog must pick the fastest backend that returns the same findings.
 
 That means autoroute is not a fixed threshold table, not a hardware-name
 heuristic, and not a fallback hierarchy. There is no "GPU primary with CPU
@@ -192,7 +194,7 @@ git clone https://github.com/santhsecurity/keyhog.git
 cd keyhog && cargo build --release -p keyhog
 
 # From source / crates.io - macOS, Windows, or any host without Hyperscan
-# (the system-lib-free vyre CPU build - no pkg-config, no GPU stack)
+# (the system-library-free portable build: no pkg-config or GPU stack)
 cargo install keyhog --no-default-features --features portable
 ```
 
@@ -201,7 +203,7 @@ cargo install keyhog --no-default-features --features portable
 > build time depend on the network, host, and cache. For a source build, note that the **default**
 > features link Hyperscan (a system lib available on Linux x86_64); on **macOS**
 > (incl. Apple Silicon) and any host without the Hyperscan dev libraries, build
-> with `--no-default-features --features portable` - the vyre CPU path, every
+> with `--no-default-features --features portable` - the portable CPU path, every
 > detection feature, no system-lib or pkg-config dependency.
 
 Works on **Linux**, **macOS** (Intel + Apple Silicon), and **Windows**. The
@@ -288,9 +290,12 @@ exact published tag, including a prerelease. Network responses are bounded and
 timed out before any installed file is changed.
 
 `keyhog backend --self-test --json` is the machine-readable GPU health
-gate for self-hosted runners. It exits `4` when the production GPU scan
-path degrades at runtime and emits stable `ok`, `status`, `exit_code`,
+gate for self-hosted runners. It exits `4` when the production GPU
+region-presence path fails and emits stable `ok`, `status`, `exit_code`,
 `recommended_backend`, and per-probe fields for CI routing.
+On a host without an eligible physical GPU it returns one `gpu_adapter` probe
+with status `skip` and exits `0`; add `--require-gpu` to make absence a failed
+health gate (exit `4`).
 
 ## Quickstart
 
@@ -312,7 +317,7 @@ keyhog scan-system --space 50G                         # walk every drive, every
 Filter, format, gate:
 
 ```bash
-keyhog scan . --severity high                  # info | low | medium | high | critical
+keyhog scan . --severity high                  # info | client-safe | low | medium | high | critical
 keyhog scan . --min-confidence 0.5             # raise the ML floor
 keyhog scan . --format sarif -o keyhog.sarif   # GitHub code scanning
 keyhog scan . --verify                         # live-verify against vendor APIs
@@ -340,26 +345,26 @@ unavailable, `13` requested source failed or input coverage was incomplete. Matc
 
 922 embedded detectors with checksum / companion validation:
 
-- **Cloud providers** . AWS (access key + secret + STS verification),
+- **Cloud providers:** AWS (access key + secret + STS verification),
   Azure (subscription key, storage account key, SAS), GCP (service account,
   API key), Cloudflare, Heroku, Vercel, Supabase.
-- **Payment processors** . Stripe, Braintree, Razorpay, Paddle, Plaid,
-  Square, PayPal . all with companion-required validation (a Braintree
+- **Payment processors:** Stripe, Braintree, Razorpay, Paddle, Plaid,
+  Square, and PayPal, all with companion-required validation (a Braintree
   private key without its public counterpart never fires).
-- **Source forges** . GitHub PATs (with CRC32 checksum), GitLab tokens,
+- **Source forges:** GitHub PATs (with CRC32 checksum), GitLab tokens,
   Bitbucket app passwords, npm tokens (with checksum), Gitea / Forgejo
   / Codeberg.
-- **Auth / SSO** . Okta, Auth0, Clerk, JumpCloud, Kinde.
-- **Comms** . Slack, Discord, Twilio, SendGrid, Postmark, Mailgun,
+- **Auth / SSO:** Okta, Auth0, Clerk, JumpCloud, Kinde.
+- **Comms:** Slack, Discord, Twilio, SendGrid, Postmark, Mailgun,
   Resend, Loops.
-- **AI / ML** . OpenAI (sk-/sk-proj-), Anthropic, Google AI Studio,
+- **AI / ML:** OpenAI (sk-/sk-proj-), Anthropic, Google AI Studio,
   Cohere, Mistral, HuggingFace, Replicate.
-- **Databases** . Postgres connection strings, MongoDB Atlas, Supabase
+- **Databases:** Postgres connection strings, MongoDB Atlas, Supabase
   service-role, PlanetScale, Neon, Turso, MySQL, Redis URLs.
-- **Generic + entropy fallback** . `API_KEY=<high-entropy-blob>` catches
+- **Generic + entropy discovery:** `API_KEY=<high-entropy-blob>` catches
   credentials with no named detector, gated by per-context entropy
   thresholds + ML scoring.
-- **Cryptographic material** . RSA / EC / SSH private keys, PGP private
+- **Cryptographic material:** RSA / EC / SSH private keys, PGP private
   blocks, JWT signing secrets.
 
 Each detector ships as a [TOML file](./detectors/) (data, not code):
@@ -382,13 +387,13 @@ Browse detector authoring and inspection in the
 ## Why higher recall, fewer false positives
 
 - **Decode-through scanning.** Kubernetes `Secret` manifests, JWT payloads,
-  base64-wrapped envs, helm values, docker-config `auth:` blobs . the
+  base64-wrapped envs, helm values, and docker-config `auth:` blobs. The
   structured preprocessor decodes them in place and feeds every
   downstream detector the plaintext, so detectors don't each need to
   re-implement decoding.
 - **Multiline reassembly.** `"sk-proj-" + \` continuation in JavaScript,
   YAML multi-line strings, Makefile backslash-continuation, Helm /
-  Jinja templated outputs . all reassembled before regex matching.
+  Jinja templated outputs, all reassembled before regex matching.
 - **Companion-required validation.** AWS access key without its 40-char
   secret? Skipped. Twilio API key without its auth token? Skipped.
   Two-out-of-two signals are required for the high-noise detectors,
@@ -407,7 +412,7 @@ Browse detector authoring and inspection in the
 
 ## Performance
 
-Measured head-to-head against BetterLeaks, Kingfisher, TruffleHog, and
+Measured head-to-head against Betterleaks, Kingfisher, TruffleHog, and
 Titus, scored identically by the reproducible harness in
 [`benchmarks/`](benchmarks/): the SecretBench containment rule, with the
 ground-truth manifest **excluded from every scanner's scan tree** so no tool
@@ -426,7 +431,7 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 | 3 | Kingfisher | 0.4720 | 0.3912 | 0.5947 | 5241 | 3.81s | 502 MB |
 | 4 | Titus | 0.4127 | 0.3318 | 0.5457 | 5159 | 4.13s | 114 MB |
 | 5 | Nosey Parker | 0.4078 | 0.3414 | 0.5063 | 4532 | 0.82s | 534 MB |
-| 6 | BetterLeaks | 0.3585 | 0.2313 | 0.7967 | 10828 | 1.04s | 210 MB |
+| 6 | Betterleaks | 0.3585 | 0.2313 | 0.7967 | 10828 | 1.04s | 210 MB |
 <!-- BENCH:leaderboard:end -->
 
 ### Speed & memory
@@ -435,10 +440,10 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 | Scanner | Config | Corpus | Wall | Throughput | Peak RSS |
 |---|---|---|---|---|---|
 | Nosey Parker | `default-nocache-nodaemon-no-git-history` | mirror | 0.75s | 3.1 MB/s | 285 MB |
-| BetterLeaks | `default-nocache-nodaemon-no-validate` | mirror | 0.77s | 3.0 MB/s | 192 MB |
+| Betterleaks | `default-nocache-nodaemon-no-validate` | mirror | 0.77s | 3.0 MB/s | 192 MB |
 | Nosey Parker | `default-nocache-nodaemon-no-git-history` | mirror | 0.82s | 2.8 MB/s | 534 MB |
 | Nosey Parker | `default-nocache-nodaemon-no-git-history` | creddata | 0.92s | 1056.3 MB/s | 1743 MB |
-| BetterLeaks | `default-nocache-nodaemon-no-validate` | mirror | 1.04s | 2.2 MB/s | 210 MB |
+| Betterleaks | `default-nocache-nodaemon-no-validate` | mirror | 1.04s | 2.2 MB/s | 210 MB |
 | KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.27s | 1.8 MB/s | 1137 MB |
 | KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.32s | 1.8 MB/s | 1153 MB |
 | KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.40s | 1.7 MB/s | 1745 MB |
@@ -446,8 +451,8 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 | KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.58s | 1.5 MB/s | 1543 MB |
 | TruffleHog | `default-nocache-nodaemon-no-verify` | mirror | 1.73s | 1.3 MB/s | 308 MB |
 | Titus | `default-nocache-nodaemon-no-validate` | mirror | 2.53s | 0.9 MB/s | 117 MB |
-| BetterLeaks | `default-nocache-nodaemon-no-validate` | creddata | 2.83s | 342.8 MB/s | 252 MB |
-| BetterLeaks | `default-nocache-nodaemon-no-validate` | creddata | 3.07s | 316.5 MB/s | 261 MB |
+| Betterleaks | `default-nocache-nodaemon-no-validate` | creddata | 2.83s | 342.8 MB/s | 252 MB |
+| Betterleaks | `default-nocache-nodaemon-no-validate` | creddata | 3.07s | 316.5 MB/s | 261 MB |
 | Titus | `default-nocache-nodaemon-no-validate` | creddata | 3.16s | 307.6 MB/s | 2024 MB |
 | KeyHog | `simd-nocache-nodaemon-full` | creddata | 3.31s | 293.8 MB/s | 1887 MB |
 | KeyHog | `cpu-nocache-nodaemon-full` | creddata | 3.45s | 281.7 MB/s | 1821 MB |
@@ -471,8 +476,8 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 <!-- BENCH:gaps:start -->
 | Category | KeyHog P/R/F1 | KeyHog TP/FN | Best competitor P/R/F1 | Recall gap |
 |---|---|---|---|---|
-| `authentication-key` | 1.000 / 0.973 / 0.986 | 498/14 | BetterLeaks 0.893 / 0.977 / 0.933 | +0.004 |
-| `generic-high-entropy-string` | 1.000 / 0.348 / 0.516 | 63/118 | BetterLeaks 1.000 / 0.807 / 0.893 | +0.459 |
+| `authentication-key` | 1.000 / 0.973 / 0.986 | 498/14 | Betterleaks 0.893 / 0.977 / 0.933 | +0.004 |
+| `generic-high-entropy-string` | 1.000 / 0.348 / 0.516 | 63/118 | Betterleaks 1.000 / 0.807 / 0.893 | +0.459 |
 <!-- BENCH:gaps:end -->
 
 Reproduce: `make -C benchmarks bench` runs every scanner on the 15k
@@ -490,7 +495,7 @@ backend/cache/daemon/OS/GPU matrix.
 - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.41
   with:
     path: .
-    severity: high       # info | low | medium | high | critical
+    severity: high       # info | client-safe | low | medium | high | critical
     format: sarif        # SARIF auto-uploads to GitHub code scanning
     baseline: .keyhog-baseline.json   # block only NEW findings
 ```
@@ -505,7 +510,9 @@ CWE-798 + OWASP A07:2021 taxa on every finding.
 **Hosted CI should run pure CPU/SIMD unless it has a real GPU.**
 Use `keyhog scan --no-gpu` or `.keyhog.toml` `[system].gpu = "off"` on
 hosted runners. Use `--require-gpu` or `[system].gpu = "required"` on
-self-hosted GPU runners where a driver regression must fail closed.
+self-hosted GPU runners where a driver or runtime dispatch regression must fail
+closed with exit `12`. An explicit or autoroute-selected GPU route is also a
+hard execution contract: KeyHog never completes it through CPU/SIMD.
 Detection results are identical on CPU and GPU - the GPU only changes
 throughput, never which secrets are found.
 
@@ -555,7 +562,7 @@ binary, corpus, host, accelerator state, cache warmth, and input size; measure
 it on the deployment host instead of relying on copied benchmark numbers.
 
 ```bash
-keyhog daemon start                    # Unix socket on $XDG_RUNTIME_DIR
+keyhog daemon start                    # Unix socket via runtime/cache/temp resolution
 keyhog scan --stdin --daemon < .env
 keyhog daemon status
 keyhog daemon stop
@@ -609,12 +616,12 @@ keyhog scan . --lockdown
 
 Enforces:
 
-- `mlockall(MCL_CURRENT|MCL_FUTURE)` on Linux . credentials never page
+- `mlockall(MCL_CURRENT|MCL_FUTURE)` on Linux: credentials never page
   to swap.
-- `PR_SET_DUMPABLE = 0` (always on, even outside lockdown) . disables
+- `PR_SET_DUMPABLE = 0` (always on, even outside lockdown): disables
   core dumps, ptrace, `/proc/<pid>/mem` reads. macOS gets
   `PT_DENY_ATTACH`.
-- `setrlimit(RLIMIT_CORE, 0)` on Linux . kernel refuses to write any
+- `setrlimit(RLIMIT_CORE, 0)` on Linux: the kernel refuses to write any
   core file regardless of the system `coredump_filter`, so anonymous
   pages can never reach disk via the dump path.
 - Refuses to run if `~/.cache/keyhog/*` exists, refuses
@@ -625,8 +632,8 @@ Enforces:
   highest-stakes runs where you want every gate engaged).
 
 The always-on hardening (everything except mlock + cache refusal) is
-applied to every keyhog invocation . even without `--lockdown` a
-keyhog binary can't be coredumped or ptraced.
+applied to every KeyHog invocation. Even without `--lockdown`, the
+KeyHog process cannot be core-dumped or traced through `ptrace`.
 
 ## Library API
 
@@ -648,6 +655,12 @@ The no-backend library methods are deterministic portable CPU references; they
 do not consult host heuristics or the CLI's calibration cache. Use
 `scan_with_backend` or `scan_coalesced_with_backend` for an explicit
 Hyperscan/GPU engine. The `keyhog` CLI owns persisted fastest-correct autoroute.
+The explicit-backend library methods return infallible finding vectors, so the
+selected backend is a hard process contract: unavailable SIMD terminates with
+exit `3`, and unavailable or failed GPU execution terminates with exit `12`
+instead of returning findings from another engine. Call `warm_backend` to probe
+startup eligibility; use the CLI as a subprocess when an embedder must contain
+runtime accelerator failure.
 
 Mix shipped + custom detectors by concatenating before compile. The
 scanner is `Send + Sync`; share one across rayon workers. Streaming
@@ -712,23 +725,21 @@ Precedence (rightmost wins): compiled defaults → `.keyhog.toml`
 `ScanConfig::default()` (`crates/core/src/config.rs`). Full reference:
 [`docs/src/reference/configuration.md`](./docs/src/reference/configuration.md).
 
-`keyhog config --effective <path>` prints the exact resolved configuration that
-would reach the scanner (without scanning), so the precedence chain is provable
+`keyhog config --effective <path>` prints the exact resolved scan and report
+policy (without scanning), so the precedence chain is provable
 (here a CLI `--min-confidence 0.6` overrides the compiled `0.40` default):
 
 <p align="center">
-  <img src="demo/keyhog-config.gif" alt="keyhog config --effective demo --min-confidence 0.6 printing the resolved [effective-config] block: backend, gpu, ml, entropy, decode, and limit knobs, with min_confidence resolved to 0.6 from the CLI override" width="860" />
+  <img src="demo/keyhog-config.gif" alt="keyhog config --effective demo --min-confidence 0.6 printing the resolved [effective-config] block: backend, report, GPU, ML, entropy, decode, and limit knobs, with min_confidence resolved to 0.6 from the CLI override" width="860" />
 </p>
 
-Suppress specific findings (not whole detectors) with a `.keyhogignore`
-file by hash, path glob, or detector id - see
-[suppressions](./docs/src/suppressions.md).
-
-Allowlist a known leak with a hash, path glob, or detector id . plus
-optional `reason` / `expires` / `approved_by` governance metadata:
+Suppress a known finding by credential hash, path glob, or detector id in
+`.keyhogignore`, with optional `reason`, `expires`, and `approved_by`
+governance metadata. See [Suppressions](./docs/src/suppressions.md) for rule
+ordering, inline directives, and composable `.keyhogignore.toml` predicates.
 
 ```
-# .keyhogignore . gitignore-style shorthand
+# .keyhogignore - gitignore-style shorthand
 *.log
 node_modules/
 9d6060e21ef8d5daec9cfe4a44b1b1bc9792246bfad28210edaaa1782a8a676a
@@ -764,15 +775,15 @@ tools/        Contract generators (gen_contracts.py, gen_companion_contracts.py)
 
 Two-phase coalesced scan:
 
-1. **Phase 1** . shared trigger scan on raw bytes, parallel across all files
+1. **Phase 1:** shared trigger scan on raw bytes, parallel across all files
    via rayon. Hyperscan accelerates this phase when compiled; portable builds
-   use the pure-Rust trigger path. 95 %+ of files have no hits and pay zero cost.
-2. **Phase 2** . full extraction on hits only: regex capture groups,
+   use the pure-Rust trigger path. Files with no trigger hit stop before extraction.
+2. **Phase 2:** full extraction on hits only: regex capture groups,
    companion matching, checksum validation, entropy gating, ML
    confidence + explicit Bayesian damping when configured.
 
-Result: a multi-GB monorepo scans in seconds. Determinism is part of
-the contract . same input → same output, byte-exact, every time.
+Result: extraction work is concentrated on trigger-positive data. Determinism
+is part of the contract: same input → same output, byte-exact, every time.
 
 The full pipeline, routing ownership, and profiling entrypoints live in the
 [architecture guide](docs/src/architecture.md) and
@@ -801,25 +812,25 @@ keyhog completion zsh                        # shell completions (bash/zsh/fish/
   redacted credential shape and detector id; each report becomes a
   permanent test fixture under
   [`tests/contracts/`](./crates/scanner/tests/contracts/).
-- **Security issue in keyhog itself?** Don't open a public issue -
+- **Security issue in KeyHog itself?** Don't open a public issue;
   email `security@santh.dev` (PGP key on the org page).
 
 [Changelog](./CHANGELOG.md). [Open issues](https://github.com/santhsecurity/keyhog/issues).
 
 ## Credits
 
-keyhog stands on prior secret-scanning work. Ideas borrowed from:
+KeyHog stands on prior secret-scanning work. Ideas borrowed from:
 
-- [trufflehog](https://github.com/trufflesecurity/trufflehog) . detector breadth + verification semantics
-- **betterleaks** . entropy/keyword fusion and false-positive suppression
-- **titus** . scanning ergonomics and severity calibration
+- [TruffleHog](https://github.com/trufflesecurity/trufflehog): detector breadth and verification semantics
+- [Betterleaks](https://github.com/betterleaks/betterleaks): token-efficiency and false-positive suppression
+- **Titus:** scanning ergonomics and severity calibration
 
 Thanks to these projects and their contributors.
 
 ## License
 
 MIT. Use commercially, embed, fork, sell a hosted version. The
-detector TOMLs are also MIT . adding one is a 5-line PR with zero
+detector TOMLs are also MIT; adding one is a five-line PR with zero
 legal friction.
 
 ---

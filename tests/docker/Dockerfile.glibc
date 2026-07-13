@@ -77,7 +77,7 @@ WORKDIR /data
 # dir (scan /tmp) has zero files and routes to exit 0 without a decision. If a NEW
 # matrix scenario introduces an uncalibrated (workload, config) pair, run.sh sees a
 # LOUD exit 2 against the built image (drift fails the test, never ships silent).
-# Decisions accumulate in the v20 multi-config cache at ~/.cache/keyhog/autoroute.json,
+# Decisions accumulate in the current multi-config cache at ~/.cache/keyhog/autoroute.json,
 # baked into this layer and read by every later `docker run --rm`.
 # NOTE on exit codes: `--autoroute-calibrate` runs calibration THEN scans, so it
 # returns the SCAN code: 0 (clean) or 1 (aws_leak.env found the key). Only exit

@@ -62,7 +62,7 @@ impl Phase2GpuDfaShard {
         let overflowed = count > PHASE2_GPU_DFA_MAX_MATCHES;
         let decoded_count = count.min(PHASE2_GPU_DFA_MAX_MATCHES);
         // `try_unpack_match_triples_exact_prefix_into` validates that
-        // `triples_bytes` holds `decoded_count` triples (Vyre owns the triple
+        // `triples_bytes` holds `decoded_count` triples (VYRE owns the triple
         // byte-width), so no local length pre-check or triple-size constant is
         // duplicated here.
         dispatch_io::try_unpack_match_triples_exact_prefix_into(

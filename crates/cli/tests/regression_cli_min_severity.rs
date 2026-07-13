@@ -3,7 +3,7 @@
 //! The real flag is `--severity` (short `-s`), declared in
 //! `crates/cli/src/args/scan.rs` as
 //!   `#[arg(short, long, value_enum)] pub severity: Option<SeverityFilter>`
-//! with help text "Min severity to report: info, low, medium, high, critical".
+//! with help text "Min severity to report: info, client-safe, low, medium, high, critical".
 //! The filter lives in `orchestrator/postprocess.rs`:
 //!   `if m.severity < min_severity.to_severity() { return false; }`
 //! i.e. a match is KEPT iff `severity >= threshold` (strict `<` drops), using
@@ -149,7 +149,7 @@ fn scan_help_documents_severity_flag_and_values() {
         help.contains("Min severity to report"),
         "help must carry the severity floor description; got:\n{help}"
     );
-    for level in ["info", "low", "medium", "high", "critical"] {
+    for level in ["info", "client-safe", "low", "medium", "high", "critical"] {
         assert!(
             help.contains(level),
             "help must list severity level `{level}`; got:\n{help}"

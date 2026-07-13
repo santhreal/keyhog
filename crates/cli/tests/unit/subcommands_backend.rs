@@ -3,9 +3,9 @@
 use keyhog::testing::{CliTestApi as _, API};
 
 #[test]
-fn backend_self_test_json_preserves_failing_ac_probe() {
+fn backend_self_test_json_preserves_failing_region_presence_probe() {
     let json = API
-        .render_failing_ac_probe_json()
+        .render_failing_region_presence_probe_json()
         .expect("serialize report");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid self-test JSON");
 
@@ -15,13 +15,13 @@ fn backend_self_test_json_preserves_failing_ac_probe() {
     assert_eq!(parsed["gpu_name"], "NVIDIA GeForce RTX 5090");
     assert_eq!(parsed["recommended_backend"], "simd-regex");
     assert_eq!(parsed["probes"][1]["status"], "known");
-    assert_eq!(parsed["probes"][2]["name"], "vyre_ac_kernel");
+    assert_eq!(parsed["probes"][2]["name"], "gpu_region_presence");
     assert_eq!(parsed["probes"][2]["status"], "fail");
     assert!(
         parsed["probes"][2]["message"]
             .as_str()
-            .is_some_and(|message| message.contains("degenerate match triples")),
-        "AC failure reason must survive JSON rendering: {parsed}"
+            .is_some_and(|message| message.contains("region-presence dispatch failed")),
+        "region-presence failure reason must survive JSON rendering: {parsed}"
     );
 }
 

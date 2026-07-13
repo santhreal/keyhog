@@ -1,6 +1,6 @@
 # keyhog CLI SPEC
 
-`keyhog` is the command-line entry point for the Keyhog workspace. It loads detector specifications, configures source readers and scanner settings, applies allowlists and baselines, and emits findings.
+`keyhog` is the command-line entry point for the KeyHog workspace. It loads detector specifications, configures source readers and scanner settings, applies allowlists and baselines, and emits findings.
 
 ## Guarantees
 

@@ -52,7 +52,7 @@ pub const DEFINITIONS: &[ExitCodeDefinition] = &[
     ExitCodeDefinition {
         code: EXIT_USER_ERROR,
         label: "User error",
-        help: "User error (bad flag/config, missing path/baseline, detector-load failure, not-found/permission-denied path)",
+        help: "User error (bad flag/config, missing path/baseline, detector-load failure, invalid autoroute calibration, not-found/permission-denied path)",
         scan_reachable: true,
     },
     ExitCodeDefinition {
@@ -81,8 +81,8 @@ pub const DEFINITIONS: &[ExitCodeDefinition] = &[
     },
     ExitCodeDefinition {
         code: EXIT_REQUIRE_GPU_UNMET,
-        label: "Required GPU unavailable",
-        help: "Required GPU unavailable (--require-gpu)",
+        label: "Selected GPU unavailable",
+        help: "Selected GPU unavailable (--require-gpu, explicit gpu, or autoroute gpu dispatch)",
         scan_reachable: true,
     },
     ExitCodeDefinition {

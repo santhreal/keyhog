@@ -61,6 +61,29 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     out.push_str(&format!("profile = {}\n", s.profile));
     out.push_str(&format!("perf_trace = {}\n", s.perf_trace));
     out.push_str(&format!("verify = {}\n", resolved.report.verify));
+    out.push_str(&format!("format = {}\n", resolved.report.format));
+    out.push_str(&format!(
+        "severity = {}\n",
+        resolved
+            .report
+            .severity
+            .as_ref()
+            .map_or_else(|| "all".to_string(), ToString::to_string)
+    ));
+    out.push_str(&format!("dedup = {}\n", resolved.report.dedup));
+    out.push_str(&format!(
+        "show_secrets = {}\n",
+        resolved.report.show_secrets
+    ));
+    out.push_str(&format!(
+        "hide_client_safe = {}\n",
+        resolved.report.hide_client_safe
+    ));
+    out.push_str(&format!(
+        "suppress_test_fixtures = {}\n",
+        !resolved.report.no_suppress_test_fixtures
+    ));
+    out.push_str(&format!("lockdown = {}\n", resolved.report.lockdown));
     out.push_str(&format!(
         "verify_timeout_secs = {}\n",
         resolved.verify.timeout_secs

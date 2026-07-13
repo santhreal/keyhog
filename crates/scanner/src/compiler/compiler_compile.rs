@@ -26,7 +26,7 @@ pub(crate) fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCora
     ))
 }
 
-/// Keep GPU literal inputs in Keyhog order so Vyre match pattern IDs map back
+/// Keep GPU literal inputs in KeyHog order so VYRE match pattern IDs map back
 /// to `ac_map` without an adapter table.
 pub(crate) fn build_gpu_literals(
     ac_literals: &[String],
@@ -98,7 +98,7 @@ prefix entry). Use --require-gpu when GPU acceleration is mandatory."
     if rows.is_empty() {
         None
     } else {
-        tracing::info!(patterns = rows.len(), "{} prepared for Vyre", label);
+        tracing::info!(patterns = rows.len(), "{} prepared for VYRE", label);
         Some(std::sync::Arc::new(rows))
     }
 }

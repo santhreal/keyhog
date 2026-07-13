@@ -27,7 +27,7 @@ impl Drop for ZeroGpuLiteralScratch<'_> {
     }
 }
 
-/// Single owner for zeroing-then-clearing a Vyre `ScanDispatchScratch`'s
+/// Single owner for zeroing-then-clearing a VYRE `ScanDispatchScratch`'s
 /// upload/readback buffers before it is released back to its thread-local.
 /// Shared by every GPU dispatch scratch guard so the zeroed-field set cannot
 /// drift between owners.

@@ -42,7 +42,7 @@ public repository.
 ## The crates and their layering
 
 Dependencies point one way: `core` is the foundation and depends on no other
-keyhog crate; `cli` sits on top and wires the rest together. This DAG is enforced
+KeyHog crate; `cli` sits on top and wires the rest together. This DAG is enforced
 by Cargo and must stay acyclic (domain logic never imports CLI/transport/UI).
 
 ```text
@@ -72,7 +72,7 @@ by Cargo and must stay acyclic (domain logic never imports CLI/transport/UI).
 | **`scanner`** | The detection engine: hardware routing, prefilter, compile, scan, decode-through, entropy, ML confidence, multiline, suppression. | `crates/scanner/src/engine/mod.rs` (the flow), `pipeline/`, `lib.rs` |
 | **`sources`** | Where bytes come from: filesystem, git (staged/diff/history), stdin, Docker, S3, GCS, Azure Blob, GitHub-org, web, HAR, strings, binary. | `crates/sources/src/lib.rs` |
 | **`verifier`** | Turning a *candidate* into a *verified-live* credential: per-detector verify endpoints, SSRF/bogon guards, OOB, rate limiting. | `crates/verifier/src/lib.rs`, `verify/`, `ssrf.rs` |
-| **`cli`** | The user-facing binary: argument parsing, the scan orchestrator, daemon/watch, baselines, calibrate, hook installer, output formatting. | `crates/cli/src/main.rs`, `args/`, `orchestrator/` |
+| **`cli`** | The user-facing binary: argument parsing, the scan orchestrator, daemon/watch, baselines, calibrate, hook installer, output formatting. | `crates/cli/src/lib.rs`, `args/`, `orchestrator/`; `main.rs` owns process/signal startup only |
 
 ---
 
@@ -89,8 +89,9 @@ method-level version of steps 2-4.
    `bitbucket_workspace.rs`, `hosted_git.rs`, `web/`, `har.rs`, `strings.rs`,
    `binary/`).
 2. **Phase 1: trigger production** (which detectors *could* fire, and where).
-   Swappable backend: CPU Hyperscan prefilter (`engine/scan.rs`) or the GPU
-   batched literal region-presence route (`engine/gpu_region_dispatch.rs`). Produces one
+   Swappable backend: scalar CPU literal/regex, SIMD Hyperscan
+   (`engine/scan.rs`), or the GPU batched literal region-presence route
+   (`engine/gpu_region_dispatch.rs`). Produces one
    "which detectors may match here" bitmap per chunk. The fast prefilters
    (`simdsieve`, `bigram_bloom`, `alphabet_filter`, `prefix_trie`) live at
    `scanner/src/` top level; the detector→matcher build is `engine/compile.rs`
@@ -99,7 +100,7 @@ method-level version of steps 2-4.
    per-chunk `confirmed → phase2 capture → generic → entropy → ML`
    (`engine/extract.rs`, `engine/phase2*.rs`, `engine/scan.rs`). Decode-through
    (base64/hex/url/unicode/json) runs here and recurses: `decode/`.
-4. **Post-process:** suppression, dedup, confidence, decode recursion, cross-chunk
+4. **Post-process:** suppression, dedup, confidence, cross-chunk
    seam reassembly (`engine/scan_postprocess.rs`, `engine/process.rs`,
    `engine/boundary.rs`). Confidence + ML scoring: `confidence/`, `ml_scorer.rs`
    + `ml_scorer/` (`ml_features`, `ml_weights`); context inference: `context/`. The
@@ -113,8 +114,8 @@ method-level version of steps 2-4.
    for CI gates. `core/report/`, `core/dedup.rs`, `cli/reporting.rs`,
    `cli/format.rs`.
 
-**Two-phase coalesced** is the key perf idea: 95 %+ of files have no Phase-1 hit
-and pay near-zero cost; full extraction runs only on hits. Determinism is a
+**Two-phase coalesced** is the key performance idea: files with no phase-one hit
+stop before extraction; full extraction runs only on hits. Determinism is a
 contract: same input → byte-exact same output.
 
 ### Finding identity and dedup

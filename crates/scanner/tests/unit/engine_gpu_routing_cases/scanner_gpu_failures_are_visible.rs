@@ -104,23 +104,17 @@ fn compiled_pattern_detector_indices_fail_before_scan_runtime() {
 }
 
 #[test]
-fn phase2_gpu_admission_loss_is_operator_visible() {
-    let helper_src = engine_src("gpu_region_dispatch_helpers.rs");
+fn phase2_gpu_admission_loss_terminates_selected_route() {
     let dispatch_src = engine_src("gpu_region_dispatch.rs");
     assert!(
-        helper_src.contains("fn report_phase2_gpu_admission_loss")
-            && helper_src.contains("PHASE2_GPU_ADMISSION_LOSS_WARNED")
-            && helper_src.contains("eprintln!(")
-            && helper_src.contains("GPU speed evidence is incomplete")
-            && helper_src.contains("CPU admission remains authoritative"),
-        "phase-2 GPU regex-DFA admission loss must be visible to normal CLI stderr, not only tracing"
-    );
-    assert!(
-        dispatch_src
-            .matches("report_phase2_gpu_admission_loss(error);")
-            .count()
-            >= 2,
-        "both full-batch and subset phase-2 GPU admission failures must route through the visible reporter"
+        dispatch_src.contains("fail_selected_gpu_dispatch_error(self, error)")
+            && dispatch_src.contains("SelectedGpuDispatchError::new(reason)")
+            && dispatch_src
+                .matches("return dispatch_failure(reason);")
+                .count()
+                >= 2
+            && !dispatch_src.contains("CPU admission remains authoritative"),
+        "full-batch and subset phase-2 GPU failures must terminate the selected route instead of substituting CPU admission"
     );
 }
 
@@ -128,8 +122,9 @@ fn phase2_gpu_admission_loss_is_operator_visible() {
 fn positioned_gpu_candidate_loss_updates_runtime_status() {
     let src = engine_src("gpu_region_dispatch.rs");
     assert!(
-        src.matches("self.record_gpu_degrade(").count() >= 2,
-        "coalesced GPU degrade and recall-floor under-fire must update runtime status"
+        src.contains("self.record_gpu_runtime_fault(format!(")
+            && src.contains("fail_selected_gpu_dispatch_error(self, error)"),
+        "recall-floor recovery and hard GPU dispatch failures must both update runtime status"
     );
     assert!(
         !src.contains("positioned literal matcher not built for this scanner")
@@ -139,7 +134,7 @@ fn positioned_gpu_candidate_loss_updates_runtime_status() {
     );
     let forced = engine_src("gpu_forced.rs");
     assert!(
-        forced.contains("fn record_gpu_degrade(&self")
+        forced.contains("fn record_gpu_runtime_fault(&self")
             && forced.contains("gpu_last_degrade_reason")
             && forced.contains("gpu_degrade_count"),
         "GPU degradation status accounting must have one owner"
@@ -177,14 +172,14 @@ fn gpu_matcher_loss_is_operator_visible() {
     let src = engine_src("gpu_lazy.rs");
     let helpers = engine_src("gpu_lazy_helpers.rs");
     assert!(
-        helpers.contains("fn report_gpu_matcher_unavailable")
+        helpers.contains("fn report_gpu_literal_matcher_unavailable")
             && helpers.contains("GPU_LITERAL_MATCHER_UNAVAILABLE_WARNED")
             && helpers.contains("eprintln!(")
             && helpers.contains("Use --require-gpu when GPU acceleration is mandatory"),
         "GPU matcher compile loss must be visible to normal CLI stderr"
     );
     assert!(
-        src.contains("report_gpu_matcher_unavailable(&error, GpuMatcherKind::Literal)")
+        src.contains("report_gpu_literal_matcher_unavailable(&error)")
             && !src.contains("gpu_position_matcher"),
         "the single live literal matcher compile failure must route through the visible reporter"
     );

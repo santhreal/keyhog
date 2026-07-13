@@ -9,7 +9,7 @@ pub struct GpuSelfTest {
     pub scores: usize,
 }
 
-/// Result from an explicit vyre GPU scanner self-test.
+/// Result from an explicit VYRE GPU scanner self-test.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VyreGpuSelfTest {
     /// Number of direct GPU matches produced by `GpuLiteralSet::scan`.
@@ -84,15 +84,15 @@ pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
     }
 }
 
-/// Force the vyre GPU scanner and coalesced scanner paths.
+/// Force the VYRE GPU scanner and coalesced scanner paths.
 ///
 /// Proves the scanner-side GPU dependency is available independently from
-/// Keyhog's MoE GPU scorer. Both counts are populated from real GPU scans.
+/// KeyHog's MoE GPU scorer. Both counts are populated from real GPU scans.
 pub fn vyre_gpu_self_test() -> Result<VyreGpuSelfTest, String> {
     #[cfg(not(feature = "gpu"))]
     {
         Err(
-            "vyre GPU self-test not available in the lean ci build (no wgpu driver compiled in). \
+            "VYRE GPU self-test not available in the lean CI build (no WGPU driver compiled in). \
              Rebuild with `--features gpu`."
                 .to_string(),
         )
@@ -141,11 +141,11 @@ fn vyre_gpu_self_test_impl() -> Result<VyreGpuSelfTest, String> {
     })
 }
 
-/// Status report from the AC-kernel GPU self-test. Returned by
-/// [`vyre_ac_kernel_self_test`] so the diagnostic CLI can display the active
-/// backend and match count rather than just PASS/FAIL.
-pub struct VyreAcKernelSelfTest {
-    /// Number of GPU phase-1 match triples emitted.
+/// Status report from the production GPU region-presence self-test. Returned by
+/// [`gpu_region_presence_self_test`] so diagnostics can display the active
+/// backend and exact finding count rather than only PASS/FAIL.
+pub struct GpuRegionPresenceSelfTest {
+    /// Number of findings emitted through the production GPU trigger path.
     pub matches: usize,
     /// `VyreBackend::id()` of the backend that ran the test.
     pub backend_id: &'static str,
@@ -154,23 +154,23 @@ pub struct VyreAcKernelSelfTest {
 /// Build a minimal one-detector `CompiledScanner` and dispatch a scan through
 /// the production GPU backend. A PASS proves device acquisition, compilation,
 /// lowering, dispatch, and host readback on this host.
-pub fn vyre_ac_kernel_self_test() -> Result<VyreAcKernelSelfTest, String> {
+pub fn gpu_region_presence_self_test() -> Result<GpuRegionPresenceSelfTest, String> {
     #[cfg(not(feature = "gpu"))]
     {
         Err(
-            "vyre AC-kernel self-test not available in the lean ci build. \
-             Rebuild with `--features gpu` to exercise the GPU AC phase-1 path."
+            "GPU region-presence self-test not available in the lean ci build. \
+             Rebuild with `--features gpu` to exercise the production GPU trigger path."
                 .to_string(),
         )
     }
     #[cfg(feature = "gpu")]
     {
-        vyre_ac_kernel_self_test_impl()
+        gpu_region_presence_self_test_impl()
     }
 }
 
 #[cfg(feature = "gpu")]
-fn vyre_ac_kernel_self_test_impl() -> Result<VyreAcKernelSelfTest, String> {
+fn gpu_region_presence_self_test_impl() -> Result<GpuRegionPresenceSelfTest, String> {
     use crate::engine::CompiledScanner;
     use crate::hw_probe::ScanBackend;
     use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
@@ -226,10 +226,12 @@ fn vyre_ac_kernel_self_test_impl() -> Result<VyreAcKernelSelfTest, String> {
         );
     }
 
-    let results = scanner.scan_chunks_with_backend(&[make_chunk()], ScanBackend::Gpu);
+    let results = scanner
+        .try_scan_coalesced_gpu_region_presence(&[make_chunk()])
+        .map_err(|error| format!("GPU region-presence dispatch failed: {error}"))?;
     if let Some(detail) = scanner.last_gpu_degrade_reason() {
         return Err(format!(
-            "GPU region-presence scan degraded to SIMD/CPU at runtime despite an acquired GPU stack: {detail}"
+            "GPU region-presence recall floor recovered an under-fire condition despite an acquired GPU stack: {detail}"
         ));
     }
     let total: usize = results.iter().map(Vec::len).sum();
@@ -241,7 +243,7 @@ fn vyre_ac_kernel_self_test_impl() -> Result<VyreAcKernelSelfTest, String> {
             "GPU region-presence scan diverged from the CPU baseline: GPU found {total} match(es), CPU found {cpu_total} for the same planted secret. Indicates a GPU phase-1 literal-set lowering regression or a dispatch/workgroup-size mismatch."
         ));
     }
-    Ok(VyreAcKernelSelfTest {
+    Ok(GpuRegionPresenceSelfTest {
         matches: total,
         backend_id,
     })

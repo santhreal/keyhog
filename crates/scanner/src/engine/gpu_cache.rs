@@ -26,9 +26,9 @@ impl std::fmt::Display for GpuMatcherCacheDirError {
 }
 
 /// Local cache-format version mixed into every GPU matcher cache key. Bump
-/// this when Keyhog's literal-row derivation changes in a way that must
-/// invalidate on-disk matchers. It does NOT track Vyre's wire version: a
-/// Vyre wire-format change is caught on load by `GpuLiteralSet::from_bytes`
+/// this when KeyHog's literal-row derivation changes in a way that must
+/// invalidate on-disk matchers. It does NOT track VYRE's wire version: a
+/// VYRE wire-format change is caught on load by `GpuLiteralSet::from_bytes`
 /// (through `cached_load_or_compile`), which rejects and recompiles a blob
 /// whose envelope no longer matches, so a stale matcher is never loaded
 /// silently. Cache blobs live at `$XDG_CACHE_HOME/keyhog/programs/`

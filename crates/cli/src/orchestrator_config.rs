@@ -271,6 +271,7 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
         },
         source_limits: keyhog_sources::SourceLimits::default(),
         report: ResolvedReportPolicy {
+            format: crate::args::OutputFormat::Text,
             severity: None,
             dedup: CliDedupScope::Credential,
             verify: false,

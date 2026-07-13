@@ -255,14 +255,14 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     }
 
     // GPU scan-path self-test. Before this, `doctor` reported "keyhog works"
-    // while `backend --self-test` exited 4 on a broken GPU AC kernel - the
+    // while `backend --self-test` exited 4 on a broken production GPU path - the
     // two health checks disagreed and a user trusting `doctor` never learned
     // their GPU path was dead. Surface the production GPU verdict here too.
     //
     // A FAIL is UNHEALTHY, not a warning: on a GPU-capable host the default
     // auto-scan resolves to the GPU route, and autoroute is fail-closed - it
     // refuses to silently substitute CPU/SIMD for a GPU decision it cannot
-    // make (Law 10). A broken GPU AC kernel therefore breaks the DEFAULT scan
+    // make (Law 10). A broken GPU region-presence path therefore breaks the default scan
     // the moment calibration tries to record a GPU runtime identity, so
     // "keyhog is healthy" while the GPU scan path is dead is a lie. `doctor`
     // must agree with `backend --self-test` (which exits 4) and report
@@ -271,9 +271,9 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     // Skipped on no-GPU / software-renderer hosts (matches backend --self-test's
     // SKIP path, so a headless CI box stays green).
     if hw.gpu_available && !hw.gpu_is_software {
-        match keyhog_scanner::gpu::vyre_ac_kernel_self_test() {
+        match keyhog_scanner::gpu::gpu_region_presence_self_test() {
             Ok(report) => println!(
-                "  gpu scan path  {}  {dim}AC kernel matches={}, backend={}{reset}",
+                "  gpu scan path  {}  {dim}region presence findings={}, backend={}{reset}",
                 style::pass("PASS", &palette),
                 report.matches,
                 report.backend_id
@@ -281,7 +281,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
             Err(e) => {
                 healthy = false;
                 println!(
-                    "  gpu scan path  {}  GPU AC kernel self-test failed; GPU routes are unavailable until fixed. The default GPU scan route is BROKEN on this host (auto scans fail closed rather than silently route to CPU/SIMD). Fix the GPU path, or scan with an explicit `--backend cpu`/`--backend simd` override.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
+                    "  gpu scan path  {}  GPU region-presence self-test failed; GPU routes are unavailable until fixed. The default GPU scan route is BROKEN on this host (auto scans fail closed rather than silently route to CPU/SIMD). Fix the GPU path, or scan with an explicit `--backend cpu`/`--backend simd` override.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
                     style::fail("FAIL", &palette)
                 );
             }
@@ -300,14 +300,14 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
                 if known_lowering_gap {
                     warned = true;
                     println!(
-                        "  gpu literal    {}  vyre literal-set path has a known lowering limitation (the canonical pre-emit lowering rejects the subgroup_ballot form append_match_subgroup emits, surfacing as `_vyre_match_leader is referenced before binding`); scans use the AC kernel path checked above.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
+                        "  gpu literal    {}  VYRE's direct match-triple diagnostic has a known lowering limitation (the canonical pre-emit lowering rejects the subgroup_ballot form append_match_subgroup emits, surfacing as `_vyre_match_leader is referenced before binding`); the production region-presence path is checked separately above.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
                         style::warn("WARN", &palette)
                     );
                 } else {
-                    healthy = false;
+                    warned = true;
                     println!(
-                        "  gpu literal    {}  GPU literal-set self-test failed; GPU routes are unavailable until fixed.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
-                        style::fail("FAIL", &palette)
+                        "  gpu literal    {}  VYRE direct match-triple diagnostic failed; production scan eligibility is determined by the region-presence probe above.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
+                        style::warn("WARN", &palette)
                     );
                 }
             }

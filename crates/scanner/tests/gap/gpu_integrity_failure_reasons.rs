@@ -1,6 +1,5 @@
 //! GPU AC corrupt/degenerate match ranges must be rejected, and every GPU
-//! dispatch failure must carry an operator-visible reason, never a silent
-//! degrade (Law 10).
+//! dispatch failure must carry an operator-visible reason (Law 10).
 //!
 //! The 78046450 consolidation removed `engine/gpu_ac_phase1.rs`: GPU phase-1 is
 //! now POSITIONLESS (a presence bitmap via `scan_presence` or the coalesced
@@ -8,8 +7,8 @@
 //! and all match POSITIONS come from CPU regex in
 //! `scan_coalesced_phase2`. So a degenerate GPU position triple can no longer
 //! reach attribution; the surviving structured integrity guard is
-//! `segment_attribution::map_offsets_to_segments`, and the surviving degrade
-//! contract is the reason-recording `gpu_last_degrade_reason` slot. These tests
+//! `segment_attribution::map_offsets_to_segments`, and the surviving failure
+//! contract uses the compatibility-named `gpu_last_degrade_reason` slot. These tests
 //! pin those, behaviorally where possible.
 
 use std::fs;
@@ -51,8 +50,8 @@ fn degenerate_match_ranges_are_rejected_not_silently_attributed() {
     assert_eq!(ok.len(), 1, "expected one attributed match, got {ok:?}");
 }
 
-/// Every GPU dispatch failure mode records a CONCRETE reason into
-/// `gpu_last_degrade_reason` (operator-visible via `last_gpu_degrade_reason()`
+/// Every GPU dispatch failure mode records a CONCRETE reason into the
+/// compatibility-named `gpu_last_degrade_reason` slot (operator-visible via `last_gpu_degrade_reason()`
 /// and the self-test), never a bare "GPU unavailable". The reasons live in the
 /// two consolidated dispatch sites that replaced `gpu_ac_phase1.rs`.
 #[test]
@@ -67,7 +66,7 @@ fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
     ] {
         assert!(
             dispatch.contains(needle),
-            "gpu_region_dispatch degrade must carry a concrete reason: {needle:?}"
+            "gpu_region_dispatch failure must carry a concrete reason: {needle:?}"
         );
     }
     for needle in [
@@ -77,26 +76,24 @@ fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
     ] {
         assert!(
             trigger.contains(needle),
-            "backend_triggered per-chunk GPU degrade must carry a concrete reason: {needle:?}"
+            "backend_triggered per-chunk GPU failure must carry a concrete reason: {needle:?}"
         );
     }
-    // Both degrade closures funnel the reason into the recorded slot.
+    let failure = engine_src("src/engine/gpu_forced_helpers.rs");
     assert!(
-        dispatch.contains("self.record_gpu_degrade(reason.clone())"),
-        "coalesced GPU degrade must record the reason through the shared GPU degrade owner"
-    );
-    assert!(
-        trigger.contains("self.record_gpu_degrade(reason.clone())"),
-        "per-chunk GPU degrade must record the reason through the shared GPU degrade owner"
+        dispatch.contains("SelectedGpuDispatchError::new(reason)")
+            && dispatch.contains("fail_selected_gpu_dispatch_error(self, error)")
+            && trigger.contains("fail_selected_gpu_dispatch(self, &reason)")
+            && failure.contains("scanner.record_gpu_runtime_fault(error.reason())"),
+        "all GPU dispatch failures must use the one reason-recording hard-failure owner"
     );
 }
 
-/// The `backend --self-test` JSON must receive the concrete GPU degrade reason
-/// through the public `last_gpu_degrade_reason()` accessor, not by scraping
-/// stderr. Pins the field -> accessor -> self-test wiring across the consolidated
-/// files.
+/// The `backend --self-test` report must receive a concrete recall-floor
+/// recovery reason through `last_gpu_degrade_reason()`, not by scraping stderr.
+/// Hard dispatch failures travel through the structured result directly.
 #[test]
-fn gpu_self_test_can_report_recorded_degrade_reason() {
+fn gpu_self_test_can_report_recorded_runtime_fault() {
     let engine = engine_src("src/engine/mod.rs");
     let api = engine_src("src/engine/compiled_api.rs");
     let gpu_self_test = engine_src("src/gpu/self_test.rs");

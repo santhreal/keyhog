@@ -12,7 +12,7 @@ consumers (CI gates, pre-commit hooks, IDE plugins) can rely on them.
 | `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed. |
 | `10` | **LIVE credentials confirmed** (a `--verify` scan where the vendor API accepted a found secret) - the highest-severity gate. Also returned by `keyhog update --check` when a newer release exists. |
 | `11` | Scanner thread panicked. The finding count is NOT trustworthy - investigate, don't ship. Distinct from `2`/`3` so CI can tell a code bug from a config error. |
-| `12` | Required GPU unavailable: `--require-gpu` was set but no usable GPU path was available. |
+| `12` | Selected/required GPU unavailable: `--require-gpu`, an explicit GPU backend, or persisted autoroute selected GPU but the stack or dispatch could not honor it. CPU/SIMD is not substituted. |
 | `13` | A requested source failed before producing scan data, or input coverage was incomplete, so the scan did not prove the target clean. |
 | `130`| Interrupted (SIGINT / Ctrl-C).                                     |
 
@@ -118,12 +118,14 @@ The reason this is `11` rather than `2`:
 - Additional scan failure categories can be added without renumbering existing
   codes.
 
-## `12` (required GPU unavailable)
+## `12` (selected or required GPU unavailable)
 
-Returned before scanning when the operator explicitly required GPU execution
-(`--require-gpu` or `[system].gpu = "required"`) but the host cannot provide a
-usable GPU path. This is distinct from `2` so CI can tell "bad input" from "GPU
-runner regressed or was scheduled on the wrong host" without scraping stderr.
+Returned when the operator explicitly required GPU execution (`--require-gpu`
+or `[system].gpu = "required"`), explicitly selected the GPU backend, or a
+persisted autoroute decision selected GPU, but the host cannot provide or keep
+a usable GPU dispatch path. This can happen before scanning or during a runtime
+dispatch. CPU/SIMD is not substituted. The distinct code lets CI identify a GPU
+runner/driver regression without scraping stderr.
 
 ## `13` (requested source failed or coverage incomplete)
 
@@ -153,7 +155,7 @@ case "$rc" in
   2)     echo "user error (bad flag/config) -> failing build" ;;
   3)     echo "system error -> retry / investigate" ;;
   11)    echo "scanner panic -> paging on-call" ;;
-  12)    echo "required GPU unavailable -> reroute to GPU runner" ;;
+  12)    echo "selected/required GPU unavailable -> repair runner or recalibrate" ;;
   13)    echo "source failed or coverage incomplete -> fix source/ref/token or rescan uncovered input" ;;
   130)   echo "interrupted" ;;
   *)     echo "unknown exit $rc" ;;

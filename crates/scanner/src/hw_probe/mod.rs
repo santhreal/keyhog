@@ -36,7 +36,7 @@ pub use tier::{gpu_routing_profile, gpu_routing_profiles, GpuRoutingProfile};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ScanBackend {
-    /// GPU region-presence phase 1 via vyre's literal-set engine
+    /// GPU region-presence phase 1 via VYRE's literal-set engine
     /// (`GpuLiteralSet`). The default GPU path; it produces per-chunk
     /// detector-presence bitmaps and the shared CPU phase-2 tail confirms
     /// findings.
@@ -44,7 +44,8 @@ pub enum ScanBackend {
     /// Hyperscan NFA multi-pattern matching + SIMD prefilter.
     /// This is the primary high-throughput path on all platforms.
     SimdCpu,
-    /// Pure CPU: vyre AC + regex. No Hyperscan, no GPU.
+    /// Pure CPU: Aho-Corasick literals plus Rust regex extraction. No
+    /// Hyperscan or GPU execution.
     CpuFallback,
 }
 
@@ -126,6 +127,9 @@ pub struct HardwareCaps {
     pub has_neon: bool,
     pub gpu_available: bool,
     pub gpu_name: Option<String>,
+    /// WGPU's portable `max_buffer_size`, expressed in MiB and capped by
+    /// KeyHog. The historical field name does not mean physical VRAM; WGPU can
+    /// expose a virtual buffer limit larger than installed device memory.
     pub gpu_vram_mb: Option<u64>,
     pub gpu_runtime_identity: Option<String>,
     /// True when the GPU is a software renderer (llvmpipe/lavapipe) - always slower than CPU.

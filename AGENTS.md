@@ -1,4 +1,4 @@
-# Keyhog AGENTS
+# KeyHog AGENTS
 
 ## Execution Rules (local)
 

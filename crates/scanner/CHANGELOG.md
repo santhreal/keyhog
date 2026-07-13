@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fail a selected GPU route with exit `12` when runtime dispatch fails,
+  rather than completing the scan through an unselected CPU/SIMD backend.
+- Rename the production GPU health API from the obsolete AC-kernel name to
+  `gpu_region_presence_self_test`, matching the live VYRE region-presence path.
+  Its structured failure remains available to health reporters while normal
+  selected-GPU scan entry points map the same failure to exit `12`.
 - Rename the VRAM-adaptive live buffer budget to `gpu_batch_input_limit` and
   move its owner to `engine/gpu_input_budget.rs`.
 - Remove detector-ID constants used only by their own tests; runtime-specific

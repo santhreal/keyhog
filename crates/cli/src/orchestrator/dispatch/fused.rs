@@ -289,7 +289,8 @@ impl ScanOrchestrator {
                 // Snapshot the runtime GPU-degrade counter so GPU_SCANNED_CHUNKS
                 // reflects REAL GPU execution, not the router's CHOICE (Law 10): a
                 // batch routed to GPU that degrades mid-dispatch (loudly, via
-                // deny_silent_gpu_degrade) must not be counted as GPU-scanned. The
+                // require_selected_backend_stack) must not be counted as
+                // GPU-scanned. The
                 // increment moved BELOW the dispatch, gated on this snapshot.
                 let gpu_degrade_before =
                     matches!(backend, keyhog_scanner::hw_probe::ScanBackend::Gpu)

@@ -154,7 +154,7 @@ pub(super) fn build_scanner_config_from_input(input: &ScannerConfigInput) -> Sca
     config.perf_trace = input.perf_trace;
     config.entropy_in_source_files = input.entropy_source_files;
     // Entropy candidates are scored through the MoE (model authoritative) by
-    // default; `--no-entropy-ml-scoring` restores the legacy heuristic emit.
+    // default; `--no-entropy-ml-scoring` selects bare entropy-only scoring.
     // No-op unless entropy + ML are both on (gated in scan_entropy_fallback).
     config.entropy_ml_authoritative = !input.no_entropy_ml_scoring;
     // Keyword-anchored generic values use the relaxed entropy floor by default

@@ -23,7 +23,7 @@
 //!   A. GREEN coherence pins (every OS), lock the DELIBERATE cross-OS
 //!      divergences so a later edit cannot silently erase one.
 //!   B. A portability target, the one concrete cross-OS BUILD blocker the
-//!      dogfood surfaced. It stays green only while Vyre resolves from registry
+//!      dogfood surfaced. It stays green only while VYRE resolves from registry
 //!      pins or repo-contained paths, never from a tree-escaping NFS path.
 
 use std::path::PathBuf;
@@ -155,7 +155,7 @@ fn daemon_is_unix_only_with_explicit_windows_guidance() {
 // B. Portability target (the cross-OS BUILD blocker the dogfood surfaced).
 // ===========================================================================
 
-/// THE CROSS-OS BUILD BLOCKER (kept green by self-contained Vyre dependencies).
+/// THE CROSS-OS BUILD BLOCKER (kept green by self-contained VYRE dependencies).
 ///
 /// Reproduced live: `tar`-shipping the keyhog source to windows-thinkpad (which
 /// cannot mount the Santh NFS share) and running `cargo metadata` there fails:
@@ -174,8 +174,8 @@ fn daemon_is_unix_only_with_explicit_windows_guidance() {
 ///
 /// It stays GREEN only when every `vyre*` dependency in the root `Cargo.toml` is
 /// either a registry pin (no `path`) or a path that stays inside the repo tree
-/// (does not start with `../`). Keyhog now uses exact crates.io `=0.6.2` pins,
-/// so a share-less offline source ship can resolve the Vyre runtime fleet.
+/// (does not start with `../`). KeyHog now uses exact crates.io `=0.6.4` pins,
+/// so a share-less offline source ship can resolve the VYRE runtime fleet.
 #[test]
 fn vyre_pins_are_self_contained_for_offline_cross_os_build() {
     let cargo = read("Cargo.toml");

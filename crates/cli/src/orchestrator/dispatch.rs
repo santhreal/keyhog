@@ -215,17 +215,16 @@ impl CoalescedScannerWorker {
         let chosen_backend = self.router.choose(self.scanner.as_ref(), batch)?;
         let chose_gpu = is_gpu_backend(chosen_backend);
         // Snapshot the scanner's runtime GPU-degrade counter BEFORE the GPU arm so
-        // we can tell whether THIS batch actually executed on the GPU or degraded
-        // to CPU/SIMD mid-dispatch. The degrade is already surfaced loudly by
-        // `deny_silent_gpu_degrade` (one-shot eprintln / --require-gpu hard-fail);
-        // this keeps the GPU_SCANNED_CHUNKS completion telemetry HONEST so the
-        // summary reports real GPU execution, not the router's CHOICE (Law 10).
+        // we can tell whether THIS batch actually executed on the GPU. Runtime
+        // failure terminates in `require_selected_backend_stack`; the counter
+        // check keeps GPU_SCANNED_CHUNKS honest for embedders that replace that
+        // process boundary.
         let degrade_before = chose_gpu.then(|| self.scanner.gpu_degrade_count());
         let per_chunk = match chosen_backend {
-            // The Vyre GpuLiteralSet region-presence route is the single on-GPU
-            // trigger path. It owns backend acquisition and degrades LOUDLY to
-            // SIMD/CPU, so both an explicit GPU request and a selected GPU
-            // batch land here.
+            // The VYRE GpuLiteralSet region-presence route is the single on-GPU
+            // trigger path. It owns backend acquisition and fails the selected
+            // route if dispatch cannot remain on GPU, so both an explicit GPU
+            // request and an autoroute-selected GPU batch land here.
             ScanBackend::Gpu => {
                 let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
                 tracing::debug!(
@@ -248,8 +247,8 @@ impl CoalescedScannerWorker {
         };
         // Count the batch as GPU-scanned only if it was routed to the GPU AND the
         // scanner recorded no runtime degrade while dispatching it. A degrade
-        // (already reported loudly) means those chunks ran on CPU/SIMD, so
-        // claiming them as GPU would overstate acceleration in the summary.
+        // hard-fails the selected route; retaining the counter check also keeps
+        // telemetry honest if an embedder replaces the process-exit boundary.
         let ran_on_gpu =
             degrade_before.is_some_and(|before| self.scanner.gpu_degrade_count() == before);
         append_scanned_batch_findings(findings, batch, per_chunk, scanned_count, ran_on_gpu);
@@ -396,6 +395,15 @@ impl CoalescedBatchProducer {
                         break 'sources;
                     }
                 }
+            }
+            // Autoroute evidence is keyed by source family and size
+            // provenance. Never let a tail batch from one source absorb the
+            // first chunks of the next source: installers calibrate each
+            // source workload independently, and a synthetic mixed-family key
+            // has no corresponding proof.
+            self.flush_batch();
+            if !self.pipeline_alive {
+                break 'sources;
             }
             finalize_source_outcome(src_chunks, src_errored);
             self.skipped_unchanged += filesystem_source_skipped_unchanged(source.as_ref());

@@ -42,7 +42,7 @@ description     = "AWS access key checked into committed config"
 # The leaked text, verbatim from the public source.
 #
 # CRITICAL: this is the EXACT public-domain leaked bytes, not a
-# fabrication, not a redaction. Keyhog must surface this credential
+# fabrication, not a redaction. KeyHog must surface this credential
 # under at least one detector listed above. If a credential is in
 # this file and the source URL no longer publishes it (revoked,
 # rotated), keep the entry, historic recall still matters and the

@@ -28,7 +28,7 @@ fn forced_simd_backend_without_prefilter_is_not_cpu_fallback() {
         .and_then(|tail| tail.split("// Direct-match prefilters").next())
         .expect("scan entry prefilter guard block extractable");
     assert!(
-        scan_entry.contains("self.deny_silent_selected_backend_degrade(selected_backend);"),
+        scan_entry.contains("self.require_selected_backend_stack(selected_backend);"),
         "explicit selected backends must be validated before prefilter skip/no-hit branches can return"
     );
     let simd_trigger_collector = triggered
@@ -53,23 +53,14 @@ fn forced_simd_backend_without_prefilter_is_not_cpu_fallback() {
 }
 
 #[test]
-fn gpu_degrade_batch_path_runs_boundary_reassembly() {
-    // The GPU-batch degrade closure lives in the coalesced GPU dispatch:
-    // it picks `degraded_backend_after_gpu_failure()` then re-runs the per-chunk
-    // boundary reassembly so the loud CPU degrade keeps cross-chunk recall.
+fn gpu_dispatch_failure_has_no_cpu_substitution_path() {
     let source = scanner_source("engine/gpu_region_dispatch.rs");
-    // Position-based (robust to the comment that also names the helper): the
-    // degrade closure picks the live CPU backend, THEN re-runs boundary reassembly.
-    let degrade_at = source
-        .find("self.degraded_backend_after_gpu_failure()")
-        .expect("gpu degrade must pick the live CPU backend");
-    let boundary_at = source
-        .find("scan_chunk_boundaries(self, chunks, &mut results)")
-        .expect("gpu degrade must run cross-chunk boundary reassembly");
     assert!(
-        boundary_at > degrade_at,
-        "GPU batch degrade to CPU must run boundary reassembly AFTER picking the degraded backend, \
-         preserving cross-chunk recall"
+        source.contains("fail_selected_gpu_dispatch_error(self, error)")
+            && source.contains("SelectedGpuDispatchError::new(reason)")
+            && !source.contains("degraded_backend_after_gpu_failure")
+            && !source.contains("scan_with_backend(chunk, degraded)"),
+        "a selected GPU dispatch failure must terminate with exit 12, not retain a CPU/SIMD substitution"
     );
 }
 

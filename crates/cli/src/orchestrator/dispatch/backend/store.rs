@@ -115,6 +115,8 @@ fn current_cli_features() -> Vec<String> {
     push_feature!("gcs");
     push_feature!("github");
     push_feature!("git");
+    push_feature!("gitlab");
+    push_feature!("bitbucket");
     push_feature!("gpu");
     push_feature!("mimalloc");
     push_feature!("portable");
@@ -183,6 +185,8 @@ fn current_sources_dependency_features() -> Vec<String> {
     push_feature!("gcs", "gcs");
     push_feature!("github", "github");
     push_feature!("git", "git");
+    push_feature!("gitlab", "gitlab");
+    push_feature!("bitbucket", "bitbucket");
     push_feature!("s3", "s3");
     push_feature!("web", "web");
     normalize_feature_list(features)
@@ -190,7 +194,7 @@ fn current_sources_dependency_features() -> Vec<String> {
 
 fn current_verifier_dependency_features() -> Vec<String> {
     let mut features = Vec::new();
-    if cfg!(feature = "verify") || cfg!(feature = "web") {
+    if cfg!(feature = "verify") {
         features.push("live");
     }
     normalize_feature_list(features)

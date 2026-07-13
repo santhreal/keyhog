@@ -206,12 +206,12 @@ fn generated_help_is_byte_identical_to_the_documented_block() {
     let expected = "EXIT CODES:\n  \
 0   Success (no secrets found)\n  \
 1   Secrets found, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked)\n  \
-2   User error (bad flag/config, missing path/baseline, detector-load failure, not-found/permission-denied path)\n  \
+2   User error (bad flag/config, missing path/baseline, detector-load failure, invalid autoroute calibration, not-found/permission-denied path)\n  \
 3   System error (local environment failure: low-level I/O that is not not-found/permission-denied, or GPU/hardware init)\n  \
 4   Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)\n  \
 10  Live credentials found (requires --verify)\n  \
 11  Scanner thread panicked mid-scan (state is unreliable)\n  \
-12  Required GPU unavailable (--require-gpu)\n  \
+12  Selected GPU unavailable (--require-gpu, explicit gpu, or autoroute gpu dispatch)\n  \
 13  Requested source failed or input coverage was incomplete\n  \
 130 Interrupted (SIGINT / Ctrl-C)";
     assert_eq!(help(), expected);

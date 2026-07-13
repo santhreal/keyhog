@@ -98,6 +98,13 @@ fn config_effective_prints_and_exits_without_source() {
         "profile = false",
         "perf_trace = false",
         "verify = false",
+        "format = text",
+        "severity = all",
+        "dedup = credential",
+        "show_secrets = false",
+        "hide_client_safe = false",
+        "suppress_test_fixtures = true",
+        "lockdown = false",
         "verify_timeout_secs = 5",
         "verify_concurrency = 5",
         "verify_rate_rps = 5",
@@ -120,6 +127,20 @@ fn config_effective_prints_and_exits_without_source() {
         assert!(
             stdout.contains(required),
             "effective config missing `{required}`; stdout={stdout}"
+        );
+    }
+}
+
+#[test]
+fn config_effective_reports_client_safe_and_report_policy() {
+    let (stdout, stderr, code) = effective_config_with_toml(
+        "[scan]\nseverity = \"client-safe\"\nformat = \"json\"\ndedup = \"file\"\n",
+    );
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    for expected in ["severity = client-safe", "format = json", "dedup = file"] {
+        assert!(
+            stdout.contains(expected),
+            "effective config missing {expected:?}: {stdout}"
         );
     }
 }

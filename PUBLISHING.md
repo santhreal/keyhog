@@ -1,60 +1,61 @@
 # crates.io publishing
 
-> Status (2026-06-17): the Keyhog workspace is pinned to published Vyre `0.6.3`
-> registry crates. `vyre-debug` is not a Keyhog dependency and does not block the
-> Keyhog publish chain. The last public Keyhog cut remains `0.5.37` until the
-> package publish steps below run.
+Registry state below was verified on 2026-07-12. The source tree is `0.5.41`;
+all five public KeyHog crates remain at `0.5.40` until this publish chain
+completes. KeyHog pins the five VYRE runtime dependencies to the published
+`=0.6.4` release. Development-only or unrelated VYRE crates do not participate
+in the KeyHog publish chain.
 
 ## What's live on crates.io
 
 | crate | version |
 | --- | --- |
-| `keyhog`         | 0.5.37 |
-| `keyhog-core`    | 0.5.37 |
-| `keyhog-scanner` | 0.5.37 |
-| `keyhog-sources` | 0.5.37 |
-| `keyhog-verifier`| 0.5.37 |
+| `keyhog`         | 0.5.40 |
+| `keyhog-core`    | 0.5.40 |
+| `keyhog-scanner` | 0.5.40 |
+| `keyhog-sources` | 0.5.40 |
+| `keyhog-verifier`| 0.5.40 |
 
-Current source builds against published `vyre 0.6.3` plus the supporting Vyre
-crates Keyhog needs: `vyre-spec`, `vyre-foundation`, `vyre-lower`,
-`vyre-primitives`, `vyre-self-substrate`, `vyre-driver`, `vyre-emit-naga`,
-`vyre-runtime`, `vyre-emit-ptx`, `vyre-driver-cuda`, `vyre-driver-wgpu`,
-`vyre-harness`, and `vyre-libs`.
+Current source directly pins `vyre`, `vyre-libs`, `vyre-driver-wgpu`,
+`vyre-driver-cuda`, and `vyre-runtime` at `=0.6.4`. Their transitive dependency
+graph is resolved by Cargo and locked in `Cargo.lock`; it is not a second
+KeyHog-owned publish list.
 
 ## Publish chain (for the next cut)
 
-The keyhog workspace pins all five runtime `vyre*` crates (`vyre`, `vyre-libs`,
-`vyre-driver-wgpu`, `vyre-driver-cuda`, `vyre-runtime`) at `=0.6.3` from
-crates.io. The repository carries no Vyre source snapshot and nothing in the
+The KeyHog workspace pins all five runtime VYRE crates (`vyre`, `vyre-libs`,
+`vyre-driver-wgpu`, `vyre-driver-cuda`, `vyre-runtime`) at `=0.6.4` from
+crates.io. The repository carries no VYRE source snapshot and nothing in the
 build resolves through a repository vendor tree.
-To cut a new Keyhog release:
+To cut a new KeyHog release:
 
 1. **Bump the workspace version** in `Cargo.toml` (`[workspace.package] version`).
-2. **Run `cargo publish` in dependency order** (each step waits for crates.io to
-   index the previous, usually ~30 seconds):
+2. **Run `cargo publish` in dependency order.** Do not start a dependent publish
+   until crates.io has indexed the exact dependency version:
    ```sh
    cargo publish -p keyhog-core
    cargo publish -p keyhog-verifier   # depends on keyhog-core
-   cargo publish -p keyhog-sources    # depends on keyhog-core
+   cargo publish -p keyhog-sources    # depends on keyhog-core + keyhog-verifier
    cargo publish -p keyhog-scanner    # depends on keyhog-core + vyre crates
    cargo publish -p keyhog            # depends on all four
    ```
-3. **Tag the release** (`git tag v0.5.X && git push origin v0.5.X`) so install.sh's
-   GitHub-release-download path picks it up.
+3. **Tag the release** (`git tag v0.5.X && git push origin v0.5.X`) so
+   `install.sh` can resolve the matching GitHub Release assets.
 
-## If vyre bumps minor
+## If VYRE bumps minor
 
-If a new Vyre minor is required, publish the needed Vyre chain from the upstream
-repo first, then bump the five Keyhog `vyre*` pins in root `Cargo.toml`, run
-`python3 scripts/gates/vyre_pin_consistency.py`, and publish Keyhog.
+If a new VYRE minor is required, publish the needed VYRE chain from the upstream
+repo first, then bump the five KeyHog `vyre*` pins in root `Cargo.toml`, run
+`python3 scripts/gates/vyre_pin_consistency.py`, and publish KeyHog.
 
 ## Rate limits
 
-crates.io enforces new-crate burst limits. The Vyre `0.6.3` cut hit those limits
-while publishing optional/support crates; Keyhog only needs the already-published
-runtime crates listed above.
+crates.io enforces new-crate burst limits. KeyHog only needs the five published
+runtime crates listed above; unrelated optional/support crates do not block its
+publish chain.
 
 ## Stale `keyhog 0.2.1` on crates.io
 
-The pre-vyre `keyhog 0.2.1` is superseded by 0.5.37. To stop new `cargo install keyhog`
-from picking up 0.2.1 by default, the user can yank it; doing so is not automated.
+The pre-VYRE `keyhog 0.2.1` is superseded by 0.5.40. If it remains unyanked,
+registry owners can yank that exact version with `cargo yank keyhog --version
+0.2.1`; yanking does not remove existing downloads or lockfile resolutions.

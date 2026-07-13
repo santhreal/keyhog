@@ -1,7 +1,7 @@
 # `.keyhogignore.toml` - declarative finding suppression
 
 A `.keyhogignore.toml` file in your scan root expresses suppression
-rules in TOML, evaluated per-finding via vyre's CPU rule engine
+rules in TOML, evaluated per-finding via VYRE's CPU rule engine
 (`vyre_libs::rule`). Sits alongside the legacy line-based
 `.keyhogignore` - both are loaded; either alone suppresses a finding.
 
@@ -13,9 +13,10 @@ with **OR**.
 
 | Field              | Type         | Predicate                                         |
 | ------------------ | ------------ | ------------------------------------------------- |
+| `literal_true`     | boolean      | explicit unconditional match; `true` suppresses every finding |
 | `detector`         | string       | detector_id exact match                           |
 | `service`          | string       | service exact match                               |
-| `severity`         | string       | severity exact match (info\|low\|medium\|high\|critical) |
+| `severity`         | string       | severity exact match (`info`, `client-safe`, `low`, `medium`, `high`, or `critical`) |
 | `severity_lte`     | string       | severity ≤ threshold (curated rank set)           |
 | `path_eq`          | string       | file path exact match                             |
 | `path_contains`    | string       | file path contains substring                      |
@@ -25,7 +26,12 @@ with **OR**.
 | `credential_hash`  | string       | credential SHA-256 exact match                    |
 
 A `[[suppress]]` table with no predicates is rejected at parse time
-(prevents accidentally suppressing every finding).
+(prevents accidentally suppressing every finding). If an unconditional rule is
+intentional, write `literal_true = true`; the explicit name makes a
+match-everything policy reviewable. `literal_true = false` does not count as a
+predicate and is rejected when it is the only field. Because predicates in one
+table use AND semantics, combining `literal_true = true` with another field is
+equivalent to using that other field alone; use it alone to suppress everything.
 
 ## Examples
 
@@ -35,7 +41,7 @@ A `[[suppress]]` table with no predicates is rejected at parse time
 detector = "aws-access-key"
 path_contains = "/tests/"
 
-# Drop every low-or-info Stripe finding regardless of where it lives.
+# Drop every low, client-safe, or info Stripe finding regardless of where it lives.
 [[suppress]]
 service = "stripe"
 severity_lte = "low"
@@ -53,6 +59,10 @@ path_ends_with = ".min.js"
 
 [[suppress]]
 path_regex = "^docs/[a-z]+\\.md$"
+
+# Deliberately suppress every finding. Prefer a scoped predicate whenever possible.
+[[suppress]]
+literal_true = true
 ```
 
 ## Why TOML and why a rule engine
@@ -62,21 +72,19 @@ The legacy `.keyhogignore` is one allowlist entry per line:
 cases but can't express "drop aws-access-key findings ONLY in
 `/tests/`" - the conditions need to combine.
 
-The TOML schema compiles into a vyre `RuleFormula` tree (And/Or/Not
-of typed conditions like `FieldInSet` and `SubstringMatch`). Vyre's
-CPU evaluator (`vyre_libs::rule::cpu_eval`) walks the tree once per
-finding (~µs cost). The same `RuleFormula` shape can also lower to
-GPU IR via `vyre_libs::rule::build_rule_program` - useful when a
-future scan path wants to evaluate the rule alongside the literal-set
-dispatch instead of post-process.
+Each TOML table compiles into a VYRE `RuleFormula` that ANDs typed conditions
+such as `FieldInSet` and `SubstringMatch`; KeyHog applies OR semantics across
+tables by accepting the first formula that evaluates true. VYRE's CPU evaluator
+(`vyre_libs::rule::evaluate_formula`) walks those formulas once per finding.
+VYRE also exposes GPU lowering through
+`vyre_libs::rule::build_rule_program`, but KeyHog does not use that route for
+suppression decisions; the active contract is the deterministic CPU evaluator
+after finding extraction.
 
 ## Errors
 
-Parse errors are non-fatal: a malformed `.keyhogignore.toml` logs a
-warning at the top of the scan and is then ignored (zero rules
-loaded). The legacy `.keyhogignore` still applies. To gate CI on a
-clean rules file, use:
-
-```bash
-keyhog scan --backend simd --path . 2>&1 | grep -q "failed to load .keyhogignore.toml" && exit 1
-```
+Missing `.keyhogignore.toml` means no declarative rules. A present file that
+cannot be read or parsed is fatal: KeyHog prints the file and corrective action,
+refuses to scan with silently ignored suppression policy, and exits `2`. The
+legacy `.keyhogignore` is loaded independently, but it does not make a malformed
+declarative policy safe to ignore.

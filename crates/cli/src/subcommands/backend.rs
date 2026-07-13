@@ -16,6 +16,7 @@ use crate::style::{self, Palette};
 use anyhow::Result;
 use keyhog_scanner::hw_probe::{
     gpu_routing_profile, gpu_routing_profiles, probe_hardware, select_backend_verdict, simd_label,
+    HardwareCaps,
 };
 use serde::Serialize;
 use std::process::ExitCode;
@@ -32,8 +33,8 @@ const KEYHOG_GPU_MAX_BUFFER_CAP_MB: u64 = 256 * 1024;
 /// never the code.
 #[derive(serde::Deserialize)]
 pub(crate) struct GpuLoweringGapRules {
-    /// Substrings that mark a KNOWN vyre GPU IR-lowering limitation (scans still
-    /// run on the AC kernel path), not a broken GPU stack.
+    /// Substrings that mark a known VYRE direct-match lowering limitation. The
+    /// production region-presence path has a separate mandatory probe.
     pub(crate) lowering_gap_markers: Vec<String>,
     /// Substrings that mark a GPU-MoE-vs-CPU-MoE parity divergence (detection
     /// fails closed to the deterministic CPU MoE), not a hard dispatch failure.
@@ -48,7 +49,7 @@ fn parse_gpu_lowering_gap_rules(raw: &str) -> Result<GpuLoweringGapRules, String
 /// set is a BUILD bug in bundled data, not a runtime condition, so it panics
 /// in the `LazyLock` init (fail closed). An empty set would silently treat every
 /// GPU self-test error as a hard FAIL, breaking the installer/doctor on hosts
-/// whose scans are actually correct on the AC-kernel path (Law 10: never
+/// whose production region-presence scans are correct (Law 10: never
 /// silently degrade a hardcoded/bundled classification into a scanner-off state).
 pub(crate) static GPU_LOWERING_GAP_RULES: LazyLock<GpuLoweringGapRules> = LazyLock::new(|| {
     match parse_gpu_lowering_gap_rules(include_str!("../../../../rules/gpu-lowering-gaps.toml")) {
@@ -69,8 +70,8 @@ pub(crate) static GPU_LOWERING_GAP_RULES: LazyLock<GpuLoweringGapRules> = LazyLo
     }
 });
 
-/// True when a GPU self-test error names a known vyre IR-lowering gap (scans
-/// still route through the AC kernel), not a genuinely broken GPU stack.
+/// True when the diagnostic VYRE direct-match probe names a known IR-lowering
+/// gap. The separate production region-presence probe still must pass.
 pub(crate) fn is_known_vyre_lowering_gap(error: &str) -> bool {
     GPU_LOWERING_GAP_RULES
         .lowering_gap_markers
@@ -97,7 +98,7 @@ pub(crate) fn run(args: BackendArgs) -> Result<ExitCode> {
     };
     keyhog_scanner::gpu::set_gpu_runtime_policy(gpu_policy);
     if args.self_test {
-        return run_self_test(args.json);
+        return run_self_test(args.json, args.require_gpu);
     }
     if args.autoroute {
         return run_autoroute_inspection(args.json);
@@ -387,6 +388,7 @@ fn effective_pattern_count(args: &BackendArgs) -> Result<usize> {
 pub(crate) enum BackendSelfTestStatus {
     Pass,
     Fail,
+    Warning,
     Known,
     Skip,
 }
@@ -444,6 +446,14 @@ impl BackendSelfTestProbe {
             ..Self::pass(name)
         }
     }
+
+    fn warning(name: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            status: BackendSelfTestStatus::Warning,
+            message: Some(message.into()),
+            ..Self::pass(name)
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -468,8 +478,8 @@ impl BackendSelfTestReport {
     }
 }
 
-fn run_self_test(json: bool) -> Result<ExitCode> {
-    let report = collect_self_test_report();
+fn run_self_test(json: bool, require_gpu: bool) -> Result<ExitCode> {
+    let report = collect_self_test_report(require_gpu);
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
@@ -478,37 +488,11 @@ fn run_self_test(json: bool) -> Result<ExitCode> {
     Ok(report.exit_code())
 }
 
-fn collect_self_test_report() -> BackendSelfTestReport {
+fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
     let hw = probe_hardware();
 
     if !hw.gpu_available || hw.gpu_is_software {
-        let reason = if !hw.gpu_available {
-            "no GPU adapter detected"
-        } else {
-            "only software adapter (llvmpipe/lavapipe/swiftshader): won't be used for scans"
-        };
-        return BackendSelfTestReport {
-            ok: true,
-            status: BackendSelfTestStatus::Skip,
-            exit_code: EXIT_SUCCESS,
-            gpu_available: hw.gpu_available,
-            gpu_is_software: hw.gpu_is_software,
-            gpu_name: hw.gpu_name.clone(),
-            gpu_max_buffer_mb: hw.gpu_vram_mb,
-            recommended_backend: Some("simd-regex"),
-            probes: vec![BackendSelfTestProbe {
-                name: "gpu_adapter",
-                status: BackendSelfTestStatus::Skip,
-                message: Some(reason.to_string()),
-                adapter_name: None,
-                scores: None,
-                max_buffer_mb: None,
-                direct_matches: None,
-                coalesced_matches: None,
-                matches: None,
-                backend_id: None,
-            }],
-        };
+        return unavailable_gpu_self_test_report(hw, require_gpu);
     }
 
     let mut all_ok = true;
@@ -543,17 +527,10 @@ fn collect_self_test_report() -> BackendSelfTestReport {
         }
     }
 
-    // Test 2: vyre literal-set GPU dispatch. This path is NOT the
-    // production scan path on the current vyre version (the
-    // canonical pre-emit lowering rejects the subgroup form that
-    // append_match_subgroup emits, so the production scan flow
-    // routes through the AC kernel in scan_coalesced_gpu_ac_phase1).
-    // The literal_set scanner is exercised here only as a
-    // diagnostic; a FAIL with "_vyre_match_leader is referenced
-    // before binding" reflects a known vyre IR-lowering gap, not a
-    // missing GPU stack. We report it as a known limitation so
-    // operators don't conclude their GPU is broken when scans
-    // actually still run on the AC kernel path.
+    // Test 2: VYRE's direct match-triple literal-set diagnostic. Production
+    // scanning uses the scratch region-presence API exercised end to end by
+    // the next probe. A direct-mode failure with the classified lowering
+    // signature is visible as KNOWN, but never exempts the production probe.
     match keyhog_scanner::gpu::vyre_gpu_self_test() {
         Ok(report) => {
             let mut probe = BackendSelfTestProbe::pass("vyre_literal_set");
@@ -566,28 +543,31 @@ fn collect_self_test_report() -> BackendSelfTestReport {
             if known_lowering_gap {
                 probes.push(BackendSelfTestProbe::known(
                     "vyre_literal_set",
-                    "vyre IR lowering rejects literal_set's subgroup form; scans use the AC kernel path checked below",
+                    "VYRE IR lowering rejects the direct match-triple form; the production region-presence path is checked separately below",
                 ));
             } else {
-                probes.push(BackendSelfTestProbe::fail("vyre_literal_set", error));
-                all_ok = false;
+                probes.push(BackendSelfTestProbe::warning(
+                    "vyre_literal_set",
+                    format!(
+                        "VYRE direct match-triple diagnostic failed ({error}); production scan eligibility is determined by gpu_region_presence"
+                    ),
+                ));
             }
         }
     }
 
-    // Test 3: AC kernel dispatch (the production scan path for every
-    // GPU backend after the literal_set rejection moved everything to
-    // AC by default). Build a minimal one-detector CompiledScanner
-    // and route a scan through scan_coalesced_gpu_ac_phase1.
-    match keyhog_scanner::gpu::vyre_ac_kernel_self_test() {
+    // Test 3: the production region-presence route. It builds a minimal
+    // detector, dispatches through the same scanner path as a selected GPU
+    // scan, and compares the final findings with the portable CPU reference.
+    match keyhog_scanner::gpu::gpu_region_presence_self_test() {
         Ok(report) => {
-            let mut probe = BackendSelfTestProbe::pass("vyre_ac_kernel");
+            let mut probe = BackendSelfTestProbe::pass("gpu_region_presence");
             probe.matches = Some(report.matches);
             probe.backend_id = Some(report.backend_id);
             probes.push(probe);
         }
         Err(error) => {
-            probes.push(BackendSelfTestProbe::fail("vyre_ac_kernel", error));
+            probes.push(BackendSelfTestProbe::fail("gpu_region_presence", error));
             all_ok = false;
         }
     }
@@ -617,6 +597,50 @@ fn collect_self_test_report() -> BackendSelfTestReport {
     }
 }
 
+fn unavailable_gpu_self_test_report(hw: &HardwareCaps, require_gpu: bool) -> BackendSelfTestReport {
+    let reason = if !hw.gpu_available {
+        "no GPU adapter detected"
+    } else {
+        "only software adapter (llvmpipe/lavapipe/swiftshader): won't be used for scans"
+    };
+    let status = if require_gpu {
+        BackendSelfTestStatus::Fail
+    } else {
+        BackendSelfTestStatus::Skip
+    };
+    let message = if require_gpu {
+        format!("--require-gpu requested but {reason}")
+    } else {
+        reason.to_string()
+    };
+    BackendSelfTestReport {
+        ok: !require_gpu,
+        status,
+        exit_code: if require_gpu {
+            EXIT_BACKEND_SELF_TEST_FAILED
+        } else {
+            EXIT_SUCCESS
+        },
+        gpu_available: hw.gpu_available,
+        gpu_is_software: hw.gpu_is_software,
+        gpu_name: hw.gpu_name.clone(),
+        gpu_max_buffer_mb: hw.gpu_vram_mb,
+        recommended_backend: Some("simd-regex"),
+        probes: vec![BackendSelfTestProbe {
+            name: "gpu_adapter",
+            status,
+            message: Some(message),
+            adapter_name: None,
+            scores: None,
+            max_buffer_mb: None,
+            direct_matches: None,
+            coalesced_matches: None,
+            matches: None,
+            backend_id: None,
+        }],
+    }
+}
+
 fn print_self_test_report(report: &BackendSelfTestReport) {
     let palette = style::for_stdout();
     println!("## GPU self-test");
@@ -637,6 +661,10 @@ fn print_self_test_report(report: &BackendSelfTestReport) {
             BackendSelfTestStatus::Fail => {
                 let message = probe.message.as_deref().unwrap_or("probe failed"); // LAW10: absent name/label => display default; reporting-only, recall-safe
                 println!("{}  {message}", style::fail("FAIL", &palette));
+            }
+            BackendSelfTestStatus::Warning => {
+                let message = probe.message.as_deref().unwrap_or("diagnostic warning"); // LAW10: absent probe detail => reporting-only display label; status remains visible
+                println!("{}  {message}", style::warn("WARN", &palette));
             }
             BackendSelfTestStatus::Known => {
                 let message = probe.message.as_deref().unwrap_or("known limitation"); // LAW10: absent name/label => display default; reporting-only, recall-safe
@@ -679,7 +707,7 @@ fn print_pass_probe(probe: &BackendSelfTestProbe, palette: &Palette) {
             format_probe_metric(probe.direct_matches),
             format_probe_metric(probe.coalesced_matches)
         ),
-        "vyre_ac_kernel" => println!(
+        "gpu_region_presence" => println!(
             "{pass}  (matches={}, backend={})",
             format_probe_metric(probe.matches),
             probe.backend_id.unwrap_or("unknown") // LAW10: absent name/label => display default; reporting-only, recall-safe
@@ -713,7 +741,7 @@ fn format_gpu_max_buffer(max_buffer_mb: u64) -> String {
 pub(crate) mod testing {
     use anyhow::Result;
 
-    pub(crate) fn render_failing_ac_probe_json() -> Result<String> {
+    pub(crate) fn render_failing_region_presence_probe_json() -> Result<String> {
         let report = super::BackendSelfTestReport {
             ok: false,
             status: super::BackendSelfTestStatus::Fail,
@@ -751,9 +779,9 @@ pub(crate) mod testing {
                     backend_id: None,
                 },
                 super::BackendSelfTestProbe {
-                    name: "vyre_ac_kernel",
+                    name: "gpu_region_presence",
                     status: super::BackendSelfTestStatus::Fail,
-                    message: Some("GPU AC emitted degenerate match triples".to_string()),
+                    message: Some("GPU region-presence dispatch failed".to_string()),
                     adapter_name: None,
                     scores: None,
                     max_buffer_mb: None,

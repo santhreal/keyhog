@@ -115,8 +115,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tokio = { workspace = true, features = ["rt", "time"] }
-base64-simd = "0.8.0"
-hex-simd = "0.8.0"
+base64-simd = { workspace = true }
+hex-simd = { workspace = true }
 # Used for atomic-rename of the Hyperscan database cache via
 # `NamedTempFile::persist()`: see `simd.rs::HsScanner::compile`.
 # The Drop impl deletes the tmp on panic between create and rename.
@@ -131,7 +131,7 @@ toml = { workspace = true }
 # cl100k_base bytes-per-token separates word-like non-secrets (dotted API paths,
 # English prose) from random secrets. Optional, gated by the `entropy` feature so
 # non-entropy builds don't pull it. Vocab ranks are embedded (self-contained).
-tiktoken-rs = { version = "0.6", optional = true }
+tiktoken-rs = { workspace = true, optional = true }
 
 [build-dependencies]
 serde_json = { workspace = true }
@@ -154,11 +154,11 @@ proptest = { workspace = true }
 rusty-fork = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tempfile = { workspace = true }
-md5 = "0.7"
+md5 = { workspace = true }
 # Validates the generated MoE WGSL (gpu_shader::moe_shader) parses + type-checks
 # without needing a GPU adapter. Pinned to the version wgpu already pulls in so
 # this adds no new download.
-naga = { version = "25", features = ["wgsl-in"] }
+naga = { workspace = true, features = ["wgsl-in"] }
 # `toml` moved to [dependencies] for the Tier-B disclaimer-phrase
 # loader in src/context/false_positive.rs.
 
@@ -279,20 +279,20 @@ name = "gpu_tests_fail_not_skip"
 path = "tests/gap/gpu_tests_fail_not_skip.rs"
 
 [[test]]
-name = "gap_gpu_ac_degenerate_triples_degrade"
-path = "tests/gap/gpu_ac_degenerate_triples_degrade.rs"
+name = "gap_gpu_integrity_failure_reasons"
+path = "tests/gap/gpu_integrity_failure_reasons.rs"
 
 [[test]]
-name = "gap_gpu_forced_backend_no_silent_degrade"
-path = "tests/gap/gpu_forced_backend_no_silent_degrade.rs"
+name = "gap_selected_gpu_backend_executes_or_fails"
+path = "tests/gap/selected_gpu_backend_executes_or_fails.rs"
 
 [[test]]
 name = "gap_gpu_no_hit_phase2_admission"
 path = "tests/gap/gpu_no_hit_phase2_admission.rs"
 
 [[test]]
-name = "gap_gpu_per_chunk_triggers_loud_degrade"
-path = "tests/gap/gpu_per_chunk_triggers_loud_degrade.rs"
+name = "gap_gpu_per_chunk_dispatch_failure"
+path = "tests/gap/gpu_per_chunk_dispatch_failure.rs"
 
 [[test]]
 name = "gap_gpu_phase2_empty_hit_fast_path"
@@ -319,8 +319,8 @@ name = "gap_gpu_moe_readback_bounded"
 path = "tests/gap/gpu_moe_readback_bounded.rs"
 
 [[test]]
-name = "gap_degraded_batch_paths_preserve_boundaries"
-path = "tests/gap/degraded_batch_paths_preserve_boundaries.rs"
+name = "gap_backend_substitution_contracts"
+path = "tests/gap/backend_substitution_contracts.rs"
 
 [[test]]
 name = "gap_no_inline_tests_in_a3_slice"

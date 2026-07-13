@@ -172,7 +172,7 @@ reqwest = { workspace = true }
 # Thread-caching allocator (see the `mimalloc` feature above). Optional so
 # `--no-default-features` builds (and any platform where the C build is
 # undesirable) drop it cleanly and fall back to the system allocator.
-mimalloc = { version = "0.1", optional = true, default-features = false }
+mimalloc = { workspace = true, optional = true }
 # Verify-only minisign: `keyhog update` checks the release binary's
 # signature against the embedded public key before self-replacing.
 minisign-verify = { workspace = true }

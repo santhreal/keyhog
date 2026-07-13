@@ -24,6 +24,14 @@ with host hardware or local calibration files. Library callers that want
 acceleration choose `scan_with_backend`/`scan_coalesced_with_backend`; the CLI
 is the owner of persisted automatic routing.
 
+Those explicit-backend methods have infallible finding-vector return types, so
+selection is a hard process contract. Unavailable selected SIMD terminates with
+exit `3`; unavailable or failed selected GPU execution terminates with exit
+`12`. They never return findings from another backend. `warm_backend` probes
+startup eligibility in-band, but a process that must contain a later driver or
+dispatch failure should run the CLI as a subprocess. The no-backend portable
+CPU methods do not acquire an accelerator.
+
 ## What “same results” means
 
 Calibration compares canonical match identity: chunk index, detector id,
@@ -58,7 +66,7 @@ GPU trials from the same calibration evidence. See
 
 The checked RTX 5090 production-window baseline compares the GPU path with the
 real parallel Hyperscan path over one 8 MiB source split into 1 MiB windows with
-128 KiB overlap. It verifies sorted full-match parity, rejects GPU degradation,
+128 KiB overlap. It verifies sorted full-match parity, rejects GPU runtime faults,
 excludes one warmup, and aggregates five process medians. The recorded medians
 are 31.4524 ms for GPU and 35.0860 ms for Hyperscan: GPU is about 1.12× faster
 in that warm workload.
@@ -77,6 +85,10 @@ route. KeyHog exits with a configuration error and prints the missing workload
 identity plus the calibration command. Run `keyhog calibrate-autoroute` for the
 core ladder or the installer calibration for source-specific probes. Use an
 explicit backend only when you intentionally want a diagnostic override.
+
+After selection, the backend remains a hard execution contract. If a selected
+GPU route fails during runtime dispatch, KeyHog exits `12`; it does not complete
+that scan through an unselected CPU or SIMD backend.
 
 For cache identity, inspection commands, calibration coverage, and recovery,
 see [Autoroute calibration](./reference/autoroute-calibration.md).

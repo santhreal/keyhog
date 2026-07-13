@@ -11,6 +11,7 @@ fn gpu_forced_message_mentions_operator_controls() {
     assert!(src.contains("--require-gpu"));
     assert!(!src.contains("KEYHOG_REQUIRE_GPU"));
     assert!(src.contains("silent CPU fallback is forbidden"));
-    assert!(src.contains("deny_silent_gpu_degrade_with_reason"));
-    assert!(src.contains("Refusing to silently degrade"));
+    assert!(src.contains("fail_selected_gpu_dispatch"));
+    assert!(src.contains("refusing to substitute CPU/SIMD"));
+    assert!(src.contains("recalibrate autoroute"));
 }

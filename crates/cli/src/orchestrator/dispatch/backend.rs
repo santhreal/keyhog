@@ -22,7 +22,7 @@
 //! ```text
 //! backend.rs ── routers, override parsing, single-backend resolution
 //!   ├─ calibration ── install-time probe/parity/timing measurement
-//!   └─ store ──────── on-disk cache schema (v20), load/validate/merge-save
+//!   └─ store ──────── on-disk cache schema (v22), load/validate/merge-save
 //!        depend on ↓
 //!   ├─ evidence ───── timing records, AutorouteDecision, correctness digests
 //!   ├─ host ───────── host identity captured in each calibration record

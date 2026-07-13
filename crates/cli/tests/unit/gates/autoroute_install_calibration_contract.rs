@@ -275,7 +275,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("scanner.runtime_status().gpu_degrade_count")
             && backend.contains("gpu_degrade_count_before")
             && backend.contains("gpu_degrade_count_after"),
-        "autoroute must reject GPU calibration trials that loudly degrade to CPU/SIMD instead of caching them as GPU evidence"
+        "autoroute must reject GPU calibration trials with runtime failures or recall-floor recovery instead of caching them as GPU evidence"
     );
     assert!(
         dispatch.contains("autoroute_config_digest(&self.effective_config)")
@@ -356,10 +356,10 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
                 "Modes:  (default) install/upgrade   --repair   --diagnose   --calibrate   --uninstall"
             )
             && install_sh.contains("Autoroute calibration")
-            && install_sh.contains("byte_sizes=\"512\"")
+            && install_sh.contains("byte_sizes=\"1 2 4 8 16 32 64 128 256 512\"")
             && install_sh.contains("kib_sizes=\"1 2 4 8 16 32 64 128 256 512\"")
             && install_sh.contains("mib_sizes=\"1 2 4 8 16 32\"")
-            && install_sh.contains("many_file_counts=\"4 16 32\"")
+            && install_sh.contains("many_file_counts=\"2 4 8 16 32\"")
             && install_sh.contains("elapsed_ms_since")
             && install_sh.contains("PASS %s (%sms)")
             && install_sh.contains("FAIL %s (%sms)")
@@ -431,17 +431,18 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && install_ps1.contains("TotalMilliseconds")
             && install_ps1.contains("PASS {0} ({1}ms)")
             && install_ps1.contains("FAIL {0} ({1}ms)")
-            && install_ps1.contains("New-CalibrationProbeBytes -Path $probe512 -Bytes 512")
+            && install_ps1.contains("foreach ($bytes in @(1, 2, 4, 8, 16, 32, 64, 128, 256, 512))")
+            && install_ps1.contains("New-CalibrationProbeBytes -Path $probe -Bytes $bytes")
             && install_ps1.contains("@(1, 2, 4, 8, 16, 32, 64, 128, 256, 512)")
             && install_ps1.contains("@(1, 2, 4, 8, 16, 32)")
-            && install_ps1.contains("@(4, 16, 32)")
+            && install_ps1.contains("@(2, 4, 8, 16, 32)")
             && install_ps1.contains("empty stdin workload")
             && install_ps1.contains("stdin 64 KiB workload")
             && install_ps1.contains("Mode = 'stdin'")
             && install_ps1.contains("'scan', '--stdin'")
             && install_ps1.contains("RedirectStandardInput")
             && install_ps1.contains("New-CalibrationTreeKiB")
-            && install_ps1.contains("foreach ($fileCount in @(4, 16, 32))")
+            && install_ps1.contains("foreach ($fileCount in @(2, 4, 8, 16, 32))")
             && install_ps1.contains("${fileCount} x 4 KiB files workload")
             && install_ps1.contains("many-${fileCount}x4k")
             && install_ps1.contains("decode-heavy 256 KiB workload")

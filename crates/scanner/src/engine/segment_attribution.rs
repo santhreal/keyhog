@@ -1,7 +1,7 @@
 //! Attribute coalesced scanner matches back to logical input segments.
 //!
 //! This mirrors the general `match.map_offsets_to_segments` primitive in
-//! Vyre while keeping Keyhog publishable until the matching primitive crate
+//! VYRE while keeping KeyHog publishable until the matching primitive crate
 //! version used by this repository is available on crates.io.
 
 use thiserror::Error;

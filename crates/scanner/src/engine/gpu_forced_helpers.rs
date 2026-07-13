@@ -2,26 +2,30 @@ use crate::hw_probe::ScanBackend;
 
 use super::CompiledScanner;
 
-/// Process-lifetime guard so the runtime-degrade warning fires once
-/// per process, not once per scan or once per chunk.
-static RUNTIME_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-
-/// Read the resolved GPU runtime policy exactly once per process.
-/// `deny_silent_gpu_degrade` can be invoked per chunk on multi-thousand-chunk
-/// scans. The values are process-global and can't change mid-run anyway, so a
-/// OnceLock is exact.
-///
-/// The `no_gpu` flag is true when the resolved policy disables GPU. The
-/// degrade-warning paths consume this to suppress the "GPU dispatch failed"
-/// message when CPU/SIMD was explicitly requested.
-fn cached_gpu_runtime_policy_flags() -> (bool, bool) {
-    static FLAGS: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
-    *FLAGS.get_or_init(|| {
-        let no_gpu = crate::gpu::gpu_disabled_by_policy();
-        let require_gpu = crate::gpu::gpu_required_by_policy();
-        (no_gpu, require_gpu)
-    })
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SelectedGpuDispatchError {
+    reason: String,
 }
+
+impl SelectedGpuDispatchError {
+    pub(crate) fn new(reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+        }
+    }
+
+    pub(crate) fn reason(&self) -> &str {
+        &self.reason
+    }
+}
+
+impl std::fmt::Display for SelectedGpuDispatchError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.reason)
+    }
+}
+
+impl std::error::Error for SelectedGpuDispatchError {}
 
 /// Error message when routing forces GPU but the scanner cannot dispatch.
 #[must_use]
@@ -37,7 +41,7 @@ pub(crate) fn gpu_forced_unavailable_message(
     }
     Some(format!(
         "{} selected but GPU stack unavailable (gpu_literals={}, gpu_backend={}, gpu_matcher={}) - \
-         silent CPU fallback is forbidden; choose --backend simd/auto or install a compatible GPU adapter",
+         silent CPU fallback is forbidden; repair the GPU stack and recalibrate autoroute, or explicitly choose --backend simd/cpu",
         backend.label(),
         scanner.gpu_literals.is_some(),
         scanner.gpu_backend.is_some(),
@@ -45,11 +49,9 @@ pub(crate) fn gpu_forced_unavailable_message(
     ))
 }
 
-/// Exit with an explicit message when policy forces GPU and the stack
-/// is down. Otherwise, when the scanner asked for GPU but is about
-/// to degrade to CPU at runtime, emit a one-shot stderr warning so
-/// the user sees the silent fallback they didn't ask for. Use
-/// `--no-gpu` to silence the warning, or `--require-gpu` to exit 12 instead.
+/// Exit with an explicit message whenever a selected GPU route cannot dispatch.
+/// A persisted autoroute decision and an explicit GPU override are both hard
+/// execution contracts; neither may turn into CPU/SIMD after routing succeeds.
 ///
 /// ## Why a scanner hard exit survives in the library here (M12)
 ///
@@ -58,74 +60,40 @@ pub(crate) fn gpu_forced_unavailable_message(
 /// `orchestrator::run` before any scan) which returns the documented
 /// `ExitCode` through the CLI - no library `process::exit`, so embedders
 /// stay alive. This function's hard exit covers a *different*, narrower
-/// case: `--backend gpu` (or the compatibility API variant) forced a per-chunk
-/// GPU dispatch
-/// that then found the stack unusable, deep inside the parallel scan loop
+/// case: an explicit or autoroute-selected per-chunk GPU dispatch that then
+/// found the stack unusable, deep inside the parallel scan loop
 /// where there is no `Result` channel back to the caller (it runs under
 /// `par_iter` map closures returning `Vec<RawMatch>`). For that forced-
 /// dispatch contract the no-silent-fallback rule requires an immediate
 /// stop, and the only correct stop signal from inside that closure is the
-/// process exit. The hazard for embedders is bounded: it fires only when
-/// the embedder explicitly forced a GPU backend (or the policy required GPU)
-/// AND reached GPU dispatch with a broken stack -
-/// not on the ordinary no-GPU auto-routing path, which the CLI preflight
-/// now owns.
-pub(crate) fn deny_silent_gpu_degrade(scanner: &CompiledScanner, backend: ScanBackend) {
-    deny_silent_gpu_degrade_with_reason(scanner, backend, None);
-}
-
-pub(crate) fn deny_silent_gpu_degrade_with_reason(
-    scanner: &CompiledScanner,
-    backend: ScanBackend,
-    reason: Option<&str>,
-) {
+/// process exit. The hazard for embedders is bounded: it fires only after the
+/// caller selected GPU and reached dispatch with a broken stack, never on a
+/// CPU/SIMD call or a host where routing did not select GPU.
+pub(crate) fn require_selected_gpu_stack(scanner: &CompiledScanner, backend: ScanBackend) {
     if let Some(msg) = gpu_forced_unavailable_message(scanner, backend) {
         crate::process_exit::require_gpu_unmet(msg);
     }
-    if !matches!(backend, ScanBackend::Gpu) {
-        return;
-    }
-    if reason.is_none() && scanner.gpu_stack_usable() {
-        return;
-    }
-    let (no_gpu, require_gpu) = cached_gpu_runtime_policy_flags();
-    if require_gpu {
-        if let Some(reason) = reason {
-            crate::process_exit::require_gpu_unmet(format!(
-                "--require-gpu requested but the GPU dispatch failed at runtime \
-({reason}) (literals={}, backend={}, matcher={}). Refusing to silently degrade.",
-                scanner.gpu_literals.is_some(),
-                scanner.gpu_backend.is_some(),
-                scanner.gpu_matcher().is_some(),
-            ));
-        } else {
-            crate::process_exit::require_gpu_unmet(format!(
-                "--require-gpu requested but the GPU dispatch failed at runtime \
-(literals={}, backend={}, matcher={}). Refusing to silently degrade.",
-                scanner.gpu_literals.is_some(),
-                scanner.gpu_backend.is_some(),
-                scanner.gpu_matcher().is_some(),
-            ));
-        }
-    }
-    if no_gpu {
-        return;
-    }
-    if RUNTIME_DEGRADE_WARNED.set(()).is_ok() {
-        if let Some(reason) = reason {
-            eprintln!(
-                "keyhog: GPU dispatch failed at runtime ({reason}); this scan and any subsequent \
-ones in this process degrade to CPU/SIMD. Use --no-gpu to silence, or \
---require-gpu to hard-fail next time."
-            );
-        } else {
-            eprintln!(
-                "keyhog: GPU dispatch failed at runtime; this scan and any subsequent \
-ones in this process degrade to CPU/SIMD. Often a transient driver issue or a \
-program the GPU lowering pipeline rejects (check the preceding tracing::error \
-line for the underlying message). Use --no-gpu to silence, or \
---require-gpu to hard-fail next time."
-            );
-        }
-    }
+}
+
+/// Record the concrete dispatch failure and terminate the selected GPU route.
+///
+/// Keeping this operation divergent makes it impossible for an error branch to
+/// retain an unreachable CPU/SIMD substitution after the failure is surfaced.
+pub(crate) fn fail_selected_gpu_dispatch(scanner: &CompiledScanner, reason: &str) -> ! {
+    fail_selected_gpu_dispatch_error(scanner, SelectedGpuDispatchError::new(reason))
+}
+
+pub(crate) fn fail_selected_gpu_dispatch_error(
+    scanner: &CompiledScanner,
+    error: SelectedGpuDispatchError,
+) -> ! {
+    scanner.record_gpu_runtime_fault(error.reason());
+    crate::process_exit::require_gpu_unmet(format!(
+        "selected GPU dispatch failed at runtime ({error}) \
+(literals={}, backend={}, matcher={}); refusing to substitute CPU/SIMD. \
+Run `keyhog backend --self-test`, then recalibrate autoroute or select another backend explicitly",
+        scanner.gpu_literals.is_some(),
+        scanner.gpu_backend.is_some(),
+        scanner.gpu_matcher().is_some(),
+    ));
 }

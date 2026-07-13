@@ -94,7 +94,7 @@ memchr = { workspace = true }
 regex = { workspace = true }
 ziftsieve = { workspace = true, features = ["gzip", "lz4", "zstd", "snappy"] }
 openpack = { workspace = true, features = ["zip", "apk", "ipa", "crx"] }
-zip = "2.2"
+zip = { workspace = true }
 rars = { workspace = true }
 # True-decompression decoders for the always-on filesystem compressed-input
 # path (filesystem/extract.rs). ziftsieve only extracts DEFLATE literals for
@@ -173,7 +173,7 @@ optional = true
 workspace = true
 
 [dev-dependencies]
-flate2 = "1"
+flate2 = { workspace = true }
 httpmock = { workspace = true }
 proptest = { workspace = true }
 proptest-derive = { workspace = true }

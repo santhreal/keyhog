@@ -173,7 +173,7 @@ fn next_value(
 fn print_usage() {
     println!(
         "Usage: keyhog-scanner-artifacts --out-dir <DIR> [--detectors <DIR>]\n\
-         Writes Vyre GPU literal matcher blobs plus manifest.json."
+         Writes VYRE GPU literal matcher blobs plus manifest.json."
     );
 }
 
