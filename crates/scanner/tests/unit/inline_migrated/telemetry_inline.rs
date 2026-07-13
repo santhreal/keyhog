@@ -1,11 +1,13 @@
 //! Migrated from src/telemetry.rs
 
 use keyhog_scanner::telemetry::{
-    append_events, dogfood_detail_events_dropped, drain_events, enable_dogfood,
-    example_suppression_count, record_example_suppression, reset_example_suppression_count,
-    testing::reset, with_scan_telemetry, DogfoodEvent, ScanTelemetry,
+    append_daemon_events, append_events, dogfood_detail_events_dropped, drain_events,
+    enable_dogfood, example_suppression_count, merge_daemon_aggregates, record_example_suppression,
+    reset_example_suppression_count, static_recovery_rejection_counts, testing::reset,
+    with_scan_telemetry, DogfoodEvent, ScanTelemetry,
 };
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Barrier};
 
 fn scoped_dogfood_events(f: impl FnOnce()) -> Vec<DogfoodEvent> {
@@ -58,22 +60,72 @@ fn poisoned_scoped_event_buffer_counts_the_omitted_detail() {
 }
 
 #[test]
-fn legacy_static_recovery_event_wire_defaults_new_source_identity() {
+fn poisoned_scoped_event_buffer_drain_recovers_retained_details() {
+    let _g = super::super::telemetry_serial::lock();
+    let trace = Arc::new(ScanTelemetry::new());
+    trace.enable_dogfood();
+    with_scan_telemetry(&trace, || {
+        record_example_suppression("aws", Some("retained.env"), "AKIAEXAMPLE", "retained");
+    });
+    crate::telemetry::testing::poison_events(&trace);
+
+    let snapshot = trace.drain();
+    assert_eq!(snapshot.dogfood_events.len(), 1);
+    assert_eq!(snapshot.dogfood_detail_events_dropped, 0);
+}
+
+#[test]
+fn daemon_details_and_exact_aggregates_merge_without_double_counting() {
+    let _g = super::super::telemetry_serial::lock();
+    reset();
+    append_daemon_events([DogfoodEvent::StaticRecoveryRejected {
+        path: Some("history.js".to_owned()),
+        expression_offset: 9,
+        decoder: Cow::Borrowed("javascript-static"),
+        reason: Cow::Borrowed("json_utf8"),
+    }]);
+    merge_daemon_aggregates(&BTreeMap::from([("json_utf8".to_owned(), 7)]), 3)
+        .expect("merge compatible aggregate reasons");
+
+    assert_eq!(
+        static_recovery_rejection_counts().get("json_utf8"),
+        Some(&7)
+    );
+    assert_eq!(dogfood_detail_events_dropped(), 3);
+    assert_eq!(drain_events().len(), 1);
+    reset();
+}
+
+#[test]
+fn daemon_aggregate_merge_rejects_unknown_reason_before_mutation() {
+    let _g = super::super::telemetry_serial::lock();
+    reset();
+    let error = merge_daemon_aggregates(
+        &BTreeMap::from([
+            ("json_utf8".to_owned(), 4),
+            ("newer-daemon-reason".to_owned(), 2),
+        ]),
+        5,
+    )
+    .expect_err("unknown reason must fail closed");
+    assert!(error.contains("restart it with this KeyHog build"));
+    assert!(static_recovery_rejection_counts().is_empty());
+    assert_eq!(dogfood_detail_events_dropped(), 0);
+}
+
+#[test]
+fn legacy_static_recovery_event_wire_shape_remains_compatible() {
     let event: DogfoodEvent = serde_json::from_str(
         r#"{"kind":"static_recovery_rejected","path":"old.js","expression_offset":7,"decoder":"javascript-static","reason":"json_utf8"}"#,
     )
     .expect("deserialize pre-source-identity event");
     match event {
         DogfoodEvent::StaticRecoveryRejected {
-            source_type,
             path,
-            commit,
             expression_offset,
             ..
         } => {
-            assert!(source_type.is_empty());
             assert_eq!(path.as_deref(), Some("old.js"));
-            assert_eq!(commit, None);
             assert_eq!(expression_offset, 7);
         }
         other => panic!("expected static recovery rejection, got {other:?}"),

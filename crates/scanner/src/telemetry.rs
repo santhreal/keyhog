@@ -62,11 +62,7 @@ pub enum DogfoodEvent {
     /// rejected malformed or unsupported literal data. The original source is
     /// still scanned. No source bytes are retained in this event.
     StaticRecoveryRejected {
-        #[serde(default)]
-        source_type: String,
         path: Option<String>,
-        #[serde(default)]
-        commit: Option<String>,
         expression_offset: usize,
         decoder: Cow<'static, str>,
         reason: Cow<'static, str>,
@@ -183,22 +179,46 @@ fn push_dogfood_detail(
     }
 }
 
+fn recover_telemetry_lock<'a, T>(mutex: &'a Mutex<T>) -> std::sync::MutexGuard<'a, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            let guard = poisoned.into_inner();
+            mutex.clear_poison();
+            guard
+        }
+    }
+}
+
 #[derive(Default)]
 struct StaticRecoveryTelemetry {
     counts: [AtomicU64; StaticRecoveryRejection::ALL.len()],
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum EmittedDogfoodKey {
+    Suppression(String),
+    StaticRecovery {
+        source_type: Arc<str>,
+        path: Option<Arc<str>>,
+        commit: Option<Arc<str>>,
+        expression_offset: usize,
+        reason: &'static str,
+    },
+}
+
 impl StaticRecoveryTelemetry {
     fn record(&self, reason: StaticRecoveryRejection) {
+        self.add(reason, 1);
+    }
+
+    fn add(&self, reason: StaticRecoveryRejection, amount: u64) {
         let counter = &self.counts[reason.index()];
         let mut current = counter.load(Ordering::Relaxed);
         while current != u64::MAX {
-            match counter.compare_exchange_weak(
-                current,
-                current + 1,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
+            let next = current.saturating_add(amount);
+            match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
+            {
                 Ok(_) => return,
                 Err(observed) => current = observed,
             }
@@ -236,7 +256,7 @@ struct Telemetry {
     /// Keyed without the reason/stage so the FIRST stage to record a credential
     /// wins and later stages are deduped; the example counter keeps its own
     /// (reason-keyed) dedup so per-stage COUNTS are unaffected.
-    emitted_suppression_events: Mutex<HashSet<String>>,
+    emitted_suppression_events: Mutex<HashSet<EmittedDogfoodKey>>,
     detail_events_dropped: AtomicUsize,
     static_recovery: StaticRecoveryTelemetry,
 }
@@ -253,7 +273,7 @@ pub struct ScanTelemetry {
     dogfood_enabled: AtomicBool,
     example_suppressions: AtomicUsize,
     events: Mutex<Vec<DogfoodEvent>>,
-    emitted_suppression_events: Mutex<HashSet<String>>,
+    emitted_suppression_events: Mutex<HashSet<EmittedDogfoodKey>>,
     detail_events_dropped: AtomicUsize,
     static_recovery: StaticRecoveryTelemetry,
 }
@@ -517,7 +537,7 @@ pub fn record_example_suppression(
 fn record_example_suppression_in(
     example_suppressions: &AtomicUsize,
     events: &Mutex<Vec<DogfoodEvent>>,
-    emitted_suppression_events: &Mutex<HashSet<String>>,
+    emitted_suppression_events: &Mutex<HashSet<EmittedDogfoodKey>>,
     detail_events_dropped: &AtomicUsize,
     detector: &str,
     path: Option<&str>,
@@ -571,20 +591,21 @@ fn record_example_suppression_in(
 /// The shared detail budget bounds both this set and the event vector. Once it
 /// is exhausted, the exact dropped-detail counter remains operator-visible.
 fn mark_suppression_event_emitted(
-    emitted_suppression_events: &Mutex<HashSet<String>>,
+    emitted_suppression_events: &Mutex<HashSet<EmittedDogfoodKey>>,
     detail_events_dropped: &AtomicUsize,
     credential_hash: &str,
 ) -> bool {
     match emitted_suppression_events.lock() {
         Ok(mut emitted) => {
-            if emitted.contains(credential_hash) {
+            let key = EmittedDogfoodKey::Suppression(credential_hash.to_owned());
+            if emitted.contains(&key) {
                 return false;
             }
             if emitted.len() >= DOGFOOD_DETAIL_EVENT_LIMIT {
                 record_dropped_detail(detail_events_dropped);
                 return false;
             }
-            emitted.insert(credential_hash.to_string())
+            emitted.insert(key)
         }
         Err(_) => {
             // LAW10: poisoned diagnostic dedup increments the surfaced omitted-detail counter; findings and exact aggregates remain intact.
@@ -682,9 +703,7 @@ fn static_recovery_event(
     reason: StaticRecoveryRejection,
 ) -> DogfoodEvent {
     DogfoodEvent::StaticRecoveryRejected {
-        source_type: metadata.source_type.to_string(),
         path: metadata.path.as_deref().map(str::to_owned),
-        commit: metadata.commit.as_deref().map(str::to_owned),
         expression_offset,
         decoder: Cow::Borrowed("javascript-static"),
         reason: Cow::Borrowed(reason.as_str()),
@@ -692,24 +711,19 @@ fn static_recovery_event(
 }
 
 fn mark_static_recovery_event_emitted(
-    emitted_events: &Mutex<HashSet<String>>,
+    emitted_events: &Mutex<HashSet<EmittedDogfoodKey>>,
     detail_events_dropped: &AtomicUsize,
     metadata: &ChunkMetadata,
     expression_offset: usize,
     reason: StaticRecoveryRejection,
 ) -> bool {
-    let path = match metadata.path.as_deref() {
-        Some(path) => path,
-        None => "<unknown>",
-    };
-    let key = format!(
-        "static-recovery\0{}\0{}\0{}\0{}\0{}",
-        metadata.source_type,
-        path,
-        metadata.commit.as_deref().unwrap_or("<none>"), // LAW10: absent revision is an explicit dedup identity component, not a fallback that changes scan findings.
+    let key = EmittedDogfoodKey::StaticRecovery {
+        source_type: Arc::clone(&metadata.source_type),
+        path: metadata.path.clone(),
+        commit: metadata.commit.clone(),
         expression_offset,
-        reason.as_str()
-    );
+        reason: reason.as_str(),
+    };
     match emitted_events.lock() {
         Ok(mut emitted) => {
             if emitted.contains(&key) {
@@ -731,7 +745,7 @@ fn mark_static_recovery_event_emitted(
 
 fn record_shape_suppression_in(
     events: &Mutex<Vec<DogfoodEvent>>,
-    emitted_suppression_events: &Mutex<HashSet<String>>,
+    emitted_suppression_events: &Mutex<HashSet<EmittedDogfoodKey>>,
     detail_events_dropped: &AtomicUsize,
     path: Option<&str>,
     credential: &str,
@@ -878,9 +892,29 @@ pub fn line_offset_mapping_mismatch_count() -> usize {
 /// enable-check). Used by the daemon client to replay events captured
 /// on the daemon side, so `--dogfood` output works in daemon mode.
 pub fn append_events<I: IntoIterator<Item = DogfoodEvent>>(events: I) {
+    append_event_details(events, true);
+}
+
+/// Append detail events transported with exact daemon aggregates.
+///
+/// Unlike [`append_events`], this does not infer static-recovery counts from
+/// the bounded detail list. Call [`merge_daemon_aggregates`] once for the same
+/// response so retained details and exact totals cannot be double-counted.
+pub fn append_daemon_events<I: IntoIterator<Item = DogfoodEvent>>(events: I) {
+    append_event_details(events, false);
+}
+
+fn append_event_details<I: IntoIterator<Item = DogfoodEvent>>(
+    events: I,
+    infer_static_recovery_counts: bool,
+) {
     let t = cell();
     for event in events {
-        if let DogfoodEvent::StaticRecoveryRejected { reason, .. } = &event {
+        if infer_static_recovery_counts {
+            let DogfoodEvent::StaticRecoveryRejected { reason, .. } = &event else {
+                push_dogfood_detail(&t.events, &t.detail_events_dropped, event);
+                continue;
+            };
             if let Some(reason) = StaticRecoveryRejection::ALL
                 .iter()
                 .find(|candidate| candidate.as_str() == reason.as_ref())
@@ -890,6 +924,51 @@ pub fn append_events<I: IntoIterator<Item = DogfoodEvent>>(events: I) {
         }
         push_dogfood_detail(&t.events, &t.detail_events_dropped, event);
     }
+}
+
+/// Merge exact dogfood aggregates returned by a compatible daemon scan.
+///
+/// Detail events are transported separately through [`append_daemon_events`]. This
+/// method validates every typed rejection reason before mutating process state,
+/// so a response from an incompatible newer daemon fails instead of producing
+/// a plausible but incomplete trace.
+pub fn merge_daemon_aggregates(
+    static_recovery_rejections: &BTreeMap<String, u64>,
+    detail_events_dropped: u64,
+) -> Result<(), String> {
+    let mut resolved = Vec::with_capacity(static_recovery_rejections.len());
+    for (name, count) in static_recovery_rejections {
+        let Some(reason) = StaticRecoveryRejection::ALL
+            .iter()
+            .copied()
+            .find(|candidate| candidate.as_str() == name)
+        else {
+            return Err(format!(
+                "daemon returned unknown static-recovery rejection reason {name:?}; restart it with this KeyHog build"
+            ));
+        };
+        resolved.push((reason, *count));
+    }
+
+    let telemetry = cell();
+    for (reason, count) in resolved {
+        telemetry.static_recovery.add(reason, count);
+    }
+    let dropped = usize::try_from(detail_events_dropped).unwrap_or(usize::MAX); // LAW10: wire counts wider than this host can represent remain surfaced at the largest representable count; scan findings are unchanged.
+    let counter = &telemetry.detail_events_dropped;
+    let mut current = counter.load(Ordering::Relaxed);
+    while current != usize::MAX {
+        match counter.compare_exchange_weak(
+            current,
+            current.saturating_add(dropped),
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => break,
+            Err(observed) => current = observed,
+        }
+    }
+    Ok(())
 }
 
 /// Exact per-reason static-recovery rejection counts for the current process
@@ -913,21 +992,13 @@ pub fn drain_events() -> Vec<DogfoodEvent> {
 
 fn drain_event_buffers(
     events: &Mutex<Vec<DogfoodEvent>>,
-    emitted_suppression_events: &Mutex<HashSet<String>>,
+    emitted_suppression_events: &Mutex<HashSet<EmittedDogfoodKey>>,
 ) -> Vec<DogfoodEvent> {
     // The drained batch is one complete trace; the next scan must be able to emit
     // its own events for the same credentials, so clear the per-credential
     // emitted-event dedup alongside the drain.
-    if let Ok(mut emitted) = emitted_suppression_events.lock() {
-        // LAW10: poisoned dogfood dedup set can only duplicate a diagnostic telemetry event; findings/reporting are unaffected.
-        emitted.clear();
-    }
-    if let Ok(mut events) = events.lock() {
-        // LAW10: poisoned dogfood event buffer returns empty diagnostics only; this telemetry event drain leaves findings/reporting behavior unaffected.
-        std::mem::take(&mut *events)
-    } else {
-        Vec::new()
-    }
+    recover_telemetry_lock(emitted_suppression_events).clear();
+    std::mem::take(&mut *recover_telemetry_lock(events))
 }
 
 // Telemetry recording helpers (KH-116)
@@ -971,14 +1042,8 @@ pub fn reset_for_scan() {
     }
     #[cfg(test)]
     THREAD_DECODE_TRUNCATIONS.with(|count| count.set(0));
-    if let Ok(mut events) = t.events.lock() {
-        // LAW10: reset of poisoned dogfood diagnostics cannot hide findings; telemetry event reset only, scan counters are reset above.
-        events.clear();
-    }
-    if let Ok(mut emitted) = t.emitted_suppression_events.lock() {
-        // LAW10: reset of poisoned diagnostic dedup cannot hide findings; telemetry event dedup only, scan counters are reset above.
-        emitted.clear();
-    }
+    recover_telemetry_lock(&t.events).clear();
+    recover_telemetry_lock(&t.emitted_suppression_events).clear();
     CURRENT_SCAN_TELEMETRY.with(|slot| {
         *slot.borrow_mut() = None;
     });

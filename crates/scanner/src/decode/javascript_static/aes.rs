@@ -56,8 +56,13 @@ pub(super) fn recover_plaintexts(
         let Some(decipher) = captures.get(1).map(|value| value.as_str()) else {
             continue;
         };
-        let expression_offset =
-            base_offset.saturating_add(captures.get(0).map_or(0, |matched| matched.start()));
+        let Some(expression_offset) = crate::engine::absolute_offset(
+            base_offset,
+            captures.get(0).map_or(0, |matched| matched.start()),
+        ) else {
+            record_static_limit("bound AES expression offset overflow");
+            continue;
+        };
         let Some(key_name) = captures.get(2).map(|value| value.as_str()) else {
             continue;
         };
@@ -128,8 +133,13 @@ pub(super) fn recover_plaintexts(
         let Some(decipher) = captures.get(1).map(|value| value.as_str()) else {
             continue;
         };
-        let expression_offset =
-            base_offset.saturating_add(captures.get(0).map_or(0, |matched| matched.start()));
+        let Some(expression_offset) = crate::engine::absolute_offset(
+            base_offset,
+            captures.get(0).map_or(0, |matched| matched.start()),
+        ) else {
+            record_static_limit("inline AES expression offset overflow");
+            continue;
+        };
         let Some(key_name) = captures.get(2).map(|value| value.as_str()) else {
             continue;
         };

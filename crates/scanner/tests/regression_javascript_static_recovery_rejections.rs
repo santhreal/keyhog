@@ -238,24 +238,103 @@ fn equal_path_and_offset_rejections_keep_distinct_revision_identity() {
         assert!(findings.iter().all(Vec::is_empty));
     });
     let snapshot = trace.drain();
-    let identities: BTreeSet<(&str, Option<&str>)> = snapshot
+    let revision_events = snapshot
         .dogfood_events
         .iter()
-        .filter_map(|event| match event {
-            DogfoodEvent::StaticRecoveryRejected {
-                source_type,
-                commit,
-                ..
-            } => Some((source_type.as_str(), commit.as_deref())),
-            _ => None,
-        })
-        .collect();
+        .filter(|event| matches!(event, DogfoodEvent::StaticRecoveryRejected { .. }))
+        .count();
     assert_eq!(
-        identities,
-        BTreeSet::from([
-            ("git-history", Some("commit-a")),
-            ("git-history", Some("commit-b")),
-        ])
+        revision_events, 2,
+        "distinct revisions must not deduplicate"
+    );
+    assert_eq!(
+        snapshot
+            .static_recovery_rejections
+            .get("literal_byte_array_element"),
+        Some(&2)
+    );
+}
+
+#[test]
+fn repeated_evaluation_counts_each_attempt_without_duplicate_detail() {
+    let source = concat!(
+        "const bad = [256]; const key = [1]; ",
+        "String.fromCharCode(...bad.map((b, i) => b ^ key[i % key.length]));",
+    );
+    let chunk = Chunk {
+        data: source.into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("overlap.js".into()),
+            ..Default::default()
+        },
+    };
+    let trace = Arc::new(ScanTelemetry::new());
+    trace.enable_dogfood();
+    telemetry::with_scan_telemetry(&trace, || {
+        let findings =
+            scanner().scan_chunks_with_backend(&[chunk.clone(), chunk], ScanBackend::CpuFallback);
+        assert!(findings.iter().all(Vec::is_empty));
+    });
+    let snapshot = trace.drain();
+    assert_eq!(
+        snapshot
+            .static_recovery_rejections
+            .get("literal_byte_array_element"),
+        Some(&2),
+        "the aggregate measures rejected evaluation attempts"
+    );
+    assert_eq!(
+        snapshot
+            .dogfood_events
+            .iter()
+            .filter(|event| matches!(event, DogfoodEvent::StaticRecoveryRejected { .. }))
+            .count(),
+        1,
+        "detail deduplication must collapse the repeated expression identity"
+    );
+}
+
+#[test]
+fn absent_source_identity_does_not_collide_with_literal_sentinel_text() {
+    let source = concat!(
+        "const bad = [256]; const key = [1]; ",
+        "String.fromCharCode(...bad.map((b, i) => b ^ key[i % key.length]));",
+    );
+    let chunks = vec![
+        Chunk {
+            data: source.into(),
+            metadata: ChunkMetadata {
+                source_type: "filesystem".into(),
+                path: None,
+                commit: None,
+                ..Default::default()
+            },
+        },
+        Chunk {
+            data: source.into(),
+            metadata: ChunkMetadata {
+                source_type: "filesystem".into(),
+                path: Some("<unknown>".into()),
+                commit: Some("<none>".into()),
+                ..Default::default()
+            },
+        },
+    ];
+    let trace = Arc::new(ScanTelemetry::new());
+    trace.enable_dogfood();
+    telemetry::with_scan_telemetry(&trace, || {
+        let findings = scanner().scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback);
+        assert!(findings.iter().all(Vec::is_empty));
+    });
+    let snapshot = trace.drain();
+    assert_eq!(
+        snapshot
+            .dogfood_events
+            .iter()
+            .filter(|event| matches!(event, DogfoodEvent::StaticRecoveryRejected { .. }))
+            .count(),
+        2
     );
     assert_eq!(
         snapshot

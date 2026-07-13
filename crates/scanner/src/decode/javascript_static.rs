@@ -113,8 +113,13 @@ fn recover_xor_plaintexts(
         else {
             continue;
         };
-        let expression_offset =
-            base_offset.saturating_add(captures.get(0).map_or(0, |matched| matched.start()));
+        let Some(expression_offset) = crate::engine::absolute_offset(
+            base_offset,
+            captures.get(0).map_or(0, |matched| matched.start()),
+        ) else {
+            record_static_limit("XOR expression offset overflow");
+            continue;
+        };
         if byte_parameter != byte_use || index_parameter != index_use || key_name != key_length_use
         {
             continue;

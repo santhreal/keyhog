@@ -285,11 +285,14 @@ the normal report (stdout). `--dogfood` is independent of `--format`, so the
 report format does not matter here.
 
 Suppression events carry the path, redacted credential, and rule that fired.
-`static_recovery_rejected` events carry the decoder, reason, source type, path,
-optional commit, and absolute expression byte offset. Source type plus commit
-keeps equal paths from separate history revisions distinct. The events never
-contain source or recovered bytes. Detail retention is capped at 1,024 events
-per scan. Aggregate rejection counts remain exact after the cap.
+`static_recovery_rejected` events carry the decoder, reason, path, and absolute
+expression byte offset. Internal detail deduplication also uses source type and
+optional commit, so equal paths from separate history revisions remain separate
+events. Aggregate counts measure every rejected evaluation attempt. Repeated
+evaluation of one expression can therefore increment an aggregate without
+duplicating its retained detail.
+The events never contain source or recovered bytes. Detail retention is capped
+at 1,024 events per scan. Aggregate rejection counts remain exact after the cap.
 `detail_events_dropped` reports retention-bound drops and recording attempts
 rejected because the detail buffer was unavailable.
 
