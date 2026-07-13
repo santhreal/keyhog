@@ -343,7 +343,7 @@ fn detectors_help_documents_verbose_flag() {
         "detectors --help missing --verbose:\n{stdout}"
     );
     assert!(
-        stdout.contains("Print full detector spec"),
+        stdout.contains("Print the matching-policy summary"),
         "detectors --help missing --verbose doc:\n{stdout}"
     );
 }

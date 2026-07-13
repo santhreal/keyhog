@@ -400,5 +400,5 @@ they print identity information and exit. Each subcommand also has its own
 | `-h`, `--help`    | Print root help.                                    |
 
 Display controls are command-specific: `scan --no-color` disables report and
-summary ANSI output, while `detectors --verbose` prints full matching detector
-specifications.
+summary ANSI output, while `detectors --verbose` prints matching-policy
+summaries. Use `detectors --format json` for the complete detector schema.

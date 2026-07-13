@@ -18,8 +18,9 @@ pub struct DetectorArgs {
     /// detectors actually compiled into this binary.
     #[arg(short, long)]
     pub search: Option<String>,
-    /// Print full detector spec (regex, prefixes, keywords) instead of
-    /// the grouped service summary. Pairs naturally with `--search`.
+    /// Print the matching-policy summary (regexes, keywords, companions,
+    /// verification presence) instead of the grouped service summary. Pairs
+    /// naturally with `--search`. Use `--format json` for the complete schema.
     #[arg(short, long, default_value_t = false)]
     pub verbose: bool,
     /// Audit detectors against the quality gate (`keyhog_core::validate_detector`).
