@@ -354,6 +354,7 @@ impl CompiledScanner {
                 detector
                     .max_len
                     .unwrap_or(crate::engine::phase2_generic::GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT)
+                // LAW10: documented numeric default when this detector omits max_len
             })
             .max();
         let generic_assignment_re = if let Some(max_len) = generic_assignment_max_len {

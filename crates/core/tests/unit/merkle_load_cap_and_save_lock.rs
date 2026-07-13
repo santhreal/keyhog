@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
+use fs2::FileExt;
 use keyhog_core::testing::{CoreTestApi, TestApi};
+use keyhog_core::{state_file_lock_path, StateFileWriteLock};
 
 fn sample_hash(bytes: &[u8]) -> [u8; 32] {
     TestApi.merkle_hash_content(bytes)
@@ -88,6 +90,29 @@ fn persisted_cache_entries_are_sorted_by_cache_key() {
         ],
         "persisted Merkle cache order must not depend on randomized hash-map iteration"
     );
+}
+
+#[test]
+fn state_file_write_lock_excludes_a_second_writer_until_drop() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("merkle.idx");
+    let held = StateFileWriteLock::acquire(&state_path).expect("acquire first state lock");
+    let lock_path = state_file_lock_path(&state_path).expect("derive sibling lock path");
+    let contender = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .expect("open existing lock file");
+
+    assert!(
+        contender.try_lock_exclusive().is_err(),
+        "a live state writer must exclude a second writer"
+    );
+    drop(held);
+    contender
+        .try_lock_exclusive()
+        .expect("dropping the owner releases the OS lock");
+    FileExt::unlock(&contender).expect("release contender lock");
 }
 
 #[test]

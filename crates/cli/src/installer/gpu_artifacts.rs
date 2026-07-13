@@ -102,7 +102,9 @@ pub(crate) fn parse_gpu_literal_sidecar(
                 "GPU literal sidecar expands beyond the {MAX_EXPANDED_BYTES}-byte total limit"
             );
         }
-        let mut bytes = Vec::with_capacity(usize::try_from(declared).unwrap_or(0).min(64 * 1024));
+        let mut bytes = Vec::with_capacity(
+            usize::try_from(declared).unwrap_or(0).min(64 * 1024), // LAW10: perf-only allocation hint; take/read_to_end and exact declared-length validation below remain authoritative
+        );
         entry
             .take(limit.saturating_add(1))
             .read_to_end(&mut bytes)

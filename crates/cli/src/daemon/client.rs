@@ -122,7 +122,7 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
                      `keyhog daemon stop && keyhog daemon start`, or pass `--daemon=off` to \
                      scan in-process.",
                     socket_path.display(),
-                    stale_reason.as_deref().unwrap_or("unknown identity mismatch"),
+                    stale_reason.as_deref().unwrap_or("unknown identity mismatch"), // LAW10: reporting-only fallback inside an already fail-closed identity-mismatch error
                 );
             }
             // Record the daemon's reported version so callers that tolerate a

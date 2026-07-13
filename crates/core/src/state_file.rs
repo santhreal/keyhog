@@ -21,7 +21,12 @@ impl StateFileWriteLock {
     /// Acquire the canonical sibling lock for `state_path`.
     pub fn acquire(state_path: &Path) -> std::io::Result<Self> {
         let lock_path = state_file_lock_path(state_path)?;
-        let parent = lock_path.parent().unwrap_or_else(|| Path::new("."));
+        let parent = lock_path.parent().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "state-file lock path has no parent directory",
+            )
+        })?;
         std::fs::create_dir_all(parent)?;
         let file = OpenOptions::new()
             .create(true)
@@ -35,7 +40,9 @@ impl StateFileWriteLock {
 
 impl Drop for StateFileWriteLock {
     fn drop(&mut self) {
-        let _ = FileExt::unlock(&self.file);
+        if let Err(error) = FileExt::unlock(&self.file) {
+            tracing::warn!(%error, "failed to unlock KeyHog state file; closing the lock file will release the OS lock");
+        }
     }
 }
 

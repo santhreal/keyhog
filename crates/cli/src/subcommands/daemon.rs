@@ -138,7 +138,7 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                     style::warn("WARN", &palette),
                     daemon_version,
                     env!("CARGO_PKG_VERSION"),
-                    stale_reason.as_deref().unwrap_or("identity mismatch"),
+                    stale_reason.as_deref().unwrap_or("identity mismatch"), // LAW10: reporting-only fallback; status remains explicitly stale and scan handshakes still fail closed
                 );
             }
             Ok(ExitCode::SUCCESS)

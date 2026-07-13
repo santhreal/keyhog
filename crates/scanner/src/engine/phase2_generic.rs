@@ -260,7 +260,7 @@ impl CompiledScanner {
                     .map_or(8, |min_len| min_len);
                 let owning_detector_max_len = owning_detector
                     .and_then(|detector| detector.max_len)
-                    .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT);
+                    .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT); // LAW10: documented numeric default for omitted per-detector max_len
                 let owning_detector_entropy_high = owning_detector
                     .and_then(|d| d.entropy_high)
                     .map_or(crate::entropy::HIGH_ENTROPY_THRESHOLD, |threshold| {

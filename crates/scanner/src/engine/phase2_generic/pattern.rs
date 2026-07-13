@@ -58,9 +58,9 @@ pub(crate) fn build_generic_re() -> std::result::Result<regex::Regex, regex::Err
         .map(|detector| {
             detector
                 .max_len
-                .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT)
+                .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT) // LAW10: documented numeric default for an omitted max_len
         })
         .max()
-        .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT);
+        .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT); // LAW10: documented numeric default when the optional generic-detector set is empty
     compile_generic_re_with_max(&generic_keyword_alternation(), max_len)
 }

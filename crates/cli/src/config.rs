@@ -148,7 +148,7 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
                     "failed to parse .keyhog.toml: {error}"
                 );
             }
-            let parsed_table = raw.parse::<toml::Table>().ok();
+            let parsed_table = raw.parse::<toml::Table>().ok(); // LAW10: reporting-only best-effort parse for a more specific fix; the original TOML error still fails closed below
             let retired_key = parsed_table.as_ref().and_then(|table| {
                 RETIRED_FLAT_SCAN_KEYS
                     .iter()

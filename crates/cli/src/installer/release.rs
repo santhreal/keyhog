@@ -99,8 +99,8 @@ pub(crate) fn asset_name(os: &str, arch: &str) -> Option<String> {
 
 pub(crate) fn parse_version(tag: &str) -> Option<semver::Version> {
     let trimmed = tag.trim();
-    let value = trimmed.strip_prefix('v').unwrap_or(trimmed);
-    semver::Version::parse(value).ok()
+    let value = trimmed.strip_prefix('v').unwrap_or(trimmed); // LAW10: intentional alternate spelling; an absent v prefix means parse the original tag unchanged
+    semver::Version::parse(value).ok() // LAW10: malformed input returns None and fails closed because an invalid release tag is never selected
 }
 
 /// Parse the numeric core of a strict semantic version. Kept as the compact
@@ -368,7 +368,7 @@ pub(crate) fn verify_release_checksum(
         anyhow::bail!("release checksum for {asset_name} is not a 64-digit SHA-256 digest");
     }
     if let Some(label) = fields.next() {
-        let label = label.strip_prefix('*').unwrap_or(label);
+        let label = label.strip_prefix('*').unwrap_or(label); // LAW10: optional binary-mode `*` prefix; the same filename label is validated below
         if label != asset_name {
             anyhow::bail!(
                 "release checksum labels `{label}` but payload is `{asset_name}`; refusing mismatched manifest"
@@ -405,7 +405,7 @@ async fn read_limited_response(
     }
     let capacity = response
         .content_length()
-        .and_then(|length| usize::try_from(length).ok())
+        .and_then(|length| usize::try_from(length).ok()) // LAW10: perf-only allocation hint; streamed byte counting below enforces the hard response limit
         .map_or(0, |length| length.min(MAX_RESPONSE_PREALLOC_BYTES));
     let mut body = Vec::with_capacity(capacity);
     let mut stream = response.bytes_stream();
