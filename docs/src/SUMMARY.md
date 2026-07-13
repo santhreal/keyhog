@@ -25,6 +25,10 @@
 - [Integration recipes](./workflows/integrations.md)
 - [Daemon and warm scans](./workflows/daemon.md)
 
+# Guides
+
+- [Deep recovery](./guides/deep-recovery.md)
+
 # Reference
 
 - [CLI reference](./reference/cli.md)

@@ -21,6 +21,23 @@ fn deep_preset_applies_thorough_decode_depth_base() {
         "--deep must apply the thorough preset's decode-depth base (10), got {}",
         cfg.max_decode_depth
     );
+    assert_eq!(
+        cfg.max_decode_bytes,
+        keyhog_scanner::ScannerConfig::DEEP_MAX_DECODE_BYTES,
+        "--deep must admit one complete production chunk into decode-through"
+    );
+    assert!(
+        cfg.entropy_in_source_files,
+        "--deep must enable entropy discovery in source files"
+    );
+    assert!(
+        !cfg.entropy_ml_authoritative,
+        "--deep must retain heuristic evidence instead of allowing an ML-only entropy veto"
+    );
+    assert!(
+        cfg.scan_comments,
+        "--deep must treat comments as live credential surfaces"
+    );
 }
 
 #[test]
@@ -33,5 +50,14 @@ fn deep_preset_then_explicit_decode_depth_override_wins() {
         cfg.max_decode_depth, 3,
         "--deep --decode-depth 3 must yield 3 (override layers over preset), got {}",
         cfg.max_decode_depth
+    );
+}
+
+#[test]
+fn deep_preset_has_a_distinct_autoroute_config_identity() {
+    assert_ne!(
+        API.autoroute_config_digest_for_scanner(keyhog_scanner::ScannerConfig::default()),
+        API.autoroute_config_digest_for_scanner(keyhog_scanner::ScannerConfig::thorough()),
+        "deep recovery policy must not reuse default-preset calibration evidence"
     );
 }

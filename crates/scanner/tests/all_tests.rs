@@ -117,6 +117,8 @@ pub mod regression_decode_through_strict;
 pub mod regression_decode_url_plus;
 #[path = "regression_decoded_generic_entropy_guard.rs"]
 pub mod regression_decoded_generic_entropy_guard;
+#[path = "regression_deep_preset_recovery.rs"]
+pub mod regression_deep_preset_recovery;
 #[path = "regression_deepl_bare_key_recall.rs"]
 pub mod regression_deepl_bare_key_recall;
 #[path = "regression_detector_keyword_index.rs"]

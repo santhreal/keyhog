@@ -836,8 +836,8 @@ fn fast_preset_disables_ml_entropy_decode() {
     );
 }
 
-/// `--deep` preset composition: ml on, entropy on, decode 10, floor still the
-/// canonical 0.40 (thorough() omits min_confidence on purpose).
+/// `--deep` preset composition: the normal scoring floor remains stable while
+/// the resolved recovery surface expands beyond the default preset.
 #[test]
 fn deep_preset_enables_ml_entropy_keeps_default_floor() {
     let (out, err, code) = effective_config(&["scan", "--daemon=off", "--deep"]);
@@ -858,6 +858,17 @@ fn deep_preset_enables_ml_entropy_keeps_default_floor() {
         out.contains("min_confidence = 0.4"),
         "deep keeps canonical 0.40 floor; got {out}"
     );
+    for recovery_field in [
+        "entropy_in_source_files = true",
+        "entropy_ml_authoritative = false",
+        "max_decode_bytes = 1048576",
+        "scan_comments = true",
+    ] {
+        assert!(
+            out.contains(recovery_field),
+            "deep effective config must expose `{recovery_field}`; got {out}"
+        );
+    }
 }
 
 // ============================================================================

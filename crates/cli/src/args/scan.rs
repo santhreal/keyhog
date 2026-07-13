@@ -680,10 +680,10 @@ pub struct ScanArgs {
     )]
     pub fast: bool,
 
-    /// Deep mode: all features enabled. A preset is a BASE: it seeds defaults
-    /// (decode-depth 10, entropy + ML on), then any explicit knob you pass
-    /// overrides it, e.g. `--deep --decode-depth 3` runs deep with depth 3, and
-    /// `--deep --min-confidence 0.9` raises the floor on the deep base.
+    /// Deep recovery mode: scans entropy candidates in source files, removes
+    /// comment confidence penalties, keeps heuristic evidence alongside ML for
+    /// entropy candidates, sets decode depth 10, and admits one 1 MiB chunk into
+    /// decode-through. Compatible explicit knobs override this BASE.
     #[arg(long, conflicts_with_all = ["fast", "precision", "no_decode", "no_entropy"])]
     pub deep: bool,
 

@@ -177,7 +177,7 @@ error; calibration never relaxes a detector to make a backend look faster.
 ### Configuration Presets
 
 *   `--fast` (or `ScannerConfig::fast()`): Disables high-FP generic entropy checks, ML, and deep decoding (`max_decode_depth = 0`). Maximizes throughput.
-*   `--deep` (or `ScannerConfig::thorough()`): Admits unanchored generic high-entropy strings, enabling deep decoding (`max_decode_depth = 10`), ML scoring, and entropy sweeps. Maximizes recall.
+*   `--deep` (or `ScannerConfig::thorough()`): Enables source-file entropy, combines heuristic and ML evidence without an ML-only veto, removes comment confidence penalties, raises decode-through to one 1 MiB chunk, and uses decode depth 10. This is the bounded maximum-recall preset.
 *   `--precision` (or `ScannerConfig::high_precision()`): Sets `min_confidence` to `0.85` (`HIGH_PRECISION_MIN_CONFIDENCE`), keeps ML enabled, limits decoding depth (`max_decode_depth = 1`), and disables high-FP generic entropy checks. Maximizes precision.
 
 ### Strict Backend Parity

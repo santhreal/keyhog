@@ -9,7 +9,7 @@ pub(super) struct ConfigFile {
     pub detectors: Option<String>,
     /// Enable fast mode (no entropy discovery, ML scoring, or decode recursion).
     pub fast: Option<bool>,
-    /// Enable deep mode (all features).
+    /// Enable the bounded deep-recovery preset.
     pub deep: Option<bool>,
     /// Enable high-precision mass-scan mode.
     pub precision: Option<bool>,

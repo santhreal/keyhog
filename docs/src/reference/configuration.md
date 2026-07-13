@@ -148,7 +148,7 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 | Preset | TOML | CLI | What it does |
 |---|---|---|---|
 | Fast | `fast = true` | `--fast` | Disables decode recursion (`max_decode_depth = 0`), entropy discovery, and ML scoring. Named regex and multiline detection remain active. Refused under `--lockdown`. |
-| Deep | `deep = true` | `--deep` | Enables entropy and ML and restores decode depth 10. It does not lower the canonical 0.40 confidence floor. |
+| Deep | `deep = true` | `--deep` | Enables entropy and ML, keeps heuristic evidence instead of an ML-only entropy veto, scans source-file entropy, removes comment confidence penalties, sets depth 10, and raises decode-through to one 1 MiB chunk. It keeps the 0.40 floor. |
 | Precision | `precision = true` | `--precision` | Disables entropy discovery and the relaxed keyword-low-entropy bridge, keeps ML enabled, sets decode depth 1, and clamps global and detector confidence floors to at least **0.85**. |
 
 `--fast`, `--deep`, and `--precision` are mutually exclusive and conflict with

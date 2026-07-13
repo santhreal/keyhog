@@ -73,7 +73,7 @@ or coverage incomplete.
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
 | `--fast`                      | Disable entropy discovery, ML scoring, and decode recursion (`max_decode_depth = 0`). Named regex detectors remain loaded; the speedup and recall change are workload-dependent. |
-| `--deep`                      | Seed decode depth 10 with entropy and ML enabled; later compatible flags may tighten those defaults. |
+| `--deep`                      | Enable source-file entropy, heuristic plus ML recovery, comment recovery, a 1 MiB decode ceiling, and depth 10. |
 | `--precision`                 | Seed a high-precision policy: decode depth 1, entropy discovery and the relaxed keyword bridge off, ML scoring retained, and a minimum confidence floor of `0.85`. Explicit floors may tighten but not lower it. |
 | `--incremental`               | Skip files whose content hash matches the Merkle index, then update the index after a successful scan. |
 | `--incremental-cache <PATH>`  | Override the Merkle index used by `--incremental`. |

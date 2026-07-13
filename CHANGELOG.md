@@ -6,6 +6,12 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Make `--deep` a distinct bounded recovery preset. It enables entropy discovery
+  in source files, keeps heuristic evidence alongside ML instead of allowing an
+  ML-only entropy veto, removes comment confidence penalties, raises
+  decode-through to one 1 MiB production chunk, and retains depth 10. The
+  resolved fields are visible through `keyhog config --effective` and are part
+  of autoroute config identity.
 - Decode-enabled scans now perform bounded, side-effect-free recovery of static
   JavaScript XOR and AES-256-CBC expressions whose byte arrays, keys, IVs, and
   ciphertext are embedded in the source. Literal arrays, Base64-encoded JSON

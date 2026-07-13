@@ -279,6 +279,12 @@ impl ScannerConfig {
     /// trades recall for a near-zero false-positive rate at mass-scan scale.
     pub const HIGH_PRECISION_MIN_CONFIDENCE: f64 = 0.85;
 
+    /// Deep mode admits one complete production scan chunk into decode-through.
+    /// The default stays at 512 KiB to bound routine work; deep intentionally
+    /// spends more memory and CPU to recover encoded values anywhere in a
+    /// filesystem window.
+    pub const DEEP_MAX_DECODE_BYTES: usize = crate::types::MAX_SCAN_CHUNK_BYTES;
+
     pub fn fast() -> Self {
         let mut config = Self::default();
         config.max_decode_depth = 0;
@@ -294,8 +300,12 @@ impl ScannerConfig {
         // the confidence bar.
         let mut config = Self::default();
         config.max_decode_depth = 10;
+        config.max_decode_bytes = Self::DEEP_MAX_DECODE_BYTES;
         config.ml_enabled = true;
         config.entropy_enabled = true;
+        config.entropy_in_source_files = true;
+        config.entropy_ml_authoritative = false;
+        config.scan_comments = true;
         config
     }
 

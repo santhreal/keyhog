@@ -331,7 +331,7 @@ keyhog scan . --verify                         # live-verify against vendor APIs
 keyhog scan . --create-baseline .keyhog-baseline.json
 keyhog scan . --baseline .keyhog-baseline.json # only NEW findings vs snapshot
 keyhog scan . --fast                           # pre-commit speed (no entropy/ML/decode recursion)
-keyhog scan . --deep                           # max detection depth
+keyhog scan . --deep                           # bounded maximum-recall recovery
 keyhog scan . --incremental                    # BLAKE3 Merkle skip → 10-100× CI loop
 ```
 

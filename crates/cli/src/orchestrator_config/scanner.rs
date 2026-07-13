@@ -152,11 +152,18 @@ pub(super) fn build_scanner_config_from_input(input: &ScannerConfigInput) -> Sca
     config.per_chunk_timeout_ms = input.per_chunk_timeout_ms;
     config.profile = input.profile;
     config.perf_trace = input.perf_trace;
-    config.entropy_in_source_files = input.entropy_source_files;
+    // Deep enables source-file entropy as part of its recovery contract. The
+    // positive flag can enable it in any other preset, but an absent flag must
+    // not erase the preset base.
+    config.entropy_in_source_files |= input.entropy_source_files;
     // Entropy candidates are scored through the MoE (model authoritative) by
     // default; `--no-entropy-ml-scoring` selects bare entropy-only scoring.
     // No-op unless entropy + ML are both on (gated in scan_entropy_fallback).
-    config.entropy_ml_authoritative = !input.no_entropy_ml_scoring;
+    // Deep retains heuristic entropy evidence by preset contract. The
+    // negative flag can disable model authority in every other mode, but an
+    // absent flag must not restore authority that the preset removed.
+    config.entropy_ml_authoritative =
+        config.entropy_ml_authoritative && !input.no_entropy_ml_scoring;
     // Keyword-anchored generic values use the relaxed entropy floor by default
     // (the keyword key is the evidence; precision carried by the MoE);
     // `--no-keyword-low-entropy` restores the high-entropy-only generic gate.
@@ -167,7 +174,9 @@ pub(super) fn build_scanner_config_from_input(input: &ScannerConfigInput) -> Sca
     // false). Mirrors the one-directional precision min_confidence contract.
     config.generic_keyword_low_entropy =
         config.generic_keyword_low_entropy && !input.no_keyword_low_entropy;
-    config.scan_comments = input.scan_comments;
+    // Deep treats comments as live leak surfaces. Preserve that preset base;
+    // `--scan-comments` remains the positive opt-in for other modes.
+    config.scan_comments |= input.scan_comments;
     config.ml_enabled = !input.fast && !input.no_ml;
     if let Some(weight) = input.ml_weight {
         config.ml_weight = weight;

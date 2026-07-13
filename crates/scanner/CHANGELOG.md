@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Make `ScannerConfig::thorough()` a distinct bounded recovery policy. It scans
+  entropy candidates in source files, retains heuristic evidence alongside ML,
+  removes comment confidence penalties, and admits one complete 1 MiB
+  production chunk into decode-through.
 - Add bounded static JavaScript recovery for embedded XOR and AES-256-CBC
   expressions. Decode-enabled scans evaluate only the recognized
   side-effect-free grammar and reject dynamic operands, mismatched bindings,
