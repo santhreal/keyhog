@@ -54,7 +54,8 @@ pub(crate) fn validate_explicit_detector_path(path: &Path, explicit: bool) -> Re
         anyhow::bail!(
             "explicit detectors directory '{}' does not exist. \
              Fix: pass an existing detector directory, or omit --detectors to \
-             use the embedded corpus.",
+             search installed detector locations and then use the embedded \
+             corpus when none is installed.",
             path.display()
         );
     }
@@ -331,8 +332,8 @@ pub(crate) fn require_non_empty_detectors(
     Ok(())
 }
 
-/// Load detectors from a directory, falling back to the embedded TOML corpus
-/// when `--detectors` is omitted (the default `detectors` path is absent).
+/// Load detectors from the already-resolved directory, falling back to the
+/// embedded TOML corpus when no installed corpus was discovered.
 ///
 /// An EXPLICIT `--detectors <path>` that is missing or not a directory is NOT
 /// silently substituted with the embedded corpus: `validate_detector_path_for_scan`
@@ -364,7 +365,8 @@ pub(crate) fn detector_compile_failed(
     anyhow::anyhow!(
         "{command}: scanner compile failed while compiling detectors from '{}': {error}. \
          Fix: run `keyhog detectors --audit --detectors {}` and repair detector errors, \
-         or omit --detectors to use the embedded corpus.",
+         or omit --detectors to search installed detector locations and then use \
+         the embedded corpus when none is installed.",
         detectors_path.display(),
         detectors_path.display(),
     )
@@ -375,7 +377,8 @@ fn validate_detector_path_for_scan(path: &Path) -> Result<()> {
         anyhow::bail!(
             "detectors path '{}' is not a directory. \
              Fix: pass a directory containing detector TOML files, or omit \
-             --detectors to use the embedded corpus.",
+             --detectors to search installed detector locations and then use \
+             the embedded corpus when none is installed.",
             path.display()
         );
     }
@@ -383,7 +386,8 @@ fn validate_detector_path_for_scan(path: &Path) -> Result<()> {
         anyhow::bail!(
             "detectors directory '{}' does not exist. \
              Fix: pass an existing detector directory, or omit --detectors to \
-             use the embedded corpus.",
+             search installed detector locations and then use the embedded \
+             corpus when none is installed.",
             path.display()
         );
     }

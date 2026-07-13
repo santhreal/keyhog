@@ -184,7 +184,11 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 
 ## `keyhog detectors`
 
-Lists every detector in the embedded corpus.
+Lists every detector in the effective corpus. With no `--detectors` flag,
+KeyHog uses the first installed corpus found in the user data directories,
+system data directories, or beside the executable. If none exists, it uses the
+embedded corpus. An explicit path always replaces that search and fails closed
+when missing or invalid.
 
 ```sh
 keyhog detectors                  # human-readable, grouped by service

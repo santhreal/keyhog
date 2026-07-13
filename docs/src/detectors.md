@@ -299,6 +299,12 @@ hidden Rust-side family table to keep synchronized.
 
 ## Listing detectors
 
+With no `--detectors` flag, KeyHog searches the platform user data locations,
+system data locations, and the executable directory for an installed
+`keyhog/detectors` corpus. The first existing directory is the complete active
+corpus. If none exists, KeyHog uses the embedded corpus. An explicit path
+replaces discovery and never merges with another corpus.
+
 ```sh
 keyhog detectors                  # human-readable list, grouped by service
 keyhog detectors --format json           # one JSON array of detector objects
