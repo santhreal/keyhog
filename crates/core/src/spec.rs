@@ -171,8 +171,9 @@ pub struct DetectorSpec {
     /// candidate. `None` → the single-owner default `KEYWORD_FREE_MIN_LEN`.
     #[serde(default)]
     pub keyword_free_min_len: Option<usize>,
-    /// Per-detector minimum candidate length (any candidate this detector emits).
-    /// `None` → no detector-specific length floor beyond the path-wide default.
+    /// Per-detector minimum candidate length in UTF-8 bytes (any candidate this
+    /// detector emits). `None` means no detector-specific length floor beyond
+    /// the path-wide default.
     #[serde(default)]
     pub min_len: Option<usize>,
     /// Per-detector maximum byte length for phase-2 generic assignment values.

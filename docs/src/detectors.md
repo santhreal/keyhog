@@ -255,7 +255,7 @@ scanner uses.
 
 ### Candidate Lengths
 *   **`keyword_free_min_len`** (integer, optional): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Falls back to `KEYWORD_FREE_MIN_LEN` (20) if unset.
-*   **`min_len`** (integer, optional): Per-detector minimum candidate length for any candidate this detector emits. Falls back to no detector-specific floor beyond the path-wide default if unset.
+*   **`min_len`** (integer, optional): Per-detector minimum candidate length in UTF-8 bytes for any candidate this detector emits. Falls back to no detector-specific floor beyond the path-wide default if unset.
 *   **`max_len`** (integer, optional; `kind = "phase2-generic"` only): Inclusive maximum byte length for one generic assignment value. The candidate generator is compiled from the largest ceiling in the loaded detector corpus, then the owning detector rejects an overlength value whole; it never reports a truncated prefix. It must be at least the generic path minimum of 8 and no smaller than `min_len`. An omitted value uses the typed 128-byte compiled fallback. Keep this in the owning generic detector TOML so API keys, passphrases, and generic payloads can use different ceilings. Regex-backed patterns keep their own explicit repetition bounds.
 
 The generic assignment bridge exists only when the loaded corpus contains at

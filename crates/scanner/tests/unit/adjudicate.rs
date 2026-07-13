@@ -109,6 +109,35 @@ fn process_stage_keeps_candidate_at_detector_minimum_length() {
 }
 
 #[test]
+fn process_stage_measures_detector_minimum_in_utf8_bytes() {
+    let credential = "éé";
+    assert_eq!(credential.len(), 4, "fixture must contain four UTF-8 bytes");
+
+    for (min_len, expected) in [
+        (4, Verdict::Reported(None)),
+        (5, Verdict::Suppressed(StageId::BelowDetectorMinLength)),
+    ] {
+        let signals = ProcessCandidateSignals::from_match(
+            "custom-min-length",
+            Some(min_len),
+            None,
+            credential,
+            credential,
+            0,
+            credential.len(),
+        );
+        assert_eq!(
+            adjudicate_match(
+                CandidateMatch::new(credential),
+                &MatchCtx::for_process_signals(signals)
+            ),
+            expected,
+            "unexpected verdict at {min_len}-byte floor"
+        );
+    }
+}
+
+#[test]
 fn process_stage_suppresses_anthropic_legacy_length() {
     let credential = "sk-ant-api03-short";
     let shape = crate::credential_shapes::CredentialShapeRule::prefix_body_range_for_test(
