@@ -536,7 +536,7 @@ problems to surface to the on-call. `exit 130` means the run was interrupted
 ## Performance flags for tight CI budgets
 
 ```bash
-# Skip ML + decode + entropy + multiline - pre-commit speed
+# Disable ML, entropy discovery, and decode recursion - pre-commit speed
 keyhog scan . --fast --min-confidence 0.5
 
 # Maximum detection depth - release/security gate
@@ -548,13 +548,15 @@ keyhog scan . --threads $(nproc)
 # Force GPU for a diagnostic/benchmark run
 keyhog scan . --backend gpu
 
-# Stream findings to a file (no buffer) for very large scans
-keyhog scan . --format jsonl >> findings.jsonl
+# Write the final findings-only JSONL report to a file
+keyhog scan . --format jsonl --output findings.jsonl
 ```
 
 `--fast` is the reduced-cost pre-commit policy. `--deep` enables the documented
 deeper paths for release/security gates. Measure both on the actual repository;
-the relative cost is workload- and hardware-dependent.
+the relative cost is workload- and hardware-dependent. Reports are finalized
+after scanning and verification; `--stream` adds immediate redacted previews
+on stderr but does not turn the final report into an unbuffered writer.
 
 ## Troubleshooting
 
@@ -564,4 +566,4 @@ the relative cost is workload- and hardware-dependent.
 | Findings count drops vs prior run | `.keyhog-baseline.json` is up-to-date or `.keyhog.toml` widened | `git diff .keyhog-baseline.json .keyhog.toml` |
 | Pre-commit hook is slow | Scanning the whole repo on every commit | Use `--git-staged` not `scan .` |
 | SARIF upload rejects file | `min_confidence` too low; thousands of findings | Raise to ≥0.3 for SARIF specifically |
-| Detection misses a known token | Detector not enabled / `--fast` skipped the decoder | Re-run with `--deep` to confirm; file an issue if it still misses |
+| Detection misses a known token | Detector absent from the loaded corpus / `--fast` disabled decode recursion or entropy discovery | Re-run with the embedded corpus and `--deep`; file an issue if it still misses |

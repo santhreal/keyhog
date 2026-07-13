@@ -118,7 +118,7 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 
 | Preset | TOML | CLI | What it does |
 |---|---|---|---|
-| Fast | `fast = true` | `--fast` | Pattern-match only: **disables decode + entropy + ML**. Fastest; largest blind spot. Refused under `--lockdown`. |
+| Fast | `fast = true` | `--fast` | Disables decode recursion (`max_decode_depth = 0`), entropy discovery, and ML scoring. Named regex and multiline detection remain active. Refused under `--lockdown`. |
 | Deep | `deep = true` | `--deep` | Everything on, maximum recall. |
 | Precision | - | `--precision` | High-precision mass scanning: drops entropy-only/ML-speculative findings, raises the confidence floor to **0.85**, shallow decode. Stays fully offline and fast. |
 

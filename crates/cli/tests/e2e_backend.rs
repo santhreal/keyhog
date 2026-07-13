@@ -1,8 +1,9 @@
 //! e2e test for `keyhog backend` (hardware detection and routing).
 //!
 //! The backend subcommand inspects detected hardware (GPU, SIMD) and the
-//! auto-selected scan backend. It also supports --self-test to verify GPU
-//! kernels and --probe-bytes to test routing thresholds.
+//! diagnostic hardware-routing heuristics. It also supports --self-test to
+//! verify GPU kernels, --probe-bytes for heuristic what-if work, and
+//! --autoroute for the persisted fastest-correct decisions used by auto scans.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -11,8 +12,28 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// `keyhog backend` returns exit 0 with information about detected hardware
-/// and the selected scan backend (GPU, SIMD, or fallback).
+#[test]
+fn backend_help_distinguishes_diagnostic_heuristics_from_autoroute() {
+    let root = Command::new(binary())
+        .arg("--help")
+        .output()
+        .expect("spawn keyhog --help");
+    let root_stdout = String::from_utf8_lossy(&root.stdout);
+    assert!(root_stdout
+        .contains("Inspect hardware, diagnostic routing heuristics, or autoroute evidence"));
+    assert!(!root_stdout.contains("auto-selected scan backend"));
+
+    let backend = Command::new(binary())
+        .args(["backend", "--help"])
+        .output()
+        .expect("spawn keyhog backend --help");
+    let backend_stdout = String::from_utf8_lossy(&backend.stdout);
+    assert!(backend_stdout.contains("diagnostic hardware heuristic matrix"));
+    assert!(backend_stdout.contains("persisted fastest-correct calibration evidence"));
+}
+
+/// `keyhog backend` returns exit 0 with detected hardware and a clearly
+/// diagnostic heuristic matrix (GPU, SIMD, or fallback).
 #[test]
 fn backend_default_returns_exit_zero_with_hardware_info() {
     let output = Command::new(binary())

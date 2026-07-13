@@ -60,7 +60,7 @@ incomplete.
 
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
-| `--fast`                      | Skip entropy + ML scorer. ~50% faster, ~20% fewer detectors. |
+| `--fast`                      | Disable entropy discovery, ML scoring, and decode recursion (`max_decode_depth = 0`). Named regex detectors remain loaded; the speedup and recall change are workload-dependent. |
 | `--daemon`                    | Force daemon route for eligible stdin/single-file scans. Unix only; fails if the request needs the in-process pipeline. |
 | `--daemon=off`                 | Force in-process scan even if daemon is up.    |
 | `--timeout <SECONDS>`         | Hard per-scan deadline.                        |
@@ -146,9 +146,17 @@ Lists every detector in the embedded corpus.
 
 ```sh
 keyhog detectors                  # human-readable, grouped by service
-keyhog detectors --format json           # one JSON array of detector objects
+keyhog detectors --format json    # one JSON array of detector objects
 keyhog detectors --format json | jq length
+keyhog detectors --search aws     # id/name/service/keyword substring filter
+keyhog detectors --search aws --verbose  # full matching specs
+keyhog detectors --audit          # validate the loaded corpus; errors exit 3
+keyhog detectors --fix --dry-run  # preview safe verifier-template rewrites
 ```
+
+`--fix` only performs the mechanically safe single-brace to double-brace
+verification-template rewrite; other audit findings require an explicit edit.
+`--format` is mutually exclusive with `--audit` and `--fix`.
 
 ## `keyhog explain <DETECTOR_ID>`
 
@@ -249,9 +257,11 @@ still prints the final summary.
 
 ## `keyhog backend`
 
-Prints hardware probe results: which SIMD ISA was detected, whether
-Hyperscan / CUDA / wgpu backends initialized, the per-tier GPU
-thresholds in effect.
+Prints hardware probe results and a diagnostic per-tier heuristic matrix:
+which SIMD ISA was detected and whether Hyperscan, CUDA, or wgpu initialized.
+The matrix is not the `scan --backend auto` decision; normal automatic scans
+use persisted fastest-correct calibration. Use `keyhog backend --autoroute`
+to inspect that evidence, and `--probe-bytes` only for heuristic what-if work.
 
 ```sh
 keyhog backend
@@ -275,7 +285,7 @@ keyhog scan-system --space 50G --no-git-history     # cap + skip history walks
 keyhog scan-system --lockdown                       # forbids --include-network
 ```
 
-## `keyhog completion <bash|zsh|fish|powershell>`
+## `keyhog completion <bash|zsh|fish|powershell|elvish>`
 
 Emits a shell-completion script. Pipe into the shell's completion
 location.
@@ -285,6 +295,7 @@ keyhog completion bash > /etc/bash_completion.d/keyhog
 keyhog completion zsh > "${fpath[1]}/_keyhog"
 keyhog completion fish > ~/.config/fish/completions/keyhog.fish
 keyhog completion powershell >> $PROFILE
+keyhog completion elvish > ~/.config/elvish/lib/keyhog.elv
 ```
 
 ## Install maintenance
@@ -304,14 +315,18 @@ checksum, signature, GPU-literal sidecar, sidecar checksum, and sidecar
 signature. An explicit `--version` may select a published prerelease but never
 a draft.
 
-## Global flags
+## Root options
 
-These work on any subcommand:
+These are root-command options. `--version` and `--full` are not scan flags;
+they print identity information and exit. Each subcommand also has its own
+`--help`.
 
 | Flag             | Effect                                              |
 |------------------|-----------------------------------------------------|
-| `--version`      | Print version + build info, exit.                   |
-| `--full`         | With `--version`, include the hardware probe.       |
-| `--help`         | Print help for the current subcommand.              |
-| `--verbose`      | More log output to stderr.                          |
-| `--no-color`     | Disable ANSI colors. Auto-detects TTY otherwise.    |
+| `-V`, `--version` | Print version + build info, then exit.              |
+| `--full`          | With `--version`, include the hardware probe.       |
+| `-h`, `--help`    | Print root help.                                    |
+
+Display controls are command-specific: `scan --no-color` disables report and
+summary ANSI output, while `detectors --verbose` prints full matching detector
+specifications.

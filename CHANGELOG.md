@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Corrected backend inspection UX so the diagnostic hardware heuristic matrix
+  is never presented as the proof-backed `scan --backend auto` decision, and
+  aligned the CLI reference with actual root options, detector maintenance,
+  Elvish completion, fast-mode behavior, and finalized report semantics.
 - Added detector-owned `max_len` for `phase2-generic` TOMLs, with schema
   validation, detector-spec cache identity, named suppression telemetry, and
   boundary-tested whole-value rejection. Shipped API-key/secret/passphrase

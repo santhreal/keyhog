@@ -12,9 +12,9 @@ pub struct CompletionArgs {
 // so it requires one of them; the two modes are mutually exclusive.
 #[command(group(clap::ArgGroup::new("json_target").args(["self_test", "autoroute"])))]
 pub struct BackendArgs {
-    /// Probe the workload size that would route to a different backend.
-    /// E.g. `--probe-bytes $((256 * 1024 * 1024))` to confirm GPU is picked
-    /// at the 256 MiB threshold.
+    /// Probe the workload size in the diagnostic hardware heuristic matrix.
+    /// This does not predict `scan --backend auto`, which uses persisted
+    /// fastest-correct calibration evidence.
     #[arg(long)]
     pub probe_bytes: Option<u64>,
 

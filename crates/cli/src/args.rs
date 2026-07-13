@@ -90,7 +90,7 @@ pub enum Command {
     #[command(verbatim_doc_comment)]
     CalibrateAutoroute(CalibrateAutorouteArgs),
 
-    /// Watch a directory and scan files as they change (daemon mode)
+    /// Watch one or more directories and scan files as they change
     #[command(verbatim_doc_comment)]
     Watch(WatchArgs),
 
@@ -98,7 +98,7 @@ pub enum Command {
     #[command(verbatim_doc_comment)]
     Completion(CompletionArgs),
 
-    /// Inspect detected hardware + the auto-selected scan backend
+    /// Inspect hardware, diagnostic routing heuristics, or autoroute evidence
     #[command(verbatim_doc_comment)]
     Backend(BackendArgs),
 
