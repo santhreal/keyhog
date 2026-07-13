@@ -1,3 +1,5 @@
+import pytest
+
 from bench.schema import (
     CONF_BINS,
     CorpusInfo,
@@ -38,6 +40,18 @@ def test_run_result_round_trips_losslessly():
     assert decoded.scanner.config_id == "simd-nocache-nodaemon-full"
     assert decoded.scanner.detector_corpus_sha256 == "a" * 64
     assert decoded.result_filename() == "mirror-keyhog-simd-nocache-nodaemon-full.json"
+
+
+@pytest.mark.parametrize("observed", [None, "bench-v999"])
+def test_run_result_rejects_missing_or_unsupported_schema(observed):
+    payload = RunResult().to_json()
+    if observed is None:
+        payload.pop("schema_version")
+    else:
+        payload["schema_version"] = observed
+
+    with pytest.raises(ValueError, match="supported='bench-v1'"):
+        RunResult.from_json(payload, source="fixture.json")
 
 
 def test_scanner_config_min_confidence_is_optional_and_off_the_matrix_key():

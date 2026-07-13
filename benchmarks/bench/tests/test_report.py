@@ -29,6 +29,25 @@ def test_report_renders_keyhog_leaderboard_row():
     assert "Corpus: **mirror**" in text
 
 
+@pytest.mark.parametrize("observed", [None, "bench-v999"])
+def test_load_results_rejects_incompatible_result_schema(tmp_path, observed):
+    payload = _result("keyhog", 5, 20.0).to_json()
+    if observed is None:
+        payload.pop("schema_version")
+    else:
+        payload["schema_version"] = observed
+    artifact = tmp_path / "invalid-result.json"
+    artifact.write_text(json.dumps(payload))
+
+    with pytest.raises(report.ResultLoadError) as exc:
+        report.load_results(tmp_path)
+
+    message = str(exc.value)
+    assert str(artifact) in message
+    assert "supported='bench-v1'" in message
+    assert "Rerun the benchmark" in message
+
+
 def test_report_inject_replaces_marker_body():
     original = "a\n<!-- BENCH:perf:start -->\nold\n<!-- BENCH:perf:end -->\nz"
 

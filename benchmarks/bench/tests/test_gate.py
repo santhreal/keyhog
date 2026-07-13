@@ -224,6 +224,28 @@ def test_run_gate_rejects_stale_keyhog_result_artifacts(tmp_path):
     assert rc == 2
 
 
+@pytest.mark.parametrize("observed", [None, "bench-v999"])
+def test_run_gate_is_undecidable_for_incompatible_result_schema(
+    tmp_path, capsys, observed
+):
+    payload = _row("keyhog", tp=5, fp=0, fn=0).to_json()
+    if observed is None:
+        payload.pop("schema_version")
+    else:
+        payload["schema_version"] = observed
+    artifact = tmp_path / "mirror-keyhog-default.json"
+    artifact.write_text(json.dumps(payload))
+
+    rc = gate.run_gate(
+        "mirror", ["keyhog"], results_dir=tmp_path, beat_competitors=False,
+    )
+
+    assert rc == 2
+    error = capsys.readouterr().err
+    assert str(artifact) in error
+    assert "supported='bench-v1'" in error
+
+
 def test_run_gate_accepts_current_keyhog_result_artifacts(monkeypatch, tmp_path):
     digest = "d" * 64
     monkeypatch.setattr(gate, "workspace_detector_corpus_sha256", lambda: digest)

@@ -38,7 +38,7 @@ from .keyhog_version import (
     assert_workspace_tracked_tree_clean,
     workspace_detector_corpus_sha256,
 )
-from .report import canonical_leaderboard, load_results
+from .report import ResultLoadError, canonical_leaderboard, load_results
 from .scanners import SCANNER_NAMES
 from .schema import DetectorStat, RunResult
 
@@ -113,11 +113,14 @@ def _baseline_keyhog_row(baseline: pathlib.Path, corpus: str) -> RunResult:
     canonical selection picks the same keyhog row the live run would. The F1
     floor and the per-detector FP baseline both derive from this one row, so
     they can never disagree about which build is the baseline."""
-    results = (
-        load_results(baseline)
-        if baseline.is_dir()
-        else [RunResult.from_json(json.loads(baseline.read_text()))]
-    )
+    try:
+        results = (
+            load_results(baseline)
+            if baseline.is_dir()
+            else [RunResult.from_json(json.loads(baseline.read_text()), source=str(baseline))]
+        )
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        raise GateError(f"cannot load benchmark baseline: {exc}") from exc
     row = _keyhog_row(canonical_leaderboard(results, corpus))
     if row is None:
         raise GateError(f"baseline {baseline} has no keyhog result for corpus {corpus!r}")
@@ -270,18 +273,22 @@ def run_gate(
     """Run (or load) a leaderboard, evaluate the gate, print the verdict.
 
     Returns the process exit code (0 pass / 1 violation / 2 undecidable)."""
-    if results_dir is not None:
-        results = load_results(results_dir)
-    else:
-        # Fresh run into a scratch dir so the gate never depends on stale
-        # results/ state; the loop calls report separately to persist.
-        from .leaderboard import run_leaderboard
+    try:
+        if results_dir is not None:
+            results = load_results(results_dir)
+        else:
+            # Fresh run into a scratch dir so the gate never depends on stale
+            # results/ state; the loop calls report separately to persist.
+            from .leaderboard import run_leaderboard
 
-        with tempfile.TemporaryDirectory(prefix="keyhog-gate-") as tmp:
-            run_leaderboard(corpus, scanners, tier="quick",
-                            corpus_root=corpus_root, out_dir=pathlib.Path(tmp),
-                            verbose=True)
-            results = load_results(pathlib.Path(tmp))
+            with tempfile.TemporaryDirectory(prefix="keyhog-gate-") as tmp:
+                run_leaderboard(corpus, scanners, tier="quick",
+                                corpus_root=corpus_root, out_dir=pathlib.Path(tmp),
+                                verbose=True)
+                results = load_results(pathlib.Path(tmp))
+    except ResultLoadError as exc:
+        print(f"GATE UNDECIDABLE: {exc}", file=sys.stderr)
+        return 2
 
     rows = canonical_leaderboard(results, corpus)
     if not rows:
@@ -296,12 +303,12 @@ def run_gate(
 
     baseline_f1: float | None = None
     baseline_detectors: dict[str, DetectorStat] | None = None
-    if baseline is not None:
-        baseline_row = _baseline_keyhog_row(baseline, corpus)
-        baseline_f1 = baseline_row.detection.overall.f1()
-        if detector_fp_regression:
-            baseline_detectors = dict(baseline_row.detection.per_detector)
     try:
+        if baseline is not None:
+            baseline_row = _baseline_keyhog_row(baseline, corpus)
+            baseline_f1 = baseline_row.detection.overall.f1()
+            if detector_fp_regression:
+                baseline_detectors = dict(baseline_row.detection.per_detector)
         violations = evaluate(
             rows,
             min_f1=min_f1,

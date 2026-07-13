@@ -47,6 +47,10 @@ FULL_DIFFERENTIAL_SCANNERS = (
 )
 
 
+class ResultLoadError(ValueError):
+    """A result-shaped artifact violates the current benchmark schema."""
+
+
 def load_results(results_dir: pathlib.Path) -> list[RunResult]:
     """Load every ``*.json`` under ``results_dir`` (recursively) as RunResult.
     Skips files that aren't RunResult-shaped (e.g. an index)."""
@@ -60,7 +64,10 @@ def load_results(results_dir: pathlib.Path) -> list[RunResult]:
             continue
         if not isinstance(data, dict) or "scanner" not in data or "detection" not in data:
             continue
-        out.append(RunResult.from_json(data))
+        try:
+            out.append(RunResult.from_json(data, source=str(p)))
+        except ValueError as exc:
+            raise ResultLoadError(str(exc)) from exc
     return out
 
 

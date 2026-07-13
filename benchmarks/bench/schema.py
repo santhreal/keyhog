@@ -375,9 +375,16 @@ class RunResult:
         }
 
     @classmethod
-    def from_json(cls, d: dict) -> "RunResult":
+    def from_json(cls, d: dict, *, source: str = "benchmark result") -> "RunResult":
+        observed_version = d.get("schema_version")
+        if observed_version != SCHEMA_VERSION:
+            rendered = "<missing>" if observed_version is None else repr(observed_version)
+            raise ValueError(
+                f"{source} has schema_version={rendered}; supported={SCHEMA_VERSION!r}. "
+                "Rerun the benchmark with the current harness"
+            )
         return cls(
-            schema_version=d.get("schema_version", SCHEMA_VERSION),
+            schema_version=observed_version,
             generated_at=d.get("generated_at", ""),
             host=Host.from_json(d.get("host", {})),
             scanner=Scanner.from_json(d.get("scanner", {})),
