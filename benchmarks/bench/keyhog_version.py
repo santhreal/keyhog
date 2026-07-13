@@ -19,7 +19,7 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SEMVER_RE = re.compile(
     r"(?<![0-9A-Za-z])v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)"
 )
-_COMMIT_RE = re.compile(r"(?m)^Commit:\s+([0-9a-f]{40}|unknown)\s*$")
+_COMMIT_RE = re.compile(r"(?m)^Commit:\s+([0-9a-f]{40}(?:[0-9a-f]{24})?|unknown)\s*$")
 _DETECTOR_SET_RE = re.compile(
     r"(?m)^Detector Set:\s+\d+\s+\((\d+-[0-9a-f]{16})\)\s*$"
 )
@@ -71,7 +71,7 @@ def workspace_git_hash(repo_root: pathlib.Path = _REPO_ROOT) -> str:
         timeout=30,
     )
     value = proc.stdout.strip()
-    if proc.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", value):
+    if proc.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", value):
         raise KeyhogVersionError(
             f"cannot resolve the workspace git commit for benchmark freshness: "
             f"exit={proc.returncode}, output={(proc.stdout + proc.stderr).strip()!r}"
@@ -104,6 +104,32 @@ def assert_workspace_tracked_tree_clean(repo_root: pathlib.Path = _REPO_ROOT) ->
         raise KeyhogVersionError(
             "the tracked KeyHog workspace has uncommitted changes, so the candidate "
             "binary cannot prove it represents the current source. Commit the changes, "
+            "rebuild the release candidate, and rerun the benchmark"
+        )
+    try:
+        flags = subprocess.run(
+            ["git", "-C", str(repo_root), "ls-files", "-v", "-z"],
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise KeyhogVersionError(
+            f"cannot inspect tracked workspace index flags for benchmark freshness: {exc}"
+        ) from exc
+    if flags.returncode != 0:
+        detail = (flags.stdout + flags.stderr)[:500]
+        raise KeyhogVersionError(
+            "cannot inspect tracked workspace index flags for benchmark freshness: "
+            f"git exited {flags.returncode}, output={detail!r}"
+        )
+    hidden = [
+        entry for entry in flags.stdout.split(b"\0")
+        if entry and (entry[:1] == b"S" or entry[:1].islower())
+    ]
+    if hidden:
+        raise KeyhogVersionError(
+            "the tracked KeyHog workspace uses assume-unchanged or skip-worktree "
+            "index flags, so source freshness cannot be proven. Clear those flags, "
             "rebuild the release candidate, and rerun the benchmark"
         )
 

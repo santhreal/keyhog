@@ -141,6 +141,31 @@ def test_workspace_cleanliness_rejects_unstaged_and_staged_tracked_edits(tmp_pat
     keyhog_version.assert_workspace_tracked_tree_clean(tmp_path)
 
 
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+def test_workspace_cleanliness_rejects_hidden_index_flags(tmp_path, flag):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    scanner = tmp_path / "crates/scanner/src/lib.rs"
+    scanner.parent.mkdir(parents=True)
+    scanner.write_text("pub fn version() -> u8 { 1 }\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "crates/scanner/src/lib.rs"], check=True)
+    subprocess.run(
+        [
+            "git", "-C", str(tmp_path), "-c", "user.name=Santh",
+            "-c", "user.email=64453045+santhreal@users.noreply.github.com",
+            "commit", "-qm", "fixture",
+        ],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "update-index", flag, "crates/scanner/src/lib.rs"],
+        check=True,
+    )
+    scanner.write_text("pub fn version() -> u8 { 2 }\n")
+
+    with pytest.raises(keyhog_version.KeyhogVersionError, match="index flags"):
+        keyhog_version.assert_workspace_tracked_tree_clean(tmp_path)
+
+
 def test_binary_freshness_rejects_dirty_tracked_workspace(monkeypatch):
     current = "a" * 40
     digest = "1-0000000000000001"
@@ -162,3 +187,41 @@ def test_binary_freshness_rejects_dirty_tracked_workspace(monkeypatch):
 
     with pytest.raises(keyhog_version.KeyhogVersionError, match="uncommitted changes"):
         keyhog_version.assert_keyhog_binary_current("/candidate/keyhog")
+
+
+def test_binary_freshness_accepts_matching_sha256_commit_identity(monkeypatch):
+    current = "a" * 64
+    digest = "1-0000000000000001"
+    output = _version_output(commit=current, detector_digest=digest)
+    monkeypatch.setattr(
+        keyhog_version.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=output, stderr=""),
+    )
+    monkeypatch.setattr(keyhog_version, "workspace_git_hash", lambda: current)
+    monkeypatch.setattr(keyhog_version, "workspace_detector_digest", lambda: digest)
+    monkeypatch.setattr(keyhog_version, "assert_workspace_tracked_tree_clean", lambda: None)
+
+    assert keyhog_version.assert_keyhog_binary_current("/candidate/keyhog") == output.strip()
+
+
+def test_workspace_git_hash_accepts_sha256_repository(tmp_path):
+    initialized = subprocess.run(
+        ["git", "init", "-q", "--object-format=sha256", str(tmp_path)],
+        capture_output=True,
+    )
+    if initialized.returncode != 0:
+        pytest.skip("installed Git does not support SHA-256 repositories")
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("content\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "tracked.txt"], check=True)
+    subprocess.run(
+        [
+            "git", "-C", str(tmp_path), "-c", "user.name=Santh",
+            "-c", "user.email=64453045+santhreal@users.noreply.github.com",
+            "commit", "-qm", "fixture",
+        ],
+        check=True,
+    )
+
+    assert len(keyhog_version.workspace_git_hash(tmp_path)) == 64
