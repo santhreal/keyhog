@@ -185,10 +185,9 @@ def truth_issues() -> list[str]:
     for path in LICENSE_DOCS:
         text = path.read_text(errors="replace")
         rel = path.relative_to(REPO).as_posix()
-        if expected_license not in text:
-            issues.append(f"{rel}: missing workspace license expression {expected_license}")
-        if re.search(r"(?im)^(?:license:\s*)?MIT\.", text):
-            issues.append(f"{rel}: MIT-only prose contradicts {expected_license}")
+        canonical = f"License: {expected_license}."
+        if canonical not in text.splitlines():
+            issues.append(f"{rel}: missing canonical license sentence {canonical}")
     for name in ("LICENSE-MIT", "LICENSE-APACHE"):
         if not (REPO / name).is_file():
             issues.append(f"{name}: license file required by {expected_license} is missing")
@@ -246,8 +245,10 @@ def self_test() -> int:
         and any("broken local link target absent.md" in issue for issue in navigation)
         and any("missing anchor #absent" in issue for issue in navigation)
     )
-    license_detected = workspace_license() == "MIT OR Apache-2.0" and bool(
-        re.search(r"(?im)^(?:license:\s*)?MIT\.", "License: MIT.")
+    canonical_license = f"License: {workspace_license()}."
+    license_detected = canonical_license == "License: MIT OR Apache-2.0." and (
+        canonical_license in "License: MIT OR Apache-2.0.".splitlines()
+        and canonical_license not in "License: MIT.".splitlines()
     )
     token_arg_detected = any(
         HOSTED_TOKEN_ARG.search(line)

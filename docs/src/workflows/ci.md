@@ -248,8 +248,9 @@ checks daemon compatibility.
   fail after uploads so the report is preserved and the merge stays
   blocked.
 - **Shallow clones:** `actions/checkout` defaults to `fetch-depth: 1`,
-  which only fetches HEAD. A `--git-history` scan against a shallow
-  clone sees zero commits. Set `fetch-depth: 0` if you want history.
+  which normally exposes only the checked-out HEAD commit. A `--git-history`
+  scan walks only the ancestry present in that clone. Set `fetch-depth: 0` to
+  scan the complete HEAD ancestry.
 - **LFS files:** keyhog reads the LFS pointer file, not the
   contents. To scan LFS-stored binaries, enable LFS in checkout
   (`lfs: true`) and let the scanner pull the real file.

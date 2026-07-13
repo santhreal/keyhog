@@ -309,7 +309,7 @@ health gate (exit `4`).
 keyhog scan .                                          # scan a directory
 keyhog scan --git-staged                               # pre-commit: only staged blobs
 keyhog scan --git-diff main                            # files changed since base ref
-keyhog scan --git-history .                            # every commit, every branch
+keyhog scan --git-history .                            # added lines in commits reachable from HEAD
 keyhog scan --docker-image registry/app:v1             # Docker image layers
 keyhog scan --s3-bucket logs-prod --s3-prefix /        # S3 objects (--s3-endpoint for non-AWS)
 keyhog scan --gcs-bucket logs-prod --gcs-prefix config/ # GCS objects (--gcs-endpoint for compatible APIs)
@@ -335,7 +335,7 @@ keyhog scan . --deep                           # max detection depth
 keyhog scan . --incremental                    # BLAKE3 Merkle skip → 10-100× CI loop
 ```
 
-One scan, every CI/SIEM dialect: `text · json · jsonl · sarif · csv · html · junit · github · gitlab`, all from the same engine:
+One scan, every CI/SIEM dialect: `text · json · jsonl · sarif · csv · html · junit · github-annotations · gitlab-sast`, all from the same engine:
 
 <p align="center">
   <img src="demo/keyhog-formats.gif" alt="keyhog emitting the same findings as text, JSON, and SARIF: machine-readable surfaces for pipelines and code scanning" width="860" />
@@ -838,8 +838,9 @@ Thanks to these projects and their contributors.
 
 ## License
 
-MIT OR Apache-2.0 ([MIT terms](./LICENSE-MIT),
-[Apache-2.0 terms](./LICENSE-APACHE)). This dual license covers the code and
+License: MIT OR Apache-2.0.
+
+Terms: [MIT](./LICENSE-MIT) and [Apache-2.0](./LICENSE-APACHE). This dual license covers the code and
 detector TOMLs. Commercial use, embedding, forks, and hosted services are
 permitted under either license.
 

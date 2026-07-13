@@ -289,9 +289,9 @@ Suppression events carry the path, redacted credential, and rule that fired.
 optional commit, and absolute expression byte offset. Source type plus commit
 keeps equal paths from separate history revisions distinct. The events never
 contain source or recovered bytes. Detail retention is capped at 1,024 events
-per scan. Aggregate rejection counts remain exact after the cap, and
-`detail_events_dropped` reports every omitted detail, including an unavailable
-detail buffer.
+per scan. Aggregate rejection counts remain exact after the cap.
+`detail_events_dropped` reports retention-bound drops and recording attempts
+rejected because the detail buffer was unavailable.
 
 ## Adding a suppression for an FP cluster
 

@@ -107,5 +107,6 @@ walks through what the output means and where to go from there.
 - **Releases:** [github.com/santhreal/keyhog/releases](https://github.com/santhreal/keyhog/releases)
 - **Security:** use [GitHub private vulnerability reporting](https://github.com/santhreal/keyhog/security/advisories/new) first. If the form is unavailable, email `security@santh.dev`; PGP is not required. See the [security policy](https://github.com/santhreal/keyhog/blob/main/SECURITY.md).
 
-License: MIT OR Apache-2.0 ([MIT terms](../../LICENSE-MIT),
-[Apache-2.0 terms](../../LICENSE-APACHE)).
+License: MIT OR Apache-2.0.
+Read the [MIT terms](https://github.com/santhreal/keyhog/blob/main/LICENSE-MIT) and
+[Apache-2.0 terms](https://github.com/santhreal/keyhog/blob/main/LICENSE-APACHE).

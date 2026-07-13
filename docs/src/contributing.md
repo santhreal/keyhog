@@ -162,6 +162,8 @@ and cache warmth; command output is the timing evidence for that run.
 
 ## License
 
-By contributing, you agree that your contributions are licensed under MIT OR Apache-2.0
-([MIT terms](../../LICENSE-MIT),
-[Apache-2.0 terms](../../LICENSE-APACHE)).
+License: MIT OR Apache-2.0.
+
+By contributing, you agree that your contributions use this license. Read the
+[MIT terms](https://github.com/santhreal/keyhog/blob/main/LICENSE-MIT) and
+[Apache-2.0 terms](https://github.com/santhreal/keyhog/blob/main/LICENSE-APACHE).
