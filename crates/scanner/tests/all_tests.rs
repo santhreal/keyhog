@@ -67,6 +67,8 @@ pub mod regression_cloud_infra_db_token_recall;
 pub mod regression_coalesced_large_chunk_entropy_parity;
 #[path = "regression_coalesced_reassembly_parity.rs"]
 pub mod regression_coalesced_reassembly_parity;
+#[path = "regression_coalesced_telemetry.rs"]
+pub mod regression_coalesced_telemetry;
 #[path = "regression_compile_companion_capture_group.rs"]
 pub mod regression_compile_companion_capture_group;
 #[path = "regression_confidence_nan_sanitize.rs"]
@@ -119,6 +121,8 @@ pub mod regression_decode_through_strict;
 pub mod regression_decode_url_plus;
 #[path = "regression_decoded_generic_entropy_guard.rs"]
 pub mod regression_decoded_generic_entropy_guard;
+#[path = "property/decoded_generic_entropy_guard_proptest.rs"]
+pub mod decoded_generic_entropy_guard_proptest;
 #[path = "regression_deep_preset_recovery.rs"]
 pub mod regression_deep_preset_recovery;
 #[path = "regression_deepl_bare_key_recall.rs"]

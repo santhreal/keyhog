@@ -1,17 +1,9 @@
 //! Regression: the decode-through "anchor decoded matches" guard.
 //!
-//! A decoded sub-chunk is SYNTHESIZED content, the bytes that fall out of a
-//! base64/hex/url decode, with no surrounding keyword/structural context from the
-//! real file. A generic/entropy detector fires on shape/entropy ALONE, so on
-//! decoded content its match rests on nothing but the decoded bytes happening to
-//! look token-shaped. Decoding ordinary readable text routinely produces exactly
-//! that (`InvalidNextTokenException"}`, `max-age...;includeSubdomains`, prose)
-//! on the full CredData tree, decode-through surfaced +264 such generic/entropy
-//! hits that are ALL non-secrets, for ~0 real TP (pure precision loss). The guard
-//! (`adjudicate::record_decoded_generic_entropy_suppression`, wired into
-//! `scan_postprocess`) drops decoded matches from the generic/entropy family;
-//! vendor/key detectors on decoded content (genuine encoded secrets) self-anchor
-//! on their required literal and are UNAFFECTED.
+//! Entropy-only decoded matches remain suppressed because they have no
+//! structural evidence. A phase-2 generic assignment is different: the decoded
+//! plaintext or parent splice retains a detector-owned keyword, so it is an
+//! anchored detection and must survive alongside vendor matches.
 //!
 //! Each assertion checks EXACT credential bytes + detector ids via the on-disk
 //! scanner (Law 6), never `!is_empty`. The vendor key surfacing in the combined
@@ -65,6 +57,7 @@ fn is_generic_or_entropy(detector_id: &str) -> bool {
 // `4MwrrncB4YlTYeeBNbC1oGuHG6sFbU1A`. Paired with a `secret` keyword so the
 // generic keyword bridge surfaces it (the strongest generic-pool path).
 const TOKEN: &str = "4MwrrncB4YlTYeeBNbC1oGuHG6sFbU1A";
+const ENTROPY_ONLY_TOKEN: &str = "A00a0aAaaAEa0AE0a0A0AQaAaAE0aBaba1bcdFCD";
 
 /// A PEM RSA key, fires `private-key` with no vendor checksum (a shipped
 /// decode-through contract positive, reused from `regression_decode_through_strict`).
@@ -91,12 +84,10 @@ fn control_token_fires_generic_or_entropy_at_top_level() {
     );
 }
 
-/// The guard: one base64 blob carrying BOTH the PEM key and the `api_secret`
-/// token. Decode-through recovers both. The vendor key SURFACES under
-/// `private-key`: proving decode actually ran, while the token, matchable only
-/// by the anchor-less generic/entropy pool, is SUPPRESSED.
+/// One base64 blob carrying both the PEM key and an anchored `api_secret`
+/// token. Decode-through must recover both.
 #[test]
-fn decoded_generic_entropy_is_gated_while_vendor_key_survives() {
+fn decoded_generic_assignment_and_vendor_key_both_survive() {
     let plaintext = format!("{PEM}\napi_secret={TOKEN}\n");
     let hits = scan_text(format!("blob = \"{}\"\n", b64(&plaintext)), "config.txt");
 
@@ -110,18 +101,45 @@ fn decoded_generic_entropy_is_gated_while_vendor_key_survives() {
         ids(&hits),
     );
 
-    // The decoded generic/entropy match is gated:
-    let leaked: Vec<(String, String)> = hits
-        .iter()
-        .filter(|m| {
-            m.credential.as_ref().contains(TOKEN) && is_generic_or_entropy(m.detector_id.as_ref())
-        })
-        .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
-        .collect();
     assert!(
-        leaked.is_empty(),
-        "a generic/entropy match on DECODED content must be suppressed \
-         (it rests on shape alone, no anchor in the synthesized bytes); leaked {leaked:?}",
+        hits.iter().any(|m| {
+            m.credential.as_ref().contains(TOKEN) && is_generic_or_entropy(m.detector_id.as_ref())
+        }),
+        "the decoded api_secret assignment retains its detector-owned anchor; got {:?}",
+        ids(&hits),
+    );
+}
+
+#[test]
+fn decoded_entropy_only_token_stays_suppressed_without_an_assignment_detector() {
+    let direct = scan_text(
+        format!("secret={ENTROPY_ONLY_TOKEN}\n"),
+        "entropy-only.txt",
+    );
+    assert!(direct.iter().any(|m| {
+        m.credential.as_ref() == ENTROPY_ONLY_TOKEN
+            && keyhog_scanner::is_entropy_detector(m.detector_id.as_ref())
+    }));
+    assert!(!direct.iter().any(|m| {
+        m.credential.as_ref() == ENTROPY_ONLY_TOKEN
+            && is_generic_or_entropy(m.detector_id.as_ref())
+            && !keyhog_scanner::is_entropy_detector(m.detector_id.as_ref())
+    }));
+
+    let encoded = scan_text(
+        format!(
+            "blob = \"{}\"\n",
+            b64(&format!("secret={ENTROPY_ONLY_TOKEN}\n"))
+        ),
+        "entropy-only.txt",
+    );
+    assert!(
+        !encoded.iter().any(|m| {
+            m.credential.as_ref() == ENTROPY_ONLY_TOKEN
+                && keyhog_scanner::is_entropy_detector(m.detector_id.as_ref())
+        }),
+        "decoded entropy-only evidence must not survive without an anchored generic detector; got {:?}",
+        ids(&encoded),
     );
 }
 

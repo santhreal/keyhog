@@ -1,22 +1,9 @@
-//! Property: the decode-through generic/entropy anchor guard
-//! (`adjudicate::record_decoded_generic_entropy_suppression`, KH-L-0404) holds
-//! for ARBITRARY high-entropy tokens, not just the fixed regression fixtures.
-//!
-//! For any high-entropy token `T`, base64-encoding `secret=T` and scanning the
-//! blob with decode-through recovers `secret=T` as SYNTHESIZED decoded content
-//! where a generic/entropy detector would fire on shape/entropy ALONE, with no
-//! anchor in the decoded bytes. The guard must gate EVERY such decoded
-//! generic/entropy match. This proptest sweeps the token space and asserts that
-//! invariant; the NON-VACUITY (that these `secret=<token>` shapes DO fire a
-//! generic/entropy detector at top level, so the gate is doing real work) is
-//! pinned by
-//! `regression_decoded_generic_entropy_guard::control_token_fires_generic_or_entropy_at_top_level`.
+//! Property: a detector-owned `secret=` anchor survives base64 decode-through
+//! for arbitrary high-entropy values. The encoded top-level bytes do not expose
+//! the raw token, so an exact credential proves the decoded path retained it.
 //!
 //! Why `credential == token` isolates the decoded match: the token is base64
-//! ENCODED at top level, so no TOP-LEVEL finding can carry the raw token as its
-//! credential, only a match on the DECODED content can. A leaked entry is
-//! therefore proof the guard failed on the decode path, never a top-level
-//! false positive on the blob.
+//! encoded at top level, so only a match on the decoded content can carry it.
 
 #[path = "../support/mod.rs"]
 mod support;
@@ -44,6 +31,10 @@ fn is_generic_or_entropy(id: &str) -> bool {
     keyhog_scanner::is_generic_or_entropy_detector(id)
 }
 
+fn is_anchored_generic(id: &str) -> bool {
+    is_generic_or_entropy(id) && !keyhog_scanner::is_entropy_detector(id)
+}
+
 fn scan(text: String) -> Vec<RawMatch> {
     let chunk = Chunk {
         data: text.into(),
@@ -57,27 +48,35 @@ fn scan(text: String) -> Vec<RawMatch> {
 }
 
 proptest! {
-    /// Invariant: no generic/entropy detector may fire on the DECODED token, for
-    /// any high-entropy alphanumeric token. If the guard is ever removed or its
-    /// detector-id predicate narrows, some token here surfaces a decoded
-    /// generic/entropy match and this fails with the exact leaking (id, value).
+    #![proptest_config(ProptestConfig {
+        cases: 10_000,
+        max_global_rejects: 20_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// Invariant: the decoded generic assignment must surface for every
+    /// high-entropy alphanumeric token.
     #[test]
-    fn decoded_generic_entropy_gated_for_any_high_entropy_token(
+    fn decoded_generic_assignment_matches_direct_assignment(
         token in "[A-Za-z0-9]{32,48}"
     ) {
         let plaintext = format!("secret={token}\n");
+        let direct = scan(plaintext.clone());
+        prop_assume!(direct.iter().any(|m| {
+            m.credential.as_ref() == token && is_anchored_generic(m.detector_id.as_ref())
+        }));
         let blob = base64::engine::general_purpose::STANDARD.encode(plaintext.as_bytes());
         let hits = scan(format!("blob = \"{blob}\"\n"));
-        let leaked: Vec<(String, String)> = hits
+        let recovered: Vec<(String, String)> = hits
             .iter()
             .filter(|m| {
-                m.credential.as_ref() == token && is_generic_or_entropy(m.detector_id.as_ref())
+                m.credential.as_ref() == token && is_anchored_generic(m.detector_id.as_ref())
             })
             .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
             .collect();
         prop_assert!(
-            leaked.is_empty(),
-            "decoded generic/entropy leaked for token {token}: {leaked:?}",
+            !recovered.is_empty(),
+            "decoded generic assignment was lost for token {token}: hits={hits:?}",
         );
     }
 }
