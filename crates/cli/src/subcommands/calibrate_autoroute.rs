@@ -21,6 +21,7 @@
 use crate::args::CalibrateAutorouteArgs;
 use crate::style::Palette;
 use anyhow::{Context, Result};
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, ExitCode, Stdio};
@@ -303,6 +304,22 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
              default cache, or pass a writable file path."
         );
     }
+    let cache_path =
+        crate::autoroute_cache_path::resolve_autoroute_cache_path(args.autoroute_cache.as_deref())
+            .map_err(anyhow::Error::msg)?;
+    let prior_inspection = crate::orchestrator::inspect_autoroute_cache(cache_path.as_deref());
+    let prior_decisions: BTreeMap<(String, String), u128> = prior_inspection
+        .configs
+        .iter()
+        .flat_map(|config| {
+            config.decisions.iter().map(|decision| {
+                (
+                    (config.config_digest.clone(), decision.workload.clone()),
+                    decision.calibrated_at_unix_ms,
+                )
+            })
+        })
+        .collect();
     let exe = std::env::current_exe()
         .context("could not resolve the running keyhog binary to spawn calibration probes")?;
     let workspace = tempfile::Builder::new()
@@ -358,9 +375,6 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         );
     }
 
-    let cache_path =
-        crate::autoroute_cache_path::resolve_autoroute_cache_path(args.autoroute_cache.as_deref())
-            .map_err(anyhow::Error::msg)?;
     let inspection = crate::orchestrator::inspect_autoroute_cache(cache_path.as_deref());
     if let Some(error) = inspection.error.as_deref() {
         anyhow::bail!(
@@ -382,13 +396,28 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
             "autoroute calibration probes succeeded, but persisted cache readback contained no route decisions"
         );
     }
+    let measured_unique_decisions = inspection
+        .configs
+        .iter()
+        .flat_map(|config| {
+            config.decisions.iter().filter(|decision| {
+                prior_decisions.get(&(config.config_digest.clone(), decision.workload.clone()))
+                    != Some(&decision.calibrated_at_unix_ms)
+            })
+        })
+        .count();
+    if measured_unique_decisions == 0 {
+        anyhow::bail!(
+            "autoroute calibration probes succeeded, but persisted cache readback contained no newly measured route classes"
+        );
+    }
 
     let cache_note = match args.autoroute_cache.as_deref() {
         Some(path) => path.to_string(),
         None => "the default autoroute cache".to_string(),
     };
     println!(
-        "{check} ran {green}{total}{reset} workload {probe_word} across {green}{passes}{reset} scan {policy_word}; cache contains {green}{persisted_decisions}{reset} route {decision_word} \u{2192} {dim}{cache}{reset}",
+        "{check} ran {green}{total}{reset} workload {probe_word} across {green}{passes}{reset} scan {policy_word}; measured {green}{measured_unique_decisions}{reset} unique route {class_word}; cache contains {green}{persisted_decisions}{reset} route {decision_word} \u{2192} {dim}{cache}{reset}",
         check = crate::style::pass("\u{2713}", &p),
         green = p.green,
         reset = p.reset,
@@ -398,6 +427,11 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
             "decision"
         } else {
             "decisions"
+        },
+        class_word = if measured_unique_decisions == 1 {
+            "class"
+        } else {
+            "classes"
         },
         passes = policy_flags.len(),
         policy_word = if policy_flags.len() == 1 { "policy" } else { "policies" },

@@ -571,6 +571,12 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
         cal_stdout.contains(&format!("cache contains {total_decisions} route decisions")),
         "calibration summary decision count must match independent cache inspection; stdout={cal_stdout}; total={total_decisions}"
     );
+    assert!(
+        cal_stdout.contains(&format!(
+            "measured {total_decisions} unique route classes"
+        )),
+        "a clean sweep must report every independently inspected decision as newly measured; stdout={cal_stdout}; total={total_decisions}"
+    );
 
     // 4. The human inspection reports the same 4-config count in prose.
     let human = cmd(home.path())

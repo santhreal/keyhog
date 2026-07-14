@@ -104,9 +104,10 @@ payload-derived extracted filesystem chunks. Decode-heavy probes cover the
 decoder path. Empty input has no routing work and is not counted as a calibrated
 workload. The final count is the number of probes run, not the number of unique
 persisted route classes. Multiple representatives can currently share one
-logarithmic workload key. The same summary reports the total unique route
-decisions in the cache after a required readback check. That cache total can
-include valid decisions from prior calibration runs. The command does **not**
+logarithmic workload key. The summary separately reports unique route classes
+measured by this sweep and the total route decisions in the cache after a
+required readback check. The cache total can include valid decisions from prior
+calibration runs. The command does **not**
 cover the git / docker / web source probes; those need environment orchestration
 (a repo, a running daemon, a served URL) that only the installer's
 `--calibrate` mode performs. Current installers delegate the complete core sweep

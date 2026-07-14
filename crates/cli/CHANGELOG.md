@@ -8,8 +8,9 @@
   no longer reported as a calibrated workload. Current installers delegate this
   core sweep to the binary instead of maintaining a second matrix. Calibration
   output now calls the sweep count probes rather than unique workload buckets;
-  it also reads back and reports the cache's route-decision count. Installers
-  still parse the earlier unified-command summary during migration.
+  it also reads back and reports both route classes measured by this sweep and
+  the cache's total route-decision count. Installers still parse the earlier
+  unified-command summary during migration.
 - Rename the live GPU region-presence batch byte budget to
   `--gpu-batch-input-limit` / `gpu_batch_input_limit`; accept the retired
   MegaScan spelling as a hidden CLI/TOML migration alias.
