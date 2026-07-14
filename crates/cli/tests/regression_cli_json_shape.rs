@@ -1,8 +1,7 @@
 //! Regression: `keyhog scan --format json` emits a machine-parseable report
 //! whose SHAPE is pinned field-by-field against the REAL shipped binary.
 //!
-//! The JSON reporter (`keyhog_core::report::json::JsonArrayReporter`) writes a
-//! TOP-LEVEL ARRAY of finding objects. NOT an object with a `findings` key.
+//! The CLI JSON reporter writes a versioned object with a `findings` array.
 //! Each element is a serialized `VerifiedFinding` whose custom `Serialize` impl
 //! (finding.rs) emits, in this exact set:
 //!   detector_id, detector_name, service, severity, credential_redacted,
@@ -27,7 +26,8 @@
 //! legitimately varies by build, so it is range-checked (0,1], never pinned;
 //! `credential_hash` is a pure sha256 and IS pinned exactly.
 //!
-//! Negative twin: a clean file exits 0 and the report is EXACTLY `[]`.
+//! Negative twin: a clean file exits 0 and the report contains an empty
+//! versioned `findings` array.
 //! Adversarial: the raw plaintext token must NEVER appear anywhere in the JSON.
 
 use std::path::PathBuf;
@@ -111,12 +111,19 @@ fn run_json(path: &PathBuf) -> (Option<i32>, String, String) {
     )
 }
 
+/// Parse the versioned envelope and return its findings array.
+fn findings_array(out: &str) -> Vec<serde_json::Value> {
+    let value: serde_json::Value = serde_json::from_str(out).expect("json stdout must parse");
+    assert_eq!(value["schema_version"]["major"], 1);
+    value["findings"]
+        .as_array()
+        .expect("findings must be an array")
+        .clone()
+}
+
 /// Parse stdout and return the single finding object.
 fn single_finding(out: &str) -> serde_json::Value {
-    let v: serde_json::Value = serde_json::from_str(out).expect("json stdout must parse");
-    let arr = v
-        .as_array()
-        .expect("top-level json report must be an ARRAY");
+    let arr = findings_array(out);
     assert_eq!(arr.len(), 1, "exactly one secret planted -> one element");
     arr[0].clone()
 }
@@ -125,19 +132,19 @@ fn single_finding(out: &str) -> serde_json::Value {
 // Top-level container shape
 // ---------------------------------------------------------------------------
 
-/// The report is a top-level JSON ARRAY (not an object) with exactly one
-/// element for one planted secret, and the run exits 1.
+/// The report is a versioned object with exactly one finding for one planted
+/// secret, and the run exits 1.
 #[test]
 fn top_level_is_json_array_of_one_and_exits_one() {
     let (_dir, path) = leak_fixture();
     let (code, out, err) = run_json(&path);
     assert_eq!(code, Some(1), "a finding must exit 1; stderr={err}");
     let v: serde_json::Value = serde_json::from_str(&out).expect("json must parse");
-    let arr = v.as_array().expect("report must be a top-level array");
+    let arr = findings_array(&out);
     assert_eq!(arr.len(), 1, "one planted secret -> one array element");
     assert!(
-        v.as_object().is_none(),
-        "report must NOT be a wrapping object"
+        v["metadata"].is_object(),
+        "CLI envelope carries scan metadata"
     );
 }
 
@@ -396,23 +403,13 @@ fn remediation_object_carries_revoke_action() {
 // Negative twin
 // ---------------------------------------------------------------------------
 
-/// A clean file exits 0 and the JSON report is EXACTLY the two-byte empty
-/// array `[]`: the honest empty shape, never `null` or an object.
+/// A clean file exits 0 and the JSON report carries an empty findings array.
 #[test]
 fn clean_scan_is_exactly_empty_array_exit_zero() {
     let (_dir, path) = clean_fixture();
     let (code, out, err) = run_json(&path);
     assert_eq!(code, Some(0), "clean scan must exit 0; stderr={err}");
-    assert_eq!(
-        out.trim_end(),
-        "[]",
-        "empty run must be exactly the bracket pair, got {out:?}"
-    );
-    // And it must still parse as an empty array, not just look like one.
     let v: serde_json::Value = serde_json::from_str(&out).expect("empty json parses");
-    assert_eq!(
-        v.as_array().map(|a| a.len()),
-        Some(0),
-        "clean report parses to a zero-length array"
-    );
+    assert_eq!(v["schema_version"]["major"], 1);
+    assert!(v["findings"].as_array().is_some_and(Vec::is_empty));
 }

@@ -54,6 +54,7 @@ fn all_formats() -> Vec<ReportFormat> {
             dogfood_active: true,
         },
         ReportFormat::Json,
+        ReportFormat::JsonEnvelope,
         ReportFormat::Jsonl,
         ReportFormat::Sarif {
             skip_summary: vec![],
@@ -84,6 +85,7 @@ fn format_name(f: &ReportFormat) -> &'static str {
     match f {
         ReportFormat::Text { .. } => "text",
         ReportFormat::Json => "json",
+        ReportFormat::JsonEnvelope => "json-envelope",
         ReportFormat::Jsonl => "jsonl",
         ReportFormat::Sarif { .. } => "sarif",
         ReportFormat::Csv => "csv",

@@ -263,7 +263,7 @@ steps:
       - minisign -Vm install.sh -P "$PUB"
       - KEYHOG_VERSION="$TAG" sh install.sh
       - |
-        printf '[]\n' > keyhog.json
+        printf '{"schema_version":{"major":1,"minor":0},"findings":[]}\n' > keyhog.json
         scan_status=0
         $HOME/.local/bin/keyhog scan . --format json --output keyhog.json \
           2>keyhog.stderr || scan_status=$?
@@ -304,7 +304,7 @@ CI that can run a POSIX shell:
 #!/bin/sh
 set -eu
 
-printf '[]\n' > keyhog.json
+printf '{"schema_version":{"major":1,"minor":0},"findings":[]}\n' > keyhog.json
 scan_status=0
 keyhog scan . --format json --output keyhog.json \
   2>keyhog.stderr || scan_status=$?
@@ -315,8 +315,8 @@ exit "$scan_status"
 
 Configure the CI artifact publisher to retain `keyhog.json`, `keyhog.stderr`,
 and `keyhog.exit-code` on both success and failure. KeyHog atomically replaces
-the initial empty JSON array after a completed scan. If setup or scanning fails
-before report generation, the valid empty report remains, while the saved
+the initial empty JSON envelope after a completed scan. If setup or scanning
+fails before report generation, the valid empty report remains, while the saved
 stderr and nonzero status record that the scan did not complete. Always
 evaluate the report together with `keyhog.exit-code`.
 

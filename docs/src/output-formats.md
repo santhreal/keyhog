@@ -62,15 +62,18 @@ runs add the liveness state and commit/author rows when known. The
 
 ## `--format json`
 
-Stable-schema JSON array. Every finding has all required documented fields
-present; optional fields are omitted only when their value is unavailable. See
-[Your first scan](./first-scan.md#json-output) for the schema. The `confidence`
-field is canonicalized to three decimal places before
-the reporting-floor decision, so equivalent CPU and GPU scans serialize the
-same value.
+Versioned JSON envelope. The root object contains `schema_version` and
+`findings`, plus optional scan-wide `metadata`. Every finding has all required
+documented fields present; optional fields are omitted only when their value is
+unavailable. A reader must reject an unsupported `schema_version.major`; a
+newer minor under a supported major is additive and may be accepted. See
+[Your first scan](./first-scan.md#json-output) for the complete schema. The
+`confidence` field is canonicalized to three decimal places before the
+reporting-floor decision, so equivalent CPU and GPU scans serialize the same
+value.
 
 ```sh
-keyhog scan . --format json | jq '.[] | .detector_id' | sort | uniq -c
+keyhog scan . --format json | jq '.findings[] | .detector_id' | sort | uniq -c
 ```
 
 That sample command dedups findings by detector, which is the most
@@ -182,7 +185,7 @@ reporter prints.)
 
 ```sh
 keyhog scan . --verify --format json \
-  | jq '.[] | select(.verification == "live")'
+  | jq '.findings[] | select(.verification == "live")'
 ```
 
 ## Findings-only output

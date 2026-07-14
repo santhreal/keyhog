@@ -1,11 +1,14 @@
-//! Machine-readable JSON reporters: JSON Lines for streams and pretty JSON arrays
-//! for batch output.
+//! Machine-readable JSON reporters: versioned envelopes for batch output,
+//! legacy arrays for library compatibility, and JSON Lines for streams.
 
 use std::io::Write;
 
 use crate::VerifiedFinding;
 
-use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
+use super::{
+    impl_writer_backed, ReportError, Reporter, ScanReportMetadata, WriterBackedReporter,
+    JSON_REPORT_SCHEMA_MAJOR, JSON_REPORT_SCHEMA_MINOR,
+};
 
 /// One JSON object per line (JSONL).
 ///
@@ -111,3 +114,50 @@ impl<W: Write + Send> Reporter for JsonArrayReporter<W> {
 }
 
 impl_writer_backed!(JsonArrayReporter);
+
+/// Versioned JSON envelope output for operator-facing machine artifacts.
+pub(crate) struct JsonEnvelopeReporter<W: Write + Send> {
+    writer: W,
+    first: bool,
+}
+
+impl<W: Write + Send> JsonEnvelopeReporter<W> {
+    /// Create a versioned JSON envelope reporter.
+    pub(crate) fn new(
+        mut writer: W,
+        metadata: Option<&ScanReportMetadata>,
+    ) -> Result<Self, ReportError> {
+        write!(
+            writer,
+            "{{\"schema_version\":{{\"major\":{},\"minor\":{}}}",
+            JSON_REPORT_SCHEMA_MAJOR, JSON_REPORT_SCHEMA_MINOR
+        )?;
+        if let Some(metadata) = metadata {
+            write!(writer, ",\"metadata\":")?;
+            serde_json::to_writer(&mut writer, metadata)?;
+        }
+        write!(writer, ",\"findings\":[")?;
+        Ok(Self {
+            writer,
+            first: true,
+        })
+    }
+}
+
+impl<W: Write + Send> Reporter for JsonEnvelopeReporter<W> {
+    fn report(&mut self, finding: &VerifiedFinding) -> Result<(), ReportError> {
+        if !self.first {
+            write!(self.writer, ",")?;
+        }
+        serde_json::to_writer(&mut self.writer, finding)?;
+        self.first = false;
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<(), ReportError> {
+        write!(self.writer, "]}}")?;
+        self.flush_writer()
+    }
+}
+
+impl_writer_backed!(JsonEnvelopeReporter);

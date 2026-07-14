@@ -49,7 +49,7 @@ pub use anyhow::Error as ReportError;
 /// object, while schema-constrained formats retain their established fields.
 /// Keeping this model in `keyhog-core` prevents the CLI and a single reporter
 /// from growing competing definitions of scan identity and timing.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ScanReportMetadata {
     /// KeyHog crate/binary version that produced the report.
     pub keyhog_version: String,
@@ -67,6 +67,50 @@ pub struct ScanReportMetadata {
     pub source_chunks_scanned: usize,
     /// Number of loaded detector specs used by this scan.
     pub detector_count: usize,
+}
+
+/// Current major version for the versioned JSON report envelope.
+pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 1;
+/// Current minor version for the versioned JSON report envelope.
+pub const JSON_REPORT_SCHEMA_MINOR: u16 = 0;
+
+/// Version marker carried by every versioned JSON report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct JsonReportSchemaVersion {
+    /// Incompatible schema generation.
+    pub major: u16,
+    /// Backward-compatible additive revision.
+    pub minor: u16,
+}
+
+/// Versioned machine-readable JSON report.
+///
+/// A reader must reject an unsupported `major` and may accept any `minor`
+/// under a supported major because minor revisions only add optional fields.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct JsonReportEnvelope {
+    /// Version marker used to select the reader contract.
+    pub schema_version: JsonReportSchemaVersion,
+    /// Optional scan-wide metadata supplied by the producer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ScanReportMetadata>,
+    /// Findings in the same redacted shape used by the legacy array.
+    pub findings: Vec<VerifiedFinding>,
+}
+
+impl JsonReportEnvelope {
+    /// Parse and validate a versioned JSON report.
+    pub fn parse(input: &str) -> Result<Self, ReportError> {
+        let report: Self = serde_json::from_str(input)?;
+        if report.schema_version.major != JSON_REPORT_SCHEMA_MAJOR {
+            anyhow::bail!(
+                "unsupported JSON report schema major {}; this reader supports major {}",
+                report.schema_version.major,
+                JSON_REPORT_SCHEMA_MAJOR
+            );
+        }
+        Ok(report)
+    }
 }
 
 /// Compatibility name for callers that used the original HTML-only type.
@@ -118,6 +162,8 @@ pub enum ReportFormat {
     },
     /// JSON array output.
     Json,
+    /// Versioned JSON envelope output.
+    JsonEnvelope,
     /// Newline-delimited JSON output.
     Jsonl,
     /// SARIF output.
@@ -182,6 +228,10 @@ pub fn write_scan_report<W: Write + Send>(
             finish_reporter(reporter, findings)
         }
         ReportFormat::Json => finish_reporter(json::JsonArrayReporter::new(writer)?, findings),
+        ReportFormat::JsonEnvelope => finish_reporter(
+            json::JsonEnvelopeReporter::new(writer, report_metadata)?,
+            findings,
+        ),
         ReportFormat::Jsonl => finish_reporter(json::JsonlReporter::new(writer), findings),
         ReportFormat::Sarif { skip_summary } => finish_reporter(
             sarif::SarifReporter::new(writer).with_skip_summary(skip_summary),

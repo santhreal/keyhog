@@ -109,7 +109,7 @@ the URL tail makes the location unambiguous.
 
 ```sh
 keyhog scan capture.har --format json | \
-  jq '.[] | select(.location.source == "wire:har:request")'
+  jq '.findings[] | select(.location.source == "wire:har:request")'
 ```
 
 filters down to outbound credentials only - the bug-bounty

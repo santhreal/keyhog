@@ -90,46 +90,54 @@ documented ownership. See [Suppressions](./suppressions.md) for the full order.
 keyhog scan . --format json
 ```
 
-Each finding is a JSON object with the required fields below always present
-(consumers like SARIF converters and CI gates rely on that stable schema).
-`entropy` and `confidence` are included when the detection path measured them;
-otherwise they are omitted. A present entropy value is Shannon
-bits-per-byte evidence, not a confidence score and not a claim that entropy
-alone caused the finding.
+The output is a versioned envelope. `schema_version.major` selects the
+incompatible schema generation; consumers must reject an unsupported major.
+Minor revisions are additive, so a reader that understands major `1` may
+accept a newer minor and ignore fields it does not know. The optional
+`metadata` object identifies the scan; `findings` contains the redacted
+finding objects. `entropy` and `confidence` are included when the detection
+path measured them; otherwise they are omitted. A present entropy value is
+Shannon bits-per-byte evidence, not a confidence score and not a claim that
+entropy alone caused the finding.
 
 ```json
 {
-  "detector_id":        "stripe-secret-key",
-  "detector_name":      "Stripe Secret Key",
-  "service":            "stripe",
-  "severity":           "critical",
-  "credential_redacted": "sk_l...p7dc",
-  "credential_hash":     "sha256-hex",
-  "companions_redacted": {},
-  "location": {
-    "source":    "filesystem",
-    "file_path": "src/config/staging.env",
-    "line":      14,
-    "offset":    12,
-    "commit":    null,
-    "author":    null,
-    "date":      null
-  },
-  "verification": "skipped",
-  "metadata": {},
-  "additional_locations": [],
-  "entropy": 4.5,
-  "confidence": 1.0,
-  "remediation": {
-    "action":     "Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.",
-    "revoke_url":  "https://docs.stripe.com/keys#roll-api-key",
-    "docs_url":    "https://docs.stripe.com/keys"
-  }
+  "schema_version": {"major": 1, "minor": 0},
+  "findings": [
+    {
+      "detector_id":        "stripe-secret-key",
+      "detector_name":      "Stripe Secret Key",
+      "service":            "stripe",
+      "severity":           "critical",
+      "credential_redacted": "sk_l...p7dc",
+      "credential_hash":     "sha256-hex",
+      "companions_redacted": {},
+      "location": {
+        "source":    "filesystem",
+        "file_path": "src/config/staging.env",
+        "line":      14,
+        "offset":    12,
+        "commit":    null,
+        "author":    null,
+        "date":      null
+      },
+      "verification": "skipped",
+      "metadata": {},
+      "additional_locations": [],
+      "entropy": 4.5,
+      "confidence": 1.0,
+      "remediation": {
+        "action":     "Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.",
+        "revoke_url":  "https://docs.stripe.com/keys#roll-api-key",
+        "docs_url":    "https://docs.stripe.com/keys"
+      }
+    }
+  ]
 }
 ```
 
-Pipe it into `jq`, into a SARIF converter for the GitHub Security tab,
-or into your own dedup / triage tooling.
+Pipe `.findings` into `jq`, into a SARIF converter for the GitHub Security
+tab, or into your own dedup / triage tooling.
 
 ## Limiting scope
 

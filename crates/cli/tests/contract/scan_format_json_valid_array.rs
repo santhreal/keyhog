@@ -1,4 +1,4 @@
-//! Contract: `--format json` stdout is always a JSON array.
+//! Contract: `--format json` stdout is a versioned findings envelope.
 
 use crate::e2e::support::{binary, write_temp_file};
 use std::process::Command;
@@ -20,5 +20,8 @@ fn scan_format_json_valid_array() {
         .expect("spawn");
     let parsed: serde_json::Value =
         serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("json");
-    assert!(parsed.is_array(), "json format must emit an array");
+    let object = parsed.as_object().expect("json format must emit an object");
+    assert_eq!(object["schema_version"]["major"], 1);
+    assert!(object["schema_version"]["minor"].is_u64());
+    assert!(object["findings"].is_array());
 }

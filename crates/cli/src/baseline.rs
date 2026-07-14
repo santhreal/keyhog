@@ -58,12 +58,13 @@ fn default_created() -> String {
 /// Heuristic used only to turn an opaque serde error into an actionable hint:
 /// does this JSON look like a `scan` findings report rather than a baseline?
 /// A baseline is a JSON object carrying `version` + `entries`; a findings
-/// report is an array, or an object without that shape.
+/// report is a legacy array or a versioned object carrying `findings`.
 fn looks_like_findings_report(content: &str) -> bool {
     match serde_json::from_str::<serde_json::Value>(content) {
         Ok(serde_json::Value::Array(_)) => true,
         Ok(serde_json::Value::Object(map)) => {
-            !(map.contains_key("version") && map.contains_key("entries"))
+            map.contains_key("findings")
+                || !(map.contains_key("version") && map.contains_key("entries"))
         }
         _ => false,
     }
@@ -86,14 +87,14 @@ impl Baseline {
             .with_context(|| format!("reading baseline file {}", path.display()))?;
         let baseline: Baseline = serde_json::from_str(&content).map_err(|e| {
             // The #1 mistake here is feeding a `scan --format json` FINDINGS
-            // report to `diff`, which wants a BASELINE file. The raw serde
+            // envelope to `diff`, which wants a BASELINE file. The raw serde
             // error ("invalid type: map, expected u32") sends people chasing a
             // corruption bug that isn't there - detect the shape and point at
             // the command that actually produces a baseline.
             if looks_like_findings_report(&content) {
                 anyhow::anyhow!(
                     "{p} is not a keyhog baseline file - it looks like a `scan` \
-                     findings report (e.g. `--format json` output).\n       \
+                     findings report (for example `--format json` output).\n       \
                      Create a baseline with:  keyhog scan <path> --create-baseline {p}",
                     p = path.display(),
                 )

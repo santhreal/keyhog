@@ -21,8 +21,10 @@ fn parse_json_array(stdout: &[u8], context: &str) -> Vec<serde_json::Value> {
         )
     });
     value
-        .as_array()
-        .unwrap_or_else(|| panic!("{context}: JSON report must be an array, got {value}"))
+        .get("findings")
+        .and_then(serde_json::Value::as_array)
+        .or_else(|| value.as_array())
+        .unwrap_or_else(|| panic!("{context}: JSON report must contain findings, got {value}"))
         .clone()
 }
 

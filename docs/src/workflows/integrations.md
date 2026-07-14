@@ -290,7 +290,7 @@ case "$scan_status" in
   0|1) ;;
   *) echo "keyhog scan did not complete (exit $scan_status)" >&2; exit "$scan_status" ;;
 esac
-count="$(echo "$findings_json" | jq 'length')"
+count="$(echo "$findings_json" | jq '.findings | length')"
 if [ "$count" -gt 0 ]; then
   curl -X POST -H 'Content-type: application/json' \
     --data "{\"text\":\"⚠ keyhog: $count secret(s) detected in $(basename "$PWD")\"}" \

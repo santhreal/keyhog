@@ -1,4 +1,4 @@
-//! Contract: `--format json` on a clean corpus emits an empty JSON array, not null.
+//! Contract: `--format json` on a clean corpus emits an empty versioned envelope.
 
 use crate::e2e::support::{binary, write_temp_file};
 use std::process::Command;
@@ -28,26 +28,12 @@ fn scan_format_json_empty_corpus_empty_array() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let value: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json must be valid");
 
-    // Must be an array, not null
-    assert!(
-        value.is_array(),
-        "json format must always emit an array, not null or object; got: {}",
-        value.to_string()
-    );
-
-    // Must be empty
-    let arr = value.as_array().expect("is an array");
+    let object = value.as_object().expect("json format must emit an object");
+    assert_eq!(object["schema_version"]["major"], 1);
+    let arr = object["findings"].as_array().expect("findings array");
     assert!(
         arr.is_empty(),
-        "clean scan with --format json must emit an empty array [] ; got array with {} elements",
+        "clean scan with --format json must emit an empty findings array; got {} elements",
         arr.len()
-    );
-
-    // Verify the literal output is exactly [] with no extra whitespace/content
-    let trimmed = stdout.trim();
-    assert_eq!(
-        trimmed, "[]",
-        "json empty findings must be exactly '[]'; got: '{}'",
-        trimmed
     );
 }

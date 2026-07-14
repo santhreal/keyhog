@@ -52,7 +52,7 @@ fn report_with<W: std::io::Write + 'static + Send>(
             example_suppressions: keyhog_scanner::telemetry::example_suppression_count(),
             dogfood_active: keyhog_scanner::telemetry::is_dogfood_enabled(),
         },
-        OutputFormat::Json => ReportFormat::Json,
+        OutputFormat::Json => ReportFormat::JsonEnvelope,
         OutputFormat::Jsonl => ReportFormat::Jsonl,
         OutputFormat::Sarif => ReportFormat::Sarif {
             skip_summary: coverage_gap_summary(&CoverageCounts::current()),
