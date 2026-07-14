@@ -172,6 +172,11 @@ harness = false
 required-features = ["simd"]
 
 [[bench]]
+name = "decode"
+harness = false
+required-features = ["decode"]
+
+[[bench]]
 name = "scan_throughput"
 harness = false
 

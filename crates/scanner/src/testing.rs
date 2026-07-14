@@ -4109,6 +4109,32 @@ pub fn decode_chunk(
     crate::decode::decode_chunk(chunk, max_depth, validate, deadline, screen.map(|s| &s.0))
 }
 
+/// Benchmark-only admission probe for the fail-open custom-decoder default.
+#[cfg(feature = "decode")]
+#[doc(hidden)]
+pub fn decode_admission_sketch_with_custom_unknown(
+    chunk: &keyhog_core::Chunk,
+) -> crate::decode::DecodeAdmissionSketch {
+    struct CustomUnknown;
+
+    impl crate::decode::Decoder for CustomUnknown {
+        fn name(&self) -> &'static str {
+            "benchmark-custom-unknown"
+        }
+
+        fn decode_chunk(&self, _chunk: &keyhog_core::Chunk) -> Vec<keyhog_core::Chunk> {
+            Vec::new()
+        }
+    }
+
+    let mut sketch = crate::decode::decode_admission_sketch(chunk);
+    sketch.merge(crate::decode::Decoder::admission_sketch(
+        &CustomUnknown,
+        chunk,
+    ));
+    sketch
+}
+
 #[cfg(test)]
 pub(crate) fn register_thread_decoder(
     decoder: Box<dyn crate::decode::Decoder>,
