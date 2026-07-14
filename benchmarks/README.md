@@ -153,11 +153,13 @@ checksum-valid GitHub-token-shaped values:
 | P7-P12 | XOR or AES combined with the simple, dead-code, and structural transforms |
 
 The paper evaluates 336 programs across these 13 phases. KeyHog's generator
-therefore emits 4,368 JavaScript fixtures by default. The paper's published
-HTML currently contains an unresolved `github-repo` placeholder where its
-artifact link should be, so this corpus is a reproducible methodology
-adaptation, not a claim of byte-for-byte identity with unavailable source
-files. It uses no third-party dataset bytes.
+therefore emits 4,368 JavaScript fixtures by default. The authors publish
+[13 demonstration files](https://github.com/jaimemorales52/llm-ioc-detection/tree/91d45377cf482c1de6c36a0d33744665976a19b6/1.createdFiles)
+at commit `91d45377cf482c1de6c36a0d33744665976a19b6`. That repository does not contain
+the 336-program evaluation corpus. KeyHog records the repository and commit as
+methodology provenance, but generates its own deterministic credential
+fixtures. It does not claim byte identity with the paper's evaluation data and
+uses no third-party dataset bytes.
 
 Every value is synthetic and deterministic. P5-P12 embed the key and recovery
 logic in the program, matching the program-analysis task rather than creating

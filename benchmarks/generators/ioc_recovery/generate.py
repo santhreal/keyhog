@@ -31,6 +31,14 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from bench.corpus_integrity import file_sha256, tree_sha256  # noqa: E402
 from bench.generator_checksums import crc32_base62  # noqa: E402
+from bench.ioc_recovery_provenance import (  # noqa: E402
+    PAPER_TITLE,
+    PAPER_URL,
+    UPSTREAM_EVALUATION_CORPUS_PUBLISHED,
+    UPSTREAM_PUBLIC_EXAMPLE_COUNT,
+    UPSTREAM_REPOSITORY_COMMIT,
+    UPSTREAM_REPOSITORY_URL,
+)
 
 PHASES: tuple[tuple[int, str], ...] = (
     (0, "plaintext"),
@@ -50,12 +58,6 @@ PHASES: tuple[tuple[int, str], ...] = (
 
 NODE_AES_TIMEOUT_SECONDS = 30
 NODE_AES_REAP_SECONDS = 5
-
-PAPER_TITLE = (
-    "Benchmarking Large Language Models for IoC Recovery under Adversarial "
-    "Code Obfuscation and Encryption"
-)
-PAPER_URL = "https://arxiv.org/abs/2605.06910"
 
 _NODE_AES = r"""
 const crypto = require('crypto');
@@ -371,12 +373,16 @@ def generate(out: pathlib.Path, samples: int, seed: int) -> None:
             encoding="utf-8",
         )
         metadata = {
-            "schema_version": 1,
+            "schema_version": 2,
             "name": "keyhog-ioc-recovery",
             "methodology": "P0-P12 adapted to synthetic credentials",
             "methodology_title": PAPER_TITLE,
             "methodology_url": PAPER_URL,
             "methodology_license": "CC-BY-4.0",
+            "upstream_repository_url": UPSTREAM_REPOSITORY_URL,
+            "upstream_repository_commit": UPSTREAM_REPOSITORY_COMMIT,
+            "upstream_public_example_count": UPSTREAM_PUBLIC_EXAMPLE_COUNT,
+            "upstream_evaluation_corpus_published": UPSTREAM_EVALUATION_CORPUS_PUBLISHED,
             "artifact_relationship": "methodology-adaptation",
             "credential_shape": "checksum-valid synthetic GitHub classic PAT",
             "match_mode": "exact",

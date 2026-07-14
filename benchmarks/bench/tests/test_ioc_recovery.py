@@ -69,8 +69,16 @@ def test_ioc_recovery_generator_is_deterministic_and_executable(tmp_path):
     }
 
     metadata = json.loads((left / "corpus.json").read_text())
-    assert metadata["schema_version"] == 1
+    assert metadata["schema_version"] == 2
     assert metadata["methodology_url"] == "https://arxiv.org/abs/2605.06910"
+    assert metadata["upstream_repository_url"] == (
+        "https://github.com/jaimemorales52/llm-ioc-detection"
+    )
+    assert metadata["upstream_repository_commit"] == (
+        "91d45377cf482c1de6c36a0d33744665976a19b6"
+    )
+    assert metadata["upstream_public_example_count"] == 13
+    assert metadata["upstream_evaluation_corpus_published"] is False
     assert metadata["artifact_relationship"] == "methodology-adaptation"
     assert metadata["match_mode"] == "exact"
     assert metadata["credential_shape"] == (

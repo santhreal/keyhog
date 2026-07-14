@@ -5,10 +5,10 @@ and Tapiador's *Benchmarking Large Language Models for IoC Recovery under
 Adversarial Code Obfuscation and Encryption* to synthetic credential values.
 It is part of KeyHog's unified benchmark harness, not a separate evaluator.
 
-The paper's arXiv source currently cites an unresolved ``github-repo``
-placeholder, so this adapter does not claim to mirror an unavailable artifact
-byte-for-byte. The committed generator records the paper-compatible phase,
-seed, transform, and expected recovered plaintext for reproducibility.
+The authors publish 13 demonstration files at a repository and commit pinned
+by the generator. That repository does not contain the paper's 336-program
+evaluation corpus. This adapter therefore records the public source provenance
+without claiming byte identity with the unpublished evaluation data.
 """
 
 from __future__ import annotations
@@ -20,6 +20,12 @@ import subprocess
 import sys
 
 from ..corpus_integrity import file_sha256, tree_sha256
+from ..ioc_recovery_provenance import (
+    UPSTREAM_EVALUATION_CORPUS_PUBLISHED,
+    UPSTREAM_PUBLIC_EXAMPLE_COUNT,
+    UPSTREAM_REPOSITORY_COMMIT,
+    UPSTREAM_REPOSITORY_URL,
+)
 from .base import Corpus, LabeledRecord, load_jsonl_manifest
 
 _THIS = pathlib.Path(__file__).resolve()
@@ -100,11 +106,15 @@ class IocRecoveryCorpus(Corpus):
             )
         metadata = self._load_metadata()
         required = {
-            "schema_version": 1,
+            "schema_version": 2,
             "name": "keyhog-ioc-recovery",
             "phases": 13,
             "match_mode": "exact",
             "artifact_relationship": "methodology-adaptation",
+            "upstream_repository_url": UPSTREAM_REPOSITORY_URL,
+            "upstream_repository_commit": UPSTREAM_REPOSITORY_COMMIT,
+            "upstream_public_example_count": UPSTREAM_PUBLIC_EXAMPLE_COUNT,
+            "upstream_evaluation_corpus_published": UPSTREAM_EVALUATION_CORPUS_PUBLISHED,
         }
         for key, expected in required.items():
             if metadata.get(key) != expected:

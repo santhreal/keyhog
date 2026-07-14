@@ -47,11 +47,13 @@ Language Models for IoC Recovery under Adversarial Code Obfuscation and
 Encryption*](https://arxiv.org/abs/2605.06910), licensed
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
-The KeyHog repository ships its own generator and no dataset bytes from the
-paper. The paper's HTML currently leaves its code/data citation as an
-unresolved `github-repo` placeholder, so the generated corpus is explicitly a
-methodology adaptation using deterministic synthetic credentials. It does not
-claim byte-for-byte identity with the paper's unavailable artifact.
+The authors publish an MIT-licensed repository with 13 demonstration files at
+[`jaimemorales52/llm-ioc-detection`](https://github.com/jaimemorales52/llm-ioc-detection/tree/91d45377cf482c1de6c36a0d33744665976a19b6),
+commit `91d45377cf482c1de6c36a0d33744665976a19b6`. It does not contain the
+paper's 336-program evaluation corpus. KeyHog ships its own generator and no
+upstream dataset bytes. The generated corpus is a methodology adaptation using
+deterministic synthetic credentials, not a byte-identical copy of the paper's
+evaluation data.
 
 ## Home-turf harvested fixtures
 
