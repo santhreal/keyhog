@@ -339,7 +339,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && daemon_server.contains("router: Arc<crate::orchestrator::CachedBackendRouter>")
             && daemon_server.contains("router.choose(")
             && (daemon_server.contains("scan_with_backend(&chunk, backend)")
-                || daemon_server.contains("scan_chunks_with_backend(&chunks, backend)"))
+                || daemon_server.contains("scan_coalesced_with_backend(&chunks, backend)"))
             && daemon_server.contains("source_type: \"stdin\"")
             && (daemon_server.contains("source_type: \"filesystem\"")
                 || daemon_server.contains("FilesystemSource::new"))

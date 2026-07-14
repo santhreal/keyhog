@@ -220,7 +220,7 @@ impl CoalescedScannerWorker {
         // check keeps GPU_SCANNED_CHUNKS honest for embedders that replace that
         // process boundary.
         let degrade_before = chose_gpu.then(|| self.scanner.gpu_degrade_count());
-        let per_chunk = match chosen_backend {
+        match chosen_backend {
             // The VYRE GpuLiteralSet region-presence route is the single on-GPU
             // trigger path. It owns backend acquisition and fails the selected
             // route if dispatch cannot remain on GPU, so both an explicit GPU
@@ -234,17 +234,13 @@ impl CoalescedScannerWorker {
                     chunks = scanned_count,
                     "batch dispatched (gpu region presence)",
                 );
-                self.scanner
-                    .scan_chunks_with_backend(batch, ScanBackend::Gpu)
             }
-            ScanBackend::CpuFallback => self
-                .scanner
-                .scan_chunks_with_backend(batch, ScanBackend::CpuFallback),
-            ScanBackend::SimdCpu => self
-                .scanner
-                .scan_coalesced_with_backend(batch, ScanBackend::SimdCpu),
+            ScanBackend::CpuFallback | ScanBackend::SimdCpu => {}
             backend => return Err(AutorouteRoutingError::unsupported_backend(backend)),
-        };
+        }
+        let per_chunk = self
+            .scanner
+            .scan_coalesced_with_backend(batch, chosen_backend);
         // Count the batch as GPU-scanned only if it was routed to the GPU AND the
         // scanner recorded no runtime degrade while dispatching it. A degrade
         // hard-fails the selected route; retaining the counter check also keeps

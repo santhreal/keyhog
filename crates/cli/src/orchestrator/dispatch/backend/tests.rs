@@ -2673,8 +2673,9 @@ fn autoroute_reference_inconsistency_aborts_calibration_contract() {
                 "Result<(Vec<Vec<keyhog_core::RawMatch>>, BackendTimingEvidence), AutorouteRoutingError>"
             )
             && calibration.contains(
-                "scanner.scan_coalesced_with_backend(sample, ScanBackend::SimdCpu)"
+                "scan_calibration_backend(scanner, sample, ScanBackend::SimdCpu)"
             )
+            && calibration.contains("scanner.scan_coalesced_with_backend(sample, backend)")
             && calibration
                 .contains("return Err(AutorouteRoutingError::inconsistent_reference_backend("),
         "measure_reference_simd must explicitly force the SIMD route and abort on reference \

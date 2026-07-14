@@ -146,13 +146,13 @@ fn measure_reference_simd(
     // run would inflate the SIMD baseline and unfairly bias every candidate
     // comparison against it (Law 7: a biased measurement is a production bug).
     scanner.clear_fragment_cache();
-    let reference = scanner.scan_coalesced_with_backend(sample, ScanBackend::SimdCpu);
+    let reference = scan_calibration_backend(scanner, sample, ScanBackend::SimdCpu);
     let reference_key = canonical_matches(&reference);
     let mut durations = Vec::with_capacity(AUTOROUTE_CALIBRATION_TRIALS);
     for trial_idx in 0..AUTOROUTE_CALIBRATION_TRIALS {
         scanner.clear_fragment_cache();
         let (matches, dur) =
-            timed(|| scanner.scan_coalesced_with_backend(sample, ScanBackend::SimdCpu));
+            timed(|| scan_calibration_backend(scanner, sample, ScanBackend::SimdCpu));
         if !canonical_matches_equal_reference(&matches, &reference_key) {
             let reference_set = calibration_match_identity_set(&reference);
             let trial_set = calibration_match_identity_set(&matches);
@@ -222,7 +222,7 @@ fn measure_candidate_backend(
         } else {
             None
         };
-        let (matches, dur) = timed(|| scanner.scan_chunks_with_backend(sample, backend));
+        let (matches, dur) = timed(|| scan_calibration_backend(scanner, sample, backend));
         if let Some(before) = gpu_degrade_count_before {
             let after = scanner.runtime_status().gpu_degrade_count;
             if after != before {
@@ -265,6 +265,17 @@ fn measure_candidate_backend(
             "candidate timing evidence had no recorded trials",
         )
     })
+}
+
+/// Run every calibration candidate through the same backend-dispatch boundary
+/// used by in-process batches and daemon requests. The boundary selects the
+/// coalesced Hyperscan implementation and the ordinary CPU or GPU batch path.
+fn scan_calibration_backend(
+    scanner: &CompiledScanner,
+    sample: &[Chunk],
+    backend: ScanBackend,
+) -> Vec<Vec<keyhog_core::RawMatch>> {
+    scanner.scan_coalesced_with_backend(sample, backend)
 }
 
 fn timed<T>(f: impl FnOnce() -> T) -> (T, Duration) {

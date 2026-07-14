@@ -21,6 +21,11 @@ location; entropy; confidence; and finding multiplicity. Plain credentials and
 companions never enter calibration logs. Normal scans then do a direct table
 lookup; they never benchmark mid-scan.
 
+Calibration, in-process batches, and daemon requests call the same explicit
+backend-dispatch boundary. Hyperscan uses its coalesced multi-chunk path. Scalar
+CPU and GPU use their normal batch paths. A timing row therefore measures the
+implementation that the persisted route authorizes.
+
 Performance selection uses the median of the recorded trials, not the single
 fastest sample. If one route's 95% Student-t confidence interval is entirely
 below every competitor, it is the separated winner. If intervals overlap,
