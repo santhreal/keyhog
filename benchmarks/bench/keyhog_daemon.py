@@ -14,12 +14,23 @@ import tempfile
 import time
 import types
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from .scanners.base import RunStats, run_measured
+if TYPE_CHECKING:
+    from .scanners.base import RunStats
 
 _STATUS_SCANS_RE = re.compile(r"\b(\d+) scans served\b")
 _STATUS_ACTIVE_RE = re.compile(r"\b(\d+) active\b")
 _COVERAGE_GAP_MARKER = "daemon input coverage was incomplete"
+
+
+def run_measured(
+    command: list[str], *, timeout: int, pass_fds: tuple[int, ...]
+) -> tuple[str, str, RunStats]:
+    """Measure a client without importing the scanner registry at module load."""
+    from .scanners.base import run_measured as measure
+
+    return measure(command, timeout=timeout, pass_fds=pass_fds)
 
 
 def validate_daemon_benchmark(root: pathlib.Path, backend: str, cache: str, mode: str) -> None:

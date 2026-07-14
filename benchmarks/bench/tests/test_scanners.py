@@ -5,6 +5,7 @@ import os
 import pathlib
 import shutil
 import sqlite3
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +19,17 @@ from bench.schema import ScannerConfig
 
 
 _REAL_BINARY_SNAPSHOT = keyhog_adapter.KeyhogScanner._binary_snapshot
+
+
+def test_keyhog_daemon_is_directly_importable_from_a_fresh_process():
+    completed = subprocess.run(
+        [sys.executable, "-c", "import bench.keyhog_daemon"],
+        cwd=pathlib.Path(__file__).parents[2],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 @pytest.fixture(autouse=True)
