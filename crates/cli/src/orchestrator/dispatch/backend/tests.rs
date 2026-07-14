@@ -11,7 +11,7 @@ use super::workload::{
     autoroute_stable_bucket, autoroute_stable_decode_bucket, decode_workload_projection,
     decode_workload_sketch as decode_workload_sketch_with_plan, planned_decode_sample_bytes,
     planned_decode_sample_quotas, source_family_id, source_mixture_key,
-    validate_source_mixture_key, validate_workload_source_mixture,
+    validate_source_mixture_key, validate_workload_source_mixture, workload_evidence_digest,
     workload_key as workload_key_with_plan, Phase1AdmissionKey, SourceMixtureEntry,
     SourceMixtureKey, WorkloadKey,
 };
@@ -492,8 +492,12 @@ fn write_tampered_decision_cache(
         .configs
         .first_mut()
         .expect("saved single-config cache has one config entry");
+    let mut row = config.decisions[0].clone();
+    row.workload = key;
+    row.decision = bad_decision;
+    row.workload_digest = workload_evidence_digest(&row.workload);
     config.decisions.clear();
-    config.decisions.push((key, bad_decision));
+    config.decisions.push(row);
     std::fs::write(
         path,
         serde_json::to_vec_pretty(&cache).expect("tampered cache serializes"),
@@ -1079,6 +1083,18 @@ fn source_mixture_validation_rejects_noncanonical_persisted_entries() {
     impossible_payload_span.max_file_bucket = 25;
     assert!(validate_workload_source_mixture(&impossible_payload_span).is_err());
 
+    let mut mixed_impossible_span = test_workload_key();
+    let mut payload_entry = test_source_mixture("web").entries.remove(0);
+    payload_entry.has_full_size = false;
+    payload_entry.max_span_bucket = 25;
+    mixed_impossible_span
+        .source_mixture
+        .entries
+        .push(payload_entry);
+    mixed_impossible_span.source_mixture.entries.sort();
+    mixed_impossible_span.max_file_bucket = 25;
+    assert!(validate_workload_source_mixture(&mixed_impossible_span).is_err());
+
     let mut parent_mismatch = test_workload_key();
     parent_mismatch.source_mixture.entries[0].max_span_bucket = 23;
     assert!(validate_workload_source_mixture(&parent_mismatch).is_err());
@@ -1174,6 +1190,30 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
     assert!(rows
         .iter()
         .all(|row| { !row.workload.contains("filesystem") && !row.workload.contains("web") }));
+
+    let mut cache: AutorouteCache = serde_json::from_slice(
+        &std::fs::read(&path).expect("read exact-mixture cache for binding tamper"),
+    )
+    .expect("deserialize exact-mixture cache for binding tamper");
+    let first_mixture = cache.configs[0].decisions[0]
+        .workload
+        .source_mixture
+        .clone();
+    let second_mixture = cache.configs[0].decisions[1]
+        .workload
+        .source_mixture
+        .clone();
+    cache.configs[0].decisions[0].workload.source_mixture = second_mixture;
+    cache.configs[0].decisions[1].workload.source_mixture = first_mixture;
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&cache).expect("serialize relabeled workload evidence"),
+    )
+    .expect("write relabeled workload evidence");
+    let error = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+        .expect_err("source-mixture relabeling must invalidate workload evidence")
+        .to_string();
+    assert!(error.contains("bound to a different workload key"));
 }
 
 #[test]
@@ -1220,7 +1260,7 @@ fn cache_rejects_noncanonical_source_mixture_on_save_and_load() {
     )
     .expect("deserialize valid source-mixture cache");
     cache.configs[0].decisions[0]
-        .0
+        .workload
         .source_mixture
         .entries
         .reverse();
@@ -1290,7 +1330,7 @@ fn mismatched_sample_evidence_never_clobbers_or_replays() {
 
     let mut cache: AutorouteCache =
         serde_json::from_slice(&original).expect("deserialize valid sample-bound cache");
-    cache.configs[0].decisions[0].1.sample_bytes = 4 * 1024 * 1024;
+    cache.configs[0].decisions[0].decision.sample_bytes = 4 * 1024 * 1024;
     std::fs::write(
         &path,
         serde_json::to_vec_pretty(&cache).expect("serialize tampered sample binding"),
@@ -1405,7 +1445,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && !serialized.contains("\"confidence_interval_95_ns\"")
             && !serialized.contains("\"best_ns\"")
             && !serialized.contains("\"mean_ns\""),
-        // v30 persists primary timing evidence and per-candidate parity receipts.
+        // v31 persists primary timing evidence, workload binding, and per-candidate parity receipts.
         // GPU cold/warm/route, and selected-margin keys are derived from the
         // trial vectors on load, never stored.
         "cache JSON must persist route timing evidence, not only the selected backend"
@@ -2050,19 +2090,19 @@ fn autoroute_cache_rejects_v25_decode_density_identity_before_payload_decode() {
         0xA55A_D00D_CAFE_BEEF,
         &test_host(None),
     )
-    .expect_err("v25 decode-density identity must never be reused as v30 decoder work")
+    .expect_err("v25 decode-density identity must never be reused as v31 decoder work")
     .to_string();
     let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 
     assert!(
         error.contains("unsupported autoroute cache version 25")
-            && error.contains("expects 30")
+            && error.contains("expects 31")
             && error.contains("re-run calibration"),
         "v25 migration failure must be version-first and actionable: {error}"
     );
     assert!(
         !error.contains("missing field") && !error.contains("unknown field"),
-        "v25 payload must not reach the v30 workload deserializer: {error}"
+        "v25 payload must not reach the v31 workload deserializer: {error}"
     );
 }
 
@@ -2091,13 +2131,13 @@ fn autoroute_cache_rejects_v28_before_phase1_identity_decode() {
 
     assert!(
         error.contains("unsupported autoroute cache version 28")
-            && error.contains("expects 30")
+            && error.contains("expects 31")
             && error.contains("re-run calibration"),
         "v28 migration failure must be version-first and actionable: {error}"
     );
     assert!(
         !error.contains("missing field") && !error.contains("unknown field"),
-        "v28 payload must not reach the v30 phase-one identity deserializer: {error}"
+        "v28 payload must not reach the v31 phase-one identity deserializer: {error}"
     );
 }
 
@@ -2126,13 +2166,48 @@ fn autoroute_cache_rejects_v29_before_source_mixture_decode() {
 
     assert!(
         error.contains("unsupported autoroute cache version 29")
-            && error.contains("expects 30")
+            && error.contains("expects 31")
             && error.contains("re-run calibration"),
         "v29 migration failure must be version-first and actionable: {error}"
     );
     assert!(
         !error.contains("missing field") && !error.contains("unknown field"),
-        "v29 payload must not reach the v30 source-mixture deserializer: {error}"
+        "v29 payload must not reach the v31 source-mixture deserializer: {error}"
+    );
+}
+
+#[test]
+fn autoroute_cache_rejects_v30_before_workload_binding_decode() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_v30_workload_binding_{}.json",
+        std::process::id()
+    ));
+    std::fs::write(
+        &path,
+        br#"{"version":30,"configs":[{"decisions":[[{"source_mixture":{"entries":[]}},{}]]}]}"#,
+    )
+    .expect("write v30 cache");
+
+    let error = load_autoroute_cache(
+        &path,
+        0x1234_5678_9ABC_DEF0,
+        test_rules_digest(),
+        0xA55A_D00D_CAFE_BEEF,
+        &test_host(None),
+    )
+    .expect_err("v30 decisions must never be reused without workload binding")
+    .to_string();
+    let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+
+    assert!(
+        error.contains("unsupported autoroute cache version 30")
+            && error.contains("expects 31")
+            && error.contains("re-run calibration"),
+        "v30 migration failure must be version-first and actionable: {error}"
+    );
+    assert!(
+        !error.contains("missing field") && !error.contains("unknown field"),
+        "v30 payload must not reach the v31 workload-binding deserializer: {error}"
     );
 }
 
@@ -2161,7 +2236,7 @@ fn autoroute_cache_save_reports_when_it_replaces_outdated_evidence() {
 
     match outcome {
         AutorouteCacheSaveOutcome::Replaced { reason } => assert!(
-            reason.contains("schema 1") && reason.contains("schema 30"),
+            reason.contains("schema 1") && reason.contains("schema 31"),
             "replacement disposition must explain both schema identities: {reason}"
         ),
         _ => panic!("outdated cache replacement must be operator-visible"),
@@ -3454,7 +3529,8 @@ fn autoroute_cache_rejects_non_primary_timing_summary_fields() {
         &std::fs::read(&path).expect("tampered cache fixture must be readable"),
     )
     .expect("tampered cache fixture must be JSON");
-    cache_json["configs"][0]["decisions"][0][1]["simd_timing"]["mean_ns"] = serde_json::json!(1);
+    cache_json["configs"][0]["decisions"][0]["decision"]["simd_timing"]["mean_ns"] =
+        serde_json::json!(1);
     std::fs::write(
         &path,
         serde_json::to_vec_pretty(&cache_json).expect("tampered cache JSON must serialize"),
@@ -3511,8 +3587,8 @@ fn autoroute_cache_rejects_unknown_and_incomplete_proof_fields() {
             "features" => &mut tampered["build_features"],
             "host" => &mut tampered["host"],
             "config" => &mut tampered["configs"][0],
-            "workload" => &mut tampered["configs"][0]["decisions"][0][0],
-            "decision" => &mut tampered["configs"][0]["decisions"][0][1],
+            "workload" => &mut tampered["configs"][0]["decisions"][0]["workload"],
+            "decision" => &mut tampered["configs"][0]["decisions"][0]["decision"],
             _ => unreachable!("fixed strict-schema case"),
         };
         target["unexpected_proof_field"] = serde_json::json!(true);

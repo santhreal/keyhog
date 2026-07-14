@@ -33,7 +33,15 @@ pub(crate) struct AutorouteCache {
 #[serde(deny_unknown_fields)]
 pub(crate) struct AutorouteConfigDecisions {
     pub(crate) config_digest: u64,
-    pub(crate) decisions: Vec<(WorkloadKey, AutorouteDecision)>,
+    pub(crate) decisions: Vec<PersistedAutorouteDecision>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PersistedAutorouteDecision {
+    pub(crate) workload: WorkloadKey,
+    pub(crate) decision: AutorouteDecision,
+    pub(crate) workload_digest: [u8; 32],
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

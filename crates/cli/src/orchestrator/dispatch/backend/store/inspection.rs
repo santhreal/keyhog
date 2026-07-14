@@ -230,7 +230,9 @@ fn inspect_autoroute_cache_for_build(
 
     for config in &cache.configs {
         let mut decisions = Vec::with_capacity(config.decisions.len());
-        for (key, decision) in &config.decisions {
+        for row in &config.decisions {
+            let key = &row.workload;
+            let decision = &row.decision;
             let Some(daemon_backend) = decision.resolved_persistent_backend() else {
                 out.error = Some(
                     "autoroute cache decision has no persistent-daemon route evidence; \

@@ -4,7 +4,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use super::super::evidence::AutorouteDecision;
 use super::super::host::AutorouteHostProfile;
-use super::super::workload::{validate_workload_source_mixture, WorkloadKey};
+use super::super::workload::{
+    validate_workload_source_mixture, workload_evidence_digest, WorkloadKey,
+};
 use super::super::AUTOROUTE_CACHE_VERSION;
 
 /// Operator-relevant effect of a successful cache save.
@@ -23,7 +25,9 @@ use super::artifact_identity::current_executable_sha256;
 use super::codec::{
     parse_autoroute_cache, read_autoroute_cache_file, CacheParseError, AUTOROUTE_CACHE_FILE_BYTES,
 };
-use super::schema::{AutorouteBuildFeatures, AutorouteCache, AutorouteConfigDecisions};
+use super::schema::{
+    AutorouteBuildFeatures, AutorouteCache, AutorouteConfigDecisions, PersistedAutorouteDecision,
+};
 use super::validation::{
     validate_cache_shared_identity, validate_cache_structure, validate_decision_route_evidence,
     validate_decision_workload_binding,
@@ -68,7 +72,11 @@ pub(crate) fn load_autoroute_cache(
         )
         .into());
     };
-    Ok(config.decisions.iter().cloned().collect())
+    Ok(config
+        .decisions
+        .iter()
+        .map(|row| (row.workload.clone(), row.decision.clone()))
+        .collect())
 }
 
 pub(crate) fn save_autoroute_cache(
@@ -102,7 +110,12 @@ pub(crate) fn save_autoroute_cache(
         .iter()
         .find(|config| config.config_digest == config_digest)
     {
-        merged.extend(prior.decisions.iter().cloned());
+        merged.extend(
+            prior
+                .decisions
+                .iter()
+                .map(|row| (row.workload.clone(), row.decision.clone())),
+        );
     }
     merged.extend(
         decisions
@@ -112,7 +125,14 @@ pub(crate) fn save_autoroute_cache(
     configs.retain(|config| config.config_digest != config_digest);
     configs.push(AutorouteConfigDecisions {
         config_digest,
-        decisions: merged.into_iter().collect(),
+        decisions: merged
+            .into_iter()
+            .map(|(workload, decision)| PersistedAutorouteDecision {
+                workload_digest: workload_evidence_digest(&workload),
+                workload,
+                decision,
+            })
+            .collect(),
     });
     configs.sort_by_key(|config| config.config_digest);
 

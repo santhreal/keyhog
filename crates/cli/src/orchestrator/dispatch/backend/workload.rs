@@ -452,6 +452,63 @@ pub(super) fn source_family_id(family: &str) -> [u8; 32] {
     hasher.finish_256()
 }
 
+pub(super) fn workload_evidence_digest(key: &WorkloadKey) -> [u8; 32] {
+    let mut hasher = crate::stable_hash::StableHasher::new("autoroute-workload-evidence-v1");
+    hasher
+        .field_u64("bytes_bucket", u64::from(key.bytes_bucket))
+        .field_u64("chunks_bucket", u64::from(key.chunks_bucket))
+        .field_u64("max_file_bucket", u64::from(key.max_file_bucket))
+        .field_u64("pattern_bucket", u64::from(key.pattern_bucket))
+        .field_u64(
+            "phase1.alphabet_rejected_chunks_bucket",
+            u64::from(key.phase1.alphabet_rejected_chunks_bucket),
+        )
+        .field_u64(
+            "phase1.alphabet_rejected_bytes_bucket",
+            u64::from(key.phase1.alphabet_rejected_bytes_bucket),
+        )
+        .field_u64(
+            "phase1.bigram_rejected_chunks_bucket",
+            u64::from(key.phase1.bigram_rejected_chunks_bucket),
+        )
+        .field_u64(
+            "phase1.bigram_rejected_bytes_bucket",
+            u64::from(key.phase1.bigram_rejected_bytes_bucket),
+        )
+        .field_u64(
+            "phase1.admitted_chunks_bucket",
+            u64::from(key.phase1.admitted_chunks_bucket),
+        )
+        .field_u64(
+            "phase1.admitted_bytes_bucket",
+            u64::from(key.phase1.admitted_bytes_bucket),
+        )
+        .field_u64("decode_kind_mask", u64::from(key.decode_kind_mask))
+        .field_u64(
+            "decode_candidate_count_bucket",
+            u64::from(key.decode_candidate_count_bucket),
+        )
+        .field_u64(
+            "decode_candidate_bytes_bucket",
+            u64::from(key.decode_candidate_bytes_bucket),
+        )
+        .field_bool("decode_unknown", key.decode_unknown)
+        .field_usize("source_mixture.entries", key.source_mixture.entries.len());
+    for (index, entry) in key.source_mixture.entries.iter().enumerate() {
+        hasher
+            .field_usize("source_mixture.index", index)
+            .field_bytes("source_mixture.family_digest", &entry.family_digest)
+            .field_bool("source_mixture.has_full_size", entry.has_full_size)
+            .field_u64("source_mixture.chunk_ratio", entry.chunk_ratio)
+            .field_u64("source_mixture.payload_ratio", entry.payload_ratio)
+            .field_u64(
+                "source_mixture.max_span_bucket",
+                u64::from(entry.max_span_bucket),
+            );
+    }
+    hasher.finish_256()
+}
+
 pub(super) fn validate_source_mixture_key(key: &SourceMixtureKey) -> Result<(), String> {
     if key.entries.is_empty() || key.entries.len() > MAX_SOURCE_MIXTURE_ENTRIES {
         return Err(format!(
@@ -516,10 +573,11 @@ pub(super) fn validate_workload_source_mixture(key: &WorkloadKey) -> Result<(), 
         .source_mixture
         .entries
         .iter()
-        .all(|entry| !entry.has_full_size)
-        && key.max_file_bucket > key.bytes_bucket
+        .any(|entry| !entry.has_full_size && entry.max_span_bucket > key.bytes_bucket)
     {
-        return Err("payload-derived source spans cannot exceed the aggregate payload band".into());
+        return Err(
+            "a payload-derived source span cannot exceed the aggregate payload band".into(),
+        );
     }
     Ok(())
 }

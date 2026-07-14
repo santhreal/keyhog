@@ -6,7 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use super::super::evidence::{gpu_cold_warm_route_evidence, AutorouteDecision};
 use super::super::host::AutorouteHostProfile;
 use super::super::workload::{
-    autoroute_stable_bucket, render_workload_key, validate_workload_source_mixture, WorkloadKey,
+    autoroute_stable_bucket, render_workload_key, validate_workload_source_mixture,
+    workload_evidence_digest, WorkloadKey,
 };
 use super::super::AUTOROUTE_CALIBRATION_TRIALS;
 use super::artifact_identity::current_executable_sha256;
@@ -78,7 +79,9 @@ pub(super) fn validate_cache_structure_at(
             .into());
         }
         let mut seen_workloads = HashSet::with_capacity(config.decisions.len());
-        for (key, decision) in &config.decisions {
+        for row in &config.decisions {
+            let key = &row.workload;
+            let decision = &row.decision;
             validate_workload_source_mixture(key).map_err(|error| {
                 format!(
                     "autoroute cache config {:016x} contains an invalid source mixture: {error}",
@@ -87,6 +90,13 @@ pub(super) fn validate_cache_structure_at(
             })?;
             validate_decision_route_evidence_at(decision, current_unix_ms)?;
             validate_decision_workload_binding(key, decision)?;
+            if row.workload_digest != workload_evidence_digest(key) {
+                return Err(format!(
+                    "autoroute cache config {:016x} contains workload evidence bound to a different workload key",
+                    config.config_digest
+                )
+                .into());
+            }
             if !seen_workloads.insert(key.clone()) {
                 return Err(format!(
                     "autoroute cache config {:016x} contains duplicate autoroute workload decision for {}",
