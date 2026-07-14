@@ -12,6 +12,7 @@
 #   #1d no_deferral_markers, stale deferral markers cannot reappear
 #   #1e docs_truth, canonical mdBook is complete and source-true
 #   #1f github_actions_pinned, repo CI cannot execute mutable third-party refs
+#   package_licenses: publishable crate roots carry canonical license bytes
 #   #4 surface_coverage: a subcommand with no real-process test
 #   #5 complexity_budget: engine grew a new lane/backend/file past budget
 #   org_audit.py: stale claims, generated LOC-cap bloat, evidence wiring
@@ -26,6 +27,7 @@
 # gates and CI (which HAS the assets) gets everything:
 #   #2 backend parity: a scan path silently diverges (pytest, needs corpus+bin)
 #   #3 recall floor: recall regressed below the pinned line (pytest)
+#   docs_links: built mdBook has no broken local resources or fragments
 #   bench gate, keyhog must lead competitors + not regress (needs results/)
 #   audit.sh: cargo audit (needs cargo-audit + advisory DB)
 #   ml/parity_check.py: Rust<->Python feature parity (skipped if ml/ absent)
@@ -117,6 +119,8 @@ run "Gate #1e self-test: stale and duplicate documentation is detected" \
   python3 scripts/gates/docs_truth.py --self-test
 run "Gate #1e: canonical mdBook documentation is complete and source-true" \
   python3 scripts/gates/docs_truth.py
+run "Package license gate: publishable crate roots use canonical bytes" \
+  python3 -B scripts/gates/package_licenses.py
 run "Gate #1f self-test: mutable GitHub Action refs are detected" \
   python3 scripts/gates/github_actions_pinned.py --self-test
 run "Gate #1f: GitHub Actions are commit-pinned" \
@@ -149,6 +153,14 @@ run "Integration entry-point gate: pre-commit hook + Action wired" \
   bash tests/integration/entrypoints_check.sh
 run "CI operability: workflow and metadata contracts" \
   "$CARGO_BIN" test --manifest-path tools/ci-operability/Cargo.toml -- --nocapture
+
+echo "== Built documentation links: local resources and fragments resolve =="
+if [ -d docs/book ] && [ -f docs/book/index.html ]; then
+  python3 -B scripts/gates/docs_links.py docs/book --site-prefix /keyhog/ || rc=1
+else
+  skip "docs/book is absent (run \`cd docs && mdbook build\` to enable the built-link gate)."
+fi
+echo
 
 echo "== Gates #2 + #3: backend parity + recall floor (bench pytest) =="
 if [ "$GATES_SOURCE_ONLY" = "1" ]; then
