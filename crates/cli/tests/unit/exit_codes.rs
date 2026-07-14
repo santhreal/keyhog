@@ -207,7 +207,7 @@ fn generated_help_is_byte_identical_to_the_documented_block() {
 0   Success (no secrets found)\n  \
 1   Secrets found, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked)\n  \
 2   User error (bad flag/config, missing path/baseline, detector-load failure, invalid autoroute calibration, not-found/permission-denied path)\n  \
-3   System error (local environment failure: low-level I/O that is not not-found/permission-denied, or GPU/hardware init)\n  \
+3   System error (local environment failure: low-level I/O that is not not-found/permission-denied, or selected SIMD/Hyperscan unavailable)\n  \
 4   Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)\n  \
 10  Live credentials found (requires --verify)\n  \
 11  Scanner thread panicked mid-scan (state is unreliable)\n  \
