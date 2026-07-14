@@ -68,6 +68,14 @@ keyhog scan . --format json | jq '.[] | .detector_id' | sort | uniq -c
 That sample command dedups findings by detector, which is the most
 common "what kinds of leaks do I have" question.
 
+## `--format csv`
+
+CSV emits one row per finding. The `companions_redacted` and `remediation`
+columns contain deterministic JSON objects, and every textual cell is escaped
+with RFC 4180 quoting plus spreadsheet-formula neutralization. An unavailable
+confidence score remains an empty cell; remediation is still emitted so a CSV
+artifact never loses the canonical action guidance.
+
 ## `--format sarif`
 
 [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)

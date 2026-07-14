@@ -3,7 +3,7 @@
 //!
 //! Complements `regression_report_alt_formats.rs` (header / single planted row /
 //! empty run) and `regression_csv_formula_injection.rs` (formula defang) by
-//! pinning the parts those files do not: the 15-column ORDER and count, a fully
+//! pinning the parts those files do not: the 17-column ORDER and count, a fully
 //! populated row with every git field present, empty cells for absent optional
 //! fields (line/confidence), RFC-4180 quoting for a NON-formula comma / embedded
 //! double-quote / embedded newline, the kebab-case severity strings for all six
@@ -21,8 +21,13 @@ use keyhog_core::{
     VerificationResult, VerifiedFinding,
 };
 
-/// The exact 16-column CSV header keyhog writes on `CsvReporter::new`.
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence";
+/// The exact 17-column CSV header keyhog writes on CsvReporter::new.
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,remediation";
+
+/// AWS's Tier-B remediation serialized and escaped as one RFC-4180 CSV cell.
+const AWS_REMEDIATION_CSV: &str = r#""{""action"":""Disable or delete the exposed IAM access key, then rotate any paired secret access key and session token."",""revoke_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_ManagingAccessKeys"",""docs_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html"",""revoke_command"":""aws iam update-access-key --access-key-id {{credential}} --status Inactive""}""#;
+const AWS_SERVICE_REMEDIATION_CSV: &str = r#""{""action"":""Rotate the exposed AWS credential in IAM, revoke active sessions where applicable, and audit CloudTrail for use."",""docs_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html""}""#;
+const GITHUB_SERVICE_REMEDIATION_CSV: &str = r#""{""action"":""Revoke the exposed GitHub credential, audit recent usage, and recreate it with minimum required scopes."",""docs_url"":""https://docs.github.com/en/authentication/keeping-your-account-and-data-secure""}""#;
 
 /// Render findings as a CSV document string.
 fn render(findings: &[VerifiedFinding]) -> String {
@@ -64,15 +69,39 @@ fn base() -> VerifiedFinding {
     }
 }
 
-/// The second physical logical row (index 1) split on commas. Only safe when no
-/// field is RFC-4180 quoted (i.e. no field contains a comma/quote/newline).
+/// Parse the first data record with RFC-4180 quote and doubled-quote rules.
 fn data_columns(out: &str) -> Vec<String> {
-    out.lines()
-        .nth(1)
-        .expect("csv must have a data row")
-        .split(',')
-        .map(|s| s.to_string())
-        .collect()
+    let row = out
+        .split_once('\n')
+        .map(|(_, rest)| rest)
+        .expect("csv must have a header");
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut chars = row.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if quoted {
+            match ch {
+                '"' if chars.peek() == Some(&'"') => {
+                    field.push('"');
+                    chars.next();
+                }
+                '"' => quoted = false,
+                _ => field.push(ch),
+            }
+        } else {
+            match ch {
+                '"' if field.is_empty() => quoted = true,
+                ',' => {
+                    fields.push(std::mem::take(&mut field));
+                }
+                '\n' | '\r' => break,
+                _ => field.push(ch),
+            }
+        }
+    }
+    fields.push(field);
+    fields
 }
 
 // ---------------------------------------------------------------------------
@@ -80,11 +109,11 @@ fn data_columns(out: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn csv_header_is_exactly_sixteen_columns_in_canonical_order() {
+fn csv_header_is_exactly_seventeen_columns_in_canonical_order() {
     let out = render(&[base()]);
     let header = out.lines().next().expect("csv must have a header line");
     assert_eq!(header, CSV_HEADER);
-    assert_eq!(header.split(',').count(), 16);
+    assert_eq!(header.split(',').count(), 17);
 }
 
 #[test]
@@ -123,7 +152,7 @@ fn csv_fully_populated_row_places_every_field_exactly() {
 
     let out = render(&[f]);
     let expected = format!(
-        "github-pat,GitHub PAT,github,critical,ghp_****,{},{{}},git,src/config.rs,42,1234,abc123,Jane Dev,2026-07-01,live,0.875",
+        "github-pat,GitHub PAT,github,critical,ghp_****,{},{{}},git,src/config.rs,42,1234,abc123,Jane Dev,2026-07-01,live,0.875,{GITHUB_SERVICE_REMEDIATION_CSV}",
         "00".repeat(32)
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -139,15 +168,15 @@ fn csv_confidence_none_yields_empty_trailing_cell() {
     f.confidence = None;
     let out = render(&[f]);
     let cols = data_columns(&out);
-    assert_eq!(cols.len(), 16);
+    assert_eq!(cols.len(), 17);
     assert_eq!(cols[14], "unverifiable");
     assert_eq!(cols[15], "");
-    // The record ends immediately after the verification token's separator.
-    assert!(out
-        .lines()
-        .nth(1)
-        .expect("data row")
-        .ends_with(",unverifiable,"));
+    let remediation: serde_json::Value = serde_json::from_str(&cols[16]).expect("remediation JSON");
+    assert_eq!(remediation["action"], "Disable or delete the exposed IAM access key, then rotate any paired secret access key and session token.");
+    assert!(
+        out.contains(",unverifiable,,\"{"),
+        "remediation must follow confidence"
+    );
 }
 
 #[test]
@@ -171,7 +200,7 @@ fn csv_non_formula_comma_field_is_quoted_not_split() {
     f.detector_name = "AWS, Inc".into();
     let out = render(&[f]);
     let expected = format!(
-        "aws-access-key,\"AWS, Inc\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9",
+        "aws-access-key,\"AWS, Inc\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,{AWS_REMEDIATION_CSV}",
         hash_ab()
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -184,7 +213,7 @@ fn csv_embedded_double_quote_is_doubled_and_wrapped() {
     let out = render(&[f]);
     // escape_csv: inner `"` doubled, whole field wrapped => "He said ""hi"""
     let expected = format!(
-        "aws-access-key,\"He said \"\"hi\"\"\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9",
+        "aws-access-key,\"He said \"\"hi\"\"\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,{AWS_REMEDIATION_CSV}",
         hash_ab()
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -277,7 +306,7 @@ fn csv_three_findings_preserve_input_order_exact_document() {
     let out = render(&[a, b, c]);
     let hash = hash_ab();
     let row = |id: &str, sev: &str| {
-        format!("{id},AWS Access Key,aws,{sev},AKIA****,{hash},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9")
+        format!("{id},AWS Access Key,aws,{sev},AKIA****,{hash},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,{AWS_SERVICE_REMEDIATION_CSV}")
     };
     let expected = format!(
         "{}\n{}\n{}\n{}\n",
@@ -313,7 +342,7 @@ fn csv_formula_prefix_with_comma_is_guarded_then_quoted() {
     let out = render(&[f]);
     // Combined branch: opening `"`, then the `'` formula guard, then the value.
     let expected = format!(
-        "aws-access-key,AWS Access Key,\"'=A1,B1\",high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9",
+        "aws-access-key,AWS Access Key,\"'=A1,B1\",high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,{AWS_REMEDIATION_CSV}",
         hash_ab()
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);

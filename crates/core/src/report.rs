@@ -30,6 +30,15 @@ pub(crate) fn companions_json(finding: &VerifiedFinding) -> Result<String, Repor
     Ok(serde_json::to_string(&companions)?)
 }
 
+/// Serialize the canonical Tier-B remediation projection for scalar report
+/// formats. Keeping this beside companion serialization prevents CSV and other
+/// adapters from inventing provider-specific remediation logic.
+pub(crate) fn remediation_json(finding: &VerifiedFinding) -> Result<String, ReportError> {
+    let remediation =
+        crate::auto_fix::remediation_for(&finding.detector_id, &finding.service, finding.severity);
+    Ok(serde_json::to_string(&remediation)?)
+}
+
 /// Common error type used by all reporters.
 pub use anyhow::Error as ReportError;
 
