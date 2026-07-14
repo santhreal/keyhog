@@ -165,6 +165,14 @@ coverage gaps, its metadata panel shows the producing KeyHog version, scan
 interval, duration, redacted targets, source bytes and chunks, and detector count. The
 metadata is descriptive only; it never changes finding or exit-code semantics.
 
+## `--format junit`
+
+JUnit XML contains one failing testcase per finding. When the scan has source
+coverage gaps, the suite also contains `keyhog.scan.status=partial` and one
+`keyhog.coverage_gap` property per reason/count pair. A complete scan keeps the
+historical XML shape with no extra properties, while CI consumers can reject a
+partial artifact without scraping stderr.
+
 ## `--format jsonl`
 
 Legacy newline-delimited JSON retained for compatibility: one finding object
@@ -216,7 +224,8 @@ ticker, and a completion summary on stderr. Most of the time you do not need to
 silence it: the banner and ticker are printed only when stderr is a TTY (they
 never appear in a pipe, a file, or CI logs), and the structured formats
 (`json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`,
-`github-annotations`, `gitlab-sast`, `junit`) carry findings only, with no banner or footer prose. So a CI script
+`github-annotations`, `gitlab-sast`, `junit`) carry structured findings and
+format-specific coverage metadata, with no banner or footer prose. So a CI script
 that wants machine output just selects a structured format:
 
 ```sh

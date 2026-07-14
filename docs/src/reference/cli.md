@@ -42,7 +42,7 @@ or coverage incomplete.
 
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
-| `--format <text\|json\|json-envelope\|jsonl\|jsonl-envelope\|sarif\|csv\|github-annotations\|gitlab-sast\|html\|junit>` | Output format. Default `text`. The machine formats are findings-only: the banner/summary go to stderr (or are omitted), so stdout stays a clean parseable artifact. `json` and `jsonl` retain legacy array/stream contracts; the `*-envelope` forms add versioned schema identity. |
+| `--format <text\|json\|json-envelope\|jsonl\|jsonl-envelope\|sarif\|csv\|github-annotations\|gitlab-sast\|html\|junit>` | Output format. Default `text`. Machine formats keep stdout parseable; the banner/summary go to stderr (or are omitted). `json` and `jsonl` retain legacy array/stream contracts; the `*-envelope` forms add versioned schema identity, and JUnit adds coverage properties when a scan is partial. |
 | `--output <FILE>`             | Write the report to `FILE` instead of stdout.  |
 | `--stream`                    | Stream a one-line redacted preview per finding to stderr as they're found; the full formatted report still lands on stdout/`--output` after verification. |
 | `--show-secrets`              | Show full credentials. Default redacts.        |

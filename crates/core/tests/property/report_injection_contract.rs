@@ -75,6 +75,9 @@ fn all_formats() -> Vec<ReportFormat> {
             metadata: None,
         },
         ReportFormat::Junit,
+        ReportFormat::JunitCoverage {
+            skip_summary: Vec::new(),
+        },
     ]
 }
 
@@ -99,6 +102,7 @@ fn format_name(f: &ReportFormat) -> &'static str {
         ReportFormat::GitlabSast { .. } => "gitlab-sast",
         ReportFormat::Html { .. } => "html",
         ReportFormat::Junit => "junit",
+        ReportFormat::JunitCoverage { .. } => "junit-coverage",
     }
 }
 

@@ -402,6 +402,11 @@ pub enum ReportFormat {
     },
     /// JUnit XML output.
     Junit,
+    /// JUnit XML output with deterministic scan coverage properties.
+    JunitCoverage {
+        /// Non-zero source or scanner coverage gaps observed during the scan.
+        skip_summary: Vec<(String, usize)>,
+    },
 }
 
 /// Write a complete findings report in the requested format.
@@ -490,6 +495,10 @@ pub fn write_scan_report<W: Write + Send>(
             findings,
         ),
         ReportFormat::Junit => finish_reporter(junit::JunitReporter::new(writer), findings),
+        ReportFormat::JunitCoverage { skip_summary } => finish_reporter(
+            junit::JunitReporter::new(writer).with_skip_summary(skip_summary),
+            findings,
+        ),
     }
 }
 

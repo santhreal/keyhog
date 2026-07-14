@@ -14,6 +14,7 @@ pub(crate) struct JunitReporter<W: Write + Send> {
     writer: W,
     testcases: Vec<u8>,
     tests_count: usize,
+    skip_summary: Vec<(String, usize)>,
 }
 
 impl<W: Write + Send> JunitReporter<W> {
@@ -23,7 +24,17 @@ impl<W: Write + Send> JunitReporter<W> {
             writer,
             testcases: Vec::new(),
             tests_count: 0,
+            skip_summary: Vec::new(),
         }
+    }
+
+    /// Attach deterministic suite properties for source coverage gaps.
+    pub(crate) fn with_skip_summary(mut self, summary: Vec<(String, usize)>) -> Self {
+        self.skip_summary = summary
+            .into_iter()
+            .filter(|(_, count)| *count > 0)
+            .collect();
+        self
     }
 }
 
@@ -43,6 +54,23 @@ impl<W: Write + Send> Reporter for JunitReporter<W> {
             "  <testsuite name=\"keyhog\" tests=\"{}\" failures=\"{}\" errors=\"0\" time=\"0.0\">",
             self.tests_count, self.tests_count
         )?;
+
+        if !self.skip_summary.is_empty() {
+            writeln!(self.writer, "    <properties>")?;
+            writeln!(
+                self.writer,
+                "      <property name=\"keyhog.scan.status\" value=\"partial\"/>"
+            )?;
+            for (reason, count) in &self.skip_summary {
+                writeln!(
+                    self.writer,
+                    "      <property name=\"keyhog.coverage_gap\" value=\"{}={}\"/>",
+                    escape_xml_attr(reason),
+                    count
+                )?;
+            }
+            writeln!(self.writer, "    </properties>")?;
+        }
 
         self.writer.write_all(&self.testcases)?;
 

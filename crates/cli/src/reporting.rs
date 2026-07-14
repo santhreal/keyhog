@@ -73,7 +73,9 @@ fn report_with<W: std::io::Write + 'static + Send>(
             skip_summary: coverage_gap_summary(&CoverageCounts::current()),
             metadata: None,
         },
-        OutputFormat::Junit => ReportFormat::Junit,
+        OutputFormat::Junit => ReportFormat::JunitCoverage {
+            skip_summary: coverage_gap_summary(&CoverageCounts::current()),
+        },
     };
     keyhog_core::write_scan_report(w, format, ScanReport::new(findings).with_metadata(metadata))?;
     Ok(())

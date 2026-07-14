@@ -133,6 +133,26 @@ fn junit_empty_run_is_exact_document() {
     assert_eq!(out, expected);
 }
 
+#[test]
+fn junit_coverage_properties_make_partial_scans_machine_visible() {
+    let mut buf = Vec::new();
+    write_report(
+        &mut buf,
+        ReportFormat::JunitCoverage {
+            skip_summary: vec![
+                ("oversize & <file>".to_string(), 2),
+                ("unreadable source".to_string(), 1),
+            ],
+        },
+        &[],
+    )
+    .expect("junit coverage report");
+    let out = String::from_utf8(buf).expect("junit is UTF-8");
+    assert!(out.contains("name=\"keyhog.scan.status\" value=\"partial\""));
+    assert!(out.contains("name=\"keyhog.coverage_gap\" value=\"oversize &amp; &lt;file&gt;=2\""));
+    assert!(out.contains("name=\"keyhog.coverage_gap\" value=\"unreadable source=1\""));
+}
+
 /// Positive: the planted finding drives `tests="1" failures="1"`, and the
 /// testcase name is `<file>:<line>:<detector_id>` with the fixed classname.
 #[test]
