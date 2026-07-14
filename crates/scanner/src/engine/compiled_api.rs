@@ -589,13 +589,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         // to a DECODE-ONLY pass instead of skipping. Bounded: only
         // encoded-looking rejected chunks pay the decode cost, so normal
         // traffic keeps the fast skip.
-        let alphabet_ok = self
-            .alphabet_screen
-            .as_ref()
-            .is_none_or(|screen| screen.screen(chunk.data.as_bytes()));
-        let bigram_ok = chunk.data.len() < super::BIGRAM_BLOOM_MIN_CHUNK_BYTES
-            || self.bigram_bloom.maybe_overlaps(chunk.data.as_bytes());
-        if !(alphabet_ok && bigram_ok) {
+        if self.phase1_admission(chunk.data.as_bytes()) != Phase1Admission::Admitted {
             #[cfg(feature = "simd")]
             if self.should_scan_no_hit_chunk(chunk) {
                 let prepared = self.prepare_chunk(chunk);

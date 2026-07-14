@@ -275,7 +275,7 @@ impl ScanOrchestrator {
                         };
                         router.choose(scanner_ref, None, &batch)
                     }
-                    ActiveBackendRouter::Cached(router) => router.choose(None, &batch),
+                    ActiveBackendRouter::Cached(router) => router.choose(scanner_ref, None, &batch),
                 };
 
                 let backend = match selected_backend {

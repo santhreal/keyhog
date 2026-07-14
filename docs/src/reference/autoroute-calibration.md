@@ -162,7 +162,12 @@ change produced a new `config_digest` row.
 Every lookup is exact at the complete workload-key level. Size, chunk-count,
 and maximum-file dimensions use one-power-of-two logarithmic ranges; decode
 density uses paired logarithmic ranges to resist content-sample jitter. The
-decision proves correctness and timing for the representative that was
+key also records how many chunks and bytes the detector-specific phase-one
+alphabet and bigram screens reject or admit. A phase-one rejection suppresses
+only the direct-literal pass. It does not skip normalization, decoding,
+fragment, boundary, or phase-two work, so these classes describe measured cost
+without changing detection semantics. The decision proves correctness and
+timing for the representative that was
 measured under that key. It does **not** prove that the same backend is fastest
 for every individual byte length inside the numeric range. A neighbouring range
 is not evidence for this one. Uncalibrated keys fail closed; KeyHog never

@@ -273,7 +273,11 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
         .as_str()
         .expect("decision workload is a string");
     assert!(
-        workload.contains("bytes_log2=") && workload.contains("source_hash="),
+        workload.contains("bytes_log2=")
+            && workload.contains("phase1_alphabet_rejected_chunks_log2=")
+            && workload.contains("phase1_bigram_rejected_bytes_log2=")
+            && workload.contains("phase1_admitted_bytes_log2=")
+            && workload.contains("source_hash="),
         "the workload bucket must render in the same field layout as the fail-closed \
          scan error so operators can match them; got: {workload}"
     );

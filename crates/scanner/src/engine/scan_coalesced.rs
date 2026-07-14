@@ -191,14 +191,7 @@ impl CompiledScanner {
             .par_iter()
             .map(|chunk| {
                 let data = chunk.data.as_bytes();
-                let alphabet_rejected = self
-                    .alphabet_screen
-                    .as_ref()
-                    .is_some_and(|screen| !screen.screen(data));
-                if alphabet_rejected
-                    || (data.len() >= super::BIGRAM_BLOOM_MIN_CHUNK_BYTES
-                        && !self.bigram_bloom.maybe_overlaps(data))
-                {
+                if self.phase1_admission(data) != super::Phase1Admission::Admitted {
                     return None;
                 }
                 with_trigger_buffer(words_needed, |scratch| {

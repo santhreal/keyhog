@@ -2,6 +2,7 @@
 
 use keyhog_core::Chunk;
 use keyhog_scanner::decode::{DecodeAdmissionSketch, DecodeWorkloadPlan};
+use keyhog_scanner::Phase1AdmissionSummary;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -22,6 +23,7 @@ pub(super) struct WorkloadKey {
     pub(super) chunks_bucket: u8,
     pub(super) max_file_bucket: u8,
     pub(super) pattern_bucket: u8,
+    pub(super) phase1: Phase1AdmissionKey,
     pub(super) decode_kind_mask: u32,
     pub(super) decode_candidate_count_bucket: u8,
     pub(super) decode_candidate_bytes_bucket: u8,
@@ -29,17 +31,54 @@ pub(super) struct WorkloadKey {
     pub(super) source_class_hash: u64,
 }
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Phase1AdmissionKey {
+    pub(super) alphabet_rejected_chunks_bucket: u8,
+    pub(super) alphabet_rejected_bytes_bucket: u8,
+    pub(super) bigram_rejected_chunks_bucket: u8,
+    pub(super) bigram_rejected_bytes_bucket: u8,
+    pub(super) admitted_chunks_bucket: u8,
+    pub(super) admitted_bytes_bucket: u8,
+}
+
+impl Phase1AdmissionKey {
+    fn from_summary(summary: Phase1AdmissionSummary) -> Self {
+        Self {
+            alphabet_rejected_chunks_bucket: autoroute_stable_bucket(
+                summary.alphabet_rejected_chunks,
+            ),
+            alphabet_rejected_bytes_bucket: autoroute_stable_bucket(
+                summary.alphabet_rejected_bytes,
+            ),
+            bigram_rejected_chunks_bucket: autoroute_stable_bucket(summary.bigram_rejected_chunks),
+            bigram_rejected_bytes_bucket: autoroute_stable_bucket(summary.bigram_rejected_bytes),
+            admitted_chunks_bucket: autoroute_stable_bucket(summary.admitted_chunks),
+            admitted_bytes_bucket: autoroute_stable_bucket(summary.admitted_bytes),
+        }
+    }
+}
+
 /// Render a bucket identically in fail-closed routing errors and cache
 /// inspection, so operators can match a refused workload field-for-field.
 pub(super) fn render_workload_key(key: &WorkloadKey) -> String {
     format!(
         "bytes_log2={} chunks_log2={} max_file_log2={} patterns_log2={} \
+         phase1_alphabet_rejected_chunks_log2={} phase1_alphabet_rejected_bytes_log2={} \
+         phase1_bigram_rejected_chunks_log2={} phase1_bigram_rejected_bytes_log2={} \
+         phase1_admitted_chunks_log2={} phase1_admitted_bytes_log2={} \
          decode_kinds={:08x} decode_candidates_log2={} decode_bytes_log2={} \
          decode_unknown={} source_hash={:016x}",
         key.bytes_bucket,
         key.chunks_bucket,
         key.max_file_bucket,
         key.pattern_bucket,
+        key.phase1.alphabet_rejected_chunks_bucket,
+        key.phase1.alphabet_rejected_bytes_bucket,
+        key.phase1.bigram_rejected_chunks_bucket,
+        key.phase1.bigram_rejected_bytes_bucket,
+        key.phase1.admitted_chunks_bucket,
+        key.phase1.admitted_bytes_bucket,
         key.decode_kind_mask,
         key.decode_candidate_count_bucket,
         key.decode_candidate_bytes_bucket,
@@ -103,6 +142,7 @@ impl std::error::Error for WorkloadClassificationError {}
 pub(super) fn workload_key(
     batch: &[Chunk],
     pattern_count: usize,
+    phase1_admission: Phase1AdmissionSummary,
     decode_plan: DecodeWorkloadPlan,
 ) -> Result<WorkloadKey, WorkloadClassificationError> {
     let bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
@@ -123,6 +163,7 @@ pub(super) fn workload_key(
         chunks_bucket: autoroute_stable_bucket(batch.len() as u64),
         max_file_bucket: autoroute_stable_bucket(max_file),
         pattern_bucket: log2_bucket(pattern_count as u64),
+        phase1: Phase1AdmissionKey::from_summary(phase1_admission),
         decode_kind_mask,
         decode_candidate_count_bucket,
         decode_candidate_bytes_bucket,

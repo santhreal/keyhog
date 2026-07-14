@@ -67,7 +67,6 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
     assert!(
         fused.contains("MeasuredBackendRouter::new")
             && fused.contains("CachedBackendRouter::new")
-            && fused.contains("router.choose(None, &batch)")
             && fused.contains("router.choose(scanner_ref, None, &batch)")
             && fused.contains("routing_error")
             && !fused.contains("has_gpu_decision()")

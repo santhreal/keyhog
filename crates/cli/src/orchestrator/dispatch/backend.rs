@@ -25,7 +25,7 @@
 //!   ├─ evidence ───── decision policy
 //!   │    ├─ timing ─────── measured trials and confidence intervals
 //!   │    └─ match_identity ─ secret-safe semantic parity proof
-//!   ├─ store ──────── cache facade (schema v28)
+//!   ├─ store ──────── cache facade (schema v29)
 //!   │    ├─ schema / artifact_identity / build_identity
 //!   │    └─ codec / validation / persistence / inspection
 //!   ├─ host ───────── host identity captured in each calibration record
@@ -57,6 +57,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 
+// v29: workload identity includes scanner-owned phase-1 admission classes so
+// raw-prefilter rejects cannot reuse full-literal-scan timing evidence.
 // v28: each measured backend has an explicit parity receipt binding its
 // canonical identity, correctness digest, and completed trial count.
 // v27: CUDA and WGPU are independent GPU candidates with distinct route labels
@@ -85,7 +87,7 @@ use std::path::PathBuf;
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 28;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 29;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -366,6 +368,7 @@ impl CachedBackendRouter {
 
     pub(crate) fn choose(
         &self,
+        scanner: &CompiledScanner,
         explicit: Option<ScanBackend>,
         batch: &[Chunk],
     ) -> Result<ScanBackend, AutorouteRoutingError> {
@@ -375,8 +378,13 @@ impl CachedBackendRouter {
         if let Some(only) = sole_compiled_backend() {
             return Ok(only);
         }
-        let key = workload_key(batch, self.pattern_count, self.decode_workload_plan)
-            .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
+        let key = workload_key(
+            batch,
+            self.pattern_count,
+            scanner.phase1_admission_summary(batch),
+            self.decode_workload_plan,
+        )
+        .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
         resolve_persisted_backend(
             &self.decisions,
             key,
@@ -478,8 +486,13 @@ impl MeasuredBackendRouter {
         if let Some(only) = sole_compiled_backend() {
             return Ok(only);
         }
-        let key = workload_key(batch, self.pattern_count, self.decode_workload_plan)
-            .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
+        let key = workload_key(
+            batch,
+            self.pattern_count,
+            scanner.phase1_admission_summary(batch),
+            self.decode_workload_plan,
+        )
+        .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
         if let Some(backend) = self.reusable_decision_backend(&key) {
             return Ok(backend);
         }

@@ -487,9 +487,11 @@ impl DefaultScanRuntime {
     }
 
     pub(crate) fn scan_chunk(&self, chunk: &Chunk) -> Result<Vec<RawMatch>> {
-        let backend = self
-            .router
-            .choose(self.backend_override, std::slice::from_ref(chunk))?;
+        let backend = self.router.choose(
+            self.scanner.as_ref(),
+            self.backend_override,
+            std::slice::from_ref(chunk),
+        )?;
         Ok(self.scanner.scan_with_backend(chunk, backend))
     }
 

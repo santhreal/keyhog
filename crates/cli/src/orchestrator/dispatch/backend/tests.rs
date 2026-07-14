@@ -11,7 +11,7 @@ use super::workload::{
     autoroute_stable_bucket, autoroute_stable_decode_bucket, decode_workload_projection,
     decode_workload_sketch as decode_workload_sketch_with_plan, planned_decode_sample_bytes,
     planned_decode_sample_quotas, source_class_hash, workload_key as workload_key_with_plan,
-    WorkloadKey,
+    Phase1AdmissionKey, WorkloadKey,
 };
 use super::*;
 
@@ -23,7 +23,45 @@ fn workload_key(
     batch: &[Chunk],
     pattern_count: usize,
 ) -> Result<WorkloadKey, super::workload::WorkloadClassificationError> {
-    workload_key_with_plan(batch, pattern_count, test_decode_workload_plan())
+    workload_key_with_plan(
+        batch,
+        pattern_count,
+        all_admitted_phase1(batch),
+        test_decode_workload_plan(),
+    )
+}
+
+fn all_admitted_phase1(batch: &[Chunk]) -> keyhog_scanner::Phase1AdmissionSummary {
+    keyhog_scanner::Phase1AdmissionSummary::all_admitted(
+        batch.len() as u64,
+        batch.iter().map(|chunk| chunk.data.len() as u64).sum(),
+    )
+}
+
+fn phase1_test_scanner() -> CompiledScanner {
+    CompiledScanner::compile(vec![keyhog_core::DetectorSpec {
+        tests: Vec::new(),
+        id: "autoroute-phase1-token".into(),
+        name: "Autoroute phase 1 token".into(),
+        service: "unit".into(),
+        severity: keyhog_core::Severity::High,
+        patterns: vec![keyhog_core::PatternSpec {
+            regex: r"ghp_[A-Za-z0-9]{8}".into(),
+            description: None,
+            group: None,
+            client_safe: false,
+        }],
+        keywords: vec!["ghp_".into()],
+        min_confidence: Some(0.0),
+        ..Default::default()
+    }])
+    .expect("autoroute phase-1 scanner compiles")
+}
+
+fn repeated_to_len(seed: &str, len: usize) -> String {
+    let mut value = seed.repeat(len.div_ceil(seed.len()));
+    value.truncate(len);
+    value
 }
 
 fn decode_workload_sketch(
@@ -158,6 +196,14 @@ fn test_workload_key() -> WorkloadKey {
         chunks_bucket: 2,
         max_file_bucket: 8,
         pattern_bucket: 5,
+        phase1: Phase1AdmissionKey {
+            alphabet_rejected_chunks_bucket: 0,
+            alphabet_rejected_bytes_bucket: 0,
+            bigram_rejected_chunks_bucket: 0,
+            bigram_rejected_bytes_bucket: 0,
+            admitted_chunks_bucket: 2,
+            admitted_bytes_bucket: 10,
+        },
         decode_kind_mask: keyhog_scanner::decode::DecodeAdmissionSketch::BASE64,
         decode_candidate_count_bucket: 2,
         decode_candidate_bytes_bucket: 3,
@@ -484,6 +530,49 @@ fn workload_key_distinguishes_decoder_work_for_same_size_batches() {
 }
 
 #[test]
+fn workload_key_distinguishes_equal_8mib_phase1_admission_classes() {
+    const BYTES: usize = 8 * 1024 * 1024;
+    let scanner = phase1_test_scanner();
+    let decode_disabled = keyhog_scanner::decode::DecodeWorkloadPlan::from_limits(0, usize::MAX);
+    let alphabet_batch = vec![test_chunk("~".repeat(BYTES))];
+    let bigram_batch = vec![test_chunk("g".repeat(BYTES))];
+    let admitted_batch = vec![test_chunk(repeated_to_len("gh ", BYTES))];
+
+    let alphabet_key = workload_key_with_plan(
+        &alphabet_batch,
+        scanner.runtime_status().pattern_count,
+        scanner.phase1_admission_summary(&alphabet_batch),
+        decode_disabled,
+    )
+    .expect("alphabet-rejected workload classifies");
+    let bigram_key = workload_key_with_plan(
+        &bigram_batch,
+        scanner.runtime_status().pattern_count,
+        scanner.phase1_admission_summary(&bigram_batch),
+        decode_disabled,
+    )
+    .expect("bigram-rejected workload classifies");
+    let admitted_key = workload_key_with_plan(
+        &admitted_batch,
+        scanner.runtime_status().pattern_count,
+        scanner.phase1_admission_summary(&admitted_batch),
+        decode_disabled,
+    )
+    .expect("admitted workload classifies");
+
+    assert_ne!(alphabet_key.phase1, bigram_key.phase1);
+    assert_ne!(alphabet_key.phase1, admitted_key.phase1);
+    assert_ne!(bigram_key.phase1, admitted_key.phase1);
+    for mut legacy_key in [alphabet_key, bigram_key] {
+        legacy_key.phase1 = admitted_key.phase1;
+        assert_eq!(
+            legacy_key, admitted_key,
+            "the equal-layout classes must differ only by scanner-owned phase-1 admission"
+        );
+    }
+}
+
+#[test]
 fn workload_key_projects_scanner_owned_decoder_families() {
     use keyhog_scanner::decode::DecodeAdmissionSketch as Sketch;
 
@@ -596,7 +685,7 @@ fn disabled_or_ineligible_decode_work_contributes_exact_zero() {
         DecodeAdmissionSketch::NONE,
         "disabled decode must neither consume sample budget nor project work"
     );
-    let key = workload_key_with_plan(&batch, 902, disabled)
+    let key = workload_key_with_plan(&batch, 902, all_admitted_phase1(&batch), disabled)
         .expect("disabled decode workload remains classifiable");
     assert_eq!(
         (
@@ -979,7 +1068,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && !serialized.contains("\"confidence_interval_95_ns\"")
             && !serialized.contains("\"best_ns\"")
             && !serialized.contains("\"mean_ns\""),
-        // v28 persists primary timing evidence and per-candidate parity receipts.
+        // v29 persists primary timing evidence and per-candidate parity receipts.
         // GPU cold/warm/route, and selected-margin keys are derived from the
         // trial vectors on load, never stored.
         "cache JSON must persist route timing evidence, not only the selected backend"
@@ -1624,19 +1713,54 @@ fn autoroute_cache_rejects_v25_decode_density_identity_before_payload_decode() {
         0xA55A_D00D_CAFE_BEEF,
         &test_host(None),
     )
-    .expect_err("v25 decode-density identity must never be reused as v28 decoder work")
+    .expect_err("v25 decode-density identity must never be reused as v29 decoder work")
     .to_string();
     let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 
     assert!(
         error.contains("unsupported autoroute cache version 25")
-            && error.contains("expects 28")
+            && error.contains("expects 29")
             && error.contains("re-run calibration"),
         "v25 migration failure must be version-first and actionable: {error}"
     );
     assert!(
         !error.contains("missing field") && !error.contains("unknown field"),
-        "v25 payload must not reach the v28 workload deserializer: {error}"
+        "v25 payload must not reach the v29 workload deserializer: {error}"
+    );
+}
+
+#[test]
+fn autoroute_cache_rejects_v28_before_phase1_identity_decode() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_v28_phase1_{}.json",
+        std::process::id()
+    ));
+    std::fs::write(
+        &path,
+        br#"{"version":28,"configs":[{"decisions":[[{"bytes_bucket":23,"chunks_bucket":0,"max_file_bucket":23,"pattern_bucket":9,"decode_kind_mask":0,"decode_candidate_count_bucket":0,"decode_candidate_bytes_bucket":0,"decode_sample_bytes_bucket":0,"source_class_hash":1},{}]]}]}"#,
+    )
+    .expect("write v28 cache");
+
+    let error = load_autoroute_cache(
+        &path,
+        0x1234_5678_9ABC_DEF0,
+        test_rules_digest(),
+        0xA55A_D00D_CAFE_BEEF,
+        &test_host(None),
+    )
+    .expect_err("v28 identity must never be reused without phase-one admission classes")
+    .to_string();
+    let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+
+    assert!(
+        error.contains("unsupported autoroute cache version 28")
+            && error.contains("expects 29")
+            && error.contains("re-run calibration"),
+        "v28 migration failure must be version-first and actionable: {error}"
+    );
+    assert!(
+        !error.contains("missing field") && !error.contains("unknown field"),
+        "v28 payload must not reach the v29 phase-one identity deserializer: {error}"
     );
 }
 
@@ -1665,7 +1789,7 @@ fn autoroute_cache_save_reports_when_it_replaces_outdated_evidence() {
 
     match outcome {
         AutorouteCacheSaveOutcome::Replaced { reason } => assert!(
-            reason.contains("schema 1") && reason.contains("schema 28"),
+            reason.contains("schema 1") && reason.contains("schema 29"),
             "replacement disposition must explain both schema identities: {reason}"
         ),
         _ => panic!("outdated cache replacement must be operator-visible"),
@@ -2142,12 +2266,24 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
         "token = abc\n".repeat(64),
         "filesystem",
     )];
-    let hit_key = workload_key(&hit_batch, pattern_count).expect("hit workload classified");
+    let hit_key = workload_key_with_plan(
+        &hit_batch,
+        pattern_count,
+        scanner.phase1_admission_summary(&hit_batch),
+        test_decode_workload_plan(),
+    )
+    .expect("hit workload classified");
     let miss_batch = vec![test_chunk_with_source(
         "token = abc\n".repeat(4096),
         "filesystem",
     )];
-    let miss_key = workload_key(&miss_batch, pattern_count).expect("miss workload classified");
+    let miss_key = workload_key_with_plan(
+        &miss_batch,
+        pattern_count,
+        scanner.phase1_admission_summary(&miss_batch),
+        test_decode_workload_plan(),
+    )
+    .expect("miss workload classified");
     assert_ne!(
         hit_key, miss_key,
         "test must exercise a real cache miss for a different workload bucket"
@@ -2178,12 +2314,12 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     );
     assert_eq!(
         router
-            .choose(None, &hit_batch)
+            .choose(&scanner, None, &hit_batch)
             .expect("cache hit should choose persisted backend"),
         ScanBackend::SimdCpu
     );
     let miss = router
-        .choose(None, &miss_batch)
+        .choose(&scanner, None, &miss_batch)
         .expect_err("cache miss must fail loud instead of guessing a backend")
         .to_string();
     assert!(
@@ -2193,7 +2329,7 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     );
     assert_eq!(
         router
-            .choose(Some(ScanBackend::CpuFallback), &miss_batch)
+            .choose(&scanner, Some(ScanBackend::CpuFallback), &miss_batch)
             .expect("explicit backend diagnostics bypass autoroute cache"),
         ScanBackend::CpuFallback
     );

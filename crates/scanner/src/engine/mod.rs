@@ -96,6 +96,7 @@ pub(crate) use phase2_anchor::required_prefix_literals as phase2_required_prefix
 pub(crate) use phase2_anchor::{
     required_prefix_literals_with_cap, CONFIRMED_MAX_LITERALS_PER_PATTERN,
 };
+mod phase1_admission;
 mod phase2_anchor_scan;
 mod phase2_compiled;
 mod phase2_compiled_anchored;
@@ -211,6 +212,9 @@ pub(crate) const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
 /// ([`compiled_api`]), can never carry divergent copies of the threshold (each
 /// used to hardcode a bare `64`).
 pub(crate) const BIGRAM_BLOOM_MIN_CHUNK_BYTES: usize = 64;
+
+pub(crate) use phase1_admission::Phase1Admission;
+pub use phase1_admission::Phase1AdmissionSummary;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GpuInitPolicy {
