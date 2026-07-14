@@ -253,7 +253,7 @@ if !matches!(out.status.code(), Some(0 | 1)) {
 for line in out.stdout.split(|b| *b == b'\n') {
     if line.is_empty() { continue; }
     let record: serde_json::Value = serde_json::from_slice(line)?;
-    if record.get("record_type").and_then(|v| v.as_str()) == Some("header") {
+    if matches!(record.get("record_type").and_then(|v| v.as_str()), Some("header" | "summary")) {
         continue;
     }
     let finding = record;

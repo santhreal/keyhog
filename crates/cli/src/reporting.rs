@@ -57,7 +57,9 @@ fn report_with<W: std::io::Write + 'static + Send>(
             coverage_gap_summary: coverage_gap_summary(&CoverageCounts::current()),
         },
         OutputFormat::Jsonl => ReportFormat::Jsonl,
-        OutputFormat::JsonlEnvelope => ReportFormat::JsonlEnvelope,
+        OutputFormat::JsonlEnvelope => ReportFormat::JsonlEnvelope {
+            coverage_gap_summary: coverage_gap_summary(&CoverageCounts::current()),
+        },
         OutputFormat::Sarif => ReportFormat::Sarif {
             skip_summary: coverage_gap_summary(&CoverageCounts::current()),
         },

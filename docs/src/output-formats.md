@@ -172,17 +172,21 @@ schema identity and explicit concatenation boundaries.
 ## `--format jsonl-envelope`
 
 Versioned newline-delimited JSON. The first line is a `record_type: "header"`
-object carrying the same `schema_version` major/minor contract as
-`--format json-envelope` and optional scan metadata; every following line is
-one finding object. An empty scan still emits the header, and concatenated
-streams are split at the next header. Importers must validate the header before
-accepting findings. This is better than `--format json-envelope` for streaming
-consumers that want to start processing before the scan finishes:
+object carrying the same `schema_version` major contract as
+`--format json-envelope` (JSONL has its own additive minor revision) and
+optional scan metadata; every following line is one finding object. The final
+line is a `record_type: "summary"` object with
+`status: "complete"`, the exact finding count, and the coverage-gap summary.
+An empty scan still emits both header and summary. A stream without the final
+summary is interrupted and must not be treated as complete; concatenated
+streams are split at the next header. Importers must validate both records
+before accepting the stream. This is better than `--format json-envelope` for
+streaming consumers that want to start processing before the scan finishes:
 
 ```sh
 keyhog scan /huge/monorepo --format jsonl-envelope \
   | while read line; do
-      echo "$line" | jq -r 'select(.record_type != "header") | .location.file_path'
+      echo "$line" | jq -r 'select(.record_type == null) | .location.file_path'
     done
 ```
 

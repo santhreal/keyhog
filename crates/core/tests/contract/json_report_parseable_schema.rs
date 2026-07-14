@@ -136,14 +136,18 @@ fn versioned_jsonl_headers_split_concatenated_streams_and_validate_major() {
     let mut first = Vec::new();
     write_scan_report(
         &mut first,
-        ReportFormat::JsonlEnvelope,
+        ReportFormat::JsonlEnvelope {
+            coverage_gap_summary: vec![("partial source".into(), 2)],
+        },
         ScanReport::new(std::slice::from_ref(&finding)),
     )
     .expect("first JSONL stream writes");
     let mut second = Vec::new();
     write_scan_report(
         &mut second,
-        ReportFormat::JsonlEnvelope,
+        ReportFormat::JsonlEnvelope {
+            coverage_gap_summary: Vec::new(),
+        },
         ScanReport::new(&[]),
     )
     .expect("second JSONL stream writes");
@@ -153,8 +157,35 @@ fn versioned_jsonl_headers_split_concatenated_streams_and_validate_major() {
     let streams = parse_jsonl_stream(std::str::from_utf8(&joined).expect("JSONL is UTF-8"))
         .expect("concatenated streams parse by header boundary");
     assert_eq!(streams.len(), 2);
+    assert_eq!(streams[0].header.schema_version.minor, 2);
     assert_eq!(streams[0].findings.len(), 1);
+    assert!(streams[0].is_complete());
+    assert_eq!(
+        streams[0].summary.as_ref().expect("summary").finding_count,
+        1
+    );
+    assert_eq!(
+        streams[0]
+            .summary
+            .as_ref()
+            .expect("summary")
+            .coverage_gap_summary[0]
+            .count,
+        2
+    );
     assert!(streams[1].findings.is_empty());
+    assert!(streams[1].is_complete());
+
+    let incomplete_text = std::str::from_utf8(&first)
+        .expect("JSONL is UTF-8")
+        .lines()
+        .take(2)
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    let incomplete = parse_jsonl_stream(&incomplete_text).expect("interrupted stream parses");
+    assert_eq!(incomplete.len(), 1);
+    assert!(!incomplete[0].is_complete());
 
     let mut additive = first.clone();
     let newline = additive

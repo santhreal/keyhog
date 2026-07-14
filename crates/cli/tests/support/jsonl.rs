@@ -21,6 +21,10 @@ pub fn parse_jsonl_objects(stdout: &str, context: &str) -> Vec<serde_json::Value
             assert_eq!(value["schema_version"]["major"], 1);
             continue;
         }
+        if value.get("record_type").and_then(serde_json::Value::as_str) == Some("summary") {
+            assert_eq!(value["status"], "complete");
+            continue;
+        }
         objects.push(value);
     }
     objects

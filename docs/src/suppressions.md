@@ -76,7 +76,7 @@ to append from an existing run:
 
 ```sh
 keyhog scan . --format jsonl-envelope \
-  | jq -r 'select(.record_type != "header") | "hash:" + .credential_hash' \
+  | jq -r 'select(.record_type == null) | "hash:" + .credential_hash' \
   >> .keyhogignore
 ```
 

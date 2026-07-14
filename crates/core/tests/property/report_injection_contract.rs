@@ -58,7 +58,9 @@ fn all_formats() -> Vec<ReportFormat> {
             coverage_gap_summary: Vec::new(),
         },
         ReportFormat::Jsonl,
-        ReportFormat::JsonlEnvelope,
+        ReportFormat::JsonlEnvelope {
+            coverage_gap_summary: Vec::new(),
+        },
         ReportFormat::Sarif {
             skip_summary: vec![],
         },
@@ -90,7 +92,7 @@ fn format_name(f: &ReportFormat) -> &'static str {
         ReportFormat::Json => "json",
         ReportFormat::JsonEnvelope { .. } => "json-envelope",
         ReportFormat::Jsonl => "jsonl",
-        ReportFormat::JsonlEnvelope => "jsonl-envelope",
+        ReportFormat::JsonlEnvelope { .. } => "jsonl-envelope",
         ReportFormat::Sarif { .. } => "sarif",
         ReportFormat::Csv => "csv",
         ReportFormat::GithubAnnotations => "github-annotations",

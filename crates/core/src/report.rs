@@ -73,6 +73,8 @@ pub struct ScanReportMetadata {
 pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 1;
 /// Current minor version for the versioned JSON report envelope.
 pub const JSON_REPORT_SCHEMA_MINOR: u16 = 1;
+/// Current minor version for the versioned JSONL stream contract.
+pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 2;
 
 /// Version marker carried by every versioned JSON report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -145,7 +147,7 @@ impl JsonlStreamHeader {
             record_type: "header".to_string(),
             schema_version: JsonReportSchemaVersion {
                 major: JSON_REPORT_SCHEMA_MAJOR,
-                minor: JSON_REPORT_SCHEMA_MINOR,
+                minor: JSONL_REPORT_SCHEMA_MINOR,
             },
             metadata: metadata.cloned(),
         }
@@ -178,8 +180,64 @@ impl JsonlStreamHeader {
 pub struct JsonlStream {
     /// Header that governed this segment.
     pub header: JsonlStreamHeader,
+    /// Terminal summary when the producer completed normally. None means
+    /// the input ended before completion and must not be treated as complete.
+    pub summary: Option<JsonlStreamSummary>,
     /// Findings following the header until the next header or end of input.
     pub findings: Vec<VerifiedFinding>,
+}
+
+/// Terminal record written when a versioned JSONL stream completes.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct JsonlStreamSummary {
+    /// Distinguishes the terminal record from headers and findings.
+    pub record_type: String,
+    /// Completion state for the stream.
+    pub status: String,
+    /// Number of finding records written before this summary.
+    pub finding_count: usize,
+    /// Coverage gaps observed during the stream.
+    #[serde(default)]
+    pub coverage_gap_summary: Vec<JsonReportCoverageGap>,
+}
+
+impl JsonlStreamSummary {
+    /// Construct a complete summary for a stream.
+    #[must_use]
+    pub fn complete(finding_count: usize, coverage_gap_summary: &[(String, usize)]) -> Self {
+        Self {
+            record_type: "summary".to_string(),
+            status: "complete".to_string(),
+            finding_count,
+            coverage_gap_summary: coverage_gap_summary
+                .iter()
+                .map(|(reason, count)| JsonReportCoverageGap {
+                    reason: reason.clone(),
+                    count: *count,
+                })
+                .collect(),
+        }
+    }
+
+    fn parse(input: &str) -> Result<Self, ReportError> {
+        let summary: Self = serde_json::from_str(input)?;
+        if summary.record_type != "summary" || summary.status != "complete" {
+            anyhow::bail!(
+                "invalid JSONL stream summary: record_type={:?}, status={:?}",
+                summary.record_type,
+                summary.status
+            );
+        }
+        Ok(summary)
+    }
+}
+
+impl JsonlStream {
+    /// Whether the stream has a validated terminal summary.
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.summary.is_some()
+    }
 }
 
 /// Parse one or more concatenated, versioned JSONL streams.
@@ -202,6 +260,7 @@ pub fn parse_jsonl_stream(input: &str) -> Result<Vec<JsonlStream>, ReportError> 
             }
             current = Some(JsonlStream {
                 header: JsonlStreamHeader::parse(line)?,
+                summary: None,
                 findings: Vec::new(),
             });
             continue;
@@ -210,6 +269,26 @@ pub fn parse_jsonl_stream(input: &str) -> Result<Vec<JsonlStream>, ReportError> 
         let stream = current.as_mut().ok_or_else(|| {
             anyhow::anyhow!("JSONL line {line_number} precedes its stream header")
         })?;
+        let is_summary =
+            value.get("record_type").and_then(serde_json::Value::as_str) == Some("summary");
+        if is_summary {
+            if stream.summary.is_some() {
+                anyhow::bail!("JSONL line {line_number} repeats the terminal summary");
+            }
+            let summary = JsonlStreamSummary::parse(line)?;
+            if summary.finding_count != stream.findings.len() {
+                anyhow::bail!(
+                    "JSONL summary count {} does not match {} finding records",
+                    summary.finding_count,
+                    stream.findings.len()
+                );
+            }
+            stream.summary = Some(summary);
+            continue;
+        }
+        if stream.summary.is_some() {
+            anyhow::bail!("JSONL line {line_number} follows the terminal summary");
+        }
         let finding = serde_json::from_value(value).map_err(|error| {
             anyhow::anyhow!("invalid finding on JSONL line {line_number}: {error}")
         })?;
@@ -282,7 +361,10 @@ pub enum ReportFormat {
     /// Newline-delimited JSON output.
     Jsonl,
     /// Versioned newline-delimited JSON output with a stream header.
-    JsonlEnvelope,
+    JsonlEnvelope {
+        /// Non-zero source or scanner coverage gaps observed during the scan.
+        coverage_gap_summary: Vec<(String, usize)>,
+    },
     /// SARIF output.
     Sarif {
         /// Operator-visible scan coverage-gap summary entries.
@@ -352,8 +434,10 @@ pub fn write_scan_report<W: Write + Send>(
             findings,
         ),
         ReportFormat::Jsonl => finish_reporter(json::JsonlReporter::new(writer), findings),
-        ReportFormat::JsonlEnvelope => finish_reporter(
-            json::JsonlEnvelopeReporter::new(writer, report_metadata)?,
+        ReportFormat::JsonlEnvelope {
+            coverage_gap_summary,
+        } => finish_reporter(
+            json::JsonlEnvelopeReporter::new(writer, report_metadata, &coverage_gap_summary)?,
             findings,
         ),
         ReportFormat::Sarif { skip_summary } => finish_reporter(

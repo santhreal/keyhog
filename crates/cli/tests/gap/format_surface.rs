@@ -114,7 +114,7 @@ fn every_format_exits_0_on_clean_corpus() {
     for fmt in [
         "text",
         "json-envelope",
-        "jsonl",
+        "jsonl-envelope",
         "sarif",
         "csv",
         "github-annotations",
@@ -139,7 +139,7 @@ fn every_format_exits_1_on_planted_finding() {
     for fmt in [
         "text",
         "json-envelope",
-        "jsonl",
+        "jsonl-envelope",
         "sarif",
         "csv",
         "github-annotations",
@@ -165,7 +165,7 @@ fn planted_finding_is_never_live_or_panic_exit() {
     for fmt in [
         "text",
         "json-envelope",
-        "jsonl",
+        "jsonl-envelope",
         "sarif",
         "csv",
         "github-annotations",
@@ -337,30 +337,39 @@ fn json_output_file_clean_is_exact_empty_array() {
 }
 
 // ---------------------------------------------------------------------------
-// JSONL (JsonlReporter)
+// JSONL (versioned JsonlEnvelopeReporter)
 // ---------------------------------------------------------------------------
 
 /// Empty corpus -> JSONL emits a header and no finding records.
 #[test]
 fn jsonl_empty_corpus_is_empty_output() {
-    let (stdout, stderr, code) = scan_with_format(CLEAN_FIXTURE, "jsonl");
+    let (stdout, stderr, code) = scan_with_format(CLEAN_FIXTURE, "jsonl-envelope");
     assert_eq!(
         code,
         Some(0),
         "clean jsonl scan must exit 0; stderr={stderr}"
     );
     let lines: Vec<_> = stdout.lines().collect();
-    assert_eq!(lines.len(), 1, "empty JSONL stream must contain one header");
+    assert_eq!(
+        lines.len(),
+        2,
+        "empty JSONL stream must contain header and summary"
+    );
     let header: serde_json::Value = serde_json::from_str(lines[0]).expect("header parses");
     assert_eq!(header["record_type"], "header");
     assert_eq!(header["schema_version"]["major"], 1);
+    let summary: serde_json::Value = serde_json::from_str(lines[1]).expect("summary parses");
+    assert_eq!(summary["record_type"], "summary");
+    assert_eq!(summary["status"], "complete");
+    assert_eq!(summary["finding_count"], 0);
 }
 
-/// Non-empty corpus -> one header plus one JSON object per finding, each line
+/// Non-empty corpus -> one header, one JSON object per finding, and one summary,
+/// each line
 /// terminated by `\n` (writeln! after each object).
 #[test]
 fn jsonl_planted_finding_is_one_object_per_line() {
-    let (stdout, stderr, code) = scan_with_format(AWS_KEY_FIXTURE, "jsonl");
+    let (stdout, stderr, code) = scan_with_format(AWS_KEY_FIXTURE, "jsonl-envelope");
     assert_eq!(
         code,
         Some(1),
@@ -371,9 +380,17 @@ fn jsonl_planted_finding_is_one_object_per_line() {
         "JSONL output must end with a newline after the final object; got {stdout:?}"
     );
     let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
-    assert!(lines.len() >= 2, "header plus finding must be present");
+    assert!(
+        lines.len() >= 3,
+        "header, finding, and summary must be present"
+    );
     let header: serde_json::Value = serde_json::from_str(lines[0]).expect("header parses");
     assert_eq!(header["record_type"], "header");
+    let summary: serde_json::Value =
+        serde_json::from_str(lines.last().expect("summary line")).expect("summary parses");
+    assert_eq!(summary["record_type"], "summary");
+    assert_eq!(summary["status"], "complete");
+    assert_eq!(summary["finding_count"], 1);
     for line in &lines {
         let obj: serde_json::Value = serde_json::from_str(line)
             .unwrap_or_else(|e| panic!("each JSONL line is an object: {e}; line={line:?}"));
@@ -381,7 +398,10 @@ fn jsonl_planted_finding_is_one_object_per_line() {
             obj.is_object(),
             "each JSONL line must be a JSON object, not an array; got {obj}"
         );
-        if obj.get("record_type").and_then(|v| v.as_str()) == Some("header") {
+        if matches!(
+            obj.get("record_type").and_then(|v| v.as_str()),
+            Some("header" | "summary")
+        ) {
             continue;
         }
         assert!(
@@ -394,7 +414,7 @@ fn jsonl_planted_finding_is_one_object_per_line() {
 /// JSONL is NOT a bracketed array: a line must never start with `[`.
 #[test]
 fn jsonl_is_not_a_bracketed_array() {
-    let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "jsonl");
+    let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "jsonl-envelope");
     assert!(
         !stdout.trim_start().starts_with('['),
         "JSONL must emit bare objects, never a `[...]` array; got {stdout:?}"
@@ -1033,7 +1053,7 @@ fn text_planted_finding_is_redacted() {
 fn structured_formats_emit_no_ansi_escapes_when_piped() {
     for fmt in [
         "json-envelope",
-        "jsonl",
+        "jsonl-envelope",
         "sarif",
         "csv",
         "github-annotations",
@@ -1054,7 +1074,7 @@ fn structured_formats_emit_no_ansi_escapes_when_piped() {
 #[test]
 fn json_and_jsonl_agree_on_finding_count() {
     let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
-    let (jsonl_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "jsonl");
+    let (jsonl_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "jsonl-envelope");
     let json_v: serde_json::Value = serde_json::from_str(json_out.trim()).expect("json parses");
     let json_count = json_findings(&json_v).len();
     let jsonl_count = jsonl_out
@@ -1064,7 +1084,7 @@ fn json_and_jsonl_agree_on_finding_count() {
             serde_json::from_str::<serde_json::Value>(l)
                 .ok()
                 .and_then(|value| value.get("record_type").cloned())
-                != Some(serde_json::Value::String("header".into()))
+                .is_none()
         })
         .count();
     assert_eq!(
@@ -1225,7 +1245,7 @@ fn empty_file_is_clean_for_every_format() {
     for fmt in [
         "text",
         "json-envelope",
-        "jsonl",
+        "jsonl-envelope",
         "sarif",
         "csv",
         "github-annotations",
@@ -1243,7 +1263,7 @@ fn empty_file_is_clean_for_every_format() {
     // And the empty-corpus structural invariants still hold.
     let (json_out, _e, _c) = scan_with_format("", "json-envelope");
     assert_eq!(json_out, "[]", "zero-byte file JSON must be `[]`");
-    let (jsonl_out, _e, _c) = scan_with_format("", "jsonl");
+    let (jsonl_out, _e, _c) = scan_with_format("", "jsonl-envelope");
     assert_eq!(jsonl_out, "", "zero-byte file JSONL must be empty");
 }
 

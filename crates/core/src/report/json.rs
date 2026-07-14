@@ -6,8 +6,9 @@ use std::io::Write;
 use crate::VerifiedFinding;
 
 use super::{
-    impl_writer_backed, JsonReportCoverageGap, JsonlStreamHeader, ReportError, Reporter,
-    ScanReportMetadata, WriterBackedReporter, JSON_REPORT_SCHEMA_MAJOR, JSON_REPORT_SCHEMA_MINOR,
+    impl_writer_backed, JsonReportCoverageGap, JsonlStreamHeader, JsonlStreamSummary, ReportError,
+    Reporter, ScanReportMetadata, WriterBackedReporter, JSON_REPORT_SCHEMA_MAJOR,
+    JSON_REPORT_SCHEMA_MINOR,
 };
 
 /// One JSON object per line (JSONL).
@@ -59,16 +60,23 @@ impl_writer_backed!(JsonlReporter);
 /// Versioned JSON Lines output with an explicit first-record stream header.
 pub(crate) struct JsonlEnvelopeReporter<W: Write + Send> {
     writer: W,
+    finding_count: usize,
+    coverage_gap_summary: Vec<(String, usize)>,
 }
 
 impl<W: Write + Send> JsonlEnvelopeReporter<W> {
     pub(crate) fn new(
         mut writer: W,
         metadata: Option<&ScanReportMetadata>,
+        coverage_gap_summary: &[(String, usize)],
     ) -> Result<Self, ReportError> {
         serde_json::to_writer(&mut writer, &JsonlStreamHeader::new(metadata))?;
         writeln!(writer)?;
-        Ok(Self { writer })
+        Ok(Self {
+            writer,
+            finding_count: 0,
+            coverage_gap_summary: coverage_gap_summary.to_vec(),
+        })
     }
 }
 
@@ -76,10 +84,16 @@ impl<W: Write + Send> Reporter for JsonlEnvelopeReporter<W> {
     fn report(&mut self, finding: &VerifiedFinding) -> Result<(), ReportError> {
         serde_json::to_writer(&mut self.writer, finding)?;
         writeln!(self.writer)?;
+        self.finding_count += 1;
         Ok(())
     }
 
     fn finish(&mut self) -> Result<(), ReportError> {
+        serde_json::to_writer(
+            &mut self.writer,
+            &JsonlStreamSummary::complete(self.finding_count, &self.coverage_gap_summary),
+        )?;
+        writeln!(self.writer)?;
         self.flush_writer()
     }
 }
