@@ -23,5 +23,6 @@ mod simd_inline;
 mod simdsieve_prefilter_inline;
 mod static_intern_inline;
 mod telemetry_inline;
+#[cfg(feature = "multiline")]
 mod types_inline;
 mod util_hash_inline;

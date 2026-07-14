@@ -16,6 +16,7 @@ mod decode_hostile_rot47_noise_only;
 mod decode_hostile_unicode_surrogate_pair_in_base64;
 mod decode_hostile_url_double_percent_encoded_aws;
 mod malformed_base64_no_panic;
+#[cfg(feature = "multiline")]
 mod multiline_phantom_no_double_secret;
 mod null_byte_in_parent_no_panic;
 mod percent_run_not_double_base64;

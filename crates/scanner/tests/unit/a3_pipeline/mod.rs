@@ -13,7 +13,9 @@ mod does_not_suppress_sk_live_shape;
 mod entropy_suppresses_ci_workflow_findings;
 mod evasion_reverse_skips_example_suppression;
 mod example_path_with_example_token;
+#[cfg(feature = "multiline")]
 mod find_companion_locates_nearby_keyword;
+#[cfg(feature = "multiline")]
 mod find_companion_respects_within_lines;
 mod floor_char_boundary_utf8;
 mod generic_detector_suppresses_identifier_shape;
@@ -34,6 +36,7 @@ mod is_within_hex_context_neighbor;
 mod is_within_hex_context_prose_false;
 mod is_within_hex_context_rejects_prose;
 mod is_within_hex_context_short_match_false;
+#[cfg(feature = "multiline")]
 mod line_window_offsets_bounded;
 mod local_context_window_caps_long_line;
 mod local_context_window_clamps_end;
@@ -44,9 +47,13 @@ mod match_entropy_positive_mixed;
 mod match_entropy_single_byte;
 mod match_entropy_two_equal_bytes;
 mod match_entropy_zero_uniform;
+#[cfg(feature = "multiline")]
 mod match_line_number_empty_offsets_fallback;
+#[cfg(feature = "multiline")]
 mod match_line_number_first_line;
+#[cfg(feature = "multiline")]
 mod match_line_number_last_line;
+#[cfg(feature = "multiline")]
 mod match_line_number_mid_line_offset;
 mod named_detector_keeps_algolia_hex;
 mod named_detector_suppresses_vendored_minified_path;

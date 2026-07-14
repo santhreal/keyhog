@@ -45,6 +45,7 @@ pub mod decode_structure_protobuf_fixed_width_fields;
 pub mod decoder_registry_default_composition;
 pub mod detector_classification_query_contract;
 pub mod detector_contract_coverage_100pct;
+#[cfg(any(feature = "entropy", feature = "simd", feature = "gpu"))]
 pub mod detector_precision_decoys;
 pub mod detector_recall_prefixes;
 pub mod docs_megakernel_env_claim_matches_engine;
@@ -52,6 +53,7 @@ pub mod engine_backend_parity;
 pub mod entropy_authorization_scheme_ci;
 pub mod entropy_candidate_owned_by_named_assignment_composition_exact;
 pub mod entropy_canonical_lift_keyword_material;
+#[cfg(feature = "entropy")]
 pub mod entropy_detector_index_case_insensitive;
 pub mod entropy_keyword_anchor_lazy_lowercase;
 pub mod entropy_keyword_only_requires_keyword_line;
@@ -99,6 +101,7 @@ pub mod ml_score_cache_memoized;
 pub mod multiline_fragment_prefix_extraction;
 pub mod multiline_large_file_keyword_gate;
 pub mod multiline_preprocess_join_contract;
+#[cfg(feature = "multiline")]
 pub mod multiline_reassembly;
 pub mod multiline_structural_template_resolve;
 pub mod nightly_exports_all_strict_env_vars;
@@ -154,6 +157,7 @@ pub mod scanner_src_files_exceed_standard_500_loc;
 pub mod selected_gpu_backend_executes_or_fails;
 pub mod shared_assign_regex_contract;
 pub mod simd_no_hit_multiline_fast_path;
+#[cfg(feature = "multiline")]
 pub mod single_line_implicit_concat_not_appended;
 pub mod slack_checksum_token_shapes;
 pub mod standard_base64_shape_classification_exact;

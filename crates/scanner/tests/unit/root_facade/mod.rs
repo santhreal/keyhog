@@ -3,6 +3,7 @@ pub mod support;
 
 mod analyze_keyword_only;
 mod api_consistency;
+#[cfg(feature = "multiline")]
 mod audit_speed;
 mod autoroute_gpu_optin_contract;
 mod backend_collapse_regression;
@@ -37,6 +38,7 @@ mod phase2_anchor_parity;
 mod phase2_hs_anchor_parser;
 mod phase2_no_candidate_gate_perf;
 mod phase2_no_candidate_zero_work;
+#[cfg(any(feature = "entropy", feature = "simdsieve"))]
 mod phase2_order_independence;
 mod phase2_pattern_profile;
 mod phase2_prefilter_hs_findings_parity;
@@ -59,8 +61,11 @@ mod regression_entropy_fma3_dispatch;
 mod regression_fragment_cache_determinism;
 mod regression_instructional_fragment_multibyte_boundary;
 mod regression_invalid_pattern_index_skip_counted;
+#[cfg(feature = "multiline")]
 mod regression_multiline_line_offset_mismatch_counted;
+#[cfg(feature = "multiline")]
 mod regression_multiline_struct_base_and_fstring_prefix;
+#[cfg(feature = "multiline")]
 mod regression_org_split_multiline_and_context_api;
 mod regression_slack_three_segment;
 mod regression_unicode_nbsp_separator_normalization;
