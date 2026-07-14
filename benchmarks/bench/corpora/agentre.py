@@ -142,5 +142,6 @@ class AgentREBenchmark:
         report = score_report(samples)
         report["decoded_c2_recovery"] = decoded_c2_recovery_summary(samples)
         report["score_contract"] = score_contract_receipt()
-        self.validate()
+        receipt = self.validate()
+        report["task_selection"] = receipt["task_selection"]
         return report

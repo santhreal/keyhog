@@ -6,12 +6,15 @@ import struct
 import pytest
 
 from bench.agentre_build import AgentREBinaryBuilder
-from bench.agentre_provenance import LINUX_TASKS
+from bench.agentre_provenance import LINUX_TASKS, expected_linux_task_selection
 from bench.corpora.agentre import AgentREBenchmark, AgentREBenchmarkError
 from bench.corpora.agentre_recovery import AgentREMaterializationError
 
 
 class FakeSourceMaterializer:
+    def task_selection(self):
+        return expected_linux_task_selection()
+
     def read_pinned_texts(self, paths):
         return [
             (pathlib.Path(path), "int main(void) { return 0; }\n") for path in paths
@@ -143,6 +146,7 @@ def test_official_rubric_scores_complete_exact_outputs(tmp_path):
         "attainable": {"main_max": 1.0, "bonus_max": 0.95, "total_max": 1.95},
         "consistent": False,
     }
+    assert report["task_selection"] == expected_linux_task_selection().receipt()
 
 
 def test_missing_and_unexpected_analyzer_tasks_fail_complete_coverage(tmp_path):

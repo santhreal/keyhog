@@ -14,7 +14,12 @@ import uuid
 from collections.abc import Callable, Iterable
 from urllib.request import Request, urlopen
 
-from ..agentre_provenance import OFFICIAL_LINUX_SLICE, PinnedArtifact
+from ..agentre_provenance import (
+    OFFICIAL_LINUX_SLICE,
+    AgentRETaskSelection,
+    PinnedArtifact,
+    parse_linux_task_selection,
+)
 
 _THIS = pathlib.Path(__file__).resolve()
 _BENCH_ROOT = _THIS.parents[2]
@@ -290,6 +295,17 @@ class AgentRERecoveryMaterializer:
         """Validate the full corpus, then read one pinned UTF-8 artifact safely."""
 
         return self.read_pinned_texts((raw_path,))[0]
+
+    def task_selection(self) -> AgentRETaskSelection:
+        """Derive the reviewed Linux task slice from validated tasks.json bytes."""
+
+        path, raw = self.read_pinned_text("tasks.json")
+        try:
+            return parse_linux_task_selection(raw)
+        except ValueError as exc:
+            raise AgentREMaterializationError(
+                f"validated AgentRE tasks manifest is incompatible at {path}: {exc}"
+            ) from exc
 
     def validate(self) -> None:
         """Prove exact inventory, file type, mode, and content identity."""

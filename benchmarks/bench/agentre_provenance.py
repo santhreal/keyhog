@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from urllib.parse import quote
 
@@ -14,6 +15,9 @@ RAW_ROOT = (
     "https://raw.githubusercontent.com/agentrebench/AgentRE-Bench/"
     f"{UPSTREAM_REPOSITORY_COMMIT}"
 )
+TASK_SELECTION_SCHEMA = "agentre-linux-task-selection-v1"
+TASK_SELECTOR = "exclude-task-id-prefix:windows_"
+UPSTREAM_TASK_COUNT = 23
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,26 @@ class AgentRETask:
     binary_name: str
     ground_truth_path: str
     difficulty: int
+
+
+@dataclass(frozen=True)
+class AgentRETaskSelection:
+    """Exact Linux task slice derived from the pinned upstream manifest."""
+
+    tasks: tuple[AgentRETask, ...]
+    manifest_sha256: str
+    selection_sha256: str
+
+    def receipt(self) -> dict[str, object]:
+        """Return the stable task identity embedded in benchmark receipts."""
+
+        return {
+            "schema": TASK_SELECTION_SCHEMA,
+            "selector": TASK_SELECTOR,
+            "manifest_sha256": self.manifest_sha256,
+            "selection_sha256": self.selection_sha256,
+            "task_count": len(self.tasks),
+        }
 
 
 CONTROL_ARTIFACTS = (
@@ -276,5 +300,132 @@ LINUX_TASKS = (
         13,
     ),
 )
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    output: dict[str, object] = {}
+    for key, value in pairs:
+        if key in output:
+            raise ValueError(f"AgentRE tasks manifest repeats JSON key {key!r}")
+        output[key] = value
+    return output
+
+
+def _manifest_task(row: object, index: int) -> AgentRETask:
+    if not isinstance(row, dict):
+        raise ValueError(f"AgentRE task row {index} must be a JSON object")
+    expected_fields = {
+        "task_id",
+        "source_file",
+        "binary_name",
+        "ground_truth",
+        "difficulty",
+    }
+    if set(row) != expected_fields:
+        raise ValueError(
+            f"AgentRE task row {index} fields are invalid: "
+            f"missing={sorted(expected_fields - set(row))}, "
+            f"unexpected={sorted(set(row) - expected_fields)}"
+        )
+    strings = {
+        field: row[field]
+        for field in ("task_id", "source_file", "binary_name", "ground_truth")
+    }
+    for field, value in strings.items():
+        if not isinstance(value, str) or not value:
+            raise ValueError(
+                f"AgentRE task row {index} field {field!r} must be a nonempty string"
+            )
+    difficulty = row["difficulty"]
+    if type(difficulty) is not int or difficulty <= 0:
+        raise ValueError(
+            f"AgentRE task row {index} difficulty must be a positive integer"
+        )
+    for field in ("source_file", "ground_truth"):
+        path = strings[field]
+        if path.startswith("/") or ".." in path.split("/"):
+            raise ValueError(
+                f"AgentRE task row {index} field {field!r} must stay repository-relative"
+            )
+    return AgentRETask(
+        task_id=strings["task_id"],
+        source_path=strings["source_file"],
+        binary_name=strings["binary_name"],
+        ground_truth_path=strings["ground_truth"],
+        difficulty=difficulty,
+    )
+
+
+def _selection_digest(tasks: tuple[AgentRETask, ...]) -> str:
+    rows = [
+        {
+            "task_id": task.task_id,
+            "source_file": task.source_path,
+            "binary_name": task.binary_name,
+            "ground_truth": task.ground_truth_path,
+            "difficulty": task.difficulty,
+        }
+        for task in tasks
+    ]
+    identity = {
+        "schema": TASK_SELECTION_SCHEMA,
+        "selector": TASK_SELECTOR,
+        "tasks": rows,
+    }
+    encoded = json.dumps(
+        identity, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def expected_linux_task_selection() -> AgentRETaskSelection:
+    """Return the task identity expected from the pinned upstream manifest."""
+
+    tasks_manifest = next(
+        artifact for artifact in CONTROL_ARTIFACTS if artifact.path == "tasks.json"
+    )
+    return AgentRETaskSelection(
+        tasks=LINUX_TASKS,
+        manifest_sha256=tasks_manifest.sha256,
+        selection_sha256=_selection_digest(LINUX_TASKS),
+    )
+
+
+def parse_linux_task_selection(raw: str) -> AgentRETaskSelection:
+    """Strictly derive and verify the Linux slice from pinned tasks.json text."""
+
+    try:
+        document = json.loads(raw, object_pairs_hook=_unique_json_object)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"AgentRE tasks manifest is invalid JSON: {exc}") from exc
+    if not isinstance(document, dict) or set(document) != {"tasks"}:
+        raise ValueError("AgentRE tasks manifest must contain only the tasks array")
+    rows = document["tasks"]
+    if not isinstance(rows, list) or len(rows) != UPSTREAM_TASK_COUNT:
+        observed = len(rows) if isinstance(rows, list) else "non-array"
+        raise ValueError(
+            f"AgentRE tasks manifest must contain {UPSTREAM_TASK_COUNT} rows; "
+            f"observed {observed}"
+        )
+    tasks = tuple(_manifest_task(row, index) for index, row in enumerate(rows))
+    for field, values in (
+        ("task_id", [task.task_id for task in tasks]),
+        ("source_file", [task.source_path for task in tasks]),
+        ("binary_name", [task.binary_name for task in tasks]),
+        ("ground_truth", [task.ground_truth_path for task in tasks]),
+        ("difficulty", [task.difficulty for task in tasks]),
+    ):
+        if len(values) != len(set(values)):
+            raise ValueError(f"AgentRE tasks manifest repeats {field}")
+    selected = tuple(task for task in tasks if not task.task_id.startswith("windows_"))
+    expected = expected_linux_task_selection()
+    if selected != expected.tasks:
+        raise ValueError(
+            "AgentRE Linux task selection differs from the reviewed benchmark slice"
+        )
+    if _selection_digest(selected) != expected.selection_sha256:
+        raise ValueError("AgentRE Linux task selection digest is inconsistent")
+    return expected
+
 
 OFFICIAL_LINUX_SLICE = CONTROL_ARTIFACTS + SOURCE_ARTIFACTS + GROUND_TRUTH_ARTIFACTS

@@ -11,10 +11,13 @@ from bench.agentre_build import (
     AgentREBinaryBuilder,
     AgentREBuildError,
 )
-from bench.agentre_provenance import LINUX_TASKS
+from bench.agentre_provenance import LINUX_TASKS, expected_linux_task_selection
 
 
 class FakeMaterializer:
+    def task_selection(self):
+        return expected_linux_task_selection()
+
     def read_pinned_texts(self, paths):
         return [
             (pathlib.Path(path), "int main(void) { return 0; }\n") for path in paths
@@ -63,6 +66,7 @@ def test_build_uses_pinned_offline_nonexecuting_compiler_and_seals_exact_outputs
     assert len(calls) == 13
     assert len(receipt["binaries"]) == 13
     assert receipt["image"] == GCC_IMAGE
+    assert receipt["task_selection"] == expected_linux_task_selection().receipt()
     for task, (argv, binary, timeout) in zip(LINUX_TASKS, calls):
         assert argv[:2] == ["docker", "run"]
         assert "--network" in argv and argv[argv.index("--network") + 1] == "none"
@@ -212,6 +216,12 @@ def test_validation_rejects_unexpected_output(tmp_path):
     [
         (lambda receipt: receipt.update({"unexpected": True}), "receipt schema"),
         (lambda receipt: receipt.update({"network": "default"}), "isolation identity"),
+        (
+            lambda receipt: receipt["task_selection"].update(
+                {"selection_sha256": "0" * 64}
+            ),
+            "task selection identity",
+        ),
         (
             lambda receipt: receipt["binaries"][0].update({"compile_flags": ["-O3"]}),
             "receipt row",

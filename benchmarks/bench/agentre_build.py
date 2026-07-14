@@ -17,14 +17,17 @@ import uuid
 from collections.abc import Callable, Mapping
 
 from .agentre_provenance import LINUX_TASKS, SOURCE_ARTIFACTS
-from .corpora.agentre_recovery import AgentRERecoveryMaterializer
+from .corpora.agentre_recovery import (
+    AgentREMaterializationError,
+    AgentRERecoveryMaterializer,
+)
 
 GCC_IMAGE = (
     "docker.io/library/gcc@"
     "sha256:82549aa8f90ada3236a8be70c74543132a76662ef33f0c3271ed802b81584a82"
 )
 GCC_IMAGE_DIGEST = GCC_IMAGE.rsplit("@", 1)[1]
-BUILD_SCHEMA = "agentre-linux-build-v1"
+BUILD_SCHEMA = "agentre-linux-build-v2"
 BUILD_TIMEOUT_SECONDS = 120
 MAX_BINARY_BYTES = 64 * 1024 * 1024
 MAX_DIAGNOSTIC_BYTES = 16 * 1024
@@ -53,6 +56,7 @@ _RECEIPT_FIELDS = {
     "image_digest",
     "platform",
     "network",
+    "task_selection",
     "binaries",
 }
 
@@ -223,7 +227,7 @@ class AgentREBinaryBuilder:
         _expected: Mapping[str, str] | None = None,
     ):
         self.root = pathlib.Path(
-            output_dir or _BENCH_ROOT / "corpora" / "agentre-binaries"
+            output_dir or _BENCH_ROOT / "corpora" / "agentre-binaries-v2"
         )
         self.materializer = materializer or AgentRERecoveryMaterializer()
         self._runner = _runner or _docker_runner
@@ -239,7 +243,21 @@ class AgentREBinaryBuilder:
             )
         return {artifact.path: artifact.sha256 for artifact in SOURCE_ARTIFACTS}
 
+    def _task_selection_receipt(self) -> dict[str, object]:
+        try:
+            selection = self.materializer.task_selection()
+        except AgentREMaterializationError as exc:
+            raise AgentREBuildError(
+                f"AgentRE task selection could not be verified: {exc}"
+            ) from exc
+        if selection.tasks != LINUX_TASKS:
+            raise AgentREBuildError(
+                "AgentRE task selection does not match the reviewed Linux slice"
+            )
+        return selection.receipt()
+
     def _validate_tree(self, root: pathlib.Path) -> dict[str, object]:
+        task_selection = self._task_selection_receipt()
         try:
             root_stat = root.lstat()
         except FileNotFoundError as exc:
@@ -282,6 +300,10 @@ class AgentREBinaryBuilder:
             raise AgentREBuildError(
                 "AgentRE build receipt isolation identity is invalid"
             )
+        if receipt.get("task_selection") != task_selection:
+            raise AgentREBuildError(
+                "AgentRE build receipt task selection identity is invalid"
+            )
         binaries = receipt.get("binaries")
         if not isinstance(binaries, list) or len(binaries) != len(LINUX_TASKS):
             raise AgentREBuildError("AgentRE build receipt binary inventory is invalid")
@@ -321,6 +343,7 @@ class AgentREBinaryBuilder:
         if self.root.exists() or self.root.is_symlink():
             self.validate()
             return self.root
+        task_selection = self._task_selection_receipt()
         sources = self.materializer.read_pinned_texts(
             task.source_path for task in LINUX_TASKS
         )
@@ -420,6 +443,7 @@ class AgentREBinaryBuilder:
                 "image_digest": GCC_IMAGE_DIGEST,
                 "platform": "linux/amd64",
                 "network": "none",
+                "task_selection": task_selection,
                 "binaries": rows,
             }
             receipt_path = outputs / "build-receipt.json"
