@@ -535,9 +535,10 @@ pub struct ScanArgs {
     /// Daemon routing: `auto` (default, use a live daemon if one is up, else
     /// scan in-process), `on` (force the daemon route; fail if none is up), or
     /// `off` (force in-process). Bare `--daemon` means `on`. Use `on` in
-    /// pre-commit hooks / IDE save handlers where the ~3 s in-process cold-start
-    /// dominates the actual scan; the daemon holds a compiled scanner so each
-    /// invocation is sub-ms IPC + scan. See `keyhog daemon start --help`.
+    /// pre-commit hooks and IDE save handlers that benefit from reusing a
+    /// compatible compiled scanner. Startup and request latency depend on the
+    /// corpus, backend, cache state, host, and input. See
+    /// `keyhog daemon start --help`.
     ///
     /// Socket: the daemon route connects to the shared default resolution
     /// (`$XDG_RUNTIME_DIR`, then the OS cache directory, then the OS temporary

@@ -154,12 +154,10 @@ pub(crate) async fn run_with_backend_override(
     options: ServerOptions,
     backend_override: Option<ScanBackend>,
 ) -> Result<()> {
-    // Tell the operator the daemon is working BEFORE the scanner compile + warm
-    // below. On a warm Hyperscan cache that compile is sub-second and the
-    // "ready" line follows immediately; on a COLD cache (first start, or after a
-    // CPU/detector change) it can take tens of seconds, during which `daemon
-    // start` would otherwise print nothing and look hung. The count is the spec
-    // count (pre-compile); the ready line reports the final compiled count.
+    // Tell the operator the daemon is working before scanner compile and warmup.
+    // Duration varies with the detector corpus, backend, cache state, and host.
+    // The count is the pre-compile spec count; the ready line reports the final
+    // compiled count.
     announce_daemon_starting(detectors.len());
     let detector_rules_digest =
         keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
@@ -229,7 +227,7 @@ fn bind_trusted_daemon_socket(socket_path: &Path) -> Result<UnixListener> {
 fn announce_daemon_starting(detector_spec_count: usize) {
     eprintln!(
         "keyhog daemon: compiling {detector_spec_count} detectors \
-         (first start on a cold cache can take tens of seconds; later starts reuse the cache)…"
+         (compatible later starts may reuse compiled caches)…"
     );
 }
 

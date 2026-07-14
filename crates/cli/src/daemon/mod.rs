@@ -1,13 +1,11 @@
 //! Daemon mode for keyhog: long-lived process that holds a compiled
 //! scanner and serves scan requests over a Unix socket.
 //!
-//! Why a daemon: `CompiledScanner::compile` pays a ~3 s cold-start
-//! cost (Hyperscan database compile, detector load, vyre GPU adapter
-//! probe). For workflows that invoke `keyhog` many times in quick
-//! succession (pre-commit hooks, CI per-commit pipelines, IDE save
-//! handlers, mitmproxy live scan) that 3 s lands on every invocation.
-//! Holding the compiled scanner in a long-lived process collapses
-//! repeat-scan latency from ~3 s + scan to sub-ms IPC + scan.
+//! Why a daemon: scanner compilation, detector loading, Hyperscan database
+//! setup, and accelerator probing otherwise repeat for each process. A
+//! long-lived daemon retains that compatible runtime across repeated scans.
+//! Actual startup and request latency depend on the detector corpus, backend,
+//! cache state, host, and input.
 //!
 //! Surface:
 //! - `keyhog daemon start` - bind the socket, compile the scanner,
