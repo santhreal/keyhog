@@ -391,6 +391,15 @@ pub enum ReportFormat {
         /// UTC scan end time formatted as `YYYY-MM-DDTHH:MM:SS`.
         scan_finished_at: String,
     },
+    /// GitLab SAST output with scan-wide coverage status.
+    GitlabSastCoverage {
+        /// UTC scan start time formatted as `YYYY-MM-DDTHH:MM:SS`.
+        scan_started_at: String,
+        /// UTC scan end time formatted as `YYYY-MM-DDTHH:MM:SS`.
+        scan_finished_at: String,
+        /// Non-zero source or scanner coverage gaps observed during the scan.
+        skip_summary: Vec<(String, usize)>,
+    },
     /// Self-contained HTML output.
     Html {
         /// Operator-visible scan coverage-gap summary entries (same data the
@@ -483,6 +492,29 @@ pub fn write_scan_report<W: Write + Send>(
                     "scan_finished_at",
                 )?,
             ),
+            findings,
+        ),
+        ReportFormat::GitlabSastCoverage {
+            scan_started_at,
+            scan_finished_at,
+            skip_summary,
+        } => finish_reporter(
+            gitlab_sast::GitlabSastReporter::new(
+                writer,
+                report_time(
+                    report_metadata,
+                    scan_started_at,
+                    |metadata| &metadata.scan_started_at,
+                    "scan_started_at",
+                )?,
+                report_time(
+                    report_metadata,
+                    scan_finished_at,
+                    |metadata| &metadata.scan_finished_at,
+                    "scan_finished_at",
+                )?,
+            )
+            .with_skip_summary(skip_summary),
             findings,
         ),
         ReportFormat::Html {

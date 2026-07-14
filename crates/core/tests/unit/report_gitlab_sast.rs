@@ -8,6 +8,14 @@ fn format() -> ReportFormat {
     }
 }
 
+fn partial_format() -> ReportFormat {
+    ReportFormat::GitlabSastCoverage {
+        scan_started_at: "2026-06-17T10:00:00".to_string(),
+        scan_finished_at: "2026-06-17T10:00:01".to_string(),
+        skip_summary: vec![("oversize file".to_string(), 2)],
+    }
+}
+
 fn render(findings: &[VerifiedFinding]) -> serde_json::Value {
     let mut buf: Vec<u8> = Vec::new();
     write_report(&mut buf, format(), findings).expect("render GitLab SAST");
@@ -70,6 +78,14 @@ fn gitlab_sast_finding_has_required_vulnerability_fields() {
         vuln["id"].as_str().expect("id string").contains("deadbeef"),
         "stable id must include the credential hash"
     );
+}
+
+#[test]
+fn gitlab_sast_partial_scan_is_schema_visible() {
+    let mut buf = Vec::new();
+    write_report(&mut buf, partial_format(), &[]).expect("render partial GitLab SAST");
+    let report: serde_json::Value = serde_json::from_slice(&buf).expect("valid GitLab JSON");
+    assert_eq!(report["scan"]["status"], "failure");
 }
 
 #[test]

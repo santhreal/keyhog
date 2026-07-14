@@ -156,7 +156,10 @@ location. Use `json` or `sarif` for mixed file and non-file sources.
 The `scan.start_time` and `scan.end_time` values come from the same report
 metadata used by HTML. This keeps CI artifacts and the human report aligned
 when a daemon or a long-running scan finishes at a different time than the
-reporting step began.
+reporting step began. If source coverage gaps occur, KeyHog emits the
+schema-supported `scan.status: "failure"`; a complete scan emits
+`scan.status: "success"`. This keeps partial GitLab artifacts distinguishable
+without adding fields GitLab does not define.
 
 ## `--format html`
 

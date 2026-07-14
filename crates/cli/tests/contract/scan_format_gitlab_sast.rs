@@ -18,6 +18,23 @@ fn scan(path: &std::path::Path) -> std::process::Output {
         .expect("spawn keyhog scan --format gitlab-sast")
 }
 
+fn scan_directory_with_cap(path: &std::path::Path) -> std::process::Output {
+    Command::new(binary())
+        .args([
+            "scan",
+            "--daemon=off",
+            "--backend",
+            "simd",
+            "--max-file-size",
+            "15B",
+            "--format",
+            "gitlab-sast",
+        ])
+        .arg(path)
+        .output()
+        .expect("spawn capped keyhog scan --format gitlab-sast")
+}
+
 #[test]
 fn clean_scan_emits_empty_gitlab_sast_report() {
     let (_dir, path) = write_temp_file("clean.env", "no secrets here\n");
@@ -74,4 +91,22 @@ fn planted_secret_emits_gitlab_sast_vulnerability() {
     assert_eq!(vuln["location"]["start_line"], 2);
     assert_eq!(vuln["identifiers"][0]["type"], "keyhog_rule");
     assert_eq!(vuln["details"]["credential"]["value"], "AK...BN");
+}
+
+#[test]
+fn partial_scan_marks_gitlab_sast_failure_status() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("small.txt"), "plain text\n").expect("small fixture");
+    std::fs::write(dir.path().join("large.txt"), "this file exceeds the cap\n")
+        .expect("large fixture");
+
+    let output = scan_directory_with_cap(dir.path());
+    assert_eq!(
+        output.status.code(),
+        Some(13),
+        "partial scan must retain the coverage-gap exit code"
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("partial GitLab SAST JSON parses");
+    assert_eq!(report["scan"]["status"], "failure");
 }

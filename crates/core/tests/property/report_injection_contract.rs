@@ -70,6 +70,11 @@ fn all_formats() -> Vec<ReportFormat> {
             scan_started_at: "2020-01-01T00:00:00".to_string(),
             scan_finished_at: "2020-01-01T00:00:01".to_string(),
         },
+        ReportFormat::GitlabSastCoverage {
+            scan_started_at: "2020-01-01T00:00:00".to_string(),
+            scan_finished_at: "2020-01-01T00:00:01".to_string(),
+            skip_summary: Vec::new(),
+        },
         ReportFormat::Html {
             skip_summary: vec![],
             metadata: None,
@@ -100,6 +105,7 @@ fn format_name(f: &ReportFormat) -> &'static str {
         ReportFormat::Csv => "csv",
         ReportFormat::GithubAnnotations => "github-annotations",
         ReportFormat::GitlabSast { .. } => "gitlab-sast",
+        ReportFormat::GitlabSastCoverage { .. } => "gitlab-sast-coverage",
         ReportFormat::Html { .. } => "html",
         ReportFormat::Junit => "junit",
         ReportFormat::JunitCoverage { .. } => "junit-coverage",

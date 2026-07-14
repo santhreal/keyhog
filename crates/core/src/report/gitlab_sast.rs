@@ -18,6 +18,7 @@ pub(crate) struct GitlabSastReporter<W: Write + Send> {
     scan_finished_at: String,
     prefix_written: bool,
     first_vulnerability: bool,
+    skip_summary: Vec<(String, usize)>,
 }
 
 impl<W: Write + Send> GitlabSastReporter<W> {
@@ -29,7 +30,19 @@ impl<W: Write + Send> GitlabSastReporter<W> {
             scan_finished_at,
             prefix_written: false,
             first_vulnerability: true,
+            skip_summary: Vec::new(),
         }
+    }
+
+    /// Attach scan coverage gaps. GitLab's schema-supported `scan.status`
+    /// becomes `failure`, making partial artifacts distinguishable from a
+    /// complete successful scan without inventing non-schema fields.
+    pub(crate) fn with_skip_summary(mut self, summary: Vec<(String, usize)>) -> Self {
+        self.skip_summary = summary
+            .into_iter()
+            .filter(|(_, count)| *count > 0)
+            .collect();
+        self
     }
 
     fn ensure_prefix(&mut self) -> Result<(), ReportError> {
@@ -43,7 +56,11 @@ impl<W: Write + Send> GitlabSastReporter<W> {
         write!(self.writer, ",\"scan\":")?;
         serde_json::to_writer(
             &mut self.writer,
-            &scan_object(&self.scan_started_at, &self.scan_finished_at),
+            &scan_object(
+                &self.scan_started_at,
+                &self.scan_finished_at,
+                !self.skip_summary.is_empty(),
+            ),
         )?;
         write!(self.writer, ",\"vulnerabilities\":[")?;
         self.prefix_written = true;
@@ -145,10 +162,14 @@ struct GitlabTextDetail<'a> {
     value: Cow<'a, str>,
 }
 
-fn scan_object<'a>(scan_started_at: &'a str, scan_finished_at: &'a str) -> GitlabScan<'a> {
+fn scan_object<'a>(
+    scan_started_at: &'a str,
+    scan_finished_at: &'a str,
+    partial: bool,
+) -> GitlabScan<'a> {
     GitlabScan {
         scan_type: "sast",
-        status: "success",
+        status: if partial { "failure" } else { "success" },
         start_time: scan_started_at,
         end_time: scan_finished_at,
         analyzer: keyhog_tool(),
