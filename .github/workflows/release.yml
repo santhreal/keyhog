@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to build assets for (e.g. v0.5.7). Manual re-run.'
+        description: 'Existing tag to build (e.g. v0.5.7). Select the same tag under Use workflow from.'
         required: true
 
 env:
@@ -31,6 +31,8 @@ jobs:
     # `permissions:` rejected at dispatch time on this repo.
     permissions:
       contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -83,6 +85,7 @@ jobs:
         shell: bash
         env:
           KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
+          KEYHOG_RELEASE_EVENT_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           if [[ -n "${KEYHOG_RELEASE_INPUT_TAG:-}" ]]; then
@@ -92,6 +95,10 @@ jobs:
           fi
           if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
+            exit 2
+          fi
+          if [[ "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
+            echo "::error title=KeyHog::Attestation source mismatch::Run this workflow from the exact refs/tags/$tag ref so GitHub provenance names the source that is built."
             exit 2
           fi
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
@@ -113,6 +120,18 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
+
+      - name: Prove checkout matches attested event
+        shell: bash
+        env:
+          KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
+            echo "ERROR: checked-out release commit $actual does not match attested event commit $KEYHOG_RELEASE_EVENT_SHA" >&2
+            exit 2
+          fi
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
         with:
@@ -183,6 +202,13 @@ jobs:
             fi
             cat "$asset.sha256"
           done
+
+      - name: Attest release payload provenance
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: |
+            ${{ matrix.asset }}
+            ${{ matrix.asset }}.gpu-literals.tar.gz
 
       - name: Stage unsigned release bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

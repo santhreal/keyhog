@@ -281,6 +281,23 @@ fi
 sh keyhog-install.sh --from-file="$ASSET"
 ```
 
+Release workflows also publish GitHub build-provenance attestations for both
+payloads. With a GitHub CLI version that provides `gh attestation`, this online
+check proves that GitHub-hosted `release.yml` attested the exact bytes for the
+requested tag. It does not by itself prove the Cargo feature or profile policy.
+It complements the detached minisign signatures, which remain the installer's
+offline trust root:
+
+```sh
+TAG=v0.5.41
+gh attestation verify "$ASSET" --repo santhreal/keyhog \
+  --signer-workflow github.com/santhreal/keyhog/.github/workflows/release.yml \
+  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
+gh attestation verify "$ASSET.gpu-literals.tar.gz" --repo santhreal/keyhog \
+  --signer-workflow github.com/santhreal/keyhog/.github/workflows/release.yml \
+  --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
+```
+
 On Windows, use
 `./keyhog-install.ps1 -FromFile C:\absolute\path\to\keyhog-windows-x86_64.exe`.
 Verify each payload's `.minisig` first and keep each `.sha256` sibling beside
