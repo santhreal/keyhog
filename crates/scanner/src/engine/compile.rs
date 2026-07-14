@@ -251,6 +251,11 @@ impl CompiledScanner {
         };
         #[cfg(not(feature = "gpu"))]
         let gpu_literals: Option<Arc<Vec<Vec<u8>>>> = None;
+        #[cfg(feature = "gpu")]
+        let gpu_max_literal_len = gpu_literals
+            .as_ref()
+            .and_then(|literals| literals.iter().map(Vec::len).max())
+            .unwrap_or(0);
 
         // Combined-RegexSet prefilter over EVERY always-active phase-2 pattern. The
         // plain (homoglyph-variant) batches carry a fast ASCII-folded alternate
@@ -468,6 +473,8 @@ impl CompiledScanner {
             gpu_backends,
             gpu_acquisition_failures,
             gpu_literals,
+            #[cfg(feature = "gpu")]
+            gpu_max_literal_len,
             gpu_matcher: OnceLock::new(),
             #[cfg(feature = "gpu")]
             gpu_resident_presence_cuda: std::sync::Mutex::new(

@@ -26,6 +26,7 @@ pub(super) enum RegionPresenceBatchMode {
     BorrowedSingleChunk,
     FoldedScratch,
     ShardedScratch,
+    Windowed,
 }
 
 impl RegionPresenceBatchMode {
@@ -34,6 +35,7 @@ impl RegionPresenceBatchMode {
             Self::BorrowedSingleChunk => "borrowed-single-chunk",
             Self::FoldedScratch => "folded-scratch",
             Self::ShardedScratch => "sharded-scratch",
+            Self::Windowed => "windowed",
         }
     }
 }
@@ -89,12 +91,28 @@ pub(super) const REGION_PRESENCE_BATCH_BYTE_LIMIT: usize =
 /// VYRE byte-scan kernels launch one 128-thread workgroup per byte block.
 pub(super) const WGPU_BYTE_SCAN_DISPATCH_LIMIT: usize = 65_535 * 128;
 
+/// Bound overlap amplification from pathological custom detector literals.
+/// A selected GPU route fails visibly instead of issuing an effectively
+/// unbounded sequence of tiny-progress dispatches.
+const MAX_REGION_PRESENCE_WINDOW_DISPATCHES: usize = 4_096;
+
 pub(super) fn region_presence_batch_byte_limit(backend_id: &str) -> usize {
-    if backend_id == "wgpu" {
+    region_presence_batch_byte_limit_for_input_budget(
+        backend_id,
+        super::gpu_input_budget::gpu_batch_input_limit(),
+    )
+}
+
+fn region_presence_batch_byte_limit_for_input_budget(
+    backend_id: &str,
+    input_budget: usize,
+) -> usize {
+    let backend_ceiling = if backend_id == "wgpu" {
         WGPU_BYTE_SCAN_DISPATCH_LIMIT
     } else {
         REGION_PRESENCE_BATCH_BYTE_LIMIT
-    }
+    };
+    backend_ceiling.min(input_budget)
 }
 
 pub(super) fn validate_region_presence_batch_len(total: usize) -> Result<(), String> {
@@ -214,6 +232,112 @@ pub(super) fn region_presence_ref_shards<'a>(
     byte_limit: usize,
 ) -> Result<impl Iterator<Item = Result<RegionPresenceShard, String>> + 'a, String> {
     region_presence_shards_with_limit(chunks.len(), |idx| chunks[idx].data.len(), byte_limit)
+}
+
+fn region_presence_window_ranges(
+    len: usize,
+    byte_limit: usize,
+    max_literal_len: usize,
+) -> Result<impl Iterator<Item = Range<usize>>, String> {
+    if byte_limit == 0 || byte_limit > REGION_PRESENCE_BATCH_BYTE_LIMIT {
+        return Err(format!(
+            "GPU region-presence window limit {byte_limit} is outside the supported range 1..={REGION_PRESENCE_BATCH_BYTE_LIMIT}"
+        ));
+    }
+    if max_literal_len == 0 {
+        return Err("GPU region-presence windowing requires at least one compiled literal".into());
+    }
+    if max_literal_len > byte_limit {
+        return Err(format!(
+            "longest compiled GPU literal is {max_literal_len} byte(s), above the selected backend's {byte_limit}-byte dispatch ceiling"
+        ));
+    }
+    let overlap = max_literal_len - 1;
+    let step = byte_limit.checked_sub(overlap).ok_or_else(|| {
+        "GPU region-presence window progress underflows the dispatch ceiling".to_string()
+    })?;
+    let dispatches = if len == 0 {
+        0
+    } else if len <= byte_limit {
+        1
+    } else {
+        1usize
+            .checked_add((len - byte_limit).div_ceil(step))
+            .ok_or_else(|| "GPU region-presence window count overflows host usize".to_string())?
+    };
+    if dispatches > MAX_REGION_PRESENCE_WINDOW_DISPATCHES {
+        return Err(format!(
+            "GPU region-presence needs {dispatches} overlap window dispatches, above the safety limit of {MAX_REGION_PRESENCE_WINDOW_DISPATCHES}. Fix: lower the source chunk size or shorten the detector literal"
+        ));
+    }
+    let mut start = 0usize;
+    Ok(std::iter::from_fn(move || {
+        if start >= len {
+            return None;
+        }
+        let end = start.saturating_add(byte_limit).min(len);
+        let range = start..end;
+        start = if end == len { len } else { end - overlap };
+        Some(range)
+    }))
+}
+
+pub(super) fn for_each_region_presence_window(
+    bytes: &[u8],
+    byte_limit: usize,
+    max_literal_len: usize,
+    mut f: impl FnMut(&[u8], Range<usize>) -> Result<(), String>,
+) -> Result<RegionPresenceBatchSummary, String> {
+    let ranges = region_presence_window_ranges(bytes.len(), byte_limit, max_literal_len)?;
+    let mut dispatches = 0usize;
+    let mut coalesced_bytes = 0usize;
+    let mut max_dispatch_bytes = 0usize;
+    REGION_PRESENCE_BATCH_SCRATCH
+        .try_with(|cell| {
+            let mut scratch = cell.try_borrow_mut().map_err(|_| {
+                "GPU region-presence window scratch already borrowed on this thread; recursive GPU dispatch is unsupported".to_string()
+            })?;
+            let mut zero_on_drop = ZeroRegionPresenceScratch::new(&mut scratch);
+            for range in ranges {
+                let window = &bytes[range.clone()];
+                dispatches += 1;
+                coalesced_bytes = coalesced_bytes.checked_add(window.len()).ok_or_else(|| {
+                    "GPU region-presence window accounting overflows host usize".to_string()
+                })?;
+                max_dispatch_bytes = max_dispatch_bytes.max(window.len());
+                if !crate::ascii_ci::has_ascii_uppercase(window) {
+                    f(window, range)?;
+                    continue;
+                }
+                let scratch = zero_on_drop.as_mut();
+                scratch.haystack.fill(0);
+                scratch.haystack.clear();
+                scratch
+                    .haystack
+                    .try_reserve(window.len())
+                    .map_err(|error| format!("GPU region-presence window reserve failed: {error}"))?;
+                crate::ascii_ci::write_ascii_lowercase_into(
+                    &mut scratch.haystack.spare_capacity_mut()[..window.len()],
+                    window,
+                );
+                // SAFETY: the reserved spare-capacity prefix was initialized
+                // exactly once by `write_ascii_lowercase_into` above.
+                unsafe {
+                    scratch.haystack.set_len(window.len());
+                }
+                f(&scratch.haystack, range)?;
+            }
+            Ok::<(), String>(())
+        })
+        .map_err(|_| {
+            "GPU region-presence window scratch unavailable during thread shutdown".to_string()
+        })??;
+    Ok(RegionPresenceBatchSummary {
+        dispatches,
+        coalesced_bytes,
+        max_dispatch_bytes,
+        mode: RegionPresenceBatchMode::Windowed,
+    })
 }
 
 pub(super) fn build_region_presence_batch(

@@ -147,8 +147,19 @@ fn backend_limits_keep_wgpu_inside_its_portable_grid() {
     assert_eq!(
         region_presence_batch_byte_limit("cuda"),
         REGION_PRESENCE_BATCH_BYTE_LIMIT
+            .min(crate::engine::gpu_input_budget::gpu_batch_input_limit())
     );
     assert_eq!(WGPU_BYTE_SCAN_DISPATCH_LIMIT, 8_388_480);
+    assert_eq!(
+        region_presence_batch_byte_limit_for_input_budget("cuda", 128 * 1024 * 1024),
+        128 * 1024 * 1024,
+        "CUDA dispatches must honor the live low-VRAM batch budget below VYRE's hard ceiling"
+    );
+    assert_eq!(
+        region_presence_batch_byte_limit_for_input_budget("wgpu", 128 * 1024 * 1024),
+        WGPU_BYTE_SCAN_DISPATCH_LIMIT,
+        "WGPU's portable grid ceiling remains stricter than the low-VRAM budget"
+    );
 
     let exact = [
         WGPU_BYTE_SCAN_DISPATCH_LIMIT / 2,
@@ -337,7 +348,7 @@ fn ceiling_edges_and_multi_shard_preserve_cpu_hyperscan_parity() {
 }
 
 #[test]
-fn one_oversized_chunk_fails_without_switching_backend() {
+fn phase2_chunk_sharder_rejects_one_oversized_chunk() {
     let chunks = [chunk_with_hits(65, false)];
     let mut callbacks = 0usize;
     let error = for_each_region_presence_batch_with_limit(
@@ -352,6 +363,111 @@ fn one_oversized_chunk_fails_without_switching_backend() {
 
     assert_eq!(callbacks, 0);
     assert!(error.contains("chunk 0") && error.contains("no safe chunk boundary"));
+}
+
+#[test]
+fn oversized_literal_presence_windows_are_bounded_and_overlap_seams() {
+    const LIMIT: usize = 64;
+    const LITERAL_LEN: usize = 6;
+    let mut bytes = vec![b'x'; 72];
+    bytes[61..67].copy_from_slice(b"SECRET");
+    let mut ranges = Vec::new();
+    let mut found = false;
+    let summary = for_each_region_presence_window(&bytes, LIMIT, LITERAL_LEN, |window, range| {
+        assert!(window.len() <= LIMIT);
+        ranges.push(range);
+        found |= window
+            .windows(LITERAL_LEN)
+            .any(|candidate| candidate == b"secret");
+        Ok(())
+    })
+    .expect("oversized literal-presence windows");
+
+    assert!(
+        found,
+        "the folded seam literal must survive physical windowing"
+    );
+    assert_eq!(ranges, [0..64, 59..72]);
+    assert_eq!(summary.dispatches, 2);
+    assert_eq!(summary.coalesced_bytes, 77);
+    assert_eq!(summary.max_dispatch_bytes, LIMIT);
+    assert_eq!(summary.mode, RegionPresenceBatchMode::Windowed);
+}
+
+#[test]
+fn literal_presence_windows_cover_the_tail_and_reject_impossible_overlap() {
+    let bytes = vec![b'x'; 129];
+    let ranges = for_each_region_presence_window(&bytes, 64, 1, |_window, _range| Ok(()))
+        .expect("one-byte literal windows");
+    assert_eq!(ranges.dispatches, 3);
+    assert_eq!(ranges.coalesced_bytes, bytes.len());
+
+    let exact = for_each_region_presence_window(&bytes[..64], 64, 64, |window, range| {
+        assert_eq!(window.len(), 64);
+        assert_eq!(range, 0..64);
+        Ok(())
+    })
+    .expect("literal equal to the dispatch ceiling remains representable");
+    assert_eq!(exact.dispatches, 1);
+
+    let error = for_each_region_presence_window(&bytes, 64, 65, |_window, _range| Ok(()))
+        .expect_err("literal longer than the dispatch ceiling must fail");
+    assert!(error.contains("longest compiled GPU literal is 65 byte(s)"));
+
+    let pathological = vec![b'x'; 64 + MAX_REGION_PRESENCE_WINDOW_DISPATCHES];
+    let error = for_each_region_presence_window(&pathological, 64, 64, |_window, _range| Ok(()))
+        .expect_err("one-byte window progress must have a bounded dispatch count");
+    assert!(error.contains("above the safety limit of 4096"));
+}
+
+#[test]
+fn window_plan_contains_every_literal_interval_across_ten_thousand_cases() {
+    const LIMIT: usize = 64;
+    for case in 0usize..10_000 {
+        let literal_len = 1 + case % 32;
+        let source_len = LIMIT + 1 + (case.wrapping_mul(37) % 257);
+        let start = case.wrapping_mul(97) % (source_len - literal_len + 1);
+        let end = start + literal_len;
+        let literal = vec![b'a'; literal_len];
+        let absent = vec![b'z'; literal_len];
+        let mut source = vec![b'x'; source_len];
+        for (offset, byte) in source[start..end].iter_mut().enumerate() {
+            *byte = if offset % 2 == 0 { b'A' } else { b'a' };
+        }
+        let mut folded = source.clone();
+        folded.make_ascii_lowercase();
+        let scalar = [literal.as_slice(), absent.as_slice()].map(|needle| {
+            folded
+                .windows(needle.len())
+                .any(|candidate| candidate == needle)
+        });
+        let mut reduced = [false; 2];
+        let mut ranges = Vec::new();
+        for_each_region_presence_window(&source, LIMIT, literal_len, |window, range| {
+            ranges.push(range);
+            for (bit, needle) in [literal.as_slice(), absent.as_slice()]
+                .into_iter()
+                .enumerate()
+            {
+                reduced[bit] |= window
+                    .windows(needle.len())
+                    .any(|candidate| candidate == needle);
+            }
+            Ok(())
+        })
+        .expect("valid physical window plan");
+        assert!(
+            ranges
+                .iter()
+                .any(|range| range.start <= start && range.end >= end),
+            "case {case}: literal interval {start}..{end} was not contained in {ranges:?}"
+        );
+        assert!(ranges.iter().all(|range| range.len() <= LIMIT));
+        assert_eq!(
+            reduced, scalar,
+            "case {case}: OR-reduced folded window presence diverged from unsplit scalar presence"
+        );
+    }
 }
 
 #[test]

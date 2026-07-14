@@ -15,7 +15,7 @@ pipeline.
 
 | VYRE capability | KeyHog owner | Production use |
 |---|---|---|
-| GPU literal-set region presence | `keyhog-scanner::engine::gpu_region_dispatch` | Produces one candidate-detector bitmap per input region. Oversized batches shard only at existing chunk boundaries on the selected WGPU or CUDA peer. |
+| GPU literal-set region presence | `keyhog-scanner::engine::gpu_region_dispatch` | Produces one candidate-detector bitmap per input region. Dispatches honor the smaller of the live VRAM/config budget and the backend ceiling. Oversized batches shard between chunks. Oversized individual chunks use overlap-preserving physical windows whose presence rows reduce into one logical row on the selected WGPU or CUDA peer. |
 | GPU literal artifacts and cache | `keyhog-scanner::engine::{gpu_artifacts,gpu_cache}` | Compiles detector-derived literal rows. The local key combines a program-kind prefix with a SHA-256 hash of KeyHog's cache-format version and the exact length-delimited ordered rows. VYRE rejects incompatible wire envelopes when loading. |
 | GPU regex-DFA admission | `keyhog-scanner::engine::phase2_gpu_dfa` | Narrows eligible prefixless phase-two work; host extraction remains authoritative. |
 | Declarative rule evaluation | `keyhog-core::rule_filter` | Evaluates `.keyhogignore.toml` rules through the shared rule representation. |

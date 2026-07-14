@@ -323,6 +323,8 @@ pub struct CompiledScanner {
     pub(crate) gpu_backends: GpuBackendPeers,
     pub(crate) gpu_acquisition_failures: Vec<GpuBackendAcquisitionFailure>,
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
+    #[cfg(feature = "gpu")]
+    pub(crate) gpu_max_literal_len: usize,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
     #[cfg(feature = "gpu")]
     gpu_resident_presence_cuda: std::sync::Mutex<gpu_resident_presence::GpuResidentPresenceSlot>,

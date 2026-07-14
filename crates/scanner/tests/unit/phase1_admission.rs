@@ -1,5 +1,5 @@
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 
 fn scanner() -> CompiledScanner {
     CompiledScanner::compile(vec![DetectorSpec {
@@ -89,49 +89,73 @@ fn phase1_summary_distinguishes_equal_size_admission_classes() {
 #[test]
 fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
     const BYTES: usize = 8 * 1024 * 1024;
-    const REGION_BYTES: usize = BYTES / 2;
-    const CREDENTIAL: &str = "ghp_A1b2C3d4";
+    const WGPU_GRID_BYTES: usize = 8_388_480;
+    const SEAM_CREDENTIAL: &str = "ghp_A1b2C3d4";
+    const TAIL_CREDENTIAL: &str = "ghp_Z9y8X7w6";
     let scanner = scanner();
-    let mut admitted_tail = repeated_to_len("gh ", REGION_BYTES);
-    admitted_tail.replace_range(REGION_BYTES - CREDENTIAL.len().., CREDENTIAL);
-    // Two source regions per class preserve each exact 8 MiB workload while
-    // keeping every portable WGPU dispatch below its one-dimensional grid cap.
+    let mut admitted = repeated_to_len("gh ", BYTES);
+    let seam_start = WGPU_GRID_BYTES - 2;
+    admitted.replace_range(
+        seam_start..seam_start + SEAM_CREDENTIAL.len(),
+        SEAM_CREDENTIAL,
+    );
+    admitted.replace_range(
+        seam_start + SEAM_CREDENTIAL.len()..seam_start + SEAM_CREDENTIAL.len() + 1,
+        "!",
+    );
+    admitted.replace_range(BYTES - TAIL_CREDENTIAL.len().., TAIL_CREDENTIAL);
     let batch = vec![
-        chunk("~".repeat(REGION_BYTES)),
-        chunk("~".repeat(REGION_BYTES)),
-        chunk("g".repeat(REGION_BYTES)),
-        chunk("g".repeat(REGION_BYTES)),
-        chunk(repeated_to_len("gh ", REGION_BYTES)),
-        chunk(admitted_tail),
+        chunk("~".repeat(BYTES)),
+        chunk("g".repeat(BYTES)),
+        chunk(admitted),
     ];
 
     let reference =
         canonical(&scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
     assert_eq!(
         reference,
-        vec![(
-            5,
-            "phase1-admission-token".to_string(),
-            REGION_BYTES - CREDENTIAL.len(),
-            CREDENTIAL.to_string(),
-        )],
-        "the fixture must prove one exact finding after two rejected phase-one classes"
+        vec![
+            (
+                2,
+                "phase1-admission-token".to_string(),
+                seam_start,
+                SEAM_CREDENTIAL.to_string(),
+            ),
+            (
+                2,
+                "phase1-admission-token".to_string(),
+                BYTES - TAIL_CREDENTIAL.len(),
+                TAIL_CREDENTIAL.to_string(),
+            ),
+        ],
+        "the fixture must prove exact seam and tail findings after two rejected phase-one classes"
     );
     assert_eq!(
         canonical(&scanner.scan_coalesced_with_backend(&batch, ScanBackend::SimdCpu)),
         reference,
         "Hyperscan/SIMD must preserve scalar findings across phase-one admission classes"
     );
+    let direct_reference =
+        canonical(&[scanner.scan_with_backend(&batch[2], ScanBackend::CpuFallback)]);
 
     #[cfg(feature = "gpu")]
     {
         let candidates = scanner.gpu_backend_candidates();
+        let hardware = keyhog_scanner::hw_probe::probe_hardware();
+        let wgpu_acquired = candidates
+            .iter()
+            .find(|candidate| candidate.backend == ScanBackend::GpuWgpu)
+            .is_some_and(|candidate| candidate.acquired);
+        assert!(
+            !hardware.gpu_available || wgpu_acquired,
+            "a physical GPU was detected but the WGPU peer needed to prove the 8 MiB dispatch seam was not acquired: {candidates:?}"
+        );
         let acquired = candidates
             .iter()
             .filter(|candidate| candidate.acquired)
             .collect::<Vec<_>>();
         assert!(
-            !keyhog_scanner::hw_probe::probe_hardware().gpu_available || !acquired.is_empty(),
+            !hardware.gpu_available || !acquired.is_empty(),
             "a physical GPU was detected but neither compiled GPU peer was acquired: {candidates:?}"
         );
         for candidate in acquired {
@@ -141,6 +165,105 @@ fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
                 "{} must preserve scalar findings across phase-one admission classes",
                 candidate.backend.label()
             );
+            assert_eq!(
+                canonical(&[scanner.scan_with_backend(&batch[2], candidate.backend)]),
+                direct_reference,
+                "{} per-chunk API must preserve seam and tail findings",
+                candidate.backend.label()
+            );
         }
+    }
+}
+
+#[test]
+fn oversized_window_reduction_preserves_mixed_logical_rows() {
+    const BYTES: usize = 8 * 1024 * 1024;
+    const WGPU_GRID_BYTES: usize = 8_388_480;
+    const SEAM_CREDENTIAL: &str = "ghp_M3n4B5v6";
+    let scanner = scanner();
+    let mut oversized = repeated_to_len("gh ", BYTES);
+    let seam_start = WGPU_GRID_BYTES - 2;
+    oversized.replace_range(
+        seam_start..seam_start + SEAM_CREDENTIAL.len(),
+        SEAM_CREDENTIAL,
+    );
+    oversized.replace_range(
+        seam_start + SEAM_CREDENTIAL.len()..seam_start + SEAM_CREDENTIAL.len() + 1,
+        "!",
+    );
+    let batch = vec![
+        chunk("ghp_A1b2C3d4!".into()),
+        chunk(oversized),
+        chunk("ghp_Z9y8X7w6!".into()),
+    ];
+    let reference =
+        canonical(&scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
+    assert_eq!(
+        reference.len(),
+        3,
+        "fixture must produce one finding per logical row"
+    );
+    assert_eq!(
+        reference.iter().map(|row| row.0).collect::<Vec<_>>(),
+        [0, 1, 2]
+    );
+    assert_eq!(reference[1].2, seam_start);
+    assert_eq!(
+        canonical(&scanner.scan_coalesced_with_backend(&batch, ScanBackend::SimdCpu)),
+        reference
+    );
+
+    #[cfg(feature = "gpu")]
+    for candidate in scanner
+        .gpu_backend_candidates()
+        .into_iter()
+        .filter(|candidate| candidate.acquired)
+    {
+        assert_eq!(
+            canonical(&scanner.scan_coalesced_with_backend(&batch, candidate.backend)),
+            reference,
+            "{} changed logical row order or findings",
+            candidate.backend.label()
+        );
+    }
+}
+
+#[test]
+fn oversized_prefixless_phase2_row_keeps_cpu_admission_authoritative() {
+    const BYTES: usize = 8 * 1024 * 1024;
+    const TOKEN: &str = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn";
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = scanner().with_config(config);
+    let mut data = "x".repeat(BYTES);
+    let assignment = format!("secretKey=\"{TOKEN}\"\n");
+    data.replace_range(BYTES - assignment.len().., &assignment);
+    assert!(
+        scanner
+            .collect_triggered_patterns_cpu(&data)
+            .iter()
+            .all(|&word| word == 0),
+        "fixture must enter the prefixless phase-two no-hit lane"
+    );
+    let batch = vec![chunk(data)];
+    let reference =
+        canonical(&scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
+    assert!(
+        reference.iter().any(|row| row.3 == TOKEN),
+        "CPU no-hit admission must find the tail token: {reference:?}"
+    );
+
+    #[cfg(feature = "gpu")]
+    for candidate in scanner
+        .gpu_backend_candidates()
+        .into_iter()
+        .filter(|candidate| candidate.acquired)
+    {
+        assert_eq!(
+            canonical(&scanner.scan_coalesced_with_backend(&batch, candidate.backend)),
+            reference,
+            "{} lost the oversized prefixless phase-two row",
+            candidate.backend.label()
+        );
     }
 }
