@@ -204,10 +204,10 @@ fn touching_matches_on_one_line_do_not_compete() {
 }
 
 #[test]
-fn transitively_overlapping_matches_form_one_component() {
+fn partial_overlap_bridge_does_not_merge_independent_outer_findings() {
     let first = make_match_at_offset("short-a", "aaaaaaaaaa", Some(0.10), "config.json", 1, 0);
     let bridge = make_match_at_offset("short-b", "bbbbbbbbbb", Some(0.20), "config.json", 1, 8);
-    let winner = make_match_at_offset(
+    let last = make_match_at_offset(
         "service-highest-priority-token",
         "cccccccccc",
         Some(0.99),
@@ -216,17 +216,306 @@ fn transitively_overlapping_matches_form_one_component() {
         16,
     );
 
+    let permutations = [
+        vec![first.clone(), bridge.clone(), last.clone()],
+        vec![first.clone(), last.clone(), bridge.clone()],
+        vec![bridge.clone(), first.clone(), last.clone()],
+        vec![bridge.clone(), last.clone(), first.clone()],
+        vec![last.clone(), first.clone(), bridge.clone()],
+        vec![last, bridge, first],
+    ];
+    let expected = resolve_matches(permutations[0].clone());
+    assert_eq!(expected.len(), 3);
+    for input in permutations {
+        assert_eq!(
+            resolve_matches(input),
+            expected,
+            "every input permutation must retain the same three direct findings"
+        );
+    }
+}
+
+#[test]
+fn losing_containment_bridge_cannot_suppress_an_independent_outer() {
+    let first = make_match_at_offset(
+        "service-bridge-token",
+        "aaaaaaaaaa",
+        Some(0.10),
+        "config.json",
+        1,
+        0,
+    );
+    let bridge = make_match_at_offset(
+        "service-bridge-token",
+        "bbbbbbbbbbbbbbbbbb",
+        Some(0.50),
+        "config.json",
+        1,
+        0,
+    );
+    let last = make_match_at_offset(
+        "service-bridge-token",
+        "cccccccccc",
+        Some(0.90),
+        "config.json",
+        1,
+        8,
+    );
+
+    let permutations = [
+        vec![first.clone(), bridge.clone(), last.clone()],
+        vec![first.clone(), last.clone(), bridge.clone()],
+        vec![bridge.clone(), first.clone(), last.clone()],
+        vec![bridge.clone(), last.clone(), first.clone()],
+        vec![last.clone(), first.clone(), bridge.clone()],
+        vec![last, bridge, first],
+    ];
+    let expected = resolve_matches(permutations[0].clone());
+    assert_eq!(expected.len(), 2);
+    assert!(expected.iter().any(|matched| matched.location.offset == 0));
+    assert!(expected.iter().any(|matched| matched.location.offset == 8));
+    assert!(expected
+        .iter()
+        .all(|matched| matched.credential.as_ref() != "bbbbbbbbbbbbbbbbbb"));
+    for input in permutations {
+        assert_eq!(resolve_matches(input), expected);
+    }
+}
+
+#[test]
+fn losing_equivalent_evidence_bridge_cannot_suppress_an_independent_outer() {
+    let credential = "same-value";
+    let first = make_match_at_offset("service-a", credential, Some(0.10), "config.json", 1, 0);
+    let bridge = make_match_at_offset("service-b", credential, Some(0.50), "config.json", 1, 8);
+    let last = make_match_at_offset(
+        "service-c-with-highest-priority",
+        credential,
+        Some(0.90),
+        "config.json",
+        1,
+        16,
+    );
+
+    let permutations = [
+        vec![first.clone(), bridge.clone(), last.clone()],
+        vec![first.clone(), last.clone(), bridge.clone()],
+        vec![bridge.clone(), first.clone(), last.clone()],
+        vec![bridge.clone(), last.clone(), first.clone()],
+        vec![last.clone(), first.clone(), bridge.clone()],
+        vec![last, bridge, first],
+    ];
+    let expected = resolve_matches(permutations[0].clone());
+    assert_eq!(expected.len(), 2);
+    assert!(expected.iter().any(|matched| matched.location.offset == 0));
+    assert!(expected.iter().any(|matched| matched.location.offset == 16));
+    assert!(expected.iter().all(|matched| matched.location.offset != 8));
+    for input in permutations {
+        assert_eq!(resolve_matches(input), expected);
+    }
+}
+
+#[test]
+fn partial_overlap_with_distinct_evidence_remains_independent() {
+    let left = make_match_at_offset(
+        "service-left-token",
+        "left-secret-value",
+        Some(0.20),
+        "config.json",
+        1,
+        100,
+    );
+    let right = make_match_at_offset(
+        "service-right-token-with-higher-priority",
+        "right-secret-value",
+        Some(0.99),
+        "config.json",
+        1,
+        110,
+    );
+
+    let resolved = resolve_matches(vec![right, left]);
+
+    assert_eq!(resolved.len(), 2);
+}
+
+#[test]
+fn partially_overlapping_equivalent_evidence_competes_directly() {
+    let credential = "same-secret-evidence";
+    let lower = make_match_at_offset(
+        "generic-secret",
+        credential,
+        Some(0.20),
+        "config.json",
+        1,
+        100,
+    );
+    let higher = make_match_at_offset(
+        "service-specific-token",
+        credential,
+        Some(0.99),
+        "config.json",
+        1,
+        105,
+    );
+
+    let forward = resolve_matches(vec![lower.clone(), higher.clone()]);
+    let reverse = resolve_matches(vec![higher, lower]);
+
+    assert_eq!(forward, reverse);
+    assert_eq!(forward.len(), 1);
+    assert_eq!(forward[0].detector_id.as_ref(), "service-specific-token");
+}
+
+#[test]
+fn epsilon_ties_are_pairwise_across_an_unrelated_higher_match() {
+    let credential = "same-secret-evidence";
+    let unrelated =
+        make_match_at_offset("service-token", credential, Some(0.50), "config.json", 1, 0);
+    let tied_left = make_match_at_offset(
+        "service-token",
+        credential,
+        Some(0.50 - 0.15e-9),
+        "config.json",
+        1,
+        100,
+    );
+    let tied_right = make_match_at_offset(
+        "service-token",
+        credential,
+        Some(0.50 - 0.30e-9),
+        "config.json",
+        1,
+        105,
+    );
+
+    let resolved = resolve_matches(vec![tied_right, unrelated, tied_left]);
+
+    assert_eq!(
+        resolved.len(),
+        3,
+        "an unrelated priority anchor must not split directly conflicting epsilon ties"
+    );
+}
+
+#[test]
+fn equivalent_overlap_uses_each_retained_saturated_end() {
+    let credential = "0123456789";
+    let higher = make_match_at_offset(
+        "service-specific-token",
+        credential,
+        Some(0.99),
+        "firmware.bin",
+        1,
+        usize::MAX - 11,
+    );
+    let lower = make_match_at_offset(
+        "generic-secret",
+        credential,
+        Some(0.10),
+        "firmware.bin",
+        1,
+        usize::MAX - 5,
+    );
+
+    let resolved = resolve_matches(vec![lower, higher]);
+
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(resolved[0].location.offset, usize::MAX - 11);
+}
+
+#[test]
+fn tied_direct_winners_keep_priority_then_raw_match_order() {
+    let credential = "same-secret-evidence";
+    let later_a = make_match_at_offset("service-a", credential, Some(0.50), "config.json", 1, 10);
+    let earlier_b = make_match_at_offset("service-b", credential, Some(0.50), "config.json", 1, 0);
+
+    let resolved = resolve_matches(vec![earlier_b, later_a]);
+
+    assert_eq!(resolved.len(), 2);
+    assert_eq!(resolved[0].detector_id.as_ref(), "service-a");
+    assert_eq!(resolved[1].detector_id.as_ref(), "service-b");
+}
+
+#[test]
+fn touching_repeated_evidence_remains_two_occurrences() {
+    let credential = "repeated-secret";
+    let first = make_match_at_offset(
+        "service-token",
+        credential,
+        Some(0.90),
+        "config.json",
+        1,
+        100,
+    );
+    let second = make_match_at_offset(
+        "service-token",
+        credential,
+        Some(0.90),
+        "config.json",
+        1,
+        100 + credential.len(),
+    );
+
+    assert_eq!(resolve_matches(vec![second, first]).len(), 2);
+}
+
+#[test]
+fn contained_generic_child_is_suppressed_for_every_permutation() {
+    let parent_value = "postgres://user:real-secret-value@example.org/database";
+    let child_value = "real-secret-value";
+    let parent_offset = 400;
+    let child_offset = parent_offset + parent_value.find(child_value).unwrap();
+    let parent = make_match_at_offset(
+        "postgresql-connection-string",
+        parent_value,
+        Some(0.30),
+        "config.json",
+        1,
+        parent_offset,
+    );
+    let child = make_match_at_offset(
+        "generic-password",
+        child_value,
+        Some(0.99),
+        "config.json",
+        1,
+        child_offset,
+    );
+
     for input in [
-        vec![winner.clone(), first.clone(), bridge.clone()],
-        vec![bridge, winner, first],
+        vec![parent.clone(), child.clone()],
+        vec![child.clone(), parent.clone()],
     ] {
         let resolved = resolve_matches(input);
         assert_eq!(resolved.len(), 1);
         assert_eq!(
             resolved[0].detector_id.as_ref(),
-            "service-highest-priority-token"
+            "postgresql-connection-string"
         );
     }
+}
+
+#[test]
+fn adversarial_partial_overlap_chain_remains_linear_sized() {
+    const COUNT: usize = 4096;
+    let matches: Vec<_> = (0..COUNT)
+        .map(|index| {
+            make_match_at_offset(
+                "service-chain-token",
+                &format!("v{index:09}"),
+                Some((index % 100) as f64 / 100.0),
+                "chain.txt",
+                1,
+                index * 8,
+            )
+        })
+        .collect();
+
+    let resolved = resolve_matches(matches);
+
+    assert_eq!(resolved.len(), COUNT);
+    assert_eq!(resolved.first().unwrap().location.offset, 0);
+    assert_eq!(resolved.last().unwrap().location.offset, (COUNT - 1) * 8);
 }
 
 #[test]
@@ -342,6 +631,32 @@ fn unrelated_entropy_on_named_line_is_not_suppressed() {
     assert!(resolved
         .iter()
         .any(|matched| matched.detector_id.as_ref() == "entropy"));
+}
+
+#[test]
+fn partially_overlapping_entropy_with_distinct_evidence_is_not_suppressed() {
+    let named = make_match_at_offset(
+        "stripe-key",
+        "named-secret-value",
+        Some(0.80),
+        "a.py",
+        5,
+        100,
+    );
+    let entropy = make_match_at_offset(
+        "entropy",
+        "different-entropy-value",
+        Some(0.95),
+        "a.py",
+        5,
+        110,
+    );
+
+    let forward = resolve_matches(vec![named.clone(), entropy.clone()]);
+    let reverse = resolve_matches(vec![entropy, named]);
+
+    assert_eq!(forward, reverse);
+    assert_eq!(forward.len(), 2);
 }
 
 #[test]
