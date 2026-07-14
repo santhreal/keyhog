@@ -50,11 +50,17 @@ auto-upload to GitHub code-scanning as SARIF; adopt without breaking an existing
 (`keyhog scan --create-baseline .keyhog-baseline.json`) so the action
 fails only on NEW secrets.
 
-For system-library-free CI installs use `cargo install keyhog
---no-default-features --features ci`: no Hyperscan dependency, no wgpu/Vulkan
-probe, and no libstdc++ link. It retains the same embedded detector and
-ML/entropy/decode/multiline
-data paths. Use this profile in self-built CI images where binary size
+For lean CI source builds, disable default features and select the CI profile:
+
+```sh
+cargo install keyhog --no-default-features --features ci
+```
+
+This profile has no Hyperscan dependency, wgpu/Vulkan probe, or libstdc++ link.
+Native TLS still needs the platform's TLS build prerequisites. On Debian/Ubuntu,
+install `libssl-dev` and `pkg-config`. The profile retains the same embedded
+detector and ML/entropy/decode/multiline data paths. Use it in self-built CI
+images where binary size
 or container cold-start matters; the prebuilt installer above stays the
 default for a turnkey single-binary download.
 
@@ -207,7 +213,7 @@ KEYHOG_VERSION="$TAG" sh install.sh
 
 # Windows uses the same signed, versioned flow. See the install guide.
 
-# From source - Linux (install libhyperscan-dev + pkg-config first)
+# From source - Linux (install libhyperscan-dev + libssl-dev + pkg-config first)
 git clone https://github.com/santhreal/keyhog.git
 cd keyhog && cargo build --release -p keyhog
 
@@ -215,8 +221,8 @@ cd keyhog && cargo build --release -p keyhog
 brew install vectorscan pkg-config
 cargo install keyhog
 
-# Portable source build - Windows or any host without Hyperscan/Vectorscan
-# (the system-library-free portable build: no pkg-config or GPU stack)
+# Portable scanner build - Windows or a host without Hyperscan/Vectorscan
+# (no Hyperscan or GPU stack; native TLS build prerequisites still apply)
 cargo install keyhog --no-default-features --features portable
 ```
 
@@ -224,12 +230,15 @@ cargo install keyhog --no-default-features --features portable
 > installer before execution, then selects and verifies the platform asset. See
 > the [install guide](https://santhreal.github.io/keyhog/install.html) for
 > PowerShell and checksum commands. Download and
-> build time depend on the network, host, and cache. For a source build, note that the **default**
-> features link Hyperscan/Vectorscan. Linux uses `libhyperscan-dev`; macOS
-> source builds use Homebrew `vectorscan`. On Windows or a host without either
+> build time depend on the network, host, and cache. For a source build, note
+> that the **default**
+> features link Hyperscan/Vectorscan. Linux source builds also require
+> `libssl-dev` and `pkg-config` for native TLS. Linux uses
+> `libhyperscan-dev`; macOS source builds use Homebrew `vectorscan`. On Windows
+> or a host without either
 > library, build with `--no-default-features --features portable` for the pure
-> Rust CPU path with all portable scanner data features and no system-library
-> dependency.
+> Rust CPU scanner path with all portable scanner data features. Network source
+> and verification features still use the platform native TLS dependency.
 
 Works on **Linux**, **macOS** (Intel + Apple Silicon), and **Windows**. The
 verified installers calibrate multi-backend builds before enabling default
@@ -242,7 +251,7 @@ dynamically, so the same binary works on NVIDIA, other compatible GPUs, and
 CPU-only hosts without a build-time CUDA toolkit. Runtime probing reports which
 engines are usable, while persisted autoroute evidence selects the
 fastest measured-correct engine for each workload. macOS and Windows release
-assets are portable no-system-library builds without Hyperscan or GPU drivers.
+assets are portable scanner builds without Hyperscan or GPU drivers.
 Each download is verified before it can replace your binary:
 the installer checks the release's
 **minisign signature** against keyhog's pinned public key and **fails closed**

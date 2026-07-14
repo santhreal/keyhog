@@ -23,7 +23,7 @@ x86_64 has one accelerator-capable binary: Hyperscan plus VYRE's CUDA and WGPU
 drivers. CUDA/NVRTC use dynamic loading, so no build-time toolkit is required
 and the same artifact runs on GPU and CPU-only hosts. Backend probing and
 persisted autoroute evidence, not installer variants, decide execution. macOS and
-Windows assets use the portable no-system-library build without Hyperscan or GPU
+Windows assets use the portable scanner build without Hyperscan or GPU
 drivers.
 
 This path authenticates the versioned installer before execution. Changing the
@@ -78,8 +78,8 @@ if ($Actual -ne $Expected) { throw 'installer checksum mismatch' }
 ```
 
 Drops the binary in `%LOCALAPPDATA%\keyhog\bin\keyhog.exe`. Detects
-your GPU for diagnostics; the Windows installer ships the portable
-no-system-library build, with no Hyperscan, WGPU, or CUDA asset in the
+your GPU for diagnostics; the Windows installer ships the portable scanner
+build, with no Hyperscan, WGPU, or CUDA asset in the
 current release.
 
 > **Heads up.** The Unix daemon mode is unavailable on Windows (it
@@ -315,11 +315,16 @@ cargo build --release -p keyhog
 
 The default feature set requires **Hyperscan / Vectorscan**:
 
-- Debian / Ubuntu: `sudo apt install libhyperscan-dev pkg-config`
+- Debian / Ubuntu: `sudo apt install libhyperscan-dev libssl-dev pkg-config`
 - macOS: `brew install vectorscan pkg-config`, then use the default build for
-  the Hyperscan path. Use `--no-default-features --features portable` only for
-  the no-system-library build used by the official macOS asset.
+  the Hyperscan path. Use `--no-default-features --features portable` for the
+  portable scanner build used by the official macOS asset.
 - Windows: build with `--no-default-features --features portable`.
+
+The portable profile removes Hyperscan, Ghidra, CUDA, and WGPU build
+dependencies. It retains network sources and verification through `reqwest`
+native TLS. A portable source build on Debian/Ubuntu still needs `libssl-dev`
+and `pkg-config`.
 
 The default Linux build includes the dynamically loaded CUDA and WGPU backends:
 
