@@ -59,6 +59,11 @@ pub(super) fn calibrate_fastest_correct_backend(
     let mut gpu_cuda_timing = None;
     let mut gpu_wgpu_timing = None;
     for backend in candidate_backends {
+        if is_gpu_backend(backend) {
+            scanner
+                .reset_autoroute_calibration_gpu_workload()
+                .map_err(AutorouteRoutingError::calibration_not_persisted)?;
+        }
         let mut measured = measure_candidate_backend(scanner, sample, backend, &reference_matches)?;
         if is_gpu_backend(backend) {
             let backend_cold_ns = scanner

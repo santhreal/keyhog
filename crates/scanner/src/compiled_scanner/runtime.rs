@@ -81,7 +81,7 @@ impl CompiledScanner {
     /// Reset workload-shaped GPU state while retaining immutable literal and
     /// phase-2 programs whose measured preparation costs are composed into cold
     /// evidence.
-    pub fn reset_autoroute_calibration_gpu_workload(&mut self) -> std::result::Result<(), String> {
+    pub fn reset_autoroute_calibration_gpu_workload(&self) -> std::result::Result<(), String> {
         #[cfg(feature = "gpu")]
         {
             self.reset_gpu_resident_presence_for_calibration()?;

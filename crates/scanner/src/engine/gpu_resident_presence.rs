@@ -225,12 +225,12 @@ pub(super) fn scan_gpu_literal_presence_by_region_resident<R>(
 
 impl CompiledScanner {
     pub(crate) fn reset_gpu_resident_presence_for_calibration(
-        &mut self,
+        &self,
     ) -> std::result::Result<(), String> {
         let mut failures = Vec::new();
         for (backend, slot) in [
-            ("cuda", &mut self.gpu_resident_presence_cuda),
-            ("wgpu", &mut self.gpu_resident_presence_wgpu),
+            ("cuda", &self.gpu_resident_presence_cuda),
+            ("wgpu", &self.gpu_resident_presence_wgpu),
         ] {
             if let Err(error) = reset_resident_presence_slot(slot) {
                 failures.push(format!("{backend}: {error}"));
@@ -259,13 +259,13 @@ impl CompiledScanner {
 }
 
 fn reset_resident_presence_slot(
-    slot: &mut std::sync::Mutex<GpuResidentPresenceSlot>,
+    slot: &std::sync::Mutex<GpuResidentPresenceSlot>,
 ) -> std::result::Result<(), String> {
-    let slot = match slot.get_mut() {
-        Ok(slot) => slot,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    let state = std::mem::replace(slot, GpuResidentPresenceSlot::Empty);
+    let mut slot = slot.lock().map_err(|_| {
+        "GPU resident presence calibration state lock is poisoned after an earlier scan panic"
+            .to_string()
+    })?;
+    let state = std::mem::replace(&mut *slot, GpuResidentPresenceSlot::Empty);
     match state {
         GpuResidentPresenceSlot::Empty => Ok(()),
         GpuResidentPresenceSlot::Failed(error) => {
