@@ -27,6 +27,7 @@ group = 1
 [detector.verify]
 method = "POST"
 url = "https://api.cohere.com/v1/tokenize"
+allowed_domains = ["api.cohere.com"]
 
 [detector.verify.auth]
 type = "bearer"

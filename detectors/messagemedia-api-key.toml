@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.messagemedia.com/v1/messages"
+allowed_domains = ["api.messagemedia.com"]
 
 [detector.verify.auth]
 type = "basic"

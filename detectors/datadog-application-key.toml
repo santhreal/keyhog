@@ -26,6 +26,7 @@ within_lines = 5
 [detector.verify]
 method = "GET"
 url = "https://api.datadoghq.com/api/v2/current_user"
+allowed_domains = ["api.datadoghq.com"]
 
 [detector.verify.auth]
 type = "header"

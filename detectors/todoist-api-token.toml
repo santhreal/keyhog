@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = 'https://api.todoist.com/sync/v9/sync?sync_token=*&resource_types=["all"]'
+allowed_domains = ["api.todoist.com"]
 
 [detector.verify.auth]
 type = "bearer"

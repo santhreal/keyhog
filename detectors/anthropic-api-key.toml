@@ -47,6 +47,7 @@ group = 0
 [detector.verify]
 method = "GET"
 url = "https://api.anthropic.com/v1/messages"
+allowed_domains = ["api.anthropic.com"]
 
 [detector.verify.auth]
 type = "header"

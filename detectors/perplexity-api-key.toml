@@ -17,6 +17,7 @@ description = "Perplexity API key (pplx- prefix)"
 [detector.verify]
 method = "POST"
 url = "https://api.perplexity.ai/chat/completions"
+allowed_domains = ["api.perplexity.ai"]
 
 [detector.verify.auth]
 type = "bearer"

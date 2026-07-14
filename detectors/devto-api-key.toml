@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://dev.to/api/users/me"
+allowed_domains = ["dev.to"]
 
 [detector.verify.auth]
 type = "header"

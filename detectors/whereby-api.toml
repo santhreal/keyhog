@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.whereby.dev/v1/meetings"
+allowed_domains = ["api.whereby.dev"]
 
 [detector.verify.auth]
 type = "bearer"

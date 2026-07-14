@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.bluejeans.com/v1/user/info"
+allowed_domains = ["api.bluejeans.com"]
 
 [detector.verify.auth]
 type = "header"

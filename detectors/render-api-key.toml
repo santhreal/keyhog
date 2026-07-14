@@ -17,6 +17,7 @@ description = "Render API key (rnd_ prefix followed by 24 alphanumeric character
 [detector.verify]
 method = "GET"
 url = "https://api.render.com/v1/services?limit=1"
+allowed_domains = ["api.render.com"]
 
 [detector.verify.auth]
 type = "bearer"

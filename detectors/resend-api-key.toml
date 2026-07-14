@@ -17,6 +17,7 @@ description = "Resend API key (re_ prefix with 48 alphanumeric characters)"
 [detector.verify]
 method = "GET"
 url = "https://api.resend.com/api-keys"
+allowed_domains = ["api.resend.com"]
 
 [detector.verify.auth]
 type = "bearer"

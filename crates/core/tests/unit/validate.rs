@@ -605,16 +605,111 @@ fn spec_field_bounds_are_named_and_validated() {
 }
 
 #[test]
-fn verify_template_checks_use_one_field_visitor() {
-    let source = keyhog_core::testing::read_crate_source("src/spec/validate.rs");
-
-    assert!(source.contains("struct VerifyTemplateField"));
-    assert!(source.contains("fn visit_verify_template_fields"));
-    assert_eq!(
-        source.matches("for step in &verify.steps").count(),
-        1,
-        "step URL/body/header traversal should live only in the template-field visitor"
+fn literal_verify_url_host_must_match_the_runtime_domain_policy() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        url: Some("https://api.example.com/v1/{{match}}".into()),
+        allowed_domains: vec!["example.com".into()],
+        ..Default::default()
+    });
+    let valid = validate_detector(&detector);
+    assert!(
+        !valid.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Error(message) if message.contains("outside verify.allowed_domains")
+        )),
+        "an exact permitted subdomain must pass compile validation: {valid:?}"
     );
-    assert!(source.contains("validate_verify_urls(verify, issues);"));
-    assert!(source.contains("visit_verify_template_fields(verify, |field|"));
+
+    detector.verify.as_mut().expect("verify spec").url =
+        Some("https://example.com.attacker.test/v1/{{match}}".into());
+    let invalid = validate_detector(&detector);
+    assert!(invalid.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("verify.url host")
+                && message.contains("outside verify.allowed_domains")
+    )));
+}
+
+#[test]
+fn omitted_verify_service_inherits_the_detector_service_domain_policy() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.service = "github".into();
+    detector.verify = Some(VerifySpec {
+        url: Some("https://api.github.com/user".into()),
+        ..Default::default()
+    });
+    let inherited = validate_detector(&detector);
+    assert!(
+        !inherited.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Error(message)
+                if message.contains("no domain policy")
+                    || message.contains("outside verify.allowed_domains")
+        )),
+        "the runtime and compile path must share detector-service inheritance: {inherited:?}"
+    );
+
+    detector.service = "unknown-service".into();
+    let unknown = validate_detector(&detector);
+    assert!(unknown.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("verify.url host")
+            && message.contains("no domain policy")
+    )));
+}
+
+#[test]
+fn every_selected_step_url_is_checked_with_field_context() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    let step = |name: &str, url: &str| StepSpec {
+        name: name.into(),
+        method: HttpMethod::Get,
+        url: url.into(),
+        auth: AuthSpec::None {},
+        headers: Vec::new(),
+        body: None,
+        success: SuccessSpec::default(),
+        extract: Vec::new(),
+    };
+    detector.verify = Some(VerifySpec {
+        url: Some("https://unused.attacker.test/".into()),
+        allowed_domains: vec!["example.com".into()],
+        steps: vec![
+            step("session", "https://auth.example.com/session"),
+            step("profile", "https://api.example.net/profile"),
+        ],
+        ..Default::default()
+    });
+
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("verify.steps[1].url host")
+                && message.contains("api.example.net")
+    )));
+    assert!(!issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("unused.attacker.test")
+    )));
+}
+
+#[test]
+fn invalid_domain_policy_entries_fail_before_runtime() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        url: Some("https://api.example.com/v1".into()),
+        allowed_domains: vec!["https://example.com/path".into()],
+        ..Default::default()
+    });
+
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("verify.allowed_domains[0]")
+                && message.contains("host-only URL")
+    )));
 }

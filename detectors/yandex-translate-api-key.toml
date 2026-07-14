@@ -27,6 +27,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://translate.yandex.net/api/v1.5/tr.json/getLangs?key={{match}}"
+allowed_domains = ["translate.yandex.net"]
 [detector.verify.success]
 status = 200
 

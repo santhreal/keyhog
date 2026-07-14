@@ -36,6 +36,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://platform.clickatell.com/public-client/authenticate"
+allowed_domains = ["platform.clickatell.com"]
 
 [detector.verify.auth]
 type = "header"

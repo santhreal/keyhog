@@ -27,6 +27,7 @@ within_lines = 5
 [detector.verify]
 method = "GET"
 url = "https://cloud.appwrite.io/v1/account"
+allowed_domains = ["cloud.appwrite.io"]
 
 [detector.verify.auth]
 type = "header"

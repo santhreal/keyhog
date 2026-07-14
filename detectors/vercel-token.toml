@@ -22,6 +22,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.vercel.com/v9/user"
+allowed_domains = ["api.vercel.com"]
 
 [detector.verify.auth]
 type = "bearer"

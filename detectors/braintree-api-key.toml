@@ -31,6 +31,7 @@ within_lines = 10
 [detector.verify]
 method = "GET"
 url = "https://api.braintreegateway.com/"
+allowed_domains = ["api.braintreegateway.com"]
 [detector.verify.success]
 status = 200
 

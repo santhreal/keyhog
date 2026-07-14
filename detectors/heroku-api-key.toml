@@ -27,6 +27,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.heroku.com/account"
+allowed_domains = ["api.heroku.com"]
 
 [detector.verify.auth]
 type = "basic"

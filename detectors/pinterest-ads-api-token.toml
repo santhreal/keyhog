@@ -17,6 +17,7 @@ description = "Pinterest Ads API v5 access token (pina_ prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.pinterest.com/v5/user_account"
+allowed_domains = ["api.pinterest.com"]
 
 [detector.verify.auth]
 type = "bearer"

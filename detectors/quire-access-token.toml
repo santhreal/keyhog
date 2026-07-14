@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://quire.io/api/user/id/me"
+allowed_domains = ["quire.io"]
 
 [detector.verify.auth]
 type = "bearer"

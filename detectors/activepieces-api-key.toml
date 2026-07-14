@@ -22,6 +22,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://cloud.activepieces.com/api/v1/flows"
+allowed_domains = ["cloud.activepieces.com"]
 
 [detector.verify.auth]
 type = "bearer"

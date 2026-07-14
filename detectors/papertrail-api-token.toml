@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://papertrailapp.com/api/v1/systems.json"
+allowed_domains = ["papertrailapp.com"]
 
 [detector.verify.auth]
 type = "header"

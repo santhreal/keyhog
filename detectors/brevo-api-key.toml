@@ -17,6 +17,7 @@ description = "Brevo/Sendinblue API v3 key (xkeysib- prefix with 64 hex characte
 [detector.verify]
 method = "GET"
 url = "https://api.brevo.com/v3/account"
+allowed_domains = ["api.brevo.com"]
 
 [detector.verify.auth]
 type = "header"

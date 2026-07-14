@@ -17,6 +17,7 @@ description = "Axiom API token (xapt- prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.axiom.co/v1/datasets"
+allowed_domains = ["api.axiom.co"]
 
 [detector.verify.auth]
 type = "bearer"

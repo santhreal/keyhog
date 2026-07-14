@@ -17,6 +17,7 @@ description = "Radar.io API key (prj_live_ or prj_test_ prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.radar.io/v1/geofences"
+allowed_domains = ["api.radar.io"]
 
 [detector.verify.auth]
 type = "header"

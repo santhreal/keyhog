@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.trello.com/1/members/me?key={{match}}&token=dummy"
+allowed_domains = ["api.trello.com"]
 
 [detector.verify.auth]
 type = "none"

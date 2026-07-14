@@ -22,6 +22,7 @@ description = "Webex JWT token pattern (base64 encoded with ZmRk header indicato
 [detector.verify]
 method = "GET"
 url = "https://webexapis.com/v1/people/me"
+allowed_domains = ["webexapis.com"]
 
 [detector.verify.auth]
 type = "bearer"

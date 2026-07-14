@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://geocode.search.hereapi.com/v1/health"
+allowed_domains = ["geocode.search.hereapi.com"]
 
 [detector.verify.auth]
 type = "query"

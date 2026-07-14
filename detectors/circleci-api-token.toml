@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://circleci.com/api/v2/me"
+allowed_domains = ["circleci.com"]
 
 [detector.verify.auth]
 type = "header"

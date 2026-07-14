@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.vultr.com/v2/account"
+allowed_domains = ["api.vultr.com"]
 
 [detector.verify.auth]
 type = "bearer"

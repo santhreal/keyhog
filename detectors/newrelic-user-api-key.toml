@@ -21,6 +21,7 @@ description = "New Relic user API key (NRAK- prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.newrelic.com/v2/users.json"
+allowed_domains = ["api.newrelic.com"]
 
 [detector.verify.auth]
 type = "header"

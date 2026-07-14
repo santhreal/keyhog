@@ -583,6 +583,11 @@ pub mod testing {
             raw_url: &str,
             spec: &keyhog_core::VerifySpec,
         ) -> Result<(), String>;
+        fn engine_detector_verify_service(
+            &self,
+            engine: &crate::VerificationEngine,
+            detector_id: &str,
+        ) -> Option<String>;
         fn engine_inflight_count(&self, engine: &crate::VerificationEngine) -> usize;
         fn format_sigv4_timestamps(&self, unix_secs: u64) -> (String, String);
         fn parse_aws_sts_success_metadata(
@@ -899,6 +904,18 @@ pub mod testing {
             spec: &keyhog_core::VerifySpec,
         ) -> Result<(), String> {
             crate::domain_allowlist::check_url_against_spec(raw_url, spec)
+        }
+
+        fn engine_detector_verify_service(
+            &self,
+            engine: &crate::VerificationEngine,
+            detector_id: &str,
+        ) -> Option<String> {
+            engine
+                .detectors
+                .get(detector_id)
+                .and_then(|detector| detector.verify.as_ref())
+                .map(|verify| verify.service.clone())
         }
 
         fn engine_inflight_count(&self, engine: &crate::VerificationEngine) -> usize {

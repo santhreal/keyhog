@@ -31,6 +31,7 @@ description = "Postman API key (PMAK- prefix, 24-hex + 34-hex body)"
 [detector.verify]
 method = "GET"
 url = "https://api.getpostman.com/me"
+allowed_domains = ["api.getpostman.com"]
 
 [detector.verify.auth]
 type = "header"

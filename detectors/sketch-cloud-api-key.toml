@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.sketch.com/v1/user"
+allowed_domains = ["api.sketch.com"]
 
 [detector.verify.auth]
 type = "header"

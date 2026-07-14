@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.linode.com/v4/account"
+allowed_domains = ["api.linode.com"]
 
 [detector.verify.auth]
 type = "bearer"

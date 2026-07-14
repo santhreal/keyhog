@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.segmentapis.com/v1/workspaces"
+allowed_domains = ["api.segmentapis.com"]
 
 [detector.verify.auth]
 type = "bearer"

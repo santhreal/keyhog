@@ -1,6 +1,6 @@
 # Docs: https://www.openssh.com/manual.html
 # Format: PEM-encoded private key block (RSA, EC, DSA, ED25519, OpenSSH)
-# Verify: Parse key to check validity (no remote endpoint needed)
+# Verify: none (private keys have no service-owned network endpoint)
 # Prefix: -----BEGIN (distinctive PEM header)
 
 [detector]
@@ -25,17 +25,6 @@ description = "SSH/TLS private key in PEM format (full BEGIN/END block)"
 [[detector.patterns]]
 regex = '-----BEGIN ENCRYPTED PRIVATE KEY-----[\s\S]*?-----END ENCRYPTED PRIVATE KEY-----'
 description = "Encrypted private key, full block (still sensitive - password may be weak)"
-
-[detector.verify]
-method = "GET"
-url = "https://localhost:0/health"
-
-[detector.verify.auth]
-type = "bearer"
-field = "match"
-
-[detector.verify.success]
-status = 200
 
 [[detector.tests]]
 test_positive = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n-----END PRIVATE KEY-----"

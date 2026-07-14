@@ -1,6 +1,6 @@
 # Docs: https://jwt.io/introduction
 # Format: base64url-encoded header.payload.signature (3 dot-separated segments)
-# Verify: Decode header to check algorithm, decode payload to check claims
+# Verify: none (structural token; issuer and verification key are tenant-specific)
 # Prefix: eyJ (base64url of '{"')
 #
 # Header-field-order coverage (KH recall lane, CredData-measured):
@@ -34,17 +34,6 @@ keywords = ["eyJ", "bearer", "authorization", "jwt"]
 [[detector.patterns]]
 regex = "eyJ[a-zA-Z0-9_-]{8,256}\\.eyJ[a-zA-Z0-9_-]{10,1000}\\.[a-zA-Z0-9_-]{10,512}"
 description = "JWT structural shape: eyJ-headed base64url header.payload.signature (eyJ = base64url of {\")"
-
-[detector.verify]
-method = "GET"
-url = "https://jwt.io/api/v1/verify"
-
-[detector.verify.auth]
-type = "bearer"
-field = "match"
-
-[detector.verify.success]
-status = 200
 
 [[detector.tests]]
 test_positive = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5OTk5OTk5OTk5IiwidGVuYW50Ijoia2V5aG9nLWUyZSIsImlhdCI6MTc0ODA3MjAwMH0.K3xqLnZWP4UlH9oZcQK7nBmJrEzVfYp2N1RsAtX5Y8w"

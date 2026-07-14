@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.box.com/2.0/users/me"
+allowed_domains = ["api.box.com"]
 
 [detector.verify.auth]
 type = "bearer"

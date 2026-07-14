@@ -17,6 +17,7 @@ description = "HuggingFace API token (hf_)"
 [detector.verify]
 method = "GET"
 url = "https://huggingface.co/api/whoami-v2"
+allowed_domains = ["huggingface.co"]
 
 [detector.verify.auth]
 type = "bearer"

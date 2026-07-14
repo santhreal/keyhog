@@ -41,6 +41,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.mailgun.net/v3/domains"
+allowed_domains = ["api.mailgun.net"]
 
 [detector.verify.auth]
 type = "basic"

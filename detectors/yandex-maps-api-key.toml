@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://geocode-maps.yandex.ru/1.x/"
+allowed_domains = ["geocode-maps.yandex.ru"]
 
 [detector.verify.auth]
 type = "query"

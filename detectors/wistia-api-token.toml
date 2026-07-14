@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.wistia.com/v1/medias.json"
+allowed_domains = ["api.wistia.com"]
 [detector.verify.success]
 status = 200
 

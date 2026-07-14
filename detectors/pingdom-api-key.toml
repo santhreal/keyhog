@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.pingdom.com/api/3.1/checks"
+allowed_domains = ["api.pingdom.com"]
 
 [detector.verify.auth]
 type = "bearer"

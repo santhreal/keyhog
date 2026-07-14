@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.surveymonkey.com/v3/users/me"
+allowed_domains = ["api.surveymonkey.com"]
 
 [detector.verify.auth]
 type = "bearer"

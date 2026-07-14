@@ -21,6 +21,7 @@ description = "BigCommerce Stencil CLI access token (at_ prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.bigcommerce.com/stores/v3/store"
+allowed_domains = ["api.bigcommerce.com"]
 
 [detector.verify.auth]
 type = "header"

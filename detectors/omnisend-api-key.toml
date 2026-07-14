@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.omnisend.com/v3/account"
+allowed_domains = ["api.omnisend.com"]
 
 [detector.verify.auth]
 type = "header"

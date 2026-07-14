@@ -21,6 +21,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.redislabs.com/v1/subscriptions"
+allowed_domains = ["api.redislabs.com"]
 
 [detector.verify.auth]
 type = "header"

@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.worldweatheronline.com/premium/v1/weather.ashx?q=London&format=json&key={{match}}"
+allowed_domains = ["api.worldweatheronline.com"]
 
 [detector.verify.auth]
 type = "none"

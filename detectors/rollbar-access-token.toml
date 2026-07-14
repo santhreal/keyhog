@@ -21,6 +21,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.rollbar.com/api/1/item/1"
+allowed_domains = ["api.rollbar.com"]
 
 [detector.verify.auth]
 type = "header"

@@ -27,6 +27,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.cortex.cerebrium.ai/v4/projects"
+allowed_domains = ["api.cortex.cerebrium.ai"]
 
 [detector.verify.auth]
 type = "bearer"

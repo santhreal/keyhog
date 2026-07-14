@@ -17,6 +17,7 @@ description = "OpenRouter API key (sk-or-v1- prefix)"
 [detector.verify]
 method = "GET"
 url = "https://openrouter.ai/api/v1/models"
+allowed_domains = ["openrouter.ai"]
 
 [detector.verify.auth]
 type = "bearer"

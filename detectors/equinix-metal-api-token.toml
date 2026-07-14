@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.equinix.com/metal/v1/user/api-keys"
+allowed_domains = ["api.equinix.com"]
 
 [detector.verify.auth]
 type = "header"

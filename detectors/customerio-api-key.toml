@@ -33,6 +33,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://track.customer.io/api/v1/accounts/region"
+allowed_domains = ["track.customer.io"]
 
 [detector.verify.auth]
 type = "basic"

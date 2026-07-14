@@ -17,6 +17,7 @@ description = "PyPI API token (100-128 chars after prefix)"
 [detector.verify]
 method = "GET"
 url = "https://upload.pypi.org/legacy/"
+allowed_domains = ["upload.pypi.org"]
 
 [detector.verify.auth]
 type = "basic"

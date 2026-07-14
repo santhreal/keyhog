@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.nsone.net/v1/account/settings"
+allowed_domains = ["api.nsone.net"]
 
 [detector.verify.auth]
 type = "header"

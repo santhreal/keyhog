@@ -17,6 +17,7 @@ description = "Telegram bot token (numeric_id:alphanumeric token format)"
 [detector.verify]
 method = "GET"
 url = "https://api.telegram.org/bot{{match}}/getMe"
+allowed_domains = ["api.telegram.org"]
 
 [detector.verify.auth]
 type = "none"

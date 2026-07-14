@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.logz.io/v1/account-management/whoami"
+allowed_domains = ["api.logz.io"]
 
 [detector.verify.auth]
 type = "header"

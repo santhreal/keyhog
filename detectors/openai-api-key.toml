@@ -42,6 +42,7 @@ description = "OpenAI legacy API key (exactly 48 chars after sk-)"
 [detector.verify]
 method = "GET"
 url = "https://api.openai.com/v1/models"
+allowed_domains = ["api.openai.com"]
 
 [detector.verify.auth]
 type = "bearer"

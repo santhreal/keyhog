@@ -17,6 +17,7 @@ description = "Dropbox short-lived access token (sl. prefix)"
 [detector.verify]
 method = "POST"
 url = "https://api.dropboxapi.com/2/check/user"
+allowed_domains = ["api.dropboxapi.com"]
 
 [detector.verify.auth]
 type = "bearer"

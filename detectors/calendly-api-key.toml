@@ -29,6 +29,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.calendly.com/users/me"
+allowed_domains = ["api.calendly.com"]
 
 [detector.verify.auth]
 type = "bearer"

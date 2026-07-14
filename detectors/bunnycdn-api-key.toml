@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://bunnycdn.com/api/billing"
+allowed_domains = ["bunnycdn.com"]
 
 [detector.verify.auth]
 type = "header"

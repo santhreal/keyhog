@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.wise.com/v1/profiles"
+allowed_domains = ["api.wise.com"]
 [detector.verify.success]
 status = 200
 

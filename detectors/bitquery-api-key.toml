@@ -21,6 +21,7 @@ group = 1
 [detector.verify]
 method = "POST"
 url = "https://graphql.bitquery.io"
+allowed_domains = ["graphql.bitquery.io"]
 body = '{"query": "{ bitcoin { blocks { count } } }"}'
 
 [detector.verify.auth]

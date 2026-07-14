@@ -17,6 +17,7 @@ description = "Courier API key (pk_prod_ or pk_test_ prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.courier.com/notifications"
+allowed_domains = ["api.courier.com"]
 
 [detector.verify.auth]
 type = "bearer"

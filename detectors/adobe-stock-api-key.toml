@@ -27,6 +27,7 @@ within_lines = 5
 [detector.verify]
 method = "GET"
 url = "https://stock.adobe.io/Rest/Media/1/Search/Files?search_parameters[words]=test"
+allowed_domains = ["stock.adobe.io"]
 
 [detector.verify.auth]
 type = "header"

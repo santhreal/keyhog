@@ -17,6 +17,7 @@ description = "Riot Games API key (RGAPI-)"
 [detector.verify]
 method = "GET"
 url = "https://americas.api.riotgames.com/riot/account/v1/accounts/me"
+allowed_domains = ["americas.api.riotgames.com"]
 
 [detector.verify.auth]
 type = "header"

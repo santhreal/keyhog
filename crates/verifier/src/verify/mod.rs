@@ -343,25 +343,27 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
         notify_to_await.notified().await;
     };
 
-    let (verification, metadata) =
-        if let Some(verify_spec) = detector.as_ref().and_then(|det| det.verify.as_ref()) {
-            verify_with_retry(
-                &client,
-                verify_spec,
-                &group.credential,
-                &group.companions,
-                timeout,
-                shared.danger_allow_private_ips,
-                shared.danger_allow_http,
-                shared.proxy_in_use,
-                shared.insecure_tls,
-                shared.allow_script_verify,
-                shared.oob_session.as_ref(),
-            )
-            .await
-        } else {
-            (VerificationResult::Unverifiable, HashMap::new())
-        };
+    let (verification, metadata) = if let Some(verify_spec) = detector
+        .as_ref()
+        .and_then(|detector| detector.verify.as_ref())
+    {
+        verify_with_retry(
+            &client,
+            verify_spec,
+            &group.credential,
+            &group.companions,
+            timeout,
+            shared.danger_allow_private_ips,
+            shared.danger_allow_http,
+            shared.proxy_in_use,
+            shared.insecure_tls,
+            shared.allow_script_verify,
+            shared.oob_session.as_ref(),
+        )
+        .await
+    } else {
+        (VerificationResult::Unverifiable, HashMap::new())
+    };
 
     // Cache only stable verdicts. A `RateLimited` or a transient-network
     // `Error` that exhausted the retry loop must NOT be pinned for the full TTL,
@@ -437,7 +439,14 @@ impl VerificationEngine {
         let detector_map: HashMap<Arc<str>, keyhog_core::DetectorSpec> = detectors
             .iter()
             .cloned()
-            .map(|d| (d.id.clone().into(), d))
+            .map(|mut detector| {
+                if let Some(verify) = detector.verify.as_mut() {
+                    if verify.service.trim().is_empty() {
+                        verify.service.clone_from(&detector.service);
+                    }
+                }
+                (detector.id.clone().into(), detector)
+            })
             .collect();
 
         let mut service_semaphores = HashMap::new();

@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://min-api.cryptocompare.com/data/price?fsym=BTC&tsyms=USD"
+allowed_domains = ["min-api.cryptocompare.com"]
 
 [detector.verify.auth]
 type = "header"

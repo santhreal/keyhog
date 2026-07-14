@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://www.mapquestapi.com/directions/v2/route"
+allowed_domains = ["www.mapquestapi.com"]
 
 [detector.verify.auth]
 type = "query"

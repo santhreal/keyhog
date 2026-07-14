@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.weatherbit.io/v2.0/current?city=London&key={{match}}"
+allowed_domains = ["api.weatherbit.io"]
 
 [detector.verify.auth]
 type = "none"

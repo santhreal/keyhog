@@ -30,6 +30,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.blockcypher.com/v1/btc/main?token={{match}}"
+allowed_domains = ["api.blockcypher.com"]
 
 [detector.verify.auth]
 type = "none"

@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.smartsheet.com/2.0/sheets"
+allowed_domains = ["api.smartsheet.com"]
 
 [detector.verify.auth]
 type = "bearer"

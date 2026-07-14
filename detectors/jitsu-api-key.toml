@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://app.jitsu.com/api/v1/events"
+allowed_domains = ["app.jitsu.com"]
 
 [detector.verify.auth]
 type = "header"

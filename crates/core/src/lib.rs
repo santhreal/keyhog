@@ -58,6 +58,9 @@ mod safe_bin;
 mod source;
 mod spec;
 mod state_file;
+/// Verification-domain policy shared by detector validation and the network
+/// verifier.
+pub mod verification_domain;
 pub mod winpath;
 use std::borrow::Cow;
 

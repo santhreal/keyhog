@@ -27,6 +27,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://console.neon.tech/api/v2/projects"
+allowed_domains = ["console.neon.tech"]
 
 [detector.verify.auth]
 type = "bearer"

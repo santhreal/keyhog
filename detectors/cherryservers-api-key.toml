@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.cherryservers.com/v1/user"
+allowed_domains = ["api.cherryservers.com"]
 
 [detector.verify.auth]
 type = "bearer"

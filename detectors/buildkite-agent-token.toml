@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.buildkite.com/v2/access-token"
+allowed_domains = ["api.buildkite.com"]
 
 [detector.verify.auth]
 type = "bearer"

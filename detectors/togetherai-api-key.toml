@@ -27,6 +27,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.together.xyz/v1/models"
+allowed_domains = ["api.together.xyz"]
 
 [detector.verify.auth]
 type = "bearer"

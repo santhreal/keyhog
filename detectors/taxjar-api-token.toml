@@ -21,6 +21,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.taxjar.com/v2/categories"
+allowed_domains = ["api.taxjar.com"]
 
 [detector.verify.auth]
 type = "bearer"

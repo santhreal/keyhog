@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.turso.io/v1/organizations"
+allowed_domains = ["api.turso.io"]
 
 [detector.verify.auth]
 type = "bearer"

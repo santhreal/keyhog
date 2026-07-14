@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://data.gov.au/data/api/3/action/package_list?limit=1"
+allowed_domains = ["data.gov.au"]
 
 [detector.verify.auth]
 type = "header"

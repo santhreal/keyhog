@@ -145,6 +145,12 @@ report a bug.
 
 Outbound destinations are filtered at the client level:
 
+- Shipped HTTP verifier blocks declare `allowed_domains` in their owning
+  detector TOML. Literal endpoint hosts are checked when the detector loads.
+  Interpolated hosts are checked again before every request with the same
+  exact-or-subdomain matcher.
+- Public multi-tenant suffixes are exact-only. An allowlist entry for a shared
+  suffix never licenses arbitrary tenant subdomains.
 - No `localhost`, `127.0.0.0/8`, `169.254.0.0/16`, or other RFC 1918
   private ranges.
 - No IPv4-mapped IPv6 of the above.
@@ -154,6 +160,12 @@ These rules are enforced for every detector even if its TOML
 specifies a localhost URL by mistake. If a project configures a proxy
 but a particular run must be direct, pass `--proxy off`; shell proxy
 variables are ignored by design.
+
+`verify.service` inherits the detector's service when omitted. It owns rate
+limiting and remains a compatibility source for custom detectors that use the
+built-in provider map. The shipped corpus uses detector-local
+`allowed_domains`, so the endpoint and its network authority are reviewed in
+one file.
 
 ## Out-of-band callbacks
 

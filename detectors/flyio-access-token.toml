@@ -17,6 +17,7 @@ description = "Fly.io access token (fm2_ prefix followed by base64url characters
 [detector.verify]
 method = "GET"
 url = "https://api.machines.dev/v1/apps"
+allowed_domains = ["api.machines.dev"]
 
 [detector.verify.auth]
 type = "bearer"

@@ -17,6 +17,7 @@ description = "Apify API token with apify_api_ prefix"
 [detector.verify]
 method = "GET"
 url = "https://api.apify.com/v2/users/me"
+allowed_domains = ["api.apify.com"]
 
 [detector.verify.auth]
 type = "bearer"

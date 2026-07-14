@@ -27,6 +27,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.letsdeel.com/rest/v2/me"
+allowed_domains = ["api.letsdeel.com"]
 
 [detector.verify.auth]
 type = "bearer"

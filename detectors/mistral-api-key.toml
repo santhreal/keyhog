@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.mistral.ai/v1/models"
+allowed_domains = ["api.mistral.ai"]
 
 [detector.verify.auth]
 type = "bearer"

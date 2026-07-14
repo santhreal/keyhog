@@ -17,6 +17,7 @@ description = "Novu API key (nvu_ prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.novu.co/v1/environments/me"
+allowed_domains = ["api.novu.co"]
 
 [detector.verify.auth]
 type = "header"

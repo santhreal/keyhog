@@ -17,6 +17,7 @@ description = "DigitalOcean personal access token (v1)"
 [detector.verify]
 method = "GET"
 url = "https://api.digitalocean.com/v2/account"
+allowed_domains = ["api.digitalocean.com"]
 
 [detector.verify.auth]
 type = "bearer"

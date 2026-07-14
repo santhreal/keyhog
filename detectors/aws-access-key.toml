@@ -54,6 +54,7 @@ name = "session_token"
 [detector.verify]
 method = "GET"
 url = "https://sts.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15"
+allowed_domains = ["sts.amazonaws.com"]
 
 [detector.verify.auth]
 type = "aws_v4"

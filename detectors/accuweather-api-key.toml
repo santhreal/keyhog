@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://dataservice.accuweather.com/currentconditions/v1/349727"
+allowed_domains = ["dataservice.accuweather.com"]
 
 [detector.verify.auth]
 type = "query"

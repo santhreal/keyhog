@@ -28,6 +28,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.machines.dev/v1/apps"
+allowed_domains = ["api.machines.dev"]
 
 [detector.verify.auth]
 type = "bearer"

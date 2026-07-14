@@ -17,6 +17,7 @@ description = "Terraform Cloud API token (atlasv1 infix format)"
 [detector.verify]
 method = "GET"
 url = "https://app.terraform.io/api/v2/account/details"
+allowed_domains = ["app.terraform.io"]
 
 [detector.verify.auth]
 type = "header"

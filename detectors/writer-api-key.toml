@@ -17,6 +17,7 @@ description = "Writer API key (UUID format with sk- prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.writer.com/v1/models"
+allowed_domains = ["api.writer.com"]
 
 [detector.verify.auth]
 type = "bearer"

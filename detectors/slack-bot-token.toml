@@ -25,6 +25,7 @@ description = "Slack bot token (2-segment or mixed)"
 [detector.verify]
 method = "POST"
 url = "https://slack.com/api/auth.test"
+allowed_domains = ["slack.com"]
 
 [detector.verify.auth]
 type = "bearer"

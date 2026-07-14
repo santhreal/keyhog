@@ -17,6 +17,7 @@ description = "Netlify Personal Access Token (nfp_ prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.netlify.com/api/v1/sites"
+allowed_domains = ["api.netlify.com"]
 
 [detector.verify.auth]
 type = "bearer"

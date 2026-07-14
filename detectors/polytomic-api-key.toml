@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://app.polytomic.com/api/identity"
+allowed_domains = ["app.polytomic.com"]
 
 [detector.verify.auth]
 type = "bearer"

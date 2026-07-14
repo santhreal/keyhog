@@ -21,6 +21,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.stability.ai/v1/user/balance"
+allowed_domains = ["api.stability.ai"]
 
 [detector.verify.auth]
 type = "bearer"

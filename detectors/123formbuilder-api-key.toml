@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.123formbuilder.com/v2/users"
+allowed_domains = ["api.123formbuilder.com"]
 
 [detector.verify.auth]
 type = "header"

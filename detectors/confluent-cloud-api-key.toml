@@ -26,6 +26,7 @@ within_lines = 5
 [detector.verify]
 method = "GET"
 url = "https://api.confluent.cloud/org/v2/organizations"
+allowed_domains = ["api.confluent.cloud"]
 
 [detector.verify.auth]
 type = "basic"

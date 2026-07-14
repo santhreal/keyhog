@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.rippling.com/platform/api/me"
+allowed_domains = ["api.rippling.com"]
 
 [detector.verify.auth]
 type = "bearer"

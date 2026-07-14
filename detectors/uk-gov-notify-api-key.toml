@@ -17,6 +17,7 @@ description = "GOV.UK Notify API key with service prefix, UUID, and secret"
 [detector.verify]
 method = "GET"
 url = "https://api.notifications.service.gov.uk/v2/notifications"
+allowed_domains = ["api.notifications.service.gov.uk"]
 
 [detector.verify.auth]
 type = "bearer"

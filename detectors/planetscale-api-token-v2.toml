@@ -22,6 +22,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.planetscale.com/v1/organizations"
+allowed_domains = ["api.planetscale.com"]
 
 [detector.verify.auth]
 type = "header"

@@ -28,6 +28,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.iterable.com/api/users/me"
+allowed_domains = ["api.iterable.com"]
 
 [detector.verify.auth]
 type = "header"

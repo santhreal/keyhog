@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://dashboard.hologram.io/api/1/users/me/"
+allowed_domains = ["dashboard.hologram.io"]
 
 [detector.verify.auth]
 type = "header"

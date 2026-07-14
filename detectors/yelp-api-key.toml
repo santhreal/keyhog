@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.yelp.com/v3/businesses/search?limit=1"
+allowed_domains = ["api.yelp.com"]
 
 [detector.verify.auth]
 type = "bearer"

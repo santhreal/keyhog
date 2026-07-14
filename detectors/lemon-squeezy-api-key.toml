@@ -17,6 +17,7 @@ description = "Lemon Squeezy API key (lmsq_ prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.lemonsqueezy.com/v1/stores"
+allowed_domains = ["api.lemonsqueezy.com"]
 
 [detector.verify.auth]
 type = "bearer"

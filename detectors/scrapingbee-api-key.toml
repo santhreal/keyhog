@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://app.scrapingbee.com/api/v1/"
+allowed_domains = ["app.scrapingbee.com"]
 
 [detector.verify.auth]
 type = "query"

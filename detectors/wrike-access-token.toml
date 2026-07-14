@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://www.wrike.com/api/v4/contacts?me=true"
+allowed_domains = ["www.wrike.com"]
 
 [detector.verify.auth]
 type = "bearer"

@@ -26,6 +26,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://deep-index.moralis.io/api/v2.2/block/1?chain=eth"
+allowed_domains = ["deep-index.moralis.io"]
 
 [detector.verify.auth]
 type = "header"

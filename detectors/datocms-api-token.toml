@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://site-api.datocms.com/site"
+allowed_domains = ["site-api.datocms.com"]
 
 [detector.verify.auth]
 type = "header"

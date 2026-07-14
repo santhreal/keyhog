@@ -25,6 +25,7 @@ description = "PostHog personal API key (phx_ prefix)"
 [detector.verify]
 method = "GET"
 url = "https://app.posthog.com/api/projects"
+allowed_domains = ["app.posthog.com"]
 
 [detector.verify.auth]
 type = "bearer"

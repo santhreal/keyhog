@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.africastalking.com/version1/user"
+allowed_domains = ["api.africastalking.com"]
 [detector.verify.success]
 status = 200
 

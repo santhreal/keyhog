@@ -38,6 +38,7 @@ description = "Asana legacy personal access token (user-id:secret shape)"
 [detector.verify]
 method = "GET"
 url = "https://app.asana.com/api/1.0/users/me"
+allowed_domains = ["app.asana.com"]
 
 [detector.verify.auth]
 type = "bearer"

@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://dev.virtualearth.net/REST/v1/Locations"
+allowed_domains = ["dev.virtualearth.net"]
 
 [detector.verify.auth]
 type = "query"

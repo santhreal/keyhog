@@ -17,6 +17,7 @@ description = "Groq API key (gsk_)"
 [detector.verify]
 method = "GET"
 url = "https://api.groq.com/openai/v1/models"
+allowed_domains = ["api.groq.com"]
 
 [detector.verify.auth]
 type = "bearer"

@@ -21,6 +21,7 @@ description = "Notion internal integration token (ntn_ prefix - current format, 
 [detector.verify]
 method = "POST"
 url = "https://api.notion.com/v1/search"
+allowed_domains = ["api.notion.com"]
 
 [detector.verify.auth]
 type = "bearer"

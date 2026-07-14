@@ -22,6 +22,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.supabase.com/v1/projects"
+allowed_domains = ["api.supabase.com"]
 
 [detector.verify.auth]
 type = "bearer"

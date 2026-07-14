@@ -26,6 +26,7 @@ within_lines = 5
 [detector.verify]
 method = "GET"
 url = "https://api.checklyhq.com/v1/checks"
+allowed_domains = ["api.checklyhq.com"]
 
 [detector.verify.auth]
 type = "header"

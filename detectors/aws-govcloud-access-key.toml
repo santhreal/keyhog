@@ -33,6 +33,7 @@ name = "session_token"
 [detector.verify]
 method = "GET"
 url = "https://sts.us-gov-west-1.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15"
+allowed_domains = ["sts.us-gov-west-1.amazonaws.com"]
 
 [detector.verify.auth]
 type = "aws_v4"

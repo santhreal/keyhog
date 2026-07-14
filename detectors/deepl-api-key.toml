@@ -31,6 +31,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api-free.deepl.com/v2/usage"
+allowed_domains = ["api-free.deepl.com"]
 
 [detector.verify.auth]
 type = "header"

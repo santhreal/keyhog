@@ -17,6 +17,7 @@ description = "npm automation or publish token (exactly 36 chars after npm_)"
 [detector.verify]
 method = "GET"
 url = "https://registry.npmjs.org/-/whoami"
+allowed_domains = ["registry.npmjs.org"]
 
 [detector.verify.auth]
 type = "bearer"

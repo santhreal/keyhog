@@ -21,6 +21,7 @@ description = "CodeSandbox token with csb_ prefix and base62 body"
 [detector.verify]
 method = "GET"
 url = "https://codesandbox.io/api/v1/users/current"
+allowed_domains = ["codesandbox.io"]
 [detector.verify.success]
 status = 200
 

@@ -27,6 +27,7 @@ description = "Slack app-level token (xapp- prefix, Socket Mode)"
 [detector.verify]
 method = "POST"
 url = "https://slack.com/api/apps.connections.open"
+allowed_domains = ["slack.com"]
 
 [detector.verify.auth]
 type = "bearer"

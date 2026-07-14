@@ -27,6 +27,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.cloudflare.com/client/v4/user/tokens/verify"
+allowed_domains = ["api.cloudflare.com"]
 
 [detector.verify.auth]
 type = "bearer"

@@ -17,6 +17,7 @@ description = "Rootly API token with rootly- prefix"
 [detector.verify]
 method = "GET"
 url = "https://api.rootly.com/v1/incidents"
+allowed_domains = ["api.rootly.com"]
 
 [detector.verify.auth]
 type = "header"

@@ -17,6 +17,7 @@ description = "Covalent API key (cqt_ prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.covalenthq.com/v1/chains/"
+allowed_domains = ["api.covalenthq.com"]
 
 [detector.verify.auth]
 type = "query"

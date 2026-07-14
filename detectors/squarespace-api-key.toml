@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.squarespace.com/1.0/commerce/inventory"
+allowed_domains = ["api.squarespace.com"]
 
 [detector.verify.auth]
 type = "bearer"

@@ -22,6 +22,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.deepgram.com/v1/projects"
+allowed_domains = ["api.deepgram.com"]
 
 [detector.verify.auth]
 type = "header"

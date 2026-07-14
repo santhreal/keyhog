@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.zenrows.com/v1/"
+allowed_domains = ["api.zenrows.com"]
 
 [detector.verify.auth]
 type = "query"

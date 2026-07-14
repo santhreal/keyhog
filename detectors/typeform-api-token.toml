@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.typeform.com/forms"
+allowed_domains = ["api.typeform.com"]
 
 [detector.verify.auth]
 type = "bearer"

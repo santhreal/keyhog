@@ -27,6 +27,7 @@ description = "GitLab routable runner authentication token (glrt-t<n>_ prefix)"
 [detector.verify]
 method = "POST"
 url = "https://gitlab.com/api/v4/runners/verify"
+allowed_domains = ["gitlab.com"]
 
 [detector.verify.auth]
 type = "query"

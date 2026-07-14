@@ -17,6 +17,7 @@ description = "Tailscale API access token (tskey-api- prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.tailscale.com/api/v2/tailnet/-/devices"
+allowed_domains = ["api.tailscale.com"]
 
 [detector.verify.auth]
 type = "bearer"

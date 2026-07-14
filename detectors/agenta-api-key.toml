@@ -21,6 +21,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://cloud.agenta.ai/api/apps"
+allowed_domains = ["cloud.agenta.ai"]
 
 [detector.verify.auth]
 type = "header"

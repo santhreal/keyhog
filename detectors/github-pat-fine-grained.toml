@@ -17,6 +17,7 @@ description = "GitHub fine-grained personal access token"
 [detector.verify]
 method = "GET"
 url = "https://api.github.com/user"
+allowed_domains = ["api.github.com"]
 
 [detector.verify.auth]
 type = "bearer"

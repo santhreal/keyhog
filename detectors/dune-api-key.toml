@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.dune.com/api/v1/user"
+allowed_domains = ["api.dune.com"]
 
 [detector.verify.auth]
 type = "header"

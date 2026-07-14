@@ -17,6 +17,7 @@ description = "Contentful Personal Access Token (Management API)"
 [detector.verify]
 method = "GET"
 url = "https://api.contentful.com/users/me"
+allowed_domains = ["api.contentful.com"]
 
 [detector.verify.auth]
 type = "bearer"

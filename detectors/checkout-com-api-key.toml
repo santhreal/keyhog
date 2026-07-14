@@ -42,6 +42,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.sandbox.checkout.com/payments?limit=1"
+allowed_domains = ["api.sandbox.checkout.com"]
 
 [detector.verify.auth]
 type = "bearer"

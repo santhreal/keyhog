@@ -17,6 +17,7 @@ description = "Buildkite API access token (bkua_ prefix + 32 chars)"
 [detector.verify]
 method = "GET"
 url = "https://api.buildkite.com/v2/user"
+allowed_domains = ["api.buildkite.com"]
 
 [detector.verify.auth]
 type = "bearer"

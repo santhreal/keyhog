@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://sonarcloud.io/api/measures/component?component=test&metricKeys=ncloc"
+allowed_domains = ["sonarcloud.io"]
 
 [detector.verify.auth]
 type = "bearer"

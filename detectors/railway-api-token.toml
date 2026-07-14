@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "POST"
 url = "https://backboard.railway.app/graphql/v2"
+allowed_domains = ["backboard.railway.app"]
 
 [detector.verify.auth]
 type = "bearer"

@@ -29,6 +29,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.crowdin.com/api/v2/user"
+allowed_domains = ["api.crowdin.com"]
 
 [detector.verify.auth]
 type = "header"

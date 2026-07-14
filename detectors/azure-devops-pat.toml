@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://dev.azure.com/_apis/connectionData"
+allowed_domains = ["dev.azure.com"]
 
 [detector.verify.auth]
 type = "basic"

@@ -24,6 +24,7 @@ description = "Doppler CLI / personal / service-account token (dp.ct./dp.pt./dp.
 [detector.verify]
 method = "GET"
 url = "https://api.doppler.com/v3/workplace"
+allowed_domains = ["api.doppler.com"]
 
 [detector.verify.auth]
 type = "bearer"

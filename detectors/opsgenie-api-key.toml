@@ -21,6 +21,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.opsgenie.com/v2/account"
+allowed_domains = ["api.opsgenie.com"]
 
 [detector.verify.auth]
 type = "header"

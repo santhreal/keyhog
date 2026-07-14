@@ -39,6 +39,7 @@ within_lines = 5
 [detector.verify]
 method = "GET"
 url = "https://api.flickr.com/services/rest/?method=flickr.test.echo&api_key={{match}}"
+allowed_domains = ["api.flickr.com"]
 [detector.verify.success]
 status = 200
 

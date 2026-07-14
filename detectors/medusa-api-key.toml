@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.medusajs.com/admin/users"
+allowed_domains = ["api.medusajs.com"]
 
 [detector.verify.auth]
 type = "header"

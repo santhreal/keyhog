@@ -22,6 +22,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.xata.io/workspaces"
+allowed_domains = ["api.xata.io"]
 
 [detector.verify.auth]
 type = "bearer"

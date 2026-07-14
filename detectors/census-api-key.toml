@@ -28,6 +28,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://app.getcensus.com/api/v1/users"
+allowed_domains = ["app.getcensus.com"]
 
 [detector.verify.auth]
 type = "bearer"

@@ -21,6 +21,7 @@ description = "Flutterwave public key (FLWPUBK_TEST/LIVE prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.flutterwave.com/v3/transactions"
+allowed_domains = ["api.flutterwave.com"]
 
 [detector.verify.auth]
 type = "bearer"

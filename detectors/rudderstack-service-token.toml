@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "POST"
 url = "https://api.rudderstack.com/v1/event"
+allowed_domains = ["api.rudderstack.com"]
 
 [detector.verify.auth]
 type = "basic"

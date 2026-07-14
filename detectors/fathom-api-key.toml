@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.usefathom.com/v1/account"
+allowed_domains = ["api.usefathom.com"]
 
 [detector.verify.auth]
 type = "header"

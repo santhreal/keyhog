@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.daily.co/v1/rooms"
+allowed_domains = ["api.daily.co"]
 
 [detector.verify.auth]
 type = "bearer"

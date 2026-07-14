@@ -55,6 +55,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://www.googleapis.com/drive/v3/about?fields=user&key={{match}}"
+allowed_domains = ["www.googleapis.com"]
 
 [detector.verify.auth]
 type = "query"

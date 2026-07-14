@@ -17,6 +17,7 @@ description = "Paddle API key (pdl_live_apikey_ or pdl_sdbx_apikey_ prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.paddle.com/v2/products"
+allowed_domains = ["api.paddle.com"]
 
 [detector.verify.auth]
 type = "header"

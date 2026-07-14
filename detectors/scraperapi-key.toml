@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.scraperapi.com/account"
+allowed_domains = ["api.scraperapi.com"]
 
 [detector.verify.auth]
 type = "query"

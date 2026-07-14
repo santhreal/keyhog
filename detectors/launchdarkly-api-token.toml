@@ -17,6 +17,7 @@ description = "LaunchDarkly API access token (api- prefix with UUID)"
 [detector.verify]
 method = "GET"
 url = "https://app.launchdarkly.com/api/v2/members"
+allowed_domains = ["app.launchdarkly.com"]
 
 [detector.verify.auth]
 type = "bearer"

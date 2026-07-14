@@ -17,6 +17,7 @@ description = "Portkey AI API key (pk- prefix)"
 [detector.verify]
 method = "POST"
 url = "https://api.portkey.ai/v1/chat/completions"
+allowed_domains = ["api.portkey.ai"]
 
 [detector.verify.auth]
 type = "header"

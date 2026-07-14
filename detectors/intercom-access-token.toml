@@ -34,6 +34,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.intercom.io/me"
+allowed_domains = ["api.intercom.io"]
 
 [detector.verify.auth]
 type = "bearer"

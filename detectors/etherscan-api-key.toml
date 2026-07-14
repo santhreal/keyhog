@@ -35,6 +35,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.etherscan.io/v2/api?chainid=1&module=stats&action=ethprice&apikey={{match}}"
+allowed_domains = ["api.etherscan.io"]
 
 [detector.verify.auth]
 type = "none"

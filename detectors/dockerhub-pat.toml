@@ -17,6 +17,7 @@ description = "Docker Hub personal access token (dckr_pat_, 27-64 chars)"
 [detector.verify]
 method = "GET"
 url = "https://hub.docker.com/v2/access-tokens"
+allowed_domains = ["hub.docker.com"]
 
 [detector.verify.auth]
 type = "bearer"

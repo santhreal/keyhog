@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://docsapi.helpscout.net/v1/sites"
+allowed_domains = ["docsapi.helpscout.net"]
 
 [detector.verify.auth]
 type = "basic"

@@ -17,6 +17,7 @@ description = "ElevenLabs API key (sk_ prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.elevenlabs.io/v1/user"
+allowed_domains = ["api.elevenlabs.io"]
 
 [detector.verify.auth]
 type = "header"

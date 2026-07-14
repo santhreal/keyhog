@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.tomorrow.io/v4/weather/forecast?location=42.3601,-71.0589&apikey={{match}}"
+allowed_domains = ["api.tomorrow.io"]
 
 [detector.verify.auth]
 type = "none"

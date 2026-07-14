@@ -29,6 +29,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://eastus.api.cognitive.microsoft.com/openai/models?api-version=2024-02-01"
+allowed_domains = ["eastus.api.cognitive.microsoft.com"]
 [detector.verify.success]
 status = 200
 

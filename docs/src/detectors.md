@@ -48,6 +48,7 @@ description = "Stripe test restricted key"
 [detector.verify]
 method = "GET"
 url = "https://api.stripe.com/v1/charges?limit=1"
+allowed_domains = ["api.stripe.com"]
 
 [detector.verify.auth]
 type = "basic"
@@ -158,6 +159,12 @@ finding and can strengthen confidence or verification. Only a companion marked
 makes the documented API call with the captured credential and:
 - live + valid -> keep severity, mark `verification: "live"`
 - live + invalid -> downgrade severity one tier, mark `verification: "dead"`
+
+Every shipped HTTP verifier declares `allowed_domains` beside its URL. Literal
+hosts must match that list when the TOML loads, and the resolved host must match
+again before a request is sent. Use the narrowest service-owned host. Do not add
+localhost, a generic decoder site, or an unresolved tenant placeholder to make
+a non-verifiable detector appear live-capable.
 
 ## Per-detector recall/precision knobs
 

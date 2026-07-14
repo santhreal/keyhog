@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.tomtom.com/search/2/geocode/test.json"
+allowed_domains = ["api.tomtom.com"]
 
 [detector.verify.auth]
 type = "query"

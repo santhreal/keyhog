@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.datadoghq.com/api/v1/validate"
+allowed_domains = ["api.datadoghq.com"]
 
 [detector.verify.auth]
 type = "header"

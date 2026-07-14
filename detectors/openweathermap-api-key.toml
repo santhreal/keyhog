@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.openweathermap.org/data/2.5/weather?q=London&appid={{match}}"
+allowed_domains = ["api.openweathermap.org"]
 
 [detector.verify.auth]
 type = "none"

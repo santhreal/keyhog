@@ -17,6 +17,7 @@ description = "Airtable personal access token (pat...)"
 [detector.verify]
 method = "GET"
 url = "https://api.airtable.com/v0/meta/bases"
+allowed_domains = ["api.airtable.com"]
 
 [detector.verify.auth]
 type = "bearer"

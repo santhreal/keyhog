@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://partners.api.skyscanner.net/apiservices/v3/cultures"
+allowed_domains = ["partners.api.skyscanner.net"]
 
 [detector.verify.auth]
 type = "header"

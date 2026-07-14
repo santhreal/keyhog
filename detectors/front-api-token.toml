@@ -22,6 +22,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api2.frontapp.com/me"
+allowed_domains = ["api2.frontapp.com"]
 
 [detector.verify.auth]
 type = "bearer"

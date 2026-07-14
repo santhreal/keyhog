@@ -17,6 +17,7 @@ description = "FireHydrant API key with fhc prefix"
 [detector.verify]
 method = "GET"
 url = "https://api.firehydrant.io/v1/organizations"
+allowed_domains = ["api.firehydrant.io"]
 
 [detector.verify.auth]
 type = "bearer"

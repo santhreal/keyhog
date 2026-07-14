@@ -17,6 +17,7 @@ description = "Anyscale API key with anyscale_ prefix"
 [detector.verify]
 method = "GET"
 url = "https://api.endpoints.anyscale.com/v1/models"
+allowed_domains = ["api.endpoints.anyscale.com"]
 [detector.verify.success]
 status = 200
 

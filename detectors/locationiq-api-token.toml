@@ -17,6 +17,7 @@ description = "LocationIQ API token (pk. or sk. prefix)"
 [detector.verify]
 method = "GET"
 url = "https://eu1.locationiq.com/v1/reverse.php"
+allowed_domains = ["eu1.locationiq.com"]
 
 [detector.verify.auth]
 type = "query"

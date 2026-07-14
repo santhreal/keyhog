@@ -26,6 +26,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api-v2.autoblocks.ai/prompts/types"
+allowed_domains = ["api-v2.autoblocks.ai"]
 [detector.verify.success]
 status = 200
 

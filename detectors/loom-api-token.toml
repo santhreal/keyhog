@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.loom.com/v1/videos"
+allowed_domains = ["api.loom.com"]
 
 [detector.verify.auth]
 type = "bearer"

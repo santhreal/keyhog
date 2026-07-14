@@ -26,6 +26,7 @@ description = "Slack user token (3-segment variant)"
 [detector.verify]
 method = "POST"
 url = "https://slack.com/api/auth.test"
+allowed_domains = ["slack.com"]
 
 [detector.verify.auth]
 type = "bearer"

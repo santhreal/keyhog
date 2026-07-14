@@ -22,6 +22,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.clickup.com/api/v2/team"
+allowed_domains = ["api.clickup.com"]
 
 [detector.verify.auth]
 type = "header"

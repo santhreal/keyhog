@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.ai21.com/studio/v1/models"
+allowed_domains = ["api.ai21.com"]
 
 [detector.verify.auth]
 type = "header"

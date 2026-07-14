@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.hightouch.com/api/v1/syncs"
+allowed_domains = ["api.hightouch.com"]
 
 [detector.verify.auth]
 type = "bearer"

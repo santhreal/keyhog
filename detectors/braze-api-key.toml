@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "POST"
 url = "https://rest.iad-01.braze.com/users/export/ids"
+allowed_domains = ["rest.iad-01.braze.com"]
 
 [detector.verify.auth]
 type = "header"

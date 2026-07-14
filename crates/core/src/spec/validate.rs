@@ -622,8 +622,7 @@ fn has_substantial_literal<'a>(
 
 fn validate_verify_spec(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     if let Some(ref verify) = spec.verify {
-        // verify.service defaults to the detector's service - empty is fine
-        validate_verify_urls(verify, issues);
+        validate_verify_urls(spec, verify, issues);
         validate_verify_success_statuses(verify, issues);
         issues.extend(
             crate::json_selector::validate_detector_response_selectors(spec)
@@ -673,30 +672,98 @@ fn validate_http_status(
     }
 }
 
-fn validate_verify_urls(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
-    let mut validated_url = false;
-    visit_verify_template_fields(verify, |field| {
-        if field.kind != VerifyTemplateFieldKind::Url {
-            return;
+fn validate_verify_urls(
+    detector: &DetectorSpec,
+    verify: &VerifySpec,
+    issues: &mut Vec<QualityIssue>,
+) {
+    for (index, domain) in verify.allowed_domains.iter().enumerate() {
+        if crate::verification_domain::normalize_allowlist_entry(domain).is_none() {
+            issues.push(QualityIssue::Error(format!(
+                "verify.allowed_domains[{index}] is not a bare domain or host-only URL: {domain:?}"
+            )));
         }
-        let selected = if verify.steps.is_empty() {
-            field.scope == VerifyTemplateScope::DefaultRequest
-        } else {
-            field.scope == VerifyTemplateScope::Step
-        };
-        if !selected {
-            return;
-        }
-        validated_url = true;
-        validate_url(field.value, issues);
-        check_url_exfil_risk(field.value, &verify.allowed_domains, issues);
-    });
-
-    if !validated_url {
-        issues.push(QualityIssue::Error(
-            "verify spec has no steps and no default URL".into(),
-        ));
     }
+
+    if verify.steps.is_empty() {
+        if let Some(url) = verify.url.as_deref() {
+            validate_selected_verify_url("verify.url", url, &detector.service, verify, issues);
+        } else {
+            issues.push(QualityIssue::Error(
+                "verify spec has no steps and no default URL".into(),
+            ));
+        }
+    } else {
+        for (index, step) in verify.steps.iter().enumerate() {
+            validate_selected_verify_url(
+                &format!("verify.steps[{index}].url"),
+                &step.url,
+                &detector.service,
+                verify,
+                issues,
+            );
+        }
+    }
+}
+
+fn validate_selected_verify_url(
+    field: &str,
+    raw_url: &str,
+    detector_service: &str,
+    verify: &VerifySpec,
+    issues: &mut Vec<QualityIssue>,
+) {
+    validate_url(raw_url, issues);
+    check_url_exfil_risk(raw_url, &verify.allowed_domains, issues);
+    if url_authority_is_templated(raw_url) {
+        return;
+    }
+    let parsed = match url::Url::parse(raw_url) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            issues.push(QualityIssue::Error(format!(
+                "{field} is not a valid absolute URL: {error}"
+            )));
+            return;
+        }
+    };
+    let Some(host) = parsed.host_str() else {
+        issues.push(QualityIssue::Error(format!(
+            "{field} has no host; use an absolute service URL"
+        )));
+        return;
+    };
+    let Some(allowlist) =
+        crate::verification_domain::effective_allowlist(verify, Some(detector_service))
+    else {
+        issues.push(QualityIssue::Error(format!(
+            "{field} host {host:?} has no domain policy; set verify.service to a known service or declare verify.allowed_domains"
+        )));
+        return;
+    };
+    if !crate::verification_domain::host_is_allowed(host, &allowlist) {
+        let policy_service = if verify.service.trim().is_empty() {
+            detector_service
+        } else {
+            verify.service.as_str()
+        };
+        issues.push(QualityIssue::Error(format!(
+            "{field} host {host:?} is outside verify.allowed_domains for service {:?} (allowed: {})",
+            policy_service,
+            allowlist.join(", ")
+        )));
+    }
+}
+
+fn url_authority_is_templated(raw_url: &str) -> bool {
+    let trimmed = raw_url.trim();
+    let authority = trimmed
+        .split_once("://")
+        .map_or(trimmed, |(_, remainder)| remainder)
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    authority.contains(['{', '}'])
 }
 
 /// Reserved synthetic companion-map keys used by the OOB interpolator. A
@@ -734,8 +801,8 @@ fn check_reserved_companion_names(spec: &DetectorSpec, issues: &mut Vec<QualityI
 /// silently-wrong verify behavior. Fail-closed at the validator instead.
 fn check_oob_consistency(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
     let mut interactsh_referenced = false;
-    visit_verify_template_fields(verify, |field| {
-        if field.value.contains("{{interactsh") {
+    visit_verify_template_fields(verify, |value| {
+        if value.contains("{{interactsh") {
             interactsh_referenced = true;
         }
     });
@@ -769,70 +836,23 @@ fn check_oob_consistency(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum VerifyTemplateScope {
-    DefaultRequest,
-    Step,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum VerifyTemplateFieldKind {
-    Url,
-    Body,
-    Header,
-}
-
-#[derive(Clone, Copy)]
-struct VerifyTemplateField<'a> {
-    scope: VerifyTemplateScope,
-    kind: VerifyTemplateFieldKind,
-    value: &'a str,
-}
-
-fn visit_verify_template_fields<'a>(
-    verify: &'a VerifySpec,
-    mut visit: impl FnMut(VerifyTemplateField<'a>),
-) {
+fn visit_verify_template_fields(verify: &VerifySpec, mut visit: impl FnMut(&str)) {
     if let Some(ref url) = verify.url {
-        visit(VerifyTemplateField {
-            scope: VerifyTemplateScope::DefaultRequest,
-            kind: VerifyTemplateFieldKind::Url,
-            value: url,
-        });
+        visit(url);
     }
     if let Some(ref body) = verify.body {
-        visit(VerifyTemplateField {
-            scope: VerifyTemplateScope::DefaultRequest,
-            kind: VerifyTemplateFieldKind::Body,
-            value: body,
-        });
+        visit(body);
     }
     for header in &verify.headers {
-        visit(VerifyTemplateField {
-            scope: VerifyTemplateScope::DefaultRequest,
-            kind: VerifyTemplateFieldKind::Header,
-            value: &header.value,
-        });
+        visit(&header.value);
     }
     for step in &verify.steps {
-        visit(VerifyTemplateField {
-            scope: VerifyTemplateScope::Step,
-            kind: VerifyTemplateFieldKind::Url,
-            value: &step.url,
-        });
+        visit(&step.url);
         if let Some(ref body) = step.body {
-            visit(VerifyTemplateField {
-                scope: VerifyTemplateScope::Step,
-                kind: VerifyTemplateFieldKind::Body,
-                value: body,
-            });
+            visit(body);
         }
         for header in &step.headers {
-            visit(VerifyTemplateField {
-                scope: VerifyTemplateScope::Step,
-                kind: VerifyTemplateFieldKind::Header,
-                value: &header.value,
-            });
+            visit(&header.value);
         }
     }
 }

@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.shodan.io/api-info?key={{match}}"
+allowed_domains = ["api.shodan.io"]
 
 [detector.verify.auth]
 type = "none"

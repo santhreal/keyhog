@@ -29,6 +29,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.bamboohr.com/api/gateway.php/test/v1/employees/directory"
+allowed_domains = ["api.bamboohr.com"]
 
 [detector.verify.auth]
 type = "basic"

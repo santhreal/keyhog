@@ -30,6 +30,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://app.honeybadger.io/v2/projects"
+allowed_domains = ["app.honeybadger.io"]
 
 [detector.verify.auth]
 type = "basic"

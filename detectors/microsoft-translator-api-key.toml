@@ -28,6 +28,7 @@ group = 1
 [detector.verify]
 method = "POST"
 url = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&to=en"
+allowed_domains = ["api.cognitive.microsofttranslator.com"]
 
 [detector.verify.auth]
 type = "header"

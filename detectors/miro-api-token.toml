@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.miro.com/v2/boards"
+allowed_domains = ["api.miro.com"]
 
 [detector.verify.auth]
 type = "bearer"

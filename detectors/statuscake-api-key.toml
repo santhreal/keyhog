@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.statuscake.com/v1/uptime"
+allowed_domains = ["api.statuscake.com"]
 
 [detector.verify.auth]
 type = "bearer"

@@ -28,6 +28,7 @@ group = 1
 [detector.verify]
 method = "POST"
 url = "https://id.voxbone.com/api/v1/oauth2/token"
+allowed_domains = ["id.voxbone.com"]
 
 [detector.verify.auth]
 type = "basic"

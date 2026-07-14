@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://haveibeenpwned.com/api/v3/breachedaccount/test@hibp-integration-tests.com"
+allowed_domains = ["haveibeenpwned.com"]
 
 [detector.verify.auth]
 type = "header"

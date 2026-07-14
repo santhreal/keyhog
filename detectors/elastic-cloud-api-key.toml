@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.elastic-cloud.com/api/v1/deployments"
+allowed_domains = ["api.elastic-cloud.com"]
 
 [detector.verify.auth]
 type = "header"

@@ -22,6 +22,7 @@ description = "Flagsmith server-side API key (ser. prefix, word-boundary anchore
 [detector.verify]
 method = "GET"
 url = "https://edge.api.flagsmith.com/api/v1/flags"
+allowed_domains = ["edge.api.flagsmith.com"]
 
 [detector.verify.auth]
 type = "header"

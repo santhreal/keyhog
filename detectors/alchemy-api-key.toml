@@ -24,6 +24,7 @@ group = 1
 [detector.verify]
 method = "POST"
 url = "https://eth-mainnet.g.alchemy.com/v2/{{match}}"
+allowed_domains = ["eth-mainnet.g.alchemy.com"]
 
 [detector.verify.auth]
 type = "none"

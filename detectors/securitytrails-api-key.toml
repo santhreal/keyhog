@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.securitytrails.com/v1/ping"
+allowed_domains = ["api.securitytrails.com"]
 
 [detector.verify.auth]
 type = "header"

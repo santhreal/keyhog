@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.geocod.io/v1.7/geocode"
+allowed_domains = ["api.geocod.io"]
 
 [detector.verify.auth]
 type = "query"

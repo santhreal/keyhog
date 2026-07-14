@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/London?key={{match}}"
+allowed_domains = ["weather.visualcrossing.com"]
 
 [detector.verify.auth]
 type = "none"

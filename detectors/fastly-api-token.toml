@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.fastly.com/current_user"
+allowed_domains = ["api.fastly.com"]
 
 [detector.verify.auth]
 type = "header"

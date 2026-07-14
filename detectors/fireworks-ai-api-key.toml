@@ -17,6 +17,7 @@ description = "Fireworks AI API key (fw_)"
 [detector.verify]
 method = "GET"
 url = "https://api.fireworks.ai/inference/v1/models"
+allowed_domains = ["api.fireworks.ai"]
 
 [detector.verify.auth]
 type = "bearer"

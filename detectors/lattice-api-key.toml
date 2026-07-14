@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.latticehq.com/v1/users"
+allowed_domains = ["api.latticehq.com"]
 
 [detector.verify.auth]
 type = "header"

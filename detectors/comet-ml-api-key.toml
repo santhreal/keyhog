@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://www.comet.com/api/rest/v2/account-details"
+allowed_domains = ["www.comet.com"]
 [detector.verify.success]
 status = 200
 

@@ -22,6 +22,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://sentry.io/api/0/organizations/"
+allowed_domains = ["sentry.io"]
 
 [detector.verify.auth]
 type = "bearer"

@@ -19,6 +19,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.abuseipdb.com/api/v2/check?ipAddress=8.8.8.8"
+allowed_domains = ["api.abuseipdb.com"]
 
 [detector.verify.auth]
 type = "header"

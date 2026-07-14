@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://proxy.scrapeops.io/v1/"
+allowed_domains = ["proxy.scrapeops.io"]
 
 [detector.verify.auth]
 type = "query"

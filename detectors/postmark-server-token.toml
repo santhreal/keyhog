@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.postmarkapp.com/server"
+allowed_domains = ["api.postmarkapp.com"]
 
 [detector.verify.auth]
 type = "header"

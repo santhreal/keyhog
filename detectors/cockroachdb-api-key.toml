@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://cockroachlabs.cloud/api/v1/clusters"
+allowed_domains = ["cockroachlabs.cloud"]
 
 [detector.verify.auth]
 type = "bearer"

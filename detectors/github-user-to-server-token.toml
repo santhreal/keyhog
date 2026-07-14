@@ -16,6 +16,7 @@ description = "GitHub User-to-Server Token (ghu_ prefix)"
 [detector.verify]
 method = "GET"
 url = "https://api.github.com/user"
+allowed_domains = ["api.github.com"]
 
 [detector.verify.auth]
 type = "bearer"

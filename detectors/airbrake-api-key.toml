@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.airbrake.io/api/v4/projects"
+allowed_domains = ["api.airbrake.io"]
 
 [detector.verify.auth]
 type = "query"

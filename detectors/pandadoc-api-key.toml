@@ -22,6 +22,7 @@ description = "PandaDoc API key in Authorization header"
 [detector.verify]
 method = "GET"
 url = "https://api.pandadoc.com/public/v1/documents"
+allowed_domains = ["api.pandadoc.com"]
 
 [detector.verify.auth]
 type = "header"

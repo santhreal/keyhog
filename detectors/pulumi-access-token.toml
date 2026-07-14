@@ -17,6 +17,7 @@ description = "Pulumi access token (pul-)"
 [detector.verify]
 method = "GET"
 url = "https://api.pulumi.com/api/user"
+allowed_domains = ["api.pulumi.com"]
 
 [detector.verify.auth]
 type = "header"

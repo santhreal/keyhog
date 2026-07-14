@@ -18,6 +18,7 @@ description = "SendGrid API key (tightened segment lengths)"
 [detector.verify]
 method = "GET"
 url = "https://api.sendgrid.com/v3/scopes"
+allowed_domains = ["api.sendgrid.com"]
 
 [detector.verify.auth]
 type = "bearer"

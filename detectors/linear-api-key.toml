@@ -17,6 +17,7 @@ description = "Linear API key (lin_api_ prefix, 40 chars)"
 [detector.verify]
 method = "POST"
 url = "https://api.linear.app/graphql"
+allowed_domains = ["api.linear.app"]
 
 [detector.verify.auth]
 type = "header"

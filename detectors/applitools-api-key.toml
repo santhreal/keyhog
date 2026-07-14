@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://eyes.applitools.com/api/v1/auth/api-key-validation"
+allowed_domains = ["eyes.applitools.com"]
 
 [detector.verify.auth]
 type = "header"

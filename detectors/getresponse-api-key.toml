@@ -28,6 +28,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.getresponse.com/v3/accounts"
+allowed_domains = ["api.getresponse.com"]
 [detector.verify.success]
 status = 200
 

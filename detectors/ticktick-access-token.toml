@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.ticktick.com/api/v2/user/status"
+allowed_domains = ["api.ticktick.com"]
 
 [detector.verify.auth]
 type = "bearer"

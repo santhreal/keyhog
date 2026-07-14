@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.jotform.com/user"
+allowed_domains = ["api.jotform.com"]
 
 [detector.verify.auth]
 type = "query"

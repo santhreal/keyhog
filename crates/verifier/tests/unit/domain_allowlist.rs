@@ -1,5 +1,6 @@
-use keyhog_core::VerifySpec;
+use keyhog_core::{DetectorSpec, VerifySpec};
 use keyhog_verifier::testing::{TestApi, VerifierTestApi};
+use keyhog_verifier::{VerificationEngine, VerifyConfig};
 
 #[test]
 fn builtin_service_domains_includes_github() {
@@ -42,4 +43,26 @@ fn check_url_against_spec_rejects_unknown_service_without_allowlist() {
     assert!(TestApi
         .check_url_against_spec("https://example.com/verify", &spec)
         .is_err());
+}
+
+#[test]
+fn engine_resolves_omitted_verify_service_once_at_construction() {
+    let detector = DetectorSpec {
+        id: "github-test".into(),
+        name: "GitHub test".into(),
+        service: "github".into(),
+        verify: Some(VerifySpec {
+            url: Some("https://api.github.com/user".into()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let engine =
+        VerificationEngine::new(&[detector], VerifyConfig::default()).expect("construct verifier");
+    assert_eq!(
+        TestApi
+            .engine_detector_verify_service(&engine, "github-test")
+            .as_deref(),
+        Some("github")
+    );
 }

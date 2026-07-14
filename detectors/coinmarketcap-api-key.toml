@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/map"
+allowed_domains = ["pro-api.coinmarketcap.com"]
 
 [detector.verify.auth]
 type = "header"

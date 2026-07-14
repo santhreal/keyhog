@@ -19,6 +19,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.assemblyai.com/v2/transcript"
+allowed_domains = ["api.assemblyai.com"]
 
 [detector.verify.auth]
 type = "header"

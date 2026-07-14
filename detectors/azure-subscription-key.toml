@@ -38,6 +38,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://management.azure.com/subscriptions?api-version=2020-01-01"
+allowed_domains = ["management.azure.com"]
 
 [detector.verify.auth]
 type = "header"

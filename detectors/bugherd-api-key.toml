@@ -23,6 +23,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://www.bugherd.com/api_v2/organization.json"
+allowed_domains = ["www.bugherd.com"]
 
 [detector.verify.auth]
 type = "basic"

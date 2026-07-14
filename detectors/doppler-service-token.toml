@@ -17,6 +17,7 @@ description = "Doppler service token (dp.st.)"
 [detector.verify]
 method = "GET"
 url = "https://api.doppler.com/v3/workplace"
+allowed_domains = ["api.doppler.com"]
 
 [detector.verify.auth]
 type = "bearer"

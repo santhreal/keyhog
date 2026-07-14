@@ -27,6 +27,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.lokalise.com/api2/projects"
+allowed_domains = ["api.lokalise.com"]
 
 [detector.verify.auth]
 type = "header"

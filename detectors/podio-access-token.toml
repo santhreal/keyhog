@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.podio.com/user/status"
+allowed_domains = ["api.podio.com"]
 
 [detector.verify.auth]
 type = "bearer"

@@ -28,6 +28,7 @@ description = "Square OAuth application secret (sq0csp- prefix, 43 chars)"
 [detector.verify]
 method = "GET"
 url = "https://connect.squareup.com/v2/locations"
+allowed_domains = ["connect.squareup.com"]
 
 [detector.verify.auth]
 type = "bearer"

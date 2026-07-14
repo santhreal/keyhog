@@ -18,6 +18,7 @@ group = 1
 [detector.verify]
 method = "GET"
 url = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={{match}}&steamids=76561197960434622"
+allowed_domains = ["api.steampowered.com"]
 
 [detector.verify.auth]
 type = "none"
