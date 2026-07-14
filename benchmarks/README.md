@@ -226,6 +226,20 @@ python -m bench.agentre_build
 The local scorer reproduces the pinned standard and bonus rubrics, including
 partial decoded-C2 credit, set overlap, nested fields, hallucination penalties,
 and rounding. Differential tests compare it with the validated upstream scorer.
+Analyzers use the explicit benchmark boundary instead of the generic secret
+corpus runner:
+
+```python
+from bench.corpora.agentre import AgentREBenchmark
+
+benchmark = AgentREBenchmark()
+tasks = benchmark.tasks()
+report = benchmark.score_analyzer_outputs(outputs_by_task_id)
+```
+
+`tasks()` returns all 13 validated binary paths and their canonical identities.
+Scoring requires one mapping output for every task, validates all 149 expected
+fields, and revalidates the sealed binaries before returning the report.
 The official bonus weights sum to 0.95 although its summary declares a 1.0
 bonus maximum. KeyHog exposes both the declared 2.0 total and attainable 1.95
 total in a separate score-contract receipt. It does not silently normalize the
