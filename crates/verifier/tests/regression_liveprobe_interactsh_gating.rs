@@ -68,6 +68,7 @@ fn base_detector() -> DetectorSpec {
 fn base_verify() -> VerifySpec {
     VerifySpec {
         url: Some("https://api.example.com/verify".into()),
+        allowed_domains: vec!["api.example.com".into()],
         ..Default::default()
     }
 }

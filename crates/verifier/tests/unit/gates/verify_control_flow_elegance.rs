@@ -9,9 +9,11 @@ fn verifier_control_flow_uses_single_expression_helpers() {
         .expect("verify/credential readable");
     let response = std::fs::read_to_string(root.join("src/verify/response.rs"))
         .expect("verify/response readable");
+    let verify_mod_compact = verify_mod.split_whitespace().collect::<Vec<_>>().join(" ");
 
     assert!(
-        verify_mod.contains("detector.as_ref().and_then(|det| det.verify.as_ref())")
+        verify_mod_compact
+            .contains("detector .as_ref() .and_then(|detector| detector.verify.as_ref())")
             && !verify_mod.contains("match &detector {\n        Some(det) => match &det.verify"),
         "verify task should select detector verify specs without nested option matches"
     );
@@ -23,7 +25,8 @@ fn verifier_control_flow_uses_single_expression_helpers() {
         "credential verifier should keep retry/success/OOB boolean flow expression-level"
     );
     assert!(
-        response.contains(".map_or(!val.is_null(), |expected|")
+        response.contains("return Ok(!val.is_null()")
+            && response.contains("spec.equals.as_ref().map_or(true, |expected|")
             && response.contains("map.iter().any(|(key, val)|")
             && response.contains("n.as_f64().map_or(true, |f| f != 0.0)")
             && response.contains("eq_ignore_ascii_case(candidate)")

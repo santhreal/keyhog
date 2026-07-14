@@ -50,13 +50,18 @@ fn cache_happy() {
 #[test]
 fn domain_allowlist_happy() {
     assert!(TestApi.host_is_allowed("api.github.com", &["github.com".into()]));
-    let source = include_str!("../../src/domain_allowlist.rs");
+    let adapter = include_str!("../../src/domain_allowlist.rs");
+    let source = include_str!("../../../core/src/verification_domain.rs");
     assert!(
         source.contains("fn lowercase_domain_if_needed")
             && source.contains("fn host_is_subdomain_of_allowed")
             && !source.contains("format!(\".{allowed}\")")
             && !source.contains("let allowed = allowed.trim_end_matches('.').to_lowercase();"),
         "domain allowlist matching must avoid per-entry suffix format allocation and eager lowercase allocation"
+    );
+    assert!(
+        adapter.contains("keyhog_core::verification_domain::host_is_allowed(host, allowlist)"),
+        "the verifier adapter must delegate to the shared allocation-free domain-policy owner"
     );
 }
 #[test]

@@ -151,12 +151,10 @@ pub(crate) fn evaluate_success(
         if let Some(val) = keyhog_core::json_selector::select(&json, json_path)
             .map_err(|error| ResponseContractError::invalid_selector("success selector", error))?
         {
-            if val.is_null() {
-                return Ok(false);
-            }
-            return Ok(spec.equals.as_ref().map_or(true, |expected| {
-                json_value_to_contract_string(val) == *expected
-            }));
+            return Ok(!val.is_null()
+                && spec.equals.as_ref().map_or(true, |expected| {
+                    json_value_to_contract_string(val) == *expected
+                }));
         }
         return Ok(false);
     }

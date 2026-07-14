@@ -57,7 +57,6 @@ pub async fn verify_url_blocked_as_private(url: &str) -> String {
             steps: vec![],
             allowed_domains: vec![
                 "127.0.0.1".into(),
-                "localhost".into(),
                 "169.254.169.254".into(),
                 "metadata.google.internal".into(),
             ],
