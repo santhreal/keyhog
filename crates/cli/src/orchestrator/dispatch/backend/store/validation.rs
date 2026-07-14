@@ -164,17 +164,22 @@ fn validate_decision_route_evidence_at(
         )
         .into());
     }
+    if decision.timing_for_backend(selected_backend).is_none() {
+        return Err("selected backend is missing timing evidence".into());
+    }
     if !decision
         .simd_timing
         .is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
     {
         return Err("cache decision has invalid SIMD timing evidence".into());
     }
-    if decision
-        .cpu_timing
-        .as_ref()
-        .is_some_and(|timing| !timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS))
-    {
+    let Some(cpu_timing) = decision.cpu_timing.as_ref() else {
+        return Err(
+            "cache decision has incomplete candidate coverage: scalar CPU timing evidence is missing"
+                .into(),
+        );
+    };
+    if !cpu_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
         return Err("cache decision has invalid CPU timing evidence".into());
     }
     for (driver, timing) in [
@@ -192,10 +197,7 @@ fn validate_decision_route_evidence_at(
     }
     let expected_receipt_backends = [
         (keyhog_scanner::ScanBackend::SimdCpu, true),
-        (
-            keyhog_scanner::ScanBackend::CpuFallback,
-            decision.cpu_timing.is_some(),
-        ),
+        (keyhog_scanner::ScanBackend::CpuFallback, true),
         (
             keyhog_scanner::ScanBackend::GpuCuda,
             decision.gpu_cuda_timing.is_some(),

@@ -162,8 +162,13 @@ impl AutorouteDecision {
         gpu_ms: Option<u128>,
     ) -> Self {
         let simd_timing = BackendTimingEvidence::constant_ms(simd_ms, AUTOROUTE_CALIBRATION_TRIALS);
-        let cpu_timing =
-            cpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
+        // Production calibration always measures scalar CPU. Test fixtures
+        // therefore default an omitted explicit value to the SIMD duration;
+        // missing-candidate tests remove the field after construction.
+        let cpu_timing = Some(BackendTimingEvidence::constant_ms(
+            cpu_ms.unwrap_or(simd_ms),
+            AUTOROUTE_CALIBRATION_TRIALS,
+        ));
         let gpu_wgpu_timing =
             gpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
         let candidate_receipts = Self::candidate_receipts(

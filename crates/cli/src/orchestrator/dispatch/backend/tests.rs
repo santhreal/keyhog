@@ -3360,6 +3360,43 @@ fn autoroute_cache_rejects_selected_backend_without_timing_evidence() {
 }
 
 #[test]
+fn autoroute_cache_rejects_missing_unselected_scalar_cpu_candidate() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_missing_unselected_cpu_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+    let mut bad =
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 10, Some(12), None);
+    bad.cpu_timing = None;
+    bad.candidate_receipts
+        .retain(|receipt| receipt.backend != ScanBackend::CpuFallback.label());
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key,
+        bad,
+        "incomplete candidate coverage: scalar CPU timing evidence is missing",
+    );
+
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
+    let error = loaded.expect_err("every calibration must retain its scalar CPU peer");
+    assert!(
+        error
+            .to_string()
+            .contains("incomplete candidate coverage: scalar CPU timing evidence is missing"),
+        "unexpected validation error: {error}"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
 fn autoroute_cache_rejects_missing_calibration_sample_evidence() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_missing_sample_{}.json",
