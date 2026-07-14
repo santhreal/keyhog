@@ -95,6 +95,14 @@ jobs:
       - name: Generate exact recovery corpus
         run: make -C benchmarks ioc-recovery-corpus
 
+      - name: Enforce exact deep recovery target
+        env:
+          KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
+        run: |
+          cd benchmarks && PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest \
+            -p no:cacheprovider -q -m target_spec \
+            bench/tests/test_ioc_recovery_target_spec.py
+
       - name: Run exact recovery mode matrix
         env:
           KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
