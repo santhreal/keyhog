@@ -424,7 +424,7 @@ fn equivalent_overlap_uses_each_retained_saturated_end() {
 }
 
 #[test]
-fn tied_direct_winners_keep_priority_then_raw_match_order() {
+fn tied_direct_winners_keep_coordinate_order() {
     let credential = "same-secret-evidence";
     let later_a = make_match_at_offset("service-a", credential, Some(0.50), "config.json", 1, 10);
     let earlier_b = make_match_at_offset("service-b", credential, Some(0.50), "config.json", 1, 0);
@@ -432,8 +432,42 @@ fn tied_direct_winners_keep_priority_then_raw_match_order() {
     let resolved = resolve_matches(vec![earlier_b, later_a]);
 
     assert_eq!(resolved.len(), 2);
-    assert_eq!(resolved[0].detector_id.as_ref(), "service-a");
-    assert_eq!(resolved[1].detector_id.as_ref(), "service-b");
+    assert_eq!(resolved[0].detector_id.as_ref(), "service-b");
+    assert_eq!(resolved[1].detector_id.as_ref(), "service-a");
+}
+
+#[test]
+fn direct_conflict_chain_cannot_reverse_nonconflicting_endpoints() {
+    let credential = "same-value";
+    let first = make_match_at_offset("service-token", credential, Some(0.50), "config.json", 1, 0);
+    let bridge = make_match_at_offset(
+        "service-token",
+        credential,
+        Some(0.50 + 0.15e-9),
+        "config.json",
+        1,
+        8,
+    );
+    let last = make_match_at_offset(
+        "service-token",
+        credential,
+        Some(0.50 + 0.30e-9),
+        "config.json",
+        1,
+        16,
+    );
+
+    let resolved = resolve_matches(vec![last, bridge, first]);
+
+    assert_eq!(resolved.len(), 3);
+    assert_eq!(
+        resolved
+            .iter()
+            .map(|matched| matched.location.offset)
+            .collect::<Vec<_>>(),
+        vec![0, 8, 16],
+        "the tied bridge must not transitively priority-sort disjoint endpoints"
+    );
 }
 
 #[test]
