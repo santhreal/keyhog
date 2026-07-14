@@ -346,9 +346,22 @@ class KeyhogScanner(Scanner):
             "mode": ["full", "fast", "deep", "precision"],
         }
         defaults = {"backend": "simd", "cache": "off", "daemon": "off", "mode": "full"}
-        active = [a for a in axes if a in choices]
-        if not active:
+        if not axes:
             return self.variants()
+        unknown = sorted(set(axes).difference(choices))
+        if unknown:
+            raise ValueError(
+                "unsupported keyhog benchmark matrix axes: "
+                + ", ".join(unknown)
+                + "; choose from: "
+                + ", ".join(sorted(choices))
+            )
+        if len(set(axes)) != len(axes):
+            duplicates = sorted({axis for axis in axes if axes.count(axis) > 1})
+            raise ValueError(
+                "duplicate keyhog benchmark matrix axes: " + ", ".join(duplicates)
+            )
+        active = axes
         grids = [choices[a] for a in active]
         out: list[ScannerConfig] = []
         for combo in itertools.product(*grids):

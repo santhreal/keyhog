@@ -436,6 +436,15 @@ def test_keyhog_adapter_rejects_invalid_confidence_before_execution(tmp_path, va
         )
 
 
+def test_keyhog_matrix_rejects_unknown_and_duplicate_axes():
+    scanner = scanners.KeyhogScanner(binary="/bin/true")
+
+    with pytest.raises(ValueError, match=r"unsupported .* axes: mystery"):
+        scanner.matrix(["mode", "mystery"])
+    with pytest.raises(ValueError, match=r"duplicate .* axes: mode"):
+        scanner.matrix(["mode", "mode"])
+
+
 def test_keyhog_scanner_reports_timeout_as_timeout(monkeypatch, tmp_path):
     scanner = scanners.KeyhogScanner(binary="/unused/keyhog")
     timed_out = base.RunStats(exit_code=-1, timed_out=True)
