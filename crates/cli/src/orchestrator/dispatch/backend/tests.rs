@@ -8,7 +8,8 @@ use super::store::{
     AUTOROUTE_CACHE_FILE_BYTES,
 };
 use super::workload::{
-    autoroute_stable_bucket, autoroute_stable_density_bucket, source_class_hash, workload_key,
+    autoroute_stable_bucket, autoroute_stable_density_bucket, decode_density_bucket,
+    planned_decode_sample_bytes, planned_decode_sample_quotas, source_class_hash, workload_key,
     WorkloadKey,
 };
 use super::*;
@@ -405,6 +406,103 @@ fn workload_key_distinguishes_decode_density_for_same_size_batches() {
 }
 
 #[test]
+fn workload_decode_density_is_invariant_to_batch_permutation() {
+    let plain = test_chunk("source code and ordinary prose\n".repeat(4_096));
+    let encoded = test_chunk("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=".repeat(2_048));
+    let escaped = test_chunk("%7B%22secret%22%3A%22value%22%7D".repeat(2_048));
+
+    let forward = workload_key(&[plain.clone(), encoded.clone(), escaped.clone()], 902)
+        .expect("forward workload classifies");
+    let rotated = workload_key(&[encoded.clone(), escaped.clone(), plain.clone()], 902)
+        .expect("rotated workload classifies");
+    let reversed =
+        workload_key(&[escaped, encoded, plain], 902).expect("reversed workload classifies");
+
+    assert_eq!(forward, rotated);
+    assert_eq!(forward, reversed);
+}
+
+#[test]
+fn workload_decode_density_samples_late_chunks_and_file_tails() {
+    let encoded = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=".repeat(4_096);
+    let plain_prefix = " ".repeat(128 * 1024);
+    let same_size_plain = " ".repeat(plain_prefix.len() + encoded.len());
+    let tail_heavy = format!("{plain_prefix}{encoded}");
+
+    let plain_key =
+        workload_key(&[test_chunk(same_size_plain)], 902).expect("plain workload classifies");
+    let tail_key =
+        workload_key(&[test_chunk(tail_heavy)], 902).expect("tail-heavy workload classifies");
+    assert!(
+        tail_key.decode_density_bucket > plain_key.decode_density_bucket,
+        "encoded data beyond the old 64 KiB prefix must affect workload identity"
+    );
+
+    let late_plain = vec![
+        test_chunk(" ".repeat(128 * 1024)),
+        test_chunk(" ".repeat(encoded.len())),
+    ];
+    let late_encoded = vec![test_chunk(" ".repeat(128 * 1024)), test_chunk(encoded)];
+    assert!(
+        decode_density_bucket(&late_encoded).expect("late encoded batch classifies")
+            > decode_density_bucket(&late_plain).expect("late plain batch classifies"),
+        "a decode-heavy late chunk must not be hidden by earlier plain bytes"
+    );
+}
+
+#[test]
+fn decode_density_sample_plan_is_bounded_and_represents_short_chunks() {
+    let lengths = [0usize, 1, 23, 24, 71, 72, 73, 4_096, 1024 * 1024];
+    let batch = lengths
+        .iter()
+        .map(|&len| test_chunk("x".repeat(len)))
+        .collect::<Vec<_>>();
+    let quotas = planned_decode_sample_quotas(&batch).expect("sample plan fits");
+    let sampled = planned_decode_sample_bytes(&batch).expect("sample plan fits");
+
+    assert_eq!(sampled, quotas.iter().sum::<usize>());
+    assert!(sampled <= 64 * 1024, "sample plan read {sampled} bytes");
+    for (index, &len) in lengths.iter().enumerate().filter(|(_, len)| **len <= 72) {
+        assert_eq!(
+            quotas[index], len,
+            "short chunk {index} must be sampled in full"
+        );
+    }
+    assert!(
+        quotas[lengths.len() - 1] > 72,
+        "unused sampling capacity must flow to long chunks"
+    );
+}
+
+#[test]
+fn decode_density_does_not_join_encoded_fragments_across_sample_windows() {
+    let fragments = (0..1_000)
+        .map(|_| test_chunk("A".repeat(23)))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        decode_density_bucket(&fragments).expect("fragment batch classifies"),
+        0,
+        "sub-threshold fragments in separate windows must not form an encoded run"
+    );
+}
+
+#[test]
+fn workload_decode_density_fails_closed_when_representative_sampling_cannot_fit() {
+    let batch = (0..911)
+        .map(|_| test_chunk("x".repeat(72)))
+        .collect::<Vec<_>>();
+    let error = workload_key(&batch, 902)
+        .expect_err("autoroute must reject an under-represented decode-density sample")
+        .to_string();
+    assert!(
+        error.contains("65536-byte sampling cap")
+            && error.contains("lower --fused-batch")
+            && error.contains("recalibrate"),
+        "sampling-budget failure must be explicit and actionable: {error}"
+    );
+}
+
+#[test]
 fn workload_key_coalesces_parallel_reader_adjacent_bucket_jitter() {
     assert_eq!(
         autoroute_stable_bucket(1_u64 << 26),
@@ -614,7 +712,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && !serialized.contains("\"confidence_interval_95_ns\"")
             && !serialized.contains("\"best_ns\"")
             && !serialized.contains("\"mean_ns\""),
-        // v24 persists PRIMARY evidence only: timing summaries, per-backend ms,
+        // v25 persists PRIMARY evidence only: timing summaries, per-backend ms,
         // GPU cold/warm/route, and selected-margin keys are derived from the
         // trial vectors on load, never stored.
         "cache JSON must persist route timing evidence, not only the selected backend"
