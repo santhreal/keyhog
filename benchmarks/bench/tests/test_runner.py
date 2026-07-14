@@ -112,6 +112,7 @@ def test_runner_rejects_daemon_scoring_on_labeled_corpus(tmp_path):
     )
 
     assert result.available is False
+    assert result.exit_code == -1
     assert "production daemon CLI forbids plaintext" in result.error
 
 

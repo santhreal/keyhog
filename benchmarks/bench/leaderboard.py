@@ -34,6 +34,10 @@ from .schema import RunResult, ScannerConfig
 _DEFAULT_SCANNERS = list(SCANNER_NAMES)
 
 
+class RequiredBenchmarkUnavailable(RuntimeError):
+    """One or more explicitly required matrix rows could not execute."""
+
+
 def results_dir(base: pathlib.Path | None = None) -> pathlib.Path:
     base = base or (pathlib.Path(__file__).resolve().parents[1] / "results")
     return base / hardware.capture().hostname_hash
@@ -81,11 +85,13 @@ def run_leaderboard(corpus_name: str, scanners: list[str], *, tier: str = "quick
                     matrix_axes: list[str] | None = None,
                     corpus_root: str | pathlib.Path | None = None,
                     out_dir: pathlib.Path | None = None,
-                    verbose: bool = True) -> list[pathlib.Path]:
+                    verbose: bool = True,
+                    require_available: bool = False) -> list[pathlib.Path]:
     """Run the matrix, write one RunResult JSON per run, return their paths."""
     out = out_dir or results_dir()
     out.mkdir(parents=True, exist_ok=True)
     written: list[pathlib.Path] = []
+    unavailable: list[str] = []
     for scanner_name in scanners:
         for cfg in _configs_for(scanner_name, tier, matrix_axes, corpus_name):
             if verbose:
@@ -95,10 +101,16 @@ def run_leaderboard(corpus_name: str, scanners: list[str], *, tier: str = "quick
             path = out / f"{corpus_name}-{scanner_name}-{cfg.config_id}.json"
             write_result(result, path)
             written.append(path)
+            if not result.available:
+                unavailable.append(f"{scanner_name}[{cfg.config_id}]: {result.error}")
             if verbose:
                 _print_line(result)
     if verbose:
         print(f"\nwrote {len(written)} result(s) -> {out}", file=sys.stderr)
+    if require_available and unavailable:
+        raise RequiredBenchmarkUnavailable(
+            "required benchmark rows were unavailable: " + "; ".join(unavailable)
+        )
     return written
 
 
@@ -124,12 +136,14 @@ def _main(argv: list[str] | None = None) -> int:
                     help="comma-separated keyhog axes: backend,cache,daemon,mode")
     ap.add_argument("--corpus-root", default=None)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--require-available", action="store_true")
     args = ap.parse_args(argv)
     scanners = [s.strip() for s in args.scanners.split(",") if s.strip()]
     axes = [a.strip() for a in args.matrix.split(",")] if args.matrix else None
     out = pathlib.Path(args.out) if args.out else None
     run_leaderboard(args.corpus, scanners, tier=args.tier, matrix_axes=axes,
-                    corpus_root=args.corpus_root, out_dir=out)
+                    corpus_root=args.corpus_root, out_dir=out,
+                    require_available=args.require_available)
     return 0
 
 

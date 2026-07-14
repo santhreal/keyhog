@@ -80,7 +80,7 @@ ioc-recovery-corpus:
 
 ioc-recovery: ioc-recovery-corpus
 	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus ioc-recovery \
-		--scanners keyhog --matrix mode --out "$(IOC_RECOVERY_OUT)"
+		--scanners keyhog --matrix mode --out "$(IOC_RECOVERY_OUT)" --require-available
 
 agentre-corpus:
 	cd $(BENCH_DIR) && $(PY) -m bench.agentre_build --ensure
@@ -104,7 +104,7 @@ analyze:
 	cd $(BENCH_DIR) && $(PY) -m bench analyze --scanner "$(SCANNER)" --corpus "$(CORPUS)" --top "$(ANALYZE_TOP)"
 
 bench leaderboard:
-	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus "$(CORPUS)" --scanners "$(SCANNERS)" --out "$(OUT)"
+	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus "$(CORPUS)" --scanners "$(SCANNERS)" --out "$(OUT)" --require-available
 
 report:
 	cd $(BENCH_DIR) && $(PY) -m bench report --results "$(OUT)" --reports reports --corpus "$(CORPUS)" --inject
@@ -137,7 +137,7 @@ cross-device-gate:
 loop:
 	cd $(BENCH_DIR) && PYTHONDONTWRITEBYTECODE=1 $(PY) -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests
 	cd $(BENCH_DIR) && $(PY) -m bench.corpora.mirror --ensure
-	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus "$(CORPUS)" --scanners "$(SCANNERS)" --out "$(OUT)"
+	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus "$(CORPUS)" --scanners "$(SCANNERS)" --out "$(OUT)" --require-available
 	cd $(BENCH_DIR) && $(PY) -m bench calibrate --corpus "$(CORPUS)" --emit-toml "$(CALIBRATION_OUT)"
 	cd $(BENCH_DIR) && $(PY) -m bench report --results "$(OUT)" --reports reports --corpus "$(CORPUS)"
 	cd $(BENCH_DIR) && $(PY) -m bench gate --corpus "$(CORPUS)" --results "$(OUT)" \

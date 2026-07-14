@@ -302,6 +302,9 @@ def _unavailable_result(
             detector_corpus_sha256=detector_corpus_sha256,
         ),
         corpus=corpus.info(),
+        # No scanner process ran. Keep this distinct from a successful scanner
+        # exit so unavailable rows cannot masquerade as successful execution.
+        exit_code=-1,
         available=False,
         error=error,
     )

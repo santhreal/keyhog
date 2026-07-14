@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import sys
 
 from . import hardware
 from .analyze import analyze as analyze_examples, print_report
 from .gate import DEFAULT_DETECTOR_FP_ABS, DEFAULT_DETECTOR_FP_REL
-from .leaderboard import run_leaderboard
+from .leaderboard import RequiredBenchmarkUnavailable, run_leaderboard
 from .scanners import SCANNER_NAMES
 from .report import (
     build_sections,
@@ -51,14 +52,19 @@ def _run(args: argparse.Namespace) -> int:
 def _leaderboard(args: argparse.Namespace) -> int:
     scanners = [s.strip() for s in args.scanners.split(",") if s.strip()]
     axes = [a.strip() for a in args.matrix.split(",")] if args.matrix else None
-    run_leaderboard(
-        args.corpus,
-        scanners,
-        tier=args.tier,
-        matrix_axes=axes,
-        corpus_root=args.corpus_root,
-        out_dir=args.out,
-    )
+    try:
+        run_leaderboard(
+            args.corpus,
+            scanners,
+            tier=args.tier,
+            matrix_axes=axes,
+            corpus_root=args.corpus_root,
+            out_dir=args.out,
+            require_available=args.require_available,
+        )
+    except RequiredBenchmarkUnavailable as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 2
     return 0
 
 
@@ -219,6 +225,11 @@ def main(argv: list[str] | None = None) -> int:
     leaderboard.add_argument("--matrix", default=None)
     leaderboard.add_argument("--corpus-root", default=None)
     leaderboard.add_argument("--out", type=pathlib.Path, default=None)
+    leaderboard.add_argument(
+        "--require-available",
+        action="store_true",
+        help="write every row, then exit nonzero if any requested row could not execute",
+    )
 
     report = sub.add_parser("report", help="Render benchmark markdown reports.")
     report.add_argument("--results", type=pathlib.Path, default=pathlib.Path("results"))
