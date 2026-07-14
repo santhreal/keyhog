@@ -58,7 +58,7 @@ pub const DEFINITIONS: &[ExitCodeDefinition] = &[
     ExitCodeDefinition {
         code: EXIT_SYSTEM_ERROR,
         label: "System error",
-        help: "System error (local environment failure: low-level I/O that is not not-found/permission-denied, or GPU/hardware init)",
+        help: "System error (local environment failure: low-level I/O that is not not-found/permission-denied, or selected SIMD/Hyperscan unavailable)",
         scan_reachable: true,
     },
     ExitCodeDefinition {

@@ -435,10 +435,10 @@ impl ScanOrchestrator {
             // failed by a decode-heavy probe that legitimately decodes to a
             // secret. A scanner panic still overrides (the scan was unreliable).
             std::process::ExitCode::SUCCESS
-        } else if has_live_credentials {
-            std::process::ExitCode::from(EXIT_LIVE_CREDENTIALS)
         } else if scanner_panicked {
             std::process::ExitCode::from(EXIT_SCANNER_PANIC)
+        } else if has_live_credentials {
+            std::process::ExitCode::from(EXIT_LIVE_CREDENTIALS)
         } else if has_new_entries {
             std::process::ExitCode::from(EXIT_FINDINGS)
         } else if incremental_cache_failed {
