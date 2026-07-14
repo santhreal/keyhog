@@ -17,6 +17,7 @@ fn junit_wraps_finding_in_testsuites_with_failure() {
     let out = render(&sample_finding());
 
     assert!(out.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n"));
+    assert!(out.contains("name=\"keyhog.scan.status\" value=\"success\""));
     assert!(out.trim_end().ends_with("</testsuites>"));
     assert!(
         out.contains(

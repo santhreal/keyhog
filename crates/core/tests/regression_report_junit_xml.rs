@@ -187,7 +187,7 @@ fn empty_findings_emit_exact_empty_suite() {
     let out = render(&[]);
     // NB: no `\`-line-continuation, that strips the leading whitespace of the
     // next source line, which would drop the real 2-space indentation below.
-    let expected = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n  <testsuite name=\"keyhog\" tests=\"0\" failures=\"0\" errors=\"0\" time=\"0.0\">\n  </testsuite>\n</testsuites>\n";
+    let expected = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n  <testsuite name=\"keyhog\" tests=\"0\" failures=\"0\" errors=\"0\" time=\"0.0\">\n    <properties>\n      <property name=\"keyhog.scan.status\" value=\"success\"/>\n    </properties>\n  </testsuite>\n</testsuites>\n";
     assert_eq!(out, expected, "empty-suite bytes wrong");
     // No testcase/failure elements at all.
     assert_eq!(out.matches("<testcase").count(), 0);

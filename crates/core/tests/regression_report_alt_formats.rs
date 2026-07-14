@@ -125,11 +125,16 @@ fn csv_empty_run_is_header_only() {
 #[test]
 fn junit_empty_run_is_exact_document() {
     let out = render_str(ReportFormat::Junit, &[]);
-    let expected = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
-<testsuites>\n\
-\x20 <testsuite name=\"keyhog\" tests=\"0\" failures=\"0\" errors=\"0\" time=\"0.0\">\n\
-\x20 </testsuite>\n\
-</testsuites>\n";
+    let expected = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+        "<testsuites>\n",
+        "  <testsuite name=\"keyhog\" tests=\"0\" failures=\"0\" errors=\"0\" time=\"0.0\">\n",
+        "    <properties>\n",
+        "      <property name=\"keyhog.scan.status\" value=\"success\"/>\n",
+        "    </properties>\n",
+        "  </testsuite>\n",
+        "</testsuites>\n",
+    );
     assert_eq!(out, expected);
 }
 

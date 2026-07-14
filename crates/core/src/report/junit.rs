@@ -55,22 +55,25 @@ impl<W: Write + Send> Reporter for JunitReporter<W> {
             self.tests_count, self.tests_count
         )?;
 
-        if !self.skip_summary.is_empty() {
-            writeln!(self.writer, "    <properties>")?;
+        writeln!(self.writer, "    <properties>")?;
+        writeln!(
+            self.writer,
+            "      <property name=\"keyhog.scan.status\" value=\"{}\"/>",
+            if self.skip_summary.is_empty() {
+                "success"
+            } else {
+                "partial"
+            }
+        )?;
+        for (reason, count) in &self.skip_summary {
             writeln!(
                 self.writer,
-                "      <property name=\"keyhog.scan.status\" value=\"partial\"/>"
+                "      <property name=\"keyhog.coverage_gap\" value=\"{}={}\"/>",
+                escape_xml_attr(reason),
+                count
             )?;
-            for (reason, count) in &self.skip_summary {
-                writeln!(
-                    self.writer,
-                    "      <property name=\"keyhog.coverage_gap\" value=\"{}={}\"/>",
-                    escape_xml_attr(reason),
-                    count
-                )?;
-            }
-            writeln!(self.writer, "    </properties>")?;
         }
+        writeln!(self.writer, "    </properties>")?;
 
         self.writer.write_all(&self.testcases)?;
 

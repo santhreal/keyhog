@@ -181,10 +181,9 @@ metadata is descriptive only; it never changes finding or exit-code semantics.
 
 ## `--format junit`
 
-JUnit XML contains one failing testcase per finding. When the scan has source
-coverage gaps, the suite also contains `keyhog.scan.status=partial` and one
-`keyhog.coverage_gap` property per reason/count pair. A complete scan keeps the
-historical XML shape with no extra properties, while CI consumers can reject a
+JUnit XML contains one failing testcase per finding. The suite always contains
+`keyhog.scan.status` (`success` or `partial`), and partial scans add one
+`keyhog.coverage_gap` property per reason/count pair. CI consumers can reject a
 partial artifact without scraping stderr.
 
 ## `--format jsonl`
