@@ -42,6 +42,8 @@ fn r5t_detectors_format_json_emits_corpus_and_policy() {
         "patterns",
         "companions",
         "verify",
+        "verification",
+        "test_contracts",
         "policy",
     ] {
         assert!(
@@ -56,6 +58,32 @@ fn r5t_detectors_format_json_emits_corpus_and_policy() {
     assert!(
         first["verify"].is_boolean(),
         "`detectors --format json` element `verify` must be a boolean per the documented shape: {first}"
+    );
+
+    let aws = arr
+        .iter()
+        .find(|detector| detector["id"] == "aws-access-key")
+        .expect("aws-access-key declaration in detector listing");
+    assert_eq!(
+        aws["simdsieve_prefixes"],
+        serde_json::json!(["AKIA", "ASIA"]),
+        "detector JSON must expose detector-owned accelerator prefixes"
+    );
+    assert_eq!(
+        aws["verification"]["allowed_domains"],
+        serde_json::json!(["sts.amazonaws.com"]),
+        "detector JSON must expose the declared verification policy"
+    );
+    assert_eq!(
+        aws["test_contracts"],
+        serde_json::json!([{"positive": true, "negative": true}]),
+        "detector JSON must expose test coverage without fixture bytes"
+    );
+    assert!(
+        !serde_json::to_string(&aws["test_contracts"])
+            .expect("test contract summary serializes")
+            .contains("AKIAQYLPMN5HFIQR7XYA"),
+        "detector introspection must not expose fixture credentials"
     );
 
     let password = arr
@@ -88,6 +116,10 @@ fn r5t_detectors_format_json_emits_corpus_and_policy() {
         generic_api_key["policy"]["decoded_hex_key_material_lengths"],
         serde_json::json!([32, 48]),
         "detector JSON must expose transport-decoded widths from detector TOML"
+    );
+    assert_eq!(
+        generic_api_key["policy"]["entropy_policy_priority"], 80,
+        "detector JSON must expose overlapping keyword policy ownership"
     );
     assert_eq!(
         generic_api_key["policy"]["canonical_hex_key_material"][1]["lengths"],

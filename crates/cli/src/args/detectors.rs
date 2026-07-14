@@ -20,7 +20,8 @@ pub struct DetectorArgs {
     pub search: Option<String>,
     /// Print the matching-policy summary (regexes, keywords, companions,
     /// verification presence) instead of the grouped service summary. Pairs
-    /// naturally with `--search`. Use `--format json` for the complete schema.
+    /// naturally with `--search`. Use `--format json` for the redaction-safe
+    /// declared schema, including verification structure and test coverage.
     #[arg(short, long, default_value_t = false)]
     pub verbose: bool,
     /// Audit detectors against the quality gate (`keyhog_core::validate_detector`).
