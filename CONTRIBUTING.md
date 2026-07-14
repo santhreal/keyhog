@@ -150,7 +150,9 @@ We follow standard Rust conventions enforced by `cargo fmt` and
 - Error messages lowercase, actionable, specific. Include the
   fix the user should try whenever possible.
 - Public items have doc comments.
-- Files cap at ~500 lines. Split when you cross it.
+- Split modules by responsibility, ownership, readability, and testability.
+  File length is a prompt to inspect cohesion, not an architecture rule by
+  itself.
 
 ## PR checklist
 
