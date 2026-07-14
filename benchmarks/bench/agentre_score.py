@@ -28,10 +28,35 @@ BONUS_WEIGHTS = {
 HALLUCINATION_PENALTY = 0.05
 BONUS_HALLUCINATION_PENALTY = 0.03
 BONUS_SAMPLE_PATTERN = re.compile(r"level(?:13|23)", re.IGNORECASE)
+SCORE_CONTRACT_SCHEMA = "agentre-score-contract-v1"
 
 
 class AgentREScoreError(ValueError):
     """An AgentRE scoring input does not satisfy the pinned JSON contract."""
+
+
+def score_contract_receipt() -> dict[str, object]:
+    """Expose the pinned scorer's declared and mathematically attainable maxima."""
+
+    attainable_main = round(sum(STANDARD_WEIGHTS.values()), 4)
+    attainable_bonus = round(sum(BONUS_WEIGHTS.values()), 4)
+    declared_main = 1.0
+    declared_bonus = 1.0
+    return {
+        "schema": SCORE_CONTRACT_SCHEMA,
+        "declared": {
+            "main_max": declared_main,
+            "bonus_max": declared_bonus,
+            "total_max": declared_main + declared_bonus,
+        },
+        "attainable": {
+            "main_max": attainable_main,
+            "bonus_max": attainable_bonus,
+            "total_max": round(attainable_main + attainable_bonus, 4),
+        },
+        "consistent": (attainable_main, attainable_bonus)
+        == (declared_main, declared_bonus),
+    }
 
 
 def _require_mapping(value: object, *, context: str) -> Mapping[str, object]:

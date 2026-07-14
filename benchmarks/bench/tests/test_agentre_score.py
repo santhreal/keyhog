@@ -6,6 +6,7 @@ import pytest
 
 from bench.agentre_score import (
     AgentREScoreError,
+    score_contract_receipt,
     score_report,
     score_sample,
 )
@@ -214,3 +215,14 @@ def test_bonus_nested_schema_and_type_drift_fails_closed(pinned_scorer, mutation
 def test_non_object_inputs_fail_closed():
     with pytest.raises(AgentREScoreError, match="JSON object"):
         score_sample([], {})
+
+
+def test_score_contract_exposes_upstream_unattainable_declared_maximum():
+    receipt = score_contract_receipt()
+
+    assert receipt == {
+        "schema": "agentre-score-contract-v1",
+        "declared": {"main_max": 1.0, "bonus_max": 1.0, "total_max": 2.0},
+        "attainable": {"main_max": 1.0, "bonus_max": 0.95, "total_max": 1.95},
+        "consistent": False,
+    }

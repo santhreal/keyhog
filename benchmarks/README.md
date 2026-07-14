@@ -226,6 +226,10 @@ python -m bench.agentre_build
 The local scorer reproduces the pinned standard and bonus rubrics, including
 partial decoded-C2 credit, set overlap, nested fields, hallucination penalties,
 and rounding. Differential tests compare it with the validated upstream scorer.
+The official bonus weights sum to 0.95 although its summary declares a 1.0
+bonus maximum. KeyHog exposes both the declared 2.0 total and attainable 1.95
+total in a separate score-contract receipt. It does not silently normalize the
+upstream result.
 No 100% claim is valid until the complete runner also proves field-level score,
 backend parity, and fail-visible analyzer coverage.
 
