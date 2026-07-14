@@ -1310,6 +1310,49 @@ exit 0
 }
 
 #[test]
+fn action_accepts_client_safe_severity_and_forwards_it_exactly() {
+    let dir = TempDir::new().expect("tempdir");
+    let seen = dir.path().join("severity");
+    write_stub(
+        &dir,
+        &format!(
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --severity) shift; printf '%s' "$1" > '{}' ;;
+    --output) shift; out="$1" ;;
+  esac
+  shift
+done
+printf '[]\n' > "$out"
+"#,
+            seen.display()
+        ),
+    );
+
+    let output = run_action(
+        &dir,
+        &[
+            ("ACTION_INPUT_SEVERITY", "client-safe"),
+            ("ACTION_INPUT_FORMAT", "json"),
+            ("ACTION_INPUT_OUTPUT", "results.json"),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "client-safe must be accepted by the Action wrapper: {}",
+        combined_output(&output)
+    );
+    assert_eq!(
+        fs::read_to_string(seen).expect("recorded severity"),
+        "client-safe"
+    );
+}
+
+#[test]
 fn action_validates_policy_booleans_before_invoking_scanner() {
     let dir = TempDir::new().expect("tempdir");
     let invoked = dir.path().join("invoked");

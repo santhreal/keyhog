@@ -139,15 +139,15 @@ such as the portable/static release) has no backend *choice* to route, so it
 resolves its lone CPU backend directly and never requires calibration (and never
 fails closed). Autoroute engages only when a build compiled more than one backend.
 
-The visible calibration phase measures every workload class the current host
-can materialize: stdin, small/large files, many-file trees, decode-heavy input, git
-history/blobs/diff, a loopback web URL, and a live container image, timing each
-backend per class and persisting only a route it can prove fastest (or the sound
-lowest measured median among statistically non-dominated routes when confidence
-intervals overlap). Backend engagement overhead breaks only an exact median
-tie. A materialized class must calibrate successfully; classes whose required
-tool, daemon, or fixture cannot be created are reported as unavailable rather
-than silently claimed as covered.
+The visible calibration phase measures stdin and filesystem workload classes for
+the default policy and every preset. The default policy also measures Git
+history, blobs, and diffs, a loopback web URL, and a live container image when
+the host can materialize them. Each class times every eligible backend and
+persists only a route it can prove fastest (or the sound lowest measured median
+among statistically non-dominated routes when confidence intervals overlap).
+Backend engagement overhead breaks only an exact median tie. A materialized
+class must calibrate successfully. Missing tools or fixtures are reported as
+unavailable instead of claimed as covered.
 
 Because a scan-policy preset (`--fast`, `--deep`, `--precision`) changes the
 scanner fields hashed into the routing digest, each preset resolves a *different*
@@ -352,13 +352,13 @@ Filter, format, gate:
 
 ```bash
 keyhog scan . --severity high                  # info | client-safe | low | medium | high | critical
-keyhog scan . --min-confidence 0.5             # raise the ML floor
+keyhog scan . --min-confidence 0.5             # raise the reporting confidence floor
 keyhog scan . --format sarif -o keyhog.sarif   # GitHub code scanning
 keyhog scan . --verify                         # live-verify against vendor APIs
 keyhog scan . --create-baseline .keyhog-baseline.json
 keyhog scan . --baseline .keyhog-baseline.json # only NEW findings vs snapshot
 keyhog scan . --fast                           # pre-commit speed (no entropy/ML/decode recursion)
-keyhog scan . --deep                           # bounded maximum-recall recovery
+keyhog scan . --deep                           # highest-recall built-in preset
 keyhog scan . --incremental                    # BLAKE3 Merkle skip → 10-100× CI loop
 ```
 
@@ -383,8 +383,8 @@ unavailable, `13` requested source failed or input coverage was incomplete. Matc
   Azure (subscription key, storage account key, SAS), GCP (service account,
   API key), Cloudflare, Heroku, Vercel, Supabase.
 - **Payment processors:** Stripe, Braintree, Razorpay, Paddle, Plaid,
-  Square, and PayPal, all with companion-required validation (a Braintree
-  private key without its public counterpart never fires).
+  Square, and PayPal, with detector-owned checks and optional or required
+  companions. A Razorpay key secret requires its nearby key ID.
 - **Source forges:** GitHub PATs (with CRC32 checksum), GitLab tokens,
   Bitbucket app passwords, npm tokens (with checksum), Gitea / Forgejo
   / Codeberg.
@@ -431,10 +431,10 @@ Browse detector authoring and inspection in the
 - **Multiline reassembly.** `"sk-proj-" + \` continuation in JavaScript,
   YAML multi-line strings, Makefile backslash-continuation, Helm /
   Jinja templated outputs, all reassembled before regex matching.
-- **Companion-required validation.** AWS access key without its 40-char
-  secret? Skipped. Twilio API key without its auth token? Skipped.
-  Two-out-of-two signals are required for the high-noise detectors,
-  cutting the canonical `git log -G ghp_` false-positive cluster.
+- **Companion validation.** Required companions gate high-noise detectors. A
+  Twilio API key without its API secret is skipped. Optional companions enrich
+  confidence or verification. AWS access-key detection does not require its
+  secret, but the secret is needed for live verification.
 - **Confidence scoring.** Every finding carries a `[0.0, 1.0]` score
   derived from Shannon entropy, surrounding context, companion match,
   checksum (GitHub CRC32, npm, Slack), and a small ML classifier

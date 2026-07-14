@@ -45,7 +45,8 @@ jobs:
 ```
 
 This Action example scans the checked-out working tree. Use the explicit
-`--git-history` recipe below when the workflow must inspect reachable history.
+`--git-history` recipe below to inspect added lines across reachable commit
+ancestry. Add `--git-blobs` for complete reachable blob coverage.
 
 The composite action installs KeyHog, writes a SARIF report, uploads it
 to **Security -> Code scanning**, attaches the report as a workflow
@@ -394,15 +395,16 @@ KEYHOG_VERSION="$TAG" sh install.sh
 Update the pin via a Renovate / Dependabot config or just bump it
 by hand when a new release lands.
 
-## Scan history on main and release, not per PR
+## Scan commit additions on main and release, not per PR
 
-A full git-history scan is the right thing to run on `main` post-merge
-and on release tags, but it's overkill for every PR. A typical setup:
+An added-line history scan is useful on `main` post-merge and on release tags,
+but it is overkill for every PR. Add `--git-blobs .` when the policy must cover
+the complete set of blobs reachable from the selected repository. A typical setup:
 
 | Trigger        | Scan                            | Purpose |
 |----------------|----------------------------------|---------|
 | Pull request   | `keyhog scan .` (working tree)  | Fast feedback over proposed files |
-| Push to main   | `keyhog scan --git-history .`   | Cover reachable repository history |
+| Push to main   | `keyhog scan --git-history .`   | Cover added lines from reachable commit patches |
 | Release tag    | `keyhog scan --git-history . --verify` | Add explicit live verification before publication |
 
 Duration depends on history size, changed bytes, verification endpoints,
@@ -423,11 +425,15 @@ process list by injecting `KEYHOG_GITHUB_TOKEN`, `KEYHOG_GITLAB_TOKEN`, or
 store. Then select the scope explicitly:
 
 ```bash
-keyhog scan --github-org acme --precision --format jsonl --output acme.jsonl
-keyhog scan --gitlab-group platform --precision --format jsonl --output platform.jsonl
+keyhog scan --github-org acme --format jsonl --output acme.jsonl
+keyhog scan --gitlab-group platform --format jsonl --output platform.jsonl
 keyhog scan --s3-bucket audit-archive --s3-prefix production/ \
-  --precision --format jsonl --output audit-archive.jsonl
+  --format jsonl --output audit-archive.jsonl
 ```
+
+Use `--precision` only when its explicit lower-recall policy is appropriate. It
+disables generic entropy discovery and the relaxed keyword bridge, then raises
+the confidence floor to 0.85.
 
 Use the source limits from the [CLI reference](../reference/cli.md) to define the
 intended coverage boundary. Reaching one is an incomplete-source result, not a
@@ -439,10 +445,10 @@ choice vary with detector policy, source shape, cache state, host CPU/GPU, and
 network limits. Calibrate autoroute on the actual worker class; do not copy a
 routing cache between machines or force GPU/CPU based only on input size.
 
-For long-lived workers, the [daemon workflow](./daemon.md) avoids repeated
-startup work. Ephemeral hosted CI should normally use the ordinary process path
-unless the job performs enough scans to amortize daemon startup and explicitly
-checks daemon compatibility.
+The [daemon workflow](./daemon.md) can avoid repeated startup for compatible
+stdin and single-file scans under the daemon's standard scan policy. Remote,
+cloud, Git, directory, and multi-source inventory scans use the ordinary process
+path. Ephemeral hosted CI should normally do the same.
 
 ## Failure modes worth knowing
 

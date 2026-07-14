@@ -155,7 +155,7 @@ pub struct ScanArgs {
     #[arg(long, value_name = "BASE_REF")]
     pub git_diff: Option<String>,
 
-    /// Scan full git history commit-by-commit using added lines from patches
+    /// Scan reachable commits using added lines from each commit patch
     #[cfg(feature = "git")]
     #[arg(long, value_name = "PATH")]
     pub git_history: Option<PathBuf>,
@@ -564,10 +564,11 @@ pub struct ScanArgs {
 
     /// Daemon routing: `auto` (default, use a live daemon if one is up, else
     /// scan in-process), `on` (force the daemon route; fail if none is up), or
-    /// `off` (force in-process). Bare `--daemon` means `on`. Use `on` in
-    /// pre-commit hooks and IDE save handlers that benefit from reusing a
-    /// compatible compiled scanner. Startup and request latency depend on the
-    /// corpus, backend, cache state, host, and input. See
+    /// `off` (force in-process). Bare `--daemon` means `on`. Custom stdin or
+    /// single-file hook glue can reuse a compatible compiled scanner. The
+    /// shipped `keyhog hook install` path and `--git-staged` are not daemon
+    /// eligible. Startup and request latency depend on the corpus, backend,
+    /// cache state, host, and input. See
     /// `keyhog daemon start --help`.
     ///
     /// Socket: the daemon route connects to the shared default resolution
@@ -844,7 +845,7 @@ pub struct ScanArgs {
     #[arg(long, value_name = "DEPTH", value_parser = crate::value_parsers::parse_decode_depth)]
     pub decode_depth: Option<usize>,
 
-    /// Maximum file size for decode-through scanning (default: 512KB).
+    /// Maximum prepared chunk size admitted to decode-through (default: 512KB).
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub decode_size_limit: Option<usize>,
 

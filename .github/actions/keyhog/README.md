@@ -54,7 +54,7 @@ inputs to the KeyHog step:
 - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
   with:
     path: .                     # file or directory to scan
-    severity: high              # info | low | medium | high | critical
+    severity: high              # info | client-safe | low | medium | high | critical
     format: sarif               # text | json | sarif | jsonl
     verify: 'false'             # 'true' to live-verify credentials
     upload-sarif: 'true'        # 'false' to keep the report local-only

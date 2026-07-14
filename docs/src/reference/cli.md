@@ -253,7 +253,7 @@ stdin and single-file scans.
 |--------------------|-----------------------------------------------------|
 | `daemon start`     | Bind the Unix socket and accept connections. Startup options include `--socket`, `--detectors`, `--cache-dir`, `--backend`, and `--request-timeout-secs`. |
 | `daemon stop`      | Tell the running daemon to shut down.               |
-| `daemon status`    | Print uptime, scans served, active scans, detector count, and backend policy. |
+| `daemon status`    | Print uptime, scans served, active scan attempts (running or queued behind serialized scanner execution), detector count, and backend policy. |
 
 See [Daemon and warm scans](../workflows/daemon.md) for option semantics,
 `auto` / `on` / `off` routing, eligibility, readiness, socket resolution,

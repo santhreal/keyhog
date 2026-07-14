@@ -9,7 +9,7 @@ inputs:
     description: 'Path to scan (file or directory).'
     default: '.'
   severity:
-    description: 'Minimum severity to report: info | low | medium | high | critical.'
+    description: 'Minimum severity to report: info | client-safe | low | medium | high | critical.'
     default: 'high'
   format:
     description: 'Output format: text | json | sarif | jsonl.'

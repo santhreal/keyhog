@@ -22,13 +22,13 @@ mechanisms, and their roles are deliberately different:
 | Mechanism | Role | Can create a candidate? |
 |---|---|---|
 | Service-anchored detector regex | Matches a vendor or credential-specific shape from detector TOML | Yes |
-| Companion patterns | Requires related fields or fragments near a primary match | Confirms an existing candidate |
+| Companion patterns | Finds related fields near a primary match; `required = true` gates acceptance, while optional companions enrich confidence or verification | Confirms an existing candidate |
 | Structured and multiline extraction | Reassembles assignments and strings that syntax splits across lines or nodes | Yes |
 | Decode-through transforms | Scans supported encoded or transformed representations while preserving source attribution | Yes |
 | Bounded static program recovery | Evaluates recognized side-effect-free JavaScript XOR, explicit-key AES-256-CBC, and CryptoJS/OpenSSL passphrase expressions when every operand is embedded and immutable | Yes |
 | Generic assignment bridge | Extracts values beside credential-role keys when no vendor shape exists | Yes |
 | Shannon entropy | Measures byte-distribution uncertainty for opaque generic values | Yes, on the entropy-discovery path |
-| BPE token efficiency | Rejects language-like values that compress into common subword tokens when the owning detector enables it | No; precision gate |
+| BPE token efficiency | Rejects language-like values that compress into common subword tokens; eligible candidates use it by default, and detector TOML can tune or disable it | No; precision gate |
 | English bigram discriminator | Distinguishes random alphabetic tokens from pronounceable identifiers, dictionary placeholders, and low-diversity masks inside specific shape and context gates | No; admits or rejects an extracted candidate within those gates |
 | Shape, placeholder, path, and context policy | Rejects examples, references, prose, identifiers, and context-specific noise | No; precision gates |
 | Checksums and structural validators | Proves or rejects formats that carry intrinsic validity bits or grammar | Adjusts acceptance/confidence |
@@ -204,7 +204,7 @@ relaxes a detector to make a backend look faster.
 ### Configuration Presets
 
 *   `--fast` (or `ScannerConfig::fast()`): Disables high-FP generic entropy checks, ML, and deep decoding (`max_decode_depth = 0`). Maximizes throughput.
-*   `--deep` (or `ScannerConfig::thorough()`): Enables source-file entropy, combines heuristic and ML evidence without an ML-only veto, removes comment confidence penalties, raises decode-through to one 1 MiB chunk, and uses decode depth 10. This is the bounded maximum-recall preset.
+*   `--deep` (or `ScannerConfig::thorough()`): Enables source-file entropy, combines heuristic and ML evidence without an ML-only veto, removes comment confidence penalties, raises decode-through to one 1 MiB chunk, and uses decode depth 10. This is the highest-recall built-in preset with bounded recovery.
 *   `--precision` (or `ScannerConfig::high_precision()`): Sets `min_confidence` to `0.85` (`HIGH_PRECISION_MIN_CONFIDENCE`), keeps ML enabled, limits decoding depth (`max_decode_depth = 1`), and disables high-FP generic entropy checks. Maximizes precision.
 
 ### Strict Backend Parity
@@ -294,7 +294,7 @@ A detector's `.toml` carries:
 - zero or more `patterns`, each with `regex` + `group` + optional `description`
   (required for service-anchored detectors; optional structured-envelope
   anchors for `phase2-generic`)
-- optional `companions` (e.g. AWS access key needs the secret key nearby)
+- optional `companions`; only entries with `required = true` gate acceptance
 - optional `verify` block - HTTP method, URL template, auth scheme,
   success status
 

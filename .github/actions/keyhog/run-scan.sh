@@ -137,9 +137,9 @@ now_ms() {
 }
 
 case "$severity" in
-  info | low | medium | high | critical) ;;
+  info | client-safe | low | medium | high | critical) ;;
   *)
-    gha_error "Invalid severity '$severity'. Use one of: info, low, medium, high, critical."
+    gha_error "Invalid severity '$severity'. Use one of: info, client-safe, low, medium, high, critical."
     exit 2
     ;;
 esac

@@ -55,7 +55,10 @@ daemon configuration error remains exit `2`.
 scan attempts, active scans, detector count, backend policy, and identity
 staleness. `scans served` includes attempts that returned a daemon error, so it
 is an activity counter rather than a success counter. Status never starts a
-daemon.
+daemon. `active scans` counts accepted scan attempts until their blocking task
+finishes, including attempts queued behind the scanner's fragment-state lock.
+The daemon can frame multiple client connections concurrently, but production
+scanner execution is serialized so fragment state cannot cross requests.
 
 `daemon stop` sends a shutdown request and succeeds after receiving the
 acknowledgement. The server then stops accepting connections and removes the
