@@ -15,14 +15,13 @@ keyhog; it documents the third-party tools and data the benchmark *uses*.
 | Kingfisher | https://github.com/mongodb/kingfisher | Apache-2.0 |
 | TruffleHog | https://github.com/trufflesecurity/trufflehog | AGPL-3.0 |
 | Nosey Parker | https://github.com/praetorian-inc/noseyparker | Apache-2.0 |
-| `betterleaks` (bench alias) | upstream project, see note below | per upstream |
+| Betterleaks | https://github.com/betterleaks/betterleaks (benchmark pin: v1.1.1, `df7dbcb43c51b3cfe258607c2d7941a87cc98672`) | MIT |
 | `titus` (bench alias) | upstream project, see note below | per upstream |
 
-> **Note on `betterleaks` / `titus`:** these are the bench's internal adapter
-> names (`benchmarks/bench/scanners/competitors.py`). They wrap real upstream
-> tools invoked from `$BETTERLEAKS_BIN` / `$TITUS_BIN`. Replace these rows with
-> the exact upstream project + SPDX license once the alias→tool mapping is
-> confirmed, so attribution is precise rather than assumed.
+> **Note on `titus`:** this is the bench's internal adapter name
+> (`benchmarks/bench/scanners/competitors.py`). It wraps a tool supplied through
+> `$TITUS_BIN`. Record the exact upstream project and SPDX license before
+> distributing its binary or results that identify it as a public project.
 
 Each scanner is invoked as an external binary the operator installs; keyhog does
 not vendor, redistribute, or relink any of their code. AGPL-3.0 (TruffleHog) is
@@ -67,5 +66,5 @@ used here only to benchmark detection on each tool's home turf.
 These fixtures are **gitignored and never committed** (`homefield/.gitignore`
 ignores `*/corpus/`); they are regenerated locally from a checkout/cache of the
 upstream source. Their content remains under the respective upstream project's
-license (Apache-2.0 for kingfisher; see the `betterleaks` upstream for its
-terms). We redistribute none of it.
+license (MIT for Betterleaks and Apache-2.0 for Kingfisher). We redistribute
+none of it.
