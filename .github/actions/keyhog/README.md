@@ -111,7 +111,12 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 | Scan duration | Reported by the Action as `duration-ms`; varies by host, cache, config, and input |
 | Runtime dependencies | `libhyperscan5` (auto-installed via apt on Ubuntu runners); none on macOS/Windows |
 | Toolchains required | none for release-tag prebuilts; Rust only for branch/SHA source builds |
-| GPU | optional; install-time calibration measures every backend available on the runner and persists the fastest correct route |
+| GPU | optional; the Action parity-checks eligible backends on the exact requested workload and persists the fastest correct route |
+
+Before the report scan, the Action resolves the effective configuration and
+runs one throwaway calibration scan. Calibration reads incremental state for
+exact workload filtering but never persists Merkle cache changes, so the report
+scan receives the same cache state and input workload.
 
 No Python, no JVM, no Docker daemon. Single static binary plus the
 auto-installed Hyperscan shared library on Linux.

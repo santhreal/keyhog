@@ -47,8 +47,8 @@ artifact, and prints a job summary with the finding count, raw exit code,
 and scan duration.
 
 Release tags and explicit `version:` inputs require a matching prebuilt binary
-and checksum. A missing or unverifiable asset fails closed. Branch and commit
-Action refs may build the checked-out source instead.
+and checksum. A missing or unverifiable asset fails closed. Branch/SHA Action
+refs may build from source using the checked-out tree instead.
 
 When `upload-sarif: 'true'`, SARIF upload is fail-closed on trusted pushes
 and same-repo pull requests. Fork pull requests often lack

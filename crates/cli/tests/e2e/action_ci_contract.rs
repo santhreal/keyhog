@@ -1773,7 +1773,7 @@ fn consumer_docs_state_release_assets_fail_closed_before_source_build() {
     let docs = [
         repo.join("README.md"),
         repo.join(".github/actions/keyhog/README.md"),
-        repo.join("docs/src/workflows/integrations.md"),
+        repo.join("docs/src/workflows/ci.md"),
     ];
     let retired_claims = [
         "Auto-downloads a prebuilt binary; falls back to cargo build when no release asset matches",
@@ -1801,7 +1801,7 @@ fn consumer_docs_state_release_assets_fail_closed_before_source_build() {
             path.display()
         );
         assert!(
-            lower.contains("fail closed"),
+            lower.contains("fail closed") || lower.contains("fails closed"),
             "{} must say missing release assets fail closed",
             path.display()
         );
@@ -1873,22 +1873,208 @@ fn composite_action_wires_resolved_asset_into_download_step() {
 }
 
 #[test]
-fn composite_action_calibrates_default_autoroute_without_forcing_a_backend() {
+fn composite_action_calibrates_exact_workload_without_forcing_a_backend() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     let step = manifest
-        .split("- name: Calibrate autoroute")
+        .split("- name: Calibrate autoroute for this scan")
         .nth(1)
         .and_then(|tail| tail.split("- name:").next())
         .expect("Calibrate autoroute step exists");
     assert!(
-        step.contains("if: inputs.backend == ''")
-            && step.contains("run: keyhog calibrate-autoroute"),
-        "fresh default Action scans must create proof-backed routing evidence"
+        step.contains("if: inputs.backend == '' || inputs.backend == 'auto'")
+            && step.contains("--autoroute-calibrate")
+            && step.contains("--autoroute-gpu")
+            && step.contains("--path \"$ACTION_SCAN_PATH\"")
+            && step.contains("--severity \"$ACTION_SEVERITY\"")
+            && step.contains("config_args=(")
+            && step.contains("  --effective")
+            && step.contains("args+=(--baseline \"$ACTION_BASELINE\")")
+            && step.contains("config_args+=(--baseline \"$ACTION_BASELINE\")")
+            && step.contains("keyhog \"${args[@]}\""),
+        "fresh and explicit-auto Action scans must calibrate the exact requested workload and policy"
     );
     assert!(
-        !step.contains("--backend") && !step.contains("--no-autoroute-gpu"),
+        !step.contains("--backend")
+            && !step.contains("--no-autoroute-gpu")
+            && !step.contains("calibration_passes")
+            && !step.contains("for ((pass"),
         "Action calibration must measure eligible peers, not choose a route"
     );
+}
+
+#[test]
+fn composite_action_calibration_executes_exact_argv_once_for_every_incremental_mode() {
+    for incremental in ["false", "true"] {
+        let dir = TempDir::new().expect("tempdir");
+        let runner_temp = dir.path().join("runner-temp");
+        fs::create_dir(&runner_temp).expect("runner temp");
+        let call_log = dir.path().join("calls.bin");
+        let config_log = dir.path().join("config.log");
+        write_executable(
+            &dir.path().join("keyhog"),
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "config" ]]; then
+  printf '%s\0' "$@" > "$KEYHOG_CONFIG_LOG"
+  printf '[effective-config]\nincremental = %s\n' "$STUB_INCREMENTAL"
+  exit "${STUB_CONFIG_EXIT:-0}"
+fi
+printf '__CALL__\0' >> "$KEYHOG_CALL_LOG"
+printf '%s\0' "$@" >> "$KEYHOG_CALL_LOG"
+previous=""
+for arg in "$@"; do
+  if [[ "$previous" == "--output" ]]; then
+    printf '[]\n' > "$arg"
+  fi
+  previous="$arg"
+done
+"#,
+        );
+        let path = format!(
+            "{}:{}",
+            dir.path().display(),
+            env::var("PATH").expect("PATH")
+        );
+        let output = run_manifest_bash_step(
+            "Calibrate autoroute for this scan",
+            &[
+                ("ACTION_SCAN_PATH", "repo slice"),
+                ("ACTION_SEVERITY", "critical"),
+                ("ACTION_BASELINE", "baseline file.json"),
+                (
+                    "RUNNER_TEMP",
+                    runner_temp.to_str().expect("utf-8 runner temp"),
+                ),
+                ("GITHUB_RUN_ID", "42"),
+                ("GITHUB_RUN_ATTEMPT", "3"),
+                (
+                    "KEYHOG_CALL_LOG",
+                    call_log.to_str().expect("utf-8 call log"),
+                ),
+                (
+                    "KEYHOG_CONFIG_LOG",
+                    config_log.to_str().expect("utf-8 config log"),
+                ),
+                ("STUB_INCREMENTAL", incremental),
+                ("PATH", &path),
+            ],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "calibration step failed: {}",
+            combined_output(&output)
+        );
+        let config_args = fs::read(&config_log)
+            .expect("config invocation logged")
+            .split(|byte| *byte == 0)
+            .filter(|field| !field.is_empty())
+            .map(|field| String::from_utf8(field.to_vec()).expect("utf-8 config argument"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            config_args,
+            [
+                "config",
+                "--effective",
+                "--path",
+                "repo slice",
+                "--severity",
+                "critical",
+                "--format",
+                "json",
+                "--baseline",
+                "baseline file.json",
+            ]
+        );
+
+        let fields = fs::read(&call_log)
+            .expect("calibration calls logged")
+            .split(|byte| *byte == 0)
+            .filter(|field| !field.is_empty())
+            .map(|field| String::from_utf8(field.to_vec()).expect("utf-8 argument"))
+            .collect::<Vec<_>>();
+        let probe = runner_temp.join("keyhog-autoroute-probe-42-3.json");
+        let expected = vec![
+            "scan".to_string(),
+            "--autoroute-calibrate".to_string(),
+            "--autoroute-gpu".to_string(),
+            "--path".to_string(),
+            "repo slice".to_string(),
+            "--severity".to_string(),
+            "critical".to_string(),
+            "--format".to_string(),
+            "json".to_string(),
+            "--output".to_string(),
+            probe.display().to_string(),
+            "--baseline".to_string(),
+            "baseline file.json".to_string(),
+        ];
+        let calls = fields
+            .split(|field| field == "__CALL__")
+            .filter(|call| !call.is_empty())
+            .collect::<Vec<_>>();
+        assert_eq!(calls.len(), 1, "calibration must run exactly once");
+        for call in calls {
+            assert_eq!(call, expected.as_slice());
+        }
+        assert!(
+            !probe.exists(),
+            "throwaway calibration report must be removed"
+        );
+    }
+}
+
+#[test]
+fn composite_action_calibration_fails_before_scanning_when_config_is_unresolved() {
+    let dir = TempDir::new().expect("tempdir");
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&runner_temp).expect("runner temp");
+    let call_log = dir.path().join("calls.bin");
+    let config_log = dir.path().join("config.log");
+    write_executable(
+        &dir.path().join("keyhog"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "config" ]]; then
+  printf 'config\n' >> "$KEYHOG_CONFIG_LOG"
+  exit 7
+fi
+printf 'scan\n' >> "$KEYHOG_CALL_LOG"
+"#,
+    );
+    let path = format!(
+        "{}:{}",
+        dir.path().display(),
+        env::var("PATH").expect("PATH")
+    );
+    let output = run_manifest_bash_step(
+        "Calibrate autoroute for this scan",
+        &[
+            ("ACTION_SCAN_PATH", "."),
+            ("ACTION_SEVERITY", "high"),
+            ("ACTION_BASELINE", ""),
+            (
+                "RUNNER_TEMP",
+                runner_temp.to_str().expect("utf-8 runner temp"),
+            ),
+            (
+                "KEYHOG_CALL_LOG",
+                call_log.to_str().expect("utf-8 call log"),
+            ),
+            (
+                "KEYHOG_CONFIG_LOG",
+                config_log.to_str().expect("utf-8 config log"),
+            ),
+            ("PATH", &path),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(output.status.code(), Some(7), "{combined}");
+    assert!(
+        combined.contains("Could not resolve the exact scan configuration"),
+        "config failure must be actionable: {combined}"
+    );
+    assert!(!call_log.exists(), "scan must not run after config failure");
 }
 
 #[test]

@@ -52,8 +52,8 @@ inputs:
     default: ''
   backend:
     description: |
-      Optional explicit scan backend for diagnostics: auto | simd | cpu | gpu.
-      Leave unset to use the installed binary's persisted autoroute calibration.
+      Optional scan backend: auto | simd | cpu | gpu. Leave unset or choose
+      auto to calibrate this workload; explicit backends are for diagnostics.
     default: ''
 
 outputs:
@@ -276,10 +276,46 @@ runs:
       shell: bash
       run: echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
-    - name: Calibrate autoroute
-      if: inputs.backend == ''
+    - name: Calibrate autoroute for this scan
+      if: inputs.backend == '' || inputs.backend == 'auto'
       shell: bash
-      run: keyhog calibrate-autoroute
+      env:
+        ACTION_SCAN_PATH: ${{ inputs.path }}
+        ACTION_SEVERITY: ${{ inputs.severity }}
+        ACTION_BASELINE: ${{ inputs.baseline }}
+      run: |
+        set -euo pipefail
+        probe="${RUNNER_TEMP}/keyhog-autoroute-probe-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}.json"
+        trap 'rm -f -- "$probe"' EXIT
+        config_args=(
+          config
+          --effective
+          --path "$ACTION_SCAN_PATH"
+          --severity "$ACTION_SEVERITY"
+          --format json
+        )
+        args=(
+          scan
+          --autoroute-calibrate
+          --autoroute-gpu
+          --path "$ACTION_SCAN_PATH"
+          --severity "$ACTION_SEVERITY"
+          --format json
+          --output "$probe"
+        )
+        if [[ -n "${ACTION_BASELINE:-}" ]]; then
+          config_args+=(--baseline "$ACTION_BASELINE")
+          args+=(--baseline "$ACTION_BASELINE")
+        fi
+        set +e
+        keyhog "${config_args[@]}" >/dev/null
+        config_exit=$?
+        set -e
+        if [[ "$config_exit" != "0" ]]; then
+          echo "::error title=KeyHog::Could not resolve the exact scan configuration before autoroute calibration. Run keyhog config --effective with the same path and policy inputs."
+          exit "$config_exit"
+        fi
+        keyhog "${args[@]}"
 
     - name: Run scan
       id: scan

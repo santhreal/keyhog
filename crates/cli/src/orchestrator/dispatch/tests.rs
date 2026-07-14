@@ -4,6 +4,8 @@
 //! gate stays green while these still reach the parent module via `use super::*`.
 
 use super::*;
+use clap::Parser;
+use keyhog_core::{DetectorSpec, PatternSpec, Severity};
 
 struct StaticSource {
     name: &'static str,
@@ -122,4 +124,62 @@ fn coalesced_producer_reserves_region_separators_before_crossing_the_byte_cap() 
     assert_eq!(batches[0][1].data.as_ref(), "two");
     assert_eq!(batches[1].len(), 1);
     assert_eq!(batches[1][0].data.as_ref(), "x");
+}
+
+#[test]
+fn autoroute_calibration_leaves_incremental_cache_bytes_unchanged() {
+    let detector = DetectorSpec {
+        id: "incremental-finalize-test".into(),
+        name: "Incremental Finalize Test".into(),
+        service: "test".into(),
+        severity: Severity::Medium,
+        patterns: vec![PatternSpec {
+            regex: r"STATIC_SECRET_[0-9]+".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let scanner =
+        Arc::new(CompiledScanner::compile(vec![detector.clone()]).expect("compile test detector"));
+    let signatures = [Arc::<str>::from(r"STATIC_SECRET_[0-9]+")]
+        .into_iter()
+        .collect();
+    let args = crate::args::ScanArgs::try_parse_from(["scan"]).expect("parse scan args");
+    let mut orchestrator = ScanOrchestrator::from_parts_for_test(
+        args,
+        vec![detector],
+        scanner,
+        signatures,
+        crate::test_fixture_suppressions::TestFixtureSuppressions::bundled(),
+    );
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let cache = dir.path().join("incremental.json");
+    let index = Arc::new(keyhog_core::MerkleIndex::default());
+    assert!(!index.record_chunk_at_offset_and_check_unchanged("seed.rs".into(), 0, 1, 4, b"seed",));
+    index
+        .save_with_spec(&cache, &orchestrator.detector_spec_hash)
+        .expect("seed incremental cache");
+    let seeded_bytes = std::fs::read(&cache).expect("read seeded cache");
+
+    assert!(!index.record_chunk_at_offset_and_check_unchanged("new.rs".into(), 0, 2, 3, b"new",));
+    orchestrator.effective_config.autoroute_calibration = true;
+    orchestrator.finalize_incremental(Some(&index), Some(&cache), 0, &[]);
+    assert_eq!(
+        std::fs::read(&cache).expect("read cache after calibration"),
+        seeded_bytes,
+        "calibration must not persist in-memory incremental updates"
+    );
+
+    orchestrator.effective_config.autoroute_calibration = false;
+    orchestrator.finalize_incremental(Some(&index), Some(&cache), 0, &[]);
+    assert_ne!(
+        std::fs::read(&cache).expect("read cache after ordinary scan"),
+        seeded_bytes,
+        "ordinary scans must persist in-memory incremental updates"
+    );
+    let reloaded =
+        keyhog_core::MerkleIndex::load_with_spec_report(&cache, &orchestrator.detector_spec_hash)
+            .into_index();
+    assert!(reloaded.record_chunk_at_offset_and_check_unchanged("new.rs".into(), 0, 2, 3, b"new",));
 }

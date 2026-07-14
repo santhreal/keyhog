@@ -649,6 +649,14 @@ impl ScanOrchestrator {
                 "incremental scan: skipped unchanged files"
             );
         }
+        // Calibration must observe the same incremental filtering state as the
+        // report scan without consuming that state. The producer may update its
+        // in-memory index while assembling the exact workload, but calibration
+        // is read-only with respect to the persisted cache.
+        if self.effective_config.autoroute_calibration {
+            tracing::debug!("autoroute calibration: incremental cache left unchanged");
+            return;
+        }
         if let (Some(idx), Some(path)) = (merkle, incremental_path) {
             // Incremental-mode safety: never persist a file that produced a
             // finding. Otherwise an unchanged secret-bearing file would be
