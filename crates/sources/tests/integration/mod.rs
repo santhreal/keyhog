@@ -5,6 +5,7 @@ pub mod git_diff_finds_feature_branch_secret;
 pub mod git_history_finds_added_line;
 pub mod git_source_chunk_has_path_metadata;
 pub mod git_source_finds_tracked_secret;
+pub mod image_metadata;
 pub mod node_modules_skipped_by_default;
 pub mod ooxml_office_documents_are_scanned;
 pub mod pdf_documents_are_scanned;

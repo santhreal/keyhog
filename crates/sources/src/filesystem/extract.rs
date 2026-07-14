@@ -11,6 +11,7 @@ use std::sync::Arc;
 mod archive;
 mod compressed;
 mod hexnib;
+mod image_metadata;
 mod pdf;
 #[cfg(fuzzing)]
 pub use pdf::fuzz_extract_pdf_text;
@@ -370,6 +371,18 @@ pub(super) fn process_entry(
     let live_mtime_ns = live_metadata.and_then(|meta| meta.mtime_ns);
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
 
+    let image_kind = match image_metadata::probe_kind(&path, ext) {
+        Ok(kind) => kind,
+        Err(error) => {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            let _ = emit(Err(SourceError::Other(format!(
+                "failed to inspect image metadata signature for '{}': {error}; image metadata was not scanned",
+                display_path(&path)
+            ))));
+            return;
+        }
+    };
+
     // Compile the SKIP_EXTENSIONS array into a fast HashSet at startup to accelerate file-type screening (KH-45)
     if is_skip_extension(ext) {
         // A skip-extension file is normally dropped unread as binary. But Git-LFS
@@ -386,8 +399,10 @@ pub(super) fn process_entry(
             let _event = crate::record_skip_event(crate::SourceSkipEvent::GitLfsPointer);
             return;
         }
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-        return;
+        if image_kind.is_none() {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+            return;
+        }
     }
 
     if max_size > 0 && file_size > max_size {
@@ -415,6 +430,30 @@ pub(super) fn process_entry(
                 }
             }
         }
+    }
+
+    if let Some(kind) = image_kind {
+        match image_metadata::extract(&path, kind, file_size, live_mtime_ns, max_size) {
+            Ok(extraction) => {
+                for chunk in extraction.chunks {
+                    if !emit(Ok(chunk)) {
+                        return;
+                    }
+                }
+                if let Some(error) = extraction.coverage_error {
+                    let _event = crate::record_skip_event(
+                        crate::SourceSkipEvent::StructuredSourceParseFailure,
+                    );
+                    let _ = emit(Err(error));
+                }
+            }
+            Err(error) => {
+                let _event =
+                    crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
+                let _ = emit(Err(error));
+            }
+        }
+        return;
     }
 
     if ext.is_empty() {
