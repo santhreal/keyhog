@@ -177,6 +177,14 @@ fn hex_decode_rejects_non_hex_digit() {
 }
 
 #[test]
+fn hex_decode_rejects_oversize_input() {
+    // MAX_HEX_INPUT_LEN == 32 MiB; two bytes over preserves even length, so
+    // the input ceiling alone rejects this otherwise valid hex.
+    let big = "0".repeat(32 * 1024 * 1024 + 2);
+    assert!(hex_decode(&big).is_err());
+}
+
+#[test]
 fn find_hex_strings_floor_and_underscore_value_preserved() {
     // HexDecoder uses floor 16. find_hex_strings keeps the ORIGINAL value
     // (with `_`) so the splice can locate it in the parent.

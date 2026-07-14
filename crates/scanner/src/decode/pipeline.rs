@@ -1,9 +1,7 @@
+use super::limits::{MAX_DECODED_CHUNKS_PER_ROOT, MAX_DECODED_TOTAL_BYTES};
 use keyhog_core::Chunk;
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
-
-const MAX_DECODED_CHUNKS_PER_ROOT: usize = 1000;
-const MAX_DECODED_TOTAL_BYTES: usize = 64 * 1024 * 1024;
 
 pub(crate) fn decode_chunk(
     chunk: &Chunk,

@@ -11,6 +11,7 @@ pub(crate) mod inflate;
 #[cfg(feature = "decode")]
 mod javascript_static;
 mod json;
+mod limits;
 mod pipeline;
 pub(crate) mod reverse;
 mod unicode_escape;
@@ -62,18 +63,6 @@ pub(crate) fn extracted_value_strings_for_test(text: &str) -> Vec<String> {
         values.iter().map(|value| value.value.clone()).collect()
     })
 }
-
-/// Minimum contiguous encoded-alphabet run that makes a chunk worth decoding.
-/// A base64 of a ~16-byte secret is ~24 chars; shorter runs are too small to
-/// hide a credential and would only add prefilter-bypass cost.
-#[cfg(feature = "decode")]
-const MIN_DECODABLE_RUN: usize = 24;
-#[cfg(feature = "decode")]
-const MIN_PERCENT_ESCAPES: usize = 4;
-#[cfg(feature = "decode")]
-const MIN_BACKSLASH_ESCAPES: usize = 2;
-#[cfg(feature = "decode")]
-const MIN_HTML_NUMERIC_ENTITIES: usize = 4;
 
 #[cfg(feature = "decode")]
 fn valid_html_numeric_entity_len(data: &[u8]) -> Option<usize> {
@@ -155,7 +144,7 @@ pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
             && data[i + 2].is_ascii_hexdigit()
         {
             percent_escapes += 1;
-            if percent_escapes >= MIN_PERCENT_ESCAPES {
+            if percent_escapes >= limits::MIN_PERCENT_ESCAPES {
                 return true;
             }
             run = 0;
@@ -166,7 +155,7 @@ pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
         if b == b'&' {
             if let Some(entity_len) = valid_html_numeric_entity_len(&data[i..]) {
                 html_numeric_entities += 1;
-                if html_numeric_entities >= MIN_HTML_NUMERIC_ENTITIES {
+                if html_numeric_entities >= limits::MIN_HTML_NUMERIC_ENTITIES {
                     return true;
                 }
                 run = 0;
@@ -183,7 +172,7 @@ pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
                         .all(|digit| digit.is_ascii_hexdigit()) =>
                 {
                     backslash_escapes += 1;
-                    if backslash_escapes >= MIN_BACKSLASH_ESCAPES {
+                    if backslash_escapes >= limits::MIN_BACKSLASH_ESCAPES {
                         return true;
                     }
                     run = 0;
@@ -196,7 +185,7 @@ pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
                         .all(|digit| digit.is_ascii_hexdigit()) =>
                 {
                     backslash_escapes += 1;
-                    if backslash_escapes >= MIN_BACKSLASH_ESCAPES {
+                    if backslash_escapes >= limits::MIN_BACKSLASH_ESCAPES {
                         return true;
                     }
                     run = 0;
@@ -219,7 +208,7 @@ pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
                         && (b'0'..=b'7').contains(&data[i + 3]) =>
                 {
                     backslash_escapes += 1;
-                    if backslash_escapes >= MIN_BACKSLASH_ESCAPES {
+                    if backslash_escapes >= limits::MIN_BACKSLASH_ESCAPES {
                         return true;
                     }
                     run = 0;
@@ -234,7 +223,7 @@ pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
         // `=` is included so a trailing-padded blob still counts.
         if is_base64_candidate_byte(b) {
             run += 1;
-            if run >= MIN_DECODABLE_RUN {
+            if run >= limits::MIN_DECODABLE_RUN {
                 return true;
             }
         } else {

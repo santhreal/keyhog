@@ -1,3 +1,4 @@
+use super::limits::{MAX_HEX_INPUT_LEN, MIN_HEX_CANDIDATE_LEN};
 use super::pipeline::{decode_candidate_refs_exact, with_extracted_value_spans, ExtractedValue};
 use super::{Decoder, EncodedString};
 use keyhog_core::Chunk;
@@ -10,14 +11,12 @@ impl Decoder for HexDecoder {
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        // Floor lowered from 32→16 hex chars (8 decoded bytes) so
-        // short API keys encode-through in `encoding_explosion_runner`.
         with_extracted_value_spans(&chunk.data, |candidates| {
             decode_candidate_refs_exact(
                 chunk,
-                candidates
-                    .iter()
-                    .filter_map(|candidate| is_hex_candidate(candidate, 16).then_some(candidate)),
+                candidates.iter().filter_map(|candidate| {
+                    is_hex_candidate(candidate, MIN_HEX_CANDIDATE_LEN).then_some(candidate)
+                }),
                 |value| {
                     hex_decode(value).and_then(|decoded| String::from_utf8(decoded).map_err(|_| ()))
                 },
@@ -67,9 +66,6 @@ fn is_hex_candidate(candidate: &ExtractedValue, min_length: usize) -> bool {
             .bytes()
             .all(|byte| byte == b'_' || byte.is_ascii_hexdigit())
 }
-
-/// Maximum hex input length we'll decode (prevents OOM from malicious input).
-const MAX_HEX_INPUT_LEN: usize = 32 * 1024 * 1024; // 32 MB -> 16 MB decoded
 
 /// Decode a hex string (optionally `_`-separated), bounded to
 /// `MAX_HEX_INPUT_LEN` bytes for DoS safety. `Err(())` on odd length or
