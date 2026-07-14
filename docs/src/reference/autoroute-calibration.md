@@ -259,6 +259,7 @@ meanings:
 | `selected_margin_ns` | One-shot representative-time margin to the next candidate; `null` when there is no competitor. |
 | `daemon_backend` | Backend derived for a ready persistent daemon from warm GPU evidence. |
 | `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts of the one-shot confidence, basis, and margin fields. |
+| `candidate_receipts` | One receipt per measured backend, containing its canonical backend identity, secret-safe correctness digest, complete trial count, and evidence digest over those fields plus the exact timing vector. Every result digest must equal the SIMD reference and every evidence digest must recompute exactly or the cache is rejected. |
 
 ## Single-backend builds
 

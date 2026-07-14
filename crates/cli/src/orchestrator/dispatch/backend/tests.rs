@@ -969,14 +969,17 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && serialized.contains("\"decode_candidate_bytes_bucket\"")
             && serialized.contains("\"decode_unknown\"")
             && !serialized.contains("\"decode_density_bucket\"")
+            && serialized.contains("\"candidate_receipts\"")
             && serialized.contains("\"correctness_digest\"")
+            && serialized.contains("\"completed_trials\"")
+            && serialized.contains("\"evidence_digest\"")
             && serialized.contains("\"calibrated_at_unix_ms\"")
             && serialized.contains("\"simd_timing\"")
             && serialized.contains("\"trials_ns\"")
             && !serialized.contains("\"confidence_interval_95_ns\"")
             && !serialized.contains("\"best_ns\"")
             && !serialized.contains("\"mean_ns\""),
-        // v26 persists PRIMARY evidence only: timing summaries, per-backend ms,
+        // v28 persists primary timing evidence and per-candidate parity receipts.
         // GPU cold/warm/route, and selected-margin keys are derived from the
         // trial vectors on load, never stored.
         "cache JSON must persist route timing evidence, not only the selected backend"
@@ -1621,19 +1624,19 @@ fn autoroute_cache_rejects_v25_decode_density_identity_before_payload_decode() {
         0xA55A_D00D_CAFE_BEEF,
         &test_host(None),
     )
-    .expect_err("v25 decode-density identity must never be reused as v26 decoder work")
+    .expect_err("v25 decode-density identity must never be reused as v28 decoder work")
     .to_string();
     let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 
     assert!(
         error.contains("unsupported autoroute cache version 25")
-            && error.contains("expects 26")
+            && error.contains("expects 28")
             && error.contains("re-run calibration"),
         "v25 migration failure must be version-first and actionable: {error}"
     );
     assert!(
         !error.contains("missing field") && !error.contains("unknown field"),
-        "v25 payload must not reach the v26 workload deserializer: {error}"
+        "v25 payload must not reach the v28 workload deserializer: {error}"
     );
 }
 
@@ -1662,7 +1665,7 @@ fn autoroute_cache_save_reports_when_it_replaces_outdated_evidence() {
 
     match outcome {
         AutorouteCacheSaveOutcome::Replaced { reason } => assert!(
-            reason.contains("schema 1") && reason.contains("schema 26"),
+            reason.contains("schema 1") && reason.contains("schema 28"),
             "replacement disposition must explain both schema identities: {reason}"
         ),
         _ => panic!("outdated cache replacement must be operator-visible"),
@@ -2593,10 +2596,11 @@ fn autoroute_cache_rejects_selected_backend_without_timing_evidence() {
         Some(10),
         None,
     );
-    // Drop the CpuFallback timing so the SELECTED backend has no evidence, the
-    // "missing timing" invariant is kept in v21 (the redundant `cpu_ms` field it
-    // once also cleared is gone; ms is derived from `cpu_timing`).
+    // Drop the CpuFallback timing and its receipt so the selected backend has
+    // no evidence while the remaining SIMD timing/receipt pair stays coherent.
     bad.cpu_timing = None;
+    bad.candidate_receipts
+        .retain(|receipt| receipt.backend != ScanBackend::CpuFallback.label());
     write_tampered_decision_cache(
         &path,
         digest,
@@ -3405,7 +3409,7 @@ fn autoroute_cache_rejects_missing_correctness_digest() {
     let host = test_host(None);
     let key = test_workload_key();
     let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
-    bad.correctness_digest = 0;
+    bad.candidate_receipts[0].correctness_digest = 0;
     write_tampered_decision_cache(
         &path,
         digest,
@@ -3422,6 +3426,77 @@ fn autoroute_cache_rejects_missing_correctness_digest() {
             .to_string()
             .contains("missing correctness digest"),
         "autoroute cache load must not trust timing evidence without parity evidence"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn autoroute_cache_binds_every_timing_row_to_one_parity_receipt() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_candidate_receipts_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+
+    let mut missing = AutorouteDecision::new(
+        ScanBackend::CpuFallback,
+        8 * 1024 * 1024,
+        1,
+        12,
+        Some(7),
+        None,
+    );
+    missing.candidate_receipts.pop();
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key,
+        missing,
+        "candidate receipt set does not match timing evidence",
+    );
+
+    let mut divergent = AutorouteDecision::new(
+        ScanBackend::CpuFallback,
+        8 * 1024 * 1024,
+        1,
+        12,
+        Some(7),
+        None,
+    );
+    divergent.candidate_receipts[1].correctness_digest ^= 1;
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key,
+        divergent,
+        "does not match the reference correctness digest",
+    );
+
+    let mut timing_mutation = AutorouteDecision::new(
+        ScanBackend::CpuFallback,
+        8 * 1024 * 1024,
+        1,
+        12,
+        Some(7),
+        None,
+    );
+    timing_mutation.cpu_timing.as_mut().unwrap().trials_ns[0] += 1;
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key,
+        timing_mutation,
+        "does not match its timing evidence",
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant

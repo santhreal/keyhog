@@ -52,21 +52,77 @@ pub(super) fn gpu_cold_warm_route_evidence(
 ///
 /// PRIMARY EVIDENCE ONLY: the persisted state is the measured timing evidence
 /// (`simd_timing`, `cpu_timing`, and per-driver GPU timing) plus `backend`,
-/// calibration sample, digest, timestamp, and trial count. Every value that is a
-/// pure function of that evidence, per-backend median-ms (`simd_ms()`/…), the GPU
-/// cold/warm/route triple (`gpu_cold_warm_route()`), and the selected-backend
-/// margin (`selected_margin_ns()`), is DERIVED on demand through the accessors
-/// below rather than stored a second time. This is the ONE-PLACE invariant: a
+/// calibration sample, per-candidate parity receipts, timestamp, and trial
+/// count. Per-backend median-ms (`simd_ms()`/…), the GPU cold/warm/route triple
+/// (`gpu_cold_warm_route()`), and the selected-backend margin
+/// (`selected_margin_ns()`) are derived on demand through the accessors below
+/// rather than stored a second time. This is the one-place invariant: a
 /// cache can never hold a derived value inconsistent with its own evidence,
 /// because there is no stored copy to drift, which is why the old
 /// `validate_decision_route_evidence` cross-field-mismatch checks no longer exist.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct BackendParityReceipt {
+    pub(super) backend: String,
+    pub(super) correctness_digest: u64,
+    pub(super) completed_trials: usize,
+    pub(super) evidence_digest: u64,
+}
+
+impl BackendParityReceipt {
+    fn new(backend: ScanBackend, correctness_digest: u64, timing: &BackendTimingEvidence) -> Self {
+        let completed_trials = timing.trials_ns.len();
+        let evidence_digest =
+            Self::evidence_digest_for(backend, correctness_digest, completed_trials, timing);
+        Self {
+            backend: backend.label().to_string(),
+            correctness_digest,
+            completed_trials,
+            evidence_digest,
+        }
+    }
+
+    pub(super) fn expected_evidence_digest(
+        &self,
+        backend: ScanBackend,
+        timing: &BackendTimingEvidence,
+    ) -> u64 {
+        Self::evidence_digest_for(
+            backend,
+            self.correctness_digest,
+            self.completed_trials,
+            timing,
+        )
+    }
+
+    fn evidence_digest_for(
+        backend: ScanBackend,
+        correctness_digest: u64,
+        completed_trials: usize,
+        timing: &BackendTimingEvidence,
+    ) -> u64 {
+        let mut hasher = crate::stable_hash::StableHasher::new("autoroute-parity-receipt");
+        hasher
+            .field_str("backend", backend.label())
+            .field_u64("correctness_digest", correctness_digest)
+            .field_usize("completed_trials", completed_trials)
+            .field_usize("timing.trials_ns.len", timing.trials_ns.len());
+        for (index, trial_ns) in timing.trials_ns.iter().enumerate() {
+            hasher
+                .field_usize("timing.trial.index", index)
+                .field_bytes("timing.trial.ns", &trial_ns.to_le_bytes());
+        }
+        hasher.finish_u64()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct AutorouteDecision {
     pub(super) backend: String,
     pub(super) sample_bytes: u64,
     pub(super) sample_chunks: usize,
-    pub(super) correctness_digest: u64,
+    pub(super) candidate_receipts: Vec<BackendParityReceipt>,
     pub(super) calibrated_at_unix_ms: u128,
     pub(super) simd_timing: BackendTimingEvidence,
     pub(super) cpu_timing: Option<BackendTimingEvidence>,
@@ -76,6 +132,26 @@ pub(super) struct AutorouteDecision {
 }
 
 impl AutorouteDecision {
+    fn candidate_receipts(
+        correctness_digest: u64,
+        simd_timing: &BackendTimingEvidence,
+        cpu_timing: Option<&BackendTimingEvidence>,
+        gpu_cuda_timing: Option<&BackendTimingEvidence>,
+        gpu_wgpu_timing: Option<&BackendTimingEvidence>,
+    ) -> Vec<BackendParityReceipt> {
+        [
+            (ScanBackend::SimdCpu, Some(simd_timing)),
+            (ScanBackend::CpuFallback, cpu_timing),
+            (ScanBackend::GpuCuda, gpu_cuda_timing),
+            (ScanBackend::GpuWgpu, gpu_wgpu_timing),
+        ]
+        .into_iter()
+        .filter_map(|(backend, timing)| {
+            timing.map(|timing| BackendParityReceipt::new(backend, correctness_digest, timing))
+        })
+        .collect()
+    }
+
     #[cfg(test)]
     pub(super) fn new(
         backend: ScanBackend,
@@ -90,11 +166,18 @@ impl AutorouteDecision {
             cpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
         let gpu_wgpu_timing =
             gpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
+        let candidate_receipts = Self::candidate_receipts(
+            0xA11D_0B57_A11D_0B57,
+            &simd_timing,
+            cpu_timing.as_ref(),
+            None,
+            gpu_wgpu_timing.as_ref(),
+        );
         Self {
             backend: backend.label().to_string(),
             sample_bytes,
             sample_chunks,
-            correctness_digest: 0xA11D_0B57_A11D_0B57,
+            candidate_receipts,
             calibrated_at_unix_ms: 1,
             simd_timing,
             cpu_timing,
@@ -115,11 +198,18 @@ impl AutorouteDecision {
         cpu_timing: Option<BackendTimingEvidence>,
         gpu_timing: Option<BackendTimingEvidence>,
     ) -> Self {
+        let candidate_receipts = Self::candidate_receipts(
+            correctness_digest,
+            &simd_timing,
+            cpu_timing.as_ref(),
+            None,
+            gpu_timing.as_ref(),
+        );
         Self {
             backend: backend.label().to_string(),
             sample_bytes,
             sample_chunks,
-            correctness_digest,
+            candidate_receipts,
             calibrated_at_unix_ms,
             simd_timing,
             cpu_timing,
@@ -140,11 +230,18 @@ impl AutorouteDecision {
         gpu_cuda_timing: Option<BackendTimingEvidence>,
         gpu_wgpu_timing: Option<BackendTimingEvidence>,
     ) -> Self {
+        let candidate_receipts = Self::candidate_receipts(
+            correctness_digest,
+            &simd_timing,
+            cpu_timing.as_ref(),
+            gpu_cuda_timing.as_ref(),
+            gpu_wgpu_timing.as_ref(),
+        );
         Self {
             backend: backend.label().to_string(),
             sample_bytes,
             sample_chunks,
-            correctness_digest,
+            candidate_receipts,
             calibrated_at_unix_ms,
             simd_timing,
             cpu_timing,

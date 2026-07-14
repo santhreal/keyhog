@@ -61,6 +61,7 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) backend: String,
     pub(crate) sample_bytes: u64,
     pub(crate) sample_chunks: usize,
+    pub(crate) candidate_receipts: Vec<AutorouteCandidateReceiptInspection>,
     pub(crate) simd_ms: u128,
     pub(crate) cpu_ms: Option<u128>,
     pub(crate) gpu_cuda_ms: Option<u128>,
@@ -78,6 +79,14 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) daemon_confidence_separated: bool,
     pub(crate) daemon_selection_basis: &'static str,
     pub(crate) daemon_selected_margin_ns: Option<u128>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct AutorouteCandidateReceiptInspection {
+    pub(crate) backend: String,
+    pub(crate) correctness_digest: String,
+    pub(crate) completed_trials: usize,
+    pub(crate) evidence_digest: String,
 }
 
 fn selection_basis(confidence_separated: bool) -> &'static str {
@@ -240,6 +249,16 @@ fn inspect_autoroute_cache_for_build(
                 backend: decision.backend.clone(),
                 sample_bytes: decision.sample_bytes,
                 sample_chunks: decision.sample_chunks,
+                candidate_receipts: decision
+                    .candidate_receipts
+                    .iter()
+                    .map(|receipt| AutorouteCandidateReceiptInspection {
+                        backend: receipt.backend.clone(),
+                        correctness_digest: format!("{:016x}", receipt.correctness_digest),
+                        completed_trials: receipt.completed_trials,
+                        evidence_digest: format!("{:016x}", receipt.evidence_digest),
+                    })
+                    .collect(),
                 simd_ms: decision.simd_ms(),
                 cpu_ms: decision.cpu_ms(),
                 gpu_cuda_ms: decision

@@ -250,6 +250,25 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
             && decision["daemon_selection_basis"].is_string(),
         "inspection must disclose daemon confidence and selection rule; json={value}"
     );
+    let receipts = decision["candidate_receipts"]
+        .as_array()
+        .expect("candidate receipts array");
+    assert!(
+        !receipts.is_empty()
+            && receipts.iter().all(|receipt| {
+                receipt["backend"]
+                    .as_str()
+                    .is_some_and(|value| !value.is_empty())
+                    && receipt["correctness_digest"]
+                        .as_str()
+                        .is_some_and(|value| value.len() == 16)
+                    && receipt["completed_trials"].as_u64() == Some(7)
+                    && receipt["evidence_digest"]
+                        .as_str()
+                        .is_some_and(|value| value.len() == 16)
+            }),
+        "each measured candidate must expose its parity receipt; decision={decision}"
+    );
     let workload = decisions[0]["workload"]
         .as_str()
         .expect("decision workload is a string");
@@ -269,5 +288,9 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
     assert!(
         text_stdout.contains("evidence age:") && text_stdout.contains("calibrated_at_unix_ms="),
         "text inspection must make evidence age and its timestamp visible; got: {text_stdout}"
+    );
+    assert!(
+        text_stdout.contains("parity:") && text_stdout.contains("/trials=7/receipt="),
+        "text inspection must make per-candidate parity receipts visible; got: {text_stdout}"
     );
 }

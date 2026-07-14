@@ -104,9 +104,6 @@ fn validate_decision_route_evidence_at(
     if decision.sample_chunks == 0 || decision.sample_bytes == 0 {
         return Err("cache decision is missing calibration sample evidence".into());
     }
-    if decision.correctness_digest == 0 {
-        return Err("cache decision is missing correctness digest".into());
-    }
     let Some(selected_backend) = decision.backend() else {
         return Err(format!(
             "cache contains unsupported backend decision {:?}",
@@ -126,18 +123,6 @@ fn validate_decision_route_evidence_at(
         return Err(format!(
             "cache decision records {} calibration trials; expected exactly {AUTOROUTE_CALIBRATION_TRIALS}",
             decision.trials
-        )
-        .into());
-    }
-    if decision.calibrated_at_unix_ms == 0 {
-        return Err("cache decision is missing a calibration timestamp".into());
-    }
-    if decision.calibrated_at_unix_ms > current_unix_ms {
-        return Err(format!(
-            "cache decision calibration timestamp {} is {} ms in the future relative to the system clock at {}; correct the system clock and re-run calibration",
-            decision.calibrated_at_unix_ms,
-            decision.calibrated_at_unix_ms - current_unix_ms,
-            current_unix_ms
         )
         .into());
     }
@@ -166,6 +151,108 @@ fn validate_decision_route_evidence_at(
                 format!("cache decision has invalid {driver} cold/warm timing evidence").into(),
             );
         }
+    }
+    let expected_receipt_backends = [
+        (keyhog_scanner::ScanBackend::SimdCpu, true),
+        (
+            keyhog_scanner::ScanBackend::CpuFallback,
+            decision.cpu_timing.is_some(),
+        ),
+        (
+            keyhog_scanner::ScanBackend::GpuCuda,
+            decision.gpu_cuda_timing.is_some(),
+        ),
+        (
+            keyhog_scanner::ScanBackend::GpuWgpu,
+            decision.gpu_wgpu_timing.is_some(),
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, present)| *present)
+    .map(|(backend, _)| backend.label())
+    .collect::<HashSet<_>>();
+    if decision.candidate_receipts.len() != expected_receipt_backends.len() {
+        return Err("cache decision candidate receipt set does not match timing evidence".into());
+    }
+    let mut seen_receipts = HashSet::with_capacity(decision.candidate_receipts.len());
+    let mut reference_digest = None;
+    for receipt in &decision.candidate_receipts {
+        let Some(backend) = keyhog_scanner::hw_probe::parse_backend_str(&receipt.backend) else {
+            return Err(format!(
+                "cache decision has a candidate receipt for unsupported backend {:?}",
+                receipt.backend
+            )
+            .into());
+        };
+        if receipt.backend != backend.label()
+            || !expected_receipt_backends.contains(receipt.backend.as_str())
+        {
+            return Err(format!(
+                "cache decision has an unexpected or non-canonical candidate receipt for {:?}",
+                receipt.backend
+            )
+            .into());
+        }
+        if !seen_receipts.insert(receipt.backend.as_str()) {
+            return Err(format!(
+                "cache decision has duplicate candidate receipt for {}",
+                receipt.backend
+            )
+            .into());
+        }
+        if receipt.correctness_digest == 0 {
+            return Err(format!(
+                "cache decision candidate receipt for {} is missing correctness digest",
+                receipt.backend
+            )
+            .into());
+        }
+        if receipt.completed_trials != AUTOROUTE_CALIBRATION_TRIALS {
+            return Err(format!(
+                "cache decision candidate receipt for {} records {} completed trials; expected {AUTOROUTE_CALIBRATION_TRIALS}",
+                receipt.backend, receipt.completed_trials
+            )
+            .into());
+        }
+        match reference_digest {
+            Some(digest) if digest != receipt.correctness_digest => {
+                return Err(format!(
+                    "cache decision candidate receipt for {} does not match the reference correctness digest",
+                    receipt.backend
+                )
+                .into());
+            }
+            None => reference_digest = Some(receipt.correctness_digest),
+            _ => {}
+        }
+        let Some(timing) = decision.timing_for_backend(backend) else {
+            return Err(format!(
+                "cache decision candidate receipt for {} has no timing evidence",
+                receipt.backend
+            )
+            .into());
+        };
+        if receipt.evidence_digest == 0
+            || receipt.evidence_digest != receipt.expected_evidence_digest(backend, timing)
+        {
+            return Err(format!(
+                "cache decision candidate receipt for {} does not match its timing evidence",
+                receipt.backend
+            )
+            .into());
+        }
+    }
+    if decision.calibrated_at_unix_ms == 0 {
+        return Err("cache decision is missing a calibration timestamp".into());
+    }
+    if decision.calibrated_at_unix_ms > current_unix_ms {
+        return Err(format!(
+            "cache decision calibration timestamp {} is {} ms in the future relative to the system clock at {}; correct the system clock and re-run calibration",
+            decision.calibrated_at_unix_ms,
+            decision.calibrated_at_unix_ms - current_unix_ms,
+            current_unix_ms
+        )
+        .into());
     }
     let Some(selected_timing) = decision.timing_for_backend(selected_backend) else {
         return Err("selected backend is missing timing evidence".into());

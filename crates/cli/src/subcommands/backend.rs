@@ -227,6 +227,20 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
             p.cyan, config.config_digest, p.reset, config.decision_count
         );
         for decision in &config.decisions {
+            let parity_receipts = decision
+                .candidate_receipts
+                .iter()
+                .map(|receipt| {
+                    format!(
+                        "{}:result={}/trials={}/receipt={}",
+                        receipt.backend,
+                        receipt.correctness_digest,
+                        receipt.completed_trials,
+                        receipt.evidence_digest
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
             let cpu = decision
                 .cpu_ms
                 .map(|ms| format!(" cpu={ms}ms"))
@@ -261,6 +275,7 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
                 render_age_ms(decision.calibration_age_ms),
                 decision.calibrated_at_unix_ms
             );
+            println!("        parity:      {parity_receipts}");
             println!(
                 "        one-shot -> {}  {}[{} B / {} chunk(s); simd={}ms{}{}{}{}{}{}; basis={}]{}",
                 decision.backend,

@@ -25,7 +25,7 @@
 //!   ├─ evidence ───── decision policy
 //!   │    ├─ timing ─────── measured trials and confidence intervals
 //!   │    └─ match_identity ─ secret-safe semantic parity proof
-//!   ├─ store ──────── cache facade (schema v27)
+//!   ├─ store ──────── cache facade (schema v28)
 //!   │    ├─ schema / artifact_identity / build_identity
 //!   │    └─ codec / validation / persistence / inspection
 //!   ├─ host ───────── host identity captured in each calibration record
@@ -57,6 +57,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 
+// v28: each measured backend has an explicit parity receipt binding its
+// canonical identity, correctness digest, and completed trial count.
 // v27: CUDA and WGPU are independent GPU candidates with distinct route labels
 // and timing evidence. v26 collapsed both drivers into one GPU timing slot.
 // v26: scanner-owned decoder-family and bounded candidate-work evidence
@@ -83,7 +85,7 @@ use std::path::PathBuf;
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 27;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 28;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
