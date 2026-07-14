@@ -88,7 +88,7 @@ fn scan_artifacts(
 ) -> Result<(Baseline, Baseline, HashMap<(String, String), DedupedMatch>)> {
     let max_artifact_bytes = args
         .max_artifact_bytes
-        .unwrap_or(DEFAULT_MAX_ARTIFACT_BYTES);
+        .unwrap_or(DEFAULT_MAX_ARTIFACT_BYTES); // LAW10: absent CLI value selects the documented artifact-size default
     if max_artifact_bytes == 0 {
         anyhow::bail!("--max-artifact-bytes must be greater than zero");
     }
@@ -100,7 +100,7 @@ fn scan_artifacts(
             );
         }
     }
-    let requested_detectors = args.detectors.as_deref().unwrap_or(Path::new("detectors"));
+    let requested_detectors = args.detectors.as_deref().unwrap_or(Path::new("detectors")); // LAW10: absent CLI value selects the documented auto-discovery starting path
     let detectors_path = crate::orchestrator_config::auto_discover_detectors(requested_detectors)?;
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&detectors_path)?;
     let scanner = keyhog_scanner::CompiledScanner::compile_with_gpu_policy(
@@ -157,7 +157,7 @@ fn read_artifact(path: &Path, max_bytes: u64) -> Result<Vec<u8>> {
         );
     }
     let read_limit = max_bytes.saturating_add(1);
-    let capacity = usize::try_from(length.min(max_bytes).min(1024 * 1024)).unwrap_or(1024 * 1024);
+    let capacity = length.min(max_bytes).min(1024 * 1024) as usize;
     let mut bytes = Vec::with_capacity(capacity);
     file.take(read_limit)
         .read_to_end(&mut bytes)
@@ -229,14 +229,14 @@ async fn classify_removed(
     if !args.verify_removed {
         return Ok(HashMap::new());
     }
-    let verify_timeout = args.verify_timeout.unwrap_or(DEFAULT_VERIFY_TIMEOUT_SECS);
+    let verify_timeout = args.verify_timeout.unwrap_or(DEFAULT_VERIFY_TIMEOUT_SECS); // LAW10: absent CLI value selects the documented verification timeout
     if verify_timeout == 0 {
         anyhow::bail!("--verify-timeout must be greater than zero");
     }
 
     #[cfg(not(feature = "verify"))]
     {
-        let _ = removed_groups;
+        drop(removed_groups);
         anyhow::bail!("--verify-removed requires a keyhog build with the `verify` feature");
     }
 
@@ -245,7 +245,7 @@ async fn classify_removed(
         if removed_groups.is_empty() {
             return Ok(HashMap::new());
         }
-        let requested_detectors = args.detectors.as_deref().unwrap_or(Path::new("detectors"));
+        let requested_detectors = args.detectors.as_deref().unwrap_or(Path::new("detectors")); // LAW10: absent CLI value selects the documented auto-discovery starting path
         let detectors_path =
             crate::orchestrator_config::auto_discover_detectors(requested_detectors)?;
         let detectors = crate::orchestrator_config::load_detectors_or_embedded(&detectors_path)?;
@@ -319,7 +319,7 @@ fn compare<'a>(
             state: removed_states
                 .get(&entry_key(entry))
                 .copied()
-                .unwrap_or(RemovedVerificationState::VerificationUnknown),
+                .unwrap_or(RemovedVerificationState::VerificationUnknown), // LAW10: missing verification evidence is the fail-closed state and blocks success
         })
         .collect();
     let mut unchanged_entries: Vec<_> = after
@@ -422,11 +422,11 @@ fn print_human(result: &DiffResult<'_>, hide_unchanged: bool) {
             "{} {} @ {}{}",
             paint(palette.red, "NEW".into()),
             entry.detector_id,
-            entry.file_path.as_deref().unwrap_or("<unknown>"),
+            entry.file_path.as_deref().unwrap_or("<unknown>"), // LAW10: display-only location label; the finding and exit status are unchanged
             entry
                 .line
                 .map(|line| format!(":{line}"))
-                .unwrap_or_default()
+                .unwrap_or_default() // LAW10: display-only absent line suffix; the finding and exit status are unchanged
         );
     }
     for entry in &result.removed_entries {
@@ -440,11 +440,11 @@ fn print_human(result: &DiffResult<'_>, hide_unchanged: bool) {
             paint(palette.yellow, "REMOVED".into()),
             paint(state_color, removed_state_label(entry.state).into()),
             entry.detector_id,
-            entry.file_path.unwrap_or("<unknown>"),
+            entry.file_path.unwrap_or("<unknown>"), // LAW10: display-only location label; the finding and exit status are unchanged
             entry
                 .line
                 .map(|line| format!(":{line}"))
-                .unwrap_or_default()
+                .unwrap_or_default() // LAW10: display-only absent line suffix; the finding and exit status are unchanged
         );
     }
     if !hide_unchanged {
@@ -453,11 +453,11 @@ fn print_human(result: &DiffResult<'_>, hide_unchanged: bool) {
                 "{} {} @ {}{}",
                 paint(palette.dim, "UNCHANGED".into()),
                 entry.detector_id,
-                entry.file_path.as_deref().unwrap_or("<unknown>"),
+                entry.file_path.as_deref().unwrap_or("<unknown>"), // LAW10: display-only location label; the finding and exit status are unchanged
                 entry
                     .line
                     .map(|line| format!(":{line}"))
-                    .unwrap_or_default()
+                    .unwrap_or_default() // LAW10: display-only absent line suffix; the finding and exit status are unchanged
             );
         }
     }

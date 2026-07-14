@@ -170,7 +170,7 @@ impl ServerState {
     fn backend_policy(&self) -> &'static str {
         self.backend_override
             .map(ScanBackend::label)
-            .unwrap_or("autoroute")
+            .unwrap_or("autoroute") // LAW10: None is the explicit persisted-autoroute policy label, not a backend substitution
     }
 }
 

@@ -29,6 +29,7 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::{Arc, Mutex};
 
 /// This binary's own scan-policy preset flags, swept in addition to the default
 /// policy. Each resolves a distinct autoroute config digest, so each needs its
@@ -336,17 +337,16 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
 
     let mut idx = 0usize;
     let mut failed = 0usize;
-    let mut measured_config_digests = BTreeSet::new();
+    let measured_route_classes = Arc::new(Mutex::new(BTreeSet::new()));
     for policy in &policy_flags {
-        let policy_label = policy.unwrap_or("default policy");
+        let policy_label = policy.unwrap_or("default policy"); // LAW10: documented default label only; it does not select a fallback backend
         let scan_args = calibration_scan_args(args.autoroute_cache.as_deref(), *policy)
             .with_context(|| format!("constructing {policy_label} calibration runtime"))?;
         let mut orchestrator = ScanOrchestrator::new(scan_args)
             .with_context(|| format!("initializing {policy_label} calibration runtime"))?;
-        measured_config_digests.insert(format!(
-            "{:016x}",
-            crate::orchestrator_config::autoroute_config_digest(&orchestrator.effective_config)
-        ));
+        orchestrator
+            .observe_autoroute_calibration_measurements(Arc::clone(&measured_route_classes))
+            .with_context(|| format!("observing {policy_label} calibration route receipts"))?;
         orchestrator
             .prepare_autoroute_calibration_gpu_artifact()
             .with_context(|| format!("preparing {policy_label} shared GPU calibration artifact"))?;
@@ -387,34 +387,39 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
             "autoroute calibration probes succeeded, but no persisted cache was found during readback"
         );
     }
-    let persisted_decisions = inspection
+    let measured_route_classes = measured_route_classes
+        .lock()
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "autoroute measured-route observer lock was poisoned, so the calibration summary cannot be trusted; rerun `keyhog calibrate-autoroute`"
+            )
+        })?;
+    let persisted_route_classes = inspection
         .configs
         .iter()
-        .map(|config| config.decision_count)
-        .sum::<usize>();
+        .flat_map(|config| {
+            config
+                .decisions
+                .iter()
+                .map(|decision| (config.config_digest.clone(), decision.workload.clone()))
+        })
+        .collect::<BTreeSet<_>>();
+    let (persisted_decisions, measured_unique_decisions) =
+        calibration_summary_counts(&persisted_route_classes, &measured_route_classes)?;
     if persisted_decisions == 0 {
         anyhow::bail!(
             "autoroute calibration probes succeeded, but persisted cache readback contained no route decisions"
         );
     }
-    // Every successful probe entered a fresh calibration router, which rejects
-    // reuse until that workload key has been measured in the current run. Count
-    // the resulting classes for these policy digests instead of inferring work
-    // from wall-clock timestamp changes, which can be frozen in deterministic
-    // containers.
-    let measured_unique_decisions = measured_route_class_count(
-        inspection
-            .configs
-            .iter()
-            .map(|config| (config.config_digest.as_str(), config.decision_count)),
-        &measured_config_digests,
-    );
+    // Fresh calibration routers reject reuse until a workload key is measured
+    // in this run. Count their canonical post-save receipts. Existing rows
+    // under the same config digest are cache inventory, not evidence that this
+    // invocation measured them.
     if measured_unique_decisions == 0 {
         anyhow::bail!(
             "autoroute calibration probes succeeded, but persisted cache readback contained no newly measured route classes"
         );
     }
-
     let cache_note = match args.autoroute_cache.as_deref() {
         Some(path) => path.to_string(),
         None => "the default autoroute cache".to_string(),
@@ -443,15 +448,19 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn measured_route_class_count<'a>(
-    configs: impl IntoIterator<Item = (&'a str, usize)>,
-    measured_config_digests: &BTreeSet<String>,
-) -> usize {
-    configs
-        .into_iter()
-        .filter(|(digest, _)| measured_config_digests.contains(*digest))
-        .map(|(_, decision_count)| decision_count)
-        .sum()
+fn calibration_summary_counts(
+    persisted_route_classes: &BTreeSet<(String, String)>,
+    measured_route_classes: &BTreeSet<(String, String)>,
+) -> Result<(usize, usize)> {
+    if let Some((config_digest, workload)) = measured_route_classes
+        .difference(persisted_route_classes)
+        .next()
+    {
+        anyhow::bail!(
+            "autoroute calibration measured route class [{workload}] for config {config_digest}, but final cache readback did not contain it"
+        );
+    }
+    Ok((persisted_route_classes.len(), measured_route_classes.len()))
 }
 
 fn calibration_scan_args(autoroute_cache: Option<&str>, policy: Option<&str>) -> Result<ScanArgs> {

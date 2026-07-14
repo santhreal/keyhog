@@ -15,8 +15,8 @@ mod pipeline;
 use anyhow::Result;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::inspect_autoroute_cache;
-pub(crate) use backend::CachedBackendRouter;
 use backend::{is_gpu_backend, AutorouteRoutingError, MeasuredBackendRouter};
+pub(crate) use backend::{AutorouteMeasurementObserver, CachedBackendRouter};
 use keyhog_core::{Chunk, RawMatch, Source};
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
@@ -125,6 +125,7 @@ struct CoalescedMeasuredRouterConfig {
     autoroute_gpu: bool,
     autoroute_calibration: bool,
     autoroute_cache_path: std::result::Result<Option<std::path::PathBuf>, String>,
+    measurement_observer: Option<AutorouteMeasurementObserver>,
 }
 
 impl CoalescedBatchRouter {
@@ -170,6 +171,7 @@ impl CoalescedScannerWorker {
             config.autoroute_gpu,
             config.autoroute_calibration,
             config.autoroute_cache_path,
+            config.measurement_observer,
             scanner.as_ref(),
         );
         Self {
@@ -567,6 +569,7 @@ impl ScanOrchestrator {
             autoroute_gpu: self.effective_config.autoroute_gpu,
             autoroute_calibration: self.effective_config.autoroute_calibration,
             autoroute_cache_path,
+            measurement_observer: self.autoroute_measurement_observer.clone(),
         };
         CoalescedScannerWorker::measured(scanner, router_config, perf_trace)
     }

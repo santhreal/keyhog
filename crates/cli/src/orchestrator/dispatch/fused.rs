@@ -77,6 +77,7 @@ impl ScanOrchestrator {
             self.effective_config.autoroute_gpu,
             self.effective_config.autoroute_calibration,
             Ok(self.effective_config.autoroute_cache_path.clone()),
+            self.autoroute_measurement_observer.clone(),
             self.scanner.as_ref(),
         )
     }

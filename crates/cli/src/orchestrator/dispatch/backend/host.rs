@@ -51,12 +51,17 @@ impl AutorouteHostProfile {
         let gpu_device_identity =
             (gpu_participates && (caps.gpu_available || acquired_peer_present)).then(|| {
                 if caps.gpu_is_software && acquired_peer_present {
-                    gpu_peer_identity.unwrap_or_default().to_string()
+                    let Some(identity) = gpu_peer_identity else {
+                        // Keep an impossible presence mismatch fail-closed as
+                        // the invalid identity sentinel checked below.
+                        return String::new();
+                    };
+                    identity.to_string()
                 } else {
                     caps.gpu_name
                         .clone()
                         .or_else(|| gpu_peer_identity.map(str::to_string))
-                        .unwrap_or_default()
+                        .unwrap_or_default() // LAW10: fail-closed invalid-identity sentinel rejected before autoroute cache trust
                 }
             });
         Self {

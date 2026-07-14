@@ -14,22 +14,53 @@ fn scan_policy_plan_covers_every_digest_changing_preset() {
 }
 
 #[test]
-fn measured_route_count_uses_the_current_policy_digests_not_wall_clock_changes() {
-    let measured = [
-        "00000000000000aa".to_string(),
-        "00000000000000bb".to_string(),
+fn measured_route_count_deduplicates_aliases_and_excludes_a_seeded_row() {
+    let digest = "00000000000000aa";
+    let aliased_key = "bytes_log2=13 chunks_log2=1 source_mixture=[filesystem/full]";
+    let measured = ["2-file representative", "3-file representative"]
+        .into_iter()
+        .map(|_| (digest.to_string(), aliased_key.to_string()))
+        .chain(std::iter::once((
+            "00000000000000bb".to_string(),
+            aliased_key.to_string(),
+        )))
+        .collect();
+
+    // Both representatives resolve to one canonical workload key. The same
+    // config also contains one externally seeded route decision. The other
+    // config's identical workload key remains a distinct measured class.
+    let persisted_routes = [
+        (digest.to_string(), aliased_key.to_string()),
+        ("00000000000000bb".to_string(), aliased_key.to_string()),
+        (
+            digest.to_string(),
+            "externally seeded web route".to_string(),
+        ),
     ]
     .into_iter()
     .collect();
-    let count = measured_route_class_count(
-        [
-            ("00000000000000aa", 5),
-            ("00000000000000bb", 7),
-            ("stale-unrelated-config", 99),
-        ],
-        &measured,
-    );
-    assert_eq!(count, 12);
+    let (persisted, measured_now) =
+        calibration_summary_counts(&persisted_routes, &measured).expect("summary counts");
+
+    assert_eq!(persisted, 3);
+    assert_eq!(measured_now, 2);
+}
+
+#[test]
+fn calibration_summary_rejects_a_measured_class_missing_from_final_cache() {
+    let measured = [(
+        "00000000000000aa".to_string(),
+        "canonical workload".to_string(),
+    )]
+    .into_iter()
+    .collect();
+
+    let error = calibration_summary_counts(&BTreeSet::new(), &measured)
+        .expect_err("missing measured receipt must fail closed");
+
+    assert!(error
+        .to_string()
+        .contains("final cache readback did not contain it"));
 }
 
 #[test]

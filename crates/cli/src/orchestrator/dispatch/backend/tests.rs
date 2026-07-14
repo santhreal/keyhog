@@ -503,6 +503,7 @@ fn measured_router_collapses_stale_gpu_identity_when_runtime_policy_disables_gpu
         false,
         false,
         Ok(None),
+        None,
         &scanner,
     );
 
@@ -777,7 +778,7 @@ fn workload_key_projects_scanner_owned_decoder_families() {
     ));
     for (name, input, required_kind) in fixtures {
         let key = workload_key(&[test_chunk(input.to_string())], 902)
-            .unwrap_or_else(|error| panic!("{name} workload failed: {error}"));
+            .unwrap_or_else(|error| panic!("{name} workload failed: {error}")); // LAW10: test-only oracle has no runtime effect and prints the exact error
         assert_ne!(
             key.decode_kind_mask & required_kind,
             0,
@@ -2627,6 +2628,7 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
     );
     let mut measured_this_run = HashSet::new();
     measured_this_run.insert(key.clone());
+    let observer = Arc::new(Mutex::new(BTreeSet::new()));
     let mut router = MeasuredBackendRouter {
         pattern_count: 902,
         decode_workload_plan: test_decode_workload_plan(),
@@ -2638,6 +2640,7 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
         host_profile: host,
         decisions,
         measured_this_run,
+        measurement_observer: Some(Arc::clone(&observer)),
         cache_path: Some(path.clone()),
         cache_load_error: None,
         cache_dirty: true,
@@ -2649,6 +2652,19 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
     assert!(
         !router.cache_dirty,
         "successful autoroute cache save must clear the dirty bit so Drop does not rewrite it"
+    );
+    assert_eq!(
+        observer
+            .lock()
+            .expect("observer lock")
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![(
+            format!("{:016x}", router.config_digest),
+            render_workload_key(&key),
+        )],
+        "the receipt must carry the exact canonical workload key that was persisted"
     );
     router
         .save_cache()
@@ -2671,6 +2687,7 @@ fn measured_router_drop_does_not_persist_dirty_cache() {
         key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
+    let observer = Arc::new(Mutex::new(BTreeSet::new()));
     {
         let _router = MeasuredBackendRouter {
             pattern_count: 902,
@@ -2682,7 +2699,8 @@ fn measured_router_drop_does_not_persist_dirty_cache() {
             calibration_mode: true,
             host_profile: host,
             decisions,
-            measured_this_run: HashSet::new(),
+            measured_this_run: [key].into_iter().collect(),
+            measurement_observer: Some(Arc::clone(&observer)),
             cache_path: Some(path.clone()),
             cache_load_error: None,
             cache_dirty: true,
@@ -2692,6 +2710,10 @@ fn measured_router_drop_does_not_persist_dirty_cache() {
     assert!(
         !path.exists(),
         "autoroute must persist only from explicit successful calibration save, never from Drop"
+    );
+    assert!(
+        observer.lock().expect("observer lock").is_empty(),
+        "an unpersisted dirty route must not produce a measurement receipt"
     );
 }
 
@@ -2735,6 +2757,7 @@ fn measured_router_commit_discards_unmeasured_stale_decisions() {
         host_profile: host.clone(),
         decisions,
         measured_this_run,
+        measurement_observer: None,
         cache_path: Some(path.clone()),
         cache_load_error: None,
         cache_dirty: true,
@@ -2790,6 +2813,7 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
         host_profile: host,
         decisions,
         measured_this_run: HashSet::new(),
+        measurement_observer: None,
         cache_path: None,
         cache_load_error: None,
         cache_dirty: false,

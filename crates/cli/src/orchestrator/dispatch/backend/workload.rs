@@ -402,7 +402,7 @@ pub(super) fn source_mixture_key(
         let family = source_family(chunk)?.to_string();
         let has_full_size = chunk.metadata.size_bytes.is_some();
         let payload_bytes = chunk.data.len() as u64;
-        let span = chunk.metadata.size_bytes.unwrap_or(payload_bytes);
+        let span = chunk.metadata.size_bytes.unwrap_or(payload_bytes); // LAW10: absent backing size means the payload is the exact transformed or streamed span
         let entry = classes.entry((family, has_full_size)).or_default();
         entry.0 = entry
             .0
@@ -419,11 +419,13 @@ pub(super) fn source_mixture_key(
             });
         }
     }
-    let chunk_divisor = classes
+    let Some(chunk_divisor) = classes
         .values()
         .map(|(chunks, _, _)| *chunks)
         .reduce(greatest_common_divisor)
-        .unwrap_or(1);
+    else {
+        return Err(WorkloadClassificationError::EmptySourceMixture);
+    };
     let payload_divisor = classes
         .values()
         .map(|(_, payload_bytes, _)| *payload_bytes)
@@ -454,7 +456,7 @@ pub(super) fn source_mixture_key(
 
 pub(crate) fn source_route_class(chunk: &Chunk) -> Option<SourceRouteClass> {
     Some(SourceRouteClass {
-        family_digest: source_family_id(source_family(chunk).ok()?),
+        family_digest: source_family_id(source_family(chunk).ok()?), // LAW10: optional pre-batch split probe; authoritative workload classification returns the source error
         has_full_size: chunk.metadata.size_bytes.is_some(),
     })
 }
@@ -547,19 +549,21 @@ pub(super) fn validate_source_mixture_key(key: &SourceMixtureKey) -> Result<(), 
         }
         previous = Some(identity);
     }
-    let chunk_divisor = key
+    let Some(chunk_divisor) = key
         .entries
         .iter()
         .map(|entry| entry.chunk_ratio)
         .reduce(greatest_common_divisor)
-        .unwrap_or(0);
+    else {
+        return Err("source mixture has no chunk ratios".into());
+    };
     let payload_divisor = key
         .entries
         .iter()
         .map(|entry| entry.payload_ratio)
         .filter(|ratio| *ratio > 0)
         .reduce(greatest_common_divisor)
-        .unwrap_or(0);
+        .unwrap_or(0); // LAW10: fail-closed invalid zero sentinel rejected immediately below
     if chunk_divisor != 1 || payload_divisor != 1 {
         return Err(
             "source mixture ratios are zero or not reduced to canonical lowest terms".into(),
@@ -570,13 +574,15 @@ pub(super) fn validate_source_mixture_key(key: &SourceMixtureKey) -> Result<(), 
 
 pub(super) fn validate_workload_source_mixture(key: &WorkloadKey) -> Result<(), String> {
     validate_source_mixture_key(&key.source_mixture)?;
-    let max_span_bucket = key
+    let Some(max_span_bucket) = key
         .source_mixture
         .entries
         .iter()
         .map(|entry| entry.max_span_bucket)
         .max()
-        .unwrap_or(0);
+    else {
+        return Err("source mixture has no span buckets".into());
+    };
     if max_span_bucket != key.max_file_bucket {
         return Err(
             "source mixture maximum span is inconsistent with the parent workload key".into(),

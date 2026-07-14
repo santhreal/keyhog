@@ -542,7 +542,7 @@ pub(crate) mod testing {
         // has none). A made-up non-existent path is (correctly) rejected as an
         // operator typo, so it can't be used to force embedded.
         let embedded_sentinel = std::path::Path::new("detectors");
-        let runtime = super::setup_default_scan_runtime(
+        let runtime = crate::orchestrator::setup_default_scan_runtime_for_test(
             embedded_sentinel,
             false,
             None,

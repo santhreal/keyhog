@@ -30,8 +30,8 @@ impl ResolvedEngineRuntimeSettings {
     /// or sizing state. `None` selects the documented engine default.
     pub(crate) fn apply(self) {
         keyhog_scanner::gpu::set_gpu_runtime_policy(self.gpu_policy);
-        keyhog_scanner::set_regex_dfa_limit(self.regex_dfa_limit.unwrap_or(0));
-        keyhog_scanner::set_gpu_batch_input_limit(self.gpu_batch_input_limit.unwrap_or(0));
+        keyhog_scanner::set_regex_dfa_limit(self.regex_dfa_limit.unwrap_or(0)); // LAW10: zero is the scanner API's documented compiled-default sentinel
+        keyhog_scanner::set_gpu_batch_input_limit(self.gpu_batch_input_limit.unwrap_or(0)); // LAW10: zero is the scanner API's documented VRAM-adaptive-default sentinel
         keyhog_scanner::set_profile_enabled(self.profile);
         keyhog_scanner::set_perf_trace_enabled(self.perf_trace);
     }

@@ -544,6 +544,64 @@ pub(crate) fn setup_default_scan_runtime(
     warm: bool,
     filter_root: Option<&std::path::Path>,
 ) -> Result<DefaultScanRuntime> {
+    setup_default_scan_runtime_with_rayon_policy(
+        detectors_path,
+        detectors_cli_explicit,
+        cache_dir,
+        threads,
+        backend_override,
+        subcommand_name,
+        warm,
+        filter_root,
+        RayonSetupPolicy::RequireKeyHogOwned,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum RayonSetupPolicy {
+    RequireKeyHogOwned,
+    #[cfg(test)]
+    ReuseTestHarnessPool,
+}
+
+#[cfg(test)]
+/// Build the production persistent runtime while explicitly reusing the Rust
+/// test harness pool. Production callers always require KeyHog-owned workers;
+/// unit tests cannot reset Rayon's process-global pool after another test uses it.
+pub(crate) fn setup_default_scan_runtime_for_test(
+    detectors_path: &std::path::Path,
+    detectors_cli_explicit: bool,
+    cache_dir: Option<std::path::PathBuf>,
+    threads: Option<usize>,
+    backend_override: Option<keyhog_scanner::ScanBackend>,
+    subcommand_name: &'static str,
+    warm: bool,
+    filter_root: Option<&std::path::Path>,
+) -> Result<DefaultScanRuntime> {
+    setup_default_scan_runtime_with_rayon_policy(
+        detectors_path,
+        detectors_cli_explicit,
+        cache_dir,
+        threads,
+        backend_override,
+        subcommand_name,
+        warm,
+        filter_root,
+        RayonSetupPolicy::ReuseTestHarnessPool,
+    )
+}
+
+fn setup_default_scan_runtime_with_rayon_policy(
+    detectors_path: &std::path::Path,
+    detectors_cli_explicit: bool,
+    cache_dir: Option<std::path::PathBuf>,
+    threads: Option<usize>,
+    backend_override: Option<keyhog_scanner::ScanBackend>,
+    subcommand_name: &'static str,
+    warm: bool,
+    filter_root: Option<&std::path::Path>,
+    rayon_policy: RayonSetupPolicy,
+) -> Result<DefaultScanRuntime> {
     use clap::Parser;
     crate::runtime_preflight::validate_scan_runtime_config()?;
 
@@ -568,7 +626,23 @@ pub(crate) fn setup_default_scan_runtime(
     ResolvedEngineRuntimeSettings::from(&effective_config).apply();
 
     let hw = keyhog_scanner::hw_probe::probe_hardware();
-    let worker_threads = configure_threads(effective_config.threads, hw.physical_cores)?;
+    let worker_threads = match rayon_policy {
+        RayonSetupPolicy::RequireKeyHogOwned => {
+            configure_threads(effective_config.threads, hw.physical_cores)?
+        }
+        #[cfg(test)]
+        RayonSetupPolicy::ReuseTestHarnessPool => {
+            let current = rayon::current_num_threads();
+            if let Some(requested) = effective_config.threads {
+                if requested != current {
+                    anyhow::bail!(
+                        "test harness Rayon pool has {current} threads, but the isolated runtime requested {requested}"
+                    );
+                }
+            }
+            current
+        }
+    };
     effective_config.threads = Some(worker_threads);
     apply_host_runtime_limits(&mut effective_config, &hw);
     keyhog_scanner::gpu::require_gpu_preflight().map_err(|diagnostic| {
@@ -757,6 +831,9 @@ pub(crate) struct ScanOrchestrator {
     pub(crate) private_key_block_detectors: std::collections::HashSet<String>,
     /// Fully resolved scan policy used by the engine and post-processing.
     pub(crate) effective_config: ResolvedScanConfig,
+    /// Optional receipt sink for the calibration command's exact persisted
+    /// workload keys. Normal scans never install one.
+    autoroute_measurement_observer: Option<dispatch::AutorouteMeasurementObserver>,
 }
 
 impl ScanOrchestrator {
@@ -998,6 +1075,7 @@ impl ScanOrchestrator {
             detector_min_confidence,
             private_key_block_detectors,
             effective_config,
+            autoroute_measurement_observer: None,
         })
     }
 
@@ -1020,6 +1098,17 @@ impl ScanOrchestrator {
         scanner
             .reset_autoroute_calibration_gpu_workload()
             .map_err(|error| anyhow::anyhow!(error))
+    }
+
+    pub(crate) fn observe_autoroute_calibration_measurements(
+        &mut self,
+        observer: dispatch::AutorouteMeasurementObserver,
+    ) -> Result<()> {
+        if !self.effective_config.autoroute_calibration {
+            anyhow::bail!("measured-route observation requires an autoroute calibration runtime");
+        }
+        self.autoroute_measurement_observer = Some(observer);
+        Ok(())
     }
 
     pub(crate) fn args(&self) -> &ScanArgs {
@@ -1118,6 +1207,7 @@ impl ScanOrchestrator {
             disabled_detectors: std::collections::HashSet::new(),
             detector_min_confidence: std::collections::HashMap::new(),
             private_key_block_detectors,
+            autoroute_measurement_observer: None,
             effective_config: ResolvedScanConfig {
                 backend_override: Some(keyhog_scanner::ScanBackend::SimdCpu),
                 batch_pipeline,

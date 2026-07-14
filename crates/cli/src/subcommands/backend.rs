@@ -606,6 +606,7 @@ fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
     let mut probes = Vec::with_capacity(2 + acquired_backends.len());
     let has_wgpu = acquired_backends.contains(&keyhog_scanner::ScanBackend::GpuWgpu);
     let recommended_gpu = region_presence.as_ref().ok().and_then(|report| {
+        // LAW10: reporting-only recommendation. The original error is surfaced as a failed probe and nonzero exit below.
         report
             .peers
             .iter()

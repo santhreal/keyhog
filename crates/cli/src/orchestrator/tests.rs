@@ -5,7 +5,7 @@
 
 use super::run::{resolve_scan_exit, ScanOutcome};
 #[cfg(feature = "simd")]
-use super::setup_default_scan_runtime;
+use super::setup_default_scan_runtime_for_test;
 use super::{
     apply_host_runtime_limits, daemon_compile_failure, daemon_gpu_preflight_failure,
     daemon_requires_gpu, resolved_scan_config_for_scanner, validate_daemon_gpu_initialization,
@@ -219,7 +219,7 @@ fn persistent_runtime_uses_configured_autoroute_cache_path() {
     )
     .expect("write config");
 
-    let runtime = setup_default_scan_runtime(
+    let runtime = setup_default_scan_runtime_for_test(
         std::path::Path::new("detectors"),
         false,
         None,

@@ -54,9 +54,14 @@ use self::workload::{render_workload_key, workload_key, WorkloadClassificationEr
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+/// Canonical `(config digest, rendered workload key)` receipts persisted by
+/// this calibration command. The cache remains the evidence owner.
+pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, String)>>>;
 
 // v32: projected host and accelerator-peer identity moves from the cache root
 // into each resolved config generation so distinct GPU policies can coexist.
@@ -117,6 +122,7 @@ pub(super) struct MeasuredBackendRouter {
     host_profile: AutorouteHostProfile,
     decisions: HashMap<WorkloadKey, AutorouteDecision>,
     measured_this_run: HashSet<WorkloadKey>,
+    measurement_observer: Option<AutorouteMeasurementObserver>,
     cache_path: Option<PathBuf>,
     cache_load_error: Option<String>,
     cache_dirty: bool,
@@ -196,6 +202,12 @@ impl AutorouteRoutingError {
                  Fix the cache path/permissions and rerun `install.sh --calibrate` or \
                  `install.ps1 -Calibrate`."
             ),
+        }
+    }
+
+    fn measurement_observer_unavailable() -> Self {
+        Self {
+            message: "autoroute calibration persisted its routing decision, but the current-run measured-route observer lock was poisoned; the command cannot report a truthful measured class count. Rerun `keyhog calibrate-autoroute`.".to_string(),
         }
     }
 
@@ -441,6 +453,7 @@ impl MeasuredBackendRouter {
         autoroute_gpu: bool,
         calibration_mode: bool,
         autoroute_cache_path: Result<Option<PathBuf>, String>,
+        measurement_observer: Option<AutorouteMeasurementObserver>,
         scanner: &CompiledScanner,
     ) -> Self {
         let runtime_status = scanner.runtime_status();
@@ -479,6 +492,7 @@ impl MeasuredBackendRouter {
             host_profile,
             decisions,
             measured_this_run: HashSet::new(),
+            measurement_observer,
             cache_path,
             cache_load_error,
             cache_dirty: false,
@@ -592,6 +606,17 @@ impl MeasuredBackendRouter {
                 path.display()
             ),
             AutorouteCacheSaveOutcome::Fresh | AutorouteCacheSaveOutcome::Merged => {}
+        }
+        if let Some(observer) = self.measurement_observer.as_ref() {
+            let mut observed = observer
+                .lock()
+                .map_err(|_| AutorouteRoutingError::measurement_observer_unavailable())?;
+            observed.extend(self.measured_this_run.iter().map(|key| {
+                (
+                    format!("{:016x}", self.config_digest),
+                    render_workload_key(key),
+                )
+            }));
         }
         self.cache_dirty = false;
         Ok(())
@@ -726,18 +751,23 @@ fn gpu_peer_identity(scanner: &CompiledScanner) -> Option<String> {
     if acquired.is_empty() {
         return None;
     }
-    let mut peers: Vec<(String, String, String, String, String)> = acquired
+    let peers = acquired
         .into_iter()
         .map(|candidate| {
-            (
+            Some((
                 candidate.backend.label().to_string(),
-                candidate.driver_id.unwrap_or_default().to_string(),
-                candidate.driver_version.unwrap_or_default().to_string(),
-                candidate.device_identity.unwrap_or_default(),
-                candidate.runtime_identity.unwrap_or_default(),
-            )
+                candidate.driver_id?.to_string(),
+                candidate.driver_version?.to_string(),
+                candidate.device_identity?,
+                candidate.runtime_identity?,
+            ))
         })
-        .collect();
+        .collect::<Option<Vec<(String, String, String, String, String)>>>();
+    let Some(mut peers) = peers else {
+        // An eligibility contract drift is an invalid identity, never evidence
+        // that the GPU is absent. Host identity validation rejects this value.
+        return Some(String::new());
+    };
     peers.sort_unstable();
     (!peers.is_empty()).then(|| {
         serde_json::to_string(&peers)
