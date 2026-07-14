@@ -102,6 +102,7 @@ schema being stable):
   "severity":           "critical",
   "credential_redacted": "sk_l...p7dc",
   "credential_hash":     "sha256-hex",
+  "companions_redacted": {},
   "location": {
     "source":    "filesystem",
     "file_path": "src/config/staging.env",

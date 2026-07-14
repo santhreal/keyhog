@@ -53,6 +53,7 @@ fn finding(
         // Non-zero hash so the result is fully populated; identity value is
         // exercised by the partialFingerprints test, not here.
         credential_hash: keyhog_core::sha256_hash("value-for-this-finding"),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: file.map(Into::into),

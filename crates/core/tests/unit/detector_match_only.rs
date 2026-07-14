@@ -22,6 +22,7 @@ fn finding(
             bytes[..len].copy_from_slice(&hash[..len]);
             bytes.into()
         },
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(path)),

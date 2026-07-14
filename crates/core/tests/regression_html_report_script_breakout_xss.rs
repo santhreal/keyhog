@@ -30,6 +30,7 @@ fn poisoned_finding() -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Owned(format!("AKIA...{PAYLOAD}")),
         credential_hash: [0u8; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             // Attacker-named file on disk: appears in location.file_path.

@@ -44,6 +44,7 @@ fn finding_with(
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA****"),
         credential_hash: sha256_hash(AWS_VALUE),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: file.map(|f| f.into()),

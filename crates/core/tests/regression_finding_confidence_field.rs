@@ -62,6 +62,7 @@ fn make_verified(confidence: Option<f64>) -> VerifiedFinding {
         severity: Severity::Critical,
         credential_redacted: "AK****LE".into(),
         credential_hash: sha256_hash(AKIA_PLAINTEXT),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: None,
@@ -170,35 +171,35 @@ fn raw_match_confidence_deserializes_from_explicit_field() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn verified_finding_confidence_some_included_and_field_count_is_12() {
+fn verified_finding_confidence_some_included_and_field_count_is_13() {
     let finding = make_verified(Some(0.9));
     let value = serde_json::to_value(&finding).expect("serialize VerifiedFinding");
     let obj = value.as_object().expect("object");
-    // 11 base fields + confidence => 12.
-    assert_eq!(obj.len(), 12);
+    // 12 base fields + confidence => 13.
+    assert_eq!(obj.len(), 13);
     assert!(obj.contains_key("confidence"));
     assert_eq!(value["confidence"].as_f64(), Some(0.9));
 }
 
 #[test]
-fn verified_finding_confidence_none_omitted_and_field_count_is_11() {
+fn verified_finding_confidence_none_omitted_and_field_count_is_12() {
     let finding = make_verified(None);
     let value = serde_json::to_value(&finding).expect("serialize VerifiedFinding");
     let obj = value.as_object().expect("object");
-    assert_eq!(obj.len(), 11);
+    assert_eq!(obj.len(), 12);
     assert!(!obj.contains_key("confidence"));
     // remediation is always injected by the custom Serialize regardless.
     assert!(obj.contains_key("remediation"));
 }
 
 #[test]
-fn verified_finding_confidence_zero_is_present_field_count_12() {
-    // BOUNDARY on the custom Serialize: `Some(0.0)` bumps the count to 12
+fn verified_finding_confidence_zero_is_present_field_count_13() {
+    // BOUNDARY on the custom Serialize: `Some(0.0)` bumps the count to 13
     // because the branch keys on `is_some()`, not truthiness.
     let finding = make_verified(Some(0.0));
     let value = serde_json::to_value(&finding).expect("serialize VerifiedFinding");
     let obj = value.as_object().expect("object");
-    assert_eq!(obj.len(), 12);
+    assert_eq!(obj.len(), 13);
     assert_eq!(value["confidence"].as_f64(), Some(0.0));
 }
 

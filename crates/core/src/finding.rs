@@ -398,6 +398,12 @@ pub struct VerifiedFinding {
     /// SHA-256 digest of the original credential for internal correlation.
     /// Raw 32 inline bytes; hex-encoded lazily at the serde/reporter boundary.
     pub credential_hash: CredentialHash,
+    /// Redacted companion credentials or context values extracted nearby.
+    ///
+    /// Companion values follow the same boundary rule as the primary
+    /// credential: reports may expose a safe preview, never plaintext.
+    #[serde(default)]
+    pub companions_redacted: HashMap<String, String>,
     /// Source location for the match.
     pub location: MatchLocation,
     /// Verification result.
@@ -418,7 +424,7 @@ impl Serialize for VerifiedFinding {
     {
         let remediation =
             crate::auto_fix::remediation_for(&self.detector_id, &self.service, self.severity);
-        let mut field_count = 11;
+        let mut field_count = 12;
         if self.confidence.is_some() {
             field_count += 1;
         }
@@ -429,6 +435,12 @@ impl Serialize for VerifiedFinding {
         state.serialize_field("severity", &self.severity)?;
         state.serialize_field("credential_redacted", self.credential_redacted.as_ref())?;
         state.serialize_field("credential_hash", &hex_encode(self.credential_hash))?;
+        let sorted_companions: BTreeMap<&str, &str> = self
+            .companions_redacted
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        state.serialize_field("companions_redacted", &sorted_companions)?;
         state.serialize_field("location", &self.location)?;
         state.serialize_field("verification", &self.verification)?;
         let sorted_metadata: BTreeMap<&str, &str> = self
@@ -491,16 +503,25 @@ impl RawMatch {
             severity: self.severity,
             credential_redacted: crate::redact(&self.credential),
             credential_hash: self.credential_hash,
-            companions_redacted: self
-                .companions
-                .iter()
-                .map(|(k, v)| (k.clone(), crate::redact(v).into_owned()))
-                .collect(),
+            companions_redacted: redact_companions(&self.companions),
             location: self.location.clone(),
             entropy: self.entropy,
             confidence: self.confidence,
         }
     }
+}
+
+/// Redact every companion value at the process boundary.
+///
+/// Keeping this transformation centralized prevents verifier, offline scan,
+/// and serialization paths from accidentally diverging on companion safety.
+pub fn redact_companions(
+    companions: &std::collections::HashMap<String, String>,
+) -> std::collections::HashMap<String, String> {
+    companions
+        .iter()
+        .map(|(key, value)| (key.clone(), crate::redact(value).into_owned()))
+        .collect()
 }
 
 /// Redacted, disk-safe view of a `RawMatch`. Carries only the SHA-256 hash

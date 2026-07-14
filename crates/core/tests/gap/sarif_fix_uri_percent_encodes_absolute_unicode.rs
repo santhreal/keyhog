@@ -14,6 +14,7 @@ fn synthetic_finding(path: &str) -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("****redacted"),
         credential_hash: [0; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some(path.into()),

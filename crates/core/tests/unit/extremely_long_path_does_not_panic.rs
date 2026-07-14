@@ -13,6 +13,7 @@ fn finding_with_hostile_path(path: &str) -> VerifiedFinding {
         severity: Severity::Medium,
         credential_redacted: Cow::Borrowed("****"),
         credential_hash: [0; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(path)),

@@ -40,7 +40,7 @@ impl<W: Write + Send> Reporter for GithubAnnotationsReporter<W> {
         );
         write_property(&mut self.writer, &mut first_property, "title", &title)?;
         write!(self.writer, "::")?;
-        writeln!(self.writer, "{}", escape_command_data(&message(finding)))?;
+        writeln!(self.writer, "{}", escape_command_data(&message(finding)?))?;
         Ok(())
     }
 
@@ -74,7 +74,7 @@ fn write_property<W: Write>(
     Ok(())
 }
 
-fn message(finding: &VerifiedFinding) -> String {
+fn message(finding: &VerifiedFinding) -> Result<String, ReportError> {
     let verification = super::style::verification_token(&finding.verification);
     let mut text = format!(
         "{} detector={} service={} redacted={} verification={}",
@@ -90,7 +90,11 @@ fn message(finding: &VerifiedFinding) -> String {
             unreachable!("formatting into a String cannot fail");
         }
     }
-    text
+    if !finding.companions_redacted.is_empty() {
+        text.push_str(" companions=");
+        text.push_str(&super::companions_json(finding)?);
+    }
+    Ok(text)
 }
 
 fn escape_property(value: &str) -> String {

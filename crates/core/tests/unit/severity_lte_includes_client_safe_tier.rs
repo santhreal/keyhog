@@ -25,6 +25,7 @@ fn finding(sev: Severity) -> VerifiedFinding {
         severity: sev,
         credential_redacted: std::borrow::Cow::Borrowed("REDACTED"),
         credential_hash: [0; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("x")),

@@ -51,6 +51,7 @@ fn base_finding() -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA...wxyz"),
         credential_hash: [0u8; 32].into(),
+        companions_redacted: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("src/main.rs")),

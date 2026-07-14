@@ -163,6 +163,14 @@ impl<W: Write + Send> SarifReporter<W> {
             &finding.service,
             finding.severity,
         );
+        let mut metadata = finding
+            .metadata
+            .iter()
+            .map(|(key, value)| (format!("metadata.{key}"), value.to_string()))
+            .collect::<BTreeMap<_, _>>();
+        for (key, value) in &finding.companions_redacted {
+            metadata.insert(format!("companions_redacted.{key}"), value.clone());
+        }
         SarifResultProperties {
             verification: super::style::verification_token(&finding.verification).into_owned(),
             confidence: finding.confidence.map(|confidence| {
@@ -178,11 +186,7 @@ impl<W: Write + Send> SarifReporter<W> {
             remediation_revoke_url: remediation.revoke_url.clone(),
             remediation_docs_url: remediation.docs_url.clone(),
             remediation_revoke_command: remediation.revoke_command.clone(),
-            metadata: finding
-                .metadata
-                .iter()
-                .map(|(key, value)| (format!("metadata.{key}"), value.to_string()))
-                .collect::<BTreeMap<_, _>>(),
+            metadata,
         }
     }
 

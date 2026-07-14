@@ -164,6 +164,7 @@ fn finding_opt_path(
             bytes[..len].copy_from_slice(&hb[..len]);
             bytes.into()
         },
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: path.map(Arc::from),

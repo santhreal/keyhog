@@ -77,6 +77,7 @@ prop_compose! {
             severity: severity_at(sev_idx),
             credential_redacted: Cow::Owned(credential),
             credential_hash: [0u8; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
             location: MatchLocation {
                 source: Arc::from(source.as_str()),
                 file_path: opt_arc(file_path),
@@ -163,6 +164,7 @@ fn base_finding() -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA...7XYA"),
         credential_hash: [0u8; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("config/app.env")),

@@ -14,6 +14,7 @@ fn sample_finding() -> VerifiedFinding {
         severity: Severity::Critical,
         credential_redacted: Cow::Borrowed("xoxb***************"),
         credential_hash: [0; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("config.py".into()),

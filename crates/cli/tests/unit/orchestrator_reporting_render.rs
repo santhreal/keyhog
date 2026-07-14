@@ -15,6 +15,7 @@ fn finding(verification: keyhog_core::VerificationResult) -> keyhog_core::Verifi
         severity: keyhog_core::Severity::High,
         credential_redacted: Cow::Borrowed("AKIA..."),
         credential_hash: [0u8; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: keyhog_core::MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("a.txt")),

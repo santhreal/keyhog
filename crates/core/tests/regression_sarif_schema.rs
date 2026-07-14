@@ -59,6 +59,7 @@ fn finding_for(
         severity,
         credential_redacted: Cow::Borrowed(redacted),
         credential_hash: sha256_hash(value),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some(file.into()),
@@ -85,6 +86,7 @@ fn finding_stdin_no_region(value: &str) -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA****"),
         credential_hash: sha256_hash(value),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "stdin".into(),
             file_path: None,
@@ -111,6 +113,7 @@ fn finding_offset_no_line(value: &str, offset: usize) -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA****"),
         credential_hash: sha256_hash(value),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("blob.bin".into()),

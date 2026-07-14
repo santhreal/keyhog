@@ -20,7 +20,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 /// The exact CSV header keyhog writes on `CsvReporter::new`.
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,source,file_path,line,offset,commit,author,date,verification,confidence";
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence";
 
 /// GitLab SAST schema version and URL pinned by the reporter.
 const GITLAB_SCHEMA_VERSION: &str = "15.2.4";
@@ -38,6 +38,7 @@ fn planted() -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA****"),
         credential_hash: CredentialHash::from_bytes([0xAB; 32]),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("config/app.env".into()),
@@ -93,7 +94,7 @@ fn csv_header_is_exact_first_line() {
 fn csv_planted_finding_row_is_exact() {
     let out = render_str(ReportFormat::Csv, &[planted()]);
     let expected_row = format!(
-        "aws-access-key,AWS Access Key,aws,high,AKIA****,{},filesystem,config/app.env,7,0,,,,unverifiable,0.9",
+        "aws-access-key,AWS Access Key,aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9",
         hash_hex()
     );
     assert!(

@@ -207,6 +207,7 @@ fn skipped_finding_for_baseline(group: &DedupedMatch) -> keyhog_core::VerifiedFi
         severity: group.severity,
         credential_redacted: keyhog_core::redact(&group.credential),
         credential_hash: group.credential_hash,
+        companions_redacted: keyhog_core::redact_companions(&group.companions),
         location: group.primary_location.clone(),
         additional_locations: group.additional_locations.clone(),
         verification: VerificationResult::Skipped,

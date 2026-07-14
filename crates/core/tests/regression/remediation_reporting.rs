@@ -57,6 +57,7 @@ fn finding(detector_id: &str, name: &str, service: &str, severity: Severity) -> 
         severity,
         credential_redacted: Cow::Borrowed("AKIA...7XYA"),
         credential_hash: [7; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("src/main.rs")),

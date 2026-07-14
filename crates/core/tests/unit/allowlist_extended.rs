@@ -14,6 +14,7 @@ fn verified_finding(detector: &str, path: Option<&str>) -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: "abcd...wxyz".into(),
         credential_hash: [0; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("fs"),
             file_path: path.map(Arc::from),

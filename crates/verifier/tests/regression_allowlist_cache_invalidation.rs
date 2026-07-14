@@ -56,6 +56,7 @@ fn finding(
         severity: Severity::default(),
         credential_redacted: Cow::Borrowed("****"),
         credential_hash,
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: file_path.map(|p| p.into()),

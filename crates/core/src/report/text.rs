@@ -232,6 +232,18 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
             )?;
         }
 
+        let mut companions: Vec<_> = finding.companions_redacted.iter().collect();
+        companions.sort_by(|(left, _), (right, _)| left.cmp(right));
+        for (key, value) in companions {
+            writeln!(
+                self.writer,
+                "  {} {} {}",
+                report_style::paint("│", border_ansi, self.color),
+                report_style::dim("Companion:", self.color),
+                sanitize_terminal(&format!("{key}={value}")),
+            )?;
+        }
+
         if !finding.additional_locations.is_empty() {
             writeln!(
                 self.writer,

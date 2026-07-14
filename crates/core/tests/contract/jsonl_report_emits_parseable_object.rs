@@ -13,6 +13,7 @@ fn sample() -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("****"),
         credential_hash: [0; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "fs".into(),
             file_path: Some("a.env".into()),

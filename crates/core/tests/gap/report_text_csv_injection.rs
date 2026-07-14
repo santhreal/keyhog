@@ -35,6 +35,7 @@ fn base_finding() -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA...7XYA"),
         credential_hash: [0xab; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("config/app.env")),
@@ -465,7 +466,7 @@ fn csv_header_is_exact_and_first_line() {
     let header = out.lines().next().expect("csv header line");
     assert_eq!(
         header,
-        "detector_id,detector_name,service,severity,credential_redacted,credential_hash,source,file_path,line,offset,commit,author,date,verification,confidence",
+        "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence",
         "CSV header drifted"
     );
 }
@@ -641,7 +642,7 @@ fn csv_empty_field_is_bare_and_unguarded() {
     // and a benign path absent, there must be an empty cell, not "''" or "'".
     let fields: Vec<&str> = row.split(',').collect();
     assert_eq!(
-        fields[7], "",
+        fields[8], "",
         "absent file_path must be an empty cell: {row:?}"
     );
 }

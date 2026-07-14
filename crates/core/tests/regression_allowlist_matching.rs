@@ -44,6 +44,7 @@ fn finding(detector_id: &str, file: &str, hash: CredentialHash) -> VerifiedFindi
         severity: Severity::High,
         credential_redacted: "abc...wxyz".into(),
         credential_hash: hash,
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("fs"),
             file_path: Some(Arc::from(file)),

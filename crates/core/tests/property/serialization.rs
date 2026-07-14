@@ -18,6 +18,7 @@ proptest! {
             severity: Severity::High,
             credential_redacted: Cow::Owned(cred.clone()),
             credential_hash: [0; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
             location: MatchLocation {
                 source: "fs".into(),
                 file_path: Some("a.txt".into()),

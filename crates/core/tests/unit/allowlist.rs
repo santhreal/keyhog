@@ -87,6 +87,7 @@ fn is_allowed_checks_detector_and_path_rules_consistently() {
         severity: Severity::High,
         credential_redacted: "***".into(),
         credential_hash: [0; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("src/main.rs".into()),
@@ -109,6 +110,7 @@ fn is_allowed_checks_detector_and_path_rules_consistently() {
 
     let finding = VerifiedFinding {
         detector_id: "other".into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("tests/fixture.env".into()),
@@ -177,6 +179,7 @@ fn gitleaks_detector_ignore_by_id() {
         severity: Severity::High,
         credential_redacted: "***".into(),
         credential_hash: [0; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("any/path/file.rs".into()),

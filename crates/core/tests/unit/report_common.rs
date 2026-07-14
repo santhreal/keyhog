@@ -17,6 +17,7 @@ pub fn sample_finding() -> VerifiedFinding {
             0, 0, 0, 0, 0, 0, 0,
         ]
         .into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("config/app.env")),

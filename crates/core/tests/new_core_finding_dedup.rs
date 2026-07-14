@@ -807,6 +807,7 @@ fn verified_finding_serde_roundtrip() {
         severity: Severity::Critical,
         credential_redacted: redact("AKIAIOSFODNN7EXAMPLE"),
         credential_hash: sha256("AKIAIOSFODNN7EXAMPLE"),
+        companions_redacted: std::collections::HashMap::new(),
         location: loc("creds.env", 5, 0),
         verification: VerificationResult::Live,
         metadata: {

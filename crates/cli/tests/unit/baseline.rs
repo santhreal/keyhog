@@ -15,6 +15,7 @@ fn make_finding(
         severity: Severity::High,
         credential_redacted: "***".into(),
         credential_hash: test_hash(credential_hash).into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: file_path.map(Arc::from),

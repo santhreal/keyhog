@@ -66,6 +66,7 @@ fn finding_for(
         severity,
         credential_redacted: Cow::Borrowed(redacted),
         credential_hash: sha256_hash(value),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some(file.into()),

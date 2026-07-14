@@ -28,6 +28,7 @@ fn finding_with(file_path: &str, author: Option<&str>) -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA...7XYA"),
         credential_hash: [0xab; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(file_path)),

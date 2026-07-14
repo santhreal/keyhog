@@ -49,6 +49,14 @@ fn group_with_severity(severity: Severity) -> DedupedMatch {
     }
 }
 
+fn group_with_companion() -> DedupedMatch {
+    let mut group = group_with_severity(Severity::High);
+    group
+        .companions
+        .insert("account_id".into(), "companion-secret-value".into());
+    group
+}
+
 /// Every severity tier, ordered. The canonical `downgrade_one` chain is
 /// Critical → High → Medium → Low → ClientSafe → Info, with Info a fixed point.
 const ALL_SEVERITIES: [Severity; 6] = [
@@ -183,4 +191,29 @@ fn dead_info_stays_info_no_underflow() {
         Severity::Info,
         "Info is the lowest tier; a dead Info finding must stay Info (no underflow)"
     );
+}
+
+#[test]
+fn verified_and_unverified_twins_preserve_identical_redacted_companions() {
+    let live = TestApi.build_finding(
+        group_with_companion(),
+        VerificationResult::Live,
+        HashMap::new(),
+    );
+    let skipped = TestApi.build_finding(
+        group_with_companion(),
+        VerificationResult::Skipped,
+        HashMap::new(),
+    );
+
+    assert_eq!(live.companions_redacted, skipped.companions_redacted);
+    assert_eq!(
+        live.companions_redacted
+            .get("account_id")
+            .map(String::as_str),
+        Some("co...ue")
+    );
+    let serialized = serde_json::to_value(&live).expect("verified finding serializes");
+    assert_eq!(serialized["companions_redacted"]["account_id"], "co...ue");
+    assert!(!serialized.to_string().contains("companion-secret-value"));
 }

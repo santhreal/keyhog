@@ -103,6 +103,7 @@ fn benign_finding() -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA...7XYA"),
         credential_hash: [0xab; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("config/app.env")),
@@ -128,6 +129,7 @@ fn adversarial_finding(payload: &str) -> VerifiedFinding {
         detector_name: Arc::from(format!("Name {payload}").as_str()),
         service: Arc::from(format!("svc{payload}").as_str()),
         credential_redacted: Cow::Owned(format!("AKIA{payload}7X")),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(format!("path/{payload}").as_str())),
@@ -245,6 +247,7 @@ fn color_free_text_report_has_no_raw_escape_byte() {
     metadata.insert(format!("key{esc}"), format!("val{esc}"));
     let f = VerifiedFinding {
         credential_redacted: Cow::Owned(format!("AK{esc}IA")),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(format!("path/{esc}/f").as_str())),
@@ -318,6 +321,7 @@ fn github_annotations_encode_newlines_no_command_injection() {
     let f = VerifiedFinding {
         detector_name: Arc::from(format!("Name {nasty}").as_str()),
         credential_redacted: Cow::Owned(format!("AK{nasty}")),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(format!("path/{nasty}").as_str())),

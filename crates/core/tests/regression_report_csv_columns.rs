@@ -21,8 +21,8 @@ use keyhog_core::{
     VerificationResult, VerifiedFinding,
 };
 
-/// The exact 15-column CSV header keyhog writes on `CsvReporter::new`.
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,source,file_path,line,offset,commit,author,date,verification,confidence";
+/// The exact 16-column CSV header keyhog writes on `CsvReporter::new`.
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence";
 
 /// Render findings as a CSV document string.
 fn render(findings: &[VerifiedFinding]) -> String {
@@ -47,6 +47,7 @@ fn base() -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("AKIA****"),
         credential_hash: CredentialHash::from_bytes([0xAB; 32]),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("config/app.env".into()),
@@ -79,11 +80,11 @@ fn data_columns(out: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn csv_header_is_exactly_fifteen_columns_in_canonical_order() {
+fn csv_header_is_exactly_sixteen_columns_in_canonical_order() {
     let out = render(&[base()]);
     let header = out.lines().next().expect("csv must have a header line");
     assert_eq!(header, CSV_HEADER);
-    assert_eq!(header.split(',').count(), 15);
+    assert_eq!(header.split(',').count(), 16);
 }
 
 #[test]
@@ -122,7 +123,7 @@ fn csv_fully_populated_row_places_every_field_exactly() {
 
     let out = render(&[f]);
     let expected = format!(
-        "github-pat,GitHub PAT,github,critical,ghp_****,{},git,src/config.rs,42,1234,abc123,Jane Dev,2026-07-01,live,0.875",
+        "github-pat,GitHub PAT,github,critical,ghp_****,{},{{}},git,src/config.rs,42,1234,abc123,Jane Dev,2026-07-01,live,0.875",
         "00".repeat(32)
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -138,9 +139,9 @@ fn csv_confidence_none_yields_empty_trailing_cell() {
     f.confidence = None;
     let out = render(&[f]);
     let cols = data_columns(&out);
-    assert_eq!(cols.len(), 15);
-    assert_eq!(cols[13], "unverifiable");
-    assert_eq!(cols[14], "");
+    assert_eq!(cols.len(), 16);
+    assert_eq!(cols[14], "unverifiable");
+    assert_eq!(cols[15], "");
     // The record ends immediately after the verification token's separator.
     assert!(out
         .lines()
@@ -155,9 +156,9 @@ fn csv_line_none_yields_empty_line_cell_but_keeps_neighbours() {
     f.location.line = None;
     let out = render(&[f]);
     let cols = data_columns(&out);
-    assert_eq!(cols[7], "config/app.env"); // file_path still populated
-    assert_eq!(cols[8], ""); // line cell empty
-    assert_eq!(cols[9], "0"); // offset unaffected
+    assert_eq!(cols[8], "config/app.env"); // file_path still populated
+    assert_eq!(cols[9], ""); // line cell empty
+    assert_eq!(cols[10], "0"); // offset unaffected
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +171,7 @@ fn csv_non_formula_comma_field_is_quoted_not_split() {
     f.detector_name = "AWS, Inc".into();
     let out = render(&[f]);
     let expected = format!(
-        "aws-access-key,\"AWS, Inc\",aws,high,AKIA****,{},filesystem,config/app.env,7,0,,,,unverifiable,0.9",
+        "aws-access-key,\"AWS, Inc\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9",
         hash_ab()
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -183,7 +184,7 @@ fn csv_embedded_double_quote_is_doubled_and_wrapped() {
     let out = render(&[f]);
     // escape_csv: inner `"` doubled, whole field wrapped => "He said ""hi"""
     let expected = format!(
-        "aws-access-key,\"He said \"\"hi\"\"\",aws,high,AKIA****,{},filesystem,config/app.env,7,0,,,,unverifiable,0.9",
+        "aws-access-key,\"He said \"\"hi\"\"\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9",
         hash_ab()
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -245,7 +246,7 @@ fn csv_verification_column_uses_canonical_tokens() {
         f.verification = verification;
         let out = render(&[f]);
         let cols = data_columns(&out);
-        assert_eq!(cols[13], expected, "verification token mismatch");
+        assert_eq!(cols[14], expected, "verification token mismatch");
     }
 }
 
@@ -255,7 +256,7 @@ fn csv_verification_error_renders_error_prefix_and_message() {
     f.verification = VerificationResult::Error("boom".to_string());
     let out = render(&[f]);
     let cols = data_columns(&out);
-    assert_eq!(cols[13], "error: boom");
+    assert_eq!(cols[14], "error: boom");
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +277,7 @@ fn csv_three_findings_preserve_input_order_exact_document() {
     let out = render(&[a, b, c]);
     let hash = hash_ab();
     let row = |id: &str, sev: &str| {
-        format!("{id},AWS Access Key,aws,{sev},AKIA****,{hash},filesystem,config/app.env,7,0,,,,unverifiable,0.9")
+        format!("{id},AWS Access Key,aws,{sev},AKIA****,{hash},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9")
     };
     let expected = format!(
         "{}\n{}\n{}\n{}\n",
@@ -312,7 +313,7 @@ fn csv_formula_prefix_with_comma_is_guarded_then_quoted() {
     let out = render(&[f]);
     // Combined branch: opening `"`, then the `'` formula guard, then the value.
     let expected = format!(
-        "aws-access-key,AWS Access Key,\"'=A1,B1\",high,AKIA****,{},filesystem,config/app.env,7,0,,,,unverifiable,0.9",
+        "aws-access-key,AWS Access Key,\"'=A1,B1\",high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9",
         hash_ab()
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -324,10 +325,10 @@ fn csv_benign_leading_char_gets_no_guard_quote() {
     f.location.file_path = Some("normal.env".into());
     let out = render(&[f]);
     let cols = data_columns(&out);
-    assert_eq!(cols[7], "normal.env");
+    assert_eq!(cols[8], "normal.env");
     assert!(
-        !cols[7].starts_with('\''),
+        !cols[8].starts_with('\''),
         "benign field must not gain a formula guard: {:?}",
-        cols[7]
+        cols[8]
     );
 }

@@ -301,6 +301,10 @@ fn verified_finding_serialize_adds_remediation_and_sorts_metadata() {
     let mut metadata = HashMap::new();
     metadata.insert("zeta_key".to_string(), "z".to_string());
     metadata.insert("alpha_key".to_string(), "a".to_string());
+    let companions_redacted = HashMap::from([
+        ("zeta_context".to_string(), "z...9".to_string()),
+        ("alpha_context".to_string(), "a...1".to_string()),
+    ]);
 
     let finding = VerifiedFinding {
         detector_id: "aws-access-key-id".into(),
@@ -309,6 +313,7 @@ fn verified_finding_serialize_adds_remediation_and_sorts_metadata() {
         severity: Severity::Critical,
         credential_redacted: "AK****LE".into(),
         credential_hash: sha256_hash(AKIA_PLAINTEXT),
+        companions_redacted,
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("config/prod.env".into()),
@@ -328,8 +333,8 @@ fn verified_finding_serialize_adds_remediation_and_sorts_metadata() {
     let value: serde_json::Value = serde_json::from_str(&text).expect("reparse");
     let obj = value.as_object().expect("object");
 
-    // Custom Serialize adds `remediation` (field_count == 12 with confidence set).
-    assert_eq!(obj.len(), 12);
+    // Custom Serialize adds `companions_redacted` and `remediation`.
+    assert_eq!(obj.len(), 13);
     assert!(obj.contains_key("remediation"));
     assert!(value["remediation"]["action"].is_string());
 
@@ -339,6 +344,10 @@ fn verified_finding_serialize_adds_remediation_and_sorts_metadata() {
     assert_eq!(value["credential_redacted"].as_str(), Some("AK****LE"));
     assert_eq!(value["confidence"].as_f64(), Some(0.9));
     assert_eq!(value["additional_locations"], serde_json::json!([]));
+    assert_eq!(
+        value["companions_redacted"],
+        serde_json::json!({"alpha_context": "a...1", "zeta_context": "z...9"})
+    );
 
     // metadata is emitted in sorted-key order: "alpha_key" precedes "zeta_key"
     // in the raw serialized byte stream regardless of HashMap iteration order.
@@ -356,6 +365,7 @@ fn verified_finding_error_verification_serializes_as_tagged_object() {
         severity: Severity::High,
         credential_redacted: "AK****LE".into(),
         credential_hash: sha256_hash(AKIA_PLAINTEXT),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: None,
@@ -377,9 +387,9 @@ fn verified_finding_error_verification_serializes_as_tagged_object() {
         value["verification"]["error"].as_str(),
         Some("connection timed out")
     );
-    // confidence is None => omitted; field_count == 11.
+    // confidence is None => omitted; field_count == 12.
     let obj = value.as_object().expect("object");
     assert!(!obj.contains_key("confidence"));
-    assert_eq!(obj.len(), 11);
+    assert_eq!(obj.len(), 12);
     assert_eq!(value["severity"].as_str(), Some("high"));
 }

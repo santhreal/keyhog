@@ -14,9 +14,21 @@ pub(crate) mod text;
 #[path = "report/sarif_uri.rs"]
 pub(crate) mod sarif_uri;
 
+use std::collections::BTreeMap;
 use std::io::Write;
 
 use crate::VerifiedFinding;
+
+/// Serialize redacted companion values deterministically for report formats
+/// that expose a scalar details field instead of the native JSON object.
+pub(crate) fn companions_json(finding: &VerifiedFinding) -> Result<String, ReportError> {
+    let companions: BTreeMap<&str, &str> = finding
+        .companions_redacted
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
+    Ok(serde_json::to_string(&companions)?)
+}
 
 /// Common error type used by all reporters.
 pub use anyhow::Error as ReportError;

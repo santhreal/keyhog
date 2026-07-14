@@ -49,6 +49,7 @@ fn finding_with(
         severity,
         credential_redacted: Cow::Borrowed(redacted),
         credential_hash: CredentialHash::from_bytes([hash_byte; 32]),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "filesystem".into(),
             file_path: Some("config/app.env".into()),

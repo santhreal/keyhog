@@ -68,6 +68,7 @@ fn finding_with_additional(additional: Vec<MatchLocation>) -> VerifiedFinding {
         severity: Severity::High,
         credential_redacted: Cow::Borrowed("****"),
         credential_hash: [0; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: "fs".into(),
             file_path: Some(std::sync::Arc::<str>::from("primary.rs")),

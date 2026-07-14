@@ -132,6 +132,7 @@ struct GitlabDetails<'a> {
     credential: GitlabTextDetail<'a>,
     service: GitlabTextDetail<'a>,
     credential_hash: GitlabTextDetail<'a>,
+    companions: GitlabTextDetail<'a>,
 }
 
 #[derive(Serialize)]
@@ -178,6 +179,7 @@ fn vulnerability_object(finding: &VerifiedFinding) -> Result<GitlabVulnerability
         "{} found by {} at {}:{}",
         finding.detector_name, finding.detector_id, file, start_line
     );
+    let companions = super::companions_json(finding)?;
 
     Ok(GitlabVulnerability {
         id,
@@ -212,6 +214,11 @@ fn vulnerability_object(finding: &VerifiedFinding) -> Result<GitlabVulnerability
                 name: "Credential hash",
                 detail_type: "text",
                 value: Cow::Owned(credential_hash),
+            },
+            companions: GitlabTextDetail {
+                name: "Redacted companions",
+                detail_type: "text",
+                value: Cow::Owned(companions),
             },
         },
     })

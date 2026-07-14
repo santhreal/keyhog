@@ -145,6 +145,13 @@ fn write_testcase<W: Write>(writer: &mut W, finding: &VerifiedFinding) -> Result
         crate::hex_encode(&finding.credential_hash)
     )?;
     writeln!(writer, "Verification:  {}", escape_cdata(&verification_str))?;
+    if !finding.companions_redacted.is_empty() {
+        writeln!(
+            writer,
+            "Companions:    {}",
+            escape_cdata(&super::companions_json(finding)?)
+        )?;
+    }
     if !confidence_str.is_empty() {
         writeln!(writer, "Confidence:    {}", confidence_str)?;
     }

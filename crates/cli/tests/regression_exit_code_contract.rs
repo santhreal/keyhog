@@ -38,6 +38,7 @@ fn finding(verification: V) -> VerifiedFinding {
         severity: Severity::Critical,
         credential_redacted: Cow::Borrowed("ghp_...DSiF"),
         credential_hash: [0u8; 32].into(),
+        companions_redacted: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from("leak.env")),

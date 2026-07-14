@@ -17,6 +17,15 @@ schemas: HTML displays the full metadata panel, GitLab SAST projects the scan
 times required by its schema, and finding-only formats preserve their stable
 finding shape.
 
+Every finding also carries `companions_redacted`, a sorted JSON object of
+nearby credential or context values captured by the detector. Companion values
+are redacted at the same boundary as the primary credential, so plaintext
+never enters verification results or reports. JSON, JSONL, and HTML expose the
+object directly; SARIF exposes `companions_redacted.<name>` result properties;
+CSV, JUnit, GitLab SAST, and GitHub annotations use a deterministic redacted
+summary. An empty object means the detector did not produce companion evidence,
+not that companion matching was disabled.
+
 ## `--format text` (default)
 
 Human-readable boxes. Best for terminal use, pre-commit hook output,
