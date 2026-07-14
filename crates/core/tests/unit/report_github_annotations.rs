@@ -94,6 +94,24 @@ fn github_annotation_empty_report_is_empty_stdout() {
 }
 
 #[test]
+fn github_annotation_partial_scan_emits_terminal_coverage_notice() {
+    let mut buf = Vec::new();
+    write_report(
+        &mut buf,
+        ReportFormat::GithubAnnotationsCoverage {
+            skip_summary: vec![("oversize file".to_string(), 2)],
+        },
+        &[],
+    )
+    .expect("render partial GitHub annotations");
+    let out = String::from_utf8(buf).expect("annotation output is UTF-8");
+    assert_eq!(
+        out,
+        "::warning title=keyhog coverage::partial scan coverage: oversize file=2\n"
+    );
+}
+
+#[test]
 fn github_annotation_uses_canonical_structured_verification_tokens() {
     for (verification, expected) in [
         (VerificationResult::Live, "live"),

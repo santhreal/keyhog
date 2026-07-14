@@ -10,12 +10,25 @@ use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
 /// GitHub Actions workflow command annotations.
 pub(crate) struct GithubAnnotationsReporter<W: Write + Send> {
     writer: W,
+    skip_summary: Vec<(String, usize)>,
 }
 
 impl<W: Write + Send> GithubAnnotationsReporter<W> {
     /// Create a GitHub Actions annotation reporter.
     pub(crate) fn new(writer: W) -> Self {
-        Self { writer }
+        Self {
+            writer,
+            skip_summary: Vec::new(),
+        }
+    }
+
+    /// Attach a terminal workflow notice for incomplete source coverage.
+    pub(crate) fn with_skip_summary(mut self, summary: Vec<(String, usize)>) -> Self {
+        self.skip_summary = summary
+            .into_iter()
+            .filter(|(_, count)| *count > 0)
+            .collect();
+        self
     }
 }
 
@@ -45,6 +58,19 @@ impl<W: Write + Send> Reporter for GithubAnnotationsReporter<W> {
     }
 
     fn finish(&mut self) -> Result<(), ReportError> {
+        if !self.skip_summary.is_empty() {
+            let details = self
+                .skip_summary
+                .iter()
+                .map(|(reason, count)| format!("{}={count}", sanitize_terminal(reason)))
+                .collect::<Vec<_>>()
+                .join("; ");
+            writeln!(
+                self.writer,
+                "::warning title=keyhog coverage::{}",
+                escape_command_data(&format!("partial scan coverage: {details}"))
+            )?;
+        }
         self.flush_writer()
     }
 }

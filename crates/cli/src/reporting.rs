@@ -64,7 +64,9 @@ fn report_with<W: std::io::Write + 'static + Send>(
             skip_summary: coverage_gap_summary(&CoverageCounts::current()),
         },
         OutputFormat::Csv => ReportFormat::Csv,
-        OutputFormat::GithubAnnotations => ReportFormat::GithubAnnotations,
+        OutputFormat::GithubAnnotations => ReportFormat::GithubAnnotationsCoverage {
+            skip_summary: coverage_gap_summary(&CoverageCounts::current()),
+        },
         OutputFormat::GitlabSast => ReportFormat::GitlabSastCoverage {
             scan_started_at: metadata.scan_started_at.clone(),
             scan_finished_at: metadata.scan_finished_at.clone(),

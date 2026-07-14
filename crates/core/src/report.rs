@@ -384,6 +384,11 @@ pub enum ReportFormat {
     Csv,
     /// GitHub Actions workflow command annotations.
     GithubAnnotations,
+    /// GitHub Actions annotations with a terminal scan coverage notice.
+    GithubAnnotationsCoverage {
+        /// Non-zero source or scanner coverage gaps observed during the scan.
+        skip_summary: Vec<(String, usize)>,
+    },
     /// GitLab SAST security report JSON.
     GitlabSast {
         /// UTC scan start time formatted as `YYYY-MM-DDTHH:MM:SS`.
@@ -471,6 +476,11 @@ pub fn write_scan_report<W: Write + Send>(
         ReportFormat::Csv => finish_reporter(csv::CsvReporter::new(writer)?, findings),
         ReportFormat::GithubAnnotations => finish_reporter(
             github_annotations::GithubAnnotationsReporter::new(writer),
+            findings,
+        ),
+        ReportFormat::GithubAnnotationsCoverage { skip_summary } => finish_reporter(
+            github_annotations::GithubAnnotationsReporter::new(writer)
+                .with_skip_summary(skip_summary),
             findings,
         ),
         ReportFormat::GitlabSast {

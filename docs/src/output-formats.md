@@ -133,6 +133,9 @@ Critical and high findings render as `error` annotations, medium and
 low as `warning`, and info as `notice`. Each annotation carries the file,
 line, title, detector, service, redacted credential, verification state,
 and confidence when available. The plaintext credential is not emitted.
+When source coverage is incomplete, the formatter also emits one terminal
+`::warning` notice with deterministic reason/count pairs, so the GitHub job log
+shows the incomplete state even when there are no findings.
 
 ## `--format gitlab-sast`
 

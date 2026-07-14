@@ -18,6 +18,23 @@ fn scan(path: &std::path::Path) -> std::process::Output {
         .expect("spawn keyhog scan --format github-annotations")
 }
 
+fn scan_directory_with_cap(path: &std::path::Path) -> std::process::Output {
+    Command::new(binary())
+        .args([
+            "scan",
+            "--daemon=off",
+            "--backend",
+            "simd",
+            "--max-file-size",
+            "15B",
+            "--format",
+            "github-annotations",
+        ])
+        .arg(path)
+        .output()
+        .expect("spawn capped keyhog scan --format github-annotations")
+}
+
 #[test]
 fn clean_scan_emits_no_github_annotations() {
     let (_dir, path) = write_temp_file("clean.env", "no secrets here\n");
@@ -67,5 +84,26 @@ fn planted_secret_emits_github_error_annotation() {
     assert!(
         !stdout.contains(plaintext),
         "annotation output must not leak plaintext credentials"
+    );
+}
+
+#[test]
+fn partial_scan_emits_github_coverage_warning() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("small.txt"), "plain text\n").expect("small fixture");
+    std::fs::write(dir.path().join("large.txt"), "this file exceeds the cap\n")
+        .expect("large fixture");
+
+    let output = scan_directory_with_cap(dir.path());
+    assert_eq!(
+        output.status.code(),
+        Some(13),
+        "partial scan must retain the coverage-gap exit code"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("::warning title=keyhog coverage::partial scan coverage:")
+            && stdout.contains("exceeded --max-file-size=1"),
+        "GitHub annotations must surface partial coverage in the job log: {stdout:?}"
     );
 }
