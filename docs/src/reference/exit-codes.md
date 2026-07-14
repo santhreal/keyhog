@@ -80,8 +80,9 @@ depending on where the error happened.
 
 A failure below the operator-input boundary: a low-level I/O error that is not
 one of the operator-correctable kinds mapped to `2`, an incremental-cache
-failure, or an explicitly selected SIMD/Hyperscan path that becomes
-unavailable. A selected or required GPU failure is `12`, not `3`. A
+failure, a fatal daemon listener or connection-handler spawn failure, or an
+explicitly selected SIMD/Hyperscan path that becomes unavailable. A selected
+or required GPU failure is `12`, not `3`. A
 missing/garbage `--baseline` is `2`; a requested source that produced no scan
 data (for example `--git-history` on a non-repo) is `13`; and a detector TOML
 load failure is `2`. Distinct codes let automation choose whether to correct

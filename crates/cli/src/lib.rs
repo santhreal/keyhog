@@ -355,20 +355,7 @@ pub async fn cli_main() -> ExitCode {
             // {:#} prints the chained user-facing message instead of the {:?}
             // debug dump that includes backtrace internals.
             eprintln!("error: {error:#}");
-            let code = if SCANNER_PANICKED.load(Ordering::SeqCst) {
-                exit_codes::EXIT_SCANNER_PANIC
-            } else if error
-                .chain()
-                .any(|cause| cause.is::<orchestrator::GpuUnavailableError>())
-            {
-                exit_codes::EXIT_REQUIRE_GPU_UNMET
-            } else if error.chain().any(is_user_io_error) {
-                exit_codes::EXIT_USER_ERROR
-            } else if error.chain().any(|e| e.is::<std::io::Error>()) {
-                exit_codes::EXIT_SYSTEM_ERROR
-            } else {
-                exit_codes::EXIT_USER_ERROR
-            };
+            let code = cli_error_exit_code(&error);
             // Every scan-setup error routes here. When autoroute probed the GPU
             // before failing, the normal teardown would SIGSEGV in the leaked
             // Vulkan driver thread (exit 139) instead of returning `code`; exit
@@ -376,6 +363,37 @@ pub async fn cli_main() -> ExitCode {
             exit_now(code);
         }
     }
+}
+
+fn cli_error_exit_code(error: &anyhow::Error) -> u8 {
+    if SCANNER_PANICKED.load(Ordering::SeqCst) {
+        exit_codes::EXIT_SCANNER_PANIC
+    } else if error
+        .chain()
+        .any(|cause| cause.is::<orchestrator::GpuUnavailableError>())
+    {
+        exit_codes::EXIT_REQUIRE_GPU_UNMET
+    } else if is_daemon_service_failure(error) {
+        exit_codes::EXIT_SYSTEM_ERROR
+    } else if error.chain().any(is_user_io_error) {
+        exit_codes::EXIT_USER_ERROR
+    } else if error.chain().any(|cause| cause.is::<std::io::Error>()) {
+        exit_codes::EXIT_SYSTEM_ERROR
+    } else {
+        exit_codes::EXIT_USER_ERROR
+    }
+}
+
+#[cfg(unix)]
+fn is_daemon_service_failure(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.is::<daemon::server::DaemonServiceFailure>())
+}
+
+#[cfg(not(unix))]
+fn is_daemon_service_failure(_error: &anyhow::Error) -> bool {
+    false
 }
 
 fn is_user_io_error(error: &(dyn std::error::Error + 'static)) -> bool {

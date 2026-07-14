@@ -31,6 +31,44 @@ pub struct ServerOptions {
     pub request_read_timeout: Duration,
 }
 
+/// Fatal terminal outcomes from the running daemon service.
+#[derive(Debug)]
+pub(crate) enum DaemonServiceFailure {
+    AcceptLoopTask(String),
+    ListenerAccept(std::io::Error),
+    ConnectionHandlerSpawn(String),
+}
+
+impl std::fmt::Display for DaemonServiceFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AcceptLoopTask(error) => {
+                write!(f, "daemon service failed: accept loop task failed: {error}")
+            }
+            Self::ListenerAccept(error) => {
+                write!(
+                    f,
+                    "daemon service failed: listener accept failed fatally: {error}"
+                )
+            }
+            Self::ConnectionHandlerSpawn(error) => write!(
+                f,
+                "daemon service failed: connection handler spawn failed: {error}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for DaemonServiceFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::AcceptLoopTask(_) => None,
+            Self::ListenerAccept(error) => Some(error),
+            Self::ConnectionHandlerSpawn(_) => None,
+        }
+    }
+}
+
 impl Default for ServerOptions {
     fn default() -> Self {
         Self {
@@ -136,8 +174,8 @@ impl ServerState {
     }
 }
 
-/// Run the daemon until a `Shutdown` request comes in or the
-/// listener closes. The compiled scanner is built once before the
+/// Run the daemon until a `Shutdown` request or terminal listener failure.
+/// The compiled scanner is built once before the
 /// listener accepts so the first client connection doesn't pay the
 /// init cost (which is the whole point of running a daemon).
 pub async fn run(
@@ -178,12 +216,25 @@ pub(crate) async fn run_with_backend_override(
     announce_daemon_ready(&socket_path, detector_count);
     let accept_task = spawn_accept_loop(listener, state.clone());
 
-    shutdown.notified().await;
-    accept_task
-        .await
-        .context("daemon: accept loop task failed during shutdown")?;
-    remove_daemon_socket_on_shutdown(&socket_path)?;
-    Ok(())
+    finish_daemon_service(&socket_path, accept_task).await
+}
+
+async fn finish_daemon_service(
+    socket_path: &Path,
+    accept_task: tokio::task::JoinHandle<std::result::Result<(), DaemonServiceFailure>>,
+) -> Result<()> {
+    let terminal_outcome = match accept_task.await {
+        Ok(outcome) => outcome,
+        Err(error) => Err(DaemonServiceFailure::AcceptLoopTask(error.to_string())),
+    };
+    let cleanup = remove_daemon_socket_on_shutdown(socket_path);
+    match (terminal_outcome, cleanup) {
+        (Ok(()), cleanup) => cleanup,
+        (Err(failure), Ok(())) => Err(anyhow::Error::new(failure)),
+        (Err(failure), Err(cleanup_error)) => Err(anyhow::Error::new(failure).context(format!(
+            "daemon socket cleanup also failed: {cleanup_error:#}"
+        ))),
+    }
 }
 
 fn compile_daemon_scan_runtime(
@@ -243,27 +294,26 @@ fn announce_daemon_ready(socket_path: &Path, detector_count: usize) {
 fn spawn_accept_loop(
     listener: UnixListener,
     state: Arc<ServerState>,
-) -> tokio::task::JoinHandle<()> {
+) -> tokio::task::JoinHandle<std::result::Result<(), DaemonServiceFailure>> {
     tokio::spawn(run_accept_loop(listener, state))
 }
 
-async fn run_accept_loop(listener: UnixListener, state: Arc<ServerState>) {
+async fn run_accept_loop(
+    listener: UnixListener,
+    state: Arc<ServerState>,
+) -> std::result::Result<(), DaemonServiceFailure> {
     loop {
         tokio::select! {
-            _ = state.shutdown.notified() => break,
+            _ = state.shutdown.notified() => return Ok(()),
             conn = listener.accept() => {
                 match conn {
                     Ok((stream, _addr)) => {
                         if let Err(error) = spawn_connection_handler(state.clone(), stream).await {
-                            handle_connection_spawn_error(&state, error);
-                            break;
+                            return Err(handle_connection_spawn_error(&state.shutdown, error));
                         }
                     }
                     Err(e) => {
-                        if handle_accept_error(&state, e).await {
-                            continue;
-                        }
-                        break;
+                        handle_accept_error(&state.shutdown, e).await?;
                     }
                 }
             }
@@ -291,7 +341,7 @@ async fn spawn_connection_handler(
     Ok(())
 }
 
-fn handle_connection_spawn_error(state: &ServerState, error: String) {
+fn handle_connection_spawn_error(shutdown: &Notify, error: String) -> DaemonServiceFailure {
     let palette = style::for_stderr();
     eprintln!(
         "{} keyhog daemon: failed to spawn a connection handler ({error}); \
@@ -299,10 +349,14 @@ fn handle_connection_spawn_error(state: &ServerState, error: String) {
          Restart it with `keyhog daemon start`.",
         style::fail("FAIL", &palette)
     );
-    state.shutdown.notify_waiters();
+    shutdown.notify_waiters();
+    DaemonServiceFailure::ConnectionHandlerSpawn(error)
 }
 
-async fn handle_accept_error(state: &ServerState, error: std::io::Error) -> bool {
+async fn handle_accept_error(
+    shutdown: &Notify,
+    error: std::io::Error,
+) -> std::result::Result<(), DaemonServiceFailure> {
     // Law 10: a swallowed accept() error silently kills the daemon's ability to
     // serve while the process stays alive. Surface it loudly and either recover
     // from transient bursts or notify shutdown for fatal listener failure.
@@ -314,7 +368,7 @@ async fn handle_accept_error(state: &ServerState, error: std::io::Error) -> bool
             style::warn("WARN", &palette)
         );
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        return true;
+        return Ok(());
     }
 
     let palette = style::for_stderr();
@@ -324,8 +378,8 @@ async fn handle_accept_error(state: &ServerState, error: std::io::Error) -> bool
          shutting down. Restart it with `keyhog daemon start`.",
         style::fail("FAIL", &palette)
     );
-    state.shutdown.notify_waiters();
-    false
+    shutdown.notify_waiters();
+    Err(DaemonServiceFailure::ListenerAccept(error))
 }
 
 fn remove_daemon_socket_on_shutdown(socket_path: &std::path::Path) -> Result<()> {
@@ -690,4 +744,26 @@ pub(crate) mod testing {
     pub(crate) use crate::daemon::trust::testing::{
         ensure_private_socket_dir, remove_stale_socket_if_trusted, verify_accepted_peer,
     };
+
+    pub(crate) async fn finish_daemon_service_for_test(
+        socket_path: std::path::PathBuf,
+        fixture: crate::testing::DaemonTerminalFixture,
+    ) -> anyhow::Result<()> {
+        let accept_task = tokio::spawn(async move {
+            let shutdown = tokio::sync::Notify::new();
+            match fixture {
+                crate::testing::DaemonTerminalFixture::CleanShutdown => Ok(()),
+                crate::testing::DaemonTerminalFixture::AcceptLoopPanic => {
+                    panic!("injected accept loop panic")
+                }
+                crate::testing::DaemonTerminalFixture::FatalAccept(error) => {
+                    super::handle_accept_error(&shutdown, error).await
+                }
+                crate::testing::DaemonTerminalFixture::ConnectionHandlerSpawn(error) => {
+                    Err(super::handle_connection_spawn_error(&shutdown, error))
+                }
+            }
+        });
+        super::finish_daemon_service(&socket_path, accept_task).await
+    }
 }

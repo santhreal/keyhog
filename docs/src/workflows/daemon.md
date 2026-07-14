@@ -194,9 +194,9 @@ retries in process; the retry then owns its normal exit semantics, including
 `12` if its selected or required GPU cannot run.
 
 A fatal listener accept or connection-handler spawn error prints a failure,
-stops the service, and currently lets `daemon start` return `0` after socket
-cleanup. Treat that logged failure as an unhealthy service even though the
-process status is zero.
+stops the service, removes the daemon socket, and makes `daemon start` exit `3`.
+The typed service failure remains distinct from requested `daemon stop`, which
+cleans up the same socket and leaves `daemon start` at exit `0`.
 
 `daemon status` against an identity-stale but wire-compatible service exits `0`
 and prints a warning. `daemon stop` can stop that service. A wire-incompatible

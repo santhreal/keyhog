@@ -15,6 +15,15 @@ pub struct TestApi;
 /// Integration-test handle. Import [`CliTestApi`] to call its methods.
 pub const API: TestApi = TestApi;
 
+#[cfg(unix)]
+#[derive(Debug)]
+pub enum DaemonTerminalFixture {
+    CleanShutdown,
+    AcceptLoopPanic,
+    FatalAccept(std::io::Error),
+    ConnectionHandlerSpawn(String),
+}
+
 static SCAN_RUNTIME_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[must_use = "hold ScanRuntimeGuard across CLI test-facade calls that touch process-global scan state"]
@@ -163,6 +172,13 @@ pub trait CliTestApi {
     ) -> std::borrow::Cow<'static, str>;
     #[cfg(unix)]
     fn is_transient_accept_error(&self, error: &std::io::Error) -> bool;
+    #[cfg(unix)]
+    fn finish_daemon_terminal_fixture(
+        &self,
+        socket_path: PathBuf,
+        fixture: DaemonTerminalFixture,
+    ) -> Pin<Box<dyn Future<Output = Result<()>>>>;
+    fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8;
     fn daemon_client_version<'a>(&self, client: &'a crate::daemon::client::Client) -> &'a str;
     fn daemon_client_is_stale(&self, client: &crate::daemon::client::Client) -> bool;
     fn daemon_client_round_trip<'a>(
@@ -603,6 +619,19 @@ impl CliTestApi for TestApi {
     #[cfg(unix)]
     fn is_transient_accept_error(&self, error: &std::io::Error) -> bool {
         crate::daemon::server::is_transient_accept_error(error)
+    }
+    #[cfg(unix)]
+    fn finish_daemon_terminal_fixture(
+        &self,
+        socket_path: PathBuf,
+        fixture: DaemonTerminalFixture,
+    ) -> Pin<Box<dyn Future<Output = Result<()>>>> {
+        Box::pin(
+            crate::daemon::server::testing::finish_daemon_service_for_test(socket_path, fixture),
+        )
+    }
+    fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8 {
+        crate::cli_error_exit_code(error)
     }
     fn daemon_client_version<'a>(&self, client: &'a crate::daemon::client::Client) -> &'a str {
         client.daemon_version()
