@@ -157,7 +157,7 @@ impl CompiledScanner {
                                     scan_state,
                                     deadline,
                                 ),
-                                None => self.extract_matches(
+                                None => self.extract_matches_inner(
                                     entry,
                                     preprocessed,
                                     line_offsets,
@@ -165,6 +165,7 @@ impl CompiledScanner {
                                     documentation_lines,
                                     chunk,
                                     scan_state,
+                                    None,
                                     deadline,
                                 ),
                             }
@@ -223,7 +224,7 @@ impl CompiledScanner {
             } else {
                 None
             };
-            self.extract_matches(
+            self.extract_matches_inner(
                 entry,
                 preprocessed,
                 line_offsets,
@@ -231,6 +232,7 @@ impl CompiledScanner {
                 documentation_lines,
                 chunk,
                 scan_state,
+                None,
                 deadline,
             );
             if let Some(t0) = t0 {

@@ -462,7 +462,8 @@ impl CompiledScanner {
     /// (`scan_large_phase2_patterns`) whole-chunk paths share. Keeping it in one
     /// place means the abort cadence and profiling stay in lockstep between the
     /// two paths. (The decode-focus path keeps its own loop because it is
-    /// cursor-bounded via `extract_matches_inner`.)
+    /// cursor-bounded via `extract_matches_inner`. Whole-chunk callers pass an
+    /// explicit `None` range to the same owner.)
     #[allow(clippy::too_many_arguments)]
     fn extract_active_phase2_patterns(
         &self,
@@ -484,7 +485,7 @@ impl CompiledScanner {
             }
             let (entry, _) = &self.phase2_patterns[index];
             let t0 = if prof { Some(Instant::now()) } else { None };
-            self.extract_matches(
+            self.extract_matches_inner(
                 entry,
                 preprocessed,
                 line_offsets,
@@ -492,6 +493,7 @@ impl CompiledScanner {
                 documentation_lines,
                 chunk,
                 scan_state,
+                None,
                 deadline,
             );
             if let Some(t0) = t0 {

@@ -1,11 +1,10 @@
 //! Pattern-level extraction loops.
 //!
-//! Houses the four entry points the scanner uses to walk each triggered
+//! Houses the three entry points the scanner uses to walk each triggered
 //! pattern's regex over the prepared chunk:
 //!
-//! * `extract_matches` - public wrapper preserving the legacy
-//!   no-cursor-range call shape.
-//! * `extract_matches_inner` - dispatches between grouped and plain.
+//! * `extract_matches_inner` - range-aware dispatch between grouped and plain.
+//!   Callers pass `None` explicitly for whole-chunk extraction.
 //! * `extract_grouped_matches` - patterns with a capture-group target.
 //! * `extract_plain_matches` - patterns with no capture group.
 //!
@@ -18,34 +17,6 @@ use crate::types::*;
 use keyhog_core::{Chunk, DetectorSpec};
 
 impl CompiledScanner {
-    pub(crate) fn extract_matches(
-        &self,
-        entry: &CompiledPattern,
-        preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
-        chunk: &Chunk,
-        scan_state: &mut ScanState,
-        // Per-pattern deadline. Inner regex loops can produce many
-        // matches on adversarial inputs (false_prefix_storm); without
-        // a deadline-check inside those loops, --timeout is a lie for
-        // those chunks. Threaded down to the inner loops below.
-        deadline: Option<std::time::Instant>,
-    ) {
-        self.extract_matches_inner(
-            entry,
-            preprocessed,
-            line_offsets,
-            code_lines,
-            documentation_lines,
-            chunk,
-            scan_state,
-            None,
-            deadline,
-        );
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub(super) fn extract_matches_inner(
         &self,
@@ -111,7 +82,7 @@ impl CompiledScanner {
         // across this pattern's matches but expensive to compute:
         //   `keyword_nearby` = `O(K x |chunk|)` substring scans.
         //   `sensitive_file` = Aho-Corasick scan over the file path.
-        // Computing eagerly at `extract_matches` level regressed the
+        // Computing eagerly at the extraction-dispatch level regressed the
         // entropy_noise bench by -36% because many patterns trigger via
         // AC but produce zero matches, paying for compute they
         // never use. The OnceCell here keeps: zero-match patterns
