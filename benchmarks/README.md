@@ -200,6 +200,35 @@ checked v0.5.41 SIMD/deep artifact currently satisfies it with 4,368 true
 positives, zero false negatives, and zero false positives. The artifact records
 the exact commit and detector-set identity.
 
+### AgentRE Linux recovery slice
+
+The AgentRE adapter pins the upstream commit, license, task map, 13 Linux C
+sources, ground truths, build script, and scorer by SHA-256. Source material and
+binaries stay under the gitignored `benchmarks/corpora/` tree.
+
+```bash
+make -C benchmarks agentre-corpus
+```
+
+The build uses the pinned Linux amd64 GCC image manifest with networking
+disabled, a read-only source mount, no capabilities, bounded memory and PIDs,
+and a non-writable container root. It compiles each source with the upstream
+flags but never runs a sample. Publication succeeds only when all 13 ELF files
+match their pinned digests and the compiler-bound receipt. The published files
+are read-only and non-executable. Running the module without `--ensure`
+validates an existing corpus:
+
+```bash
+cd benchmarks
+python -m bench.agentre_build
+```
+
+The local scorer reproduces the pinned standard and bonus rubrics, including
+partial decoded-C2 credit, set overlap, nested fields, hallucination penalties,
+and rounding. Differential tests compare it with the validated upstream scorer.
+No 100% claim is valid until the complete runner also proves field-level score,
+backend parity, and fail-visible analyzer coverage.
+
 ## Daemon measurements
 
 Daemon performance uses a separate unlabeled, single-file corpus because the

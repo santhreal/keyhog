@@ -9,6 +9,7 @@
 #   make mirror            # generate the 15k synthetic mirror corpus if absent
 #   make ioc-recovery-corpus  # generate the 4,368-file P0-P12 recovery corpus
 #   make ioc-recovery         # compare KeyHog full/fast/deep on recovery phases
+#   make agentre-corpus       # verify sources and build the pinned Linux binaries
 #   make creddata          # print Samsung/CredData corpus info
 #   make kernel-info       # print perf corpus info
 #   make run               # run SCANNER=keyhog CORPUS=mirror once
@@ -53,7 +54,7 @@ ifneq ($(strip $(KEYHOG_BIN)),)
 export KEYHOG_BIN
 endif
 
-.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery creddata kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
+.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus creddata kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
 
 help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
@@ -76,6 +77,9 @@ ioc-recovery-corpus:
 ioc-recovery: ioc-recovery-corpus
 	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus ioc-recovery \
 		--scanners keyhog --matrix mode --out "$(IOC_RECOVERY_OUT)"
+
+agentre-corpus:
+	cd $(BENCH_DIR) && $(PY) -m bench.agentre_build --ensure
 
 creddata:
 	cd $(BENCH_DIR) && $(PY) -m bench.corpora.creddata
