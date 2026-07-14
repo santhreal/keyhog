@@ -140,6 +140,14 @@ pub struct DetectorSpec {
     /// `None` → the single-owner default `MIXED_ALNUM_TOKEN_THRESHOLD`.
     #[serde(default)]
     pub mixed_alnum_floor: Option<f64>,
+    /// Precedence when this detector owns entropy-fallback policy for one of
+    /// its declared keywords. Phase-2 generic detectors participate with
+    /// priority zero when omitted. Regex detectors participate only when this
+    /// field is present. Higher values win overlapping keyword claims, so the
+    /// policy decision is declared in detector TOML instead of depending on
+    /// detector IDs or load order.
+    #[serde(default)]
+    pub entropy_policy_priority: Option<u16>,
     /// Per-detector BPE token-efficiency ceiling in UTF-8 bytes per
     /// `cl100k_base` token. Candidates above the ceiling are word-like and are
     /// suppressed after the cheaper entropy/shape gates. `None` preserves the

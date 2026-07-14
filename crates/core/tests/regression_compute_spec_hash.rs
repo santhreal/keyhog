@@ -469,6 +469,9 @@ knob_changes_digest!(spec_hash_binds_entropy_very_high, |d| d.entropy_very_high 
     Some(5.2));
 knob_changes_digest!(spec_hash_binds_mixed_alnum_floor, |d| d.mixed_alnum_floor =
     Some(3.7));
+knob_changes_digest!(spec_hash_binds_entropy_policy_priority, |d| d
+    .entropy_policy_priority =
+    Some(80));
 knob_changes_digest!(spec_hash_binds_bpe_max_bytes_per_token, |d| d
     .bpe_max_bytes_per_token =
     Some(2.4));

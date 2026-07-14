@@ -28,19 +28,54 @@ use std::sync::Arc;
 /// so the earliest detector wins across BOTH conditions exactly as the linear
 /// `find` did. `generic_secret_index` is the cached `GENERIC_SECRET` fallback
 /// (formerly a second linear `find`).
+///
+/// Entropy policy uses separate maps. Phase-2 generic detectors participate by
+/// default, regex detectors opt in through `entropy_policy_priority`, and the
+/// highest declared priority wins an overlap. Compiled order breaks an equal
+/// priority tie deterministically. This keeps candidate-emitter compatibility
+/// separate from explicit entropy-policy ownership.
 #[derive(Debug, Default)]
 pub(crate) struct GenericOwningDetectorIndex {
     exact: HashMap<String, usize>,
     normalized: HashMap<String, usize>,
+    policy_exact: HashMap<String, PolicyOwner>,
+    policy_normalized: HashMap<String, PolicyOwner>,
+    policy_keywords: Vec<String>,
     by_id: HashMap<String, usize>,
     generic_secret_index: Option<usize>,
     generic_keyword_secret_index: Option<usize>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PolicyOwner {
+    index: usize,
+    priority: u16,
+}
+
+fn insert_policy_owner(
+    owners: &mut HashMap<String, PolicyOwner>,
+    keyword: String,
+    candidate: PolicyOwner,
+) {
+    owners
+        .entry(keyword)
+        .and_modify(|current| {
+            if candidate.priority > current.priority
+                || (candidate.priority == current.priority && candidate.index < current.index)
+            {
+                *current = candidate;
+            }
+        })
+        .or_insert(candidate);
 }
 
 impl GenericOwningDetectorIndex {
     pub(crate) fn build(detectors: &[DetectorSpec]) -> Self {
         let mut exact = HashMap::new();
         let mut normalized = HashMap::new();
+        let mut policy_exact = HashMap::new();
+        let mut policy_normalized = HashMap::new();
+        let mut policy_keywords = BTreeSet::new();
         let mut by_id = HashMap::new();
         let mut generic_secret_index = None;
         let mut generic_keyword_secret_index = None;
@@ -54,11 +89,28 @@ impl GenericOwningDetectorIndex {
             {
                 generic_keyword_secret_index = Some(index);
             }
-            // Policy lookup covers every active generic detector, including
-            // regex-backed families such as `generic-password`. Assignment-key
-            // ownership below remains limited to Phase2Generic detectors.
             if detector.service == "generic" {
                 by_id.entry(detector.id.clone()).or_insert(index);
+            }
+            // Phase-2 generic detectors own their entropy keywords by default.
+            // Regex detectors opt in with an explicit TOML priority. Overlap
+            // resolution uses that priority as its primary ordering.
+            if detector.service == "generic"
+                && (detector.kind == DetectorKind::Phase2Generic
+                    || detector.entropy_policy_priority.is_some())
+            {
+                let owner = PolicyOwner {
+                    index,
+                    priority: detector.entropy_policy_priority.unwrap_or(0),
+                };
+                for keyword in &detector.keywords {
+                    let kw_lower = keyword.to_ascii_lowercase();
+                    policy_keywords.insert(kw_lower.clone());
+                    if let Some(norm) = normalize_assignment_keyword(&kw_lower) {
+                        insert_policy_owner(&mut policy_normalized, norm, owner);
+                    }
+                    insert_policy_owner(&mut policy_exact, kw_lower, owner);
+                }
             }
             if detector.service != "generic" || detector.kind != DetectorKind::Phase2Generic {
                 continue;
@@ -74,6 +126,9 @@ impl GenericOwningDetectorIndex {
         Self {
             exact,
             normalized,
+            policy_exact,
+            policy_normalized,
+            policy_keywords: policy_keywords.into_iter().collect(),
             by_id,
             generic_secret_index,
             generic_keyword_secret_index,
@@ -96,6 +151,36 @@ impl GenericOwningDetectorIndex {
             (a, b) => a.or(b),
         };
         keyword_owner.or(self.generic_secret_index)
+    }
+
+    /// Generic detector that explicitly claims `keyword`, without applying the
+    /// broad generic-secret fallback. Context discovery uses this distinction:
+    /// an explicit detector keyword is positive credential evidence, while an
+    /// arbitrary assignment that only reaches the fallback is not.
+    pub(crate) fn claimed_policy_index(&self, keyword: &str) -> Option<usize> {
+        let kw_lower = keyword.to_ascii_lowercase();
+        let exact_hit = self.policy_exact.get(&kw_lower).copied();
+        let norm_hit = normalize_assignment_keyword(&kw_lower)
+            .and_then(|norm| self.policy_normalized.get(&norm).copied());
+        match (exact_hit, norm_hit) {
+            (Some(a), Some(b)) => Some(
+                if a.priority > b.priority || (a.priority == b.priority && a.index < b.index) {
+                    a
+                } else {
+                    b
+                }
+                .index,
+            ),
+            (a, b) => a.or(b).map(|owner| owner.index),
+        }
+    }
+
+    /// Lowercased keyword vocabulary contributed by active entropy-policy
+    /// owners. The entropy line finder consumes this alongside Tier-A scan
+    /// keywords so a custom detector TOML works without duplicating its anchor
+    /// in scanner configuration.
+    pub(crate) fn policy_keywords(&self) -> &[String] {
+        &self.policy_keywords
     }
 
     /// Index of the loaded `GENERIC_SECRET` detector, if any. This is the ONE

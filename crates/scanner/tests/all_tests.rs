@@ -151,6 +151,8 @@ pub mod regression_edge_platform_token_recall;
 pub mod regression_email_vendor_token_recall;
 #[path = "regression_encoded_benign_text_suppression.rs"]
 pub mod regression_encoded_benign_text_suppression;
+#[path = "regression_entropy_active_policy_ownership.rs"]
+pub mod regression_entropy_active_policy_ownership;
 #[path = "regression_entropy_base64_protobuf_decoys.rs"]
 pub mod regression_entropy_base64_protobuf_decoys;
 #[path = "regression_entropy_confidence_truth.rs"]

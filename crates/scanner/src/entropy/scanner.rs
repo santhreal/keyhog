@@ -39,6 +39,37 @@ impl<'a> ActiveDetectorPolicy<'a> {
             .index_for_id(detector_id)
             .and_then(|index| self.detectors.get(index))
     }
+
+    fn spec_for_keyword(self, keyword: &str) -> Option<&'a DetectorSpec> {
+        active_policy_detector_index(self.index, keyword)
+            .and_then(|index| self.detectors.get(index))
+    }
+
+    fn claims_keyword(self, keyword: &str) -> bool {
+        self.index.claimed_policy_index(keyword).is_some()
+    }
+}
+
+/// Resolve entropy policy from the compiled corpus. Synthetic paths have exact
+/// owners, detector-declared keyword claims come next, and an unclaimed Tier-A
+/// keyword retains the API-key compatibility policy before the generic-secret
+/// fallback. This is the single resolver shared by generation and emission.
+pub(crate) fn active_policy_detector_index(
+    index: &crate::generic_keyword_owner::GenericOwningDetectorIndex,
+    keyword: &str,
+) -> Option<usize> {
+    use crate::detector_ids::{GENERIC_API_KEY, GENERIC_KEYWORD_SECRET, GENERIC_SECRET};
+
+    if keyword == KEYWORD_FREE_LABEL {
+        return index.index_for_id(GENERIC_SECRET);
+    }
+    if keyword == crate::entropy::ISOLATED_BARE_ENTROPY_LABEL {
+        return index.index_for_id(GENERIC_KEYWORD_SECRET);
+    }
+    index
+        .claimed_policy_index(keyword)
+        .or_else(|| index.index_for_id(GENERIC_API_KEY))
+        .or_else(|| index.index_for_id(GENERIC_SECRET))
 }
 
 fn get_spec<'a>(
@@ -48,6 +79,16 @@ fn get_spec<'a>(
     match active_policy {
         Some(policy) => policy.spec(detector_id),
         None => keyhog_core::detector_spec_by_id(detector_id),
+    }
+}
+
+fn get_spec_for_keyword<'a>(
+    active_policy: Option<ActiveDetectorPolicy<'a>>,
+    keyword: &str,
+) -> Option<&'a DetectorSpec> {
+    match active_policy {
+        Some(policy) => policy.spec_for_keyword(keyword),
+        None => get_spec(None, classify_keyword_to_detector_id(keyword)),
     }
 }
 
@@ -626,10 +667,7 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_an
             false,
             active_policy,
         );
-        let detector = get_spec(
-            active_policy,
-            classify_keyword_to_detector_id(&context.keyword),
-        );
+        let detector = get_spec_for_keyword(active_policy, &context.keyword);
         for candidate in extract_candidates(
             keyword_line,
             &context.keyword,
@@ -695,10 +733,7 @@ fn collect_line_candidates_inner(
     placeholder_keywords: &[String],
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) {
-    let detector = get_spec(
-        active_policy,
-        classify_keyword_to_detector_id(&context.keyword),
-    );
+    let detector = get_spec_for_keyword(active_policy, &context.keyword);
     let candidates = if crate::telemetry::is_dogfood_enabled() {
         let extracted = extract_candidates_with_rejections(
             line,
@@ -808,8 +843,7 @@ fn candidate_plausibility_rejection_stage_with_policy(
     placeholder_keywords: &[String],
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) -> Option<StageId> {
-    let detector_id = classify_keyword_to_detector_id(&context.keyword);
-    let spec = get_spec(active_policy, detector_id);
+    let spec = get_spec_for_keyword(active_policy, &context.keyword);
     let keyword_free_min_len = spec
         .and_then(|s| s.keyword_free_min_len)
         .map_or(KEYWORD_FREE_MIN_LEN, |min_len| min_len);
@@ -1051,15 +1085,18 @@ fn keyword_context_with_policy(
     let is_exact_credential_context = exact_assignment_keyword
         .as_deref()
         .is_some_and(crate::entropy::keywords::normalized_assignment_keyword_is_credential);
+    let is_active_detector_context = exact_assignment_keyword
+        .as_deref()
+        .is_some_and(|keyword| active_policy.is_some_and(|policy| policy.claims_keyword(keyword)));
     let is_credential_context = is_exact_credential_context
+        || is_active_detector_context
         || crate::credential_context_keywords::credential_context_keywords()
             .iter()
             .any(|credential_keyword| {
                 crate::ascii_ci::ci_find_nonempty(line_bytes, credential_keyword.as_bytes())
             });
 
-    let detector_id = classify_keyword_to_detector_id(keyword);
-    let spec = get_spec(active_policy, detector_id);
+    let spec = get_spec_for_keyword(active_policy, keyword);
     let entropy_low = spec
         .and_then(|s| s.entropy_low)
         .map_or(LOW_ENTROPY_THRESHOLD, |threshold| threshold);

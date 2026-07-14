@@ -35,10 +35,12 @@ impl CompiledScanner {
         // called 2-3 times per chunk (O(lines × 19 keywords) each), which
         // was the dominant entropy-scan cost at 8 MiB (~33% of the 18.3ms
         // per-chunk entropy time).
-        let keyword_assignment_lines = crate::entropy::keywords::find_keyword_assignment_lines(
-            &entropy_lines,
-            &self.config.secret_keywords,
-        );
+        let keyword_assignment_lines =
+            crate::entropy::keywords::find_keyword_assignment_lines_with_policy(
+                &entropy_lines,
+                &self.config.secret_keywords,
+                self.generic_owning_detector.policy_keywords(),
+            );
         let source_path =
             crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref());
         // `is_entropy_appropriate_inner` needs `has_secret_keyword_line`. For
@@ -164,12 +166,11 @@ impl CompiledScanner {
         for mut entropy_match in entropy_matches {
             // Resolve metadata once; emit clones the pre-interned triple.
             let entropy_meta_idx = helpers::classify_entropy_detector_index(&entropy_match.keyword);
-            let policy_detector_id =
-                crate::entropy::scanner::classify_keyword_to_detector_id(&entropy_match.keyword);
-            let policy_detector = self
-                .generic_owning_detector
-                .index_for_id(policy_detector_id)
-                .map(|index| &self.detectors[index]);
+            let policy_detector = crate::entropy::scanner::active_policy_detector_index(
+                &self.generic_owning_detector,
+                &entropy_match.keyword,
+            )
+            .map(|index| &self.detectors[index]);
             let transport_decoded = preprocessed.transport_decoded_for_offset(entropy_match.offset);
             let detector_owned_canonical_hex_key = policy_detector.is_some_and(|detector| {
                 if transport_decoded {

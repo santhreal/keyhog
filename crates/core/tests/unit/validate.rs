@@ -25,6 +25,28 @@ fn detector_with_pattern(regex: &str) -> DetectorSpec {
 }
 
 #[test]
+fn entropy_policy_priority_is_restricted_to_generic_detectors() {
+    let mut detector = detector_with_pattern("token_([A-Z0-9]{12})");
+    detector.entropy_policy_priority = Some(10);
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("entropy_policy_priority is only valid")
+    )));
+
+    detector.service = "generic".into();
+    assert!(
+        !validate_detector(&detector).iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Error(message)
+                if message.contains("entropy_policy_priority is only valid")
+        )),
+        "a generic regex detector may explicitly opt into entropy-policy ownership"
+    );
+}
+
+#[test]
 fn phase2_generic_max_len_must_be_positive_and_not_below_min_len() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
     detector.kind = keyhog_core::DetectorKind::Phase2Generic;

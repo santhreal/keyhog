@@ -185,6 +185,13 @@ The available per-detector tuning fields are:
 *   **`entropy_floor`** (array of tables, optional): Length-bucketed low-entropy suppression floor mapping maximum lengths to minimum entropy scores. If absent, generic adjudication uses its compiled 3.5-bit fallback where this gate applies.
     *   `max_len` (integer, optional): Inclusive maximum length for this bucket.
     *   `floor` (float): Shannon entropy floor.
+*   **`entropy_policy_priority`** (integer, optional): Resolves overlapping
+    generic keyword claims. Higher values own entropy, length, canonical-shape,
+    and BPE policy for the shared keyword. Phase-2 generic detectors
+    participate at priority zero when omitted. Regex detectors do not
+    participate unless they set this field. It is valid only with
+    `service = "generic"`. This makes the primary precedence explicit in
+    detector TOML. Equal priorities use compiled order as a deterministic tie.
 
 ### BPE token efficiency
 *   **`bpe_enabled`** (bool, optional): Detector-local token-efficiency switch.

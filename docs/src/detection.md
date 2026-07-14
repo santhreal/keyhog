@@ -81,6 +81,7 @@ resolved scan-wide policy.
 | `entropy_very_high` | Tightens isolated, anchor-free token admission | Expands the no-keyword search and therefore its false-positive surface |
 | `entropy_floor` | A higher applicable length-bucket floor suppresses more low-entropy candidates for that detector | A lower floor preserves more human-chosen or structured credentials |
 | `mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
+| `entropy_policy_priority` | Wins more overlapping generic keyword-policy claims | Yields shared keywords to a more specific detector; unique keywords are unchanged |
 | `bpe_max_bytes_per_token` | A higher ceiling is looser: fewer compressible/word-like candidates are rejected | A lower ceiling is stricter: more language-like values are rejected, with corresponding recall risk |
 | `bpe_enabled = false` | Not applicable | Skips token-efficiency rejection for detectors such as human-chosen passwords |
 | `decoded_hex_key_material_lengths` | Adds only the declared pure-hex widths after transport decoding | Omitted widths remain decoded-digest negatives |
@@ -98,6 +99,11 @@ resolved scan-wide policy.
 
 These settings do not all use one generic “last value wins” rule:
 
+- **Generic keyword ownership:** the highest `entropy_policy_priority` among
+  detectors claiming the normalized assignment keyword owns entropy and BPE
+  policy. Equal priorities use compiled detector order only as a deterministic
+  tie-break. Custom detector policy keywords join entropy discovery directly;
+  they do not need to be repeated in `[scan].secret_keywords`.
 - **BPE ceiling:** the compiled fallback is `2.2` UTF-8 bytes per
   `cl100k_base` token. The owning detector's `bpe_max_bytes_per_token` replaces
   that fallback. An explicitly supplied

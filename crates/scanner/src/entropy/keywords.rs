@@ -38,16 +38,33 @@ pub(crate) fn find_keyword_assignment_lines<'a>(
     lines: &'a [&str],
     secret_keywords: &[String],
 ) -> Vec<(usize, &'a str)> {
+    find_keyword_assignment_lines_with_policy(lines, secret_keywords, &[])
+}
+
+pub(crate) fn find_keyword_assignment_lines_with_policy<'a>(
+    lines: &'a [&str],
+    secret_keywords: &[String],
+    detector_policy_keywords: &[String],
+) -> Vec<(usize, &'a str)> {
     lines
         .iter()
         .enumerate()
         .filter_map(|(index, line)| {
-            is_keyword_assignment_line(line, secret_keywords).then_some((index, *line))
+            is_keyword_assignment_line_with_policy(line, secret_keywords, detector_policy_keywords)
+                .then_some((index, *line))
         })
         .collect()
 }
 
 pub(crate) fn is_keyword_assignment_line(line: &str, secret_keywords: &[String]) -> bool {
+    is_keyword_assignment_line_with_policy(line, secret_keywords, &[])
+}
+
+fn is_keyword_assignment_line_with_policy(
+    line: &str,
+    secret_keywords: &[String],
+    detector_policy_keywords: &[String],
+) -> bool {
     let trimmed = line.trim();
     if is_import_like_prefix(trimmed) {
         return false;
@@ -66,6 +83,7 @@ pub(crate) fn is_keyword_assignment_line(line: &str, secret_keywords: &[String])
 
     let has_keyword = secret_keywords
         .iter()
+        .chain(detector_policy_keywords)
         .any(|keyword| crate::ascii_ci::ci_find_nonempty(line_bytes, keyword.as_bytes()));
     has_keyword
 }

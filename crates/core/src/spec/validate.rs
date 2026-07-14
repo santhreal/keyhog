@@ -270,6 +270,12 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 .into(),
         ));
     }
+    if spec.entropy_policy_priority.is_some() && spec.service != "generic" {
+        issues.push(QualityIssue::Error(
+            "entropy_policy_priority is only valid for service = \"generic\" detectors; provider detectors use their own regex evidence"
+                .into(),
+        ));
+    }
     for (name, value) in [
         ("entropy_high", spec.entropy_high),
         ("entropy_low", spec.entropy_low),

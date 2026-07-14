@@ -3478,6 +3478,53 @@ pub mod entropy_scanner {
         )
     }
 
+    /// Run the production entropy generator against a caller-supplied detector
+    /// corpus. This proves custom keyword ownership affects real candidate
+    /// admission rather than only the index shape.
+    pub fn active_policy_match_values(
+        detectors: Vec<keyhog_core::DetectorSpec>,
+        keyword: &str,
+        line: &str,
+    ) -> Vec<String> {
+        use crate::entropy::scanner::ActiveDetectorPolicy;
+        use crate::generic_keyword_owner::GenericOwningDetectorIndex;
+
+        let index = GenericOwningDetectorIndex::build(&detectors);
+        let policy = ActiveDetectorPolicy::new(&detectors, &index);
+        let secret_keywords = vec![keyword.to_string()];
+        crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
+            &[line],
+            &[0],
+            &[(0, line)],
+            1,
+            0,
+            0.0,
+            crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD,
+            &secret_keywords,
+            &[],
+            &[],
+            None,
+            false,
+            Some(policy),
+        )
+        .into_iter()
+        .filter(|candidate| candidate.keyword == keyword)
+        .map(|candidate| candidate.value)
+        .collect()
+    }
+
+    /// Resolve the exact active detector that owns entropy policy for a
+    /// keyword or synthetic entropy label.
+    pub fn active_policy_owner_id(
+        detectors: &[keyhog_core::DetectorSpec],
+        keyword: &str,
+    ) -> Option<String> {
+        let index = crate::generic_keyword_owner::GenericOwningDetectorIndex::build(detectors);
+        crate::entropy::scanner::active_policy_detector_index(&index, keyword)
+            .and_then(|owner| detectors.get(owner))
+            .map(|detector| detector.id.clone())
+    }
+
     #[cfg(test)]
     pub(crate) fn candidate_plausibility_rejection_reason(
         candidate: &str,
