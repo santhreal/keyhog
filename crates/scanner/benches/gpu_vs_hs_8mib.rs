@@ -38,8 +38,11 @@ use std::time::{Duration, Instant};
 
 const MIB: usize = 1024 * 1024;
 const WINDOW_OVERLAP: usize = 128 * 1024;
-const RELEASE_HELD_OUT_PAIRS: usize = 20;
-const RELEASE_SELECTION_ROUNDS: usize = 7;
+// The measured crossover is close enough that 20 pairs produced a 95% interval
+// spanning parity. These floors distinguish a repeatable 1% win from noise
+// without reusing peer-selection samples as held-out evidence.
+const RELEASE_HELD_OUT_PAIRS: usize = 100;
+const RELEASE_SELECTION_ROUNDS: usize = 20;
 
 #[derive(serde::Serialize)]
 struct TimingSampleArtifact {
@@ -372,7 +375,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             format!("{size_mib} MiB overflows usize on this host"),
         )
     })?;
-    let iters = env_positive_usize("KH_BENCH_ITERS", 20)?;
+    let iters = env_positive_usize("KH_BENCH_ITERS", RELEASE_HELD_OUT_PAIRS)?;
     if iters < 2 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -380,7 +383,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
-    let selection_rounds = env_positive_usize("KH_BENCH_SELECTION_ROUNDS", 7)?;
+    let selection_rounds =
+        env_positive_usize("KH_BENCH_SELECTION_ROUNDS", RELEASE_SELECTION_ROUNDS)?;
     let release_gate = size_mib == 8 && !perf_trace && !profile;
     if release_gate
         && (iters < RELEASE_HELD_OUT_PAIRS || selection_rounds < RELEASE_SELECTION_ROUNDS)
