@@ -36,9 +36,7 @@ regex-syntax = { workspace = true }
 sha2 = { workspace = true }
 rayon = { workspace = true }
 hex = { workspace = true }
-once_cell = { workspace = true }
 async-trait = { workspace = true }
-serde_with = { workspace = true }
 parking_lot = { workspace = true }
 indexmap = { workspace = true }
 fs2 = { workspace = true }

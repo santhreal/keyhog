@@ -90,7 +90,6 @@ blake3 = { workspace = true }
 memchr = { workspace = true }
 rayon = { workspace = true }
 lru = { workspace = true }
-lazy_static = { workspace = true }
 dirs = { workspace = true }
 libc = { workspace = true }
 zeroize = { workspace = true }
