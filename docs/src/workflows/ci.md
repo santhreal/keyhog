@@ -172,22 +172,27 @@ keyhog:
   image: ubuntu:24.04
   before_script:
     - apt-get update -qq && apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-    - curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
+    - export TAG=v0.5.41
+    - export BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
+    - export PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+    - curl -fSLO "$BASE/install.sh" && curl -fSLO "$BASE/install.sh.minisig"
+    - minisign -Vm install.sh -P "$PUB"
+    - KEYHOG_VERSION="$TAG" sh install.sh
   script:
     # Exits non-zero on findings, which fails the job and gates the MR.
-    - ~/.local/bin/keyhog scan . --format sarif --output keyhog.sarif
+    - ~/.local/bin/keyhog scan . --format gitlab-sast --output gl-sast-report.json
   artifacts:
     when: always           # keep the report even when the scan fails the job
+    reports:
+      sast: gl-sast-report.json
     paths:
-      - keyhog.sarif
+      - gl-sast-report.json
 ```
 
-The job's exit status gates the merge request (keyhog exits non-zero on
-findings) and the SARIF is kept as a downloadable artifact. Note: GitLab's
-`artifacts:reports:sast` expects GitLab's own SAST JSON schema, **not** SARIF,
-so to surface findings in the MR security dashboard you must convert the SARIF
-to that format (e.g. a SARIF-to-GitLab-SAST converter step) - pointing
-`reports:sast` directly at a SARIF file does not work.
+The job's exit status gates the merge request. KeyHog emits GitLab's SAST JSON
+schema directly, so `artifacts:reports:sast` publishes findings to the merge
+request security widget without a converter. The same report remains a
+downloadable artifact when the scan fails.
 
 ## CircleCI
 
