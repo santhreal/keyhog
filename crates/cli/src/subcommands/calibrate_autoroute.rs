@@ -55,8 +55,7 @@ const SPARSE_TRIGGER_INTERVAL: usize = 64 * 1024;
 /// decode-through path is timed against. Mirrors the installer's seed.
 const DECODE_HEAVY_SEED: &str = "apiVersion:v1 kind:Secret data token:QUtJQUlPU0ZPRE5ON0VYQU1QTEVBS0lBSU9TRk9ETk43RVhBTVBMRT0= payload:c2stcHJvai1BQkNkZWZHSElKS0xtbm9QUVJTVFVWV1hZWjAxMjM0NTY3ODkwPQ== ";
 
-/// One calibration workload: how to materialize the probe and feed it to the
-/// child scan.
+/// One calibration workload and its canonical source materialization shape.
 enum Workload {
     /// Pipe `bytes` of plain content over stdin.
     Stdin { label: &'static str, bytes: usize },

@@ -6,11 +6,9 @@
 //! persisted the same buckets the shell loop did.
 //!
 //! Unlike the lighter `autoroute_preset_resolution` test (which calibrates and
-//! verifies the same file), this drives the real subcommand end to end, it
-//! sweeps `--deep` too and inherits its env into the child probes, then
-//! verifies against a SEPARATE file at a calibrated ladder size, so it also
-//! proves the spawn + cache-path plumbing and that decisions persist across
-//! processes.
+//! verifies the same file), this drives the real subcommand end to end. It
+//! sweeps `--deep` too, then verifies against a separate file at a calibrated
+//! ladder size. This proves cache-path plumbing and cross-process persistence.
 //!
 //! The verifying targets cover exact single-file buckets represented by the
 //! ladder, including a 512-byte file in the same stable bucket as the 1 KiB
@@ -41,9 +39,9 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
     let cache = TempDir::new().expect("cache home");
     let work = TempDir::new().expect("workdir");
 
-    // One command calibrates the default policy + every preset across the whole
-    // workload ladder. The child `keyhog scan --autoroute-calibrate` probes
-    // inherit XDG_CACHE_HOME, so they write to the isolated cache.
+    // One command calibrates the default policy plus every preset across the
+    // whole workload ladder. The policy-local runtimes write to the isolated
+    // cache resolved through XDG_CACHE_HOME.
     let out = Command::new(binary())
         .arg("calibrate-autoroute")
         .env("XDG_CACHE_HOME", cache.path())

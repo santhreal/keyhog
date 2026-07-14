@@ -189,9 +189,9 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("total_memory_mb")
             && backend.contains("gpu_runtime_backend")
             && backend.contains("gpu_driver_runtime_identity")
-            && backend.contains("decode_density_bucket")
-            && backend.contains("AUTOROUTE_DECODE_DENSITY_SAMPLE_BYTES")
-            && backend.contains("AUTOROUTE_DECODE_MIN_ENCODED_RUN")
+            && backend.contains("decode_candidate_bytes_bucket")
+            && backend.contains("AUTOROUTE_DECODE_SAMPLE_BYTES")
+            && backend.contains("AUTOROUTE_DECODE_SAMPLE_WINDOW_BYTES")
             && backend.contains("sample_bytes")
             && backend.contains("calibration_sample_bytes")
             && backend.contains("insufficient_calibration_sample")
@@ -219,12 +219,12 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("TimingConfidenceInterval::from_trials(&self.trials_ns)")
             && backend.contains("#[serde(deny_unknown_fields)]")
             && backend.contains("config_digest")
-            && backend.contains("source_class_hash")
-            && backend.contains("StableHasher::new(\"autoroute-source-class\")")
+            && backend.contains("source_mixture")
+            && backend.contains("StableHasher::new(\"autoroute-source-family-v1\")")
             && backend.contains("StableHasher::new(\"autoroute-correctness-digest\")")
             && backend.contains("executable_sha256")
             && backend.contains("current_executable_sha256")
-            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 29")
+            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 31")
             && backend.contains("AUTOROUTE_CALIBRATION_TRIALS: usize = 7")
             && backend.contains("trials"),
         "autoroute cache must persist binary identity, build feature identity, exact host identity, and measured calibration evidence"
@@ -268,7 +268,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
     assert!(
         run.contains("backend prewarm skipped during autoroute calibration")
             && run.contains("autoroute_calibration")
-            && backend.contains("gpu_route_ms")
+            && backend.contains("gpu_cold_warm_route")
             && backend.contains("cold_ns.max(warm_timing.median_ns())")
             && backend.contains("route_candidates"),
         "autoroute calibration must preserve and validate GPU cold/warm state instead of selecting by warmed best timing only"
@@ -369,7 +369,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && install_sh.contains("byte_sizes=\"1 2 4 8 16 32 64 128 256 512\"")
             && install_sh.contains("kib_sizes=\"1 2 4 8 16 32 64 128 256 512\"")
             && install_sh.contains("mib_sizes=\"1 2 4 8 16 32\"")
-            && install_sh.contains("many_file_counts=\"2 4 8 16 32\"")
+            && install_sh.contains("many_file_counts=\"1 2 4 8 16 32\"")
             && install_sh.contains("elapsed_ms_since")
             && install_sh.contains("PASS %s (%sms)")
             && install_sh.contains("FAIL %s (%sms)")
