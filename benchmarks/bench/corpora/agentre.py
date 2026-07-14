@@ -10,7 +10,11 @@ from dataclasses import dataclass
 from ..agentre_build import AgentREBinaryBuilder, AgentREBuildError
 from ..agentre_ground_truth import AgentREGroundTruthAdapter
 from ..agentre_provenance import LINUX_TASKS
-from ..agentre_score import score_contract_receipt, score_report
+from ..agentre_score import (
+    decoded_c2_recovery_summary,
+    score_contract_receipt,
+    score_report,
+)
 from ..schema import RecoveryExpectation
 from .agentre_recovery import AgentRERecoveryMaterializer
 
@@ -136,6 +140,7 @@ class AgentREBenchmark:
                 ) from exc
             samples.append((ground_truth, observed_outputs[task.task_id], str(path)))
         report = score_report(samples)
+        report["decoded_c2_recovery"] = decoded_c2_recovery_summary(samples)
         report["score_contract"] = score_contract_receipt()
         self.validate()
         return report

@@ -279,7 +279,12 @@ report = benchmark.score_analyzer_outputs(outputs_by_task_id)
 `tasks()` returns all 13 validated binary paths and their canonical identities.
 Scoring requires one mapping output for every task, validates all 149 expected
 fields, revalidates the sealed binaries, and attaches the score-contract receipt
-before returning the report.
+before returning the report. The report also separates decoded-C2 recovery from
+negative absence. The Linux slice has 11 tasks with a decoded C2 and two tasks
+whose correct value is null. Positive results are counted as exact,
+host-partial, or missed. Negative results are counted as absent or spurious.
+The official aggregate remains unchanged, but a recovery-rate claim uses only
+the 11 positive tasks.
 The official bonus weights sum to 0.95 although its summary declares a 1.0
 bonus maximum. KeyHog exposes both the declared 2.0 total and attainable 1.95
 total in a separate score-contract receipt. It does not silently normalize the

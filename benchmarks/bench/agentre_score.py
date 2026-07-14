@@ -29,6 +29,7 @@ HALLUCINATION_PENALTY = 0.05
 BONUS_HALLUCINATION_PENALTY = 0.03
 BONUS_SAMPLE_PATTERN = re.compile(r"level(?:13|23)", re.IGNORECASE)
 SCORE_CONTRACT_SCHEMA = "agentre-score-contract-v1"
+DECODED_C2_RECOVERY_SCHEMA = "agentre-decoded-c2-recovery-v1"
 
 
 class AgentREScoreError(ValueError):
@@ -199,6 +200,47 @@ def score_decoded_c2(ground_truth: str | None, agent: str | None) -> float:
     expected_host = expected.split("://")[-1].split("/")[0].split(":")[0]
     observed_host = observed.split("://")[-1].split("/")[0].split(":")[0]
     return 0.5 if expected_host == observed_host else 0.0
+
+
+def decoded_c2_recovery_summary(
+    samples: Iterable[tuple[Mapping[str, object], Mapping[str, object], str]],
+) -> dict[str, object]:
+    """Report positive recovery separately from correct negative absence.
+
+    The pinned AgentRE score intentionally awards exact field credit when both
+    values are null. That remains part of the official aggregate. This receipt
+    prevents those negative tasks from inflating a product claim about actual
+    decoded-C2 recovery.
+    """
+
+    positive = {"exact": 0, "host_partial": 0, "missed": 0}
+    negative = {"absent": 0, "spurious": 0}
+    for ground_truth, agent, _path in samples:
+        ground_truth = _require_mapping(ground_truth, context="ground truth")
+        agent = _require_mapping(agent, context="agent output")
+        _validate_optional_string(
+            ground_truth, "decoded_c2", required=True, context="ground truth"
+        )
+        _validate_optional_string(agent, "decoded_c2", required=False, context="agent")
+        expected = ground_truth.get("decoded_c2")
+        observed = agent.get("decoded_c2")
+        if expected is None:
+            negative["absent" if observed is None else "spurious"] += 1
+            continue
+        credit = score_decoded_c2(expected, observed)
+        if credit == 1.0:
+            positive["exact"] += 1
+        elif credit == 0.5:
+            positive["host_partial"] += 1
+        else:
+            positive["missed"] += 1
+    positive_total = sum(positive.values())
+    negative_total = sum(negative.values())
+    return {
+        "schema": DECODED_C2_RECOVERY_SCHEMA,
+        "positive": {**positive, "total": positive_total},
+        "negative": {**negative, "total": negative_total},
+    }
 
 
 def score_set_overlap(

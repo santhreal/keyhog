@@ -6,6 +6,7 @@ import pytest
 
 from bench.agentre_score import (
     AgentREScoreError,
+    decoded_c2_recovery_summary,
     score_contract_receipt,
     score_report,
     score_sample,
@@ -225,4 +226,24 @@ def test_score_contract_exposes_upstream_unattainable_declared_maximum():
         "declared": {"main_max": 1.0, "bonus_max": 1.0, "total_max": 2.0},
         "attainable": {"main_max": 1.0, "bonus_max": 0.95, "total_max": 1.95},
         "consistent": False,
+    }
+
+
+def test_decoded_c2_recovery_separates_positive_and_negative_truth():
+    samples = [
+        (
+            {"decoded_c2": "https://one.test/a"},
+            {"decoded_c2": "https://one.test/a"},
+            "1",
+        ),
+        ({"decoded_c2": "https://two.test/a"}, {"decoded_c2": "two.test:99"}, "2"),
+        ({"decoded_c2": "https://three.test"}, {}, "3"),
+        ({"decoded_c2": None}, {}, "4"),
+        ({"decoded_c2": None}, {"decoded_c2": "invented.test"}, "5"),
+    ]
+
+    assert decoded_c2_recovery_summary(samples) == {
+        "schema": "agentre-decoded-c2-recovery-v1",
+        "positive": {"exact": 1, "host_partial": 1, "missed": 1, "total": 3},
+        "negative": {"absent": 1, "spurious": 1, "total": 2},
     }

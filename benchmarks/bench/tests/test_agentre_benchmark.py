@@ -132,6 +132,11 @@ def test_official_rubric_scores_complete_exact_outputs(tmp_path):
     assert report["summary"]["main_score"] == 1.0
     assert report["summary"]["bonus_score"] == 0.95
     assert report["summary"]["total_score"] == 1.95
+    assert report["decoded_c2_recovery"] == {
+        "schema": "agentre-decoded-c2-recovery-v1",
+        "positive": {"exact": 11, "host_partial": 0, "missed": 0, "total": 11},
+        "negative": {"absent": 2, "spurious": 0, "total": 2},
+    }
     assert report["score_contract"] == {
         "schema": "agentre-score-contract-v1",
         "declared": {"main_max": 1.0, "bonus_max": 1.0, "total_max": 2.0},
