@@ -94,6 +94,23 @@ rate-limit error (e.g. HTTP 429): `rate_limited`. If the request times
 out or DNS fails: an `error` (treated as unverified, severity
 unchanged).
 
+## Permissions and blast radius
+
+`live` proves only that the detector's declared request was accepted. It does
+not mean KeyHog enumerated everything the credential can read, write, delete,
+administer, or bill. Provider metadata is included only when the detector TOML
+declares response selectors for fields such as account, organization, project,
+or scope and the endpoint returns them. The JSON `metadata` object contains the
+fields that were actually extracted. An absent field is unknown, not empty or
+denied.
+
+KeyHog does not currently compute effective IAM policy, inherited group roles,
+resource-level grants, organization policy, network restrictions, or reachable
+resource inventories. It also cannot infer whether a successful low-impact
+request represents the credential's maximum privilege. Treat every live result
+as exposed authority whose full blast radius must be reviewed in the provider's
+own audit and access-control tools.
+
 ## Severity shift on verification
 
 The verdict is the lowercase `VerificationResult` variant (the JSON
@@ -226,8 +243,12 @@ finding stays `skipped`.
 
 ## What you can't do
 
-- `--verify` does NOT POST data. Every verification call is either a
-  GET or a benign read-only endpoint (e.g. `GET /me`, `GET /charges?limit=1`).
+- `--verify` is not guaranteed to use GET. The owning detector TOML declares
+  the method, URL, headers, query, and optional body, and some shipped providers
+  require POST to perform an authentication or low-impact probe. Verification
+  can create provider audit events, consume rate limits, or incur provider-side
+  effects. Inspect `keyhog explain <detector-id>` before enabling it in a
+  sensitive account.
 - The verifier does NOT cache results across runs. Each `keyhog scan
   --verify` makes fresh calls. Caching would risk reporting a
   rotated credential as "live" hours after it was revoked.
