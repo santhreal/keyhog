@@ -377,6 +377,33 @@ pub(super) fn emit_archive_content_with_depth(
     nested_depth: usize,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
+    emit_archive_content_with_tex_provenance(
+        archive_display,
+        entry_name,
+        content,
+        per_entry_cap,
+        total_budget,
+        total_uncompressed,
+        respect_default_excludes,
+        nested_depth,
+        None,
+        emit,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn emit_archive_content_with_tex_provenance(
+    archive_display: &str,
+    entry_name: &str,
+    content: Vec<u8>,
+    per_entry_cap: u64,
+    total_budget: u64,
+    total_uncompressed: &mut u64,
+    respect_default_excludes: bool,
+    nested_depth: usize,
+    provenance: Option<&super::tex_package::TexMemberProvenance>,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
     if entry_is_embedded_openpack_archive(entry_name, &content) {
         let nested_display = format!("{archive_display}//{entry_name}");
         if nested_depth >= MAX_NESTED_ARCHIVE_DEPTH {
@@ -446,10 +473,12 @@ pub(super) fn emit_archive_content_with_depth(
         );
     }
 
-    match chunk_from_archive_content_inner(archive_display, entry_name, content) {
-        Some(chunk) => emit(chunk),
-        None => true,
-    }
+    super::emit_archive_leaf_member(
+        content,
+        &format!("{archive_display}//{entry_name}"),
+        provenance,
+        emit,
+    )
 }
 
 fn entry_is_embedded_openpack_archive(entry_name: &str, content: &[u8]) -> bool {
@@ -500,20 +529,6 @@ pub(super) fn emit_embedded_zip_member(
         nested_depth + 1,
         respect_default_excludes,
         emit,
-    )
-}
-
-fn chunk_from_archive_content_inner(
-    archive_display: &str,
-    entry_name: &str,
-    content: Vec<u8>,
-) -> Option<Result<Chunk, SourceError>> {
-    // Canonical UTF-16-aware entry decode shared with every other extractor.
-    super::chunk_from_extracted_entry(
-        content,
-        format!("{archive_display}//{entry_name}"),
-        "filesystem/archive",
-        "filesystem/archive-binary",
     )
 }
 

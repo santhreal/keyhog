@@ -15,6 +15,7 @@
 - [Detectors](./detectors.md)
 - [Backends and routing](./backends.md)
 - [HTTP and wire scanning](./http-wire.md)
+- [Source archives](./source-archives.md)
 - [Suppressions](./suppressions.md)
 - [Verification](./verification.md)
 

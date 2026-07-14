@@ -168,6 +168,14 @@ pub(super) fn emit_tar_entries_with_state(
     respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) {
+    let tex_package = analyze_tex_package(tar_bytes);
+    if tex_package.is_bounded()
+        && !emit(Err(SourceError::Other(format!(
+            "TeX provenance analysis for '{container_display}' exceeded its bounded member or source-byte budget; every readable archive member is still scanned without TeX role annotations"
+        ))))
+    {
+        return;
+    }
     let mut archive = tar::Archive::new(std::io::Cursor::new(tar_bytes));
     let entries = match archive.entries() {
         Ok(e) => e,
@@ -369,7 +377,7 @@ pub(super) fn emit_tar_entries_with_state(
         // `super::emit_archive_member` -- so a nested archive is never silently
         // leaf-scanned as printable strings (Law 10).
         let member_display = format!("{container_display}//{entry_name}");
-        if !super::emit_archive_member(
+        if !super::emit_archive_member_with_tex_provenance(
             &entry_name,
             content,
             &member_display,
@@ -377,11 +385,70 @@ pub(super) fn emit_tar_entries_with_state(
             total_uncompressed,
             nested_depth,
             respect_default_excludes,
+            tex_package.get(&entry_name),
             emit,
         ) {
             return;
         }
     }
+}
+
+fn analyze_tex_package(tar_bytes: &[u8]) -> super::tex_package::TexPackageAnalysis {
+    if !super::tex_package::bytes_might_contain_source_extension(tar_bytes) {
+        return super::tex_package::TexPackageAnalysis::default();
+    }
+    let mut builder = super::tex_package::TexPackageBuilder::default();
+    let mut archive = tar::Archive::new(std::io::Cursor::new(tar_bytes));
+    let Ok(entries) = archive.entries() else {
+        builder.mark_bounded();
+        return builder.finish();
+    };
+    for entry in entries {
+        let mut entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => {
+                builder.mark_bounded();
+                continue;
+            }
+        };
+        if entry.header().entry_type() != tar::EntryType::Regular {
+            continue;
+        }
+        let name = match entry.path() {
+            Ok(path) => path.to_string_lossy().into_owned(),
+            Err(_) => {
+                builder.mark_bounded();
+                continue;
+            }
+        };
+        if validate_scan_archive_entry_name(&name).is_err() {
+            continue;
+        }
+        if !super::tex_package::member_needs_source_bytes(&name) {
+            builder.add_member(&name, None);
+            continue;
+        }
+        let entry_size = entry.header().size().ok();
+        let read = match crate::capped_read::read_to_cap(
+            &mut entry,
+            super::tex_package::TexPackageBuilder::source_member_read_cap(),
+            entry_size,
+        ) {
+            Ok(read) => read,
+            Err(_) => {
+                builder.mark_bounded();
+                builder.add_member(&name, None);
+                continue;
+            }
+        };
+        if read.truncated {
+            builder.mark_bounded();
+            builder.add_member(&name, None);
+        } else {
+            builder.add_member(&name, Some(&read.bytes));
+        }
+    }
+    builder.finish()
 }
 
 pub(super) fn entry_is_embedded_tar(entry_name: &str, content: &[u8]) -> bool {

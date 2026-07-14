@@ -17,6 +17,7 @@ mod pdf;
 pub use pdf::fuzz_extract_pdf_text;
 mod rar;
 mod seven_zip;
+mod tex_package;
 
 // Re-export the archive entry-name path-traversal validator so the crate-root
 // test facade (`testing::SourceTestApi`) can pin its security contract directly,
@@ -190,6 +191,68 @@ pub(super) fn chunk_from_extracted_entry(
     }
 }
 
+fn emit_tex_comment_chunks(
+    text: &str,
+    member_display: &str,
+    provenance: &tex_package::TexMemberProvenance,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    for &(start, end) in &provenance.comment_spans {
+        let Some(comment) = text.get(start..end) else {
+            continue;
+        };
+        let base_line = text.as_bytes()[..start]
+            .iter()
+            .filter(|&&byte| byte == b'\n')
+            .count();
+        if !emit(Ok(Chunk {
+            data: comment.to_string().into(),
+            metadata: ChunkMetadata {
+                source_type: provenance.role.comment_source_type().into(),
+                path: Some(member_display.into()),
+                base_offset: start,
+                base_line,
+                ..Default::default()
+            },
+        })) {
+            return false;
+        }
+    }
+    true
+}
+
+fn emit_archive_leaf_member(
+    content: Vec<u8>,
+    member_display: &str,
+    provenance: Option<&tex_package::TexMemberProvenance>,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    if let (Some(provenance), Ok(text)) = (provenance, std::str::from_utf8(&content)) {
+        if !emit_tex_comment_chunks(text, member_display, provenance, emit) {
+            return false;
+        }
+    }
+
+    let text_source_type = provenance
+        .map(|item| item.role.source_type())
+        .unwrap_or("filesystem/archive");
+    let binary_source_type = match provenance.map(|item| item.role) {
+        Some(tex_package::TexMemberRole::Root) => "filesystem/archive-binary/tex-root",
+        Some(tex_package::TexMemberRole::Referenced) => "filesystem/archive-binary/tex-referenced",
+        Some(tex_package::TexMemberRole::Orphaned) => "filesystem/archive-binary/tex-orphaned",
+        None => "filesystem/archive-binary",
+    };
+    match chunk_from_extracted_entry(
+        content,
+        member_display.to_string(),
+        text_source_type,
+        binary_source_type,
+    ) {
+        Some(chunk) => emit(chunk),
+        None => true,
+    }
+}
+
 /// Maximum archive-within-archive nesting any extractor will descend. Shared by
 /// the canonical member dispatcher below so tar/zip/7z all cap nesting at the
 /// same depth (each extractor previously hard-coded its own `= 8`).
@@ -218,6 +281,31 @@ pub(super) fn emit_archive_member(
     total_uncompressed: &mut u64,
     nested_depth: usize,
     respect_default_excludes: bool,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) -> bool {
+    emit_archive_member_with_tex_provenance(
+        entry_name,
+        content,
+        member_display,
+        max_size,
+        total_uncompressed,
+        nested_depth,
+        respect_default_excludes,
+        None,
+        emit,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_archive_member_with_tex_provenance(
+    entry_name: &str,
+    content: Vec<u8>,
+    member_display: &str,
+    max_size: u64,
+    total_uncompressed: &mut u64,
+    nested_depth: usize,
+    respect_default_excludes: bool,
+    provenance: Option<&tex_package::TexMemberProvenance>,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
     let is_tar = compressed::entry_is_embedded_tar(entry_name, &content);
@@ -274,15 +362,7 @@ pub(super) fn emit_archive_member(
         );
     }
 
-    match chunk_from_extracted_entry(
-        content,
-        member_display.to_string(),
-        "filesystem/archive",
-        "filesystem/archive-binary",
-    ) {
-        Some(chunk) => emit(chunk),
-        None => true,
-    }
+    emit_archive_leaf_member(content, member_display, provenance, emit)
 }
 
 pub(super) fn report_archive_truncation(

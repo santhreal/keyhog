@@ -14,5 +14,6 @@ pub mod pdf_stream_extraction;
 pub mod rar_documents_are_scanned;
 pub mod scan_skips_target_directory_by_default;
 pub mod seven_zip_documents_are_scanned;
+pub mod tex_source_packages;
 pub mod windowed_large_file_emits_base_offset;
 pub mod xz_bzip2_compressed_documents_are_scanned;

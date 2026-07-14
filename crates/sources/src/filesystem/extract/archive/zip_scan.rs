@@ -1,7 +1,9 @@
 use super::{
-    archive_unix_mode_is_special, emit_archive_content_with_depth, emit_archive_entry_error,
-    emit_archive_entry_over_cap_error, emit_archive_unreadable_error, report_archive_truncation,
-    validate_scan_archive_entry_name,
+    archive_unix_mode_is_special, emit_archive_entry_error, emit_archive_entry_over_cap_error,
+    emit_archive_unreadable_error, report_archive_truncation, validate_scan_archive_entry_name,
+};
+use crate::filesystem::extract::tex_package::{
+    member_needs_source_bytes, TexPackageAnalysis, TexPackageBuilder,
 };
 use crate::filesystem::filter;
 use keyhog_core::{Chunk, SourceError};
@@ -211,6 +213,15 @@ fn extract_zip_archive_entries<R: Read + Seek>(
     respect_default_excludes: bool,
     emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
 ) -> bool {
+    let mut tex_package = analyze_tex_package(&mut archive);
+    if tex_package.is_bounded()
+        && !emit(Err(SourceError::Other(format!(
+            "TeX provenance analysis for '{archive_display}' exceeded its bounded member or source-byte budget; every archive member is still scanned without TeX role annotations"
+        ))))
+    {
+        return false;
+    }
+
     for index in 0..archive.len() {
         let mut entry = match archive.by_index(index) {
             Ok(entry) => entry,
@@ -308,26 +319,33 @@ fn extract_zip_archive_entries<R: Read + Seek>(
 
         let remaining_budget = total_budget.saturating_sub(*total_uncompressed);
         let read_cap = per_entry_cap.min(remaining_budget);
-        let read = match crate::capped_read::read_to_cap(
-            &mut entry,
-            read_cap,
-            Some(advertised_uncompressed),
-        ) {
-            Ok(read) => read,
-            Err(error) => {
-                tracing::warn!(
-                    archive = archive_display,
-                    entry = %entry_name,
-                    %error,
-                    "cannot read archive entry; skipping"
-                );
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                if !emit(Err(SourceError::Other(format!(
+        let read = if let Some(mut bytes) = tex_package.take_source_content(&entry_name) {
+            let cap = usize::try_from(read_cap).unwrap_or(usize::MAX);
+            let truncated = bytes.len() > cap;
+            bytes.truncate(cap);
+            crate::capped_read::CappedRead { bytes, truncated }
+        } else {
+            match crate::capped_read::read_to_cap(
+                &mut entry,
+                read_cap,
+                Some(advertised_uncompressed),
+            ) {
+                Ok(read) => read,
+                Err(error) => {
+                    tracing::warn!(
+                        archive = archive_display,
+                        entry = %entry_name,
+                        %error,
+                        "cannot read archive entry; skipping"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    if !emit(Err(SourceError::Other(format!(
                         "failed to scan ZIP entry '{archive_display}//{entry_name}': cannot read entry ({error}); entry was not scanned"
                     )))) {
                         return false;
                     }
-                continue;
+                    continue;
+                }
             }
         };
         let content = read.bytes;
@@ -390,7 +408,7 @@ fn extract_zip_archive_entries<R: Read + Seek>(
             break;
         }
 
-        if !emit_archive_content_with_depth(
+        if !super::emit_archive_content_with_tex_provenance(
             archive_display,
             &entry_name,
             content,
@@ -399,12 +417,60 @@ fn extract_zip_archive_entries<R: Read + Seek>(
             total_uncompressed,
             respect_default_excludes,
             nested_depth,
+            tex_package.get(&entry_name),
             emit,
         ) {
             return false;
         }
     }
     true
+}
+
+fn analyze_tex_package<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> TexPackageAnalysis {
+    if !archive.file_names().any(member_needs_source_bytes) {
+        return TexPackageAnalysis::default();
+    }
+    let mut builder = TexPackageBuilder::default();
+    for index in 0..archive.len() {
+        let mut entry = match archive.by_index(index) {
+            Ok(entry) => entry,
+            Err(_) => {
+                builder.mark_bounded();
+                continue;
+            }
+        };
+        if entry.is_dir() || zip_entry_is_special(&entry) {
+            continue;
+        }
+        let name = entry.name().to_string();
+        if validate_scan_archive_entry_name(&name).is_err() {
+            continue;
+        }
+        if !member_needs_source_bytes(&name) {
+            builder.add_member(&name, None);
+            continue;
+        }
+        let entry_size = entry.size();
+        let read = match crate::capped_read::read_to_cap(
+            &mut entry,
+            TexPackageBuilder::source_member_read_cap(),
+            Some(entry_size),
+        ) {
+            Ok(read) => read,
+            Err(_) => {
+                builder.mark_bounded();
+                builder.add_member(&name, None);
+                continue;
+            }
+        };
+        if read.truncated {
+            builder.mark_bounded();
+            builder.add_member(&name, None);
+        } else {
+            builder.add_member(&name, Some(&read.bytes));
+        }
+    }
+    builder.finish()
 }
 
 fn zip_entry_is_special(entry: &zip::read::ZipFile<'_>) -> bool {

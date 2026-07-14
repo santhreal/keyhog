@@ -3,6 +3,7 @@ use super::super::{
     emit_archive_unreadable_error, report_archive_truncation,
 };
 use super::{validate_scan_archive_entry_name, zip_external_attrs_are_special};
+use crate::filesystem::extract::tex_package::member_needs_source_bytes;
 use crate::filesystem::filter;
 use crate::magic::{
     ZIP_CENTRAL_DIRECTORY_FILE_HEADER_SIGNATURE, ZIP_END_OF_CENTRAL_DIRECTORY_PREFIX,
@@ -99,6 +100,15 @@ pub(super) fn extract_zip_archive_from_central_entries_reader<R: Read + Seek>(
     entries: Vec<CentralZipEntry>,
 ) -> bool {
     let mut occurrence_counts: HashMap<String, usize> = HashMap::new();
+    if entries
+        .iter()
+        .any(|entry| member_needs_source_bytes(&entry.name))
+        && !emit(Err(SourceError::Other(format!(
+            "TeX provenance analysis for duplicate ZIP archive '{archive_display}' is ambiguous because repeated member names have distinct payloads; every duplicate entry is still scanned without TeX role annotations"
+        ))))
+    {
+        return false;
+    }
 
     for entry in entries {
         let occurrence = occurrence_counts.entry(entry.name.clone()).or_insert(0);
