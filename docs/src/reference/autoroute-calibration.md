@@ -170,8 +170,10 @@ which backend is fastest:
   builds that happen to share a package version and Git hash.
 - Host identity includes OS/architecture, CPU model and topology, memory, CPU
   instruction support and, when the scanner can use a physical GPU, the GPU
-  device, every acquired runtime backend and version, and driver/runtime identity. A missing or changed
-  required field invalidates the evidence and requires recalibration.
+  device, every acquired runtime backend and version, driver/runtime identity,
+  and the exact sorted eligible-backend census for that resolved config. A
+  missing or changed required field invalidates the evidence and requires
+  recalibration.
 - Each scan preset (default, `--fast`, `--deep`, `--precision`) is calibrated
   separately.
 - Flags hashed into the scan config (for example `--threads` or
@@ -281,7 +283,11 @@ the matching scan flag or `[system].autoroute_cache`.
 
 These show every persisted config, its workload buckets, representative median
 route times, whether confidence was separated, the selection basis, and the
-resolved one-shot and daemon backends. When a scan hits `exit 2`, you can
+resolved one-shot and daemon backends. Each config's `eligible_backends` array
+is the complete candidate set that every decision had to measure and prove
+correct. Removing a candidate timing and its receipt together still invalidates
+the cache because validation compares both sets with this live config identity.
+When a scan hits `exit 2`, you can
 therefore see exactly what *is* covered and how each existing decision was
 made. An invalid decision makes the inspection report the cache as unusable;
 inspection never omits a malformed row and presents the remainder as healthy.
@@ -304,7 +310,7 @@ meanings:
 | `calibrated_at_unix_ms` | Persisted Unix timestamp from the calibration run. A future value invalidates the complete cache. |
 | `calibration_age_ms` | Age derived at inspection time from `inspected_at_unix_ms`; it is visible evidence, not an expiry policy. |
 | `backend` | Cold-aware backend for an in-process one-shot scan. |
-| `simd_ms`, `cpu_ms` | Median trial time for that CPU route; `cpu_ms` is `null` when scalar CPU was not measured separately. |
+| `simd_ms`, `cpu_ms` | Median trial time for that CPU route. Every calibrated multi-backend decision contains both CPU timings. |
 | `gpu_cuda_ms`, `gpu_wgpu_ms` | Per-driver one-shot representative: the greater of the real first dispatch and that driver's warm-trial median. |
 | `gpu_cuda_warm_ms`, `gpu_wgpu_warm_ms` | Per-driver warm median used by a ready daemon; `null` when that driver was not eligible. |
 | `confidence_separated` | Whether the one-shot winner's 95% interval is entirely below every competitor. |
@@ -312,7 +318,7 @@ meanings:
 | `selected_margin_ns` | One-shot representative-time margin to the next candidate; `null` when there is no competitor. |
 | `daemon_backend` | Backend derived for a ready persistent daemon from warm GPU evidence. |
 | `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts of the one-shot confidence, basis, and margin fields. |
-| `candidate_receipts` | One receipt per measured backend, containing its canonical backend identity, secret-safe correctness digest, complete trial count, and evidence digest over those fields plus the exact timing vector. Every result digest must equal the SIMD reference and every evidence digest must recompute exactly or the cache is rejected. |
+| `candidate_receipts` | One receipt per backend named by the config's `eligible_backends`, containing its canonical backend identity, secret-safe correctness digest, complete trial count, and evidence digest over those fields plus the exact timing vector. The receipt and timing sets must both equal the eligible census. Every result digest must equal the SIMD reference and every evidence digest must recompute exactly or the cache is rejected. |
 
 ## Single-backend builds
 

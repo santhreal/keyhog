@@ -2,6 +2,7 @@
 
 use keyhog_scanner::hw_probe::HardwareCaps;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -20,6 +21,10 @@ pub(super) struct AutorouteHostProfile {
     pub(super) gpu_driver_runtime_identity: Option<String>,
     pub(super) gpu_is_software: bool,
     pub(super) total_memory_mb: Option<u64>,
+    /// Canonical measured-candidate labels for this resolved configuration.
+    /// This is live host/config identity, not a list inferred from whichever
+    /// timing rows remain in a cache decision.
+    pub(super) eligible_backends: Vec<String>,
 }
 
 impl AutorouteHostProfile {
@@ -27,6 +32,7 @@ impl AutorouteHostProfile {
         caps: &HardwareCaps,
         gpu_peer_identity: Option<&str>,
         gpu_participates: bool,
+        eligible_backends: Vec<String>,
     ) -> Self {
         // A route that excludes GPU never uses it, so a physically present or
         // already-acquired peer is not part of this calibration identity:
@@ -87,6 +93,7 @@ impl AutorouteHostProfile {
                 .flatten(),
             gpu_is_software: gpu_participates && caps.gpu_is_software && !acquired_peer_present,
             total_memory_mb: caps.total_memory_mb,
+            eligible_backends,
         }
     }
 
@@ -104,6 +111,7 @@ impl AutorouteHostProfile {
             Some(memory_mb) if memory_mb > 0 => {}
             _ => return Err("system memory size is unavailable"),
         }
+        self.require_exact_candidate_census()?;
         // A Some("") / Some("  ") field is a PROBE BUG, distinct from an honest
         // None (no device): present-but-blank never validates.
         let gpu_name_present = field_is_present_nonblank(&self.gpu_name);
@@ -126,6 +134,47 @@ impl AutorouteHostProfile {
         {
             return Err("GPU driver/runtime identity is unavailable");
         }
+        let gpu_candidate_present = self.eligible_backends.iter().any(|label| {
+            keyhog_scanner::hw_probe::parse_backend_str(label)
+                .is_some_and(|backend| backend.is_gpu())
+        });
+        if hardware_gpu_present != gpu_candidate_present {
+            return Err("GPU identity and eligible backend census disagree");
+        }
+        Ok(())
+    }
+
+    pub(super) fn candidate_backend_set(&self) -> Result<BTreeSet<String>, &'static str> {
+        self.require_exact_candidate_census()?;
+        Ok(self.eligible_backends.iter().cloned().collect())
+    }
+
+    fn require_exact_candidate_census(&self) -> Result<(), &'static str> {
+        if self.eligible_backends.is_empty() {
+            return Err("eligible backend census is unavailable");
+        }
+        if !self
+            .eligible_backends
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+        {
+            return Err("eligible backend census is not unique canonical order");
+        }
+        let mut has_simd = false;
+        let mut has_scalar = false;
+        for label in &self.eligible_backends {
+            let Some(backend) = keyhog_scanner::hw_probe::parse_backend_str(label) else {
+                return Err("eligible backend census contains an unsupported backend");
+            };
+            if backend.label() != label {
+                return Err("eligible backend census contains a non-canonical backend label");
+            }
+            has_simd |= backend == keyhog_scanner::ScanBackend::SimdCpu;
+            has_scalar |= backend == keyhog_scanner::ScanBackend::CpuFallback;
+        }
+        if !has_simd || !has_scalar {
+            return Err("eligible backend census omits a required CPU peer");
+        }
         Ok(())
     }
 }
@@ -142,7 +191,7 @@ pub(super) fn render_host_profile(host: &AutorouteHostProfile) -> String {
         "scalar"
     };
     format!(
-        "{}/{} {} | {}p/{}l cores | {} | hyperscan={} | gpu={} | gpu_peers={} | gpu_driver={}",
+        "{}/{} {} | {}p/{}l cores | {} | hyperscan={} | gpu={} | gpu_peers={} | gpu_driver={} | candidates={}",
         host.os,
         host.arch,
         host.cpu_model.as_deref().unwrap_or("unknown-cpu"), // LAW10: display-only host label; recall-safe
@@ -159,6 +208,7 @@ pub(super) fn render_host_profile(host: &AutorouteHostProfile) -> String {
         host.gpu_driver_runtime_identity
             .as_deref()
             .unwrap_or("none"), // LAW10: display-only host label; recall-safe
+        host.eligible_backends.join(","),
     )
 }
 

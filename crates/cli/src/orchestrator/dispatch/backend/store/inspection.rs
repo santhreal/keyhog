@@ -50,6 +50,7 @@ pub(crate) struct AutorouteCacheInspection {
 pub(crate) struct AutorouteConfigInspection {
     pub(crate) config_digest: String,
     pub(crate) host: String,
+    pub(crate) eligible_backends: Vec<String>,
     pub(crate) decision_count: usize,
     pub(crate) decisions: Vec<AutorouteDecisionInspection>,
 }
@@ -300,6 +301,7 @@ fn inspect_autoroute_cache_for_build(
         out.configs.push(AutorouteConfigInspection {
             config_digest: format!("{:016x}", config.config_digest),
             host: render_host_profile(&config.host),
+            eligible_backends: config.host.eligible_backends.clone(),
             decision_count: config.decisions.len(),
             decisions,
         });

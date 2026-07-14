@@ -25,7 +25,7 @@
 //!   ├─ evidence ───── decision policy
 //!   │    ├─ timing ─────── measured trials and confidence intervals
 //!   │    └─ match_identity ─ secret-safe semantic parity proof
-//!   ├─ store ──────── cache facade (schema v32)
+//!   ├─ store ──────── cache facade (schema v33)
 //!   │    ├─ schema / artifact_identity / build_identity
 //!   │    └─ codec / validation / persistence / inspection
 //!   ├─ host ───────── host identity captured in each calibration record
@@ -63,6 +63,8 @@ use std::sync::{Arc, Mutex};
 /// this calibration command. The cache remains the evidence owner.
 pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, String)>>>;
 
+// v33: each resolved config host persists the exact live eligible-backend
+// census, and every decision must carry timing and parity evidence for it.
 // v32: projected host and accelerator-peer identity moves from the cache root
 // into each resolved config generation so distinct GPU policies can coexist.
 // v31: every timing decision carries a digest of its complete workload key.
@@ -98,7 +100,7 @@ pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, Strin
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 32;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 33;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -117,7 +119,7 @@ pub(super) struct MeasuredBackendRouter {
     detector_digest: u64,
     rules_digest: String,
     config_digest: u64,
-    autoroute_gpu: bool,
+    gpu_participates: bool,
     calibration_mode: bool,
     host_profile: AutorouteHostProfile,
     decisions: HashMap<WorkloadKey, AutorouteDecision>,
@@ -331,11 +333,16 @@ impl CachedBackendRouter {
     ) -> Self {
         let runtime_status = scanner.runtime_status();
         let detector_digest = runtime_status.detector_digest;
-        let gpu_peer_identity = gpu_peer_identity(scanner);
+        let gpu_participates = gpu_participates && keyhog_scanner::hw_probe::gpu_backend_compiled();
+        let gpu_peer_identity = gpu_participates
+            .then(|| gpu_peer_identity(scanner))
+            .flatten();
+        let eligible_backends = eligible_backend_labels(scanner, gpu_participates);
         let host_profile = AutorouteHostProfile::from_caps(
             &hw_caps,
             gpu_peer_identity.as_deref(),
-            gpu_participates && keyhog_scanner::hw_probe::gpu_backend_compiled(),
+            gpu_participates,
+            eligible_backends,
         );
         let (cache_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
             detector_digest,
@@ -468,10 +475,12 @@ impl MeasuredBackendRouter {
         let gpu_peer_identity = gpu_participates
             .then(|| gpu_peer_identity(scanner))
             .flatten();
+        let eligible_backends = eligible_backend_labels(scanner, gpu_participates);
         let host_profile = AutorouteHostProfile::from_caps(
             &hw_caps,
             gpu_peer_identity.as_deref(),
             gpu_participates,
+            eligible_backends,
         );
         let (cache_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
             detector_digest,
@@ -487,7 +496,7 @@ impl MeasuredBackendRouter {
             detector_digest,
             rules_digest,
             config_digest,
-            autoroute_gpu,
+            gpu_participates,
             calibration_mode,
             host_profile,
             decisions,
@@ -539,11 +548,17 @@ impl MeasuredBackendRouter {
             .map_err(AutorouteRoutingError::host_identity_unavailable)?;
         self.persist_cache_path()?;
 
+        let live_eligible_backends = eligible_backend_labels(scanner, self.gpu_participates);
+        if live_eligible_backends != self.host_profile.eligible_backends {
+            return Err(AutorouteRoutingError::calibration_not_persisted(
+                "eligible backend set changed after calibration started; rerun calibration so every candidate is measured under one stable peer census",
+            ));
+        }
         let decision = calibrate_fastest_correct_backend(
             scanner,
             self.pattern_count,
             batch,
-            self.autoroute_gpu,
+            &live_eligible_backends,
         )?;
         let backend = match decision.backend() {
             Some(backend) => backend,
@@ -773,6 +788,25 @@ fn gpu_peer_identity(scanner: &CompiledScanner) -> Option<String> {
         serde_json::to_string(&peers)
             .expect("GPU peer identity contains only serializable string fields")
     })
+}
+
+fn eligible_backend_labels(scanner: &CompiledScanner, gpu_participates: bool) -> Vec<String> {
+    let mut labels = vec![
+        ScanBackend::SimdCpu.label().to_string(),
+        ScanBackend::CpuFallback.label().to_string(),
+    ];
+    if gpu_participates {
+        labels.extend(
+            scanner
+                .gpu_backend_candidates()
+                .into_iter()
+                .filter(|candidate| candidate.is_eligible())
+                .map(|candidate| candidate.backend.label().to_string()),
+        );
+    }
+    labels.sort_unstable();
+    labels.dedup();
+    labels
 }
 
 pub(super) fn backend_requires_coalesced_batch_pipeline(

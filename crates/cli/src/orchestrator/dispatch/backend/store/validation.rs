@@ -1,6 +1,6 @@
 //! Single trust boundary for cache identity, structure, and routing evidence.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::super::evidence::{gpu_cold_warm_route_evidence, AutorouteDecision};
@@ -72,6 +72,12 @@ pub(super) fn validate_cache_structure_at(
                 config.config_digest
             )
         })?;
+        let expected_backends = config.host.candidate_backend_set().map_err(|error| {
+            format!(
+                "autoroute cache config {:016x} has invalid candidate census: {error}",
+                config.config_digest
+            )
+        })?;
         if config.decisions.is_empty() {
             return Err(format!(
                 "autoroute cache config {:016x} contains no workload decisions",
@@ -89,7 +95,7 @@ pub(super) fn validate_cache_structure_at(
                     config.config_digest
                 )
             })?;
-            validate_decision_route_evidence_at(decision, current_unix_ms)?;
+            validate_decision_route_evidence_at(decision, current_unix_ms, &expected_backends)?;
             validate_decision_workload_binding(key, decision)?;
             if row.workload_digest != workload_evidence_digest(key) {
                 return Err(format!(
@@ -131,13 +137,15 @@ pub(super) fn validate_decision_workload_binding(
 
 pub(super) fn validate_decision_route_evidence(
     decision: &AutorouteDecision,
+    expected_backends: &BTreeSet<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    validate_decision_route_evidence_at(decision, current_unix_time_ms()?)
+    validate_decision_route_evidence_at(decision, current_unix_time_ms()?, expected_backends)
 }
 
 fn validate_decision_route_evidence_at(
     decision: &AutorouteDecision,
     current_unix_ms: u128,
+    expected_backends: &BTreeSet<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if decision.sample_chunks == 0 || decision.sample_bytes == 0 {
         return Err("cache decision is missing calibration sample evidence".into());
@@ -195,9 +203,12 @@ fn validate_decision_route_evidence_at(
             );
         }
     }
-    let expected_receipt_backends = [
+    let timing_backends = [
         (keyhog_scanner::ScanBackend::SimdCpu, true),
-        (keyhog_scanner::ScanBackend::CpuFallback, true),
+        (
+            keyhog_scanner::ScanBackend::CpuFallback,
+            decision.cpu_timing.is_some(),
+        ),
         (
             keyhog_scanner::ScanBackend::GpuCuda,
             decision.gpu_cuda_timing.is_some(),
@@ -209,10 +220,28 @@ fn validate_decision_route_evidence_at(
     ]
     .into_iter()
     .filter(|(_, present)| *present)
-    .map(|(backend, _)| backend.label())
-    .collect::<HashSet<_>>();
-    if decision.candidate_receipts.len() != expected_receipt_backends.len() {
-        return Err("cache decision candidate receipt set does not match timing evidence".into());
+    .map(|(backend, _)| backend.label().to_string())
+    .collect::<BTreeSet<_>>();
+    if &timing_backends != expected_backends {
+        return Err(format!(
+            "cache decision timing set does not match eligible backend census (expected {:?}, found {:?})",
+            expected_backends, timing_backends
+        )
+        .into());
+    }
+    let receipt_backends = decision
+        .candidate_receipts
+        .iter()
+        .map(|receipt| receipt.backend.clone())
+        .collect::<BTreeSet<_>>();
+    if &receipt_backends != expected_backends
+        || receipt_backends.len() != decision.candidate_receipts.len()
+    {
+        return Err(format!(
+            "cache decision receipt set does not match eligible backend census (expected {:?}, found {:?})",
+            expected_backends, receipt_backends
+        )
+        .into());
     }
     let mut seen_receipts = HashSet::with_capacity(decision.candidate_receipts.len());
     let mut reference_digest = None;
@@ -225,7 +254,7 @@ fn validate_decision_route_evidence_at(
             .into());
         };
         if receipt.backend != backend.label()
-            || !expected_receipt_backends.contains(receipt.backend.as_str())
+            || !expected_backends.contains(receipt.backend.as_str())
         {
             return Err(format!(
                 "cache decision has an unexpected or non-canonical candidate receipt for {:?}",

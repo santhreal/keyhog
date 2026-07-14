@@ -27,43 +27,29 @@ pub(super) fn calibrate_fastest_correct_backend(
     scanner: &CompiledScanner,
     _pattern_count: usize,
     sample: &[Chunk],
-    autoroute_gpu: bool,
+    eligible_backend_labels: &[String],
 ) -> Result<AutorouteDecision, AutorouteRoutingError> {
     let sample_bytes = calibration_sample_bytes(sample)?;
 
     let reference_matches = establish_reference_simd(scanner, sample);
 
-    let gpu_candidates = scanner.gpu_backend_candidates();
-    if autoroute_gpu {
-        if let Some(candidate) = gpu_candidates.iter().find(|candidate| {
-            candidate.acquired && !candidate.is_software && !candidate.is_eligible()
-        }) {
-            return Err(AutorouteRoutingError::candidate_backend_rejected(
-                candidate.backend,
-                "GPU peer was acquired without complete driver, device, and runtime identity",
-            ));
-        }
-    }
-    let eligible_gpu_backends = if autoroute_gpu {
-        gpu_candidates
-            .iter()
-            .filter(|candidate| candidate.is_eligible())
-            .map(|candidate| candidate.backend)
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
-    let gpu_candidate_allowed = !eligible_gpu_backends.is_empty();
+    let mut candidate_backends = eligible_backend_labels
+        .iter()
+        .map(|label| {
+            keyhog_scanner::hw_probe::parse_backend_str(label).ok_or_else(|| {
+                AutorouteRoutingError::calibration_not_persisted(format!(
+                    "eligible backend census contains unsupported label {label:?}"
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let gpu_candidate_allowed = candidate_backends.iter().any(|backend| backend.is_gpu());
     if gpu_candidate_allowed {
         scanner
             .prepare_autoroute_calibration_gpu_artifact()
             .map_err(AutorouteRoutingError::calibration_not_persisted)?;
     }
 
-    let mut candidate_backends = Vec::with_capacity(2 + eligible_gpu_backends.len());
-    candidate_backends.push(ScanBackend::SimdCpu);
-    candidate_backends.push(ScanBackend::CpuFallback);
-    candidate_backends.extend(eligible_gpu_backends);
     let rotation =
         calibration_candidate_rotation(sample_bytes, sample.len(), candidate_backends.len());
     candidate_backends.rotate_left(rotation);
@@ -159,7 +145,6 @@ pub(super) fn calibrate_fastest_correct_backend(
         sample_bytes,
         simd_ms = decision.simd_ms(),
         cpu_ms = decision.cpu_ms(),
-        gpu_opt_in = autoroute_gpu,
         gpu_considered = gpu_candidate_allowed,
         cuda_ms = decision.timing_for_backend(ScanBackend::GpuCuda).map(BackendTimingEvidence::median_ms),
         wgpu_ms = decision.timing_for_backend(ScanBackend::GpuWgpu).map(BackendTimingEvidence::median_ms),

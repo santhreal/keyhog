@@ -95,6 +95,7 @@ pub(crate) fn save_autoroute_cache(
     decisions: &HashMap<WorkloadKey, AutorouteDecision>,
 ) -> Result<AutorouteCacheSaveOutcome, Box<dyn std::error::Error + Send + Sync>> {
     host_profile.require_exact_identity()?;
+    let expected_backends = host_profile.candidate_backend_set()?;
     if decisions.is_empty() {
         return Err("autoroute cache contains no workload decisions".into());
     }
@@ -102,7 +103,7 @@ pub(crate) fn save_autoroute_cache(
         validate_workload_source_mixture(key).map_err(|error| {
             format!("autoroute cache save rejected an invalid source mixture: {error}")
         })?;
-        validate_decision_route_evidence(decision)?;
+        validate_decision_route_evidence(decision, &expected_backends)?;
         validate_decision_workload_binding(key, decision)?;
     }
     if let Some(parent) = path.parent() {
@@ -306,14 +307,24 @@ mod tests {
             gpu_driver_runtime_identity: None,
             gpu_is_software: false,
             total_memory_mb: Some(65_536),
+            eligible_backends: vec![
+                ScanBackend::CpuFallback.label().to_string(),
+                ScanBackend::SimdCpu.label().to_string(),
+            ],
         }
     }
 
     fn gpu_host(device: &str, runtime: &str) -> AutorouteHostProfile {
         let mut host = cpu_host();
         host.gpu_name = Some(device.to_string());
-        host.gpu_runtime_backend = Some(format!("gpu-cuda-region-presence:{runtime}"));
-        host.gpu_driver_runtime_identity = Some(runtime.to_string());
+        let identity = format!("gpu-wgpu-region-presence:{runtime}:{device}");
+        host.gpu_runtime_backend = Some(identity.clone());
+        host.gpu_driver_runtime_identity = Some(identity);
+        host.eligible_backends = vec![
+            ScanBackend::CpuFallback.label().to_string(),
+            ScanBackend::GpuWgpu.label().to_string(),
+            ScanBackend::SimdCpu.label().to_string(),
+        ];
         host
     }
 
@@ -348,10 +359,18 @@ mod tests {
         }
     }
 
-    fn decisions(bytes: u64) -> HashMap<WorkloadKey, AutorouteDecision> {
+    fn decisions(
+        bytes: u64,
+        host: &AutorouteHostProfile,
+    ) -> HashMap<WorkloadKey, AutorouteDecision> {
+        let gpu_ms = host
+            .eligible_backends
+            .iter()
+            .any(|label| label == ScanBackend::GpuWgpu.label())
+            .then_some(24);
         HashMap::from([(
             workload(bytes),
-            AutorouteDecision::new(ScanBackend::SimdCpu, bytes, 1, 12, Some(20), None),
+            AutorouteDecision::new(ScanBackend::SimdCpu, bytes, 1, 12, Some(20), gpu_ms),
         )])
     }
 
@@ -381,7 +400,7 @@ mod tests {
                     RULES_DIGEST,
                     config_digest,
                     host,
-                    &decisions(8 * 1024 * 1024),
+                    &decisions(8 * 1024 * 1024, host),
                 )
                 .expect("each GPU policy config must persist");
             }
@@ -453,7 +472,7 @@ mod tests {
                 RULES_DIGEST,
                 config_digest,
                 &host,
-                &decisions(8 * 1024 * 1024),
+                &decisions(8 * 1024 * 1024, &host),
             )
             .expect("persist same-host config");
         }
@@ -483,7 +502,7 @@ mod tests {
             RULES_DIGEST,
             replaced_config,
             &old_gpu,
-            &decisions(8 * 1024 * 1024),
+            &decisions(8 * 1024 * 1024, &old_gpu),
         )
         .expect("seed old GPU config generation");
         save_autoroute_cache(
@@ -492,7 +511,7 @@ mod tests {
             RULES_DIGEST,
             unrelated_config,
             &cpu,
-            &decisions(8 * 1024 * 1024),
+            &decisions(8 * 1024 * 1024, &cpu),
         )
         .expect("seed unrelated CPU config generation");
         let replacement = save_autoroute_cache(
@@ -501,7 +520,7 @@ mod tests {
             RULES_DIGEST,
             replaced_config,
             &new_gpu,
-            &decisions(16 * 1024 * 1024),
+            &decisions(16 * 1024 * 1024, &new_gpu),
         )
         .expect("replace only changed-host config generation");
         assert!(matches!(
@@ -554,7 +573,7 @@ mod tests {
             RULES_DIGEST,
             config_digest,
             &host,
-            &decisions(8 * 1024 * 1024),
+            &decisions(8 * 1024 * 1024, &host),
         )
         .expect("seed current autoroute schema");
 

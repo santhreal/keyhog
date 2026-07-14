@@ -21,6 +21,18 @@ fn test_decode_workload_plan() -> keyhog_scanner::decode::DecodeWorkloadPlan {
     keyhog_scanner::decode::DecodeWorkloadPlan::from_limits(1, usize::MAX)
 }
 
+fn test_eligible_backends(gpu: Option<ScanBackend>) -> Vec<String> {
+    let mut labels = vec![
+        ScanBackend::SimdCpu.label().to_string(),
+        ScanBackend::CpuFallback.label().to_string(),
+    ];
+    if let Some(gpu) = gpu {
+        labels.push(gpu.label().to_string());
+    }
+    labels.sort_unstable();
+    labels
+}
+
 fn workload_key(
     batch: &[Chunk],
     pattern_count: usize,
@@ -159,6 +171,9 @@ fn autoroute_host_identity_uses_dependency_owned_gpu_compile_fact() {
         &caps,
         Some(peer),
         keyhog_scanner::hw_probe::gpu_backend_compiled(),
+        test_eligible_backends(
+            keyhog_scanner::hw_probe::gpu_backend_compiled().then_some(ScanBackend::GpuCuda),
+        ),
     );
     if keyhog_scanner::hw_probe::gpu_backend_compiled() {
         assert_eq!(profile.gpu_name, caps.gpu_name);
@@ -183,10 +198,13 @@ fn test_host(gpu_name: Option<&str>) -> AutorouteHostProfile {
         has_neon: false,
         hyperscan_available: true,
         gpu_name: gpu_name.map(str::to_string),
-        gpu_runtime_backend: gpu_name.map(|_| "cuda".to_string()),
-        gpu_driver_runtime_identity: gpu_name.map(|name| format!("wgpu:Vulkan:{name}:535.00")),
+        gpu_runtime_backend: gpu_name
+            .map(|name| format!("gpu-wgpu-region-presence:wgpu@0.6.4:{name}:535.00")),
+        gpu_driver_runtime_identity: gpu_name
+            .map(|name| format!("gpu-wgpu-region-presence:wgpu@0.6.4:{name}:535.00")),
         gpu_is_software: false,
         total_memory_mb: Some(65_536),
+        eligible_backends: test_eligible_backends(gpu_name.map(|_| ScanBackend::GpuWgpu)),
     }
 }
 
@@ -249,7 +267,8 @@ fn host_profile_strips_gpu_runtime_when_no_hardware_gpu_participates() {
     cpu_only.gpu_name = Some("stale probe name".to_string());
     cpu_only.gpu_runtime_identity = Some("stale runtime identity".to_string());
     cpu_only.gpu_is_software = false;
-    let cpu_profile = AutorouteHostProfile::from_caps(&cpu_only, None, true);
+    let cpu_profile =
+        AutorouteHostProfile::from_caps(&cpu_only, None, true, test_eligible_backends(None));
     assert_eq!(
         cpu_profile.gpu_name, None,
         "CPU-only autoroute identity must not persist stale GPU device names"
@@ -268,7 +287,8 @@ fn host_profile_strips_gpu_runtime_when_no_hardware_gpu_participates() {
     software_gpu.gpu_name = Some("llvmpipe (LLVM 15.0.7)".to_string());
     software_gpu.gpu_runtime_identity = Some("wgpu:Vulkan:llvmpipe:mesa".to_string());
     software_gpu.gpu_is_software = true;
-    let software_profile = AutorouteHostProfile::from_caps(&software_gpu, None, true);
+    let software_profile =
+        AutorouteHostProfile::from_caps(&software_gpu, None, true, test_eligible_backends(None));
     assert_eq!(
         software_profile.gpu_runtime_backend, None,
         "software renderer runtimes do not participate in autoroute calibration"
@@ -292,7 +312,12 @@ fn host_profile_strips_gpu_runtime_when_no_hardware_gpu_participates() {
 fn cuda_only_acquired_peer_remains_part_of_exact_host_identity() {
     let caps = test_hw_caps();
     let peer = "gpu-cuda-region-presence:cuda@0.6.4:NVIDIA RTX 5090:ordinal=0:nvidia-kernel:580.95";
-    let mut profile = AutorouteHostProfile::from_caps(&caps, Some(peer), true);
+    let mut profile = AutorouteHostProfile::from_caps(
+        &caps,
+        Some(peer),
+        true,
+        test_eligible_backends(Some(ScanBackend::GpuCuda)),
+    );
     profile.cpu_model = Some("test-cpu".to_string());
 
     assert_eq!(profile.gpu_name.as_deref(), Some(peer));
@@ -306,7 +331,12 @@ fn cuda_only_acquired_peer_remains_part_of_exact_host_identity() {
 #[test]
 fn cuda_only_acquired_peer_without_exact_identity_fails_closed() {
     let caps = test_hw_caps();
-    let mut profile = AutorouteHostProfile::from_caps(&caps, Some(""), true);
+    let mut profile = AutorouteHostProfile::from_caps(
+        &caps,
+        Some(""),
+        true,
+        test_eligible_backends(Some(ScanBackend::GpuCuda)),
+    );
     profile.cpu_model = Some("test-cpu".to_string());
 
     assert_eq!(profile.gpu_name.as_deref(), Some(""));
@@ -324,7 +354,12 @@ fn hardware_cuda_identity_survives_a_software_wgpu_probe() {
     caps.gpu_runtime_identity = Some("wgpu:Vulkan:llvmpipe:mesa".to_string());
     caps.gpu_is_software = true;
     let peer = "gpu-cuda-region-presence:cuda@0.6.4:NVIDIA RTX 5090:ordinal=0:nvidia-kernel:580.95";
-    let mut profile = AutorouteHostProfile::from_caps(&caps, Some(peer), true);
+    let mut profile = AutorouteHostProfile::from_caps(
+        &caps,
+        Some(peer),
+        true,
+        test_eligible_backends(Some(ScanBackend::GpuCuda)),
+    );
     profile.cpu_model = Some("test-cpu".to_string());
 
     assert_eq!(profile.gpu_name.as_deref(), Some(peer));
@@ -380,6 +415,7 @@ fn gpu_excluded_calibration_collapses_an_already_acquired_peer() {
         &gpu_host,
         Some("gpu-cuda-region-presence:cuda@0.6.4:NVIDIA RTX 5090"),
         false,
+        test_eligible_backends(None),
     );
     assert_eq!(
         portable.gpu_name, None,
@@ -406,7 +442,8 @@ fn gpu_excluded_calibration_collapses_an_already_acquired_peer() {
     // Contrast: a GPU-CAPABLE build whose runtime probe FAILED (gpu_backend
     // None) must STILL fail closed, the physical GPU IS usable by this build,
     // so caching GPU-absent evidence would silently mis-route (Law 10).
-    let mut gpu_build_probe_failed = AutorouteHostProfile::from_caps(&gpu_host, None, true);
+    let mut gpu_build_probe_failed =
+        AutorouteHostProfile::from_caps(&gpu_host, None, true, test_eligible_backends(None));
     gpu_build_probe_failed.cpu_model = Some("test-cpu".to_string());
     assert_eq!(
         gpu_build_probe_failed.require_exact_identity(),
@@ -428,7 +465,8 @@ fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
     probed_caps.gpu_runtime_identity = Some("wgpu:Vulkan:NVIDIA:565.00".to_string());
     probed_caps.gpu_is_software = false;
 
-    let host = AutorouteHostProfile::from_caps(&probed_caps, None, false);
+    let host =
+        AutorouteHostProfile::from_caps(&probed_caps, None, false, test_eligible_backends(None));
     let directory = tempfile::tempdir().expect("CPU-policy autoroute cache directory");
     let path = directory.path().join("autoroute.json");
     let config_digest = 0x6f4d_11c2_731a_b908;
@@ -519,7 +557,12 @@ fn gpu_capable_build_rejects_present_gpu_without_device_name() {
     caps.gpu_name = None;
     caps.gpu_runtime_identity = Some("cuda:unknown-device:driver-565".to_string());
 
-    let mut profile = AutorouteHostProfile::from_caps(&caps, Some(""), true);
+    let mut profile = AutorouteHostProfile::from_caps(
+        &caps,
+        Some(""),
+        true,
+        test_eligible_backends(Some(ScanBackend::GpuCuda)),
+    );
     profile.cpu_model = Some("test-cpu".to_string());
     assert_eq!(profile.gpu_name.as_deref(), Some(""));
     assert_eq!(
@@ -590,10 +633,7 @@ fn write_tampered_decision_cache(
     );
 
     let mut valid_decisions = HashMap::new();
-    valid_decisions.insert(
-        key.clone(),
-        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
-    );
+    valid_decisions.insert(key.clone(), valid_decision_for_host(host));
     save_autoroute_cache(
         path,
         digest,
@@ -621,6 +661,26 @@ fn write_tampered_decision_cache(
         serde_json::to_vec_pretty(&cache).expect("tampered cache serializes"),
     )
     .expect("tampered cache writable");
+}
+
+fn valid_decision_for_host(host: &AutorouteHostProfile) -> AutorouteDecision {
+    let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
+    let has = |backend: ScanBackend| {
+        host.eligible_backends
+            .iter()
+            .any(|label| label == backend.label())
+    };
+    AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::SimdCpu,
+        8 * 1024 * 1024,
+        1,
+        0xA11D_0B57_A11D_0B57,
+        1,
+        timing(12),
+        Some(timing(20)),
+        has(ScanBackend::GpuCuda).then(|| timing(30)),
+        has(ScanBackend::GpuWgpu).then(|| timing(40)),
+    )
 }
 
 fn test_rules_digest() -> &'static str {
@@ -2635,7 +2695,7 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
         detector_digest: 0x1234_5678_9ABC_DEF0,
         rules_digest: test_rules_digest().to_string(),
         config_digest: 0xA55A_D00D_CAFE_BEEF,
-        autoroute_gpu: false,
+        gpu_participates: false,
         calibration_mode: true,
         host_profile: host,
         decisions,
@@ -2695,7 +2755,7 @@ fn measured_router_drop_does_not_persist_dirty_cache() {
             detector_digest: 0x1234_5678_9ABC_DEF0,
             rules_digest: test_rules_digest().to_string(),
             config_digest: 0xA55A_D00D_CAFE_BEEF,
-            autoroute_gpu: false,
+            gpu_participates: false,
             calibration_mode: true,
             host_profile: host,
             decisions,
@@ -2752,7 +2812,7 @@ fn measured_router_commit_discards_unmeasured_stale_decisions() {
         detector_digest: 0x1234_5678_9ABC_DEF0,
         rules_digest: test_rules_digest().to_string(),
         config_digest: 0xA55A_D00D_CAFE_BEEF,
-        autoroute_gpu: false,
+        gpu_participates: false,
         calibration_mode: true,
         host_profile: host.clone(),
         decisions,
@@ -2808,7 +2868,7 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
         detector_digest: 0x1234_5678_9ABC_DEF0,
         rules_digest: test_rules_digest().to_string(),
         config_digest: 0xA55A_D00D_CAFE_BEEF,
-        autoroute_gpu: false,
+        gpu_participates: false,
         calibration_mode: true,
         host_profile: host,
         decisions,
@@ -2851,6 +2911,7 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
         &caps,
         None,
         keyhog_scanner::hw_probe::gpu_backend_compiled(),
+        test_eligible_backends(None),
     );
     let pattern_count = 902;
     let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
@@ -4270,7 +4331,7 @@ fn autoroute_cache_binds_every_timing_row_to_one_parity_receipt() {
         &host,
         key.clone(),
         missing,
-        "candidate receipt set does not match timing evidence",
+        "receipt set does not match eligible backend census",
     );
 
     let mut divergent = AutorouteDecision::new(
@@ -4312,6 +4373,130 @@ fn autoroute_cache_binds_every_timing_row_to_one_parity_receipt() {
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn autoroute_cache_requires_every_live_gpu_candidate_timing_and_receipt() {
+    let dir = tempfile::tempdir().expect("autoroute GPU candidate census tempdir");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let mut host = test_host(Some("NVIDIA GeForce RTX 5090"));
+    host.eligible_backends = test_eligible_backends(Some(ScanBackend::GpuWgpu));
+    host.eligible_backends
+        .push(ScanBackend::GpuCuda.label().to_string());
+    host.eligible_backends.sort_unstable();
+    let key = test_workload_key();
+    let complete = valid_decision_for_host(&host);
+
+    for backend in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
+        let mut missing = complete.clone();
+        match backend {
+            ScanBackend::GpuCuda => missing.gpu_cuda_timing = None,
+            ScanBackend::GpuWgpu => missing.gpu_wgpu_timing = None,
+            _ => unreachable!("fixed GPU peer fixture"),
+        }
+        missing
+            .candidate_receipts
+            .retain(|receipt| receipt.backend != backend.label());
+        let path = dir.path().join(format!("{}.json", backend.label()));
+        write_tampered_decision_cache(
+            &path,
+            digest,
+            config_digest,
+            &host,
+            key.clone(),
+            missing,
+            "timing set does not match eligible backend census",
+        );
+        let error = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+            .expect_err("deleting an eligible GPU peer's evidence must invalidate replay")
+            .to_string();
+        assert!(
+            error.contains("timing set does not match eligible backend census"),
+            "{backend:?} replay error: {error}"
+        );
+    }
+}
+
+#[test]
+fn autoroute_cache_rejects_coordinated_candidate_and_evidence_deletion() {
+    let dir = tempfile::tempdir().expect("autoroute coordinated deletion tempdir");
+    let path = dir.path().join("autoroute.json");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let live_host = test_host(Some("NVIDIA GeForce RTX 5090"));
+    let key = test_workload_key();
+    let decisions = HashMap::from([(key, valid_decision_for_host(&live_host))]);
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &live_host,
+        &decisions,
+    )
+    .expect("complete GPU candidate evidence saves");
+
+    let mut cache: AutorouteCache = serde_json::from_slice(
+        &std::fs::read(&path).expect("coordinated-deletion cache is readable"),
+    )
+    .expect("coordinated-deletion cache is JSON");
+    let config = &mut cache.configs[0];
+    config.host = test_host(None);
+    config.decisions[0].decision = valid_decision_for_host(&config.host);
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&cache).expect("coordinated-deletion cache serializes"),
+    )
+    .expect("coordinated-deletion cache is writable");
+
+    let error = load_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &live_host,
+    )
+    .expect_err("a cache cannot delete the live GPU census together with its evidence")
+    .to_string();
+    assert!(
+        error.contains("host profile mismatch"),
+        "load error: {error}"
+    );
+}
+
+#[test]
+fn autoroute_host_rejects_noncanonical_candidate_census() {
+    let cpu = ScanBackend::CpuFallback.label().to_string();
+    let simd = ScanBackend::SimdCpu.label().to_string();
+    for (label, census, expected) in [
+        ("empty", vec![], "census is unavailable"),
+        (
+            "duplicate",
+            vec![cpu.clone(), cpu.clone(), simd.clone()],
+            "not unique canonical order",
+        ),
+        (
+            "unsorted",
+            vec![simd.clone(), cpu.clone()],
+            "not unique canonical order",
+        ),
+        (
+            "unknown",
+            vec![cpu.clone(), "gpu-mystery".to_string(), simd.clone()],
+            "unsupported backend",
+        ),
+    ] {
+        let mut host = test_host(None);
+        host.eligible_backends = census;
+        let error = host
+            .require_exact_identity()
+            .expect_err("invalid candidate census must fail closed");
+        assert!(
+            error.contains(expected),
+            "{label} census error {error:?} did not contain {expected:?}"
+        );
+    }
 }
 
 #[test]
@@ -5063,8 +5248,9 @@ fn live_calibration_measures_both_gpu_driver_peers() {
         data: "key=KHGPUCAL_A1b2C3d4E5f6G7h8I9j0\n".repeat(1024).into(),
         metadata: keyhog_core::ChunkMetadata::default(),
     }];
+    let eligible = super::eligible_backend_labels(&scanner, true);
     let decision =
-        super::calibration::calibrate_fastest_correct_backend(&scanner, 0, &sample, true)
+        super::calibration::calibrate_fastest_correct_backend(&scanner, 0, &sample, &eligible)
             .expect("calibrate every scanner-owned eligible peer");
     assert!(decision.gpu_cuda_timing.is_some());
     assert!(decision.gpu_wgpu_timing.is_some());
