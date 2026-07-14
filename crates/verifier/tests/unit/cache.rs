@@ -22,6 +22,43 @@ fn cache_hit_and_miss() {
 }
 
 #[test]
+fn companion_request_inputs_partition_cache_identity_canonically() {
+    let cache = VerificationCache::new(Duration::from_secs(60));
+    let companions_a = HashMap::from([
+        ("account".into(), "tenant-a".into()),
+        ("secret".into(), "companion-a".into()),
+    ]);
+    let companions_a_reordered = HashMap::from([
+        ("secret".into(), "companion-a".into()),
+        ("account".into(), "tenant-a".into()),
+    ]);
+    let companions_b = HashMap::from([
+        ("account".into(), "tenant-b".into()),
+        ("secret".into(), "companion-b".into()),
+    ]);
+
+    cache.put_with_companions(
+        "same-primary",
+        "paired-detector",
+        &companions_a,
+        VerificationResult::Live,
+        HashMap::from([("owner".into(), "a".into())]),
+    );
+
+    let (result, metadata) = cache
+        .get_with_companions("same-primary", "paired-detector", &companions_a_reordered)
+        .expect("equivalent companion maps must share one request identity");
+    assert!(matches!(result, VerificationResult::Live));
+    assert_eq!(metadata["owner"], "a");
+    assert!(
+        cache
+            .get_with_companions("same-primary", "paired-detector", &companions_b)
+            .is_none(),
+        "a different companion secret or tenant must not inherit a cached verdict"
+    );
+}
+
+#[test]
 fn cache_ttl_expiry() {
     let cache = VerificationCache::new(Duration::from_millis(1));
     cache.put("cred", "det", VerificationResult::Dead, HashMap::new());

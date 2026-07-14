@@ -94,7 +94,7 @@ pub(crate) fn note_inflight_cap_bypass(max_inflight_keys: usize) -> usize {
     if INFLIGHT_CAP_WARNED.set(()).is_ok() {
         tracing::warn!(
             max_inflight_keys,
-            "verifier inflight-dedup cap reached: verifying (detector, credential) pairs \
+            "verifier inflight-dedup cap reached: verifying complete request identities \
              WITHOUT the single-in-flight guard, so concurrent duplicate probes can hit the \
              live API (rate-limit bans). Raise max_inflight_keys to restore dedup."
         );
@@ -115,7 +115,7 @@ struct VerifyTaskShared {
     detectors: Arc<HashMap<Arc<str>, keyhog_core::DetectorSpec>>,
     timeout: Duration,
     cache: Arc<cache::VerificationCache>,
-    inflight: Arc<DashMap<(Arc<str>, SensitiveString), Arc<Notify>>>,
+    inflight: Arc<DashMap<cache::VerificationIdentity, Arc<Notify>>>,
     inflight_count: Arc<AtomicUsize>,
     max_inflight_keys: usize,
     danger_allow_private_ips: bool,
@@ -139,8 +139,8 @@ struct VerifyTaskShared {
 }
 
 struct InflightGuard {
-    key: (Arc<str>, SensitiveString),
-    inflight: Arc<DashMap<(Arc<str>, SensitiveString), Arc<Notify>>>,
+    key: cache::VerificationIdentity,
+    inflight: Arc<DashMap<cache::VerificationIdentity, Arc<Notify>>>,
     inflight_count: Arc<AtomicUsize>,
     notify: Arc<Notify>,
 }
@@ -303,7 +303,11 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
         );
     };
 
-    if let Some((cached_result, cached_meta)) = cache.get(&group.credential, &group.detector_id) {
+    let verification_identity =
+        cache::verification_identity(&group.credential, &group.detector_id, &group.companions);
+    if let Some((cached_result, cached_meta)) =
+        cache.get_with_companions(&group.credential, &group.detector_id, &group.companions)
+    {
         return into_finding(group, cached_result, cached_meta);
     }
 
@@ -315,9 +319,9 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
             // global parking_lot::Mutex held across HashMap operations in an
             // async context (anti-pattern that stalled the tokio runtime
             // under high concurrency - see the 2026-04-26 audit).
-            let key = (group.detector_id.clone(), group.credential.clone());
+            let key = verification_identity.clone();
             if let Some((cached_result, cached_meta)) =
-                cache.get(&group.credential, &group.detector_id)
+                cache.get_with_companions(&group.credential, &group.detector_id, &group.companions)
             {
                 return into_finding(group, cached_result, cached_meta);
             }
@@ -371,9 +375,10 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
     // or a single network blip would report a live credential as errored on
     // every rescan within the window. See `verification_result_is_cacheable`.
     if verification_result_is_cacheable(&verification) {
-        cache.put(
+        cache.put_with_companions(
             &group.credential,
             &group.detector_id,
+            &group.companions,
             verification.clone(),
             metadata.clone(),
         );

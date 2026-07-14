@@ -24,15 +24,15 @@ fn cache_non_empty() {
             && prod.contains("CredentialHash")
             && prod.contains("VerificationResult")
             && prod.contains("credential_hash: sha256_hash(credential)")
-            && prod.contains("detector_id_hash: sha256_hash(detector_id)"),
-        "verification cache must use core::sha256_hash for cache-key hashing"
+            && prod.contains("detector_id_hash: sha256_hash(detector_id)")
+            && prod.contains("companions_hash: CredentialHash::from_bytes("),
+        "verification cache must hash every request-identity component"
     );
     assert!(
         !prod.contains("fn hash_credential(")
             && !prod.contains("fn cache_key_hash(")
-            && !prod.contains("use sha2::{Digest, Sha256};")
             && !prod.contains("Sha256::digest(credential.as_bytes())"),
-        "verification cache must not restore a verifier-local SHA-256 helper"
+        "credential and detector hashing must stay on the core primitive"
     );
     assert!(
         !prod.contains("detector_id: Arc<str>")

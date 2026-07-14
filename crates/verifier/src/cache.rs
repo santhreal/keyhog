@@ -1,8 +1,9 @@
 //! Verification cache: avoids re-verifying the same credential across scans.
 //!
-//! Stores `(credential_hash, detector_id) -> (result, expiry)` mappings.
+//! Stores a digest of `(detector, credential, companions) -> (result, expiry)`.
 //! TTLs matter because live/dead status changes over time, and the cache stores
-//! only hashes so plaintext credentials are not retained in memory longer than needed.
+//! only hashes so plaintext request inputs are not retained in memory longer
+//! than needed.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -10,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use keyhog_core::{sha256_hash, CredentialHash, VerificationResult};
+use sha2::{Digest, Sha256};
 
 /// Bounded in-memory cache for verification outcomes.
 ///
@@ -29,7 +31,7 @@ pub(crate) struct VerificationCache {
     /// based on parallelism) replaces the previous single global RwLock so
     /// concurrent `get`/`put` calls touch different shards and never block
     /// each other on cacheline bouncing - see the internal design notes.
-    entries: DashMap<CacheKey, CacheEntry>,
+    entries: DashMap<VerificationIdentity, CacheEntry>,
     inserts: AtomicUsize,
     max_entries: usize,
     ttl: Duration,
@@ -42,13 +44,14 @@ pub(crate) struct VerificationCache {
     /// a later `put` leaves its old marker behind (generation mismatch); the
     /// eviction/reconcile paths skip such stale markers lazily instead of
     /// paying an O(queue) reposition on every refresh.
-    queue: parking_lot::Mutex<std::collections::VecDeque<(CacheKey, u64)>>,
+    queue: parking_lot::Mutex<std::collections::VecDeque<(VerificationIdentity, u64)>>,
 }
 
 #[derive(Hash, Eq, PartialEq, Clone)]
-struct CacheKey {
+pub(crate) struct VerificationIdentity {
     credential_hash: CredentialHash,
     detector_id_hash: CredentialHash,
+    companions_hash: CredentialHash,
 }
 
 struct CacheEntry {
@@ -146,7 +149,17 @@ impl VerificationCache {
         credential: &str,
         detector_id: &str,
     ) -> Option<(VerificationResult, HashMap<String, String>)> {
-        let key = cache_key(credential, detector_id);
+        self.get_with_companions(credential, detector_id, &HashMap::new())
+    }
+
+    /// Look up a result for the complete detector-owned verification identity.
+    pub(crate) fn get_with_companions(
+        &self,
+        credential: &str,
+        detector_id: &str,
+        companions: &HashMap<String, String>,
+    ) -> Option<(VerificationResult, HashMap<String, String>)> {
+        let key = verification_identity(credential, detector_id, companions);
         let now = Instant::now();
 
         // Per-shard read: O(1) hash, lock just one shard. Hot path for
@@ -194,7 +207,19 @@ impl VerificationCache {
         result: VerificationResult,
         metadata: HashMap<String, String>,
     ) {
-        let key = cache_key(credential, detector_id);
+        self.put_with_companions(credential, detector_id, &HashMap::new(), result, metadata);
+    }
+
+    /// Store a result under the complete detector-owned verification identity.
+    pub(crate) fn put_with_companions(
+        &self,
+        credential: &str,
+        detector_id: &str,
+        companions: &HashMap<String, String>,
+        result: VerificationResult,
+        metadata: HashMap<String, String>,
+    ) {
+        let key = verification_identity(credential, detector_id, companions);
 
         let insert_count = self.inserts.fetch_add(1, Ordering::Relaxed) + 1;
         if insert_count.is_multiple_of(Self::EVICTION_INTERVAL) {
@@ -360,7 +385,7 @@ impl VerificationCache {
         metadata: HashMap<String, String>,
     ) {
         self.entries.insert(
-            cache_key(credential, detector_id),
+            verification_identity(credential, detector_id, &HashMap::new()),
             CacheEntry {
                 result,
                 metadata: sanitize_metadata(metadata),
@@ -416,10 +441,29 @@ pub(crate) fn evict_oldest_dashmap_entries<K, V>(
     }
 }
 
-fn cache_key(credential: &str, detector_id: &str) -> CacheKey {
-    CacheKey {
+pub(crate) fn verification_identity(
+    credential: &str,
+    detector_id: &str,
+    companions: &HashMap<String, String>,
+) -> VerificationIdentity {
+    let mut companion_rows: Vec<(&str, &str)> = companions
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    companion_rows.sort_unstable();
+    let mut companions_hasher = Sha256::new();
+    companions_hasher.update(b"keyhog-verification-companions-v1\0");
+    companions_hasher.update((companion_rows.len() as u64).to_le_bytes());
+    for (name, value) in companion_rows {
+        companions_hasher.update((name.len() as u64).to_le_bytes());
+        companions_hasher.update(name.as_bytes());
+        companions_hasher.update((value.len() as u64).to_le_bytes());
+        companions_hasher.update(value.as_bytes());
+    }
+    VerificationIdentity {
         credential_hash: sha256_hash(credential),
         detector_id_hash: sha256_hash(detector_id),
+        companions_hash: CredentialHash::from_bytes(companions_hasher.finalize().into()),
     }
 }
 

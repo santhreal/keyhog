@@ -22,9 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
-use keyhog_core::{
-    redact, DedupedMatch, DetectorSpec, SensitiveString, VerificationResult, VerifiedFinding,
-};
+use keyhog_core::{redact, DedupedMatch, DetectorSpec, VerificationResult, VerifiedFinding};
 
 // Re-export dedup types from core so existing consumers (`use keyhog_verifier::DedupedMatch`)
 // continue to work without source changes.
@@ -73,10 +71,10 @@ pub struct VerificationEngine {
     timeout: Duration,
     /// Response cache to avoid re-verifying the same credential.
     cache: Arc<cache::VerificationCache>,
-    /// One in-flight request per (detector_id, credential). DashMap (per-shard
-    /// locking) replaces the previous parking_lot::Mutex<HashMap> which was an
-    /// async anti-pattern - see the internal design notes.
-    pub(crate) inflight: Arc<DashMap<(Arc<str>, SensitiveString), Arc<Notify>>>,
+    /// One in-flight request per complete hashed verification identity.
+    /// Companion values participate because detector TOML may interpolate them
+    /// into authentication, tenant, account, or endpoint fields.
+    pub(crate) inflight: Arc<DashMap<cache::VerificationIdentity, Arc<Notify>>>,
     pub(crate) inflight_count: Arc<AtomicUsize>,
     pub(crate) max_inflight_keys: usize,
     pub(crate) danger_allow_private_ips: bool,
@@ -451,10 +449,24 @@ pub mod testing {
             credential: &str,
             detector_id: &str,
         ) -> Option<(keyhog_core::VerificationResult, HashMap<String, String>)>;
+        fn get_with_companions(
+            &self,
+            credential: &str,
+            detector_id: &str,
+            companions: &HashMap<String, String>,
+        ) -> Option<(keyhog_core::VerificationResult, HashMap<String, String>)>;
         fn put(
             &self,
             credential: &str,
             detector_id: &str,
+            result: keyhog_core::VerificationResult,
+            metadata: HashMap<String, String>,
+        );
+        fn put_with_companions(
+            &self,
+            credential: &str,
+            detector_id: &str,
+            companions: &HashMap<String, String>,
             result: keyhog_core::VerificationResult,
             metadata: HashMap<String, String>,
         );
@@ -497,6 +509,16 @@ pub mod testing {
             self.0.get(credential, detector_id)
         }
 
+        fn get_with_companions(
+            &self,
+            credential: &str,
+            detector_id: &str,
+            companions: &HashMap<String, String>,
+        ) -> Option<(keyhog_core::VerificationResult, HashMap<String, String>)> {
+            self.0
+                .get_with_companions(credential, detector_id, companions)
+        }
+
         fn put(
             &self,
             credential: &str,
@@ -505,6 +527,18 @@ pub mod testing {
             metadata: HashMap<String, String>,
         ) {
             self.0.put(credential, detector_id, result, metadata);
+        }
+
+        fn put_with_companions(
+            &self,
+            credential: &str,
+            detector_id: &str,
+            companions: &HashMap<String, String>,
+            result: keyhog_core::VerificationResult,
+            metadata: HashMap<String, String>,
+        ) {
+            self.0
+                .put_with_companions(credential, detector_id, companions, result, metadata);
         }
 
         fn len(&self) -> usize {
