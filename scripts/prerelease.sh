@@ -303,6 +303,7 @@ check "bench gate" bash -c "cd benchmarks && python3 -m bench gate \
 step "coherence: README bench tables fresh"
 check "README bench tables up to date" make -C benchmarks report-check
 check "locked metadata matches manifests" bash -c "cargo metadata --locked --no-deps --format-version 1 >/dev/null"
+check "publishable crate licenses match canonical payloads" python3 -B scripts/gates/package_licenses.py
 check "documentation truth" python3 -B scripts/gates/docs_truth.py
 
 # ── 3. Rust test gates (CI-faithful) ─────────────────────────────────────────
