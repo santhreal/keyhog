@@ -5,7 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::super::evidence::{gpu_cold_warm_route_evidence, AutorouteDecision};
 use super::super::host::AutorouteHostProfile;
-use super::super::workload::render_workload_key;
+use super::super::workload::{
+    autoroute_stable_bucket, render_workload_key, validate_workload_source_mixture, WorkloadKey,
+};
 use super::super::AUTOROUTE_CALIBRATION_TRIALS;
 use super::artifact_identity::current_executable_sha256;
 use super::schema::{AutorouteBuildFeatures, AutorouteCache};
@@ -77,7 +79,15 @@ pub(super) fn validate_cache_structure_at(
         }
         let mut seen_workloads = HashSet::with_capacity(config.decisions.len());
         for (key, decision) in &config.decisions {
-            if !seen_workloads.insert(*key) {
+            validate_workload_source_mixture(key).map_err(|error| {
+                format!(
+                    "autoroute cache config {:016x} contains an invalid source mixture: {error}",
+                    config.config_digest
+                )
+            })?;
+            validate_decision_route_evidence_at(decision, current_unix_ms)?;
+            validate_decision_workload_binding(key, decision)?;
+            if !seen_workloads.insert(key.clone()) {
                 return Err(format!(
                     "autoroute cache config {:016x} contains duplicate autoroute workload decision for {}",
                     config.config_digest,
@@ -85,8 +95,25 @@ pub(super) fn validate_cache_structure_at(
                 )
                 .into());
             }
-            validate_decision_route_evidence_at(decision, current_unix_ms)?;
         }
+    }
+    Ok(())
+}
+
+pub(super) fn validate_decision_workload_binding(
+    key: &WorkloadKey,
+    decision: &AutorouteDecision,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let sample_chunks = u64::try_from(decision.sample_chunks)
+        .map_err(|_| "cache decision sample chunk count exceeds the supported u64 range")?;
+    if autoroute_stable_bucket(sample_chunks) != key.chunks_bucket
+        || autoroute_stable_bucket(decision.sample_bytes) != key.bytes_bucket
+    {
+        return Err(format!(
+            "cache decision sample evidence ({sample_chunks} chunks, {} bytes) does not match workload bands (chunks_log2={}, bytes_log2={})",
+            decision.sample_bytes, key.chunks_bucket, key.bytes_bucket
+        )
+        .into());
     }
     Ok(())
 }

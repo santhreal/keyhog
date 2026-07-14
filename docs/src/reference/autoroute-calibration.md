@@ -26,6 +26,16 @@ backend-dispatch boundary. Hyperscan uses its coalesced multi-chunk path. Scalar
 CPU and GPU use their normal batch paths. A timing row therefore measures the
 implementation that the persisted route authorizes.
 
+The workload key preserves the canonical source mixture, not only the set of
+source families. Each sorted, raw-family-free BLAKE3 identity and size-provenance
+entry records exact reduced chunk and payload proportions plus the maximum
+source-span band. Reordering chunks keeps the same complete workload key.
+Scaling every class equally keeps only the source-mixture component stable;
+size, admission, and decoder bands can still change. Any different reduced
+mixture, including 31:1 versus 1:31, requires its own measured route.
+Noncanonical, duplicate, inconsistent, or oversized persisted mixtures
+invalidate the cache instead of being normalized silently.
+
 Performance selection uses the median of the recorded trials, not the single
 fastest sample. If one route's 95% Student-t confidence interval is entirely
 below every competitor, it is the separated winner. If intervals overlap,

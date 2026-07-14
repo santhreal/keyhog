@@ -93,10 +93,14 @@ impl StableHasher {
     }
 
     pub(crate) fn finish_u64(&self) -> u64 {
-        let digest = self.inner.finalize();
+        let digest = self.finish_256();
         let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&digest.as_bytes()[..8]);
+        bytes.copy_from_slice(&digest[..8]);
         u64::from_le_bytes(bytes)
+    }
+
+    pub(crate) fn finish_256(&self) -> [u8; 32] {
+        *self.inner.finalize().as_bytes()
     }
 
     fn field_name(&mut self, name: &str) {

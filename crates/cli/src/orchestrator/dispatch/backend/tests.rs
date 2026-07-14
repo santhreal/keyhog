@@ -10,8 +10,10 @@ use super::store::{
 use super::workload::{
     autoroute_stable_bucket, autoroute_stable_decode_bucket, decode_workload_projection,
     decode_workload_sketch as decode_workload_sketch_with_plan, planned_decode_sample_bytes,
-    planned_decode_sample_quotas, source_class_hash, workload_key as workload_key_with_plan,
-    Phase1AdmissionKey, WorkloadKey,
+    planned_decode_sample_quotas, source_family_id, source_mixture_key,
+    validate_source_mixture_key, validate_workload_source_mixture,
+    workload_key as workload_key_with_plan, Phase1AdmissionKey, SourceMixtureEntry,
+    SourceMixtureKey, WorkloadKey,
 };
 use super::*;
 
@@ -192,23 +194,35 @@ fn test_host(gpu_name: Option<&str>) -> AutorouteHostProfile {
 
 fn test_workload_key() -> WorkloadKey {
     WorkloadKey {
-        bytes_bucket: 10,
-        chunks_bucket: 2,
-        max_file_bucket: 8,
+        bytes_bucket: 24,
+        chunks_bucket: 1,
+        max_file_bucket: 24,
         pattern_bucket: 5,
         phase1: Phase1AdmissionKey {
             alphabet_rejected_chunks_bucket: 0,
             alphabet_rejected_bytes_bucket: 0,
             bigram_rejected_chunks_bucket: 0,
             bigram_rejected_bytes_bucket: 0,
-            admitted_chunks_bucket: 2,
-            admitted_bytes_bucket: 10,
+            admitted_chunks_bucket: 1,
+            admitted_bytes_bucket: 24,
         },
         decode_kind_mask: keyhog_scanner::decode::DecodeAdmissionSketch::BASE64,
         decode_candidate_count_bucket: 2,
         decode_candidate_bytes_bucket: 3,
         decode_unknown: false,
-        source_class_hash: 0xAA55_AA55_AA55_AA55,
+        source_mixture: test_source_mixture("filesystem"),
+    }
+}
+
+fn test_source_mixture(family: &str) -> SourceMixtureKey {
+    SourceMixtureKey {
+        entries: vec![SourceMixtureEntry {
+            family_digest: source_family_id(family),
+            has_full_size: true,
+            chunk_ratio: 1,
+            payload_ratio: 1,
+            max_span_bucket: 24,
+        }],
     }
 }
 
@@ -441,7 +455,7 @@ fn write_tampered_decision_cache(
     expected_error: &str,
 ) {
     let mut bad_decisions = HashMap::new();
-    bad_decisions.insert(key, bad_decision.clone());
+    bad_decisions.insert(key.clone(), bad_decision.clone());
     let save_error = save_autoroute_cache(
         path,
         digest,
@@ -459,7 +473,7 @@ fn write_tampered_decision_cache(
 
     let mut valid_decisions = HashMap::new();
     valid_decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
     save_autoroute_cache(
@@ -520,7 +534,7 @@ fn workload_key_distinguishes_decoder_work_for_same_size_batches() {
     assert_eq!(plain_key.chunks_bucket, encoded_key.chunks_bucket);
     assert_eq!(plain_key.max_file_bucket, encoded_key.max_file_bucket);
     assert_eq!(plain_key.pattern_bucket, encoded_key.pattern_bucket);
-    assert_eq!(plain_key.source_class_hash, encoded_key.source_class_hash);
+    assert_eq!(plain_key.source_mixture, encoded_key.source_mixture);
     assert!(
         encoded_key.decode_candidate_bytes_bucket > plain_key.decode_candidate_bytes_bucket
             && encoded_key.decode_kind_mask & keyhog_scanner::decode::DecodeAdmissionSketch::BASE64
@@ -711,7 +725,7 @@ proptest::proptest! {
 
     #[test]
     fn workload_key_is_permutation_invariant_across_decoder_shapes(
-        shape_indices in proptest::collection::vec(0usize..9, 0..32)
+        shape_indices in proptest::collection::vec(0usize..9, 1..32)
     ) {
         const SHAPES: &[&str] = &[
             "ordinary prose. short words.",
@@ -739,7 +753,7 @@ proptest::proptest! {
         let expected = workload_key(&forward, 902).expect("forward workload classified");
         proptest::prop_assert_eq!(
             workload_key(&reversed, 902).expect("reversed workload classified"),
-            expected
+            expected.clone()
         );
         proptest::prop_assert_eq!(
             workload_key(&rotated, 902).expect("rotated workload classified"),
@@ -910,16 +924,22 @@ fn calibration_tree_representatives_cover_default_fused_residual_chunk_keys() {
 }
 
 #[test]
-fn source_class_hash_uses_stable_top_level_source_family() {
-    let plain = source_class_hash(&[test_chunk_with_source("a".repeat(64), "filesystem")])
-        .expect("filesystem source class hashes");
-    let mixed_filesystem = source_class_hash(&[
+fn source_mixture_uses_stable_top_level_source_family() {
+    let plain = source_mixture_key(&[
+        test_chunk_with_source("a".repeat(64), "filesystem"),
+        test_chunk_with_source("a".repeat(64), "filesystem"),
+    ])
+    .expect("filesystem source mixture classifies");
+    let mixed_filesystem = source_mixture_key(&[
         test_chunk_with_source("a".repeat(64), "filesystem/windowed"),
         test_chunk_with_source("a".repeat(64), "filesystem/archive"),
     ])
-    .expect("filesystem subtype source classes hash");
-    let docker = source_class_hash(&[test_chunk_with_source("a".repeat(64), "docker")])
-        .expect("docker source class hashes");
+    .expect("filesystem subtype source mixture classifies");
+    let docker = source_mixture_key(&[
+        test_chunk_with_source("a".repeat(64), "docker"),
+        test_chunk_with_source("a".repeat(64), "docker"),
+    ])
+    .expect("docker source mixture classifies");
 
     assert_eq!(
         plain, mixed_filesystem,
@@ -944,28 +964,345 @@ fn workload_key_separates_full_source_size_from_payload_size_fallback() {
     assert_eq!(full_key.bytes_bucket, transformed_key.bytes_bucket);
     assert_eq!(full_key.max_file_bucket, transformed_key.max_file_bucket);
     assert_ne!(
-        full_key.source_class_hash, transformed_key.source_class_hash,
+        full_key.source_mixture, transformed_key.source_mixture,
         "autoroute must not reuse full-source measurements for stream/transformation payload sizes"
     );
 }
 
 #[test]
-fn source_class_hash_associates_size_provenance_with_each_source_family() {
+fn source_mixture_associates_size_provenance_with_each_source_family() {
     let mut filesystem = test_chunk_with_source("a".repeat(64), "filesystem/windowed");
     let mut web = test_chunk_with_source("b".repeat(64), "web:js");
     filesystem.metadata.size_bytes = None;
-    let filesystem_payload =
-        source_class_hash(&[filesystem.clone(), web.clone()]).expect("mixed source classes hash");
+    let filesystem_payload = source_mixture_key(&[filesystem.clone(), web.clone()])
+        .expect("mixed source mixture classifies");
 
     filesystem.metadata.size_bytes = Some(64);
     web.metadata.size_bytes = None;
     let web_payload =
-        source_class_hash(&[filesystem, web]).expect("reversed size provenance hashes");
+        source_mixture_key(&[filesystem, web]).expect("reversed size provenance classifies");
 
     assert_ne!(
         filesystem_payload, web_payload,
         "equal source sets with different per-family size provenance need distinct calibration keys"
     );
+}
+
+#[test]
+fn source_mixture_separates_inverse_shares_and_ignores_chunk_order() {
+    let mixture = |total: usize, filesystem_chunks: usize| {
+        (0..total)
+            .map(|index| {
+                test_chunk_with_source(
+                    "x".repeat(64),
+                    if index < filesystem_chunks {
+                        "filesystem/windowed"
+                    } else {
+                        "web:response"
+                    },
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let dominant_filesystem = mixture(32, 31);
+    let dominant_web = mixture(32, 1);
+    let filesystem_key = source_mixture_key(&dominant_filesystem).expect("31:1 classifies");
+    let web_key = source_mixture_key(&dominant_web).expect("1:31 classifies");
+    assert_ne!(filesystem_key, web_key, "inverse mixtures must not alias");
+
+    let mut permuted = dominant_filesystem.clone();
+    permuted.reverse();
+    assert_eq!(
+        source_mixture_key(&permuted).expect("permuted mixture classifies"),
+        filesystem_key,
+        "source mixture identity must be permutation invariant"
+    );
+    assert_ne!(
+        source_mixture_key(&mixture(32, 30)).expect("30:2 classifies"),
+        filesystem_key,
+        "every different source proportion must change identity"
+    );
+
+    let formerly_aliased_17 = source_mixture_key(&mixture(1024, 17)).expect("17:1007 classifies");
+    let formerly_aliased_18 = source_mixture_key(&mixture(1024, 18)).expect("18:1006 classifies");
+    assert_ne!(
+        formerly_aliased_17, formerly_aliased_18,
+        "exact mixture identity must not alias proportions within an old 1/64 share bin"
+    );
+
+    let full_filesystem_key = workload_key(&dominant_filesystem, 902).expect("31:1 key classifies");
+    let full_web_key = workload_key(&dominant_web, 902).expect("1:31 key classifies");
+    assert_ne!(full_filesystem_key, full_web_key);
+    let mut without_mixture = full_filesystem_key.clone();
+    without_mixture.source_mixture = full_web_key.source_mixture.clone();
+    assert_eq!(
+        without_mixture, full_web_key,
+        "equal-layout inverse batches must differ only in their exact source mixture"
+    );
+}
+
+#[test]
+fn source_mixture_validation_rejects_noncanonical_persisted_entries() {
+    let mut key = SourceMixtureKey {
+        entries: vec![
+            test_source_mixture("web")
+                .entries
+                .into_iter()
+                .next()
+                .unwrap(),
+            test_source_mixture("filesystem")
+                .entries
+                .into_iter()
+                .next()
+                .unwrap(),
+        ],
+    };
+    assert!(validate_source_mixture_key(&key).is_err());
+    key.entries.sort();
+    key.entries[0].chunk_ratio = 0;
+    assert!(validate_source_mixture_key(&key).is_err());
+
+    let mut unreduced = test_source_mixture("filesystem");
+    unreduced.entries[0].chunk_ratio = 2;
+    unreduced.entries[0].payload_ratio = 2;
+    assert!(validate_source_mixture_key(&unreduced).is_err());
+
+    let mut zero_payload = test_workload_key();
+    zero_payload.source_mixture.entries[0].payload_ratio = 0;
+    zero_payload.source_mixture.entries[0].max_span_bucket = 0;
+    zero_payload.max_file_bucket = 0;
+    assert!(validate_workload_source_mixture(&zero_payload).is_err());
+
+    let mut impossible_payload_span = test_workload_key();
+    impossible_payload_span.source_mixture.entries[0].has_full_size = false;
+    impossible_payload_span.source_mixture.entries[0].max_span_bucket = 25;
+    impossible_payload_span.max_file_bucket = 25;
+    assert!(validate_workload_source_mixture(&impossible_payload_span).is_err());
+
+    let mut parent_mismatch = test_workload_key();
+    parent_mismatch.source_mixture.entries[0].max_span_bucket = 23;
+    assert!(validate_workload_source_mixture(&parent_mismatch).is_err());
+
+    assert!(source_mixture_key(&[]).is_err());
+    assert!(source_mixture_key(&[test_chunk(String::new())]).is_err());
+    let source_classes = |count: usize| {
+        (0..count)
+            .map(|index| test_chunk_with_source("x".into(), &format!("source-{index}")))
+            .collect::<Vec<_>>()
+    };
+    assert!(source_mixture_key(&source_classes(64)).is_ok());
+    assert!(source_mixture_key(&source_classes(65)).is_err());
+}
+
+#[test]
+fn exact_source_mixtures_survive_cache_replay_and_inspection() {
+    let mixture = |filesystem_chunks: usize| {
+        (0..32)
+            .map(|index| {
+                test_chunk_with_source(
+                    "x".repeat(64),
+                    if index < filesystem_chunks {
+                        "filesystem/windowed"
+                    } else {
+                        "web:response"
+                    },
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let filesystem_key = workload_key(&mixture(31), 902).expect("31:1 workload classifies");
+    let web_key = workload_key(&mixture(1), 902).expect("1:31 workload classifies");
+    let dir = tempfile::TempDir::new().expect("tempdir for exact mixture replay");
+    let path = dir.path().join("mixtures.json");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        filesystem_key.clone(),
+        AutorouteDecision::new(ScanBackend::SimdCpu, 2_048, 32, 12, None, None),
+    );
+    decisions.insert(
+        web_key.clone(),
+        AutorouteDecision::new(ScanBackend::CpuFallback, 2_048, 32, 13, Some(7), None),
+    );
+
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &decisions,
+    )
+    .expect("inverse source mixtures persist");
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+        .expect("inverse source mixtures reload");
+    assert_eq!(loaded, decisions);
+    assert_eq!(
+        loaded
+            .get(&filesystem_key)
+            .and_then(AutorouteDecision::backend),
+        Some(ScanBackend::SimdCpu)
+    );
+    assert_eq!(
+        loaded.get(&web_key).and_then(AutorouteDecision::backend),
+        Some(ScanBackend::CpuFallback)
+    );
+    let unmeasured_key = workload_key(&mixture(30), 902).expect("30:2 workload classifies");
+    assert!(
+        resolve_persisted_backend(
+            &loaded,
+            unmeasured_key,
+            AutorouteRuntimeClass::OneShot,
+            &Some(path.clone()),
+            &None,
+        )
+        .is_err(),
+        "an unmeasured neighboring mixture must fail closed"
+    );
+
+    let inspection = inspect_autoroute_cache(Some(&path));
+    assert!(
+        inspection.error.is_none(),
+        "inspection: {:?}",
+        inspection.error
+    );
+    let rows = &inspection.configs[0].decisions;
+    assert_eq!(rows.len(), 2);
+    assert_ne!(rows[0].workload, rows[1].workload);
+    assert!(rows
+        .iter()
+        .all(|row| { !row.workload.contains("filesystem") && !row.workload.contains("web") }));
+}
+
+#[test]
+fn cache_rejects_noncanonical_source_mixture_on_save_and_load() {
+    let batch = [
+        test_chunk_with_source("x".repeat(64), "filesystem"),
+        test_chunk_with_source("y".repeat(64), "web"),
+    ];
+    let valid_key = workload_key(&batch, 902).expect("mixed workload classifies");
+    let mut invalid_key = valid_key.clone();
+    invalid_key.source_mixture.entries.reverse();
+    let decision = AutorouteDecision::new(ScanBackend::SimdCpu, 128, 2, 12, None, None);
+    let dir = tempfile::TempDir::new().expect("tempdir for source-mixture rejection");
+    let rejected_path = dir.path().join("rejected-save.json");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let invalid = HashMap::from([(invalid_key.clone(), decision.clone())]);
+    let save_error = save_autoroute_cache(
+        &rejected_path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &invalid,
+    )
+    .expect_err("noncanonical source mixture must fail before persistence")
+    .to_string();
+    assert!(save_error.contains("duplicate or not canonically sorted"));
+    assert!(!rejected_path.exists());
+
+    let tampered_path = dir.path().join("tampered-load.json");
+    save_autoroute_cache(
+        &tampered_path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &HashMap::from([(valid_key, decision)]),
+    )
+    .expect("valid source mixture persists before tampering");
+    let mut cache: AutorouteCache = serde_json::from_slice(
+        &std::fs::read(&tampered_path).expect("read valid source-mixture cache"),
+    )
+    .expect("deserialize valid source-mixture cache");
+    cache.configs[0].decisions[0]
+        .0
+        .source_mixture
+        .entries
+        .reverse();
+    std::fs::write(
+        &tampered_path,
+        serde_json::to_vec_pretty(&cache).expect("serialize tampered source-mixture cache"),
+    )
+    .expect("write tampered source-mixture cache");
+    let load_error = load_autoroute_cache(
+        &tampered_path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+    )
+    .expect_err("noncanonical persisted source mixture must fail closed")
+    .to_string();
+    assert!(load_error.contains("duplicate or not canonically sorted"));
+    let inspection = inspect_autoroute_cache(Some(&tampered_path));
+    assert!(inspection.error.is_some());
+    assert!(inspection.configs.is_empty());
+}
+
+#[test]
+fn mismatched_sample_evidence_never_clobbers_or_replays() {
+    let dir = tempfile::TempDir::new().expect("tempdir for sample binding");
+    let path = dir.path().join("sample-binding.json");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+    let valid = HashMap::from([(
+        key.clone(),
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    )]);
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &valid,
+    )
+    .expect("valid sample binding persists");
+    let original = std::fs::read(&path).expect("read valid sample-bound cache");
+
+    let mismatched = HashMap::from([(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 4 * 1024 * 1024, 1, 12, None, None),
+    )]);
+    let save_error = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &mismatched,
+    )
+    .expect_err("mismatched sample evidence must fail before persistence")
+    .to_string();
+    assert!(save_error.contains("does not match workload bands"));
+    assert_eq!(
+        std::fs::read(&path).expect("read cache after rejected replacement"),
+        original,
+        "a rejected save must preserve the prior cache byte-for-byte"
+    );
+
+    let mut cache: AutorouteCache =
+        serde_json::from_slice(&original).expect("deserialize valid sample-bound cache");
+    cache.configs[0].decisions[0].1.sample_bytes = 4 * 1024 * 1024;
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&cache).expect("serialize tampered sample binding"),
+    )
+    .expect("write tampered sample binding");
+    let load_error = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+        .expect_err("mismatched persisted sample evidence must fail closed")
+        .to_string();
+    assert!(load_error.contains("does not match workload bands"));
+    let inspection = inspect_autoroute_cache(Some(&path));
+    assert!(inspection.error.is_some());
+    assert!(inspection.configs.is_empty());
 }
 
 #[test]
@@ -1023,7 +1360,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, Some(40)),
     );
 
@@ -1068,7 +1405,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && !serialized.contains("\"confidence_interval_95_ns\"")
             && !serialized.contains("\"best_ns\"")
             && !serialized.contains("\"mean_ns\""),
-        // v29 persists primary timing evidence and per-candidate parity receipts.
+        // v30 persists primary timing evidence and per-candidate parity receipts.
         // GPU cold/warm/route, and selected-margin keys are derived from the
         // trial vectors on load, never stored.
         "cache JSON must persist route timing evidence, not only the selected backend"
@@ -1079,7 +1416,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
 
     let mut replacement = HashMap::new();
     replacement.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(
             ScanBackend::CpuFallback,
             8 * 1024 * 1024,
@@ -1230,13 +1567,7 @@ fn concurrent_autoroute_calibrations_preserve_every_config() {
             let barrier = std::sync::Arc::clone(&barrier);
             std::thread::spawn(move || {
                 let mut decisions = HashMap::new();
-                decisions.insert(
-                    WorkloadKey {
-                        bytes_bucket: index as u8,
-                        ..test_workload_key()
-                    },
-                    cpu_decision(ScanBackend::SimdCpu),
-                );
+                decisions.insert(test_workload_key(), cpu_decision(ScanBackend::SimdCpu));
                 barrier.wait();
                 save_autoroute_cache(
                     &path,
@@ -1287,8 +1618,14 @@ fn multi_config_cache_accumulates_buckets_across_sequential_saves() {
     let host = test_host(None);
 
     let small_key = test_workload_key();
-    let mut large_key = small_key;
+    let mut large_key = small_key.clone();
     large_key.bytes_bucket = large_key.bytes_bucket.saturating_add(3);
+    large_key.max_file_bucket = large_key.max_file_bucket.saturating_add(3);
+    large_key.phase1.admitted_bytes_bucket =
+        large_key.phase1.admitted_bytes_bucket.saturating_add(3);
+    large_key.source_mixture.entries[0].max_span_bucket = large_key.source_mixture.entries[0]
+        .max_span_bucket
+        .saturating_add(3);
     assert_ne!(
         small_key, large_key,
         "test needs two distinct workload buckets"
@@ -1296,7 +1633,7 @@ fn multi_config_cache_accumulates_buckets_across_sequential_saves() {
 
     let mut first = HashMap::new();
     first.insert(
-        small_key,
+        small_key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
     save_autoroute_cache(
@@ -1311,10 +1648,10 @@ fn multi_config_cache_accumulates_buckets_across_sequential_saves() {
 
     let mut second = HashMap::new();
     second.insert(
-        large_key,
+        large_key.clone(),
         AutorouteDecision::new(
             ScanBackend::CpuFallback,
-            8 * 1024 * 1024,
+            64 * 1024 * 1024,
             1,
             13,
             Some(7),
@@ -1363,7 +1700,7 @@ fn multi_config_cache_keeps_distinct_presets_side_by_side() {
 
     let mut default_decisions = HashMap::new();
     default_decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
     save_autoroute_cache(
@@ -1378,7 +1715,7 @@ fn multi_config_cache_keeps_distinct_presets_side_by_side() {
 
     let mut fast_decisions = HashMap::new();
     fast_decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(
             ScanBackend::CpuFallback,
             8 * 1024 * 1024,
@@ -1430,7 +1767,7 @@ fn multi_config_cache_upserts_same_bucket_without_duplicating() {
 
     let mut first = HashMap::new();
     first.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
     save_autoroute_cache(
@@ -1445,7 +1782,7 @@ fn multi_config_cache_upserts_same_bucket_without_duplicating() {
 
     let mut second = HashMap::new();
     second.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(
             ScanBackend::CpuFallback,
             8 * 1024 * 1024,
@@ -1500,7 +1837,7 @@ fn exact_median_tie_persists_lowest_overhead_backend() {
         "a SimdCpu/GPU tie must resolve to the lowest-overhead route (SimdCpu)"
     );
     let mut decisions = HashMap::new();
-    decisions.insert(key, tie_to_simd);
+    decisions.insert(key.clone(), tie_to_simd);
     save_autoroute_cache(
         &path,
         digest,
@@ -1520,7 +1857,7 @@ fn exact_median_tie_persists_lowest_overhead_backend() {
     // The same exact median tie naming the higher-overhead GPU must be rejected.
     let mut wrong = HashMap::new();
     wrong.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::GpuWgpu, 8 * 1024 * 1024, 1, 20, None, Some(20)),
     );
     let err = save_autoroute_cache(
@@ -1713,19 +2050,19 @@ fn autoroute_cache_rejects_v25_decode_density_identity_before_payload_decode() {
         0xA55A_D00D_CAFE_BEEF,
         &test_host(None),
     )
-    .expect_err("v25 decode-density identity must never be reused as v29 decoder work")
+    .expect_err("v25 decode-density identity must never be reused as v30 decoder work")
     .to_string();
     let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 
     assert!(
         error.contains("unsupported autoroute cache version 25")
-            && error.contains("expects 29")
+            && error.contains("expects 30")
             && error.contains("re-run calibration"),
         "v25 migration failure must be version-first and actionable: {error}"
     );
     assert!(
         !error.contains("missing field") && !error.contains("unknown field"),
-        "v25 payload must not reach the v29 workload deserializer: {error}"
+        "v25 payload must not reach the v30 workload deserializer: {error}"
     );
 }
 
@@ -1754,13 +2091,48 @@ fn autoroute_cache_rejects_v28_before_phase1_identity_decode() {
 
     assert!(
         error.contains("unsupported autoroute cache version 28")
-            && error.contains("expects 29")
+            && error.contains("expects 30")
             && error.contains("re-run calibration"),
         "v28 migration failure must be version-first and actionable: {error}"
     );
     assert!(
         !error.contains("missing field") && !error.contains("unknown field"),
-        "v28 payload must not reach the v29 phase-one identity deserializer: {error}"
+        "v28 payload must not reach the v30 phase-one identity deserializer: {error}"
+    );
+}
+
+#[test]
+fn autoroute_cache_rejects_v29_before_source_mixture_decode() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_v29_source_mixture_{}.json",
+        std::process::id()
+    ));
+    std::fs::write(
+        &path,
+        br#"{"version":29,"configs":[{"decisions":[[{"source_class_hash":1},{}]]}]}"#,
+    )
+    .expect("write v29 cache");
+
+    let error = load_autoroute_cache(
+        &path,
+        0x1234_5678_9ABC_DEF0,
+        test_rules_digest(),
+        0xA55A_D00D_CAFE_BEEF,
+        &test_host(None),
+    )
+    .expect_err("v29 identity must never be reused without exact source mixtures")
+    .to_string();
+    let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+
+    assert!(
+        error.contains("unsupported autoroute cache version 29")
+            && error.contains("expects 30")
+            && error.contains("re-run calibration"),
+        "v29 migration failure must be version-first and actionable: {error}"
+    );
+    assert!(
+        !error.contains("missing field") && !error.contains("unknown field"),
+        "v29 payload must not reach the v30 source-mixture deserializer: {error}"
     );
 }
 
@@ -1789,7 +2161,7 @@ fn autoroute_cache_save_reports_when_it_replaces_outdated_evidence() {
 
     match outcome {
         AutorouteCacheSaveOutcome::Replaced { reason } => assert!(
-            reason.contains("schema 1") && reason.contains("schema 29"),
+            reason.contains("schema 1") && reason.contains("schema 30"),
             "replacement disposition must explain both schema identities: {reason}"
         ),
         _ => panic!("outdated cache replacement must be operator-visible"),
@@ -1809,7 +2181,7 @@ fn autoroute_cache_rejects_different_build_feature_set() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
 
@@ -1863,7 +2235,7 @@ fn autoroute_cache_rejects_duplicate_workload_decisions() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
 
@@ -1975,7 +2347,7 @@ fn autoroute_cache_rejects_empty_decision_set() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
 
@@ -2054,11 +2426,11 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
     let mut measured_this_run = HashSet::new();
-    measured_this_run.insert(key);
+    measured_this_run.insert(key.clone());
     let mut router = MeasuredBackendRouter {
         pattern_count: 902,
         decode_workload_plan: test_decode_workload_plan(),
@@ -2100,7 +2472,7 @@ fn measured_router_drop_does_not_persist_dirty_cache() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
     {
@@ -2136,15 +2508,15 @@ fn measured_router_commit_discards_unmeasured_stale_decisions() {
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired pre-state, recall-irrelevant
     let host = test_host(None);
     let measured_key = test_workload_key();
-    let mut stale_key = measured_key;
+    let mut stale_key = measured_key.clone();
     stale_key.bytes_bucket = stale_key.bytes_bucket.saturating_add(1);
     let mut decisions = HashMap::new();
     decisions.insert(
-        measured_key,
+        measured_key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
     decisions.insert(
-        stale_key,
+        stale_key.clone(),
         AutorouteDecision::new(
             ScanBackend::CpuFallback,
             8 * 1024 * 1024,
@@ -2155,7 +2527,7 @@ fn measured_router_commit_discards_unmeasured_stale_decisions() {
         ),
     );
     let mut measured_this_run = HashSet::new();
-    measured_this_run.insert(measured_key);
+    measured_this_run.insert(measured_key.clone());
     let mut router = MeasuredBackendRouter {
         pattern_count: 902,
         decode_workload_plan: test_decode_workload_plan(),
@@ -2201,7 +2573,7 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(
             ScanBackend::CpuFallback,
             8 * 1024 * 1024,
@@ -2232,7 +2604,7 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
         None,
         "calibration mode must not reuse a persisted cache row before this run remeasures the bucket"
     );
-    router.measured_this_run.insert(key);
+    router.measured_this_run.insert(key.clone());
     assert_eq!(
         router.reusable_decision_backend(&key),
         Some(ScanBackend::CpuFallback),
@@ -2290,9 +2662,17 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     );
 
     let mut decisions = HashMap::new();
+    let hit_sample_bytes = hit_batch.iter().map(|chunk| chunk.data.len() as u64).sum();
     decisions.insert(
         hit_key,
-        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 9, Some(12), None),
+        AutorouteDecision::new(
+            ScanBackend::SimdCpu,
+            hit_sample_bytes,
+            hit_batch.len(),
+            9,
+            Some(12),
+            None,
+        ),
     );
     save_autoroute_cache(
         &path,
@@ -2350,7 +2730,7 @@ fn autoroute_cache_rejects_missing_cpu_model_identity() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
 
@@ -2384,7 +2764,7 @@ fn autoroute_cache_rejects_missing_core_topology_identity() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
 
@@ -2439,7 +2819,7 @@ fn autoroute_cache_rejects_missing_memory_identity() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
 
@@ -2493,7 +2873,7 @@ fn autoroute_cache_rejects_missing_gpu_runtime_identity() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, Some(40)),
     );
 
@@ -2547,7 +2927,7 @@ fn autoroute_cache_rejects_empty_or_impossible_gpu_runtime_identity() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, Some(40)),
     );
 
@@ -2640,7 +3020,7 @@ fn autoroute_cache_allows_software_gpu_without_runtime_identity() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
 
@@ -2686,7 +3066,7 @@ fn autoroute_cache_rejects_software_gpu_runtime_without_driver_identity() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
 
@@ -2742,7 +3122,7 @@ fn autoroute_cache_rejects_selected_backend_without_timing_evidence() {
         digest,
         config_digest,
         &host,
-        key,
+        key.clone(),
         bad,
         "selected backend is missing timing evidence",
     );
@@ -2776,7 +3156,7 @@ fn autoroute_cache_rejects_missing_calibration_sample_evidence() {
         digest,
         config_digest,
         &host,
-        key,
+        key.clone(),
         bad,
         "missing calibration sample evidence",
     );
@@ -2807,7 +3187,7 @@ fn autoroute_cache_rejects_future_calibration_timestamps_everywhere() {
         digest,
         config_digest,
         &host,
-        key,
+        key.clone(),
         bad,
         "in the future relative to the system clock",
     );
@@ -2849,7 +3229,7 @@ fn autoroute_inspection_reports_exact_persisted_timestamp_and_derived_age() {
     let decision = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
     assert_eq!(decision.calibrated_at_unix_ms, 1);
     let mut decisions = HashMap::new();
-    decisions.insert(key, decision);
+    decisions.insert(key.clone(), decision);
     save_autoroute_cache(
         &path,
         digest,
@@ -2900,7 +3280,7 @@ fn autoroute_cache_rejects_retired_backend_alias_labels() {
         digest,
         config_digest,
         &host,
-        key,
+        key.clone(),
         bad,
         "unsupported backend decision",
     );
@@ -2936,7 +3316,7 @@ fn autoroute_cache_rejects_zero_duration_timing_evidence() {
         digest,
         config_digest,
         &host,
-        key,
+        key.clone(),
         bad,
         "invalid SIMD timing evidence",
     );
@@ -2967,7 +3347,7 @@ fn autoroute_cache_rejects_noncanonical_trial_count_on_load_and_inspection() {
         digest,
         config_digest,
         &host,
-        key,
+        key.clone(),
         bad,
         "expected exactly 7",
     );
@@ -3027,7 +3407,7 @@ fn autoroute_cache_rejects_extra_backend_trials_on_load_and_inspection() {
             digest,
             config_digest,
             &host,
-            key,
+            key.clone(),
             bad,
             expected_error,
         );
@@ -3058,7 +3438,7 @@ fn autoroute_cache_rejects_non_primary_timing_summary_fields() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
     );
     save_autoroute_cache(
@@ -3551,7 +3931,7 @@ fn autoroute_cache_rejects_missing_correctness_digest() {
         digest,
         config_digest,
         &host,
-        key,
+        key.clone(),
         bad,
         "missing correctness digest",
     );
@@ -3592,7 +3972,7 @@ fn autoroute_cache_binds_every_timing_row_to_one_parity_receipt() {
         digest,
         config_digest,
         &host,
-        key,
+        key.clone(),
         missing,
         "candidate receipt set does not match timing evidence",
     );
@@ -3611,7 +3991,7 @@ fn autoroute_cache_binds_every_timing_row_to_one_parity_receipt() {
         digest,
         config_digest,
         &host,
-        key,
+        key.clone(),
         divergent,
         "does not match the reference correctness digest",
     );
@@ -3630,7 +4010,7 @@ fn autoroute_cache_binds_every_timing_row_to_one_parity_receipt() {
         digest,
         config_digest,
         &host,
-        key,
+        key.clone(),
         timing_mutation,
         "does not match its timing evidence",
     );
@@ -3697,7 +4077,7 @@ fn autoroute_cache_rejects_selected_backend_that_is_not_fastest() {
         digest,
         config_digest,
         &host,
-        key,
+        key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, Some(10), None),
         "selected backend is not the fastest persisted timing evidence",
     );
@@ -3751,7 +4131,7 @@ fn autoroute_cache_rejects_selected_backend_beaten_by_separated_confidence() {
         digest,
         config_digest,
         &host,
-        key,
+        key.clone(),
         bad,
         "selected backend is not the fastest persisted timing evidence",
     );
@@ -3809,7 +4189,7 @@ fn gpu_decision() -> AutorouteDecision {
 fn bucket_resolution_exact_hit_wins() {
     let key = test_workload_key();
     let mut decisions = HashMap::new();
-    decisions.insert(key, cpu_decision(ScanBackend::SimdCpu));
+    decisions.insert(key.clone(), cpu_decision(ScanBackend::SimdCpu));
     assert_eq!(
         resolve_bucket(&decisions, &key),
         BucketResolution::Exact(ScanBackend::SimdCpu)
@@ -3823,18 +4203,18 @@ fn bucket_resolution_rejects_agreeing_cpu_neighbours() {
     let base = test_workload_key();
     let lo = WorkloadKey {
         bytes_bucket: 8,
-        ..base
+        ..base.clone()
     };
     let hi = WorkloadKey {
         bytes_bucket: 12,
-        ..base
+        ..base.clone()
     };
     let mut decisions = HashMap::new();
     decisions.insert(lo, cpu_decision(ScanBackend::SimdCpu));
     decisions.insert(hi, cpu_decision(ScanBackend::SimdCpu));
     let requested = WorkloadKey {
         bytes_bucket: 10,
-        ..base
+        ..base.clone()
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
@@ -3849,20 +4229,20 @@ fn persisted_router_rejects_agreeing_neighbours_without_exact_evidence() {
     decisions.insert(
         WorkloadKey {
             bytes_bucket: 8,
-            ..base
+            ..base.clone()
         },
         cpu_decision(ScanBackend::SimdCpu),
     );
     decisions.insert(
         WorkloadKey {
             bytes_bucket: 12,
-            ..base
+            ..base.clone()
         },
         cpu_decision(ScanBackend::SimdCpu),
     );
     let requested = WorkloadKey {
         bytes_bucket: 10,
-        ..base
+        ..base.clone()
     };
 
     let error = resolve_persisted_backend(
@@ -3975,20 +4355,20 @@ fn bucket_resolution_rejects_neighbours_along_max_file_axis() {
     decisions.insert(
         WorkloadKey {
             max_file_bucket: 4,
-            ..base
+            ..base.clone()
         },
         cpu_decision(ScanBackend::CpuFallback),
     );
     decisions.insert(
         WorkloadKey {
             max_file_bucket: 10,
-            ..base
+            ..base.clone()
         },
         cpu_decision(ScanBackend::CpuFallback),
     );
     let requested = WorkloadKey {
         max_file_bucket: 7,
-        ..base
+        ..base.clone()
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
@@ -4005,20 +4385,20 @@ fn bucket_resolution_fails_closed_when_cpu_neighbours_disagree() {
     decisions.insert(
         WorkloadKey {
             bytes_bucket: 8,
-            ..base
+            ..base.clone()
         },
         cpu_decision(ScanBackend::SimdCpu),
     );
     decisions.insert(
         WorkloadKey {
             bytes_bucket: 12,
-            ..base
+            ..base.clone()
         },
         cpu_decision(ScanBackend::CpuFallback),
     );
     let requested = WorkloadKey {
         bytes_bucket: 10,
-        ..base
+        ..base.clone()
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
@@ -4035,20 +4415,20 @@ fn bucket_resolution_never_interpolates_across_gpu_buckets() {
     decisions.insert(
         WorkloadKey {
             bytes_bucket: 8,
-            ..base
+            ..base.clone()
         },
         gpu_decision(),
     );
     decisions.insert(
         WorkloadKey {
             bytes_bucket: 12,
-            ..base
+            ..base.clone()
         },
         gpu_decision(),
     );
     let requested = WorkloadKey {
         bytes_bucket: 10,
-        ..base
+        ..base.clone()
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
@@ -4065,13 +4445,13 @@ fn bucket_resolution_requires_both_brackets() {
     decisions.insert(
         WorkloadKey {
             bytes_bucket: 8,
-            ..base
+            ..base.clone()
         },
         cpu_decision(ScanBackend::SimdCpu),
     );
     let requested = WorkloadKey {
         bytes_bucket: 10,
-        ..base
+        ..base.clone()
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
@@ -4081,30 +4461,30 @@ fn bucket_resolution_requires_both_brackets() {
 
 #[test]
 fn bucket_resolution_does_not_cross_non_size_dimensions() {
-    // Neighbours that differ on a NON-size dimension (here source_class_hash)
+    // Neighbours that differ on a NON-size dimension (here source mixture)
     // describe a different workload shape and must not bracket the request.
     let base = test_workload_key();
     let mut decisions = HashMap::new();
     decisions.insert(
         WorkloadKey {
             bytes_bucket: 8,
-            source_class_hash: 0x1111_1111_1111_1111,
-            ..base
+            source_mixture: test_source_mixture("filesystem"),
+            ..base.clone()
         },
         cpu_decision(ScanBackend::SimdCpu),
     );
     decisions.insert(
         WorkloadKey {
             bytes_bucket: 12,
-            source_class_hash: 0x1111_1111_1111_1111,
-            ..base
+            source_mixture: test_source_mixture("filesystem"),
+            ..base.clone()
         },
         cpu_decision(ScanBackend::SimdCpu),
     );
     let requested = WorkloadKey {
         bytes_bucket: 10,
-        source_class_hash: 0x2222_2222_2222_2222,
-        ..base
+        source_mixture: test_source_mixture("web"),
+        ..base.clone()
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
@@ -4124,7 +4504,7 @@ fn bucket_resolution_rejects_below_floor_cpu_extrapolation() {
         WorkloadKey {
             bytes_bucket: 8,
             max_file_bucket: 8,
-            ..base
+            ..base.clone()
         },
         cpu_decision(ScanBackend::SimdCpu),
     );
@@ -4132,14 +4512,14 @@ fn bucket_resolution_rejects_below_floor_cpu_extrapolation() {
         WorkloadKey {
             bytes_bucket: 12,
             max_file_bucket: 12,
-            ..base
+            ..base.clone()
         },
         cpu_decision(ScanBackend::SimdCpu),
     );
     let requested = WorkloadKey {
         bytes_bucket: 3,
         max_file_bucket: 3,
-        ..base
+        ..base.clone()
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
@@ -4155,12 +4535,12 @@ fn bucket_resolution_rejects_between_single_file_rungs() {
     let lo = WorkloadKey {
         bytes_bucket: 6,
         max_file_bucket: 6,
-        ..base
+        ..base.clone()
     };
     let hi = WorkloadKey {
         bytes_bucket: 8,
         max_file_bucket: 8,
-        ..base
+        ..base.clone()
     };
     let mut decisions = HashMap::new();
     decisions.insert(lo, cpu_decision(ScanBackend::SimdCpu));
@@ -4168,7 +4548,7 @@ fn bucket_resolution_rejects_between_single_file_rungs() {
     let requested = WorkloadKey {
         bytes_bucket: 7,
         max_file_bucket: 7,
-        ..base
+        ..base.clone()
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
@@ -4187,7 +4567,7 @@ fn bucket_resolution_does_not_interpolate_between_disagreeing_single_file_rungs(
         WorkloadKey {
             bytes_bucket: 6,
             max_file_bucket: 6,
-            ..base
+            ..base.clone()
         },
         cpu_decision(ScanBackend::SimdCpu),
     );
@@ -4195,14 +4575,14 @@ fn bucket_resolution_does_not_interpolate_between_disagreeing_single_file_rungs(
         WorkloadKey {
             bytes_bucket: 8,
             max_file_bucket: 8,
-            ..base
+            ..base.clone()
         },
         cpu_decision(ScanBackend::CpuFallback),
     );
     let requested = WorkloadKey {
         bytes_bucket: 7,
         max_file_bucket: 7,
-        ..base
+        ..base.clone()
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
@@ -4223,7 +4603,7 @@ fn bucket_resolution_does_not_interpolate_single_file_across_a_gpu_rung() {
         WorkloadKey {
             bytes_bucket: 6,
             max_file_bucket: 6,
-            ..base
+            ..base.clone()
         },
         cpu_decision(ScanBackend::SimdCpu),
     );
@@ -4231,14 +4611,14 @@ fn bucket_resolution_does_not_interpolate_single_file_across_a_gpu_rung() {
         WorkloadKey {
             bytes_bucket: 8,
             max_file_bucket: 8,
-            ..base
+            ..base.clone()
         },
         gpu_decision(),
     );
     let requested = WorkloadKey {
         bytes_bucket: 7,
         max_file_bucket: 7,
-        ..base
+        ..base.clone()
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
@@ -4257,13 +4637,13 @@ fn bucket_resolution_does_not_clamp_below_a_gpu_floor() {
     decisions.insert(
         WorkloadKey {
             bytes_bucket: 8,
-            ..base
+            ..base.clone()
         },
         gpu_decision(),
     );
     let requested = WorkloadKey {
         bytes_bucket: 3,
-        ..base
+        ..base.clone()
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),
@@ -4281,15 +4661,15 @@ fn bucket_resolution_does_not_clamp_an_uncalibrated_class() {
     decisions.insert(
         WorkloadKey {
             bytes_bucket: 8,
-            source_class_hash: 0x1111_1111_1111_1111,
-            ..base
+            source_mixture: test_source_mixture("filesystem"),
+            ..base.clone()
         },
         cpu_decision(ScanBackend::SimdCpu),
     );
     let requested = WorkloadKey {
         bytes_bucket: 3,
-        source_class_hash: 0x2222_2222_2222_2222,
-        ..base
+        source_mixture: test_source_mixture("web"),
+        ..base.clone()
     };
     assert_eq!(
         resolve_bucket(&decisions, &requested),

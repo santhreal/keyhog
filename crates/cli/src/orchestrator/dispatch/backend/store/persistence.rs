@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use super::super::evidence::AutorouteDecision;
 use super::super::host::AutorouteHostProfile;
-use super::super::workload::WorkloadKey;
+use super::super::workload::{validate_workload_source_mixture, WorkloadKey};
 use super::super::AUTOROUTE_CACHE_VERSION;
 
 /// Operator-relevant effect of a successful cache save.
@@ -26,6 +26,7 @@ use super::codec::{
 use super::schema::{AutorouteBuildFeatures, AutorouteCache, AutorouteConfigDecisions};
 use super::validation::{
     validate_cache_shared_identity, validate_cache_structure, validate_decision_route_evidence,
+    validate_decision_workload_binding,
 };
 
 pub(crate) fn load_autoroute_cache(
@@ -82,8 +83,12 @@ pub(crate) fn save_autoroute_cache(
     if decisions.is_empty() {
         return Err("autoroute cache contains no workload decisions".into());
     }
-    for decision in decisions.values() {
+    for (key, decision) in decisions {
+        validate_workload_source_mixture(key).map_err(|error| {
+            format!("autoroute cache save rejected an invalid source mixture: {error}")
+        })?;
         validate_decision_route_evidence(decision)?;
+        validate_decision_workload_binding(key, decision)?;
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -102,7 +107,7 @@ pub(crate) fn save_autoroute_cache(
     merged.extend(
         decisions
             .iter()
-            .map(|(&key, decision)| (key, decision.clone())),
+            .map(|(key, decision)| (key.clone(), decision.clone())),
     );
     configs.retain(|config| config.config_digest != config_digest);
     configs.push(AutorouteConfigDecisions {
@@ -122,6 +127,7 @@ pub(crate) fn save_autoroute_cache(
         host: host_profile.clone(),
         configs,
     };
+    validate_cache_structure(&cache)?;
     let serialized = serde_json::to_vec_pretty(&cache)?;
     if serialized.len() as u64 > AUTOROUTE_CACHE_FILE_BYTES {
         return Err(format!(
