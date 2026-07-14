@@ -46,7 +46,9 @@ grammar for cyclic byte-array XOR and Node-style AES-256-CBC decryption,
 resolves only literal numeric arrays, Base64-encoded JSON arrays, buffer
 literals, and empty-separator string joins, then checks binding consistency,
 UTF-8, AES block shape, and PKCS#7 padding before rescanning the recovered
-plaintext. The CryptoJS dialect additionally requires an exact immutable
+plaintext. Recovered XOR calls and Node AES ciphertext bindings are spliced
+back into bounded parent context, preserving assignment evidence and absolute
+source offsets. The CryptoJS dialect additionally requires an exact immutable
 `require("crypto-js")` alias, decrypt wrapper, literal passphrase and
 ciphertext bindings, an OpenSSL `Salted__` envelope, and EVP_BytesToKey MD5
 derivation. Dynamic values or unsupported syntax produce no derived candidate.
