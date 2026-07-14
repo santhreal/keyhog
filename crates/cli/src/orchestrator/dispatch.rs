@@ -215,7 +215,7 @@ impl CoalescedScannerWorker {
         let scanned_bytes = batch.iter().map(|chunk| chunk.data.len()).sum::<usize>();
         if batch_has_no_scan_bytes(batch) {
             crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
-        crate::SCANNED_BYTES.fetch_add(scanned_bytes as u64, Ordering::Relaxed);
+            crate::SCANNED_BYTES.fetch_add(scanned_bytes as u64, Ordering::Relaxed);
             return Ok(scan_start.elapsed());
         }
         let chosen_backend = self.router.choose(self.scanner.as_ref(), batch)?;
@@ -318,7 +318,10 @@ fn append_scanned_batch_findings(
 
     crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
     crate::SCANNED_BYTES.fetch_add(
-        batch.iter().map(|chunk| chunk.data.len() as u64).sum::<u64>(),
+        batch
+            .iter()
+            .map(|chunk| chunk.data.len() as u64)
+            .sum::<u64>(),
         Ordering::Relaxed,
     );
     if ran_on_gpu {
