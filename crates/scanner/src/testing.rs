@@ -3307,6 +3307,20 @@ pub fn set_phase2_hs(scanner: &crate::engine::CompiledScanner, mode: Option<bool
     scanner.tuning.set_phase2_hs(mode);
 }
 
+/// Score the production cl100k token-efficiency gate. Benchmarks use this
+/// instead of substituting Shannon entropy under a BPE label.
+#[cfg(feature = "entropy")]
+pub fn entropy_bpe_bytes_per_token(value: &str) -> f64 {
+    crate::entropy::bpe::bytes_per_token(value)
+}
+
+/// Construct the same cl100k tokenizer used by the production BPE gate. This
+/// isolates initialization cost from warm per-candidate scoring.
+#[cfg(feature = "entropy")]
+pub fn build_entropy_bpe_tokenizer() -> Result<tiktoken_rs::CoreBPE, String> {
+    tiktoken_rs::cl100k_base().map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 pub(crate) fn set_hs_prefilter_max_len(
     scanner: &crate::engine::CompiledScanner,

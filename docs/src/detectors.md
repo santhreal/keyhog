@@ -221,9 +221,11 @@ The available per-detector tuning fields are:
     ceiling, or compose both gates when byte-distribution and language-likeness
     each reject different noise. It is not a candidate generator: the
     detector's regex or phase-2 assignment/entropy discovery path must first
-    produce a candidate. BetterLeaks' public documentation calls this Token
-    Efficiency, not BPD; KeyHog uses `bpe_...` field names to keep that
-    distinction explicit.
+    produce a candidate, and the current pipeline does not offer a true
+    entropy-or-BPE branch. BetterLeaks likewise applies configured Shannon
+    entropy before Token Efficiency in its shipped generic rule. Its public
+    implementation calls this Token Efficiency, not BPD. KeyHog uses
+    `bpe_...` field names to keep that distinction explicit.
 
 ### Decoded key material
 *   **`decoded_hex_key_material_lengths`** (integer array, optional;

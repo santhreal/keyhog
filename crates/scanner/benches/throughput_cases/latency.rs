@@ -25,7 +25,10 @@ fn benchmark_latency_ml_inference(c: &mut Criterion) {
     group.sampling_mode(SamplingMode::Flat);
 
     let test_credentials = [
-        ("github_pat", concat!("gh", "p_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")),
+        (
+            "github_pat",
+            concat!("gh", "p_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"),
+        ),
         (
             "openai_key",
             "sk-proj-abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ",
@@ -56,17 +59,35 @@ fn benchmark_latency_entropy_calculation(c: &mut Criterion) {
     group.sampling_mode(SamplingMode::Flat);
 
     let test_candidates = [
-        ("short_secret", "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fG0hJkL"),
+        ("random_16", "aK7xP9mQ2wE5rT8y"),
+        ("random_17", "aK7xP9mQ2wE5rT8yU"),
+        ("random_32", "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fG0hJ"),
         (
-            "medium_secret",
+            "prefixed_64",
             "sk-proj-abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ",
         ),
         (
-            "long_secret",
+            "prefixed_128",
             "sk-proj-abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ",
         ),
         ("hex_hash", "d41d8cd98f00b204e9800998ecf8427e"),
+        (
+            "encoded_base64",
+            "U2FsdGVkX18AESIzRFVmd4gAG90IBfANYeQRW2joYGicJIAQKVwfQhcc0SZhoi6",
+        ),
+        (
+            "word_like",
+            "CorrectHorseBatteryStapleConfigurationIdentifier",
+        ),
     ];
+
+    group.bench_function("bpe_tokenizer_build", |b| {
+        b.iter(|| {
+            let tokenizer = keyhog_scanner::testing::build_entropy_bpe_tokenizer()
+                .expect("embedded cl100k ranks must construct");
+            black_box(tokenizer)
+        });
+    });
 
     for (name, candidate) in &test_candidates {
         group.bench_with_input(
@@ -85,7 +106,7 @@ fn benchmark_latency_entropy_calculation(c: &mut Criterion) {
             candidate,
             |b, cand| {
                 b.iter(|| {
-                    let eff = entropy::normalized_entropy(black_box(cand.as_bytes()));
+                    let eff = keyhog_scanner::testing::entropy_bpe_bytes_per_token(black_box(cand));
                     black_box(eff)
                 });
             },

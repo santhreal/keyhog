@@ -136,7 +136,8 @@ per-detector alternative to making Shannon entropy the decisive signal: use a
 permissive detector-owned entropy floor appropriate to the credential family,
 then let its BPE, shape, context, and confidence policy reject word-like noise.
 It is not equivalent to blindly replacing entropy with one global BPE number,
-and `bpe_enabled` alone never creates a candidate.
+and `bpe_enabled` alone never creates a candidate. Both configured gates still
+execute; the current pipeline has no entropy-or-BPE branch.
 
 Detector-owned `canonical_hex_key_material` is the deliberate exception to the
 BPE and generic low-diversity/decode-as-data gates. Hexadecimal key bytes
