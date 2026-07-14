@@ -13,13 +13,21 @@ use crate::orchestrator::dispatch::backend::host::render_host_profile;
 use crate::orchestrator::dispatch::backend::workload::render_workload_key;
 use crate::orchestrator::dispatch::backend::AUTOROUTE_CACHE_VERSION;
 
+#[cfg(test)]
+mod tests;
+
 /// Operator-facing view of the persisted autoroute cache (one JSON object).
 #[derive(Debug, Default, Serialize)]
 pub(crate) struct AutorouteCacheInspection {
     pub(crate) path: Option<String>,
+    /// Whether this build has multiple compiled scan backends and therefore
+    /// needs persisted evidence to select among them.
+    pub(crate) calibration_required: bool,
+    /// The only possible route when calibration is not required.
+    pub(crate) direct_backend: Option<&'static str>,
     pub(crate) present: bool,
-    /// Set when the cache exists but is unusable (disabled / unreadable / wrong
-    /// schema version / corrupt). A real scan fails closed on the same input.
+    /// Set when this build needs the requested cache but it is disabled, or
+    /// when a present cache is unreadable, incompatible, or corrupt.
     pub(crate) error: Option<String>,
     pub(crate) version: Option<u32>,
     pub(crate) binary_version: Option<String>,
@@ -84,17 +92,29 @@ fn selection_basis(confidence_separated: bool) -> &'static str {
 /// build drift and the full persisted structure are validated; scan-time load
 /// additionally validates the live host, detector, rules, and config identity.
 pub(crate) fn inspect_autoroute_cache(path: Option<&std::path::Path>) -> AutorouteCacheInspection {
+    inspect_autoroute_cache_for_build(path, keyhog_scanner::hw_probe::multiple_backends_compiled())
+}
+
+fn inspect_autoroute_cache_for_build(
+    path: Option<&std::path::Path>,
+    multiple_backends_compiled: bool,
+) -> AutorouteCacheInspection {
     let mut out = AutorouteCacheInspection {
         path: path.map(|path| path.display().to_string()),
+        calibration_required: multiple_backends_compiled,
+        direct_backend: (!multiple_backends_compiled)
+            .then_some(keyhog_scanner::hw_probe::ScanBackend::CpuFallback.label()),
         ..AutorouteCacheInspection::default()
     };
 
     let Some(path) = path else {
-        out.error = Some(
-            "autoroute cache is disabled (--autoroute-cache off / [system].autoroute_cache = \
-             off); auto scans require an explicit --backend in this configuration"
-                .to_string(),
-        );
+        if multiple_backends_compiled {
+            out.error = Some(
+                "autoroute cache is disabled (--autoroute-cache off / [system].autoroute_cache = \
+                 off); auto scans require an explicit --backend in this configuration"
+                    .to_string(),
+            );
+        }
         return out;
     };
     match autoroute_cache_file_presence(path) {

@@ -232,7 +232,10 @@ config inputs; those identities are checked when a real scan loads its decision.
 Therefore a readable, build-matched inspection is evidence that the cache can be
 examined, not a guarantee that the next workload has a usable row.
 
-The top-level `inspected_at_unix_ms` is the clock value used for timestamp
+The top-level `calibration_required` field is true only when this build has
+multiple compiled scan backends. When false, `direct_backend` names the only
+possible route and a disabled or absent cache does not make automatic scans
+unhealthy. `inspected_at_unix_ms` is the clock value used for timestamp
 validation and age derivation. The per-decision JSON fields have these exact
 meanings:
 

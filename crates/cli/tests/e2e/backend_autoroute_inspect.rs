@@ -10,8 +10,7 @@ use crate::e2e::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
-/// An uncalibrated cache directory reports "not calibrated yet" in text mode and
-/// exits 0 (never a scary error, since the operator's next step is to calibrate).
+/// An absent cache reports whether this build actually has a backend choice.
 #[test]
 fn backend_autoroute_reports_uncalibrated_cache_cleanly() {
     let cache = TempDir::new().unwrap();
@@ -31,10 +30,17 @@ fn backend_autoroute_reports_uncalibrated_cache_cleanly() {
         stdout.contains("autoroute calibration cache"),
         "must render the cache header; got: {stdout}"
     );
-    assert!(
-        stdout.contains("not calibrated yet"),
-        "an empty cache dir must say it is not calibrated yet; got: {stdout}"
-    );
+    if keyhog_scanner::hw_probe::multiple_backends_compiled() {
+        assert!(
+            stdout.contains("not calibrated yet"),
+            "a multi-backend build must report missing calibration; got: {stdout}"
+        );
+    } else {
+        assert!(
+            stdout.contains("calibration not required") && stdout.contains("cpu-fallback directly"),
+            "a single-backend build must report that no routing evidence is needed; got: {stdout}"
+        );
+    }
 }
 
 /// `--json` emits a valid object that marks an absent cache as `present:false`
@@ -55,6 +61,20 @@ fn backend_autoroute_json_is_valid_and_marks_absence() {
     );
     let value: serde_json::Value = serde_json::from_slice(&out.stdout)
         .expect("backend --autoroute --json must emit valid JSON");
+    assert_eq!(
+        value["calibration_required"],
+        serde_json::json!(keyhog_scanner::hw_probe::multiple_backends_compiled()),
+        "JSON must reflect the scanner-owned compiled candidate set; json={value}"
+    );
+    let expected_direct_backend = if keyhog_scanner::hw_probe::multiple_backends_compiled() {
+        serde_json::Value::Null
+    } else {
+        serde_json::json!("cpu-fallback")
+    };
+    assert_eq!(
+        value["direct_backend"], expected_direct_backend,
+        "JSON must name the direct route exactly when calibration is unnecessary; json={value}"
+    );
     assert_eq!(value["present"], serde_json::json!(false), "json={value}");
     assert!(
         value["configs"]
@@ -63,6 +83,40 @@ fn backend_autoroute_json_is_valid_and_marks_absence() {
             .is_empty(),
         "absent cache lists no configs; json={value}"
     );
+}
+
+#[test]
+fn backend_autoroute_disabled_cache_reports_compiled_route_contract() {
+    let out = Command::new(binary())
+        .args([
+            "backend",
+            "--autoroute",
+            "--json",
+            "--autoroute-cache",
+            "off",
+        ])
+        .output()
+        .expect("inspect disabled autoroute cache");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "inspection report exits zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("disabled-cache inspection JSON");
+
+    if keyhog_scanner::hw_probe::multiple_backends_compiled() {
+        assert_eq!(value["calibration_required"], serde_json::json!(true));
+        assert_eq!(value["direct_backend"], serde_json::Value::Null);
+        assert!(value["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("explicit --backend")));
+    } else {
+        assert_eq!(value["calibration_required"], serde_json::json!(false));
+        assert_eq!(value["direct_backend"], serde_json::json!("cpu-fallback"));
+        assert_eq!(value["error"], serde_json::Value::Null);
+    }
 }
 
 /// Inspection must read the same explicit cache path a scan or project config

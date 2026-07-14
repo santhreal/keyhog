@@ -127,11 +127,19 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
         None => println!("  path:            (disabled)"),
     }
 
-    // Unusable cache (disabled / unreadable / wrong version / corrupt): a real
-    // scan fails closed on the same input, so say so loudly with the next step.
+    // Report cache faults, then distinguish route-blocking multi-backend state
+    // from an unused artifact in a single-backend build.
     if let Some(error) = &inspection.error {
         println!("  status:          {}{}{}", p.yellow, error, p.reset);
         println!();
+        if !inspection.calibration_required {
+            let direct_backend = direct_backend_or_error(inspection.direct_backend)?;
+            println!(
+                "This cache artifact is not used by automatic scans in a single-backend build. \
+                 Automatic scans resolve {direct_backend} directly."
+            );
+            return Ok(ExitCode::SUCCESS);
+        }
         println!(
             "Run `keyhog calibrate-autoroute` to (re)build the cache in place, or \
              `install.sh --calibrate` (Unix) / `install.ps1 -Calibrate` (Windows), or scan \
@@ -140,8 +148,21 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
         return Ok(ExitCode::SUCCESS);
     }
 
-    // Cache file absent: simply not calibrated yet.
+    // Cache absence is unhealthy only when this build has a routing choice.
     if !inspection.present {
+        if !inspection.calibration_required {
+            let direct_backend = direct_backend_or_error(inspection.direct_backend)?;
+            println!(
+                "  status:          {}calibration not required{} (single compiled backend)",
+                p.green, p.reset
+            );
+            println!();
+            println!(
+                "Automatic scans resolve {direct_backend} directly. No autoroute cache is needed \
+                 for this build."
+            );
+            return Ok(ExitCode::SUCCESS);
+        }
         println!(
             "  status:          {}not calibrated yet{}",
             p.yellow, p.reset
@@ -257,6 +278,14 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn direct_backend_or_error(direct_backend: Option<&'static str>) -> Result<&'static str> {
+    direct_backend.ok_or_else(|| {
+        anyhow::anyhow!(
+            "autoroute inspection omitted the direct backend for a single-backend build"
+        )
+    })
 }
 
 fn render_age_ms(age_ms: u128) -> String {
