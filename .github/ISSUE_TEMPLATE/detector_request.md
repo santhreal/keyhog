@@ -27,7 +27,7 @@ labels: ["detector", "enhancement"]
 
 <!-- Is there a free public endpoint that returns 200 on a live key and
      401/403 on a revoked one? If so, paste the URL. This unlocks live
-     verification, which downgrades the detection from "maybe" to "live". -->
+     verification, which can confirm the format match as a live credential. -->
 
 ## Severity
 

@@ -29,7 +29,7 @@ labels: ["false-positive", "detector"]
 
 ## Detector ID
 
-<!-- From the scan output, the SARIF, or `keyhog detectors list | grep …`. -->
+<!-- From the scan output or SARIF. Inspect it with `keyhog explain <id>`. -->
 
 ## Service / context
 

@@ -40,9 +40,9 @@ labels: ["bug", "needs-triage"]
 
 ## Logs
 
-<!-- Re-run with NO_COLOR=1 and the most verbose flag that's relevant:
-     `keyhog scan --verbose ...` or `keyhog backend` for backend probes.
-     Paste between the fences. -->
+<!-- Re-run with `RUST_LOG=keyhog=debug NO_COLOR=1 keyhog scan ...`.
+     Use `keyhog backend` for backend probes. Redact credentials and sensitive
+     paths before pasting the output between the fences. -->
 
 ```
 ```
