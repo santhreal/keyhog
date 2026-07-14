@@ -90,9 +90,9 @@ documented ownership. See [Suppressions](./suppressions.md) for the full order.
 keyhog scan . --format json
 ```
 
-Each finding is a JSON object with these fields, every one always
-present (consumers like SARIF converters and CI gates rely on the
-schema being stable):
+Each finding is a JSON object with the required fields below always present
+(consumers like SARIF converters and CI gates rely on that stable schema).
+`confidence` is included when the scanner has a score; otherwise it is omitted.
 
 ```json
 {

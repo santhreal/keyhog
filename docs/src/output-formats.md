@@ -54,9 +54,10 @@ runs add the liveness state and commit/author rows when known. The
 
 ## `--format json`
 
-Stable-schema JSON array. Every finding has every documented field
-present. See [Your first scan](./first-scan.md#json-output) for the
-schema. The `confidence` field is canonicalized to three decimal places before
+Stable-schema JSON array. Every finding has all required documented fields
+present; optional fields are omitted only when their value is unavailable. See
+[Your first scan](./first-scan.md#json-output) for the schema. The `confidence`
+field is canonicalized to three decimal places before
 the reporting-floor decision, so equivalent CPU and GPU scans serialize the
 same value.
 
