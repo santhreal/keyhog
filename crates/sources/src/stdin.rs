@@ -21,9 +21,35 @@ pub struct ConfiguredStdinSource {
     limits: crate::SourceLimits,
 }
 
+/// An already acquired stdin payload with the same decoding, limits, chunk
+/// metadata, and source identity as [`StdinSource`].
+///
+/// This is useful for long-lived processes and calibration harnesses that own
+/// the input bytes before source construction. It avoids mutating process
+/// stdin or recreating its metadata contract in another crate.
+pub struct BufferedStdinSource {
+    bytes: std::sync::Arc<[u8]>,
+    limits: crate::SourceLimits,
+}
+
 impl StdinSource {
     pub fn with_limits(self, limits: crate::SourceLimits) -> ConfiguredStdinSource {
         ConfiguredStdinSource { limits }
+    }
+}
+
+impl BufferedStdinSource {
+    pub fn new(bytes: impl Into<Vec<u8>>) -> Self {
+        Self {
+            bytes: bytes.into().into(),
+            limits: crate::SourceLimits::default(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
+        self
     }
 }
 
@@ -55,28 +81,48 @@ impl Source for ConfiguredStdinSource {
     }
 }
 
+impl Source for BufferedStdinSource {
+    fn name(&self) -> &str {
+        "stdin"
+    }
+
+    fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
+        crate::gate_scan(|| {
+            let mut reader = std::io::Cursor::new(self.bytes.as_ref());
+            one_stdin_chunk(read_to_string_limited(&mut reader, self.limits.stdin_bytes))
+        })
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 fn chunks_with_limit(max_bytes: usize) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>>> {
-    crate::gate_scan(|| {
-        let stdin_read = read_stdin_limited(max_bytes);
-        Box::new(std::iter::once(match stdin_read {
-            Ok(data) => Ok(Chunk {
-                data: data.into(),
-                metadata: ChunkMetadata {
-                    base_offset: 0,
-                    base_line: 0,
-                    source_type: "stdin".into(),
-                    path: None,
-                    commit: None,
-                    author: None,
-                    date: None,
-                    mtime_ns: None,
-                    size_bytes: None,
-                    decoded_span: None,
-                },
-            }),
-            Err(e) => Err(SourceError::Io(e)),
-        }))
-    })
+    crate::gate_scan(|| one_stdin_chunk(read_stdin_limited(max_bytes)))
+}
+
+fn one_stdin_chunk(
+    result: std::io::Result<String>,
+) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>>> {
+    Box::new(std::iter::once(match result {
+        Ok(data) => Ok(Chunk {
+            data: data.into(),
+            metadata: ChunkMetadata {
+                base_offset: 0,
+                base_line: 0,
+                source_type: "stdin".into(),
+                path: None,
+                commit: None,
+                author: None,
+                date: None,
+                mtime_ns: None,
+                size_bytes: None,
+                decoded_span: None,
+            },
+        }),
+        Err(error) => Err(SourceError::Io(error)),
+    }))
 }
 
 fn read_stdin_limited(max_bytes: usize) -> std::io::Result<String> {

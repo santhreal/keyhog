@@ -23,7 +23,7 @@
 
 use keyhog_core::{Source, SourceError};
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{SourceLimits, StdinSource};
+use keyhog_sources::{BufferedStdinSource, SourceLimits, StdinSource};
 
 // ---------------------------------------------------------------------------
 // Pure decode-boundary truths (Cursor-backed facade; no real stdin).
@@ -166,6 +166,40 @@ fn default_stdin_cap_is_ten_mib_and_empty_decodes_empty() {
         .expect("empty stdin at the default cap decodes to the empty string");
     assert_eq!(out, "");
     assert_eq!(out.len(), 0);
+}
+
+#[test]
+fn buffered_stdin_uses_the_canonical_decode_and_metadata_contract() {
+    let source = BufferedStdinSource::new(b"api_key=abc\x80xyz".to_vec());
+    let chunks: Vec<_> = source.chunks().collect();
+    assert_eq!(chunks.len(), 1);
+    let chunk = chunks.into_iter().next().unwrap().expect("buffered stdin");
+
+    assert_eq!(chunk.data.as_ref(), "api_key=abc\u{fffd}xyz");
+    assert_eq!(chunk.metadata.source_type.as_ref(), "stdin");
+    assert_eq!(chunk.metadata.base_offset, 0);
+    assert_eq!(chunk.metadata.base_line, 0);
+    assert_eq!(chunk.metadata.path, None);
+    assert_eq!(chunk.metadata.size_bytes, None);
+    assert_eq!(chunk.metadata.mtime_ns, None);
+}
+
+#[test]
+fn buffered_stdin_enforces_the_same_exact_byte_limit() {
+    let source = BufferedStdinSource::new(b"abcd".to_vec()).with_limits(SourceLimits {
+        stdin_bytes: 3,
+        ..SourceLimits::default()
+    });
+    let error = source
+        .chunks()
+        .next()
+        .expect("one stdin result")
+        .expect_err("four bytes exceed the three-byte limit");
+    assert!(matches!(error, SourceError::Io(_)));
+    assert_eq!(
+        error.to_string(),
+        "failed to read source: stdin exceeds 3 byte limit. Fix: check the path exists, is readable, and is not a broken symlink"
+    );
 }
 
 // ---------------------------------------------------------------------------
