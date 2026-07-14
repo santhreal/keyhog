@@ -407,6 +407,7 @@ fn analyze_tex_package(tar_bytes: &[u8]) -> super::tex_package::TexPackageAnalys
         let mut entry = match entry {
             Ok(entry) => entry,
             Err(_) => {
+                // LAW10: TeX analysis marks bounded and the caller emits a visible coverage error; ordinary tar members are still scanned.
                 builder.mark_bounded();
                 continue;
             }
@@ -417,6 +418,7 @@ fn analyze_tex_package(tar_bytes: &[u8]) -> super::tex_package::TexPackageAnalys
         let name = match entry.path() {
             Ok(path) => path.to_string_lossy().into_owned(),
             Err(_) => {
+                // LAW10: TeX analysis marks bounded and the caller emits a visible coverage error; this member is still scanned without TeX annotations.
                 builder.mark_bounded();
                 continue;
             }
@@ -428,7 +430,7 @@ fn analyze_tex_package(tar_bytes: &[u8]) -> super::tex_package::TexPackageAnalys
             builder.add_member(&name, None);
             continue;
         }
-        let entry_size = entry.header().size().ok();
+        let entry_size = entry.header().size().ok(); // LAW10: malformed optional size disables only preallocation; the bounded reader still scans the member bytes.
         let read = match crate::capped_read::read_to_cap(
             &mut entry,
             super::tex_package::TexPackageBuilder::source_member_read_cap(),
@@ -436,6 +438,7 @@ fn analyze_tex_package(tar_bytes: &[u8]) -> super::tex_package::TexPackageAnalys
         ) {
             Ok(read) => read,
             Err(_) => {
+                // LAW10: TeX analysis marks bounded and the caller emits a visible coverage error; this member is still scanned by the ordinary tar pass.
                 builder.mark_bounded();
                 builder.add_member(&name, None);
                 continue;

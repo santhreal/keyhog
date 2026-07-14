@@ -320,7 +320,7 @@ fn extract_zip_archive_entries<R: Read + Seek>(
         let remaining_budget = total_budget.saturating_sub(*total_uncompressed);
         let read_cap = per_entry_cap.min(remaining_budget);
         let read = if let Some(mut bytes) = tex_package.take_source_content(&entry_name) {
-            let cap = usize::try_from(read_cap).unwrap_or(usize::MAX);
+            let cap = usize::try_from(read_cap).unwrap_or(usize::MAX); // LAW10: recall-preserving bounded conversion saturates to the largest addressable buffer cap; every readable byte remains eligible.
             let truncated = bytes.len() > cap;
             bytes.truncate(cap);
             crate::capped_read::CappedRead { bytes, truncated }
@@ -435,6 +435,7 @@ fn analyze_tex_package<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> TexP
         let mut entry = match archive.by_index(index) {
             Ok(entry) => entry,
             Err(_) => {
+                // LAW10: TeX analysis marks bounded and the caller emits a visible coverage error; ordinary archive members are still scanned.
                 builder.mark_bounded();
                 continue;
             }
@@ -458,6 +459,7 @@ fn analyze_tex_package<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> TexP
         ) {
             Ok(read) => read,
             Err(_) => {
+                // LAW10: TeX analysis marks bounded and the caller emits a visible coverage error; this member is still scanned without TeX annotations.
                 builder.mark_bounded();
                 builder.add_member(&name, None);
                 continue;

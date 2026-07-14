@@ -735,7 +735,7 @@ fn parse_binary_xml(
         .find(|header| header.kind == RES_XML_RESOURCE_MAP_TYPE)
         .map(|header| parse_resource_map(bytes, header, limits))
         .transpose()?
-        .unwrap_or_default();
+        .unwrap_or_default(); // LAW10: the Android XML resource map is optional; attribute names and values are still recovered from the required string pool.
     let mut output = OutputBuilder::new(
         archive_display,
         entry_name,
@@ -837,7 +837,7 @@ fn parse_binary_xml(
                     let resource_id = resource_map
                         .get(attribute_name_index as usize)
                         .copied()
-                        .unwrap_or(0);
+                        .unwrap_or(0); // LAW10: missing optional resource ID uses the Android zero sentinel in result metadata; the attribute value is still emitted.
                     let element_path = elements
                         .iter()
                         .map(|part| safe_component(part))
@@ -1335,7 +1335,7 @@ fn read_config_u16(config: &[u8], offset: usize) -> u16 {
     config
         .get(offset..offset + 2)
         .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-        .unwrap_or(0)
+        .unwrap_or(0) // LAW10: absent optional configuration qualifier uses Android's zero default; resource value extraction is unchanged.
 }
 
 fn decode_locale_part(bytes: &[u8]) -> Option<String> {

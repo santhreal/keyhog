@@ -23,7 +23,7 @@ static EXACT_ONLY_SHARED_TENANT_SUFFIXES: std::sync::LazyLock<Vec<String>> =
         let parsed = toml::from_str::<SharedTenantSuffixes>(include_str!(
             "../../../rules/shared-tenant-suffixes.toml"
         ))
-        .unwrap_or_else(|error| {
+        .unwrap_or_else(|error| { // LAW10: bundled Tier-B parse failure is loud and fail-closed during policy initialization.
             panic!(
                 "rules/shared-tenant-suffixes.toml is invalid: {error}. Fix the bundled Tier-B shared-tenant suffix list."
             )
@@ -43,7 +43,7 @@ pub fn builtin_service_domains() -> &'static HashMap<&'static str, &'static [&'s
         let parsed: ServicesFile = toml::from_str(include_str!(
             "../../../rules/service-verification-domains.toml"
         ))
-        .unwrap_or_else(|error| {
+        .unwrap_or_else(|error| { // LAW10: bundled Tier-B parse failure is loud and fail-closed during policy initialization.
             panic!(
                 "rules/service-verification-domains.toml is invalid: {error}. Fix the bundled Tier-B verification-domain allowlist."
             )
@@ -88,7 +88,7 @@ pub fn effective_allowlist(
             .collect();
     }
     let service = if spec.service.trim().is_empty() {
-        detector_service.unwrap_or_default().trim()
+        detector_service.unwrap_or_default().trim() // LAW10: absent optional detector service intentionally resolves to no allowlist, which the caller blocks.
     } else {
         spec.service.trim()
     };
@@ -109,7 +109,7 @@ pub fn normalize_allowlist_entry(raw: &str) -> Option<String> {
         return None;
     }
     let host = if value.contains("://") {
-        let url = url::Url::parse(value).ok()?;
+        let url = url::Url::parse(value).ok()?; // LAW10: malformed allowlist input fails closed to None and becomes a detector validation error.
         if !matches!(url.scheme(), "http" | "https")
             || !url.username().is_empty()
             || url.password().is_some()
@@ -130,6 +130,7 @@ pub fn normalize_allowlist_entry(raw: &str) -> Option<String> {
             return None;
         }
         match url::Host::parse(value).ok()? {
+            // LAW10: malformed bare-host input fails closed to None and becomes a detector validation error.
             url::Host::Domain(domain) => domain,
             url::Host::Ipv4(address) => return Some(address.to_string()),
             url::Host::Ipv6(address) => return Some(address.to_string()),
@@ -177,8 +178,10 @@ fn validated_domain_entries(entries: Vec<String>, context: &str, allow_empty: bo
     entries
         .into_iter()
         .map(|entry| {
-            let normalized = normalize_allowlist_entry(&entry)
-                .unwrap_or_else(|| panic!("{context} contains invalid domain entry {entry:?}"));
+            let normalized = normalize_allowlist_entry(&entry).unwrap_or_else(|| {
+                // LAW10: invalid bundled policy is rejected loudly and fail-closed before verification can run.
+                panic!("{context} contains invalid domain entry {entry:?}")
+            });
             assert!(
                 seen.insert(normalized.clone()),
                 "{context} contains duplicate domain {normalized:?}"

@@ -239,6 +239,7 @@ fn terminate_analyzer_process_tree(child: &mut Child) -> std::io::Result<()> {
             );
         }
         Err(_) => {
+            // LAW10: direct-child termination still runs and the returned error is loud and operator-visible when process-tree termination is incomplete.
             return kill_direct_after_group_failure(
                 child,
                 "Ghidra process ID does not fit the platform process-group type".into(),

@@ -575,7 +575,7 @@ fn parse_webp<R: Read + Seek>(
                 let mut payload = vec![0u8; length_usize];
                 read_exact(reader, &mut payload, "WebP metadata")?;
                 if &chunk_header[..4] == b"EXIF" {
-                    let tiff = payload.strip_prefix(b"Exif\0\0").unwrap_or(&payload);
+                    let tiff = payload.strip_prefix(b"Exif\0\0").unwrap_or(&payload); // LAW10: optional EXIF signature absence preserves the whole payload for TIFF parsing.
                     let tiff_prefix = u64::try_from(payload.len() - tiff.len())
                         .map_err(|_| "WebP EXIF offset overflow")?;
                     let mut cursor = Cursor::new(tiff);
@@ -652,12 +652,13 @@ fn parse_tiff<R: Read + Seek>(
         let entries_bytes = count
             .checked_mul(12)
             .ok_or("TIFF IFD entry count overflow")?;
+        let entries_bytes_u64 =
+            u64::try_from(entries_bytes).map_err(|_| "TIFF table is too large")?;
         let table_end = ifd_offset
             .checked_add(2)
-            .and_then(|offset| offset.checked_add(u64::try_from(entries_bytes).ok()?))
+            .and_then(|offset| offset.checked_add(entries_bytes_u64))
             .ok_or("TIFF IFD table overflow")?;
-        let table_length = u64::try_from(entries_bytes)
-            .map_err(|_| "TIFF table too large")?
+        let table_length = entries_bytes_u64
             .checked_add(6)
             .ok_or("TIFF IFD table length overflow")?;
         ensure_region(ifd_offset, table_length, region_len, "TIFF IFD table")?;
@@ -981,7 +982,7 @@ fn inflate_utf8(input: &[u8], limit: usize, context: &str) -> Result<String, Str
 }
 
 fn inflate_bounded(input: &[u8], limit: usize, context: &str) -> Result<Vec<u8>, String> {
-    let read_limit = u64::try_from(limit).unwrap_or(u64::MAX).saturating_add(1);
+    let read_limit = u64::try_from(limit).unwrap_or(u64::MAX).saturating_add(1); // LAW10: recall-preserving bounded conversion saturates only on wider-than-u64 targets; the reader retains the largest representable stream cap.
     let mut decoder = ZlibDecoder::new(input).take(read_limit);
     let mut output = Vec::new();
     decoder

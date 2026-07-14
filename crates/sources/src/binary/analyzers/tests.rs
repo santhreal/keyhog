@@ -24,6 +24,7 @@ fn script_analyzer(path: &Path) -> GhidraAnalyzer {
 #[cfg(target_os = "linux")]
 fn process_is_running(pid: i32) -> bool {
     if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        // LAW10: test-only probe has no runtime effect in shipped code; unavailable procfs falls through to kill(0).
         if stat
             .rsplit_once(") ")
             .is_some_and(|(_, rest)| rest.starts_with("Z "))

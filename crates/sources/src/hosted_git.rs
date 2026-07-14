@@ -853,10 +853,11 @@ fn clone_materialization_cap(
             let size = match usize::try_from(metadata.len()) {
                 Ok(size) => size,
                 Err(_) => {
+                    // LAW10: bounded conversion failure returns an operator-visible clone byte-cap result; no oversized materialization is treated as complete.
                     return Ok(Some(CloneMaterializationCap::Bytes {
                         observed: usize::MAX,
                         cap: guard.byte_cap,
-                    }))
+                    }));
                 }
             };
             bytes = match bytes.checked_add(size) {

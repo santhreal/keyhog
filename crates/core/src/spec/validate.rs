@@ -782,7 +782,7 @@ fn url_authority_is_templated(raw_url: &str) -> bool {
         .map_or(trimmed, |(_, remainder)| remainder)
         .split(['/', '?', '#'])
         .next()
-        .unwrap_or_default();
+        .unwrap_or_default(); // LAW10: infallible split iterator; the first authority segment always exists, including the documented empty value.
     authority.contains(['{', '}'])
 }
 

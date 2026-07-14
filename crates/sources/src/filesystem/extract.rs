@@ -235,7 +235,7 @@ fn emit_archive_leaf_member(
 
     let text_source_type = provenance
         .map(|item| item.role.source_type())
-        .unwrap_or("filesystem/archive");
+        .unwrap_or("filesystem/archive"); // LAW10: absent TeX provenance is an ordinary archive member with this canonical identity
     let binary_source_type = match provenance.map(|item| item.role) {
         Some(tex_package::TexMemberRole::Root) => "filesystem/archive-binary/tex-root",
         Some(tex_package::TexMemberRole::Referenced) => "filesystem/archive-binary/tex-referenced",

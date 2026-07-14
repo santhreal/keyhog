@@ -378,8 +378,10 @@ impl Serialize for DetectorIntrospection<'_> {
 
         let tests = declared
             .remove("tests")
-            .and_then(|value| value.as_array().cloned())
-            .unwrap_or_default();
+            .ok_or_else(|| S::Error::custom("DetectorSpec serialization omitted tests"))?
+            .as_array()
+            .cloned()
+            .ok_or_else(|| S::Error::custom("DetectorSpec tests must serialize as an array"))?;
         let test_contracts = tests
             .into_iter()
             .map(|test| {
@@ -396,7 +398,9 @@ impl Serialize for DetectorIntrospection<'_> {
             })
             .collect();
 
-        let verification = declared.remove("verify").unwrap_or(serde_json::Value::Null);
+        let verification = declared
+            .remove("verify")
+            .ok_or_else(|| S::Error::custom("DetectorSpec serialization omitted verify"))?;
         let has_verification = !verification.is_null();
 
         let mut output = serde_json::Map::new();

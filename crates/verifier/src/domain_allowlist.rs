@@ -22,7 +22,9 @@ pub(crate) fn check_url_against_spec(
 ) -> Result<(), String> {
     let url = reqwest::Url::parse(raw_url)
         .map_err(|error| format!("blocked: invalid verify URL: {error}"))?;
-    let host = url.host_str().unwrap_or_default();
+    let host = url
+        .host_str()
+        .ok_or_else(|| "blocked: verify URL has no host".to_string())?;
     let Some(allowlist) = effective_allowlist(spec) else {
         return Err(format!(
             "blocked: detector service '{}' has no domain allowlist (set verify.allowed_domains in the detector TOML)",

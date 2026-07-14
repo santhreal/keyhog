@@ -139,7 +139,7 @@ impl TexPackageBuilder {
             let comment_spans = parsed
                 .get(&name)
                 .map(|document| document.comment_spans.clone())
-                .unwrap_or_default();
+                .unwrap_or_default(); // LAW10: absent optional TeX parse metadata means no comment spans; member bytes are still scanned.
             if let Some(content) = content {
                 source_contents.insert(name.clone(), content);
             }
@@ -197,7 +197,7 @@ pub(super) fn member_needs_source_bytes(name: &str) -> bool {
                 "tex" | "ltx" | "sty" | "cls"
             )
         })
-        .unwrap_or(false)
+        .unwrap_or(false) // LAW10: a member without an extension is not TeX source; recall-preserving ordinary archive scanning still handles the member.
 }
 
 pub(super) fn bytes_might_contain_source_extension(bytes: &[u8]) -> bool {
@@ -416,7 +416,7 @@ fn resolve_reference(
     reference: &Reference,
     members: &BTreeSet<&str>,
 ) -> Option<String> {
-    let parent_dir = parent.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+    let parent_dir = parent.rsplit_once('/').map(|(dir, _)| dir).unwrap_or(""); // LAW10: a root-level TeX member has the documented default empty parent path; reference resolution remains exact.
     let raw = reference.value.trim().trim_matches('"').replace('\\', "/");
     if raw.is_empty() || raw.starts_with('/') || raw.contains('\0') {
         return None;

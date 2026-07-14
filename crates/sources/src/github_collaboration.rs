@@ -9,6 +9,7 @@ use keyhog_core::{
 };
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
+use reqwest::StatusCode;
 use serde::{de::DeserializeOwned, Deserialize};
 
 const SOURCE_NAME: &str = "github-collaboration";
@@ -225,7 +226,7 @@ impl GitHubCollaborationSource {
             let (reviews, reviews_gap): (Vec<PullRequestReview>, _) =
                 api.pages("pull-requests", &reviews_path, "");
             for review in reviews {
-                let revision_time = review.submitted_at.as_deref().unwrap_or(&review.commit_id);
+                let revision_time = review.submitted_at.as_deref().unwrap_or(&review.commit_id); // LAW10: absent optional review timestamp uses the immutable commit ID as result metadata; review content is still scanned.
                 let revision = revision_identity(&review.node_id, revision_time);
                 push_text_chunk(
                     chunks,
@@ -236,8 +237,8 @@ impl GitHubCollaborationSource {
                     self.provenance(&format!("pulls/{}/reviews/{}", pull.number, review.id)),
                     &revision,
                     review.user.as_ref().map(|actor| actor.login.as_str()),
-                    review.submitted_at.as_deref().unwrap_or(""),
-                    review.body.unwrap_or_default(),
+                    review.submitted_at.as_deref().unwrap_or(""), // LAW10: absent optional timestamp omits date result metadata; review content is still scanned.
+                    review.body.unwrap_or_default(), // LAW10: absent optional review body means there are no review bytes to scan.
                 )?;
             }
             if let Some(gap) = reviews_gap {
@@ -456,8 +457,20 @@ impl GitHubCollaborationSource {
                     "a GitHub wiki revision could not be decoded",
                 ),
             })?;
-            let path = chunk.metadata.path.as_deref().unwrap_or("unknown");
-            let revision = chunk.metadata.commit.as_deref().unwrap_or("unreachable");
+            let path = chunk.metadata.path.as_deref().ok_or_else(|| {
+                GitHubGap::inaccessible(
+                    "wiki",
+                    self.repository(),
+                    "a GitHub wiki revision omitted its file path; the revision was not scanned",
+                )
+            })?;
+            let revision = chunk.metadata.commit.as_deref().ok_or_else(|| {
+                GitHubGap::inaccessible(
+                    "wiki",
+                    self.repository(),
+                    "a GitHub wiki revision omitted its commit identity; the revision was not scanned",
+                )
+            })?;
             let identity = format!("wiki:{revision}:{path}");
             if !seen.insert(identity) {
                 continue;
@@ -777,21 +790,9 @@ impl<'a> GitHubApi<'a> {
                     GitHubGap::inaccessible(surface, "/graphql", "GitHub GraphQL request failed")
                 })?;
             let status = response.status();
-            let rate_limited = status.as_u16() == 429
-                || (status.as_u16() == 403
-                    && response
-                        .headers()
-                        .get("x-ratelimit-remaining")
-                        .and_then(|value| value.to_str().ok())
-                        == Some("0"));
+            let rate_limited = response_is_rate_limited(status, response.headers());
             if rate_limited && attempt + 1 < MAX_RATE_LIMIT_ATTEMPTS {
-                let seconds = response
-                    .headers()
-                    .get("retry-after")
-                    .and_then(|value| value.to_str().ok())
-                    .and_then(|value| value.parse::<u64>().ok())
-                    .unwrap_or((attempt + 1) as u64)
-                    .min(MAX_RATE_LIMIT_SLEEP_SECS);
+                let seconds = rate_limit_backoff_seconds(response.headers(), attempt);
                 std::thread::sleep(std::time::Duration::from_secs(seconds));
                 continue;
             }
@@ -847,21 +848,9 @@ impl<'a> GitHubApi<'a> {
                     GitHubGap::inaccessible(surface, path, "GitHub API request failed")
                 })?;
             let status = response.status();
-            let rate_limited = status.as_u16() == 429
-                || (status.as_u16() == 403
-                    && response
-                        .headers()
-                        .get("x-ratelimit-remaining")
-                        .and_then(|value| value.to_str().ok())
-                        == Some("0"));
+            let rate_limited = response_is_rate_limited(status, response.headers());
             if rate_limited && attempt + 1 < MAX_RATE_LIMIT_ATTEMPTS {
-                let seconds = response
-                    .headers()
-                    .get("retry-after")
-                    .and_then(|value| value.to_str().ok())
-                    .and_then(|value| value.parse::<u64>().ok())
-                    .unwrap_or((attempt + 1) as u64)
-                    .min(MAX_RATE_LIMIT_SLEEP_SECS);
+                let seconds = rate_limit_backoff_seconds(response.headers(), attempt);
                 std::thread::sleep(std::time::Duration::from_secs(seconds));
                 continue;
             }
@@ -881,6 +870,28 @@ impl<'a> GitHubApi<'a> {
             "GitHub API rate limit retry budget was exhausted",
         ))
     }
+}
+
+fn response_is_rate_limited(status: StatusCode, headers: &HeaderMap) -> bool {
+    status == StatusCode::TOO_MANY_REQUESTS
+        || status == StatusCode::FORBIDDEN
+            && headers
+                .get("x-ratelimit-remaining")
+                .is_some_and(|value| value.to_str().is_ok_and(|remaining| remaining == "0"))
+}
+
+fn rate_limit_backoff_seconds(headers: &HeaderMap, attempt: usize) -> u64 {
+    let default = (attempt + 1) as u64;
+    let Some(value) = headers.get("retry-after") else {
+        return default;
+    };
+    let Ok(value) = value.to_str() else {
+        return default;
+    };
+    let Ok(seconds) = value.parse::<u64>() else {
+        return default;
+    };
+    seconds.min(MAX_RATE_LIMIT_SLEEP_SECS)
 }
 
 fn read_bounded_json<T: DeserializeOwned>(
@@ -1053,13 +1064,15 @@ fn revision_identity(node_id: &str, updated_at: &str) -> String {
 }
 
 fn percent_encode_path(path: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut encoded = String::with_capacity(path.len());
     for byte in path.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'_' | b'.') {
             encoded.push(char::from(byte));
         } else {
-            use std::fmt::Write as _;
-            let _ = write!(encoded, "%{byte:02X}");
+            encoded.push('%');
+            encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
         }
     }
     encoded
