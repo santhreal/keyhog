@@ -167,6 +167,11 @@ name = "gpu_vs_hs_8mib"
 harness = false
 
 [[bench]]
+name = "hs_vectored_candidate"
+harness = false
+required-features = ["simd"]
+
+[[bench]]
 name = "scan_throughput"
 harness = false
 
