@@ -59,8 +59,7 @@ async fn start(
     keyhog_scanner::gpu::set_gpu_runtime_policy(gpu_policy);
     if gpu_policy == keyhog_scanner::gpu::GpuRuntimePolicy::Required {
         keyhog_scanner::gpu::require_gpu_preflight()
-            .map_err(anyhow::Error::msg)
-            .context("daemon start: required GPU preflight failed")?;
+            .map_err(crate::orchestrator::daemon_gpu_preflight_failure)?;
     }
 
     let socket = socket.unwrap_or_else(default_socket_path); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant

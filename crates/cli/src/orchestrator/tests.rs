@@ -4,14 +4,18 @@
 //! parent module's private constants via `use super::*`.
 
 use super::run::{resolve_scan_exit, ScanOutcome};
+#[cfg(feature = "simd")]
+use super::setup_default_scan_runtime;
 use super::{
-    apply_host_runtime_limits, daemon_requires_gpu, resolved_scan_config_for_scanner,
-    setup_default_scan_runtime, LOW_RAM_HOST_THRESHOLD_MB, LOW_RAM_MAX_DECODE_BYTES,
+    apply_host_runtime_limits, daemon_compile_failure, daemon_gpu_preflight_failure,
+    daemon_requires_gpu, resolved_scan_config_for_scanner, validate_daemon_gpu_initialization,
+    validate_daemon_gpu_warmup, LOW_RAM_HOST_THRESHOLD_MB, LOW_RAM_MAX_DECODE_BYTES,
     LOW_RAM_MAX_MATCHES_PER_CHUNK,
 };
+use crate::exit_codes::EXIT_REQUIRE_GPU_UNMET;
 use crate::exit_codes::{
     EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC, EXIT_SOURCE_FAILED, EXIT_SUCCESS,
-    EXIT_SYSTEM_ERROR,
+    EXIT_SYSTEM_ERROR, EXIT_USER_ERROR,
 };
 
 #[test]
@@ -108,9 +112,95 @@ fn daemon_gpu_warmup_follows_the_selected_routing_mode() {
     assert!(daemon_requires_gpu(None, true).expect("auto policy"));
     assert!(!daemon_requires_gpu(None, false).expect("auto policy"));
     assert!(daemon_requires_gpu(Some(ScanBackend::Gpu), true).expect("gpu policy"));
-    assert!(daemon_requires_gpu(Some(ScanBackend::Gpu), false).expect("gpu policy"));
     assert!(!daemon_requires_gpu(Some(ScanBackend::SimdCpu), true).expect("simd policy"));
     assert!(!daemon_requires_gpu(Some(ScanBackend::CpuFallback), true).expect("cpu policy"));
+}
+
+#[test]
+fn unavailable_daemon_gpu_is_typed_and_exits_twelve() {
+    use keyhog_scanner::ScanBackend;
+
+    let error = daemon_requires_gpu(Some(ScanBackend::Gpu), false)
+        .expect_err("an explicit GPU daemon must reject a GPU-less host");
+    assert_eq!(crate::cli_error_exit_code(&error), EXIT_REQUIRE_GPU_UNMET);
+    assert_eq!(
+        error.to_string(),
+        "daemon --backend gpu cannot be honored: this build and host have no eligible physical GPU path. Run `keyhog backend --self-test` and repair the GPU driver/runtime, or start the daemon with `--backend simd` or `--backend cpu`."
+    );
+
+    let preflight = daemon_gpu_preflight_failure("no physical adapter passed self-test".into());
+    assert_eq!(
+        crate::cli_error_exit_code(&preflight),
+        EXIT_REQUIRE_GPU_UNMET
+    );
+    assert_eq!(
+        preflight.to_string(),
+        "daemon start: required GPU preflight failed: no physical adapter passed self-test. Run `keyhog backend --self-test` and repair the GPU driver/runtime, or start the daemon with `--backend simd` or `--backend cpu`."
+    );
+}
+
+#[test]
+fn incompatible_daemon_gpu_compile_and_initialization_are_typed() {
+    let compile_error = daemon_compile_failure(&keyhog_scanner::ScanError::Gpu(
+        "adapter limits cannot create the literal-set pipeline".into(),
+    ));
+    assert_eq!(
+        crate::cli_error_exit_code(&compile_error),
+        EXIT_REQUIRE_GPU_UNMET
+    );
+    assert_eq!(
+        compile_error.to_string(),
+        "daemon GPU initialization failed while compiling the scanner: adapter limits cannot create the literal-set pipeline. Run `keyhog backend --self-test` and repair the GPU driver/runtime, or start the daemon with `--backend simd` or `--backend cpu`."
+    );
+
+    let readiness = validate_daemon_gpu_initialization(true, false)
+        .expect_err("an incompatible initialized backend must fail readiness");
+    assert_eq!(
+        crate::cli_error_exit_code(&readiness),
+        EXIT_REQUIRE_GPU_UNMET
+    );
+    assert_eq!(
+        readiness.to_string(),
+        "daemon GPU initialization failed: the detected physical GPU is unavailable or incompatible with the compiled scanner, driver, or runtime; refusing to announce readiness. Run `keyhog backend --self-test` and repair the GPU driver/runtime, or start the daemon with `--backend simd` or `--backend cpu`."
+    );
+}
+
+#[test]
+fn degraded_daemon_gpu_warmup_is_typed_and_exits_twelve() {
+    let error = validate_daemon_gpu_warmup(true, 4, 5)
+        .expect_err("a GPU degradation during warmup must fail readiness");
+    assert_eq!(crate::cli_error_exit_code(&error), EXIT_REQUIRE_GPU_UNMET);
+    assert_eq!(
+        error.to_string(),
+        "daemon GPU warmup degraded before readiness; refusing to apply persistent warm autoroute evidence. Run `keyhog backend --self-test` and repair the GPU driver/runtime, or start the daemon with `--backend simd` or `--backend cpu`."
+    );
+}
+
+#[test]
+fn non_gpu_daemon_configuration_remains_a_user_error() {
+    use keyhog_scanner::ScanBackend;
+
+    assert!(!daemon_requires_gpu(Some(ScanBackend::CpuFallback), false)
+        .expect("CPU daemon does not require GPU"));
+    validate_daemon_gpu_initialization(false, false)
+        .expect("CPU daemon ignores GPU initialization state");
+    validate_daemon_gpu_warmup(false, 4, 5).expect("CPU daemon ignores GPU degradation state");
+
+    let invalid = crate::orchestrator_config::parse_backend_override(Some("quantum"))
+        .expect_err("unknown daemon backend must be rejected");
+    assert_eq!(crate::cli_error_exit_code(&invalid), EXIT_USER_ERROR);
+
+    let invalid_detector = daemon_compile_failure(&keyhog_scanner::ScanError::Config(
+        "detector confidence is outside 0..=1".into(),
+    ));
+    assert_eq!(
+        crate::cli_error_exit_code(&invalid_detector),
+        EXIT_USER_ERROR
+    );
+    assert_eq!(
+        invalid_detector.to_string(),
+        "daemon: compiling scanner from detector specs: scanner configuration failure: detector confidence is outside 0..=1. Fix: correct the bundled scanner rules"
+    );
 }
 
 #[cfg(feature = "simd")]

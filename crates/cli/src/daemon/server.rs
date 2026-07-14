@@ -245,9 +245,10 @@ fn compile_daemon_scan_runtime(
     crate::orchestrator::CachedBackendRouter,
     usize,
 )> {
-    let scan_runtime = crate::orchestrator::compile_default_scan_runtime(detectors, |error| {
-        anyhow::anyhow!("daemon: compiling scanner from detector specs: {error}")
-    })?
+    let scan_runtime = crate::orchestrator::compile_default_scan_runtime(
+        detectors,
+        crate::orchestrator::daemon_compile_failure,
+    )?
     .prepare_persistent_daemon(backend_override)?;
     let detector_count = scan_runtime.detector_count();
     // The daemon is long-lived and serves many scan requests; pay the lazy

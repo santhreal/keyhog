@@ -69,6 +69,8 @@ Things that exit `2`:
 - Daemon availability, eligibility, trust, or protocol errors. See
   [Daemon and warm scans](../workflows/daemon.md) for routing-specific exits,
   automatic retry, stale status, coverage, and Windows behavior.
+- Invalid daemon startup configuration, including an unknown `--backend`
+  value. Required or selected GPU failures are `12`, not `2`.
 - Network error during `--verify` is NOT a `2`; it's a `verification-error`
   marker per finding and the scan exits `1` if any unverified-live
   findings exist.
@@ -135,6 +137,12 @@ persisted autoroute decision selected GPU, but the host cannot provide or keep
 a usable GPU dispatch path. This can happen before scanning or during a runtime
 dispatch. CPU/SIMD is not substituted. The distinct code lets CI identify a GPU
 runner/driver regression without scraping stderr.
+
+For `keyhog daemon start`, exit `12` covers required GPU preflight, GPU scanner
+compilation, an unavailable or incompatible initialized backend, and a warmup
+that degrades before readiness. A GPU dispatch failure after the ready line also
+terminates the daemon with `12`. Run `keyhog backend --self-test`; repair the
+GPU driver/runtime or select `--backend simd` or `--backend cpu` explicitly.
 
 ## `13` (requested source failed or coverage incomplete)
 

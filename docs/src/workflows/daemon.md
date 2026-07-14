@@ -41,6 +41,13 @@ autorouted daemon requires valid persisted warm-route evidence. A forced
 requested. Backend selection never falls through silently. See
 [Autoroute calibration](../reference/autoroute-calibration.md).
 
+GPU startup failures retain their stage and exit `12`. This covers required
+GPU preflight, scanner compilation, an unavailable or incompatible backend,
+and degradation during the readiness warmup. The diagnostic tells the operator
+to run `keyhog backend --self-test`, repair the driver/runtime, or start with
+`--backend simd` or `--backend cpu`. An invalid backend value or unrelated
+daemon configuration error remains exit `2`.
+
 `daemon status` connects to an existing service. It reports uptime, completed
 scan attempts, active scans, detector count, backend policy, and identity
 staleness. `scans served` includes attempts that returned a daemon error, so it
@@ -188,7 +195,9 @@ operator-correctable path errors normally exit `2`. This includes forced
 `--daemon=on` without a usable service, `status` or `stop` without a service,
 an incompatible forced request, and invalid startup configuration. Low-level
 operating-system I/O failures outside the operator-input classes exit `3`.
-Daemon GPU validation, initialization, and warmup errors currently exit `2`.
+Daemon GPU validation, initialization, and warmup failures exit `12`. A GPU
+dispatch failure after readiness also terminates the daemon with `12`; it never
+serves CPU/SIMD results for that request.
 If an `auto` request fails inside the daemon, KeyHog reports the error and
 retries in process; the retry then owns its normal exit semantics, including
 `12` if its selected or required GPU cannot run.

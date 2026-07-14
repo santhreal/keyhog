@@ -56,6 +56,29 @@ impl std::fmt::Display for GpuUnavailableError {
 
 impl std::error::Error for GpuUnavailableError {}
 
+const DAEMON_GPU_REMEDIATION: &str =
+    "Run `keyhog backend --self-test` and repair the GPU driver/runtime, or start the daemon with `--backend simd` or `--backend cpu`.";
+
+fn daemon_gpu_failure(diagnostic: impl std::fmt::Display) -> anyhow::Error {
+    GpuUnavailableError::new(format!("{diagnostic} {DAEMON_GPU_REMEDIATION}")).into()
+}
+
+pub(crate) fn daemon_gpu_preflight_failure(diagnostic: String) -> anyhow::Error {
+    let diagnostic = diagnostic.trim().trim_end_matches('.');
+    daemon_gpu_failure(format_args!(
+        "daemon start: required GPU preflight failed: {diagnostic}."
+    ))
+}
+
+pub(crate) fn daemon_compile_failure(error: &keyhog_scanner::ScanError) -> anyhow::Error {
+    match error {
+        keyhog_scanner::ScanError::Gpu(diagnostic) => daemon_gpu_failure(format_args!(
+            "daemon GPU initialization failed while compiling the scanner: {diagnostic}."
+        )),
+        _ => anyhow::anyhow!("daemon: compiling scanner from detector specs: {error}"),
+    }
+}
+
 fn apply_host_runtime_limits(
     effective_config: &mut ResolvedScanConfig,
     hw: &keyhog_scanner::HardwareCaps,
@@ -93,7 +116,10 @@ fn daemon_requires_gpu(
 ) -> Result<bool> {
     match backend_override {
         None => Ok(gpu_expected),
-        Some(keyhog_scanner::ScanBackend::Gpu) => Ok(true),
+        Some(keyhog_scanner::ScanBackend::Gpu) if gpu_expected => Ok(true),
+        Some(keyhog_scanner::ScanBackend::Gpu) => Err(daemon_gpu_failure(
+            "daemon --backend gpu cannot be honored: this build and host have no eligible physical GPU path.",
+        )),
         Some(keyhog_scanner::ScanBackend::SimdCpu | keyhog_scanner::ScanBackend::CpuFallback) => {
             Ok(false)
         }
@@ -101,6 +127,28 @@ fn daemon_requires_gpu(
             "daemon backend {unknown:?} is not supported by this KeyHog build; choose auto, gpu, simd, or cpu"
         ),
     }
+}
+
+fn validate_daemon_gpu_initialization(gpu_required: bool, gpu_ready: bool) -> Result<()> {
+    if gpu_required && !gpu_ready {
+        return Err(daemon_gpu_failure(
+            "daemon GPU initialization failed: the detected physical GPU is unavailable or incompatible with the compiled scanner, driver, or runtime; refusing to announce readiness.",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_daemon_gpu_warmup(
+    gpu_required: bool,
+    degrade_before: u64,
+    degrade_after: u64,
+) -> Result<()> {
+    if gpu_required && degrade_after != degrade_before {
+        return Err(daemon_gpu_failure(
+            "daemon GPU warmup degraded before readiness; refusing to apply persistent warm autoroute evidence.",
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) use postprocess::render_credential;
@@ -378,11 +426,6 @@ impl DefaultScanRuntime {
         let gpu_expected = keyhog_scanner::hw_probe::gpu_backend_compiled()
             && hw.gpu_available
             && !hw.gpu_is_software;
-        if backend_override == Some(keyhog_scanner::ScanBackend::Gpu) && !gpu_expected {
-            anyhow::bail!(
-                "daemon --backend gpu cannot be honored on this host/build; no eligible physical GPU path is available. Run `keyhog backend --self-test` or choose --backend simd/cpu"
-            );
-        }
         if backend_override == Some(keyhog_scanner::ScanBackend::SimdCpu) && !simd_ready {
             anyhow::bail!(
                 "daemon --backend simd cannot be honored because the Hyperscan/SIMD prefilter is unavailable. Run `keyhog backend --self-test` or choose --backend cpu"
@@ -391,13 +434,7 @@ impl DefaultScanRuntime {
         let gpu_must_be_ready = daemon_requires_gpu(backend_override, gpu_expected)?;
         let gpu_ready =
             gpu_must_be_ready && self.scanner.warm_backend(keyhog_scanner::ScanBackend::Gpu);
-        if gpu_must_be_ready && !gpu_ready {
-            anyhow::bail!(
-                "daemon GPU initialization failed on a host with an eligible physical GPU; \
-                 refusing to serve warm autoroute decisions. Run `keyhog backend --self-test` \
-                 or start a build/configuration without GPU eligibility"
-            );
-        }
+        validate_daemon_gpu_initialization(gpu_must_be_ready, gpu_ready)?;
         if gpu_must_be_ready {
             let warmup = keyhog_core::Chunk {
                 data: "keyhog daemon accelerator warmup\n".into(),
@@ -413,12 +450,11 @@ impl DefaultScanRuntime {
                 keyhog_scanner::ScanBackend::Gpu,
             ));
             self.scanner.clear_fragment_cache();
-            if self.scanner.gpu_degrade_count() != degrade_before {
-                anyhow::bail!(
-                    "daemon GPU warmup degraded before readiness; refusing to apply persistent \
-                     warm autoroute evidence. Run `keyhog backend --self-test` and fix the GPU path"
-                );
-            }
+            validate_daemon_gpu_warmup(
+                gpu_must_be_ready,
+                degrade_before,
+                self.scanner.gpu_degrade_count(),
+            )?;
         }
         tracing::info!(
             simd_ready,
@@ -449,7 +485,7 @@ impl DefaultScanRuntime {
 
 pub(crate) fn compile_default_scan_runtime(
     detectors: Vec<DetectorSpec>,
-    map_compile_error: impl FnOnce(&dyn std::fmt::Display) -> anyhow::Error,
+    map_compile_error: impl FnOnce(&keyhog_scanner::ScanError) -> anyhow::Error,
 ) -> Result<DefaultScanRuntime> {
     let scanner = Arc::new(
         CompiledScanner::compile(detectors.clone()).map_err(|error| map_compile_error(&error))?,
