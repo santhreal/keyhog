@@ -358,9 +358,10 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         );
     }
 
-    let inspection = crate::orchestrator::inspect_autoroute_cache(
-        args.autoroute_cache.as_deref().map(Path::new),
-    );
+    let cache_path =
+        crate::autoroute_cache_path::resolve_autoroute_cache_path(args.autoroute_cache.as_deref())
+            .map_err(anyhow::Error::msg)?;
+    let inspection = crate::orchestrator::inspect_autoroute_cache(cache_path.as_deref());
     if let Some(error) = inspection.error.as_deref() {
         anyhow::bail!(
             "autoroute calibration probes succeeded, but persisted cache readback failed: {error}"
