@@ -58,8 +58,8 @@ Things that exit `2`:
   itself, so the command prints the path to remove after it exits. The
   PowerShell installer handles this outer-process cleanup normally.
 - `.keyhog.toml` parse error.
-- Detector load failure for a specific TOML (with a stderr warning;
-  the rest of the scan continues but exits 2 at the end).
+- Detector corpus load failure. KeyHog rejects the whole corpus before reading
+  scan input. It does not scan with a partial detector set.
 - `--baseline <FILE>` where FILE doesn't exist or isn't valid JSON.
 - Missing, stale, invalid, or incomplete autoroute calibration for an
   automatic backend decision. Inspect it with `keyhog backend --autoroute`,

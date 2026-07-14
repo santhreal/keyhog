@@ -36,7 +36,15 @@ fn scan_rejects_partial_detector_corpus() {
     std::fs::write(target.join("input.txt"), "DEMO_ABCDEFGH\n").expect("write scan target");
 
     let output = Command::new(binary())
-        .args(["scan", "--backend", "cpu", "--daemon=off", "--detectors"])
+        .args([
+            "scan",
+            "--backend",
+            "cpu",
+            "--daemon=off",
+            "--format",
+            "json",
+            "--detectors",
+        ])
         .arg(&detectors)
         .arg(&target)
         .env("NO_COLOR", "1")
@@ -58,5 +66,10 @@ fn scan_rejects_partial_detector_corpus() {
             && combined.contains("broken.toml")
             && combined.contains("Fix: repair the named TOML"),
         "scan failure must name the malformed detector and fix; got {combined}"
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "corpus rejection must happen before partial scan output; stdout={}",
+        String::from_utf8_lossy(&output.stdout)
     );
 }
