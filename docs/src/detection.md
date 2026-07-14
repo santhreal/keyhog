@@ -181,9 +181,11 @@ positive, negative, evasion, backend-parity, and corpus contracts.
 Hardware changes execution, not detection policy. CPU, SIMD/Hyperscan, and GPU
 routes consume the same resolved detector/config digest. Autoroute admits a
 candidate only when its canonical detection identities match the reference:
-chunk membership, detector id/name/service/severity, hashed credential value,
-stored credential hash, hashed companion names and values, source, file, line,
-byte offset, commit, author, date, entropy, confidence, and multiplicity.
+chunk membership, detector id/name/service/severity, exact credential,
+stored-hash, and companion identity, source, file, line, byte offset, commit,
+author, date, entropy, confidence, and multiplicity. Mismatch diagnostics name
+only the differing fields and occurrence counts. They never expose raw
+values or deterministic value fingerprints.
 Built-in suppression, confidence, decode, and scanner postprocessing are already
 part of those backend results. CLI allowlists and rules, policy floors,
 cross-source deduplication, verification, and output formatting run after

@@ -483,6 +483,35 @@ fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
 }
 
 #[test]
+fn measured_router_collapses_stale_gpu_identity_when_runtime_policy_disables_gpu() {
+    let scanner = CompiledScanner::compile_with_gpu_policy(
+        Vec::new(),
+        keyhog_scanner::GpuInitPolicy::ForceDisabled,
+    )
+    .expect("compile CPU-policy scanner");
+    let mut probed_caps = test_hw_caps();
+    probed_caps.gpu_available = true;
+    probed_caps.gpu_name = Some("NVIDIA GeForce RTX 5090".to_string());
+    probed_caps.gpu_runtime_identity = Some("wgpu:Vulkan:NVIDIA:565.00".to_string());
+
+    let router = MeasuredBackendRouter::new(
+        probed_caps,
+        scanner.runtime_status().pattern_count,
+        test_rules_digest().to_string(),
+        0x5e21_97b4_80f3_4dc1,
+        false,
+        false,
+        false,
+        Ok(None),
+        &scanner,
+    );
+
+    assert_eq!(router.host_profile.gpu_name, None);
+    assert_eq!(router.host_profile.gpu_runtime_backend, None);
+    assert_eq!(router.host_profile.gpu_driver_runtime_identity, None);
+}
+
+#[test]
 fn gpu_capable_build_rejects_present_gpu_without_device_name() {
     let mut caps = test_hw_caps();
     caps.gpu_available = true;
@@ -3838,47 +3867,69 @@ fn autoroute_reference_inconsistency_aborts_calibration_contract() {
 }
 
 #[test]
-fn autoroute_reference_mismatch_evidence_names_divergent_records() {
-    let evidence = calibration::calibration_match_identity_set(&[vec![keyhog_core::RawMatch {
+fn autoroute_reference_mismatch_evidence_names_fields_without_values() {
+    let reference_match = keyhog_core::RawMatch {
         detector_id: "aws-access-key".into(),
         detector_name: "AWS Access Key".into(),
         service: "aws".into(),
         severity: keyhog_core::Severity::High,
         credential: "AKIAIOSFODNN7EXAMPLE".into(),
         credential_hash: [0xAB; 32].into(),
-        companions: std::collections::HashMap::new(),
+        companions: std::collections::HashMap::from([(
+            "account".to_string(),
+            "production@example.test".to_string(),
+        )]),
         location: keyhog_core::MatchLocation {
             source: "filesystem".into(),
             file_path: Some("src/secrets.rs".into()),
             line: Some(42),
             offset: 1337,
-            commit: None,
-            author: None,
-            date: None,
+            commit: Some("commit-sensitive-a".into()),
+            author: Some("author-a@example.test".into()),
+            date: Some("2026-07-14T00:00:00Z".into()),
         },
         entropy: Some(4.2),
         confidence: Some(0.99),
-    }]]);
-    let rendered = evidence
-        .iter()
-        .next()
-        .expect("one calibration mismatch identity");
+    };
+    let mut trial_match = reference_match.clone();
+    trial_match.credential = "AKIAZZZZZZZZZZZZZZZZ".into();
+    trial_match.credential_hash = [0xCD; 32].into();
+    trial_match
+        .companions
+        .insert("account".to_string(), "staging@example.test".to_string());
+    trial_match.location.commit = Some("commit-sensitive-b".into());
+    trial_match.location.author = Some("author-b@example.test".into());
+    trial_match.location.date = Some("2026-07-15T00:00:00Z".into());
 
-    assert!(
-        rendered.contains("chunk=0")
-            && rendered.contains("detector=aws-access-key")
-            && rendered.contains(
-                "cred_hash=abababababababababababababababababababababababababababababababab"
-            )
-            && rendered.contains("file=Some(\"src/secrets.rs\")")
-            && rendered.contains("line=Some(42)")
-            && rendered.contains("offset=1337"),
-        "autoroute mismatch evidence must name the divergent record, got: {rendered}"
+    let fields = calibration::calibration_mismatch_field_names(
+        &[vec![reference_match]],
+        &[vec![trial_match]],
     );
-    assert!(
-        !rendered.contains("AKIAIOSFODNN7EXAMPLE"),
-        "autoroute mismatch diagnostics must not log plaintext credentials: {rendered}"
+
+    assert_eq!(
+        fields,
+        vec![
+            "author",
+            "commit",
+            "companions",
+            "credential_hash",
+            "credential_value",
+            "date",
+        ]
     );
+    let rendered = format!("{fields:?}");
+    for sensitive in [
+        "AKIAIOSFODNN7EXAMPLE",
+        "AKIAZZZZZZZZZZZZZZZZ",
+        "production@example.test",
+        "staging@example.test",
+        "author-a@example.test",
+        "author-b@example.test",
+        "commit-sensitive-a",
+        "commit-sensitive-b",
+    ] {
+        assert!(!rendered.contains(sensitive));
+    }
 }
 
 fn canonical_test_match(

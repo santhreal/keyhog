@@ -393,9 +393,11 @@ keyhog scan-system --lockdown                       # forbids --include-network
 | `--lockdown` | flag | off | Require stronger memory and process protections and refuse network mounts. |
 
 `--threads` configures a process-global Rayon pool. Reusing the same width in
-one process is supported. An external pool is reused only at the exact requested
-width. A different live width is an operator-visible error. Effective config
-and autoroute identity record the actual width.
+one process is supported when KeyHog created the pool. An externally initialized
+pool is rejected even at the requested width because its stack size, naming,
+and ownership cannot be attested. A different live width is also an
+operator-visible error. Effective config and autoroute identity record the
+actual KeyHog-owned width.
 
 `scan-system` always runs its own in-process scanner, whether the daemon is
 active or inactive. It uses persisted autoroute evidence and has no explicit

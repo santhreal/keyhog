@@ -263,25 +263,12 @@ pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) -
         .stack_size(8 * 1024 * 1024)
         .thread_name(|i| format!("keyhog-worker-{i}"));
 
-    if let Err(error) = builder.build_global() {
-        let actual = rayon::current_num_threads();
-        if actual != n {
-            anyhow::bail!(
-                "Rayon worker pool already has {actual} threads, but this scan requested {n} ({source}); the requested width cannot take effect in this process ({error}). Fix: configure KeyHog before any library initializes Rayon's global pool or start this scan in a separate process"
-            );
-        }
-        CONFIGURED_RAYON_THREADS.set(actual).map_err(|_| {
-            anyhow::anyhow!(
-                "Rayon worker pool has {actual} threads, but its KeyHog initialization state changed concurrently"
-            )
-        })?;
-        tracing::warn!(
-            threads = actual,
-            source,
-            "reusing an externally initialized Rayon pool with the exact requested width"
-        );
-        return Ok(actual);
-    }
+    require_keyhog_owned_rayon_pool(
+        builder.build_global(),
+        n,
+        source,
+        rayon::current_num_threads,
+    )?;
     CONFIGURED_RAYON_THREADS.set(n).map_err(|_| {
         anyhow::anyhow!(
             "Rayon worker pool configured with {n} threads, but its KeyHog initialization state changed concurrently"
@@ -294,6 +281,20 @@ pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) -
         "rayon thread pool configured"
     );
     Ok(n)
+}
+
+fn require_keyhog_owned_rayon_pool<E: std::fmt::Display>(
+    build_result: std::result::Result<(), E>,
+    requested: usize,
+    source: &'static str,
+    actual_threads: impl FnOnce() -> usize,
+) -> Result<()> {
+    build_result.map_err(|error| {
+        let actual = actual_threads();
+        anyhow::anyhow!(
+            "Rayon worker pool was initialized outside KeyHog with {actual} threads, but this scan requires a KeyHog-owned pool with {requested} threads ({source}) and 8 MiB worker stacks ({error}). Fix: configure KeyHog before any library initializes Rayon's global pool or start this scan in a separate process"
+        )
+    })
 }
 
 fn thread_pool_needs_initialization(
@@ -388,7 +389,7 @@ pub(crate) mod testing {
 
 #[cfg(test)]
 mod tests {
-    use super::thread_pool_needs_initialization;
+    use super::{require_keyhog_owned_rayon_pool, thread_pool_needs_initialization};
 
     #[test]
     fn repeated_rayon_configuration_accepts_the_live_width() {
@@ -406,6 +407,19 @@ mod tests {
         assert!(
             error.contains("already has 16 threads") && error.contains("requested 8"),
             "mismatch diagnostic must name the live and requested widths: {error}"
+        );
+    }
+
+    #[test]
+    fn externally_owned_same_width_rayon_pool_is_rejected() {
+        let error = require_keyhog_owned_rayon_pool(Err("already initialized"), 16, "test", || 16)
+            .expect_err("same-width external Rayon ownership must be rejected")
+            .to_string();
+        assert!(
+            error.contains("initialized outside KeyHog")
+                && error.contains("KeyHog-owned pool with 16 threads")
+                && error.contains("8 MiB worker stacks"),
+            "same-width external ownership must fail closed with the unverifiable setting: {error}"
         );
     }
 }

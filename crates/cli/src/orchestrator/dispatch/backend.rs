@@ -437,6 +437,7 @@ impl MeasuredBackendRouter {
         pattern_count: usize,
         rules_digest: String,
         config_digest: u64,
+        gpu_runtime_participates: bool,
         autoroute_gpu: bool,
         calibration_mode: bool,
         autoroute_cache_path: Result<Option<PathBuf>, String>,
@@ -444,13 +445,16 @@ impl MeasuredBackendRouter {
     ) -> Self {
         let runtime_status = scanner.runtime_status();
         let detector_digest = runtime_status.detector_digest;
-        // A GPU-excluded diagnostic calibration neither measures nor persists a
-        // GPU route, so physical GPU identity is not part of that diagnostic
-        // cache. Normal routing and canonical all-candidate calibration retain
+        // A GPU-excluded runtime or diagnostic calibration neither measures nor
+        // persists a GPU route, so physical GPU identity is not part of that
+        // cache. Eligible normal routing and all-candidate calibration retain
         // the exact device/runtime/driver identity.
-        let gpu_participates = keyhog_scanner::hw_probe::gpu_backend_compiled()
+        let gpu_participates = gpu_runtime_participates
+            && keyhog_scanner::hw_probe::gpu_backend_compiled()
             && (!calibration_mode || autoroute_gpu);
-        let gpu_peer_identity = gpu_peer_identity(scanner);
+        let gpu_peer_identity = gpu_participates
+            .then(|| gpu_peer_identity(scanner))
+            .flatten();
         let host_profile = AutorouteHostProfile::from_caps(
             &hw_caps,
             gpu_peer_identity.as_deref(),

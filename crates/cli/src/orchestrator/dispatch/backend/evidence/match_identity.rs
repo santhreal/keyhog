@@ -7,7 +7,7 @@ use keyhog_core::{CredentialHash, RawMatch, Severity};
 /// Plain credentials and companion values never enter this proof object. Their
 /// SHA-256 domain values do, so calibration proves semantic parity without
 /// making diagnostics or comparison scratch a secret-bearing surface.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct CanonicalMatch<'a> {
     chunk_idx: usize,
     detector_id: &'a str,
@@ -116,49 +116,69 @@ fn canonical_match(chunk_idx: usize, m: &RawMatch) -> CanonicalMatch<'_> {
     }
 }
 
-pub(crate) fn render_canonical_match(m: &CanonicalMatch<'_>) -> String {
-    let credential_value_hash = keyhog_core::hex_encode(m.credential_value_hash.as_bytes());
-    let credential_hash = keyhog_core::hex_encode(m.credential_hash.as_bytes());
-    let companions = m
-        .companions
-        .iter()
-        .map(|(name, value)| {
-            (
-                keyhog_core::hex_encode(name.as_bytes()),
-                keyhog_core::hex_encode(value.as_bytes()),
-            )
-        })
-        .collect::<Vec<_>>();
-    let commit_hash = secret_safe_optional_hash(m.commit);
-    let author_hash = secret_safe_optional_hash(m.author);
-    let date_hash = secret_safe_optional_hash(m.date);
-    format!(
-        "chunk={} detector={} name={} service={} severity={} credential_value_hash={} cred_hash={} credential_hash_consistent={} \
-         companions={:?} source={} file={:?} line={:?} offset={} commit_hash={:?} author_hash={:?} date_hash={:?} \
-         entropy_bits={:?} confidence_bits={:?}",
-        m.chunk_idx,
-        m.detector_id,
-        m.detector_name,
-        m.service,
-        m.severity.as_str(),
-        credential_value_hash,
-        credential_hash,
-        m.credential_value_hash == m.credential_hash,
-        companions,
-        m.source,
-        m.file_path,
-        m.line,
-        m.offset,
-        commit_hash,
-        author_hash,
-        date_hash,
-        m.entropy_bits,
-        m.confidence_bits,
-    )
-}
-
-fn secret_safe_optional_hash(value: Option<&str>) -> Option<String> {
-    value.map(|value| keyhog_core::hex_encode(keyhog_core::sha256_hash(value).as_bytes()))
+/// Identify which semantic fields differ without rendering their values.
+pub(crate) fn differing_canonical_match_fields(
+    reference: &[CanonicalMatch<'_>],
+    trial: &[CanonicalMatch<'_>],
+) -> Vec<&'static str> {
+    let mut fields = std::collections::BTreeSet::new();
+    if reference.len() != trial.len() {
+        fields.insert("match_count");
+    }
+    for (reference, trial) in reference.iter().zip(trial) {
+        if reference.chunk_idx != trial.chunk_idx {
+            fields.insert("chunk_idx");
+        }
+        if reference.detector_id != trial.detector_id {
+            fields.insert("detector_id");
+        }
+        if reference.detector_name != trial.detector_name {
+            fields.insert("detector_name");
+        }
+        if reference.service != trial.service {
+            fields.insert("service");
+        }
+        if reference.severity != trial.severity {
+            fields.insert("severity");
+        }
+        if reference.credential_value_hash != trial.credential_value_hash {
+            fields.insert("credential_value");
+        }
+        if reference.credential_hash != trial.credential_hash {
+            fields.insert("credential_hash");
+        }
+        if reference.companions != trial.companions {
+            fields.insert("companions");
+        }
+        if reference.source != trial.source {
+            fields.insert("source");
+        }
+        if reference.file_path != trial.file_path {
+            fields.insert("file_path");
+        }
+        if reference.line != trial.line {
+            fields.insert("line");
+        }
+        if reference.offset != trial.offset {
+            fields.insert("offset");
+        }
+        if reference.commit != trial.commit {
+            fields.insert("commit");
+        }
+        if reference.author != trial.author {
+            fields.insert("author");
+        }
+        if reference.date != trial.date {
+            fields.insert("date");
+        }
+        if reference.entropy_bits != trial.entropy_bits {
+            fields.insert("entropy");
+        }
+        if reference.confidence_bits != trial.confidence_bits {
+            fields.insert("confidence");
+        }
+    }
+    fields.into_iter().collect()
 }
 
 pub(crate) fn canonical_match_digest(matches: &[CanonicalMatch<'_>]) -> u64 {
@@ -220,22 +240,21 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_render_distinguishes_exact_hashed_evidence_without_plaintext() {
+    fn diagnostic_reports_only_differing_field_names() {
         let base = diagnostic_match();
-        let base_rendered = render_canonical_match(&base);
         let mut variants = Vec::new();
 
         let mut changed = base.clone();
         changed.chunk_idx = 1;
-        variants.push(("chunk index", changed));
+        variants.push(("chunk_idx", changed));
 
         let mut changed = base.clone();
         changed.detector_id = "detector-b";
-        variants.push(("detector id", changed));
+        variants.push(("detector_id", changed));
 
         let mut changed = base.clone();
         changed.detector_name = "Detector B";
-        variants.push(("detector name", changed));
+        variants.push(("detector_name", changed));
 
         let mut changed = base.clone();
         changed.service = "service-b";
@@ -247,19 +266,19 @@ mod tests {
 
         let mut changed = base.clone();
         changed.credential_value_hash = [0x12; 32].into();
-        variants.push(("credential value", changed));
+        variants.push(("credential_value", changed));
 
         let mut changed = base.clone();
         changed.credential_hash = [0x98; 32].into();
-        variants.push(("stored credential hash", changed));
+        variants.push(("credential_hash", changed));
 
         let mut changed = base.clone();
         changed.companions = vec![([0x22; 32].into(), [0x34; 32].into())];
-        variants.push(("companion value", changed));
+        variants.push(("companions", changed));
 
         let mut changed = base.clone();
         changed.companions = vec![([0x23; 32].into(), [0x33; 32].into())];
-        variants.push(("companion name", changed));
+        variants.push(("companions", changed));
 
         let mut changed = base.clone();
         changed.source = "filesystem";
@@ -267,7 +286,7 @@ mod tests {
 
         let mut changed = base.clone();
         changed.file_path = Some("src/other.rs");
-        variants.push(("file path", changed));
+        variants.push(("file_path", changed));
 
         let mut changed = base.clone();
         changed.line = Some(8);
@@ -298,18 +317,19 @@ mod tests {
         variants.push(("confidence", changed));
 
         for (field, changed) in variants {
-            assert_ne!(
-                base_rendered,
-                render_canonical_match(&changed),
-                "changing {field} must change the parity diagnostic"
+            assert_eq!(
+                differing_canonical_match_fields(
+                    std::slice::from_ref(&base),
+                    std::slice::from_ref(&changed),
+                ),
+                vec![field],
+                "the parity diagnostic must name only the changed field"
             );
         }
 
-        for plaintext in ["commit-a", "author-a@example.test", "2026-07-14T00:00:00Z"] {
-            assert!(
-                !base_rendered.contains(plaintext),
-                "parity diagnostics must hash provenance value {plaintext:?}"
-            );
-        }
+        assert_eq!(
+            differing_canonical_match_fields(std::slice::from_ref(&base), &[]),
+            vec!["match_count"]
+        );
     }
 }

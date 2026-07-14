@@ -57,14 +57,15 @@ zeroized without discarding the warmed host allocation.
 
 ## What “same results” means
 
-Calibration compares the complete redacted `RawMatch` identity: chunk index;
-detector id, name, service, and severity; hashes of the actual credential,
-stored credential hash, and companion names/values; source, file, line, offset,
-commit, author, and date; entropy and confidence. A candidate is rejected if
-any field or finding multiplicity differs from the Hyperscan reference, if
-repeated reference trials are inconsistent, or if required GPU timing evidence
-is invalid. Plain credentials and companion values never enter parity logs.
-Normal automatic scans do not benchmark or silently replace a rejected backend.
+Calibration compares the complete `RawMatch` identity: chunk index; detector
+id, name, service, and severity; exact credential, stored-hash, and companion
+identity; source, file, line, offset, commit, author, and date; entropy and
+confidence. A candidate is rejected if any field or finding multiplicity
+differs from the Hyperscan reference, if repeated reference trials are
+inconsistent, or if required GPU timing evidence is invalid. Diagnostics name
+only the differing fields and occurrence counts. They never emit raw
+values or deterministic value fingerprints. Normal automatic scans do not
+benchmark or silently replace a rejected backend.
 
 Among parity-correct candidates, routing uses representative measured medians,
 never a lucky fastest trial. A fully separated 95% confidence interval is the

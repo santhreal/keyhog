@@ -14,12 +14,13 @@ execution class exposed by that scanner, rejects candidates whose complete
 redacted raw-match identity differs from the reference, and records the fastest
 survivor for the measured representative. Every executable CUDA and WGPU path
 is acquired and measured independently. One driver never substitutes for the
-other. The parity identity
-covers chunk membership; detector id/name/service/severity; hashes of the actual
-credential, stored hash, and companion names/values; full source/history
-location; entropy; confidence; and finding multiplicity. Plain credentials and
-companions never enter calibration logs. Normal scans then do a direct table
-lookup; they never benchmark mid-scan.
+other. The parity identity covers chunk membership; detector
+id/name/service/severity; exact credential, stored-hash, and companion identity;
+full source/history location; entropy; confidence; and finding multiplicity.
+Mismatch diagnostics expose only field names and occurrence counts.
+They never expose credentials, companions, history values, or deterministic
+value fingerprints. Normal scans then do a direct table lookup; they never
+benchmark mid-scan.
 
 Calibration, in-process batches, and daemon requests call the same explicit
 backend-dispatch boundary. Hyperscan uses its coalesced multi-chunk path. Scalar
@@ -182,10 +183,11 @@ which backend is fastest:
 - Pipeline knobs (`--threads`, `--reader-threads`, `--fused-batch`,
   `--fused-depth`) and `[tuning]` settings fork the decision because they change
   work partitioning and backend warm-up behavior.
-- One calibration process may reuse an already configured Rayon pool only at
-  the same worker width. An external pool is accepted only at that exact width.
-  An incompatible preset or live width fails before measurement, and the actual
-  count is part of the resolved config identity.
+- One calibration process may reuse a KeyHog-owned Rayon pool only at the same
+  worker width. An external pool is rejected because its stack, naming, and
+  ownership settings cannot be attested. An incompatible preset or live width
+  fails before measurement, and the actual count is part of the resolved config
+  identity.
 - Source policy (`--limit-*`, `--max-file-size`, `--no-default-excludes`) and detector
   floors fork the decision for real `stdin`/directory buckets that feed different cache/chunk
   geometry.

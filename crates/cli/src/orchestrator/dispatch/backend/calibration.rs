@@ -14,17 +14,14 @@
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::ScanBackend;
 use keyhog_scanner::CompiledScanner;
-#[cfg(test)]
-use std::collections::BTreeSet;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
     canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
-    gpu_cold_warm_route_evidence, AutorouteDecision, BackendTimingEvidence, CanonicalMatch,
+    differing_canonical_match_fields, gpu_cold_warm_route_evidence, AutorouteDecision,
+    BackendTimingEvidence, CanonicalMatch,
 };
 use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
-
-const CALIBRATION_MISMATCH_RECORD_LIMIT: usize = 32;
 
 pub(super) fn calibrate_fastest_correct_backend(
     scanner: &CompiledScanner,
@@ -208,25 +205,12 @@ fn establish_reference_simd(
     reference
 }
 
-/// The reference-mismatch diff view: every match's calibration identity,
-/// rendered. Derived from `evidence::canonical_matches` + `render_canonical_match`
-/// so the identity FIELDS have exactly one owner (`evidence::canonical_match`)
-/// and this diff can never drift from the equality check it explains.
 #[cfg(test)]
-pub(super) fn calibration_match_identity_set(
-    results: &[Vec<keyhog_core::RawMatch>],
-) -> BTreeSet<String> {
-    calibration_match_identity_records(results)
-        .into_iter()
-        .collect()
-}
-
-#[cfg(test)]
-fn calibration_match_identity_records(results: &[Vec<keyhog_core::RawMatch>]) -> Vec<String> {
-    canonical_matches(results)
-        .iter()
-        .map(super::evidence::render_canonical_match)
-        .collect()
+pub(super) fn calibration_mismatch_field_names(
+    reference: &[Vec<keyhog_core::RawMatch>],
+    trial: &[Vec<keyhog_core::RawMatch>],
+) -> Vec<&'static str> {
+    differing_canonical_match_fields(&canonical_matches(reference), &canonical_matches(trial))
 }
 
 fn measure_candidate_backend(
@@ -275,23 +259,21 @@ fn measure_candidate_backend(
             calibration_candidate_parity_result(backend, trial_idx + 1, &matches, &reference_key)
         {
             let trial_key = canonical_matches(&matches);
-            let (only_in_reference_count, only_in_reference) =
-                bounded_sorted_calibration_difference(&reference_key, &trial_key, |record| {
-                    super::evidence::render_canonical_match(record)
-                });
-            let (only_in_trial_count, only_in_trial) =
-                bounded_sorted_calibration_difference(&trial_key, &reference_key, |record| {
-                    super::evidence::render_canonical_match(record)
-                });
+            let only_in_reference_count =
+                sorted_calibration_difference_count(&reference_key, &trial_key);
+            let only_in_trial_count =
+                sorted_calibration_difference_count(&trial_key, &reference_key);
+            let differing_fields = differing_canonical_match_fields(&reference_key, &trial_key);
             if backend == ScanBackend::SimdCpu {
                 tracing::error!(
                     target: "keyhog::routing",
                     backend = backend.label(),
                     trial = trial_idx + 1,
+                    reference_match_count = reference_key.len(),
+                    trial_match_count = trial_key.len(),
                     only_in_reference_count,
                     only_in_trial_count,
-                    only_in_reference = ?only_in_reference,
-                    only_in_trial = ?only_in_trial,
+                    differing_fields = ?differing_fields,
                     "reference backend produced inconsistent calibration results; autoroute calibration aborted"
                 );
             } else {
@@ -299,10 +281,11 @@ fn measure_candidate_backend(
                     target: "keyhog::routing",
                     backend = backend.label(),
                     trial = trial_idx + 1,
+                    reference_match_count = reference_key.len(),
+                    trial_match_count = trial_key.len(),
                     only_in_reference_count,
                     only_in_trial_count,
-                    only_in_reference = ?only_in_reference,
-                    only_in_trial = ?only_in_trial,
+                    differing_fields = ?differing_fields,
                     "backend rejected by autoroute parity check"
                 );
             }
@@ -322,19 +305,8 @@ fn measure_candidate_backend(
     })
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct CalibrationMismatchRecord {
-    record: String,
-    missing_occurrences: usize,
-}
-
-fn bounded_sorted_calibration_difference<T: Ord>(
-    left: &[T],
-    right: &[T],
-    render: impl Fn(&T) -> String,
-) -> (usize, Vec<CalibrationMismatchRecord>) {
+fn sorted_calibration_difference_count<T: Ord>(left: &[T], right: &[T]) -> usize {
     let mut missing_occurrences = 0usize;
-    let mut records = Vec::new();
     let mut left_index = 0usize;
     let mut right_index = 0usize;
     while left_index < left.len() {
@@ -354,15 +326,9 @@ fn bounded_sorted_calibration_difference<T: Ord>(
             continue;
         }
         missing_occurrences = missing_occurrences.saturating_add(missing);
-        if records.len() < CALIBRATION_MISMATCH_RECORD_LIMIT {
-            records.push(CalibrationMismatchRecord {
-                record: render(record),
-                missing_occurrences: missing,
-            });
-        }
         left_index = left_end;
     }
-    (missing_occurrences, records)
+    missing_occurrences
 }
 
 fn run_end<T: Eq>(records: &[T], start: usize) -> usize {
@@ -419,27 +385,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn calibration_difference_reports_exact_count_with_bounded_records() {
+    fn calibration_difference_reports_exact_multiset_count() {
         let mut left = vec!["record-00".to_string(); 4];
-        left.extend(
-            (1..CALIBRATION_MISMATCH_RECORD_LIMIT + 5).map(|index| format!("record-{index:02}")),
-        );
+        left.extend((1..37).map(|index| format!("record-{index:02}")));
         let right = vec!["record-00".to_string()];
 
-        let (count, records) = bounded_sorted_calibration_difference(&left, &right, Clone::clone);
-
-        assert_eq!(count, CALIBRATION_MISMATCH_RECORD_LIMIT + 7);
-        assert_eq!(records.len(), CALIBRATION_MISMATCH_RECORD_LIMIT);
-        assert_eq!(
-            records.first(),
-            Some(&CalibrationMismatchRecord {
-                record: "record-00".to_string(),
-                missing_occurrences: 3,
-            })
-        );
-        assert_eq!(
-            records.last().map(|record| record.record.as_str()),
-            Some("record-31")
-        );
+        assert_eq!(sorted_calibration_difference_count(&left, &right), 39);
     }
 }
