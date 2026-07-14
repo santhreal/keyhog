@@ -11,6 +11,7 @@ use std::path::{Component, Path};
 
 pub(super) use super::report_archive_truncation;
 
+mod android_compiled;
 mod zip_scan;
 
 /// Initial decode-buffer capacity reserved per archive entry, capped by the
@@ -471,6 +472,11 @@ pub(super) fn emit_archive_content_with_tex_provenance(
             respect_default_excludes,
             emit,
         );
+    }
+
+    if !android_compiled::emit_android_compiled_member(archive_display, entry_name, &content, emit)
+    {
+        return false;
     }
 
     super::emit_archive_leaf_member(

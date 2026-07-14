@@ -32,3 +32,22 @@ The dependency pass caps member count, per-source bytes, total source bytes,
 references per member, and group nesting. If a package exceeds a cap, KeyHog
 reports that role annotations are unavailable and still scans every readable
 member through the ordinary archive path.
+
+## Android packages
+
+APK scans decode `resources.arsc` value tables and compiled Android XML before
+running the normal detector pipeline. The resource-table path preserves package,
+type, entry name, resource ID, and configuration qualifier. The XML path
+preserves the element path, attribute name, framework resource ID, and inline or
+referenced value.
+
+Decoded chunks use `filesystem/archive/android-resource` or
+`filesystem/archive/android-xml`. Paths retain the APK, member, semantic name,
+and byte-backed resource identity. KeyHog also scans each original member through
+the ordinary archive path. The adapter does not execute Dalvik code or resolve
+runtime resource selection.
+
+Input bytes, chunk count, string pools, resource entries, XML depth, emitted
+items, and emitted bytes are bounded. A malformed compiled resource emits an
+`inaccessible` coverage gap. A cap emits a `truncated` coverage gap. Both state
+that semantic decoding was incomplete while the original member scan continues.
