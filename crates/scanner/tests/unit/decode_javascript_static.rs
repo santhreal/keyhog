@@ -79,6 +79,145 @@ fn decode_at(source: String, base_offset: usize) -> Vec<Chunk> {
     })
 }
 
+fn reverse_base64_literal(plaintext: &str) -> String {
+    let reversed: String = plaintext.chars().rev().collect();
+    base64::engine::general_purpose::STANDARD
+        .encode(reversed)
+        .chars()
+        .rev()
+        .collect()
+}
+
+fn reverse_base64_program(function: &str, parameter: &str, plaintext: &str) -> String {
+    let encoded = reverse_base64_literal(plaintext);
+    format!(
+        "function {function}({parameter}) {{ return {parameter}.split('').reverse().join(''); }}\n\
+         const recovered = {function}(atob('{encoded}'.split('').reverse().join('')));\n\
+         console.log(recovered);"
+    )
+}
+
+#[test]
+fn reverse_base64_recovers_exact_literal_with_provenance() {
+    let source = reverse_base64_program("decodeString", "str", SECRET);
+    let encoded = reverse_base64_literal(SECRET);
+    let base_offset = 8192;
+    let decoded = decode_at(source.clone(), base_offset);
+    assert_eq!(decoded.len(), 1);
+    let span = decoded[0]
+        .metadata
+        .decoded_span
+        .expect("reverse/Base64 recovery carries the spliced literal span");
+    assert_eq!(&decoded[0].data[span.0..span.1], SECRET);
+    assert_eq!(
+        decoded[0].metadata.base_offset + span.0,
+        base_offset + source.find(&encoded).expect("encoded literal provenance")
+    );
+    assert_eq!(
+        decoded[0].metadata.source_type.as_ref(),
+        "test/javascript-static"
+    );
+}
+
+#[test]
+fn recovers_upstream_reverse_base64_transform_semantics() {
+    let upstream_ioc = "192.168.17.65";
+    let decoded = decode(reverse_base64_program("decodeString", "str", upstream_ioc));
+    assert_eq!(decoded.len(), 1);
+    let span = decoded[0].metadata.decoded_span.expect("recovered span");
+    assert_eq!(&decoded[0].data[span.0..span.1], upstream_ioc);
+}
+
+#[test]
+fn reverse_base64_accepts_scope_safe_identifier_renaming() {
+    let decoded = decode(reverse_base64_program("_decode", "_value", SECRET));
+    assert_eq!(decoded.len(), 1);
+    let span = decoded[0].metadata.decoded_span.expect("recovered span");
+    assert_eq!(&decoded[0].data[span.0..span.1], SECRET);
+}
+
+#[test]
+fn reverse_base64_rejects_alias_mutation_dynamic_and_changed_operators() {
+    let valid = reverse_base64_program("decodeString", "str", SECRET);
+    assert!(
+        decode(valid.replace("const recovered = decodeString", "const recovered = other"))
+            .is_empty()
+    );
+    assert!(decode(valid.replace(
+        "const recovered =",
+        "decodeString = other; const recovered ="
+    ))
+    .is_empty());
+    assert!(
+        decode(valid.replace("const recovered =", "const atob = other; const recovered ="))
+            .is_empty()
+    );
+    assert!(decode(valid.replace(
+        "const recovered =",
+        "String.prototype.reverse = other; const recovered ="
+    ))
+    .is_empty());
+    assert!(decode(valid.replace(
+        "const recovered =",
+        "globalThis['atob'] = other; const recovered ="
+    ))
+    .is_empty());
+    assert!(decode(valid.replace(
+        "const recovered =",
+        "String.prototype['reverse'] = other; const recovered ="
+    ))
+    .is_empty());
+
+    let encoded = reverse_base64_literal(SECRET);
+    let dynamic = valid.replace(&format!("'{encoded}'.split('')"), "encoded.split('')");
+    assert!(decode(format!("const encoded = '{encoded}'; {dynamic}")).is_empty());
+    assert!(decode(valid.replacen(".join('')", ".join('-')", 1)).is_empty());
+    assert!(decode(valid.rsplit_once(".join('')").map_or_else(
+        || valid.clone(),
+        |(prefix, suffix)| format!("{prefix}.join('-'){suffix}")
+    ))
+    .is_empty());
+}
+
+#[test]
+fn reverse_base64_rejects_non_code_malformed_and_oversized_candidates() {
+    let valid = reverse_base64_program("decodeString", "str", SECRET);
+    assert!(decode(format!("/* {valid} */")).is_empty());
+
+    let encoded = reverse_base64_literal(SECRET);
+    let helper_end = valid.find('\n').expect("helper line");
+    let helper = &valid[..helper_end];
+    let quoted = format!(
+        "{helper}\nconst decoy = \"decodeString(atob('{encoded}'.split('').reverse().join('')))\";"
+    );
+    assert!(decode(quoted).is_empty());
+
+    let regex = format!(
+        "{helper}\nconst decoy = /decodeString\\(atob\\('{encoded}'\\.split\\(''\\)\\.reverse\\(\\)\\.join\\(''\\)\\)\\)/;"
+    );
+    assert!(decode(regex).is_empty());
+
+    let malformed = valid.replace(&encoded, "====");
+    assert!(decode(malformed).is_empty());
+
+    let oversized = "A".repeat(MAX_BYTE_ARRAY_LEN * 4 + 1);
+    let oversized_source = format!(
+        "{helper}\nconst recovered = decodeString(atob('{oversized}'.split('').reverse().join('')));"
+    );
+    assert!(decode(oversized_source).is_empty());
+}
+
+#[test]
+fn reverse_base64_rejects_inaccessible_helper_and_offset_overflow() {
+    let valid = reverse_base64_program("decodeString", "str", SECRET);
+    assert!(
+        decode(valid.replacen("function decodeString", "{ function decodeString", 1) + " }")
+            .is_empty()
+    );
+    assert_eq!(decode_at(valid.clone(), usize::MAX).len(), 0);
+    assert_eq!(decode_at(valid, 4096).len(), 1);
+}
+
 #[test]
 fn static_recovery_fails_closed_when_expression_offset_overflows() {
     assert_eq!(decode_at(xor_program(false, true), 4096).len(), 1);

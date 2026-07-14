@@ -2,7 +2,8 @@
 
 use super::{
     aes::decrypt_aes_256_cbc, all_distinct, compile_static_regex, record_static_limit,
-    unquote_static_string, MAX_ARRAY_BINDINGS, MAX_BYTE_ARRAY_LEN, MAX_STATIC_EXPRESSIONS,
+    unquote_static_string, RecoveredPlaintext, MAX_ARRAY_BINDINGS, MAX_BYTE_ARRAY_LEN,
+    MAX_STATIC_EXPRESSIONS,
 };
 use keyhog_core::ChunkMetadata;
 use regex::Regex;
@@ -45,13 +46,6 @@ static CONSOLE_LOG_RE: LazyLock<Regex> = LazyLock::new(|| {
         "CryptoJS result log",
     )
 });
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct RecoveredPlaintext {
-    pub(super) plaintext: String,
-    pub(super) source_start: usize,
-    pub(super) source_end: usize,
-}
 
 #[derive(Clone, Copy)]
 struct RequireBinding<'a> {
@@ -507,7 +501,7 @@ fn result_usage_is_supported(
 }
 
 /// Collect inert regex declarations so their contents cannot change lexical facts.
-fn collect_inert_regex_bindings(source: &str) -> Vec<(usize, usize)> {
+pub(super) fn collect_inert_regex_bindings(source: &str) -> Vec<(usize, usize)> {
     let bytes = source.as_bytes();
     let mut spans = Vec::new();
     let mut index = 0usize;

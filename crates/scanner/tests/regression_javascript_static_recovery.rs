@@ -81,6 +81,22 @@ const CRYPTOJS_ANCHORED_ASSIGNMENT: &str = concat!(
     "let api_key = decryptAES(encryptedMessage, secretKey);",
 );
 
+fn reverse_base64_program() -> (String, String) {
+    use base64::Engine;
+    let reversed: String = SECRET.chars().rev().collect();
+    let encoded: String = base64::engine::general_purpose::STANDARD
+        .encode(reversed)
+        .chars()
+        .rev()
+        .collect();
+    let source = format!(
+        "function decodeString(str) {{ return str.split('').reverse().join(''); }}\n\
+         const recovered = decodeString(atob('{encoded}'.split('').reverse().join('')));\n\
+         console.log(recovered);"
+    );
+    (source, encoded)
+}
+
 fn scanner(config: ScannerConfig) -> CompiledScanner {
     CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
         .expect("compile embedded detector corpus")
@@ -148,6 +164,56 @@ fn cryptojs_recovery_preserves_assignment_anchor_for_unprefixed_secret() {
         credential_found(&matches, ANCHORED_SECRET),
         "the retained api_key assignment must detect the recovered unprefixed credential: {matches:?}"
     );
+}
+
+#[test]
+fn reverse_base64_recovery_preserves_exact_source_provenance() {
+    let scanner = scanner(ScannerConfig::thorough());
+    let (source, encoded) = reverse_base64_program();
+    let matches = scan(&scanner, &source, ScanBackend::CpuFallback);
+    let finding = matches
+        .iter()
+        .find(|matched| {
+            matched.detector_id.as_ref() == "github-classic-pat"
+                && matched.credential.as_ref() == SECRET
+        })
+        .expect("reverse/Base64 recovery must surface the exact synthetic PAT");
+    assert_eq!(
+        finding.location.source.as_ref(),
+        "filesystem/javascript-static"
+    );
+    assert_eq!(finding.location.file_path.as_deref(), Some("recovery.js"));
+    assert_eq!(finding.location.line, Some(2));
+    assert_eq!(
+        finding.location.offset,
+        source.find(&encoded).expect("encoded literal provenance")
+    );
+}
+
+#[cfg(feature = "simd")]
+#[test]
+fn reverse_base64_recovery_has_exact_simd_cpu_parity() {
+    let scanner = scanner(ScannerConfig::thorough());
+    let (source, _) = reverse_base64_program();
+    let mut cpu = scan(&scanner, &source, ScanBackend::CpuFallback);
+    let mut simd = scan(&scanner, &source, ScanBackend::SimdCpu);
+    cpu.sort();
+    simd.sort();
+    assert_eq!(simd, cpu);
+    assert!(exact_target_found(&simd));
+}
+
+#[cfg(feature = "gpu")]
+#[test]
+fn reverse_base64_recovery_has_exact_gpu_cpu_parity() {
+    let scanner = scanner(ScannerConfig::thorough());
+    let (source, _) = reverse_base64_program();
+    let mut cpu = scan(&scanner, &source, ScanBackend::CpuFallback);
+    let mut gpu = scan(&scanner, &source, ScanBackend::Gpu);
+    cpu.sort();
+    gpu.sort();
+    assert_eq!(gpu, cpu);
+    assert!(exact_target_found(&gpu));
 }
 
 #[cfg(feature = "simd")]

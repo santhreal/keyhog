@@ -22,11 +22,40 @@ use crate::telemetry::{record_static_recovery_rejection, StaticRecoveryRejection
 
 mod aes;
 mod cryptojs;
+mod reverse_base64;
 
 const MAX_STATIC_SOURCE_BYTES: usize = 1024 * 1024;
 const MAX_BYTE_ARRAY_LEN: usize = 64 * 1024;
 const MAX_ARRAY_BINDINGS: usize = 32;
 const MAX_STATIC_EXPRESSIONS: usize = 64;
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct RecoveredPlaintext {
+    plaintext: String,
+    source_start: usize,
+    source_end: usize,
+}
+
+fn append_spliced_recoveries(
+    decoded_chunks: &mut Vec<Chunk>,
+    chunk: &Chunk,
+    recovered: BTreeSet<RecoveredPlaintext>,
+    decoder: &'static str,
+) {
+    for recovery in recovered {
+        let Some(original) = chunk.data.get(recovery.source_start..recovery.source_end) else {
+            continue;
+        };
+        push_decoded_text_chunk_spliced_at(
+            decoded_chunks,
+            chunk,
+            Some((recovery.source_start, recovery.source_end)),
+            original,
+            recovery.plaintext,
+            decoder,
+        );
+    }
+}
 
 static LITERAL_ARRAY_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
@@ -69,7 +98,15 @@ impl Decoder for JavaScriptStaticDecoder {
             && chunk.data.contains(".decrypt")
             && chunk.data.contains(".enc")
             && chunk.data.contains(".Utf8");
-        if !has_xor_expression && !has_node_aes_expression && !has_cryptojs_aes_expression {
+        let has_reverse_base64_expression = chunk.data.contains("atob")
+            && chunk.data.contains(".split")
+            && chunk.data.contains(".reverse")
+            && chunk.data.contains(".join");
+        if !has_xor_expression
+            && !has_node_aes_expression
+            && !has_cryptojs_aes_expression
+            && !has_reverse_base64_expression
+        {
             return Vec::new();
         }
         if chunk.data.len() > MAX_STATIC_SOURCE_BYTES {
@@ -89,20 +126,12 @@ impl Decoder for JavaScriptStaticDecoder {
         if has_cryptojs_aes_expression {
             let mut recovered = BTreeSet::new();
             cryptojs::recover_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut recovered);
-            for recovery in recovered {
-                let Some(original) = chunk.data.get(recovery.source_start..recovery.source_end)
-                else {
-                    continue;
-                };
-                push_decoded_text_chunk_spliced_at(
-                    &mut decoded_chunks,
-                    chunk,
-                    Some((recovery.source_start, recovery.source_end)),
-                    original,
-                    recovery.plaintext,
-                    self.name(),
-                );
-            }
+            append_spliced_recoveries(&mut decoded_chunks, chunk, recovered, self.name());
+        }
+        if has_reverse_base64_expression {
+            let mut recovered = BTreeSet::new();
+            reverse_base64::recover_plaintexts(&chunk.data, base_offset, &mut recovered);
+            append_spliced_recoveries(&mut decoded_chunks, chunk, recovered, self.name());
         }
         for plaintext in emitted {
             push_decoded_text_chunk(&mut decoded_chunks, chunk, plaintext, self.name());
