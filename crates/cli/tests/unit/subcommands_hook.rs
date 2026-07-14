@@ -46,6 +46,18 @@ fn pre_commit_hooks_yaml_matches_canonical_scan_args() {
         yaml.contains("always_run: true"),
         ".pre-commit-hooks.yaml must run for binary-only change sets so the staged source can report unscanned blobs as coverage gaps"
     );
+
+    let hooks: serde_yaml::Value = serde_yaml::from_str(&yaml)
+        .unwrap_or_else(|err| panic!("parsing {}: {err}", path.display()));
+    let hook = hooks
+        .as_sequence()
+        .and_then(|entries| entries.first())
+        .and_then(serde_yaml::Value::as_mapping)
+        .expect(".pre-commit-hooks.yaml must contain one hook mapping");
+    assert!(
+        !hook.contains_key(serde_yaml::Value::String("types".into())),
+        ".pre-commit-hooks.yaml must not filter by pre-commit file type; archive-only and binary-only staged changes still require a scan"
+    );
 }
 
 #[test]

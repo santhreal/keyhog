@@ -37,7 +37,7 @@ const HOOK_CONTENT: &str = concat!(
     "if ! command -v keyhog >/dev/null 2>&1; then\n",
     "    echo \"keyhog: not found on PATH - blocking commit because the pre-commit secret scan did not run.\" >&2\n",
     "    echo \"  Install keyhog (https://github.com/santhreal/keyhog), fix PATH,\" >&2\n",
-    "    echo \"  or remove .git/hooks/pre-commit if this repository should not be protected.\" >&2\n",
+    "    echo \"  or run 'keyhog hook uninstall' if this repository should not be protected.\" >&2\n",
     "    exit 127\n",
     "fi\n",
     "exec keyhog ",
@@ -61,8 +61,7 @@ pub(crate) fn run(command: HookCommand) -> Result<ExitCode> {
 }
 
 fn install(force: bool) -> Result<ExitCode> {
-    let git_dir = find_git_dir()?;
-    let hooks_dir = git_dir.join("hooks");
+    let hooks_dir = find_hooks_dir()?;
     let hook_path = hooks_dir.join("pre-commit");
 
     std::fs::create_dir_all(&hooks_dir)
@@ -127,8 +126,7 @@ fn install(force: bool) -> Result<ExitCode> {
 }
 
 fn uninstall() -> Result<ExitCode> {
-    let git_dir = find_git_dir()?;
-    let hook_path = git_dir.join("hooks").join("pre-commit");
+    let hook_path = find_hooks_dir()?.join("pre-commit");
 
     if !hook_path.exists() {
         let palette = crate::style::for_stderr();
@@ -159,33 +157,33 @@ fn uninstall() -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn find_git_dir() -> Result<PathBuf> {
+fn find_hooks_dir() -> Result<PathBuf> {
     // SECURITY: kimi-wave1 audit finding 3.PATH-git. Use trusted absolute path.
     let git_bin = keyhog_core::resolve_safe_bin("git")
         .ok_or_else(|| anyhow::anyhow!("git binary not found in trusted system bin dirs"))?;
     let output = std::process::Command::new(&git_bin)
-        .args(["rev-parse", "--git-dir"])
+        .args(["rev-parse", "--path-format=absolute", "--git-path", "hooks"])
         .output()
-        .context("failed to run `git rev-parse --git-dir`. Is this a git repository?")?;
+        .context("failed to run `git rev-parse --git-path hooks`. Is this a git repository?")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("not a git repository (or git failed): {stderr}");
     }
 
-    let git_dir = String::from_utf8(output.stdout)
+    let hooks_dir = String::from_utf8(output.stdout)
         .context("git output is not valid UTF-8")?
         .trim()
         .to_string();
-
-    let path = PathBuf::from(git_dir);
-    let absolute = if path.is_absolute() {
-        path
-    } else {
-        std::env::current_dir()
-            .context("getting current directory")?
-            .join(path)
-    };
-
-    Ok(absolute.canonicalize().unwrap_or(absolute)) // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
+    anyhow::ensure!(
+        !hooks_dir.is_empty(),
+        "git returned an empty hooks path. Fix: check core.hooksPath and repository metadata."
+    );
+    let path = PathBuf::from(hooks_dir);
+    anyhow::ensure!(
+        path.is_absolute(),
+        "git returned a relative hooks path despite --path-format=absolute: {}. Fix: update Git or repair core.hooksPath.",
+        path.display()
+    );
+    Ok(path)
 }

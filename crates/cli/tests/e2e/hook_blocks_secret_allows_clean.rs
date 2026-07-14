@@ -24,6 +24,38 @@ fn commit_count(dir: &std::path::Path) -> usize {
         .unwrap_or(0)
 }
 
+fn install_hook(dir: &std::path::Path) -> std::process::Output {
+    Command::new(binary())
+        .current_dir(dir)
+        .args(["hook", "install"])
+        .output()
+        .expect("install hook")
+}
+
+fn resolved_hooks_dir(dir: &std::path::Path) -> std::path::PathBuf {
+    let output = git(
+        dir,
+        &["rev-parse", "--path-format=absolute", "--git-path", "hooks"],
+    );
+    assert!(
+        output.status.success(),
+        "resolve Git hooks path: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::path::PathBuf::from(
+        String::from_utf8(output.stdout)
+            .expect("UTF-8 hooks path")
+            .trim(),
+    )
+}
+
+fn configure_identity(dir: &std::path::Path) {
+    assert!(git(dir, &["config", "user.email", "t@t.t"])
+        .status
+        .success());
+    assert!(git(dir, &["config", "user.name", "t"]).status.success());
+}
+
 #[test]
 fn hook_blocks_staged_secret_and_allows_clean_commit() {
     let dir = TempDir::new().expect("tempdir");
@@ -92,6 +124,140 @@ fn hook_blocks_staged_secret_and_allows_clean_commit() {
         String::from_utf8_lossy(&clean.stderr)
     );
     assert_eq!(commit_count(p), 1, "the clean commit must land");
+}
+
+#[test]
+fn hook_install_and_uninstall_follow_core_hooks_path() {
+    let dir = TempDir::new().expect("tempdir");
+    let p = dir.path();
+    assert!(git(p, &["init", "-q"]).status.success());
+    assert!(git(p, &["config", "core.hooksPath", ".githooks"])
+        .status
+        .success());
+
+    let hooks_dir = resolved_hooks_dir(p);
+    let installed = install_hook(p);
+    assert!(
+        installed.status.success(),
+        "install at core.hooksPath: {}",
+        String::from_utf8_lossy(&installed.stderr)
+    );
+    let hook = hooks_dir.join("pre-commit");
+    assert!(hook.is_file(), "hook must use Git-resolved path: {hook:?}");
+    assert!(
+        !p.join(".git/hooks/pre-commit").exists(),
+        "hook must not bypass core.hooksPath"
+    );
+
+    let removed = Command::new(binary())
+        .current_dir(p)
+        .args(["hook", "uninstall"])
+        .output()
+        .expect("uninstall hook");
+    assert!(removed.status.success(), "uninstall must succeed");
+    assert!(!hook.exists(), "uninstall must use the same resolved path");
+}
+
+#[test]
+fn hook_install_uses_linked_worktree_hooks_path() {
+    let root = TempDir::new().expect("tempdir");
+    let primary = root.path().join("primary");
+    let linked = root.path().join("linked");
+    std::fs::create_dir(&primary).expect("primary dir");
+    assert!(git(&primary, &["init", "-q"]).status.success());
+    configure_identity(&primary);
+    assert!(
+        git(&primary, &["commit", "--allow-empty", "-qm", "initial"])
+            .status
+            .success()
+    );
+    assert!(git(
+        &primary,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            linked.to_str().expect("linked path")
+        ],
+    )
+    .status
+    .success());
+
+    let hooks_dir = resolved_hooks_dir(&linked);
+    let installed = install_hook(&linked);
+    assert!(
+        installed.status.success(),
+        "linked-worktree install: {}",
+        String::from_utf8_lossy(&installed.stderr)
+    );
+    assert!(hooks_dir.join("pre-commit").is_file());
+    assert!(
+        !linked.join(".git/hooks/pre-commit").exists(),
+        "a linked worktree .git file must never be treated as a hooks directory"
+    );
+}
+
+#[test]
+fn hook_install_uses_bare_repository_hooks_path() {
+    let root = TempDir::new().expect("tempdir");
+    let bare = root.path().join("repo.git");
+    assert!(Command::new("git")
+        .args(["init", "--bare", "-q"])
+        .arg(&bare)
+        .status()
+        .expect("init bare repo")
+        .success());
+
+    let hooks_dir = resolved_hooks_dir(&bare);
+    let installed = install_hook(&bare);
+    assert!(
+        installed.status.success(),
+        "bare-repository install: {}",
+        String::from_utf8_lossy(&installed.stderr)
+    );
+    assert!(hooks_dir.join("pre-commit").is_file());
+}
+
+#[test]
+fn hook_install_uses_submodule_hooks_path() {
+    let root = TempDir::new().expect("tempdir");
+    let child = root.path().join("child");
+    let parent = root.path().join("parent");
+    std::fs::create_dir(&child).expect("child dir");
+    std::fs::create_dir(&parent).expect("parent dir");
+    assert!(git(&child, &["init", "-q"]).status.success());
+    configure_identity(&child);
+    assert!(git(&child, &["commit", "--allow-empty", "-qm", "initial"])
+        .status
+        .success());
+    assert!(git(&parent, &["init", "-q"]).status.success());
+    configure_identity(&parent);
+    let add = Command::new("git")
+        .current_dir(&parent)
+        .args(["-c", "protocol.file.allow=always", "submodule", "add", "-q"])
+        .arg(&child)
+        .arg("module")
+        .output()
+        .expect("add submodule");
+    assert!(
+        add.status.success(),
+        "add submodule: {}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let module = parent.join("module");
+
+    let hooks_dir = resolved_hooks_dir(&module);
+    let installed = install_hook(&module);
+    assert!(
+        installed.status.success(),
+        "submodule install: {}",
+        String::from_utf8_lossy(&installed.stderr)
+    );
+    assert!(hooks_dir.join("pre-commit").is_file());
+    assert!(
+        !module.join(".git/hooks/pre-commit").exists(),
+        "a submodule .git file must never be treated as a hooks directory"
+    );
 }
 
 /// Locate the directory holding `tool` on the current PATH.

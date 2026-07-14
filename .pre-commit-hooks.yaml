@@ -22,5 +22,4 @@
   # silently skipping the hook would misreport the commit as checked.
   always_run: true
   require_serial: true
-  types: [text]
   stages: [pre-commit]
