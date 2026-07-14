@@ -118,11 +118,11 @@ pub enum Command {
     #[command(verbatim_doc_comment)]
     Uninstall(UninstallArgs),
 
-    /// 🛰  Recursive system-wide scan: every mounted drive, every git history
+    /// Recursive system-wide scan: every mounted drive, every git history
     #[command(verbatim_doc_comment)]
     ScanSystem(ScanSystemArgs),
 
-    /// 🔌 Manage the long-lived `keyhog daemon` (start, stop, status)
+    /// Manage the long-lived `keyhog daemon` (start, stop, status)
     #[command(verbatim_doc_comment)]
     Daemon(DaemonArgs),
 }

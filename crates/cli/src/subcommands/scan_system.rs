@@ -274,7 +274,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     }
 
     eprintln!(
-        "🛰  keyhog scan-system | space cap: {} | network mounts: {} | git history: {}",
+        "keyhog scan-system | space cap: {} | network mounts: {} | git history: {}",
         format_bytes(args.space),
         if args.include_network { "yes" } else { "no" },
         if args.no_git_history { "no" } else { "yes" },
