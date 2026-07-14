@@ -199,13 +199,12 @@ impl AutorouteRoutingError {
                     },
                 )
                 .map(|(dimensions, _)| dimensions.join(", "));
-            nearest
-                .map(|dimensions| {
-                    format!(
-                        "nearest calibrated bucket differs in: {dimensions}; this is not reusable evidence"
-                    )
-                })
-                .unwrap_or_else(|| "the cache has no calibrated workload buckets".to_string())
+            match nearest {
+                Some(dimensions) => format!(
+                    "nearest calibrated bucket differs in: {dimensions}; this is not reusable evidence"
+                ),
+                None => "the cache has no calibrated workload buckets".to_string(),
+            }
         };
         Self {
             message: format!(

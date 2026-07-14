@@ -165,8 +165,12 @@ impl AutorouteDecision {
         // Production calibration always measures scalar CPU. Test fixtures
         // therefore default an omitted explicit value to the SIMD duration;
         // missing-candidate tests remove the field after construction.
+        let cpu_duration_ms = match cpu_ms {
+            Some(duration_ms) => duration_ms,
+            None => simd_ms,
+        };
         let cpu_timing = Some(BackendTimingEvidence::constant_ms(
-            cpu_ms.unwrap_or(simd_ms),
+            cpu_duration_ms,
             AUTOROUTE_CALIBRATION_TRIALS,
         ));
         let gpu_wgpu_timing =
