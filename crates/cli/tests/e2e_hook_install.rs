@@ -1,8 +1,5 @@
-//! e2e test for `keyhog hook install` and `keyhog hook list`.
-//!
-//! The hook subcommand manages git pre-commit integrations. This test
-//! verifies that `hook install` writes a valid pre-commit hook and
-//! `hook list` shows installed hooks.
+//! End-to-end tests for the canonical `keyhog hook install` and `uninstall`
+//! surface.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -12,101 +9,217 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// `keyhog hook list` returns exit 0 with a list of available/installed hooks.
-/// The list is human-readable text, not JSON, and should mention at least
-/// one standard hook (e.g., `pre-commit`).
-#[test]
-fn hook_list_returns_exit_zero_and_mentions_precommit() {
-    let output = Command::new(binary())
-        .arg("hook")
-        .arg("list")
+fn repository() -> TempDir {
+    let dir = TempDir::new().expect("create temporary repository");
+    let output = Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(dir.path())
         .output()
-        .expect("spawn keyhog hook list");
-
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "keyhog hook list should exit 0; stderr={}",
+        .expect("initialize git repository");
+    assert!(
+        output.status.success(),
+        "git init failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    dir
+}
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+fn run_hook(dir: &TempDir, args: &[&str]) -> std::process::Output {
+    Command::new(binary())
+        .arg("hook")
+        .args(args)
+        .current_dir(dir.path())
+        .env("NO_COLOR", "1")
+        .output()
+        .expect("run keyhog hook command")
+}
+
+#[test]
+fn hook_install_is_executable_and_idempotent() {
+    let dir = repository();
+    let hook_path = dir.path().join(".git/hooks/pre-commit");
+
+    let first = run_hook(&dir, &["install"]);
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "install failed: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let installed = std::fs::read(&hook_path).expect("read installed hook");
+    let installed_text = String::from_utf8_lossy(&installed);
     assert!(
-        stdout.to_lowercase().contains("pre-commit") || stdout.contains("hooks"),
-        "hook list should mention available hooks; got: {stdout}"
+        installed_text.contains("exec keyhog scan --fast --git-staged --backend cpu"),
+        "installed hook must execute the canonical staged scan: {installed_text}"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_ne!(
+            std::fs::metadata(&hook_path)
+                .expect("read installed hook metadata")
+                .permissions()
+                .mode()
+                & 0o111,
+            0,
+            "installed hook must be executable"
+        );
+    }
+
+    let second = run_hook(&dir, &["install"]);
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(
+        std::fs::read(&hook_path).expect("reread installed hook"),
+        installed,
+        "idempotent install must preserve the managed hook bytes"
     );
 }
 
-/// `keyhog hook install` in a git repo creates a pre-commit hook file.
-/// The hook script must be executable and contain a reference to keyhog.
 #[test]
-fn hook_install_creates_executable_pre_commit_hook() {
-    let dir = TempDir::new().expect("create tempdir");
-    let git_dir = dir.path().join(".git");
-    std::fs::create_dir_all(&git_dir).expect("create .git");
-    let hooks_dir = git_dir.join("hooks");
-    std::fs::create_dir_all(&hooks_dir).expect("create hooks dir");
+fn hook_install_preserves_an_unmanaged_hook_unless_forced() {
+    let dir = repository();
+    let hook_path = dir.path().join(".git/hooks/pre-commit");
+    std::fs::create_dir_all(hook_path.parent().expect("hook parent")).expect("create hooks dir");
+    let original = b"#!/bin/sh\necho existing-hook\n";
+    std::fs::write(&hook_path, original).expect("write unmanaged hook");
 
-    let output = Command::new(binary())
-        .arg("hook")
-        .arg("install")
-        .arg("--path")
-        .arg(dir.path())
-        .output()
-        .expect("spawn keyhog hook install");
-
-    let exit_code = output.status.code();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
+    let refused = run_hook(&dir, &["install"]);
+    assert_ne!(refused.status.code(), Some(0));
+    assert_eq!(
+        std::fs::read(&hook_path).expect("read preserved unmanaged hook"),
+        original,
+        "ordinary install must not overwrite an unmanaged hook"
+    );
     assert!(
-        exit_code == Some(0) || exit_code == Some(1),
-        "hook install should exit 0 (success) or 1 (already installed); \
-         got {exit_code:?}, stderr: {stderr}"
+        String::from_utf8_lossy(&refused.stderr).contains("--force"),
+        "refusal must name the explicit replacement control"
     );
 
-    let hook_path = hooks_dir.join("pre-commit");
-    let hook_exists = hook_path.exists();
-    assert!(
-        hook_exists,
-        "hook install must create .git/hooks/pre-commit; path: {hook_path:?}"
+    let forced = run_hook(&dir, &["install", "--force"]);
+    assert_eq!(
+        forced.status.code(),
+        Some(0),
+        "forced install failed: {}",
+        String::from_utf8_lossy(&forced.stderr)
     );
-
-    let hook_content = std::fs::read_to_string(&hook_path).expect("read hook file");
     assert!(
-        hook_content.contains("keyhog") || hook_content.contains("scan"),
-        "pre-commit hook must reference keyhog; got: {hook_content}"
+        String::from_utf8_lossy(&std::fs::read(&hook_path).expect("read replaced hook"))
+            .contains("KeyHog pre-commit hook"),
+        "forced install must replace the unmanaged hook with the managed hook"
     );
 }
 
-/// `keyhog hook install --hook=pre-push` installs a pre-push hook instead.
-/// This test verifies that the --hook flag routes to the correct hook file.
 #[test]
-fn hook_install_with_hook_flag_respects_hook_type() {
-    let dir = TempDir::new().expect("create tempdir");
-    let git_dir = dir.path().join(".git");
-    std::fs::create_dir_all(&git_dir).expect("create .git");
-    let hooks_dir = git_dir.join("hooks");
-    std::fs::create_dir_all(&hooks_dir).expect("create hooks dir");
+fn hook_uninstall_removes_only_the_managed_hook() {
+    let dir = repository();
+    let hook_path = dir.path().join(".git/hooks/pre-commit");
+    assert_eq!(run_hook(&dir, &["install"]).status.code(), Some(0));
 
-    let output = Command::new(binary())
-        .arg("hook")
-        .arg("install")
-        .arg("--hook=pre-push")
-        .arg("--path")
-        .arg(dir.path())
-        .output()
-        .expect("spawn keyhog hook install --hook=pre-push");
-
-    let exit_code = output.status.code();
+    let removed = run_hook(&dir, &["uninstall"]);
+    assert_eq!(
+        removed.status.code(),
+        Some(0),
+        "uninstall failed: {}",
+        String::from_utf8_lossy(&removed.stderr)
+    );
     assert!(
-        exit_code == Some(0) || exit_code == Some(1),
-        "hook install --hook=pre-push should succeed; got {exit_code:?}"
+        !hook_path.exists(),
+        "uninstall must remove the managed hook"
+    );
+    assert_eq!(
+        run_hook(&dir, &["uninstall"]).status.code(),
+        Some(0),
+        "repeated uninstall must be idempotent"
     );
 
-    let pre_push_path = hooks_dir.join("pre-push");
-    let pre_push_exists = pre_push_path.exists();
+    std::fs::write(&hook_path, "#!/bin/sh\necho unmanaged\n").expect("write unmanaged hook");
+    let refused = run_hook(&dir, &["uninstall"]);
+    assert_ne!(refused.status.code(), Some(0));
     assert!(
-        pre_push_exists,
-        "hook install --hook=pre-push must create .git/hooks/pre-push; path: {pre_push_path:?}"
+        hook_path.exists(),
+        "uninstall must preserve an unmanaged hook"
+    );
+}
+
+#[test]
+fn staged_hook_scope_differs_from_a_full_working_tree_scan() {
+    let dir = repository();
+    std::fs::write(dir.path().join("tracked.txt"), "ordinary tracked content\n")
+        .expect("write tracked file");
+    let added = Command::new("git")
+        .args(["add", "tracked.txt"])
+        .current_dir(dir.path())
+        .output()
+        .expect("stage tracked file");
+    assert!(added.status.success(), "git add must succeed");
+    std::fs::write(dir.path().join("untracked.txt"), "token = demo_ABCDEFGH\n")
+        .expect("write untracked secret");
+
+    let detectors = TempDir::new().expect("create detector directory");
+    std::fs::write(
+        detectors.path().join("demo.toml"),
+        r#"[detector]
+id = "demo-token"
+name = "Demo token"
+service = "demo"
+severity = "high"
+keywords = ["demo_"]
+min_confidence = 0.0
+
+[[detector.patterns]]
+regex = '(?-i)demo_[A-Z0-9]{8}'
+"#,
+    )
+    .expect("write detector");
+    let detector_path = detectors.path().to_string_lossy().to_string();
+
+    let staged = Command::new(binary())
+        .args([
+            "scan",
+            "--fast",
+            "--backend",
+            "cpu",
+            "--format",
+            "json",
+            "--detectors",
+            &detector_path,
+            "--git-staged",
+        ])
+        .current_dir(dir.path())
+        .env("NO_COLOR", "1")
+        .output()
+        .expect("run staged scan");
+    assert_eq!(
+        staged.status.code(),
+        Some(0),
+        "staged scan must ignore the untracked secret: {}",
+        String::from_utf8_lossy(&staged.stderr)
+    );
+
+    let full = Command::new(binary())
+        .args([
+            "scan",
+            "--fast",
+            "--backend",
+            "cpu",
+            "--format",
+            "json",
+            "--detectors",
+            &detector_path,
+            ".",
+        ])
+        .current_dir(dir.path())
+        .env("NO_COLOR", "1")
+        .output()
+        .expect("run full working-tree scan");
+    assert_eq!(
+        full.status.code(),
+        Some(1),
+        "full scan must find the untracked secret: {}",
+        String::from_utf8_lossy(&full.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&full.stdout).contains("demo-token"),
+        "full scan must identify the custom detector"
     );
 }

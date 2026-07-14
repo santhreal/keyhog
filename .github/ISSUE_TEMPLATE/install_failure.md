@@ -5,6 +5,11 @@ title: "[install] "
 labels: ["install", "needs-triage"]
 ---
 
+<!-- Never paste credentials or security-sensitive logs here. Report them
+     privately first at
+     https://github.com/santhreal/keyhog/security/advisories/new. If that form
+     is unavailable, email security@santh.dev; PGP is not required. -->
+
 ## Install path
 
 - [ ] `install.sh` (Linux / macOS)

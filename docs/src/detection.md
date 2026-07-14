@@ -29,6 +29,7 @@ mechanisms, and their roles are deliberately different:
 | Generic assignment bridge | Extracts values beside credential-role keys when no vendor shape exists | Yes |
 | Shannon entropy | Measures byte-distribution uncertainty for opaque generic values | Yes, on the entropy-discovery path |
 | BPE token efficiency | Rejects language-like values that compress into common subword tokens when the owning detector enables it | No; precision gate |
+| English bigram discriminator | Distinguishes random alphabetic tokens from pronounceable identifiers, dictionary placeholders, and low-diversity masks inside specific shape and context gates | No; admits or rejects an extracted candidate within those gates |
 | Shape, placeholder, path, and context policy | Rejects examples, references, prose, identifiers, and context-specific noise | No; precision gates |
 | Checksums and structural validators | Proves or rejects formats that carry intrinsic validity bits or grammar | Adjusts acceptance/confidence |
 | On-device MoE scoring | Scores ambiguous candidates using local features; never sends content away | Adjusts confidence |
@@ -36,9 +37,9 @@ mechanisms, and their roles are deliberately different:
 
 Regex, generic extraction, entropy, and decode-through therefore find different
 candidate classes. Named regexes and generic assignment extraction create
-candidates; companions, validators, BPE, shape/context policy, and confidence
-then confirm, reject, or score them. Verification runs only after a candidate
-survives detection and reporting policy.
+candidates; companions, validators, BPE, English bigram evidence, shape/context
+policy, and confidence then confirm, reject, or score them. Verification runs
+only after a candidate survives detection and reporting policy.
 
 Static program recovery is a decode mechanism, not arbitrary code execution.
 KeyHog does not invoke Node.js or evaluate source. It recognizes a bounded
@@ -67,8 +68,18 @@ positive filter; it does not present “BPD” as a separate score. KeyHog names
 related mechanism **BPE token efficiency**, uses `cl100k_base`, measures UTF-8
 bytes per token, and resolves the ceiling per detector. If “BPD” is being used
 informally to mean a bits/byte or bytes/token density, do not treat it as a
-third implemented score: Shannon entropy and BPE token efficiency are the two
-separate signals documented here.
+third byte-density score. KeyHog also uses a separate English letter-bigram
+discriminator, but it does not measure bits per byte or bytes per token.
+
+The English bigram discriminator evaluates lowercase ASCII alphabetic runs
+against an embedded 26 by 26 log-probability model. Digits and symbols end a
+run. Fewer than six alphabetic characters produce no randomness verdict. A
+random-token verdict requires a mean score at or below `-6.85` and at least
+three distinct letters. Depending on the calling gate, that evidence can keep
+an otherwise identifier-shaped random credential or reject a confidently
+English placeholder. The model does not model arbitrary bytes, numeric keys,
+hexadecimal or Base64 alphabets as such, or short values. Its current
+thresholds are scanner-wide constants, not detector TOML fields.
 
 ## Detector-owned tuning: what each setting changes
 
@@ -196,15 +207,16 @@ relaxes a detector to make a backend look faster.
 
 ### Strict Backend Parity
 
-KeyHog supports three search backends: pure Rust CPU, SIMD/Hyperscan
-(`simd-regex`), and GPU/VYRE region presence. Portable builds retain the
-pure-Rust trigger path without Hyperscan. `keyhog calibrate-autoroute` measures
-every eligible backend for the host/config/workload key and rejects candidates
-whose canonical match identity differs from the reference. It records the first
-real GPU dispatch plus warm trials: an ordinary process resolves against the
-cold-aware GPU cost, while a daemon that initialized its engines before
-readiness resolves against the warm GPU evidence. A missing or invalid decision
-is an error; automatic routing never silently substitutes another backend.
+KeyHog exposes three search-backend classes: pure Rust CPU, SIMD/Hyperscan
+(`simd-regex`), and GPU/VYRE region presence. Autoroute measures four concrete
+runtime peers when eligible: scalar CPU, Hyperscan CPU, CUDA, and WGPU. Portable
+builds retain the pure-Rust trigger path without Hyperscan. `keyhog
+calibrate-autoroute` rejects any peer whose canonical match identity differs
+from the reference. It records the first real GPU dispatch plus warm trials: an
+ordinary process resolves against the cold-aware GPU cost, while a daemon that
+initialized its engines before readiness resolves against the warm GPU
+evidence. A missing or invalid decision is an error; automatic routing never
+silently substitutes another backend.
 
 When comparing settings, record the effective config, detector digest, input
 identity, backend, host/accelerator identity, and complete findings, not only

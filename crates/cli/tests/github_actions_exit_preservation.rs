@@ -48,6 +48,23 @@ fn yaml_fences(markdown: &str) -> Vec<String> {
     blocks
 }
 
+fn fenced_block_after_heading(markdown: &str, heading: &str, language: &str) -> String {
+    let section = markdown
+        .split_once(heading)
+        .unwrap_or_else(|| panic!("CI guide contains {heading}"))
+        .1;
+    let opening = format!("```{language}");
+    let body = section
+        .split_once(&opening)
+        .unwrap_or_else(|| panic!("{heading} contains a {language} fence"))
+        .1;
+    body.split_once("```")
+        .unwrap_or_else(|| panic!("{heading} closes its {language} fence"))
+        .0
+        .trim()
+        .to_string()
+}
+
 fn dedent(block: &str) -> String {
     let indent = block
         .lines()
@@ -136,6 +153,17 @@ fn run_shell(script: &str, cwd: &Path, envs: &[(&str, &str)]) -> Output {
         command.env(name, value);
     }
     command.output().expect("execute documented shell step")
+}
+
+fn run_posix_shell(script: &str, cwd: &Path, envs: &[(&str, &str)]) -> Output {
+    let mut command = Command::new("sh");
+    command.arg("-c").arg(script).current_dir(cwd);
+    for (name, value) in envs {
+        command.env(name, value);
+    }
+    command
+        .output()
+        .expect("execute documented POSIX shell step")
 }
 
 fn upload_report(report: &Path, destination: &Path) -> Output {
@@ -257,5 +285,85 @@ exit "$KEYHOG_FIXTURE_EXIT"
             expected_report,
             "enforcement must not remove the uploaded evidence"
         );
+    }
+}
+
+#[test]
+fn documented_generic_shell_preserves_report_stderr_and_exact_exit() {
+    let markdown = fs::read_to_string(docs_path()).expect("read CI guide");
+    let script = fenced_block_after_heading(&markdown, "## Generic shell", "sh");
+
+    for exit_code in std::iter::once(0).chain(PUBLIC_NONZERO_EXIT_CODES) {
+        let case = TempDir::new().expect("case tempdir");
+        let bin_dir = case.path().join("bin");
+        fs::create_dir(&bin_dir).expect("create fixture bin directory");
+        write_executable(
+            &bin_dir.join("keyhog"),
+            r#"#!/bin/sh
+report=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output)
+      report=$2
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [ "$KEYHOG_FIXTURE_EXIT" -le 1 ]; then
+  printf '[{"detector_id":"fixture-exit-%s"}]\n' "$KEYHOG_FIXTURE_EXIT" > "$report"
+fi
+printf 'fixture stderr %s\n' "$KEYHOG_FIXTURE_EXIT" >&2
+exit "$KEYHOG_FIXTURE_EXIT"
+"#,
+        );
+
+        let path = format!(
+            "{}:{}",
+            bin_dir.display(),
+            env::var("PATH").expect("PATH is set")
+        );
+        let exit_text = exit_code.to_string();
+        let output = run_posix_shell(
+            &script,
+            case.path(),
+            &[("PATH", &path), ("KEYHOG_FIXTURE_EXIT", &exit_text)],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(exit_code),
+            "generic shell must restore KeyHog exit {exit_code}: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            fs::read_to_string(case.path().join("keyhog.exit-code")).expect("saved exit status"),
+            format!("{exit_code}\n")
+        );
+        assert_eq!(
+            fs::read_to_string(case.path().join("keyhog.stderr")).expect("saved stderr"),
+            format!("fixture stderr {exit_code}\n")
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr),
+            format!("fixture stderr {exit_code}\n"),
+            "saved stderr must also remain visible in the job log"
+        );
+        let report = fs::read_to_string(case.path().join("keyhog.json"))
+            .expect("generic shell always leaves valid JSON");
+        if exit_code <= 1 {
+            assert_eq!(
+                report,
+                format!("[{{\"detector_id\":\"fixture-exit-{exit_code}\"}}]\n")
+            );
+        } else {
+            assert_eq!(
+                report, "[]\n",
+                "an operational failure before report generation must preserve the initialized report"
+            );
+        }
+        serde_json::from_str::<serde_json::Value>(&report).expect("report parses as JSON");
     }
 }

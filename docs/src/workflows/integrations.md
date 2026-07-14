@@ -126,7 +126,8 @@ scan status, and artifact handling.
 
 ## Drone CI
 
-Use the canonical [Drone and generic-shell workflow](./ci.md#drone-ci--generic-shell).
+Use the canonical [Drone workflow](./ci.md#drone-ci). For another CI runner,
+use the [generic shell workflow](./ci.md#generic-shell).
 
 ## Buildkite
 

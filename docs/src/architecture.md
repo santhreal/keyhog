@@ -9,7 +9,7 @@ is one source of truth per fact. Read this first; then jump to the cited module.
 - Touching detection? The detector format is data, not code; see the
   [detector reference](./detectors.md).
 - Touching the scan engine? Its own header doc is the deepest map:
-  [`crates/scanner/src/engine/mod.rs`](../../crates/scanner/src/engine/mod.rs)
+  [`crates/scanner/src/engine/mod.rs`](https://github.com/santhreal/keyhog/blob/main/crates/scanner/src/engine/mod.rs)
   ("# The one flow" + "# Where each method lives").
 - Choosing between a one-shot scan, a large repository scan, the daemon, and
   `watch`? Start with [Execution surfaces](#execution-surfaces), then read the
@@ -84,7 +84,7 @@ by Cargo and must stay acyclic (domain logic never imports CLI/transport/UI).
 
 The end-to-end flow, stage by stage, each pointing at the crate/module that owns
 it. The scan engine's own header doc
-([`engine/mod.rs`](../../crates/scanner/src/engine/mod.rs)) is the authoritative,
+([`engine/mod.rs`](https://github.com/santhreal/keyhog/blob/main/crates/scanner/src/engine/mod.rs)) is the authoritative,
 method-level version of steps 2-4.
 
 1. **Acquire bytes:** a source yields file-path + content chunks.

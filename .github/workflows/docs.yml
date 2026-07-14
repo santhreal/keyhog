@@ -15,6 +15,7 @@ on:
       - 'CHANGELOG.md'
       - '.github/workflows/docs.yml'
       - 'scripts/gates/docs_truth.py'
+      - 'scripts/gates/docs_links.py'
   pull_request:
     paths:
       - 'docs/**'
@@ -22,6 +23,7 @@ on:
       - 'CHANGELOG.md'
       - '.github/workflows/docs.yml'
       - 'scripts/gates/docs_truth.py'
+      - 'scripts/gates/docs_links.py'
   workflow_dispatch:
 
 # Don't queue parallel deploys -- the latest push wins.
@@ -64,6 +66,7 @@ jobs:
           cd docs
           mdbook test
           mdbook build
+          python3 -B ../scripts/gates/docs_links.py book --site-prefix /keyhog/
           # mdbook emits to docs/book/. Move CNAME / .nojekyll if present.
           [ -f CNAME ] && cp CNAME book/CNAME || true
           touch book/.nojekyll

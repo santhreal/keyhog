@@ -6,7 +6,10 @@ labels: ["false-positive", "detector"]
 ---
 
 <!-- This is the highest-signal kind of issue we receive. Even a redacted
-     two-line input is enough to ship a test. -->
+     two-line input is enough to ship a test. Never paste a live credential or
+     security-sensitive material here. Report it privately first at
+     https://github.com/santhreal/keyhog/security/advisories/new. If that form
+     is unavailable, email security@santh.dev; PGP is not required. -->
 
 ## What kind?
 

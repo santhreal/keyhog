@@ -5,7 +5,7 @@
 # Installation:
 #   1. Install pre-commit: pip install pre-commit
 #   2. Install the hook: pre-commit install
-#   3. (Optional) Run on all files: pre-commit run --all-files
+#   3. (Optional) Scan the full working tree: keyhog scan --fast --backend cpu .
 #
 # For more information: https://pre-commit.com
 

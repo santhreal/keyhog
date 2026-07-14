@@ -5,6 +5,11 @@ title: "[detector] "
 labels: ["detector", "enhancement"]
 ---
 
+<!-- Never paste a live credential or security-sensitive material here. Report
+     it privately first at
+     https://github.com/santhreal/keyhog/security/advisories/new. If that form
+     is unavailable, email security@santh.dev; PGP is not required. -->
+
 ## Service / vendor
 
 <!-- Cloud, SaaS, vendor, or protocol name. -->

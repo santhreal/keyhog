@@ -68,8 +68,8 @@ and zero false positives for the pinned corpus and scanner identity. The fast
 comparison reports 1,344 true positives and 3,024 false negatives. These are
 corpus results, not a claim that every possible program transform is supported.
 
-- [Executable deep target](../../../benchmarks/bench/tests/test_ioc_recovery_target_spec.py)
-- [Corpus and scorer contract](../../../benchmarks/README.md#exact-secret-recovery-benchmark)
+- [Executable deep target](https://github.com/santhreal/keyhog/blob/main/benchmarks/bench/tests/test_ioc_recovery_target_spec.py)
+- [Corpus and scorer contract](https://github.com/santhreal/keyhog/blob/main/benchmarks/README.md#exact-secret-recovery-benchmark)
 
 The reproduction commands write local artifacts under
 `benchmarks/results-ioc-recovery/`. Those artifacts are intentionally ignored

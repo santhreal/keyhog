@@ -237,12 +237,16 @@ workflows:
       - keyhog
 ```
 
-## Drone CI / generic shell
+## Drone CI
 
 ```yaml
 # .drone.yml
-pipeline:
-  keyhog:
+kind: pipeline
+type: docker
+name: default
+
+steps:
+  - name: keyhog
     image: ubuntu:24.04
     commands:
       - apt-get update -qq
@@ -253,12 +257,63 @@ pipeline:
       - curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
       - minisign -Vm install.sh -P "$PUB"
       - KEYHOG_VERSION="$TAG" sh install.sh
-      - $HOME/.local/bin/keyhog scan .
+      - |
+        printf '[]\n' > keyhog.json
+        scan_status=0
+        $HOME/.local/bin/keyhog scan . --format json --output keyhog.json \
+          2>keyhog.stderr || scan_status=$?
+        printf '%s\n' "$scan_status" > keyhog.exit-code
+        cat keyhog.stderr >&2 || true
+        exit "$scan_status"
+
+  - name: publish-keyhog-report
+    image: plugins/s3
+    settings:
+      endpoint:
+        from_secret: keyhog_artifacts_endpoint
+      bucket:
+        from_secret: keyhog_artifacts_bucket
+      access_key:
+        from_secret: keyhog_artifacts_access_key
+      secret_key:
+        from_secret: keyhog_artifacts_secret_key
+      source: keyhog.*
+      target: keyhog/${DRONE_REPO}/${DRONE_BUILD_NUMBER}
+    when:
+      status:
+        - success
+        - failure
 ```
 
-Same pattern works in Jenkins, Buildkite, Woodpecker, Concourse, or
-any CI that can run a shell. The two lines are the install command
-and the scan command.
+The S3-compatible publisher runs after clean scans, findings, and operational
+errors. Configure its four `keyhog_artifacts_*` secrets for your artifact
+store. The scan step exits with KeyHog's exact status after writing
+`keyhog.exit-code` and replaying `keyhog.stderr` to the job log.
+
+## Generic shell
+
+Use the same scan wrapper in Jenkins, Buildkite, Woodpecker, Concourse, or any
+CI that can run a POSIX shell:
+
+```sh
+#!/bin/sh
+set -eu
+
+printf '[]\n' > keyhog.json
+scan_status=0
+keyhog scan . --format json --output keyhog.json \
+  2>keyhog.stderr || scan_status=$?
+printf '%s\n' "$scan_status" > keyhog.exit-code
+cat keyhog.stderr >&2 || true
+exit "$scan_status"
+```
+
+Configure the CI artifact publisher to retain `keyhog.json`, `keyhog.stderr`,
+and `keyhog.exit-code` on both success and failure. KeyHog atomically replaces
+the initial empty JSON array after a completed scan. If setup or scanning fails
+before report generation, the valid empty report remains, while the saved
+stderr and nonzero status record that the scan did not complete. Always
+evaluate the report together with `keyhog.exit-code`.
 
 ## Buildkite
 
