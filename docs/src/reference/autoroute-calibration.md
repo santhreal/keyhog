@@ -35,6 +35,8 @@ size, admission, and decoder bands can still change. Any different reduced
 mixture, including 31:1 versus 1:31, requires its own measured route.
 Noncanonical, duplicate, inconsistent, or oversized persisted mixtures
 invalidate the cache instead of being normalized silently.
+Each persisted decision also carries a digest of the complete workload key.
+Changing or relabeling any keyed field invalidates the row before routing.
 
 Performance selection uses the median of the recorded trials, not the single
 fastest sample. If one route's 95% Student-t confidence interval is entirely
