@@ -1,11 +1,13 @@
 # KeyHog installer (Windows, PowerShell 5+).
 #
-# Curl-pipe-iwr quick install:
-#   iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 -useb | iex
-#
-# Interactive install (recommended when you want post-install wizard):
-#   iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 -OutFile keyhog-install.ps1
-#   .\keyhog-install.ps1
+# Authenticated install from one tagged release:
+#   $Tag = 'v0.5.41'
+#   $Base = "https://github.com/santhreal/keyhog/releases/download/$Tag"
+#   $PublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+#   iwr "$Base/install.ps1" -OutFile keyhog-install.ps1
+#   iwr "$Base/install.ps1.minisig" -OutFile keyhog-install.ps1.minisig
+#   minisign -Vm keyhog-install.ps1 -x keyhog-install.ps1.minisig -P $PublicKey
+#   .\keyhog-install.ps1 -Version $Tag
 #
 # Modes:
 #   (default)        install or upgrade keyhog

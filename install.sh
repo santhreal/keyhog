@@ -2,13 +2,13 @@
 #
 # KeyHog installer (Linux + macOS).
 #
-# Curl-pipe-sh quick install:
-#   curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
-#
-# Interactive install (recommended when you want PATH, shell completion, and
-# pre-commit setup):
-#   curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh -o keyhog-install.sh
-#   sh keyhog-install.sh
+# Authenticated install from one tagged release:
+#   TAG=v0.5.41
+#   BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
+#   PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+#   curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
+#   minisign -Vm install.sh -P "$PUB"
+#   KEYHOG_VERSION="$TAG" sh install.sh
 #
 # Modes:
 #   (default)         install or upgrade keyhog
@@ -222,8 +222,10 @@ usage() {
         printf '%s\n' \
 "KeyHog installer (Linux + macOS)." \
 "" \
-"Quick install:" \
-"  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | sh" \
+"Authenticated install:" \
+"  Download install.sh and install.sh.minisig from one tagged release," \
+"  verify with Minisign key RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go," \
+"  then run KEYHOG_VERSION=<tag> sh install.sh." \
 "" \
 "Modes:  (default) install/upgrade   --repair   --diagnose   --calibrate   --uninstall" \
 "Flags:  --version=vX.Y.Z  --install-dir=PATH" \
@@ -2633,7 +2635,7 @@ banner
 
 if [ "$INTERACTIVE" = "0" ] && [ "$MODE" = "install" ] && [ ! -t 0 ]; then
     dim "Tip: re-run interactively for the post-install wizard:"
-    dim "  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh -o keyhog-install.sh && sh keyhog-install.sh"
+    dim "  verify the tagged release's install.sh.minisig, then run KEYHOG_VERSION=<tag> sh install.sh"
 fi
 
 case "$MODE" in
