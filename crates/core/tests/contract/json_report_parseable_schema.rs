@@ -93,7 +93,9 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     let mut buf = Vec::new();
     write_scan_report(
         &mut buf,
-        ReportFormat::JsonEnvelope,
+        ReportFormat::JsonEnvelope {
+            coverage_gap_summary: vec![("fixture skipped".into(), 1)],
+        },
         ScanReport::new(std::slice::from_ref(&finding)).with_metadata(&metadata),
     )
     .expect("versioned JSON report writes");
@@ -101,11 +103,12 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     let text = String::from_utf8(buf).expect("JSON envelope is UTF-8");
     let parsed = JsonReportEnvelope::parse(&text).expect("current major parses");
     assert_eq!(parsed.schema_version.major, 1);
-    assert_eq!(parsed.schema_version.minor, 0);
+    assert_eq!(parsed.schema_version.minor, 1);
     assert_eq!(
         parsed.metadata.as_ref().expect("metadata").targets,
         ["fixture.env"]
     );
+    assert_eq!(parsed.coverage_gap_summary[0].count, 1);
     assert_eq!(parsed.findings.len(), 1);
 
     let mut future_minor: serde_json::Value =

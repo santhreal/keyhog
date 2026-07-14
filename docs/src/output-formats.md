@@ -77,7 +77,9 @@ common "what kinds of leaks do I have" question.
 ## `--format json-envelope`
 
 Versioned JSON envelope. The root object contains `schema_version` and
-`findings`, plus optional scan-wide `metadata`. A reader must reject an
+`findings`, plus optional scan-wide `metadata` and the `coverage_gap_summary`
+array. Each gap preserves the canonical reason and count used by SARIF/HTML,
+including when there are no findings. A reader must reject an
 unsupported `schema_version.major`; a newer minor under a supported major is
 additive and may be accepted. See [Your first scan](./first-scan.md#json-output)
 for the complete schema.

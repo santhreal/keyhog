@@ -72,7 +72,7 @@ pub struct ScanReportMetadata {
 /// Current major version for the versioned JSON report envelope.
 pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 1;
 /// Current minor version for the versioned JSON report envelope.
-pub const JSON_REPORT_SCHEMA_MINOR: u16 = 0;
+pub const JSON_REPORT_SCHEMA_MINOR: u16 = 1;
 
 /// Version marker carried by every versioned JSON report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -94,8 +94,20 @@ pub struct JsonReportEnvelope {
     /// Optional scan-wide metadata supplied by the producer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ScanReportMetadata>,
+    /// Non-zero source or scanner coverage gaps observed during the scan.
+    #[serde(default)]
+    pub coverage_gap_summary: Vec<JsonReportCoverageGap>,
     /// Findings in the same redacted shape used by the legacy array.
     pub findings: Vec<VerifiedFinding>,
+}
+
+/// One scan-wide coverage gap preserved in a versioned JSON report.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct JsonReportCoverageGap {
+    /// Stable machine-readable reason shared with SARIF/HTML projections.
+    pub reason: String,
+    /// Number of affected files, chunks, or invariant events.
+    pub count: usize,
 }
 
 impl JsonReportEnvelope {
@@ -262,8 +274,11 @@ pub enum ReportFormat {
     },
     /// JSON array output.
     Json,
-    /// Versioned JSON envelope output.
-    JsonEnvelope,
+    /// Versioned JSON envelope output and its scan-wide coverage summary.
+    JsonEnvelope {
+        /// Non-zero source or scanner coverage gaps observed during the scan.
+        coverage_gap_summary: Vec<(String, usize)>,
+    },
     /// Newline-delimited JSON output.
     Jsonl,
     /// Versioned newline-delimited JSON output with a stream header.
@@ -330,8 +345,10 @@ pub fn write_scan_report<W: Write + Send>(
             finish_reporter(reporter, findings)
         }
         ReportFormat::Json => finish_reporter(json::JsonArrayReporter::new(writer)?, findings),
-        ReportFormat::JsonEnvelope => finish_reporter(
-            json::JsonEnvelopeReporter::new(writer, report_metadata)?,
+        ReportFormat::JsonEnvelope {
+            coverage_gap_summary,
+        } => finish_reporter(
+            json::JsonEnvelopeReporter::new(writer, report_metadata, &coverage_gap_summary)?,
             findings,
         ),
         ReportFormat::Jsonl => finish_reporter(json::JsonlReporter::new(writer), findings),

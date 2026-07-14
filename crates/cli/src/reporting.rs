@@ -53,7 +53,9 @@ fn report_with<W: std::io::Write + 'static + Send>(
             dogfood_active: keyhog_scanner::telemetry::is_dogfood_enabled(),
         },
         OutputFormat::Json => ReportFormat::Json,
-        OutputFormat::JsonEnvelope => ReportFormat::JsonEnvelope,
+        OutputFormat::JsonEnvelope => ReportFormat::JsonEnvelope {
+            coverage_gap_summary: coverage_gap_summary(&CoverageCounts::current()),
+        },
         OutputFormat::Jsonl => ReportFormat::Jsonl,
         OutputFormat::JsonlEnvelope => ReportFormat::JsonlEnvelope,
         OutputFormat::Sarif => ReportFormat::Sarif {

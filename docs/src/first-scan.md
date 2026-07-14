@@ -98,15 +98,17 @@ The output is a versioned envelope. `schema_version.major` selects the
 incompatible schema generation; consumers must reject an unsupported major.
 Minor revisions are additive, so a reader that understands major `1` may
 accept a newer minor and ignore fields it does not know. The optional
-`metadata` object identifies the scan; `findings` contains the redacted
-finding objects. `entropy` and `confidence` are included when the detection
+`metadata` object identifies the scan; `coverage_gap_summary` preserves any
+source or scanner coverage gaps; `findings` contains the redacted finding
+objects. `entropy` and `confidence` are included when the detection
 path measured them; otherwise they are omitted. A present entropy value is
 Shannon bits-per-byte evidence, not a confidence score and not a claim that
 entropy alone caused the finding.
 
 ```json
 {
-  "schema_version": {"major": 1, "minor": 0},
+  "schema_version": {"major": 1, "minor": 1},
+  "coverage_gap_summary": [],
   "findings": [
     {
       "detector_id":        "stripe-secret-key",

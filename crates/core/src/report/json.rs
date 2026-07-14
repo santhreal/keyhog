@@ -6,8 +6,8 @@ use std::io::Write;
 use crate::VerifiedFinding;
 
 use super::{
-    impl_writer_backed, JsonlStreamHeader, ReportError, Reporter, ScanReportMetadata,
-    WriterBackedReporter, JSON_REPORT_SCHEMA_MAJOR, JSON_REPORT_SCHEMA_MINOR,
+    impl_writer_backed, JsonReportCoverageGap, JsonlStreamHeader, ReportError, Reporter,
+    ScanReportMetadata, WriterBackedReporter, JSON_REPORT_SCHEMA_MAJOR, JSON_REPORT_SCHEMA_MINOR,
 };
 
 /// One JSON object per line (JSONL).
@@ -156,6 +156,7 @@ impl<W: Write + Send> JsonEnvelopeReporter<W> {
     pub(crate) fn new(
         mut writer: W,
         metadata: Option<&ScanReportMetadata>,
+        coverage_gap_summary: &[(String, usize)],
     ) -> Result<Self, ReportError> {
         write!(
             writer,
@@ -166,6 +167,20 @@ impl<W: Write + Send> JsonEnvelopeReporter<W> {
             write!(writer, ",\"metadata\":")?;
             serde_json::to_writer(&mut writer, metadata)?;
         }
+        write!(writer, ",\"coverage_gap_summary\":[")?;
+        for (index, (reason, count)) in coverage_gap_summary.iter().enumerate() {
+            if index > 0 {
+                write!(writer, ",")?;
+            }
+            serde_json::to_writer(
+                &mut writer,
+                &JsonReportCoverageGap {
+                    reason: reason.clone(),
+                    count: *count,
+                },
+            )?;
+        }
+        write!(writer, "]")?;
         write!(writer, ",\"findings\":[")?;
         Ok(Self {
             writer,
