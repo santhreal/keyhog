@@ -572,32 +572,22 @@ repos:
 
 ## Daemon mode
 
-The daemon keeps the compiled scanner and calibrated backend state warm for
-eligible repeated stdin and single-file scans. Actual latency depends on the
-binary, corpus, host, accelerator state, cache warmth, and input size; measure
-it on the deployment host instead of relying on copied benchmark numbers.
+The optional Unix daemon keeps a compiled scanner warm for repeated eligible
+stdin and single-file scans. It runs in the foreground and is never started
+implicitly.
 
 ```bash
-keyhog daemon start                    # Unix socket via runtime/cache/temp resolution
+keyhog daemon start
 keyhog scan --stdin --daemon < .env
 keyhog daemon status
 keyhog daemon stop
 ```
 
-Daemon scans are scanner-only and apply to eligible stdin or single
-regular-file inputs. They return findings before baseline filtering,
-Merkle skip-cache, and live verification; directory, git, remote,
-baseline, `--verify`, backend/GPU/autoroute, and policy-changing scans
-run in-process. `--daemon=on` fails loudly when the daemon cannot honor
-the requested scan exactly. The v5 handshake rejects package, Git-build, or
-detector-rules mismatches, including a same-version daemon started with a
-custom corpus. It also names the daemon-owned autoroute or forced diagnostic
-backend policy. `--daemon=auto` reports a handshake refusal before running in
-process, and `daemon status` prints the accepted backend policy.
-
-Use it in IDE save handlers, stdin/single-file hook glue, or per-commit
-CI loops that feed one file at a time. See the
-[daemon workflow](docs/src/workflows/daemon.md) for routing and lifecycle semantics.
+Omitting `--daemon` means `auto` on Unix. Bare `--daemon` means `on`, which
+fails if the service cannot honor the request exactly. Directory, Git, remote,
+verification, baseline, and policy-changing scans stay in process. See the
+[daemon workflow](docs/src/workflows/daemon.md) for eligibility, retry,
+identity, socket trust, shutdown, coverage, and exit semantics.
 
 Watch mode is a separate foreground filesystem-event loop; it does not connect
 to the daemon socket or appear in `keyhog daemon status`. For IDEs:

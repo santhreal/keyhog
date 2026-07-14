@@ -66,14 +66,9 @@ Things that exit `2`:
   then rerun `keyhog calibrate-autoroute`, `install.sh --calibrate`, or
   `install.ps1 -Calibrate`. An explicit `--backend` bypasses the table for that
   diagnostic scan; it does not make the autoroute state valid.
-- `--daemon=on` (or bare `--daemon`) when no compatible daemon can honor the
-  request, `daemon status`/`stop` when no daemon is running, or a stale daemon
-  rejected by the required route. `--daemon=auto` instead reports a reachable
-  daemon failure and runs the eligible request in process; with no socket it
-  goes straight in process.
-- On Windows, explicit `--daemon=auto|on` and daemon subcommands, because the
-  Unix-domain-socket transport is unavailable. An omitted flag or
-  `--daemon=off` is the supported in-process path.
+- Daemon availability, eligibility, trust, or protocol errors. See
+  [Daemon and warm scans](../workflows/daemon.md) for routing-specific exits,
+  automatic retry, stale status, coverage, and Windows behavior.
 - Network error during `--verify` is NOT a `2`; it's a `verification-error`
   marker per finding and the scan exits `1` if any unverified-live
   findings exist.

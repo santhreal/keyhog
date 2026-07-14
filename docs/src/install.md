@@ -183,8 +183,8 @@ fail-closed requirement; it does not choose GPU over a faster calibrated peer.
 
 ### Daemon policy after installation
 
-Installation and calibration do not start a daemon. On Unix, run and manage the
-optional warm scanner explicitly:
+Installation and calibration do not start a daemon. On Unix, manage the
+optional foreground warm scanner explicitly:
 
 ```sh
 keyhog daemon start
@@ -192,29 +192,10 @@ keyhog daemon status
 keyhog daemon stop
 ```
 
-`daemon start` is a foreground long-lived process; run it under the service
-manager or terminal lifecycle you intend to own. It announces readiness only
-after compiling the scanner and validating its selected backend.
-
-For `keyhog scan`, an omitted daemon flag means `--daemon=auto`. Auto uses a
-reachable, compatible daemon only for a request it can reproduce exactly
-(currently one stdin stream or one regular file). With no socket it runs in
-process directly. If a reachable daemon fails its handshake or request, KeyHog
-prints the failure and retries the same eligible scan in process. Directory,
-Git/remote, baseline, verification, explicit backend/GPU, and unsupported
-policy combinations stay in process without weakening their semantics.
-
-Bare `--daemon` means `--daemon=on`: the daemon is required, so a missing,
-stale, incompatible, or incapable daemon is an exit-`2` error and no in-process
-substitution occurs. `--daemon=off` always runs in process. A daemon left alive
-across a binary, build, or detector-corpus change is visible as stale in
-`keyhog daemon status`; scan handshakes refuse it until it is restarted. Windows
-has no daemon transport: an omitted flag and `--daemon=off` run in process,
-while explicit `--daemon=auto`, `--daemon=on`, and daemon subcommands fail
-loudly. A connected-but-stale `daemon status` prints the identity mismatch but
-still exits `0`, because the status request itself succeeded; the strict scan
-route remains rejected. See [Daemon and warm scans](workflows/daemon.md) for
-request eligibility, socket trust, warm-GPU routing, and timeout details.
+An omitted scan flag means `--daemon=auto` on Unix. Bare `--daemon` means
+`--daemon=on`; `--daemon=off` always runs in process. See
+[Daemon and warm scans](workflows/daemon.md) for the canonical activation,
+eligibility, retry, identity, shutdown, socket, coverage, and exit contract.
 
 ## Repair, diagnose, uninstall
 

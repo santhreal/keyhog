@@ -77,10 +77,10 @@ or coverage incomplete.
 | `--precision`                 | Seed a high-precision policy: decode depth 1, entropy discovery and the relaxed keyword bridge off, ML scoring retained, and a minimum confidence floor of `0.85`. Explicit floors may tighten but not lower it. |
 | `--incremental`               | Skip files whose content hash matches the Merkle index, then update the index after a successful scan. |
 | `--incremental-cache <PATH>`  | Override the Merkle index used by `--incremental`. |
-| `--daemon`                    | Force daemon route for eligible stdin/single-file scans. Unix only; fails if the request needs the in-process pipeline. |
-| `--daemon=auto`               | On Unix, use a reachable compatible daemon when it can honor the exact request. With no socket, run in process. Connection, handshake, request, and daemon-execution failures are reported before an in-process retry. After a valid daemon result is accepted, finalization or report errors return directly without rescanning. This is also the absent-flag policy, except that explicit `auto` is rejected on platforms with no daemon transport. |
-| `--daemon=off`                | Force in-process scan even if daemon is up.    |
-| `--daemon-socket <PATH>`      | Connect to the same non-default socket supplied to `daemon start --socket`; rejected with `--daemon=off`. |
+| `--daemon`                    | Require the daemon for an eligible request. Bare form means `on`. See the [daemon contract](../workflows/daemon.md). |
+| `--daemon=auto`               | Use an eligible compatible daemon when available, with the documented visible retry. This is the Unix default. |
+| `--daemon=off`                | Force in-process scanning. |
+| `--daemon-socket <PATH>`      | Select the same non-default socket supplied to `daemon start --socket`. |
 | `--benchmark`                 | Run the built-in backend benchmark corpus and exit instead of scanning the requested source. |
 | `--profile`                   | Emit the scanner-owned hierarchical profile report to stderr at scan end. |
 | `--perf-trace`                | Emit low-level scan/GPU phase timing traces to stderr. |
@@ -245,11 +245,8 @@ Manages the git pre-commit hook. See
 
 ## `keyhog daemon <start|stop|status>` (Unix only)
 
-The daemon holds a compiled scanner and initialized accelerator state for
-eligible stdin and single-file scans. Directory, Git, remote, baseline,
-verification, explicit backend/calibration, and incompatible policy requests
-use the in-process pipeline in `auto` mode; `--daemon=on` fails if the exact
-daemon route cannot be honored.
+The optional foreground daemon holds a compiled scanner for repeated eligible
+stdin and single-file scans.
 
 | Subcommand         | Effect                                              |
 |--------------------|-----------------------------------------------------|
@@ -257,23 +254,9 @@ daemon route cannot be honored.
 | `daemon stop`      | Tell the running daemon to shut down.               |
 | `daemon status`    | Print uptime, scans served, active scans, detector count, and backend policy. |
 
-`daemon start --request-timeout-secs <N>` sets how long one client connection
-may sit without completing a request frame before the daemon closes it and
-reclaims the connection slot. Default: `300`.
-
-Default socket path: `$XDG_RUNTIME_DIR/keyhog.sock` when that directory is set;
-otherwise the OS user cache directory (`~/.cache/keyhog/server.sock` on Linux
-or `~/Library/Caches/keyhog/server.sock` on macOS), with the OS temporary
-directory plus `keyhog/server.sock` as the last fallback. Every daemon command
-and scan client resolves the same default.
-
-On Windows: every `daemon` subcommand and explicit `scan --daemon=auto|on`
-prints a Unix-only error and exits non-zero. No Windows daemon transport ships;
-an absent daemon flag or explicit `--daemon=off` runs the in-process scanner.
-
-See [Daemon and warm scans](../workflows/daemon.md) for the complete `auto` /
-`on` / `off` contract, request eligibility, warm autoroute behavior, and socket
-security semantics.
+See [Daemon and warm scans](../workflows/daemon.md) for option semantics,
+`auto` / `on` / `off` routing, eligibility, readiness, socket resolution,
+identity, shutdown, timeout, coverage, and exits.
 
 ## `keyhog diff <FILE_A> <FILE_B>`
 
