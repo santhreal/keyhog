@@ -82,11 +82,6 @@ pub struct UpdateArgs {
     /// Use this to pin a version or downgrade.
     #[arg(long)]
     pub version: Option<String>,
-
-    /// Hidden test seam for offline update lifecycle tests. Production users
-    /// should resolve releases from the canonical GitHub API.
-    #[arg(long, hide = true, value_name = "URL")]
-    pub release_api_base: Option<String>,
 }
 
 /// Arguments for `keyhog repair` (reinstall a known-good binary from releases).
@@ -100,11 +95,6 @@ pub struct RepairArgs {
     /// Use this to pin a version or downgrade.
     #[arg(long)]
     pub version: Option<String>,
-
-    /// Hidden test seam for offline repair lifecycle tests. Production users
-    /// should resolve releases from the canonical GitHub API.
-    #[arg(long, hide = true, value_name = "URL")]
-    pub release_api_base: Option<String>,
 }
 
 /// Arguments for `keyhog uninstall`.

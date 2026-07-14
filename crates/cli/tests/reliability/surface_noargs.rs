@@ -1,11 +1,11 @@
 //! Invariant: every non-blocking subcommand, invoked with NO arguments,
 //! terminates cleanly with a documented exit code and no panic, under every
-//! profile. (scan/scan-system/watch/daemon are excluded here: with no args
-//! they would scan the cwd or run forever; their no-arg behavior is covered by
-//! dedicated tests with bounded inputs.)
+//! profile. Scan, scan-system, watch, and daemon would scan or run indefinitely.
+//! Update and repair can perform network I/O. Dedicated bounded tests cover
+//! those commands.
 //!
-//! This is the "does the command even start on a weird box" sweep. 12 x 16 =
-//! 192 distinct tests.
+//! This is the "does the command even start on a weird box" sweep. 10 x 16 =
+//! 160 distinct tests.
 
 use crate::reliability::harness::{
     assert_clean_exit, assert_documented_exit, assert_no_ansi, assert_no_panic, run, Profile,
@@ -31,8 +31,6 @@ crate::kh_matrix!(
     completion => "completion",
     backend => "backend",
     doctor => "doctor",
-    update => "update",
-    repair => "repair",
     uninstall => "uninstall",
     hook => "hook",
 );

@@ -200,7 +200,6 @@ toml = { workspace = true }
 # but the dep was missing, the whole property/ dir was orphaned (empty mod.rs)
 # so it never compiled and the gap stayed hidden. Pinned via the workspace.
 proptest = { workspace = true }
-# Mock GitHub releases API for the installer/update lifecycle suite: drive the
-# real binary's release-resolution path against deliberately hostile responses
-# (malformed JSON, 500s, missing assets) with zero network.
+# Mock GitHub releases API for the installer/update lifecycle suite. The suite
+# injects this server only through the library test API, never shipped argv.
 httpmock = { workspace = true }

@@ -96,9 +96,8 @@ fn release_signature_verify_rejects_garbage_after_split() {
 fn release_public_constants_and_self_test_reachable_after_split() {
     assert_eq!(API.release_repo(), "santhreal/keyhog");
     assert!(API.release_public_key().starts_with("RWT"));
-    // release_api_base default is always the real GitHub API. The offline
-    // lifecycle tests use an explicit hidden argv seam; ambient env must not
-    // redirect production update metadata.
+    // Production release resolution has one canonical API origin. Offline
+    // lifecycle tests inject their server through the library test API.
     let base = API.release_api_base();
     assert_eq!(base, "https://api.github.com");
     // The scan-engine self-test plants a synthetic secret and round-trips it
@@ -122,11 +121,6 @@ fn release_api_base_ignores_ambient_env_after_split() {
         API.release_api_base(),
         "https://api.github.com",
         "ambient KEYHOG_RELEASE_API_BASE must not redirect production update metadata"
-    );
-    assert_eq!(
-        API.release_api_base_with_override("http://127.0.0.1:1234/"),
-        "http://127.0.0.1:1234",
-        "offline tests must use the explicit argv/test seam instead"
     );
 }
 
@@ -167,7 +161,10 @@ fn local_install_rollback_restores_on_failed_verify_after_split() {
     // its injected health check must be rolled back to the prior working one.
     #[cfg(unix)]
     {
+        use std::os::unix::fs::PermissionsExt as _;
+
         let dir = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
         let exe = dir.path().join("keyhog");
         std::fs::write(&exe, b"GOOD").unwrap();
 
@@ -199,7 +196,8 @@ fn full_installer_call_surface_reachable_after_split() {
     let _asset_name = |os: &str, arch: &str| API.asset_name(os, arch);
     let _select_release_asset_name =
         |tag: &str, names: &[&str]| API.select_release_asset_name(tag, names);
-    let _release_api_base_with_override = |base: &str| API.release_api_base_with_override(base);
+    let client = API.http_client().expect("build release client");
+    let _resolve_release_at = API.resolve_release_at(&client, None, "http://127.0.0.1:9");
     let _looks_like_native_executable = |bytes: &[u8]| API.looks_like_native_executable(bytes);
     let _verify_release_signature =
         |bytes: &[u8], signature: &str| API.verify_release_signature(bytes, signature);

@@ -4,7 +4,7 @@
 //!
 //! The bar is "a customer's experience CANNOT be bad," so every profile here
 //! is NASTIER than a normal user's box: HOME unset, read-only cwd, TERM=dumb,
-//! a 1-column terminal, a bogus forced backend, a dead update endpoint. A
+//! a 1-column terminal, and a bogus forced backend. A
 //! subcommand that panics, leaks raw escape codes, or returns a nonsense exit
 //! code under any of these is a defect, not an edge case.
 
@@ -227,26 +227,10 @@ fn apply_profile(profile: Profile, cmd: &mut Command) -> Option<TempDir> {
     None
 }
 
-fn offline_release_args(args: &[&str]) -> Vec<String> {
-    let mut out: Vec<String> = args.iter().map(|arg| (*arg).to_string()).collect();
-    if matches!(args.first().copied(), Some("update" | "repair"))
-        && !args.iter().any(|arg| *arg == "--release-api-base")
-    {
-        // Always neutralize the release endpoint for update/repair so surface
-        // tests fail FAST and offline instead of reaching api.github.com. This
-        // is an explicit argv-only test seam; production code ignores ambient
-        // KEYHOG_RELEASE_API_BASE by design.
-        out.push("--release-api-base".into());
-        out.push("http://127.0.0.1:9".into());
-    }
-    out
-}
-
 /// Run `keyhog <args>` under `profile`, feeding `stdin`, capturing everything.
 pub fn run_stdin(profile: Profile, args: &[&str], stdin: &[u8]) -> Outcome {
     let mut cmd = Command::new(binary());
-    let effective_args = offline_release_args(args);
-    cmd.args(&effective_args)
+    cmd.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -269,11 +253,7 @@ pub fn run_stdin(profile: Profile, args: &[&str], stdin: &[u8]) -> Outcome {
         stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         stdout_raw: out.stdout,
         stderr_raw: out.stderr,
-        what: format!(
-            "`keyhog {}` [{}]",
-            effective_args.join(" "),
-            profile.label()
-        ),
+        what: format!("`keyhog {}` [{}]", args.join(" "), profile.label()),
     }
 }
 

@@ -57,12 +57,7 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
 
     // 2. Reinstall a known-good release binary (latest, or pinned --version).
     let client = installer::http_client()?;
-    let release = installer::resolve_release(
-        &client,
-        args.version.as_deref(),
-        args.release_api_base.as_deref(),
-    )
-    .await?;
+    let release = installer::resolve_release(&client, args.version.as_deref()).await?;
     let asset = installer::select_asset(&release)?;
     let expected_tag = release.tag_name.clone();
     let allow_explicit_downgrade = args.version.is_some();

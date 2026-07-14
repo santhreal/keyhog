@@ -94,6 +94,14 @@ impl SkipDirPolicyView {
 }
 
 pub type DownloadFuture<'a> = Pin<Box<dyn Future<Output = Result<Vec<u8>>> + 'a>>;
+pub type ReleaseResolutionFuture<'a> = Pin<Box<dyn Future<Output = Result<ResolvedRelease>> + 'a>>;
+pub type ReleaseInstallFuture<'a> = Pin<Box<dyn Future<Output = Result<()>> + 'a>>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedRelease {
+    pub tag_name: String,
+    pub asset_name: String,
+}
 
 /// Verification-state tallies exposed to the relocated completion-summary
 /// tests without leaking the crate-internal `VerificationBreakdown` type.
@@ -234,8 +242,21 @@ pub trait CliTestApi {
         files: &[(&str, &[u8])],
         commit: bool,
     ) -> Result<()>;
-    fn release_api_base(&self) -> String;
-    fn release_api_base_with_override(&self, base: &str) -> String;
+    fn release_api_base(&self) -> &'static str;
+    fn resolve_release_at<'a>(
+        &self,
+        client: &'a reqwest::Client,
+        version: Option<&'a str>,
+        release_api_base: &'a str,
+    ) -> ReleaseResolutionFuture<'a>;
+    fn install_verified_release_payload_at<'a>(
+        &self,
+        client: &'a reqwest::Client,
+        version: Option<&'a str>,
+        release_api_base: &'a str,
+        asset_name: &'a str,
+        target: &'a Path,
+    ) -> ReleaseInstallFuture<'a>;
     fn release_public_key(&self) -> &'static str;
     fn release_repo(&self) -> &'static str;
     fn scan_engine_self_test(&self) -> Result<bool>;
@@ -775,11 +796,51 @@ impl CliTestApi for TestApi {
         }
         Ok(())
     }
-    fn release_api_base(&self) -> String {
-        crate::installer::release_api_base(None)
+    fn release_api_base(&self) -> &'static str {
+        crate::installer::release_api_base()
     }
-    fn release_api_base_with_override(&self, base: &str) -> String {
-        crate::installer::release_api_base(Some(base))
+    fn resolve_release_at<'a>(
+        &self,
+        client: &'a reqwest::Client,
+        version: Option<&'a str>,
+        release_api_base: &'a str,
+    ) -> ReleaseResolutionFuture<'a> {
+        Box::pin(async move {
+            let release =
+                crate::installer::resolve_release_at(client, version, release_api_base).await?;
+            let asset_name = crate::installer::select_asset(&release)?.name.clone();
+            Ok(ResolvedRelease {
+                tag_name: release.tag_name,
+                asset_name,
+            })
+        })
+    }
+    fn install_verified_release_payload_at<'a>(
+        &self,
+        client: &'a reqwest::Client,
+        version: Option<&'a str>,
+        release_api_base: &'a str,
+        asset_name: &'a str,
+        target: &'a Path,
+    ) -> ReleaseInstallFuture<'a> {
+        Box::pin(async move {
+            let bytes = crate::installer::resolve_and_download_verified_payload_at(
+                client,
+                version,
+                release_api_base,
+                asset_name,
+            )
+            .await?;
+            let expected = bytes.clone();
+            crate::installer::install_with_rollback_checked(target, &bytes, move |candidate| {
+                let installed = std::fs::read(candidate).map_err(anyhow::Error::from)?;
+                anyhow::ensure!(
+                    installed == expected,
+                    "installed release payload changed bytes"
+                );
+                Ok(())
+            })
+        })
     }
     fn release_public_key(&self) -> &'static str {
         crate::installer::RELEASE_PUBLIC_KEY

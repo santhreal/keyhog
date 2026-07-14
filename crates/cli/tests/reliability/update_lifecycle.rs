@@ -1,28 +1,26 @@
-//! Installer/update lifecycle under a HOSTILE GitHub: malformed JSON, 500s,
-//! empty release lists, asset-less releases, missing pinned tags. Drives the
-//! REAL binary's release-resolution path (`keyhog update --check`) against an
-//! httpmock server via the hidden `--release-api-base` test seam, with zero network.
+//! Offline release lifecycle coverage through the library-only endpoint seam.
 //!
-//! `--check` is used exclusively: it resolves + compares versions but NEVER
-//! downloads or self-replaces, so the test binary is never overwritten. The
-//! download/verify/rollback primitives are covered by
-//! `installer_recoverability` at the library level.
-//!
-//! Bar: a broken or hostile release endpoint must produce a clean, documented
-//! error - never a panic, never a hang, never a nonsense exit code. "The
-//! installer broke under stress" is the exact failure this suite forbids.
+//! Production `update` and `repair` have no endpoint override. These tests
+//! inject an HTTP server directly into release resolution and the shared
+//! signature, checksum, download, and atomic install path.
 
 use std::process::Command;
 
 use httpmock::prelude::*;
+use keyhog::testing::{CliTestApi as _, ResolvedRelease, API};
 
 use crate::reliability::harness::binary;
 
-/// A releases-list body whose newest tag is `tag`, carrying an asset for every
-/// supported platform so `select_asset` resolves regardless of test host.
-fn releases_body(tag: &str) -> String {
+const FIXTURE_DATA: &[u8] = b"keyhog-signature-test-v1\n";
+const FIXTURE_SIG: &str = "untrusted comment: signature from rsign secret key\n\
+RUTPnJ/p6xVJ3REkJ9dhxwKQpEisq7Y2A4uIZlUzPRM0zDjWidV3sIXjHB8d558++9M0KpCpz6T8efYlVFl/RZhrKIznrUZSGww=\n\
+trusted comment: timestamp:1780025193\tfile:/tmp/claude-1000/tmp.JTQWgRt5FO/fixture.bin\tprehashed\n\
+L/wvGiwIhpaBlkEUaQ364Q8ph9ksqIxJyIMy1RQbs/QS4+q8biUaJGt+0weV4E0IV/pPHywDFtZhvUD03un2CA==\n";
+const FIXTURE_SHA256: &str = "79792c6a6ce7cccb7d14cadf57006754b70a3e90a944cdaaf111ae97f03fbee8";
+
+fn release_value(tag: &str, base: &str) -> serde_json::Value {
     let mut assets = Vec::new();
-    for base in [
+    for binary in [
         "keyhog-linux-x86_64",
         "keyhog-macos-aarch64",
         "keyhog-macos-x86_64",
@@ -36,62 +34,29 @@ fn releases_body(tag: &str) -> String {
             ".gpu-literals.tar.gz.sha256",
             ".gpu-literals.tar.gz.minisig",
         ] {
-            let name = format!("{base}{suffix}");
+            let name = format!("{binary}{suffix}");
             assets.push(serde_json::json!({
                 "name": name,
-                "browser_download_url": format!("http://example.invalid/{base}{suffix}"),
+                "browser_download_url": format!("{base}/download/{binary}{suffix}"),
             }));
         }
     }
-    serde_json::json!([{
+    for suffix in ["", ".sha256", ".minisig"] {
+        assets.push(serde_json::json!({
+            "name": format!("fixture.bin{suffix}"),
+            "browser_download_url": format!("{base}/download/fixture.bin{suffix}"),
+        }));
+    }
+    serde_json::json!({
         "tag_name": tag,
         "draft": false,
         "prerelease": false,
         "assets": assets,
-    }])
-    .to_string()
+    })
 }
 
-fn run_update(base: &str, extra: &[&str]) -> (Option<i32>, String, String) {
-    let mut args: Vec<&str> = vec!["update", "--release-api-base", base];
-    args.extend_from_slice(extra);
-    let out = Command::new(binary())
-        .args(&args)
-        .output()
-        .expect("spawn keyhog update");
-    (
-        out.status.code(),
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-        String::from_utf8_lossy(&out.stderr).into_owned(),
-    )
-}
-
-/// Assert the invocation degraded gracefully: real exit code (not a signal),
-/// no panic/backtrace, no ANSI leak on the pipe, and an exit code update is
-/// allowed to return (0 up-to-date, 10 available, 2 user error, 3 system).
-fn assert_graceful(code: Option<i32>, stdout: &str, stderr: &str, what: &str) {
-    assert!(code.is_some(), "{what}: update crashed (killed by signal)");
-    let hay = format!("{stdout}{stderr}");
-    for needle in [
-        "panicked at",
-        "RUST_BACKTRACE",
-        "Result::unwrap()",
-        "Option::unwrap()",
-    ] {
-        assert!(
-            !hay.contains(needle),
-            "{what}: panic marker {needle:?}:\n{hay}"
-        );
-    }
-    assert!(
-        !stdout.as_bytes().contains(&0x1b) && !stderr.as_bytes().contains(&0x1b),
-        "{what}: ANSI escape leaked to a pipe"
-    );
-    let c = code.unwrap();
-    assert!(
-        [0, 2, 3, 10].contains(&c),
-        "{what}: undocumented exit {c} (update may return 0/10/2/3)\n{hay}"
-    );
+fn releases_body(tag: &str, base: &str) -> String {
+    serde_json::json!([release_value(tag, base)]).to_string()
 }
 
 fn releases_mock(server: &MockServer, status: u16, body: &str) {
@@ -103,195 +68,234 @@ fn releases_mock(server: &MockServer, status: u16, body: &str) {
     });
 }
 
-#[test]
-fn newer_release_reports_update_available() {
-    let server = MockServer::start();
-    releases_mock(&server, 200, &releases_body("v99.0.0"));
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "newer release");
-    assert_eq!(
-        code,
-        Some(10),
-        "a strictly newer release must exit 10 (update available)"
-    );
-    assert!(
-        out.to_lowercase().contains("update available") || out.contains("v99.0.0"),
-        "--check did not announce the available update:\n{out}"
-    );
+async fn resolve(base: &str, version: Option<&str>) -> anyhow::Result<ResolvedRelease> {
+    let client = API.http_client()?;
+    API.resolve_release_at(&client, version, base).await
+}
+
+fn private_install_directory() -> tempfile::TempDir {
+    let directory = tempfile::tempdir().expect("installer target directory");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700))
+            .expect("make installer target private");
+    }
+    directory
 }
 
 #[test]
-fn current_or_older_release_reports_up_to_date() {
-    let server = MockServer::start();
-    releases_mock(&server, 200, &releases_body("v0.0.1"));
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "older release");
-    assert_eq!(
-        code,
-        Some(0),
-        "an older latest must mean 'already current' (exit 0)"
-    );
-    assert!(
-        out.to_lowercase().contains("latest") || out.to_lowercase().contains("up"),
-        "did not report up-to-date:\n{out}"
-    );
+fn shipped_update_and_repair_reject_release_api_base() {
+    for command in ["update", "repair"] {
+        let output = Command::new(binary())
+            .args([command, "--release-api-base", "http://127.0.0.1:9"])
+            .output()
+            .unwrap_or_else(|error| panic!("run keyhog {command}: {error}"));
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{command} must reject the removed flag"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("unexpected argument") && stderr.contains("--release-api-base"),
+            "{command} must reject the test-only flag before any network access: {stderr}"
+        );
+    }
 }
 
-#[test]
-fn malformed_json_fails_gracefully() {
+#[tokio::test]
+async fn newer_release_resolves_through_library_injection() {
     let server = MockServer::start();
-    releases_mock(&server, 200, "{ this is not valid json at all ][");
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "malformed JSON");
-    assert_ne!(
-        code,
-        Some(10),
-        "malformed JSON must not be read as 'update available'"
-    );
-    assert_ne!(
-        code,
-        Some(0),
-        "malformed JSON must not be read as 'up to date'"
-    );
+    releases_mock(&server, 200, &releases_body("v99.0.0", &server.base_url()));
+    let release = resolve(&server.base_url(), None)
+        .await
+        .expect("resolve release");
+    assert_eq!(release.tag_name, "v99.0.0");
+    assert!(release.asset_name.starts_with("keyhog-"));
 }
 
-#[test]
-fn truncated_json_fails_gracefully() {
-    let server = MockServer::start();
-    releases_mock(&server, 200, "[{\"tag_name\":\"v9.9.9\",\"assets\":[");
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "truncated JSON");
+#[tokio::test]
+async fn empty_injected_base_does_not_fall_back_to_github() {
+    let error = resolve(" / ", None).await.unwrap_err();
+    assert!(format!("{error:#}").contains("injected release API base is empty"));
 }
 
-#[test]
-fn html_error_page_instead_of_json_fails_gracefully() {
+#[tokio::test]
+async fn assetless_release_is_not_installable() {
     let server = MockServer::start();
     releases_mock(
         &server,
         200,
-        "<!DOCTYPE html><html><body>502 Bad Gateway</body></html>",
+        r#"[{"tag_name":"v99.0.0","draft":false,"prerelease":false,"assets":[]}]"#,
     );
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "HTML body");
+    let error = resolve(&server.base_url(), None).await.unwrap_err();
+    assert!(format!("{error:#}").contains("complete signed asset bundle"));
 }
 
-#[test]
-fn server_500_fails_gracefully() {
+#[tokio::test]
+async fn incomplete_newer_release_is_skipped_for_complete_stable_bundle() {
     let server = MockServer::start();
-    releases_mock(&server, 500, "internal server error");
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "HTTP 500");
-    assert_ne!(code, Some(0), "an HTTP 500 must not be treated as success");
-    assert_ne!(
-        code,
-        Some(10),
-        "an HTTP 500 must not be treated as 'update available'"
-    );
-}
-
-#[test]
-fn rate_limit_403_fails_gracefully() {
-    let server = MockServer::start();
-    releases_mock(&server, 403, r#"{"message":"API rate limit exceeded"}"#);
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "HTTP 403 rate limit");
-}
-
-#[test]
-fn empty_release_list_fails_gracefully_with_guidance() {
-    let server = MockServer::start();
-    releases_mock(&server, 200, "[]");
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "empty release list");
-    assert_ne!(code, Some(10));
-    assert_ne!(code, Some(0), "no releases must not be 'up to date'");
-}
-
-#[test]
-fn release_with_no_assets_fails_gracefully() {
-    let server = MockServer::start();
-    releases_mock(&server, 200, r#"[{"tag_name":"v99.0.0","assets":[]}]"#);
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "asset-less release");
-}
-
-#[test]
-fn incomplete_newer_release_is_skipped_for_complete_stable_bundle() {
-    let server = MockServer::start();
-    let complete = serde_json::from_str::<serde_json::Value>(&releases_body("v99.0.0"))
-        .expect("complete release JSON");
     let body = serde_json::json!([
         {
             "tag_name": "v100.0.0",
             "assets": [{"name": "keyhog-linux-x86_64", "browser_download_url": "http://example.invalid/partial"}]
         },
-        complete.as_array().expect("release array")[0].clone()
+        release_value("v99.0.0", &server.base_url())
     ]);
     releases_mock(&server, 200, &body.to_string());
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "partial newest release");
-    assert_eq!(code, Some(10));
-    assert!(out.contains("v99.0.0") && !out.contains("v100.0.0"));
+    let release = resolve(&server.base_url(), None)
+        .await
+        .expect("resolve complete release");
+    assert_eq!(release.tag_name, "v99.0.0");
 }
 
-#[test]
-fn prerelease_is_not_selected_as_implicit_latest() {
+#[tokio::test]
+async fn prerelease_is_not_selected_as_implicit_latest() {
     let server = MockServer::start();
-    let mut prerelease = serde_json::from_str::<serde_json::Value>(&releases_body("v100.0.0-rc.1"))
-        .expect("prerelease JSON");
-    prerelease[0]["prerelease"] = serde_json::Value::Bool(true);
-    let stable =
-        serde_json::from_str::<serde_json::Value>(&releases_body("v99.0.0")).expect("stable JSON");
-    let body = serde_json::json!([
-        prerelease.as_array().expect("prerelease array")[0].clone(),
-        stable.as_array().expect("stable array")[0].clone()
-    ]);
+    let mut prerelease = release_value("v100.0.0-rc.1", &server.base_url());
+    prerelease["prerelease"] = serde_json::Value::Bool(true);
+    let body = serde_json::json!([prerelease, release_value("v99.0.0", &server.base_url())]);
     releases_mock(&server, 200, &body.to_string());
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "implicit prerelease filtering");
-    assert_eq!(code, Some(10));
-    assert!(out.contains("v99.0.0") && !out.contains("v100.0.0-rc.1"));
+    let release = resolve(&server.base_url(), None)
+        .await
+        .expect("resolve stable release");
+    assert_eq!(release.tag_name, "v99.0.0");
 }
 
-#[test]
-fn oversized_release_metadata_is_rejected_before_parsing() {
-    let server = MockServer::start();
-    releases_mock(&server, 200, &"x".repeat(8 * 1024 * 1024 + 1));
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "oversized release metadata");
-    assert_ne!(code, Some(0));
-    assert_ne!(code, Some(10));
-    assert!(format!("{out}{err}").contains("download limit"));
+#[tokio::test]
+async fn hostile_release_metadata_fails_closed() {
+    for (name, status, body) in [
+        (
+            "malformed JSON",
+            200,
+            "{ this is not valid json at all ][".to_string(),
+        ),
+        (
+            "truncated JSON",
+            200,
+            "[{\"tag_name\":\"v9.9.9\",\"assets\":[".to_string(),
+        ),
+        (
+            "HTML body",
+            200,
+            "<!DOCTYPE html><html>502</html>".to_string(),
+        ),
+        ("server error", 500, "internal server error".to_string()),
+        (
+            "rate limit",
+            403,
+            r#"{"message":"API rate limit exceeded"}"#.to_string(),
+        ),
+        ("empty list", 200, "[]".to_string()),
+        ("oversized metadata", 200, "x".repeat(8 * 1024 * 1024 + 1)),
+    ] {
+        let server = MockServer::start();
+        releases_mock(&server, status, &body);
+        let error = resolve(&server.base_url(), None).await.unwrap_err();
+        let message = format!("{error:#}");
+        assert!(!message.is_empty(), "{name} must return a contextual error");
+        if name == "oversized metadata" {
+            assert!(message.contains("download limit"), "{message}");
+        }
+    }
 }
 
-#[test]
-fn pinned_missing_tag_404_fails_gracefully() {
+#[tokio::test]
+async fn pinned_missing_tag_fails_closed() {
     let server = MockServer::start();
     server.mock(|when, then| {
         when.method(GET)
             .path("/repos/santhreal/keyhog/releases/tags/v1.2.3");
         then.status(404).body(r#"{"message":"Not Found"}"#);
     });
-    let (code, out, err) = run_update(&server.base_url(), &["--check", "--version", "v1.2.3"]);
-    assert_graceful(code, &out, &err, "pinned missing tag");
-    assert_ne!(code, Some(10), "a 404 tag must not be 'update available'");
+    let error = resolve(&server.base_url(), Some("v1.2.3"))
+        .await
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("HTTP status"));
 }
 
-#[test]
-fn garbage_tag_name_in_release_does_not_crash() {
-    // A release whose tag_name is unparseable as semver: is_newer fails safe
-    // (not newer), so --check must say up-to-date or error, never panic.
+#[tokio::test]
+async fn signed_payload_runs_shared_download_and_atomic_install_path() {
     let server = MockServer::start();
-    releases_mock(
-        &server,
-        200,
-        r#"[{"tag_name":"not-a-version-🙃","assets":[{"name":"keyhog-linux-x86_64","browser_download_url":"http://example.invalid/x"}]}]"#,
+    let tag = "v99.0.0";
+    let release = release_value(tag, &server.base_url()).to_string();
+    server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/repos/santhreal/keyhog/releases/tags/{tag}"));
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(release);
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/download/fixture.bin");
+        then.status(200).body(FIXTURE_DATA);
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/download/fixture.bin.minisig");
+        then.status(200).body(FIXTURE_SIG);
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/download/fixture.bin.sha256");
+        then.status(200)
+            .body(format!("{FIXTURE_SHA256}  fixture.bin\n"));
+    });
+
+    let directory = private_install_directory();
+    let target = directory.path().join("keyhog-fixture");
+    std::fs::write(&target, b"working-old-binary").expect("write old target");
+    let client = API.http_client().expect("build release client");
+    API.install_verified_release_payload_at(
+        &client,
+        Some(tag),
+        &server.base_url(),
+        "fixture.bin",
+        &target,
+    )
+    .await
+    .expect("verify and install signed payload");
+    assert_eq!(
+        std::fs::read(&target).expect("read installed target"),
+        FIXTURE_DATA
     );
-    let (code, out, err) = run_update(&server.base_url(), &["--check"]);
-    assert_graceful(code, &out, &err, "garbage tag");
-    assert_ne!(
-        code,
-        Some(10),
-        "an unparseable tag must not be 'update available' (fail-safe)"
+}
+
+#[tokio::test]
+async fn invalid_signature_preserves_existing_install() {
+    let server = MockServer::start();
+    let tag = "v99.0.0";
+    let release = release_value(tag, &server.base_url()).to_string();
+    server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/repos/santhreal/keyhog/releases/tags/{tag}"));
+        then.status(200).body(release);
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/download/fixture.bin");
+        then.status(200).body(b"tampered payload");
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/download/fixture.bin.minisig");
+        then.status(200).body(FIXTURE_SIG);
+    });
+
+    let directory = private_install_directory();
+    let target = directory.path().join("keyhog-fixture");
+    std::fs::write(&target, b"working-old-binary").expect("write old target");
+    let client = API.http_client().expect("build release client");
+    let error = API
+        .install_verified_release_payload_at(
+            &client,
+            Some(tag),
+            &server.base_url(),
+            "fixture.bin",
+            &target,
+        )
+        .await
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("signature verification"));
+    assert_eq!(
+        std::fs::read(&target).expect("read preserved target"),
+        b"working-old-binary"
     );
 }

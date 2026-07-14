@@ -22,12 +22,7 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
     } = palette;
     let current = env!("CARGO_PKG_VERSION");
     let client = installer::http_client()?;
-    let release = installer::resolve_release(
-        &client,
-        args.version.as_deref(),
-        args.release_api_base.as_deref(),
-    )
-    .await?;
+    let release = installer::resolve_release(&client, args.version.as_deref()).await?;
     let latest = release.tag_name.clone();
 
     let asset = installer::select_asset(&release);

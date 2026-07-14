@@ -28,20 +28,14 @@ const MAX_RELEASE_ASSET_BYTES: usize = 512 * 1024 * 1024;
 const MAX_RELEASE_SIGNATURE_BYTES: usize = 64 * 1024;
 const MAX_RELEASE_CHECKSUM_BYTES: usize = 64 * 1024;
 const MAX_RESPONSE_PREALLOC_BYTES: usize = 64 * 1024;
+const RELEASE_API_BASE: &str = "https://api.github.com";
 
 /// GitHub API base for update/repair release resolution.
 ///
-/// Production callers pass `None`, which always resolves to the canonical
-/// GitHub API. Offline tests may pass an explicit mock-server URL through the
-/// hidden `--release-api-base` argv seam. This must not read an environment
-/// variable: release metadata controls what binary gets downloaded, so ambient
-/// shell/CI state cannot be authority over it.
-pub(crate) fn release_api_base(explicit: Option<&str>) -> String {
-    explicit
-        .map(str::trim)
-        .map(|s| s.trim_end_matches('/').to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "https://api.github.com".to_string()) // LAW10: empty/unset explicit test seam ⇒ canonical GitHub API default; no ambient fallback.
+/// Production resolution has no argv or environment override. Integration
+/// tests inject a server only through the crate's explicit library test API.
+pub(crate) fn release_api_base() -> &'static str {
+    RELEASE_API_BASE
 }
 
 /// minisign public key for keyhog release artifacts (key ID `DD4915EBE99F9CCF`).
@@ -162,9 +156,19 @@ pub(crate) fn http_client() -> Result<reqwest::Client> {
 pub(crate) async fn resolve_release(
     client: &reqwest::Client,
     version: Option<&str>,
-    release_api_base_override: Option<&str>,
 ) -> Result<Release> {
-    let api = release_api_base(release_api_base_override);
+    resolve_release_at(client, version, RELEASE_API_BASE).await
+}
+
+pub(crate) async fn resolve_release_at(
+    client: &reqwest::Client,
+    version: Option<&str>,
+    release_api_base: &str,
+) -> Result<Release> {
+    let api = release_api_base.trim().trim_end_matches('/');
+    if api.is_empty() {
+        anyhow::bail!("injected release API base is empty");
+    }
     if let Some(tag) = version {
         let url = format!("{api}/repos/{REPO}/releases/tags/{tag}");
         let response = client.get(&url).send().await.context("query release tag")?;
@@ -225,6 +229,24 @@ fn find_unique_asset<'a>(release: &'a Release, name: &str) -> Result<&'a Asset> 
         );
     }
     Ok(asset)
+}
+
+pub(crate) async fn resolve_and_download_verified_payload_at(
+    client: &reqwest::Client,
+    version: Option<&str>,
+    release_api_base: &str,
+    asset_name: &str,
+) -> Result<Vec<u8>> {
+    let release = resolve_release_at(client, version, release_api_base).await?;
+    let asset = find_unique_asset(&release, asset_name)?;
+    download_verified_payload(
+        client,
+        &release,
+        asset,
+        MAX_RELEASE_ASSET_BYTES,
+        "release test payload",
+    )
+    .await
 }
 
 /// Pick the one platform asset for this host. Runtime accelerator selection is
