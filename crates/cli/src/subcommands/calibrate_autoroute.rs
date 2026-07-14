@@ -38,6 +38,14 @@ const SCAN_POLICY_PRESETS: &[&str] = &["--fast", "--deep", "--precision"];
 /// in the exact same size / decode-density bucket a shell-generated one landed.
 const PLAIN_SEED: &str = "src path one. scan text two. keyhog route plain. config value sample. ";
 
+/// Valid, checksum-bearing sparse trigger used in plain calibration probes.
+/// One occurrence per 64 KiB makes the route measurement exercise real
+/// phase-2 confirmation without turning the sample into an artificial secret
+/// dump. A zero-trigger calibration systematically overstates GPU wins because
+/// phase 2 remains host work for every backend.
+const SPARSE_TRIGGER: &[u8] = b"GITHUB_TOKEN=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\n";
+const SPARSE_TRIGGER_INTERVAL: usize = 64 * 1024;
+
 /// A 1 KiB block dense with base64 runs, the decode-heavy bucket the scanner's
 /// decode-through path is timed against. Mirrors the installer's seed.
 const DECODE_HEAVY_SEED: &str = "apiVersion:v1 kind:Secret data token:QUtJQUlPU0ZPRE5ON0VYQU1QTEVBS0lBSU9TRk9ETk43RVhBTVBMRT0= payload:c2stcHJvai1BQkNkZWZHSElKS0xtbm9QUVJTVFVWV1hZWjAxMjM0NTY3ODkwPQ== ";
@@ -55,28 +63,27 @@ enum Workload {
     },
     /// A directory of `files` files, each `kib` KiB of plain content.
     Tree {
-        label: &'static str,
+        label: String,
         files: usize,
         kib: usize,
     },
 }
 
 impl Workload {
-    fn label(&self) -> &'static str {
+    fn label(&self) -> &str {
         match self {
-            Workload::Stdin { label, .. }
-            | Workload::File { label, .. }
-            | Workload::Tree { label, .. } => label,
+            Workload::Stdin { label, .. } | Workload::File { label, .. } => label,
+            Workload::Tree { label, .. } => label.as_str(),
         }
     }
 }
 
 /// The core stdin + filesystem workload ladder. The sizes span the autoroute
-/// byte / file-count / decode-density buckets a real scan resolves, matching
-/// the installer's ladder exactly so install-time and in-binary calibration
-/// cover identical buckets.
+/// byte and decode-density bands a real scan resolves. Tree probes cover every
+/// production fused count because bounded decoder admission may distinguish
+/// adjacent counts within one logarithmic chunk band.
 fn core_workload_plan() -> Vec<Workload> {
-    vec![
+    let mut workloads = vec![
         Workload::Stdin {
             label: "empty stdin workload",
             bytes: 0,
@@ -220,32 +227,15 @@ fn core_workload_plan() -> Vec<Workload> {
             bytes: 256 * 1024,
             decode_heavy: true,
         },
-        Workload::Tree {
-            label: "2 x 4 KiB files workload",
-            files: 2,
+    ];
+    workloads.extend(
+        (1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT).map(|files| Workload::Tree {
+            label: format!("{files} x 4 KiB files workload"),
+            files,
             kib: 4,
-        },
-        Workload::Tree {
-            label: "4 x 4 KiB files workload",
-            files: 4,
-            kib: 4,
-        },
-        Workload::Tree {
-            label: "8 x 4 KiB files workload",
-            files: 8,
-            kib: 4,
-        },
-        Workload::Tree {
-            label: "16 x 4 KiB files workload",
-            files: 16,
-            kib: 4,
-        },
-        Workload::Tree {
-            label: "32 x 4 KiB files workload",
-            files: 32,
-            kib: 4,
-        },
-    ]
+        }),
+    );
+    workloads
 }
 
 /// Build `total` bytes of calibration content by repeating `seed`'s 1 KiB block.
@@ -263,6 +253,18 @@ fn calibration_bytes(seed: &str, total: usize) -> Vec<u8> {
     }
     out.truncate(total);
     out
+}
+
+fn plain_calibration_bytes(total: usize) -> Vec<u8> {
+    let mut bytes = calibration_bytes(PLAIN_SEED, total);
+    if total < SPARSE_TRIGGER_INTERVAL {
+        return bytes;
+    }
+    for end in (SPARSE_TRIGGER_INTERVAL..=total).step_by(SPARSE_TRIGGER_INTERVAL) {
+        let start = end - SPARSE_TRIGGER.len();
+        bytes[start..end].copy_from_slice(SPARSE_TRIGGER);
+    }
+    bytes
 }
 
 /// Expand `seed` to exactly 1024 bytes (repeat then truncate), matching the
@@ -465,7 +467,7 @@ fn materialize_probe(
     match workload {
         Workload::Stdin { bytes, .. } => {
             let path = workspace.join(format!("stdin-{idx}.bin"));
-            std::fs::write(&path, calibration_bytes(PLAIN_SEED, *bytes))
+            std::fs::write(&path, plain_calibration_bytes(*bytes))
                 .with_context(|| format!("writing stdin probe {}", path.display()))?;
             cmd.arg("--stdin");
             let file = std::fs::File::open(&path)
@@ -478,12 +480,12 @@ fn materialize_probe(
             ..
         } => {
             let path = workspace.join(format!("file-{idx}.txt"));
-            let seed = if *decode_heavy {
-                DECODE_HEAVY_SEED
+            let content = if *decode_heavy {
+                calibration_bytes(DECODE_HEAVY_SEED, *bytes)
             } else {
-                PLAIN_SEED
+                plain_calibration_bytes(*bytes)
             };
-            std::fs::write(&path, calibration_bytes(seed, *bytes))
+            std::fs::write(&path, content)
                 .with_context(|| format!("writing file probe {}", path.display()))?;
             cmd.arg(&path);
             Ok(None)
@@ -494,7 +496,7 @@ fn materialize_probe(
                 .with_context(|| format!("creating tree probe {}", tree.display()))?;
             for file_idx in 0..*files {
                 let path = tree.join(format!("file-{file_idx}.txt"));
-                std::fs::write(&path, calibration_bytes(PLAIN_SEED, kib * 1024))
+                std::fs::write(&path, plain_calibration_bytes(kib * 1024))
                     .with_context(|| format!("writing tree probe {}", path.display()))?;
             }
             cmd.arg(&tree);

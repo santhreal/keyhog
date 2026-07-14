@@ -30,10 +30,30 @@ fn calibration_bytes_are_exact_block_prefix_runs() {
 }
 
 #[test]
+fn plain_route_probe_has_sparse_real_phase2_work_without_changing_size() {
+    let below_interval = plain_calibration_bytes(SPARSE_TRIGGER_INTERVAL - 1);
+    assert_eq!(below_interval.len(), SPARSE_TRIGGER_INTERVAL - 1);
+    assert!(!below_interval
+        .windows(SPARSE_TRIGGER.len())
+        .any(|window| window == SPARSE_TRIGGER));
+
+    let two_intervals = plain_calibration_bytes(2 * SPARSE_TRIGGER_INTERVAL);
+    assert_eq!(two_intervals.len(), 2 * SPARSE_TRIGGER_INTERVAL);
+    assert_eq!(
+        two_intervals
+            .windows(SPARSE_TRIGGER.len())
+            .filter(|window| *window == SPARSE_TRIGGER)
+            .count(),
+        2,
+        "plain calibration must model one valid sparse confirmation per 64 KiB"
+    );
+}
+
+#[test]
 fn workload_plan_matches_the_installer_ladder() {
     let plan = core_workload_plan();
-    // 2 stdin + 27 single-file (incl. decode-heavy) + 5 file-tree workloads.
-    assert_eq!(plan.len(), 34);
+    // 2 stdin + 27 single-file (incl. decode-heavy) + every default fused count.
+    assert_eq!(plan.len(), 61);
     let labels: Vec<&str> = plan.iter().map(Workload::label).collect();
     assert!(labels.contains(&"empty stdin workload"));
     assert!(labels.contains(&"1 B workload"));
@@ -43,6 +63,8 @@ fn workload_plan_matches_the_installer_ladder() {
     assert!(labels.contains(&"4 MiB workload"));
     assert!(labels.contains(&"decode-heavy 256 KiB workload"));
     assert!(labels.contains(&"32 MiB workload"));
+    assert!(labels.contains(&"1 x 4 KiB files workload"));
+    assert!(labels.contains(&"17 x 4 KiB files workload"));
     assert!(labels.contains(&"32 x 4 KiB files workload"));
 
     let plain_file_bytes: Vec<usize> = plan
@@ -98,8 +120,8 @@ fn workload_plan_matches_the_installer_ladder() {
         .collect();
     assert_eq!(
         tree_counts,
-        [2, 4, 8, 16, 32],
-        "tree probes must represent every chunk-count band in the default 32-chunk batch"
+        (1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT).collect::<Vec<_>>(),
+        "tree probes must represent every exact count in the default fused batch"
     );
 }
 

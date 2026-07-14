@@ -899,7 +899,8 @@ fn eight_mib_crossover_has_an_exact_power_of_two_band() {
 
 #[test]
 fn calibration_tree_representatives_cover_default_fused_residual_chunk_keys() {
-    let representative_counts = [1usize, 2, 4, 8, 16, 32];
+    let representative_counts =
+        (1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT).collect::<Vec<_>>();
     let representative_keys = representative_counts
         .iter()
         .map(|&count| {
