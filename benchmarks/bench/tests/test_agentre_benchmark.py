@@ -132,6 +132,12 @@ def test_official_rubric_scores_complete_exact_outputs(tmp_path):
     assert report["summary"]["main_score"] == 1.0
     assert report["summary"]["bonus_score"] == 0.95
     assert report["summary"]["total_score"] == 1.95
+    assert report["score_contract"] == {
+        "schema": "agentre-score-contract-v1",
+        "declared": {"main_max": 1.0, "bonus_max": 1.0, "total_max": 2.0},
+        "attainable": {"main_max": 1.0, "bonus_max": 0.95, "total_max": 1.95},
+        "consistent": False,
+    }
 
 
 def test_missing_and_unexpected_analyzer_tasks_fail_complete_coverage(tmp_path):
