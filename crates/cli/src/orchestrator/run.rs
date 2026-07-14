@@ -16,6 +16,41 @@ use keyhog_core::{VerificationResult, VerifiedFinding};
 use std::io::IsTerminal;
 use std::time::Instant;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct ScanOutcome {
+    pub(super) autoroute_calibration: bool,
+    pub(super) scanner_panicked: bool,
+    pub(super) has_live_credentials: bool,
+    pub(super) has_new_entries: bool,
+    pub(super) incremental_cache_failed: bool,
+    pub(super) source_coverage_incomplete: bool,
+}
+
+/// Resolve scan terminal state with reliability failures ahead of findings.
+///
+/// Autoroute calibration is a measurement command and returns success once its
+/// routing evidence was persisted, except that a scanner panic still makes the
+/// measurement untrustworthy. For ordinary scans, a panic outranks live or
+/// unverified findings, then finding states outrank cache and coverage errors
+/// because the caller already has actionable credential evidence to preserve.
+pub(super) fn resolve_scan_exit(outcome: ScanOutcome) -> u8 {
+    if outcome.autoroute_calibration && !outcome.scanner_panicked {
+        EXIT_SUCCESS
+    } else if outcome.scanner_panicked {
+        EXIT_SCANNER_PANIC
+    } else if outcome.has_live_credentials {
+        EXIT_LIVE_CREDENTIALS
+    } else if outcome.has_new_entries {
+        EXIT_FINDINGS
+    } else if outcome.incremental_cache_failed {
+        EXIT_SYSTEM_ERROR
+    } else if outcome.source_coverage_incomplete {
+        EXIT_SOURCE_FAILED
+    } else {
+        EXIT_SUCCESS
+    }
+}
+
 impl ScanOrchestrator {
     pub async fn run(mut self) -> Result<std::process::ExitCode> {
         crate::reset_scan_runtime_state();
@@ -425,33 +460,21 @@ impl ScanOrchestrator {
         let incremental_cache_failed =
             crate::INCREMENTAL_CACHE_ERRORS.load(std::sync::atomic::Ordering::Relaxed) > 0;
         let source_coverage_incomplete = source_coverage_incomplete();
-        Ok(if self.args.autoroute_calibrate && !scanner_panicked {
-            // `--autoroute-calibrate` is a routing-measurement command, not a
-            // findings scan: reaching here means calibration persisted a routing
-            // decision (a calibration failure errors out earlier with a non-zero
-            // exit). Its exit code therefore reflects CALIBRATION success, never
-            // whatever secrets or coverage gaps the throwaway calibration probe
-            // happened to contain, so the installer's calibration phase is not
-            // failed by a decode-heavy probe that legitimately decodes to a
-            // secret. A scanner panic still overrides (the scan was unreliable).
-            std::process::ExitCode::SUCCESS
-        } else if scanner_panicked {
-            std::process::ExitCode::from(EXIT_SCANNER_PANIC)
-        } else if has_live_credentials {
-            std::process::ExitCode::from(EXIT_LIVE_CREDENTIALS)
-        } else if has_new_entries {
-            std::process::ExitCode::from(EXIT_FINDINGS)
-        } else if incremental_cache_failed {
-            std::process::ExitCode::from(EXIT_SYSTEM_ERROR)
-        } else if source_coverage_incomplete {
+        let exit = resolve_scan_exit(ScanOutcome {
+            autoroute_calibration: self.args.autoroute_calibrate,
+            scanner_panicked,
+            has_live_credentials,
+            has_new_entries,
+            incremental_cache_failed,
+            source_coverage_incomplete,
+        });
+        if exit == EXIT_SOURCE_FAILED {
             eprintln!(
                 "error: input coverage was incomplete (see coverage warnings above). Not \
                  reporting \"clean\": some requested bytes were not scanned."
             );
-            std::process::ExitCode::from(EXIT_SOURCE_FAILED)
-        } else {
-            std::process::ExitCode::SUCCESS
-        })
+        }
+        Ok(std::process::ExitCode::from(exit))
     }
 }
 

@@ -3,11 +3,89 @@
 //! so the `no_inline_tests_in_src` gate stays green while these still reach the
 //! parent module's private constants via `use super::*`.
 
+use super::run::{resolve_scan_exit, ScanOutcome};
 use super::{
     apply_host_runtime_limits, daemon_requires_gpu, resolved_scan_config_for_scanner,
     setup_default_scan_runtime, LOW_RAM_HOST_THRESHOLD_MB, LOW_RAM_MAX_DECODE_BYTES,
     LOW_RAM_MAX_MATCHES_PER_CHUNK,
 };
+use crate::exit_codes::{
+    EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC, EXIT_SOURCE_FAILED, EXIT_SUCCESS,
+    EXIT_SYSTEM_ERROR,
+};
+
+#[test]
+fn scan_exit_priority_is_explicit_for_every_terminal_class() {
+    let cases = [
+        (ScanOutcome::default(), EXIT_SUCCESS),
+        (
+            ScanOutcome {
+                source_coverage_incomplete: true,
+                ..ScanOutcome::default()
+            },
+            EXIT_SOURCE_FAILED,
+        ),
+        (
+            ScanOutcome {
+                incremental_cache_failed: true,
+                source_coverage_incomplete: true,
+                ..ScanOutcome::default()
+            },
+            EXIT_SYSTEM_ERROR,
+        ),
+        (
+            ScanOutcome {
+                has_new_entries: true,
+                incremental_cache_failed: true,
+                source_coverage_incomplete: true,
+                ..ScanOutcome::default()
+            },
+            EXIT_FINDINGS,
+        ),
+        (
+            ScanOutcome {
+                has_live_credentials: true,
+                has_new_entries: true,
+                ..ScanOutcome::default()
+            },
+            EXIT_LIVE_CREDENTIALS,
+        ),
+        (
+            ScanOutcome {
+                scanner_panicked: true,
+                has_live_credentials: true,
+                has_new_entries: true,
+                incremental_cache_failed: true,
+                source_coverage_incomplete: true,
+                ..ScanOutcome::default()
+            },
+            EXIT_SCANNER_PANIC,
+        ),
+        (
+            ScanOutcome {
+                autoroute_calibration: true,
+                has_live_credentials: true,
+                has_new_entries: true,
+                incremental_cache_failed: true,
+                source_coverage_incomplete: true,
+                ..ScanOutcome::default()
+            },
+            EXIT_SUCCESS,
+        ),
+        (
+            ScanOutcome {
+                autoroute_calibration: true,
+                scanner_panicked: true,
+                ..ScanOutcome::default()
+            },
+            EXIT_SCANNER_PANIC,
+        ),
+    ];
+
+    for (outcome, expected) in cases {
+        assert_eq!(resolve_scan_exit(outcome), expected, "outcome: {outcome:?}");
+    }
+}
 
 /// Pin the OOM-guard thresholds and the 256-KiB decode-window derivation, so
 /// a silent edit to any of the three cannot change the low-RAM scan envelope
