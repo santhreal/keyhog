@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import hashlib
 import json
 import os
@@ -156,10 +157,34 @@ def _aes_materials(seed: int, secrets: list[str]) -> list[tuple[str, str, str]]:
         ciphertexts = json.loads(stdout)
     except json.JSONDecodeError as exc:
         raise SystemExit(f"Node AES generation returned invalid JSON: {exc}") from exc
+    if not isinstance(ciphertexts, list):
+        raise SystemExit(
+            "Node AES generation returned a JSON value that is not an array"
+        )
     if len(ciphertexts) != len(secrets):
         raise SystemExit(
             f"Node AES generation returned {len(ciphertexts)} rows for {len(secrets)} samples"
         )
+    for index, ciphertext in enumerate(ciphertexts):
+        if not isinstance(ciphertext, str) or not ciphertext:
+            raise SystemExit(
+                f"Node AES generation row {index} is not a non-empty Base64 string"
+            )
+        try:
+            raw = base64.b64decode(ciphertext, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise SystemExit(
+                f"Node AES generation row {index} is not canonical Base64"
+            ) from exc
+        if base64.b64encode(raw).decode("ascii") != ciphertext:
+            raise SystemExit(
+                f"Node AES generation row {index} is not canonical Base64"
+            )
+        expected_bytes = (len(secrets[index].encode("utf-8")) // 16 + 1) * 16
+        if len(raw) != expected_bytes:
+            raise SystemExit(
+                f"Node AES generation row {index} is not canonical AES-CBC ciphertext"
+            )
     return [(*keys[index], ciphertext) for index, ciphertext in enumerate(ciphertexts)]
 
 

@@ -153,6 +153,45 @@ def test_ioc_recovery_generator_times_out_node_and_removes_staging(
     assert list(tmp_path.glob(".recovery-*")) == []
 
 
+@pytest.mark.parametrize(
+    ("node_stdout", "error"),
+    [
+        ("{}", "not an array"),
+        ('[""]', "not a non-empty Base64 string"),
+        ('["%%%"]', "not canonical Base64"),
+        ('["QUFBQUFBQUFBQUFBQUFBQe=="]', "not canonical Base64"),
+        ('["YQ=="]', "not canonical AES-CBC ciphertext"),
+        (
+            '["AAECAwQFBgcICQoLDA0ODw=="]',
+            "not canonical AES-CBC ciphertext",
+        ),
+    ],
+)
+def test_ioc_recovery_generator_rejects_invalid_aes_output_and_removes_staging(
+    monkeypatch, tmp_path, node_stdout, error
+):
+    class Process:
+        returncode = 0
+
+        def communicate(self, _input, timeout):
+            assert timeout == ioc_generator.NODE_AES_TIMEOUT_SECONDS
+            return node_stdout, ""
+
+    monkeypatch.setattr(ioc_generator.shutil, "which", lambda _name: "/resolved/node")
+    monkeypatch.setattr(
+        ioc_generator.subprocess,
+        "Popen",
+        lambda *args, **kwargs: Process(),
+    )
+    output = tmp_path / "recovery"
+
+    with pytest.raises(SystemExit, match=error):
+        ioc_generator.generate(output, samples=1, seed=17)
+
+    assert not output.exists()
+    assert list(tmp_path.glob(".recovery-*")) == []
+
+
 def test_ioc_recovery_timeout_termination_covers_posix_and_windows_branches(
     monkeypatch,
 ):
