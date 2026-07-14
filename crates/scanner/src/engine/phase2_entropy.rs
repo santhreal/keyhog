@@ -14,7 +14,27 @@ use line_context::entropy_value_line;
 use std::sync::Arc;
 
 #[cfg(feature = "entropy")]
+const SENSITIVE_FILE_KEYWORD_FREE_ENTROPY_DISCOUNT: f64 =
+    crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD
+        - crate::entropy::SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD;
+
+#[cfg(feature = "entropy")]
 impl CompiledScanner {
+    fn keyword_free_entropy_threshold(&self, sensitive_path: bool) -> f64 {
+        let detector_threshold = self
+            .generic_owning_detector
+            .generic_secret_index()
+            .and_then(|index| self.detectors.get(index))
+            .and_then(|spec| spec.entropy_very_high)
+            .unwrap_or(crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD); // LAW10: omitted field uses documented numeric default; findings are unchanged
+        if sensitive_path {
+            // Preserve the historical recall discount relative to detector policy.
+            (detector_threshold - SENSITIVE_FILE_KEYWORD_FREE_ENTROPY_DISCOUNT).max(0.0)
+        } else {
+            detector_threshold
+        }
+    }
+
     pub(crate) fn scan_entropy_fallback(
         &self,
         preprocessed: &ScannerPreprocessedText<'_>,
@@ -127,16 +147,12 @@ impl CompiledScanner {
             }
         });
 
-        let keyword_free_threshold = if chunk
+        let sensitive_path = chunk
             .metadata
             .path
             .as_deref()
-            .is_some_and(crate::confidence::is_sensitive_path)
-        {
-            crate::entropy::SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD
-        } else {
-            crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD
-        };
+            .is_some_and(crate::confidence::is_sensitive_path);
+        let keyword_free_threshold = self.keyword_free_entropy_threshold(sensitive_path);
 
         // With authoritative ML, narrowly accepted credential-anchored hex key
         // candidates may be generated for model arbitration.

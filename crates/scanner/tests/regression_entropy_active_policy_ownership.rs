@@ -6,6 +6,7 @@ use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 
 const KEYWORD: &str = "custom_credential";
 const VALUE: &str = "a8Xk9mQ2pL5vR7tN3wE6yU1zAbCdEf0G";
+const KEYWORD_FREE_VALUE: &str = "hmWtQ96MawiACRuKvJHIUxNGZDg5z1bVFodOE@07lkfBynYs";
 
 fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
     DetectorSpec {
@@ -112,6 +113,126 @@ fn full_scan_findings(bpe_enabled: bool, backend: ScanBackend) -> Vec<(String, S
         .collect::<Vec<_>>();
     findings.sort_unstable();
     findings
+}
+
+fn full_scan_keyword_free_values(
+    entropy_very_high: f64,
+    path: &str,
+    backend: ScanBackend,
+) -> Vec<String> {
+    let mut generic_secret = detector("generic-secret", &["secret"], 8);
+    generic_secret.entropy_very_high = Some(entropy_very_high);
+    generic_secret.keyword_free_min_len = Some(20);
+    generic_secret.bpe_enabled = Some(false);
+    let mut config = ScannerConfig::default();
+    config.entropy_enabled = true;
+    config.entropy_in_source_files = true;
+    config.min_confidence = 0.0;
+    // Keep one nonmatching phase-1 detector so explicit Hyperscan and GPU
+    // routes execute their real production paths before the shared entropy
+    // fallback evaluates the keyword-free candidate.
+    let scanner = CompiledScanner::compile(vec![generic_secret, entropy_only_owner(false)])
+        .expect("compile detector-owned entropy threshold corpus")
+        .with_config(config);
+    assert!(
+        scanner.warm_backend(backend),
+        "backend {} must be usable for the detector-policy boundary matrix",
+        backend.label()
+    );
+    let chunk = Chunk {
+        data: format!("x:\"{KEYWORD_FREE_VALUE}\"").into(),
+        metadata: ChunkMetadata {
+            source_type: "detector-threshold-boundary".into(),
+            path: Some(path.into()),
+            ..Default::default()
+        },
+    };
+    scanner
+        .scan_with_backend(&chunk, backend)
+        .into_iter()
+        .map(|finding| finding.credential.to_string())
+        .collect()
+}
+
+#[test]
+fn keyword_free_full_scan_uses_detector_owned_very_high_boundary() {
+    let entropy = keyhog_scanner::entropy::shannon_entropy(KEYWORD_FREE_VALUE.as_bytes());
+    assert!(
+        (entropy - 48_f64.log2()).abs() < 1e-12,
+        "the boundary fixture must contain 48 equiprobable bytes"
+    );
+    let admitted = full_scan_keyword_free_values(entropy, "payload.yaml", ScanBackend::CpuFallback);
+    assert!(
+        admitted.iter().any(|value| value == KEYWORD_FREE_VALUE),
+        "a candidate exactly at the detector TOML threshold must be admitted: {admitted:?}"
+    );
+    assert!(
+        !full_scan_keyword_free_values(entropy + 0.001, "payload.yaml", ScanBackend::CpuFallback,)
+            .iter()
+            .any(|value| value == KEYWORD_FREE_VALUE),
+        "raising only the detector TOML threshold above the candidate must suppress it"
+    );
+}
+
+#[test]
+fn sensitive_path_discount_is_relative_to_detector_owned_threshold() {
+    let entropy = keyhog_scanner::entropy::shannon_entropy(KEYWORD_FREE_VALUE.as_bytes());
+    let sensitive_discount = keyhog_scanner::entropy::VERY_HIGH_ENTROPY_THRESHOLD
+        - keyhog_scanner::entropy::SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD;
+    assert!(
+        full_scan_keyword_free_values(
+            entropy + sensitive_discount,
+            "secrets.yaml",
+            ScanBackend::CpuFallback,
+        )
+        .iter()
+        .any(|value| value == KEYWORD_FREE_VALUE),
+        "the sensitive-path discount must admit the exact detector-relative boundary"
+    );
+    assert!(
+        !full_scan_keyword_free_values(
+            entropy + sensitive_discount + 0.001,
+            "secrets.yaml",
+            ScanBackend::CpuFallback,
+        )
+            .iter()
+            .any(|value| value == KEYWORD_FREE_VALUE),
+        "the sensitive-path discount must not replace a stricter detector threshold with a global constant"
+    );
+}
+
+#[cfg(feature = "gpu")]
+#[test]
+fn detector_owned_very_high_boundary_is_exact_on_every_accelerated_backend() {
+    let entropy = keyhog_scanner::entropy::shannon_entropy(KEYWORD_FREE_VALUE.as_bytes());
+    let sensitive_discount = keyhog_scanner::entropy::VERY_HIGH_ENTROPY_THRESHOLD
+        - keyhog_scanner::entropy::SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD;
+    for backend in [
+        ScanBackend::SimdCpu,
+        ScanBackend::GpuCuda,
+        ScanBackend::GpuWgpu,
+    ] {
+        let normal = full_scan_keyword_free_values(entropy, "payload.yaml", backend);
+        assert!(
+            normal.iter().any(|value| value == KEYWORD_FREE_VALUE),
+            "{} must admit the exact detector-owned boundary: {normal:?}",
+            backend.label()
+        );
+        assert!(
+            !full_scan_keyword_free_values(entropy + 0.001, "payload.yaml", backend)
+                .iter()
+                .any(|value| value == KEYWORD_FREE_VALUE),
+            "{} must reject above the detector-owned boundary",
+            backend.label()
+        );
+        assert!(
+            full_scan_keyword_free_values(entropy + sensitive_discount, "secrets.yaml", backend,)
+                .iter()
+                .any(|value| value == KEYWORD_FREE_VALUE),
+            "{} must preserve the detector-relative sensitive-path discount",
+            backend.label()
+        );
+    }
 }
 
 #[test]

@@ -267,14 +267,11 @@ pub(crate) fn find_entropy_secrets_with_canonical_lift_and_lines(
     allow_canonical_lift: bool,
 ) -> Vec<EntropyMatch> {
     // The explicit `keyword_free_threshold` is authoritative here, do NOT
-    // re-derive it from the generic-secret spec. The spec's `entropy_very_high`
-    // is the single-owner DEFAULT and is read in ONE place, the no-threshold
-    // convenience entry `find_entropy_secrets` (which passes it in as this
-    // param). Callers that pass an ADJUSTED threshold rely on it: the production
-    // `phase2_entropy` lowers it to `SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD`
-    // on sensitive paths (a recall boost), and a Tier-A operator can RAISE it for
-    // a stricter scan. A second spec read here silently clobbered both, a dead
-    // knob (WIRING) and a lost sensitive-file recall boost.
+    // re-derive it from the generic-secret spec. Callers resolve the relevant
+    // corpus first: the convenience entry reads the embedded detector, while
+    // production reads the compiled detector and applies its detector-relative
+    // sensitive-path discount. Re-reading policy here would silently clobber
+    // both custom corpora and the recall adjustment.
     assert!(
         line_offsets.len() >= lines.len(),
         "entropy line offsets must cover every split line"
