@@ -116,6 +116,22 @@ On Unix, omitting `--daemon` is equivalent to `--daemon=auto`. Bare
 
 `--daemon-socket` cannot be combined with `--daemon=off`.
 
+The socket state and daemon state are separate signals. Use this matrix when
+diagnosing an automatic route:
+
+| Observed state | `--daemon=auto` / omitted | `--daemon=on` | `daemon status` / `daemon stop` |
+|---|---|---|---|
+| No socket entry | Run in process with no daemon diagnostic. | Fail with daemon-unavailable exit `2`. | Fail with service-unavailable exit `2`. |
+| Trusted stale `0600` socket | Attempt once, report the connection failure, then retry in process. Automatic scans never unlink it. | Fail with the specific stale/availability error. | Inspect or stop only after a trusted handshake; stale cleanup belongs to the next trusted `daemon start`. |
+| Live compatible daemon | Send the eligible request and use its validated result. | Send the eligible request and require its result. | Report live identity and counters, or acknowledge stop. |
+| Live but wire-incompatible daemon | Report the mismatch, then retry an eligible request in process. | Fail before scanning with the exact wire mismatch. | Report the mismatch; the current protocol does not inspect or stop it. |
+| Untrusted entry or peer | Report the trust failure, then retry an eligible request in process. | Fail before scanning with the exact trust error. | Refuse to unlink or operate on the entry. |
+
+An eligible request that connects successfully can still fail during daemon
+execution. `auto` retries only after a complete, validated `ScanResults`
+response boundary; `on` returns the daemon error. A request that is ineligible
+because of its sources or policy never connects in either mode.
+
 The automatic retry boundary is a fully decoded and validated `ScanResults`
 response. Failures before that boundary, including incompatible required wire
 fields, retry in process under `auto`. Allowlist loading, finalization, output
