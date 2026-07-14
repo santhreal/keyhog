@@ -142,10 +142,13 @@ which backend is fastest:
   stream are distinct buckets, and `stdin` is content-sensitive.
 
 The host profile is deliberately checked, but it is not a complete performance-
-environment fingerprint: for example, cache age, CPU governor, system load, and
-every accelerator limit are not all identity fields. Decisions do not expire by
-age. Recalibrate after driver, firmware, power-policy, or material workload
-changes even when the stored identity still parses as compatible.
+environment fingerprint: for example, CPU governor, system load, and every
+accelerator limit are not all identity fields. Inspection reports each decision's
+persisted calibration timestamp and current age. Decisions do not expire by age.
+A timestamp later than the inspecting system clock is invalid evidence, so cache
+loading and inspection fail closed with clock and recalibration guidance.
+Recalibrate after driver, firmware, power-policy, or material workload changes
+even when the stored identity still parses as compatible.
 
 `keyhog config --effective` prints the resolved scan settings. Pair it with
 `keyhog backend --autoroute --json` to verify that a routing-relevant setting
@@ -229,10 +232,14 @@ config inputs; those identities are checked when a real scan loads its decision.
 Therefore a readable, build-matched inspection is evidence that the cache can be
 examined, not a guarantee that the next workload has a usable row.
 
-The per-decision JSON fields have these exact meanings:
+The top-level `inspected_at_unix_ms` is the clock value used for timestamp
+validation and age derivation. The per-decision JSON fields have these exact
+meanings:
 
 | Field | Meaning |
 |---|---|
+| `calibrated_at_unix_ms` | Persisted Unix timestamp from the calibration run. A future value invalidates the complete cache. |
+| `calibration_age_ms` | Age derived at inspection time from `inspected_at_unix_ms`; it is visible evidence, not an expiry policy. |
 | `backend` | Cold-aware backend for an in-process one-shot scan. |
 | `simd_ms`, `cpu_ms` | Median trial time for that CPU route; `cpu_ms` is `null` when scalar CPU was not measured separately. |
 | `gpu_ms` | One-shot GPU representative: the greater of the real first dispatch and the warm-trial median. |

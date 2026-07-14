@@ -1,6 +1,7 @@
 //! Single trust boundary for cache identity, structure, and routing evidence.
 
 use std::collections::HashSet;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::super::evidence::{gpu_cold_warm_route_evidence, AutorouteDecision};
 use super::super::host::AutorouteHostProfile;
@@ -48,6 +49,13 @@ pub(super) fn validate_cache_shared_identity(
 pub(super) fn validate_cache_structure(
     cache: &AutorouteCache,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    validate_cache_structure_at(cache, current_unix_time_ms()?)
+}
+
+pub(super) fn validate_cache_structure_at(
+    cache: &AutorouteCache,
+    current_unix_ms: u128,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if cache.configs.is_empty() {
         return Err("autoroute cache contains no calibrated configurations".into());
     }
@@ -77,7 +85,7 @@ pub(super) fn validate_cache_structure(
                 )
                 .into());
             }
-            validate_decision_route_evidence(decision)?;
+            validate_decision_route_evidence_at(decision, current_unix_ms)?;
         }
     }
     Ok(())
@@ -85,6 +93,13 @@ pub(super) fn validate_cache_structure(
 
 pub(super) fn validate_decision_route_evidence(
     decision: &AutorouteDecision,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    validate_decision_route_evidence_at(decision, current_unix_time_ms()?)
+}
+
+fn validate_decision_route_evidence_at(
+    decision: &AutorouteDecision,
+    current_unix_ms: u128,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if decision.sample_chunks == 0 || decision.sample_bytes == 0 {
         return Err("cache decision is missing calibration sample evidence".into());
@@ -116,6 +131,15 @@ pub(super) fn validate_decision_route_evidence(
     }
     if decision.calibrated_at_unix_ms == 0 {
         return Err("cache decision is missing a calibration timestamp".into());
+    }
+    if decision.calibrated_at_unix_ms > current_unix_ms {
+        return Err(format!(
+            "cache decision calibration timestamp {} is {} ms in the future relative to the system clock at {}; correct the system clock and re-run calibration",
+            decision.calibrated_at_unix_ms,
+            decision.calibrated_at_unix_ms - current_unix_ms,
+            current_unix_ms
+        )
+        .into());
     }
     if !decision
         .simd_timing
@@ -160,4 +184,14 @@ pub(super) fn validate_decision_route_evidence(
         return Err("selected backend does not match measured-median resolution among statistically non-dominated routes".into());
     }
     Ok(())
+}
+
+pub(super) fn current_unix_time_ms() -> Result<u128, Box<dyn std::error::Error + Send + Sync>> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .map_err(|_| {
+            "system clock predates the Unix epoch; correct the system clock and re-run calibration"
+                .into()
+        })
 }

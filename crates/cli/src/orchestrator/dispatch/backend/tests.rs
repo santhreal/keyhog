@@ -2312,6 +2312,90 @@ fn autoroute_cache_rejects_missing_calibration_sample_evidence() {
 }
 
 #[test]
+fn autoroute_cache_rejects_future_calibration_timestamps_everywhere() {
+    let dir = tempfile::TempDir::new().expect("autoroute future-timestamp tempdir");
+    let path = dir.path().join("autoroute.json");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+    let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
+    bad.calibrated_at_unix_ms = u128::MAX;
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key,
+        bad,
+        "in the future relative to the system clock",
+    );
+
+    let inspection = inspect_autoroute_cache(Some(&path));
+    let inspection_error = inspection
+        .error
+        .as_deref()
+        .expect("future evidence must make inspection unusable");
+    assert!(
+        inspection_error.contains("in the future relative to the system clock")
+            && inspection_error.contains("correct the system clock")
+            && inspection_error.contains("re-run calibration"),
+        "inspection must explain the invalid clock evidence and its repair: {inspection_error}"
+    );
+    assert!(
+        inspection.configs.is_empty(),
+        "inspection cannot present any routes from a cache with future evidence"
+    );
+
+    let load_error = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+        .expect_err("future evidence must never reach route selection")
+        .to_string();
+    assert!(
+        load_error.contains("in the future relative to the system clock")
+            && load_error.contains("correct the system clock"),
+        "scan-time load must fail closed with clock repair guidance: {load_error}"
+    );
+}
+
+#[test]
+fn autoroute_inspection_reports_exact_persisted_timestamp_and_derived_age() {
+    let dir = tempfile::TempDir::new().expect("autoroute evidence-age tempdir");
+    let path = dir.path().join("autoroute.json");
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+    let decision = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
+    assert_eq!(decision.calibrated_at_unix_ms, 1);
+    let mut decisions = HashMap::new();
+    decisions.insert(key, decision);
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &decisions,
+    )
+    .expect("valid historical evidence must remain accepted without an arbitrary expiry");
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+        .expect("age alone must not invalidate otherwise matching route evidence");
+    assert_eq!(loaded[&key].calibrated_at_unix_ms, 1);
+
+    let inspection = inspect_autoroute_cache(Some(&path));
+    assert_eq!(
+        inspection.error, None,
+        "valid old evidence remains inspectable"
+    );
+    let inspected_at = inspection
+        .inspected_at_unix_ms
+        .expect("inspection must disclose the age reference timestamp");
+    let row = &inspection.configs[0].decisions[0];
+    assert_eq!(row.calibrated_at_unix_ms, 1);
+    assert_eq!(row.calibration_age_ms, inspected_at - 1);
+}
+
+#[test]
 fn autoroute_cache_rejects_retired_backend_alias_labels() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_legacy_backend_alias_{}.json",

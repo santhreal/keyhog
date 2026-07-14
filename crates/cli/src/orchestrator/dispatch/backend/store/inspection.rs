@@ -8,7 +8,7 @@ use super::codec::{
     CacheParseError,
 };
 use super::schema::AutorouteBuildFeatures;
-use super::validation::validate_cache_structure;
+use super::validation::{current_unix_time_ms, validate_cache_structure_at};
 use crate::orchestrator::dispatch::backend::host::render_host_profile;
 use crate::orchestrator::dispatch::backend::workload::render_workload_key;
 use crate::orchestrator::dispatch::backend::AUTOROUTE_CACHE_VERSION;
@@ -30,6 +30,7 @@ pub(crate) struct AutorouteCacheInspection {
     pub(crate) host: Option<String>,
     pub(crate) detector_digest: Option<String>,
     pub(crate) rules_digest: Option<String>,
+    pub(crate) inspected_at_unix_ms: Option<u128>,
     pub(crate) configs: Vec<AutorouteConfigInspection>,
 }
 
@@ -46,6 +47,8 @@ pub(crate) struct AutorouteConfigInspection {
 #[derive(Debug, Serialize)]
 pub(crate) struct AutorouteDecisionInspection {
     pub(crate) workload: String,
+    pub(crate) calibrated_at_unix_ms: u128,
+    pub(crate) calibration_age_ms: u128,
     /// Cold-aware backend for an in-process one-shot scan.
     pub(crate) backend: String,
     pub(crate) sample_bytes: u64,
@@ -181,7 +184,15 @@ pub(crate) fn inspect_autoroute_cache(path: Option<&std::path::Path>) -> Autorou
         out.identity_mismatch_reason = Some(drift.join("; "));
     }
 
-    if let Err(error) = validate_cache_structure(&cache) {
+    let inspected_at_unix_ms = match current_unix_time_ms() {
+        Ok(timestamp) => timestamp,
+        Err(error) => {
+            out.error = Some(format!("autoroute cache time validation failed: {error}"));
+            return out;
+        }
+    };
+    out.inspected_at_unix_ms = Some(inspected_at_unix_ms);
+    if let Err(error) = validate_cache_structure_at(&cache, inspected_at_unix_ms) {
         out.error = Some(format!(
             "autoroute cache is structurally invalid: {error}; re-run calibration"
         ));
@@ -204,6 +215,8 @@ pub(crate) fn inspect_autoroute_cache(path: Option<&std::path::Path>) -> Autorou
             let daemon_confidence_separated = decision.has_separated_fastest_persistent_route();
             decisions.push(AutorouteDecisionInspection {
                 workload: render_workload_key(key),
+                calibrated_at_unix_ms: decision.calibrated_at_unix_ms,
+                calibration_age_ms: inspected_at_unix_ms - decision.calibrated_at_unix_ms,
                 backend: decision.backend.clone(),
                 sample_bytes: decision.sample_bytes,
                 sample_chunks: decision.sample_chunks,

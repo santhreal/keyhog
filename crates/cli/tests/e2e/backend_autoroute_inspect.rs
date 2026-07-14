@@ -168,6 +168,12 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
     );
     let decision = &decisions[0];
     assert!(
+        decision["calibrated_at_unix_ms"].as_u64().is_some()
+            && decision["calibration_age_ms"].as_u64().is_some()
+            && value["inspected_at_unix_ms"].as_u64().is_some(),
+        "inspection must expose the persisted timestamp and its derived age; json={value}"
+    );
+    assert!(
         decision["confidence_separated"].is_boolean(),
         "inspection must disclose whether one-shot confidence is separated; json={value}"
     );
@@ -197,5 +203,17 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
         workload.contains("bytes_log2=") && workload.contains("source_hash="),
         "the workload bucket must render in the same field layout as the fail-closed \
          scan error so operators can match them; got: {workload}"
+    );
+
+    let text = Command::new(binary())
+        .args(["backend", "--autoroute"])
+        .env("XDG_CACHE_HOME", cache.path())
+        .output()
+        .expect("spawn text autoroute inspection");
+    assert_eq!(text.status.code(), Some(0));
+    let text_stdout = String::from_utf8_lossy(&text.stdout);
+    assert!(
+        text_stdout.contains("evidence age:") && text_stdout.contains("calibrated_at_unix_ms="),
+        "text inspection must make evidence age and its timestamp visible; got: {text_stdout}"
     );
 }

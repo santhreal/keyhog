@@ -228,6 +228,11 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
                 .unwrap_or_default(); // LAW10: display-only optional derived margin; recall-safe
             println!("    {}", decision.workload);
             println!(
+                "        evidence age: {} (calibrated_at_unix_ms={})",
+                render_age_ms(decision.calibration_age_ms),
+                decision.calibrated_at_unix_ms
+            );
+            println!(
                 "        one-shot -> {}  {}[{} B / {} chunk(s); simd={}ms{}{}{}{}; basis={}]{}",
                 decision.backend,
                 p.dim,
@@ -252,6 +257,25 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn render_age_ms(age_ms: u128) -> String {
+    const SECOND_MS: u128 = 1_000;
+    const MINUTE_MS: u128 = 60 * SECOND_MS;
+    const HOUR_MS: u128 = 60 * MINUTE_MS;
+    const DAY_MS: u128 = 24 * HOUR_MS;
+
+    if age_ms < SECOND_MS {
+        format!("{age_ms}ms")
+    } else if age_ms < MINUTE_MS {
+        format!("{}s", age_ms / SECOND_MS)
+    } else if age_ms < HOUR_MS {
+        format!("{}m", age_ms / MINUTE_MS)
+    } else if age_ms < DAY_MS {
+        format!("{}h", age_ms / HOUR_MS)
+    } else {
+        format!("{}d", age_ms / DAY_MS)
+    }
 }
 
 fn print_backend_report(args: &BackendArgs) -> Result<()> {
