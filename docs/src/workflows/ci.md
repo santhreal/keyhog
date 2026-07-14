@@ -5,6 +5,11 @@ turn new findings into a merge gate. The recipes below keep scanning,
 enforcement, and report retention explicit so a missing upload or unsupported
 source cannot look like a clean run.
 
+The shell recipes use an Ubuntu worker. `minisign` is required because the
+installer refuses unverified release assets. The Linux release binary also
+requires the `libhyperscan5` runtime package. macOS and Windows release assets
+use the portable scanner build, but still require `minisign` for installation.
+
 | Workflow | Recommended scan | Why |
 |---|---|---|
 | Developer commit | `keyhog hook install` | Fast staged-file feedback before push. |
@@ -92,6 +97,10 @@ Use the verified installer when the workflow must own installation explicitly:
 
 ```yaml
       - uses: actions/checkout@v4
+      - name: Install KeyHog runtime and verifier prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libhyperscan5 minisign
       - name: Install KeyHog
         run: |
           curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
@@ -162,7 +171,7 @@ keyhog:
   stage: test
   image: ubuntu:24.04
   before_script:
-    - apt-get update -qq && apt-get install -y curl libhyperscan-dev
+    - apt-get update -qq && apt-get install -y --no-install-recommends curl libhyperscan5 minisign
     - curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
   script:
     # Exits non-zero on findings, which fails the job and gates the MR.
@@ -195,6 +204,8 @@ jobs:
       - run:
           name: Install keyhog
           command: |
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends libhyperscan5 minisign
             curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> $BASH_ENV
       - run:
@@ -216,9 +227,10 @@ workflows:
 # .drone.yml
 pipeline:
   keyhog:
-    image: alpine:3.20
+    image: ubuntu:24.04
     commands:
-      - apk add --no-cache curl
+      - apt-get update -qq
+      - apt-get install -y --no-install-recommends curl libhyperscan5 minisign
       - curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
       - $HOME/.local/bin/keyhog scan .
 ```
@@ -236,6 +248,8 @@ Use a dedicated artifact path so the report survives a finding exit:
 steps:
   - label: ":mag: keyhog secret scan"
     command: |
+      sudo apt-get update -qq
+      sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign
       curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
       export PATH="$HOME/.local/bin:$PATH"
       keyhog scan . --severity high --format json --output keyhog.json
@@ -256,6 +270,8 @@ pipeline {
         stage('keyhog') {
             steps {
                 sh '''
+                    sudo apt-get update -qq
+                    sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign
                     curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
                     export PATH="$HOME/.local/bin:$PATH"
                     keyhog scan . --severity high --format json --output keyhog.json
@@ -273,11 +289,12 @@ pipeline {
 
 ## Pinning a version
 
-The install scripts pull the latest release by default. For
-reproducible CI, pin a specific version:
+The install scripts pull the latest release by default. Pin the script and
+binary version together for reproducible CI:
 
 ```sh
-curl -fsSL ...install.sh | KEYHOG_VERSION=v0.5.41 sh
+curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/v0.5.41/install.sh \
+  | KEYHOG_VERSION=v0.5.41 sh
 ```
 
 Update the pin via a Renovate / Dependabot config or just bump it

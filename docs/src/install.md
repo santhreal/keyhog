@@ -313,9 +313,11 @@ cargo build --release -p keyhog
 ```
 
 CUDA is attempted only when its runtime libraries and a compatible device are
-present. WGPU is an independent candidate. Missing accelerator libraries do not
-prevent the binary from starting; `keyhog backend --self-test --json` reports
-the exact runtime state and autoroute calibration determines eligibility.
+present. On Linux, scanner construction acquires CUDA first and tries WGPU only
+when CUDA acquisition fails. That acquisition failure is reported. It is not a
+scan-time backend substitution. `keyhog backend --self-test --json` reports the
+acquired runtime state, and autoroute calibration determines whether that GPU
+route is eligible against the CPU candidates.
 
 The `portable` feature is what the official Windows + macOS release
 binaries are built with. It keeps the portable scanner data paths without

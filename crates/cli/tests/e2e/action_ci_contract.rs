@@ -2634,6 +2634,22 @@ fn integration_smoke_defaults_to_latest_stable_without_a_version_literal() {
 }
 
 #[test]
+fn integration_smoke_can_execute_the_fail_closed_verified_installer() {
+    let workflow =
+        fs::read_to_string(integration_smoke_workflow()).expect("read integration-smoke.yml");
+    assert!(
+        workflow.contains("libhyperscan5 minisign")
+            && workflow.contains("brew install minisign"),
+        "Linux and macOS smoke lanes must install the runtime and signature verifier required by the release installer"
+    );
+    assert!(
+        workflow.contains("winget install -e --id jedisct1.minisign")
+            && workflow.contains("Get-Command minisign.exe"),
+        "Windows smoke must install minisign and prove the executable is available before running the installer"
+    );
+}
+
+#[test]
 fn integration_smoke_daemon_path_fails_closed() {
     let workflow =
         fs::read_to_string(integration_smoke_workflow()).expect("read integration-smoke.yml");

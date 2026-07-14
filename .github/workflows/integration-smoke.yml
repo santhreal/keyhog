@@ -32,19 +32,33 @@ jobs:
           uname -a || systeminfo | head -5 || true
           echo "version input: ${{ inputs.version || 'latest stable' }}"
 
-      - name: Install runtime deps (Ubuntu only)
-        if: runner.os == 'Linux'
+      - name: Install verified-installer prerequisites (Unix)
+        if: runner.os != 'Windows'
         shell: bash
-        # The Linux release binary links against libhyperscan.so.5 at
-        # runtime. Hosted Ubuntu runners do NOT ship libhyperscan5 by
-        # default. install.sh's post-install verify_install step now
-        # surfaces the missing-shared-library case with a clear
-        # actionable message, but a smoke test wants to actually exit
-        # cleanly so it can run the rest of the matrix. Pre-install it.
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libhyperscan5
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends libhyperscan5 minisign
+          else
+            brew install minisign
+          fi
+
+      - name: Install verified-installer prerequisite (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          winget install -e --id jedisct1.minisign --silent `
+            --accept-package-agreements --accept-source-agreements `
+            --disable-interactivity
+          $wingetLinks = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'
+          if (Test-Path $wingetLinks) {
+            $wingetLinks | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            $env:PATH = "$wingetLinks;$env:PATH"
+          }
+          if (-not (Get-Command minisign.exe -ErrorAction SilentlyContinue)) {
+            throw 'minisign was installed but is not available on PATH'
+          }
 
       - name: Install (unix)
         if: runner.os != 'Windows'
