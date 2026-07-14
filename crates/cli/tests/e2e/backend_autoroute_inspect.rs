@@ -65,6 +65,41 @@ fn backend_autoroute_json_is_valid_and_marks_absence() {
     );
 }
 
+/// Inspection must read the same explicit cache path a scan or project config
+/// uses. Otherwise a healthy non-default cache is falsely reported absent.
+#[test]
+fn backend_autoroute_inspects_explicit_cache_path() {
+    let dir = TempDir::new().unwrap();
+    let cache = dir.path().join("project-autoroute.json");
+    std::fs::write(&cache, b"not autoroute json").unwrap();
+
+    let out = Command::new(binary())
+        .args(["backend", "--autoroute", "--json", "--autoroute-cache"])
+        .arg(&cache)
+        .output()
+        .expect("inspect explicit autoroute cache");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "inspection report exits zero; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("explicit-path inspection JSON");
+    assert_eq!(
+        value["path"],
+        serde_json::json!(cache.display().to_string()),
+        "inspection must disclose the exact requested cache; json={value}"
+    );
+    assert_eq!(value["present"], serde_json::json!(true), "json={value}");
+    assert!(
+        value["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("not valid cache JSON")),
+        "the explicit file must be read rather than the platform default; json={value}"
+    );
+}
+
 /// After an `--autoroute-calibrate` scan writes a decision, `backend --autoroute
 /// --json` lists the resolved config, its workload decision(s), and a real
 /// backend label, and reports the freshly-written cache as matching this build.

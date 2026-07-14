@@ -101,7 +101,7 @@ pub(crate) fn run(args: BackendArgs) -> Result<ExitCode> {
         return run_self_test(args.json, args.require_gpu);
     }
     if args.autoroute {
-        return run_autoroute_inspection(args.json);
+        return run_autoroute_inspection(args.json, args.autoroute_cache.as_deref());
     }
     print_backend_report(&args)?;
     Ok(ExitCode::SUCCESS)
@@ -110,8 +110,8 @@ pub(crate) fn run(args: BackendArgs) -> Result<ExitCode> {
 /// `keyhog backend --autoroute`: render the persisted autoroute calibration
 /// cache so an operator can see which resolved configs and workload buckets are
 /// calibrated (and to which backend), diagnosing a fail-closed scan. Read-only.
-fn run_autoroute_inspection(json: bool) -> Result<ExitCode> {
-    let path = crate::autoroute_cache_path::resolve_autoroute_cache_path(None)
+fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result<ExitCode> {
+    let path = crate::autoroute_cache_path::resolve_autoroute_cache_path(autoroute_cache)
         .map_err(|message| anyhow::anyhow!(message))?;
     let inspection = crate::orchestrator::inspect_autoroute_cache(path.as_deref());
 

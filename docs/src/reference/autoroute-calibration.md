@@ -209,8 +209,12 @@ reject it, so recalibrate after upgrading KeyHog.
 ```sh
 keyhog backend --autoroute          # human-readable cache contents
 keyhog backend --autoroute --json   # machine-readable
+keyhog backend --autoroute --autoroute-cache /absolute/custom/autoroute.json
 keyhog doctor                       # reports calibrated / not calibrated / STALE
 ```
+
+Pass `--autoroute-cache` when the scan uses a non-default cache path through
+the matching scan flag or `[system].autoroute_cache`.
 
 These show every persisted config, its workload buckets, representative median
 route times, whether confidence was separated, the selection basis, and the

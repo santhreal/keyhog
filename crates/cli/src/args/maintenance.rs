@@ -27,6 +27,13 @@ pub struct BackendArgs {
     #[arg(long)]
     pub autoroute: bool,
 
+    /// Inspect this explicit autoroute cache file instead of the platform
+    /// default. Use the same absolute path passed to `scan --autoroute-cache`
+    /// or configured as `[system].autoroute_cache`; `off` inspects the disabled
+    /// state.
+    #[arg(long, value_name = "PATH|off", requires = "autoroute")]
+    pub autoroute_cache: Option<String>,
+
     /// Compiled pattern count to use for the routing-simulation matrix.
     /// This is a what-if knob: it does not change the loaded corpus, only
     /// the pattern_count fed to the backend-routing thresholds so you can

@@ -82,6 +82,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   validation, inspection, and locked persistence modules. Replacing an
   existing stale, incompatible, unreadable, or invalid cache now produces an
   unconditional stderr warning with the cache path and reason.
+- `keyhog backend --autoroute --autoroute-cache PATH` now inspects the exact
+  non-default cache selected by a scan or `[system].autoroute_cache` instead of
+  falsely reporting only the platform-default cache state.
 - Current scan, daemon, reporter, and suppression contracts now require the
   canonical detector TOML id on accelerated paths instead of accepting the
   retired `hot-*` finding namespace. `keyhog explain` retains a finite,
