@@ -66,14 +66,15 @@ def test_pinned_manifest_derives_exact_reviewed_linux_selection():
     assert selection.receipt() == {
         "schema": "agentre-linux-task-selection-v1",
         "selector": "exclude-task-id-prefix:windows_",
-        "manifest_sha256": (
-            "514523220d1915f4153a927cf66db9ef92901d4352964dc205271d872b338e8a"
-        ),
+        "manifest_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
         "selection_sha256": (
             "1bd43bf9751084b41165d12859dee509d50bd59e6a5aa2ba9fdc5a55adb891ac"
         ),
         "task_count": 13,
     }
+    assert selection.manifest_sha256 != (
+        "514523220d1915f4153a927cf66db9ef92901d4352964dc205271d872b338e8a"
+    )
 
 
 @pytest.mark.parametrize("mutation", ["omission", "duplicate", "linux-drift"])

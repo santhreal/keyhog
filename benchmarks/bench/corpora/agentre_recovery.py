@@ -18,6 +18,7 @@ from ..agentre_provenance import (
     OFFICIAL_LINUX_SLICE,
     AgentRETaskSelection,
     PinnedArtifact,
+    expected_linux_task_selection,
     parse_linux_task_selection,
 )
 
@@ -301,11 +302,16 @@ class AgentRERecoveryMaterializer:
 
         path, raw = self.read_pinned_text("tasks.json")
         try:
-            return parse_linux_task_selection(raw)
+            selection = parse_linux_task_selection(raw)
         except ValueError as exc:
             raise AgentREMaterializationError(
                 f"validated AgentRE tasks manifest is incompatible at {path}: {exc}"
             ) from exc
+        if selection != expected_linux_task_selection():
+            raise AgentREMaterializationError(
+                f"validated AgentRE tasks manifest identity is inconsistent at {path}"
+            )
+        return selection
 
     def validate(self) -> None:
         """Prove exact inventory, file type, mode, and content identity."""

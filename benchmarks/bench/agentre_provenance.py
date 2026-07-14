@@ -423,9 +423,14 @@ def parse_linux_task_selection(raw: str) -> AgentRETaskSelection:
         raise ValueError(
             "AgentRE Linux task selection differs from the reviewed benchmark slice"
         )
-    if _selection_digest(selected) != expected.selection_sha256:
+    selection_sha256 = _selection_digest(selected)
+    if selection_sha256 != expected.selection_sha256:
         raise ValueError("AgentRE Linux task selection digest is inconsistent")
-    return expected
+    return AgentRETaskSelection(
+        tasks=selected,
+        manifest_sha256=hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+        selection_sha256=selection_sha256,
+    )
 
 
 OFFICIAL_LINUX_SLICE = CONTROL_ARTIFACTS + SOURCE_ARTIFACTS + GROUND_TRUTH_ARTIFACTS
