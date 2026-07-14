@@ -647,6 +647,7 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         (report_finished_at - wall_start).num_milliseconds().max(0) as u128,
         1,
         keyhog_core::embedded_detector_count(),
+        None,
     );
     crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
     if args.dogfood {

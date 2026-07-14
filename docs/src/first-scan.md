@@ -108,6 +108,19 @@ entropy alone caused the finding.
 ```json
 {
   "schema_version": {"major": 1, "minor": 1},
+  "metadata": {
+    "keyhog_version": "0.5.41",
+    "git_hash": "<build-commit>",
+    "detector_digest": "922-<digest>",
+    "config_digest": "<effective-config-digest>",
+    "generated_at": "2026-07-14T00:00:01",
+    "scan_started_at": "2026-07-14T00:00:00",
+    "scan_finished_at": "2026-07-14T00:00:01",
+    "duration_ms": 1000,
+    "targets": ["."],
+    "source_chunks_scanned": 1,
+    "detector_count": 922
+  },
   "coverage_gap_summary": [],
   "findings": [
     {

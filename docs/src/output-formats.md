@@ -82,7 +82,8 @@ array. Each gap preserves the canonical reason and count used by SARIF/HTML,
 including when there are no findings. A reader must reject an
 unsupported `schema_version.major`; a newer minor under a supported major is
 additive and may be accepted. See [Your first scan](./first-scan.md#json-output)
-for the complete schema.
+for the complete schema. Metadata includes the binary Git identity, detector-set
+digest, effective-config digest when available, targets, timing, and counters.
 
 ## `--format csv`
 

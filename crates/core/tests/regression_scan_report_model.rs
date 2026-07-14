@@ -7,6 +7,9 @@ use keyhog_core::{write_scan_report, ReportFormat, ScanReport, ScanReportMetadat
 fn metadata() -> ScanReportMetadata {
     ScanReportMetadata {
         keyhog_version: "0.5.41-test".to_string(),
+        git_hash: "test-git".to_string(),
+        detector_digest: "922-test".to_string(),
+        config_digest: Some("0000000000000001".to_string()),
         generated_at: "2026-07-14T12:00:02".to_string(),
         scan_started_at: "2026-07-14T12:00:00".to_string(),
         scan_finished_at: "2026-07-14T12:00:02".to_string(),

@@ -82,6 +82,9 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     let finding = sample_finding();
     let metadata = ScanReportMetadata {
         keyhog_version: "0.5.41".into(),
+        git_hash: "test-git".into(),
+        detector_digest: "922-test".into(),
+        config_digest: Some("0000000000000001".into()),
         generated_at: "2026-07-14T00:00:00".into(),
         scan_started_at: "2026-07-14T00:00:00".into(),
         scan_finished_at: "2026-07-14T00:00:01".into(),

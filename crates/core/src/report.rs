@@ -53,6 +53,14 @@ pub use anyhow::Error as ReportError;
 pub struct ScanReportMetadata {
     /// KeyHog crate/binary version that produced the report.
     pub keyhog_version: String,
+    /// Git identity of the binary that produced the report.
+    pub git_hash: String,
+    /// Digest of the embedded detector set compiled into the binary.
+    pub detector_digest: String,
+    /// Digest of the effective scan configuration, when the orchestrator had
+    /// a resolved configuration identity available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_digest: Option<String>,
     /// UTC generation timestamp formatted as `YYYY-MM-DDTHH:MM:SS`.
     pub generated_at: String,
     /// UTC scan start timestamp formatted as `YYYY-MM-DDTHH:MM:SS`.

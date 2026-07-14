@@ -229,6 +229,9 @@ fn html_report_service_bars_and_badges_are_contrast_guarded() {
 fn html_report_embeds_scan_metadata_panel() {
     let out = render_with_metadata(HtmlScanMetadata {
         keyhog_version: "1.2.3".to_string(),
+        git_hash: "test-git".to_string(),
+        detector_digest: "test-detectors".to_string(),
+        config_digest: None,
         generated_at: "2026-06-23T12:00:01".to_string(),
         scan_started_at: "2026-06-23T12:00:00".to_string(),
         scan_finished_at: "2026-06-23T12:00:01".to_string(),

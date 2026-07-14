@@ -446,6 +446,9 @@ impl ScanOrchestrator {
             start.elapsed().as_millis(),
             crate::SCANNED_CHUNKS.load(std::sync::atomic::Ordering::Relaxed),
             self.detectors.len(),
+            Some(crate::orchestrator_config::autoroute_config_digest(
+                &self.effective_config,
+            )),
         );
         let show_reporting_progress = show_progress
             && !self.args.stream

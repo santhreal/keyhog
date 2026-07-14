@@ -83,7 +83,7 @@ fn report_with<W: std::io::Write + 'static + Send>(
 /// full scan run (for example a direct `scan --format` invocation).
 fn generated_report_metadata() -> ScanReportMetadata {
     let now = Utc::now();
-    report_metadata_from_times(now, now)
+    report_metadata_from_times(now, now, None)
 }
 
 /// Construct the single core-owned report metadata model for a scan run.
@@ -94,8 +94,9 @@ pub(crate) fn report_metadata_from_scan_run(
     duration_ms: u128,
     source_chunks_scanned: usize,
     detector_count: usize,
+    config_digest: Option<u64>,
 ) -> ScanReportMetadata {
-    let mut metadata = report_metadata_from_times(started_at, finished_at);
+    let mut metadata = report_metadata_from_times(started_at, finished_at, config_digest);
     metadata.duration_ms = duration_ms;
     metadata.targets = scan_targets(args);
     metadata.source_chunks_scanned = source_chunks_scanned;
@@ -106,9 +107,13 @@ pub(crate) fn report_metadata_from_scan_run(
 fn report_metadata_from_times(
     started_at: DateTime<Utc>,
     finished_at: DateTime<Utc>,
+    config_digest: Option<u64>,
 ) -> ScanReportMetadata {
     ScanReportMetadata {
         keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
+        git_hash: keyhog_core::git_hash().to_string(),
+        detector_digest: keyhog_core::detector_digest().to_string(),
+        config_digest: config_digest.map(|digest| format!("{digest:016x}")),
         generated_at: format_gitlab_time(finished_at),
         scan_started_at: format_gitlab_time(started_at),
         scan_finished_at: format_gitlab_time(finished_at),
