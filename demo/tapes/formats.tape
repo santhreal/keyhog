@@ -26,17 +26,17 @@ Sleep 600ms
 Enter
 Sleep 400ms
 
-Type "keyhog scan demo --backend gpu-region-presence --format json 2>/dev/null | head -c 240; echo"
+Type "keyhog scan demo --backend gpu-wgpu --format json 2>/dev/null | head -c 240; echo"
 Sleep 500ms
 Enter
 Sleep 2600ms
 
-Type "keyhog scan demo --backend gpu-region-presence --format sarif 2>/dev/null | head -c 240; echo"
+Type "keyhog scan demo --backend gpu-wgpu --format sarif 2>/dev/null | head -c 240; echo"
 Sleep 500ms
 Enter
 Sleep 2600ms
 
-Type "keyhog scan demo --backend gpu-region-presence --format csv 2>/dev/null | head -n 4"
+Type "keyhog scan demo --backend gpu-wgpu --format csv 2>/dev/null | head -n 4"
 Sleep 500ms
 Enter
 Sleep 2600ms
