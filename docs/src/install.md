@@ -82,14 +82,6 @@ your GPU for diagnostics; the Windows installer ships the portable
 no-system-library build, with no Hyperscan, WGPU, or CUDA asset in the
 current release.
 
-For an unpinned development checkout of the installer:
-
-```powershell
-iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 `
-    -OutFile keyhog-install.ps1
-.\keyhog-install.ps1
-```
-
 > **Heads up.** The Unix daemon mode is unavailable on Windows (it
 > relies on Unix-domain sockets). `keyhog scan`, `keyhog detectors`,
 > `keyhog watch`, `keyhog hook`, etc. all work the same. The `daemon`

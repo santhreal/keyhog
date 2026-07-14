@@ -103,7 +103,12 @@ Use the verified installer when the workflow must own installation explicitly:
           sudo apt-get install -y --no-install-recommends libhyperscan5 minisign
       - name: Install KeyHog
         run: |
-          curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
+          TAG=v0.5.41
+          BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
+          PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+          curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
+          minisign -Vm install.sh -P "$PUB"
+          KEYHOG_VERSION="$TAG" sh install.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Scan working tree
         id: keyhog
@@ -211,7 +216,12 @@ jobs:
           command: |
             sudo apt-get update -qq
             sudo apt-get install -y --no-install-recommends libhyperscan5 minisign
-            curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
+            TAG=v0.5.41
+            BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
+            PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+            curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
+            minisign -Vm install.sh -P "$PUB"
+            KEYHOG_VERSION="$TAG" sh install.sh
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> $BASH_ENV
       - run:
           name: Scan repo
@@ -236,7 +246,12 @@ pipeline:
     commands:
       - apt-get update -qq
       - apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-      - curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
+      - export TAG=v0.5.41
+      - export BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
+      - export PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+      - curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
+      - minisign -Vm install.sh -P "$PUB"
+      - KEYHOG_VERSION="$TAG" sh install.sh
       - $HOME/.local/bin/keyhog scan .
 ```
 
@@ -255,7 +270,12 @@ steps:
     command: |
       sudo apt-get update -qq
       sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-      curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
+      TAG=v0.5.41
+      BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
+      PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+      curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
+      minisign -Vm install.sh -P "$PUB"
+      KEYHOG_VERSION="$TAG" sh install.sh
       export PATH="$HOME/.local/bin:$PATH"
       keyhog scan . --severity high --format json --output keyhog.json
     artifact_paths:
@@ -277,7 +297,12 @@ pipeline {
                 sh '''
                     sudo apt-get update -qq
                     sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-                    curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
+                    TAG=v0.5.41
+                    BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
+                    PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+                    curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
+                    minisign -Vm install.sh -P "$PUB"
+                    KEYHOG_VERSION="$TAG" sh install.sh
                     export PATH="$HOME/.local/bin:$PATH"
                     keyhog scan . --severity high --format json --output keyhog.json
                 '''
@@ -294,12 +319,16 @@ pipeline {
 
 ## Pinning a version
 
-The install scripts pull the latest release by default. Pin the script and
-binary version together for reproducible CI:
+Pin and authenticate the installer before execution. The installer then pins
+the binary to the same release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/v0.5.41/install.sh \
-  | KEYHOG_VERSION=v0.5.41 sh
+TAG=v0.5.41
+BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
+PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
+minisign -Vm install.sh -P "$PUB"
+KEYHOG_VERSION="$TAG" sh install.sh
 ```
 
 Update the pin via a Renovate / Dependabot config or just bump it

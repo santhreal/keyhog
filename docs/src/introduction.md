@@ -83,12 +83,17 @@ Three things, in order of how much they matter:
 ## Get going
 
 ```sh
-# Linux / macOS
-curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
-
-# Windows (PowerShell)
-iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 -useb | iex
+# Linux / macOS, pinned and authenticated before execution
+TAG=v0.5.41
+BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
+PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
+minisign -Vm install.sh -P "$PUB"
+KEYHOG_VERSION="$TAG" sh install.sh
 ```
+
+Windows uses the same signed release flow. Copy the PowerShell commands from
+the [Install](./install.md#windows-powershell) page.
 
 Then:
 
