@@ -31,6 +31,63 @@ pub(crate) struct Phase2PoolBreakdown {
 }
 
 impl CompiledScanner {
+    /// Compile the immutable GPU literal program once for an autoroute sweep
+    /// and remember its measured one-time cost. Per-workload calibration can
+    /// retain that program while composing this cost into every GPU one-shot
+    /// observation.
+    pub fn prepare_autoroute_calibration_gpu_artifact(&self) -> std::result::Result<(), String> {
+        if self
+            .autoroute_gpu_shared_cold_ns
+            .load(std::sync::atomic::Ordering::Acquire)
+            > 0
+        {
+            return Ok(());
+        }
+        let has_eligible_gpu = self
+            .gpu_backend_candidates()
+            .into_iter()
+            .any(|candidate| candidate.is_eligible());
+        if !has_eligible_gpu {
+            self.autoroute_gpu_shared_cold_ns
+                .store(0, std::sync::atomic::Ordering::Relaxed);
+            return Ok(());
+        }
+        if self.gpu_matcher().is_none() {
+            return Err(
+                "eligible GPU peers exist but the shared literal program could not be prepared"
+                    .to_string(),
+            );
+        }
+        if self
+            .autoroute_gpu_shared_cold_ns
+            .load(std::sync::atomic::Ordering::Acquire)
+            == 0
+        {
+            return Err(
+                "the shared GPU literal program initialized without recording its preparation duration"
+                    .to_string(),
+            );
+        }
+        Ok(())
+    }
+
+    /// Reset workload-shaped GPU state while retaining the immutable literal
+    /// program whose measured preparation cost is composed into cold evidence.
+    pub fn reset_autoroute_calibration_gpu_workload(&mut self) -> std::result::Result<(), String> {
+        #[cfg(feature = "gpu")]
+        {
+            self.phase2_gpu_dfa.reset();
+            self.reset_gpu_resident_presence_for_calibration()?;
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn autoroute_calibration_gpu_shared_cold_ns(&self) -> u128 {
+        self.autoroute_gpu_shared_cold_ns
+            .load(std::sync::atomic::Ordering::Acquire) as u128
+    }
+
     /// Whether a SIMD (Hyperscan/Vectorscan) prefilter is compiled in and live.
     ///
     /// The GPU phase-1 paths reroute a batch through the SIMD coalesced scan

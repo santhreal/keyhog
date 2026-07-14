@@ -294,6 +294,11 @@ impl Phase2GpuDfaCatalog {
 }
 
 impl Phase2GpuDfaCatalogCache {
+    pub(crate) fn reset(&mut self) {
+        self.subgroup = OnceLock::new();
+        self.cuda = OnceLock::new();
+    }
+
     pub(crate) fn catalog(
         &self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],

@@ -224,6 +224,28 @@ pub(super) fn scan_gpu_literal_presence_by_region_resident<R>(
 }
 
 impl CompiledScanner {
+    pub(super) fn reset_gpu_resident_presence_for_calibration(
+        &mut self,
+    ) -> std::result::Result<(), String> {
+        let mut failures = Vec::new();
+        for (backend, slot) in [
+            ("cuda", &mut self.gpu_resident_presence_cuda),
+            ("wgpu", &mut self.gpu_resident_presence_wgpu),
+        ] {
+            if let Err(error) = reset_resident_presence_slot(slot) {
+                failures.push(format!("{backend}: {error}"));
+            }
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "failed to reset GPU resident calibration state for {}",
+                failures.join("; ")
+            ))
+        }
+    }
+
     pub(super) fn gpu_resident_presence_slot(
         &self,
         backend: crate::hw_probe::ScanBackend,
@@ -232,6 +254,32 @@ impl CompiledScanner {
             crate::hw_probe::ScanBackend::GpuCuda => Some(&self.gpu_resident_presence_cuda),
             crate::hw_probe::ScanBackend::GpuWgpu => Some(&self.gpu_resident_presence_wgpu),
             _ => None,
+        }
+    }
+}
+
+fn reset_resident_presence_slot(
+    slot: &mut std::sync::Mutex<GpuResidentPresenceSlot>,
+) -> std::result::Result<(), String> {
+    let slot = match slot.get_mut() {
+        Ok(slot) => slot,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    let state = std::mem::replace(slot, GpuResidentPresenceSlot::Empty);
+    match state {
+        GpuResidentPresenceSlot::Empty => Ok(()),
+        GpuResidentPresenceSlot::Failed(error) => {
+            *slot = GpuResidentPresenceSlot::Failed(error.clone());
+            Err(format!(
+                "resident presence pipeline was already unhealthy: {error}"
+            ))
+        }
+        GpuResidentPresenceSlot::Ready(state) => {
+            if let Err(error) = state.free() {
+                *slot = GpuResidentPresenceSlot::Failed(error.clone());
+                return Err(error);
+            }
+            Ok(())
         }
     }
 }
@@ -258,3 +306,7 @@ impl Drop for CompiledScanner {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/gpu_resident_presence.rs"]
+mod tests;

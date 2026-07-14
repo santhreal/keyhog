@@ -3658,6 +3658,29 @@ fn backend_timing_evidence_rejects_empty_trial_sets_at_construction() {
 }
 
 #[test]
+fn shared_gpu_preparation_cost_changes_only_the_cold_trial() {
+    let evidence =
+        super::evidence::BackendTimingEvidence::from_trial_ns(vec![10, 20, 20, 20, 20, 20, 20])
+            .expect("timing evidence")
+            .add_to_first_trial(90);
+    assert_eq!(evidence.trials_ns, vec![100, 20, 20, 20, 20, 20, 20]);
+    let (cold_ns, warm, one_shot_ns) =
+        super::evidence::gpu_cold_warm_route_evidence(&evidence).expect("cold/warm split");
+    assert_eq!(cold_ns, 100);
+    assert_eq!(warm.median_ns(), 20);
+    assert_eq!(one_shot_ns, 100);
+}
+
+#[test]
+fn calibration_candidate_order_rotates_across_workload_bands() {
+    let rotations = [1_u64, 2, 4, 8, 16, 32]
+        .into_iter()
+        .map(|bytes| super::calibration::calibration_candidate_rotation(bytes, 1, 4))
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(rotations, [0, 1, 2, 3].into_iter().collect());
+}
+
+#[test]
 fn autoroute_confidence_uses_student_t_for_small_calibration_samples() {
     let simd_timing = super::evidence::BackendTimingEvidence::from_trial_ns(vec![
         90, 95, 100, 100, 100, 105, 110,
@@ -3687,41 +3710,36 @@ fn autoroute_confidence_uses_student_t_for_small_calibration_samples() {
 
 #[test]
 fn autoroute_reference_inconsistency_aborts_calibration_contract() {
-    let error = AutorouteRoutingError::inconsistent_reference_backend(2).to_string();
+    let reference = vec![vec![canonical_test_match(
+        "detector-reference",
+        7,
+        Some("src/reference.rs"),
+        Some(4),
+        19,
+    )]];
+    let reference_key = canonical_matches(&reference);
+    assert!(calibration::calibration_candidate_parity_result(
+        ScanBackend::SimdCpu,
+        1,
+        &reference,
+        &reference_key,
+    )
+    .is_ok());
+
+    let mut divergent = reference.clone();
+    divergent[0][0].location.offset += 1;
+    let error = calibration::calibration_candidate_parity_result(
+        ScanBackend::SimdCpu,
+        2,
+        &divergent,
+        &reference_key,
+    )
+    .expect_err("a divergent SIMD trial must abort reference calibration")
+    .to_string();
     assert!(
         error.contains("reference backend produced inconsistent findings")
             && error.contains("no backend decision was persisted"),
         "reference inconsistency must be an autoroute calibration failure, got: {error}"
-    );
-
-    let calibration = include_str!("calibration.rs");
-    assert!(
-        calibration.contains("fn measure_reference_simd(")
-            && calibration.contains(
-                "Result<(Vec<Vec<keyhog_core::RawMatch>>, BackendTimingEvidence), AutorouteRoutingError>"
-            )
-            && calibration.contains(
-                "scan_calibration_backend(scanner, sample, ScanBackend::SimdCpu)"
-            )
-            && calibration.contains("scanner.scan_coalesced_with_backend(sample, backend)")
-            && calibration
-                .contains("return Err(AutorouteRoutingError::inconsistent_reference_backend("),
-        "measure_reference_simd must explicitly force the SIMD route and abort on reference \
-         mismatch, not continue with partial proof"
-    );
-    assert!(
-        !calibration.contains("timed(|| scanner.scan_coalesced(sample))"),
-        "autoroute calibration must not label the default coalesced route as explicit SIMD"
-    );
-    assert!(
-        calibration.contains("canonical_matches_equal_reference(&matches, &reference_key)")
-            && !calibration.contains("canonical_matches(&matches) != reference_key"),
-        "autoroute calibration trial loops must compare against the reference without rebuilding \
-         a sorted canonical Vec on every trial"
-    );
-    assert!(
-        !calibration.contains("reference backend produced inconsistent calibration results\"\\n            );\\n            continue;"),
-        "old warn-and-continue reference mismatch path must not return"
     );
 }
 
@@ -3960,34 +3978,29 @@ fn canonical_match_parity_large_path_preserves_full_multiset() {
 
 #[test]
 fn autoroute_candidate_rejection_aborts_calibration_contract() {
-    let error = AutorouteRoutingError::candidate_backend_rejected(
+    let reference = vec![vec![canonical_test_match(
+        "detector-candidate",
+        9,
+        Some("src/candidate.rs"),
+        Some(8),
+        33,
+    )]];
+    let reference_key = canonical_matches(&reference);
+    let mut divergent = reference.clone();
+    divergent[0][0].service = "divergent-service".into();
+    let error = calibration::calibration_candidate_parity_result(
         ScanBackend::GpuWgpu,
-        "candidate findings diverged from the SIMD reference",
+        1,
+        &divergent,
+        &reference_key,
     )
+    .expect_err("an eligible backend with divergent findings must be rejected")
     .to_string();
     assert!(
         error.contains("rejected eligible backend gpu")
             && error.contains("cannot prove fastest-correct routing")
             && error.contains("no routing decision was persisted"),
         "eligible candidate rejection must be an autoroute calibration failure, got: {error}"
-    );
-
-    let calibration = include_str!("calibration.rs");
-    assert!(
-        calibration.contains("measure_candidate_backend(")
-            && calibration.contains("ScanBackend::CpuFallback")
-            && calibration.contains(")?;")
-            && calibration
-                .contains("return Err(AutorouteRoutingError::candidate_backend_rejected(")
-            && calibration.contains("backend rejected by autoroute parity check")
-            && calibration.contains("backend rejected by autoroute GPU degrade check")
-            && calibration.contains("backend rejected by autoroute GPU cold/warm evidence check"),
-        "eligible CPU/GPU candidate rejection must abort calibration instead of dropping the candidate"
-    );
-    assert!(
-        !calibration.contains("if let Some(cpu_timing) = cpu_timing.clone()")
-            && !calibration.contains("return None;"),
-        "old candidate-drop path must not remain in autoroute calibration"
     );
 }
 

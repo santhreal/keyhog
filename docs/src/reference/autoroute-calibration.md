@@ -102,8 +102,13 @@ through 32 MiB. File-tree probes cover every chunk-count band through the
 default 32-chunk fused batch. Tar-member probes cover the same count ladder for
 payload-derived extracted filesystem chunks. Decode-heavy probes cover the
 decoder path. Empty input has no routing work and is not counted as a calibrated
-workload. The final count is the number of probes run, not the number of unique
-persisted route classes. Multiple representatives can currently share one
+workload. Each preset uses one compiled production scanner. Immutable detector
+and GPU literal-program artifacts are reused. Workload-shaped resident GPU and
+phase-two state is reset before each representative, and the measured shared GPU
+program preparation cost is added to every one-shot GPU observation. Candidate
+order rotates across workload bands rather than giving one backend the same
+thermal position in every probe. The final count is the number of probes run,
+not the number of unique persisted route classes. Multiple representatives can share one
 logarithmic workload key. The summary separately reports unique route classes
 measured by this sweep and the total route decisions in the cache after a
 required readback check. The cache total can include valid decisions from prior

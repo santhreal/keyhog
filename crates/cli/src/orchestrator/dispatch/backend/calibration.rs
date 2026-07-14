@@ -19,7 +19,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
     canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
-    gpu_cold_warm_route_evidence, AutorouteDecision, BackendTimingEvidence,
+    gpu_cold_warm_route_evidence, AutorouteDecision, BackendTimingEvidence, CanonicalMatch,
 };
 use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
 
@@ -31,15 +31,7 @@ pub(super) fn calibrate_fastest_correct_backend(
 ) -> Result<AutorouteDecision, AutorouteRoutingError> {
     let sample_bytes = calibration_sample_bytes(sample)?;
 
-    let (reference_matches, simd_timing) = measure_reference_simd(scanner, sample)?;
-
-    let cpu_timing = measure_candidate_backend(
-        scanner,
-        sample,
-        ScanBackend::CpuFallback,
-        &reference_matches,
-    )?;
-    let cpu_timing = Some(cpu_timing);
+    let reference_matches = establish_reference_simd(scanner, sample);
 
     let gpu_candidates = scanner.gpu_backend_candidates();
     if autoroute_gpu {
@@ -52,37 +44,64 @@ pub(super) fn calibrate_fastest_correct_backend(
             ));
         }
     }
-    let gpu_candidate_allowed = autoroute_gpu
-        && gpu_candidates
+    let eligible_gpu_backends = if autoroute_gpu {
+        gpu_candidates
             .iter()
-            .any(|candidate| candidate.is_eligible());
+            .filter(|candidate| candidate.is_eligible())
+            .map(|candidate| candidate.backend)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let gpu_candidate_allowed = !eligible_gpu_backends.is_empty();
+    if gpu_candidate_allowed {
+        scanner
+            .prepare_autoroute_calibration_gpu_artifact()
+            .map_err(AutorouteRoutingError::calibration_not_persisted)?;
+    }
+
+    let mut candidate_backends = Vec::with_capacity(2 + eligible_gpu_backends.len());
+    candidate_backends.push(ScanBackend::SimdCpu);
+    candidate_backends.push(ScanBackend::CpuFallback);
+    candidate_backends.extend(eligible_gpu_backends);
+    let rotation =
+        calibration_candidate_rotation(sample_bytes, sample.len(), candidate_backends.len());
+    candidate_backends.rotate_left(rotation);
+
+    let mut simd_timing = None;
+    let mut cpu_timing = None;
     let mut gpu_cuda_timing = None;
     let mut gpu_wgpu_timing = None;
-    if gpu_candidate_allowed {
-        for candidate in gpu_candidates
-            .into_iter()
-            .filter(|candidate| candidate.is_eligible())
-        {
-            let measured =
-                measure_candidate_backend(scanner, sample, candidate.backend, &reference_matches)?;
+    for backend in candidate_backends {
+        let mut measured = measure_candidate_backend(scanner, sample, backend, &reference_matches)?;
+        if is_gpu_backend(backend) {
+            measured =
+                measured.add_to_first_trial(scanner.autoroute_calibration_gpu_shared_cold_ns());
             if gpu_cold_warm_route_evidence(&measured).is_none() {
                 return Err(AutorouteRoutingError::candidate_backend_rejected(
-                    candidate.backend,
+                    backend,
                     "GPU cold/warm route evidence was incomplete or invalid",
                 ));
             }
-            match candidate.backend {
-                ScanBackend::GpuCuda => gpu_cuda_timing = Some(measured),
-                ScanBackend::GpuWgpu => gpu_wgpu_timing = Some(measured),
-                _ => {
-                    return Err(AutorouteRoutingError::candidate_backend_rejected(
-                        candidate.backend,
-                        "scanner GPU candidate enumeration returned a non-GPU route",
-                    ));
-                }
+        }
+        match backend {
+            ScanBackend::SimdCpu => simd_timing = Some(measured),
+            ScanBackend::CpuFallback => cpu_timing = Some(measured),
+            ScanBackend::GpuCuda => gpu_cuda_timing = Some(measured),
+            ScanBackend::GpuWgpu => gpu_wgpu_timing = Some(measured),
+            _ => {
+                return Err(AutorouteRoutingError::candidate_backend_rejected(
+                    backend,
+                    "calibration candidate enumeration returned an unsupported route",
+                ));
             }
         }
     }
+    let simd_timing = simd_timing.ok_or_else(|| {
+        AutorouteRoutingError::calibration_not_persisted(
+            "calibration candidate plan omitted the SIMD reference backend",
+        )
+    })?;
 
     let calibrated_at_unix_ms = current_unix_time_ms().map_err(|error| {
         AutorouteRoutingError::calibration_not_persisted(format!(
@@ -151,56 +170,29 @@ pub(super) fn calibration_sample_bytes(sample: &[Chunk]) -> Result<u64, Autorout
     Ok(sample_bytes)
 }
 
-fn measure_reference_simd(
+pub(super) fn calibration_candidate_rotation(
+    sample_bytes: u64,
+    sample_chunks: usize,
+    candidates: usize,
+) -> usize {
+    if candidates <= 1 {
+        return 0;
+    }
+    let size_band = 64_u32.saturating_sub(sample_bytes.leading_zeros()) as usize;
+    size_band.wrapping_add(sample_chunks) % candidates
+}
+
+fn establish_reference_simd(
     scanner: &CompiledScanner,
     sample: &[Chunk],
-) -> Result<(Vec<Vec<keyhog_core::RawMatch>>, BackendTimingEvidence), AutorouteRoutingError> {
-    // Warmup (UN-timed): the reference scan establishes the reference match set
-    // AND absorbs one-time cold costs. Hyperscan scratch first-alloc, cold
-    // instruction cache, page-faults, so the timed trials below measure
-    // steady-state throughput, not first-run startup. Including the cold first
-    // run would inflate the SIMD baseline and unfairly bias every candidate
-    // comparison against it (Law 7: a biased measurement is a production bug).
+) -> Vec<Vec<keyhog_core::RawMatch>> {
+    // Establish the canonical finding set outside the rotated timed plan. SIMD
+    // is still the correctness reference, but no longer receives the same
+    // first thermal position in every workload.
     scanner.clear_fragment_cache();
     let reference = scan_calibration_backend(scanner, sample, ScanBackend::SimdCpu);
-    let reference_key = canonical_matches(&reference);
-    let mut durations = Vec::with_capacity(AUTOROUTE_CALIBRATION_TRIALS);
-    for trial_idx in 0..AUTOROUTE_CALIBRATION_TRIALS {
-        scanner.clear_fragment_cache();
-        let (matches, dur) =
-            timed(|| scan_calibration_backend(scanner, sample, ScanBackend::SimdCpu));
-        if !canonical_matches_equal_reference(&matches, &reference_key) {
-            let reference_set = calibration_match_identity_set(&reference);
-            let trial_set = calibration_match_identity_set(&matches);
-            let only_in_reference: Vec<&String> = reference_set.difference(&trial_set).collect();
-            let only_in_trial: Vec<&String> = trial_set.difference(&reference_set).collect();
-            tracing::error!(
-                target: "keyhog::routing",
-                backend = ScanBackend::SimdCpu.label(),
-                trial = trial_idx + 1,
-                only_in_reference = ?only_in_reference,
-                only_in_trial = ?only_in_trial,
-                "reference backend produced inconsistent calibration results; autoroute calibration aborted"
-            );
-            scanner.clear_fragment_cache();
-            return Err(AutorouteRoutingError::inconsistent_reference_backend(
-                trial_idx + 1,
-            ));
-        }
-        durations.push(dur);
-    }
     scanner.clear_fragment_cache();
-    let timing = BackendTimingEvidence::from_durations(durations).ok_or_else(|| {
-        AutorouteRoutingError::calibration_not_persisted(
-            "reference SIMD timing evidence had no recorded trials",
-        )
-    })?;
-    if !timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
-        return Err(AutorouteRoutingError::calibration_not_persisted(
-            "reference SIMD timing evidence was invalid",
-        ));
-    }
-    Ok((reference, timing))
+    reference
 }
 
 /// The reference-mismatch diff view: every match's calibration identity,
@@ -258,17 +250,32 @@ fn measure_candidate_backend(
                 ));
             }
         }
-        if !canonical_matches_equal_reference(&matches, &reference_key) {
-            tracing::error!(
-                target: "keyhog::routing",
-                backend = backend.label(),
-                "backend rejected by autoroute parity check"
-            );
+        if let Err(error) =
+            calibration_candidate_parity_result(backend, trial_idx + 1, &matches, &reference_key)
+        {
+            if backend == ScanBackend::SimdCpu {
+                let reference_set = calibration_match_identity_set(reference_matches);
+                let trial_set = calibration_match_identity_set(&matches);
+                let only_in_reference: Vec<&String> =
+                    reference_set.difference(&trial_set).collect();
+                let only_in_trial: Vec<&String> = trial_set.difference(&reference_set).collect();
+                tracing::error!(
+                    target: "keyhog::routing",
+                    backend = backend.label(),
+                    trial = trial_idx + 1,
+                    only_in_reference = ?only_in_reference,
+                    only_in_trial = ?only_in_trial,
+                    "reference backend produced inconsistent calibration results; autoroute calibration aborted"
+                );
+            } else {
+                tracing::error!(
+                    target: "keyhog::routing",
+                    backend = backend.label(),
+                    "backend rejected by autoroute parity check"
+                );
+            }
             scanner.clear_fragment_cache();
-            return Err(AutorouteRoutingError::candidate_backend_rejected(
-                backend,
-                "candidate findings diverged from the SIMD reference",
-            ));
+            return Err(error);
         }
         if records_cold_trial || trial_idx > 0 {
             durations.push(dur);
@@ -281,6 +288,24 @@ fn measure_candidate_backend(
             "candidate timing evidence had no recorded trials",
         )
     })
+}
+
+pub(super) fn calibration_candidate_parity_result(
+    backend: ScanBackend,
+    trial: usize,
+    matches: &[Vec<keyhog_core::RawMatch>],
+    reference_key: &[CanonicalMatch<'_>],
+) -> Result<(), AutorouteRoutingError> {
+    if canonical_matches_equal_reference(matches, reference_key) {
+        return Ok(());
+    }
+    if backend == ScanBackend::SimdCpu {
+        return Err(AutorouteRoutingError::inconsistent_reference_backend(trial));
+    }
+    Err(AutorouteRoutingError::candidate_backend_rejected(
+        backend,
+        "candidate findings diverged from the SIMD reference",
+    ))
 }
 
 /// Run every calibration candidate through the same backend-dispatch boundary

@@ -332,6 +332,10 @@ pub struct CompiledScanner {
     gpu_resident_presence_wgpu: std::sync::Mutex<gpu_resident_presence::GpuResidentPresenceSlot>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,
+    /// One-time backend-neutral GPU literal-program preparation measured by
+    /// the canonical autoroute sweep. The sweep reuses that immutable program
+    /// but adds this cost to every GPU one-shot observation.
+    pub(crate) autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64,
     pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,
     /// Per-detector interned `(id, name, service)` metadata triple, indexed by
     /// `detector_index`. Built ONCE at scanner construction from the same

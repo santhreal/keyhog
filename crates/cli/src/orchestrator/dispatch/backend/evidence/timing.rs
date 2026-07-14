@@ -11,6 +11,13 @@ pub(crate) struct BackendTimingEvidence {
 }
 
 impl BackendTimingEvidence {
+    pub(crate) fn add_to_first_trial(mut self, overhead_ns: u128) -> Self {
+        if let Some(first) = self.trials_ns.first_mut() {
+            *first = first.saturating_add(overhead_ns);
+        }
+        self
+    }
+
     pub(crate) fn from_durations(durations: Vec<Duration>) -> Option<Self> {
         let trials_ns = durations.into_iter().map(|dur| dur.as_nanos()).collect();
         Self::from_trial_ns(trials_ns)

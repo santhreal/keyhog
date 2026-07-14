@@ -14,6 +14,25 @@ fn scan_policy_plan_covers_every_digest_changing_preset() {
 }
 
 #[test]
+fn measured_route_count_uses_the_current_policy_digests_not_wall_clock_changes() {
+    let measured = [
+        "00000000000000aa".to_string(),
+        "00000000000000bb".to_string(),
+    ]
+    .into_iter()
+    .collect();
+    let count = measured_route_class_count(
+        [
+            ("00000000000000aa", 5),
+            ("00000000000000bb", 7),
+            ("stale-unrelated-config", 99),
+        ],
+        &measured,
+    );
+    assert_eq!(count, 12);
+}
+
+#[test]
 fn plain_block_is_exactly_one_kib() {
     assert_eq!(calibration_block(PLAIN_SEED).len(), 1024);
     assert_eq!(calibration_block(DECODE_HEAVY_SEED).len(), 1024);
@@ -178,14 +197,12 @@ fn tar_probe_materializes_exact_payload_derived_member_batch() {
         members: 17,
         kib: 4,
     };
-    let mut command = Command::new("keyhog-test-placeholder");
-
-    assert!(
-        materialize_probe(workspace.path(), 1, &workload, &mut command)
-            .expect("materialize tar")
-            .is_none()
-    );
-    let source = keyhog_sources::FilesystemSource::new(workspace.path().join("archive-1.tar"));
+    let MaterializedProbe::Filesystem(path) =
+        materialize_probe(workspace.path(), 1, &workload).expect("materialize tar")
+    else {
+        panic!("tar representative must remain a filesystem source");
+    };
+    let source = keyhog_sources::FilesystemSource::new(path);
     let chunks: Vec<keyhog_core::Chunk> = source
         .chunks()
         .map(|chunk| chunk.expect("read tar member"))

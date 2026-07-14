@@ -231,7 +231,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
     );
     assert!(
         backend.contains("AUTOROUTE_CALIBRATION_TRIALS")
-            && backend.contains("measure_reference_simd")
+            && backend.contains("establish_reference_simd")
             && backend.contains("measure_candidate_backend")
             && !backend.contains("sample_batch(")
             && !backend.contains("MAX_SAMPLE_CHUNKS")

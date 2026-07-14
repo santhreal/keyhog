@@ -29,16 +29,23 @@ impl CompiledScanner {
     pub(crate) fn gpu_matcher(&self) -> Option<&vyre_libs::scan::GpuLiteralSet> {
         self.gpu_matcher
             .get_or_init(|| {
+                let started = std::time::Instant::now();
                 let Some(literals) = &self.gpu_literals else {
                     return None;
                 };
-                match compile_gpu_literal_set(literals, "lit") {
+                let matcher = match compile_gpu_literal_set(literals, "lit") {
                     Ok(matcher) => Some(matcher),
                     Err(error) => {
                         report_gpu_literal_matcher_unavailable(&error);
                         None
                     }
+                };
+                if matcher.is_some() {
+                    let elapsed = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+                    self.autoroute_gpu_shared_cold_ns
+                        .store(elapsed.max(1), std::sync::atomic::Ordering::Release);
                 }
+                matcher
             })
             .as_ref()
     }

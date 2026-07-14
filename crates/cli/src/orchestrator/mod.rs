@@ -997,6 +997,23 @@ impl ScanOrchestrator {
         self.scanner.as_ref()
     }
 
+    pub(crate) fn prepare_autoroute_calibration_gpu_artifact(&self) -> Result<()> {
+        self.scanner
+            .prepare_autoroute_calibration_gpu_artifact()
+            .map_err(|error| anyhow::anyhow!(error))
+    }
+
+    pub(crate) fn reset_autoroute_calibration_gpu_workload(&mut self) -> Result<()> {
+        let scanner = Arc::get_mut(&mut self.scanner).ok_or_else(|| {
+            anyhow::anyhow!(
+                "autoroute calibration scanner still has a live worker reference after the previous workload"
+            )
+        })?;
+        scanner
+            .reset_autoroute_calibration_gpu_workload()
+            .map_err(|error| anyhow::anyhow!(error))
+    }
+
     pub(crate) fn args(&self) -> &ScanArgs {
         &self.args
     }

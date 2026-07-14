@@ -8,7 +8,7 @@ mod timing;
 
 pub(super) use match_identity::{
     canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
-    render_canonical_match,
+    render_canonical_match, CanonicalMatch,
 };
 pub(super) use timing::{BackendTimingEvidence, TimingConfidenceInterval};
 

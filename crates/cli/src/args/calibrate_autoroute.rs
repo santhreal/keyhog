@@ -2,12 +2,12 @@ use clap::Parser;
 
 /// Run the full install-time autoroute calibration sweep in one command.
 ///
-/// Generates the stdin + filesystem workload ladder a real scan can hit, then
-/// runs `keyhog scan --autoroute-calibrate` once per (scan-policy preset ×
-/// workload) so every bucket the auto router will look up is persisted before
-/// the scan path goes live. External source classes that need repositories,
-/// services, containers, or remote endpoints remain installer-owned because
-/// this command deliberately does not own that environment orchestration.
+/// Generates the stdin + filesystem workload ladder a real scan can hit. Each
+/// preset reuses one compiled production scanner while every representative
+/// still runs through canonical source handling, all-backend parity checks,
+/// workload-shaped cold-state measurement, and persisted route selection.
+/// External source classes that need repositories, services, containers, or
+/// remote endpoints remain installer-owned.
 #[derive(Parser)]
 pub struct CalibrateAutorouteArgs {
     /// Override the persistent autoroute cache file every probe writes to.

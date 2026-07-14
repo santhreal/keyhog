@@ -45,12 +45,9 @@ impl AutorouteHostProfile {
         // `None` would be indistinguishable from genuinely absent hardware and
         // could trust calibration across an unknown device/driver change.
         let acquired_peer_present = gpu_runtime_backend.is_some() && !caps.gpu_is_software;
-        let gpu_device_identity =
-            (gpu_participates && (caps.gpu_available || acquired_peer_present)).then(|| {
-                caps.gpu_name
-                    .clone()
-                    .unwrap_or_else(|| gpu_runtime_backend.unwrap_or_default().to_string())
-            });
+        let gpu_device_identity = (gpu_participates
+            && (caps.gpu_available || acquired_peer_present))
+            .then(|| caps.gpu_name.clone().unwrap_or_default());
         Self {
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),

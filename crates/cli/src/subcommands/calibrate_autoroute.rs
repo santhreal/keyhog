@@ -11,20 +11,24 @@
 //! not own (Screwdriver Principle: one job, the core workload sweep, done
 //! precisely).
 //!
-//! Each probe is a real child `keyhog scan --autoroute-calibrate` process
-//! the same invocation the installer spawned, so calibration behavior is
-//! unchanged byte for byte; only the loop moved from shell into Rust. Because
-//! it runs in the same build whose presets it sweeps, every preset flag below
-//! always exists (the installer has to grep `scan --help` because it may drive
-//! an older released binary; this command never does).
+//! Each policy owns one production [`crate::orchestrator::ScanOrchestrator`]
+//! and reuses its compiled scanner plus initialized backend peers across the
+//! workload ladder. Every representative still enters through the canonical
+//! source and measured-router paths. Rebuilding the full scanner in a fresh
+//! child process for all 368 representatives made install calibration take
+//! hours while measuring startup work that is not part of the route decision.
 
-use crate::args::CalibrateAutorouteArgs;
+use crate::args::{CalibrateAutorouteArgs, ScanArgs};
+use crate::orchestrator::ScanOrchestrator;
 use crate::style::Palette;
 use anyhow::{Context, Result};
-use std::collections::BTreeMap;
+use clap::Parser;
+use keyhog_core::Source;
+use std::collections::BTreeSet;
+use std::ffi::OsString;
 use std::io::Write;
-use std::path::Path;
-use std::process::{Command, ExitCode, Stdio};
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 /// This binary's own scan-policy preset flags, swept in addition to the default
 /// policy. Each resolves a distinct autoroute config digest, so each needs its
@@ -307,21 +311,6 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     let cache_path =
         crate::autoroute_cache_path::resolve_autoroute_cache_path(args.autoroute_cache.as_deref())
             .map_err(anyhow::Error::msg)?;
-    let prior_inspection = crate::orchestrator::inspect_autoroute_cache(cache_path.as_deref());
-    let prior_decisions: BTreeMap<(String, String), u128> = prior_inspection
-        .configs
-        .iter()
-        .flat_map(|config| {
-            config.decisions.iter().map(|decision| {
-                (
-                    (config.config_digest.clone(), decision.workload.clone()),
-                    decision.calibrated_at_unix_ms,
-                )
-            })
-        })
-        .collect();
-    let exe = std::env::current_exe()
-        .context("could not resolve the running keyhog binary to spawn calibration probes")?;
     let workspace = tempfile::Builder::new()
         .prefix("keyhog-autoroute-prime-")
         .tempdir()
@@ -346,20 +335,33 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         );
     }
 
-    let sweep = ProbeSweep {
-        exe: &exe,
-        workspace: workspace.path(),
-        autoroute_cache: args.autoroute_cache.as_deref(),
-        total,
-        quiet: args.quiet,
-        palette: &p,
-    };
     let mut idx = 0usize;
     let mut failed = 0usize;
+    let mut measured_config_digests = BTreeSet::new();
     for policy in &policy_flags {
+        let policy_label = policy.unwrap_or("default policy");
+        let scan_args = calibration_scan_args(args.autoroute_cache.as_deref(), *policy)
+            .with_context(|| format!("constructing {policy_label} calibration runtime"))?;
+        let mut orchestrator = ScanOrchestrator::new(scan_args)
+            .with_context(|| format!("initializing {policy_label} calibration runtime"))?;
+        measured_config_digests.insert(format!(
+            "{:016x}",
+            crate::orchestrator_config::autoroute_config_digest(&orchestrator.effective_config)
+        ));
+        orchestrator
+            .prepare_autoroute_calibration_gpu_artifact()
+            .with_context(|| format!("preparing {policy_label} shared GPU calibration artifact"))?;
+        let mut sweep = ProbeSweep {
+            orchestrator: &mut orchestrator,
+            workspace: workspace.path(),
+            policy_label,
+            total,
+            quiet: args.quiet,
+            palette: &p,
+        };
         for workload in &workloads {
             idx += 1;
-            if let Err(error) = sweep.run_probe(workload, *policy, idx) {
+            if let Err(error) = sweep.run_probe(workload, idx) {
                 failed += 1;
                 // The probe already printed its FAIL line; surface the cause
                 // loudly (Law 10) rather than swallowing it behind the counter.
@@ -396,16 +398,18 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
             "autoroute calibration probes succeeded, but persisted cache readback contained no route decisions"
         );
     }
-    let measured_unique_decisions = inspection
-        .configs
-        .iter()
-        .flat_map(|config| {
-            config.decisions.iter().filter(|decision| {
-                prior_decisions.get(&(config.config_digest.clone(), decision.workload.clone()))
-                    != Some(&decision.calibrated_at_unix_ms)
-            })
-        })
-        .count();
+    // Every successful probe entered a fresh calibration router, which rejects
+    // reuse until that workload key has been measured in the current run. Count
+    // the resulting classes for these policy digests instead of inferring work
+    // from wall-clock timestamp changes, which can be frozen in deterministic
+    // containers.
+    let measured_unique_decisions = measured_route_class_count(
+        inspection
+            .configs
+            .iter()
+            .map(|config| (config.config_digest.as_str(), config.decision_count)),
+        &measured_config_digests,
+    );
     if measured_unique_decisions == 0 {
         anyhow::bail!(
             "autoroute calibration probes succeeded, but persisted cache readback contained no newly measured route classes"
@@ -440,32 +444,57 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// The sweep-wide invariants every probe shares: the binary under calibration,
-/// the probe workspace, the cache override, and the presentation context.
-/// Per-probe variation (workload, policy, index) stays a method argument.
+fn measured_route_class_count<'a>(
+    configs: impl IntoIterator<Item = (&'a str, usize)>,
+    measured_config_digests: &BTreeSet<String>,
+) -> usize {
+    configs
+        .into_iter()
+        .filter(|(digest, _)| measured_config_digests.contains(*digest))
+        .map(|(_, decision_count)| decision_count)
+        .sum()
+}
+
+fn calibration_scan_args(autoroute_cache: Option<&str>, policy: Option<&str>) -> Result<ScanArgs> {
+    let mut argv = vec![
+        OsString::from("keyhog-scan"),
+        OsString::from("--autoroute-calibrate"),
+        OsString::from("--autoroute-gpu"),
+        OsString::from("--no-config"),
+    ];
+    if let Some(cache) = autoroute_cache {
+        argv.push(OsString::from("--autoroute-cache"));
+        argv.push(OsString::from(cache));
+    }
+    if let Some(policy) = policy {
+        argv.push(OsString::from(policy));
+    }
+    ScanArgs::try_parse_from(argv).context("parsing the internal calibration scan policy")
+}
+
+/// One policy-local sweep. The compiled scanner and every acquired backend peer
+/// stay alive across all representative workloads in this policy.
 struct ProbeSweep<'a> {
-    exe: &'a Path,
+    orchestrator: &'a mut ScanOrchestrator,
     workspace: &'a Path,
-    autoroute_cache: Option<&'a str>,
+    policy_label: &'a str,
     total: usize,
     quiet: bool,
     palette: &'a Palette,
 }
 
 impl ProbeSweep<'_> {
-    /// Materialize one probe and run a child `keyhog scan --autoroute-calibrate`
-    /// against it. Returns `Err` (with the child's first stderr line) if the
-    /// probe could not be created or the scan exited non-zero.
-    fn run_probe(&self, workload: &Workload, policy: Option<&str>, idx: usize) -> Result<()> {
+    /// Materialize one representative through its canonical source and run it
+    /// through the same measured router used by `keyhog scan` calibration.
+    fn run_probe(&mut self, workload: &Workload, idx: usize) -> Result<()> {
         let p = self.palette;
         let label = workload.label();
-        // LAW10: reporting_only (display label for the default (no-flag) policy).
-        let policy_label = policy.unwrap_or("default policy");
         if !self.quiet {
             print!(
                 "  [{idx}/{total}] {tag} {label} {dim}({policy_label}){reset} ",
                 total = self.total,
                 tag = crate::style::info("calibrating", p),
+                policy_label = self.policy_label,
                 dim = p.dim,
                 reset = p.reset,
             );
@@ -473,79 +502,72 @@ impl ProbeSweep<'_> {
             std::io::stdout().flush().ok();
         }
 
-        let out = self.workspace.join(format!("probe-{idx}.json"));
-        let mut cmd = Command::new(self.exe);
-        cmd.arg("scan")
-            .arg("--autoroute-calibrate")
-            // Autoroute calibration measures every eligible backend. GPU is a
-            // peer candidate, not an opt-in route that normal scans can never
-            // discover.
-            .arg("--autoroute-gpu")
-            .arg("--no-config");
-        if let Some(cache) = self.autoroute_cache {
-            cmd.arg("--autoroute-cache").arg(cache);
-        }
-        // The probe target (positional path, or `--stdin` + piped file) is added
-        // by `materialize_probe`; the returned handle, if any, becomes the child
-        // stdin.
-        let stdin_handle = materialize_probe(self.workspace, idx, workload, &mut cmd)
+        self.orchestrator
+            .reset_autoroute_calibration_gpu_workload()
+            .with_context(|| {
+                format!(
+                    "resetting workload-shaped GPU state for {label} ({})",
+                    self.policy_label
+                )
+            })?;
+        let probe = materialize_probe(self.workspace, idx, workload)
             .with_context(|| format!("creating {label} calibration probe"))?;
-        if let Some(flag) = policy {
-            cmd.arg(flag);
-        }
-        cmd.arg("--format").arg("json").arg("-o").arg(&out);
-        cmd.stdout(Stdio::null());
-        cmd.stderr(Stdio::piped());
-        match stdin_handle {
-            Some(file) => {
-                cmd.stdin(Stdio::from(file));
-            }
-            None => {
-                cmd.stdin(Stdio::null());
-            }
-        }
-
-        let output = cmd
-            .output()
-            .with_context(|| format!("spawning {label} calibration probe"))?;
-        if output.status.success() {
-            if !self.quiet {
-                println!("{}", crate::style::pass("ok", p));
-            }
-            Ok(())
-        } else {
+        let sources = probe
+            .into_sources(self.orchestrator)
+            .with_context(|| format!("building {label} calibration source"))?;
+        if let Err(error) = self.orchestrator.scan_sources(sources, false, None, None) {
             if !self.quiet {
                 println!("{}", crate::style::fail("FAIL", p));
             }
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let reason = stderr
-                .lines()
-                .find(|line| !line.trim().is_empty())
-                // LAW10: reporting-only error-message string; placeholder for a child that wrote no stderr.
-                .unwrap_or("no error output");
-            anyhow::bail!("{label} ({policy_label}): {reason}");
+            return Err(error).with_context(|| format!("{label} ({})", self.policy_label));
+        }
+        if !self.quiet {
+            println!("{}", crate::style::pass("ok", p));
+        }
+        Ok(())
+    }
+}
+
+enum MaterializedProbe {
+    Stdin(Vec<u8>),
+    Filesystem(PathBuf),
+}
+
+impl MaterializedProbe {
+    fn into_sources(self, orchestrator: &ScanOrchestrator) -> Result<Vec<Box<dyn Source>>> {
+        match self {
+            Self::Stdin(bytes) => Ok(vec![Box::new(
+                keyhog_sources::BufferedStdinSource::new(bytes)
+                    .with_limits(orchestrator.effective_config.source_limits),
+            )]),
+            Self::Filesystem(path) => {
+                let mut source_args = orchestrator.args().clone();
+                source_args.input.clear();
+                source_args.path = Some(path);
+                source_args.stdin = false;
+                crate::sources::build_sources(
+                    &source_args,
+                    &orchestrator.effective_config,
+                    Vec::new(),
+                    None,
+                )
+            }
         }
     }
 }
 
-/// Write the probe for `workload` under `workspace` and add its target to `cmd`.
-/// Returns an open stdin file for stdin workloads (the caller wires it to the
-/// child), or `None` for path / tree workloads (added as a positional arg).
+/// Materialize a representative once. Filesystem inputs still pass through
+/// [`keyhog_sources::FilesystemSource`], including archive extraction. Stdin
+/// uses [`keyhog_sources::BufferedStdinSource`], the canonical stdin decoder
+/// and metadata owner for already acquired bytes.
 fn materialize_probe(
     workspace: &Path,
     idx: usize,
     workload: &Workload,
-    cmd: &mut Command,
-) -> Result<Option<std::fs::File>> {
+) -> Result<MaterializedProbe> {
     match workload {
         Workload::Stdin { bytes, .. } => {
-            let path = workspace.join(format!("stdin-{idx}.bin"));
-            std::fs::write(&path, plain_calibration_bytes(*bytes))
-                .with_context(|| format!("writing stdin probe {}", path.display()))?;
-            cmd.arg("--stdin");
-            let file = std::fs::File::open(&path)
-                .with_context(|| format!("opening stdin probe {}", path.display()))?;
-            Ok(Some(file))
+            Ok(MaterializedProbe::Stdin(plain_calibration_bytes(*bytes)))
         }
         Workload::File {
             bytes,
@@ -560,8 +582,7 @@ fn materialize_probe(
             };
             std::fs::write(&path, content)
                 .with_context(|| format!("writing file probe {}", path.display()))?;
-            cmd.arg(&path);
-            Ok(None)
+            Ok(MaterializedProbe::Filesystem(path))
         }
         Workload::Tree { files, kib, .. } => {
             let tree = workspace.join(format!("tree-{idx}"));
@@ -572,8 +593,7 @@ fn materialize_probe(
                 std::fs::write(&path, plain_calibration_bytes(kib * 1024))
                     .with_context(|| format!("writing tree probe {}", path.display()))?;
             }
-            cmd.arg(&tree);
-            Ok(None)
+            Ok(MaterializedProbe::Filesystem(tree))
         }
         Workload::Tar { members, kib, .. } => {
             let path = workspace.join(format!("archive-{idx}.tar"));
@@ -597,8 +617,7 @@ fn materialize_probe(
             archive
                 .finish()
                 .with_context(|| format!("finishing tar probe {}", path.display()))?;
-            cmd.arg(&path);
-            Ok(None)
+            Ok(MaterializedProbe::Filesystem(path))
         }
     }
 }

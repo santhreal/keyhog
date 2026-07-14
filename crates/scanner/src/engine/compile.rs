@@ -486,6 +486,7 @@ impl CompiledScanner {
             ),
             gpu_last_degrade_reason: std::sync::Mutex::new(None),
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
+            autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64::new(0),
             static_intern,
             metadata_by_index,
             detector_weak_anchor_base_by_index,
