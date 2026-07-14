@@ -1,4 +1,5 @@
 import hashlib
+import json
 import pathlib
 import stat
 import struct
@@ -203,4 +204,44 @@ def test_validation_rejects_unexpected_output(tmp_path):
     output.chmod(0o500)
 
     with pytest.raises(AgentREBuildError, match="inventory mismatch"):
+        builder.validate()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda receipt: receipt.update({"unexpected": True}), "receipt schema"),
+        (lambda receipt: receipt.update({"network": "default"}), "isolation identity"),
+        (
+            lambda receipt: receipt["binaries"][0].update({"compile_flags": ["-O3"]}),
+            "receipt row",
+        ),
+    ],
+)
+def test_validation_rejects_receipt_contract_drift(tmp_path, mutation, message):
+    def runner(_argv, output, _timeout):
+        output.write_bytes(
+            fake_elf(output.name, shared=output.name.startswith("level9_"))
+        )
+
+    output = tmp_path / "agentre-binaries"
+    builder = AgentREBinaryBuilder(
+        output,
+        materializer=FakeMaterializer(),
+        _runner=runner,
+        _expected=fake_inventory(),
+    )
+    builder.build()
+    receipt_path = output / "build-receipt.json"
+    output.chmod(0o700)
+    receipt_path.chmod(0o600)
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    mutation(receipt)
+    receipt_path.write_text(
+        json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    receipt_path.chmod(0o400)
+    output.chmod(0o500)
+
+    with pytest.raises(AgentREBuildError, match=message):
         builder.validate()

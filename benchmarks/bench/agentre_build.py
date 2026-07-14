@@ -47,6 +47,14 @@ EXPECTED_BINARY_SHA256 = {
 }
 
 Runner = Callable[[list[str], pathlib.Path, int], None]
+_RECEIPT_FIELDS = {
+    "schema",
+    "image",
+    "image_digest",
+    "platform",
+    "network",
+    "binaries",
+}
 
 
 class AgentREBuildError(RuntimeError):
@@ -55,6 +63,21 @@ class AgentREBuildError(RuntimeError):
 
 def _sha256(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
+
+
+def _compile_flags(difficulty: int) -> list[str]:
+    if difficulty == 9:
+        return [
+            "-O0",
+            "-fno-stack-protector",
+            "-no-pie",
+            "-z",
+            "execstack",
+            "-shared",
+            "-fPIC",
+            "-ldl",
+        ]
+    return ["-O0", "-fno-stack-protector", "-no-pie", "-z", "execstack", "-static"]
 
 
 def _stable_identity(value: os.stat_result) -> tuple[int, int, int, int, int, int]:
@@ -139,6 +162,17 @@ def _remove_tree(root: pathlib.Path) -> None:
             if not child.is_symlink():
                 child.chmod(0o600)
     shutil.rmtree(root, ignore_errors=True)
+
+
+def _fsync_path(path: pathlib.Path, *, directory: bool = False) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    if directory:
+        flags |= getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _docker_runner(argv: list[str], _output: pathlib.Path, timeout: int) -> None:
@@ -231,7 +265,11 @@ class AgentREBinaryBuilder:
             receipt = json.loads(receipt_raw)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise AgentREBuildError(f"AgentRE build receipt is invalid: {exc}") from exc
-        if not isinstance(receipt, dict) or receipt.get("schema") != BUILD_SCHEMA:
+        if (
+            not isinstance(receipt, dict)
+            or set(receipt) != _RECEIPT_FIELDS
+            or receipt.get("schema") != BUILD_SCHEMA
+        ):
             raise AgentREBuildError("AgentRE build receipt schema is invalid")
         if (
             receipt.get("image") != GCC_IMAGE
@@ -239,6 +277,10 @@ class AgentREBinaryBuilder:
         ):
             raise AgentREBuildError(
                 "AgentRE build receipt compiler identity is invalid"
+            )
+        if receipt.get("platform") != "linux/amd64" or receipt.get("network") != "none":
+            raise AgentREBuildError(
+                "AgentRE build receipt isolation identity is invalid"
             )
         binaries = receipt.get("binaries")
         if not isinstance(binaries, list) or len(binaries) != len(LINUX_TASKS):
@@ -260,6 +302,7 @@ class AgentREBinaryBuilder:
                 "size": len(payload),
                 "source": task.source_path,
                 "source_sha256": sources[task.source_path],
+                "compile_flags": _compile_flags(task.difficulty),
             }
             if by_name.get(task.binary_name) != expected_row:
                 raise AgentREBuildError(
@@ -308,25 +351,7 @@ class AgentREBinaryBuilder:
             for task in LINUX_TASKS:
                 source_name = pathlib.Path(task.source_path).name
                 output = outputs / task.binary_name
-                flags = [
-                    "-O0",
-                    "-fno-stack-protector",
-                    "-no-pie",
-                    "-z",
-                    "execstack",
-                    "-static",
-                ]
-                if task.difficulty == 9:
-                    flags = [
-                        "-O0",
-                        "-fno-stack-protector",
-                        "-no-pie",
-                        "-z",
-                        "execstack",
-                        "-shared",
-                        "-fPIC",
-                        "-ldl",
-                    ]
+                flags = _compile_flags(task.difficulty)
                 container = f"keyhog-agentre-{uuid.uuid4().hex}"
                 argv = [
                     "docker",
@@ -386,6 +411,7 @@ class AgentREBinaryBuilder:
                         "size": len(payload),
                         "source": task.source_path,
                         "source_sha256": self._inventory()[task.source_path],
+                        "compile_flags": flags,
                     }
                 )
             receipt = {
@@ -401,7 +427,11 @@ class AgentREBinaryBuilder:
                 json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
             )
             receipt_path.chmod(0o400)
+            for task in LINUX_TASKS:
+                _fsync_path(outputs / task.binary_name)
+            _fsync_path(receipt_path)
             outputs.chmod(0o500)
+            _fsync_path(outputs, directory=True)
             self._validate_tree(outputs)
             if self.root.exists() or self.root.is_symlink():
                 raise AgentREBuildError(
@@ -411,6 +441,7 @@ class AgentREBinaryBuilder:
             outputs.chmod(0o700)
             outputs.rename(self.root)
             self.root.chmod(0o500)
+            _fsync_path(self.root.parent, directory=True)
             self.validate()
             return self.root
         except BaseException:
