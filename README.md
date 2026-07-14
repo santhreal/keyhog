@@ -61,6 +61,12 @@ default for a turnkey single-binary download.
 GitLab CI, CircleCI, Drone, BuildKite, Jenkins, pre-commit, Husky, and
 lefthook recipes: [integration recipes](docs/src/workflows/integrations.md).
 
+Protect local commits with `keyhog hook install`. The
+[pre-commit guide](docs/src/workflows/precommit.md) owns staged-content,
+hook-replacement, bypass, and removal semantics. The
+[CI guide](docs/src/workflows/ci.md) owns the maintained workflows, baseline
+adoption, report retention, and exit handling.
+
 ### How it works
 
 KeyHog compiles its 922 detectors into a shared trigger/extraction plan,
@@ -501,74 +507,6 @@ SecretBench-mirror corpus and writes `benchmarks/results/<host>/`;
 `benchmarks/reports/`. See [`benchmarks/README.md`](benchmarks/README.md)
 for the corpora (mirror, competitor home-turf, Samsung/CredData) and the
 backend/cache/daemon/OS/GPU matrix.
-
-## CI integration
-
-### GitHub Actions
-
-```yaml
-- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
-  with:
-    path: .
-    severity: high       # info | client-safe | low | medium | high | critical
-    format: sarif        # SARIF auto-uploads to GitHub code scanning
-    baseline: .keyhog-baseline.json   # block only NEW findings
-```
-
-Release tags and explicit `version:` inputs require a matching prebuilt
-binary plus checksum and fail closed if the asset is missing or unverifiable.
-Branch/SHA action refs may build from source with Cargo. SARIF carries
-CWE-798 + OWASP A07:2021 taxa on every finding.
-
-### CI never needs a GPU
-
-**Hosted CI should run pure CPU/SIMD unless it has a real GPU.**
-Use `keyhog scan --no-gpu` or `.keyhog.toml` `[system].gpu = "off"` on
-hosted runners. Use `--require-gpu` or `[system].gpu = "required"` on
-self-hosted GPU runners where a driver or runtime dispatch regression must fail
-closed with exit `12`. An explicit or autoroute-selected GPU route is also a
-hard execution contract: KeyHog never completes it through CPU/SIMD.
-Detection results are identical on CPU and GPU - the GPU only changes
-throughput, never which secrets are found.
-
-Building keyhog from source in CI (rather than the prebuilt binary)?
-Use the `portable` feature for the ML, entropy, decode, and multiline scanner
-data paths without system-library build dependencies. It omits Hyperscan, GPU,
-and Ghidra binary extraction:
-
-```yaml
-- run: cargo install keyhog --no-default-features --features portable
-- run: keyhog scan . --format sarif --severity high > keyhog.sarif
-```
-
-Other CIs, hook recipes, and SARIF behavior live in the canonical
-[CI guide](docs/src/workflows/ci.md) and
-[integration recipes](docs/src/workflows/integrations.md).
-
-### Pre-commit hook
-
-```bash
-keyhog hook install                    # writes .git/hooks/pre-commit
-keyhog hook uninstall                  # removes the keyhog-generated hook
-```
-
-The installed hook calls `keyhog scan --fast --git-staged --backend cpu`
-on every commit. If `keyhog` is missing from `PATH`, the hook blocks the
-commit because the security scan did not run; install KeyHog, fix `PATH`,
-or remove `.git/hooks/pre-commit` if the repository should not be protected.
-Staged/diff scans use the in-process orchestrator because they need
-git-aware source expansion and policy handling. The daemon fast path is
-for editor-save and hook glue that scans stdin or one regular file.
-
-Or via the `pre-commit` framework:
-
-```yaml
-repos:
-  - repo: https://github.com/santhreal/keyhog
-    rev: v0.5.41
-    hooks:
-      - id: keyhog
-```
 
 ## Daemon mode
 
