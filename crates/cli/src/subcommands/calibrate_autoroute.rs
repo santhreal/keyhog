@@ -398,10 +398,13 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         .configs
         .iter()
         .flat_map(|config| {
-            config
-                .decisions
-                .iter()
-                .map(|decision| (config.config_digest.clone(), decision.workload.clone()))
+            config.decisions.iter().map(|decision| {
+                (
+                    config.config_digest.clone(),
+                    config.host_identity.clone(),
+                    decision.workload.clone(),
+                )
+            })
         })
         .collect::<BTreeSet<_>>();
     let (persisted_decisions, measured_unique_decisions) =
@@ -413,8 +416,8 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     }
     // Fresh calibration routers reject reuse until a workload key is measured
     // in this run. Count their canonical post-save receipts. Existing rows
-    // under the same config digest are cache inventory, not evidence that this
-    // invocation measured them.
+    // under the same config digest or another host are cache inventory, not
+    // evidence that this invocation measured them.
     if measured_unique_decisions == 0 {
         anyhow::bail!(
             "autoroute calibration probes succeeded, but persisted cache readback contained no newly measured route classes"
@@ -449,15 +452,15 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
 }
 
 fn calibration_summary_counts(
-    persisted_route_classes: &BTreeSet<(String, String)>,
-    measured_route_classes: &BTreeSet<(String, String)>,
+    persisted_route_classes: &BTreeSet<(String, String, String)>,
+    measured_route_classes: &BTreeSet<(String, String, String)>,
 ) -> Result<(usize, usize)> {
-    if let Some((config_digest, workload)) = measured_route_classes
+    if let Some((config_digest, host_identity, workload)) = measured_route_classes
         .difference(persisted_route_classes)
         .next()
     {
         anyhow::bail!(
-            "autoroute calibration measured route class [{workload}] for config {config_digest}, but final cache readback did not contain it"
+            "autoroute calibration measured route class [{workload}] for config {config_digest} on host identity {host_identity}, but final cache readback did not contain it"
         );
     }
     Ok((persisted_route_classes.len(), measured_route_classes.len()))

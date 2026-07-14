@@ -16,12 +16,20 @@ fn scan_policy_plan_covers_every_digest_changing_preset() {
 #[test]
 fn measured_route_count_deduplicates_aliases_and_excludes_a_seeded_row() {
     let digest = "00000000000000aa";
+    let host = "host-identity-a";
     let aliased_key = "bytes_log2=13 chunks_log2=1 source_mixture=[filesystem/full]";
     let measured = ["2-file representative", "3-file representative"]
         .into_iter()
-        .map(|_| (digest.to_string(), aliased_key.to_string()))
+        .map(|_| {
+            (
+                digest.to_string(),
+                host.to_string(),
+                aliased_key.to_string(),
+            )
+        })
         .chain(std::iter::once((
             "00000000000000bb".to_string(),
+            host.to_string(),
             aliased_key.to_string(),
         )))
         .collect();
@@ -30,10 +38,19 @@ fn measured_route_count_deduplicates_aliases_and_excludes_a_seeded_row() {
     // config also contains one externally seeded route decision. The other
     // config's identical workload key remains a distinct measured class.
     let persisted_routes = [
-        (digest.to_string(), aliased_key.to_string()),
-        ("00000000000000bb".to_string(), aliased_key.to_string()),
         (
             digest.to_string(),
+            host.to_string(),
+            aliased_key.to_string(),
+        ),
+        (
+            "00000000000000bb".to_string(),
+            host.to_string(),
+            aliased_key.to_string(),
+        ),
+        (
+            digest.to_string(),
+            host.to_string(),
             "externally seeded web route".to_string(),
         ),
     ]
@@ -50,6 +67,7 @@ fn measured_route_count_deduplicates_aliases_and_excludes_a_seeded_row() {
 fn calibration_summary_rejects_a_measured_class_missing_from_final_cache() {
     let measured = [(
         "00000000000000aa".to_string(),
+        "host-identity-a".to_string(),
         "canonical workload".to_string(),
     )]
     .into_iter()
@@ -61,6 +79,29 @@ fn calibration_summary_rejects_a_measured_class_missing_from_final_cache() {
     assert!(error
         .to_string()
         .contains("final cache readback did not contain it"));
+}
+
+#[test]
+fn calibration_summary_rejects_another_hosts_matching_config_and_workload() {
+    let persisted = [(
+        "00000000000000aa".to_string(),
+        "host-identity-a".to_string(),
+        "canonical workload".to_string(),
+    )]
+    .into_iter()
+    .collect();
+    let measured = [(
+        "00000000000000aa".to_string(),
+        "host-identity-b".to_string(),
+        "canonical workload".to_string(),
+    )]
+    .into_iter()
+    .collect();
+
+    let error = calibration_summary_counts(&persisted, &measured)
+        .expect_err("another host's row must not satisfy current-host readback");
+
+    assert!(error.to_string().contains("host-identity-b"));
 }
 
 #[test]

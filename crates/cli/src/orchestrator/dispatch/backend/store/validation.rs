@@ -57,11 +57,11 @@ pub(super) fn validate_cache_structure_at(
     if cache.configs.is_empty() {
         return Err("autoroute cache contains no calibrated configurations".into());
     }
-    let mut seen_config_digests = HashSet::with_capacity(cache.configs.len());
+    let mut seen_generations = HashSet::with_capacity(cache.configs.len());
     for config in &cache.configs {
-        if !seen_config_digests.insert(config.config_digest) {
+        if !seen_generations.insert((config.config_digest, &config.host)) {
             return Err(format!(
-                "autoroute cache contains duplicate config digest {:016x}",
+                "autoroute cache contains duplicate config and host generation for digest {:016x}",
                 config.config_digest
             )
             .into());

@@ -4,7 +4,7 @@ use keyhog_scanner::hw_probe::HardwareCaps;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct AutorouteHostProfile {
     pub(super) os: String,
@@ -210,6 +210,36 @@ pub(super) fn render_host_profile(host: &AutorouteHostProfile) -> String {
             .unwrap_or("none"), // LAW10: display-only host label; recall-safe
         host.eligible_backends.join(","),
     )
+}
+
+/// Stable digest of every field that participates in exact route replay.
+pub(super) fn host_identity_digest(host: &AutorouteHostProfile) -> String {
+    let mut hasher = crate::stable_hash::StableHasher::new("autoroute-host-identity-v1");
+    hasher
+        .field_str("os", &host.os)
+        .field_str("arch", &host.arch)
+        .field_option_str("cpu_model", host.cpu_model.as_deref())
+        .field_usize("physical_cores", host.physical_cores)
+        .field_usize("logical_cores", host.logical_cores)
+        .field_bool("has_avx2", host.has_avx2)
+        .field_bool("has_avx512", host.has_avx512)
+        .field_bool("has_neon", host.has_neon)
+        .field_bool("hyperscan_available", host.hyperscan_available)
+        .field_option_str("gpu_name", host.gpu_name.as_deref())
+        .field_option_str("gpu_runtime_backend", host.gpu_runtime_backend.as_deref())
+        .field_option_str(
+            "gpu_driver_runtime_identity",
+            host.gpu_driver_runtime_identity.as_deref(),
+        )
+        .field_bool("gpu_is_software", host.gpu_is_software)
+        .field_option_u64("total_memory_mb", host.total_memory_mb)
+        .field_usize("eligible_backend_count", host.eligible_backends.len());
+    for backend in &host.eligible_backends {
+        hasher.field_str("eligible_backend", backend);
+    }
+    blake3::Hash::from_bytes(hasher.finish_256())
+        .to_hex()
+        .to_string()
 }
 
 /// True when an optional identity field is `Some` with non-blank content

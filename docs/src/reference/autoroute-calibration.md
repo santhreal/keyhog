@@ -144,12 +144,19 @@ is repaired and calibration is rerun.
 
 Calibration saves take an exclusive sibling-file lock across the complete
 read/merge/atomic-write cycle. Separate calibration processes therefore
-accumulate compatible config and workload decisions without a
+accumulate compatible host, config, and workload decisions without a
 last-writer-wins loss; the operating system releases the lock if a writer exits
 or crashes. Only identity-compatible, structurally valid rows are preserved. If
 an existing cache is unreadable, incompatible, or invalid, calibration emits an
 unconditional stderr warning with the cache path and replacement reason, then
 starts a fresh cache; unrelated preset rows in that old file are not merged.
+
+One cache can be shared across hosts. Each route generation is keyed by the
+exact resolved config digest and host profile. Calibrating the same config on a
+second host preserves the first host's evidence, and recalibrating either host
+merges only that host's workload rows. A scan replays only the generation whose
+complete host identity matches the live machine. JSON inspection exposes the
+stable `host_identity` digest used to distinguish those generations.
 
 ## What a decision covers
 
@@ -281,12 +288,13 @@ keyhog doctor                       # reports calibrated / not calibrated / STAL
 Pass `--autoroute-cache` when the scan uses a non-default cache path through
 the matching scan flag or `[system].autoroute_cache`.
 
-These show every persisted config, its workload buckets, representative median
-route times, whether confidence was separated, the selection basis, and the
-resolved one-shot and daemon backends. Each config's `eligible_backends` array
-is the complete candidate set that every decision had to measure and prove
-correct. Removing a candidate timing and its receipt together still invalidates
-the cache because validation compares both sets with this live config identity.
+These show every persisted config and host generation, its workload buckets,
+representative median route times, whether confidence was separated, the
+selection basis, and the resolved one-shot and daemon backends. Each
+generation's `eligible_backends` array is the complete candidate set that every
+decision had to measure and prove correct. Removing a candidate timing and its
+receipt together still invalidates the cache because validation compares both
+sets with this live config identity.
 When a scan hits `exit 2`, you can
 therefore see exactly what *is* covered and how each existing decision was
 made. An invalid decision makes the inspection report the cache as unusable;

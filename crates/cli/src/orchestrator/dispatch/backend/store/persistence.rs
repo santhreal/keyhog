@@ -15,7 +15,6 @@ pub(crate) enum AutorouteCacheSaveOutcome {
     Fresh,
     Merged,
     Replaced { reason: String },
-    ReplacedConfig { reason: String },
 }
 
 struct MergeableConfigs {
@@ -60,11 +59,12 @@ pub(crate) fn load_autoroute_cache(
     host_profile.require_exact_identity()?;
     validate_cache_global_identity(&cache, detector_digest, rules_digest)?;
     validate_cache_structure(&cache)?;
-    let Some(config) = cache
+    let matching_config_count = cache
         .configs
         .iter()
-        .find(|config| config.config_digest == config_digest)
-    else {
+        .filter(|config| config.config_digest == config_digest)
+        .count();
+    if matching_config_count == 0 {
         return Err(format!(
             "scan config digest mismatch; cache is for a different resolved scan config \
              (this binary/corpus has {} calibrated config(s), none matching config \
@@ -72,13 +72,19 @@ pub(crate) fn load_autoroute_cache(
             cache.configs.len()
         )
         .into());
-    };
-    if &config.host != host_profile {
+    }
+    let Some(config) = cache
+        .configs
+        .iter()
+        .find(|config| config.matches_generation(config_digest, host_profile))
+    else {
         return Err(format!(
-            "host profile mismatch for scan config {config_digest:016x}; this config was calibrated for different hardware or accelerator peers. Recalibrate this scan config on the current host"
+            "host profile mismatch for scan config {config_digest:016x}; the cache has \
+             {matching_config_count} generation(s) for different hardware or accelerator \
+             peers. Calibrate this scan config on the current host"
         )
         .into());
-    }
+    };
     Ok(config
         .decisions
         .iter()
@@ -113,38 +119,25 @@ pub(crate) fn save_autoroute_cache(
 
     let mergeable = read_mergeable_configs(path, detector_digest, rules_digest);
     let mut configs = mergeable.configs;
-    let mut outcome = mergeable.outcome;
+    let outcome = mergeable.outcome;
     let mut merged = BTreeMap::new();
     if let Some(prior) = configs
         .iter()
-        .find(|config| config.config_digest == config_digest)
+        .find(|config| config.matches_generation(config_digest, host_profile))
     {
-        if &prior.host == host_profile {
-            merged.extend(
-                prior
-                    .decisions
-                    .iter()
-                    .map(|row| (row.workload.clone(), row.decision.clone())),
-            );
-        } else {
-            outcome = AutorouteCacheSaveOutcome::ReplacedConfig {
-                reason: format!(
-                    "config {config_digest:016x} was calibrated for a different host or accelerator-peer identity; unrelated config generations were preserved"
-                ),
-            };
-            tracing::info!(
-                target: "keyhog::routing",
-                config_digest,
-                "replacing only the autoroute config generation whose host or accelerator-peer identity changed"
-            );
-        }
+        merged.extend(
+            prior
+                .decisions
+                .iter()
+                .map(|row| (row.workload.clone(), row.decision.clone())),
+        );
     }
     merged.extend(
         decisions
             .iter()
             .map(|(key, decision)| (key.clone(), decision.clone())),
     );
-    configs.retain(|config| config.config_digest != config_digest);
+    configs.retain(|config| !config.matches_generation(config_digest, host_profile));
     configs.push(AutorouteConfigDecisions {
         config_digest,
         host: host_profile.clone(),
@@ -157,7 +150,11 @@ pub(crate) fn save_autoroute_cache(
             })
             .collect(),
     });
-    configs.sort_by_key(|config| config.config_digest);
+    configs.sort_by(|left, right| {
+        left.config_digest
+            .cmp(&right.config_digest)
+            .then_with(|| left.host.cmp(&right.host))
+    });
 
     let cache = AutorouteCache {
         version: AUTOROUTE_CACHE_VERSION,
@@ -280,7 +277,7 @@ fn replacement(reason: String) -> MergeableConfigs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::orchestrator::dispatch::backend::host::render_host_profile;
+    use crate::orchestrator::dispatch::backend::host::{host_identity_digest, render_host_profile};
     use crate::orchestrator::dispatch::backend::store::inspection::inspect_autoroute_cache;
     use crate::orchestrator::dispatch::backend::workload::{
         autoroute_stable_bucket, source_family_id, Phase1AdmissionKey, SourceMixtureEntry,
@@ -487,24 +484,35 @@ mod tests {
     }
 
     #[test]
-    fn changed_host_replaces_only_its_config_generation() {
-        let directory = tempfile::tempdir().expect("autoroute host replacement directory");
+    fn same_config_hosts_coexist_and_recalibrate_independently() {
+        let directory = tempfile::tempdir().expect("autoroute multi-host directory");
         let path = directory.path().join("autoroute.json");
         let old_gpu = gpu_host("NVIDIA RTX 5090", "cuda-580.95");
-        let new_gpu = gpu_host("NVIDIA RTX 5090", "cuda-581.10");
+        let mut new_gpu = old_gpu.clone();
+        new_gpu.total_memory_mb = Some(131_072);
+        assert_eq!(
+            render_host_profile(&old_gpu),
+            render_host_profile(&new_gpu),
+            "the exact persistence key must not depend on the lossy display label"
+        );
+        assert_ne!(
+            host_identity_digest(&old_gpu),
+            host_identity_digest(&new_gpu),
+            "the inspection identity must include every exact host field"
+        );
         let cpu = cpu_host();
-        let replaced_config = 0xb001;
+        let shared_config = 0xb001;
         let unrelated_config = 0xb002;
 
         save_autoroute_cache(
             &path,
             DETECTOR_DIGEST,
             RULES_DIGEST,
-            replaced_config,
+            shared_config,
             &old_gpu,
             &decisions(8 * 1024 * 1024, &old_gpu),
         )
-        .expect("seed old GPU config generation");
+        .expect("seed first host generation");
         save_autoroute_cache(
             &path,
             DETECTOR_DIGEST,
@@ -514,51 +522,147 @@ mod tests {
             &decisions(8 * 1024 * 1024, &cpu),
         )
         .expect("seed unrelated CPU config generation");
-        let replacement = save_autoroute_cache(
+        let second_host = save_autoroute_cache(
             &path,
             DETECTOR_DIGEST,
             RULES_DIGEST,
-            replaced_config,
+            shared_config,
             &new_gpu,
             &decisions(16 * 1024 * 1024, &new_gpu),
         )
-        .expect("replace only changed-host config generation");
-        assert!(matches!(
-            replacement,
-            AutorouteCacheSaveOutcome::ReplacedConfig { .. }
-        ));
+        .expect("persist second host generation for the same config");
+        assert_eq!(second_host, AutorouteCacheSaveOutcome::Merged);
 
         let unrelated =
             load_autoroute_cache(&path, DETECTOR_DIGEST, RULES_DIGEST, unrelated_config, &cpu)
-                .expect("unrelated config must survive another config's host change");
+                .expect("unrelated config must survive same-config host additions");
         assert!(unrelated.contains_key(&workload(8 * 1024 * 1024)));
 
-        let replaced = load_autoroute_cache(
+        let first = load_autoroute_cache(
             &path,
             DETECTOR_DIGEST,
             RULES_DIGEST,
-            replaced_config,
-            &new_gpu,
-        )
-        .expect("replacement config must replay under its new exact host");
-        assert_eq!(replaced.len(), 1);
-        assert!(replaced.contains_key(&workload(16 * 1024 * 1024)));
-        assert!(!replaced.contains_key(&workload(8 * 1024 * 1024)));
-
-        let old_host_error = load_autoroute_cache(
-            &path,
-            DETECTOR_DIGEST,
-            RULES_DIGEST,
-            replaced_config,
+            shared_config,
             &old_gpu,
         )
-        .expect_err("replaced config must reject its stale host identity");
-        assert!(old_host_error.to_string().contains("host profile mismatch"));
+        .expect("first host generation must remain replayable");
+        assert_eq!(first.len(), 1);
+        assert!(first.contains_key(&workload(8 * 1024 * 1024)));
+
+        let second = load_autoroute_cache(
+            &path,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            shared_config,
+            &new_gpu,
+        )
+        .expect("second host generation must replay independently");
+        assert_eq!(second.len(), 1);
+        assert!(second.contains_key(&workload(16 * 1024 * 1024)));
+
+        save_autoroute_cache(
+            &path,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            shared_config,
+            &old_gpu,
+            &HashMap::new(),
+        )
+        .expect_err("missing decisions cannot mutate either host generation");
+
+        save_autoroute_cache(
+            &path,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            shared_config,
+            &old_gpu,
+            &decisions(32 * 1024 * 1024, &old_gpu),
+        )
+        .expect("recalibrate first host without replacing second host");
+
+        let first = load_autoroute_cache(
+            &path,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            shared_config,
+            &old_gpu,
+        )
+        .expect("recalibrated first host must replay its merged rows");
+        assert_eq!(first.len(), 2);
+        assert!(first.contains_key(&workload(8 * 1024 * 1024)));
+        assert!(first.contains_key(&workload(32 * 1024 * 1024)));
+
+        let second = load_autoroute_cache(
+            &path,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            shared_config,
+            &new_gpu,
+        )
+        .expect("recalibrating first host must preserve second host");
+        assert_eq!(second.len(), 1);
+        assert!(second.contains_key(&workload(16 * 1024 * 1024)));
+
+        save_autoroute_cache(
+            &path,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            shared_config,
+            &new_gpu,
+            &decisions(64 * 1024 * 1024, &new_gpu),
+        )
+        .expect("recalibrate second host without replacing first host");
+
+        let second = load_autoroute_cache(
+            &path,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            shared_config,
+            &new_gpu,
+        )
+        .expect("recalibrated second host must replay its merged rows");
+        assert_eq!(second.len(), 2);
+        assert!(second.contains_key(&workload(16 * 1024 * 1024)));
+        assert!(second.contains_key(&workload(64 * 1024 * 1024)));
+
+        let first = load_autoroute_cache(
+            &path,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            shared_config,
+            &old_gpu,
+        )
+        .expect("recalibrating second host must preserve first host");
+        assert_eq!(first.len(), 2);
+        assert!(first.contains_key(&workload(8 * 1024 * 1024)));
+        assert!(first.contains_key(&workload(32 * 1024 * 1024)));
 
         let cache: AutorouteCache =
-            serde_json::from_slice(&std::fs::read(path).expect("read isolated replacement cache"))
-                .expect("deserialize isolated replacement cache");
-        assert_eq!(cache.configs.len(), 2);
+            serde_json::from_slice(&std::fs::read(&path).expect("read multi-host cache"))
+                .expect("deserialize multi-host cache");
+        assert_eq!(cache.configs.len(), 3);
+        assert_eq!(
+            cache
+                .configs
+                .iter()
+                .filter(|config| config.config_digest == shared_config)
+                .count(),
+            2
+        );
+
+        let inspection = inspect_autoroute_cache(Some(&path));
+        assert_eq!(inspection.configs.len(), 3);
+        assert_eq!(inspection.host, None);
+        let shared_inspection = inspection
+            .configs
+            .iter()
+            .filter(|config| config.config_digest == format!("{shared_config:016x}"))
+            .collect::<Vec<_>>();
+        assert_eq!(shared_inspection.len(), 2);
+        assert_ne!(
+            shared_inspection[0].host_identity, shared_inspection[1].host_identity,
+            "inspection must retain two exact hosts even when display labels collide"
+        );
     }
 
     #[test]

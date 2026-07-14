@@ -2537,7 +2537,7 @@ fn autoroute_cache_rejects_duplicate_workload_decisions() {
 }
 
 #[test]
-fn autoroute_cache_rejects_duplicate_config_digests_on_load_and_inspection() {
+fn autoroute_cache_rejects_duplicate_config_host_generations_on_load_and_inspection() {
     let dir = tempfile::TempDir::new().expect("autoroute duplicate-config tempdir");
     let path = dir.path().join("autoroute.json");
     let detector_digest = 0x1234_5678_9ABC_DEF0u64;
@@ -2575,18 +2575,18 @@ fn autoroute_cache_rejects_duplicate_config_digests_on_load_and_inspection() {
         config_digest,
         &host,
     )
-    .expect_err("duplicate config digests must be rejected before route selection")
+    .expect_err("duplicate config and host generations must be rejected before route selection")
     .to_string();
     assert!(
-        error.contains("duplicate config digest"),
-        "load error must identify the ambiguous config identity: {error}"
+        error.contains("duplicate config and host generation"),
+        "load error must identify the ambiguous generation identity: {error}"
     );
     let inspection = inspect_autoroute_cache(Some(&path));
     assert!(
         inspection
             .error
             .as_deref()
-            .is_some_and(|error| error.contains("duplicate config digest")),
+            .is_some_and(|error| error.contains("duplicate config and host generation")),
         "inspection must reject the same ambiguous cache: {inspection:?}"
     );
     assert!(inspection.configs.is_empty());
@@ -2722,9 +2722,10 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
             .collect::<Vec<_>>(),
         vec![(
             format!("{:016x}", router.config_digest),
+            host_identity_digest(&router.host_profile),
             render_workload_key(&key),
         )],
-        "the receipt must carry the exact canonical workload key that was persisted"
+        "the receipt must carry the exact host and canonical workload key that were persisted"
     );
     router
         .save_cache()

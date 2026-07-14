@@ -15,7 +15,7 @@
 //! field (works on every platform's cache-dir convention).
 //!
 //! Pinned facts (read from source, asserted exactly):
-//!   * `AUTOROUTE_CACHE_VERSION = 32` (backend.rs), the schema version an
+//!   * `AUTOROUTE_CACHE_VERSION = 34` (backend.rs), the schema version an
 //!     inspected valid cache reports and an incompatible one is rejected against.
 //!   * `AUTOROUTE_CACHE_FILE_BYTES = 8 * 1024 * 1024` in the cache codec, the read
 //!     cap; a file one byte over is reported "unreadable".
@@ -28,7 +28,7 @@ use std::process::Command;
 use tempfile::TempDir;
 
 /// Schema version this build's cache reports and requires.
-const EXPECTED_CACHE_VERSION: u64 = 32;
+const EXPECTED_CACHE_VERSION: u64 = 34;
 /// Read cap for the cache file (kept in sync with the cache codec).
 const CACHE_FILE_CAP_BYTES: usize = 8 * 1024 * 1024;
 
@@ -506,6 +506,14 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
                 .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
             "config digest is lowercase hex; digest={digest}"
         );
+        let host_identity = config
+            .get("host_identity")
+            .and_then(serde_json::Value::as_str)
+            .expect("exact host identity digest");
+        assert_eq!(host_identity.len(), 64);
+        assert!(host_identity
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
         let count = config
             .get("decision_count")
             .and_then(serde_json::Value::as_u64)

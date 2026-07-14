@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Autoroute caches now retain independent route generations for each exact
+  config and host identity. Recalibrating one host preserves other hosts, and
+  calibration readback proves the current host rather than accepting a shared
+  cache row from another machine.
 - GitHub collaboration scans now independently select issues, pull requests,
   discussions, wiki history, and owner public gists. REST and GraphQL requests share
   bounded rate-aware pagination, findings retain immutable revision

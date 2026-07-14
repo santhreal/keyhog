@@ -25,7 +25,7 @@
 //!   ├─ evidence ───── decision policy
 //!   │    ├─ timing ─────── measured trials and confidence intervals
 //!   │    └─ match_identity ─ secret-safe semantic parity proof
-//!   ├─ store ──────── cache facade (schema v33)
+//!   ├─ store ──────── cache facade (schema v34)
 //!   │    ├─ schema / artifact_identity / build_identity
 //!   │    └─ codec / validation / persistence / inspection
 //!   ├─ host ───────── host identity captured in each calibration record
@@ -43,7 +43,7 @@ mod workload;
 
 use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
-use self::host::AutorouteHostProfile;
+use self::host::{host_identity_digest, AutorouteHostProfile};
 pub(crate) use self::store::inspect_autoroute_cache;
 use self::store::{
     autoroute_cache_file_presence, load_autoroute_cache, save_autoroute_cache,
@@ -59,10 +59,13 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-/// Canonical `(config digest, rendered workload key)` receipts persisted by
-/// this calibration command. The cache remains the evidence owner.
-pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, String)>>>;
+/// Canonical `(config digest, exact host digest, rendered workload key)`
+/// receipts persisted by this calibration command. The host dimension prevents
+/// a shared cache's older generation from proving this host's calibration.
+pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, String, String)>>>;
 
+// v34: route generations are keyed by exact `(config digest, host)` identity,
+// so shared caches preserve independent evidence for every calibrated host.
 // v33: each resolved config host persists the exact live eligible-backend
 // census, and every decision must carry timing and parity evidence for it.
 // v32: projected host and accelerator-peer identity moves from the cache root
@@ -100,7 +103,7 @@ pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, Strin
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 33;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 34;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -616,10 +619,6 @@ impl MeasuredBackendRouter {
                 "warning: replaced existing autoroute cache {}: {reason}",
                 path.display()
             ),
-            AutorouteCacheSaveOutcome::ReplacedConfig { reason } => eprintln!(
-                "warning: replaced one autoroute config generation in {}: {reason}",
-                path.display()
-            ),
             AutorouteCacheSaveOutcome::Fresh | AutorouteCacheSaveOutcome::Merged => {}
         }
         if let Some(observer) = self.measurement_observer.as_ref() {
@@ -629,6 +628,7 @@ impl MeasuredBackendRouter {
             observed.extend(self.measured_this_run.iter().map(|key| {
                 (
                     format!("{:016x}", self.config_digest),
+                    host_identity_digest(&self.host_profile),
                     render_workload_key(key),
                 )
             }));

@@ -9,7 +9,7 @@ use super::codec::{
 };
 use super::schema::AutorouteBuildFeatures;
 use super::validation::{current_unix_time_ms, validate_cache_structure_at};
-use crate::orchestrator::dispatch::backend::host::render_host_profile;
+use crate::orchestrator::dispatch::backend::host::{host_identity_digest, render_host_profile};
 use crate::orchestrator::dispatch::backend::workload::render_workload_key;
 use crate::orchestrator::dispatch::backend::AUTOROUTE_CACHE_VERSION;
 
@@ -45,10 +45,11 @@ pub(crate) struct AutorouteCacheInspection {
     pub(crate) configs: Vec<AutorouteConfigInspection>,
 }
 
-/// One resolved scan-config digest's calibrated workload decisions.
+/// One exact resolved scan-config and host generation's calibrated decisions.
 #[derive(Debug, Serialize)]
 pub(crate) struct AutorouteConfigInspection {
     pub(crate) config_digest: String,
+    pub(crate) host_identity: String,
     pub(crate) host: String,
     pub(crate) eligible_backends: Vec<String>,
     pub(crate) decision_count: usize,
@@ -300,13 +301,17 @@ fn inspect_autoroute_cache_for_build(
         decisions.sort_by(|left, right| left.workload.cmp(&right.workload));
         out.configs.push(AutorouteConfigInspection {
             config_digest: format!("{:016x}", config.config_digest),
+            host_identity: host_identity_digest(&config.host),
             host: render_host_profile(&config.host),
             eligible_backends: config.host.eligible_backends.clone(),
             decision_count: config.decisions.len(),
             decisions,
         });
     }
-    out.configs
-        .sort_by(|left, right| left.config_digest.cmp(&right.config_digest));
+    out.configs.sort_by(|left, right| {
+        left.config_digest
+            .cmp(&right.config_digest)
+            .then_with(|| left.host_identity.cmp(&right.host_identity))
+    });
     out
 }
