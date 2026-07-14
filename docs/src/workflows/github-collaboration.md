@@ -23,10 +23,10 @@ makes no issue, pull request, discussion, wiki, or gist request.
 | Flag | Scanned content |
 | --- | --- |
 | `--github-issues` | Issue title, body, and issue comments. Pull requests returned by the issues API are excluded. |
-| `--github-pull-requests` | Pull request title and body, conversation comments, and review comments. |
+| `--github-pull-requests` | Pull request title and body, conversation comments, review summaries, and inline review comments. |
 | `--github-discussions` | Discussion title, body, top-level comments, and replies through the GitHub GraphQL API. |
 | `--github-wiki` | Every reachable unique blob in the full `<repo>.wiki.git` history. |
-| `--github-gists` | Every readable revision and comment for gists owned by the repository owner. This is an account surface, not a repository-only surface. |
+| `--github-gists` | Every listed revision and comment for public gists owned by the repository owner. This is a public account surface, not a repository-only surface. |
 
 Each flag is independent. Pass only the surfaces the token is allowed to read.
 Use `KEYHOG_GITHUB_TOKEN` instead of `--github-token` so the credential does not
@@ -34,9 +34,10 @@ enter the process argument list.
 
 Limit a fine-grained token to the target repository and grant read-only access
 for the selected Issues, Pull requests, Discussions, and Contents resources.
-Owner-gist scanning also needs the token's Gists user permission. A classic
-token may need `repo` for private repository surfaces and `gist` for non-public
-gists. Public access still depends on the repository and organization policy.
+A classic token may need `repo` for private repository surfaces. Public access
+still depends on the repository and organization policy. Gist scanning does not
+claim private or secret gists because repository ownership does not identify the
+authenticated token owner.
 
 ## Bounds and coverage
 

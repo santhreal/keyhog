@@ -22,6 +22,7 @@ fn issue_selection_fetches_only_issues_and_deduplicates_comment_identity() {
         when.method(Method::GET)
             .path("/repos/acme/rocket/issues")
             .query_param("state", "all")
+            .query_param("filter", "all")
             .query_param("per_page", "100")
             .query_param("page", "1")
             .header("authorization", "Bearer test-token");
@@ -94,7 +95,7 @@ fn issue_selection_fetches_only_issues_and_deduplicates_comment_identity() {
 }
 
 #[test]
-fn pull_request_text_and_both_comment_classes_reach_chunks() {
+fn pull_request_text_comments_and_review_summaries_reach_chunks() {
     let server = MockServer::start();
     let pulls = server.mock(|when, then| {
         when.method(Method::GET).path("/repos/acme/rocket/pulls");
@@ -120,6 +121,15 @@ fn pull_request_text_and_both_comment_classes_reach_chunks() {
             "user":{"login":"carol"},"updated_at":"2026-07-13T02:00:00Z"
         }]));
     });
+    let reviews = server.mock(|when, then| {
+        when.method(Method::GET)
+            .path("/repos/acme/rocket/pulls/3/reviews");
+        then.status(200).json_body(serde_json::json!([{
+            "id":12,"node_id":"PRR_node","body":"TOKEN=review-summary-secret",
+            "user":{"login":"dana"},"submitted_at":"2026-07-13T03:00:00Z",
+            "commit_id":"0123456789abcdef"
+        }]));
+    });
     let source = TestApi
         .github_collaboration_source_with_endpoint(
             "acme/rocket",
@@ -137,7 +147,7 @@ fn pull_request_text_and_both_comment_classes_reach_chunks() {
         .into_iter()
         .collect::<Result<_, _>>()
         .expect("complete pull-request surface");
-    assert_eq!(chunks.len(), 3);
+    assert_eq!(chunks.len(), 4);
     assert!(chunks.iter().any(|chunk| chunk.data.contains("pr-secret")));
     assert!(chunks
         .iter()
@@ -145,9 +155,22 @@ fn pull_request_text_and_both_comment_classes_reach_chunks() {
     assert!(chunks
         .iter()
         .any(|chunk| chunk.data.contains("review-secret")));
+    let review = chunks
+        .iter()
+        .find(|chunk| chunk.data.contains("review-summary-secret"))
+        .expect("review summary body");
+    assert_eq!(
+        review.metadata.path.as_deref(),
+        Some("github://acme/rocket/pulls/3/reviews/12")
+    );
+    assert_eq!(
+        review.metadata.commit.as_deref(),
+        Some("PRR_node@2026-07-13T03:00:00Z")
+    );
     pulls.assert_calls(1);
     issue_comments.assert_calls(1);
     review_comments.assert_calls(1);
+    reviews.assert_calls(1);
 }
 
 #[test]
@@ -212,18 +235,22 @@ fn gist_revisions_and_comments_have_stable_provenance() {
         then.status(200)
             .json_body(serde_json::json!([{"id":"abc123"}]));
     });
-    let _gist = server.mock(|when, then| {
-        when.method(Method::GET).path("/gists/abc123");
-        then.status(200).json_body(serde_json::json!({
-            "id":"abc123","files":{},
-            "history":[{"version":"0123456789abcdef","committed_at":"2026-07-13T00:00:00Z","user":{"login":"alice"}}]
-        }));
+    let revisions = server.mock(|when, then| {
+        when.method(Method::GET)
+            .path("/gists/abc123/commits")
+            .query_param("per_page", "100")
+            .query_param("page", "1");
+        then.status(200).json_body(serde_json::json!([{
+            "version":"0123456789abcdef",
+            "committed_at":"2026-07-13T00:00:00Z",
+            "user":{"login":"alice"}
+        }]));
     });
     let _revision = server.mock(|when, then| {
         when.method(Method::GET)
             .path("/gists/abc123/0123456789abcdef");
         then.status(200).json_body(serde_json::json!({
-            "id":"abc123","history":[],
+            "id":"abc123",
             "files":{"config?token#name.env":{"content":"TOKEN=gist-secret","truncated":false}}
         }));
     });
@@ -264,6 +291,7 @@ fn gist_revisions_and_comments_have_stable_provenance() {
         chunks[1].metadata.path.as_deref(),
         Some("github://gists/abc123/comments/17")
     );
+    revisions.assert_calls(1);
 }
 
 #[test]
@@ -305,6 +333,47 @@ fn wiki_history_scans_content_replaced_by_a_later_revision() {
                 .is_some_and(|path| path.starts_with("github://acme/rocket/wiki/"))
             && chunk.metadata.commit.is_some()
     }));
+}
+
+#[test]
+fn wiki_history_limit_is_a_typed_truncation_gap() {
+    let temp = tempfile::tempdir().expect("temp repository");
+    let repo = temp.path();
+    run_git(repo, &["init", "-b", "main"]);
+    run_git(repo, &["config", "user.name", "Wiki Author"]);
+    run_git(repo, &["config", "user.email", "wiki@example.invalid"]);
+    std::fs::write(repo.join("Home.md"), "TOKEN=wiki-secret\n").expect("wiki page");
+    run_git(repo, &["add", "Home.md"]);
+    run_git(repo, &["commit", "-m", "wiki revision"]);
+
+    let mut capped = limits(20);
+    capped.git_total_bytes = 1;
+    let error = TestApi
+        .github_collaboration_wiki_chunks_from_repo(repo, capped)
+        .expect_err("one-byte cap must truncate wiki history");
+    assert!(matches!(
+        error,
+        SourceError::Coverage {
+            kind: SourceCoverageGapKind::Truncated,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn dot_prefixed_repository_name_is_valid() {
+    let server = MockServer::start();
+    TestApi
+        .github_collaboration_source_with_endpoint(
+            "acme/.github",
+            &server.url(""),
+            GitHubCollaborationSelection {
+                issues: true,
+                ..Default::default()
+            },
+            limits(1),
+        )
+        .expect("GitHub organization metadata repository must be accepted");
 }
 
 fn run_git(repo: &std::path::Path, args: &[&str]) {

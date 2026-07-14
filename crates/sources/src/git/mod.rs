@@ -1,6 +1,6 @@
 //! Shared git utilities.
 
-use keyhog_core::SourceError;
+use keyhog_core::{SourceCoverageGapKind, SourceError};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command};
 use std::thread::JoinHandle;
@@ -165,9 +165,13 @@ pub(crate) fn record_git_cap_once(
         }
     };
     let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
-    Some(SourceError::Other(format!(
-        "{source_name} was truncated: {reason}; {remaining_description} were not scanned"
-    )))
+    Some(SourceError::Coverage {
+        adapter: "git".into(),
+        surface: "history".into(),
+        target: source_name.into(),
+        kind: SourceCoverageGapKind::Truncated,
+        detail: format!("{reason}; {remaining_description} were not scanned"),
+    })
 }
 
 pub(crate) fn git_unscanned_object_error(reason: impl std::fmt::Display) -> SourceError {

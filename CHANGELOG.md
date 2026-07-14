@@ -6,6 +6,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- GitHub collaboration scans now independently select issues, pull requests,
+  discussions, wiki history, and owner public gists. REST and GraphQL requests share
+  bounded rate-aware pagination, findings retain immutable revision
+  provenance, pull request review summaries are included, and inaccessible or
+  truncated surfaces emit typed coverage gaps.
 - ZIP and tar TeX source packages now expose root, referenced, orphaned, and
   exact comment-span provenance while every readable member still follows the
   normal archive scan path. Dependency expansion is bounded, rejects archive

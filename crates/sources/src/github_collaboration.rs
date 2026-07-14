@@ -132,7 +132,8 @@ impl GitHubCollaborationSource {
         chunks: &mut Vec<Chunk>,
     ) -> Result<(), GitHubGap> {
         let path = format!("/repos/{}/{}/issues", self.owner, self.repo);
-        let (issues, page_gap): (Vec<Issue>, _) = api.pages("issues", &path, "state=all");
+        let (issues, page_gap): (Vec<Issue>, _) =
+            api.pages("issues", &path, "state=all&filter=all");
         for issue in issues
             .into_iter()
             .filter(|item| item.pull_request.is_none())
@@ -216,6 +217,31 @@ impl GitHubCollaborationSource {
                 if let Some(gap) = comments_gap {
                     return Err(gap);
                 }
+            }
+            let reviews_path = format!(
+                "/repos/{}/{}/pulls/{}/reviews",
+                self.owner, self.repo, pull.number
+            );
+            let (reviews, reviews_gap): (Vec<PullRequestReview>, _) =
+                api.pages("pull-requests", &reviews_path, "");
+            for review in reviews {
+                let revision_time = review.submitted_at.as_deref().unwrap_or(&review.commit_id);
+                let revision = revision_identity(&review.node_id, revision_time);
+                push_text_chunk(
+                    chunks,
+                    seen,
+                    budget,
+                    "pull-requests",
+                    format!("review:{revision}"),
+                    self.provenance(&format!("pulls/{}/reviews/{}", pull.number, review.id)),
+                    &revision,
+                    review.user.as_ref().map(|actor| actor.login.as_str()),
+                    review.submitted_at.as_deref().unwrap_or(""),
+                    review.body.unwrap_or_default(),
+                )?;
+            }
+            if let Some(gap) = reviews_gap {
+                return Err(gap);
             }
         }
         if let Some(gap) = page_gap {
@@ -410,12 +436,18 @@ impl GitHubCollaborationSource {
     ) -> Result<(), GitHubGap> {
         let source = crate::GitSource::new(clone_path.to_path_buf()).with_limits(self.limits);
         for row in source.chunks() {
-            let mut chunk = row.map_err(|_| {
-                GitHubGap::inaccessible(
+            let mut chunk = row.map_err(|error| match error {
+                SourceError::Coverage { kind, detail, .. } => GitHubGap {
+                    surface: "wiki",
+                    target: self.repository(),
+                    kind,
+                    detail,
+                },
+                _ => GitHubGap::inaccessible(
                     "wiki",
                     self.repository(),
                     "a GitHub wiki revision could not be decoded",
-                )
+                ),
             })?;
             let path = chunk.metadata.path.as_deref().unwrap_or("unknown");
             let revision = chunk.metadata.commit.as_deref().unwrap_or("unreachable");
@@ -446,12 +478,20 @@ impl GitHubCollaborationSource {
         let (summaries, page_gap): (Vec<GistSummary>, _) = api.pages("gists", &list_path, "");
         for summary in summaries {
             validate_hex_id("gists", "gist id", &summary.id)?;
-            let gist_path = format!("/gists/{}", summary.id);
-            let gist: Gist = api.one("gists", &gist_path, "")?;
-            for revision in gist.history {
+            let revisions_path = format!("/gists/{}/commits", summary.id);
+            let (revisions, revisions_gap): (Vec<GistRevision>, _) =
+                api.pages("gists", &revisions_path, "");
+            for revision in revisions {
                 validate_hex_id("gists", "gist revision", &revision.version)?;
-                let revision_path = format!("/gists/{}/{}", gist.id, revision.version);
+                let revision_path = format!("/gists/{}/{}", summary.id, revision.version);
                 let revision_gist: Gist = api.one("gists", &revision_path, "")?;
+                if revision_gist.id != summary.id {
+                    return Err(GitHubGap::inaccessible(
+                        "gists",
+                        self.repository(),
+                        "GitHub returned a different gist identity for a requested revision",
+                    ));
+                }
                 for (name, file) in revision_gist.files {
                     let encoded_name = percent_encode_path(&name);
                     if file.truncated {
@@ -469,10 +509,10 @@ impl GitHubCollaborationSource {
                         seen,
                         budget,
                         "gists",
-                        format!("gist:{}:{}:{}", gist.id, revision.version, encoded_name),
+                        format!("gist:{}:{}:{}", summary.id, revision.version, encoded_name),
                         format!(
                             "github://gists/{}/{encoded_name}@{}",
-                            gist.id, revision.version
+                            summary.id, revision.version
                         ),
                         &revision.version,
                         revision.user.as_ref().map(|actor| actor.login.as_str()),
@@ -481,7 +521,10 @@ impl GitHubCollaborationSource {
                     )?;
                 }
             }
-            let comments_path = format!("/gists/{}/comments", gist.id);
+            if let Some(gap) = revisions_gap {
+                return Err(gap);
+            }
+            let comments_path = format!("/gists/{}/comments", summary.id);
             let (comments, comments_gap): (Vec<Comment>, _) =
                 api.pages("gists", &comments_path, "");
             append_comments(
@@ -489,7 +532,7 @@ impl GitHubCollaborationSource {
                 seen,
                 budget,
                 "gists",
-                &format!("github://gists/{}", gist.id),
+                &format!("github://gists/{}", summary.id),
                 comments,
             )?;
             if let Some(gap) = comments_gap {
@@ -895,15 +938,21 @@ fn parse_repository(repository: &str) -> Result<(String, String), SourceError> {
             "github-collaboration repository must contain exactly one slash".into(),
         ));
     }
-    validate_name("owner", owner, 39)?;
-    validate_name("repository", repo, 100)?;
+    validate_name("owner", owner, 39, false)?;
+    validate_name("repository", repo, 100, true)?;
     Ok((owner.into(), repo.into()))
 }
 
-fn validate_name(kind: &str, value: &str, max_len: usize) -> Result<(), SourceError> {
+fn validate_name(
+    kind: &str,
+    value: &str,
+    max_len: usize,
+    allow_leading_dot: bool,
+) -> Result<(), SourceError> {
     if value.is_empty()
         || value.len() > max_len
-        || value.starts_with(['-', '.'])
+        || value.starts_with('-')
+        || (!allow_leading_dot && value.starts_with('.'))
         || value.ends_with(['-', '.'])
         || !value
             .bytes()
@@ -1035,6 +1084,16 @@ struct PullRequest {
     updated_at: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct PullRequestReview {
+    id: u64,
+    node_id: String,
+    body: Option<String>,
+    user: Option<Actor>,
+    submitted_at: Option<String>,
+    commit_id: String,
+}
+
 const DISCUSSIONS_QUERY: &str = "query($owner:String!,$repo:String!,$cursor:String){repository(owner:$owner,name:$repo){discussions(first:100,after:$cursor){nodes{id number title body updatedAt author{login}} pageInfo{hasNextPage endCursor}}}}";
 const DISCUSSION_COMMENTS_QUERY: &str = "query($owner:String!,$repo:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$repo){discussion(number:$number){comments(first:100,after:$cursor){nodes{id body updatedAt author{login} replies(first:100){nodes{id body updatedAt author{login}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}";
 
@@ -1145,13 +1204,11 @@ struct GistSummary {
 struct Gist {
     id: String,
     #[serde(default)]
-    history: Vec<GistHistory>,
-    #[serde(default)]
     files: HashMap<String, GistFile>,
 }
 
 #[derive(Debug, Deserialize)]
-struct GistHistory {
+struct GistRevision {
     version: String,
     committed_at: String,
     user: Option<Actor>,

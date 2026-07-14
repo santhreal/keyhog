@@ -200,7 +200,7 @@ pub struct ScanArgs {
     #[arg(long, requires = "github_collaboration")]
     pub github_wiki: bool,
 
-    /// Include every readable gist revision and gist comment for the repository owner
+    /// Include public gist revisions and comments for the repository owner
     #[cfg(feature = "github")]
     #[arg(long, requires = "github_collaboration")]
     pub github_gists: bool,
