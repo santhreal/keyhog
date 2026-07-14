@@ -23,6 +23,7 @@ class PageParser(HTMLParser):
         attribute = {
             "a": "href",
             "img": "src",
+            "iframe": "src",
             "link": "href",
             "script": "src",
             "source": "src",
@@ -35,6 +36,62 @@ def parse_page(path: Path) -> PageParser:
     parser = PageParser()
     parser.feed(path.read_text(encoding="utf-8"))
     return parser
+
+
+def css_urls(text: str) -> list[str]:
+    """Return CSS url(...) operands without interpreting their contents."""
+    references: list[str] = []
+    cursor = 0
+    while cursor < len(text):
+        if text.startswith("/*", cursor):
+            end = text.find("*/", cursor + 2)
+            cursor = len(text) if end < 0 else end + 2
+            continue
+        if text[cursor] in "\"'":
+            quote = text[cursor]
+            cursor += 1
+            while cursor < len(text):
+                if text[cursor] == "\\":
+                    cursor += 2
+                elif text[cursor] == quote:
+                    cursor += 1
+                    break
+                else:
+                    cursor += 1
+            continue
+        if text[cursor : cursor + 4].lower() != "url(":
+            cursor += 1
+            continue
+        cursor += 4
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        quote = text[cursor] if cursor < len(text) and text[cursor] in "\"'" else None
+        if quote is not None:
+            cursor += 1
+        value: list[str] = []
+        escaped = False
+        while cursor < len(text):
+            character = text[cursor]
+            cursor += 1
+            if escaped:
+                value.append(character)
+                escaped = False
+                continue
+            if character == "\\":
+                escaped = True
+                continue
+            if quote is not None and character == quote:
+                while cursor < len(text) and text[cursor].isspace():
+                    cursor += 1
+                if cursor < len(text) and text[cursor] == ")":
+                    cursor += 1
+                    references.append("".join(value))
+                break
+            if quote is None and character == ")":
+                references.append("".join(value).strip())
+                break
+            value.append(character)
+    return references
 
 
 def resolve_target(book: Path, source: Path, href_path: str, site_prefix: str) -> Path | None:
@@ -69,26 +126,45 @@ def main() -> int:
     args = argument_parser.parse_args()
 
     book = args.book.resolve()
+    if not book.is_dir():
+        print(f"Built documentation directory does not exist: {book}")
+        return 1
+    index = book / "index.html"
+    if not index.is_file():
+        print(f"Built documentation is missing its entry page: {index}")
+        return 1
     pages = {path.resolve(): parse_page(path) for path in book.rglob("*.html")}
+    if not pages:
+        print(f"Built documentation contains no HTML pages: {book}")
+        return 1
     failures: list[str] = []
-    for source, page in sorted(pages.items()):
-        for reference in page.references:
-            parsed = urlsplit(reference)
-            if parsed.scheme or parsed.netloc or reference.startswith(("mailto:", "javascript:")):
-                continue
-            target = resolve_target(book, source, parsed.path, args.site_prefix)
-            if target is None or not target.is_file():
+    references = [
+        (source, reference)
+        for source, page in pages.items()
+        for reference in page.references
+    ]
+    references.extend(
+        (stylesheet.resolve(), reference)
+        for stylesheet in book.rglob("*.css")
+        for reference in css_urls(stylesheet.read_text(encoding="utf-8"))
+    )
+    for source, reference in sorted(references):
+        parsed = urlsplit(reference)
+        if parsed.scheme or parsed.netloc or reference.startswith(("mailto:", "javascript:")):
+            continue
+        target = resolve_target(book, source, parsed.path, args.site_prefix)
+        if target is None or not target.is_file():
+            failures.append(
+                f"{source.relative_to(book)}: unresolved local resource {reference!r}"
+            )
+            continue
+        if parsed.fragment and target.suffix == ".html":
+            target_page = pages.get(target.resolve())
+            if target_page is None or unquote(parsed.fragment) not in target_page.ids:
                 failures.append(
-                    f"{source.relative_to(book)}: unresolved local resource {reference!r}"
+                    f"{source.relative_to(book)}: missing fragment {parsed.fragment!r} in "
+                    f"{target.relative_to(book)}"
                 )
-                continue
-            if parsed.fragment and target.suffix == ".html":
-                target_page = pages.get(target.resolve())
-                if target_page is None or unquote(parsed.fragment) not in target_page.ids:
-                    failures.append(
-                        f"{source.relative_to(book)}: missing fragment {parsed.fragment!r} in "
-                        f"{target.relative_to(book)}"
-                    )
 
     if failures:
         print("Built documentation contains broken local links:")

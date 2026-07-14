@@ -29,12 +29,6 @@ PUBLISH_TIER_1=(keyhog-core)
 PUBLISH_TIER_2=(keyhog-verifier)
 PUBLISH_TIER_3=(keyhog-sources keyhog-scanner)
 PUBLISH_TIER_4=(keyhog)
-PUBLISH_ORDER=(
-    "${PUBLISH_TIER_1[@]}"
-    "${PUBLISH_TIER_2[@]}"
-    "${PUBLISH_TIER_3[@]}"
-    "${PUBLISH_TIER_4[@]}"
-)
 PACKAGE_TARGET=""
 declare -a PACKAGE_ARCHIVES=()
 
@@ -57,18 +51,58 @@ require_clean_tree() {
 }
 
 require_complete_publish_order() {
-    local -a discovered=()
-    local -a declared=()
-    mapfile -t discovered < <(python3 -B \
-        "$ROOT/scripts/gates/package_licenses.py" --print-package-names)
-    mapfile -t discovered < <(printf '%s\n' "${discovered[@]}" | LC_ALL=C sort)
-    mapfile -t declared < <(printf '%s\n' "${PUBLISH_ORDER[@]}" | LC_ALL=C sort)
-    if [[ "${discovered[*]}" != "${declared[*]}" ]]; then
-        echo "error: publish order does not match the publishable workspace packages" >&2
-        printf 'Discovered: %s\nDeclared: %s\n' \
-            "${discovered[*]}" "${declared[*]}" >&2
-        return 1
-    fi
+    python3 -B "$ROOT/scripts/gates/package_licenses.py" \
+        --publish-tier "${PUBLISH_TIER_1[@]}" \
+        --publish-tier "${PUBLISH_TIER_2[@]}" \
+        --publish-tier "${PUBLISH_TIER_3[@]}" \
+        --publish-tier "${PUBLISH_TIER_4[@]}"
+}
+
+archive_sha256() {
+    python3 -B - "$1" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+digest = hashlib.sha256()
+with path.open("rb") as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+print(digest.hexdigest())
+PY
+}
+
+registry_sha256() {
+    python3 -B - "$1" "$VERSION" <<'PY'
+import json
+import string
+import sys
+import urllib.parse
+import urllib.request
+
+crate, version = sys.argv[1:]
+url = "https://crates.io/api/v1/crates/{}/{}".format(
+    urllib.parse.quote(crate, safe=""), urllib.parse.quote(version, safe="")
+)
+request = urllib.request.Request(
+    url,
+    headers={"User-Agent": f"keyhog-release-gate/{version} (security@santh.dev)"},
+)
+try:
+    with urllib.request.urlopen(request, timeout=30) as response:
+        document = json.load(response)
+except Exception as error:
+    raise SystemExit(f"cannot read crates.io checksum for {crate} {version}: {error}")
+checksum = document.get("version", {}).get("checksum")
+if (
+    not isinstance(checksum, str)
+    or len(checksum) != 64
+    or any(character not in string.hexdigits for character in checksum)
+):
+    raise SystemExit(f"crates.io returned no valid SHA-256 for {crate} {version}")
+print(checksum.lower())
+PY
 }
 
 # Pull the version out of the workspace Cargo.toml so the echo lines
@@ -98,25 +132,38 @@ package_and_verify() {
     CARGO_TARGET_DIR="$PACKAGE_TARGET" cargo package \
         --no-verify \
         --locked \
+        --registry crates-io \
         --package "$crate"
     if [[ ! -f "$archive" ]]; then
         echo "error: cargo package did not create expected archive $archive" >&2
         return 1
     fi
     python3 -B "$ROOT/scripts/gates/package_licenses.py" "$archive"
+    archive_sha256 "$archive" > "$archive.verified.sha256"
     PACKAGE_ARCHIVES+=("$archive")
 }
 
 publish() {
     local crate="$1"
+    local archive="$PACKAGE_TARGET/package/${crate}-${VERSION}.crate"
+    local digest_file="$archive.verified.sha256"
+    local verified_digest
+    local packaged_digest
+    local remote_digest
     # Unpredictable per-crate log path via mktemp: a fixed `/tmp/publish-<crate>.log`
     # is a symlink-TOCTOU target and collides between concurrent publish runs.
     local log
     log="$(mktemp "${TMPDIR:-/tmp}/publish-${crate}.XXXXXX")"
     require_clean_tree
+    if [[ ! -s "$digest_file" ]]; then
+        echo "error: missing verified package digest for $crate" >&2
+        return 1
+    fi
+    verified_digest="$(<"$digest_file")"
     echo
     echo "==> cargo publish --locked --registry crates-io -p $crate"
-    if cargo publish --locked --registry crates-io -p "$crate" 2>&1 | tee "$log"; then
+    if CARGO_TARGET_DIR="$PACKAGE_TARGET" cargo publish \
+        --locked --registry crates-io -p "$crate" 2>&1 | tee "$log"; then
         echo "==> $crate published."
         sleep "$WAIT_BETWEEN_PUBLISH"
     else
@@ -127,6 +174,29 @@ publish() {
             exit 1
         fi
     fi
+    # Cargo does not expose a supported "upload this prebuilt .crate" option.
+    # It may rebuild the archive during `cargo publish`. Bind that rebuild to the
+    # same isolated target, verify its license payload again, and require both
+    # byte identity with the prechecked archive and the checksum crates.io
+    # records for the uploaded object. A mismatch is reported after Cargo has
+    # returned because there is no supported pre-upload archive hook.
+    python3 -B "$ROOT/scripts/gates/package_licenses.py" "$archive"
+    packaged_digest="$(archive_sha256 "$archive")"
+    if [[ "$packaged_digest" != "$verified_digest" ]]; then
+        echo "error: cargo publish produced different archive bytes for $crate" >&2
+        printf 'Prechecked SHA-256: %s\nPublished SHA-256:  %s\n' \
+            "$verified_digest" "$packaged_digest" >&2
+        echo "The upload may already have completed. Stop the release and inspect crates.io." >&2
+        return 1
+    fi
+    remote_digest="$(registry_sha256 "$crate")"
+    if [[ "$remote_digest" != "$packaged_digest" ]]; then
+        echo "error: crates.io checksum does not match the verified $crate archive" >&2
+        printf 'Local SHA-256:  %s\nRemote SHA-256: %s\n' \
+            "$packaged_digest" "$remote_digest" >&2
+        return 1
+    fi
+    echo "==> $crate archive checksum verified on crates.io: $remote_digest"
 }
 
 publish_tier() {

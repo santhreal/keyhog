@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import subprocess
 import sys
 import tarfile
 import tomllib
@@ -90,6 +92,95 @@ def publishable_packages(repo: Path) -> list[Package]:
     if len(archive_roots) != len(set(archive_roots)):
         raise ValueError("publishable packages do not have unique name/version identities")
     return packages
+
+
+def cargo_metadata(repo: Path) -> dict[str, object]:
+    command = [
+        "cargo",
+        "metadata",
+        "--locked",
+        "--no-deps",
+        "--format-version",
+        "1",
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise ValueError(f"cargo metadata failed: {detail}")
+    try:
+        document = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"cargo metadata returned invalid JSON: {error}") from error
+    if not isinstance(document, dict):
+        raise ValueError("cargo metadata did not return an object")
+    return document
+
+
+def validate_publish_tiers(
+    repo: Path, packages: list[Package], tiers: list[list[str]]
+) -> list[str]:
+    failures: list[str] = []
+    declared = [name for tier in tiers for name in tier]
+    duplicates = sorted({name for name in declared if declared.count(name) > 1})
+    if duplicates:
+        failures.append("packages appear in multiple publish tiers: " + ", ".join(duplicates))
+
+    expected = {package.name for package in packages}
+    actual = set(declared)
+    missing = sorted(expected - actual)
+    foreign = sorted(actual - expected)
+    if missing:
+        failures.append("publish tiers omit packages: " + ", ".join(missing))
+    if foreign:
+        failures.append("publish tiers contain unknown packages: " + ", ".join(foreign))
+    if failures:
+        return failures
+
+    tier_index = {
+        package_name: index
+        for index, tier in enumerate(tiers)
+        for package_name in tier
+    }
+    metadata = cargo_metadata(repo)
+    metadata_packages = metadata.get("packages")
+    if not isinstance(metadata_packages, list):
+        return ["cargo metadata has no packages array"]
+    by_name = {
+        package.get("name"): package
+        for package in metadata_packages
+        if isinstance(package, dict) and isinstance(package.get("name"), str)
+    }
+    for package in packages:
+        metadata_package = by_name.get(package.name)
+        if not isinstance(metadata_package, dict):
+            failures.append(f"cargo metadata omitted publishable package {package.name}")
+            continue
+        dependencies = metadata_package.get("dependencies")
+        if not isinstance(dependencies, list):
+            failures.append(f"cargo metadata omitted dependencies for {package.name}")
+            continue
+        for dependency in dependencies:
+            if not isinstance(dependency, dict):
+                failures.append(f"cargo metadata contains an invalid dependency for {package.name}")
+                continue
+            dependency_name = dependency.get("name")
+            dependency_kind = dependency.get("kind")
+            if dependency_name not in expected or dependency_kind not in (None, "build"):
+                continue
+            if tier_index[dependency_name] >= tier_index[package.name]:
+                kind = "build" if dependency_kind == "build" else "normal"
+                failures.append(
+                    f"{package.name} tier {tier_index[package.name] + 1} has a {kind} "
+                    f"dependency on {dependency_name} tier {tier_index[dependency_name] + 1}; "
+                    "internal publish dependencies must be in an earlier tier"
+                )
+    return failures
 
 
 def canonical_licenses(repo: Path) -> dict[str, bytes]:
@@ -198,6 +289,14 @@ def main(argv: list[str]) -> int:
         help="require exactly one archive for every publishable package",
     )
     parser.add_argument(
+        "--publish-tier",
+        action="append",
+        nargs="+",
+        default=[],
+        metavar="PACKAGE",
+        help="declare one ordered publish tier and validate internal dependency edges",
+    )
+    parser.add_argument(
         "archives",
         nargs="*",
         type=Path,
@@ -208,10 +307,24 @@ def main(argv: list[str]) -> int:
     try:
         packages = publishable_packages(REPO)
         if args.print_package_names:
-            if args.archives or args.require_all_archives:
+            if args.archives or args.require_all_archives or args.publish_tier:
                 parser.error("--print-package-names cannot be combined with archive checks")
             for package in packages:
                 print(package.name)
+            return 0
+        if args.publish_tier:
+            if args.archives or args.require_all_archives:
+                parser.error("--publish-tier cannot be combined with archive checks")
+            failures = validate_publish_tiers(REPO, packages, args.publish_tier)
+            if failures:
+                print("Publish tier verification failed:", file=sys.stderr)
+                for failure in failures:
+                    print(f"- {failure}", file=sys.stderr)
+                return 1
+            print(
+                f"validated {len(packages)} publishable packages across "
+                f"{len(args.publish_tier)} dependency-ordered tiers"
+            )
             return 0
         canonical = canonical_licenses(REPO)
     except (OSError, tomllib.TOMLDecodeError, ValueError) as error:
