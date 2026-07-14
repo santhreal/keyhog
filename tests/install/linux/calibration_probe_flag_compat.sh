@@ -86,7 +86,7 @@ fi
 if [ "$1" = "calibrate-autoroute" ]; then
     mkdir -p "$HOME/.cache/keyhog"
     printf '%s\n' cache > "$HOME/.cache/keyhog/autoroute.json"
-    printf '%s\n' "calibrated 368 workload buckets across 4 scan policies"
+    printf '%s\n' "ran 368 workload probes across 4 scan policies; cache contains 1 route decision"
     exit 0
 fi
 if [ "$1" = "backend" ]; then
@@ -130,6 +130,12 @@ fi
 exit 0
 EOF
 chmod +x "$work/binD/keyhog"
+
+# --- mock E: unified command with the older summary vocabulary --------------
+mkdir -p "$work/binE"
+sed 's/ran 368 workload probes/calibrated 244 workload buckets/' \
+    "$work/binC/keyhog" > "$work/binE/keyhog"
+chmod +x "$work/binE/keyhog"
 
 run_calibrate() { # $1=install-dir-with-keyhog
     env -i PATH="/usr/bin:/bin" HOME="$work/home" TMPDIR="$work/tmp" \
@@ -183,7 +189,7 @@ fi
 # 6. Current binaries own the core matrix. The installer must invoke that one
 #    command and must not replay its compatibility workload loop.
 outC="$(run_calibrate "$work/binC")"
-if printf '%s' "$outC" | grep -q 'calibrated 368 workload buckets' \
+if printf '%s' "$outC" | grep -q 'ran 368 workload probes' \
    && printf '%s' "$outC" | grep -q 'probes: 368' \
    && ! printf '%s' "$outC" | grep -q 'PASS .* workload'; then
     _pass "current binary canonical sweep replaces installer core replay"
@@ -200,6 +206,17 @@ if printf '%s' "$outD" | grep -q 'top-level help failed (mock corruption)' \
     _pass "failed top-level capability inspection never falls back silently"
 else
     _fail "failed top-level capability inspection never falls back silently" "got: $(printf '%s' "$outD" | tr '\n' '|' | tail -c 500)"
+fi
+
+# 8. The command existed before the summary vocabulary became precise. Accept
+#    that exact legacy form, while every other malformed summary still fails.
+outE="$(run_calibrate "$work/binE")"
+if printf '%s' "$outE" | grep -q 'calibrated 244 workload buckets' \
+   && printf '%s' "$outE" | grep -q 'probes: 244' \
+   && ! printf '%s' "$outE" | grep -q 'PASS .* workload'; then
+    _pass "legacy unified-command summary remains migration-compatible"
+else
+    _fail "legacy unified-command summary remains migration-compatible" "got: $(printf '%s' "$outE" | tr '\n' '|' | tail -c 500)"
 fi
 
 total=$((pass + fail))

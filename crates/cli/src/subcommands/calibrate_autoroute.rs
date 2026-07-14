@@ -358,17 +358,46 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         );
     }
 
+    let inspection = crate::orchestrator::inspect_autoroute_cache(
+        args.autoroute_cache.as_deref().map(Path::new),
+    );
+    if let Some(error) = inspection.error.as_deref() {
+        anyhow::bail!(
+            "autoroute calibration probes succeeded, but persisted cache readback failed: {error}"
+        );
+    }
+    if !inspection.present {
+        anyhow::bail!(
+            "autoroute calibration probes succeeded, but no persisted cache was found during readback"
+        );
+    }
+    let persisted_decisions = inspection
+        .configs
+        .iter()
+        .map(|config| config.decision_count)
+        .sum::<usize>();
+    if persisted_decisions == 0 {
+        anyhow::bail!(
+            "autoroute calibration probes succeeded, but persisted cache readback contained no route decisions"
+        );
+    }
+
     let cache_note = match args.autoroute_cache.as_deref() {
         Some(path) => path.to_string(),
         None => "the default autoroute cache".to_string(),
     };
     println!(
-        "{check} calibrated {green}{total}{reset} workload {bucket_word} across {green}{passes}{reset} scan {policy_word} \u{2192} {dim}{cache}{reset}",
+        "{check} ran {green}{total}{reset} workload {probe_word} across {green}{passes}{reset} scan {policy_word}; cache contains {green}{persisted_decisions}{reset} route {decision_word} \u{2192} {dim}{cache}{reset}",
         check = crate::style::pass("\u{2713}", &p),
         green = p.green,
         reset = p.reset,
         dim = p.dim,
-        bucket_word = if total == 1 { "bucket" } else { "buckets" },
+        probe_word = if total == 1 { "probe" } else { "probes" },
+        decision_word = if persisted_decisions == 1 {
+            "decision"
+        } else {
+            "decisions"
+        },
         passes = policy_flags.len(),
         policy_word = if policy_flags.len() == 1 { "policy" } else { "policies" },
         cache = cache_note,

@@ -6,7 +6,10 @@
   boundaries, extend the split to tracked and untracked git-diff inputs, and
   calibrate every default fused count for extracted tar members. Empty stdin is
   no longer reported as a calibrated workload. Current installers delegate this
-  core sweep to the binary instead of maintaining a second matrix.
+  core sweep to the binary instead of maintaining a second matrix. Calibration
+  output now calls the sweep count probes rather than unique workload buckets;
+  it also reads back and reports the cache's route-decision count. Installers
+  still parse the earlier unified-command summary during migration.
 - Rename the live GPU region-presence batch byte budget to
   `--gpu-batch-input-limit` / `gpu_batch_input_limit`; accept the retired
   MegaScan spelling as a hidden CLI/TOML migration alias.

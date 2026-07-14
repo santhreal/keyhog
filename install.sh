@@ -1332,7 +1332,12 @@ prime_autoroute_cache() {
             err "The installed binary's canonical core autoroute calibration failed."
             return 1
         fi
-        core_total="$(printf '%s\n' "$core_output" | sed -n 's/.*calibrated \([0-9][0-9]*\) workload.*/\1/p' | tail -n 1)"
+        core_total="$(printf '%s\n' "$core_output" | sed -n 's/.*ran \([0-9][0-9]*\) workload probe[s]*.*/\1/p' | tail -n 1)"
+        if [ -z "$core_total" ]; then
+            # Compatibility for binaries that shipped the unified command
+            # before its summary distinguished probes from unique route keys.
+            core_total="$(printf '%s\n' "$core_output" | sed -n 's/.*calibrated \([0-9][0-9]*\) workload bucket[s]*.*/\1/p' | tail -n 1)"
+        fi
         case "$core_total" in
             ''|*[!0-9]*)
                 err "Canonical core calibration completed without a readable probe count."

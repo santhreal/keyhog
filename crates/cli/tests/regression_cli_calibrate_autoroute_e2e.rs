@@ -425,13 +425,13 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
     assert_eq!(
         calibrate.status.code(),
         Some(0),
-        "calibration of every bucket must succeed; stderr={}",
+        "every calibration probe must succeed; stderr={}",
         String::from_utf8_lossy(&calibrate.stderr)
     );
     let cal_stdout = String::from_utf8_lossy(&calibrate.stdout);
     // 92 workloads × 4 policies = 368 probes across 4 scan policies.
     assert!(
-        cal_stdout.contains("368 core workload probes"),
+        cal_stdout.contains("ran 368 workload probes"),
         "summary reports the exact 368-probe sweep; stdout={cal_stdout}"
     );
     assert!(
@@ -566,6 +566,10 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
     assert!(
         total_decisions >= 4,
         "at least one decision per primed config; total={total_decisions}"
+    );
+    assert!(
+        cal_stdout.contains(&format!("cache contains {total_decisions} route decisions")),
+        "calibration summary decision count must match independent cache inspection; stdout={cal_stdout}; total={total_decisions}"
     );
 
     // 4. The human inspection reports the same 4-config count in prose.

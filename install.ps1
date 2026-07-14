@@ -1083,11 +1083,16 @@ function Invoke-AutorouteCalibration {
                     Err "The installed binary's canonical core autoroute calibration failed."
                     return $false
                 }
-                if ($coreOutput -notmatch 'calibrated\s+(\d+)\s+workload') {
+                if ($coreOutput -match 'ran\s+(\d+)\s+workload\s+probes?') {
+                    $coreProbeCount = [int]$Matches[1]
+                } elseif ($coreOutput -match 'calibrated\s+(\d+)\s+workload\s+buckets?') {
+                    # Compatibility for binaries that shipped the unified
+                    # command before the summary named these as probes.
+                    $coreProbeCount = [int]$Matches[1]
+                } else {
                     Err "Canonical core calibration completed without a readable probe count."
                     return $false
                 }
-                $coreProbeCount = [int]$Matches[1]
                 Say $coreOutput.Trim()
             }
             # Calibrate the documented scan-policy presets too: each changes scanner

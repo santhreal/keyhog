@@ -102,7 +102,11 @@ through 32 MiB. File-tree probes cover every chunk-count band through the
 default 32-chunk fused batch. Tar-member probes cover the same count ladder for
 payload-derived extracted filesystem chunks. Decode-heavy probes cover the
 decoder path. Empty input has no routing work and is not counted as a calibrated
-workload. The command does **not**
+workload. The final count is the number of probes run, not the number of unique
+persisted route classes. Multiple representatives can currently share one
+logarithmic workload key. The same summary reports the total unique route
+decisions in the cache after a required readback check. That cache total can
+include valid decisions from prior calibration runs. The command does **not**
 cover the git / docker / web source probes; those need environment orchestration
 (a repo, a running daemon, a served URL) that only the installer's
 `--calibrate` mode performs. Current installers delegate the complete core sweep
@@ -110,7 +114,8 @@ to this command, then construct external fixtures and invoke the low-level
 `scan --autoroute-calibrate` probe mode. Older binaries without the command use
 the installers' compatibility sweep. Capability inspection must succeed before
 that choice, so broken help output cannot silently select the older matrix. The
-low-level scan flag records one
+installers also accept the earlier unified command's migration summary
+(`calibrated N workload buckets`). The low-level scan flag records one
 caller-supplied workload but does not build or sweep external fixtures. If
 you scan those sources and hit
 `autoroute calibration required`, re-run `install.sh --calibrate` /
