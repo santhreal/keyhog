@@ -217,12 +217,11 @@ runs:
       run: |
         set -euo pipefail
         cd "$ACTION_SOURCE_ROOT"
-        # Only Linux ships keyhog's default `simd` feature (libhyperscan-dev).
-        # macOS has no homebrew formula for libhyperscan; Windows has no
-        # libhyperscan at all. Both fall to the `portable` feature subset
-        # which keeps every scanner-data and source-backend feature minus
-        # the Hyperscan link. Before this guard the Windows + macOS
-        # source-build path crashed at link time on a missing `-lhs`.
+        # Only the Linux Action asset ships the default `simd` feature. Manual
+        # macOS builds can link Homebrew Vectorscan, but this fallback matches
+        # the portable macOS release asset; Windows has no supported Hyperscan
+        # package. Portable keeps every scanner data path and its portable
+        # source-backend set without the Hyperscan link.
         case "$(uname -s)" in
           Linux*) cargo build --locked --release -p keyhog ;;
           *)

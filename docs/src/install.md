@@ -320,7 +320,9 @@ cargo build --release -p keyhog
 The default feature set requires **Hyperscan / Vectorscan**:
 
 - Debian / Ubuntu: `sudo apt install libhyperscan-dev pkg-config`
-- macOS: not available via Homebrew. Build with `--no-default-features --features portable` to skip Hyperscan and use the pure-Rust path.
+- macOS: `brew install vectorscan pkg-config`, then use the default build for
+  the Hyperscan path. Use `--no-default-features --features portable` only for
+  the no-system-library build used by the official macOS asset.
 - Windows: build with `--no-default-features --features portable`.
 
 The default Linux build includes the dynamically loaded CUDA and WGPU backends:
@@ -335,8 +337,9 @@ prevent the binary from starting; `keyhog backend --self-test --json` reports
 the exact runtime state and autoroute calibration determines eligibility.
 
 The `portable` feature is what the official Windows + macOS release
-binaries are built with: same scanner, no native dependency, ~5%
-slower on big inputs.
+binaries are built with. It keeps the portable scanner data paths without
+native Hyperscan, GPU, or Ghidra dependencies. Throughput varies by host and
+workload; benchmark the intended scan class instead of applying a fixed ratio.
 
 ## crates.io
 

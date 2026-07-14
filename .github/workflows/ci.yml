@@ -437,7 +437,9 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
         run: brew update && brew install vectorscan pkg-config
-      - run: cargo build -p keyhog-core -p keyhog-scanner
+      # Prove the documented Homebrew Vectorscan path builds the actual CLI,
+      # not only the scanner library. The portable release build remains below.
+      - run: cargo build -p keyhog
       - run: cargo test -p keyhog-core --lib
       - run: cargo test -p keyhog-scanner --lib
       - run: cargo test -p keyhog-sources --lib

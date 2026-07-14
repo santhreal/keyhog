@@ -195,11 +195,15 @@ curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | 
 # Windows (PowerShell)
 iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 -useb | iex
 
-# From source - Linux (default = Hyperscan SIMD; needs libhyperscan-dev + pkg-config)
+# From source - Linux (install libhyperscan-dev + pkg-config first)
 git clone https://github.com/santhreal/keyhog.git
 cd keyhog && cargo build --release -p keyhog
 
-# From source / crates.io - macOS, Windows, or any host without Hyperscan
+# From source - macOS Hyperscan path (Homebrew)
+brew install vectorscan pkg-config
+cargo install keyhog
+
+# Portable source build - Windows or any host without Hyperscan/Vectorscan
 # (the system-library-free portable build: no pkg-config or GPU stack)
 cargo install keyhog --no-default-features --features portable
 ```
@@ -207,10 +211,11 @@ cargo install keyhog --no-default-features --features portable
 > `install.sh` / `install.ps1` (signed prebuilt) is the recommended path: it
 > selects and verifies the platform asset before installation. Download and
 > build time depend on the network, host, and cache. For a source build, note that the **default**
-> features link Hyperscan (a system lib available on Linux x86_64); on **macOS**
-> (incl. Apple Silicon) and any host without the Hyperscan dev libraries, build
-> with `--no-default-features --features portable` - the portable CPU path, every
-> detection feature, no system-lib or pkg-config dependency.
+> features link Hyperscan/Vectorscan. Linux uses `libhyperscan-dev`; macOS
+> source builds use Homebrew `vectorscan`. On Windows or a host without either
+> library, build with `--no-default-features --features portable` for the pure
+> Rust CPU path with all portable scanner data features and no system-library
+> dependency.
 
 Works on **Linux**, **macOS** (Intel + Apple Silicon), and **Windows**. The
 verified installers calibrate multi-backend builds before enabling default
@@ -527,8 +532,9 @@ Detection results are identical on CPU and GPU - the GPU only changes
 throughput, never which secrets are found.
 
 Building keyhog from source in CI (rather than the prebuilt binary)?
-Use the `portable` feature - every detection feature, no system-library
-build deps (skips the Hyperscan/Ghidra build step):
+Use the `portable` feature for the ML, entropy, decode, and multiline scanner
+data paths without system-library build dependencies. It omits Hyperscan, GPU,
+and Ghidra binary extraction:
 
 ```yaml
 - run: cargo install keyhog --no-default-features --features portable

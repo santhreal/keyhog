@@ -94,10 +94,13 @@ auto-installed Hyperscan shared library on Linux.
 Release tags and explicit `version:` inputs require a matching prebuilt binary
 and checksum; missing or unverifiable release assets fail closed instead of
 silently source-building different code. Branch/SHA action refs may build from
-source. macOS builds (both prebuilt and branch/SHA source builds) ship
-without Hyperscan because there is no `libhyperscan-dev` package in homebrew;
-everything else (entropy, multiline reassembly, ML scoring, decode-through, all
-source backends) is included.
+source. The Action intentionally uses the portable feature set for both macOS
+prebuilts and branch/SHA source fallbacks. A manual macOS source build can use
+Hyperscan after `brew install vectorscan pkg-config`; that is a different build
+from the Action asset. Both include entropy, multiline reassembly, ML scoring,
+decode-through, and the portable git, web, hosted-Git, cloud, and Docker source
+backends. Ghidra binary extraction remains opt-in and is absent from the
+portable asset.
 
 ## Recipes
 
