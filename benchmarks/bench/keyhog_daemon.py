@@ -14,10 +14,8 @@ import tempfile
 import time
 import types
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from .scanners.base import RunStats
+from .measurement import RunStats
 
 _STATUS_SCANS_RE = re.compile(r"\b(\d+) scans served\b")
 _STATUS_ACTIVE_RE = re.compile(r"\b(\d+) active\b")

@@ -34,6 +34,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from ..measurement import RunStats
 from ..schema import ScannerConfig
 
 try:
@@ -51,15 +52,6 @@ def _line(value: object) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
-
-
-@dataclass
-class RunStats:
-    wall_ms: float = 0.0
-    peak_rss_kb: int = 0
-    throughput_mb_s: float = 0.0
-    exit_code: int = 0
-    timed_out: bool = False
 
 
 @dataclass(frozen=True)

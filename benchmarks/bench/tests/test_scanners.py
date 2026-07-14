@@ -23,13 +23,21 @@ _REAL_BINARY_SNAPSHOT = keyhog_adapter.KeyhogScanner._binary_snapshot
 
 def test_keyhog_daemon_is_directly_importable_from_a_fresh_process():
     completed = subprocess.run(
-        [sys.executable, "-c", "import bench.keyhog_daemon"],
+        [
+            sys.executable,
+            "-c",
+            "import bench.keyhog_daemon as module; print(module.__file__)",
+        ],
         cwd=pathlib.Path(__file__).parents[2],
         capture_output=True,
         text=True,
+        timeout=10,
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
+    assert pathlib.Path(completed.stdout.strip()).resolve() == (
+        pathlib.Path(__file__).parents[1] / "keyhog_daemon.py"
+    ).resolve()
 
 
 @pytest.fixture(autouse=True)
