@@ -20,6 +20,7 @@ pub(crate) fn looks_like_source_code_expression_with_randomness(
         || looks_like_source_escaped_string_fragment(value, randomness)
         || looks_like_source_format_template_fragment(value)
         || looks_like_template_interpolation_prefix(value)
+        || looks_like_javascript_length_index_tail(value)
     {
         return true;
     }
@@ -71,6 +72,20 @@ pub(crate) fn looks_like_source_code_expression_with_randomness(
         || value.contains("->")
         || value.contains("=>")
         || has_call_or_index_syntax(value)
+}
+
+fn looks_like_javascript_length_index_tail(value: &str) -> bool {
+    let receiver = [".length]))", ".length])"]
+        .iter()
+        .find_map(|suffix| value.strip_suffix(suffix));
+    let Some(receiver) = receiver else {
+        return false;
+    };
+    !receiver.is_empty()
+        && receiver
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$'))
+        && receiver.bytes().any(|byte| byte.is_ascii_alphabetic())
 }
 
 fn looks_like_template_interpolation_prefix(value: &str) -> bool {
@@ -418,7 +433,6 @@ pub(crate) fn looks_like_source_type_identifier_with_randomness(
     let digits = bytes.iter().filter(|b| b.is_ascii_digit()).count();
     upper >= 2 && lower >= 3 && digits >= 1 && !randomness.is_random_token(value)
 }
-
 
 #[cfg(test)]
 #[path = "../../../tests/unit/suppression_shape_source.rs"]

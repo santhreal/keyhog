@@ -50,3 +50,23 @@ fn deep_recovers_unanchored_source_entropy_that_default_excludes() {
         "deep must recover a high-entropy source value without a keyword anchor; got {deep_matches:?}"
     );
 }
+
+#[test]
+fn deep_rejects_javascript_xor_index_expression_as_entropy() {
+    let input = Chunk {
+        data: "const recovered = (() => { const data = [1, 2, 3]; const _a8fe8b046732 = [4, 5, 6]; return String.fromCharCode(...data.map((b, i) => b ^ _a8fe8b046732[i % _a8fe8b046732.length])); })();\n".into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("recovery_fixture.js".into()),
+            ..Default::default()
+        },
+    };
+
+    let matches = scanner(ScannerConfig::thorough()).scan(&input);
+    assert!(
+        matches
+            .iter()
+            .all(|finding| finding.credential.as_ref() != "_a8fe8b046732.length]))"),
+        "JavaScript array-index syntax must not become an entropy finding: {matches:?}"
+    );
+}
