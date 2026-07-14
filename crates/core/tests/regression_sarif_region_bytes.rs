@@ -57,6 +57,7 @@ fn finding_with(
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: additional,
+        entropy: None,
         confidence: None,
     }
 }

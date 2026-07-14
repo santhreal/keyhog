@@ -26,6 +26,14 @@ CSV, JUnit, GitLab SAST, and GitHub annotations use a deterministic redacted
 summary. An empty object means the detector did not produce companion evidence,
 not that companion matching was disabled.
 
+`entropy` is an optional Shannon bits-per-byte measurement. It is present only
+when the detection path measured entropy; an omitted field means that path did
+not produce entropy evidence. JSON, JSONL, and HTML expose it as a numeric
+field; SARIF exposes it as a result property; text, JUnit, GitLab SAST, and
+GitHub annotations render it only when measured. It is independent of
+`confidence`, which combines entropy with detector, context, shape, and
+verification evidence.
+
 ## `--format text` (default)
 
 Human-readable boxes. Best for terminal use, pre-commit hook output,
@@ -71,10 +79,12 @@ common "what kinds of leaks do I have" question.
 ## `--format csv`
 
 CSV emits one row per finding. The `companions_redacted` and `remediation`
-columns contain deterministic JSON objects, and every textual cell is escaped
-with RFC 4180 quoting plus spreadsheet-formula neutralization. An unavailable
-confidence score remains an empty cell; remediation is still emitted so a CSV
-artifact never loses the canonical action guidance.
+columns contain deterministic JSON objects. `entropy` is a numeric
+bits-per-byte column; it is empty when the detection path did not measure
+entropy. Every textual cell is escaped with RFC 4180 quoting plus
+spreadsheet-formula neutralization. An unavailable confidence score remains an
+empty cell; remediation is still emitted so a CSV artifact never loses the
+canonical action guidance.
 
 ## `--format sarif`
 

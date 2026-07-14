@@ -102,6 +102,7 @@ fn group() -> DedupedMatch {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: Some(1.0),
     }
 }

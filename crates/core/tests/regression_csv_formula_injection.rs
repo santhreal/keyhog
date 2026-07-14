@@ -41,6 +41,7 @@ fn finding_with(file_path: &str, author: Option<&str>) -> VerifiedFinding {
         verification: VerificationResult::Live,
         metadata: HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence: Some(0.5),
     }
 }

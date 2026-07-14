@@ -66,6 +66,7 @@ fn finding(
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence: Some(0.9),
     }
 }
@@ -396,6 +397,29 @@ fn properties_confidence_passthrough_and_omitted() {
     assert!(
         result(&json, 1)["properties"].get("confidence").is_none(),
         "a None confidence must omit the properties.confidence key"
+    );
+}
+
+#[test]
+fn properties_entropy_passthrough_and_omitted() {
+    let mut measured = finding(
+        "aws-access-key",
+        "aws",
+        Severity::High,
+        "AKIA****",
+        Some("a.env"),
+        Some(1),
+        0,
+    );
+    measured.entropy = Some(4.5);
+    let mut absent = measured.clone();
+    absent.entropy = None;
+    absent.location.file_path = Some("b.env".into());
+    let json = render_sarif(&[measured, absent]);
+    assert_eq!(result(&json, 0)["properties"]["entropy"], 4.5);
+    assert!(
+        result(&json, 1)["properties"].get("entropy").is_none(),
+        "an absent entropy measurement must omit the SARIF property"
     );
 }
 

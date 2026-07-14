@@ -57,6 +57,7 @@ fn finding(detector_id: &str, file: &str, hash: CredentialHash) -> VerifiedFindi
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: None,
     }
 }

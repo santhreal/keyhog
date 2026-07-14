@@ -22,7 +22,7 @@ use keyhog_core::{
 };
 
 /// The exact 17-column CSV header keyhog writes on CsvReporter::new.
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,remediation";
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation";
 
 /// AWS's Tier-B remediation serialized and escaped as one RFC-4180 CSV cell.
 const AWS_REMEDIATION_CSV: &str = r#""{""action"":""Disable or delete the exposed IAM access key, then rotate any paired secret access key and session token."",""revoke_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_ManagingAccessKeys"",""docs_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html"",""revoke_command"":""aws iam update-access-key --access-key-id {{credential}} --status Inactive""}""#;
@@ -42,8 +42,8 @@ fn hash_ab() -> String {
 }
 
 /// A fully benign baseline finding: High AWS key, `config/app.env:7`, offset 0,
-/// no git commit/author/date, `Unverifiable`, confidence exactly 0.9. Renders as
-/// `aws-access-key,AWS Access Key,aws,high,AKIA****,<hash>,filesystem,config/app.env,7,0,,,,unverifiable,0.9`.
+/// no git commit/author/date, `Unverifiable`, confidence exactly 0.9. Renders
+/// with empty entropy and a final remediation JSON cell.
 fn base() -> VerifiedFinding {
     VerifiedFinding {
         detector_id: "aws-access-key".into(),
@@ -65,6 +65,7 @@ fn base() -> VerifiedFinding {
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence: Some(0.9),
     }
 }
@@ -109,11 +110,11 @@ fn data_columns(out: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn csv_header_is_exactly_seventeen_columns_in_canonical_order() {
+fn csv_header_is_exactly_eighteen_columns_in_canonical_order() {
     let out = render(&[base()]);
     let header = out.lines().next().expect("csv must have a header line");
     assert_eq!(header, CSV_HEADER);
-    assert_eq!(header.split(',').count(), 17);
+    assert_eq!(header.split(',').count(), 18);
 }
 
 #[test]
@@ -152,7 +153,7 @@ fn csv_fully_populated_row_places_every_field_exactly() {
 
     let out = render(&[f]);
     let expected = format!(
-        "github-pat,GitHub PAT,github,critical,ghp_****,{},{{}},git,src/config.rs,42,1234,abc123,Jane Dev,2026-07-01,live,0.875,{GITHUB_SERVICE_REMEDIATION_CSV}",
+        "github-pat,GitHub PAT,github,critical,ghp_****,{},{{}},git,src/config.rs,42,1234,abc123,Jane Dev,2026-07-01,live,0.875,,{GITHUB_SERVICE_REMEDIATION_CSV}",
         "00".repeat(32)
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -168,15 +169,27 @@ fn csv_confidence_none_yields_empty_trailing_cell() {
     f.confidence = None;
     let out = render(&[f]);
     let cols = data_columns(&out);
-    assert_eq!(cols.len(), 17);
+    assert_eq!(cols.len(), 18);
     assert_eq!(cols[14], "unverifiable");
     assert_eq!(cols[15], "");
-    let remediation: serde_json::Value = serde_json::from_str(&cols[16]).expect("remediation JSON");
+    assert_eq!(cols[16], "");
+    let remediation: serde_json::Value = serde_json::from_str(&cols[17]).expect("remediation JSON");
     assert_eq!(remediation["action"], "Disable or delete the exposed IAM access key, then rotate any paired secret access key and session token.");
     assert!(
-        out.contains(",unverifiable,,\"{"),
+        out.contains(",unverifiable,,,\"{"),
         "remediation must follow confidence"
     );
+}
+
+#[test]
+fn csv_measured_entropy_is_a_distinct_numeric_column() {
+    let mut f = base();
+    f.entropy = Some(4.5);
+    let cols = data_columns(&render(&[f]));
+    assert_eq!(cols.len(), 18);
+    assert_eq!(cols[16], "4.5");
+    let remediation: serde_json::Value = serde_json::from_str(&cols[17]).expect("remediation JSON");
+    assert!(remediation["action"].is_string());
 }
 
 #[test]
@@ -200,7 +213,7 @@ fn csv_non_formula_comma_field_is_quoted_not_split() {
     f.detector_name = "AWS, Inc".into();
     let out = render(&[f]);
     let expected = format!(
-        "aws-access-key,\"AWS, Inc\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,{AWS_REMEDIATION_CSV}",
+        "aws-access-key,\"AWS, Inc\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,,{AWS_REMEDIATION_CSV}",
         hash_ab()
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -213,7 +226,7 @@ fn csv_embedded_double_quote_is_doubled_and_wrapped() {
     let out = render(&[f]);
     // escape_csv: inner `"` doubled, whole field wrapped => "He said ""hi"""
     let expected = format!(
-        "aws-access-key,\"He said \"\"hi\"\"\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,{AWS_REMEDIATION_CSV}",
+        "aws-access-key,\"He said \"\"hi\"\"\",aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,,{AWS_REMEDIATION_CSV}",
         hash_ab()
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);
@@ -306,7 +319,7 @@ fn csv_three_findings_preserve_input_order_exact_document() {
     let out = render(&[a, b, c]);
     let hash = hash_ab();
     let row = |id: &str, sev: &str| {
-        format!("{id},AWS Access Key,aws,{sev},AKIA****,{hash},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,{AWS_SERVICE_REMEDIATION_CSV}")
+        format!("{id},AWS Access Key,aws,{sev},AKIA****,{hash},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,,{AWS_SERVICE_REMEDIATION_CSV}")
     };
     let expected = format!(
         "{}\n{}\n{}\n{}\n",
@@ -342,7 +355,7 @@ fn csv_formula_prefix_with_comma_is_guarded_then_quoted() {
     let out = render(&[f]);
     // Combined branch: opening `"`, then the `'` formula guard, then the value.
     let expected = format!(
-        "aws-access-key,AWS Access Key,\"'=A1,B1\",high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,{AWS_REMEDIATION_CSV}",
+        "aws-access-key,AWS Access Key,\"'=A1,B1\",high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,,{AWS_REMEDIATION_CSV}",
         hash_ab()
     );
     assert_eq!(out.lines().nth(1).expect("data row"), expected);

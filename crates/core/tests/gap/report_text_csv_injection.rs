@@ -48,6 +48,7 @@ fn base_finding() -> VerifiedFinding {
         verification: VerificationResult::Live,
         metadata: HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence: Some(0.5),
     }
 }
@@ -466,7 +467,7 @@ fn csv_header_is_exact_and_first_line() {
     let header = out.lines().next().expect("csv header line");
     assert_eq!(
         header,
-        "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,remediation",
+        "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation",
         "CSV header drifted"
     );
 }

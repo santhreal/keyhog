@@ -78,6 +78,7 @@ async fn test_verify_long_unicode_surrogates() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     };
 
@@ -140,6 +141,7 @@ fn test_verify_deeply_nested_interpolations_inner() {
                 primary_location: MatchLocation { source: Arc::from(""), file_path: None, line: None, offset: 0, commit: None, author: None, date: None },
                 additional_locations: vec![],
                 companions: comps,
+                entropy: None,
                 confidence: None,
             };
 
@@ -207,6 +209,7 @@ async fn test_verify_duplicate_entries_same_key() {
             },
             additional_locations: vec![],
             companions: HashMap::new(),
+            entropy: None,
             confidence: None,
         });
     }

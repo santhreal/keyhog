@@ -26,6 +26,7 @@ fn make_deduped(detector: &str, conf: Option<f64>, severity: Severity) -> Dedupe
             date: None,
         },
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: conf,
     }
 }

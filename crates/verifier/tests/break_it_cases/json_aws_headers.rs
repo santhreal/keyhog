@@ -86,6 +86,7 @@ async fn test_verify_json_path_exhaustion() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     };
 
@@ -183,6 +184,7 @@ async fn test_verify_aws_sigv4_empty_keys() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     };
 
@@ -260,6 +262,7 @@ async fn test_verify_aws_sigv4_null_bytes() {
         },
         additional_locations: vec![],
         companions: comps,
+        entropy: None,
         confidence: None,
     };
 
@@ -333,6 +336,7 @@ async fn test_verify_bad_header_templates() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     };
 

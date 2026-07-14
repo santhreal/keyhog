@@ -29,6 +29,7 @@ pub fn deduped_match() -> DedupedMatch {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     }
 }

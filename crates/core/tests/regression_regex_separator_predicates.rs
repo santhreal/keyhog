@@ -177,6 +177,7 @@ fn finding_opt_path(
         verification: VerificationResult::Skipped,
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: Some(0.9),
     }
 }

@@ -45,6 +45,7 @@ fn poisoned_finding() -> VerifiedFinding {
         verification: VerificationResult::Live,
         metadata,
         additional_locations: vec![],
+        entropy: None,
         confidence: Some(0.5),
     }
 }

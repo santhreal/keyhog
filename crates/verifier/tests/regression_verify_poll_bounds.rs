@@ -116,6 +116,7 @@ fn group_for(detector_id: &str) -> DedupedMatch {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: Some(1.0),
     }
 }

@@ -46,6 +46,7 @@ async fn ssrf_break_link_local_metadata() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     };
     let findings = engine.verify_all(vec![group]).await;

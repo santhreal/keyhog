@@ -24,6 +24,7 @@ fn cross_detector_single_input_passthrough() {
             date: None,
         },
         additional_locations: vec![],
+        entropy: None,
         confidence: None,
     };
     let out = dedup_cross_detector(vec![one]);

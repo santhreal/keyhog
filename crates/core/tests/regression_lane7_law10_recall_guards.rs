@@ -45,6 +45,7 @@ fn deduped(detector: &str, credential: &str, hash: [u8; 32]) -> DedupedMatch {
             date: None,
         },
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: Some(0.5),
     }
 }

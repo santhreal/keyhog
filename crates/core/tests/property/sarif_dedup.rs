@@ -81,6 +81,7 @@ fn finding_with_additional(additional: Vec<MatchLocation>) -> VerifiedFinding {
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: additional,
+        entropy: None,
         confidence: Some(0.5),
     }
 }

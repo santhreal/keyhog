@@ -46,6 +46,7 @@ async fn ssrf_break_decimal_integer() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     };
     let findings = engine.verify_all(vec![group]).await;

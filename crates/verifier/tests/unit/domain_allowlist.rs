@@ -26,6 +26,7 @@ fn verification_group(detector_id: &str) -> DedupedMatch {
         },
         additional_locations: Vec::new(),
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     }
 }

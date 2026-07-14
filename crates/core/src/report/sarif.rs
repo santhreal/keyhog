@@ -180,6 +180,7 @@ impl<W: Write + Send> SarifReporter<W> {
                     0.0
                 }
             }),
+            entropy: finding.entropy.filter(|entropy| entropy.is_finite()),
             cwe: CWE_HARDCODED_CREDENTIALS_ID,
             owasp: OWASP_AUTH_FAILURES_ID,
             remediation_action: remediation.action.clone(),

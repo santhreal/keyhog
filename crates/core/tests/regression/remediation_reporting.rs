@@ -70,6 +70,7 @@ fn finding(detector_id: &str, name: &str, service: &str, severity: Severity) -> 
         verification: VerificationResult::Live,
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: Some(0.99),
     }
 }

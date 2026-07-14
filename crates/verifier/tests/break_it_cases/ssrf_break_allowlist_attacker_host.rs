@@ -45,6 +45,7 @@ async fn ssrf_break_allowlist_attacker_host() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     };
     let findings = engine.verify_all(vec![group]).await;

@@ -35,6 +35,7 @@ fn reporter_trait_can_be_implemented() {
         verification: VerificationResult::Skipped,
         metadata: HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence: None,
     };
     reporter.report(&finding).unwrap();

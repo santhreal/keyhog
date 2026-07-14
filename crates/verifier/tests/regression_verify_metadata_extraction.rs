@@ -339,6 +339,7 @@ fn report_group() -> DedupedMatch {
         },
         additional_locations: Vec::new(),
         companions: HashMap::new(),
+        entropy: None,
         confidence: Some(1.0),
     }
 }

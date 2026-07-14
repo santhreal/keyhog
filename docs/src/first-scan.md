@@ -92,7 +92,10 @@ keyhog scan . --format json
 
 Each finding is a JSON object with the required fields below always present
 (consumers like SARIF converters and CI gates rely on that stable schema).
-`confidence` is included when the scanner has a score; otherwise it is omitted.
+`entropy` and `confidence` are included when the detection path measured them;
+otherwise they are omitted. A present entropy value is Shannon
+bits-per-byte evidence, not a confidence score and not a claim that entropy
+alone caused the finding.
 
 ```json
 {
@@ -115,6 +118,7 @@ Each finding is a JSON object with the required fields below always present
   "verification": "skipped",
   "metadata": {},
   "additional_locations": [],
+  "entropy": 4.5,
   "confidence": 1.0,
   "remediation": {
     "action":     "Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.",

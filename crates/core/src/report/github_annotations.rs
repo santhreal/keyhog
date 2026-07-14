@@ -90,6 +90,12 @@ fn message(finding: &VerifiedFinding) -> Result<String, ReportError> {
             unreachable!("formatting into a String cannot fail");
         }
     }
+    if let Some(entropy) = finding.entropy.filter(|entropy| entropy.is_finite()) {
+        use std::fmt::Write;
+        if write!(text, " entropy={entropy:.3}").is_err() {
+            unreachable!("formatting into a String cannot fail");
+        }
+    }
     if !finding.companions_redacted.is_empty() {
         text.push_str(" companions=");
         text.push_str(&super::companions_json(finding)?);

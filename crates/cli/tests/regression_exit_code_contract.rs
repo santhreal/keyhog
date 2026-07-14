@@ -51,6 +51,7 @@ fn finding(verification: V) -> VerifiedFinding {
         verification,
         metadata: std::collections::HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: Some(0.9),
     }
 }

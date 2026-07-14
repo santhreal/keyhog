@@ -174,6 +174,16 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
             verify_suffix,
         )?;
 
+        if let Some(entropy) = finding.entropy.filter(|entropy| entropy.is_finite()) {
+            writeln!(
+                self.writer,
+                "  {} {} {:.3} bits/byte",
+                report_style::paint("│", border_ansi, self.color),
+                report_style::dim("Entropy:   ", self.color),
+                entropy,
+            )?;
+        }
+
         if let VerificationResult::Error(message) = &finding.verification {
             writeln!(
                 self.writer,

@@ -45,6 +45,7 @@ fn group_with_severity(severity: Severity) -> DedupedMatch {
             date: None,
         },
         additional_locations: vec![],
+        entropy: None,
         confidence: Some(0.95),
     }
 }

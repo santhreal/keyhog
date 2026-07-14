@@ -26,6 +26,7 @@ fn finding_with_hostile_path(path: &str) -> VerifiedFinding {
         verification: VerificationResult::Skipped,
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: Some(0.5),
     }
 }

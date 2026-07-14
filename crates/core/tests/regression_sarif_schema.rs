@@ -72,6 +72,7 @@ fn finding_for(
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence: Some(0.9),
     }
 }
@@ -99,6 +100,7 @@ fn finding_stdin_no_region(value: &str) -> VerifiedFinding {
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence: None,
     }
 }
@@ -126,6 +128,7 @@ fn finding_offset_no_line(value: &str, offset: usize) -> VerifiedFinding {
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence: None,
     }
 }

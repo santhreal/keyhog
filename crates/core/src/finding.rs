@@ -412,6 +412,9 @@ pub struct VerifiedFinding {
     pub metadata: HashMap<String, String>,
     /// Additional duplicate locations found for this credential.
     pub additional_locations: Vec<MatchLocation>,
+    /// Shannon entropy measured by the detection path, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entropy: Option<f64>,
     /// Confidence score (0.0 - 1.0) combining entropy, keyword proximity, file type, etc.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
@@ -441,6 +444,7 @@ impl VerifiedFinding {
             verification,
             metadata,
             additional_locations: group.additional_locations,
+            entropy: group.entropy,
             confidence: group.confidence,
         }
     }
@@ -454,6 +458,9 @@ impl Serialize for VerifiedFinding {
         let remediation =
             crate::auto_fix::remediation_for(&self.detector_id, &self.service, self.severity);
         let mut field_count = 12;
+        if self.entropy.is_some() {
+            field_count += 1;
+        }
         if self.confidence.is_some() {
             field_count += 1;
         }
@@ -479,6 +486,9 @@ impl Serialize for VerifiedFinding {
             .collect();
         state.serialize_field("metadata", &sorted_metadata)?;
         state.serialize_field("additional_locations", &self.additional_locations)?;
+        if let Some(entropy) = self.entropy {
+            state.serialize_field("entropy", &entropy)?;
+        }
         if let Some(confidence) = self.confidence {
             state.serialize_field("confidence", &confidence)?;
         }

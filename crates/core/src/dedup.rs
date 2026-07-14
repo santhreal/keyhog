@@ -695,3 +695,22 @@ fn max_confidence(lhs: Option<f64>, rhs: Option<f64>) -> Option<f64> {
         (None, None) => None,
     }
 }
+    /// Shannon entropy measured for the credential, when the detection path
+    /// computed it. `None` means entropy was not part of that path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entropy: Option<f64>,
+            .field("entropy", &self.entropy)
+                    entropy: m.entropy,
+                    existing.entropy = max_entropy(existing.entropy, matched.entropy);
+                existing.entropy = max_entropy(existing.entropy, matched.entropy);
+                        entropy: matched.entropy,
+            winner.entropy = max_entropy(winner.entropy, loser.entropy);
+
+fn max_entropy(lhs: Option<f64>, rhs: Option<f64>) -> Option<f64> {
+    match (lhs, rhs) {
+        (Some(a), Some(b)) => Some(if a.total_cmp(&b).is_ge() { a } else { b }),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
+}

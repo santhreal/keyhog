@@ -124,8 +124,8 @@ method-level version of steps 2-4.
 
 `keyhog_core::VerifiedFinding::from_deduped` is the conversion boundary from a
 deduplicated match to a report-safe finding. It initializes the complete
-finding shape, including redacted companions, so verifier, skipped, and diff
-paths cannot silently drift when the report contract grows.
+finding shape, including measured entropy and redacted companions, so verifier,
+skipped, and diff paths cannot silently drift when the report contract grows.
 
 The accelerated batch path is **two-phase and coalesced**. A file with no
 phase-one hit stops only when the shared no-hit admission proof also rules out

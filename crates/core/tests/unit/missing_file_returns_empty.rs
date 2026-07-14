@@ -35,6 +35,7 @@ fn finding(
         verification: VerificationResult::Skipped,
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: Some(0.9),
     }
 }

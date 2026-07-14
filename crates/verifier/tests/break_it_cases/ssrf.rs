@@ -48,6 +48,7 @@ async fn test_ssrf_integer_ips() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     };
     let findings = engine.verify_all(vec![group]).await;
@@ -127,6 +128,7 @@ async fn test_ssrf_integer_ips() {
             },
             additional_locations: vec![],
             companions: HashMap::new(),
+            entropy: None,
             confidence: None,
         };
         let findings = engine.verify_all(vec![group]).await;
@@ -215,6 +217,7 @@ async fn test_ssrf_malformed_urls() {
             },
             additional_locations: vec![],
             companions: HashMap::new(),
+            entropy: None,
             confidence: None,
         };
         let findings = engine.verify_all(vec![group]).await;
@@ -292,6 +295,7 @@ async fn test_ssrf_blocks_link_local_and_metadata_hosts() {
             },
             additional_locations: vec![],
             companions: HashMap::new(),
+            entropy: None,
             confidence: None,
         };
         let findings = engine.verify_all(vec![group]).await;
@@ -354,6 +358,7 @@ async fn test_ssrf_domain_allowlist_blocks_attacker_host() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     };
     let findings = engine.verify_all(vec![group]).await;

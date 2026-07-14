@@ -100,6 +100,7 @@ fn is_allowed_checks_detector_and_path_rules_consistently() {
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: None,
     };
     assert!(keyhog_core::testing::CoreTestApi::allowlist_is_allowed(
@@ -192,6 +193,7 @@ fn gitleaks_detector_ignore_by_id() {
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: None,
     };
     assert!(keyhog_core::testing::CoreTestApi::allowlist_is_allowed(

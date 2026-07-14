@@ -72,6 +72,7 @@ fn finding(
         verification,
         metadata: HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence,
     }
 }

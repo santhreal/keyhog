@@ -326,6 +326,7 @@ fn verified_finding_serialize_adds_remediation_and_sorts_metadata() {
         verification: VerificationResult::Unverifiable,
         metadata,
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: Some(0.9),
     };
 
@@ -378,6 +379,7 @@ fn verified_finding_error_verification_serializes_as_tagged_object() {
         verification: VerificationResult::Error("connection timed out".to_string()),
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: None,
     };
 

@@ -27,6 +27,7 @@ fn sample_finding() -> VerifiedFinding {
         verification: VerificationResult::Skipped,
         metadata: HashMap::from([("team".into(), "acme".into())]),
         additional_locations: vec![],
+        entropy: None,
         confidence: Some(0.88),
     }
 }

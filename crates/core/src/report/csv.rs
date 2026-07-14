@@ -16,7 +16,7 @@ impl<W: Write + Send> CsvReporter<W> {
     pub(crate) fn new(mut writer: W) -> Result<Self, ReportError> {
         writeln!(
             writer,
-            "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,remediation"
+            "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation"
         )?;
         Ok(Self { writer })
     }
@@ -65,6 +65,10 @@ impl<W: Write + Send> Reporter for CsvReporter<W> {
         write!(w, "{},", escape_csv(&verification))?;
         if let Some(confidence) = finding.confidence {
             write!(w, "{confidence}")?;
+        }
+        write!(w, ",")?;
+        if let Some(entropy) = finding.entropy {
+            write!(w, "{entropy}")?;
         }
         write!(w, ",{}", escape_csv(&super::remediation_json(finding)?))?;
         writeln!(w)?;

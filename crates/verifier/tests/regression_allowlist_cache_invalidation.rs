@@ -69,6 +69,7 @@ fn finding(
         verification: VerificationResult::Skipped,
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: None,
     }
 }

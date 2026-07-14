@@ -34,6 +34,7 @@ fn finding(v: VerificationResult) -> VerifiedFinding {
         verification: v,
         metadata: HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence: Some(0.9),
     }
 }

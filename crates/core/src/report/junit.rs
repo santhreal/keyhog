@@ -155,6 +155,9 @@ fn write_testcase<W: Write>(writer: &mut W, finding: &VerifiedFinding) -> Result
     if !confidence_str.is_empty() {
         writeln!(writer, "Confidence:    {}", confidence_str)?;
     }
+    if let Some(entropy) = finding.entropy.filter(|entropy| entropy.is_finite()) {
+        writeln!(writer, "Entropy:       {:.3} bits/byte", entropy)?;
+    }
     writeln!(writer, "        ]]>")?;
     writeln!(writer, "      </failure>")?;
     writeln!(writer, "    </testcase>")?;

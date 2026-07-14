@@ -85,6 +85,7 @@ fn group_for_credential(detector_id: &str, credential: &str) -> DedupedMatch {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: Some(1.0),
     }
 }

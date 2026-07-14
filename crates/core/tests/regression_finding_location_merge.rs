@@ -119,6 +119,7 @@ fn deduped(
         companions: HashMap::new(),
         primary_location: primary,
         additional_locations: additional,
+        entropy: None,
         confidence: Some(confidence),
     }
 }

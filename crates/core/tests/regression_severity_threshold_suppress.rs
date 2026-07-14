@@ -54,6 +54,7 @@ fn finding(severity: Severity, detector_id: &str, file_path: &str) -> VerifiedFi
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: None,
     }
 }

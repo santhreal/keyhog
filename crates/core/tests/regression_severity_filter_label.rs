@@ -58,6 +58,7 @@ fn finding(severity: Severity) -> VerifiedFinding {
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence: None,
     }
 }

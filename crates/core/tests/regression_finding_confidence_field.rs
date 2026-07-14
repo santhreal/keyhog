@@ -24,8 +24,8 @@
 use std::collections::HashMap;
 
 use keyhog_core::{
-    sha256_hash, MatchLocation, RawMatch, RedactedFinding, Severity, VerificationResult,
-    VerifiedFinding,
+    dedup_matches, sha256_hash, DedupScope, MatchLocation, RawMatch, RedactedFinding, Severity,
+    VerificationResult, VerifiedFinding,
 };
 
 const AKIA_PLAINTEXT: &str = "AKIAIOSFODNN7EXAMPLE";
@@ -75,8 +75,32 @@ fn make_verified(confidence: Option<f64>) -> VerifiedFinding {
         verification: VerificationResult::Unverifiable,
         metadata: HashMap::new(),
         additional_locations: Vec::new(),
+        entropy: None,
         confidence,
     }
+}
+
+#[test]
+fn measured_entropy_survives_redaction_dedup_and_verified_serialization() {
+    let raw = make_raw(Some(0.91));
+    let redacted = raw.to_redacted();
+    assert_eq!(redacted.entropy, Some(4.5));
+
+    let group = dedup_matches(vec![raw], &DedupScope::Credential)
+        .into_iter()
+        .next()
+        .expect("one raw match produces one group");
+    assert_eq!(group.entropy, Some(4.5));
+
+    let finding = VerifiedFinding::from_deduped(
+        group,
+        Severity::Critical,
+        VerificationResult::Skipped,
+        HashMap::new(),
+    );
+    assert_eq!(finding.entropy, Some(4.5));
+    let value = serde_json::to_value(&finding).expect("verified finding serializes");
+    assert_eq!(value["entropy"].as_f64(), Some(4.5));
 }
 
 // ---------------------------------------------------------------------------

@@ -163,6 +163,8 @@ pub(super) struct SarifResultProperties {
     pub(super) verification: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) confidence: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) entropy: Option<f64>,
     pub(super) cwe: &'static str,
     pub(super) owasp: &'static str,
     #[serde(rename = "remediation.action")]

@@ -816,6 +816,7 @@ fn verified_finding_serde_roundtrip() {
             m
         },
         additional_locations: vec![loc("backup.env", 2, 0)],
+        entropy: None,
         confidence: Some(0.99),
     };
     let json = serde_json::to_string(&vf).unwrap();

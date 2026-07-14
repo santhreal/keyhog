@@ -28,6 +28,7 @@ fn finding(verification: keyhog_core::VerificationResult) -> keyhog_core::Verifi
         verification,
         metadata: std::collections::HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence: Some(0.9),
     }
 }

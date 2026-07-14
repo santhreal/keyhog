@@ -92,6 +92,7 @@ async fn test_verify_large_payload() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: Some(1.0),
     };
 
@@ -175,6 +176,7 @@ async fn test_verify_malformed_response() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: Some(1.0),
     };
 
@@ -240,6 +242,7 @@ async fn test_verify_zero_concurrency() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     };
 
@@ -318,6 +321,7 @@ async fn test_verify_inflight_deadlock_on_duplicates() {
             },
             additional_locations: vec![],
             companions: HashMap::new(),
+            entropy: None,
             confidence: None,
         });
     }
@@ -385,6 +389,7 @@ async fn test_verify_slow_loris_timeout() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     };
 
@@ -431,6 +436,7 @@ async fn test_verify_max_inflight_keys() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: None,
     };
 
@@ -540,6 +546,7 @@ async fn verifier_routes_through_configured_proxy() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: Some(1.0),
     };
 

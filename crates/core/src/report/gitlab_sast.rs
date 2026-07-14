@@ -133,6 +133,8 @@ struct GitlabDetails<'a> {
     service: GitlabTextDetail<'a>,
     credential_hash: GitlabTextDetail<'a>,
     companions: GitlabTextDetail<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entropy: Option<GitlabTextDetail<'a>>,
 }
 
 #[derive(Serialize)]
@@ -180,6 +182,14 @@ fn vulnerability_object(finding: &VerifiedFinding) -> Result<GitlabVulnerability
         finding.detector_name, finding.detector_id, file, start_line
     );
     let companions = super::companions_json(finding)?;
+    let entropy = finding
+        .entropy
+        .filter(|entropy| entropy.is_finite())
+        .map(|entropy| GitlabTextDetail {
+            name: "Shannon entropy",
+            detail_type: "text",
+            value: Cow::Owned(format!("{entropy:.3} bits/byte")),
+        });
 
     Ok(GitlabVulnerability {
         id,
@@ -220,6 +230,7 @@ fn vulnerability_object(finding: &VerifiedFinding) -> Result<GitlabVulnerability
                 detail_type: "text",
                 value: Cow::Owned(companions),
             },
+            entropy,
         },
     })
 }

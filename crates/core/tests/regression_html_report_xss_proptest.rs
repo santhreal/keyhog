@@ -90,6 +90,7 @@ prop_compose! {
             verification: VerificationResult::Live,
             metadata,
             additional_locations: vec![],
+            entropy: None,
             confidence,
         }
     }
@@ -177,6 +178,7 @@ fn base_finding() -> VerifiedFinding {
         verification: VerificationResult::Live,
         metadata: HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence: Some(0.5),
     }
 }

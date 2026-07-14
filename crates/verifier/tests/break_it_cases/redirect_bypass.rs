@@ -119,6 +119,7 @@ async fn pinned_client_does_not_follow_redirect_to_private_target() {
         },
         additional_locations: vec![],
         companions: HashMap::new(),
+        entropy: None,
         confidence: Some(1.0),
     };
 

@@ -116,6 +116,7 @@ fn benign_finding() -> VerifiedFinding {
         verification: VerificationResult::Live,
         metadata: HashMap::new(),
         additional_locations: vec![],
+        entropy: None,
         confidence: Some(0.5),
     }
 }
