@@ -41,13 +41,21 @@ fn scanner_with_bpe_override(bound: f64) -> CompiledScanner {
 }
 
 fn credentials_for(scanner: &CompiledScanner, line: &str) -> Vec<String> {
+    credentials_for_backend(scanner, line, ScanBackend::CpuFallback)
+}
+
+fn credentials_for_backend(
+    scanner: &CompiledScanner,
+    line: &str,
+    backend: ScanBackend,
+) -> Vec<String> {
     let chunk = Chunk {
         data: line.into(),
         metadata: ChunkMetadata::default(),
     };
     scanner.clear_fragment_cache();
     scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
         .into_iter()
         .flatten()
         .map(|m| m.credential.to_string())
@@ -133,6 +141,37 @@ fn explicit_scan_bpe_override_can_release_opaque_api_key_language_like_values() 
     assert!(
         caught(&relaxed, &format!("api_key = \"{value}\""), value),
         "a scan-wide BPE override must be the final runtime authority when explicitly set"
+    );
+}
+
+#[test]
+fn generic_api_key_json_envelope_obeys_the_same_bpe_policy_as_assignment() {
+    let value = "CorrectHorseBatteryStaple!9";
+    let assignment = format!("api_key = \"{value}\"");
+    let json = format!(r#"{{"api_key": "{value}"}}"#);
+
+    let strict = scanner();
+    assert!(!caught(&strict, &assignment, value));
+    assert!(
+        !caught(&strict, &json, value),
+        "the explicit JSON regex envelope must not bypass generic-api-key's detector-owned BPE gate"
+    );
+    assert_eq!(
+        credentials_for_backend(&strict, &json, ScanBackend::CpuFallback),
+        credentials_for_backend(&strict, &json, ScanBackend::SimdCpu),
+        "CPU and Hyperscan must apply the strict detector policy identically"
+    );
+
+    let relaxed = scanner_with_bpe_override(99.0);
+    assert!(caught(&relaxed, &assignment, value));
+    assert!(
+        caught(&relaxed, &json, value),
+        "the same explicit scan override must govern assignment and JSON producers"
+    );
+    assert_eq!(
+        credentials_for_backend(&relaxed, &json, ScanBackend::CpuFallback),
+        credentials_for_backend(&relaxed, &json, ScanBackend::SimdCpu),
+        "CPU and Hyperscan must apply the relaxed scan override identically"
     );
 }
 

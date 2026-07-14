@@ -196,6 +196,35 @@ impl CompiledScanner {
             return;
         }
 
+        // Detector policy follows the candidate across producers. Generic
+        // regex envelopes must not bypass the BPE gate that the same detector
+        // applies to assignment and entropy candidates. Keep tokenization
+        // after the cheaper shape and entropy checks.
+        #[cfg(feature = "entropy")]
+        if (is_generic || is_weakly_anchored)
+            && !allow_decoded_hex_key_material
+            && crate::entropy::bpe::enabled_for_detector(entropy_floor_detector)
+        {
+            let bpe_bound = crate::entropy::bpe::max_bytes_per_token_for_detector(
+                entropy_floor_detector,
+                self.config.entropy_bpe_max_bytes_per_token,
+                self.config.entropy_bpe_max_bytes_per_token_override,
+            );
+            if crate::entropy::bpe::is_word_like_low_bpe(credential, bpe_bound) {
+                let bpe_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
+                    crate::adjudicate::GenericBridgeSignal::ValueShape(
+                        crate::adjudicate::GenericValueShapeStage::WordLikeLowBpe,
+                    ),
+                );
+                crate::adjudicate::record_suppression(
+                    chunk.metadata.path.as_deref(),
+                    credential,
+                    &bpe_ctx,
+                );
+                return;
+            }
+        }
+
         // Checksum validation: tokens with embedded checksums (GitHub, npm, Slack,
         // Stripe, GitLab, PyPI) can be verified without network requests. The
         // confidence policy owner makes the drop/floor rule shared with hot,
