@@ -62,8 +62,8 @@ fn github_classic_pat_prints_exact_name_service_severity() {
         "expected exact Service line; got:\n{s}"
     );
     assert!(
-        s.contains("Severity:  Critical"),
-        "expected exact Severity line (Debug of Severity::Critical); got:\n{s}"
+        s.contains("Severity:  critical"),
+        "expected exact canonical Severity line; got:\n{s}"
     );
 }
 
@@ -116,8 +116,23 @@ fn aws_access_key_prints_exact_name_service_severity() {
         "expected exact Service line; got:\n{s}"
     );
     assert!(
-        s.contains("Severity:  Critical"),
+        s.contains("Severity:  critical"),
         "expected Severity::Critical; got:\n{s}"
+    );
+    assert!(
+        s.contains("simdsieve_prefixes: AKIA, ASIA"),
+        "explain must show detector-owned accelerator prefixes; got:\n{s}"
+    );
+}
+
+#[test]
+fn generic_api_key_prints_entropy_policy_ownership_priority() {
+    let out = explain(&["generic-api-key"]);
+    assert_eq!(out.status.code(), Some(0), "stderr={}", stderr_of(&out));
+    let s = stdout_of(&out);
+    assert!(
+        s.contains("entropy_policy_priority: 80"),
+        "explain must show overlapping keyword policy ownership; got:\n{s}"
     );
 }
 
@@ -157,7 +172,7 @@ fn stripe_secret_key_prints_exact_name_service_severity() {
         "expected exact Service line; got:\n{s}"
     );
     assert!(
-        s.contains("Severity:  Critical"),
+        s.contains("Severity:  critical"),
         "expected Severity::Critical; got:\n{s}"
     );
 }

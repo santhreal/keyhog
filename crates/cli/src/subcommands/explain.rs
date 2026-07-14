@@ -138,7 +138,7 @@ fn print_explanation(d: &DetectorSpec) {
     println!("  {}Name:{}      {}", style.bold, style.reset, d.name);
     println!("  {}Service:{}   {}", style.bold, style.reset, d.service);
     println!(
-        "  {}Severity:{}  {}{:?}{}",
+        "  {}Severity:{}  {}{}{}",
         style.bold, style.reset, sev_color, d.severity, style.reset
     );
     println!(
@@ -258,6 +258,7 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
     optional_policy!("entropy_low", d.entropy_low, " bits/byte");
     optional_policy!("entropy_very_high", d.entropy_very_high, " bits/byte");
     optional_policy!("mixed_alnum_floor", d.mixed_alnum_floor, " bits/byte");
+    optional_policy!("entropy_policy_priority", d.entropy_policy_priority, "");
     optional_policy!(
         "bpe_max_bytes_per_token",
         d.bpe_max_bytes_per_token,
@@ -267,6 +268,14 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
     optional_policy!("keyword_free_min_len", d.keyword_free_min_len, " bytes");
     optional_policy!("min_len", d.min_len, " bytes");
     optional_policy!("max_len", d.max_len, " bytes");
+
+    if !d.simdsieve_prefixes.is_empty() {
+        println!(
+            "    simdsieve_prefixes: {}",
+            d.simdsieve_prefixes.join(", ")
+        );
+        declared += 1;
+    }
 
     if !d.decoded_hex_key_material_lengths.is_empty() {
         let lengths = d
