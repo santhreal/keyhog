@@ -97,6 +97,85 @@ class Outcome:
         return cls(tp=int(d.get("tp", 0)), fp=int(d.get("fp", 0)), fn=int(d.get("fn", 0)))
 
 
+RECOVERY_SCORE_SCHEMA_VERSION = "recovery-v1"
+
+
+@dataclass(frozen=True)
+class RecoveryExpectation:
+    """One field-qualified expected value for one recovery sample.
+
+    ``None`` means the field must be absent. An empty string is not a useful
+    recovery target and is rejected so it cannot score as an accidental hit.
+    """
+
+    sample_id: str
+    field: str
+    value: str | None
+
+    def __post_init__(self) -> None:
+        if not self.sample_id:
+            raise ValueError("recovery expectation sample_id must not be empty")
+        if not self.field:
+            raise ValueError("recovery expectation field must not be empty")
+        if self.value == "":
+            raise ValueError("recovery expectation value must be None or non-empty")
+
+
+@dataclass(frozen=True)
+class RecoveryObservation:
+    """One value emitted by a scanner for a qualified recovery field."""
+
+    sample_id: str
+    field: str
+    value: str
+
+    def __post_init__(self) -> None:
+        if not self.sample_id:
+            raise ValueError("recovery observation sample_id must not be empty")
+        if not self.field:
+            raise ValueError("recovery observation field must not be empty")
+        if not self.value:
+            raise ValueError("recovery observation value must not be empty")
+
+
+@dataclass
+class RecoveryScore:
+    """Exact field-qualified recovery outcome, independent of detection score.
+
+    Field qualification prevents one recovered string from receiving credit
+    for unrelated claims that happen to contain the same bytes.
+    """
+
+    overall: Outcome = field(default_factory=Outcome)
+    per_field: dict[str, Outcome] = field(default_factory=dict)
+
+    def to_json(self) -> dict:
+        return {
+            "schema_version": RECOVERY_SCORE_SCHEMA_VERSION,
+            "overall": self.overall.to_json(),
+            "per_field": {
+                name: outcome.to_json()
+                for name, outcome in sorted(self.per_field.items())
+            },
+        }
+
+    @classmethod
+    def from_json(cls, d: dict) -> "RecoveryScore":
+        observed = d.get("schema_version")
+        if observed != RECOVERY_SCORE_SCHEMA_VERSION:
+            raise ValueError(
+                "unsupported recovery score schema: "
+                f"observed={observed!r}, supported={RECOVERY_SCORE_SCHEMA_VERSION!r}"
+            )
+        return cls(
+            overall=Outcome.from_json(d.get("overall", {})),
+            per_field={
+                name: Outcome.from_json(outcome)
+                for name, outcome in (d.get("per_field") or {}).items()
+            },
+        )
+
+
 @dataclass
 class DetectorStat:
     """Per-detector confusion stats + confidence histograms, the signal the
