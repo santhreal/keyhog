@@ -416,13 +416,20 @@ impl GitHubCollaborationSource {
             "x-access-token",
             &self.token,
             &clone_path,
+            self.limits,
         )
-        .map_err(|_| {
-            GitHubGap::inaccessible(
+        .map_err(|error| match error {
+            SourceError::Coverage { kind, detail, .. } => GitHubGap {
+                surface: "wiki",
+                target: self.repository(),
+                kind,
+                detail,
+            },
+            _ => GitHubGap::inaccessible(
                 "wiki",
                 self.repository(),
                 "GitHub wiki repository was unavailable or unreadable",
-            )
+            ),
         })?;
         self.collect_wiki_repo(&clone_path, budget, seen, chunks)
     }

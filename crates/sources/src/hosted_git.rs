@@ -5,7 +5,7 @@ use std::process::{Child, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use keyhog_core::{Chunk, Source, SourceError};
+use keyhog_core::{Chunk, Source, SourceCoverageGapKind, SourceError};
 use serde::de::DeserializeOwned;
 
 use crate::capped_read::MAX_PREALLOCATED_READ_BYTES;
@@ -134,6 +134,7 @@ fn scan_single_hosted_repo(
         token_username,
         token_secret,
         &clone_path,
+        limits,
     )?;
     scan_repo(
         platform,
@@ -170,6 +171,16 @@ fn repo_unreadable_error(
     repo_display_path: &str,
     error: SourceError,
 ) -> SourceError {
+    if matches!(
+        error,
+        SourceError::Coverage {
+            kind: SourceCoverageGapKind::Truncated,
+            ..
+        }
+    ) {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+        return error;
+    }
     let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
     SourceError::Other(format!(
         "{platform}: failed to scan hosted repository {repo_display_path}: {error}; repository was not scanned"
@@ -188,6 +199,10 @@ pub(crate) fn repo_listing_unreadable_error(
 #[cfg(test)]
 #[path = "../tests/unit/hosted_git.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/unit/hosted_git_materialization.rs"]
+mod materialization_tests;
 
 /// Refuse repo directory names that escape the temp clone root: `..`, absolute
 /// paths, path separators, or characters outside the forge repo-name alphabet.
@@ -496,6 +511,7 @@ fn clone_repo(
     token_username: &str,
     token_secret: &str,
     clone_path: &Path,
+    limits: crate::SourceLimits,
 ) -> Result<(), SourceError> {
     clone_repo_with_history_mode(
         platform,
@@ -505,6 +521,7 @@ fn clone_repo(
         token_secret,
         clone_path,
         false,
+        limits,
     )
 }
 
@@ -515,6 +532,7 @@ pub(crate) fn clone_authenticated_history(
     token_username: &str,
     token_secret: &str,
     clone_path: &Path,
+    limits: crate::SourceLimits,
 ) -> Result<(), SourceError> {
     clone_repo_with_history_mode(
         platform,
@@ -524,6 +542,7 @@ pub(crate) fn clone_authenticated_history(
         token_secret,
         clone_path,
         true,
+        limits,
     )
 }
 
@@ -535,6 +554,7 @@ fn clone_repo_with_history_mode(
     token_secret: &str,
     clone_path: &Path,
     full_history: bool,
+    limits: crate::SourceLimits,
 ) -> Result<(), SourceError> {
     let clone_target = clone_path.to_str().ok_or_else(|| {
         SourceError::Other(format!(
@@ -595,13 +615,31 @@ fn clone_repo_with_history_mode(
         .take()
         .map(|pipe| thread::spawn(move || crate::process_excerpt::drain_stderr_excerpt(pipe)));
 
+    let materialization_guard = CloneMaterializationGuard {
+        root: clone_path,
+        byte_cap: limits.git_total_bytes,
+        entry_cap: limits.git_chunk_count,
+    };
     let output = wait_for_command_with_timeout(
         child,
         stdout_drain,
         stderr_drain,
         crate::timeouts::GIT_CLONE,
+        materialization_guard,
     )
-    .map_err(|err| SourceError::Git(format!("failed to clone {repo_display_path}: {err}")))?;
+    .map_err(|error| match error {
+        HostedGitWaitError::MaterializationCap { cap, cleanup_error } => {
+            clone_materialization_truncated(
+                platform,
+                repo_display_path,
+                cap,
+                cleanup_error.as_deref(),
+            )
+        }
+        HostedGitWaitError::Command(detail) => {
+            SourceError::Git(format!("failed to clone {repo_display_path}: {detail}"))
+        }
+    })?;
 
     if !output.status.success() {
         return Err(SourceError::Git(format!(
@@ -704,26 +742,211 @@ struct HostedGitCommandOutput {
     stderr: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CloneMaterializationCap {
+    Bytes { observed: usize, cap: usize },
+    Entries { observed: usize, cap: usize },
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CloneMaterializationGuard<'a> {
+    root: &'a Path,
+    byte_cap: usize,
+    entry_cap: usize,
+}
+
+#[derive(Debug)]
+enum HostedGitWaitError {
+    Command(String),
+    MaterializationCap {
+        cap: CloneMaterializationCap,
+        cleanup_error: Option<String>,
+    },
+}
+
+fn clone_materialization_truncated(
+    platform: &str,
+    repo_display_path: &str,
+    cap: CloneMaterializationCap,
+    cleanup_error: Option<&str>,
+) -> SourceError {
+    let mut detail = match cap {
+        CloneMaterializationCap::Bytes { observed, cap } => format!(
+            "clone materialization reached or exceeded the git_total_bytes cap ({observed} bytes observed, cap {cap}); the clone was stopped and was not scanned"
+        ),
+        CloneMaterializationCap::Entries { observed, cap } => format!(
+            "clone materialization reached or exceeded the git_chunk_count entry cap ({observed} entries observed, cap {cap}); the clone was stopped and was not scanned"
+        ),
+    };
+    if let Some(error) = cleanup_error {
+        detail.push_str("; child cleanup also failed: ");
+        detail.push_str(error);
+    }
+    SourceError::Coverage {
+        adapter: platform.to_string(),
+        surface: "clone".to_string(),
+        target: repo_display_path.to_string(),
+        kind: SourceCoverageGapKind::Truncated,
+        detail,
+    }
+}
+
+fn clone_materialization_cap(
+    guard: CloneMaterializationGuard<'_>,
+) -> Result<Option<CloneMaterializationCap>, std::io::Error> {
+    let root_metadata = match std::fs::symlink_metadata(guard.root) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if !root_metadata.file_type().is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "clone target became a non-directory",
+        ));
+    }
+
+    let mut bytes = 0_usize;
+    let mut entries = 0_usize;
+    let mut directories = vec![guard.root.to_path_buf()];
+    while let Some(directory) = directories.pop() {
+        let directory_metadata = match std::fs::symlink_metadata(&directory) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        if !directory_metadata.file_type().is_dir() {
+            continue;
+        }
+        let children = match std::fs::read_dir(&directory) {
+            Ok(children) => children,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        for child in children {
+            let child = match child {
+                Ok(child) => child,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            entries = match entries.checked_add(1) {
+                Some(entries) => entries,
+                None => {
+                    return Ok(Some(CloneMaterializationCap::Entries {
+                        observed: usize::MAX,
+                        cap: guard.entry_cap,
+                    }))
+                }
+            };
+            if entries > guard.entry_cap {
+                return Ok(Some(CloneMaterializationCap::Entries {
+                    observed: entries,
+                    cap: guard.entry_cap,
+                }));
+            }
+
+            let metadata = match std::fs::symlink_metadata(child.path()) {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let size = match usize::try_from(metadata.len()) {
+                Ok(size) => size,
+                Err(_) => {
+                    return Ok(Some(CloneMaterializationCap::Bytes {
+                        observed: usize::MAX,
+                        cap: guard.byte_cap,
+                    }))
+                }
+            };
+            bytes = match bytes.checked_add(size) {
+                Some(bytes) => bytes,
+                None => {
+                    return Ok(Some(CloneMaterializationCap::Bytes {
+                        observed: usize::MAX,
+                        cap: guard.byte_cap,
+                    }))
+                }
+            };
+            if bytes > guard.byte_cap {
+                return Ok(Some(CloneMaterializationCap::Bytes {
+                    observed: bytes,
+                    cap: guard.byte_cap,
+                }));
+            }
+            if metadata.file_type().is_dir() {
+                directories.push(child.path());
+            }
+        }
+    }
+    Ok(None)
+}
+
 fn wait_for_command_with_timeout(
     mut child: Child,
     stdout_drain: Option<thread::JoinHandle<Result<(), String>>>,
     stderr_drain: Option<thread::JoinHandle<String>>,
     timeout: Duration,
-) -> Result<HostedGitCommandOutput, String> {
+    materialization_guard: CloneMaterializationGuard<'_>,
+) -> Result<HostedGitCommandOutput, HostedGitWaitError> {
     let start = Instant::now();
     let mut stdout_drain = stdout_drain;
     let mut stderr_drain = stderr_drain;
     loop {
+        match clone_materialization_cap(materialization_guard) {
+            Ok(Some(cap)) => {
+                let cleanup_error = terminate_hosted_git_child(
+                    &mut child,
+                    stdout_drain.take(),
+                    stderr_drain.take(),
+                )
+                .err();
+                return Err(HostedGitWaitError::MaterializationCap { cap, cleanup_error });
+            }
+            Ok(None) => {}
+            Err(error) => {
+                terminate_hosted_git_child(&mut child, stdout_drain.take(), stderr_drain.take())
+                    .map_err(HostedGitWaitError::Command)?;
+                return Err(HostedGitWaitError::Command(format!(
+                    "git clone materialization monitor failed: {error}; child was killed and reaped"
+                )));
+            }
+        }
+
         match child.try_wait() {
             Ok(Some(status)) => {
-                return finish_hosted_git_child(status, stdout_drain.take(), stderr_drain.take());
+                match clone_materialization_cap(materialization_guard) {
+                    Ok(Some(cap)) => {
+                        let cleanup_error = terminate_hosted_git_child(
+                            &mut child,
+                            stdout_drain.take(),
+                            stderr_drain.take(),
+                        )
+                        .err();
+                        return Err(HostedGitWaitError::MaterializationCap { cap, cleanup_error });
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        terminate_hosted_git_child(
+                            &mut child,
+                            stdout_drain.take(),
+                            stderr_drain.take(),
+                        )
+                        .map_err(HostedGitWaitError::Command)?;
+                        return Err(HostedGitWaitError::Command(format!(
+                            "git clone materialization monitor failed after child exit: {error}"
+                        )));
+                    }
+                }
+                return finish_hosted_git_child(status, stdout_drain.take(), stderr_drain.take())
+                    .map_err(HostedGitWaitError::Command);
             }
             Ok(None) => {}
             Err(error) => {
                 kill_and_reap_child(&mut child).map_err(|cleanup_error| {
-                    format!(
+                    HostedGitWaitError::Command(format!(
                         "git clone status check failed: {error}; additionally failed to stop child: {cleanup_error}"
-                    )
+                    ))
                 })?;
                 let stdout_cleanup = match join_hosted_git_stdout(stdout_drain.take()) {
                     Ok(()) => String::new(),
@@ -731,18 +954,18 @@ fn wait_for_command_with_timeout(
                 };
                 let stderr = join_hosted_git_stderr(stderr_drain.take());
                 let stderr_suffix = hosted_git_stderr_suffix(&stderr);
-                return Err(format!(
+                return Err(HostedGitWaitError::Command(format!(
                     "git clone status check failed: {error}; child was killed and reaped{stdout_cleanup}{stderr_suffix}"
-                ));
+                )));
             }
         }
 
         if start.elapsed() >= timeout {
             kill_and_reap_child(&mut child).map_err(|cleanup_error| {
-                format!(
+                HostedGitWaitError::Command(format!(
                     "git clone timed out after {}s; additionally failed to stop child: {cleanup_error}",
                     timeout.as_secs()
-                )
+                ))
             })?;
             let stderr = join_hosted_git_stderr(stderr_drain.take());
             let stderr_suffix = hosted_git_stderr_suffix(&stderr);
@@ -750,14 +973,25 @@ fn wait_for_command_with_timeout(
                 Ok(()) => String::new(),
                 Err(error) => format!("; stdout cleanup failed: {error}"),
             };
-            return Err(format!(
+            return Err(HostedGitWaitError::Command(format!(
                 "git clone timed out after {}s{stdout_cleanup}{stderr_suffix}",
                 timeout.as_secs()
-            ));
+            )));
         }
 
         thread::sleep(Duration::from_millis(100));
     }
+}
+
+fn terminate_hosted_git_child(
+    child: &mut Child,
+    stdout_drain: Option<thread::JoinHandle<Result<(), String>>>,
+    stderr_drain: Option<thread::JoinHandle<String>>,
+) -> Result<(), String> {
+    kill_and_reap_child(child)?;
+    let stdout_result = join_hosted_git_stdout(stdout_drain);
+    let _stderr = join_hosted_git_stderr(stderr_drain);
+    stdout_result
 }
 
 fn finish_hosted_git_child(
