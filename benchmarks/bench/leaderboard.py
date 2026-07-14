@@ -11,8 +11,8 @@ generator consumes. Every scanner is scored on the *same* corpus
 Tiers:
 
 * ``quick`` - every scanner at its default config (the README leaderboard).
-* ``perf``  - keyhog's full backend x cache x daemon x mode matrix on one corpus,
-  for the speed/RSS table (detection still scored if the corpus is labeled).
+* ``perf``  - keyhog's backend x cache x mode tree matrix, or its constrained
+  backend x daemon matrix on the single-file daemon corpus.
 """
 
 from __future__ import annotations
@@ -39,11 +39,27 @@ def results_dir(base: pathlib.Path | None = None) -> pathlib.Path:
     return base / hardware.capture().hostname_hash
 
 
-def _configs_for(scanner_name: str, tier: str, matrix_axes: list[str] | None) -> list[ScannerConfig]:
+def _configs_for(
+    scanner_name: str,
+    tier: str,
+    matrix_axes: list[str] | None,
+    corpus_name: str,
+) -> list[ScannerConfig]:
     sc = resolve_scanner(scanner_name)
     if scanner_name == "keyhog" and tier == "perf":
         assert isinstance(sc, KeyhogScanner)
-        return sc.matrix(matrix_axes or ["backend", "cache", "daemon", "mode"])
+        default_axes = (
+            ["backend", "daemon"]
+            if corpus_name in {"daemon-file", "daemon_file"}
+            else ["backend", "cache", "mode"]
+        )
+        configs = sc.matrix(matrix_axes or default_axes)
+        if matrix_axes is None and corpus_name in {"daemon-file", "daemon_file"}:
+            configs = [
+                cfg for cfg in configs
+                if cfg.daemon == "off" or cfg.backend != "auto"
+            ]
+        return configs
     if scanner_name == "keyhog" and matrix_axes:
         assert isinstance(sc, KeyhogScanner)
         return sc.matrix(matrix_axes)
@@ -71,7 +87,7 @@ def run_leaderboard(corpus_name: str, scanners: list[str], *, tier: str = "quick
     out.mkdir(parents=True, exist_ok=True)
     written: list[pathlib.Path] = []
     for scanner_name in scanners:
-        for cfg in _configs_for(scanner_name, tier, matrix_axes):
+        for cfg in _configs_for(scanner_name, tier, matrix_axes, corpus_name):
             if verbose:
                 print(f"> {scanner_name} [{cfg.config_id}] on {corpus_name}...",
                       file=sys.stderr)

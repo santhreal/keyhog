@@ -1,12 +1,31 @@
 from bench import leaderboard
 from bench.corpora.perf_corpus import KernelCorpus
 from bench.scanners.base import RunStats
+from bench.scanners.keyhog import KeyhogScanner
 from bench.schema import ScannerConfig
 
 
 def test_default_leaderboard_scanners_include_requested_competitors():
     assert {"betterleaks", "kingfisher", "noseyparker", "titus"}.issubset(
         leaderboard._DEFAULT_SCANNERS
+    )
+
+
+def test_perf_tier_uses_only_corpus_eligible_default_axes(monkeypatch):
+    scanner = KeyhogScanner(binary="/unused/keyhog")
+    monkeypatch.setattr(leaderboard, "resolve_scanner", lambda *args, **kw: scanner)
+
+    tree = leaderboard._configs_for("keyhog", "perf", None, "kernel")
+    daemon_file = leaderboard._configs_for("keyhog", "perf", None, "daemon-file")
+
+    assert {cfg.daemon for cfg in tree} == {"off"}
+    assert {cfg.cache for cfg in tree} == {"off", "on"}
+    assert {cfg.mode for cfg in tree} == {"full", "fast", "deep"}
+    assert {cfg.daemon for cfg in daemon_file} == {"off", "on"}
+    assert {cfg.cache for cfg in daemon_file} == {"off"}
+    assert {cfg.mode for cfg in daemon_file} == {"full"}
+    assert not any(
+        cfg.backend == "auto" and cfg.daemon == "on" for cfg in daemon_file
     )
 
 
