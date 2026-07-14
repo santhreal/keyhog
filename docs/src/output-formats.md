@@ -144,6 +144,9 @@ When source coverage is incomplete, the formatter also emits one terminal
 `::warning` notice with deterministic reason/count pairs, so the GitHub job log
 shows the incomplete state even when there are no findings.
 
+SARIF carries the same terminal state in `runs[0].properties["keyhog.scan.status"]`;
+coverage gaps remain detailed in `invocations[].toolExecutionNotifications`.
+
 ## `--format gitlab-sast`
 
 GitLab SAST security-report JSON. Use it with `artifacts:reports:sast`

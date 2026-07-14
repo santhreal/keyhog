@@ -243,8 +243,9 @@ fn runs_is_single_element_array() {
     assert_eq!(runs.len(), 1, "keyhog emits exactly one run");
 }
 
-/// `runs[0]` (no coverage gaps) carries EXACTLY `results`, `tool`, `taxonomies`
-/// and specifically NO `invocations` when there is nothing to report.
+/// `runs[0]` (no coverage gaps) carries its terminal status plus the exact
+/// results/tool/taxonomies surfaces, and specifically NO `invocations` when
+/// there is nothing to report.
 #[test]
 fn run0_keys_are_results_tool_taxonomies_when_no_skips() {
     let json = render_sarif(&[finding_for(
@@ -261,8 +262,12 @@ fn run0_keys_are_results_tool_taxonomies_when_no_skips() {
     keys.sort_unstable();
     assert_eq!(
         keys,
-        vec!["results", "taxonomies", "tool"],
-        "runs[0] must carry exactly results/tool/taxonomies with no skip summary"
+        vec!["properties", "results", "taxonomies", "tool"],
+        "runs[0] must carry the terminal status with results/tool/taxonomies"
+    );
+    assert_eq!(
+        json["runs"][0]["properties"]["keyhog.scan.status"],
+        "success"
     );
     assert!(
         json["runs"][0]["invocations"].is_null(),
@@ -285,6 +290,10 @@ fn run0_gains_invocations_with_skip_summary() {
         vec![("oversize".to_string(), 3)],
     );
     let inv = &json["runs"][0]["invocations"];
+    assert_eq!(
+        json["runs"][0]["properties"]["keyhog.scan.status"],
+        "partial"
+    );
     let arr = inv.as_array().expect("invocations must be an array");
     assert_eq!(arr.len(), 1, "one invocation entry");
     assert_eq!(

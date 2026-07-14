@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 
-use crate::{MatchLocation, Severity, VerifiedFinding};
+use crate::{MatchLocation, ScanCompletionStatus, Severity, VerifiedFinding};
 
 use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
 
@@ -404,6 +404,16 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
         // against this block. Tier-B #16 from the internal design notes.
         write!(self.writer, ",\"taxonomies\":")?;
         serde_json::to_writer(&mut self.writer, &sarif_taxonomies_json())?;
+
+        // Keep the terminal scan state inside the detached SARIF artifact so
+        // consumers do not need the process exit code or stderr to distinguish
+        // a complete run from one with coverage gaps.
+        write!(self.writer, ",\"properties\":{{\"keyhog.scan.status\":")?;
+        serde_json::to_writer(
+            &mut self.writer,
+            &ScanCompletionStatus::from_coverage_gaps(!self.skip_summary.is_empty()),
+        )?;
+        write!(self.writer, "}}")?;
 
         // Coverage transparency: report whole-file skips and partial scan
         // degradations as SARIF tool-execution notifications, so a platform
