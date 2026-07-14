@@ -201,27 +201,40 @@ impl CompiledScanner {
         // applies to assignment and entropy candidates. Keep tokenization
         // after the cheaper shape and entropy checks.
         #[cfg(feature = "entropy")]
-        if (is_generic || is_weakly_anchored)
-            && !allow_decoded_hex_key_material
-            && crate::entropy::bpe::enabled_for_detector(entropy_floor_detector)
-        {
-            let bpe_bound = crate::entropy::bpe::max_bytes_per_token_for_detector(
-                entropy_floor_detector,
-                self.config.entropy_bpe_max_bytes_per_token,
-                self.config.entropy_bpe_max_bytes_per_token_override,
-            );
-            if crate::entropy::bpe::is_word_like_low_bpe(credential, bpe_bound) {
-                let bpe_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
-                    crate::adjudicate::GenericBridgeSignal::ValueShape(
-                        crate::adjudicate::GenericValueShapeStage::WordLikeLowBpe,
-                    ),
+        if is_generic && crate::entropy::bpe::enabled_for_detector(Some(detector)) {
+            // The explicit generic regex proves an owning detector field, but
+            // this stage no longer retains the textual assignment key.
+            // Preserve the detector's exact canonical length evidence instead
+            // of letting BPE reinterpret declared hex key material as text.
+            let allow_canonical_hex_key = credential.bytes().all(|byte| byte.is_ascii_hexdigit())
+                && detector
+                    .canonical_hex_key_material
+                    .iter()
+                    .any(|policy| policy.lengths.contains(&credential.len()));
+            let allow_encoded_text_secret = !allow_canonical_hex_key
+                && crate::decode_structure::decodes_to_printable_text(credential);
+            if !allow_canonical_hex_key
+                && !allow_encoded_text_secret
+                && !allow_decoded_hex_key_material
+            {
+                let bpe_bound = crate::entropy::bpe::max_bytes_per_token_for_detector(
+                    Some(detector),
+                    self.config.entropy_bpe_max_bytes_per_token,
+                    self.config.entropy_bpe_max_bytes_per_token_override,
                 );
-                crate::adjudicate::record_suppression(
-                    chunk.metadata.path.as_deref(),
-                    credential,
-                    &bpe_ctx,
-                );
-                return;
+                if crate::entropy::bpe::is_word_like_low_bpe(credential, bpe_bound) {
+                    let bpe_ctx = crate::adjudicate::MatchCtx::for_stage(
+                        crate::adjudicate::StageId::GenericValueShape(
+                            crate::adjudicate::GenericValueShapeStage::WordLikeLowBpe,
+                        ),
+                    );
+                    crate::adjudicate::record_suppression(
+                        chunk.metadata.path.as_deref(),
+                        credential,
+                        &bpe_ctx,
+                    );
+                    return;
+                }
             }
         }
 

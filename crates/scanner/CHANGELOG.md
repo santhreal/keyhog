@@ -92,8 +92,9 @@
   non-positive/non-finite bounds fail closed,
   and the field participates in the detector digest used by caches and
   calibration identity. Opaque generic API-key/secret policies use the measured
-  2.3 ceiling across assignment, entropy, and explicit regex-envelope paths;
-  password/passphrase-oriented policies explicitly disable the
+  2.3 ceiling across assignment, entropy, and explicit regex-envelope paths
+  when the `entropy` feature supplies the tokenizer; password/passphrase-oriented
+  policies explicitly disable the
   word-likeness rejection so human-chosen phrases do not become false negatives.
 - Add the `aws-bedrock-api-key` detector (critical), long-term AWS Bedrock
   API keys (`ABSK` prefix + the deterministic `QmVkcm9ja0FQSUtleS` base64

@@ -22,7 +22,7 @@
 mod support;
 use support::paths::detector_dir;
 
-use keyhog_core::{Chunk, ChunkMetadata};
+use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 
 fn scanner() -> CompiledScanner {
@@ -49,6 +49,17 @@ fn credentials_for_backend(
     line: &str,
     backend: ScanBackend,
 ) -> Vec<String> {
+    matches_for_backend(scanner, line, backend)
+        .into_iter()
+        .map(|m| m.credential.to_string())
+        .collect()
+}
+
+fn matches_for_backend(
+    scanner: &CompiledScanner,
+    line: &str,
+    backend: ScanBackend,
+) -> Vec<RawMatch> {
     let chunk = Chunk {
         data: line.into(),
         metadata: ChunkMetadata::default(),
@@ -58,8 +69,26 @@ fn credentials_for_backend(
         .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
         .into_iter()
         .flatten()
-        .map(|m| m.credential.to_string())
         .collect()
+}
+
+fn finding_keys_for_backend(
+    scanner: &CompiledScanner,
+    line: &str,
+    backend: ScanBackend,
+) -> Vec<(String, String, usize)> {
+    let mut keys = matches_for_backend(scanner, line, backend)
+        .into_iter()
+        .map(|finding| {
+            (
+                finding.detector_id.to_string(),
+                finding.credential.to_string(),
+                finding.location.offset,
+            )
+        })
+        .collect::<Vec<_>>();
+    keys.sort_unstable();
+    keys
 }
 
 fn caught(scanner: &CompiledScanner, line: &str, value: &str) -> bool {
@@ -156,10 +185,23 @@ fn generic_api_key_json_envelope_obeys_the_same_bpe_policy_as_assignment() {
         !caught(&strict, &json, value),
         "the explicit JSON regex envelope must not bypass generic-api-key's detector-owned BPE gate"
     );
-    assert_eq!(
-        credentials_for_backend(&strict, &json, ScanBackend::CpuFallback),
-        credentials_for_backend(&strict, &json, ScanBackend::SimdCpu),
-        "CPU and Hyperscan must apply the strict detector policy identically"
+    if strict.warm_backend(ScanBackend::SimdCpu) {
+        assert_eq!(
+            finding_keys_for_backend(&strict, &json, ScanBackend::CpuFallback),
+            finding_keys_for_backend(&strict, &json, ScanBackend::SimdCpu),
+            "CPU and Hyperscan must apply the strict detector policy identically"
+        );
+    } else {
+        eprintln!("SKIP Hyperscan parity leg: SimdCpu is unavailable on this build or host");
+    }
+    let canonical_hex = "cb083aad257625089dbc5234812146ca";
+    assert!(
+        caught(
+            &strict,
+            &format!(r#"{{"api_key": "{canonical_hex}"}}"#),
+            canonical_hex,
+        ),
+        "detector-declared 32-hex key material must bypass token-efficiency suppression"
     );
 
     let relaxed = scanner_with_bpe_override(99.0);
@@ -168,11 +210,22 @@ fn generic_api_key_json_envelope_obeys_the_same_bpe_policy_as_assignment() {
         caught(&relaxed, &json, value),
         "the same explicit scan override must govern assignment and JSON producers"
     );
-    assert_eq!(
-        credentials_for_backend(&relaxed, &json, ScanBackend::CpuFallback),
-        credentials_for_backend(&relaxed, &json, ScanBackend::SimdCpu),
-        "CPU and Hyperscan must apply the relaxed scan override identically"
+    let relaxed_cpu = finding_keys_for_backend(&relaxed, &json, ScanBackend::CpuFallback);
+    assert!(
+        relaxed_cpu
+            .iter()
+            .any(|(detector, credential, _)| detector == "generic-api-key" && credential == value),
+        "the relaxed CPU leg must contain the expected generic-api-key finding"
     );
+    if relaxed.warm_backend(ScanBackend::SimdCpu) {
+        assert_eq!(
+            relaxed_cpu,
+            finding_keys_for_backend(&relaxed, &json, ScanBackend::SimdCpu),
+            "CPU and Hyperscan must apply the relaxed scan override identically"
+        );
+    } else {
+        eprintln!("SKIP Hyperscan parity leg: SimdCpu is unavailable on this build or host");
+    }
 }
 
 #[test]
