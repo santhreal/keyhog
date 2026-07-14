@@ -263,7 +263,7 @@ steps:
       - minisign -Vm install.sh -P "$PUB"
       - KEYHOG_VERSION="$TAG" sh install.sh
       - |
-        printf '{"schema_version":{"major":1,"minor":1},"coverage_gap_summary":[],"findings":[]}\n' > keyhog.json
+        printf '{"schema_version":{"major":1,"minor":2},"coverage_gap_summary":[],"findings":[]}\n' > keyhog.json
         scan_status=0
         $HOME/.local/bin/keyhog scan . --format json-envelope --output keyhog.json \
           2>keyhog.stderr || scan_status=$?
@@ -304,7 +304,7 @@ CI that can run a POSIX shell:
 #!/bin/sh
 set -eu
 
-printf '{"schema_version":{"major":1,"minor":1},"coverage_gap_summary":[],"findings":[]}\n' > keyhog.json
+printf '{"schema_version":{"major":1,"minor":2},"coverage_gap_summary":[],"findings":[]}\n' > keyhog.json
 scan_status=0
 keyhog scan . --format json-envelope --output keyhog.json \
   2>keyhog.stderr || scan_status=$?

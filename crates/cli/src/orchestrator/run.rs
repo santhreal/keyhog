@@ -445,6 +445,7 @@ impl ScanOrchestrator {
             report_finished_at,
             start.elapsed().as_millis(),
             crate::SCANNED_CHUNKS.load(std::sync::atomic::Ordering::Relaxed),
+            crate::SCANNED_BYTES.load(std::sync::atomic::Ordering::Relaxed),
             self.detectors.len(),
             Some(crate::orchestrator_config::autoroute_config_digest(
                 &self.effective_config,

@@ -238,6 +238,7 @@ fn html_report_embeds_scan_metadata_panel() {
         duration_ms: 1234,
         targets: vec!["path:/tmp/repo".to_string()],
         source_chunks_scanned: 37,
+        source_bytes_scanned: 2368,
         detector_count: 899,
     });
 
@@ -246,6 +247,7 @@ fn html_report_embeds_scan_metadata_panel() {
     assert!(out.contains("\"keyhog_version\":\"1.2.3\""));
     assert!(out.contains("\"targets\":[\"path:\\u002ftmp\\u002frepo\"]"));
     assert!(out.contains("\"source_chunks_scanned\":37"));
+    assert!(out.contains("\"source_bytes_scanned\":2368"));
     assert!(out.contains("\"detector_count\":899"));
     assert!(out.contains("renderScanMetadata"));
     assert!(out.contains("meta-source-chunks"));

@@ -16,6 +16,7 @@ fn metadata() -> ScanReportMetadata {
         duration_ms: 2_000,
         targets: vec!["repo".to_string()],
         source_chunks_scanned: 3,
+        source_bytes_scanned: 192,
         detector_count: 922,
     }
 }

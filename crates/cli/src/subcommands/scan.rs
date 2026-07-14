@@ -573,6 +573,7 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
 struct DaemonScan {
     matches: Vec<RawMatch>,
     source_coverage_gaps: SourceCoverageGaps,
+    source_bytes_scanned: u64,
     wall_start: chrono::DateTime<chrono::Utc>,
 }
 
@@ -595,8 +596,9 @@ async fn acquire_via_daemon(args: &ScanArgs) -> Result<DaemonScan> {
         )
     })?;
 
-    let (matches, source_coverage_gaps) = if args.stdin {
+    let (matches, source_coverage_gaps, source_bytes_scanned) = if args.stdin {
         let text = read_stdin_to_string(args)?;
+        let source_bytes_scanned = text.len() as u64;
         let resp = conn
             .round_trip(&Request::ScanText {
                 path: None,
@@ -604,8 +606,12 @@ async fn acquire_via_daemon(args: &ScanArgs) -> Result<DaemonScan> {
                 dogfood: args.dogfood,
             })
             .await?;
-        unwrap_scan_results(resp)?
+        let (matches, gaps) = unwrap_scan_results(resp)?;
+        (matches, gaps, source_bytes_scanned)
     } else if let Some(path) = effective_single_file_path(args)? {
+        let source_bytes_scanned = std::fs::metadata(path)
+            .with_context(|| format!("stat daemon input {}", path.display()))?
+            .len();
         let working_dir = std::env::current_dir()
             .ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
             .map(|p| p.to_string_lossy().into_owned());
@@ -616,7 +622,8 @@ async fn acquire_via_daemon(args: &ScanArgs) -> Result<DaemonScan> {
                 dogfood: args.dogfood,
             })
             .await?;
-        unwrap_scan_results(resp)?
+        let (matches, gaps) = unwrap_scan_results(resp)?;
+        (matches, gaps, source_bytes_scanned)
     } else {
         bail!(
             "daemon route requires either --stdin or a single file path. \
@@ -627,6 +634,7 @@ async fn acquire_via_daemon(args: &ScanArgs) -> Result<DaemonScan> {
     Ok(DaemonScan {
         matches,
         source_coverage_gaps,
+        source_bytes_scanned,
         wall_start,
     })
 }
@@ -636,6 +644,7 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
     let DaemonScan {
         matches,
         source_coverage_gaps,
+        source_bytes_scanned,
         wall_start,
     } = scan;
     let findings = finalize_for_report(matches, args)?;
@@ -646,6 +655,7 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         report_finished_at,
         (report_finished_at - wall_start).num_milliseconds().max(0) as u128,
         1,
+        source_bytes_scanned,
         keyhog_core::embedded_detector_count(),
         None,
     );

@@ -4,7 +4,7 @@
 //!
 //! # Module map (by responsibility)
 //!
-//! - **Entry**: `main.rs` (binary), this `lib.rs` (`run()`: the scan
+//! - **Entry**: `main.rs` (binary), this `lib.rs` (`cli_main()`: the scan
 //!   lifecycle: parse → build config → drive sources → scan → report).
 //! - **Argument surface**: [`args`] (clap definitions), [`value_parsers`]
 //!   (typed flag parsing), [`path_validation`].
@@ -26,9 +26,13 @@ mod stable_hash;
 
 use std::io::Write;
 use std::process::ExitCode;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 pub(crate) static SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
+/// Total source bytes consumed by the scanner. This is incremented at the
+/// same production dispatch boundary as `SCANNED_CHUNKS`, so report metadata
+/// cannot claim throughput from a separate approximation.
+pub(crate) static SCANNED_BYTES: AtomicU64 = AtomicU64::new(0);
 pub(crate) static TOTAL_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 pub(crate) static FINDINGS_COUNT: AtomicUsize = AtomicUsize::new(0);
 /// Chunks actually dispatched to GPU region presence (a subset of
@@ -136,6 +140,7 @@ pub fn interrupt_counts() -> (usize, usize, usize) {
 
 pub(crate) fn reset_scan_runtime_state() {
     SCANNED_CHUNKS.store(0, Ordering::Relaxed);
+    SCANNED_BYTES.store(0, Ordering::Relaxed);
     TOTAL_CHUNKS.store(0, Ordering::Relaxed);
     FINDINGS_COUNT.store(0, Ordering::Relaxed);
     GPU_SCANNED_CHUNKS.store(0, Ordering::Relaxed);

@@ -91,6 +91,7 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
         duration_ms: 1000,
         targets: vec!["fixture.env".into()],
         source_chunks_scanned: 1,
+        source_bytes_scanned: 128,
         detector_count: 922,
     };
     let mut buf = Vec::new();
@@ -106,7 +107,7 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     let text = String::from_utf8(buf).expect("JSON envelope is UTF-8");
     let parsed = JsonReportEnvelope::parse(&text).expect("current major parses");
     assert_eq!(parsed.schema_version.major, 1);
-    assert_eq!(parsed.schema_version.minor, 1);
+    assert_eq!(parsed.schema_version.minor, 2);
     assert_eq!(
         parsed.metadata.as_ref().expect("metadata").targets,
         ["fixture.env"]
@@ -160,7 +161,7 @@ fn versioned_jsonl_headers_split_concatenated_streams_and_validate_major() {
     let streams = parse_jsonl_stream(std::str::from_utf8(&joined).expect("JSONL is UTF-8"))
         .expect("concatenated streams parse by header boundary");
     assert_eq!(streams.len(), 2);
-    assert_eq!(streams[0].header.schema_version.minor, 2);
+    assert_eq!(streams[0].header.schema_version.minor, 3);
     assert_eq!(streams[0].findings.len(), 1);
     assert!(streams[0].is_complete());
     assert_eq!(

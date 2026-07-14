@@ -276,6 +276,10 @@ impl ScanOrchestrator {
                 crate::TOTAL_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
                 if super::batch_has_no_scan_bytes(&batch) {
                     crate::SCANNED_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
+                    crate::SCANNED_BYTES.fetch_add(
+                        batch.iter().map(|chunk| chunk.data.len() as u64).sum::<u64>(),
+                        Ordering::Relaxed,
+                    );
                     return Vec::new();
                 }
 
@@ -333,6 +337,10 @@ impl ScanOrchestrator {
                 }
                 let per_chunk = scanner_ref.scan_coalesced_with_backend(&batch, backend);
                 crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                crate::SCANNED_BYTES.fetch_add(
+                    batch.iter().map(|chunk| chunk.data.len() as u64).sum::<u64>(),
+                    Ordering::Relaxed,
+                );
                 // Count as GPU-scanned only if routed to GPU AND no runtime degrade
                 // was recorded while dispatching this batch (see snapshot above)
                 // a degraded batch actually ran on CPU/SIMD.

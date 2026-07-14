@@ -10,7 +10,7 @@ self-contained report page, and `junit` emits a JUnit XML test-report
 (one `<testcase>` per finding) for CI systems that ingest JUnit.
 
 Every renderer receives the same completed scan report. Its common metadata
-(version, timestamps, duration, targets, source chunks, and detector count) is
+(version, timestamps, duration, targets, source bytes, source chunks, and detector count) is
 owned by the core `ScanReport` model, so an output format cannot accidentally
 invent a second scan clock or target list. Formats keep their established
 schemas: HTML displays the full metadata panel, GitLab SAST projects the scan
@@ -83,7 +83,8 @@ including when there are no findings. A reader must reject an
 unsupported `schema_version.major`; a newer minor under a supported major is
 additive and may be accepted. See [Your first scan](./first-scan.md#json-output)
 for the complete schema. Metadata includes the binary Git identity, detector-set
-digest, effective-config digest when available, targets, timing, and counters.
+digest, effective-config digest when available, targets, timing, and counters
+including the exact source bytes and chunks consumed by the scanner.
 
 ## `--format csv`
 
@@ -161,7 +162,7 @@ reporting step began.
 
 HTML is a self-contained interactive report. In addition to findings and
 coverage gaps, its metadata panel shows the producing KeyHog version, scan
-interval, duration, redacted targets, source chunks, and detector count. The
+interval, duration, redacted targets, source bytes and chunks, and detector count. The
 metadata is descriptive only; it never changes finding or exit-code semantics.
 
 ## `--format jsonl`

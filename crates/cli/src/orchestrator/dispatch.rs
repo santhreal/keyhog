@@ -212,8 +212,10 @@ impl CoalescedScannerWorker {
     ) -> std::result::Result<std::time::Duration, AutorouteRoutingError> {
         let scan_start = std::time::Instant::now();
         let scanned_count = batch.len();
+        let scanned_bytes = batch.iter().map(|chunk| chunk.data.len()).sum::<usize>();
         if batch_has_no_scan_bytes(batch) {
             crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+        crate::SCANNED_BYTES.fetch_add(scanned_bytes as u64, Ordering::Relaxed);
             return Ok(scan_start.elapsed());
         }
         let chosen_backend = self.router.choose(self.scanner.as_ref(), batch)?;
@@ -315,6 +317,10 @@ fn append_scanned_batch_findings(
     use std::sync::atomic::Ordering;
 
     crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+    crate::SCANNED_BYTES.fetch_add(
+        batch.iter().map(|chunk| chunk.data.len() as u64).sum::<u64>(),
+        Ordering::Relaxed,
+    );
     if ran_on_gpu {
         // Authoritative routing signal for the completion summary: this is the
         // single coalesced-pipeline path where chunks actually run on the GPU.

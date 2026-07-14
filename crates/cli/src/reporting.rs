@@ -93,6 +93,7 @@ pub(crate) fn report_metadata_from_scan_run(
     finished_at: DateTime<Utc>,
     duration_ms: u128,
     source_chunks_scanned: usize,
+    source_bytes_scanned: u64,
     detector_count: usize,
     config_digest: Option<u64>,
 ) -> ScanReportMetadata {
@@ -100,6 +101,7 @@ pub(crate) fn report_metadata_from_scan_run(
     metadata.duration_ms = duration_ms;
     metadata.targets = scan_targets(args);
     metadata.source_chunks_scanned = source_chunks_scanned;
+    metadata.source_bytes_scanned = source_bytes_scanned;
     metadata.detector_count = detector_count;
     metadata
 }
@@ -120,6 +122,7 @@ fn report_metadata_from_times(
         duration_ms: 0,
         targets: Vec::new(),
         source_chunks_scanned: 0,
+        source_bytes_scanned: 0,
         detector_count: keyhog_core::embedded_detector_count(),
     }
 }

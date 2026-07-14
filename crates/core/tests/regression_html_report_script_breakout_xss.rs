@@ -126,6 +126,7 @@ fn poisoned_scan_metadata_does_not_break_out_of_script_element() {
         duration_ms: 42,
         targets: vec![PAYLOAD.to_string()],
         source_chunks_scanned: 7,
+        source_bytes_scanned: 448,
         detector_count: 11,
     });
 

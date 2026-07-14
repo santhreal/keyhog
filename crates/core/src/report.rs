@@ -73,6 +73,8 @@ pub struct ScanReportMetadata {
     pub targets: Vec<String>,
     /// Number of source chunks the scanner consumed for this report.
     pub source_chunks_scanned: usize,
+    /// Number of source bytes the scanner consumed for this report.
+    pub source_bytes_scanned: u64,
     /// Number of loaded detector specs used by this scan.
     pub detector_count: usize,
 }
@@ -80,9 +82,9 @@ pub struct ScanReportMetadata {
 /// Current major version for the versioned JSON report envelope.
 pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 1;
 /// Current minor version for the versioned JSON report envelope.
-pub const JSON_REPORT_SCHEMA_MINOR: u16 = 1;
+pub const JSON_REPORT_SCHEMA_MINOR: u16 = 2;
 /// Current minor version for the versioned JSONL stream contract.
-pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 2;
+pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 3;
 
 /// Version marker carried by every versioned JSON report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

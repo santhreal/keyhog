@@ -104,10 +104,13 @@ objects. `entropy` and `confidence` are included when the detection
 path measured them; otherwise they are omitted. A present entropy value is
 Shannon bits-per-byte evidence, not a confidence score and not a claim that
 entropy alone caused the finding.
+The `source_bytes_scanned` and `source_chunks_scanned` counters are the exact
+workload consumed by the scanner, so an importer can calculate throughput from
+the artifact without scraping console progress.
 
 ```json
 {
-  "schema_version": {"major": 1, "minor": 1},
+  "schema_version": {"major": 1, "minor": 2},
   "metadata": {
     "keyhog_version": "0.5.41",
     "git_hash": "<build-commit>",
@@ -119,6 +122,7 @@ entropy alone caused the finding.
     "duration_ms": 1000,
     "targets": ["."],
     "source_chunks_scanned": 1,
+    "source_bytes_scanned": 128,
     "detector_count": 922
   },
   "coverage_gap_summary": [],

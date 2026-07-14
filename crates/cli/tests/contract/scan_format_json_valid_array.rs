@@ -23,5 +23,10 @@ fn scan_format_json_valid_array() {
     let object = parsed.as_object().expect("json format must emit an object");
     assert_eq!(object["schema_version"]["major"], 1);
     assert!(object["schema_version"]["minor"].is_u64());
+    assert!(object["metadata"]["scan_started_at"].is_string());
+    assert!(object["metadata"]["scan_finished_at"].is_string());
+    assert!(object["metadata"]["duration_ms"].is_u64());
+    assert!(object["metadata"]["source_chunks_scanned"].as_u64().unwrap_or(0) >= 1);
+    assert!(object["metadata"]["source_bytes_scanned"].as_u64().unwrap_or(0) >= 11);
     assert!(object["findings"].is_array());
 }
