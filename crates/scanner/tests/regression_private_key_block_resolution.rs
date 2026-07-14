@@ -29,8 +29,7 @@ use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::resolution::resolve_matches;
 use keyhog_scanner::CompiledScanner;
 
-/// Detector ids classified as private-key BLOCK detectors (see
-/// rules/detector-classification.toml `private_key_block`).
+/// Detector ids whose own detector TOMLs declare `private_key_block = true`.
 const BLOCK_IDS: &[&str] = &["private-key", "ssh-private-key", "github-app-private-key"];
 
 /// A closed PEM block for `label` with a body-unique `marker`.

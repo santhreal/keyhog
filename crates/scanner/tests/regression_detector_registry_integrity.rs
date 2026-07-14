@@ -192,8 +192,8 @@ fn generic_password_is_a_real_embedded_detector_not_phantom() {
 
 #[test]
 fn generic_detectors_own_their_entropy_floor_in_their_own_toml() {
-    // Every generic detector's entropy floor lives in its OWN detectors/*.toml
-    // `entropy_floor` field (there is no separate rules/entropy-floors.toml).
+    // Entropy floors have always lived in each generic detector's own
+    // detectors/*.toml `entropy_floor` field, not in a centralized rule file.
     // The four shapeless generic detectors are first-class `phase2-generic`
     // specs (no regex; they fire on keywords + entropy_floor); generic-password
     // is a regex detector that also carries a floor. Exactly these five declare
