@@ -98,20 +98,28 @@ Use the verified installer when the workflow must own installation explicitly:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Scan working tree
         id: keyhog
-        continue-on-error: true
-        run: keyhog scan . --severity high --format sarif --output keyhog.sarif
+        run: |
+          set +e
+          keyhog scan . --severity high --format sarif --output keyhog.sarif
+          status=$?
+          echo "exit-code=$status" >> "$GITHUB_OUTPUT"
+          exit 0
       - name: Upload SARIF
         if: always() && hashFiles('keyhog.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: keyhog.sarif
       - name: Enforce scan result
-        if: steps.keyhog.outcome == 'failure'
-        run: exit 1
+        if: steps.keyhog.outputs.exit-code != '0'
+        env:
+          KEYHOG_EXIT: ${{ steps.keyhog.outputs.exit-code }}
+        run: exit "$KEYHOG_EXIT"
 ```
 
-Limiting `continue-on-error` to the scan step lets the report upload before the
-last step restores the scan failure. Operational errors remain failures.
+The scan step records the exact process status before uploading the report. The
+last step restores that status, so findings, live findings, configuration
+errors, incomplete coverage, backend failures, and internal errors remain
+distinct.
 
 ### Scan only changed files in a PR (faster)
 
