@@ -72,6 +72,41 @@ const MIN_DECODABLE_RUN: usize = 24;
 const MIN_PERCENT_ESCAPES: usize = 4;
 #[cfg(feature = "decode")]
 const MIN_BACKSLASH_ESCAPES: usize = 2;
+#[cfg(feature = "decode")]
+const MIN_HTML_NUMERIC_ENTITIES: usize = 4;
+
+#[cfg(feature = "decode")]
+fn valid_html_numeric_entity_len(data: &[u8]) -> Option<usize> {
+    if !data.starts_with(b"&#") {
+        return None;
+    }
+
+    let mut index = 2usize;
+    let radix = if matches!(data.get(index), Some(b'x' | b'X')) {
+        index += 1;
+        16u32
+    } else {
+        10u32
+    };
+    let digits_start = index;
+    let mut codepoint = 0u32;
+    while index < data.len() && index - digits_start < url::MAX_NUMERIC_ENTITY_DIGITS {
+        let digit = match data[index] {
+            b'0'..=b'9' => u32::from(data[index] - b'0'),
+            b'a'..=b'f' if radix == 16 => u32::from(data[index] - b'a') + 10,
+            b'A'..=b'F' if radix == 16 => u32::from(data[index] - b'A') + 10,
+            _ => break,
+        };
+        codepoint = codepoint.checked_mul(radix)?.checked_add(digit)?;
+        index += 1;
+    }
+
+    if index == digits_start || data.get(index) != Some(&b';') {
+        return None;
+    }
+    char::from_u32(codepoint)?;
+    Some(index + 1)
+}
 
 /// Cheap O(n), allocation-free gate: does `data` contain an encoded shape long
 /// enough to plausibly hide a credential?
@@ -94,6 +129,7 @@ pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
     let mut run = 0usize;
     let mut percent_escapes = 0usize;
     let mut backslash_escapes = 0usize;
+    let mut html_numeric_entities = 0usize;
     let mut has_from_char_code = false;
     let mut has_xor_operator = false;
     let mut i = 0usize;
@@ -125,6 +161,18 @@ pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
             run = 0;
             i += 3;
             continue;
+        }
+
+        if b == b'&' {
+            if let Some(entity_len) = valid_html_numeric_entity_len(&data[i..]) {
+                html_numeric_entities += 1;
+                if html_numeric_entities >= MIN_HTML_NUMERIC_ENTITIES {
+                    return true;
+                }
+                run = 0;
+                i += entity_len;
+                continue;
+            }
         }
 
         if b == b'\\' && i + 1 < data.len() {

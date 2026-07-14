@@ -3,16 +3,16 @@
 //! `crates/scanner/src/decode/mod.rs` that decides whether an otherwise
 //! prefilter-skipped chunk is routed into a decode-only pass.
 //!
-//! The gate fires on any of three shapes:
+//! The gate fires on four bounded shapes. Numeric HTML entities use an exact
+//! valid-codepoint floor in addition to the existing encoded-run and escape
+//! counters.
 //!   * a contiguous base64/hex/url-safe run of `MIN_DECODABLE_RUN` (24) bytes,
-//!   * `MIN_PERCENT_ESCAPES` (4) `%XX` url-escapes, or
+//!   * `MIN_PERCENT_ESCAPES` (4) `%XX` url-escapes,
+//!   * `MIN_HTML_NUMERIC_ENTITIES` (4) valid decimal/hex entities, or
 //!   * `MIN_BACKSLASH_ESCAPES` (2) `\uXXXX` / `\xXX` string-escapes.
 //!
-//! `has_decodable_payload` itself is `pub(crate)` and, unlike ~40 sibling
-//! decode internals (`caesar_shift_for_test`, `extract_encoded_value_spans_for_test`,
-//! `octal_escape_decode_for_test`, …), has NO `*_for_test` seam in the
-//! `keyhog_scanner::testing` facade, so it cannot be called directly from an
-//! integration-test crate. This file therefore pins the gate two reachable ways:
+//! The testing facade exposes the gate for exact threshold checks. This file
+//! also pins the observable end-to-end scan path.
 //!
 //!   1. Exhaustive exact-`bool` coverage of the run counter's alphabet predicate
 //!      `decode::is_base64_candidate_byte` (the public single-owner that decides,
@@ -31,6 +31,7 @@ use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::decode::is_base64_candidate_byte;
+use keyhog_scanner::testing::has_decodable_payload_for_test;
 use keyhog_scanner::CompiledScanner;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -207,6 +208,15 @@ fn urlenc(s: &str) -> String {
     u
 }
 
+fn html_numeric(s: &str) -> String {
+    use std::fmt::Write as _;
+    let mut encoded = String::new();
+    for ch in s.chars() {
+        let _ = write!(encoded, "&#{};", ch as u32);
+    }
+    encoded
+}
+
 #[test]
 fn baseline_plaintext_secret_fires_exactly() {
     // Proves the detector fires unwrapped, so a decode-through absence below is
@@ -236,6 +246,38 @@ fn url_percent_encoded_secret_surfaces_via_percent_gate() {
     assert!(percent_count >= 4);
     let embedded = format!("blob = \"{encoded}\"\n");
     assert!(surfaces_needle(&embedded));
+}
+
+#[test]
+fn html_numeric_entity_gate_has_an_exact_valid_entity_floor() {
+    assert!(!has_decodable_payload_for_test(b"&#65;&#66;&#67;"));
+    assert!(has_decodable_payload_for_test(b"&#65;&#x42;&#67;&#x44;"));
+    assert!(!has_decodable_payload_for_test(
+        b"&#65;&#xZZ;&#1114112;&#xD800;"
+    ));
+    assert!(!has_decodable_payload_for_test(b"&#65&#66&#67&#68"));
+    assert!(!has_decodable_payload_for_test(
+        b"&#00000000000;&#00000000000;&#00000000000;&#00000000000;"
+    ));
+}
+
+#[test]
+fn fully_html_numeric_encoded_secret_surfaces_via_decode_gate() {
+    let encoded = html_numeric(NPMRC);
+    assert!(!encoded.contains("_authToken"));
+    assert!(!encoded.contains(NPMRC_NEEDLE));
+    let matches = scan_text(&format!("<data>{encoded}</data>\n"));
+    let finding = matches
+        .iter()
+        .find(|finding| finding.detector_id.as_ref() == "npmrc-auth-token")
+        .expect("the numeric-entity admission gate must make the decoder reachable");
+    assert_eq!(finding.credential.as_ref(), NPMRC_NEEDLE);
+    assert_eq!(
+        finding.location.source.as_ref(),
+        "decode-density-gate-test/html-numeric-entity"
+    );
+    assert_eq!(finding.location.file_path.as_deref(), Some("config.txt"));
+    assert_eq!(finding.location.line, Some(1));
 }
 
 #[test]

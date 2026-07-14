@@ -445,11 +445,11 @@ fn html_named_entity_decode(input: &str) -> Result<String, ()> {
 }
 
 /// Longest numeric-entity digit run parsed before the entity is treated as
-/// malformed. The largest valid Unicode scalar is `U+10FFFF` (7 hex / 7 decimal
-/// digits), so a longer run can never be a valid codepoint; capping bounds the
-/// digit `String` (a `&#000…0;` with a megabyte of zeros would otherwise
-/// allocate unbounded and feed a doomed `u32` parse (unbounded-alloc DoS)).
-const MAX_NUMERIC_ENTITY_DIGITS: usize = 10;
+/// malformed. The largest valid Unicode scalar is `U+10FFFF` (6 hex or 7
+/// decimal digits); ten digits allow limited leading-zero padding while
+/// bounding the temporary `String`. A megabyte of leading zeros would
+/// otherwise allocate unbounded memory before parsing.
+pub(super) const MAX_NUMERIC_ENTITY_DIGITS: usize = 10;
 
 fn html_numeric_entity_decode(input: &str) -> Result<String, ()> {
     let mut decoded: Option<String> = None;

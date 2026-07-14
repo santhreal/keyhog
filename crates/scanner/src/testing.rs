@@ -330,10 +330,11 @@ pub fn zlib_compress_for_test(data: &[u8]) -> Vec<u8> {
 }
 
 /// Test seam for the decode-density gate on the main scan path
-/// (`decode::has_decodable_payload`): returns true iff `data` carries an encoded
-/// shape long enough to be worth routing into decode-through, a
+/// (`decode::has_decodable_payload`): recognizes encoded, escaped, and numeric
+/// entity shapes worth routing into decode-through, including a
 /// `MIN_DECODABLE_RUN` (24) contiguous base64/hex run, `MIN_PERCENT_ESCAPES` (4)
-/// `%XX` escapes, or `MIN_BACKSLASH_ESCAPES` (2) `\u`/`\x`/`\NNN` escapes. This gate is
+/// `%XX` escapes, `MIN_HTML_NUMERIC_ENTITIES` (4) valid numeric entities, or
+/// `MIN_BACKSLASH_ESCAPES` (2) `\u`/`\x`/`\NNN` escapes. This gate is
 /// recall-load-bearing (it routes an otherwise prefilter-skipped, fully-encoded
 /// chunk into decode-through), so a silent threshold drift is a recall bug; this
 /// seam lets a test pin the exact boundaries.
