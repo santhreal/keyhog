@@ -89,7 +89,8 @@ method-level version of steps 2-4.
 
 1. **Acquire bytes:** a source yields file-path + content chunks.
    `crates/sources/src/` (`filesystem/`, `git/`, `stdin.rs`, `docker/`, `s3/`,
-   `gcs.rs`, `cloud/azure_blob.rs`, `github_org.rs`, `gitlab_group.rs`,
+   `gcs.rs`, `cloud/azure_blob.rs`, `github_org.rs`,
+   `github_collaboration.rs`, `gitlab_group.rs`,
    `bitbucket_workspace.rs`, `hosted_git/`, `web/`, `har.rs`, `strings.rs`,
    `binary/`).
 2. **Phase 1: trigger production** (which detectors *could* fire, and where).

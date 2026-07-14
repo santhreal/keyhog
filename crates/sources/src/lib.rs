@@ -64,6 +64,8 @@ mod gcs;
 #[cfg(feature = "git")]
 mod git;
 #[cfg(feature = "github")]
+mod github_collaboration;
+#[cfg(feature = "github")]
 mod github_org;
 #[cfg(feature = "gitlab")]
 mod gitlab_group;

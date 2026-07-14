@@ -185,11 +185,9 @@ pub(crate) fn repo_listing_unreadable_error(
     repo_unreadable_error(platform, repo_display_path, error)
 }
 
-
 #[cfg(test)]
 #[path = "../tests/unit/hosted_git.rs"]
 mod tests;
-
 
 /// Refuse repo directory names that escape the temp clone root: `..`, absolute
 /// paths, path separators, or characters outside the forge repo-name alphabet.
@@ -499,6 +497,45 @@ fn clone_repo(
     token_secret: &str,
     clone_path: &Path,
 ) -> Result<(), SourceError> {
+    clone_repo_with_history_mode(
+        platform,
+        repo_display_path,
+        clone_url,
+        token_username,
+        token_secret,
+        clone_path,
+        false,
+    )
+}
+
+pub(crate) fn clone_authenticated_history(
+    platform: &str,
+    repo_display_path: &str,
+    clone_url: &str,
+    token_username: &str,
+    token_secret: &str,
+    clone_path: &Path,
+) -> Result<(), SourceError> {
+    clone_repo_with_history_mode(
+        platform,
+        repo_display_path,
+        clone_url,
+        token_username,
+        token_secret,
+        clone_path,
+        true,
+    )
+}
+
+fn clone_repo_with_history_mode(
+    platform: &str,
+    repo_display_path: &str,
+    clone_url: &str,
+    token_username: &str,
+    token_secret: &str,
+    clone_path: &Path,
+    full_history: bool,
+) -> Result<(), SourceError> {
     let clone_target = clone_path.to_str().ok_or_else(|| {
         SourceError::Other(format!(
             "{platform}: non-UTF-8 clone path for repo {repo_display_path}"
@@ -532,10 +569,16 @@ fn clone_repo(
     // isolation every other git spawn uses. `git_command()`'s own doc requires
     // that "every git spawn goes through here rather than Command::new(git_bin)";
     // this clone was the one bypass. The auth-specific askpass is layered on top.
-    let mut child = crate::git::git_command()?
+    let mut command = crate::git::git_command()?;
+    command
         .env("GIT_ASKPASS", &auth_material.askpass_path)
-        .env("SSH_ASKPASS", &auth_material.askpass_path)
-        .args(git_clone_args())
+        .env("SSH_ASKPASS", &auth_material.askpass_path);
+    if full_history {
+        command.args(git_full_clone_args());
+    } else {
+        command.args(git_clone_args());
+    }
+    let mut child = command
         .arg("--end-of-options")
         .arg(clone_url)
         .arg(clone_target)
@@ -581,6 +624,19 @@ fn git_clone_args() -> [&'static str; 10] {
         "clone",
         "--depth",
         "1",
+        "--quiet",
+    ]
+}
+
+fn git_full_clone_args() -> [&'static str; 8] {
+    [
+        "-c",
+        "http.followRedirects=false",
+        "-c",
+        "credential.helper=",
+        "-c",
+        "credential.useHttpPath=true",
+        "clone",
         "--quiet",
     ]
 }

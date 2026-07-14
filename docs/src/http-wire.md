@@ -70,7 +70,7 @@ turn an `--url` invocation into a metadata-service IAM exfil.
 
 ## Proxy and TLS
 
-Everything outbound - `--url`, `--github-org`, `--gitlab-group`,
+Everything outbound - `--url`, `--github-org`, `--github-collaboration`, `--gitlab-group`,
 `--bitbucket-workspace`, `--s3-bucket`, `--gcs-bucket`,
 `--azure-container-url`, `--verify`'s API calls - runs through one HTTP client builder.
 Policy:

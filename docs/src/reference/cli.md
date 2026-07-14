@@ -29,6 +29,7 @@ or coverage incomplete.
 | `--max-commits <N>`           | Bound the number of commits traversed by git-history scanning. |
 | `--docker-image <IMAGE>`      | Scan a saved Docker image archive.             |
 | `--github-org <ORG>`          | Clone and scan every repository in a GitHub organization. Requires `KEYHOG_GITHUB_TOKEN` (recommended) or `--github-token`. |
+| `--github-collaboration <OWNER/REPO>` | Select a GitHub collaboration target. Requires one or more of `--github-issues`, `--github-pull-requests`, `--github-discussions`, `--github-wiki`, or `--github-gists`. |
 | `--gitlab-group <GROUP>`      | Clone and scan every project in a GitLab group, including subgroups. Requires `KEYHOG_GITLAB_TOKEN` (recommended) or `--gitlab-token`; use `--gitlab-endpoint` for self-managed GitLab. |
 | `--bitbucket-workspace <WORKSPACE>` | Clone and scan every repository in a Bitbucket Cloud workspace. Requires `KEYHOG_BITBUCKET_USERNAME` plus `KEYHOG_BITBUCKET_TOKEN` (recommended), or the corresponding flags; `--bitbucket-endpoint` selects the API root. |
 | `--s3-bucket <BUCKET>`        | Scan an S3 bucket. Use `--s3-prefix` to narrow and `--s3-endpoint` for an S3-compatible API. |

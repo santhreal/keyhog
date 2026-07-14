@@ -24,6 +24,7 @@
 - [Pre-commit hook](./workflows/precommit.md)
 - [CI integration](./workflows/ci.md)
 - [Other integrations](./workflows/integrations.md)
+- [GitHub collaboration scans](./workflows/github-collaboration.md)
 - [Daemon and warm scans](./workflows/daemon.md)
 
 # Guides

@@ -425,6 +425,20 @@ pub mod testing {
         #[cfg(feature = "github")]
         fn validate_repo_name(&self, name: &str) -> Result<(), keyhog_core::SourceError>;
         #[cfg(feature = "github")]
+        fn github_collaboration_source_with_endpoint(
+            &self,
+            repository: &str,
+            endpoint: &str,
+            selection: crate::GitHubCollaborationSelection,
+            limits: crate::SourceLimits,
+        ) -> Result<crate::GitHubCollaborationSource, keyhog_core::SourceError>;
+        #[cfg(feature = "github")]
+        fn github_collaboration_wiki_chunks_from_repo(
+            &self,
+            repo: &std::path::Path,
+            limits: crate::SourceLimits,
+        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>;
+        #[cfg(feature = "github")]
         fn validate_org_name(&self, name: &str) -> Result<(), keyhog_core::SourceError>;
         #[cfg(feature = "github")]
         fn validate_clone_url(&self, url: &str) -> Result<(), keyhog_core::SourceError>;
@@ -1210,6 +1224,35 @@ pub mod testing {
         #[cfg(feature = "github")]
         fn validate_repo_name(&self, name: &str) -> Result<(), keyhog_core::SourceError> {
             crate::github_org::validate_repo_name(name)
+        }
+
+        #[cfg(feature = "github")]
+        fn github_collaboration_source_with_endpoint(
+            &self,
+            repository: &str,
+            endpoint: &str,
+            selection: crate::GitHubCollaborationSelection,
+            limits: crate::SourceLimits,
+        ) -> Result<crate::GitHubCollaborationSource, keyhog_core::SourceError> {
+            Ok(
+                crate::GitHubCollaborationSource::new(repository, "test-token", selection)?
+                    .with_endpoint(endpoint)
+                    .with_limits(limits)
+                    .with_http_config(crate::http::HttpClientConfig {
+                        allow_private_endpoint: true,
+                        ua_suffix: Some("github-collaboration-test".into()),
+                        ..Default::default()
+                    }),
+            )
+        }
+
+        #[cfg(feature = "github")]
+        fn github_collaboration_wiki_chunks_from_repo(
+            &self,
+            repo: &std::path::Path,
+            limits: crate::SourceLimits,
+        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError> {
+            crate::github_collaboration::collect_wiki_repo_for_test(repo, limits)
         }
 
         #[cfg(feature = "github")]

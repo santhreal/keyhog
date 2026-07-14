@@ -17,6 +17,8 @@ pub use crate::gcs::GcsSource;
 #[cfg(feature = "git")]
 pub use crate::git::{GitDiffSource, GitHistorySource, GitSource, GitStagedSource};
 #[cfg(feature = "github")]
+pub use crate::github_collaboration::{GitHubCollaborationSelection, GitHubCollaborationSource};
+#[cfg(feature = "github")]
 pub use crate::github_org::GitHubOrgSource;
 #[cfg(feature = "s3")]
 pub use crate::s3::S3Source;

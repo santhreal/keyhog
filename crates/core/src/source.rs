@@ -9,6 +9,24 @@ use serde::Serialize;
 use std::sync::Arc;
 use thiserror::Error;
 
+/// Machine-readable reason a requested source surface was not fully scanned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceCoverageGapKind {
+    /// The source denied access, did not exist, or returned an unreadable response.
+    Inaccessible,
+    /// A configured request, item, or byte limit stopped the scan early.
+    Truncated,
+}
+
+impl std::fmt::Display for SourceCoverageGapKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Inaccessible => "inaccessible",
+            Self::Truncated => "truncated",
+        })
+    }
+}
+
 /// A scannable chunk of text with metadata about where it came from.
 ///
 /// # Examples
@@ -184,6 +202,21 @@ pub enum SourceError {
         "failed to access git source: {0}. Fix: run inside a valid git repository and verify the requested refs exist"
     )]
     Git(String),
+    #[error(
+        "source coverage gap ({kind}) in {adapter} surface {surface} at {target}: {detail}. Fix: grant read access or raise the relevant source limit, then rerun the affected surface"
+    )]
+    Coverage {
+        /// Stable source adapter name.
+        adapter: String,
+        /// Independently selected surface that was incomplete.
+        surface: String,
+        /// Credential-free target identity.
+        target: String,
+        /// Typed coverage classification.
+        kind: SourceCoverageGapKind,
+        /// Response-free operator guidance.
+        detail: String,
+    },
     #[error(
         "failed to read source: {0}. Fix: adjust the source settings or input so KeyHog can read plain text safely"
     )]

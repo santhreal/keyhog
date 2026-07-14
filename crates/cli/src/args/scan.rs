@@ -175,10 +175,40 @@ pub struct ScanArgs {
     #[arg(long, value_name = "ORG")]
     pub github_org: Option<String>,
 
-    /// GitHub personal access token for --github-org. Prefer
+    /// GitHub repository whose explicitly selected collaboration surfaces are scanned
+    #[cfg(feature = "github")]
+    #[arg(long, value_name = "OWNER/REPO")]
+    pub github_collaboration: Option<String>,
+
+    /// Include issue text and comments from --github-collaboration
+    #[cfg(feature = "github")]
+    #[arg(long, requires = "github_collaboration")]
+    pub github_issues: bool,
+
+    /// Include pull request text, issue comments, and review comments
+    #[cfg(feature = "github")]
+    #[arg(long, requires = "github_collaboration")]
+    pub github_pull_requests: bool,
+
+    /// Include discussion text and comments from --github-collaboration
+    #[cfg(feature = "github")]
+    #[arg(long, requires = "github_collaboration")]
+    pub github_discussions: bool,
+
+    /// Include every readable wiki revision from --github-collaboration
+    #[cfg(feature = "github")]
+    #[arg(long, requires = "github_collaboration")]
+    pub github_wiki: bool,
+
+    /// Include every readable gist revision and gist comment for the repository owner
+    #[cfg(feature = "github")]
+    #[arg(long, requires = "github_collaboration")]
+    pub github_gists: bool,
+
+    /// GitHub personal access token for --github-org or --github-collaboration. Prefer
     /// KEYHOG_GITHUB_TOKEN so the token is not exposed in the process list.
     #[cfg(feature = "github")]
-    #[arg(long, requires = "github_org", value_name = "PAT")]
+    #[arg(long, value_name = "PAT")]
     pub github_token: Option<String>,
 
     /// Scan all projects in a GitLab group, including subgroups

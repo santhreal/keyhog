@@ -574,6 +574,29 @@ fn scan_targets(args: &ScanArgs) -> Vec<String> {
     if let Some(org) = &args.github_org {
         targets.push(format!("github-org:{org}"));
     }
+    #[cfg(feature = "github")]
+    if let Some(repository) = &args.github_collaboration {
+        let mut surfaces = Vec::new();
+        if args.github_issues {
+            surfaces.push("issues");
+        }
+        if args.github_pull_requests {
+            surfaces.push("pull-requests");
+        }
+        if args.github_discussions {
+            surfaces.push("discussions");
+        }
+        if args.github_wiki {
+            surfaces.push("wiki");
+        }
+        if args.github_gists {
+            surfaces.push("gists");
+        }
+        targets.push(format!(
+            "github-collaboration:{repository}[{}]",
+            surfaces.join(",")
+        ));
+    }
     #[cfg(feature = "gitlab")]
     if let Some(group) = &args.gitlab_group {
         targets.push(format!("gitlab-group:{group}"));

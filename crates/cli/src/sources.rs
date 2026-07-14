@@ -325,6 +325,27 @@ pub(crate) fn build_sources(
         );
     }
 
+    #[cfg(feature = "github")]
+    if let Some(repository) = &args.github_collaboration {
+        let token = hosted_source_credential(
+            args.github_token.as_deref(),
+            HostedCredentialEnv::GithubToken,
+        )?
+        .context("GitHub collaboration source requires --github-token or KEYHOG_GITHUB_TOKEN")?;
+        let selection = keyhog_sources::GitHubCollaborationSelection {
+            issues: args.github_issues,
+            pull_requests: args.github_pull_requests,
+            discussions: args.github_discussions,
+            wiki: args.github_wiki,
+            gists: args.github_gists,
+        };
+        sources.push(Box::new(
+            keyhog_sources::GitHubCollaborationSource::new(repository, token, selection)?
+                .with_http_config(source_http_config(args, "github-collaboration"))
+                .with_limits(source_limits),
+        ));
+    }
+
     #[cfg(feature = "gitlab")]
     if let Some(group) = &args.gitlab_group {
         let token = hosted_source_credential(
@@ -553,20 +574,35 @@ fn validate_source_flag_combinations(args: &ScanArgs, _has_path_source: bool) ->
     }
 
     #[cfg(feature = "github")]
+    let github_selected = args.github_org.is_some() || args.github_collaboration.is_some();
+    #[cfg(feature = "github")]
     let github_token_present = args.github_token.is_some()
-        || (args.github_org.is_some()
+        || (github_selected
             && hosted_source_credential(None, HostedCredentialEnv::GithubToken)?.is_some());
     #[cfg(feature = "github")]
-    validate_all_or_none_source_flags(
-        "GitHub organization source",
-        &[
-            ("--github-org", args.github_org.is_some()),
-            (
-                "--github-token or KEYHOG_GITHUB_TOKEN",
-                github_token_present,
-            ),
-        ],
-    )?;
+    if github_selected && !github_token_present {
+        anyhow::bail!(
+            "GitHub source requires --github-token or KEYHOG_GITHUB_TOKEN. Fix: provide a read-only token for the selected GitHub source."
+        );
+    }
+    #[cfg(feature = "github")]
+    if !github_selected && args.github_token.is_some() {
+        anyhow::bail!(
+            "--github-token does not select a source. Fix: add --github-org or --github-collaboration, or remove the unused token."
+        );
+    }
+    #[cfg(feature = "github")]
+    if args.github_collaboration.is_some()
+        && !(args.github_issues
+            || args.github_pull_requests
+            || args.github_discussions
+            || args.github_wiki
+            || args.github_gists)
+    {
+        anyhow::bail!(
+            "--github-collaboration requires an explicit surface. Fix: add one or more of --github-issues, --github-pull-requests, --github-discussions, --github-wiki, or --github-gists."
+        );
+    }
 
     #[cfg(feature = "gitlab")]
     let gitlab_token_present = args.gitlab_token.is_some()
