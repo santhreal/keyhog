@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Preserve parent JavaScript context and exact source provenance for static
+  XOR and Node AES recoveries, matching the existing CryptoJS and reverse/Base64
+  recovery paths.
+
 - Resolve generic assignment entropy overrides against the owning detector's
   TOML `entropy_high` policy instead of the global fallback threshold.
 - Make `ScannerConfig::thorough()` a distinct bounded recovery policy. It scans

@@ -2,7 +2,8 @@
 
 use super::{
     all_distinct, compile_static_regex, identifier_occurrence_count, record_static_limit,
-    unquote_static_string, MAX_ARRAY_BINDINGS, MAX_BYTE_ARRAY_LEN, MAX_STATIC_EXPRESSIONS,
+    unquote_static_string, RecoveredPlaintext, MAX_ARRAY_BINDINGS, MAX_BYTE_ARRAY_LEN,
+    MAX_STATIC_EXPRESSIONS,
 };
 use aes::cipher::{BlockDecrypt, KeyInit};
 use aes::Aes256;
@@ -15,7 +16,7 @@ use crate::telemetry::{record_static_recovery_rejection, StaticRecoveryRejection
 
 static BUFFER_BINDING_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r#"(?m)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*Buffer\s*\.\s*from\s*\(\s*(["'][A-Za-z0-9+/=_-]+["'])\s*,\s*(["'](?:hex|base64)["'])\s*\)"#,
+        r#"(?m)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(Buffer\s*\.\s*from\s*\(\s*(["'][A-Za-z0-9+/=_-]+["'])\s*,\s*(["'](?:hex|base64)["'])\s*\))"#,
         "Buffer binding",
     )
 });
@@ -41,11 +42,17 @@ static AES_INLINE_BUFFER_RE: LazyLock<Regex> = LazyLock::new(|| {
     )
 });
 
+struct BufferBinding {
+    bytes: Result<Vec<u8>, StaticRecoveryRejection>,
+    source_start: usize,
+    source_end: usize,
+}
+
 pub(super) fn recover_plaintexts(
     source: &str,
     metadata: &ChunkMetadata,
     base_offset: usize,
-    emitted: &mut BTreeSet<String>,
+    emitted: &mut BTreeSet<RecoveredPlaintext>,
 ) {
     let buffers = collect_buffer_bindings(source);
     for (expression_index, captures) in AES_BOUND_RE.captures_iter(source).enumerate() {
@@ -56,10 +63,12 @@ pub(super) fn recover_plaintexts(
         let Some(decipher) = captures.get(1).map(|value| value.as_str()) else {
             continue;
         };
-        let Some(expression_offset) = crate::engine::absolute_offset(
-            base_offset,
-            captures.get(0).map_or(0, |matched| matched.start()),
-        ) else {
+        let Some(expression) = captures.get(0) else {
+            continue;
+        };
+        let Some(expression_offset) =
+            crate::engine::absolute_offset(base_offset, expression.start())
+        else {
             record_static_limit("bound AES expression offset overflow");
             continue;
         };
@@ -96,21 +105,21 @@ pub(super) fn recover_plaintexts(
         ) else {
             continue;
         };
-        let key = match resolve_binding(key) {
+        let key = match resolve_binding(&key.bytes) {
             Ok(key) => key,
             Err(reason) => {
                 record_static_recovery_rejection(metadata, expression_offset, reason);
                 continue;
             }
         };
-        let iv = match resolve_binding(iv) {
+        let iv = match resolve_binding(&iv.bytes) {
             Ok(iv) => iv,
             Err(reason) => {
                 record_static_recovery_rejection(metadata, expression_offset, reason);
                 continue;
             }
         };
-        let ciphertext = match resolve_binding(ciphertext) {
+        let ciphertext_bytes = match resolve_binding(&ciphertext.bytes) {
             Ok(ciphertext) => ciphertext,
             Err(reason) => {
                 record_static_recovery_rejection(metadata, expression_offset, reason);
@@ -118,9 +127,13 @@ pub(super) fn recover_plaintexts(
             }
         };
         if let Some(plaintext) =
-            decrypt_aes_256_cbc(key, iv, ciphertext, metadata, expression_offset)
+            decrypt_aes_256_cbc(key, iv, ciphertext_bytes, metadata, expression_offset)
         {
-            emitted.insert(plaintext);
+            emitted.insert(RecoveredPlaintext {
+                plaintext,
+                source_start: ciphertext.source_start,
+                source_end: ciphertext.source_end,
+            });
         }
     }
 
@@ -133,10 +146,12 @@ pub(super) fn recover_plaintexts(
         let Some(decipher) = captures.get(1).map(|value| value.as_str()) else {
             continue;
         };
-        let Some(expression_offset) = crate::engine::absolute_offset(
-            base_offset,
-            captures.get(0).map_or(0, |matched| matched.start()),
-        ) else {
+        let Some(expression) = captures.get(0) else {
+            continue;
+        };
+        let Some(expression_offset) =
+            crate::engine::absolute_offset(base_offset, expression.start())
+        else {
             record_static_limit("inline AES expression offset overflow");
             continue;
         };
@@ -225,25 +240,31 @@ pub(super) fn recover_plaintexts(
         if let Some(plaintext) =
             decrypt_aes_256_cbc(&key, &iv, &ciphertext, metadata, expression_offset)
         {
-            emitted.insert(plaintext);
+            emitted.insert(RecoveredPlaintext {
+                plaintext,
+                source_start: expression.start(),
+                source_end: expression.end(),
+            });
         }
     }
 }
 
-fn collect_buffer_bindings(
-    source: &str,
-) -> HashMap<String, Result<Vec<u8>, StaticRecoveryRejection>> {
+fn collect_buffer_bindings(source: &str) -> HashMap<String, BufferBinding> {
     let mut bindings = HashMap::new();
     for (binding_index, captures) in BUFFER_BINDING_RE.captures_iter(source).enumerate() {
         if binding_index >= MAX_ARRAY_BINDINGS {
             record_static_limit("buffer binding ceiling");
             break;
         }
-        let (Some(name), Some(value), Some(format)) =
-            (captures.get(1), captures.get(2), captures.get(3))
-        else {
+        let (Some(name), Some(binding), Some(value), Some(format)) = (
+            captures.get(1),
+            captures.get(2),
+            captures.get(3),
+            captures.get(4),
+        ) else {
             continue;
         };
+        let value_span = (binding.start(), binding.end());
         let (Some(value), Some(format)) = (
             unquote_static_string(value.as_str()),
             unquote_static_string(format.as_str()),
@@ -269,7 +290,14 @@ fn collect_buffer_bindings(
                 record_static_limit("buffer byte ceiling");
                 continue;
             }
-            bindings.insert(name.as_str().to_owned(), binding);
+            bindings.insert(
+                name.as_str().to_owned(),
+                BufferBinding {
+                    bytes: binding,
+                    source_start: value_span.0,
+                    source_end: value_span.1,
+                },
+            );
         }
     }
     bindings

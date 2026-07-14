@@ -11,7 +11,7 @@
 //! padding, and non-UTF-8 results fail closed while the original source remains
 //! in the normal scan path.
 
-use super::pipeline::{push_decoded_text_chunk, push_decoded_text_chunk_spliced_at};
+use super::pipeline::push_decoded_text_chunk_spliced_at;
 use super::{DecodeAdmissionSketch, Decoder};
 use keyhog_core::{Chunk, ChunkMetadata};
 use regex::Regex;
@@ -157,13 +157,16 @@ impl Decoder for JavaScriptStaticDecoder {
         }
 
         let mut decoded_chunks = Vec::new();
-        let mut emitted = BTreeSet::new();
         let base_offset = chunk.metadata.base_offset;
         if kinds.xor {
-            recover_xor_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut emitted);
+            let mut recovered = BTreeSet::new();
+            recover_xor_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut recovered);
+            append_spliced_recoveries(&mut decoded_chunks, chunk, recovered, self.name());
         }
         if kinds.node_aes {
-            aes::recover_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut emitted);
+            let mut recovered = BTreeSet::new();
+            aes::recover_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut recovered);
+            append_spliced_recoveries(&mut decoded_chunks, chunk, recovered, self.name());
         }
         if kinds.cryptojs_aes {
             let mut recovered = BTreeSet::new();
@@ -175,9 +178,6 @@ impl Decoder for JavaScriptStaticDecoder {
             reverse_base64::recover_plaintexts(&chunk.data, base_offset, &mut recovered);
             append_spliced_recoveries(&mut decoded_chunks, chunk, recovered, self.name());
         }
-        for plaintext in emitted {
-            push_decoded_text_chunk(&mut decoded_chunks, chunk, plaintext, self.name());
-        }
         decoded_chunks
     }
 }
@@ -186,7 +186,7 @@ fn recover_xor_plaintexts(
     source: &str,
     metadata: &ChunkMetadata,
     base_offset: usize,
-    emitted: &mut BTreeSet<String>,
+    emitted: &mut BTreeSet<RecoveredPlaintext>,
 ) {
     let bindings = collect_byte_array_bindings(source);
     if bindings.len() < 2 {
@@ -263,7 +263,14 @@ fn recover_xor_plaintexts(
                 continue;
             }
         };
-        emitted.insert(plaintext);
+        let Some(expression) = captures.get(0) else {
+            continue;
+        };
+        emitted.insert(RecoveredPlaintext {
+            plaintext,
+            source_start: expression.start(),
+            source_end: expression.end(),
+        });
     }
 }
 

@@ -49,6 +49,14 @@ const AES_JOINED_BUFFERS: &str = concat!(
     "_dec.final()]).toString('utf8');",
 );
 
+const AES_ANCHORED_BUFFERS: &str = concat!(
+    "const key = Buffer.from(\"75aa41b547fb2b20b1c35bf524115e077c7d5dd5c173271fe67c03c2d781192d\", 'hex'); ",
+    "const iv = Buffer.from(\"667daed70df5f3b0c37d48833c330c1c\", 'hex'); ",
+    "const api_key = Buffer.from(\"JKw6qMMtTXDyx1rzpmVgQo0zaQCXHwmpN+VDRTCWOODIhrmxFCPBXKzHPuWnEvyT\", 'base64'); ",
+    "const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv); ",
+    "return Buffer.concat([decipher.update(api_key), decipher.final()]).toString('utf8');",
+);
+
 const CRYPTOJS_PASSPHRASE: &str = concat!(
     "const CryptoJS = require(\"crypto-js\"); ",
     "function decryptAES(encryptedData, keyMaterial) { ",
@@ -104,11 +112,21 @@ fn scanner(config: ScannerConfig) -> CompiledScanner {
 }
 
 fn scan(scanner: &CompiledScanner, source: &str, backend: ScanBackend) -> Vec<RawMatch> {
+    scan_at_base_offset(scanner, source, backend, 0)
+}
+
+fn scan_at_base_offset(
+    scanner: &CompiledScanner,
+    source: &str,
+    backend: ScanBackend,
+    base_offset: usize,
+) -> Vec<RawMatch> {
     let chunk = Chunk {
         data: source.into(),
         metadata: ChunkMetadata {
             source_type: "filesystem".into(),
             path: Some("recovery.js".into()),
+            base_offset,
             ..Default::default()
         },
     };
@@ -164,6 +182,110 @@ fn cryptojs_recovery_preserves_assignment_anchor_for_unprefixed_secret() {
         credential_found(&matches, ANCHORED_SECRET),
         "the retained api_key assignment must detect the recovered unprefixed credential: {matches:?}"
     );
+}
+
+#[test]
+fn xor_recovery_preserves_assignment_anchor_for_unprefixed_secret() {
+    let key = [17u8, 29, 43];
+    let encoded = ANCHORED_SECRET
+        .bytes()
+        .zip(key.into_iter().cycle())
+        .map(|(byte, key_byte)| (byte ^ key_byte).to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let source = format!(
+        "const data = [{encoded}]; const key = [17,29,43]; const api_key = \
+         String.fromCharCode(...data.map((b, i) => b ^ key[i % key.length]));"
+    );
+    let matches = scan(
+        &scanner(ScannerConfig::thorough()),
+        &source,
+        ScanBackend::CpuFallback,
+    );
+    let hits = matches
+        .iter()
+        .filter(|matched| {
+            matched.detector_id.as_ref() == "generic-api-key"
+                && matched.credential.as_ref() == ANCHORED_SECRET
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        hits.len(),
+        1,
+        "the retained api_key assignment must produce one generic-api-key finding: {matches:?}"
+    );
+    assert_eq!(hits[0].location.line, Some(1));
+    assert_eq!(
+        hits[0].location.offset,
+        source.find("String.fromCharCode").expect("XOR expression")
+    );
+}
+
+#[test]
+fn node_aes_recovery_preserves_assignment_anchor_for_unprefixed_secret() {
+    let scanner = scanner(ScannerConfig::thorough());
+    let renamed_known_prefix = AES_BOUND_BUFFERS.replace("payload", "api_key");
+    let renamed_matches = scan(&scanner, &renamed_known_prefix, ScanBackend::CpuFallback);
+    assert!(
+        exact_target_found(&renamed_matches),
+        "renaming the AES ciphertext binding must not disable recovery: {renamed_matches:?}"
+    );
+    let matches = scan(&scanner, AES_ANCHORED_BUFFERS, ScanBackend::CpuFallback);
+    let hits = matches
+        .iter()
+        .filter(|matched| {
+            matched.detector_id.as_ref() == "generic-api-key"
+                && matched.credential.as_ref() == ANCHORED_SECRET
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        hits.len(),
+        1,
+        "the retained api_key binding must produce one generic-api-key finding: {matches:?}"
+    );
+    assert_eq!(hits[0].location.line, Some(1));
+    assert_eq!(
+        hits[0].location.offset,
+        AES_ANCHORED_BUFFERS
+            .find("Buffer.from(\"JKw6qMMt")
+            .expect("AES ciphertext binding")
+    );
+}
+
+#[test]
+fn xor_and_node_aes_recovery_preserve_exact_source_provenance() {
+    let scanner = scanner(ScannerConfig::thorough());
+    let base_offset = 4096;
+    for (source, source_start) in [
+        (
+            XOR_LITERAL,
+            XOR_LITERAL
+                .find("String.fromCharCode")
+                .expect("XOR expression"),
+        ),
+        (
+            AES_BOUND_BUFFERS,
+            AES_BOUND_BUFFERS
+                .find("Buffer.from(\"X1VL9YbG")
+                .expect("AES ciphertext binding"),
+        ),
+    ] {
+        let matches = scan_at_base_offset(&scanner, source, ScanBackend::CpuFallback, base_offset);
+        let finding = matches
+            .iter()
+            .find(|matched| {
+                matched.detector_id.as_ref() == "github-classic-pat"
+                    && matched.credential.as_ref() == SECRET
+            })
+            .expect("static recovery must surface the exact synthetic PAT");
+        assert_eq!(
+            finding.location.source.as_ref(),
+            "filesystem/javascript-static"
+        );
+        assert_eq!(finding.location.file_path.as_deref(), Some("recovery.js"));
+        assert_eq!(finding.location.line, Some(1));
+        assert_eq!(finding.location.offset, base_offset + source_start);
+    }
 }
 
 #[test]
@@ -226,6 +348,7 @@ fn simd_scan_recovers_every_supported_static_program_shape() {
         XOR_BASE64_ARRAYS,
         AES_BOUND_BUFFERS,
         AES_JOINED_BUFFERS,
+        AES_ANCHORED_BUFFERS,
         CRYPTOJS_PASSPHRASE,
         CRYPTOJS_RENAMED,
         CRYPTOJS_ANCHORED_ASSIGNMENT,
@@ -247,9 +370,15 @@ fn simd_scan_recovers_every_supported_static_program_shape() {
 
 #[cfg(feature = "gpu")]
 #[test]
-fn cryptojs_static_recovery_has_exact_gpu_cpu_parity() {
+fn static_recovery_has_exact_gpu_cpu_parity() {
     let scanner = scanner(ScannerConfig::thorough());
     for source in [
+        XOR_LITERAL,
+        XOR_HEX_LITERAL,
+        XOR_BASE64_ARRAYS,
+        AES_BOUND_BUFFERS,
+        AES_JOINED_BUFFERS,
+        AES_ANCHORED_BUFFERS,
         CRYPTOJS_PASSPHRASE,
         CRYPTOJS_RENAMED,
         CRYPTOJS_ANCHORED_ASSIGNMENT,
@@ -258,7 +387,7 @@ fn cryptojs_static_recovery_has_exact_gpu_cpu_parity() {
         let mut gpu = scan(&scanner, source, ScanBackend::GpuWgpu);
         cpu.sort();
         gpu.sort();
-        assert_eq!(gpu, cpu, "CryptoJS recovery must be backend-neutral");
+        assert_eq!(gpu, cpu, "static recovery must be backend-neutral");
         assert!(
             exact_target_found(&gpu) || credential_found(&gpu, ANCHORED_SECRET),
             "GPU route must preserve the recovered credential"
