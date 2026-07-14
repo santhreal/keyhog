@@ -1,5 +1,5 @@
 use super::pipeline::{decode_candidate_refs_exact, with_extracted_value_spans};
-use super::Decoder;
+use super::{DecodeAdmission, Decoder};
 use aho_corasick::AhoCorasick;
 use keyhog_core::Chunk;
 use std::sync::LazyLock;
@@ -69,6 +69,19 @@ impl Decoder for ReverseDecoder {
         "reverse"
     }
 
+    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+        if chunk.metadata.source_type.contains("/reverse") {
+            return DecodeAdmission::Impossible;
+        }
+        with_extracted_value_spans(&chunk.data, |candidates| {
+            if candidates.iter().any(is_reverse_candidate) {
+                DecodeAdmission::Possible
+            } else {
+                DecodeAdmission::Impossible
+            }
+        })
+    }
+
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
         // Refuse to recurse on our own output: reverse(reverse(s)) == s, so
         // the recursive pass would emit the original credential under a
@@ -80,19 +93,20 @@ impl Decoder for ReverseDecoder {
         with_extracted_value_spans(&chunk.data, |candidates| {
             decode_candidate_refs_exact(
                 chunk,
-                candidates.iter().filter_map(|candidate| {
-                    (candidate.value.len() >= MIN_REVERSE_LEN
-                        && !crate::suppression::shape::looks_like_prefixed_hash_digest(
-                            &candidate.value,
-                        )
-                        && looks_reversible(&candidate.value))
-                    .then_some(candidate)
-                }),
+                candidates
+                    .iter()
+                    .filter_map(|candidate| is_reverse_candidate(candidate).then_some(candidate)),
                 |s| Ok(reverse_str(s)),
                 self.name(),
             )
         })
     }
+}
+
+fn is_reverse_candidate(candidate: &super::pipeline::ExtractedValue) -> bool {
+    candidate.value.len() >= MIN_REVERSE_LEN
+        && !crate::suppression::shape::looks_like_prefixed_hash_digest(&candidate.value)
+        && looks_reversible(&candidate.value)
 }
 
 pub(crate) fn reverse_str(s: &str) -> String {

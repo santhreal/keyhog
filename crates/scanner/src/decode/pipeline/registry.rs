@@ -9,7 +9,7 @@ use crate::decode::url::{
     HtmlNamedEntityDecoder, HtmlNumericEntityDecoder, MimeEncodedWordDecoder, OctalEscapeDecoder,
     QuotedPrintableDecoder, UnicodeEscapeDecoder, UrlDecoder,
 };
-use crate::decode::Decoder;
+use crate::decode::{DecodeAdmission, Decoder};
 use parking_lot::RwLock;
 #[cfg(test)]
 use std::cell::RefCell;
@@ -156,6 +156,33 @@ pub(crate) fn default_decoder_names() -> Vec<&'static str> {
     default_decoders().iter().map(|d| d.name()).collect()
 }
 
+/// Aggregate decoder-owned admission proofs for one root chunk.
+///
+/// Candidate extraction is primed once so built-in predicates that use the
+/// shared extractor do not each allocate and rescan independently. Any custom
+/// decoder that keeps the trait default returns `Unknown`, which is preserved
+/// unless another decoder already proves the chunk is `Possible`.
+pub(crate) fn decoder_admission(chunk: &keyhog_core::Chunk) -> DecodeAdmission {
+    let decoders = active_decoders();
+    super::extractor::clear_shared_candidates();
+    super::extractor::prime_shared_candidates(&chunk.data);
+
+    let mut aggregate = DecodeAdmission::Impossible;
+    for decoder in decoders.iter() {
+        match decoder.admission(chunk) {
+            DecodeAdmission::Possible => {
+                aggregate = DecodeAdmission::Possible;
+                break;
+            }
+            DecodeAdmission::Unknown => aggregate = DecodeAdmission::Unknown,
+            DecodeAdmission::Impossible => {}
+        }
+    }
+
+    super::extractor::clear_shared_candidates();
+    aggregate
+}
+
 fn decoder_registry() -> &'static RwLock<Arc<Vec<Arc<dyn Decoder>>>> {
     DECODERS.get_or_init(|| RwLock::new(Arc::new(default_decoders())))
 }
@@ -266,3 +293,7 @@ pub(crate) fn register_thread_decoder(decoder: Box<dyn Decoder>) -> ScopedDecode
         active: inserted,
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/decode_admission_soundness.rs"]
+mod admission_soundness_tests;

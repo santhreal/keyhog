@@ -9,7 +9,7 @@ impl CompiledScanner {
     pub(super) fn chunk_needs_decode_postprocess(&self, chunk: &keyhog_core::Chunk) -> bool {
         self.config.max_decode_depth > 0
             && chunk.data.len() <= self.config.max_decode_bytes
-            && crate::decode::has_decodable_payload(chunk.data.as_bytes())
+            && crate::decode::decoder_admission(chunk) != crate::decode::DecodeAdmission::Impossible
     }
 
     #[cfg(not(feature = "decode"))]

@@ -1,5 +1,5 @@
 use super::pipeline::{push_decoded_text_chunk, with_extracted_value_spans};
-use super::Decoder;
+use super::{DecodeAdmission, Decoder};
 use aho_corasick::AhoCorasick;
 use keyhog_core::Chunk;
 use std::sync::LazyLock;
@@ -410,6 +410,24 @@ impl Decoder for CaesarDecoder {
         "caesar"
     }
 
+    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+        if chunk.metadata.source_type.contains("/caesar")
+            || is_source_code_path(chunk.metadata.path.as_deref())
+        {
+            return DecodeAdmission::Impossible;
+        }
+        with_extracted_value_spans(&chunk.data, |candidates| {
+            if candidates
+                .iter()
+                .any(|candidate| candidate_caesar_shifts(&candidate.value).is_some())
+            {
+                DecodeAdmission::Possible
+            } else {
+                DecodeAdmission::Impossible
+            }
+        })
+    }
+
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
         // Refuse to recurse on our own output: shifting all 25 non-trivial
         // shifts on a previous output's would re-shift back to the original
@@ -444,9 +462,6 @@ impl Decoder for CaesarDecoder {
                     continue;
                 }
                 let candidate = candidate.value.as_str();
-                if candidate.len() < MIN_CAESAR_LEN {
-                    continue;
-                }
                 // SHIFT-INVARIANT PRECONDITION (sound; a true superset of "some
                 // shift is credential-shaped"). `caesar_shift` maps letter->letter,
                 // digit->digit, other->other, so the two structural gates inside
@@ -464,9 +479,6 @@ impl Decoder for CaesarDecoder {
                 // alphabetic-run length gate, which is unsound: a `0x`/`SG.`/`hf_`
                 // prefix needs only a 1-2 letter run, so a credential-shaped shift
                 // can arise from a chunk with no long alphabetic run at all).
-                if !candidate_shape_invariant(candidate) {
-                    continue;
-                }
                 // Rotated-prefix SHIFT SELECTION (recall- AND precision-exact, not
                 // merely a prefilter). A shifted variant's final gate is a
                 // KNOWN_PREFIXES substring in `caesar_shift(candidate, k)`. By the
@@ -484,7 +496,9 @@ impl Decoder for CaesarDecoder {
                 // `find_overlapping_iter` (not `find_iter`) is required: a needle can
                 // sit inside/over another, and a non-overlapping walk would drop its
                 // `k`, losing a shift that should fire.
-                let try_shift = matched_caesar_shifts(candidate);
+                let Some(try_shift) = candidate_caesar_shifts(candidate) else {
+                    continue;
+                };
                 for shift in 1..=25u8 {
                     if !try_shift[shift as usize] {
                         continue;
@@ -517,6 +531,14 @@ impl Decoder for CaesarDecoder {
         });
         out
     }
+}
+
+fn candidate_caesar_shifts(candidate: &str) -> Option<[bool; 26]> {
+    if candidate.len() < MIN_CAESAR_LEN || !candidate_shape_invariant(candidate) {
+        return None;
+    }
+    let shifts = matched_caesar_shifts(candidate);
+    shifts.iter().any(|matched| *matched).then_some(shifts)
 }
 
 /// The set of Caesar shifts `k ∈ 1..=25` worth trying for `candidate`, as a

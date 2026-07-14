@@ -4,7 +4,7 @@ use super::limits::{
 use super::pipeline::{
     push_decoded_text_chunk_spliced_at, with_extracted_value_spans, ExtractedValue,
 };
-use super::{Decoder, EncodedString};
+use super::{DecodeAdmission, Decoder, EncodedString};
 use keyhog_core::Chunk;
 
 pub(super) struct Base64Decoder;
@@ -12,6 +12,10 @@ pub(super) struct Base64Decoder;
 impl Decoder for Base64Decoder {
     fn name(&self) -> &'static str {
         "base64"
+    }
+
+    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+        admission_from_bool(has_base64_candidate(&chunk.data))
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
@@ -69,6 +73,10 @@ impl Decoder for Z85Decoder {
         "z85"
     }
 
+    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+        admission_from_bool(has_z85_candidate(&chunk.data))
+    }
+
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
         let mut decoded_chunks = Vec::new();
         visit_z85_string_spans(&chunk.data, MIN_Z85_CANDIDATE_LEN, |z_match, value| {
@@ -88,6 +96,14 @@ impl Decoder for Z85Decoder {
             }
         });
         decoded_chunks
+    }
+}
+
+fn admission_from_bool(possible: bool) -> DecodeAdmission {
+    if possible {
+        DecodeAdmission::Possible
+    } else {
+        DecodeAdmission::Impossible
     }
 }
 
@@ -190,6 +206,12 @@ fn visit_classified_base64_string_spans(
             }
         }
     });
+}
+
+fn has_base64_candidate(text: &str) -> bool {
+    let mut found = false;
+    visit_classified_base64_string_spans(text, MIN_BASE64_CANDIDATE_LEN, |_, _| found = true);
+    found
 }
 
 fn classify_base64(candidate: &str) -> Option<Base64Variant> {
@@ -323,6 +345,12 @@ fn visit_z85_string_spans(
             }
         }
     });
+}
+
+fn has_z85_candidate(text: &str) -> bool {
+    let mut found = false;
+    visit_z85_string_spans(text, MIN_Z85_CANDIDATE_LEN, |_, _| found = true);
+    found
 }
 
 /// Decode a Z85-encoded string (length must be a multiple of 5), bounded to

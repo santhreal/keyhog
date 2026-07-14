@@ -32,8 +32,8 @@ pub use hex::{find_hex_strings, hex_decode};
 pub(crate) use pipeline::decode_chunk;
 pub use pipeline::register_decoder;
 pub(crate) use pipeline::{
-    bytecount_newlines, decoder_profile_dump, decoder_profile_reset, default_decoder_names,
-    extract_profile_dump, extract_profile_reset, splice_decoded_payload_at,
+    bytecount_newlines, decoder_admission, decoder_profile_dump, decoder_profile_reset,
+    default_decoder_names, extract_profile_dump, extract_profile_reset, splice_decoded_payload_at,
     with_extracted_value_spans,
 };
 #[cfg(test)]
@@ -237,7 +237,30 @@ pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
 /// A trait for decoding chunks to find hidden secrets.
 pub trait Decoder: Send + Sync {
     fn name(&self) -> &'static str;
+
+    /// Whether this decoder can produce output for `chunk`.
+    ///
+    /// Custom decoders default to [`DecodeAdmission::Unknown`], which always
+    /// fails open. Built-in decoders override this with a predicate owned next
+    /// to the grammar used by [`Self::decode_chunk`]. Only `Impossible` permits
+    /// the engine to skip decode post-processing.
+    fn admission(&self, _chunk: &Chunk) -> DecodeAdmission {
+        DecodeAdmission::Unknown
+    }
+
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk>;
+}
+
+/// Proof carried from decoder-owned grammars to the scan admission path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum DecodeAdmission {
+    /// The decoder does not expose a complete admission predicate. Fail open.
+    Unknown,
+    /// The decoder grammar can produce at least one output candidate.
+    Possible,
+    /// The decoder grammar proves that it cannot produce output.
+    Impossible,
 }
 
 /// Candidate encoded string discovered during pre-decoding extraction.

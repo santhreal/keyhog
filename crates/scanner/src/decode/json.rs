@@ -1,6 +1,6 @@
 use super::pipeline::push_decoded_text_chunk_spliced;
 use super::util::{resolve_escaped_codepoint, simple_control_escape, take_hex_digits};
-use super::Decoder;
+use super::{DecodeAdmission, Decoder};
 use keyhog_core::Chunk;
 
 /// JSON-aware decoder that unescapes string values before scanning.
@@ -9,6 +9,14 @@ pub(super) struct JsonDecoder;
 impl Decoder for JsonDecoder {
     fn name(&self) -> &'static str {
         "json"
+    }
+
+    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+        if extract_escaped_json_strings(&chunk.data).is_empty() {
+            DecodeAdmission::Impossible
+        } else {
+            DecodeAdmission::Possible
+        }
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {

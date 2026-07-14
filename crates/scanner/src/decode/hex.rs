@@ -1,6 +1,6 @@
 use super::limits::{MAX_HEX_INPUT_LEN, MIN_HEX_CANDIDATE_LEN};
 use super::pipeline::{decode_candidate_refs_exact, with_extracted_value_spans, ExtractedValue};
-use super::{Decoder, EncodedString};
+use super::{DecodeAdmission, Decoder, EncodedString};
 use keyhog_core::Chunk;
 
 pub(super) struct HexDecoder;
@@ -8,6 +8,19 @@ pub(super) struct HexDecoder;
 impl Decoder for HexDecoder {
     fn name(&self) -> &'static str {
         "hex"
+    }
+
+    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+        with_extracted_value_spans(&chunk.data, |candidates| {
+            if candidates
+                .iter()
+                .any(|candidate| is_hex_candidate(candidate, MIN_HEX_CANDIDATE_LEN))
+            {
+                DecodeAdmission::Possible
+            } else {
+                DecodeAdmission::Impossible
+            }
+        })
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {

@@ -12,7 +12,7 @@
 //! in the normal scan path.
 
 use super::pipeline::{push_decoded_text_chunk, push_decoded_text_chunk_spliced_at};
-use super::Decoder;
+use super::{DecodeAdmission, Decoder};
 use keyhog_core::{Chunk, ChunkMetadata};
 use regex::Regex;
 use std::collections::{BTreeSet, HashMap};
@@ -80,9 +80,50 @@ static XOR_MAP_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 pub(super) struct JavaScriptStaticDecoder;
 
+#[derive(Clone, Copy)]
+struct StaticExpressionKinds {
+    xor: bool,
+    node_aes: bool,
+    cryptojs_aes: bool,
+    reverse_base64: bool,
+}
+
+impl StaticExpressionKinds {
+    fn any(self) -> bool {
+        self.xor || self.node_aes || self.cryptojs_aes || self.reverse_base64
+    }
+}
+
+fn static_expression_kinds(data: &str) -> StaticExpressionKinds {
+    StaticExpressionKinds {
+        xor: data.contains("fromCharCode") && data.contains('^'),
+        node_aes: data.contains("createDecipheriv") && data.contains("aes-256-cbc"),
+        cryptojs_aes: data.contains("crypto-js")
+            && data.contains(".AES")
+            && data.contains(".decrypt")
+            && data.contains(".enc")
+            && data.contains(".Utf8"),
+        reverse_base64: data.contains("atob")
+            && data.contains(".split")
+            && data.contains(".reverse")
+            && data.contains(".join"),
+    }
+}
+
 impl Decoder for JavaScriptStaticDecoder {
     fn name(&self) -> &'static str {
         "javascript-static"
+    }
+
+    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+        if chunk.metadata.source_type.contains("/javascript-static")
+            || chunk.data.len() > MAX_STATIC_SOURCE_BYTES
+            || !static_expression_kinds(&chunk.data).any()
+        {
+            DecodeAdmission::Impossible
+        } else {
+            DecodeAdmission::Possible
+        }
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
@@ -90,23 +131,8 @@ impl Decoder for JavaScriptStaticDecoder {
             return Vec::new();
         }
 
-        let has_xor_expression = chunk.data.contains("fromCharCode") && chunk.data.contains('^');
-        let has_node_aes_expression =
-            chunk.data.contains("createDecipheriv") && chunk.data.contains("aes-256-cbc");
-        let has_cryptojs_aes_expression = chunk.data.contains("crypto-js")
-            && chunk.data.contains(".AES")
-            && chunk.data.contains(".decrypt")
-            && chunk.data.contains(".enc")
-            && chunk.data.contains(".Utf8");
-        let has_reverse_base64_expression = chunk.data.contains("atob")
-            && chunk.data.contains(".split")
-            && chunk.data.contains(".reverse")
-            && chunk.data.contains(".join");
-        if !has_xor_expression
-            && !has_node_aes_expression
-            && !has_cryptojs_aes_expression
-            && !has_reverse_base64_expression
-        {
+        let kinds = static_expression_kinds(&chunk.data);
+        if !kinds.any() {
             return Vec::new();
         }
         if chunk.data.len() > MAX_STATIC_SOURCE_BYTES {
@@ -117,18 +143,18 @@ impl Decoder for JavaScriptStaticDecoder {
         let mut decoded_chunks = Vec::new();
         let mut emitted = BTreeSet::new();
         let base_offset = chunk.metadata.base_offset;
-        if has_xor_expression {
+        if kinds.xor {
             recover_xor_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut emitted);
         }
-        if has_node_aes_expression {
+        if kinds.node_aes {
             aes::recover_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut emitted);
         }
-        if has_cryptojs_aes_expression {
+        if kinds.cryptojs_aes {
             let mut recovered = BTreeSet::new();
             cryptojs::recover_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut recovered);
             append_spliced_recoveries(&mut decoded_chunks, chunk, recovered, self.name());
         }
-        if has_reverse_base64_expression {
+        if kinds.reverse_base64 {
             let mut recovered = BTreeSet::new();
             reverse_base64::recover_plaintexts(&chunk.data, base_offset, &mut recovered);
             append_spliced_recoveries(&mut decoded_chunks, chunk, recovered, self.name());

@@ -5,7 +5,7 @@ use super::pipeline::{
 };
 use super::unicode_escape::unicode_escape_decode;
 use super::util::{hex_val, lazy_decoded_prefix};
-use super::Decoder;
+use super::{DecodeAdmission, Decoder};
 use crate::context;
 use keyhog_core::Chunk;
 
@@ -20,6 +20,14 @@ pub(super) struct UnicodeEscapeDecoder;
 impl Decoder for UrlDecoder {
     fn name(&self) -> &'static str {
         "url"
+    }
+
+    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+        if contains_percent_escape(&chunk.data) {
+            DecodeAdmission::Possible
+        } else {
+            DecodeAdmission::Impossible
+        }
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
@@ -78,6 +86,14 @@ fn percent_assignment_tail_candidates(
 impl Decoder for QuotedPrintableDecoder {
     fn name(&self) -> &'static str {
         "quoted-printable"
+    }
+
+    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+        if has_qp_escape(&chunk.data) {
+            DecodeAdmission::Possible
+        } else {
+            DecodeAdmission::Impossible
+        }
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
@@ -186,6 +202,19 @@ macro_rules! simple_decoder {
                 $name
             }
 
+            fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+                let possible = with_extracted_value_spans(&chunk.data, |candidates| {
+                    candidates
+                        .iter()
+                        .any(|candidate| ($filter)(candidate.value.as_str()))
+                }) || ($filter)(chunk.data.trim());
+                if possible {
+                    DecodeAdmission::Possible
+                } else {
+                    DecodeAdmission::Impossible
+                }
+            }
+
             fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
                 let mut decoded_chunks = with_extracted_value_spans(&chunk.data, |candidates| {
                     decode_candidate_refs_exact(
@@ -240,6 +269,14 @@ simple_decoder!(
 impl Decoder for MimeEncodedWordDecoder {
     fn name(&self) -> &'static str {
         "mime-encoded-word"
+    }
+
+    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+        if find_mime_encoded_word_spans(&chunk.data).is_empty() {
+            DecodeAdmission::Impossible
+        } else {
+            DecodeAdmission::Possible
+        }
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
@@ -605,13 +642,10 @@ pub(crate) fn octal_escape_decode(input: &str) -> Result<String, ()> {
 }
 
 fn contains_octal_escape(input: &str) -> bool {
-    let bytes = input.as_bytes();
-    bytes.windows(4).any(|window| {
-        window[0] == b'\\'
-            && (b'0'..=b'7').contains(&window[1])
-            && (b'0'..=b'7').contains(&window[2])
-            && (b'0'..=b'7').contains(&window[3])
-    })
+    input
+        .as_bytes()
+        .windows(2)
+        .any(|window| window[0] == b'\\' && (b'0'..=b'7').contains(&window[1]))
 }
 
 pub(crate) fn mime_encoded_word_decode(input: &str) -> Result<String, ()> {
