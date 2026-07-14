@@ -8,7 +8,7 @@
 #   make host              # print host hardware JSON
 #   make mirror            # generate the 15k synthetic mirror corpus if absent
 #   make ioc-recovery-corpus  # generate the 4,368-file P0-P12 recovery corpus
-#   make ioc-recovery         # compare KeyHog full/fast/deep on recovery phases
+#   make ioc-recovery         # compare all four KeyHog presets on recovery phases
 #   make agentre-corpus       # verify sources and build the pinned Linux binaries
 #   make leakage-audit        # prove train/calibration/sealed-test split isolation
 #   make creddata          # print Samsung/CredData corpus info

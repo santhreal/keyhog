@@ -20,7 +20,7 @@ def test_perf_tier_uses_only_corpus_eligible_default_axes(monkeypatch):
 
     assert {cfg.daemon for cfg in tree} == {"off"}
     assert {cfg.cache for cfg in tree} == {"off", "on"}
-    assert {cfg.mode for cfg in tree} == {"full", "fast", "deep"}
+    assert {cfg.mode for cfg in tree} == {"full", "fast", "deep", "precision"}
     assert {cfg.daemon for cfg in daemon_file} == {"off", "on"}
     assert {cfg.cache for cfg in daemon_file} == {"off"}
     assert {cfg.mode for cfg in daemon_file} == {"full"}

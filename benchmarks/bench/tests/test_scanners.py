@@ -365,19 +365,31 @@ def test_keyhog_single_file_perf_command_keeps_daemon_fixture_policy(tmp_path):
     assert "--no-suppress-test-fixtures" not in cmd
 
 
-def test_keyhog_deep_benchmark_mode_is_explicit_and_matrix_owned(tmp_path):
+def test_keyhog_presets_are_explicit_and_matrix_owned(tmp_path):
     scanner = scanners.KeyhogScanner(binary="/bin/true")
     deep = ScannerConfig(backend="simd", mode="deep")
+    precision = ScannerConfig(backend="simd", mode="precision")
     full = ScannerConfig(backend="simd", mode="full")
 
     executable = pathlib.Path("/bin/true")
     deep_cmd = scanner._cmd(tmp_path, deep, tmp_path / "deep.json", None, executable)
+    precision_cmd = scanner._cmd(
+        tmp_path, precision, tmp_path / "precision.json", None, executable
+    )
     full_cmd = scanner._cmd(tmp_path, full, tmp_path / "full.json", None, executable)
 
     assert "--deep" in deep_cmd
+    assert "--precision" in precision_cmd
     assert "--deep" not in full_cmd
-    assert {cfg.mode for cfg in scanner.matrix(["mode"])} == {"full", "fast", "deep"}
+    assert "--precision" not in full_cmd
+    assert {cfg.mode for cfg in scanner.matrix(["mode"])} == {
+        "full",
+        "fast",
+        "deep",
+        "precision",
+    }
     assert deep.config_id == "simd-nocache-nodaemon-deep"
+    assert precision.config_id == "simd-nocache-nodaemon-precision"
 
 
 def test_keyhog_scanner_reports_timeout_as_timeout(monkeypatch, tmp_path):
@@ -575,7 +587,7 @@ def test_keyhog_daemon_commands_keep_server_and_client_ownership_separate(tmp_pa
     ]
     forbidden_client_flags = {
         "--backend", "--detectors", "--show-secrets", "--no-gpu",
-        "--require-gpu", "--incremental", "--fast", "--deep",
+        "--require-gpu", "--incremental", "--fast", "--deep", "--precision",
         "--no-suppress-test-fixtures",
     }
     assert forbidden_client_flags.isdisjoint(client)
@@ -587,6 +599,7 @@ def test_keyhog_daemon_commands_keep_server_and_client_ownership_separate(tmp_pa
         ("auto", "off", "full", "explicit"),
         ("simd", "on", "full", "incremental cache"),
         ("simd", "off", "deep", "only full mode"),
+        ("simd", "off", "precision", "only full mode"),
     ],
 )
 def test_keyhog_daemon_validation_rejects_unproven_axes(

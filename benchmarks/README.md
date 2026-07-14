@@ -16,7 +16,7 @@ hand-edited.
 make mirror     # generate the 15k synthetic SecretBench-mirror corpus (off-git, neutral layout)
 make bench      # run every scanner on the mirror -> results/<host>/
 make ioc-recovery-corpus # generate the deterministic P0-P12 recovery corpus
-make ioc-recovery # compare keyhog full, fast, and deep on exact recovery
+make ioc-recovery # compare all four keyhog presets on exact recovery
 make report     # render reports/ + inject the leaderboard into ../README.md
 make analyze    # print top FP/FN examples for detector tuning
 make test       # pytest the package (scorer truth, loaders, injection idempotence)
@@ -300,7 +300,7 @@ exact process. Active requests must return to zero after each client. The
 default user daemon is never contacted.
 
 Only explicit `simd`, `cpu`, `gpu-cuda`, and `gpu-wgpu` backends are eligible. `auto` lacks a
-persisted selected-backend receipt. Cache, fast, deep, and confidence axes are
+persisted selected-backend receipt. Cache, fast, deep, precision, and confidence axes are
 also unavailable because those policies are not bound into daemon startup.
 Unsupported combinations produce unavailable rows with the exact reason.
 Explicit CPU and SIMD daemon backends disable all GPU runtime work. Explicit
@@ -353,7 +353,7 @@ vectors without manual babysitting:
   after a real gain, never down to hide one).
 - **leaderboard + speed/RSS:** `bench-nightly` (nightly): renders the tables.
 - **strict recall under evasion:** `runners-nightly` (the Rust strict matrix).
-- **exact secret recovery:** `bench-nightly` (the P0-P12 full/fast/deep matrix).
+- **exact secret recovery:** `bench-nightly` (the P0-P12 full/fast/deep/precision matrix).
 - **test depth:** `ci` (`all_tests`, property, e2e on every push).
 
 `loop` deliberately does **not** `--inject` the README: the published tables are

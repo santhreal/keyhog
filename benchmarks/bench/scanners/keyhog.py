@@ -11,8 +11,8 @@ Maps a :class:`ScannerConfig` to keyhog CLI flags:
   pass: that's the 10-100x monorepo-re-run speedup, measured honestly.
 * **daemon** -> an owned private daemon for one-file perf rows, or
   ``--daemon=off`` for normal scans.
-* **mode** -> ``--fast`` / ``--deep`` for the two explicit presets, full
-  pipeline otherwise.
+* **mode** -> ``--fast`` / ``--deep`` / ``--precision`` for the three
+  explicit presets, full pipeline otherwise.
 
 Labeled-corpus in-process scoring parity flags are present:
 ``--format json --show-secrets --no-suppress-test-fixtures --no-config`` plus
@@ -329,6 +329,7 @@ class KeyhogScanner(Scanner):
             ScannerConfig(backend="simd", cache="off", daemon="on", mode="full"),
             ScannerConfig(backend="simd", cache="off", daemon="off", mode="fast"),
             ScannerConfig(backend="simd", cache="off", daemon="off", mode="deep"),
+            ScannerConfig(backend="simd", cache="off", daemon="off", mode="precision"),
         ]
         return [default, *flips]
 
@@ -339,7 +340,7 @@ class KeyhogScanner(Scanner):
             "backend": list(_BACKENDS),
             "cache": ["off", "on"],
             "daemon": ["off", "on"],
-            "mode": ["full", "fast", "deep"],
+            "mode": ["full", "fast", "deep", "precision"],
         }
         defaults = {"backend": "simd", "cache": "off", "daemon": "off", "mode": "full"}
         active = [a for a in axes if a in choices]
@@ -389,6 +390,8 @@ class KeyhogScanner(Scanner):
             cmd.append("--fast")
         elif cfg.mode == "deep":
             cmd.append("--deep")
+        elif cfg.mode == "precision":
+            cmd.append("--precision")
         if cfg.backend in _DETERMINISTIC_BACKENDS:
             cmd.append("--no-gpu")
         elif cfg.backend in _REQUIRE_GPU_BACKENDS:
