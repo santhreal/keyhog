@@ -310,20 +310,29 @@ fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
         ..DetectorSpec::default()
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile CUDA window scanner");
-    if !crate::hw_probe::probe_hardware().gpu_available {
-        eprintln!("CUDA parity fixture requires a physical GPU");
-        return;
-    }
     let cuda = scanner
         .gpu_backend_candidates()
         .into_iter()
         .find(|candidate| candidate.backend == ScanBackend::GpuCuda)
         .expect("compiled scanner must report CUDA");
-    assert!(
-        cuda.acquired,
-        "RTX host must acquire CUDA: {}",
-        cuda.acquisition_error.as_deref().unwrap_or("no diagnostic")
-    );
+    if !cuda.acquired {
+        let caps = crate::hw_probe::probe_hardware();
+        let cuda_capable = cuda.device_identity.is_some()
+            || caps
+                .gpu_name
+                .as_deref()
+                .is_some_and(|name| name.to_ascii_lowercase().contains("nvidia"));
+        assert!(
+            !cuda_capable,
+            "CUDA-capable host failed to acquire CUDA: {}",
+            cuda.acquisition_error.as_deref().unwrap_or("no diagnostic")
+        );
+        eprintln!(
+            "CUDA parity fixture skipped because the CUDA peer is ineligible: {}",
+            cuda.acquisition_error.as_deref().unwrap_or("no diagnostic")
+        );
+        return;
+    }
 
     let mut oversized = "x".repeat(160);
     oversized.replace_range(61..61 + SEAM.len(), SEAM);
@@ -487,6 +496,14 @@ fn literal_presence_windows_cover_the_tail_and_reject_impossible_overlap() {
     let error = for_each_region_presence_window(&bytes, 64, 65, |_window, _range| Ok(()))
         .expect_err("literal longer than the dispatch ceiling must fail");
     assert!(error.contains("longest compiled GPU literal is 65 byte(s)"));
+    let error = validate_region_presence_request_plan(&[chunk_with_hits(65, false)], 64, 65)
+        .expect_err("request preflight must preserve actionable literal bounds");
+    assert!(
+        error.contains("literal is 65 byte(s)")
+            && error.contains("64-byte dispatch ceiling")
+            && error.contains("Fix:"),
+        "unexpected preflight diagnostic: {error}"
+    );
 
     let pathological = vec![b'x'; 64 + MAX_REGION_PRESENCE_REQUEST_DISPATCHES];
     let error = for_each_region_presence_window(&pathological, 64, 64, |_window, _range| Ok(()))

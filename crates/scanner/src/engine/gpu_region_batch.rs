@@ -271,21 +271,8 @@ fn region_presence_window_ranges(
     byte_limit: usize,
     max_literal_len: usize,
 ) -> Result<impl Iterator<Item = Range<usize>>, String> {
-    if byte_limit == 0 || byte_limit > REGION_PRESENCE_BATCH_BYTE_LIMIT {
-        return Err(format!(
-            "GPU region-presence window limit {byte_limit} is outside the supported range 1..={REGION_PRESENCE_BATCH_BYTE_LIMIT}"
-        ));
-    }
-    if max_literal_len == 0 {
-        return Err("GPU region-presence windowing requires at least one compiled literal".into());
-    }
-    if max_literal_len > byte_limit {
-        return Err(format!(
-            "longest compiled GPU literal is {max_literal_len} byte(s), above the selected backend's {byte_limit}-byte dispatch ceiling"
-        ));
-    }
-    let overlap = max_literal_len - 1;
     let dispatches = region_presence_window_dispatch_count(len, byte_limit, max_literal_len)?;
+    let overlap = max_literal_len - 1;
     if dispatches > MAX_REGION_PRESENCE_REQUEST_DISPATCHES {
         return Err(format!(
             "GPU region-presence needs {dispatches} overlap window dispatches, above the request safety limit of {MAX_REGION_PRESENCE_REQUEST_DISPATCHES}. Fix: lower the source chunk size or shorten the detector literal"
@@ -303,14 +290,32 @@ fn region_presence_window_ranges(
     }))
 }
 
+fn validate_region_presence_window_bounds(
+    byte_limit: usize,
+    max_literal_len: usize,
+) -> Result<(), String> {
+    if byte_limit == 0 || byte_limit > REGION_PRESENCE_BATCH_BYTE_LIMIT {
+        return Err(format!(
+            "GPU region-presence window limit {byte_limit} is outside the supported range 1..={REGION_PRESENCE_BATCH_BYTE_LIMIT}"
+        ));
+    }
+    if max_literal_len == 0 {
+        return Err("GPU region-presence windowing requires at least one compiled literal".into());
+    }
+    if max_literal_len > byte_limit {
+        return Err(format!(
+            "longest compiled GPU literal is {max_literal_len} byte(s), above the selected backend's {byte_limit}-byte dispatch ceiling. Fix: shorten the detector literal or select a backend with a sufficient measured-correct ceiling"
+        ));
+    }
+    Ok(())
+}
+
 fn region_presence_window_dispatch_count(
     len: usize,
     byte_limit: usize,
     max_literal_len: usize,
 ) -> Result<usize, String> {
-    if max_literal_len == 0 || max_literal_len > byte_limit {
-        return Err("GPU region-presence window count received invalid literal bounds".to_string());
-    }
+    validate_region_presence_window_bounds(byte_limit, max_literal_len)?;
     let overlap = max_literal_len - 1;
     let step = byte_limit.checked_sub(overlap).ok_or_else(|| {
         "GPU region-presence window progress underflows the dispatch ceiling".to_string()
