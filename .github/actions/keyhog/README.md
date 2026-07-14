@@ -1,22 +1,35 @@
-# KeyHog GitHub Action: drop-in secret scanning
+# KeyHog GitHub Action
 
-One step in your workflow. Findings fail the job, the report uploads to
-GitHub code-scanning, and a copy of the report attaches as a workflow
-artifact for download. The job summary shows the scan path, severity floor,
-report name, raw exit code, finding count, and scan duration for fast PR triage.
+Use this complete job to scan checked-out repository content and upload SARIF:
 
 ```yaml
-- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
+permissions:
+  contents: read
+  security-events: write
+
+steps:
+  - uses: actions/checkout@v4
+  - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
 ```
 
-That's it. Defaults: scan the whole repo, fail on `high` or above, output
-SARIF, upload to code-scanning. With `upload-sarif: 'true'`, Code Scanning
+The Action scans the checked-out workspace, fails on `high` or above, writes
+SARIF, uploads it to Code Scanning, and attaches the report as a workflow
+artifact. The job summary includes the scan path, severity floor, report name,
+raw exit code, finding count, and scan duration.
+
+With `upload-sarif: 'true'`, Code Scanning
 upload failures fail closed on trusted pushes and same-repo PRs. Fork PRs can
 lack `security-events: write`; those upload failures stay advisory and the
 SARIF report remains attached as a workflow artifact. Trusted upload failures
 also keep the artifact so the failed job is still diagnosable.
 
+Set `upload-sarif: 'false'` when the workflow cannot grant
+`security-events: write`. The artifact upload remains available.
+
 ## Full reference
+
+Keep the checkout step and permissions from the complete job above, then add
+inputs to the KeyHog step:
 
 ```yaml
 - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
