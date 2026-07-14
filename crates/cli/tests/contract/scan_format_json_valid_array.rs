@@ -1,4 +1,4 @@
-//! Contract: `--format json` stdout is a versioned findings envelope.
+//! Contract: `--format json-envelope` stdout is a versioned findings envelope.
 
 use crate::e2e::support::{binary, write_temp_file};
 use std::process::Command;
@@ -13,7 +13,7 @@ fn scan_format_json_valid_array() {
             "--backend",
             "simd",
             "--format",
-            "json",
+            "json-envelope",
         ])
         .arg(&path)
         .output()

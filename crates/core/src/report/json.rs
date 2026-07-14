@@ -6,8 +6,8 @@ use std::io::Write;
 use crate::VerifiedFinding;
 
 use super::{
-    impl_writer_backed, ReportError, Reporter, ScanReportMetadata, WriterBackedReporter,
-    JSON_REPORT_SCHEMA_MAJOR, JSON_REPORT_SCHEMA_MINOR,
+    impl_writer_backed, JsonlStreamHeader, ReportError, Reporter, ScanReportMetadata,
+    WriterBackedReporter, JSON_REPORT_SCHEMA_MAJOR, JSON_REPORT_SCHEMA_MINOR,
 };
 
 /// One JSON object per line (JSONL).
@@ -55,6 +55,36 @@ impl<W: Write + Send> Reporter for JsonlReporter<W> {
 }
 
 impl_writer_backed!(JsonlReporter);
+
+/// Versioned JSON Lines output with an explicit first-record stream header.
+pub(crate) struct JsonlEnvelopeReporter<W: Write + Send> {
+    writer: W,
+}
+
+impl<W: Write + Send> JsonlEnvelopeReporter<W> {
+    pub(crate) fn new(
+        mut writer: W,
+        metadata: Option<&ScanReportMetadata>,
+    ) -> Result<Self, ReportError> {
+        serde_json::to_writer(&mut writer, &JsonlStreamHeader::new(metadata))?;
+        writeln!(writer)?;
+        Ok(Self { writer })
+    }
+}
+
+impl<W: Write + Send> Reporter for JsonlEnvelopeReporter<W> {
+    fn report(&mut self, finding: &VerifiedFinding) -> Result<(), ReportError> {
+        serde_json::to_writer(&mut self.writer, finding)?;
+        writeln!(self.writer)?;
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<(), ReportError> {
+        self.flush_writer()
+    }
+}
+
+impl_writer_backed!(JsonlEnvelopeReporter);
 
 /// Full JSON array output.
 ///

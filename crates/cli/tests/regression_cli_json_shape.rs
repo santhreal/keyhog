@@ -1,4 +1,4 @@
-//! Regression: `keyhog scan --format json` emits a machine-parseable report
+//! Regression: `keyhog scan --format json-envelope` emits a machine-parseable report
 //! whose SHAPE is pinned field-by-field against the REAL shipped binary.
 //!
 //! The CLI JSON reporter writes a versioned object with a `findings` array.
@@ -99,7 +99,7 @@ fn run_json(path: &PathBuf) -> (Option<i32>, String, String) {
             "cpu",
             "--no-suppress-test-fixtures",
             "--format",
-            "json",
+            "json-envelope",
         ])
         .arg(path)
         .output()

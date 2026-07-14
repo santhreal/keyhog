@@ -75,7 +75,9 @@ Hashes are bare 64-character hex (no `sha256:` prefix). Generate the exact line
 to append from an existing run:
 
 ```sh
-keyhog scan . --format jsonl | jq -r '"hash:" + .credential_hash' >> .keyhogignore
+keyhog scan . --format jsonl-envelope \
+  | jq -r 'select(.record_type != "header") | "hash:" + .credential_hash' \
+  >> .keyhogignore
 ```
 
 The `hash:` prefix is recommended for readability but optional for an exact

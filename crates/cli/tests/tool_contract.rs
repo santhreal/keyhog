@@ -110,7 +110,17 @@ fn output_formats_are_well_formed() {
     let planted = d.join("planted");
     let p = planted.to_str().unwrap();
 
-    for fmt in ["text", "json", "jsonl", "sarif", "csv", "junit", "html"] {
+    for fmt in [
+        "text",
+        "json",
+        "json-envelope",
+        "jsonl",
+        "jsonl-envelope",
+        "sarif",
+        "csv",
+        "junit",
+        "html",
+    ] {
         let (ec, out) = run(&["scan", p, "--daemon=off", "--format", fmt]);
         assert!(
             ec == 0 || ec == 1,

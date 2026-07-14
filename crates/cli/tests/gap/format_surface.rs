@@ -97,6 +97,12 @@ fn scan_to_output_file(content: &str, fmt: &str) -> (String, Option<i32>) {
     (bytes, output.status.code())
 }
 
+fn json_findings(value: &serde_json::Value) -> &[serde_json::Value] {
+    value["findings"]
+        .as_array()
+        .expect("versioned JSON report must contain findings")
+}
+
 // ---------------------------------------------------------------------------
 // EXIT-CODE CONTRACT across every format
 // ---------------------------------------------------------------------------
@@ -107,7 +113,7 @@ fn scan_to_output_file(content: &str, fmt: &str) -> (String, Option<i32>) {
 fn every_format_exits_0_on_clean_corpus() {
     for fmt in [
         "text",
-        "json",
+        "json-envelope",
         "jsonl",
         "sarif",
         "csv",
@@ -132,7 +138,7 @@ fn every_format_exits_0_on_clean_corpus() {
 fn every_format_exits_1_on_planted_finding() {
     for fmt in [
         "text",
-        "json",
+        "json-envelope",
         "jsonl",
         "sarif",
         "csv",
@@ -158,7 +164,7 @@ fn every_format_exits_1_on_planted_finding() {
 fn planted_finding_is_never_live_or_panic_exit() {
     for fmt in [
         "text",
-        "json",
+        "json-envelope",
         "jsonl",
         "sarif",
         "csv",
@@ -188,51 +194,47 @@ fn planted_finding_is_never_live_or_panic_exit() {
 }
 
 // ---------------------------------------------------------------------------
-// JSON (JsonArrayReporter)
+// JSON (versioned JsonEnvelopeReporter)
 // ---------------------------------------------------------------------------
 
-/// Empty corpus -> stdout is exactly `[]`. The reporter writes `[` in
-/// `new()` and `]` in `finish()` with nothing between when no finding is
-/// reported. No trailing newline is emitted by the JSON array path.
+/// Empty corpus -> stdout is a versioned envelope with no findings.
 #[test]
 fn json_empty_corpus_is_exact_empty_array() {
-    let (stdout, stderr, code) = scan_with_format(CLEAN_FIXTURE, "json");
+    let (stdout, stderr, code) = scan_with_format(CLEAN_FIXTURE, "json-envelope");
     assert_eq!(
         code,
         Some(0),
         "clean json scan must exit 0; stderr={stderr}"
     );
-    assert_eq!(
-        stdout, "[]",
-        "empty JSON report must be exactly `[]` with no whitespace/newline; got {stdout:?}"
-    );
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("empty JSON parses");
+    assert_eq!(value["schema_version"]["major"], 1);
+    assert!(json_findings(&value).is_empty());
 }
 
-/// Empty corpus JSON parses to an empty array (structural validity).
+/// Empty corpus JSON parses to an empty findings array (structural validity).
 #[test]
 fn json_empty_corpus_parses_to_empty_array() {
-    let (stdout, _stderr, _code) = scan_with_format(CLEAN_FIXTURE, "json");
+    let (stdout, _stderr, _code) = scan_with_format(CLEAN_FIXTURE, "json-envelope");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("empty JSON parses");
-    assert_eq!(
-        v.as_array().map(Vec::len),
-        Some(0),
-        "empty JSON must parse to a zero-length array; got {v}"
+    assert!(
+        json_findings(&v).is_empty(),
+        "empty findings must remain empty"
     );
 }
 
-/// Non-empty corpus -> stdout is a valid JSON array with >=1 object, each
+/// Non-empty corpus -> stdout is a valid JSON envelope with >=1 finding, each
 /// carrying the contract fields the JsonReporter serializes from
 /// VerifiedFinding.
 #[test]
 fn json_planted_finding_is_valid_array_with_contract_fields() {
-    let (stdout, stderr, code) = scan_with_format(AWS_KEY_FIXTURE, "json");
+    let (stdout, stderr, code) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     assert_eq!(
         code,
         Some(1),
         "json planted scan must exit 1; stderr={stderr}"
     );
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("planted JSON parses");
-    let arr = v.as_array().expect("JSON report is an array");
+    let arr = json_findings(&v);
     assert!(
         !arr.is_empty(),
         "planted finding must produce >=1 JSON object"
@@ -260,9 +262,9 @@ fn json_planted_finding_is_valid_array_with_contract_fields() {
 /// caught under the canonical `aws-access-key` id on every backend.
 #[test]
 fn json_planted_finding_is_aws_detection() {
-    let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "json");
+    let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("JSON parses");
-    let arr = v.as_array().expect("array");
+    let arr = json_findings(&v);
     let aws = arr.iter().any(|f| {
         matches!(
             f.get("detector_id").and_then(|x| x.as_str()),
@@ -277,9 +279,9 @@ fn json_planted_finding_is_aws_detection() {
 /// variants as lowercase bare strings (see html.rs flatten comment).
 #[test]
 fn json_unverified_finding_serializes_skipped() {
-    let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "json");
+    let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("JSON parses");
-    let arr = v.as_array().expect("array");
+    let arr = json_findings(&v);
     for f in arr {
         let verification = f.get("verification").expect("verification field");
         // Skipped serializes as the bare string "skipped".
@@ -296,7 +298,7 @@ fn json_unverified_finding_serializes_skipped() {
 /// The AKIA key is `AKIAQYLPMN5HFIQR7XYA` (20 chars) -> `AK...YA`.
 #[test]
 fn json_credential_is_redacted_not_plaintext() {
-    let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "json");
+    let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("JSON parses");
     let arr = v.as_array().expect("array");
     let aws = arr
@@ -324,23 +326,21 @@ fn json_credential_is_redacted_not_plaintext() {
 }
 
 /// `--output <file>` JSON: the on-disk artifact equals the structured
-/// report exactly (atomic-write path in reporting.rs), `[]` when clean.
+/// report exactly (atomic-write path in reporting.rs), an empty envelope when clean.
 #[test]
 fn json_output_file_clean_is_exact_empty_array() {
-    let (bytes, code) = scan_to_output_file(CLEAN_FIXTURE, "json");
+    let (bytes, code) = scan_to_output_file(CLEAN_FIXTURE, "json-envelope");
     assert_eq!(code, Some(0));
-    assert_eq!(
-        bytes, "[]",
-        "JSON --output file for a clean scan must be exactly `[]`; got {bytes:?}"
-    );
+    let value: serde_json::Value = serde_json::from_str(&bytes).expect("JSON output parses");
+    assert_eq!(value["schema_version"]["major"], 1);
+    assert!(json_findings(&value).is_empty());
 }
 
 // ---------------------------------------------------------------------------
 // JSONL (JsonlReporter)
 // ---------------------------------------------------------------------------
 
-/// Empty corpus -> JSONL emits nothing (zero objects, zero lines). The
-/// JsonlReporter only writes in `report()`; `finish()` just flushes.
+/// Empty corpus -> JSONL emits a header and no finding records.
 #[test]
 fn jsonl_empty_corpus_is_empty_output() {
     let (stdout, stderr, code) = scan_with_format(CLEAN_FIXTURE, "jsonl");
@@ -349,14 +349,15 @@ fn jsonl_empty_corpus_is_empty_output() {
         Some(0),
         "clean jsonl scan must exit 0; stderr={stderr}"
     );
-    assert_eq!(
-        stdout, "",
-        "empty JSONL report must be completely empty (no `[]`, no newline); got {stdout:?}"
-    );
+    let lines: Vec<_> = stdout.lines().collect();
+    assert_eq!(lines.len(), 1, "empty JSONL stream must contain one header");
+    let header: serde_json::Value = serde_json::from_str(lines[0]).expect("header parses");
+    assert_eq!(header["record_type"], "header");
+    assert_eq!(header["schema_version"]["major"], 1);
 }
 
-/// Non-empty corpus -> one JSON object per line, each line a complete
-/// object terminated by `\n` (writeln! after each object).
+/// Non-empty corpus -> one header plus one JSON object per finding, each line
+/// terminated by `\n` (writeln! after each object).
 #[test]
 fn jsonl_planted_finding_is_one_object_per_line() {
     let (stdout, stderr, code) = scan_with_format(AWS_KEY_FIXTURE, "jsonl");
@@ -370,10 +371,9 @@ fn jsonl_planted_finding_is_one_object_per_line() {
         "JSONL output must end with a newline after the final object; got {stdout:?}"
     );
     let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
-    assert!(
-        !lines.is_empty(),
-        "planted finding must produce >=1 JSONL line"
-    );
+    assert!(lines.len() >= 2, "header plus finding must be present");
+    let header: serde_json::Value = serde_json::from_str(lines[0]).expect("header parses");
+    assert_eq!(header["record_type"], "header");
     for line in &lines {
         let obj: serde_json::Value = serde_json::from_str(line)
             .unwrap_or_else(|e| panic!("each JSONL line is an object: {e}; line={line:?}"));
@@ -381,6 +381,9 @@ fn jsonl_planted_finding_is_one_object_per_line() {
             obj.is_object(),
             "each JSONL line must be a JSON object, not an array; got {obj}"
         );
+        if obj.get("record_type").and_then(|v| v.as_str()) == Some("header") {
+            continue;
+        }
         assert!(
             obj.get("detector_id").is_some(),
             "JSONL object missing detector_id: {obj}"
@@ -1029,7 +1032,7 @@ fn text_planted_finding_is_redacted() {
 #[test]
 fn structured_formats_emit_no_ansi_escapes_when_piped() {
     for fmt in [
-        "json",
+        "json-envelope",
         "jsonl",
         "sarif",
         "csv",
@@ -1045,18 +1048,28 @@ fn structured_formats_emit_no_ansi_escapes_when_piped() {
 }
 
 /// JSON and JSONL agree on finding COUNT for the same corpus: the JSON
-/// array length equals the number of non-empty JSONL lines. Both reporters
+/// findings length equals the number of non-empty JSONL finding lines (the
+/// header is not a finding). Both reporters
 /// consume the identical `findings` slice in `finish_reporter`.
 #[test]
 fn json_and_jsonl_agree_on_finding_count() {
-    let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json");
+    let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let (jsonl_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "jsonl");
     let json_v: serde_json::Value = serde_json::from_str(json_out.trim()).expect("json parses");
-    let json_count = json_v.as_array().expect("array").len();
-    let jsonl_count = jsonl_out.lines().filter(|l| !l.trim().is_empty()).count();
+    let json_count = json_findings(&json_v).len();
+    let jsonl_count = jsonl_out
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter(|l| {
+            serde_json::from_str::<serde_json::Value>(l)
+                .ok()
+                .and_then(|value| value.get("record_type").cloned())
+                != Some(serde_json::Value::String("header".into()))
+        })
+        .count();
     assert_eq!(
         json_count, jsonl_count,
-        "JSON array length ({json_count}) must equal JSONL line count ({jsonl_count}) \
+        "JSON findings length ({json_count}) must equal JSONL finding line count ({jsonl_count}) \
          for the same corpus"
     );
     assert!(
@@ -1069,10 +1082,10 @@ fn json_and_jsonl_agree_on_finding_count() {
 /// (SARIF builds one result per reported finding in `report()`.)
 #[test]
 fn sarif_result_count_matches_json_finding_count() {
-    let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json");
+    let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let (sarif_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "sarif");
     let json_count = serde_json::from_str::<serde_json::Value>(json_out.trim())
-        .expect("json")
+        .expect("json-envelope")
         .as_array()
         .expect("array")
         .len();
@@ -1091,10 +1104,10 @@ fn sarif_result_count_matches_json_finding_count() {
 /// (one CSV row per finding, minus the header line).
 #[test]
 fn csv_row_count_matches_json_finding_count() {
-    let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json");
+    let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let (csv_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "csv");
     let json_count = serde_json::from_str::<serde_json::Value>(json_out.trim())
-        .expect("json")
+        .expect("json-envelope")
         .as_array()
         .expect("array")
         .len();
@@ -1112,10 +1125,10 @@ fn csv_row_count_matches_json_finding_count() {
 /// JUnit testcase count equals the JSON finding count for the same corpus.
 #[test]
 fn junit_testcase_count_matches_json_finding_count() {
-    let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json");
+    let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let (junit_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "junit");
     let json_count = serde_json::from_str::<serde_json::Value>(json_out.trim())
-        .expect("json")
+        .expect("json-envelope")
         .as_array()
         .expect("array")
         .len();
@@ -1130,10 +1143,10 @@ fn junit_testcase_count_matches_json_finding_count() {
 /// corpus. Each finding must become exactly one workflow-command line.
 #[test]
 fn github_annotation_count_matches_json_finding_count() {
-    let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json");
+    let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let (annotation_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "github-annotations");
     let json_count = serde_json::from_str::<serde_json::Value>(json_out.trim())
-        .expect("json")
+        .expect("json-envelope")
         .as_array()
         .expect("array")
         .len();
@@ -1151,10 +1164,10 @@ fn github_annotation_count_matches_json_finding_count() {
 /// corpus.
 #[test]
 fn gitlab_sast_count_matches_json_finding_count() {
-    let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json");
+    let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let (sast_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "gitlab-sast");
     let json_count = serde_json::from_str::<serde_json::Value>(json_out.trim())
-        .expect("json")
+        .expect("json-envelope")
         .as_array()
         .expect("array")
         .len();
@@ -1211,7 +1224,7 @@ fn csv_no_unquoted_formula_trigger_cells() {
 fn empty_file_is_clean_for_every_format() {
     for fmt in [
         "text",
-        "json",
+        "json-envelope",
         "jsonl",
         "sarif",
         "csv",
@@ -1228,7 +1241,7 @@ fn empty_file_is_clean_for_every_format() {
         );
     }
     // And the empty-corpus structural invariants still hold.
-    let (json_out, _e, _c) = scan_with_format("", "json");
+    let (json_out, _e, _c) = scan_with_format("", "json-envelope");
     assert_eq!(json_out, "[]", "zero-byte file JSON must be `[]`");
     let (jsonl_out, _e, _c) = scan_with_format("", "jsonl");
     assert_eq!(jsonl_out, "", "zero-byte file JSONL must be empty");

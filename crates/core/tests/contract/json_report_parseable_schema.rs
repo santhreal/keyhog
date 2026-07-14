@@ -3,8 +3,8 @@
 
 use crate::support::reporters::JsonArrayReporter;
 use keyhog_core::{
-    write_scan_report, JsonReportEnvelope, MatchLocation, ReportFormat, ScanReport,
-    ScanReportMetadata, Severity, VerificationResult, VerifiedFinding,
+    parse_jsonl_stream, write_scan_report, JsonReportEnvelope, MatchLocation, ReportFormat,
+    ScanReport, ScanReportMetadata, Severity, VerificationResult, VerifiedFinding,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -125,4 +125,63 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
             .contains("unsupported JSON report schema major 2"),
         "major diagnostic must name the incompatible version: {error}"
     );
+}
+
+#[test]
+fn versioned_jsonl_headers_split_concatenated_streams_and_validate_major() {
+    let finding = sample_finding();
+    let mut first = Vec::new();
+    write_scan_report(
+        &mut first,
+        ReportFormat::JsonlEnvelope,
+        ScanReport::new(std::slice::from_ref(&finding)),
+    )
+    .expect("first JSONL stream writes");
+    let mut second = Vec::new();
+    write_scan_report(
+        &mut second,
+        ReportFormat::JsonlEnvelope,
+        ScanReport::new(&[]),
+    )
+    .expect("second JSONL stream writes");
+
+    let mut joined = first.clone();
+    joined.extend_from_slice(&second);
+    let streams = parse_jsonl_stream(std::str::from_utf8(&joined).expect("JSONL is UTF-8"))
+        .expect("concatenated streams parse by header boundary");
+    assert_eq!(streams.len(), 2);
+    assert_eq!(streams[0].findings.len(), 1);
+    assert!(streams[1].findings.is_empty());
+
+    let mut additive = first.clone();
+    let newline = additive
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .expect("header newline");
+    let mut additive_header: serde_json::Value =
+        serde_json::from_slice(&additive[..newline]).expect("header JSON");
+    additive_header["schema_version"]["minor"] = serde_json::json!(99);
+    let replacement = format!("{}\n", additive_header);
+    additive.splice(..=newline, replacement.into_bytes());
+    parse_jsonl_stream(std::str::from_utf8(&additive).expect("JSONL is UTF-8"))
+        .expect("same-major JSONL minor must remain readable");
+
+    let mut incompatible = first;
+    let header = incompatible
+        .split(|byte| *byte == b'\n')
+        .next()
+        .expect("header line");
+    let mut header_value: serde_json::Value = serde_json::from_slice(header).expect("header JSON");
+    header_value["schema_version"]["major"] = serde_json::json!(2);
+    let replacement = format!("{}\n", header_value);
+    let newline = incompatible
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .expect("header newline");
+    incompatible.splice(..=newline, replacement.into_bytes());
+    let error = parse_jsonl_stream(std::str::from_utf8(&incompatible).expect("JSONL is UTF-8"))
+        .expect_err("unsupported JSONL major must fail closed");
+    assert!(error
+        .to_string()
+        .contains("unsupported JSONL report schema major 2"));
 }

@@ -87,8 +87,12 @@ documented ownership. See [Suppressions](./suppressions.md) for the full order.
 ## JSON output
 
 ```sh
-keyhog scan . --format json
+keyhog scan . --format json-envelope
 ```
+
+The compatibility `--format json` form remains a top-level findings array;
+choose `json-envelope` when a durable schema identity and scan metadata are
+needed.
 
 The output is a versioned envelope. `schema_version.major` selects the
 incompatible schema generation; consumers must reject an unsupported major.

@@ -154,7 +154,7 @@ services:
     build: https://github.com/santhreal/keyhog.git
     volumes:
       - ./:/src:ro
-    command: scan /src --backend cpu --format json
+    command: scan /src --backend cpu --format json-envelope
 ```
 
 To scan a built image, use the Docker/OCI source so layers, manifests, and source
@@ -242,7 +242,7 @@ Shell out:
 ```rust,ignore
 use std::process::Command;
 let out = Command::new("keyhog")
-    .args(["scan", "--format", "jsonl", "--min-confidence", "0.4", "."])
+    .args(["scan", "--format", "jsonl-envelope", "--min-confidence", "0.4", "."])
     .output()?;
 if !matches!(out.status.code(), Some(0 | 1)) {
     return Err(std::io::Error::other(format!(
@@ -252,7 +252,11 @@ if !matches!(out.status.code(), Some(0 | 1)) {
 }
 for line in out.stdout.split(|b| *b == b'\n') {
     if line.is_empty() { continue; }
-    let finding: serde_json::Value = serde_json::from_slice(line)?;
+    let record: serde_json::Value = serde_json::from_slice(line)?;
+    if record.get("record_type").and_then(|v| v.as_str()) == Some("header") {
+        continue;
+    }
+    let finding = record;
     // ... do whatever
 }
 ```
@@ -260,7 +264,7 @@ for line in out.stdout.split(|b| *b == b'\n') {
 Or invoke the scan subcommand directly from a wrapper script:
 
 ```bash
-keyhog scan /path/to/project --format jsonl --min-confidence 0.4
+keyhog scan /path/to/project --format jsonl-envelope --min-confidence 0.4
 ```
 
 ## SARIF for GitHub Advanced Security
@@ -283,7 +287,7 @@ Post a one-line summary on every finding:
 #!/usr/bin/env bash
 set -euo pipefail
 set +e
-findings_json="$(keyhog scan . --format json --min-confidence 0.4)"
+findings_json="$(keyhog scan . --format json-envelope --min-confidence 0.4)"
 scan_status=$?
 set -e
 case "$scan_status" in
@@ -372,8 +376,8 @@ keyhog scan /large/tree --precision --severity high
 # Force GPU for a diagnostic/benchmark run
 keyhog scan . --backend gpu-wgpu
 
-# Write the final findings-only JSONL report to a file
-keyhog scan . --format jsonl --output findings.jsonl
+# Write the versioned JSONL stream to a file
+keyhog scan . --format jsonl-envelope --output findings.jsonl
 ```
 
 `--fast`, `--deep`, and `--precision` intentionally resolve different detection

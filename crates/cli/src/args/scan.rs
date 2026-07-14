@@ -52,7 +52,9 @@ impl std::fmt::Display for SeverityFilter {
 pub enum OutputFormat {
     Text,
     Json,
+    JsonEnvelope,
     Jsonl,
+    JsonlEnvelope,
     Sarif,
     Csv,
     GithubAnnotations,

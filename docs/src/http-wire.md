@@ -108,7 +108,7 @@ Editors that jump-to-file on `path:line` URIs land on the HAR but
 the URL tail makes the location unambiguous.
 
 ```sh
-keyhog scan capture.har --format json | \
+keyhog scan capture.har --format json-envelope | \
   jq '.findings[] | select(.location.source == "wire:har:request")'
 ```
 

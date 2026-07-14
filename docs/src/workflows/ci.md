@@ -265,7 +265,7 @@ steps:
       - |
         printf '{"schema_version":{"major":1,"minor":0},"findings":[]}\n' > keyhog.json
         scan_status=0
-        $HOME/.local/bin/keyhog scan . --format json --output keyhog.json \
+        $HOME/.local/bin/keyhog scan . --format json-envelope --output keyhog.json \
           2>keyhog.stderr || scan_status=$?
         printf '%s\n' "$scan_status" > keyhog.exit-code
         cat keyhog.stderr >&2 || true
@@ -306,7 +306,7 @@ set -eu
 
 printf '{"schema_version":{"major":1,"minor":0},"findings":[]}\n' > keyhog.json
 scan_status=0
-keyhog scan . --format json --output keyhog.json \
+keyhog scan . --format json-envelope --output keyhog.json \
   2>keyhog.stderr || scan_status=$?
 printf '%s\n' "$scan_status" > keyhog.exit-code
 cat keyhog.stderr >&2 || true
@@ -338,7 +338,7 @@ steps:
       minisign -Vm install.sh -P "$PUB"
       KEYHOG_VERSION="$TAG" sh install.sh
       export PATH="$HOME/.local/bin:$PATH"
-      keyhog scan . --severity high --format json --output keyhog.json
+      keyhog scan . --severity high --format json-envelope --output keyhog.json
     artifact_paths:
       - keyhog.json
 ```
@@ -365,7 +365,7 @@ pipeline {
                     minisign -Vm install.sh -P "$PUB"
                     KEYHOG_VERSION="$TAG" sh install.sh
                     export PATH="$HOME/.local/bin:$PATH"
-                    keyhog scan . --severity high --format json --output keyhog.json
+                    keyhog scan . --severity high --format json-envelope --output keyhog.json
                 '''
             }
             post {
@@ -425,10 +425,10 @@ process list by injecting `KEYHOG_GITHUB_TOKEN`, `KEYHOG_GITLAB_TOKEN`, or
 store. Then select the scope explicitly:
 
 ```bash
-keyhog scan --github-org acme --format jsonl --output acme.jsonl
-keyhog scan --gitlab-group platform --format jsonl --output platform.jsonl
+keyhog scan --github-org acme --format jsonl-envelope --output acme.jsonl
+keyhog scan --gitlab-group platform --format jsonl-envelope --output platform.jsonl
 keyhog scan --s3-bucket audit-archive --s3-prefix production/ \
-  --format jsonl --output audit-archive.jsonl
+  --format jsonl-envelope --output audit-archive.jsonl
 ```
 
 Use `--precision` only when its explicit lower-recall policy is appropriate. It

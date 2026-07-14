@@ -1,8 +1,8 @@
 # Output formats
 
-KeyHog's `--format` flag takes one of nine values: `text` (default),
-`json`, `jsonl`, `sarif`, `csv`, `github-annotations`, `gitlab-sast`,
-`html`, and `junit`. Pick the one that fits the consumer. `csv` emits a
+KeyHog's `--format` flag takes one of eleven values: `text` (default),
+`json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`,
+`github-annotations`, `gitlab-sast`, `html`, and `junit`. Pick the one that fits the consumer. `csv` emits a
 spreadsheet-importable row per finding, `github-annotations` emits
 GitHub Actions workflow-command annotations, `gitlab-sast` emits a
 GitLab SAST security report, `html` emits a
@@ -62,22 +62,25 @@ runs add the liveness state and commit/author rows when known. The
 
 ## `--format json`
 
-Versioned JSON envelope. The root object contains `schema_version` and
-`findings`, plus optional scan-wide `metadata`. Every finding has all required
-documented fields present; optional fields are omitted only when their value is
-unavailable. A reader must reject an unsupported `schema_version.major`; a
-newer minor under a supported major is additive and may be accepted. See
-[Your first scan](./first-scan.md#json-output) for the complete schema. The
-`confidence` field is canonicalized to three decimal places before the
-reporting-floor decision, so equivalent CPU and GPU scans serialize the same
-value.
+Legacy JSON array retained for compatibility with existing consumers. Every
+finding has all required documented fields present; optional fields are omitted
+only when their value is unavailable. Use `--format json-envelope` for a
+versioned root object with schema identity and scan metadata.
 
 ```sh
-keyhog scan . --format json | jq '.findings[] | .detector_id' | sort | uniq -c
+keyhog scan . --format json | jq '.[].detector_id' | sort | uniq -c
 ```
 
 That sample command dedups findings by detector, which is the most
 common "what kinds of leaks do I have" question.
+
+## `--format json-envelope`
+
+Versioned JSON envelope. The root object contains `schema_version` and
+`findings`, plus optional scan-wide `metadata`. A reader must reject an
+unsupported `schema_version.major`; a newer minor under a supported major is
+additive and may be accepted. See [Your first scan](./first-scan.md#json-output)
+for the complete schema.
 
 ## `--format csv`
 
@@ -160,14 +163,24 @@ metadata is descriptive only; it never changes finding or exit-code semantics.
 
 ## `--format jsonl`
 
-Newline-delimited JSON - one finding per line, no outer array. Better
-than `--format json` for streaming consumers that want to start
-processing before the scan finishes:
+Legacy newline-delimited JSON retained for compatibility: one finding object
+per line and no header. Use `--format jsonl-envelope` when the stream needs a
+schema identity and explicit concatenation boundaries.
+
+## `--format jsonl-envelope`
+
+Versioned newline-delimited JSON. The first line is a `record_type: "header"`
+object carrying the same `schema_version` major/minor contract as
+`--format json-envelope` and optional scan metadata; every following line is
+one finding object. An empty scan still emits the header, and concatenated
+streams are split at the next header. Importers must validate the header before
+accepting findings. This is better than `--format json-envelope` for streaming
+consumers that want to start processing before the scan finishes:
 
 ```sh
-keyhog scan /huge/monorepo --format jsonl \
+keyhog scan /huge/monorepo --format jsonl-envelope \
   | while read line; do
-      echo "$line" | jq -r '.location.file_path'
+      echo "$line" | jq -r 'select(.record_type != "header") | .location.file_path'
     done
 ```
 
@@ -184,7 +197,7 @@ object - not the `verified-live`/`verified-dead` labels the *text*
 reporter prints.)
 
 ```sh
-keyhog scan . --verify --format json \
+keyhog scan . --verify --format json-envelope \
   | jq '.findings[] | select(.verification == "live")'
 ```
 
@@ -194,8 +207,8 @@ On an interactive terminal `keyhog scan` shows a banner, a live progress
 ticker, and a completion summary on stderr. Most of the time you do not need to
 silence it: the banner and ticker are printed only when stderr is a TTY (they
 never appear in a pipe, a file, or CI logs), and the structured formats
-(`json`, `jsonl`, `sarif`, `csv`, `github-annotations`, `gitlab-sast`,
-`junit`) carry findings only, with no banner or footer prose. So a CI script
+(`json`, `json-envelope`, `jsonl`, `jsonl-envelope`, `sarif`, `csv`,
+`github-annotations`, `gitlab-sast`, `junit`) carry findings only, with no banner or footer prose. So a CI script
 that wants machine output just selects a structured format:
 
 ```sh
@@ -204,7 +217,7 @@ keyhog scan . --format json
 
 The `text` format does print a footer summary (counts + any skip
 summary) to stdout alongside the findings; if you want findings only,
-choose `json`/`jsonl`/`sarif`/`csv`/`github-annotations`/`gitlab-sast` instead. The
+choose `json`/`json-envelope`/`jsonl`/`jsonl-envelope`/`sarif`/`csv`/`github-annotations`/`gitlab-sast` instead. The
 interactive banner is TTY-gated and never reaches a pipe or a file. Exit code
 semantics are unchanged by the format choice (see
 [exit codes](./reference/exit-codes.md)).

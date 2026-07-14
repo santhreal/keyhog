@@ -113,6 +113,106 @@ impl JsonReportEnvelope {
     }
 }
 
+/// Header written as the first record of a versioned JSONL stream.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct JsonlStreamHeader {
+    /// Distinguishes the stream header from a finding record.
+    pub record_type: String,
+    /// Version marker used to select the JSONL reader contract.
+    pub schema_version: JsonReportSchemaVersion,
+    /// Optional scan-wide metadata supplied by the producer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ScanReportMetadata>,
+}
+
+impl JsonlStreamHeader {
+    /// Construct a stream header for the current schema.
+    #[must_use]
+    pub fn new(metadata: Option<&ScanReportMetadata>) -> Self {
+        Self {
+            record_type: "header".to_string(),
+            schema_version: JsonReportSchemaVersion {
+                major: JSON_REPORT_SCHEMA_MAJOR,
+                minor: JSON_REPORT_SCHEMA_MINOR,
+            },
+            metadata: metadata.cloned(),
+        }
+    }
+
+    /// Parse and validate one JSONL header record.
+    pub fn parse(input: &str) -> Result<Self, ReportError> {
+        let header: Self = serde_json::from_str(input)?;
+        if header.record_type != "header" {
+            anyhow::bail!(
+                "invalid JSONL stream header record_type {:?}",
+                header.record_type
+            );
+        }
+        if header.schema_version.major != JSON_REPORT_SCHEMA_MAJOR {
+            anyhow::bail!(
+                "unsupported JSONL report schema major {}; this reader supports major {}",
+                header.schema_version.major,
+                JSON_REPORT_SCHEMA_MAJOR
+            );
+        }
+        Ok(header)
+    }
+}
+
+/// One validated segment of a JSONL input. Concatenated streams produce one
+/// segment per header, so boundaries remain explicit instead of being inferred
+/// from finding content.
+#[derive(Debug, Clone)]
+pub struct JsonlStream {
+    /// Header that governed this segment.
+    pub header: JsonlStreamHeader,
+    /// Findings following the header until the next header or end of input.
+    pub findings: Vec<VerifiedFinding>,
+}
+
+/// Parse one or more concatenated, versioned JSONL streams.
+pub fn parse_jsonl_stream(input: &str) -> Result<Vec<JsonlStream>, ReportError> {
+    let mut streams = Vec::new();
+    let mut current: Option<JsonlStream> = None;
+
+    for (index, line) in input.lines().enumerate() {
+        let line_number = index + 1;
+        if line.trim().is_empty() {
+            anyhow::bail!("JSONL line {line_number} is empty; remove blank records");
+        }
+        let value: serde_json::Value = serde_json::from_str(line)
+            .map_err(|error| anyhow::anyhow!("invalid JSONL line {line_number}: {error}"))?;
+        let is_header =
+            value.get("record_type").and_then(serde_json::Value::as_str) == Some("header");
+        if is_header {
+            if let Some(stream) = current.take() {
+                streams.push(stream);
+            }
+            current = Some(JsonlStream {
+                header: JsonlStreamHeader::parse(line)?,
+                findings: Vec::new(),
+            });
+            continue;
+        }
+
+        let stream = current.as_mut().ok_or_else(|| {
+            anyhow::anyhow!("JSONL line {line_number} precedes its stream header")
+        })?;
+        let finding = serde_json::from_value(value).map_err(|error| {
+            anyhow::anyhow!("invalid finding on JSONL line {line_number}: {error}")
+        })?;
+        stream.findings.push(finding);
+    }
+
+    if let Some(stream) = current {
+        streams.push(stream);
+    }
+    if streams.is_empty() {
+        anyhow::bail!("JSONL stream is empty; expected a versioned header record");
+    }
+    Ok(streams)
+}
+
 /// Compatibility name for callers that used the original HTML-only type.
 ///
 /// New code should use [`ScanReportMetadata`]. The alias is intentionally kept
@@ -166,6 +266,8 @@ pub enum ReportFormat {
     JsonEnvelope,
     /// Newline-delimited JSON output.
     Jsonl,
+    /// Versioned newline-delimited JSON output with a stream header.
+    JsonlEnvelope,
     /// SARIF output.
     Sarif {
         /// Operator-visible scan coverage-gap summary entries.
@@ -233,6 +335,10 @@ pub fn write_scan_report<W: Write + Send>(
             findings,
         ),
         ReportFormat::Jsonl => finish_reporter(json::JsonlReporter::new(writer), findings),
+        ReportFormat::JsonlEnvelope => finish_reporter(
+            json::JsonlEnvelopeReporter::new(writer, report_metadata)?,
+            findings,
+        ),
         ReportFormat::Sarif { skip_summary } => finish_reporter(
             sarif::SarifReporter::new(writer).with_skip_summary(skip_summary),
             findings,
