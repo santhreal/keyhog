@@ -20,10 +20,10 @@ pub struct WatchArgs {
     /// Override the Hyperscan compiled-database cache directory.
     #[arg(long, value_name = "DIR")]
     pub cache_dir: Option<PathBuf>,
-    /// Select persisted autoroute (`auto`) or explicitly force one diagnostic
-    /// backend (`gpu`, `simd`, or `cpu`). Without it (and without installer
-    /// calibration for this binary) every change scan fails closed with an
-    /// autoroute-calibration error, exactly as `keyhog scan` does.
+    /// Select persisted autoroute or explicitly force one diagnostic backend.
+    /// Accepted values are listed below. Without this flag or installer
+    /// calibration for this binary, every change scan fails closed with an
+    /// autoroute-calibration error exactly as `keyhog scan` does.
     #[arg(
         long,
         value_name = "BACKEND",

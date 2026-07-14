@@ -1,6 +1,6 @@
 use super::support::ENV_LOCK;
 use clap::{CommandFactory, Parser};
-use keyhog::args::ScanArgs;
+use keyhog::args::{ScanArgs, WatchArgs};
 use keyhog::testing::{CliTestApi as _, API};
 use keyhog_scanner::hw_probe::{parse_backend_str, BACKEND_OVERRIDE_VALUES};
 use keyhog_scanner::GpuInitPolicy;
@@ -337,6 +337,20 @@ fn every_advertised_backend_value_is_recognized_by_the_canonical_parser() {
         advertised, expected,
         "Clap --backend values must come from the scanner-owned backend override contract"
     );
+    let watch_command = WatchArgs::command();
+    let watch_backend = watch_command
+        .get_arguments()
+        .find(|argument| argument.get_id() == "backend")
+        .expect("the watch command must expose a --backend argument");
+    let watch_advertised: Vec<String> = watch_backend
+        .get_possible_values()
+        .iter()
+        .map(|value| value.get_name().to_string())
+        .collect();
+    assert_eq!(
+        watch_advertised, expected,
+        "watch and scan must consume the same scanner-owned backend vocabulary"
+    );
     for canonical_label in ["gpu-cuda", "gpu-wgpu", "simd", "cpu"] {
         assert!(
             advertised.iter().any(|value| value == canonical_label),
@@ -352,6 +366,13 @@ fn every_advertised_backend_value_is_recognized_by_the_canonical_parser() {
             parsed_args.backend.as_deref(),
             Some(value.as_str()),
             "clap must preserve the advertised backend token for routing"
+        );
+        let watch_args = WatchArgs::try_parse_from(["watch", "--backend", value])
+            .unwrap_or_else(|error| panic!("watch rejected advertised backend `{value}`: {error}"));
+        assert_eq!(
+            watch_args.backend.as_deref(),
+            Some(value.as_str()),
+            "watch must preserve the same backend token for routing"
         );
 
         if value == "auto" {

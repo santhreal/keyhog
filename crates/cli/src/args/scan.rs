@@ -520,8 +520,8 @@ pub struct ScanArgs {
     #[arg(long)]
     pub perf_trace: bool,
 
-    /// Select persisted autoroute (`auto`) or explicitly force one diagnostic
-    /// backend. Values: `auto`, `gpu`, `simd`, or `cpu`.
+    /// Select persisted autoroute or explicitly force one diagnostic backend.
+    /// Accepted values are listed below.
     #[arg(
         long,
         value_name = "BACKEND",
