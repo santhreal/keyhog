@@ -159,7 +159,7 @@ chrono = "=0.4.44"
 rsa = { version = "=0.9.7", features = ["sha2"] }
 aes = "=0.8.4"
 cfb-mode = "=0.8.2"
-rand = "=0.8.5"
+rand = "=0.8.6"
 uuid = { version = "=1.11.0", features = ["v4"] }
 
 # Archive and binary analysis

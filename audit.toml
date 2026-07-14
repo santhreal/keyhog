@@ -7,7 +7,7 @@
 # `cargo audit` invocation in `.github/workflows/ci.yml` need to
 # stay in sync.
 #
-# As of v0.5.41, `scripts/audit.sh` exits zero with these five ignores:
+# As of v0.5.41, `scripts/audit.sh` exits zero with these four ignores:
 # the two gix-* CVEs that the v0.5.2 audit flagged were addressed
 # by bumping gix to 0.77 (commit history under "security: bump
 # gix"). The bincode advisory below was added 2026-05-23 after
@@ -23,9 +23,6 @@ ignore = [
     # `lru::LruCache::iter_mut()` Stacked Borrows violation. Not called
     # by keyhog.
     "RUSTSEC-2026-0002",
-    # `rand::rng()` data race with custom logger. keyhog never replaces
-    # the global rng.
-    "RUSTSEC-2026-0097",
     # `bincode` 2.0.1 is unmaintained. Only consumer is the published
     # vyre GPU stack; keyhog does not depend on bincode directly.
     "RUSTSEC-2025-0141",

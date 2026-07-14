@@ -42,8 +42,8 @@ fix ships.
 
 ## RustSec Advisory Assessment (v0.5.41)
 
-A `cargo audit` of `Cargo.lock` surfaces five accepted advisories total (one
-vulnerability and four informational warnings across the workspace and VYRE).
+A `cargo audit` of `Cargo.lock` surfaces four accepted advisories total (one
+vulnerability and three informational warnings across the workspace and VYRE).
 Each was reviewed against KeyHog's actual usage of the affected crate
 and given an explicit accept-with-rationale decision or a fix path.
 The accepts are reflected in the `[advisories]` ignore list at the
@@ -75,15 +75,6 @@ session key. There is no remote RSA decryption oracle exposed by KeyHog.
 uses `lru::LruCache::get_or_insert_mut()` and `cluster.iter_mut()` on
 its own `Vec<SecretFragment>`, not on `LruCache::iter_mut()`. The
 unsound API isn't called.
-
-#### RUSTSEC-2026-0097 - `rand 0.8.5` unsound with custom logger
-
-**Risk:** `rand::rng()` interaction with custom `tracing` logger has a
-data race when the global rng is replaced.
-
-**Why not applicable:** KeyHog does not replace the global rng. `rand`
-is pulled transitively via `num-bigint-dig` → `rsa`; both use only the
-default `OsRng` seed path. Our tracing logger does not call into rand.
 
 #### RUSTSEC-2024-0436 - `paste 1.0.15` unmaintained
 

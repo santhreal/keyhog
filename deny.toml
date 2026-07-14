@@ -15,7 +15,6 @@ ignore = [
     "RUSTSEC-2023-0071",   # rsa Marvin attack, keyhog uses OAEP only
     "RUSTSEC-2024-0436",   # paste, proc-macro, no runtime presence
     "RUSTSEC-2026-0002",   # lru::LruCache::iter_mut, not called
-    "RUSTSEC-2026-0097",   # rand::rng, keyhog never replaces global rng
     "RUSTSEC-2025-0141",   # bincode 1.x unmaintained, only via vendored vyre
 ]
 
