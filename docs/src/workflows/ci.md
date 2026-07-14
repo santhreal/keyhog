@@ -37,14 +37,15 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # scan full history, not just HEAD
       - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
         with:
           path: .
           severity: high
           format: sarif
 ```
+
+This Action example scans the checked-out working tree. Use the explicit
+`--git-history` recipe below when the workflow must inspect reachable history.
 
 The composite action installs KeyHog, writes a SARIF report, uploads it
 to **Security -> Code scanning**, attaches the report as a workflow
@@ -334,7 +335,7 @@ KEYHOG_VERSION="$TAG" sh install.sh
 Update the pin via a Renovate / Dependabot config or just bump it
 by hand when a new release lands.
 
-## Scan history once per release, not per PR
+## Scan history on main and release, not per PR
 
 A full git-history scan is the right thing to run on `main` post-merge
 and on release tags, but it's overkill for every PR. A typical setup:

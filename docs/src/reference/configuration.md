@@ -89,7 +89,7 @@ A dash means that layer intentionally has no surface.
 | Verification concurrency | `5` per service | `verify_concurrency` | `--verify-concurrency` | Maximum in-flight verification requests per service; zero is rejected. Distinct from the requests/second limiter. |
 | Verification request rate | `5.0` RPS per service | - | `--verify-rate` | Steady-state request-rate ceiling. `--verify-batch` additionally forces concurrency to one. |
 | Max file size | 100 MiB | `max_file_size` | `--max-file-size` | Walker skips files larger than this. |
-| GPU batch input limit | VRAM-adaptive (128 MiB–1 GiB) | `[scan].gpu_batch_input_limit` | `--gpu-batch-input-limit` | Caps bytes admitted to one GPU region-presence batch. Retired MegaScan spellings are rejected; this one name owns CLI, config, effective-config output, and the Rust API. |
+| GPU batch input limit | VRAM-adaptive (128 MiB to 1 GiB) | `[scan].gpu_batch_input_limit` | `--gpu-batch-input-limit` | Sets the CLI coalesced-batch byte budget and is clamped to 128 MiB through 1 GiB. The pipeline can lower it further to keep its in-flight batches within host RAM headroom. VYRE's fixed per-dispatch ceiling is independent; larger coalesced requests shard only at existing chunk boundaries. Retired MegaScan spellings are rejected. |
 | Severity floor | (all) | `[scan].severity` | `--severity` | Minimum severity to report: info/client-safe/low/medium/high/critical. |
 | Output format | `text` | `[scan].format` | `--format` | text/json/jsonl/sarif/csv/github-annotations/gitlab-sast/html/junit. |
 | Show secrets | off | `show_secrets` | `--show-secrets` | Print plaintext credentials. **Never enable in CI/logs.** |
@@ -135,10 +135,10 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 | Docker config/manifest bytes | 16 MiB | `[limits].docker_image_config_bytes` | `--limit-docker-image-config-bytes` |
 | Docker tar total bytes | 8 GiB | `[limits].docker_tar_total_bytes` | `--limit-docker-tar-total-bytes` |
 | Git stdout line bytes | 10 MiB | `[limits].git_line_bytes` | `--limit-git-line-bytes` |
-| Git aggregate bytes | 256 MiB | `[limits].git_total_bytes` | `--limit-git-total-bytes` |
+| Git aggregate or hosted-clone materialized bytes | 256 MiB | `[limits].git_total_bytes` | `--limit-git-total-bytes` |
 | Git blob bytes | 10 MiB | `[limits].git_blob_bytes` | `--limit-git-blob-bytes` |
-| Git emitted chunks | 500000 | `[limits].git_chunks` | `--limit-git-chunks` |
-| Hosted-git listing pages | 1000 | `[limits].hosted_git_pages` | `--limit-hosted-git-pages` |
+| Git emitted chunks or hosted-clone entries | 500000 | `[limits].git_chunks` | `--limit-git-chunks` |
+| Hosted-git listing pages or GitHub collaboration API requests | 1000 | `[limits].hosted_git_pages` | `--limit-hosted-git-pages` |
 | Binary strings bytes | 64 MiB | `[limits].binary_read_bytes` | `--limit-binary-read-bytes` |
 | Ghidra output bytes | 50 MiB | `[limits].binary_decompiled_bytes` | `--limit-binary-decompiled-bytes` |
 

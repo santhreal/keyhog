@@ -15,10 +15,9 @@ pipeline.
 
 | VYRE capability | KeyHog owner | Production use |
 |---|---|---|
-| GPU literal-set region presence | `keyhog-scanner::engine::gpu_region_dispatch` | Produces one candidate-detector bitmap per input region. WGPU and optional CUDA implementations share this boundary. |
-| GPU literal artifacts and cache | `keyhog-scanner::engine::{gpu_artifacts,gpu_cache}` | Compiles and caches detector-derived literal programs under detector, binary, backend, and runtime identity. |
+| GPU literal-set region presence | `keyhog-scanner::engine::gpu_region_dispatch` | Produces one candidate-detector bitmap per input region. Oversized batches shard only at existing chunk boundaries on the selected WGPU or CUDA peer. |
+| GPU literal artifacts and cache | `keyhog-scanner::engine::{gpu_artifacts,gpu_cache}` | Compiles detector-derived literal rows. The local key combines a program-kind prefix with a SHA-256 hash of KeyHog's cache-format version and the exact length-delimited ordered rows. VYRE rejects incompatible wire envelopes when loading. |
 | GPU regex-DFA admission | `keyhog-scanner::engine::phase2_gpu_dfa` | Narrows eligible prefixless phase-two work; host extraction remains authoritative. |
-| Metadata interning | `keyhog-scanner::static_intern` | Freezes detector metadata for allocation-light scan state. |
 | Declarative rule evaluation | `keyhog-core::rule_filter` | Evaluates `.keyhogignore.toml` rules through the shared rule representation. |
 
 The portable build retains the CPU-side VYRE support libraries used by these
@@ -28,11 +27,14 @@ KeyHog's Aho-Corasick trigger path plus Rust-regex extraction.
 
 ## Backend and parity contract
 
-The GPU path performs trigger production only. Every candidate then passes
-through the same KeyHog phase-two extraction, decode, suppression, confidence,
-deduplication, and reporting code used by CPU routes. Release parity compares
-detector id, credential, file, line, byte offset, confidence, and ordering; an
-empty or structurally different GPU result is a failure, not a successful scan.
+The GPU path produces phase-one candidate triggers and can provide phase-two
+admission rows. Host extraction remains authoritative. GPU and CPU routes use
+the same decode, built-in suppression, confidence, and scanner postprocessing.
+Release parity canonicalizes results before comparing the chunk-indexed match
+multiset, including every finding field and multiplicity. It does not compare
+backend emission order. Canonical report ordering is a separate postprocessing
+contract. An empty or structurally different GPU result is a failure, not a
+successful scan.
 
 VYRE does not choose the scan backend. `--backend auto` accepts only a current
 persisted KeyHog calibration record that proves correctness and measures every

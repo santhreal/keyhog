@@ -240,22 +240,34 @@ the 16-symbol hex alphabet; a run of ten identical bytes is treated as filler.
 
 ### Path-based
 
-Specific directories produce findings that are almost always not credentials.
-KeyHog ships a small, high-precision path policy:
+Path policy is mechanism-specific. CI and localization paths do not disable
+named detectors. A valid GitHub, AWS, or other service credential still reports
+there. Those paths suppress only broad entropy candidates whose positive
+evidence is the file's prose or syntax.
 
-| Path pattern | Why |
-|--------------|-----|
-| `node_modules/`, `vendor/`, `bower_components/`, `jspm_packages/`, `site-packages/` | Vendored third-party code; minified bytes coincide with secret prefixes |
-| `wp-content/plugins/`, `wp-content/themes/`, `wp-includes/` | WordPress vendored trees |
-| `app/assets/javascripts/bootstrap*.js`, `…/jquery*.js`, etc. | Rails legacy asset path, vendored JS |
-| `*.min.js`, `*.bundle.js`, `*.min.css` | Minified bundles |
-| `.github/workflows/`, `.gitlab-ci.yml`, `.circleci/`, `Jenkinsfile`, `.travis.yml`, `azure-pipelines*`, `bitbucket-pipelines*` | CI config; `${{ secrets.X }}` is syntactic |
-| `locale/`, `locales/`, `i18n/`, `l10n/`, `translations/`, `lang/`, `langs/`, `*.po`, `*.pot` | i18n files; translated `password`/`token` words are not credentials |
-| Paths containing `secretscanner`, `secret-scanner`, `trufflehog`, `gitleaks`, `detect-secrets` | The file IS a secret scanner; its regex literals shouldn't fire on itself |
+| Path class | Named detector | Generic assignment | Entropy fallback |
+|---|---|---|---|
+| Recognized vendored or minified trees and bundles | Suppressed after matching | Suppressed | Suppressed |
+| CI workflows and pipeline files | Scanned | Scanned | Suppressed |
+| Localization and translation files | Scanned | Scanned | Suppressed |
+| Secret-scanner implementation paths | Suppressed after matching | Normal generic policy | Normal entropy policy |
 
-These are not configurable: their precision is high enough that making them
-opt-in would only make the scanner louder. If one suppresses a path you care
-about, that is a bug worth reporting.
+Decoded and recovered candidates keep their source path and return through the
+ordinary detector and suppression pipeline. A transform does not erase path
+policy or turn a CI or localization path into a blanket exclusion.
+
+Vendored and minified classes include `node_modules/`, specific static or
+vendored asset pairs, WordPress trees, recognized Rails legacy vendored assets,
+`*.min.js`, `*.bundle.js`, and `*.min.css`. A bare `vendor/` directory is not a
+blanket exclusion. CI classes include GitHub Actions, GitLab CI, CircleCI,
+`Jenkinsfile`, Travis, Azure Pipelines, and Bitbucket Pipelines. Localization
+classes include locale, i18n, l10n, translation, and language directories plus
+gettext files. Secret-scanner paths match shipped scanner-name markers.
+
+These built-in predicates are not configurable. "Normal policy" means the
+mechanism evaluates its ordinary value, context, and path gates. It is not a
+blanket suppression for secret-scanner paths. If a predicate suppresses a real
+credential under a mechanism shown as scanned, report it as a recall bug.
 
 > Not a suppression surface: `[lockdown] require = true` in `.keyhog.toml` (and
 > `--lockdown`) is a fail-*closed* hardening control: it refuses to run, mlocks

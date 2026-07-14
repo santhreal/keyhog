@@ -38,7 +38,15 @@ first successful batch. Haystack and region capacity grow in bounded bands from
 the actual workload. KeyHog serializes each resident session so concurrent
 requests cannot interleave uploads against the same device buffers. Preparation,
 growth, dispatch, and readback errors remain selected-GPU failures. Teardown
-cleanup errors are logged. There is no borrowed or CPU substitution.
+cleanup errors are logged. There is no per-batch pipeline or CPU substitution.
+
+A coalesced request above VYRE's per-dispatch ceiling is split only between
+existing source chunks. The source layer's overlap stays intact, and phase-one
+presence plus phase-two admission rows are merged in original order on the same
+selected CUDA or WGPU backend. A single chunk above the ceiling has no safe
+split point and fails visibly. Readback words are consumed through a scoped
+borrow while the resident session is locked, then zeroized without discarding
+the warmed host allocation.
 
 ## What “same results” means
 
@@ -58,20 +66,23 @@ than mislabeled as proof of equal performance; KeyHog then selects the lowest
 measured median among the non-dominated candidates, using engagement overhead
 only for an exact median tie. Autoroute inspection prints this selection basis.
 
-This parity contract runs before the common suppression, verification,
-deduplication, and reporter stages, but already proves every raw field those
-stages consume. The same detector TOML corpus and resolved configuration digest
-identify every route.
+`scan_coalesced_with_backend` already includes extraction, decode, built-in
+suppression, confidence, and scanner postprocessing. Autoroute parity therefore
+compares the complete `RawMatch` values returned by that production scanner
+path. CLI allowlists and rules, severity and confidence floors, cross-source
+deduplication, optional verification, and reporting run after backend selection.
+The same detector TOML corpus and resolved configuration digest identify every
+route.
 
 ## Why size alone is insufficient
 
 Two inputs with the same byte count can have different winners. Autoroute also
-keys evidence by one-power-of-two logarithmic ranges for bytes, chunk count,
-and largest source size, plus a jitter-resistant decode-density range,
-detector/pattern shape, source family,
-resolved configuration, build features, and host identity. It does not
-interpolate from a neighbouring range key; a measured key nevertheless covers
-the values grouped into that range.
+keys evidence by logarithmic buckets for bytes, chunk count, largest source
+size, and detector pattern count. Decoder work is identified by the observed
+decoder-kind mask, candidate-count bucket, candidate-byte bucket, and an
+explicit unknown-state bit. Source family, resolved configuration, build
+features, and host identity also participate. It does not interpolate from a
+neighbouring key; a measured key covers only the values grouped into that key.
 
 Runtime lifetime matters too. A one-shot process includes GPU first-dispatch
 cost. A ready daemon has already initialized accelerator state and uses the warm
@@ -86,13 +97,17 @@ point instead of the faster production coalesced Hyperscan path. The artifact is
 marked `production_comparable = false` and must not support a crossover claim.
 
 The checked benchmark now sends identical 1 MiB windows with 128 KiB overlap
-through `scan_coalesced_with_backend` for both GPU and Hyperscan. It requires
-sorted full-match parity, rejects GPU degradation, excludes the first complete
-warmup, and fails unless GPU is faster at 8 MiB. A new crossover claim requires
-a `production_comparable = true` artifact from that corrected route with exact
-binary, detector, configuration, host, runtime, workload, and trial identity.
-Autoroute still requires calibration on the deployment host for the exact
-workload class.
+through `scan_coalesced_with_backend` for Hyperscan and every acquired CUDA or
+WGPU peer. It requires sorted full-match parity from each peer, rejects GPU
+degradation, and rotates candidate order during peer selection. The selected
+exact GPU peer then runs in fresh alternating held-out pairs against Hyperscan.
+The gate passes only when the paired GPU/Hyperscan ratio's 95% confidence upper
+bound is below 1.0 at 8 MiB. Profiling and perf tracing retain parity and
+degradation checks but cannot pass the speed gate. A new crossover claim requires a
+`production_comparable = true` artifact from that corrected route with exact
+binary, detector, configuration, host, runtime, workload, peer, and trial
+identity. Autoroute still requires calibration on the deployment host for the
+exact workload class.
 
 ## When automatic routing refuses to scan
 

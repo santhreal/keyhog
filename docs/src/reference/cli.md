@@ -100,7 +100,7 @@ minus the `limit-` prefix and with dashes changed to underscores.
 | `--limit-docker-tar-entry-bytes <SIZE>` / `--limit-docker-image-config-bytes <SIZE>` / `--limit-docker-tar-total-bytes <SIZE>` | Docker/OCI archive and manifest/config ceilings. |
 | `--limit-git-line-bytes <SIZE>` / `--limit-git-total-bytes <SIZE>` / `--limit-git-blob-bytes <SIZE>` / `--limit-git-chunks <N>` | Git stdout-line, aggregate, per-blob, and chunk-count ceilings. |
 | `--limit-binary-read-bytes <SIZE>` / `--limit-binary-decompiled-bytes <SIZE>` | Binary strings and Ghidra output ceilings. |
-| `--limit-hosted-git-pages <N>` | Maximum API pages listed from one hosted Git organization, group, or workspace. |
+| `--limit-hosted-git-pages <N>` | Maximum hosted Git listing pages or GitHub collaboration API requests. |
 
 ### Detector tuning
 

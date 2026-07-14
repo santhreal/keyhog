@@ -171,9 +171,11 @@ candidate only when its canonical detection identities match the reference:
 chunk membership, detector id/name/service/severity, hashed credential value,
 stored credential hash, hashed companion names and values, source, file, line,
 byte offset, commit, author, date, entropy, confidence, and multiplicity.
-Confidence, suppression, verification, deduplication, and output formatting
-then run through the shared policy tail. Missing or stale exact evidence is an
-error; calibration never relaxes a detector to make a backend look faster.
+Built-in suppression, confidence, decode, and scanner postprocessing are already
+part of those backend results. CLI allowlists and rules, policy floors,
+cross-source deduplication, verification, and output formatting run after
+selection. Missing or stale exact evidence is an error; calibration never
+relaxes a detector to make a backend look faster.
 
 | Change | Finding-set effect | Routing/calibration effect |
 |---|---|---|
@@ -181,7 +183,7 @@ error; calibration never relaxes a detector to make a backend look faster.
 | Different detector TOML, thresholds, allowlists, or enabled detectors | May change candidates, suppressions, confidence, and final findings | Detector/config digest changes; recalibration is required |
 | `--fast`, `--deep`, or `--precision` | Changes the resolved feature and confidence policy, so results may differ by design | Each preset has a distinct config identity and calibration coverage |
 | Explicit `--backend cpu|simd|gpu-cuda|gpu-wgpu` | Intended to be parity-identical; it is a diagnostic/benchmark override, not proof | Bypasses autoroute and does not create reusable fastest-correct evidence |
-| Input size, chunk count, source family, decode density, or full-source-size availability | The input itself can change findings; backend choice must not | Selects a different exact workload key, including whether each source family's size bucket came from full-source or payload evidence |
+| Input size, chunk count, source family, decoder-kind mask, decode candidate count or byte bucket, decoder uncertainty, or full-source-size availability | The input itself can change findings; backend choice must not | Selects a different exact workload key, including whether each source family's size bucket came from full-source or payload evidence |
 | One-shot process versus ready daemon | None: runtime lifetime cannot change detector policy or canonical matches | The same timing record derives a cold-aware one-shot route and a warm persistent-daemon route; the winners may differ |
 
 ### Configuration Presets

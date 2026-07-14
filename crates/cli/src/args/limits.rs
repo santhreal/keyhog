@@ -69,7 +69,7 @@ pub struct SourceLimitArgs {
     #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_limit_count)]
     pub limit_git_chunks: Option<usize>,
 
-    /// Maximum hosted-git API pages listed from one org/group/workspace.
+    /// Maximum hosted-git listing pages or GitHub collaboration API requests.
     #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
     #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_limit_count)]
     pub limit_hosted_git_pages: Option<usize>,
