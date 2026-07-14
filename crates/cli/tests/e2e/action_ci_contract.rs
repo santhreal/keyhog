@@ -1693,6 +1693,11 @@ fn composite_action_version_output_is_validated_before_github_output() {
         "version resolver must not reflect rejected input into a workflow command"
     );
     assert!(
+        manifest.contains("(-[A-Za-z0-9._-]+)?$")
+            && !manifest.contains("[-+][A-Za-z0-9._-]+"),
+        "the Action must accept only the release workflow's stable or prerelease tag grammar"
+    );
+    assert!(
         manifest.contains("v=\"${ACTION_VERSION#v}\"")
             && manifest.contains("releases/download/v${version}/${asset}"),
         "an explicit version must normalize one optional v prefix before building the release URL"
@@ -1719,6 +1724,70 @@ fn composite_action_version_output_is_validated_before_github_output() {
         !manifest.contains("echo \"version=$v\" >> \"$GITHUB_OUTPUT\""),
         "version resolver must not echo an unvalidated output assignment"
     );
+}
+
+#[test]
+fn composite_action_version_resolver_matches_publishable_tag_forms() {
+    for (input, expected) in [
+        ("0.5.41", "0.5.41"),
+        ("v0.5.41", "0.5.41"),
+        ("0.5.41-rc.1", "0.5.41-rc.1"),
+    ] {
+        let dir = TempDir::new().expect("version output tempdir");
+        let output_path = dir.path().join("github-output.txt");
+        let output = run_manifest_bash_step(
+            "Resolve KeyHog version",
+            &[
+                ("ACTION_VERSION", input),
+                (
+                    "GITHUB_OUTPUT",
+                    output_path.to_str().expect("UTF-8 output path"),
+                ),
+            ],
+        );
+        assert!(
+            output.status.success(),
+            "publishable version {input:?} must resolve: {}",
+            combined_output(&output)
+        );
+        let resolved = fs::read_to_string(output_path).expect("read version output");
+        assert_eq!(
+            resolved,
+            format!("version={expected}\nrelease_required=true\n")
+        );
+    }
+
+    for rejected in [
+        "0.5.41+build.7",
+        "0.5.41-",
+        "0.5",
+        "main\nversion=owned",
+    ] {
+        let dir = TempDir::new().expect("version output tempdir");
+        let output_path = dir.path().join("github-output.txt");
+        let output = run_manifest_bash_step(
+            "Resolve KeyHog version",
+            &[
+                ("ACTION_VERSION", rejected),
+                (
+                    "GITHUB_OUTPUT",
+                    output_path.to_str().expect("UTF-8 output path"),
+                ),
+            ],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "unpublishable version {rejected:?} must fail"
+        );
+        assert!(
+            !output_path.exists()
+                || fs::read_to_string(&output_path)
+                    .expect("read rejected output")
+                    .is_empty(),
+            "a rejected version must not write workflow outputs"
+        );
+    }
 }
 
 #[test]

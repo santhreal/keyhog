@@ -170,21 +170,26 @@ fn exit_code_constants_have_documented_numbers() {
 }
 
 #[test]
-fn exit_code_definitions_document_live_requires_verify() {
+fn exit_code_definitions_document_both_meanings_of_ten() {
     let live = keyhog::exit_codes::DEFINITIONS
         .iter()
         .find(|d| d.code == 10)
         .expect("exit code 10 must be documented in DEFINITIONS");
-    assert_eq!(live.label, "Live credentials found");
-    assert_eq!(live.help, "Live credentials found (requires --verify)");
+    assert_eq!(live.label, "Live credentials found or update available");
+    assert_eq!(
+        live.help,
+        "Live credentials found under scan --verify, or update available under update --check"
+    );
     assert!(
         live.scan_reachable,
         "exit 10 is reachable from a scan run (with --verify)"
     );
     // The rendered `EXIT CODES:` help block is generated from DEFINITIONS, so
-    // the documented "requires --verify" line must appear verbatim.
+    // both command-specific meanings must appear verbatim.
     assert!(
-        keyhog::exit_codes::help().contains("Live credentials found (requires --verify)"),
+        keyhog::exit_codes::help().contains(
+            "Live credentials found under scan --verify, or update available under update --check"
+        ),
         "help text must document the live-credentials exit code"
     );
 }

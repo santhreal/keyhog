@@ -11,7 +11,7 @@
 //!
 //! What is pinned here:
 //!   * `--verify`, `--proxy`, `--insecure` are real, accepted flags (not exit-2).
-//!   * `--help` documents exit 10 = "Live credentials found (requires --verify)".
+//!   * `--help` documents both command-specific meanings of exit 10.
 //!   * the JSON `verification` field is the lowercase variant (`skipped` on an
 //!     unverified scan), never the text-reporter labels.
 //!   * verification.md no longer carries the fabricated `verified-live` /

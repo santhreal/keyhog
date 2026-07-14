@@ -117,7 +117,7 @@ runs:
         release_required=false
         if [[ -n "${ACTION_VERSION:-}" ]]; then
           v="${ACTION_VERSION#v}"
-          if ! [[ "$v" =~ ^[0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9._-]+)?$ ]]; then
+          if ! [[ "$v" =~ ^[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9._-]+)?$ ]]; then
             echo "::error title=KeyHog::Invalid version. Explicit version must be MAJOR.MINOR.PATCH with an optional prerelease suffix."
             exit 2
           fi
@@ -126,7 +126,7 @@ runs:
           # GITHUB_ACTION_REF is e.g. "v0.5.12", "main", a SHA, or a branch.
           ref="${GITHUB_ACTION_REF:-main}"
           v="${ref#v}"
-          if [[ "$ref" == v* && "$v" =~ ^[0-9]+[.][0-9]+[.][0-9]+([-+][A-Za-z0-9._-]+)?$ ]]; then
+          if [[ "$ref" == v* && "$v" =~ ^[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9._-]+)?$ ]]; then
             release_required=true
           fi
         fi

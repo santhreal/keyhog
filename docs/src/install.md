@@ -179,7 +179,7 @@ keyhog backend --autoroute --json
 Use `keyhog calibrate-autoroute` for KeyHog's self-contained filesystem/stdin
 workload sweep. Use the installer `--calibrate` mode when you also want its
 environment-backed Git, URL, and container probes. An explicit
-`--backend cpu|simd|gpu` bypasses the autoroute decision table for that scan;
+`--backend cpu|simd|gpu-cuda|gpu-wgpu` bypasses the autoroute decision table for that scan;
 it is a diagnostic or benchmark override, not a repair for missing evidence.
 
 ### Runtime GPU controls

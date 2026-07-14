@@ -236,7 +236,7 @@ keyhog watch                      # watch the current directory
 | `[PATH]...` | directory path(s) | `.` | Watch one or more directory trees. Nested and duplicate roots fold into their covering parent. |
 | `--detectors <PATH>` | directory path | installed or embedded corpus | Replace corpus discovery with an explicit detector TOML directory. An explicitly named missing or invalid directory is an error. |
 | `--cache-dir <DIR>` | directory path | unset | Override the Hyperscan compiled-database cache directory. |
-| `--backend <BACKEND>` | `auto`, `gpu`, `simd`, or `cpu` | `auto` | Use persisted autoroute evidence or force one diagnostic backend. Missing or stale evidence in `auto` mode fails closed. |
+| `--backend <BACKEND>` | `auto`, `gpu-cuda`, `gpu-wgpu`, `simd`, or `cpu` | `auto` | Use persisted autoroute evidence or force one diagnostic backend. Missing or stale evidence in `auto` mode fails closed. |
 | `--quiet` | flag | off | Print findings while suppressing watcher startup and status lines. |
 
 ## `keyhog hook <install|uninstall>`

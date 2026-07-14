@@ -69,8 +69,8 @@ pub const DEFINITIONS: &[ExitCodeDefinition] = &[
     },
     ExitCodeDefinition {
         code: EXIT_LIVE_CREDENTIALS,
-        label: "Live credentials found",
-        help: "Live credentials found (requires --verify)",
+        label: "Live credentials found or update available",
+        help: "Live credentials found under scan --verify, or update available under update --check",
         scan_reachable: true,
     },
     ExitCodeDefinition {

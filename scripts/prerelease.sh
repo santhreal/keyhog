@@ -125,6 +125,38 @@ sed_inplace() {
   rm -f "$tmp"
 }
 
+validate_crate_changelogs() {
+  python3 - \
+    crates/cli/CHANGELOG.md \
+    crates/core/CHANGELOG.md \
+    crates/scanner/CHANGELOG.md \
+    crates/sources/CHANGELOG.md \
+    crates/verifier/CHANGELOG.md <<'PY'
+import pathlib
+import sys
+
+failures = []
+for raw in sys.argv[1:]:
+    path = pathlib.Path(raw)
+    lines = path.read_text().splitlines()
+    try:
+        start = lines.index("## Unreleased") + 1
+    except ValueError:
+        failures.append(f"{path}: missing one '## Unreleased' section")
+        continue
+    end = next(
+        (index for index in range(start, len(lines)) if lines[index].startswith("## ")),
+        len(lines),
+    )
+    if not any(line.startswith("- ") for line in lines[start:end]):
+        failures.append(f"{path}: Unreleased section has no owned change entry")
+
+if failures:
+    print("\n".join(failures), file=sys.stderr)
+    raise SystemExit(1)
+PY
+}
+
 apply_version_bump() {
   local current="$1" next="$2" today current_re
   local -a versioned_files=(
@@ -201,6 +233,14 @@ PY
 
   today="$(date -u +%Y-%m-%d)"
   sed_inplace "0,/^## \[Unreleased\]$/s//## [$next] - $today/" CHANGELOG.md || return 1
+  for file in \
+    crates/cli/CHANGELOG.md \
+    crates/core/CHANGELOG.md \
+    crates/scanner/CHANGELOG.md \
+    crates/sources/CHANGELOG.md \
+    crates/verifier/CHANGELOG.md; do
+    sed_inplace "0,/^## Unreleased$/s//## $next - $today/" "$file" || return 1
+  done
 
   if rg -n "v$current" "${versioned_files[@]}"; then
     echo "canonical release docs still contain v$current" >&2
@@ -210,10 +250,11 @@ PY
     echo "CHANGELOG.md still contains an Unreleased heading after bump" >&2
     return 1
   fi
-  echo "  bumped workspace, lockfile, changelog, and canonical docs to $next"
+  echo "  bumped workspace, lockfile, crate changelogs, and canonical docs to $next"
 }
 
 CUR="$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
+validate_crate_changelogs || exit 1
 step "keyhog prerelease, current ${CUR}${BUMP:+ → ${BUMP}} (profile=$PROFILE, skip_rust=$SKIP_RUST)"
 
 if [ -n "$BUMP" ]; then
