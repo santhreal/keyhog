@@ -2015,6 +2015,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/engine/phase2_generic/pattern.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/engine/phase2_gpu_dfa/batch.rs"
 error = true
 adversarial = true
@@ -2314,3 +2319,58 @@ boundary = true
 error = true
 adversarial = true
 e2e_linked = true
+
+[[module]]
+path = "crates/scanner/src/suppression/detector_policy.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/compiler/compiler_prefix/groups.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/compiler/compiler_prefix/inner.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/compiler/compiler_prefix/guard.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/compiler/compiler_prefix/flags.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/decode/limits.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/decode/javascript_static.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/decode/javascript_static/cryptojs.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/decode/javascript_static/reverse_base64.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/decode/javascript_static/aes.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/engine/phase1_admission.rs"
+error = true
+adversarial = true

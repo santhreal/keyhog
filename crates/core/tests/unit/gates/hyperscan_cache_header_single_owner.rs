@@ -7,6 +7,8 @@ fn core_owns_hyperscan_cache_header_contract() {
         "/src/hyperscan_cache.rs"
     ))
     .expect("hyperscan cache source readable");
+    let api = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/api.rs"))
+        .expect("core api readable");
     let hardening =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/hardening.rs"))
             .expect("hardening source readable");
@@ -25,7 +27,7 @@ fn core_owns_hyperscan_cache_header_contract() {
     }
     assert!(
         lib.contains("mod hyperscan_cache;")
-            && lib.contains("pub use hyperscan_cache::{")
+            && api.contains("pub use crate::hyperscan_cache::{")
             && hardening.contains("crate::hyperscan_cache_header_is_valid(&header)"),
         "core hardening must consume the exported hyperscan cache header contract"
     );
