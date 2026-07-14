@@ -3658,11 +3658,13 @@ fn backend_timing_evidence_rejects_empty_trial_sets_at_construction() {
 }
 
 #[test]
-fn shared_gpu_preparation_cost_changes_only_the_cold_trial() {
+fn immutable_gpu_preparation_costs_change_only_the_cold_trial() {
+    let literal_preparation_ns = 60;
+    let phase2_preparation_ns = 30;
     let evidence =
         super::evidence::BackendTimingEvidence::from_trial_ns(vec![10, 20, 20, 20, 20, 20, 20])
             .expect("timing evidence")
-            .add_to_first_trial(90);
+            .add_to_first_trial(literal_preparation_ns + phase2_preparation_ns);
     assert_eq!(evidence.trials_ns, vec![100, 20, 20, 20, 20, 20, 20]);
     let (cold_ns, warm, one_shot_ns) =
         super::evidence::gpu_cold_warm_route_evidence(&evidence).expect("cold/warm split");

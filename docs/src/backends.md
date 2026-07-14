@@ -34,8 +34,10 @@ dispatch failure should run the CLI as a subprocess. The no-backend portable
 CPU methods do not acquire an accelerator.
 
 The GPU trigger matcher keeps its immutable VYRE tables resident after the
-first successful batch. Haystack and region capacity grow in bounded bands from
-the actual workload. KeyHog serializes each resident session so concurrent
+first successful batch. Backend-shaped phase-two DFA catalogs are also immutable
+for the compiled detector set and are reused across scans. Haystack and region
+capacity grow in bounded bands from the actual workload. KeyHog serializes each
+resident session so concurrent
 requests cannot interleave uploads against the same device buffers. Preparation,
 growth, dispatch, and readback errors remain selected-GPU failures. Teardown
 cleanup errors are logged. There is no per-batch pipeline or CPU substitution.

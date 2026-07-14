@@ -31,23 +31,17 @@ pub(crate) struct Phase2PoolBreakdown {
 }
 
 impl CompiledScanner {
-    /// Compile the immutable GPU literal program once for an autoroute sweep
-    /// and remember its measured one-time cost. Per-workload calibration can
-    /// retain that program while composing this cost into every GPU one-shot
-    /// observation.
+    /// Compile the immutable GPU literal and phase-2 programs once for an
+    /// autoroute sweep and remember their measured one-time costs. Per-workload
+    /// calibration retains those programs while composing their costs into
+    /// every matching GPU one-shot observation.
     pub fn prepare_autoroute_calibration_gpu_artifact(&self) -> std::result::Result<(), String> {
-        if self
-            .autoroute_gpu_shared_cold_ns
-            .load(std::sync::atomic::Ordering::Acquire)
-            > 0
-        {
-            return Ok(());
-        }
-        let has_eligible_gpu = self
+        let eligible_gpu = self
             .gpu_backend_candidates()
             .into_iter()
-            .any(|candidate| candidate.is_eligible());
-        if !has_eligible_gpu {
+            .filter(|candidate| candidate.is_eligible())
+            .collect::<Vec<_>>();
+        if eligible_gpu.is_empty() {
             self.autoroute_gpu_shared_cold_ns
                 .store(0, std::sync::atomic::Ordering::Relaxed);
             return Ok(());
@@ -68,15 +62,27 @@ impl CompiledScanner {
                     .to_string(),
             );
         }
+        #[cfg(feature = "gpu")]
+        for candidate in eligible_gpu {
+            let backend_id = candidate.driver_id.ok_or_else(|| {
+                "eligible GPU peer has no driver identity during phase-2 preparation".to_string()
+            })?;
+            let _catalog = self.phase2_gpu_dfa_catalog(Some(backend_id));
+            if self.phase2_gpu_dfa.preparation_ns(Some(backend_id)) == 0 {
+                return Err(format!(
+                    "the {backend_id} phase-2 GPU program initialized without recording its preparation duration"
+                ));
+            }
+        }
         Ok(())
     }
 
-    /// Reset workload-shaped GPU state while retaining the immutable literal
-    /// program whose measured preparation cost is composed into cold evidence.
+    /// Reset workload-shaped GPU state while retaining immutable literal and
+    /// phase-2 programs whose measured preparation costs are composed into cold
+    /// evidence.
     pub fn reset_autoroute_calibration_gpu_workload(&mut self) -> std::result::Result<(), String> {
         #[cfg(feature = "gpu")]
         {
-            self.phase2_gpu_dfa.reset();
             self.reset_gpu_resident_presence_for_calibration()?;
         }
         Ok(())
@@ -86,6 +92,26 @@ impl CompiledScanner {
     pub fn autoroute_calibration_gpu_shared_cold_ns(&self) -> u128 {
         self.autoroute_gpu_shared_cold_ns
             .load(std::sync::atomic::Ordering::Acquire) as u128
+    }
+
+    /// Measured one-time phase-2 program preparation cost for an eligible GPU
+    /// backend. `None` means the backend is not eligible or was not prepared.
+    #[must_use]
+    pub fn autoroute_calibration_gpu_backend_cold_ns(&self, backend: ScanBackend) -> Option<u128> {
+        #[cfg(feature = "gpu")]
+        {
+            let candidate = self
+                .gpu_backend_candidates()
+                .into_iter()
+                .find(|candidate| candidate.backend == backend && candidate.is_eligible())?;
+            let preparation_ns = self.phase2_gpu_dfa.preparation_ns(candidate.driver_id);
+            return (preparation_ns > 0).then_some(preparation_ns);
+        }
+        #[cfg(not(feature = "gpu"))]
+        {
+            let _ = backend;
+            None
+        }
     }
 
     /// Whether a SIMD (Hyperscan/Vectorscan) prefilter is compiled in and live.

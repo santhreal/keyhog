@@ -75,8 +75,18 @@ pub(super) fn calibrate_fastest_correct_backend(
     for backend in candidate_backends {
         let mut measured = measure_candidate_backend(scanner, sample, backend, &reference_matches)?;
         if is_gpu_backend(backend) {
-            measured =
-                measured.add_to_first_trial(scanner.autoroute_calibration_gpu_shared_cold_ns());
+            let backend_cold_ns = scanner
+                .autoroute_calibration_gpu_backend_cold_ns(backend)
+                .ok_or_else(|| {
+                    AutorouteRoutingError::candidate_backend_rejected(
+                        backend,
+                        "GPU phase-2 program preparation evidence was missing",
+                    )
+                })?;
+            let immutable_cold_ns = scanner
+                .autoroute_calibration_gpu_shared_cold_ns()
+                .saturating_add(backend_cold_ns);
+            measured = measured.add_to_first_trial(immutable_cold_ns);
             if gpu_cold_warm_route_evidence(&measured).is_none() {
                 return Err(AutorouteRoutingError::candidate_backend_rejected(
                     backend,

@@ -42,9 +42,10 @@ mod workload;
 const PHASE2_GPU_DFA_MAX_MATCHES: u32 = 1 << 20;
 const PHASE2_GPU_DFA_MAX_STATES: usize = 16_384;
 const PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS: usize = 16;
-// This catalog is still lazy-built on the scan path. Keep breadth bounded by
-// shard count here; selection quality comes from detector-breadth ordering, not
-// from letting first-use regex-DFA compilation consume the operator's scan.
+// Normal scans build this catalog lazily; autoroute calibration prepares it and
+// accounts for that cold cost explicitly. Keep breadth bounded by shard count;
+// selection quality comes from detector-breadth ordering, not from letting
+// first-use regex-DFA compilation consume the operator's scan.
 const PHASE2_GPU_DFA_MAX_SHARDS: usize = 4;
 const PHASE2_GPU_DFA_MAX_CANDIDATES: usize =
     PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS * PHASE2_GPU_DFA_MAX_SHARDS;
@@ -70,6 +71,8 @@ pub(crate) struct Phase2GpuDfaCatalog {
 pub(crate) struct Phase2GpuDfaCatalogCache {
     subgroup: OnceLock<Option<Phase2GpuDfaCatalog>>,
     cuda: OnceLock<Option<Phase2GpuDfaCatalog>>,
+    subgroup_preparation_ns: std::sync::atomic::AtomicU64,
+    cuda_preparation_ns: std::sync::atomic::AtomicU64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -294,11 +297,6 @@ impl Phase2GpuDfaCatalog {
 }
 
 impl Phase2GpuDfaCatalogCache {
-    pub(crate) fn reset(&mut self) {
-        self.subgroup = OnceLock::new();
-        self.cuda = OnceLock::new();
-    }
-
     pub(crate) fn catalog(
         &self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
@@ -310,10 +308,29 @@ impl Phase2GpuDfaCatalogCache {
             Phase2GpuDfaProgramKind::SubgroupCoalesced => &self.subgroup,
             Phase2GpuDfaProgramKind::CudaCompatible => &self.cuda,
         };
+        let preparation_ns = match program_kind {
+            Phase2GpuDfaProgramKind::SubgroupCoalesced => &self.subgroup_preparation_ns,
+            Phase2GpuDfaProgramKind::CudaCompatible => &self.cuda_preparation_ns,
+        };
         cell.get_or_init(|| {
-            Phase2GpuDfaCatalog::build(phase2_patterns, always_active_indices, program_kind)
+            let started = std::time::Instant::now();
+            let catalog =
+                Phase2GpuDfaCatalog::build(phase2_patterns, always_active_indices, program_kind);
+            let elapsed_ns = u64::try_from(started.elapsed().as_nanos())
+                .unwrap_or(u64::MAX)
+                .max(1);
+            preparation_ns.store(elapsed_ns, std::sync::atomic::Ordering::Release);
+            catalog
         })
         .as_ref()
+    }
+
+    pub(crate) fn preparation_ns(&self, backend_id: Option<&'static str>) -> u128 {
+        let preparation_ns = match Phase2GpuDfaProgramKind::for_backend_id(backend_id) {
+            Phase2GpuDfaProgramKind::SubgroupCoalesced => &self.subgroup_preparation_ns,
+            Phase2GpuDfaProgramKind::CudaCompatible => &self.cuda_preparation_ns,
+        };
+        preparation_ns.load(std::sync::atomic::Ordering::Acquire) as u128
     }
 }
 

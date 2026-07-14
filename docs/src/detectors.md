@@ -221,9 +221,10 @@ The available per-detector tuning fields are:
     then skips BPE tokenization for that detector. Do not combine `false` with a
     `bpe_max_bytes_per_token` ceiling; detector validation rejects the conflict.
 *   **`bpe_max_bytes_per_token`** (float, optional): Per-detector
-    `cl100k_base` UTF-8-bytes-per-token ceiling. Values above the ceiling are
-    efficiently tokenized, word-like candidates and are suppressed after the
-    cheaper shape and entropy gates. The detector field takes precedence over
+    `cl100k_base` UTF-8-bytes-per-token ceiling. Values above the ceiling use
+    fewer common subword tokens per byte, which makes them more likely to be
+    word-like; they are suppressed after the cheaper shape and entropy gates.
+    The detector field takes precedence over
     the compiled scan fallback. An explicitly configured
     `[scan].entropy_bpe_max_bytes_per_token` or CLI flag is the final Tier-A
     override for all eligible detectors. Lower ceilings favor precision and

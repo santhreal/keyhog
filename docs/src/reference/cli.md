@@ -323,9 +323,10 @@ Runs the local stdin/filesystem scan-policy and workload-bucket sweep, verifies
 backend parity, and persists fastest-correct routing evidence for those normal
 `auto` scans. Git, container, web, and other environment-backed source classes
 remain in the installer's calibration sweep.
-The command compiles one scanner per preset. It reuses immutable detector and
-GPU program artifacts, resets workload-shaped accelerator state before each
-representative, and composes the measured shared GPU preparation cost into each
+The command compiles one scanner per preset. It reuses immutable detector, GPU
+literal, and GPU phase-two program artifacts, then resets workload-shaped
+accelerator state before each representative. It composes the measured shared
+literal and backend-shaped phase-two preparation costs into each matching
 one-shot decision. Candidate measurement order rotates across workload bands to
 limit fixed-order thermal bias. This avoids per-probe process startup without
 turning cold GPU evidence into warm evidence.

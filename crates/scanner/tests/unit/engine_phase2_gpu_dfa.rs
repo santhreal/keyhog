@@ -179,6 +179,34 @@ fn program_kind_is_backend_keyed() {
 }
 
 #[test]
+fn catalog_preparation_cost_is_recorded_once_and_reused() {
+    let patterns = vec![(test_pattern("[a-z]{6}[0-9]{2}", false), Vec::new())];
+    let cache = Phase2GpuDfaCatalogCache::default();
+
+    let first = cache.catalog(&patterns, &[0], Some("cuda"));
+    assert!(
+        first.is_some(),
+        "the test pattern must lower into a GPU DFA"
+    );
+    let first_preparation_ns = cache.preparation_ns(Some("cuda"));
+    assert!(
+        first_preparation_ns > 0,
+        "catalog initialization must record a nonzero cold cost"
+    );
+
+    let second = cache.catalog(&patterns, &[0], Some("cuda"));
+    assert!(std::ptr::eq(
+        first.expect("first catalog"),
+        second.expect("second catalog")
+    ));
+    assert_eq!(
+        cache.preparation_ns(Some("cuda")),
+        first_preparation_ns,
+        "reusing an immutable catalog must not replace its measured cold cost"
+    );
+}
+
+#[test]
 fn gpu_dfa_candidate_selection_prefers_base_detector_breadth() {
     let patterns = vec![
         (
