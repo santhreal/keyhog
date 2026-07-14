@@ -153,6 +153,38 @@ def summary_targets() -> set[pathlib.Path]:
     return targets
 
 
+def security_reporting_issues() -> list[str]:
+    """Keep one visible security policy with private-first reporting."""
+    issues: list[str] = []
+    policy = (REPO / "SECURITY.md").read_text(errors="replace")
+    page = (DOCS / "security.md").read_text(errors="replace")
+    summary = (DOCS / "SUMMARY.md").read_text(errors="replace")
+    workflow = (REPO / ".github" / "workflows" / "docs.yml").read_text(errors="replace")
+
+    if page.strip() != "{{#include ../../SECURITY.md}}":
+        issues.append("docs/src/security.md: must include the canonical root SECURITY.md verbatim")
+    if "[Security](./security.md)" not in summary:
+        issues.append("docs/src/SUMMARY.md: missing visible Security navigation entry")
+
+    private_url = "https://github.com/santhreal/keyhog/security/advisories/new"
+    email = "security@santh.dev"
+    private_at = policy.find(private_url)
+    email_at = policy.find(email)
+    if private_at < 0 or email_at < 0 or private_at >= email_at:
+        issues.append(
+            "SECURITY.md: reporting must list GitHub private vulnerability reporting before the email fallback"
+        )
+    if "PGP encryption is not required" not in policy:
+        issues.append("SECURITY.md: email fallback must state that PGP is not required")
+    if "Do not open a public issue" not in policy:
+        issues.append("SECURITY.md: must prohibit public vulnerability issues")
+    if workflow.count("- 'SECURITY.md'") != 2:
+        issues.append(
+            ".github/workflows/docs.yml: SECURITY.md must rebuild docs on pushes and pull requests"
+        )
+    return issues
+
+
 def truth_issues() -> list[str]:
     issues: list[str] = []
     expected_version = workspace_version()
@@ -208,6 +240,7 @@ def truth_issues() -> list[str]:
     ).stdout.splitlines()
     for path in tracked:
         issues.append(f"{path}: duplicate/generated documentation must not be tracked")
+    issues.extend(security_reporting_issues())
     issues.extend(navigation_issues(canonical_paths()))
     return issues
 

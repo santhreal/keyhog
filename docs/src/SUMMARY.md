@@ -1,6 +1,7 @@
 # Summary
 
 [Introduction](./introduction.md)
+[Security](./security.md)
 
 # Getting started
 

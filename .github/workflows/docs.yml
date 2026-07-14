@@ -11,12 +11,14 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
+      - 'SECURITY.md'
       - 'CHANGELOG.md'
       - '.github/workflows/docs.yml'
       - 'scripts/gates/docs_truth.py'
   pull_request:
     paths:
       - 'docs/**'
+      - 'SECURITY.md'
       - 'CHANGELOG.md'
       - '.github/workflows/docs.yml'
       - 'scripts/gates/docs_truth.py'
