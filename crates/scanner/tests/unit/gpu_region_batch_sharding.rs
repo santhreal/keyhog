@@ -196,6 +196,9 @@ fn backend_limits_keep_wgpu_inside_its_portable_grid() {
 
 #[test]
 fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
+    use super::super::gpu_region_dispatch::{
+        reset_test_window_reduction_allocations, test_window_reduction_allocations,
+    };
     use crate::{CompiledScanner, ScanBackend};
     use keyhog_core::{ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 
@@ -261,7 +264,13 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
         .all(|shard| shard.coalesced_bytes <= WGPU_BYTE_SCAN_DISPATCH_LIMIT));
 
     let mut cpu = scanner.scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback);
+    reset_test_window_reduction_allocations();
     let mut gpu = scanner.scan_coalesced_with_backend(&chunks, ScanBackend::GpuWgpu);
+    assert_eq!(
+        test_window_reduction_allocations(),
+        0,
+        "ordinary chunk-boundary shards must retain streaming trigger derivation"
+    );
     canonicalize_production_results(&mut cpu);
     canonicalize_production_results(&mut gpu);
     assert_eq!(
@@ -273,6 +282,71 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
         gpu, cpu,
         "sharded production WGPU findings diverged from CPU"
     );
+}
+
+#[test]
+fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
+    use super::super::gpu_region_dispatch::{
+        reset_test_window_reduction_allocations, test_window_reduction_allocations,
+    };
+    use crate::{CompiledScanner, ScanBackend};
+    use keyhog_core::{DetectorSpec, PatternSpec, Severity};
+
+    const LIMIT: usize = 64;
+    const SEAM: &str = "KHCUDAX_A1b2C3d4";
+    const TAIL: &str = "KHCUDAX_Z9y8X7w6";
+    let detector = DetectorSpec {
+        id: "gpu-cuda-windowing".into(),
+        name: "GPU CUDA windowing".into(),
+        service: "test".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: "KHCUDAX_[A-Za-z0-9]{8}".into(),
+            description: None,
+            group: None,
+            client_safe: false,
+        }],
+        keywords: vec!["KHCUDAX_".into()],
+        ..DetectorSpec::default()
+    };
+    let scanner = CompiledScanner::compile(vec![detector]).expect("compile CUDA window scanner");
+    if !crate::hw_probe::probe_hardware().gpu_available {
+        eprintln!("CUDA parity fixture requires a physical GPU");
+        return;
+    }
+    let cuda = scanner
+        .gpu_backend_candidates()
+        .into_iter()
+        .find(|candidate| candidate.backend == ScanBackend::GpuCuda)
+        .expect("compiled scanner must report CUDA");
+    assert!(
+        cuda.acquired,
+        "RTX host must acquire CUDA: {}",
+        cuda.acquisition_error.as_deref().unwrap_or("no diagnostic")
+    );
+
+    let mut oversized = "x".repeat(160);
+    oversized.replace_range(61..61 + SEAM.len(), SEAM);
+    oversized.replace_range(160 - TAIL.len()..160, TAIL);
+    let chunks = vec![
+        keyhog_core::Chunk::from("KHCUDAX_Q1w2E3r4!"),
+        keyhog_core::Chunk::from(oversized),
+        keyhog_core::Chunk::from("KHCUDAX_T5y6U7i8!"),
+    ];
+    let mut cpu = scanner.scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback);
+    reset_test_window_reduction_allocations();
+    let mut cuda = with_test_region_presence_byte_limit(LIMIT, || {
+        scanner.scan_coalesced_with_backend(&chunks, ScanBackend::GpuCuda)
+    });
+    assert_eq!(
+        test_window_reduction_allocations(),
+        1,
+        "only the one oversized logical row may allocate a reduction bitmap"
+    );
+    canonicalize_production_results(&mut cpu);
+    canonicalize_production_results(&mut cuda);
+    assert_eq!(cpu.iter().map(Vec::len).sum::<usize>(), 4);
+    assert_eq!(cuda, cpu, "windowed production CUDA findings diverged");
 }
 
 #[test]
@@ -414,10 +488,24 @@ fn literal_presence_windows_cover_the_tail_and_reject_impossible_overlap() {
         .expect_err("literal longer than the dispatch ceiling must fail");
     assert!(error.contains("longest compiled GPU literal is 65 byte(s)"));
 
-    let pathological = vec![b'x'; 64 + MAX_REGION_PRESENCE_WINDOW_DISPATCHES];
+    let pathological = vec![b'x'; 64 + MAX_REGION_PRESENCE_REQUEST_DISPATCHES];
     let error = for_each_region_presence_window(&pathological, 64, 64, |_window, _range| Ok(()))
         .expect_err("one-byte window progress must have a bounded dispatch count");
-    assert!(error.contains("above the safety limit of 4096"));
+    assert!(error.contains("above the request safety limit of 4096"));
+}
+
+#[test]
+fn request_plan_caps_many_individually_valid_oversized_chunks() {
+    let chunks = (0..(MAX_REGION_PRESENCE_REQUEST_DISPATCHES / 2 + 1))
+        .map(|_| chunk_with_hits(65, false))
+        .collect::<Vec<_>>();
+    let error = validate_region_presence_request_plan(&chunks, 64, 1)
+        .expect_err("request-wide dispatch amplification must fail before execution");
+    assert!(
+        error.contains("request needs 4098 dispatches")
+            && error.contains("request safety limit of 4096"),
+        "unexpected request-plan error: {error}"
+    );
 }
 
 #[test]

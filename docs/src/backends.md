@@ -44,9 +44,9 @@ A coalesced request above the smaller of the live VRAM/config budget and the
 selected backend's hard ceiling is split between source chunks. An individually
 oversized chunk is scanned through physical windows whose overlap covers the
 longest compiled GPU literal. Window presence rows are OR-reduced into one
-logical source row before phase-two hints are derived. Plans above 4,096
-physical window dispatches fail visibly instead of amplifying pathological
-custom-detector overlap without bound.
+logical source row before phase-two hints are derived. A complete region-presence
+request above 4,096 physical dispatches fails visibly before execution instead
+of amplifying chunk count or custom-detector overlap without bound.
 Prefixless phase-two GPU regex admission stays on whole chunks because regex
 width may be unbounded. Oversized rows retain the authoritative CPU no-hit
 admission path instead of accepting an unsafe GPU negative. Readback words are

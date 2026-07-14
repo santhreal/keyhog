@@ -1,5 +1,7 @@
 //! Batch scratch and validation helpers for coalesced GPU region presence.
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::cell::RefCell;
 use std::ops::Range;
 
@@ -19,6 +21,11 @@ impl RegionPresenceScratch {
 thread_local! {
     static REGION_PRESENCE_BATCH_SCRATCH: RefCell<RegionPresenceScratch> =
         RefCell::new(RegionPresenceScratch::default());
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_REGION_PRESENCE_BYTE_LIMIT: Cell<Option<usize>> = const { Cell::new(None) };
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -94,13 +101,38 @@ pub(super) const WGPU_BYTE_SCAN_DISPATCH_LIMIT: usize = 65_535 * 128;
 /// Bound overlap amplification from pathological custom detector literals.
 /// A selected GPU route fails visibly instead of issuing an effectively
 /// unbounded sequence of tiny-progress dispatches.
-const MAX_REGION_PRESENCE_WINDOW_DISPATCHES: usize = 4_096;
+pub(super) const MAX_REGION_PRESENCE_REQUEST_DISPATCHES: usize = 4_096;
 
 pub(super) fn region_presence_batch_byte_limit(backend_id: &str) -> usize {
-    region_presence_batch_byte_limit_for_input_budget(
+    let live = region_presence_batch_byte_limit_for_input_budget(
         backend_id,
         super::gpu_input_budget::gpu_batch_input_limit(),
-    )
+    );
+    #[cfg(test)]
+    {
+        return TEST_REGION_PRESENCE_BYTE_LIMIT
+            .with(|limit| limit.get().map_or(live, |test_limit| live.min(test_limit)));
+    }
+    #[cfg(not(test))]
+    live
+}
+
+#[cfg(test)]
+struct TestRegionPresenceByteLimitGuard(Option<usize>);
+
+#[cfg(test)]
+impl Drop for TestRegionPresenceByteLimitGuard {
+    fn drop(&mut self) {
+        TEST_REGION_PRESENCE_BYTE_LIMIT.with(|limit| limit.set(self.0));
+    }
+}
+
+#[cfg(test)]
+pub(super) fn with_test_region_presence_byte_limit<R>(limit: usize, f: impl FnOnce() -> R) -> R {
+    assert!(limit > 0 && limit <= REGION_PRESENCE_BATCH_BYTE_LIMIT);
+    let previous = TEST_REGION_PRESENCE_BYTE_LIMIT.with(|cell| cell.replace(Some(limit)));
+    let _guard = TestRegionPresenceByteLimitGuard(previous);
+    f()
 }
 
 fn region_presence_batch_byte_limit_for_input_budget(
@@ -253,21 +285,10 @@ fn region_presence_window_ranges(
         ));
     }
     let overlap = max_literal_len - 1;
-    let step = byte_limit.checked_sub(overlap).ok_or_else(|| {
-        "GPU region-presence window progress underflows the dispatch ceiling".to_string()
-    })?;
-    let dispatches = if len == 0 {
-        0
-    } else if len <= byte_limit {
-        1
-    } else {
-        1usize
-            .checked_add((len - byte_limit).div_ceil(step))
-            .ok_or_else(|| "GPU region-presence window count overflows host usize".to_string())?
-    };
-    if dispatches > MAX_REGION_PRESENCE_WINDOW_DISPATCHES {
+    let dispatches = region_presence_window_dispatch_count(len, byte_limit, max_literal_len)?;
+    if dispatches > MAX_REGION_PRESENCE_REQUEST_DISPATCHES {
         return Err(format!(
-            "GPU region-presence needs {dispatches} overlap window dispatches, above the safety limit of {MAX_REGION_PRESENCE_WINDOW_DISPATCHES}. Fix: lower the source chunk size or shorten the detector literal"
+            "GPU region-presence needs {dispatches} overlap window dispatches, above the request safety limit of {MAX_REGION_PRESENCE_REQUEST_DISPATCHES}. Fix: lower the source chunk size or shorten the detector literal"
         ));
     }
     let mut start = 0usize;
@@ -280,6 +301,71 @@ fn region_presence_window_ranges(
         start = if end == len { len } else { end - overlap };
         Some(range)
     }))
+}
+
+fn region_presence_window_dispatch_count(
+    len: usize,
+    byte_limit: usize,
+    max_literal_len: usize,
+) -> Result<usize, String> {
+    if max_literal_len == 0 || max_literal_len > byte_limit {
+        return Err("GPU region-presence window count received invalid literal bounds".to_string());
+    }
+    let overlap = max_literal_len - 1;
+    let step = byte_limit.checked_sub(overlap).ok_or_else(|| {
+        "GPU region-presence window progress underflows the dispatch ceiling".to_string()
+    })?;
+    if len == 0 {
+        return Ok(0);
+    }
+    if len <= byte_limit {
+        return Ok(1);
+    }
+    1usize
+        .checked_add((len - byte_limit).div_ceil(step))
+        .ok_or_else(|| "GPU region-presence window count overflows host usize".to_string())
+}
+
+pub(super) fn validate_region_presence_request_plan(
+    chunks: &[keyhog_core::Chunk],
+    byte_limit: usize,
+    max_literal_len: usize,
+) -> Result<usize, String> {
+    let mut dispatches = 0usize;
+    let mut cursor = 0usize;
+    while cursor < chunks.len() {
+        if chunks[cursor].data.len() > byte_limit {
+            dispatches = dispatches
+                .checked_add(region_presence_window_dispatch_count(
+                    chunks[cursor].data.len(),
+                    byte_limit,
+                    max_literal_len,
+                )?)
+                .ok_or_else(|| {
+                    "GPU region-presence request dispatch count overflows host usize".to_string()
+                })?;
+            cursor += 1;
+        } else {
+            let run_start = cursor;
+            let run_end = chunks[run_start..]
+                .iter()
+                .position(|chunk| chunk.data.len() > byte_limit)
+                .map_or(chunks.len(), |offset| run_start + offset);
+            for shard in region_presence_shards(&chunks[run_start..run_end], byte_limit)? {
+                shard?;
+                dispatches = dispatches.checked_add(1).ok_or_else(|| {
+                    "GPU region-presence request dispatch count overflows host usize".to_string()
+                })?;
+            }
+            cursor = run_end;
+        }
+        if dispatches > MAX_REGION_PRESENCE_REQUEST_DISPATCHES {
+            return Err(format!(
+                "GPU region-presence request needs {dispatches} dispatches, above the request safety limit of {MAX_REGION_PRESENCE_REQUEST_DISPATCHES}. Fix: lower the fused batch size or source chunk size"
+            ));
+        }
+    }
+    Ok(dispatches)
 }
 
 pub(super) fn for_each_region_presence_window(

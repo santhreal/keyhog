@@ -18,7 +18,8 @@ use super::gpu_region_batch::{
     for_each_region_presence_batch, for_each_region_presence_window,
     region_presence_batch_byte_limit, region_presence_batch_len, region_presence_ref_batch_len,
     region_presence_ref_shards, region_presence_shards, set_trigger_bit, trigger_bit_is_set,
-    validate_detector_match, RegionPresenceBatchMode,
+    validate_detector_match, validate_region_presence_request_plan, RegionPresenceBatchMode,
+    MAX_REGION_PRESENCE_REQUEST_DISPATCHES,
 };
 use super::gpu_region_dispatch_helpers::mib_per_second;
 #[cfg(test)]
@@ -29,6 +30,21 @@ use super::phase2_gpu_dfa::{
     validate_phase2_gpu_trigger_rows, Phase2GpuAdmissionWorkload,
 };
 use super::*;
+
+#[cfg(test)]
+thread_local! {
+    static TEST_WINDOW_REDUCTION_ALLOCATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(super) fn reset_test_window_reduction_allocations() {
+    TEST_WINDOW_REDUCTION_ALLOCATIONS.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(super) fn test_window_reduction_allocations() -> usize {
+    TEST_WINDOW_REDUCTION_ALLOCATIONS.with(std::cell::Cell::get)
+}
 
 pub(super) fn append_phase2_gpu_admission(
     merged: &mut Phase2GpuDfaAdmission,
@@ -216,35 +232,10 @@ impl CompiledScanner {
                     )
                 })
             })?;
-            let expected_presence_words =
-                chunks.len().checked_mul(presence_words).ok_or_else(|| {
-                    super::gpu_forced::SelectedGpuDispatchError::new(
-                        "region-presence readback size overflows host usize".to_string(),
-                    )
-                })?;
-
             let t_co = std::time::Instant::now();
             let mut dis_s = std::time::Duration::ZERO;
             let mut derive_s_total = std::time::Duration::ZERO;
             let region_dispatch_profile = super::profile::span(super::profile::P::BackendDispatch);
-            let mut logical_presence = Vec::new();
-            logical_presence
-                .try_reserve_exact(expected_presence_words)
-                .map_err(|error| {
-                    super::gpu_forced::SelectedGpuDispatchError::new(format!(
-                        "GPU region-presence logical-row reserve failed: {error}"
-                    ))
-                })?;
-            logical_presence.resize(expected_presence_words, 0u32);
-            let mut logical_rows_seen = Vec::new();
-            logical_rows_seen
-                .try_reserve_exact(chunks.len())
-                .map_err(|error| {
-                    super::gpu_forced::SelectedGpuDispatchError::new(format!(
-                        "GPU region-presence row-state reserve failed: {error}"
-                    ))
-                })?;
-            logical_rows_seen.resize(chunks.len(), false);
             let mut triggers: Vec<Option<Vec<u64>>> = Vec::new();
             let mut phase2_keyword_hints: Vec<Vec<u32>> = Vec::new();
             let mut phase2_always_anchor_presence: Vec<bool> = Vec::new();
@@ -267,10 +258,36 @@ impl CompiledScanner {
                         "GPU phase-2 anchor-presence row reserve failed: {error}"
                     ))
                 })?;
+            let mut gpu_presence_bits = 0usize;
+            let mut logical_derive_s = std::time::Duration::ZERO;
+            let mut derive_presence_row = |row: &[u32]| -> std::result::Result<(), String> {
+                gpu_presence_bits = gpu_presence_bits
+                    .checked_add(
+                        row.iter()
+                            .map(|word| word.count_ones() as usize)
+                            .sum::<usize>(),
+                    )
+                    .ok_or_else(|| {
+                        "region-presence reduced bit count overflows host usize".to_string()
+                    })?;
+                let bits = self.triggered_patterns_from_gpu_presence(row);
+                phase2_keyword_hints.push(self.phase2_keyword_hints_from_gpu_presence(row));
+                phase2_always_anchor_presence
+                    .push(self.phase2_always_anchor_present_from_gpu_presence(row));
+                triggers.push(bits.iter().any(|&word| word != 0).then_some(bits));
+                Ok(())
+            };
             let mut dispatch_presence = |haystack: &[u8],
                                          region_starts: &[u32],
                                          logical_start: usize,
-                                         rows: usize| {
+                                         rows: usize,
+                                         consume: &mut dyn FnMut(
+                &[u32],
+            )
+                -> std::result::Result<
+                (),
+                String,
+            >| {
                 let t_dis = std::time::Instant::now();
                 let expected_presence_words =
                     rows.checked_mul(presence_words).ok_or_else(|| {
@@ -312,30 +329,7 @@ impl CompiledScanner {
                                             gpu_literal_count
                                         ));
                                 }
-                                let start =
-                                    row_idx.checked_mul(presence_words).ok_or_else(|| {
-                                        "region-presence logical row offset overflows host usize"
-                                            .to_string()
-                                    })?;
-                                let end = start.checked_add(presence_words).ok_or_else(|| {
-                                    "region-presence logical row end overflows host usize"
-                                        .to_string()
-                                })?;
-                                let target =
-                                    logical_presence.get_mut(start..end).ok_or_else(|| {
-                                        format!(
-                                            "region-presence logical row {row_idx} is out of range"
-                                        )
-                                    })?;
-                                for (target_word, &word) in target.iter_mut().zip(row) {
-                                    *target_word |= word;
-                                }
-                                let seen = logical_rows_seen.get_mut(row_idx).ok_or_else(|| {
-                                    format!(
-                                        "region-presence logical row state {row_idx} is out of range"
-                                    )
-                                })?;
-                                *seen = true;
+                                consume(row)?;
                             }
                             derive_s = t_derive.elapsed();
                             Ok(())
@@ -346,6 +340,9 @@ impl CompiledScanner {
                 result
             };
             let byte_limit = region_presence_batch_byte_limit(backend.id());
+            let planned_dispatches =
+                validate_region_presence_request_plan(chunks, byte_limit, self.gpu_max_literal_len)
+                    .map_err(super::gpu_forced::SelectedGpuDispatchError::new)?;
             let mut region_dispatches = 0usize;
             let mut region_coalesced_bytes = 0usize;
             let mut region_max_dispatch_bytes = 0usize;
@@ -355,15 +352,37 @@ impl CompiledScanner {
                 let oversized = chunks[cursor].data.len() > byte_limit;
                 let (summary, next_cursor) = if oversized {
                     let logical_row = cursor;
-                    (
-                        for_each_region_presence_window(
-                            chunks[cursor].data.as_bytes(),
-                            byte_limit,
-                            self.gpu_max_literal_len,
-                            |haystack, _range| dispatch_presence(haystack, &[0], logical_row, 1),
-                        ),
-                        cursor + 1,
-                    )
+                    #[cfg(test)]
+                    TEST_WINDOW_REDUCTION_ALLOCATIONS
+                        .with(|count| count.set(count.get().saturating_add(1)));
+                    let mut reduced = Vec::new();
+                    reduced.try_reserve_exact(presence_words).map_err(|error| {
+                        super::gpu_forced::SelectedGpuDispatchError::new(format!(
+                            "GPU region-presence window reduction reserve failed: {error}"
+                        ))
+                    })?;
+                    reduced.resize(presence_words, 0u32);
+                    let summary = for_each_region_presence_window(
+                        chunks[cursor].data.as_bytes(),
+                        byte_limit,
+                        self.gpu_max_literal_len,
+                        |haystack, _range| {
+                            let mut reduce = |row: &[u32]| -> std::result::Result<(), String> {
+                                for (target, &word) in reduced.iter_mut().zip(row) {
+                                    *target |= word;
+                                }
+                                Ok(())
+                            };
+                            dispatch_presence(haystack, &[0], logical_row, 1, &mut reduce)
+                        },
+                    );
+                    if summary.is_ok() {
+                        let t_derive = std::time::Instant::now();
+                        derive_presence_row(&reduced)
+                            .map_err(super::gpu_forced::SelectedGpuDispatchError::new)?;
+                        logical_derive_s += t_derive.elapsed();
+                    }
+                    (summary, cursor + 1)
                 } else {
                     let run_start = cursor;
                     let run_end = chunks[run_start..]
@@ -375,11 +394,17 @@ impl CompiledScanner {
                             &chunks[run_start..run_end],
                             backend.id(),
                             |haystack, region_starts, _mode, shard| {
+                                let logical_start =
+                                    run_start.checked_add(shard.chunks.start).ok_or_else(|| {
+                                        "region-presence logical shard start overflows host usize"
+                                            .to_string()
+                                    })?;
                                 dispatch_presence(
                                     haystack,
                                     region_starts,
-                                    run_start + shard.chunks.start,
+                                    logical_start,
                                     shard.chunks.len(),
+                                    &mut derive_presence_row,
                                 )
                             },
                         ),
@@ -400,6 +425,12 @@ impl CompiledScanner {
                             "GPU region-presence dispatch accounting overflows host usize",
                         )
                     })?;
+                if region_dispatches > MAX_REGION_PRESENCE_REQUEST_DISPATCHES {
+                    drop(region_dispatch_profile);
+                    return dispatch_failure(format!(
+                        "GPU region-presence executed {region_dispatches} dispatches, above the preflight request safety limit of {MAX_REGION_PRESENCE_REQUEST_DISPATCHES}"
+                    ));
+                }
                 region_coalesced_bytes = region_coalesced_bytes
                     .checked_add(summary.coalesced_bytes)
                     .ok_or_else(|| {
@@ -421,33 +452,27 @@ impl CompiledScanner {
                 cursor = next_cursor;
             }
             drop(dispatch_presence);
-            if let Some(missing_row) = logical_rows_seen.iter().position(|&seen| !seen) {
+            drop(derive_presence_row);
+            derive_s_total += logical_derive_s;
+            if region_dispatches != planned_dispatches {
                 drop(region_dispatch_profile);
                 return dispatch_failure(format!(
-                    "GPU region-presence produced no physical window for logical chunk {missing_row}"
+                    "GPU region-presence executed {region_dispatches} dispatches after preflighting {planned_dispatches}"
                 ));
             }
-            let t_logical_derive = std::time::Instant::now();
-            let mut gpu_presence_bits = 0usize;
-            for row in logical_presence.chunks_exact(presence_words) {
-                gpu_presence_bits = gpu_presence_bits
-                    .checked_add(
-                        row.iter()
-                            .map(|word| word.count_ones() as usize)
-                            .sum::<usize>(),
-                    )
-                    .ok_or_else(|| {
-                        super::gpu_forced::SelectedGpuDispatchError::new(
-                            "region-presence reduced bit count overflows host usize",
-                        )
-                    })?;
-                let bits = self.triggered_patterns_from_gpu_presence(row);
-                phase2_keyword_hints.push(self.phase2_keyword_hints_from_gpu_presence(row));
-                phase2_always_anchor_presence
-                    .push(self.phase2_always_anchor_present_from_gpu_presence(row));
-                triggers.push(bits.iter().any(|&word| word != 0).then_some(bits));
+            if triggers.len() != chunks.len()
+                || phase2_keyword_hints.len() != chunks.len()
+                || phase2_always_anchor_presence.len() != chunks.len()
+            {
+                drop(region_dispatch_profile);
+                return dispatch_failure(format!(
+                    "GPU region-presence derived {} trigger row(s), {} keyword-hint row(s), and {} anchor row(s) for {} logical chunk(s)",
+                    triggers.len(),
+                    phase2_keyword_hints.len(),
+                    phase2_always_anchor_presence.len(),
+                    chunks.len()
+                ));
             }
-            derive_s_total += t_logical_derive.elapsed();
             let co_s = t_co
                 .elapsed()
                 .saturating_sub(dis_s)
