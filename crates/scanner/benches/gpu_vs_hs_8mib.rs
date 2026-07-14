@@ -2,10 +2,11 @@
 //!
 //! Same `CompiledScanner` (real detector catalog), same production-style 1 MiB
 //! windows with 128 KiB overlap over an 8 MiB file, same
-//! `scan_coalesced_with_backend` entry. The layout lets the Hyperscan path use
+//! `scan_coalesced_with_backend` entry. Every acquired CUDA and WGPU peer is
+//! measured independently. The layout lets the Hyperscan path use
 //! its production coalesced trigger pass and real Rayon parallelism instead of
 //! handicapping it behind one oversized sequential chunk. `SimdCpu`
-//! runs the Hyperscan literal prefilter; `Gpu` routes the batch through VYRE
+//! runs the Hyperscan literal prefilter; each GPU peer routes the batch through VYRE
 //! `ResidentPresencePipeline`. Timing includes each
 //! backend's production batching, scheduling, phase 2, and post-processing.
 //!
@@ -13,26 +14,174 @@
 //! (matcher / coalesce / dispatch / floor / phase2_gpu / phase2) and VYRE
 //! dispatch telemetry on stderr. Trace instrumentation is intentionally not a
 //! crossover measurement: it adds GPU-specific timers and counters, so the
-//! speed gate is enforced only by the normal untraced run. Full-result parity
-//! remains mandatory in both modes.
+//! speed gate is enforced only by the normal untraced, unprofiled run.
+//! Full-result parity and zero GPU degradation remain mandatory in every mode.
 //!
-//! This is a plain `main()` (harness = false) so the numbers are raw wall-time
-//! medians, not criterion's adaptive sampling (every number is one timed call).
+//! Selection uses rotating candidate order. The selected exact GPU peer then
+//! receives fresh alternating held-out pairs against Hyperscan. The release
+//! gate requires the paired GPU/Hyperscan ratio's 95% confidence upper bound
+//! to remain below 1.0.
 
-use keyhog_core::{load_detectors, Chunk, ChunkMetadata, RawMatch};
+use keyhog_core::{
+    load_detectors,
+    timing::{median_duration, paired_ratio_confidence_95},
+    Chunk, ChunkMetadata, RawMatch,
+};
 use keyhog_scanner::{
     set_perf_trace_enabled, set_profile_enabled, CompiledScanner, ScanBackend, ScannerTuningConfig,
 };
 use std::env;
-use std::io;
-use std::path::PathBuf;
+use std::fs;
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 const MIB: usize = 1024 * 1024;
 const WINDOW_OVERLAP: usize = 128 * 1024;
+const RELEASE_HELD_OUT_PAIRS: usize = 20;
+const RELEASE_SELECTION_ROUNDS: usize = 7;
+
+#[derive(serde::Serialize)]
+struct TimingSampleArtifact {
+    backend: String,
+    round: usize,
+    order: usize,
+    nanoseconds: u128,
+}
+
+#[derive(serde::Serialize)]
+struct TimingPairArtifact {
+    pair: usize,
+    order: String,
+    hyperscan_nanoseconds: u128,
+    gpu_nanoseconds: u128,
+}
+
+#[derive(serde::Serialize)]
+struct GpuPeerArtifact {
+    backend: String,
+    acquired: bool,
+    driver: String,
+    driver_version: String,
+    device: String,
+    runtime: String,
+    acquisition_error: String,
+}
+
+#[derive(serde::Serialize)]
+struct CrossoverArtifact {
+    schema_version: u32,
+    measured_at_utc: String,
+    production_comparable: bool,
+    crossover_passed: bool,
+    git_hash: String,
+    binary_sha256: String,
+    detector_spec_blake3: String,
+    scanner_detector_digest: String,
+    resolved_tuning: String,
+    compiled_features: String,
+    command: String,
+    os: String,
+    arch: String,
+    cpu_model: String,
+    physical_cores: usize,
+    logical_cores: usize,
+    total_memory_mb: Option<u64>,
+    simd_features: String,
+    selected_gpu_backend: String,
+    selected_gpu_driver: String,
+    selected_gpu_driver_version: String,
+    selected_gpu_device: String,
+    selected_gpu_runtime: String,
+    gpu_peers: Vec<GpuPeerArtifact>,
+    source_bytes: usize,
+    scanned_bytes: usize,
+    chunk_bytes: usize,
+    overlap_bytes: usize,
+    chunks: usize,
+    detectors: usize,
+    selection_rounds: usize,
+    held_out_pairs: usize,
+    full_result_parity: bool,
+    gpu_degraded: bool,
+    ratio_geometric_mean: f64,
+    ratio_ci95_low: f64,
+    ratio_ci95_high: f64,
+    selection_samples: Vec<TimingSampleArtifact>,
+    held_out_samples: Vec<TimingPairArtifact>,
+}
 
 fn detectors_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors")
+}
+
+fn running_binary_sha256() -> Result<String, io::Error> {
+    use sha2::{Digest, Sha256};
+
+    let executable = env::current_exe()?;
+    let mut file = std::fs::File::open(executable)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn host_cpu_model() -> String {
+    #[cfg(target_os = "linux")]
+    if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
+        for line in cpuinfo.lines() {
+            let Some((key, value)) = line.split_once(':') else {
+                continue;
+            };
+            if matches!(
+                key.trim().to_ascii_lowercase().as_str(),
+                "model name" | "hardware"
+            ) && !value.trim().is_empty()
+            {
+                return value.trim().to_owned();
+            }
+        }
+    }
+    "unavailable".to_owned()
+}
+
+fn write_artifact(path: &Path, artifact: &CrossoverArtifact) -> Result<(), io::Error> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty());
+    if let Some(parent) = parent {
+        fs::create_dir_all(parent)?;
+    }
+    let rendered = toml::to_string_pretty(artifact).map_err(|source| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("cannot encode crossover artifact as TOML: {source}"),
+        )
+    })?;
+    let temporary = path.with_extension(format!(
+        "{}.tmp-{}",
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or("toml"),
+        std::process::id()
+    ));
+    fs::write(&temporary, rendered.as_bytes())?;
+    fs::rename(&temporary, path).map_err(|source| {
+        let _ = fs::remove_file(&temporary);
+        io::Error::new(
+            source.kind(),
+            format!(
+                "cannot atomically publish crossover artifact {}: {source}",
+                path.display()
+            ),
+        )
+    })
 }
 
 fn make_chunk(
@@ -108,71 +257,48 @@ fn gen_payload(size: usize) -> String {
     s
 }
 
-fn median(mut v: Vec<Duration>) -> Duration {
-    v.sort();
-    v[v.len() / 2]
-}
-
 fn canonicalize_results(results: &mut [Vec<RawMatch>]) {
     for matches in results {
         matches.sort();
     }
 }
 
-fn time_backend(
+fn scan_backend_checked(
     label: &str,
     scanner: &CompiledScanner,
     chunks: &[Chunk],
     backend: ScanBackend,
-    iters: usize,
-    profile: bool,
+    expected: &[Vec<RawMatch>],
 ) -> (Duration, Vec<Vec<RawMatch>>) {
-    // Warm: first GPU call pays the one-time catalog upload + pipeline compile;
-    // first SimdCpu call warms caches. Exclude it from the steady-state median.
     scanner.clear_fragment_cache();
-    let mut warm = scanner.scan_coalesced_with_backend(chunks, backend);
-    canonicalize_results(&mut warm);
-    if profile {
-        scanner.reset_profile_reports();
+    let started = Instant::now();
+    let mut results = scanner.scan_coalesced_with_backend(chunks, backend);
+    let elapsed = started.elapsed();
+    canonicalize_results(&mut results);
+    if results != expected {
+        let chunk_index = results
+            .iter()
+            .zip(expected)
+            .position(|(actual, reference)| actual != reference)
+            .map_or_else(|| results.len().min(expected.len()), |index| index);
+        let actual = results.get(chunk_index);
+        let reference = expected.get(chunk_index);
+        panic!(
+            "{label} broke exact Hyperscan parity: first differing chunk={chunk_index}, \
+             actual={actual:?}, reference={reference:?}"
+        );
     }
-    let mut samples = Vec::with_capacity(iters);
-    for _ in 0..iters {
-        // The fragment cache is scan-operation state used for cross-file
-        // reassembly. Reusing it across logical benchmark scans changes results
-        // and does not model a fresh production scan over this workload.
-        scanner.clear_fragment_cache();
-        let t = Instant::now();
-        let mut r = scanner.scan_coalesced_with_backend(chunks, backend);
-        samples.push(t.elapsed());
-        canonicalize_results(&mut r);
-        if r != warm {
-            let chunk_index = r
-                .iter()
-                .zip(&warm)
-                .position(|(actual, expected)| actual != expected)
-                .map_or_else(|| r.len().min(warm.len()), |index| index);
-            let actual = r.get(chunk_index);
-            let expected = warm.get(chunk_index);
-            panic!(
-                "{label} produced nondeterministic full finding results across timed calls: \
-                 first differing chunk={chunk_index}, actual={actual:?}, expected={expected:?}"
-            );
-        }
-        std::hint::black_box(&r);
-    }
-    if profile {
-        scanner.dump_profile_reports(label);
-    }
-    (median(samples), warm)
+    std::hint::black_box(&results);
+    (elapsed, results)
 }
 
 fn hit_count(results: &[Vec<RawMatch>]) -> usize {
     results.iter().map(Vec::len).sum()
 }
 
-fn report(label: &str, d: Duration, bytes: usize, hits: usize) {
+fn report(label: &str, d: Duration, scanned_bytes: usize, hits: usize) {
     let ms = d.as_secs_f64() * 1e3;
-    let gbps = bytes as f64 / d.as_secs_f64() / 1e9;
+    let gbps = scanned_bytes as f64 / d.as_secs_f64() / 1e9;
     println!("{label:<28} {ms:>10.4} ms   {gbps:>8.3} GB/s   hits={hits}",);
 }
 
@@ -234,97 +360,411 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     })?;
     let iters = env_positive_usize("KH_BENCH_ITERS", 20)?;
+    if iters < 2 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "KH_BENCH_ITERS must be at least 2 for paired confidence evidence",
+        )
+        .into());
+    }
+    let selection_rounds = env_positive_usize("KH_BENCH_SELECTION_ROUNDS", 7)?;
+    let release_gate = size_mib == 8 && !perf_trace && !profile;
+    if release_gate
+        && (iters < RELEASE_HELD_OUT_PAIRS || selection_rounds < RELEASE_SELECTION_ROUNDS)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "the 8 MiB release gate requires at least {RELEASE_HELD_OUT_PAIRS} held-out pairs and {RELEASE_SELECTION_ROUNDS} selection rounds; received {iters} and {selection_rounds}"
+            ),
+        )
+        .into());
+    }
 
     let detectors = load_detectors(&detectors_dir())?;
     let n_det = detectors.len();
+    let detector_spec_digest = hex::encode(keyhog_core::compute_spec_hash(&detectors));
+    let binary_sha256 = running_binary_sha256()?;
     let confirmed_suffix_gate = env_optional_bool("KH_BENCH_CONFIRMED_SUFFIX_GATE")?;
     let tuning = ScannerTuningConfig {
         confirmed_suffix_gate,
         ..ScannerTuningConfig::default()
     };
+    let effective_tuning = tuning.effective();
     let scanner = CompiledScanner::compile(detectors)?.with_tuning_config(tuning);
 
     let payload = gen_payload(size);
     let chunks = make_chunks(payload, MIB, WINDOW_OVERLAP);
+    let scanned_bytes = chunks.iter().try_fold(0usize, |total, chunk| {
+        total.checked_add(chunk.data.len()).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "benchmark scanned-byte count overflows host usize",
+            )
+        })
+    })?;
 
     assert!(
         scanner.warm_backend(ScanBackend::SimdCpu),
         "Hyperscan/SimdCpu is unavailable; refusing to benchmark a CPU fallback"
     );
-    #[cfg(feature = "gpu")]
-    assert!(
-        scanner.warm_backend(ScanBackend::GpuWgpu),
-        "GPU region-presence backend is unavailable; refusing to benchmark a CPU fallback"
-    );
+    #[cfg(not(feature = "gpu"))]
+    return Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "the 8 MiB crossover gate requires a GPU-enabled build; rebuild with --features gpu",
+    )
+    .into());
 
-    println!("=== keyhog matching baseline (GPU region presence vs Hyperscan/SimdCpu) ===");
-    let status = scanner.runtime_status();
-    println!(
-        "input={} MiB  chunks={}  detectors={}  gpu_backend={}  host_threads={}  iters={}  (median of {} steady-state calls, 1 warm-up excluded)",
-        size / MIB,
-        chunks.len(),
-        n_det,
-        status.gpu_backend.map_or("none", |backend| backend),
-        std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get),
-        iters,
-        iters
-    );
-    if let Some(enabled) = confirmed_suffix_gate {
-        println!("confirmed_suffix_gate={enabled}");
-    }
-    println!(
-        "{:<28} {:>13}   {:>13}   hits",
-        "backend", "wall (median)", "throughput"
-    );
-
-    // SimdCpu / Hyperscan phase-1 path.
-    let (hs, hs_results) = time_backend(
-        "bench-simd-hyperscan",
-        &scanner,
-        &chunks,
-        ScanBackend::SimdCpu,
-        iters,
-        profile,
-    );
-    let hs_hits = hit_count(&hs_results);
-    report("SimdCpu (Hyperscan)", hs, size, hs_hits);
-
-    // GPU region-presence path. --perf-trace prints the internal phase
-    // breakdown plus VYRE dispatch telemetry.
     #[cfg(feature = "gpu")]
     {
-        let degrade_before = scanner.gpu_degrade_count();
-        let (gpu, gpu_results) = time_backend(
-            "bench-gpu-region",
-            &scanner,
-            &chunks,
-            ScanBackend::GpuWgpu,
-            iters,
-            profile,
-        );
-        let gpu_hits = hit_count(&gpu_results);
-        report("Gpu (region presence)", gpu, size, gpu_hits);
-        let status = scanner.runtime_status();
-        assert_eq!(
-            status.gpu_degrade_count, degrade_before,
-            "GPU degraded during the measured run; refusing to report fallback timing as GPU"
-        );
-        let ratio = gpu.as_secs_f64() / hs.as_secs_f64();
-        println!(
-            "\nGPU / Hyperscan wall ratio = {ratio:.2}x  ({})",
-            if ratio > 1.0 {
-                "GPU SLOWER"
-            } else {
-                "GPU faster"
-            }
-        );
-        assert!(
-            gpu_results == hs_results,
-            "exact parity broken: GPU and Hyperscan returned different full RawMatch results on the same 8 MiB input (GPU hits={gpu_hits}, Hyperscan hits={hs_hits})"
-        );
-        if perf_trace {
+        let gpu_candidates = scanner.gpu_backend_candidates();
+        for candidate in &gpu_candidates {
             println!(
-                "crossover gate not enforced under --perf-trace; trace instrumentation is diagnostic and GPU-specific. Rerun without --perf-trace for the production speed gate."
+                "gpu-peer backend={} acquired={} driver={} version={} device={} runtime={} error={}",
+                candidate.backend.label(),
+                candidate.acquired,
+                candidate.driver_id.unwrap_or("unavailable"),
+                candidate.driver_version.unwrap_or("unavailable"),
+                candidate.device_identity.as_deref().unwrap_or("unavailable"),
+                candidate.runtime_identity.as_deref().unwrap_or("unavailable"),
+                candidate.acquisition_error.as_deref().unwrap_or("none")
+            );
+        }
+        let gpu_backends: Vec<_> = gpu_candidates
+            .iter()
+            .filter(|candidate| candidate.acquired)
+            .map(|candidate| candidate.backend)
+            .collect();
+        assert!(
+            !gpu_backends.is_empty(),
+            "no exact GPU region-presence peer was acquired; refusing to benchmark a CPU fallback"
+        );
+        for &backend in &gpu_backends {
+            assert!(
+                scanner.warm_backend(backend),
+                "{} was reported as acquired but failed its warm-up",
+                backend.label()
+            );
+        }
+
+        scanner.clear_fragment_cache();
+        let mut reference = scanner.scan_coalesced_with_backend(&chunks, ScanBackend::SimdCpu);
+        canonicalize_results(&mut reference);
+        for &backend in &gpu_backends {
+            let degrade_before = scanner.gpu_degrade_count();
+            let _ = scan_backend_checked(
+                &format!("{} warm parity", backend.label()),
+                &scanner,
+                &chunks,
+                backend,
+                &reference,
+            );
+            assert_eq!(
+                scanner.gpu_degrade_count(),
+                degrade_before,
+                "{} degraded during warm parity; refusing fallback evidence",
+                backend.label()
+            );
+        }
+
+        let gpu_peer_labels = gpu_backends
+            .iter()
+            .map(|backend| backend.label())
+            .collect::<Vec<_>>()
+            .join(",");
+        println!("=== keyhog paired crossover gate (GPU region presence vs Hyperscan) ===");
+        let runtime = scanner.runtime_status();
+        let hardware = keyhog_scanner::hw_probe::probe_hardware();
+        let simd_features = keyhog_scanner::hw_probe::simd_label(
+            hardware.has_avx512,
+            hardware.has_avx2,
+            hardware.has_neon,
+        );
+        println!(
+            "git_hash={} binary_sha256={} detector_spec_blake3={} scanner_detector_digest={:016x}",
+            keyhog_core::git_hash(),
+            binary_sha256,
+            detector_spec_digest,
+            runtime.detector_digest,
+        );
+        println!(
+            "host_os={} host_arch={} cpu_model={:?} physical_cores={} logical_cores={} total_memory_mb={} simd_features={} resolved_tuning={:?}",
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            host_cpu_model(),
+            hardware.physical_cores,
+            hardware.logical_cores,
+            hardware.total_memory_mb.map_or_else(|| "unavailable".to_owned(), |value| value.to_string()),
+            simd_features,
+            effective_tuning,
+        );
+        println!(
+            "source={} MiB scanned_bytes={} chunks={} detectors={} gpu_peers={} host_threads={} selection_rounds={} held_out_pairs={}",
+            size / MIB,
+            scanned_bytes,
+            chunks.len(),
+            n_det,
+            gpu_peer_labels,
+            std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get),
+            selection_rounds,
+            iters,
+        );
+        if let Some(enabled) = confirmed_suffix_gate {
+            println!("confirmed_suffix_gate={enabled}");
+        }
+
+        let mut candidate_order = Vec::with_capacity(gpu_backends.len() + 1);
+        candidate_order.push(ScanBackend::SimdCpu);
+        candidate_order.extend(gpu_backends.iter().copied());
+        let mut selection_samples: Vec<(ScanBackend, Vec<Duration>)> = candidate_order
+            .iter()
+            .copied()
+            .map(|backend| (backend, Vec::with_capacity(selection_rounds)))
+            .collect();
+        let mut artifact_selection_samples = Vec::new();
+        artifact_selection_samples
+            .try_reserve(
+                selection_rounds
+                    .checked_mul(candidate_order.len())
+                    .ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            "benchmark selection-sample count overflows host usize",
+                        )
+                    })?,
+            )
+            .map_err(|source| {
+                io::Error::new(
+                    io::ErrorKind::OutOfMemory,
+                    format!("cannot reserve benchmark selection evidence: {source}"),
+                )
+            })?;
+        if profile {
+            scanner.reset_profile_reports();
+        }
+        for round in 0..selection_rounds {
+            for offset in 0..candidate_order.len() {
+                let backend = candidate_order[(round + offset) % candidate_order.len()];
+                let degrade_before = scanner.gpu_degrade_count();
+                let (elapsed, _) =
+                    scan_backend_checked(backend.label(), &scanner, &chunks, backend, &reference);
+                if backend.is_gpu() {
+                    assert_eq!(
+                        scanner.gpu_degrade_count(),
+                        degrade_before,
+                        "{} degraded during selection; refusing fallback timing",
+                        backend.label()
+                    );
+                }
+                selection_samples
+                    .iter_mut()
+                    .find(|(candidate, _)| *candidate == backend)
+                    .expect("selection backend owns a sample vector")
+                    .1
+                    .push(elapsed);
+                println!(
+                    "selection-sample round={round} order={offset} backend={} ns={}",
+                    backend.label(),
+                    elapsed.as_nanos(),
+                );
+                artifact_selection_samples.push(TimingSampleArtifact {
+                    backend: backend.label().to_owned(),
+                    round,
+                    order: offset,
+                    nanoseconds: elapsed.as_nanos(),
+                });
+            }
+        }
+        for (backend, samples) in &selection_samples {
+            let selected_median = median_duration(samples).expect("selection samples");
+            report(
+                &format!("{} selection", backend.label()),
+                selected_median,
+                scanned_bytes,
+                hit_count(&reference),
+            );
+        }
+        let selected_gpu = selection_samples
+            .iter()
+            .filter(|(backend, _)| backend.is_gpu())
+            .min_by_key(|(_, samples)| median_duration(samples).expect("selection samples"))
+            .map(|(backend, _)| *backend)
+            .expect("an acquired GPU peer has selection evidence");
+        println!(
+            "held-out GPU peer selected from selection-only evidence: {}",
+            selected_gpu.label()
+        );
+
+        let mut held_out_hs = Vec::with_capacity(iters);
+        let mut held_out_gpu = Vec::with_capacity(iters);
+        let mut artifact_held_out = Vec::with_capacity(iters);
+        for pair in 0..iters {
+            let order = if pair % 2 == 0 {
+                [ScanBackend::SimdCpu, selected_gpu]
+            } else {
+                [selected_gpu, ScanBackend::SimdCpu]
+            };
+            let order_label = if pair % 2 == 0 { "hs-gpu" } else { "gpu-hs" };
+            let mut pair_hs = None;
+            let mut pair_gpu = None;
+            for backend in order {
+                let degrade_before = scanner.gpu_degrade_count();
+                let (elapsed, _) = scan_backend_checked(
+                    &format!("{} held-out pair {pair}", backend.label()),
+                    &scanner,
+                    &chunks,
+                    backend,
+                    &reference,
+                );
+                if backend.is_gpu() {
+                    assert_eq!(
+                        scanner.gpu_degrade_count(),
+                        degrade_before,
+                        "{} degraded during held-out pair {pair}; refusing fallback timing",
+                        backend.label()
+                    );
+                    held_out_gpu.push(elapsed);
+                    pair_gpu = Some(elapsed);
+                } else {
+                    held_out_hs.push(elapsed);
+                    pair_hs = Some(elapsed);
+                }
+            }
+            println!(
+                "held-out-pair pair={pair} order={order_label} hs_ns={} gpu_backend={} gpu_ns={}",
+                pair_hs.expect("pair includes Hyperscan").as_nanos(),
+                selected_gpu.label(),
+                pair_gpu.expect("pair includes selected GPU").as_nanos(),
+            );
+            artifact_held_out.push(TimingPairArtifact {
+                pair,
+                order: order_label.to_owned(),
+                hyperscan_nanoseconds: pair_hs.expect("pair includes Hyperscan").as_nanos(),
+                gpu_nanoseconds: pair_gpu.expect("pair includes selected GPU").as_nanos(),
+            });
+        }
+        if profile {
+            scanner.dump_profile_reports("gpu-vs-hs-paired");
+        }
+        let hs_median = median_duration(&held_out_hs).expect("held-out Hyperscan samples");
+        let gpu_median = median_duration(&held_out_gpu).expect("held-out GPU samples");
+        report(
+            "SimdCpu held-out",
+            hs_median,
+            scanned_bytes,
+            hit_count(&reference),
+        );
+        report(
+            &format!("{} held-out", selected_gpu.label()),
+            gpu_median,
+            scanned_bytes,
+            hit_count(&reference),
+        );
+        let interval = paired_ratio_confidence_95(&held_out_hs, &held_out_gpu)
+            .expect("held-out paired timing evidence must contain at least two positive pairs");
+        println!(
+            "paired GPU/Hyperscan ratio geometric_mean={:.4} ci95=[{:.4}, {:.4}] pairs={}",
+            interval.geometric_mean_ratio,
+            interval.low_ratio,
+            interval.high_ratio,
+            interval.sample_count,
+        );
+
+        if let Some(path) = env::var_os("KH_BENCH_ARTIFACT") {
+            let selected_peer = gpu_candidates
+                .iter()
+                .find(|candidate| candidate.backend == selected_gpu && candidate.acquired)
+                .expect("selected GPU peer retains acquisition identity");
+            let production_comparable = release_gate
+                && iters >= RELEASE_HELD_OUT_PAIRS
+                && selection_rounds >= RELEASE_SELECTION_ROUNDS;
+            let artifact = CrossoverArtifact {
+                schema_version: 2,
+                measured_at_utc: chrono::Utc::now().to_rfc3339(),
+                production_comparable,
+                crossover_passed: production_comparable && interval.high_ratio < 1.0,
+                git_hash: keyhog_core::git_hash().to_owned(),
+                binary_sha256,
+                detector_spec_blake3: detector_spec_digest,
+                scanner_detector_digest: format!("{:016x}", runtime.detector_digest),
+                resolved_tuning: format!("{effective_tuning:?}"),
+                compiled_features: format!(
+                    "simd={},gpu={},decode={},entropy={}",
+                    cfg!(feature = "simd"),
+                    cfg!(feature = "gpu"),
+                    cfg!(feature = "decode"),
+                    cfg!(feature = "entropy")
+                ),
+                command: env::args().collect::<Vec<_>>().join(" "),
+                os: std::env::consts::OS.to_owned(),
+                arch: std::env::consts::ARCH.to_owned(),
+                cpu_model: host_cpu_model(),
+                physical_cores: hardware.physical_cores,
+                logical_cores: hardware.logical_cores,
+                total_memory_mb: hardware.total_memory_mb,
+                simd_features: simd_features.to_owned(),
+                selected_gpu_backend: selected_gpu.label().to_owned(),
+                selected_gpu_driver: selected_peer.driver_id.unwrap_or("unavailable").to_owned(),
+                selected_gpu_driver_version: selected_peer
+                    .driver_version
+                    .unwrap_or("unavailable")
+                    .to_owned(),
+                selected_gpu_device: selected_peer
+                    .device_identity
+                    .clone()
+                    .unwrap_or_else(|| "unavailable".to_owned()),
+                selected_gpu_runtime: selected_peer
+                    .runtime_identity
+                    .clone()
+                    .unwrap_or_else(|| "unavailable".to_owned()),
+                gpu_peers: gpu_candidates
+                    .iter()
+                    .map(|candidate| GpuPeerArtifact {
+                        backend: candidate.backend.label().to_owned(),
+                        acquired: candidate.acquired,
+                        driver: candidate.driver_id.unwrap_or("unavailable").to_owned(),
+                        driver_version: candidate
+                            .driver_version
+                            .unwrap_or("unavailable")
+                            .to_owned(),
+                        device: candidate
+                            .device_identity
+                            .clone()
+                            .unwrap_or_else(|| "unavailable".to_owned()),
+                        runtime: candidate
+                            .runtime_identity
+                            .clone()
+                            .unwrap_or_else(|| "unavailable".to_owned()),
+                        acquisition_error: candidate
+                            .acquisition_error
+                            .clone()
+                            .unwrap_or_else(|| "none".to_owned()),
+                    })
+                    .collect(),
+                source_bytes: size,
+                scanned_bytes,
+                chunk_bytes: MIB,
+                overlap_bytes: WINDOW_OVERLAP,
+                chunks: chunks.len(),
+                detectors: n_det,
+                selection_rounds,
+                held_out_pairs: iters,
+                full_result_parity: true,
+                gpu_degraded: false,
+                ratio_geometric_mean: interval.geometric_mean_ratio,
+                ratio_ci95_low: interval.low_ratio,
+                ratio_ci95_high: interval.high_ratio,
+                selection_samples: artifact_selection_samples,
+                held_out_samples: artifact_held_out,
+            };
+            let path = PathBuf::from(path);
+            write_artifact(&path, &artifact)?;
+            println!("artifact={}", path.display());
+        }
+
+        if perf_trace || profile {
+            println!(
+                "crossover gate not enforced with profiling or perf tracing enabled; parity and no-degradation checks remain mandatory"
             );
         } else if size_mib != 8 {
             println!(
@@ -332,14 +772,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         } else {
             assert!(
-                gpu < hs,
-                "8 MiB crossover missed: GPU median {gpu:?} did not beat the fastest Hyperscan median {hs:?}"
+                interval.high_ratio < 1.0,
+                "8 MiB crossover missed: selected exact GPU peer {} has paired GPU/Hyperscan 95% CI upper bound {:.4}, which does not prove it faster than Hyperscan",
+                selected_gpu.label(),
+                interval.high_ratio,
             );
         }
-    }
-    #[cfg(not(feature = "gpu"))]
-    {
-        println!("(gpu feature OFF, build with --features gpu for the GPU comparison)");
     }
     Ok(())
 }

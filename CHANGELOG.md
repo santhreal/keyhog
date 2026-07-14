@@ -11,6 +11,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   bounded rate-aware pagination, findings retain immutable revision
   provenance, pull request review summaries are included, and inaccessible or
   truncated surfaces emit typed coverage gaps.
+- Hosted Git clones now monitor materialized bytes and entries while `git`
+  runs. Crossing the resolved Git limits stops and reaps the child, then emits
+  typed truncated coverage instead of allowing an unbounded clone. The monitor
+  does not follow symlinks outside the clone tree.
 - ZIP and tar TeX source packages now expose root, referenced, orphaned, and
   exact comment-span provenance while every readable member still follows the
   normal archive scan path. Dependency expansion is bounded, rejects archive
@@ -23,6 +27,15 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   scans both text versions in memory and reports `removed_still_live`,
   `removed_inactive`, or `verification_unknown`. New findings, live removals,
   and unknown removals exit 1. Reports and persisted baselines remain redacted.
+- GPU region-presence and phase-2 DFA batches now split only at existing chunk
+  boundaries when they exceed the selected backend's safe dispatch ceiling.
+  WGPU also respects its 65,535-workgroup dimension limit. Shards retain the
+  selected CUDA or WGPU backend, ordering, and multiplicity. Resident readback
+  words are consumed through a bounded borrowed view, then zeroized while
+  retaining the warmed allocation for the next dispatch. The 8 MiB crossover
+  gate selects across every acquired CUDA and WGPU peer with rotating trials,
+  then requires the selected peer's held-out paired 95% ratio interval to beat
+  Hyperscan.
 - Scan, watch, and scan-system now install the same resolved GPU policy,
   regex-DFA cap, GPU batch cap, profiling state, and compile tuning before any
   hardware probe or detector compilation. Watch applies explicit backend

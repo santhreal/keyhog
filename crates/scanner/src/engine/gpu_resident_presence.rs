@@ -120,13 +120,18 @@ impl GpuResidentPresenceState {
     }
 }
 
-pub(super) fn scan_gpu_literal_presence_by_region_resident(
+/// Dispatch into the scanner-owned readback allocation and expose the words only
+/// for the duration of `consume`. The callback runs while the resident slot is
+/// locked so no later dispatch can overwrite the borrowed slice. Its work must
+/// remain bounded to readback validation and trigger derivation.
+pub(super) fn scan_gpu_literal_presence_by_region_resident<R>(
     slot: &std::sync::Mutex<GpuResidentPresenceSlot>,
     matcher: &vyre_libs::scan::GpuLiteralSet,
     backend: &std::sync::Arc<dyn vyre::VyreBackend>,
     haystack: &[u8],
     region_starts: &[u32],
-) -> Result<Vec<u32>, String> {
+    consume: impl FnOnce(&[u32]) -> Result<R, String>,
+) -> Result<R, String> {
     let needed = ResidentPresenceCapacity::for_batch(haystack.len(), region_starts.len())?;
     let mut slot = slot.lock().map_err(|_| {
         "GPU resident presence pipeline lock is poisoned after an earlier scan panic. Fix: restart the scanner process and inspect the preceding GPU fault."
@@ -191,11 +196,13 @@ pub(super) fn scan_gpu_literal_presence_by_region_resident(
     };
     if super::profile::perf_trace_enabled() {
         eprintln!(
-            "perf-trace gpu-resident-presence: action={} backend={} haystack_capacity={} region_capacity={}",
+            "perf-trace gpu-resident-presence: action={} backend={} haystack_capacity={} region_capacity={} host_output_capacity={} host_scratch_capacity={}",
             if must_rebuild { "prepare" } else { "reuse" },
             backend.id(),
             state.pipeline.haystack_capacity(),
             state.pipeline.max_regions(),
+            state.output.capacity(),
+            state.scratch.capacity(),
         );
     }
     let guard = ZeroResidentHostBuffers {
@@ -213,7 +220,7 @@ pub(super) fn scan_gpu_literal_presence_by_region_resident(
             guard.scratch,
         )
         .map_err(|error| format!("resident region-presence dispatch error: {error}"))?;
-    Ok(guard.output.clone())
+    consume(guard.output.as_slice())
 }
 
 impl CompiledScanner {

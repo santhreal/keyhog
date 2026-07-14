@@ -1,6 +1,7 @@
 //! Batch scratch and validation helpers for coalesced GPU region presence.
 
 use std::cell::RefCell;
+use std::ops::Range;
 
 #[derive(Default)]
 pub(super) struct RegionPresenceScratch {
@@ -24,6 +25,7 @@ thread_local! {
 pub(super) enum RegionPresenceBatchMode {
     BorrowedSingleChunk,
     FoldedScratch,
+    ShardedScratch,
 }
 
 impl RegionPresenceBatchMode {
@@ -31,8 +33,23 @@ impl RegionPresenceBatchMode {
         match self {
             Self::BorrowedSingleChunk => "borrowed-single-chunk",
             Self::FoldedScratch => "folded-scratch",
+            Self::ShardedScratch => "sharded-scratch",
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct RegionPresenceShard {
+    pub(super) chunks: Range<usize>,
+    pub(super) coalesced_bytes: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct RegionPresenceBatchSummary {
+    pub(super) dispatches: usize,
+    pub(super) coalesced_bytes: usize,
+    pub(super) max_dispatch_bytes: usize,
+    pub(super) mode: RegionPresenceBatchMode,
 }
 
 pub(super) struct ZeroRegionPresenceScratch<'a> {
@@ -65,11 +82,20 @@ impl Drop for ZeroRegionPresenceScratch<'_> {
     }
 }
 
-/// VYRE's production byte-scan guard is stricter than the u32 wire ABI. KeyHog
-/// does not yet shard one coalesced request across region-boundary dispatches,
-/// so the builder rejects anything the selected backend cannot execute.
+/// VYRE's production byte-scan guard is stricter than the u32 wire ABI.
 pub(super) const REGION_PRESENCE_BATCH_BYTE_LIMIT: usize =
     vyre_libs::scan::dispatch_io::DEFAULT_MAX_SCAN_BYTES as usize;
+
+/// VYRE byte-scan kernels launch one 128-thread workgroup per byte block.
+pub(super) const WGPU_BYTE_SCAN_DISPATCH_LIMIT: usize = 65_535 * 128;
+
+pub(super) fn region_presence_batch_byte_limit(backend_id: &str) -> usize {
+    if backend_id == "wgpu" {
+        WGPU_BYTE_SCAN_DISPATCH_LIMIT
+    } else {
+        REGION_PRESENCE_BATCH_BYTE_LIMIT
+    }
+}
 
 pub(super) fn validate_region_presence_batch_len(total: usize) -> Result<(), String> {
     if total > REGION_PRESENCE_BATCH_BYTE_LIMIT {
@@ -81,18 +107,123 @@ pub(super) fn validate_region_presence_batch_len(total: usize) -> Result<(), Str
     Ok(())
 }
 
+fn region_presence_batch_len_by(
+    chunk_count: usize,
+    mut chunk_len: impl FnMut(usize) -> usize,
+) -> Result<usize, String> {
+    let mut total = chunk_count.saturating_sub(1);
+    for idx in 0..chunk_count {
+        total = total.checked_add(chunk_len(idx)).ok_or_else(|| {
+            "coalesced GPU region-presence batch length overflows host usize".to_string()
+        })?;
+    }
+    Ok(total)
+}
+
+pub(super) fn region_presence_batch_len(chunks: &[keyhog_core::Chunk]) -> Result<usize, String> {
+    region_presence_batch_len_by(chunks.len(), |idx| chunks[idx].data.len())
+}
+
+pub(super) fn region_presence_ref_batch_len(
+    chunks: &[&keyhog_core::Chunk],
+) -> Result<usize, String> {
+    region_presence_batch_len_by(chunks.len(), |idx| chunks[idx].data.len())
+}
+
+fn next_region_presence_shard(
+    chunk_count: usize,
+    mut chunk_len: impl FnMut(usize) -> usize,
+    start: usize,
+    byte_limit: usize,
+) -> Result<RegionPresenceShard, String> {
+    if start >= chunk_count {
+        return Err(format!(
+            "coalesced GPU region-presence shard starts beyond chunk index {start}"
+        ));
+    }
+    let first_len = chunk_len(start);
+    if first_len > byte_limit {
+        return Err(format!(
+            "GPU region-presence chunk {start} is {first_len} byte(s), above the selected backend's {byte_limit}-byte dispatch ceiling, and has no safe chunk boundary at which to split. Fix: lower the source chunk size while retaining the detector overlap"
+        ));
+    }
+
+    let mut end = start + 1;
+    let mut coalesced_bytes = first_len;
+    while end < chunk_count {
+        let Some(candidate) = coalesced_bytes
+            .checked_add(1)
+            .and_then(|total| total.checked_add(chunk_len(end)))
+        else {
+            return Err(
+                "coalesced GPU region-presence batch length overflows host usize".to_string(),
+            );
+        };
+        if candidate > byte_limit {
+            break;
+        }
+        coalesced_bytes = candidate;
+        end += 1;
+    }
+
+    Ok(RegionPresenceShard {
+        chunks: start..end,
+        coalesced_bytes,
+    })
+}
+
+/// Split only between existing chunks, preserving source-window overlap and row multiplicity.
+fn region_presence_shards_with_limit<'a>(
+    chunk_count: usize,
+    mut chunk_len: impl FnMut(usize) -> usize + 'a,
+    byte_limit: usize,
+) -> Result<impl Iterator<Item = Result<RegionPresenceShard, String>> + 'a, String> {
+    if byte_limit == 0 || byte_limit > REGION_PRESENCE_BATCH_BYTE_LIMIT {
+        return Err(format!(
+            "GPU region-presence shard limit {byte_limit} is outside the supported range 1..={REGION_PRESENCE_BATCH_BYTE_LIMIT}"
+        ));
+    }
+    let mut start = 0usize;
+    let mut finished = false;
+    Ok(std::iter::from_fn(move || {
+        if finished || start >= chunk_count {
+            return None;
+        }
+        match next_region_presence_shard(chunk_count, &mut chunk_len, start, byte_limit) {
+            Ok(shard) => {
+                start = shard.chunks.end;
+                Some(Ok(shard))
+            }
+            Err(error) => {
+                finished = true;
+                Some(Err(error))
+            }
+        }
+    }))
+}
+
+pub(super) fn region_presence_shards(
+    chunks: &[keyhog_core::Chunk],
+    byte_limit: usize,
+) -> Result<impl Iterator<Item = Result<RegionPresenceShard, String>> + '_, String> {
+    region_presence_shards_with_limit(chunks.len(), |idx| chunks[idx].data.len(), byte_limit)
+}
+
+pub(super) fn region_presence_ref_shards<'a>(
+    chunks: &'a [&keyhog_core::Chunk],
+    byte_limit: usize,
+) -> Result<impl Iterator<Item = Result<RegionPresenceShard, String>> + 'a, String> {
+    region_presence_shards_with_limit(chunks.len(), |idx| chunks[idx].data.len(), byte_limit)
+}
+
 pub(super) fn build_region_presence_batch(
     chunks: &[keyhog_core::Chunk],
     scratch: &mut RegionPresenceScratch,
 ) -> std::result::Result<(), String> {
-    let mut total = chunks.len().saturating_sub(1);
-    for chunk in chunks {
-        total = total.checked_add(chunk.data.len()).ok_or_else(|| {
-            "coalesced GPU region-presence batch length overflows host usize".to_string()
-        })?;
-    }
+    let total = region_presence_batch_len(chunks)?;
     validate_region_presence_batch_len(total)?;
 
+    scratch.haystack.fill(0);
     scratch.haystack.clear();
     scratch.region_starts.clear();
     scratch
@@ -124,6 +255,154 @@ pub(super) fn build_region_presence_batch(
         scratch.haystack.set_len(total);
     }
     Ok(())
+}
+
+fn for_each_region_presence_batch_with_limit(
+    chunks: &[keyhog_core::Chunk],
+    byte_limit: usize,
+    mut f: impl FnMut(
+        &[u8],
+        &[u32],
+        RegionPresenceBatchMode,
+        &RegionPresenceShard,
+    ) -> std::result::Result<(), String>,
+) -> std::result::Result<RegionPresenceBatchSummary, String> {
+    if chunks.is_empty() {
+        return Ok(RegionPresenceBatchSummary {
+            dispatches: 0,
+            coalesced_bytes: 0,
+            max_dispatch_bytes: 0,
+            mode: RegionPresenceBatchMode::FoldedScratch,
+        });
+    }
+    if byte_limit == 0 || byte_limit > REGION_PRESENCE_BATCH_BYTE_LIMIT {
+        return Err(format!(
+            "GPU region-presence shard limit {byte_limit} is outside the supported range 1..={REGION_PRESENCE_BATCH_BYTE_LIMIT}"
+        ));
+    }
+    let total = region_presence_batch_len(chunks)?;
+    if total <= byte_limit {
+        let shard = RegionPresenceShard {
+            chunks: 0..chunks.len(),
+            coalesced_bytes: total,
+        };
+        if let [chunk] = chunks {
+            let bytes = chunk.data.as_bytes();
+            if !crate::ascii_ci::has_ascii_uppercase(bytes) {
+                f(
+                    bytes,
+                    &[0],
+                    RegionPresenceBatchMode::BorrowedSingleChunk,
+                    &shard,
+                )?;
+                return Ok(RegionPresenceBatchSummary {
+                    dispatches: 1,
+                    coalesced_bytes: total,
+                    max_dispatch_bytes: total,
+                    mode: RegionPresenceBatchMode::BorrowedSingleChunk,
+                });
+            }
+        }
+        return dispatch_region_presence_shards(
+            chunks,
+            std::iter::once(Ok(shard)),
+            RegionPresenceBatchMode::FoldedScratch,
+            &mut f,
+        );
+    }
+
+    let shards =
+        region_presence_shards_with_limit(chunks.len(), |idx| chunks[idx].data.len(), byte_limit)?;
+    dispatch_region_presence_shards(
+        chunks,
+        shards,
+        RegionPresenceBatchMode::ShardedScratch,
+        &mut f,
+    )
+}
+
+fn dispatch_region_presence_shards(
+    chunks: &[keyhog_core::Chunk],
+    shards: impl IntoIterator<Item = Result<RegionPresenceShard, String>>,
+    overall_mode: RegionPresenceBatchMode,
+    f: &mut impl FnMut(
+        &[u8],
+        &[u32],
+        RegionPresenceBatchMode,
+        &RegionPresenceShard,
+    ) -> std::result::Result<(), String>,
+) -> std::result::Result<RegionPresenceBatchSummary, String> {
+    let mut coalesced_bytes = 0usize;
+    let mut max_dispatch_bytes = 0usize;
+    let mut dispatches = 0usize;
+    REGION_PRESENCE_BATCH_SCRATCH
+        .try_with(|cell| {
+            let mut scratch = cell.try_borrow_mut().map_err(|_| {
+                "coalesced GPU region-presence scratch already borrowed on this thread; recursive \
+                 GPU batch dispatch is unsupported"
+                    .to_string()
+            })?;
+            let mut zero_on_drop = ZeroRegionPresenceScratch::new(&mut scratch);
+            for shard in shards {
+                let shard = shard?;
+                dispatches += 1;
+                coalesced_bytes = coalesced_bytes
+                    .checked_add(shard.coalesced_bytes)
+                    .ok_or_else(|| {
+                        "coalesced GPU region-presence shard accounting overflows host usize"
+                            .to_string()
+                    })?;
+                max_dispatch_bytes = max_dispatch_bytes.max(shard.coalesced_bytes);
+                let shard_chunks = &chunks[shard.chunks.clone()];
+                if let [chunk] = shard_chunks {
+                    let bytes = chunk.data.as_bytes();
+                    if !crate::ascii_ci::has_ascii_uppercase(bytes) {
+                        f(
+                            bytes,
+                            &[0],
+                            RegionPresenceBatchMode::BorrowedSingleChunk,
+                            &shard,
+                        )?;
+                        continue;
+                    }
+                }
+                build_region_presence_batch(shard_chunks, zero_on_drop.as_mut())?;
+                f(
+                    zero_on_drop.haystack(),
+                    zero_on_drop.region_starts(),
+                    RegionPresenceBatchMode::FoldedScratch,
+                    &shard,
+                )?;
+            }
+            Ok::<(), String>(())
+        })
+        .map_err(|_| {
+            "coalesced GPU region-presence scratch unavailable during thread shutdown".to_string()
+        })??;
+
+    Ok(RegionPresenceBatchSummary {
+        dispatches,
+        coalesced_bytes,
+        max_dispatch_bytes,
+        mode: overall_mode,
+    })
+}
+
+pub(super) fn for_each_region_presence_batch(
+    chunks: &[keyhog_core::Chunk],
+    backend_id: &str,
+    f: impl FnMut(
+        &[u8],
+        &[u32],
+        RegionPresenceBatchMode,
+        &RegionPresenceShard,
+    ) -> std::result::Result<(), String>,
+) -> std::result::Result<RegionPresenceBatchSummary, String> {
+    for_each_region_presence_batch_with_limit(
+        chunks,
+        region_presence_batch_byte_limit(backend_id),
+        f,
+    )
 }
 
 /// Capture what [`with_region_presence_batch`] hands its callback for `chunks`:
@@ -181,6 +460,10 @@ pub(super) fn with_region_presence_batch<R>(
             "coalesced GPU region-presence scratch unavailable during thread shutdown".to_string()
         })?
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/gpu_region_batch_sharding.rs"]
+mod sharding_tests;
 
 pub(super) fn trigger_bit_is_set(triggers: &[Option<Vec<u64>>], ci: usize, det: usize) -> bool {
     triggers

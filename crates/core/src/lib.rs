@@ -58,6 +58,8 @@ mod safe_bin;
 mod source;
 mod spec;
 mod state_file;
+/// Shared paired performance statistics used by release gates and routing evidence.
+pub mod timing;
 /// Verification-domain policy shared by detector validation and the network
 /// verifier.
 pub mod verification_domain;
