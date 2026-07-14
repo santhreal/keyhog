@@ -25,7 +25,7 @@ pub fn resolve_matches(matches: Vec<RawMatch>) -> Vec<RawMatch> {
         Ok(resolved) => resolved,
         Err(error) => {
             panic!(
-                "detector classification rules are invalid during match resolution: {error}. Fix: correct rules/detector-classification.toml"
+                "detector classification policy is invalid during match resolution: {error}. Fix: correct the affected detector TOML in detectors/"
             );
         }
     }

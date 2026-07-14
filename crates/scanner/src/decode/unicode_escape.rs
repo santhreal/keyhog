@@ -6,7 +6,10 @@
 //! scanner match the literal credential. Shares hex readers and lazy output
 //! allocation with the other decoders via [`super::util`].
 
-use super::util::{lazy_decoded_prefix, resolve_escaped_codepoint, take_hex_digits_indexed};
+use super::util::{
+    lazy_decoded_prefix, resolve_escaped_codepoint, simple_control_escape,
+    take_hex_digits_indexed,
+};
 
 /// Decode backslash escapes (`\uXXXX`, `\xXX`, and `\<char>`) in `input`.
 ///
@@ -39,21 +42,11 @@ pub(super) fn unicode_escape_decode(input: &str) -> Result<String, ()> {
                     .push(char::from_u32(code).ok_or(())?);
             }
             Some(escaped) => {
-                lazy_decoded_prefix(&mut decoded_text, input, idx).push(simple_escape(escaped));
+                lazy_decoded_prefix(&mut decoded_text, input, idx)
+                    .push(simple_control_escape(escaped).unwrap_or(escaped));
             }
             None => return Err(()),
         }
     }
     decoded_text.ok_or(())
-}
-
-fn simple_escape(escaped: char) -> char {
-    match escaped {
-        'b' => '\x08',
-        'f' => '\x0c',
-        'n' => '\n',
-        'r' => '\r',
-        't' => '\t',
-        other => other,
-    }
 }

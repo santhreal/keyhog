@@ -7,6 +7,22 @@
 /// (each a semantic alias of this value), so the two floors can never drift.
 pub(crate) const MIN_EVASION_DECODE_LEN: usize = 16;
 
+/// Decode the control escapes shared by JSON and JavaScript string literals.
+///
+/// Quote, slash, and backslash handling remains with each grammar because JSON
+/// rejects unknown escapes while the broader Unicode-escape pass preserves
+/// their escaped character.
+pub(crate) fn simple_control_escape(escaped: char) -> Option<char> {
+    match escaped {
+        'b' => Some('\x08'),
+        'f' => Some('\x0c'),
+        'n' => Some('\n'),
+        'r' => Some('\r'),
+        't' => Some('\t'),
+        _ => None,
+    }
+}
+
 /// Pull `count` hex digits from `chars` and pack them MSB-first into a `u32`.
 ///
 /// Returns `Err(())` if the iterator runs out before `count` characters or

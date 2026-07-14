@@ -1,5 +1,5 @@
 use super::pipeline::push_decoded_text_chunk_spliced;
-use super::util::{resolve_escaped_codepoint, take_hex_digits};
+use super::util::{resolve_escaped_codepoint, simple_control_escape, take_hex_digits};
 use super::Decoder;
 use keyhog_core::Chunk;
 
@@ -125,18 +125,14 @@ fn json_unescape(input: &str) -> Result<String, ()> {
             Some('"') => decoded.push('"'),
             Some('\\') => decoded.push('\\'),
             Some('/') => decoded.push('/'),
-            Some('b') => decoded.push('\x08'),
-            Some('f') => decoded.push('\x0C'),
-            Some('n') => decoded.push('\n'),
-            Some('r') => decoded.push('\r'),
-            Some('t') => decoded.push('\t'),
             Some('u') => {
                 let code = take_hex_digits(&mut chars, 4)?;
                 // Shared surrogate-pair resolution (see `util`): reads a
                 // following `\u` low-surrogate code unit from `chars` itself.
                 decoded.push(resolve_escaped_codepoint(code, &mut chars)?);
             }
-            _ => return Err(()),
+            Some(escaped) => decoded.push(simple_control_escape(escaped).ok_or(())?),
+            None => return Err(()),
         }
     }
 
