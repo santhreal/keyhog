@@ -201,13 +201,14 @@ expect "H.1 reports unsupported"        "Unsupported platform"                  
 rm -rf "$sb"
 
 # ============================================================
-# Scenario I: --help renders
+# Scenario I: --help renders the authenticated install path
 # ============================================================
 printf '\n[I] --help mode\n'
 out=$(sh "$INSTALL_SH" --help 2>&1)
-expect "I.1 help shows curl-pipe-sh"    "curl -fsSL"                              "$out"
-expect "I.2 help shows --repair"        "--repair"                                "$out"
-expect "I.3 help shows --diagnose"      "--diagnose"                              "$out"
+expect "I.1 help downloads tagged files" "curl -fSLO.*install.sh.*install.sh.minisig" "$out"
+expect "I.2 help verifies the signature" "minisign -Vm install.sh -P"                "$out"
+expect "I.3 help shows --repair"         "--repair"                                  "$out"
+expect "I.4 help shows --diagnose"       "--diagnose"                                "$out"
 
 # ============================================================
 # Scenario J: --uninstall on a no-binary host is a safe no-op
