@@ -2750,6 +2750,63 @@ exit 0
 }
 
 #[test]
+fn action_accepts_only_canonical_gpu_backend_names() {
+    for backend in ["gpu-cuda", "gpu-wgpu"] {
+        let dir = TempDir::new().expect("tempdir");
+        let args_path = dir.path().join("args.txt");
+        write_stub(
+            &dir,
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" > "$KEYHOG_STUB_ARGS"
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '[]\n' > "$out"
+"#,
+        );
+        let output = run_action(
+            &dir,
+            &[
+                ("KEYHOG_STUB_ARGS", args_path.to_str().expect("utf-8 path")),
+                ("ACTION_INPUT_FORMAT", "json"),
+                ("ACTION_INPUT_OUTPUT", "report.json"),
+                ("ACTION_INPUT_BACKEND", backend),
+            ],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "canonical backend {backend} must reach keyhog: {}",
+            combined_output(&output)
+        );
+        let args = fs::read_to_string(args_path).expect("read args");
+        assert!(
+            args.contains(&format!("--backend\n{backend}\n")),
+            "canonical backend was not preserved: {args}"
+        );
+    }
+
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(&dir, "#!/usr/bin/env bash\nexit 99\n");
+    let output = run_action(
+        &dir,
+        &[("ACTION_INPUT_BACKEND", "gpu")],
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        combined_output(&output).contains("gpu-cuda, gpu-wgpu"),
+        "retired alias must fail with canonical replacements: {}",
+        combined_output(&output)
+    );
+}
+
+#[test]
 fn action_counts_text_reports_without_box_drawing_grep() {
     let dir = TempDir::new().expect("tempdir");
     write_stub(

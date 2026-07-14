@@ -52,8 +52,9 @@ inputs:
     default: ''
   backend:
     description: |
-      Optional scan backend: auto | simd | cpu | gpu. Leave unset or choose
-      auto to calibrate this workload; explicit backends are for diagnostics.
+      Optional scan backend: auto | simd | cpu | gpu-cuda | gpu-wgpu. Leave
+      unset or choose auto to calibrate this workload; explicit backends are
+      for diagnostics.
     default: ''
 
 outputs:

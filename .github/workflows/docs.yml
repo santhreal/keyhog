@@ -13,11 +13,13 @@ on:
       - 'docs/**'
       - 'CHANGELOG.md'
       - '.github/workflows/docs.yml'
+      - 'scripts/gates/docs_truth.py'
   pull_request:
     paths:
       - 'docs/**'
       - 'CHANGELOG.md'
       - '.github/workflows/docs.yml'
+      - 'scripts/gates/docs_truth.py'
   workflow_dispatch:
 
 # Don't queue parallel deploys -- the latest push wins.
@@ -37,13 +39,21 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
+      - name: Verify documentation truth
+        run: python3 -B scripts/gates/docs_truth.py
+
       - name: Install mdBook
         run: |
+          set -euo pipefail
           mkdir -p $HOME/.local/bin
-          # Pin to v0.5.2 (matches local build environment). Update by
-          # bumping the version string in two places below.
-          curl -fsSL https://github.com/rust-lang/mdBook/releases/download/v0.5.2/mdbook-v0.5.2-x86_64-unknown-linux-musl.tar.gz \
-            | tar -xz -C $HOME/.local/bin
+          mdbook_version=0.5.2
+          mdbook_asset="mdbook-v${mdbook_version}-x86_64-unknown-linux-musl.tar.gz"
+          mdbook_sha256=8e9d802bbecea34380aabfc65bec4fdba23c07453ef2c7e06fa34c282082e2c4
+          curl -fsSL --retry 2 \
+            "https://github.com/rust-lang/mdBook/releases/download/v${mdbook_version}/${mdbook_asset}" \
+            -o "$RUNNER_TEMP/$mdbook_asset"
+          printf '%s  %s\n' "$mdbook_sha256" "$RUNNER_TEMP/$mdbook_asset" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$mdbook_asset" -C $HOME/.local/bin
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           $HOME/.local/bin/mdbook --version
 

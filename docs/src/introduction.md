@@ -93,7 +93,7 @@ KEYHOG_VERSION="$TAG" sh install.sh
 ```
 
 Windows uses the same signed release flow. Copy the PowerShell commands from
-the [Install](./install.md#windows-powershell) page.
+the [Install](./install.md#pinned-verified-install-windows) page.
 
 Then:
 

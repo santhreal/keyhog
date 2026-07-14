@@ -63,6 +63,7 @@ inputs to the KeyHog step:
                                 # verified-live credentials still fail
     baseline: ''                # path to a committed baseline file; only NEW
                                 # findings (absent from the baseline) fail the job
+    backend: auto               # auto | simd | cpu | gpu-cuda | gpu-wgpu
     version: ''                 # pin a specific release (default: action ref)
 ```
 

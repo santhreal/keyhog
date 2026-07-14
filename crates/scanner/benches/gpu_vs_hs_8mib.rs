@@ -115,6 +115,19 @@ fn detectors_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors")
 }
 
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn artifact_path(raw: std::ffi::OsString) -> PathBuf {
+    let path = PathBuf::from(raw);
+    if path.is_absolute() {
+        path
+    } else {
+        workspace_root().join(path)
+    }
+}
+
 fn running_binary_sha256() -> Result<String, io::Error> {
     use sha2::{Digest, Sha256};
 
@@ -757,7 +770,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 selection_samples: artifact_selection_samples,
                 held_out_samples: artifact_held_out,
             };
-            let path = PathBuf::from(path);
+            let path = artifact_path(path);
             write_artifact(&path, &artifact)?;
             println!("artifact={}", path.display());
         }
