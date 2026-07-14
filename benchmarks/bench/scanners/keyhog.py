@@ -49,6 +49,9 @@ from .base import Finding, MeasurementProvenance, RunStats, Scanner, _line, run_
 _BACKENDS = ("simd", "cpu", "gpu-cuda", "gpu-wgpu", "auto")
 _DETERMINISTIC_BACKENDS = {"simd", "cpu"}
 _REQUIRE_GPU_BACKENDS = {"gpu-cuda", "gpu-wgpu"}
+_CACHE_MODES = {"off", "on"}
+_DAEMON_MODES = {"off", "on"}
+_SCAN_MODES = {"full", "fast", "deep", "precision"}
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _DETECTOR_CORPUS = _REPO_ROOT / "detectors"
@@ -354,12 +357,36 @@ class KeyhogScanner(Scanner):
             out.append(ScannerConfig(**vals))
         return out
 
+    @staticmethod
+    def _validate_config(cfg: ScannerConfig) -> None:
+        fields = (
+            ("backend", cfg.backend, set(_BACKENDS)),
+            ("cache", cfg.cache, _CACHE_MODES),
+            ("daemon", cfg.daemon, _DAEMON_MODES),
+            ("mode", cfg.mode, _SCAN_MODES),
+        )
+        for field, value, allowed in fields:
+            if value not in allowed:
+                choices = ", ".join(sorted(allowed))
+                raise ValueError(
+                    f"unsupported keyhog benchmark {field} {value!r}; "
+                    f"choose one of: {choices}"
+                )
+        if cfg.min_confidence is not None and (
+            not math.isfinite(cfg.min_confidence)
+            or not 0.0 <= cfg.min_confidence <= 1.0
+        ):
+            raise ValueError(
+                "keyhog benchmark min_confidence must be a finite number in [0, 1]"
+            )
+
     # ── flag mapping ───────────────────────────────────────────────────
 
     def _cmd(self, root: pathlib.Path, cfg: ScannerConfig,
              output: pathlib.Path, incremental_cache: pathlib.Path | None,
              executable: pathlib.Path,
              detector_corpus: pathlib.Path | None = None) -> list[str]:
+        self._validate_config(cfg)
         cmd = [str(executable), "scan",
                "--format", "json", "--show-secrets",
                # Hermetic config: the leaderboard scores the COMPILED shipped
@@ -427,6 +454,7 @@ class KeyhogScanner(Scanner):
         timeout: int = 3600,
     ) -> tuple[list[Finding], RunStats, MeasurementProvenance]:
         """Scan immutable executable and detector snapshots with exact identity."""
+        self._validate_config(cfg)
         snapshot, digest = self._detector_snapshot()
         with self._binary_snapshot() as (
             executable, executable_digest, version, pass_fds,

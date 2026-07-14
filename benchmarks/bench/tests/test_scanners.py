@@ -1,6 +1,7 @@
 import contextlib
 import hashlib
 import json
+import math
 import os
 import pathlib
 import shutil
@@ -390,6 +391,49 @@ def test_keyhog_presets_are_explicit_and_matrix_owned(tmp_path):
     }
     assert deep.config_id == "simd-nocache-nodaemon-deep"
     assert precision.config_id == "simd-nocache-nodaemon-precision"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("backend", "default"),
+        ("cache", "warm"),
+        ("daemon", "auto"),
+        ("mode", "thorough"),
+    ],
+)
+def test_keyhog_adapter_rejects_unknown_config_axes(tmp_path, field, value):
+    scanner = scanners.KeyhogScanner(binary="/bin/true")
+    values = {
+        "backend": "simd",
+        "cache": "off",
+        "daemon": "off",
+        "mode": "full",
+    }
+    values[field] = value
+
+    with pytest.raises(ValueError, match=rf"benchmark {field} .*choose one of"):
+        scanner._cmd(
+            tmp_path,
+            ScannerConfig(**values),
+            tmp_path / "result.json",
+            None,
+            pathlib.Path("/bin/true"),
+        )
+
+
+@pytest.mark.parametrize("value", [-0.01, 1.01, math.nan, math.inf])
+def test_keyhog_adapter_rejects_invalid_confidence_before_execution(tmp_path, value):
+    scanner = scanners.KeyhogScanner(binary="/bin/true")
+
+    with pytest.raises(ValueError, match=r"finite number in \[0, 1\]"):
+        scanner._cmd(
+            tmp_path,
+            ScannerConfig(backend="simd", min_confidence=value),
+            tmp_path / "result.json",
+            None,
+            pathlib.Path("/bin/true"),
+        )
 
 
 def test_keyhog_scanner_reports_timeout_as_timeout(monkeypatch, tmp_path):
