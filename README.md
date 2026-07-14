@@ -42,11 +42,13 @@ jobs:
         with: { path: ., severity: high, format: sarif }
 ```
 
-Release refs download the platform asset; branch/SHA refs build the checked-out
-source. With no explicit diagnostic backend, the Action visibly calibrates the
-runner before its default auto scan. The job summary reports measured duration;
-cost varies with the runner, cache, configuration, and repository. Findings
-auto-upload to GitHub code-scanning as SARIF; adopt without breaking an existing tree by committing a baseline
+Release refs authenticate the complete binary and GPU literal bundle with
+minisign and SHA-256. Branch/SHA refs skip release lookup and build the
+checked-out source. With no explicit diagnostic backend, the Action visibly
+calibrates the runner before its default auto scan. The job summary reports
+measured duration; cost varies with the runner, cache, configuration, and
+repository. Findings auto-upload to GitHub code-scanning as SARIF. Adopt
+without breaking an existing tree by committing a baseline
 (`keyhog scan --create-baseline .keyhog-baseline.json`) so the action
 fails only on NEW secrets.
 

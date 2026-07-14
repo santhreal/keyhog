@@ -52,9 +52,13 @@ to **Security -> Code scanning**, attaches the report as a workflow
 artifact, and prints a job summary with the finding count, raw exit code,
 and scan duration.
 
-Release tags and explicit `version:` inputs require a matching prebuilt binary
-and checksum. A missing or unverifiable asset fails closed. Branch/SHA Action
-refs may build from source using the checked-out tree instead.
+Exact release tags, the floating major tag (`@v0`), and explicit `version:`
+inputs require the complete binary and GPU literal bundle. The floating tag
+resolves the exact version from its checked-out manifest. The Action verifies
+both minisign signatures with KeyHog's pinned public key, verifies both SHA-256
+files, validates the sidecar archive, and seeds its matcher artifacts before
+execution. A missing or unverifiable payload fails closed. Branch/SHA Action
+refs skip release lookup and build the checked-out tree instead.
 
 When `upload-sarif: 'true'`, SARIF upload is fail-closed on trusted pushes
 and same-repo pull requests. Fork pull requests often lack

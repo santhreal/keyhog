@@ -1,12 +1,12 @@
 name: Release
 
-# Tag-driven binary build + upload. Push a `v*` tag and this workflow
-# compiles `keyhog` for each supported target and attaches the binary
-# to the existing draft/published GitHub Release for that tag.
+# Tag-driven signed release publication. Push an exact semantic-version tag and
+# this workflow builds every supported binary and GPU literal sidecar, signs the
+# payloads, validates the exact manifest, and publishes it as one release.
 #
-# Downstream consumers of the `.github/actions/keyhog/action.yml`
-# composite action look for these binaries first and only fall back to
-# a source build when an asset is missing.
+# Exact and floating release refs in the bundled composite Action require the
+# complete signed release bundle. Branch and commit refs build their checked-out
+# source directly.
 
 on:
   push:

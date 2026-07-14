@@ -108,9 +108,9 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 
 | Resource | Value |
 | --- | --- |
-| Prebuilt binary download | Release binary plus `.sha256`; checksum verified before execution |
+| Prebuilt bundle | Binary and GPU literal sidecar; both minisign signatures and SHA-256 files verified before execution |
 | Scan duration | Reported by the Action as `duration-ms`; varies by host, cache, config, and input |
-| Runtime dependencies | `libhyperscan5` (auto-installed via apt on Ubuntu runners); none on macOS/Windows |
+| Runtime dependencies | `minisign` on release refs; `libhyperscan5` also auto-installed on Ubuntu |
 | Toolchains required | none for release-tag prebuilts; Rust only for branch/SHA source builds |
 | GPU | optional; the Action parity-checks eligible backends on the exact requested workload and persists the fastest correct route |
 
@@ -119,8 +119,8 @@ runs one throwaway calibration scan. Calibration reads incremental state for
 exact workload filtering but never persists Merkle cache changes, so the report
 scan receives the same cache state and input workload.
 
-No Python, no JVM, no Docker daemon. Single static binary plus the
-auto-installed Hyperscan shared library on Linux.
+No Python, JVM, or Docker daemon. Release refs seed the authenticated GPU
+literal artifacts before scanning. Linux also installs the Hyperscan runtime.
 
 ## Platforms
 
@@ -131,10 +131,13 @@ auto-installed Hyperscan shared library on Linux.
 | macOS | x86_64 | yes (no Hyperscan) | yes (`portable` feature) |
 | Windows | x86_64 | yes (portable feature set) | yes (`portable` feature) |
 
-Release tags and explicit `version:` inputs require a matching prebuilt binary
-and checksum; missing or unverifiable release assets fail closed instead of
-silently source-building different code. Branch/SHA action refs may build from
-source. The Action intentionally uses the portable feature set for both macOS
+Exact release tags, the floating major tag (`@v0`), and explicit `version:`
+inputs require the complete signed binary and GPU literal bundle. The floating
+tag resolves the exact version from its checked-out manifest. Missing,
+malformed, or unverifiable release payloads fail closed instead of silently
+source-building different code. Branch/SHA action refs skip the release lookup
+and build from source. The Action intentionally uses the portable feature set
+for both macOS
 prebuilts and branch/SHA source fallbacks. A manual macOS source build can use
 Hyperscan after `brew install vectorscan pkg-config`; that is a different build
 from the Action asset. Both include entropy, multiline reassembly, ML scoring,

@@ -19,11 +19,11 @@ inputs:
     default: 'false'
   version:
     description: |
-      KeyHog version to use. Matched against a published GitHub Release tag
-      (e.g. "0.5.12" expects asset `keyhog-linux-x86_64` on tag `v0.5.12`).
-      When unset, derives from the action ref (`@v0.5.12` → "0.5.12").
-      Explicit versions and semver action tags require a matching release asset;
-      branch/SHA refs build from source.
+      KeyHog version to use. Matched against a published GitHub Release tag.
+      Exact versions, semver action tags, and floating major tags require the
+      complete signed binary and GPU literal bundle. When unset, exact and
+      floating release refs resolve the checked-out release version. Branch and
+      commit refs build their checked-out source directly.
     default: ''
   upload-sarif:
     description: 'When format=sarif, upload via the GitHub Code Scanning SARIF action.'
@@ -112,12 +112,13 @@ runs:
       shell: bash
       env:
         ACTION_VERSION: ${{ inputs.version }}
+        ACTION_SOURCE_ROOT: ${{ github.action_path }}/../../..
       run: |
         set -euo pipefail
         release_required=false
         if [[ -n "${ACTION_VERSION:-}" ]]; then
           v="${ACTION_VERSION#v}"
-          if ! [[ "$v" =~ ^[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9._-]+)?$ ]]; then
+          if ! [[ "$v" =~ ^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
             echo "::error title=KeyHog::Invalid version. Explicit version must be MAJOR.MINOR.PATCH with an optional prerelease suffix."
             exit 2
           fi
@@ -126,7 +127,28 @@ runs:
           # GITHUB_ACTION_REF is e.g. "v0.5.12", "main", a SHA, or a branch.
           ref="${GITHUB_ACTION_REF:-main}"
           v="${ref#v}"
-          if [[ "$ref" == v* && "$v" =~ ^[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9._-]+)?$ ]]; then
+          if [[ "$ref" == v* && "$v" =~ ^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            release_required=true
+          elif [[ "$ref" =~ ^v([0-9]+)$ ]]; then
+            major="${BASH_REMATCH[1]}"
+            manifest="$ACTION_SOURCE_ROOT/Cargo.toml"
+            if [[ ! -f "$manifest" ]]; then
+              echo "::error title=KeyHog::Floating release ref cannot resolve its exact version because Cargo.toml is unavailable."
+              exit 2
+            fi
+            v="$(awk '
+              $0 == "[workspace.package]" { in_workspace_package = 1; next }
+              in_workspace_package && /^\[/ { exit }
+              in_workspace_package && $1 == "version" {
+                gsub(/\"/, "", $3)
+                print $3
+                exit
+              }
+            ' "$manifest")"
+            if ! [[ "$v" =~ ^${major}[.][0-9]+[.][0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+              echo "::error title=KeyHog::Floating release ref does not match the exact version in Cargo.toml."
+              exit 2
+            fi
             release_required=true
           fi
         fi
@@ -205,51 +227,88 @@ runs:
           echo "::error title=KeyHog::No published asset is available for this runner/version; refusing source-build fallback for a required release."
           exit 2
         fi
-        url="https://github.com/santhreal/keyhog/releases/download/v${version}/${asset}"
+        release_url="https://github.com/santhreal/keyhog/releases/download/v${version}"
         sidecar="$asset.gpu-literals.tar.gz"
-        echo "Downloading authenticated release bundle from $url"
+        bundle_dir="$(mktemp -d "$RUNNER_TEMP/keyhog-release.XXXXXX")"
+        extract_dir=""
+        staged_target=""
+        cleanup_release_bundle() {
+          rm -rf -- "$bundle_dir"
+          if [[ -n "$extract_dir" ]]; then
+            rm -rf -- "$extract_dir"
+          fi
+          if [[ -n "$staged_target" ]]; then
+            rm -f -- "$staged_target"
+          fi
+        }
+        trap cleanup_release_bundle EXIT
+        echo "Downloading authenticated release bundle from $release_url/$asset"
         for name in \
           "$asset" "$asset.sha256" "$asset.minisig" \
           "$sidecar" "$sidecar.sha256" "$sidecar.minisig"; do
-          if ! curl -fL --retry 2 "$url${name#"$asset"}" -o "$RUNNER_TEMP/$name"; then
+          if ! curl -fL --retry 2 "$release_url/$name" -o "$bundle_dir/$name"; then
             echo "::error title=KeyHog::Required release payload '$name' is unavailable; refusing source-build fallback for a release ref."
             exit 2
           fi
         done
 
+        minisign -Vm "$bundle_dir/$asset" -x "$bundle_dir/$asset.minisig" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+        minisign -Vm "$bundle_dir/$sidecar" -x "$bundle_dir/$sidecar.minisig" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+        validate_checksum_manifest() {
+          local manifest_path="$1"
+          local expected_name="$2"
+          local line=""
+          local extra_line=""
+          if ! IFS= read -r line < "$manifest_path" || IFS= read -r extra_line < <(sed -n '2p' "$manifest_path"); then
+            echo "::error title=KeyHog::Release checksum manifest is malformed or names an unexpected file."
+            return 2
+          fi
+          if [[ ! "$line" =~ ^[0-9A-Fa-f]{64}[[:space:]]+[*]?([A-Za-z0-9._-]+)$ ]]; then
+            echo "::error title=KeyHog::Release checksum manifest is malformed or names an unexpected file."
+            return 2
+          fi
+          if [[ "${BASH_REMATCH[1]}" != "$expected_name" ]]; then
+            echo "::error title=KeyHog::Release checksum manifest is malformed or names an unexpected file."
+            return 2
+          fi
+        }
+        validate_checksum_manifest "$bundle_dir/$asset.sha256" "$asset"
+        validate_checksum_manifest "$bundle_dir/$sidecar.sha256" "$sidecar"
         if command -v sha256sum >/dev/null 2>&1; then
-          (cd "$RUNNER_TEMP" && sha256sum -c "$asset.sha256" && sha256sum -c "$sidecar.sha256")
+          (cd "$bundle_dir" && sha256sum -c "$asset.sha256" && sha256sum -c "$sidecar.sha256")
         elif command -v shasum >/dev/null 2>&1; then
-          (cd "$RUNNER_TEMP" && shasum -a 256 -c "$asset.sha256" && shasum -a 256 -c "$sidecar.sha256")
+          (cd "$bundle_dir" && shasum -a 256 -c "$asset.sha256" && shasum -a 256 -c "$sidecar.sha256")
         else
           echo "::error title=KeyHog::No SHA256 verifier on runner; refusing source-build fallback for a required release."
           exit 2
         fi
-        minisign -Vm "$RUNNER_TEMP/$asset" -x "$RUNNER_TEMP/$asset.minisig" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
-        minisign -Vm "$RUNNER_TEMP/$sidecar" -x "$RUNNER_TEMP/$sidecar.minisig" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
 
-        if ! tar -tzf "$RUNNER_TEMP/$sidecar" >/dev/null 2>&1; then
+        if ! tar -tzf "$bundle_dir/$sidecar" >/dev/null 2>&1; then
           echo "::error title=KeyHog::GPU literal sidecar is not a readable tar.gz archive."
           exit 2
         fi
         while IFS= read -r entry; do
-          if [[ -z "$entry" || "$entry" == /* || "$entry" =~ (^|[\\/])[.][.]([\\/]|$) ]]; then
+          if [[ -z "$entry" || "$entry" == /* || "$entry" == \\* || "$entry" =~ ^[A-Za-z]: || "$entry" =~ (^|[\\/])[.][.][[:space:].]*([\\/]|$) ]]; then
             echo "::error title=KeyHog::GPU literal sidecar contains an unsafe path."
             exit 2
           fi
-        done < <(tar -tzf "$RUNNER_TEMP/$sidecar")
+        done < <(tar -tzf "$bundle_dir/$sidecar")
         while IFS= read -r listing; do
           case "${listing:0:1}" in
+            - | d) ;;
             l | h)
               echo "::error title=KeyHog::GPU literal sidecar contains a link entry."
               exit 2
               ;;
+            *)
+              echo "::error title=KeyHog::GPU literal sidecar contains an unsupported entry type."
+              exit 2
+              ;;
           esac
-        done < <(tar -tvzf "$RUNNER_TEMP/$sidecar")
+        done < <(tar -tvzf "$bundle_dir/$sidecar")
 
         extract_dir="$(mktemp -d)"
-        trap 'rm -rf -- "$extract_dir"' EXIT
-        tar -xzf "$RUNNER_TEMP/$sidecar" -C "$extract_dir"
+        tar -xzf "$bundle_dir/$sidecar" -C "$extract_dir"
         case "${RUNNER_OS:-}" in
           macOS) programs_dir="$HOME/Library/Caches/keyhog/programs" ;;
           Windows)
@@ -258,10 +317,29 @@ runs:
             ;;
           *) programs_dir="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/programs" ;;
         esac
+        keyhog_cache_dir="${programs_dir%/programs}"
+        if [[ "$keyhog_cache_dir" == "$programs_dir" || -L "$keyhog_cache_dir" || -L "$programs_dir" ]]; then
+          echo "::error title=KeyHog::GPU literal cache contains an unsafe owned-directory symlink."
+          exit 2
+        fi
         mkdir -p -- "$programs_dir"
+        if [[ -L "$keyhog_cache_dir" || -L "$programs_dir" || ! -d "$programs_dir" ]]; then
+          echo "::error title=KeyHog::GPU literal cache changed to an unsafe owned-directory symlink."
+          exit 2
+        fi
         artifact_count=0
         while IFS= read -r -d '' artifact; do
-          cp -- "$artifact" "$programs_dir/$(basename "$artifact")"
+          base="$(basename "$artifact")"
+          staged_target="$(mktemp "$programs_dir/.${base}.XXXXXX")"
+          if ! cp -- "$artifact" "$staged_target"; then
+            echo "::error title=KeyHog::Could not stage GPU literal matcher artifact."
+            exit 2
+          fi
+          if ! mv -f -- "$staged_target" "$programs_dir/$base"; then
+            echo "::error title=KeyHog::Could not atomically install GPU literal matcher artifact."
+            exit 2
+          fi
+          staged_target=""
           artifact_count=$((artifact_count + 1))
         done < <(find "$extract_dir" -type f -name '*.bin' -print0)
         if [[ "$artifact_count" -eq 0 ]]; then
@@ -273,7 +351,7 @@ runs:
         case "$asset" in
           *.exe) bin_name="keyhog.exe" ;;
         esac
-        cp "$RUNNER_TEMP/$asset" "$RUNNER_TEMP/$bin_name"
+        cp "$bundle_dir/$asset" "$RUNNER_TEMP/$bin_name"
         chmod +x "$RUNNER_TEMP/$bin_name"
         echo "found=true" >> "$GITHUB_OUTPUT"
         echo "Downloaded and authenticated $asset plus $artifact_count GPU literal matcher artifact(s) for v$version"

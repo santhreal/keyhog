@@ -348,6 +348,131 @@ fn run_manifest_bash_step(step_name: &str, envs: &[(&str, &str)]) -> Output {
     cmd.output().expect("run manifest shell block")
 }
 
+fn run_release_download_harness(
+    tar_entry: &str,
+    tar_kind: &str,
+    artifact_extension: &str,
+    checksum_exit: &str,
+    signature_exit: &str,
+    preplant_programs_symlink: bool,
+) -> (TempDir, Output) {
+    let dir = TempDir::new().expect("release download harness tempdir");
+    let fake_bin = dir.path().join("bin");
+    let runner_temp = dir.path().join("runner-temp");
+    let cache_root = dir.path().join("cache");
+    fs::create_dir(&fake_bin).expect("create fake bin");
+    fs::create_dir(&runner_temp).expect("create runner temp");
+    if preplant_programs_symlink {
+        #[cfg(unix)]
+        {
+            let keyhog_cache = cache_root.join("keyhog");
+            let redirected = dir.path().join("redirected-programs");
+            fs::create_dir_all(&keyhog_cache).expect("create keyhog cache root");
+            fs::create_dir(&redirected).expect("create symlink target");
+            std::os::unix::fs::symlink(&redirected, keyhog_cache.join("programs"))
+                .expect("preplant programs symlink");
+        }
+        #[cfg(not(unix))]
+        panic!("programs symlink harness requires Unix");
+    }
+    write_executable(
+        &fake_bin.join("curl"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+url=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -o) shift; out="$1" ;;
+    http*) url="$1" ;;
+  esac
+  shift || true
+done
+[[ -n "$out" && -n "$url" ]]
+printf '%s\n' "$url" >> "$FAKE_CURL_LOG"
+case "$out" in
+  *.sha256)
+    target="$(basename "${out%.sha256}")"
+    printf '%064d  %s\n' 0 "$target" > "$out"
+    ;;
+  *) printf 'payload' > "$out" ;;
+esac
+"#,
+    );
+    write_executable(
+        &fake_bin.join("sha256sum"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+exit "$FAKE_SHA_EXIT"
+"#,
+    );
+    write_executable(
+        &fake_bin.join("minisign"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+exit "$FAKE_SIGNATURE_EXIT"
+"#,
+    );
+    write_executable(
+        &fake_bin.join("tar"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  -tzf) printf '%s\n' "$FAKE_TAR_ENTRY" ;;
+  -tvzf) printf '%s rw-r--r-- 0/0 1 Jan 1 00:00 %s\n' "$FAKE_TAR_KIND" "$FAKE_TAR_ENTRY" ;;
+  -xzf)
+    destination=""
+    while [[ "$#" -gt 0 ]]; do
+      if [[ "$1" == "-C" ]]; then shift; destination="$1"; fi
+      shift || true
+    done
+    [[ -n "$destination" ]]
+    printf 'matcher' > "$destination/literal-program.$FAKE_ARTIFACT_EXTENSION"
+    ;;
+  *) exit 9 ;;
+esac
+"#,
+    );
+
+    let path = format!(
+        "{}:{}",
+        fake_bin.display(),
+        env::var("PATH").expect("PATH is set")
+    );
+    let output_path = dir.path().join("github-output.txt");
+    let curl_log = dir.path().join("curl.log");
+    let output = run_manifest_bash_step(
+        "Try downloading prebuilt binary",
+        &[
+            ("PATH", path.as_str()),
+            (
+                "RUNNER_TEMP",
+                runner_temp.to_str().expect("UTF-8 temp path"),
+            ),
+            (
+                "GITHUB_OUTPUT",
+                output_path.to_str().expect("UTF-8 output path"),
+            ),
+            ("ACTION_ASSET_NAME", "keyhog-linux-x86_64"),
+            ("ACTION_RESOLVED_VERSION", "0.5.41"),
+            ("ACTION_RELEASE_REQUIRED", "true"),
+            ("RUNNER_OS", "Linux"),
+            (
+                "XDG_CACHE_HOME",
+                cache_root.to_str().expect("UTF-8 cache path"),
+            ),
+            ("FAKE_CURL_LOG", curl_log.to_str().expect("UTF-8 curl log")),
+            ("FAKE_TAR_ENTRY", tar_entry),
+            ("FAKE_TAR_KIND", tar_kind),
+            ("FAKE_ARTIFACT_EXTENSION", artifact_extension),
+            ("FAKE_SHA_EXIT", checksum_exit),
+            ("FAKE_SIGNATURE_EXIT", signature_exit),
+            ("KEYHOG_MINISIGN_PUBLIC_KEY", "test-public-key"),
+        ],
+    );
+    (dir, output)
+}
+
 fn yaml_literal_run_blocks(yaml: &str) -> Vec<String> {
     let lines: Vec<&str> = yaml.lines().collect();
     let mut blocks = Vec::new();
@@ -1693,13 +1818,14 @@ fn composite_action_version_output_is_validated_before_github_output() {
         "version resolver must not reflect rejected input into a workflow command"
     );
     assert!(
-        manifest.contains("(-[A-Za-z0-9._-]+)?$")
+        manifest.contains("(-[0-9A-Za-z][0-9A-Za-z.-]*)?$")
             && !manifest.contains("[-+][A-Za-z0-9._-]+"),
         "the Action must accept only the release workflow's stable or prerelease tag grammar"
     );
     assert!(
         manifest.contains("v=\"${ACTION_VERSION#v}\"")
-            && manifest.contains("releases/download/v${version}/${asset}"),
+            && manifest.contains("releases/download/v${version}")
+            && manifest.contains("\"$release_url/$name\""),
         "an explicit version must normalize one optional v prefix before building the release URL"
     );
     assert!(
@@ -1757,12 +1883,7 @@ fn composite_action_version_resolver_matches_publishable_tag_forms() {
         );
     }
 
-    for rejected in [
-        "0.5.41+build.7",
-        "0.5.41-",
-        "0.5",
-        "main\nversion=owned",
-    ] {
+    for rejected in ["0.5.41+build.7", "0.5.41-", "0.5", "main\nversion=owned"] {
         let dir = TempDir::new().expect("version output tempdir");
         let output_path = dir.path().join("github-output.txt");
         let output = run_manifest_bash_step(
@@ -1791,6 +1912,43 @@ fn composite_action_version_resolver_matches_publishable_tag_forms() {
 }
 
 #[test]
+fn composite_action_floating_major_ref_resolves_exact_signed_release() {
+    let dir = TempDir::new().expect("version output tempdir");
+    let output_path = dir.path().join("github-output.txt");
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root exists");
+    let output = run_manifest_bash_step(
+        "Resolve KeyHog version",
+        &[
+            ("ACTION_VERSION", ""),
+            ("GITHUB_ACTION_REF", "v0"),
+            (
+                "ACTION_SOURCE_ROOT",
+                repo.to_str().expect("UTF-8 repository path"),
+            ),
+            (
+                "GITHUB_OUTPUT",
+                output_path.to_str().expect("UTF-8 output path"),
+            ),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "floating release ref must resolve the exact version from its checked-out source: {}",
+        combined_output(&output)
+    );
+    assert_eq!(
+        fs::read_to_string(output_path).expect("read version output"),
+        format!(
+            "version={}\nrelease_required=true\n",
+            env!("CARGO_PKG_VERSION")
+        )
+    );
+}
+
+#[test]
 fn composite_action_error_commands_do_not_reflect_untrusted_env_values() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     assert!(
@@ -1807,29 +1965,157 @@ fn composite_action_error_commands_do_not_reflect_untrusted_env_values() {
 fn composite_action_verifies_downloaded_release_asset() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     assert!(
-        manifest.contains("Install Vectorscan/Hyperscan runtime (Linux prebuilt)"),
-        "Linux release binary path must install the runtime library it links against"
+        manifest.contains("Install release runtime and verifier (Linux prebuilt)"),
+        "Linux release binary path must install its runtime and signature verifier"
     );
     assert!(
-        manifest.contains("libhyperscan5"),
-        "Linux prebuilt path must install libhyperscan5 before executing the release asset"
+        manifest.contains("libhyperscan5") && manifest.contains("minisign"),
+        "Linux prebuilt path must install libhyperscan5 and minisign before executing the release asset"
     );
     assert!(
         manifest.contains("startsWith(steps.asset.outputs.name, 'keyhog-linux-x86_64')"),
         "both CPU and CUDA Linux prebuilts must install the Hyperscan runtime they link against"
     );
     assert!(
-        manifest.contains("curl -fL --retry 2 \"$url.sha256\""),
-        "prebuilt download must fetch the matching release checksum"
+        manifest.contains("$asset.minisig")
+            && manifest.contains("$sidecar.minisig")
+            && manifest.contains("KEYHOG_MINISIGN_PUBLIC_KEY"),
+        "prebuilt download must authenticate the binary and GPU literal sidecar with the pinned key"
     );
     assert!(
         manifest.contains("sha256sum -c \"$asset.sha256\"")
-            || manifest.contains("shasum -a 256 -c \"$asset.sha256\""),
-        "prebuilt download must verify the checksum before adding keyhog to PATH"
+            && manifest.contains("sha256sum -c \"$sidecar.sha256\"")
+            || manifest.contains("shasum -a 256 -c \"$asset.sha256\"")
+                && manifest.contains("shasum -a 256 -c \"$sidecar.sha256\""),
+        "prebuilt download must verify both checksums before adding keyhog to PATH"
     );
     assert!(
-        manifest.contains("refusing source-build fallback for a required release"),
-        "missing required release assets/checksums must fail closed instead of source-building silently"
+        manifest.contains("GPU literal sidecar contains an unsafe path")
+            && manifest.contains("GPU literal sidecar contains a link entry")
+            && manifest.contains("GPU literal sidecar contains no matcher artifacts"),
+        "the Action must validate and seed the authenticated sidecar rather than compile shipped matchers"
+    );
+    assert!(
+        manifest.contains("refusing source-build fallback for a release ref"),
+        "missing required release payloads must fail closed instead of source-building silently"
+    );
+}
+
+#[test]
+fn composite_action_authenticated_bundle_executes_all_six_exact_downloads() {
+    let (dir, output) = run_release_download_harness("literal.bin", "-", "bin", "0", "0", false);
+    assert!(
+        output.status.success(),
+        "valid authenticated bundle must install: {}",
+        combined_output(&output)
+    );
+    let urls = fs::read_to_string(dir.path().join("curl.log")).expect("read curl log");
+    let base = "https://github.com/santhreal/keyhog/releases/download/v0.5.41/";
+    let expected = [
+        "keyhog-linux-x86_64",
+        "keyhog-linux-x86_64.sha256",
+        "keyhog-linux-x86_64.minisig",
+        "keyhog-linux-x86_64.gpu-literals.tar.gz",
+        "keyhog-linux-x86_64.gpu-literals.tar.gz.sha256",
+        "keyhog-linux-x86_64.gpu-literals.tar.gz.minisig",
+    ]
+    .map(|name| format!("{base}{name}"))
+    .join("\n");
+    assert_eq!(urls, format!("{expected}\n"));
+    assert!(
+        dir.path()
+            .join("cache/keyhog/programs/literal-program.bin")
+            .is_file(),
+        "validated sidecar artifact must reach the platform cache"
+    );
+}
+
+#[test]
+fn composite_action_release_bundle_proofs_fail_closed() {
+    for (checksum_exit, signature_exit, expected) in
+        [("1", "0", "checksum"), ("0", "1", "signature")]
+    {
+        let (_dir, output) = run_release_download_harness(
+            "literal.bin",
+            "-",
+            "bin",
+            checksum_exit,
+            signature_exit,
+            false,
+        );
+        assert!(
+            !output.status.success(),
+            "invalid {expected} must stop release installation"
+        );
+    }
+}
+
+#[test]
+fn composite_action_rejects_cross_platform_archive_traversal() {
+    for unsafe_entry in [
+        "../escape.bin",
+        r"\escape.bin",
+        "C:escape.bin",
+        "nested/.. /escape.bin",
+        "nested/.../escape.bin",
+    ] {
+        let (_dir, output) =
+            run_release_download_harness(unsafe_entry, "-", "bin", "0", "0", false);
+        let combined = combined_output(&output);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "unsafe entry {unsafe_entry:?} must fail closed: {combined}"
+        );
+        assert!(
+            combined.contains("unsafe path"),
+            "unsafe entry {unsafe_entry:?} must have an operator-visible reason: {combined}"
+        );
+    }
+}
+
+#[test]
+fn composite_action_rejects_links_special_entries_and_empty_matcher_sets() {
+    for (kind, extension, reason) in [
+        ("l", "bin", "link entry"),
+        ("p", "bin", "unsupported entry type"),
+        ("-", "txt", "no matcher artifacts"),
+    ] {
+        let (_dir, output) =
+            run_release_download_harness("literal.bin", kind, extension, "0", "0", false);
+        let combined = combined_output(&output);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "invalid sidecar ({reason}) must fail closed: {combined}"
+        );
+        assert!(
+            combined.contains(reason),
+            "invalid sidecar must surface {reason:?}: {combined}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn composite_action_rejects_owned_cache_directory_symlinks() {
+    let (dir, output) = run_release_download_harness("literal.bin", "-", "bin", "0", "0", true);
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "pre-planted programs symlink must fail closed: {combined}"
+    );
+    assert!(
+        combined.contains("unsafe owned-directory symlink"),
+        "cache rejection must be operator-visible: {combined}"
+    );
+    assert!(
+        fs::read_dir(dir.path().join("redirected-programs"))
+            .expect("read redirected target")
+            .next()
+            .is_none(),
+        "Action must not stage through the owned programs symlink"
     );
 }
 
@@ -1927,7 +2213,7 @@ exit 22
         "required release download miss must fail closed; output={combined}"
     );
     assert!(
-        combined.contains("refusing source-build fallback for a required release"),
+        combined.contains("refusing source-build fallback for a release ref"),
         "failure must explain that source-build fallback is forbidden for release refs; output={combined}"
     );
 }
@@ -2179,7 +2465,7 @@ fn release_floating_tags_advance_only_after_signed_newest_stable_release() {
 }
 
 #[test]
-fn composite_action_branch_ref_download_failure_allows_source_build() {
+fn composite_action_branch_ref_skips_release_lookup_and_builds_source() {
     let dir = TempDir::new().expect("tempdir");
     let fake_bin = dir.path().join("bin");
     fs::create_dir(&fake_bin).expect("create fake bin");
@@ -2187,9 +2473,12 @@ fn composite_action_branch_ref_download_failure_allows_source_build() {
         &fake_bin.join("curl"),
         r#"#!/usr/bin/env bash
 set -euo pipefail
+touch "$CURL_CALLED"
 exit 22
 "#,
     );
+    let curl_called = dir.path().join("curl-called");
+    let curl_called_str = curl_called.to_string_lossy().into_owned();
     let output_path = dir.path().join("github-output.txt");
     let output_path_str = output_path.to_string_lossy().into_owned();
     let runner_temp = dir.path().join("runner-temp");
@@ -2209,18 +2498,24 @@ exit 22
             ("ACTION_ASSET_NAME", "keyhog-linux-x86_64"),
             ("ACTION_RESOLVED_VERSION", "main"),
             ("ACTION_RELEASE_REQUIRED", "false"),
+            ("CURL_CALLED", curl_called_str.as_str()),
         ],
     );
     let combined = combined_output(&output);
     assert_eq!(
         output.status.code(),
         Some(0),
-        "branch/SHA download miss may continue to source build; output={combined}"
+        "branch/SHA refs must continue directly to a source build; output={combined}"
     );
+    assert!(
+        combined.contains("skipping release lookup"),
+        "branch/SHA refs must report that no release request was made; output={combined}"
+    );
+    assert!(!curl_called.exists(), "branch/SHA refs must not call curl");
     let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
     assert!(
         github_output.contains("found=false"),
-        "branch/SHA miss must advertise source-build path; output={github_output}"
+        "branch/SHA path must advertise source build; output={github_output}"
     );
 }
 
@@ -2394,13 +2689,30 @@ if [[ -z "$out" ]]; then
   exit 9
 fi
 case "$out" in
-  *.sha256) printf 'fake  keyhog-windows-x86_64.exe\n' > "$out" ;;
+  *.gpu-literals.tar.gz)
+    payload="$(mktemp -d)"
+    printf 'gpu-program' > "$payload/literal-program.bin"
+    tar -czf "$out" -C "$payload" literal-program.bin
+    rm -rf "$payload"
+    ;;
+  *.sha256)
+    target="$(basename "${out%.sha256}")"
+    printf '%064d  %s\n' 0 "$target" > "$out"
+    ;;
+  *.minisig) printf 'fake-signature\n' > "$out" ;;
   *) printf 'windows-binary' > "$out" ;;
 esac
 "#,
     );
     write_executable(
         &fake_bin.join("sha256sum"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+"#,
+    );
+    write_executable(
+        &fake_bin.join("minisign"),
         r#"#!/usr/bin/env bash
 set -euo pipefail
 exit 0
@@ -2416,6 +2728,17 @@ exit 0
     let runner_temp = dir.path().join("runner-temp");
     let runner_temp_str = runner_temp.to_string_lossy().into_owned();
     fs::create_dir(&runner_temp).expect("create runner temp");
+    let cache_root = dir.path().join("cache");
+    let cache_root_str = cache_root.to_string_lossy().into_owned();
+    #[cfg(unix)]
+    {
+        let programs = cache_root.join("keyhog/programs");
+        fs::create_dir_all(&programs).expect("create programs cache");
+        let victim = dir.path().join("symlink-victim");
+        fs::write(&victim, "unchanged").expect("write symlink victim");
+        std::os::unix::fs::symlink(&victim, programs.join("literal-program.bin"))
+            .expect("preplant destination symlink");
+    }
     let output = run_manifest_bash_step(
         "Try downloading prebuilt binary",
         &[
@@ -2424,6 +2747,10 @@ exit 0
             ("RUNNER_TEMP", runner_temp_str.as_str()),
             ("ACTION_ASSET_NAME", "keyhog-windows-x86_64.exe"),
             ("ACTION_RESOLVED_VERSION", "0.5.37"),
+            ("ACTION_RELEASE_REQUIRED", "true"),
+            ("RUNNER_OS", "Linux"),
+            ("XDG_CACHE_HOME", cache_root_str.as_str()),
+            ("KEYHOG_MINISIGN_PUBLIC_KEY", "test-public-key"),
         ],
     );
     let combined = combined_output(&output);
@@ -2440,6 +2767,28 @@ exit 0
         !runner_temp.join("keyhog").exists(),
         "Windows prebuilt must not be renamed to an extensionless binary"
     );
+    assert!(
+        cache_root
+            .join("keyhog/programs/literal-program.bin")
+            .is_file(),
+        "authenticated GPU literal artifacts must be seeded into the platform cache"
+    );
+    #[cfg(unix)]
+    {
+        let installed = cache_root.join("keyhog/programs/literal-program.bin");
+        assert!(
+            fs::symlink_metadata(&installed)
+                .expect("installed artifact metadata")
+                .file_type()
+                .is_file(),
+            "atomic installation must replace a pre-planted destination symlink"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("symlink-victim")).expect("read symlink victim"),
+            "unchanged",
+            "artifact installation must never write through a destination symlink"
+        );
+    }
     let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
     assert!(
         github_output.contains("found=true"),
@@ -2863,10 +3212,7 @@ printf '[]\n' > "$out"
 
     let dir = TempDir::new().expect("tempdir");
     write_stub(&dir, "#!/usr/bin/env bash\nexit 99\n");
-    let output = run_action(
-        &dir,
-        &[("ACTION_INPUT_BACKEND", "gpu")],
-    );
+    let output = run_action(&dir, &[("ACTION_INPUT_BACKEND", "gpu")]);
     assert_eq!(output.status.code(), Some(2));
     assert!(
         combined_output(&output).contains("gpu-cuda, gpu-wgpu"),
