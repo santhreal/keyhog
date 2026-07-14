@@ -225,10 +225,7 @@ pub struct DetectorSpec {
     /// code edit (and the whole story lives in the detector file).
     #[serde(default)]
     pub structural_password_slot: bool,
-    /// Per-detector "weak anchor" classification, OWNED HERE per the architecture
-    /// law above (was a centralized id list in `rules/detector-classification.toml`
-    /// `weak_anchor = [...]`, so a detector's family lived in a second file, the
-    /// rules TOML (not its own)).
+    /// Per-detector weak-anchor classification, owned by this detector definition.
     ///
     /// `true` marks a SERVICE-anchored detector whose regex capture nonetheless
     /// structurally collides with a generic value (a bare hex/base64 run the
@@ -242,9 +239,8 @@ pub struct DetectorSpec {
     /// edit (and the whole story lives in the detector file).
     #[serde(default)]
     pub weak_anchor: bool,
-    /// Per-detector "private-key block" classification, OWNED HERE per the
-    /// architecture law above (was a centralized id list in
-    /// `rules/detector-classification.toml` `private_key_block = [...]`).
+    /// Per-detector private-key-block classification, owned by this detector
+    /// definition.
     ///
     /// `true` marks a detector whose match SPAN is an enclosing private-key block
     /// (`private-key`, `ssh-private-key`, `github-app-private-key`), a multi-line

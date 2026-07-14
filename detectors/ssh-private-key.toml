@@ -10,8 +10,8 @@ service = "ssh"
 severity = "critical"
 keywords = ["BEGIN", "PRIVATE KEY", "OPENSSH", "RSA", "EC PRIVATE", "DSA"]
 # Private-key block: the match span is an enclosing PEM/OpenSSH key body, so
-# resolution suppresses lower-specificity findings nested inside it (per-detector,
-# DetectorSpec::private_key_block; was rules/detector-classification.toml list).
+# resolution suppresses lower-specificity findings nested inside it through this
+# detector-owned flag.
 private_key_block = true
 
 # Capture the full BEGIN/END block, not just the header marker. Header-only

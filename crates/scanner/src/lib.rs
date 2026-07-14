@@ -90,7 +90,6 @@ pub mod decode;
 /// (binary asset magic bytes, protobuf wire) so decode-through feeds scoring.
 pub(crate) mod decode_structure;
 pub(crate) mod detector_catalog;
-pub(crate) mod detector_classification;
 /// Canonical detector-id strings and scanner-side detector-family predicates.
 pub(crate) mod detector_ids;
 /// Core scan execution engine.

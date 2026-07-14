@@ -10,7 +10,6 @@ inside the file itself.
 |------|---------|
 | `aws-canary-accounts.toml` | AWS account IDs known to issue canary tokens. A detected AWS access key whose offline-decoded account ID matches is marked `metadata.is_canary=true`, and live verification refuses to probe it. |
 | `default_excludes.toml` | Default source exclusion policy for binary extensions, generated/build directories, lockfiles, source maps, and related low-signal paths. |
-| `detector-classification.toml` | The Stripe hot-path confirmed-prefix list (a genuine prefix list). Per-detector classifications (`weak_anchor`, `private_key_block`) that once lived here are now per-detector `DetectorSpec` flags in each `detectors/<id>.toml` (DET-0: a detector's TOML is the whole story). |
 | `json-error-keys.toml` | Error key names recognized inside a JSON response body during verifier API error detection. |
 | `placeholder_words.toml` | Shared placeholder/sample words consumed by scanner surface, decoded, and doc-marker suppression paths. |
 | `strong-hex-key-anchors.toml` | Compact credential keywords under which a canonical-length (32/48) pure-hex value is treated as a real key, not a hash digest, exempting it from the generic-bridge bare-hex-digest gate. |

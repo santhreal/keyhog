@@ -367,29 +367,13 @@ pub fn assign_re_captures_for_test(line: &str) -> Option<(String, String)> {
     ))
 }
 
-/// Test seams for the detector-classification query API. The weak-anchor and
-/// private-key-block queries now read PER-DETECTOR `DetectorSpec` flags (DET-0;
-/// migrated out of `rules/detector-classification.toml`), while the Stripe
-/// hot-path prefix dedup stays a Tier-B list in
-/// `crates/scanner/src/detector_classification.rs`. These `pub(crate)` seams
-/// drive real suppression/resolution decisions but have no direct behavioral
-/// coverage otherwise, so each facade forwards verbatim to the live query.
+/// Test seams for detector-owned classification flags.
 pub fn detector_is_residual_weak_anchor_for_test(detector_id: &str) -> Result<bool, String> {
-    // Reads the migrated per-detector flag (was the classification `weak_anchor`
-    // list); infallible spec read, kept `Result` for caller compatibility.
     Ok(keyhog_core::detector_spec_by_id(detector_id).is_some_and(|spec| spec.weak_anchor))
 }
 
 pub fn detector_is_private_key_block_for_test(detector_id: &str) -> Result<bool, String> {
     crate::detector_ids::is_private_key_block_detector(detector_id)
-}
-
-pub fn detector_stripe_hot_confirmed_prefixes_for_test() -> Result<Vec<String>, String> {
-    crate::detector_classification::stripe_hot_confirmed_prefixes().map(<[String]>::to_vec)
-}
-
-pub fn detector_classification_validate_for_test() -> Result<(), String> {
-    crate::detector_classification::validate()
 }
 
 /// Test seam for the decode-pipeline registry's default decoder composition.

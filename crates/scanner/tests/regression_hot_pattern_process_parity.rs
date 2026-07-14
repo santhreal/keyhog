@@ -3,7 +3,7 @@
 #[path = "support/mod.rs"]
 mod support;
 
-use keyhog_core::{Chunk, ChunkMetadata};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 use support::paths::detector_dir;
 
@@ -20,6 +20,15 @@ fn scanner_without(detector_id: &str) -> CompiledScanner {
     CompiledScanner::compile(detectors).expect("scanner compile")
 }
 
+fn scanner_without_hot_acceleration() -> CompiledScanner {
+    let mut detectors =
+        keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
+    for detector in &mut detectors {
+        detector.simdsieve_prefixes.clear();
+    }
+    CompiledScanner::compile(detectors).expect("scanner without hot acceleration compiles")
+}
+
 fn scanner_with_cap(max_matches_per_chunk: usize) -> CompiledScanner {
     let detectors =
         keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
@@ -29,6 +38,134 @@ fn scanner_with_cap(max_matches_per_chunk: usize) -> CompiledScanner {
     CompiledScanner::compile(detectors)
         .expect("scanner compile")
         .with_config(config)
+}
+
+fn synthetic_hot_scanner(hot_prefix: bool) -> CompiledScanner {
+    CompiledScanner::compile(vec![DetectorSpec {
+        id: "synthetic-hot-dedup".into(),
+        name: "Synthetic Hot Dedup".into(),
+        service: "synthetic".into(),
+        severity: Severity::Critical,
+        patterns: vec![PatternSpec {
+            regex: r"ZEPHYR_[A-Z0-9]{16}".into(),
+            ..Default::default()
+        }],
+        keywords: vec!["ZEPHYR_".into()],
+        simdsieve_prefixes: hot_prefix.then(|| "ZEPHYR_".into()).into_iter().collect(),
+        min_confidence: Some(0.0),
+        ..Default::default()
+    }])
+    .expect("synthetic non-Stripe hot detector compiles")
+}
+
+#[test]
+fn detector_owned_non_stripe_hot_prefix_emits_once_at_exact_nonzero_offset() {
+    let token = "ZEPHYR_0123456789ABCDEF";
+    let prefix = "header = ";
+    let chunk = Chunk {
+        data: format!("{prefix}{token}\n").into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("repo/.env".into()),
+            base_offset: 8192,
+            ..Default::default()
+        },
+    };
+    let expected_offset = 8192 + prefix.len();
+
+    for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
+        let matches = synthetic_hot_scanner(true).scan_with_backend(&chunk, backend);
+        let exact: Vec<_> = matches
+            .iter()
+            .filter(|m| {
+                m.detector_id.as_ref() == "synthetic-hot-dedup" && m.credential.as_ref() == token
+            })
+            .collect();
+        assert_eq!(
+            exact.len(),
+            1,
+            "the detector-owned hot lane and confirmed lane must emit one canonical finding on {backend:?}; matches={matches:?}"
+        );
+        assert_eq!(exact[0].location.offset, expected_offset, "{backend:?}");
+    }
+}
+
+#[test]
+fn detector_owned_hot_dedup_is_offset_scoped_not_detector_scoped() {
+    let token = "ZEPHYR_0123456789ABCDEF";
+    let separator = "\nsecond = ";
+    let base_offset = 4096;
+    let chunk = Chunk {
+        data: format!("{token}{separator}{token}\n").into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("repo/.env".into()),
+            base_offset,
+            ..Default::default()
+        },
+    };
+    let matches = synthetic_hot_scanner(true).scan_with_backend(&chunk, ScanBackend::SimdCpu);
+    let mut offsets: Vec<_> = matches
+        .iter()
+        .filter(|m| {
+            m.detector_id.as_ref() == "synthetic-hot-dedup" && m.credential.as_ref() == token
+        })
+        .map(|m| m.location.offset)
+        .collect();
+    offsets.sort_unstable();
+
+    assert_eq!(
+        offsets,
+        vec![base_offset, base_offset + token.len() + separator.len()],
+        "each real occurrence must survive while its direct/confirmed duplicate is removed; matches={matches:?}"
+    );
+}
+
+#[test]
+fn detector_owned_hot_and_confirmed_only_paths_emit_byte_identical_findings() {
+    let chunk = Chunk {
+        data: "prefix ZEPHYR_0123456789ABCDEF\n".into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("repo/.env".into()),
+            base_offset: 256,
+            ..Default::default()
+        },
+    };
+    let hot = synthetic_hot_scanner(true).scan_with_backend(&chunk, ScanBackend::CpuFallback);
+    let confirmed_only =
+        synthetic_hot_scanner(false).scan_with_backend(&chunk, ScanBackend::CpuFallback);
+
+    assert_eq!(hot, confirmed_only);
+    assert_eq!(hot.len(), 1, "findings={hot:?}");
+    assert_eq!(hot[0].location.offset, 256 + "prefix ".len());
+}
+
+#[test]
+fn shipped_hot_detectors_are_byte_identical_without_hot_acceleration() {
+    let stripe = "sk_live_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD";
+    let square = "sq0csp-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij0123456";
+    let chunk = Chunk {
+        data: format!("STRIPE_SECRET_KEY={stripe}\nSQUARE_OAUTH_SECRET={square}\n").into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("repo/.env".into()),
+            base_offset: 1024,
+            ..Default::default()
+        },
+    };
+
+    let accelerated = scanner().scan_with_backend(&chunk, ScanBackend::CpuFallback);
+    let confirmed_only =
+        scanner_without_hot_acceleration().scan_with_backend(&chunk, ScanBackend::CpuFallback);
+
+    assert_eq!(accelerated, confirmed_only);
+    assert!(accelerated
+        .iter()
+        .any(|m| m.detector_id.as_ref() == "stripe-secret-key"));
+    assert!(accelerated
+        .iter()
+        .any(|m| m.detector_id.as_ref() == "square-access-token"));
 }
 
 // Recall-correct git-LFS parity: `is_git_lfs_oid_line` suppresses ONLY a real

@@ -392,11 +392,9 @@ pub struct CompiledScanner {
     /// from the chunk cannot match and is skipped (see `extract_confirmed_patterns`).
     pub(crate) suffix_gate_ac: Option<AhoCorasick>,
     pub(crate) ac_suffix_gate: Vec<Vec<u32>>,
-    /// Per-`ac_map` bit marking confirmed Stripe secret-key regexes whose
-    /// literal prefix is already emitted by the direct hot path. Built from
-    /// Tier-B detector classification data at compile time so candidate
-    /// extraction only pays an indexed bool load.
-    pub(crate) stripe_hot_confirmed_by_pattern: Vec<bool>,
+    /// Per-`ac_map` bit for confirmed regexes whose detector-owned
+    /// `simdsieve_prefixes` can already emit the same candidate directly.
+    pub(crate) hot_confirmed_by_pattern: Vec<bool>,
     /// Shared-anchor localization index over the confirmed `ac_map`. Eligible
     /// triggered patterns are verified at required-prefix candidate positions
     /// instead of each walking the whole scan window; non-eligible patterns keep

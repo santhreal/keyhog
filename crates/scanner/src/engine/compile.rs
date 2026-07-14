@@ -32,7 +32,6 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &crate::scanner_config::ScannerTuningConfig,
     ) -> Result<Self> {
-        crate::detector_classification::validate().map_err(crate::error::ScanError::Config)?;
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;
@@ -419,21 +418,21 @@ impl CompiledScanner {
         let generic_owning_detector =
             crate::generic_keyword_owner::GenericOwningDetectorIndex::build(&detectors);
 
-        let stripe_hot_confirmed_prefixes =
-            crate::detector_classification::stripe_hot_confirmed_prefixes()
-                .map_err(crate::error::ScanError::Config)?;
-        let stripe_hot_confirmed_by_pattern: Vec<bool> = state
-            .ac_map
-            .iter()
-            .map(|entry| {
-                detectors.get(entry.detector_index).is_some_and(|detector| {
-                    detector.id.as_str() == crate::detector_ids::STRIPE_SECRET_KEY
-                        && stripe_hot_confirmed_prefixes
-                            .iter()
-                            .any(|prefix| entry.regex.as_str().starts_with(prefix.as_str()))
-                })
-            })
-            .collect();
+        // Resolve the detector-owned hot-prefix table once, then mark its exact
+        // confirmed delegates. Limiting suppression to the delegate is
+        // recall-safe when one detector has overlapping regexes at one offset.
+        #[cfg(feature = "simdsieve")]
+        let hot_pattern_slots = build_hot_pattern_slots(&detectors, &state.ac_map)?;
+        #[cfg(feature = "simdsieve")]
+        let hot_confirmed_by_pattern = {
+            let mut hot = vec![false; state.ac_map.len()];
+            for slot in &hot_pattern_slots {
+                hot[slot.ac_map_index] = true;
+            }
+            hot
+        };
+        #[cfg(not(feature = "simdsieve"))]
+        let hot_confirmed_by_pattern = vec![false; state.ac_map.len()];
 
         let pattern_boundary_context = boundary::derive_pattern_boundary_context(
             state
@@ -471,17 +470,6 @@ impl CompiledScanner {
             })
         };
 
-        // Resolved hot-pattern slots for the simdsieve fast path: one row per
-        // slot carrying BOTH the precise-regex validator AND the canonical
-        // `ac_map` delegate, so the two can never be indexed apart at scan time.
-        // Built here (before `detectors` is moved into the struct) so the fast
-        // path can reject literal-prefix candidates the detector's own regex
-        // would not match - see `build_hot_pattern_slots`. The builder asserts
-        // every detector-owned prefix resolves to its owning compiled AC entry;
-        // invalid, duplicate, or over-capacity declarations fail loudly.
-        #[cfg(feature = "simdsieve")]
-        let hot_pattern_slots = build_hot_pattern_slots(&detectors, &state.ac_map)?;
-
         let scanner = Self {
             ac,
             gpu_backends,
@@ -512,7 +500,7 @@ impl CompiledScanner {
             ac_match_upper_bounds,
             suffix_gate_ac,
             ac_suffix_gate,
-            stripe_hot_confirmed_by_pattern,
+            hot_confirmed_by_pattern,
             confirmed_anchor_index,
             ac_map: state.ac_map,
             pattern_boundary_context,

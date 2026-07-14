@@ -1955,11 +1955,6 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/detector_classification.rs"
-error = true
-adversarial = true
-
-[[module]]
 path = "crates/scanner/src/detector_ids.rs"
 error = true
 adversarial = true

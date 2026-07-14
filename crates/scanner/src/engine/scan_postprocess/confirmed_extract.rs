@@ -1,7 +1,7 @@
 //! Confirmed-pattern extraction for the postprocess tail.
 //!
 //! Confirmed extraction owns suffix gating, shared-anchor localization, and the
-//! Stripe direct-prefix duplicate filter. It stays separate from decode
+//! direct-prefix duplicate filter. It stays separate from decode
 //! recursion and ML scoring so the postprocess folder has one owner per job.
 
 use super::{absolute_offset, scan_postprocess, scan_postprocess_profile, CompiledScanner};
@@ -68,7 +68,7 @@ impl CompiledScanner {
             }
             true
         };
-        let stripe_hot_offsets = self.stripe_direct_emitted_offsets(confirmed_patterns, scan_state);
+        let hot_direct_offsets = self.hot_direct_emitted_offsets(confirmed_patterns, scan_state);
         if let Some(anchor_index) = &self.confirmed_anchor_index {
             let has_active_anchored = confirmed_patterns
                 .iter()
@@ -114,18 +114,21 @@ impl CompiledScanner {
                         let group = &candidates[i..j];
                         if let Some(entry) = self.ac_map.get(pat_idx) {
                             let mut filtered_group = Vec::new();
-                            let group = if self.is_stripe_hot_confirmed_pattern(pat_idx) {
-                                if let Some(offsets) = stripe_hot_offsets.as_ref() {
+                            let group = if self.is_hot_confirmed_pattern(pat_idx) {
+                                if let Some(offsets) = hot_direct_offsets.as_ref() {
+                                    let detector_index = entry.detector_index;
                                     filtered_group.reserve(group.len());
                                     filtered_group.extend(group.iter().copied().filter(
                                         |&(_, pos)| {
                                             // Overflow (impossible on real input) can't collide
-                                            // with an already-emitted stripe-hot offset: keep it.
+                                            // with an already-emitted hot offset: keep it.
                                             absolute_offset(
                                                 chunk.metadata.base_offset,
                                                 pos as usize,
                                             )
-                                            .map_or(true, |ao| !offsets.contains(&ao))
+                                            .map_or(true, |ao| {
+                                                !offsets.contains(&(detector_index, ao))
+                                            })
                                         },
                                     ));
                                     if filtered_group.is_empty() {
@@ -207,8 +210,8 @@ impl CompiledScanner {
             }
             // `confirmed_patterns` is ac_map-only: every production caller
             // filters `idx < ac_map.len()` (backend_triggered.rs). This bound is
-            // load-bearing: `is_stripe_hot_confirmed_pattern` and
-            // `stripe_hot_confirmed_by_pattern` are index-parallel to `ac_map`
+            // load-bearing: `is_hot_confirmed_pattern` and
+            // `hot_confirmed_by_pattern` are index-parallel to `ac_map`
             // and panic on any phase-2 index. Assert the contract; fail closed
             // (skip) in release rather than index out of bounds.
             debug_assert!(
@@ -250,32 +253,46 @@ impl CompiledScanner {
         }
     }
 
-    fn stripe_direct_emitted_offsets(
+    fn hot_direct_emitted_offsets(
         &self,
         confirmed_patterns: &[usize],
         scan_state: &ScanState,
-    ) -> Option<std::collections::HashSet<usize>> {
-        if !confirmed_patterns
+    ) -> Option<std::collections::HashSet<(usize, usize)>> {
+        let detector_by_id: std::collections::HashMap<&str, usize> = confirmed_patterns
             .iter()
-            .any(|&pat_idx| self.is_stripe_hot_confirmed_pattern(pat_idx))
-        {
+            .filter_map(|&pat_idx| {
+                if !self.is_hot_confirmed_pattern(pat_idx) {
+                    return None;
+                }
+                self.ac_map.get(pat_idx).map(|entry| entry.detector_index)
+            })
+            .filter_map(|detector_index| {
+                self.detectors
+                    .get(detector_index)
+                    .map(|detector| (detector.id.as_str(), detector_index))
+            })
+            .collect();
+        if detector_by_id.is_empty() {
             return None;
         }
-        let offsets: std::collections::HashSet<usize> = scan_state
+        let offsets: std::collections::HashSet<(usize, usize)> = scan_state
             .matches
             .iter()
-            .filter(|m| m.detector_id.as_ref() == crate::detector_ids::STRIPE_SECRET_KEY)
-            .map(|m| m.location.offset)
+            .filter_map(|m| {
+                detector_by_id
+                    .get(m.detector_id.as_ref())
+                    .map(|&detector_index| (detector_index, m.location.offset))
+            })
             .collect();
         (!offsets.is_empty()).then_some(offsets)
     }
 
-    fn is_stripe_hot_confirmed_pattern(&self, pat_idx: usize) -> bool {
-        match self.stripe_hot_confirmed_by_pattern.get(pat_idx) {
+    fn is_hot_confirmed_pattern(&self, pat_idx: usize) -> bool {
+        match self.hot_confirmed_by_pattern.get(pat_idx) {
             Some(is_hot) => *is_hot,
             None => {
                 panic!(
-                    "internal invariant violation: missing Stripe hot-confirmed classification for pattern index {pat_idx}"
+                    "internal invariant violation: missing hot-confirmed detector classification for pattern index {pat_idx}"
                 );
             }
         }

@@ -91,13 +91,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // they exist only to populate the private shape - so migrating the tests out
     // would force the fields (or the builders) `pub` purely for test placement.
     "credential_shapes.rs",
-    // The detector-classification tests drive the crate-private
-    // `parse_classification_rules` parser against the private
-    // `DETECTOR_CLASSIFICATION_TOML` bundle (duplicate-id, unknown-id and
-    // duplicate-prefix rejection). The parser fn and the embedded TOML are both
-    // deliberately not part of the crate's public API, so external placement
-    // would force exposing them `pub` solely for the test.
-    "detector_classification.rs",
     // The placeholder/doc-marker tests drive the crate-private `parse_vocab`
     // parser, the private `validate_markers` helper, and the private
     // `PlaceholderVocab` fields against the bundled `placeholder_words.toml`

@@ -100,9 +100,8 @@ fn detector_ids_module_owns_scanner_detector_identity() {
         "detector ids and detector-family checks must route through detector_ids.rs: {offenders:#?}"
     );
 
-    let classification = read(&src.join("detector_classification.rs"));
-    let rules = read(&repo_root().join("rules/detector-classification.toml"));
     let spec = read(&repo_root().join("crates/core/src/spec.rs"));
+    let compile = read(&src.join("engine").join("compile.rs"));
     let confirmed_extract = read(
         &src.join("engine")
             .join("scan_postprocess")
@@ -120,28 +119,27 @@ fn detector_ids_module_owns_scanner_detector_identity() {
     assert!(
         spec.contains("pub weak_anchor: bool")
             && !owner.contains("RESIDUAL_WEAK_ANCHORED")
-            && !owner.contains("is_residual_weak_anchored")
-            && !classification.contains("fn is_residual_weak_anchor")
-            && !rules.contains("weak_anchor = ["),
-        "weak-anchor classification must be the per-detector `DetectorSpec::weak_anchor` flag (DET-0), not a detector_ids.rs / classification-rules id list"
+            && !owner.contains("is_residual_weak_anchored"),
+        "weak-anchor classification must be the per-detector `DetectorSpec::weak_anchor` flag, not a detector_ids.rs id list"
     );
     assert!(
         spec.contains("pub private_key_block: bool")
             && !owner.contains("PRIVATE_KEY | SSH_PRIVATE_KEY | GITHUB_APP_PRIVATE_KEY")
             && owner.contains("fn is_private_key_block_detector")
-            && owner.contains("spec.private_key_block")
-            && !classification.contains("fn is_private_key_block_detector")
-            && !rules.contains("private_key_block = ["),
-        "private-key-block classification must be the per-detector `DetectorSpec::private_key_block` flag read by detector_ids.rs (DET-0), not a classification-rules id list"
+            && owner.contains("spec.private_key_block"),
+        "private-key-block classification must be the per-detector `DetectorSpec::private_key_block` flag read by detector_ids.rs, not a centralized id list"
     );
     assert!(
-        classification.contains("stripe_hot_confirmed_prefix")
-            && classification
-                .contains("include_str!(\"../../../rules/detector-classification.toml\")")
-            && rules.contains("stripe_hot_confirmed_prefix = [")
+        !src.join("detector_classification.rs").exists()
+            && !repo_root()
+                .join("rules/detector-classification.toml")
+                .exists()
+            && compile.contains("build_hot_pattern_slots(&detectors, &state.ac_map)")
+            && compile.contains("slot.ac_map_index")
+            && !compile.contains("STRIPE_SECRET_KEY")
             && !confirmed_extract.contains("sk_live_")
             && !confirmed_extract.contains("rk_test_")
-            && confirmed_extract.contains("stripe_hot_confirmed_by_pattern"),
-        "Stripe confirmed hot-prefix classification must be Tier-B data precomputed on the scanner, not an inline extraction list"
+            && confirmed_extract.contains("is_hot_confirmed_pattern"),
+        "hot confirmed-prefix ownership must derive from each detector's simdsieve prefixes without a centralized Stripe policy"
     );
 }

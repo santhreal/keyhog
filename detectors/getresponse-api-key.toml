@@ -11,8 +11,7 @@ severity = "critical"
 keywords = ["getresponse", "GETRESPONSE", "X-Auth-Token", "api_key"]
 # Weak-anchor: the vendor prefix does not tightly bound the captured value (it
 # collides with a generic hex/base64 run), so scanner suppression keeps the
-# generic shape/entropy gates ENGAGED for it (per-detector, DetectorSpec::weak_anchor;
-# was rules/detector-classification.toml weak_anchor list).
+# generic shape/entropy gates ENGAGED through this detector-owned flag.
 weak_anchor = true
 
 [[detector.patterns]]

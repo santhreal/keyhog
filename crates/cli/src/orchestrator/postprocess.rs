@@ -299,7 +299,7 @@ pub(crate) fn filter_and_resolve_matches(
         filter.private_key_block_detectors,
     )
     .map_err(anyhow::Error::msg)
-    .context("failed to resolve matches; fix rules/detector-classification.toml")?;
+    .context("failed to resolve matches; fix the detector definitions")?;
     Ok(crate::inline_suppression::filter_inline_suppressions(
         filtered,
     ))

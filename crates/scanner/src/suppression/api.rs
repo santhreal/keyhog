@@ -531,8 +531,7 @@ fn is_generic_or_entropy(detector_id: &str, weak_anchor: bool) -> bool {
 /// minimum length that matches any short identifier) is derived here; the
 /// pure-hex class, which is shape-indistinguishable from real hex keys, is
 /// declared per-detector as `DetectorSpec::weak_anchor = true` in each such
-/// detector's own TOML (DET-0; was the `rules/detector-classification.toml`
-/// `weak_anchor` id list).
+/// detector's own TOML.
 pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> Result<bool, String> {
     Ok(match detector_weak_anchor_base(spec)? {
         WeakAnchorBase::Always => true,
@@ -588,8 +587,7 @@ pub(crate) fn detector_weak_anchor_base(
         return Ok(WeakAnchorBase::Never);
     }
     if spec.weak_anchor {
-        // Per-detector `DetectorSpec::weak_anchor` (was the centralized
-        // `rules/detector-classification.toml` `weak_anchor` id list. DET-0).
+        // Per-detector `DetectorSpec::weak_anchor`.
         return Ok(WeakAnchorBase::Always);
     }
     if spec.min_confidence.is_some() {
