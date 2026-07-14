@@ -224,14 +224,84 @@ jobs:
             ${{ matrix.asset }}.gpu-literals.tar.gz
             ${{ matrix.asset }}.gpu-literals.tar.gz.sha256
 
-  # Sign every staged binary/sidecar with the keyhog minisign secret key. Runs once
+  installers:
+    name: Stage versioned installers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        env:
+          KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
+          KEYHOG_RELEASE_EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${KEYHOG_RELEASE_INPUT_TAG:-}" ]]; then
+            tag="$KEYHOG_RELEASE_INPUT_TAG"
+          else
+            tag="${GITHUB_REF##refs/tags/}"
+          fi
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
+            exit 2
+          fi
+          if [[ "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
+            echo "::error title=KeyHog::Installer source mismatch::Run this workflow from the exact refs/tags/$tag ref."
+            exit 2
+          fi
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+
+      - name: Prove and stage installer bytes
+        shell: bash
+        env:
+          KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
+            echo "ERROR: installer checkout $actual does not match release commit $KEYHOG_RELEASE_EVENT_SHA" >&2
+            exit 2
+          fi
+          for installer in install.sh install.ps1; do
+            test -s "$installer"
+            sha256sum "$installer" > "$installer.sha256"
+          done
+
+      - name: Attest installer provenance
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: |
+            install.sh
+            install.ps1
+
+      - name: Stage unsigned installers
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unsigned-installers
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            install.sh
+            install.sh.sha256
+            install.ps1
+            install.ps1.sha256
+
+  # Sign every staged binary, sidecar, and installer with the keyhog minisign secret key. Runs once
   # on a single runner after all build arms finish, so the signing secret is
   # exposed to exactly one job. `keyhog update` verifies these `.minisig`
   # files against the embedded public key (installer::RELEASE_PUBLIC_KEY)
   # before self-replacing.
   sign:
     name: Sign release assets
-    needs: build
+    needs: [build, installers]
     runs-on: ubuntu-latest
     permissions:
       contents: write  # publish the complete signed draft manifest
@@ -290,8 +360,11 @@ jobs:
             keyhog-macos-x86_64
             keyhog-windows-x86_64.exe
           )
-          expected=()
-          payloads=()
+          expected=(
+            install.sh install.sh.sha256
+            install.ps1 install.ps1.sha256
+          )
+          payloads=(install.sh install.ps1)
           for base in "${bases[@]}"; do
             payloads+=("$base" "$base.gpu-literals.tar.gz")
             expected+=(
@@ -351,7 +424,7 @@ jobs:
                 break
               fi
             done
-            if [[ "$asset" == keyhog-* && "$keep" == false ]]; then
+            if [[ ("$asset" == keyhog-* || "$asset" == install.sh* || "$asset" == install.ps1*) && "$keep" == false ]]; then
               gh release delete-asset "$tag" "$asset" \
                 --repo "$GITHUB_REPOSITORY" --yes
             fi

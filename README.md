@@ -79,7 +79,8 @@ contract:
 | Layer / Backend | When | How |
 |---|---|---|
 | `simdsieve` prefilter | AVX-512 / AVX2 / NEON | Layer 1: skims every file for 12 high-value literal prefixes in one SIMD pass: AWS `AKIA`/`ASIA`, GitHub `ghp_`, OpenAI `sk-proj-`, Slack `xoxb-`/`xoxp-`, SendGrid `SG.`, Square `sq0csp-`, and Stripe `sk_live_`/`sk_test_`/`rk_live_`/`rk_test_` |
-| `gpu-region-presence` | discrete GPU + persisted calibration proof | VYRE literal-set region-presence pass on GPU via WGPU (cross-platform) or optional CUDA backend, followed by the shared CPU validation tail |
+| `gpu-cuda-region-presence` | executable CUDA peer + persisted calibration proof | VYRE literal-set region-presence through CUDA, followed by the shared CPU validation tail |
+| `gpu-wgpu-region-presence` | executable WGPU peer + persisted calibration proof | VYRE literal-set region-presence through WGPU, followed by the shared CPU validation tail |
 | `simd-regex` | Hyperscan compiled and live | parallel Hyperscan trigger scan plus full-regex extraction; portable builds do not expose this backend and report `cpu-fallback` instead |
 | `cpu-fallback` | portable build or explicit CPU selection | Aho-Corasick prefix + Rust `regex` extraction |
 
@@ -195,11 +196,16 @@ Banner **patterns** is the compiled pattern count shown in the startup banner ab
 ## Install
 
 ```bash
-# Linux / macOS
-curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
+# Linux / macOS, pinned and authenticated before execution
+TAG=v0.5.41
+BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
+PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+curl -fSLO "$BASE/install.sh"
+curl -fSLO "$BASE/install.sh.minisig"
+minisign -Vm install.sh -P "$PUB"
+KEYHOG_VERSION="$TAG" sh install.sh
 
-# Windows (PowerShell)
-iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 -useb | iex
+# Windows uses the same signed, versioned flow. See the install guide.
 
 # From source - Linux (install libhyperscan-dev + pkg-config first)
 git clone https://github.com/santhreal/keyhog.git
@@ -214,8 +220,10 @@ cargo install keyhog
 cargo install keyhog --no-default-features --features portable
 ```
 
-> `install.sh` / `install.ps1` (signed prebuilt) is the recommended path: it
-> selects and verifies the platform asset before installation. Download and
+> The signed versioned installer is the recommended path. It authenticates the
+> installer before execution, then selects and verifies the platform asset. See
+> the [install guide](https://santhreal.github.io/keyhog/install.html) for
+> PowerShell and checksum commands. Download and
 > build time depend on the network, host, and cache. For a source build, note that the **default**
 > features link Hyperscan/Vectorscan. Linux uses `libhyperscan-dev`; macOS
 > source builds use Homebrew `vectorscan`. On Windows or a host without either
@@ -259,12 +267,9 @@ sh install.sh --uninstall   # remove the binary + installer-owned shell wiring
 ```
 
 For an interactive install (post-install wizard for PATH, shell completions,
-and a git pre-commit hook), download the script first instead of piping into
-`sh`:
+and a git pre-commit hook), reuse the authenticated versioned installer:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh \
-    -o keyhog-install.sh
-sh keyhog-install.sh
+KEYHOG_VERSION="$TAG" sh install.sh
 ```
 
 Daemon mode is Unix only. Everything

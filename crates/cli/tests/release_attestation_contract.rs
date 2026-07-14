@@ -71,3 +71,52 @@ fn every_matrix_payload_is_attested_before_private_staging() {
         );
     }
 }
+
+#[test]
+fn versioned_installers_are_attested_signed_and_manifest_bound() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let workflow = fs::read_to_string(root.join(".github/workflows/release.yml"))
+        .expect("read release workflow");
+    let installers = workflow
+        .split("\n  installers:")
+        .nth(1)
+        .and_then(|tail| tail.split("\n  sign:").next())
+        .expect("installer staging job");
+    for contract in [
+        "ref: refs/tags/${{ steps.tag.outputs.tag }}",
+        "KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}",
+        "- name: Attest installer provenance",
+        "install.sh.sha256",
+        "install.ps1.sha256",
+        "name: unsigned-installers",
+    ] {
+        assert!(
+            installers.contains(contract),
+            "versioned installer staging is missing {contract}"
+        );
+    }
+
+    let publish = workflow
+        .split("- name: Sign, validate, and publish the exact release manifest")
+        .nth(1)
+        .and_then(|tail| tail.split("\n  docker:").next())
+        .expect("signed publish step");
+    for asset in [
+        "install.sh install.sh.sha256",
+        "install.ps1 install.ps1.sha256",
+        "payloads=(install.sh install.ps1)",
+    ] {
+        assert!(
+            publish.contains(asset),
+            "signed release manifest is missing {asset}"
+        );
+    }
+
+    let docs = fs::read_to_string(root.join("docs/src/install.md")).expect("read install docs");
+    assert!(
+        docs.contains("releases/download/$TAG")
+            && docs.contains("minisign -Vm install.sh")
+            && docs.contains("KEYHOG_VERSION=\"$TAG\" sh install.sh"),
+        "the recommended POSIX bootstrap must authenticate a pinned release installer before execution"
+    );
+}

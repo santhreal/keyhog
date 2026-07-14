@@ -3,10 +3,18 @@
 The quickest paths first. Each installs the canonical release artifact for
 your supported host; platform feature differences are explicit below.
 
-## One-liner: Linux / macOS
+## Pinned verified install: Linux / macOS
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
+TAG=v0.5.41
+BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
+KEYHOG_MINISIGN_PUBLIC_KEY='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+curl -fSLO "$BASE/install.sh"
+curl -fSLO "$BASE/install.sh.minisig"
+curl -fSLO "$BASE/install.sh.sha256"
+minisign -Vm install.sh -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+sha256sum -c install.sh.sha256
+KEYHOG_VERSION="$TAG" sh install.sh
 ```
 
 Drops a binary in `~/.local/bin/keyhog`. The installer detects the platform and
@@ -18,15 +26,18 @@ persisted autoroute evidence, not installer variants, decide execution. macOS an
 Windows assets use the portable no-system-library build without Hyperscan or GPU
 drivers.
 
+This path authenticates the versioned installer before execution. Changing the
+repository's `main` branch cannot change a pinned install. On macOS, replace the
+checksum command with `shasum -a 256 -c install.sh.sha256`.
+
 ## Interactive mode (recommended for first install)
 
-`curl ... | sh` is fast but skips the wizard because stdin is a pipe.
-For shell completions and optional hook setup:
+The verified command above keeps stdin attached to the terminal, so it can show
+the wizard for shell completions and optional hook setup. To repeat the
+interactive run after verification:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh \
-    -o keyhog-install.sh
-sh keyhog-install.sh
+KEYHOG_VERSION="$TAG" sh install.sh
 ```
 
 The interactive installer shows you:
@@ -48,12 +59,22 @@ defaults without prompting. There is no shipped Claude Code / Cursor agent-hook
 prompt or `keyhog hook install --agent <name>` flag; installer variants are not
 part of the current release contract.
 
-## One-liner: Windows
+## Pinned verified install: Windows
 
 PowerShell 5+ (ships with Windows 10/11):
 
 ```powershell
-iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 -useb | iex
+$Tag = 'v0.5.41'
+$Base = "https://github.com/santhreal/keyhog/releases/download/$Tag"
+$PublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+iwr "$Base/install.ps1" -OutFile keyhog-install.ps1
+iwr "$Base/install.ps1.minisig" -OutFile keyhog-install.ps1.minisig
+iwr "$Base/install.ps1.sha256" -OutFile keyhog-install.ps1.sha256
+minisign -Vm keyhog-install.ps1 -x keyhog-install.ps1.minisig -P $PublicKey
+$Expected = (Get-Content keyhog-install.ps1.sha256).Split()[0].ToLowerInvariant()
+$Actual = (Get-FileHash keyhog-install.ps1 -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($Actual -ne $Expected) { throw 'installer checksum mismatch' }
+& .\keyhog-install.ps1 -Version $Tag
 ```
 
 Drops the binary in `%LOCALAPPDATA%\keyhog\bin\keyhog.exe`. Detects
@@ -61,7 +82,7 @@ your GPU for diagnostics; the Windows installer ships the portable
 no-system-library build, with no Hyperscan, WGPU, or CUDA asset in the
 current release.
 
-For the interactive flow:
+For an unpinned development checkout of the installer:
 
 ```powershell
 iwr https://raw.githubusercontent.com/santhreal/keyhog/main/install.ps1 `
@@ -116,9 +137,11 @@ working binary behind.
 
 Release publication uses the same exact manifest: each platform binary, its
 SHA-256 file, the GPU-literal sidecar and checksum, plus detached minisign
-signatures for both payloads. Matrix builds stage those files as private CI
-artifacts. New releases and published-release reruns remain private while the
-asset set is mutated; only the exact signed manifest is made visible.
+signatures for both payloads. The versioned POSIX and PowerShell installers,
+their checksums, signatures, and GitHub provenance attestations are part of that
+manifest too. Matrix builds stage those files as private CI artifacts. New
+releases and published-release reruns remain private while the asset set is
+mutated; only the exact signed manifest is made visible.
 
 `keyhog update` and `keyhog repair` use strict semantic-version precedence.
 Their implicit latest-release lookup ignores drafts and prereleases and skips
@@ -174,7 +197,7 @@ it is a diagnostic or benchmark override, not a repair for missing evidence.
 | `keyhog scan --no-gpu`   | Disable GPU initialization for this resolved scan configuration. Automatic routing still requires persisted calibration for that configuration; use an explicit CPU/SIMD backend only for diagnostics. |
 | `keyhog scan --require-gpu` | Hard-fail (`exit 12`) when GPU is unavailable before scanning or a selected GPU dispatch fails at runtime. This is a diagnostic/CI assertion, separate from autoroute. Autoroute itself is not a fallback hierarchy: it selects the fastest measured-correct backend from all eligible candidates. |
 | `.keyhog.toml [system].gpu = "off"` | Persist the CPU/SIMD-only policy for a repository. Use `"required"` for self-hosted GPU runners where a GPU regression must fail closed.                                                                                         |
-| `keyhog scan --backend gpu\|simd\|cpu` | Force a specific live scan engine regardless of autoroute. Diagnostic and benchmark override only; it does not prove autoroute correctness. A selected GPU route that cannot complete dispatch exits `12` without CPU/SIMD substitution. |
+| `keyhog scan --backend gpu-cuda\|gpu-wgpu\|simd\|cpu` | Force a specific live scan engine regardless of autoroute. Diagnostic and benchmark override only; it does not prove autoroute correctness. A selected GPU driver that cannot complete dispatch exits `12` without substituting another driver or CPU/SIMD. |
 
 The GitHub Action calibrates the actual runner and admits only usable physical
 accelerators. On self-hosted GPU runners, `--require-gpu` or
