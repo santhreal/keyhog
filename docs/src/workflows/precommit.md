@@ -25,6 +25,8 @@ If `keyhog` is missing from `PATH`, the hook blocks the commit because the
 security scan did not run. Install KeyHog, fix `PATH`, or remove
 `.git/hooks/pre-commit` if the repository should not be protected.
 
+### `pre-commit` framework
+
 If your repo uses [pre-commit](https://pre-commit.com/) instead of
 raw git hooks, add the following to `.pre-commit-config.yaml`:
 

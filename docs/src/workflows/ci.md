@@ -46,6 +46,10 @@ to **Security -> Code scanning**, attaches the report as a workflow
 artifact, and prints a job summary with the finding count, raw exit code,
 and scan duration.
 
+Release tags and explicit `version:` inputs require a matching prebuilt binary
+and checksum. A missing or unverifiable asset fails closed. Branch and commit
+Action refs may build the checked-out source instead.
+
 When `upload-sarif: 'true'`, SARIF upload is fail-closed on trusted pushes
 and same-repo pull requests. Fork pull requests often lack
 `security-events: write`; in that case the upload step is advisory and the
@@ -80,6 +84,46 @@ git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
       - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
         with:
           baseline: .keyhog-baseline.json
+```
+
+### Manual installation
+
+Use the verified installer when the workflow must own installation explicitly:
+
+```yaml
+      - uses: actions/checkout@v4
+      - name: Install KeyHog
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Scan working tree
+        id: keyhog
+        continue-on-error: true
+        run: keyhog scan . --severity high --format sarif --output keyhog.sarif
+      - name: Upload SARIF
+        if: always() && hashFiles('keyhog.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: keyhog.sarif
+      - name: Enforce scan result
+        if: steps.keyhog.outcome == 'failure'
+        run: exit 1
+```
+
+Limiting `continue-on-error` to the scan step lets the report upload before the
+last step restores the scan failure. Operational errors remain failures.
+
+### Scan only changed files in a PR (faster)
+
+Fetch the pull request base before using `--git-diff`:
+
+```yaml
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan pull request diff
+        if: github.event_name == 'pull_request'
+        run: keyhog scan --git-diff "origin/${{ github.base_ref }}" --severity high
 ```
 
 ## Exclusions and adoption policy
@@ -174,6 +218,50 @@ pipeline:
 Same pattern works in Jenkins, Buildkite, Woodpecker, Concourse, or
 any CI that can run a shell. The two lines are the install command
 and the scan command.
+
+## Buildkite
+
+Use a dedicated artifact path so the report survives a finding exit:
+
+```yaml
+# .buildkite/pipeline.yml
+steps:
+  - label: ":mag: keyhog secret scan"
+    command: |
+      curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
+      export PATH="$HOME/.local/bin:$PATH"
+      keyhog scan . --severity high --format json --output keyhog.json
+    artifact_paths:
+      - keyhog.json
+```
+
+## Jenkins
+
+Archive the report in `post` so it remains available when the scan blocks the
+stage:
+
+```groovy
+// Jenkinsfile
+pipeline {
+    agent any
+    stages {
+        stage('keyhog') {
+            steps {
+                sh '''
+                    curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
+                    export PATH="$HOME/.local/bin:$PATH"
+                    keyhog scan . --severity high --format json --output keyhog.json
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'keyhog.json', allowEmptyArchive: true
+                }
+            }
+        }
+    }
+}
+```
 
 ## Pinning a version
 

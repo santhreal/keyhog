@@ -22,7 +22,7 @@
 
 - [Pre-commit hook](./workflows/precommit.md)
 - [CI integration](./workflows/ci.md)
-- [Integration recipes](./workflows/integrations.md)
+- [Other integrations](./workflows/integrations.md)
 - [Daemon and warm scans](./workflows/daemon.md)
 
 # Guides

@@ -1,12 +1,16 @@
-# Integration recipes
+# Other integrations
 
-Task-oriented recipes for running KeyHog locally, in hooks, and in CI. Install
-the release with the [verified installer](../install.md), which also records the
-host's autoroute evidence. A source-built multi-backend binary must run
-`keyhog calibrate-autoroute` before its first automatic scan; a portable
-single-backend build has no routing choice. An explicit `--backend cpu` in the
-lightweight local-hook recipes below deliberately avoids machine-local routing
-state.
+Recipes for hook managers, containers, Rust embedding, and notifications. The
+dedicated [pre-commit](./precommit.md) and [CI](./ci.md) guides own those
+workflows. Their headings remain below as stable entry points, not duplicate
+specifications.
+
+Install the release with the [verified installer](../install.md), which records
+the host's autoroute evidence. A source-built multi-backend binary used outside
+the GitHub Action must run `keyhog calibrate-autoroute` before its first
+automatic scan. A portable single-backend build has no routing choice. The
+lightweight local-hook recipes use an explicit `--backend cpu` so they do not
+depend on machine-local routing state.
 
 For the full contract behind a command, use the focused reference instead of
 treating a copied snippet as a second specification:
@@ -29,7 +33,7 @@ If you only need one section, jump to:
 - [GitLab CI](#gitlab-ci)
 - [CircleCI](#circleci)
 - [Drone CI](#drone-ci)
-- [BuildKite](#buildkite)
+- [Buildkite](#buildkite)
 - [Docker / Docker Compose](#docker--docker-compose)
 - [Jenkins](#jenkins)
 - [As a library (Rust)](#as-a-library-rust)
@@ -41,27 +45,8 @@ If you only need one section, jump to:
 
 ## Pre-commit hook (Git)
 
-The maintained path is one command:
-
-```bash
-keyhog hook install
-```
-
-It installs a KeyHog-owned `.git/hooks/pre-commit` and refuses to overwrite an
-unrelated hook unless you explicitly pass `--force`. See the
-[pre-commit guide](./precommit.md) for ownership, uninstall, and staged-content
-semantics.
-
-If another hook manager owns the file, invoke the same canonical staged scan:
-
-```bash
-keyhog scan --fast --git-staged --backend cpu
-```
-
-`--backend cpu` makes this small local check independent of autoroute state. The
-hook scans the Git index, not unstaged working-tree changes. Review and remove a
-real secret; suppress an accepted result through `.keyhogignore` or
-`.keyhogignore.toml`, never an invented `.keyhog.toml [suppress]` table.
+Use the canonical [pre-commit guide](./precommit.md) for installation, hook
+ownership, staged-content semantics, bypass auditing, performance, and removal.
 
 ## Pre-push hook (Git)
 
@@ -85,20 +70,9 @@ errors cannot be mislabeled as findings.
 
 ## `pre-commit` framework
 
-For projects that use the [pre-commit](https://pre-commit.com) Python
-tool, add this to `.pre-commit-config.yaml`:
-
-```yaml
-repos:
-  - repo: https://github.com/santhreal/keyhog
-    rev: v0.5.41
-    hooks:
-      - id: keyhog
-```
-
-Then run `pre-commit install` once. KeyHog's repository-owned hook definition
-supplies the canonical staged command; do not restate `entry`, filename, or
-backend behavior in the consuming repository.
+The [`pre-commit` framework recipe](./precommit.md#pre-commit-framework) lives
+with the raw Git hook workflow so both installation paths share one behavioral
+contract.
 
 ## Husky / lefthook
 
@@ -124,186 +98,39 @@ pre-commit:
 
 ## GitHub Actions
 
+Use the canonical [GitHub Actions workflow](./ci.md#github-actions) for the
+composite Action, fail-closed SARIF handling, baseline adoption, history depth,
+and changed-file scans.
+
 ### Recommended: composite action (3 lines + a baseline)
 
-The most concise integration. Drop this file at
-`.github/workflows/keyhog.yml` and that is the whole PR:
-
-```yaml
-name: keyhog
-on: [push, pull_request]
-permissions: { contents: read, security-events: write }
-jobs:
-  scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
-        with:
-          path: .
-          severity: high
-          format: sarif
-          baseline: .keyhog-baseline.json   # optional, see below
-```
-
-The Action downloads the platform release asset for release refs, verifies its
-checksum, visibly calibrates every eligible backend when `backend` is omitted,
-and uploads SARIF. Branch and SHA refs build the checked-out Action source.
-Runtime and download size vary by release, host, cache warmth, and repository;
-the job summary records the measured duration.
-
-Release tags and explicit `version:` inputs require the matching published
-asset and checksum and fail closed if either is unavailable. Only branch/SHA
-Action refs may build from source, so a tagged workflow cannot silently execute
-different code from the requested release.
-
-Use `fail-on-findings: 'false'` when you want ordinary findings to be
-advisory during rollout. If you also set `verify: 'true'`, any
-verified-live credential still fails the job with exit code `10` after
-the SARIF report and workflow artifact are uploaded.
-
-**Adopt without breaking an existing repo.** If your tree already
-contains findings keyhog would flag, generate a baseline once, commit
-it, and the action will only fail on NEW secrets going forward:
-
-```bash
-keyhog scan --create-baseline .keyhog-baseline.json
-git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
-```
+The maintained example is in the [GitHub Actions workflow](./ci.md#github-actions).
 
 ### Manual installation
 
-If you want the install step explicit, use the verified installer:
-
-```yaml
-name: keyhog
-on:
-  push:
-    branches: [main]
-  pull_request:
-permissions:
-  contents: read
-  security-events: write
-jobs:
-  scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0          # full history for --git-diff / --git-history
-      - name: Install keyhog
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Scan working tree
-        id: keyhog
-        continue-on-error: true
-        run: keyhog scan . --severity high --format sarif -o keyhog.sarif
-      - name: Upload SARIF
-        if: always() && hashFiles('keyhog.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: keyhog.sarif
-      - name: Enforce scan result
-        if: steps.keyhog.outcome == 'failure'
-        run: exit 1
-```
-
-`continue-on-error` applies only to the scan step so SARIF can upload. The final
-step restores the failing job outcome for findings and operational errors; it
-does not convert an incomplete scan into success.
+See [manual installation](./ci.md#manual-installation).
 
 ### Scan only changed files in a PR (faster)
 
-```yaml
-- name: Scan PR diff
-  if: github.event_name == 'pull_request'
-  run: keyhog scan --git-diff origin/${{ github.base_ref }} --severity high
-```
+See the [pull request diff workflow](./ci.md#scan-only-changed-files-in-a-pr-faster).
 
 ## GitLab CI
 
-`.gitlab-ci.yml`:
-
-```yaml
-keyhog:
-  stage: test
-  image: ubuntu:24.04
-  before_script:
-    - apt-get update -qq && apt-get install -y -qq curl ca-certificates
-    - curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
-    - export PATH="$HOME/.local/bin:$PATH"
-  script:
-    - keyhog scan . --severity high --format gitlab-sast -o keyhog.json
-  artifacts:
-    when: always
-    paths:
-      - keyhog.json
-    reports:
-      sast: keyhog.json
-  allow_failure: false
-```
+Use the canonical [GitLab CI workflow](./ci.md#gitlab-ci). It owns installation,
+GitLab SAST output, artifact retention, and exit semantics.
 
 ## CircleCI
 
-`.circleci/config.yml`:
-
-```yaml
-version: 2.1
-jobs:
-  keyhog:
-    docker:
-      - image: cimg/base:stable
-    steps:
-      - checkout
-      - run:
-          name: Install keyhog
-          command: |
-            curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
-            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$BASH_ENV"
-      - run:
-          name: Scan working tree
-          command: keyhog scan . --severity high --format json -o keyhog.json
-      - store_artifacts:
-          path: keyhog.json
-          when: always
-workflows:
-  ci:
-    jobs:
-      - keyhog
-```
+Use the canonical [CircleCI workflow](./ci.md#circleci). It owns shell setup,
+scan status, and artifact handling.
 
 ## Drone CI
 
-`.drone.yml`:
+Use the canonical [Drone and generic-shell workflow](./ci.md#drone-ci--generic-shell).
 
-```yaml
-kind: pipeline
-name: keyhog
-steps:
-  - name: scan
-    image: ubuntu:24.04
-    commands:
-      - apt-get update -qq && apt-get install -y -qq curl ca-certificates
-      - curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
-      - export PATH="$HOME/.local/bin:$PATH"
-      - keyhog scan . --severity high --format json -o keyhog.json
-```
+## Buildkite
 
-## BuildKite
-
-`.buildkite/pipeline.yml`:
-
-```yaml
-steps:
-  - label: ":mag: keyhog secret scan"
-    command: |
-      curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
-      export PATH="$HOME/.local/bin:$PATH"
-      keyhog scan . --severity high --format json -o keyhog.json
-    artifact_paths:
-      - "keyhog.json"
-```
+Use the canonical [Buildkite workflow](./ci.md#buildkite).
 
 ## Docker / Docker Compose
 
@@ -338,29 +165,7 @@ keyhog scan --docker-image my-image:latest
 
 ## Jenkins
 
-Declarative pipeline (`Jenkinsfile`):
-
-```groovy
-pipeline {
-    agent any
-    stages {
-        stage('keyhog') {
-            steps {
-                sh '''
-                    curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
-                    export PATH="$HOME/.local/bin:$PATH"
-                    keyhog scan . --severity high --format json -o keyhog.json
-                '''
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'keyhog.json', allowEmptyArchive: true
-                }
-            }
-        }
-    }
-}
-```
+Use the canonical [Jenkins workflow](./ci.md#jenkins).
 
 ## As a library (Rust)
 
