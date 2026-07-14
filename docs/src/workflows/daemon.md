@@ -37,7 +37,7 @@ The ready line follows detector loading, scanner compilation, backend
 validation and warmup, socket binding, and socket permission checks. Startup
 fails instead of announcing readiness when any required step fails. An
 autorouted daemon requires valid persisted warm-route evidence. A forced
-`--backend gpu|simd|cpu` is a diagnostic startup choice and must be usable as
+`--backend gpu-cuda|gpu-wgpu|simd|cpu` is a diagnostic startup choice and must be usable as
 requested. Backend selection never falls through silently. See
 [Autoroute calibration](../reference/autoroute-calibration.md).
 

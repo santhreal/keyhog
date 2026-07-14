@@ -52,7 +52,7 @@ fn gpu_batch_preserves_cross_chunk_reassembly() {
     ];
 
     let cpu_findings = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback);
-    let gpu_findings = scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu);
+    let gpu_findings = scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu);
 
     // V7-PERF-033: Substrate-neutral match reassembly check.
     // Match counts can vary slightly between CPU/GPU pre-filters due to different

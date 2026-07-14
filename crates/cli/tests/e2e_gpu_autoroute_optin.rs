@@ -4,7 +4,7 @@
 //! route beats Hyperscan at 8 MiB. This test does not infer that winner from a
 //! threshold: auto-routing consumes persisted local calibration evidence.
 //! Canonical maintenance calibration enables every eligible GPU peer, while
-//! low-level direct calibration uses `--autoroute-gpu`. `--backend gpu` remains
+//! low-level direct calibration uses `--autoroute-gpu`. Exact GPU backends remain
 //! an explicit parity/research route.
 //!
 //! The calibration owner is pinned in `crates/cli/tests/unit/orchestrator/`.
@@ -18,7 +18,7 @@
 //!     "autoroute calibration required" rather than guessing a backend. If a
 //!     valid cache is present, normal scans may select GPU only when calibration
 //!     picked it; they do not repeat the calibration admission flag.
-//!   * `--backend gpu` reports it as FORCED (`forced via …`), not auto-selected
+//!   * an exact GPU backend reports it as FORCED (`forced via …`), not auto-selected
 //!     when a usable adapter exists; on a host with no usable adapter it fails
 //!     closed instead of silently substituting SIMD.
 //!
@@ -88,10 +88,10 @@ fn without_persisted_evidence_a_large_auto_scan_fails_closed() {
 #[test]
 fn forcing_backend_gpu_reports_a_forced_line_not_an_auto_selection() {
     let (_dir, path) = large_clean_file();
-    // `--backend gpu` forces the device path. A GPU host completes and reports
+    // `--backend gpu-wgpu` forces one device path. A GPU host completes and reports
     // the forced backend; a no-GPU host must fail closed rather than silently
     // substituting SIMD.
-    let (code, stderr) = scan(&path, &["--backend", "gpu"]);
+    let (code, stderr) = scan(&path, &["--backend", "gpu-wgpu"]);
 
     if code == Some(0) {
         assert!(
@@ -100,7 +100,7 @@ fn forcing_backend_gpu_reports_a_forced_line_not_an_auto_selection() {
         );
         assert!(
             stderr.contains("forced via --backend"),
-            "an explicit --backend gpu must be reported as forced, not as an \
+            "an explicit --backend gpu-wgpu must be reported as forced, not as an \
              auto-routing decision; stderr={stderr}"
         );
     } else {
@@ -109,7 +109,7 @@ fn forcing_backend_gpu_reports_a_forced_line_not_an_auto_selection() {
                 && (stderr.contains("selected but GPU stack unavailable")
                     || stderr.contains("Selected GPU unavailable")
                     || stderr.contains("--require-gpu")),
-            "--backend gpu without a usable GPU must fail closed with a visible \
+            "--backend gpu-wgpu without a usable GPU must fail closed with a visible \
              diagnostic; code={code:?} stderr={stderr}"
         );
     }

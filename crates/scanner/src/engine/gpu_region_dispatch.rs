@@ -55,8 +55,9 @@ impl CompiledScanner {
     pub(crate) fn scan_coalesced_gpu_region_presence(
         &self,
         chunks: &[keyhog_core::Chunk],
+        backend: crate::hw_probe::ScanBackend,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        match self.try_scan_coalesced_gpu_region_presence(chunks) {
+        match self.try_scan_coalesced_gpu_region_presence(chunks, backend) {
             Ok(results) => results,
             Err(error) => super::gpu_forced::fail_selected_gpu_dispatch_error(self, error),
         }
@@ -70,6 +71,7 @@ impl CompiledScanner {
     pub(crate) fn try_scan_coalesced_gpu_region_presence(
         &self,
         chunks: &[keyhog_core::Chunk],
+        route: crate::hw_probe::ScanBackend,
     ) -> std::result::Result<
         Vec<Vec<keyhog_core::RawMatch>>,
         super::gpu_forced::SelectedGpuDispatchError,
@@ -98,10 +100,17 @@ impl CompiledScanner {
                 );
             };
             let matcher_s = t_matcher.elapsed();
-            let Some(backend) = self.gpu_backend.as_ref() else {
-                return dispatch_failure(
-                    "no gpu backend acquired for coalesced region dispatch".to_string(),
-                );
+            let Some(backend) = self.gpu_backends.get(route) else {
+                return dispatch_failure(format!(
+                    "{} was selected but its driver was not acquired",
+                    route.label()
+                ));
+            };
+            let Some(resident_slot) = self.gpu_resident_presence_slot(route) else {
+                return dispatch_failure(format!(
+                    "{} has no scanner-owned resident pipeline slot",
+                    route.label()
+                ));
             };
 
             let words = self.ac_map.len().div_ceil(64).max(1);
@@ -123,7 +132,7 @@ impl CompiledScanner {
                     let t_dis = std::time::Instant::now();
                     let result =
                         super::gpu_resident_presence::scan_gpu_literal_presence_by_region_resident(
-                            &self.gpu_resident_presence,
+                            resident_slot,
                             matcher,
                             backend,
                             haystack,
@@ -391,7 +400,8 @@ impl CompiledScanner {
                     .map_or(0usize, |rows| rows.iter().map(Vec::len).sum());
                 let generic_keyword_gpu_complete = generic_keyword_positions.is_some();
                 eprintln!(
-                    "perf-trace gpu-region-presence: chunks={} source_bytes={} coalesced_bytes={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_always_anchor_chunks={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} generic_keyword_gpu_complete={} generic_keyword_candidate_rows={} generic_keyword_candidates={} full_recall_floor={}",
+                    "perf-trace {}: chunks={} source_bytes={} coalesced_bytes={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_always_anchor_chunks={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} generic_keyword_gpu_complete={} generic_keyword_candidate_rows={} generic_keyword_candidates={} full_recall_floor={}",
+                    route.label(),
                     chunks.len(),
                     region_source_bytes,
                     region_coalesced_bytes,

@@ -34,7 +34,7 @@ fn software_gpu_rejected() {
     hw.gpu_available = true;
     hw.gpu_is_software = true;
     hw.gpu_name = Some("llvmpipe (LLVM 15.0.7, 256 bits)".to_string());
-    assert_ne!(select_backend(&hw, 1000, 1000), ScanBackend::Gpu);
+    assert_ne!(select_backend(&hw, 1000, 1000), ScanBackend::GpuWgpu);
 }
 
 #[test]

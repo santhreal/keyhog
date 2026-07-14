@@ -145,12 +145,12 @@ fn custom_owner_bpe_policy_reaches_the_full_scan() {
     #[cfg(feature = "gpu")]
     {
         assert!(
-            probe.warm_backend(ScanBackend::Gpu),
+            probe.warm_backend(ScanBackend::GpuWgpu),
             "GPU-enabled parity runs require a usable accelerator"
         );
         assert_eq!(
             disabled,
-            full_scan_findings(false, ScanBackend::Gpu),
+            full_scan_findings(false, ScanBackend::GpuWgpu),
             "CPU and GPU must preserve the exact detector, credential, and offset"
         );
     }

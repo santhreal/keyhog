@@ -18,5 +18,8 @@ fn select_backend_rejects_software_gpu() {
         io_uring_available: false,
         hyperscan_available: true,
     };
-    assert_ne!(select_backend(&caps, 1_000_000_000, 5000), ScanBackend::Gpu);
+    assert_ne!(
+        select_backend(&caps, 1_000_000_000, 5000),
+        ScanBackend::GpuWgpu
+    );
 }

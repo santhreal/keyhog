@@ -32,10 +32,14 @@ fn every_advertised_value_parses_except_the_auto_sentinel() {
 
 #[test]
 fn canonical_backend_strings_map_exactly() {
-    assert_eq!(parse_backend_str("gpu"), Some(ScanBackend::Gpu));
+    assert_eq!(parse_backend_str("gpu"), None);
     assert_eq!(
-        parse_backend_str("gpu-region-presence"),
-        Some(ScanBackend::Gpu)
+        parse_backend_str("gpu-cuda-region-presence"),
+        Some(ScanBackend::GpuCuda)
+    );
+    assert_eq!(
+        parse_backend_str("gpu-wgpu-region-presence"),
+        Some(ScanBackend::GpuWgpu)
     );
     assert_eq!(parse_backend_str("simd"), Some(ScanBackend::SimdCpu));
     assert_eq!(parse_backend_str("simd-regex"), Some(ScanBackend::SimdCpu));
@@ -49,7 +53,7 @@ fn canonical_backend_strings_map_exactly() {
 #[test]
 fn parser_trims_lowercases_and_rejects_unknown() {
     assert_eq!(parse_backend_str("  SIMD  "), Some(ScanBackend::SimdCpu));
-    assert_eq!(parse_backend_str("Gpu"), Some(ScanBackend::Gpu));
+    assert_eq!(parse_backend_str("Gpu-Wgpu"), Some(ScanBackend::GpuWgpu));
     assert_eq!(parse_backend_str(""), None);
     assert_eq!(parse_backend_str("gibberish"), None);
 }

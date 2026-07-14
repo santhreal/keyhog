@@ -93,9 +93,8 @@ pub fn gpu_required_by_policy() -> bool {
 /// flag exists for; it does not depend on `select_backend` having chosen GPU
 /// first.
 ///
-/// Returns `Err(diagnostic)` when a GPU is required but the host has no
-/// non-software adapter, the MoE GPU self-test, or the production region-presence
-/// scan-path self-test fails. The caller (CLI run loop) maps that to the
+/// Returns `Err(diagnostic)` when no acquired CUDA or WGPU peer passes the
+/// production region-presence parity self-test. The caller maps that to the
 /// documented exit code 12. Returning an `Err` here - rather than calling
 /// `std::process::exit` from the library - keeps embedders alive (finding
 /// M12).
@@ -104,37 +103,9 @@ pub fn require_gpu_preflight() -> Result<(), String> {
         return Ok(());
     }
 
-    let caps = crate::hw_probe::probe_hardware();
-    if !caps.gpu_available || caps.gpu_is_software {
-        let detail = match (&caps.gpu_name, caps.gpu_is_software) {
-            (Some(name), true) => {
-                format!("only a software GPU adapter is present ({name})")
-            }
-            (Some(name), false) => format!("adapter present but unusable ({name})"),
-            (None, _) => "no GPU adapter detected".to_string(),
-        };
-        return Err(format!(
-            "--require-gpu requested but {detail}; refusing to run on CPU. \
-             Install or enable a non-software GPU adapter + driver, or run \
-             without --require-gpu to allow the CPU/SIMD path."
-        ));
-    }
-
-    // A non-software adapter is reported. Prove it can run both GPU paths
-    // that matter before declaring the requirement met: the MoE scoring
-    // shader and the production region-presence path. A present-but-broken GPU
-    // (driver mismatch, shader lowering failure, dispatch reject) is exactly
-    // the regression this flag is meant to catch on self-hosted runners.
-    if let Err(reason) = super::gpu_self_test() {
-        return Err(format!(
-            "--require-gpu requested but the GPU MoE self-test failed ({reason}); \
-             refusing to run on CPU. Fix the GPU stack or run without \
-             --require-gpu."
-        ));
-    }
     if let Err(reason) = super::gpu_region_presence_self_test() {
         return Err(format!(
-            "--require-gpu requested but the production GPU region-presence self-test failed ({reason}); \
+            "--require-gpu requested but no complete production GPU peer set passed region-presence parity ({reason}); \
              refusing to run on CPU. Fix the GPU stack or run without \
              --require-gpu."
         ));

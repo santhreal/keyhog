@@ -99,34 +99,17 @@ pub(super) fn build_hot_pattern_slots(
     Ok(slots)
 }
 
-/// One-shot guard so the CUDA-acquisition-failed warning fires
-/// exactly once per process, not on every recompile. The CUDA factory
-/// is called inside `compile()` and a binary that re-compiles a
-/// scanner per-job (daemon mode, watch mode) would otherwise spam.
+/// One-shot guard so the CUDA acquisition warning fires once per process.
 #[cfg(all(target_os = "linux", feature = "gpu"))]
 static CUDA_FALLBACK_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
-/// Surface a CUDA-backend acquisition failure when the host looks
-/// like it should have a working CUDA stack. We don't want to warn
-/// on plain non-NVIDIA Linux (the wgpu fall-through is the right
-/// path); we DO want to warn when the user is on an NVIDIA box with
-/// libcuda.so or /proc/driver/nvidia present, because in that case
-/// they paid for the CUDA stack and we just dropped them onto the
-/// 5-10x slower wgpu path silently. `--require-gpu` turns the warning into a
-/// hard exit, matching the contract used by the MoE init and the scan dispatch
-/// paths.
+/// Surface a CUDA peer acquisition failure on a host that advertises NVIDIA
+/// userland. The failure is also retained in scanner runtime status. WGPU is a
+/// separate peer candidate, not a substitute selected by this function.
 #[cfg(all(target_os = "linux", feature = "gpu"))]
 pub(super) fn surface_cuda_acquisition_failure(error: &dyn std::fmt::Display) {
     let on_nvidia_host = nvidia_userland_present();
-    let require_gpu = crate::gpu::gpu_required_by_policy();
     let no_gpu = crate::gpu::gpu_disabled_by_policy();
-
-    if require_gpu && on_nvidia_host {
-        crate::process_exit::require_gpu_unmet(format!(
-            "--require-gpu requested but CUDA backend acquisition failed on \
-an NVIDIA host: {error}. Refusing to fall back to WGPU."
-        ));
-    }
 
     if no_gpu {
         return;
@@ -135,13 +118,12 @@ an NVIDIA host: {error}. Refusing to fall back to WGPU."
     if on_nvidia_host && CUDA_FALLBACK_WARNED.set(()).is_ok() {
         eprintln!(
             "keyhog: CUDA backend unavailable on this NVIDIA host ({error}); \
-falling back to WGPU (typically 5-10x slower than CUDA on the same hardware). \
-This is usually a libcuda.so version mismatch or a driver upgrade pending a \
-reboot. Use --no-gpu to silence this warning, or --require-gpu \
-to hard-fail next time."
+the CUDA peer is ineligible until its driver/runtime is repaired. WGPU remains \
+a separate candidate and will only run when explicitly selected or proven by \
+autoroute calibration."
         );
     }
-    tracing::warn!("CUDA backend unavailable, falling back to wgpu: {error}");
+    tracing::warn!("CUDA peer backend acquisition failed: {error}");
 }
 
 /// Check the common libcuda.so locations + /proc/driver/nvidia to

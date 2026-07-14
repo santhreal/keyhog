@@ -25,7 +25,7 @@ pub(super) struct AutorouteHostProfile {
 impl AutorouteHostProfile {
     pub(super) fn from_caps(
         caps: &HardwareCaps,
-        gpu_runtime_backend: Option<&'static str>,
+        gpu_runtime_backend: Option<&str>,
         gpu_supported_by_build: bool,
     ) -> Self {
         // A build compiled WITHOUT GPU support never routes to the GPU, so a
@@ -35,7 +35,7 @@ impl AutorouteHostProfile {
         // silent degrade (Law 10), the build feature set (`push_feature!("gpu")`)
         // already stamps the cache identity, so a GPU-capable build's cache can
         // never collide with this one; and a GPU-CAPABLE build whose runtime
-        // probe fails keeps `hardware_gpu_present` true below and still fails
+        // probe fails keeps a device identity below and still fails
         // closed in `require_exact_identity`. Without this, a portable/no-gpu
         // binary can never calibrate on a workstation that HAS a GPU: the hw
         // probe sees the card (`caps.gpu_available`) but no wgpu runtime is
@@ -44,16 +44,13 @@ impl AutorouteHostProfile {
         // `require_exact_identity` rejects the failed probe. Collapsing it to
         // `None` would be indistinguishable from genuinely absent hardware and
         // could trust calibration across an unknown device/driver change.
+        let acquired_peer_present = gpu_runtime_backend.is_some() && !caps.gpu_is_software;
         let gpu_device_identity =
-            (gpu_supported_by_build && caps.gpu_available).then(|| match &caps.gpu_name {
-                Some(name) => name.clone(),
-                None => String::new(),
+            (gpu_supported_by_build && (caps.gpu_available || acquired_peer_present)).then(|| {
+                caps.gpu_name
+                    .clone()
+                    .unwrap_or_else(|| gpu_runtime_backend.unwrap_or_default().to_string())
             });
-        let hardware_gpu_present = gpu_device_identity
-            .as_deref()
-            .map(str::trim)
-            .is_some_and(|name| !name.is_empty())
-            && !caps.gpu_is_software;
         Self {
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
@@ -65,11 +62,15 @@ impl AutorouteHostProfile {
             has_neon: caps.has_neon,
             hyperscan_available: caps.hyperscan_available,
             gpu_name: gpu_device_identity,
-            gpu_runtime_backend: hardware_gpu_present
+            gpu_runtime_backend: acquired_peer_present
                 .then(|| gpu_runtime_backend.map(str::to_string))
                 .flatten(),
-            gpu_driver_runtime_identity: hardware_gpu_present
-                .then(|| caps.gpu_runtime_identity.clone())
+            gpu_driver_runtime_identity: acquired_peer_present
+                .then(|| {
+                    caps.gpu_runtime_identity
+                        .clone()
+                        .or_else(|| gpu_runtime_backend.map(str::to_string))
+                })
                 .flatten(),
             gpu_is_software: gpu_supported_by_build && caps.gpu_is_software,
             total_memory_mb: caps.total_memory_mb,
@@ -128,7 +129,7 @@ pub(super) fn render_host_profile(host: &AutorouteHostProfile) -> String {
         "scalar"
     };
     format!(
-        "{}/{} {} | {}p/{}l cores | {} | hyperscan={} | gpu={}",
+        "{}/{} {} | {}p/{}l cores | {} | hyperscan={} | gpu={} | gpu_peers={} | gpu_driver={}",
         host.os,
         host.arch,
         host.cpu_model.as_deref().unwrap_or("unknown-cpu"), // LAW10: display-only host label; recall-safe
@@ -141,6 +142,10 @@ pub(super) fn render_host_profile(host: &AutorouteHostProfile) -> String {
             "no"
         },
         host.gpu_name.as_deref().unwrap_or("none"), // LAW10: display-only host label; recall-safe
+        host.gpu_runtime_backend.as_deref().unwrap_or("none"), // LAW10: display-only host label; recall-safe
+        host.gpu_driver_runtime_identity
+            .as_deref()
+            .unwrap_or("none"), // LAW10: display-only host label; recall-safe
     )
 }
 

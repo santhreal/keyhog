@@ -191,7 +191,7 @@ fn host_profile_strips_gpu_runtime_when_no_hardware_gpu_participates() {
     cpu_only.gpu_name = Some("stale probe name".to_string());
     cpu_only.gpu_runtime_identity = Some("stale runtime identity".to_string());
     cpu_only.gpu_is_software = false;
-    let cpu_profile = AutorouteHostProfile::from_caps(&cpu_only, Some("cuda"), true);
+    let cpu_profile = AutorouteHostProfile::from_caps(&cpu_only, None, true);
     assert_eq!(
         cpu_profile.gpu_name, None,
         "CPU-only autoroute identity must not persist stale GPU device names"
@@ -227,6 +227,34 @@ fn host_profile_strips_gpu_runtime_when_no_hardware_gpu_participates() {
     assert!(
         software_profile.gpu_is_software,
         "software renderer status remains part of host identity"
+    );
+}
+
+#[test]
+fn cuda_only_acquired_peer_remains_part_of_exact_host_identity() {
+    let caps = test_hw_caps();
+    let peer = "gpu-cuda-region-presence:cuda@0.6.4:NVIDIA RTX 5090:ordinal=0:nvidia-kernel:580.95";
+    let mut profile = AutorouteHostProfile::from_caps(&caps, Some(peer), true);
+    profile.cpu_model = Some("test-cpu".to_string());
+
+    assert_eq!(profile.gpu_name.as_deref(), Some(peer));
+    assert_eq!(profile.gpu_runtime_backend.as_deref(), Some(peer));
+    assert_eq!(profile.gpu_driver_runtime_identity.as_deref(), Some(peer));
+    profile
+        .require_exact_identity()
+        .expect("a CUDA-only acquired peer with exact identity must calibrate");
+}
+
+#[test]
+fn cuda_only_acquired_peer_without_exact_identity_fails_closed() {
+    let caps = test_hw_caps();
+    let mut profile = AutorouteHostProfile::from_caps(&caps, Some(""), true);
+    profile.cpu_model = Some("test-cpu".to_string());
+
+    assert_eq!(profile.gpu_name.as_deref(), Some(""));
+    assert_eq!(
+        profile.require_exact_identity(),
+        Err("GPU device identity is unavailable")
     );
 }
 
@@ -1377,7 +1405,7 @@ fn exact_median_tie_persists_lowest_overhead_backend() {
     let mut wrong = HashMap::new();
     wrong.insert(
         key,
-        AutorouteDecision::new(ScanBackend::Gpu, 8 * 1024 * 1024, 1, 20, None, Some(20)),
+        AutorouteDecision::new(ScanBackend::GpuWgpu, 8 * 1024 * 1024, 1, 20, None, Some(20)),
     );
     let err = save_autoroute_cache(
         &path,
@@ -1408,7 +1436,7 @@ fn overlapping_confidence_selects_fastest_measured_median_not_backend_rank() {
     ])
     .expect("valid GPU timing");
     let decision = AutorouteDecision::from_timing_evidence(
-        ScanBackend::Gpu,
+        ScanBackend::GpuWgpu,
         8 * 1024 * 1024,
         1,
         0xA11D_0B57_A11D_0B57,
@@ -1426,7 +1454,7 @@ fn overlapping_confidence_selects_fastest_measured_median_not_backend_rank() {
     assert_eq!(decision.gpu_ms(), Some(19));
     assert_eq!(
         decision.resolved_routing_backend(),
-        Some(ScanBackend::Gpu),
+        Some(ScanBackend::GpuWgpu),
         "confidence overlap is inconclusive, not permission to prefer SIMD over the faster measured median"
     );
 }
@@ -2138,7 +2166,7 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     let runtime_status = scanner.runtime_status();
     let host = AutorouteHostProfile::from_caps(
         &caps,
-        runtime_status.gpu_backend,
+        None,
         keyhog_scanner::hw_probe::gpu_backend_compiled(),
     );
     let pattern_count = 902;
@@ -2754,8 +2782,14 @@ fn autoroute_cache_rejects_retired_backend_alias_labels() {
     let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
     let host = test_host(Some("NVIDIA GeForce RTX 5090"));
     let key = test_workload_key();
-    let mut bad =
-        AutorouteDecision::new(ScanBackend::Gpu, 8 * 1024 * 1024, 1, 12, Some(20), Some(10));
+    let mut bad = AutorouteDecision::new(
+        ScanBackend::GpuWgpu,
+        8 * 1024 * 1024,
+        1,
+        12,
+        Some(20),
+        Some(10),
+    );
     bad.backend = ["gpu", "zero", "copy"].join("-");
     write_tampered_decision_cache(
         &path,
@@ -2872,7 +2906,7 @@ fn autoroute_cache_rejects_extra_backend_trials_on_load_and_inspection() {
         .trials_ns
         .push(20_000_000);
     let mut gpu = base;
-    gpu.gpu_timing
+    gpu.gpu_wgpu_timing
         .as_mut()
         .expect("GPU evidence")
         .trials_ns
@@ -2881,7 +2915,7 @@ fn autoroute_cache_rejects_extra_backend_trials_on_load_and_inspection() {
     for (label, bad, expected_error) in [
         ("simd", simd, "invalid SIMD timing evidence"),
         ("cpu", cpu, "invalid CPU timing evidence"),
-        ("gpu", gpu, "invalid GPU timing evidence"),
+        ("gpu", gpu, "invalid WGPU timing evidence"),
     ] {
         let path = dir.path().join(format!("{label}.json"));
         write_tampered_decision_cache(
@@ -3366,7 +3400,7 @@ fn canonical_match_parity_large_path_preserves_full_multiset() {
 #[test]
 fn autoroute_candidate_rejection_aborts_calibration_contract() {
     let error = AutorouteRoutingError::candidate_backend_rejected(
-        ScanBackend::Gpu,
+        ScanBackend::GpuWgpu,
         "candidate findings diverged from the SIMD reference",
     )
     .to_string();
@@ -3436,17 +3470,26 @@ fn derived_accessors_match_the_persisted_timing_evidence() {
     // values are computed from the timing on demand and CANNOT disagree with it.
     // This proves that ONE-PLACE invariant directly, every accessor reflects the
     // persisted timing evidence exactly, with no second copy that could drift.
-    let decision =
-        AutorouteDecision::new(ScanBackend::Gpu, 8 * 1024 * 1024, 1, 12, Some(9), Some(20));
+    let decision = AutorouteDecision::new(
+        ScanBackend::GpuWgpu,
+        8 * 1024 * 1024,
+        1,
+        12,
+        Some(9),
+        Some(20),
+    );
 
     // Per-backend ms derives from the (constant) timing built for each input.
     assert_eq!(decision.simd_ms(), 12);
     assert_eq!(decision.cpu_ms(), Some(9));
     assert_eq!(decision.gpu_ms(), Some(20));
 
-    // GPU cold / warm / route derive from `gpu_timing` through the single owner
+    // GPU cold / warm / route derive from the driver timing through the single owner
     // `gpu_cold_warm_route_evidence`, so the accessors equal a fresh derivation.
-    let gpu_timing = decision.gpu_timing.as_ref().expect("gpu timing present");
+    let gpu_timing = decision
+        .gpu_wgpu_timing
+        .as_ref()
+        .expect("WGPU timing present");
     let (cold_ns, warm_timing, route_ns) =
         super::evidence::gpu_cold_warm_route_evidence(gpu_timing)
             .expect("gpu timing must be derivable");
@@ -3584,7 +3627,7 @@ fn cpu_decision(backend: ScanBackend) -> AutorouteDecision {
 }
 
 fn gpu_decision() -> AutorouteDecision {
-    AutorouteDecision::new(ScanBackend::Gpu, 8 * 1024 * 1024, 1, 20, None, Some(20))
+    AutorouteDecision::new(ScanBackend::GpuWgpu, 8 * 1024 * 1024, 1, 20, None, Some(20))
 }
 
 #[test]
@@ -3690,7 +3733,7 @@ fn persistent_daemon_route_uses_warm_gpu_evidence_but_one_shot_uses_cold_cost() 
     );
     assert_eq!(
         decision.resolved_persistent_backend(),
-        Some(ScanBackend::Gpu),
+        Some(ScanBackend::GpuWgpu),
         "a preinitialized daemon must select from warm GPU evidence"
     );
     assert!(
@@ -4037,4 +4080,107 @@ fn bucket_resolution_does_not_clamp_an_uncalibrated_class() {
         resolve_bucket(&decisions, &requested),
         BucketResolution::Unresolved
     );
+}
+
+#[test]
+fn cuda_and_wgpu_are_independent_measured_candidates() {
+    let timing = |ms| BackendTimingEvidence::constant_ms(ms, super::AUTOROUTE_CALIBRATION_TRIALS);
+    let cuda_wins = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::GpuCuda,
+        8 * 1024 * 1024,
+        1,
+        7,
+        1,
+        timing(30),
+        Some(timing(40)),
+        Some(timing(10)),
+        Some(timing(15)),
+    );
+    assert_eq!(
+        cuda_wins.resolved_routing_backend(),
+        Some(ScanBackend::GpuCuda)
+    );
+    assert_eq!(
+        cuda_wins
+            .timing_for_backend(ScanBackend::GpuCuda)
+            .map(BackendTimingEvidence::median_ms),
+        Some(10)
+    );
+    assert_eq!(
+        cuda_wins
+            .timing_for_backend(ScanBackend::GpuWgpu)
+            .map(BackendTimingEvidence::median_ms),
+        Some(15)
+    );
+
+    let wgpu_wins = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::GpuWgpu,
+        8 * 1024 * 1024,
+        1,
+        7,
+        1,
+        timing(30),
+        Some(timing(40)),
+        Some(timing(16)),
+        Some(timing(9)),
+    );
+    assert_eq!(
+        wgpu_wins.resolved_routing_backend(),
+        Some(ScanBackend::GpuWgpu)
+    );
+
+    let json = serde_json::to_value(&wgpu_wins).expect("serialize peer evidence");
+    assert!(json.get("gpu_cuda_timing").is_some());
+    assert!(json.get("gpu_wgpu_timing").is_some());
+    assert!(json.get("gpu_timing").is_none());
+}
+
+#[cfg(feature = "default")]
+#[test]
+fn live_calibration_measures_both_gpu_driver_peers() {
+    let detector = keyhog_core::DetectorSpec {
+        id: "gpu-peer-calibration".into(),
+        name: "GPU peer calibration".into(),
+        service: "test".into(),
+        severity: keyhog_core::Severity::High,
+        patterns: vec![keyhog_core::PatternSpec {
+            regex: "KHGPUCAL_[A-Za-z0-9]{20}".into(),
+            description: None,
+            group: None,
+            client_safe: false,
+        }],
+        keywords: vec!["KHGPUCAL".into()],
+        ..keyhog_core::DetectorSpec::default()
+    };
+    let scanner = CompiledScanner::compile(vec![detector]).expect("compile calibration scanner");
+    let candidates = scanner.gpu_backend_candidates();
+    assert!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.backend == ScanBackend::GpuCuda)
+            .is_some_and(|candidate| candidate.acquired),
+        "CUDA peer must be live on the GPU release host"
+    );
+    assert!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.backend == ScanBackend::GpuWgpu)
+            .is_some_and(|candidate| candidate.acquired),
+        "WGPU peer must be live on the GPU release host"
+    );
+    let sample = vec![Chunk {
+        data: "key=KHGPUCAL_A1b2C3d4E5f6G7h8I9j0\n".repeat(1024).into(),
+        metadata: keyhog_core::ChunkMetadata::default(),
+    }];
+    let decision = super::calibration::calibrate_fastest_correct_backend(
+        &scanner,
+        keyhog_scanner::hw_probe::probe_hardware(),
+        0,
+        &sample,
+        true,
+    )
+    .expect("calibrate every live backend");
+    assert!(decision.gpu_cuda_timing.is_some());
+    assert!(decision.gpu_wgpu_timing.is_some());
+    assert!(decision.backend().is_some());
 }

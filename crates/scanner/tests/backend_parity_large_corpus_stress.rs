@@ -79,7 +79,7 @@ fn large_corpus_many_simultaneous_detector_fires() {
 
     let mut backends = vec![ScanBackend::CpuFallback];
     #[cfg(feature = "gpu")]
-    backends.extend([ScanBackend::Gpu]);
+    backends.extend([ScanBackend::GpuWgpu]);
 
     scanner.clear_fragment_cache();
     let simd_results = scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu);
@@ -98,7 +98,7 @@ fn large_corpus_many_simultaneous_detector_fires() {
         let degrade_after = scanner.runtime_status().gpu_degrade_count;
         let findings = collect_findings(&results);
 
-        if matches!(backend, ScanBackend::Gpu) {
+        if matches!(backend, ScanBackend::GpuWgpu) {
             assert_eq!(
                 degrade_after, degrade_before,
                 "{backend:?} stress proof must not silently substitute CPU"

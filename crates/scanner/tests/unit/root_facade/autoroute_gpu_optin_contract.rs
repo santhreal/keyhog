@@ -4,7 +4,7 @@
 //! A warm RTX 5090 may beat Hyperscan at 8 MiB, but the fixed heuristic cannot
 //! prove warm/cold process state. It therefore stays conservative at 128 MiB;
 //! persisted autoroute calibration is the only authority for smaller exact
-//! buckets. `--backend gpu` remains a diagnostic/parity override.
+//! buckets. `--backend gpu-cuda` and `--backend gpu-wgpu` remain diagnostic/parity overrides.
 //!
 //! The calibration owner is pinned in `crates/cli/tests/unit/orchestrator/`.
 //! This suite pins the heuristic threshold predicate separately so backend

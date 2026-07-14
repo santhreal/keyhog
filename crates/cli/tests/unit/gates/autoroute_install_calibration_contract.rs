@@ -201,7 +201,8 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("gpu_ms")
             && backend.contains("simd_timing")
             && backend.contains("cpu_timing")
-            && backend.contains("gpu_timing")
+            && backend.contains("gpu_cuda_timing")
+            && backend.contains("gpu_wgpu_timing")
             && backend.contains("gpu_cold_ns")
             && backend.contains("gpu_warm_ms")
             // v21: the GPU cold/warm/route values are DERIVED via the
@@ -251,10 +252,10 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("resolved_routing_backend")
             && backend.contains("measured-median resolution among statistically non-dominated routes")
             // v21: the GPU cold/warm/route values are DERIVED on demand from
-            // `gpu_timing` (single owner), never stored, so there is no copy to
+            // each driver timing (single owner), never stored twice, so there is no copy to
             // "mismatch". The only remaining fail-closed invariant is that the
             // persisted timing is structurally *able* to derive route evidence.
-            && backend.contains("cache decision has invalid GPU cold/warm timing evidence")
+            && backend.contains("cache decision has invalid {driver} cold/warm timing evidence")
             && backend.contains("backend rejected by autoroute GPU degrade check")
             && backend.contains("cache decision is missing a calibration timestamp")
             && backend.contains("duplicate autoroute workload decision")

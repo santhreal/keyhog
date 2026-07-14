@@ -248,7 +248,7 @@ fn select_backend_for_workload(
         return BackendRoutingVerdict::new(
             caps,
             workload,
-            ScanBackend::Gpu,
+            ScanBackend::GpuWgpu,
             BackendRoutingReason::GpuSelected,
         );
     }
@@ -372,7 +372,7 @@ pub(crate) fn select_backend_for_batch_verdict(
 }
 
 /// Cheap, side-effect-free pre-check: could a scan of `workload_bytes` over
-/// `pattern_count` patterns *ever* route to [`ScanBackend::Gpu`] on this
+/// `pattern_count` patterns ever route to a GPU backend on this
 /// hardware? This is exactly the GPU branch condition inside
 /// [`select_backend`], factored out so cold-path callers can gate the
 /// expensive wgpu/CUDA device acquisition (the ~250 ms adapter-enumeration
@@ -415,7 +415,7 @@ pub(super) fn test_backend_override() -> Option<ScanBackend> {
 /// Keep this list at the parser owner so Clap validation, error messages, docs
 /// gates, and `parse_backend_str` cannot drift into rejecting canonical labels
 /// before routing sees them.
-pub const BACKEND_OVERRIDE_VALUES: [&str; 4] = ["auto", "gpu", "simd", "cpu"];
+pub const BACKEND_OVERRIDE_VALUES: [&str; 5] = ["auto", "gpu-cuda", "gpu-wgpu", "simd", "cpu"];
 
 /// Pure backend string → [`ScanBackend`] mapping, with no env or
 /// thread-local override read. Tests that only verify the string→backend
@@ -425,7 +425,8 @@ pub const BACKEND_OVERRIDE_VALUES: [&str; 4] = ["auto", "gpu", "simd", "cpu"];
 /// reads the stable descriptive labels stored in autoroute evidence.
 pub fn parse_backend_str(raw: &str) -> Option<ScanBackend> {
     match raw.trim().to_ascii_lowercase().as_str() {
-        "gpu" | "gpu-region-presence" => Some(ScanBackend::Gpu),
+        "gpu-cuda" | "gpu-cuda-region-presence" => Some(ScanBackend::GpuCuda),
+        "gpu-wgpu" | "gpu-wgpu-region-presence" => Some(ScanBackend::GpuWgpu),
         "simd" | "simd-regex" => Some(ScanBackend::SimdCpu),
         "cpu" | "cpu-fallback" => Some(ScanBackend::CpuFallback),
         _ => None,

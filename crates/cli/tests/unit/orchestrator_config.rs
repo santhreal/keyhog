@@ -249,9 +249,9 @@ fn explicit_cpu_backend_wins_over_configured_required_gpu_policy() {
 
 #[test]
 fn explicit_gpu_backend_wins_over_configured_disabled_gpu_policy() {
-    let args = args_for_config_with_extra("[system]\ngpu = \"off\"\n", &["--backend", "gpu"]);
+    let args = args_for_config_with_extra("[system]\ngpu = \"off\"\n", &["--backend", "gpu-wgpu"]);
 
-    assert_eq!(args.backend.as_deref(), Some("gpu"));
+    assert_eq!(args.backend.as_deref(), Some("gpu-wgpu"));
     assert!(
         !args.no_gpu,
         "config must not disable an explicit GPU route"

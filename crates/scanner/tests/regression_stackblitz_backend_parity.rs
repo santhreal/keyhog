@@ -29,7 +29,7 @@ fn stripe_aws_reproducer_has_exact_gpu_simd_parity_without_degrade() {
     let simd = canonical(&scanner.scan_chunks_with_backend(&[chunk.clone()], ScanBackend::SimdCpu));
     scanner.clear_fragment_cache();
     let degrade_before = scanner.runtime_status().gpu_degrade_count;
-    let gpu = canonical(&scanner.scan_chunks_with_backend(&[chunk], ScanBackend::Gpu));
+    let gpu = canonical(&scanner.scan_chunks_with_backend(&[chunk], ScanBackend::GpuWgpu));
     let degrade_after = scanner.runtime_status().gpu_degrade_count;
 
     assert_eq!(

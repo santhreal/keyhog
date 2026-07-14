@@ -47,17 +47,10 @@ impl CompiledScanner {
         // GPU is unconditional in the build; runtime probe decides whether to
         // actually use it. `gpu_available` is set by hw_probe based on adapter
         // detection (excluding software renderers like llvmpipe/lavapipe).
-        // Resolve the active GPU backend with the cascade
-        //     CUDA (when `cuda` feature on + libcuda.so loadable)
-        //     → wgpu (any-vendor cross-platform fallback)
-        //     → None (auto-routes to SIMD/CPU).
-        // CUDA bypasses the wgpu validation layers + naga IR + WGSL
-        // text + driver shader compile; the path through CUDA driver
-        // API + PTX is empirically 5-10× faster on NVIDIA hardware
-        // and is the headline path. CUDA acquisition is opaque to
-        // failures: if libcuda.so is missing or the driver refuses,
-        // `acquire()` returns Err and we fall through to wgpu so
-        // nothing regresses on non-CUDA hosts.
+        // Acquire every compiled GPU driver independently. CUDA and WGPU are
+        // peer execution candidates. Persisted autoroute evidence chooses the
+        // exact driver for each workload, so acquisition order has no routing
+        // meaning and one driver's failure never silently selects another.
         // `crate::gpu::gpu_disabled_by_policy()` is the single source of truth
         // for "skip every GPU init path". The value comes from the resolved
         // scanner runtime policy set by the CLI/TOML layer, not ambient process
@@ -82,48 +75,72 @@ impl CompiledScanner {
             }
         }
         #[cfg(feature = "gpu")]
-        let gpu_backend = if !gpu_disabled && crate::hw_probe::probe_hardware().gpu_available {
-            let cuda_backend: Option<Arc<dyn vyre::VyreBackend>> = {
+        let (gpu_backends, gpu_acquisition_failures) = if !gpu_disabled {
+            let mut peers = GpuBackendPeers::default();
+            let mut failures = Vec::new();
+            {
                 #[cfg(target_os = "linux")]
                 {
-                    match vyre_driver_cuda::cuda_factory() {
-                        Ok(boxed) => {
+                    match vyre_driver_cuda::backend::CudaBackend::acquire() {
+                        Ok(cuda) => {
+                            let caps = &cuda.caps;
+                            peers.cuda_device_identity = Some(format!(
+                                "{}:ordinal={}:cc={}.{}:vram={}",
+                                caps.name,
+                                caps.ordinal,
+                                caps.compute_capability.0,
+                                caps.compute_capability.1,
+                                caps.total_memory
+                            ));
+                            peers.cuda_runtime_identity = linux_cuda_runtime_identity();
+                            let boxed: Box<dyn vyre::VyreBackend> =
+                                Box::new(vyre_driver_cuda::CudaBackendRegistration::new(cuda));
                             tracing::info!(
                                 target: "keyhog::routing",
-                                "CUDA backend acquired, bypassing wgpu/naga/WGSL path"
+                                "CUDA peer backend acquired"
                             );
-                            Some(Arc::from(boxed))
+                            peers.cuda = Some(Arc::from(boxed));
                         }
                         Err(error) => {
                             surface_cuda_acquisition_failure(&error);
-                            None
+                            failures.push(GpuBackendAcquisitionFailure {
+                                backend: "cuda",
+                                diagnostic: error.to_string(),
+                            });
                         }
                     }
                 }
-                #[cfg(not(target_os = "linux"))]
-                {
-                    None
-                }
-            };
-            match cuda_backend {
-                Some(cuda) => Some(cuda),
-                None => match vyre_driver_wgpu::WgpuBackend::shared() {
-                    Ok(wgpu) => {
-                        let trait_obj: Arc<dyn vyre::VyreBackend> = wgpu;
-                        Some(trait_obj)
-                    }
-                    Err(error) => {
-                        tracing::warn!(
-                            target: "keyhog::routing",
-                            %error,
-                            "wgpu backend unavailable; scan will use CPU-only path"
-                        );
-                        None
-                    }
-                },
             }
+            match vyre_driver_wgpu::WgpuBackend::shared() {
+                Ok(wgpu) => {
+                    let info = wgpu.adapter_info();
+                    peers.wgpu_device_identity = Some(format!(
+                        "{}:vendor={:04x}:device={:04x}",
+                        info.name, info.vendor, info.device
+                    ));
+                    peers.wgpu_runtime_identity = Some(format!(
+                        "{:?}:{}:{}",
+                        info.backend, info.driver, info.driver_info
+                    ));
+                    let trait_obj: Arc<dyn vyre::VyreBackend> = wgpu;
+                    peers.wgpu = Some(trait_obj);
+                    tracing::info!(target: "keyhog::routing", "WGPU peer backend acquired");
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        target: "keyhog::routing",
+                        %error,
+                        "WGPU peer backend acquisition failed"
+                    );
+                    failures.push(GpuBackendAcquisitionFailure {
+                        backend: "wgpu",
+                        diagnostic: error.to_string(),
+                    });
+                }
+            }
+            (peers, failures)
         } else {
-            None
+            (GpuBackendPeers::default(), Vec::new())
         };
 
         // Lean (no-`gpu`) build: never link the wgpu / CUDA drivers, never
@@ -132,9 +149,9 @@ impl CompiledScanner {
         // backend is acquired. `gpu_disabled` stays read so the cfg-aware
         // dead-code warning is suppressed without an `_ =` decoration.
         #[cfg(not(feature = "gpu"))]
-        let gpu_backend: Option<Arc<dyn vyre::VyreBackend>> = {
+        let (gpu_backends, gpu_acquisition_failures) = {
             let _ = gpu_disabled; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
-            None
+            (GpuBackendPeers::default(), Vec::new())
         };
         let prefix_propagation = CsrU32::from(build_prefix_propagation(&state.ac_literals));
         let same_prefix_patterns = CsrU32::from(build_same_prefix_patterns(&state.ac_literals));
@@ -219,7 +236,7 @@ impl CompiledScanner {
             .map_or(0, |index| index.always_anchor_literals().len());
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
         #[cfg(feature = "gpu")]
-        let gpu_literals = if gpu_backend.is_some() {
+        let gpu_literals = if gpu_backends.availability().any() {
             let phase2_always_anchor_literals = phase2_anchor_index
                 .as_ref()
                 .map_or(&[] as &[String], |index| index.always_anchor_literals());
@@ -447,11 +464,16 @@ impl CompiledScanner {
 
         let scanner = Self {
             ac,
-            gpu_backend,
+            gpu_backends,
+            gpu_acquisition_failures,
             gpu_literals,
             gpu_matcher: OnceLock::new(),
             #[cfg(feature = "gpu")]
-            gpu_resident_presence: std::sync::Mutex::new(
+            gpu_resident_presence_cuda: std::sync::Mutex::new(
+                super::gpu_resident_presence::GpuResidentPresenceSlot::Empty,
+            ),
+            #[cfg(feature = "gpu")]
+            gpu_resident_presence_wgpu: std::sync::Mutex::new(
                 super::gpu_resident_presence::GpuResidentPresenceSlot::Empty,
             ),
             gpu_last_degrade_reason: std::sync::Mutex::new(None),
@@ -517,4 +539,11 @@ impl CompiledScanner {
         self.tuning.apply_config(&config);
         self
     }
+}
+
+#[cfg(all(target_os = "linux", feature = "gpu"))]
+fn linux_cuda_runtime_identity() -> Option<String> {
+    let version = std::fs::read_to_string("/proc/driver/nvidia/version").ok()?;
+    let version = version.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!version.is_empty()).then(|| format!("nvidia-kernel:{version}"))
 }

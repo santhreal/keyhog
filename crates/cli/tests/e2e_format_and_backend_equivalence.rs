@@ -184,23 +184,23 @@ fn cpu_and_simd_backends_surface_the_same_finding_through_the_binary() {
 
 #[test]
 fn forcing_gpu_backend_surfaces_or_fails_closed_when_no_adapter() {
-    // `--backend gpu` forces the device path. On a GPU host it must surface the
+    // `--backend gpu-wgpu` forces the device path. On a GPU host it must surface the
     // same finding as SIMD; on a no-GPU host it must fail closed, not silently
     // scan a substitute backend.
     let (_dir, path) = fixture();
-    let (code_gpu, out_gpu) = run(&path, "json", Some("gpu"));
+    let (code_gpu, out_gpu) = run(&path, "json", Some("gpu-wgpu"));
     let (_code_simd, out_simd) = run(&path, "json", Some("simd"));
 
     if code_gpu == Some(1) {
         assert_eq!(
             json_hashes(&out_gpu),
             json_hashes(&out_simd),
-            "--backend gpu on a usable GPU host must surface the SAME finding as simd"
+            "--backend gpu-wgpu on a usable GPU host must surface the SAME finding as simd"
         );
     } else {
         assert!(
             matches!(code_gpu, Some(2) | Some(12)),
-            "--backend gpu without a usable GPU must fail closed, not silently \
+            "--backend gpu-wgpu without a usable GPU must fail closed, not silently \
              substitute another backend; code={code_gpu:?} stdout={out_gpu}"
         );
     }

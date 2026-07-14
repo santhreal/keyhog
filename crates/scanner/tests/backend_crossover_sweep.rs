@@ -62,7 +62,7 @@ const TIMED_RUNS_DENSE: usize = 2;
 /// stream so a *few* phase-2 confirmations happen (as in a real scan) without
 /// dominating (models real-world credential density, not a dump).
 const SPARSE_SECRET: &str =
-    "    let api_token = \"ghp_aaaabbbbccccddddeeeeffff00001111222233\"; // rotate me\n";
+    "    let api_token = \"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\"; // rotate me\n";
 
 /// One benign secret per this many bytes of code (~1 per 64 KiB ≈ a real repo).
 const SECRET_EVERY: usize = 64 * KIB;
@@ -209,7 +209,7 @@ fn sweep(
         let (cpu, cpu_n) = measure(scanner, &chunk, ScanBackend::CpuFallback, runs);
         let (simd, simd_n) = measure(scanner, &chunk, ScanBackend::SimdCpu, runs);
         let (gpu, gpu_n) = if gpu_present {
-            measure(scanner, &chunk, ScanBackend::Gpu, runs)
+            measure(scanner, &chunk, ScanBackend::GpuWgpu, runs)
         } else {
             (f64::NAN, 0)
         };
@@ -340,7 +340,7 @@ fn report_detector_loss(
 /// GPU-vs-CPU recall parity on a single large buffer (regression guard).
 ///
 /// Guards a fail-open recall gap found on an RTX 5090 (2026-06-06): forcing
-/// `--backend gpu` on a benign-sparse 16 MiB buffer returned 496 matches vs the
+/// `--backend gpu-wgpu` on a benign-sparse 16 MiB buffer returned 496 matches vs the
 /// CPU's 744, it dropped every github-classic-pat (248/248). Root cause was NOT
 /// the GPU kernel: the dense literal prefixes (~136k > the 32k AC dispatch cap)
 /// make GPU phase-1 reroute to `scan_coalesced`, which scanned the chunk WHOLE
@@ -372,7 +372,7 @@ fn gpu_vs_cpu_recall_parity_large_buffer() {
 
     let cpu =
         scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback);
-    let gpu = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::Gpu);
+    let gpu = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::GpuWgpu);
     let cpu_n: usize = cpu.iter().map(Vec::len).sum();
     let gpu_n: usize = gpu.iter().map(Vec::len).sum();
 
@@ -384,7 +384,7 @@ fn gpu_vs_cpu_recall_parity_large_buffer() {
     assert_eq!(
         gpu_n,
         cpu_n,
-        "forced --backend gpu must find the SAME matches as CPU on a {}-byte buffer \
+        "forced --backend gpu-wgpu must find the SAME matches as CPU on a {}-byte buffer \
          (gpu={gpu_n} vs cpu={cpu_n}); the GPU dense-prefix reroute lands on scan_coalesced, \
          which must window large chunks so the per-chunk match cap can't truncate.",
         chunk.data.len(),

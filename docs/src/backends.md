@@ -11,7 +11,8 @@ output ordering.
 |---|---|---|
 | `cpu` (`cpu-fallback`) | Pure-Rust literal and regex execution | Portable and cheap to start; useful when native accelerators are unavailable. |
 | `simd` (`simd-regex`) | Hyperscan/Vectorscan trigger matching plus the shared extraction and policy pipeline | Fast CPU throughput after compiled databases are loaded; the calibration reference for accelerated builds. |
-| `gpu` (`gpu-region-presence`) | VYRE GPU region-presence matching feeding the shared confirmation pipeline | Higher initialization/dispatch cost; can win on large or persistent workloads. |
+| `gpu-cuda` (`gpu-cuda-region-presence`) | VYRE CUDA region-presence matching feeding the shared confirmation pipeline | Measured as its own autoroute candidate. |
+| `gpu-wgpu` (`gpu-wgpu-region-presence`) | VYRE WGPU region-presence matching feeding the shared confirmation pipeline | Measured as its own autoroute candidate. |
 | `auto` | Exact lookup in a persisted, parity-checked calibration table | Default. It is a selector over all eligible engines, not a fallback order. |
 
 `--backend` is an explicit diagnostic or benchmark override. It bypasses

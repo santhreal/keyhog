@@ -62,7 +62,7 @@ fn batch_dispatch_equals_sum_of_per_chunk_results_all_backends() {
     let backends = [
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
-        ScanBackend::Gpu,
+        ScanBackend::GpuWgpu,
     ];
 
     for backend in backends {
@@ -135,7 +135,7 @@ fn per_chunk_order_preserved_coalesced_dispatch() {
     let backends = [
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
-        ScanBackend::Gpu,
+        ScanBackend::GpuWgpu,
     ];
 
     for backend in backends {

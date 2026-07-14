@@ -924,7 +924,7 @@ function Format-AutorouteMargin {
 }
 
 function Show-AutorouteCalibrationSummary {
-    param([int]$ProbeCount, [datetime]$StartedAt)
+    param([int]$ProbeCount, [datetime]$StartedAt, [string]$BinPath)
     $cachePath = Get-AutorouteCachePathForInstall
     if (-not $cachePath) {
         Warn "Autoroute calibration summary unavailable: platform cache directory is unavailable."
@@ -936,28 +936,30 @@ function Show-AutorouteCalibrationSummary {
     }
 
     try {
-        $cache = Get-Content -Raw -Path $cachePath -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $inspectionText = (& $BinPath backend --autoroute --autoroute-cache $cachePath --json 2>$null | Out-String)
+        if ($LASTEXITCODE -ne 0) { throw "typed cache inspection exited $LASTEXITCODE" }
+        $inspection = $inspectionText | ConvertFrom-Json -ErrorAction Stop
     } catch {
-        Warn "Autoroute calibration summary unavailable: could not parse persisted cache at ${cachePath}: $($_.Exception.Message)"
+        Warn "Autoroute calibration summary unavailable: typed cache inspection failed for ${cachePath}: $($_.Exception.Message)"
         return $false
     }
 
     $rows = @()
-    foreach ($pair in @($cache.decisions)) {
-        $items = @($pair)
-        if ($items.Count -lt 2) { continue }
-        $decision = $items[1]
-        if (-not $decision.backend) { continue }
-        $sampleBytes = if ($null -ne $decision.sample_bytes) { [UInt64]$decision.sample_bytes } else { [UInt64]0 }
-        $sampleChunks = if ($null -ne $decision.sample_chunks) { [int]$decision.sample_chunks } else { 0 }
-        $sample = '{0} / {1}ch' -f (Format-AutorouteByteCount $sampleBytes), $sampleChunks
-        $rows += ('  {0,-18} {1,-16} {2,-9} {3,-7} {4,-7} {5,-7}' -f `
-            $sample, `
-            ([string]$decision.backend), `
-            (Format-AutorouteMargin $decision.selected_margin_ns), `
-            (Format-AutorouteMs $decision.simd_ms), `
-            (Format-AutorouteMs $decision.cpu_ms), `
-            (Format-AutorouteMs $decision.gpu_ms))
+    foreach ($config in @($inspection.configs)) {
+        foreach ($decision in @($config.decisions)) {
+            if (-not $decision.backend) { continue }
+            $sampleBytes = if ($null -ne $decision.sample_bytes) { [UInt64]$decision.sample_bytes } else { [UInt64]0 }
+            $sampleChunks = if ($null -ne $decision.sample_chunks) { [int]$decision.sample_chunks } else { 0 }
+            $sample = '{0} / {1}ch' -f (Format-AutorouteByteCount $sampleBytes), $sampleChunks
+            $rows += ('  {0,-18} {1,-27} {2,-9} {3,-7} {4,-7} {5,-7} {6,-7}' -f `
+                $sample, `
+                ([string]$decision.backend), `
+                (Format-AutorouteMargin $decision.selected_margin_ns), `
+                (Format-AutorouteMs $decision.simd_ms), `
+                (Format-AutorouteMs $decision.cpu_ms), `
+                (Format-AutorouteMs $decision.gpu_cuda_ms), `
+                (Format-AutorouteMs $decision.gpu_wgpu_ms))
+        }
     }
     if ($rows.Count -eq 0) {
         Warn "Autoroute calibration summary unavailable: persisted cache at $cachePath has no decisions."
@@ -969,7 +971,7 @@ function Show-AutorouteCalibrationSummary {
     Info "Autoroute calibration decisions"
     Dim "  cache: $cachePath"
     Say ('  probes: {0} in {1}s; decisions persisted: {2}' -f $ProbeCount, $elapsed, $rows.Count)
-    Say '  sample/chunks       selected backend margin    simd    cpu     gpu'
+    Say '  sample/chunks       selected backend            margin    simd    cpu     cuda    wgpu'
     foreach ($row in $rows) { Say $row }
     return $true
 }
@@ -1334,7 +1336,7 @@ function Invoke-AutorouteCalibration {
                 Warn ("Autoroute calibration incomplete for unavailable source classes: {0}." -f ($unavailableCalibrations -join ', '))
                 Warn "Install the required source tools and rerun install.ps1 -Calibrate before using those source routes."
             }
-            if (-not (Show-AutorouteCalibrationSummary -ProbeCount $probePlan.Count -StartedAt $calibrationStartedAt)) {
+            if (-not (Show-AutorouteCalibrationSummary -ProbeCount $probePlan.Count -StartedAt $calibrationStartedAt -BinPath $BinPath)) {
                 Err "Autoroute calibration completed but persisted decisions could not be read back."
                 return $false
             }
@@ -1389,9 +1391,17 @@ function New-CalibrationProbe {
 function New-CalibrationProbeKiB {
     param([string]$Path, [int]$KiB)
     $chunk = New-PlainCalibrationBlock
+    $trigger = "GITHUB_TOKEN=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`n"
     $writer = [System.IO.StreamWriter]::new($Path, $false, [System.Text.Encoding]::ASCII)
     try {
-        for ($i = 0; $i -lt $KiB; $i++) { $writer.Write($chunk) }
+        for ($i = 0; $i -lt $KiB; $i++) {
+            if ((($i + 1) % 64) -eq 0) {
+                $writer.Write($chunk.Substring(0, $chunk.Length - $trigger.Length))
+                $writer.Write($trigger)
+            } else {
+                $writer.Write($chunk)
+            }
+        }
     } finally {
         $writer.Dispose()
     }

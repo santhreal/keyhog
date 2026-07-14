@@ -68,7 +68,7 @@ fn gpu_and_simd_produce_identical_findings_on_same_corpus() {
     let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
     let simd_keys = collect_keys(&simd_results);
 
-    let gpu_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu);
+    let gpu_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu);
     let gpu_keys = collect_keys(&gpu_results);
 
     assert_gpu_not_silent_empty(
@@ -145,7 +145,7 @@ fn gpu_path_finds_boundary_straddled_secret() {
         },
     };
 
-    let results = scanner.scan_chunks_with_backend(&[chunk_a, chunk_b], ScanBackend::Gpu);
+    let results = scanner.scan_chunks_with_backend(&[chunk_a, chunk_b], ScanBackend::GpuWgpu);
     let mut found = false;
     for chunk in &results {
         for m in chunk {

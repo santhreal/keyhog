@@ -369,7 +369,7 @@ keyhog scan . --deep --severity high
 keyhog scan /large/tree --precision --severity high
 
 # Force GPU for a diagnostic/benchmark run
-keyhog scan . --backend gpu
+keyhog scan . --backend gpu-wgpu
 
 # Write the final findings-only JSONL report to a file
 keyhog scan . --format jsonl --output findings.jsonl

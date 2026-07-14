@@ -236,7 +236,9 @@ impl CompiledScanner {
     ) -> Vec<u64> {
         let _g = profile::span(profile::P::Phase1Triggers);
         match backend {
-            ScanBackend::Gpu => self.collect_triggered_patterns_gpu(text),
+            ScanBackend::GpuCuda | ScanBackend::GpuWgpu => {
+                self.collect_triggered_patterns_gpu(text, backend)
+            }
             ScanBackend::SimdCpu => self.collect_triggered_patterns_simd(text),
             ScanBackend::CpuFallback => self.collect_triggered_patterns_cpu(text),
         }
@@ -244,7 +246,7 @@ impl CompiledScanner {
 
     /// Per-chunk GPU trigger production. Every dispatch failure records its
     /// concrete reason and terminates the selected route.
-    fn collect_triggered_patterns_gpu(&self, text: &str) -> Vec<u64> {
+    fn collect_triggered_patterns_gpu(&self, text: &str, route: ScanBackend) -> Vec<u64> {
         let dispatch_failure = |reason: String| -> Vec<u64> {
             super::gpu_forced::fail_selected_gpu_dispatch(self, &reason)
         };
@@ -252,10 +254,11 @@ impl CompiledScanner {
         let Some(matcher) = self.gpu_matcher() else {
             return dispatch_failure("gpu literal matcher not built for this scanner".to_string());
         };
-        let Some(gpu_backend) = self.gpu_backend.as_ref() else {
-            return dispatch_failure(
-                "no gpu backend acquired for per-chunk trigger dispatch".to_string(),
-            );
+        let Some(gpu_backend) = self.gpu_backends.get(route) else {
+            return dispatch_failure(format!(
+                "{} was selected but its driver was not acquired",
+                route.label()
+            ));
         };
         // Presence bitmap is the phase-1 path: no per-hit triples and no match
         // cap, with the same pattern-id mapping.
@@ -396,6 +399,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         (stray_bits != 0).then_some((tail_word_idx, stray_bits))
     }
 
+    #[cfg(feature = "gpu")]
     pub(crate) fn triggered_patterns_from_gpu_presence(&self, presence: &[u32]) -> Vec<u64> {
         let mut triggered = super::trigger_bitmap::new_trigger_bitmap(self.ac_map.len());
         self.mark_gpu_presence_into(&mut triggered, presence);

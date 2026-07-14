@@ -22,7 +22,7 @@ fn scan_require_gpu_forbids_silent_cpu_fallback_on_gpu_backend() {
             "--daemon=off",
             "--require-gpu",
             "--backend",
-            "gpu",
+            "gpu-wgpu",
             "--format",
             "json",
         ])
@@ -34,7 +34,7 @@ fn scan_require_gpu_forbids_silent_cpu_fallback_on_gpu_backend() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_ne!(
         code, 0,
-        "--require-gpu + --backend gpu must not exit 0 when GPU self-test failed; stderr={stderr}"
+        "--require-gpu + --backend gpu-wgpu must not exit 0 when GPU self-test failed; stderr={stderr}"
     );
     assert_eq!(
         code, 12,

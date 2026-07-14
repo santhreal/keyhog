@@ -29,6 +29,10 @@ compiled defaults  →  .keyhog.toml  →  CLI flags
   fails closed with the path and TOML error before any scan output is written.
   Unknown tables and keys are parse failures, not ignored compatibility shims.
   Use `--no-config` when you intentionally want compiled defaults.
+  A multi-root scan may use automatic discovery only when every root resolves
+  the same config identity (or every root resolves none). If roots belong to
+  repositories with different policies, KeyHog fails before scanning; pass one
+  explicit `--config PATH`, split the scan by repository, or use `--no-config`.
 - **CLI flags** always override the file. A flag left unset falls through to
   the file, then to the compiled default.
 
@@ -102,7 +106,7 @@ A dash means that layer intentionally has no surface.
 | Secret-context keywords | embedded scanner set | `secret_keywords` | - | Replace the scan-wide positive context words used by generic confidence scoring. Empty entries fail closed. |
 | Test-context keywords | embedded scanner set | `test_keywords` | - | Replace the scan-wide test/mock context words used by confidence policy. Empty entries fail closed. |
 | Placeholder keywords | embedded scanner set | `placeholder_keywords` | - | Replace the scan-wide placeholder markers used by confidence policy. Empty entries fail closed. |
-| Backend | `auto` | - | `--backend` | `auto`/`gpu`/`simd`/`cpu`. Profiles and persisted evidence use the descriptive engine labels `gpu-region-presence`/`simd-regex`/`cpu-fallback`; retired MegaScan and implementation-name aliases are rejected. Auto uses a persisted installer-calibrated fastest-correct decision for the exact workload bucket; missing/stale/incomplete calibration is an error, not permission to substitute another backend. |
+| Backend | `auto` | - | `--backend` | `auto`/`gpu-cuda`/`gpu-wgpu`/`simd`/`cpu`. CUDA and WGPU are separate measured candidates with distinct route labels and timing evidence. Auto uses a persisted fastest-correct decision for the exact workload bucket; missing, stale, or incomplete calibration is an error. |
 
 Autoroute also distinguishes runtime lifetime. Each GPU calibration record
 contains the first real dispatch and warm trials. A normal one-shot scan derives

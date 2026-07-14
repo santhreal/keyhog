@@ -142,7 +142,7 @@ fn bench_size_pattern_grid(c: &mut Criterion) {
         let backends = [
             ("scalar", ScanBackend::CpuFallback),
             ("hyperscan", ScanBackend::SimdCpu),
-            ("gpu", ScanBackend::Gpu),
+            ("gpu", ScanBackend::GpuWgpu),
         ];
         for (label, backend) in backends {
             assert!(
@@ -189,7 +189,7 @@ fn bench_size_pattern_grid(c: &mut Criterion) {
                         });
                     },
                 );
-                if backend == ScanBackend::Gpu {
+                if backend == ScanBackend::GpuWgpu {
                     assert_eq!(
                         scanner.gpu_degrade_count(),
                         degrade_before,

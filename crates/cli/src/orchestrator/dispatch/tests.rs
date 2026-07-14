@@ -57,7 +57,8 @@ fn coalesced_scan_ceiling_mb_is_derived_from_bytes() {
 /// cannot silently reintroduce a divergent classification.
 #[test]
 fn is_gpu_backend_classifies_every_routable_backend() {
-    assert!(is_gpu_backend(ScanBackend::Gpu));
+    assert!(is_gpu_backend(ScanBackend::GpuCuda));
+    assert!(is_gpu_backend(ScanBackend::GpuWgpu));
     assert!(!is_gpu_backend(ScanBackend::SimdCpu));
     assert!(!is_gpu_backend(ScanBackend::CpuFallback));
 }

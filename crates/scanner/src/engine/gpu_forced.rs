@@ -9,8 +9,11 @@
 //! did not actually use the GPU it selected.
 
 pub(crate) use super::gpu_forced_helpers::{
-    fail_selected_gpu_dispatch, fail_selected_gpu_dispatch_error, require_selected_gpu_stack,
-    SelectedGpuDispatchError,
+    fail_selected_gpu_dispatch, require_selected_gpu_stack,
+};
+#[cfg(feature = "gpu")]
+pub(crate) use super::gpu_forced_helpers::{
+    fail_selected_gpu_dispatch_error, SelectedGpuDispatchError,
 };
 use super::CompiledScanner;
 

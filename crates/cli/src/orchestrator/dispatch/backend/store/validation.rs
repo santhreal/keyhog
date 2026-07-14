@@ -154,19 +154,18 @@ fn validate_decision_route_evidence_at(
     {
         return Err("cache decision has invalid CPU timing evidence".into());
     }
-    if decision
-        .gpu_timing
-        .as_ref()
-        .is_some_and(|timing| !timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS))
-    {
-        return Err("cache decision has invalid GPU timing evidence".into());
-    }
-    if decision
-        .gpu_timing
-        .as_ref()
-        .is_some_and(|timing| gpu_cold_warm_route_evidence(timing).is_none())
-    {
-        return Err("cache decision has invalid GPU cold/warm timing evidence".into());
+    for (driver, timing) in [
+        ("CUDA", decision.gpu_cuda_timing.as_ref()),
+        ("WGPU", decision.gpu_wgpu_timing.as_ref()),
+    ] {
+        if timing.is_some_and(|timing| !timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)) {
+            return Err(format!("cache decision has invalid {driver} timing evidence").into());
+        }
+        if timing.is_some_and(|timing| gpu_cold_warm_route_evidence(timing).is_none()) {
+            return Err(
+                format!("cache decision has invalid {driver} cold/warm timing evidence").into(),
+            );
+        }
     }
     let Some(selected_timing) = decision.timing_for_backend(selected_backend) else {
         return Err("selected backend is missing timing evidence".into());

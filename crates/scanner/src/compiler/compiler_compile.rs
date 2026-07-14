@@ -80,7 +80,7 @@ fn build_gpu_literal_rows<'a>(
         if literal.is_empty() {
             // Law 10: an empty AC literal disables the ENTIRE GPU literal scan for
             // this build (every scan then routes to CPU/SIMD). A `tracing::warn!`
-            // alone is silent to an operator running `--backend gpu` at the default
+            // alone is silent to an operator running an exact GPU backend at the default
             // log level (surface it loudly, once, like report_gpu_matcher_unavailable).
             tracing::warn!("{label} contains an empty literal; disabling GPU literal scan");
             if GPU_LITERAL_EMPTY_WARNED.set(()).is_ok() {

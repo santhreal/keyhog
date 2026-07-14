@@ -87,7 +87,9 @@ fn bench_scan_throughput(c: &mut Criterion) {
             BenchmarkId::new("vyre_gpu", format!("{}B", size)),
             &chunk,
             |b, chk| {
-                b.iter(|| black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::Gpu)));
+                b.iter(|| {
+                    black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::GpuWgpu))
+                });
             },
         );
     }
@@ -128,7 +130,9 @@ fn bench_scan_no_hit_throughput(c: &mut Criterion) {
             BenchmarkId::new("vyre_gpu", format!("{}B", size)),
             &chunk,
             |b, chk| {
-                b.iter(|| black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::Gpu)));
+                b.iter(|| {
+                    black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::GpuWgpu))
+                });
             },
         );
     }

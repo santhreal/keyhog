@@ -129,7 +129,7 @@ minus the `limit-` prefix and with dashes changed to underscores.
 
 | Control                               | Effect                                                                |
 |---------------------------------------|-----------------------------------------------------------------------|
-| `keyhog scan --backend auto\|gpu\|simd\|cpu` | Use persisted automatic routing (`auto`) or explicitly force one diagnostic backend (`gpu`, `simd`, or `cpu`). Profiles and routing evidence use the descriptive labels `gpu-region-presence`, `simd-regex`, and `cpu-fallback`; retired MegaScan and implementation-name aliases are rejected. A selected GPU route that becomes unusable exits `12` instead of substituting CPU/SIMD. |
+| `keyhog scan --backend auto\|gpu-cuda\|gpu-wgpu\|simd\|cpu` | Use persisted automatic routing (`auto`) or force one diagnostic backend. CUDA and WGPU use distinct `gpu-cuda-region-presence` and `gpu-wgpu-region-presence` evidence. A selected GPU driver that becomes unusable exits `12` instead of substituting another driver or CPU/SIMD. |
 | `keyhog scan --gpu-batch-input-limit 512MB` | Override the VRAM-adaptive byte limit for one GPU region-presence batch (clamped to 128 MiB–1 GiB). |
 | `keyhog scan --max-file-size <SIZE>` | Bound one filesystem input (default 100 MiB); larger files are named in the coverage summary. |
 | `keyhog scan --regex-dfa-limit <SIZE>` | Bound each regex lazy-DFA cache (default 1 MiB); lowering the safety ceiling may force complex patterns onto the slower NFA path. |
@@ -260,18 +260,31 @@ identity, shutdown, timeout, coverage, and exits.
 
 ## `keyhog diff <FILE_A> <FILE_B>`
 
-Compare two scan outputs (JSON or NDJSON). Useful for "did this PR
-introduce a new finding?" gating in CI.
+Compare two baseline files produced by `scan --create-baseline`. A credential
+present only in the older baseline is `verification_unknown`, not resolved,
+because disappearance from source does not prove provider revocation.
 
 ```sh
-keyhog scan . --format json > baseline.json
+keyhog scan . --create-baseline baseline.json
 git checkout pr-branch
-keyhog scan . --format json > pr.json
+keyhog scan . --create-baseline pr.json
 keyhog diff baseline.json pr.json
 ```
 
 Pass `--hide-unchanged` to omit the unchanged section from human output, or
-`--json` for a stable CI-readable comparison.
+`--json` for a stable CI-readable comparison. Baseline-only removed findings
+return exit 1 because their verification state is unknown.
+
+To verify credentials removed between two text artifacts, keep both versions
+on disk only for the command lifetime and opt in to network verification:
+
+```sh
+keyhog diff old.env new.env --artifacts --verify-removed --json
+```
+
+The report emits only `removed_still_live`, `removed_inactive`, or
+`verification_unknown`. It never emits the credential. A live or unknown
+removal returns exit 1. Only provider-confirmed inactive removals can pass.
 
 ## `keyhog calibrate`
 

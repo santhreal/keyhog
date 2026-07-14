@@ -23,7 +23,7 @@
 //! fire before the size gate), so parity holds. A future change that made the
 //! `small_chunk` gate authoritative for the whole chunk would drop the token on
 //! the coalesced path and turn this red, a real Law-10 recall divergence between
-//! `--backend simd` (per-chunk) and `--backend gpu` / `--batch-pipeline`
+//! `--backend simd` (per-chunk) and `--backend gpu-wgpu` / `--batch-pipeline`
 //! (coalesced), which is exactly the M-02 parity surface.
 //!
 //! Gated on `entropy` (the `entropy-token` detector compiles out without it, as

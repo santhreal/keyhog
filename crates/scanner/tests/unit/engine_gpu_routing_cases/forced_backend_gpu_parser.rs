@@ -7,10 +7,14 @@ fn forced_backend_gpu_parser() {
     // scan in the parallel `all_tests` pool, and gpu_forced reacts to a
     // forced-but-unavailable GPU by exiting the whole process (harness abort).
     // `parse_backend_str` is the single source of truth for backend strings.
-    assert_eq!(parse_backend_str("gpu"), Some(ScanBackend::Gpu));
+    assert_eq!(parse_backend_str("gpu"), None);
     assert_eq!(
-        parse_backend_str("gpu-region-presence"),
-        Some(ScanBackend::Gpu)
+        parse_backend_str("gpu-cuda-region-presence"),
+        Some(ScanBackend::GpuCuda)
+    );
+    assert_eq!(
+        parse_backend_str("gpu-wgpu-region-presence"),
+        Some(ScanBackend::GpuWgpu)
     );
     // SIMD/CPU arms and the case-insensitive contract.
     assert_eq!(parse_backend_str("simd"), Some(ScanBackend::SimdCpu));

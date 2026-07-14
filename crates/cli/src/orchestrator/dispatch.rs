@@ -225,11 +225,11 @@ impl CoalescedScannerWorker {
             // trigger path. It owns backend acquisition and fails the selected
             // route if dispatch cannot remain on GPU, so both an explicit GPU
             // request and an autoroute-selected GPU batch land here.
-            ScanBackend::Gpu => {
+            ScanBackend::GpuCuda | ScanBackend::GpuWgpu => {
                 let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
                 tracing::debug!(
                     target: "keyhog::routing",
-                    backend = "gpu",
+                    backend = chosen_backend.label(),
                     batch_bytes,
                     chunks = scanned_count,
                     "batch dispatched (gpu region presence)",

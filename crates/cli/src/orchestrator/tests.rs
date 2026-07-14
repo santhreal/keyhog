@@ -111,7 +111,7 @@ fn daemon_gpu_warmup_follows_the_selected_routing_mode() {
 
     assert!(daemon_requires_gpu(None, true).expect("auto policy"));
     assert!(!daemon_requires_gpu(None, false).expect("auto policy"));
-    assert!(daemon_requires_gpu(Some(ScanBackend::Gpu), true).expect("gpu policy"));
+    assert!(daemon_requires_gpu(Some(ScanBackend::GpuWgpu), true).expect("gpu policy"));
     assert!(!daemon_requires_gpu(Some(ScanBackend::SimdCpu), true).expect("simd policy"));
     assert!(!daemon_requires_gpu(Some(ScanBackend::CpuFallback), true).expect("cpu policy"));
 }
@@ -120,12 +120,12 @@ fn daemon_gpu_warmup_follows_the_selected_routing_mode() {
 fn unavailable_daemon_gpu_is_typed_and_exits_twelve() {
     use keyhog_scanner::ScanBackend;
 
-    let error = daemon_requires_gpu(Some(ScanBackend::Gpu), false)
+    let error = daemon_requires_gpu(Some(ScanBackend::GpuWgpu), false)
         .expect_err("an explicit GPU daemon must reject a GPU-less host");
     assert_eq!(crate::cli_error_exit_code(&error), EXIT_REQUIRE_GPU_UNMET);
     assert_eq!(
         error.to_string(),
-        "daemon --backend gpu cannot be honored: this build and host have no eligible physical GPU path. Run `keyhog backend --self-test` and repair the GPU driver/runtime, or start the daemon with `--backend simd` or `--backend cpu`."
+        "daemon --backend gpu-wgpu-region-presence cannot be honored: this build and host have no eligible physical GPU path. Run `keyhog backend --self-test` and repair the GPU driver/runtime, or start the daemon with `--backend simd` or `--backend cpu`."
     );
 
     let preflight = daemon_gpu_preflight_failure("no physical adapter passed self-test".into());

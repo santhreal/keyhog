@@ -103,6 +103,12 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   invalid caches instead of omitting bad rows, and lives in a dedicated cache
   inspection module. Unix and PowerShell installer probes now admit every
   eligible GPU peer without changing the normal scan-config identity.
+- CUDA and WGPU are now independent measured autoroute peers with exact
+  `gpu-cuda` and `gpu-wgpu` diagnostic overrides. The public
+  `ScanBackend::Gpu` variant and `--backend gpu` alias are removed. Library
+  callers must select `GpuCuda` or `GpuWgpu`, and scripts must use the matching
+  exact CLI value. Autoroute cache schema v27 rejects older single-GPU evidence
+  and requires recalibration instead of silently assigning it to a driver.
 - Generic pure-hex key handling is now detector-owned. Phase-2 detector TOMLs
   declare exact direct-assignment keyword/length pairs and exact
   transport-decoded hex widths; those declarations participate in detector

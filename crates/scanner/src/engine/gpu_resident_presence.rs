@@ -141,7 +141,11 @@ pub(super) fn scan_gpu_literal_presence_by_region_resident(
 
     let must_rebuild = match &*slot {
         GpuResidentPresenceSlot::Empty => true,
-        GpuResidentPresenceSlot::Ready(state) => !needed.fits(state),
+        GpuResidentPresenceSlot::Ready(state) => {
+            state.backend.id() != backend.id()
+                || state.backend.version() != backend.version()
+                || !needed.fits(state)
+        }
         GpuResidentPresenceSlot::Failed(_) => false,
     };
     if must_rebuild {
@@ -212,20 +216,38 @@ pub(super) fn scan_gpu_literal_presence_by_region_resident(
     Ok(guard.output.clone())
 }
 
+impl CompiledScanner {
+    pub(super) fn gpu_resident_presence_slot(
+        &self,
+        backend: crate::hw_probe::ScanBackend,
+    ) -> Option<&std::sync::Mutex<GpuResidentPresenceSlot>> {
+        match backend {
+            crate::hw_probe::ScanBackend::GpuCuda => Some(&self.gpu_resident_presence_cuda),
+            crate::hw_probe::ScanBackend::GpuWgpu => Some(&self.gpu_resident_presence_wgpu),
+            _ => None,
+        }
+    }
+}
+
 impl Drop for CompiledScanner {
     fn drop(&mut self) {
-        let state = match self.gpu_resident_presence.get_mut() {
-            Ok(slot) => std::mem::replace(slot, GpuResidentPresenceSlot::Empty),
-            Err(poisoned) => {
-                std::mem::replace(poisoned.into_inner(), GpuResidentPresenceSlot::Empty)
+        for slot in [
+            &mut self.gpu_resident_presence_cuda,
+            &mut self.gpu_resident_presence_wgpu,
+        ] {
+            let state = match slot.get_mut() {
+                Ok(slot) => std::mem::replace(slot, GpuResidentPresenceSlot::Empty),
+                Err(poisoned) => {
+                    std::mem::replace(poisoned.into_inner(), GpuResidentPresenceSlot::Empty)
+                }
+            };
+            let GpuResidentPresenceSlot::Ready(state) = state else {
+                continue;
+            };
+            if let Err(error) = state.free() {
+                eprintln!("keyhog: GPU resident presence cleanup failed: {error}");
+                tracing::warn!(target: "keyhog::gpu", %error, "GPU resident presence cleanup failed");
             }
-        };
-        let GpuResidentPresenceSlot::Ready(state) = state else {
-            return;
-        };
-        if let Err(error) = state.free() {
-            eprintln!("keyhog: GPU resident presence cleanup failed: {error}");
-            tracing::warn!(target: "keyhog::gpu", %error, "GPU resident presence cleanup failed");
         }
     }
 }

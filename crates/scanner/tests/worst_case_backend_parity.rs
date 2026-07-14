@@ -161,7 +161,7 @@ fn full_corpus_multi_backend_worst_case_parity() {
     let backends = vec![
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
-        ScanBackend::Gpu,
+        ScanBackend::GpuWgpu,
     ];
 
     let mut total_cells = 0usize;

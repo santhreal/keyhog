@@ -63,10 +63,10 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) sample_chunks: usize,
     pub(crate) simd_ms: u128,
     pub(crate) cpu_ms: Option<u128>,
-    /// One-shot GPU representative: max(first dispatch, warm median).
-    pub(crate) gpu_ms: Option<u128>,
-    /// Persistent-daemon GPU representative: warm median.
-    pub(crate) gpu_warm_ms: Option<u128>,
+    pub(crate) gpu_cuda_ms: Option<u128>,
+    pub(crate) gpu_cuda_warm_ms: Option<u128>,
+    pub(crate) gpu_wgpu_ms: Option<u128>,
+    pub(crate) gpu_wgpu_warm_ms: Option<u128>,
     /// Whether the one-shot route's 95% confidence interval is entirely below
     /// every competitor. When false, medians decide among non-dominated routes.
     pub(crate) confidence_separated: bool,
@@ -242,8 +242,18 @@ fn inspect_autoroute_cache_for_build(
                 sample_chunks: decision.sample_chunks,
                 simd_ms: decision.simd_ms(),
                 cpu_ms: decision.cpu_ms(),
-                gpu_ms: decision.gpu_ms(),
-                gpu_warm_ms: decision.gpu_warm_ms(),
+                gpu_cuda_ms: decision
+                    .gpu_cold_warm_route_for(keyhog_scanner::ScanBackend::GpuCuda)
+                    .map(|(_, _, route_ns)| route_ns / 1_000_000),
+                gpu_cuda_warm_ms: decision
+                    .gpu_cold_warm_route_for(keyhog_scanner::ScanBackend::GpuCuda)
+                    .map(|(_, warm, _)| warm.median_ms()),
+                gpu_wgpu_ms: decision
+                    .gpu_cold_warm_route_for(keyhog_scanner::ScanBackend::GpuWgpu)
+                    .map(|(_, _, route_ns)| route_ns / 1_000_000),
+                gpu_wgpu_warm_ms: decision
+                    .gpu_cold_warm_route_for(keyhog_scanner::ScanBackend::GpuWgpu)
+                    .map(|(_, warm, _)| warm.median_ms()),
                 confidence_separated,
                 selection_basis: selection_basis(confidence_separated),
                 selected_margin_ns: decision.selected_margin_ns(),

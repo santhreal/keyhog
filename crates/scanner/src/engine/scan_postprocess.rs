@@ -140,7 +140,7 @@ impl CompiledScanner {
                         // sliced out of the outer chunk). NEVER route them
                         // to the GPU literal-set: per-dispatch overhead
                         // (driver init + queue submit + sync) is 10-100 ms,
-                        // and `--backend gpu` would otherwise force
+                        // and an exact GPU backend would otherwise force
                         // every decoded chunk through that path. On a
                         // 64 MiB chunk that decodes into 1 000 sub-chunks
                         // that's a 50-second tax - exactly the wall-clock
@@ -166,13 +166,11 @@ impl CompiledScanner {
                         DECODE_SCAN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
                     }
                     for m in decoded_matches {
-                        // Anchor decoded matches (KH-L-0404): a generic/entropy
-                        // detector firing on synthesized decoded bytes rests on
-                        // shape alone (decoding readable text yields token-shaped
-                        // fragments it spuriously claims: +264 FP / ~0 TP on
-                        // CredData). Only self-anchoring vendor/key detectors are
-                        // trustworthy on decoded content.
-                        if crate::adjudicate::record_decoded_generic_entropy_suppression(
+                        // Entropy-only matches have no structural evidence on
+                        // synthesized bytes. Generic phase-2 matches do: their
+                        // detector-owned assignment keyword survived decoding
+                        // or the bounded parent splice, so retain them.
+                        if crate::adjudicate::record_decoded_unanchored_entropy_suppression(
                             &m,
                             chunk.metadata.path.as_deref(),
                         ) {

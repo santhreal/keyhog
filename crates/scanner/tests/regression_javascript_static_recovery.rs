@@ -209,7 +209,7 @@ fn reverse_base64_recovery_has_exact_gpu_cpu_parity() {
     let scanner = scanner(ScannerConfig::thorough());
     let (source, _) = reverse_base64_program();
     let mut cpu = scan(&scanner, &source, ScanBackend::CpuFallback);
-    let mut gpu = scan(&scanner, &source, ScanBackend::Gpu);
+    let mut gpu = scan(&scanner, &source, ScanBackend::GpuWgpu);
     cpu.sort();
     gpu.sort();
     assert_eq!(gpu, cpu);
@@ -255,7 +255,7 @@ fn cryptojs_static_recovery_has_exact_gpu_cpu_parity() {
         CRYPTOJS_ANCHORED_ASSIGNMENT,
     ] {
         let mut cpu = scan(&scanner, source, ScanBackend::CpuFallback);
-        let mut gpu = scan(&scanner, source, ScanBackend::Gpu);
+        let mut gpu = scan(&scanner, source, ScanBackend::GpuWgpu);
         cpu.sort();
         gpu.sort();
         assert_eq!(gpu, cpu, "CryptoJS recovery must be backend-neutral");

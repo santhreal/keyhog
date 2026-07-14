@@ -448,8 +448,10 @@ fn docs_keep_backend_override_on_explicit_cli_surface() {
     );
     assert!(
         config_doc.contains("`--backend`")
-            && config_doc.contains("`auto`/`gpu`/`simd`/`cpu`")
-            && config_doc.contains("`gpu-region-presence`/`simd-regex`/`cpu-fallback`"),
+            && config_doc.contains("`auto`/`gpu-cuda`/`gpu-wgpu`/`simd`/`cpu`")
+            && config_doc.contains(
+                "`gpu-cuda-region-presence`/`gpu-wgpu-region-presence`/`simd-regex`/`cpu-fallback`"
+            ),
         "configuration docs must document the explicit --backend surface"
     );
     assert!(

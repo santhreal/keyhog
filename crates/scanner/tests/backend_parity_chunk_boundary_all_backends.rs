@@ -93,7 +93,7 @@ fn boundary_straddle_parity_aws_key_split_across_chunks() {
     let backends = [
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
-        ScanBackend::Gpu,
+        ScanBackend::GpuWgpu,
     ];
 
     scanner.clear_fragment_cache();

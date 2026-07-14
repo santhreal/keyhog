@@ -187,7 +187,18 @@ impl ScanOrchestrator {
             {
                 tracing::debug!(%error, "banner write error");
             }
-            let gpu_label = scanner_status.gpu_backend.unwrap_or("none"); // LAW10: absent name/label => display default; reporting-only, recall-safe
+            let gpu_candidates = self.scanner.gpu_backend_candidates();
+            let gpu_label = gpu_candidates
+                .iter()
+                .filter(|candidate| candidate.acquired)
+                .map(|candidate| candidate.backend.label())
+                .collect::<Vec<_>>()
+                .join(",");
+            let gpu_label = if gpu_label.is_empty() {
+                "none"
+            } else {
+                gpu_label.as_str()
+            };
             eprintln!(
                 "⚡ {} | backend={backend_policy} | gpu={gpu_label}",
                 keyhog_scanner::hw_probe::startup_banner(
@@ -196,6 +207,17 @@ impl ScanOrchestrator {
                     scanner_status.pattern_count,
                 )
             );
+            for candidate in gpu_candidates
+                .iter()
+                .filter(|candidate| !candidate.acquired)
+            {
+                if let Some(error) = candidate.acquisition_error.as_deref() {
+                    eprintln!(
+                        "gpu candidate unavailable | backend={} | error={error}",
+                        candidate.backend.label()
+                    );
+                }
+            }
         }
 
         // Require-GPU preflight, independent of backend routing. When

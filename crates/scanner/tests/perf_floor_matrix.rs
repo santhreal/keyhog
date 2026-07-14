@@ -134,7 +134,7 @@ fn floor_mib_per_s(backend: ScanBackend, size_mib: f64, dense: bool) -> f64 {
     let benign_floor = match backend {
         ScanBackend::SimdCpu => 0.6,
         ScanBackend::CpuFallback => 0.5,
-        ScanBackend::Gpu => 0.5,
+        ScanBackend::GpuWgpu => 0.5,
         // ScanBackend is #[non_exhaustive]; future variants inherit the
         // conservative scalar floor until they get their own calibration.
         _ => 0.5,
@@ -142,7 +142,7 @@ fn floor_mib_per_s(backend: ScanBackend, size_mib: f64, dense: bool) -> f64 {
     let dense_floor = match backend {
         ScanBackend::SimdCpu => 0.5,
         ScanBackend::CpuFallback => 0.5,
-        ScanBackend::Gpu => 0.5,
+        ScanBackend::GpuWgpu => 0.5,
         _ => 0.5,
     };
     let _ = size_mib;
@@ -183,7 +183,7 @@ fn perf_floor_matrix_all_backends_all_sizes() {
     let backends = [
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
-        ScanBackend::Gpu,
+        ScanBackend::GpuWgpu,
     ];
 
     let mut cells = 0usize;
@@ -209,7 +209,7 @@ fn perf_floor_matrix_all_backends_all_sizes() {
                 // GPU adapter (helper falls back to SIMD on init
                 // failure; that path produces a quick scan with
                 // zero findings on a "no GPU" host).
-                if matches!(backend, ScanBackend::Gpu) && found == 0 && simd_matches > 0 {
+                if matches!(backend, ScanBackend::GpuWgpu) && found == 0 && simd_matches > 0 {
                     skipped += 1;
                     continue;
                 }

@@ -48,7 +48,7 @@ fn make_chunk(text: &str, path: &str) -> Chunk {
 const ALL_BACKENDS: &[ScanBackend] = &[
     ScanBackend::SimdCpu,
     ScanBackend::CpuFallback,
-    ScanBackend::Gpu,
+    ScanBackend::GpuWgpu,
 ];
 
 // The canonical secret we plant in every encoded fixture. AWS access

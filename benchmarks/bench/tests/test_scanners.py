@@ -322,11 +322,12 @@ def test_scanner_exit_contracts_distinguish_findings_from_failures():
     assert scanners.resolve_scanner("kingfisher").exit_success(200)
 
 
-def test_keyhog_gpu_benchmark_rows_use_explicit_gpu_policy(tmp_path):
+@pytest.mark.parametrize("backend", ["gpu-cuda", "gpu-wgpu"])
+def test_keyhog_gpu_benchmark_rows_use_exact_gpu_policy(tmp_path, backend):
     scanner = scanners.KeyhogScanner()
 
     gpu_cmd = scanner._cmd(
-        tmp_path, ScannerConfig(backend="gpu"), tmp_path / "gpu.json", None,
+        tmp_path, ScannerConfig(backend=backend), tmp_path / f"{backend}.json", None,
         pathlib.Path("/unused/keyhog"),
     )
     auto_cmd = scanner._cmd(
@@ -339,6 +340,7 @@ def test_keyhog_gpu_benchmark_rows_use_explicit_gpu_policy(tmp_path):
     )
 
     assert "--require-gpu" in gpu_cmd
+    assert gpu_cmd[gpu_cmd.index("--backend") + 1] == backend
     assert "--no-gpu" not in auto_cmd
     assert "--no-gpu" in simd_cmd
     detector_index = auto_cmd.index("--detectors")
@@ -346,7 +348,7 @@ def test_keyhog_gpu_benchmark_rows_use_explicit_gpu_policy(tmp_path):
     assert scanner.detector_corpus_sha256() == keyhog_adapter.compute_detector_corpus_sha256(
         keyhog_adapter._DETECTOR_CORPUS
     )
-    assert scanner._env(ScannerConfig(backend="gpu")) == {}
+    assert scanner._env(ScannerConfig(backend=backend)) == {}
 
 
 def test_keyhog_single_file_perf_command_keeps_daemon_fixture_policy(tmp_path):
@@ -390,7 +392,7 @@ def test_keyhog_scanner_reports_timeout_as_timeout(monkeypatch, tmp_path):
     with pytest.raises(TimeoutError, match=r"timed out after 7s") as exc:
         scanner.run(
             tmp_path,
-            ScannerConfig(backend="gpu"),
+            ScannerConfig(backend="gpu-wgpu"),
             output=tmp_path / "unused.json",
             timeout=7,
         )
@@ -547,7 +549,8 @@ def test_keyhog_run_binds_digest_and_scan_to_immutable_detector_snapshot(
     assert len(list(snapshot_root.iterdir())) == 1
 
 
-def test_keyhog_daemon_commands_keep_server_and_client_ownership_separate(tmp_path):
+@pytest.mark.parametrize("backend", ["gpu-cuda", "gpu-wgpu"])
+def test_keyhog_daemon_commands_keep_server_and_client_ownership_separate(tmp_path, backend):
     executable = tmp_path / "keyhog"
     socket_path = tmp_path / "daemon.sock"
     detectors = tmp_path / "detectors"
@@ -555,7 +558,7 @@ def test_keyhog_daemon_commands_keep_server_and_client_ownership_separate(tmp_pa
     output = tmp_path / "result.json"
 
     server = keyhog_daemon.daemon_server_command(
-        executable, socket_path, detectors, "gpu",
+        executable, socket_path, detectors, backend,
     )
     client = keyhog_daemon.daemon_client_command(
         executable, socket_path, input_file, output,
@@ -563,7 +566,7 @@ def test_keyhog_daemon_commands_keep_server_and_client_ownership_separate(tmp_pa
 
     assert server == [
         str(executable), "daemon", "start", "--socket", str(socket_path),
-        "--detectors", str(detectors), "--backend", "gpu",
+        "--detectors", str(detectors), "--backend", backend,
     ]
     assert client == [
         str(executable), "scan", "--format", "json", "--no-config",

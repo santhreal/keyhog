@@ -129,9 +129,9 @@ fn cpu_fallback_when_no_gpu_no_hyperscan_no_simd() {
 fn env_override_forces_gpu_even_without_workload() {
     // Forced backend (via the race-free thread-local override) wins regardless
     // of workload size or hardware availability.
-    set_test_backend_override(Some(ScanBackend::Gpu));
+    set_test_backend_override(Some(ScanBackend::GpuWgpu));
     let caps = caps_with(false, false, true, true);
-    assert_eq!(select_backend(&caps, 1024, 10), ScanBackend::Gpu);
+    assert_eq!(select_backend(&caps, 1024, 10), ScanBackend::GpuWgpu);
     clear_test_backend_override();
 }
 
@@ -163,7 +163,8 @@ fn env_override_invalid_value_falls_through_to_auto() {
 #[test]
 fn backend_label_is_stable() {
     // Stable labels are part of our CLI banner contract.
-    assert_eq!(ScanBackend::Gpu.label(), "gpu-region-presence");
+    assert_eq!(ScanBackend::GpuCuda.label(), "gpu-cuda-region-presence");
+    assert_eq!(ScanBackend::GpuWgpu.label(), "gpu-wgpu-region-presence");
     assert_eq!(ScanBackend::SimdCpu.label(), "simd-regex");
     assert_eq!(ScanBackend::CpuFallback.label(), "cpu-fallback");
 }
@@ -172,13 +173,19 @@ fn backend_label_is_stable() {
 fn backend_parser_accepts_only_operator_names_and_persisted_labels() {
     // The short operator names and stable evidence labels map to the same
     // backend. Retired implementation aliases are rejected elsewhere.
-    for value in ["gpu", "GPU", "gpu-region-presence", " gpu "] {
+    for value in [
+        "gpu-wgpu",
+        "GPU-WGPU",
+        "gpu-wgpu-region-presence",
+        " gpu-wgpu ",
+    ] {
         assert_eq!(
             parse_backend_str(value),
-            Some(ScanBackend::Gpu),
-            "value {value:?} must map to Gpu"
+            Some(ScanBackend::GpuWgpu),
+            "value {value:?} must map to GpuWgpu"
         );
     }
+    assert_eq!(parse_backend_str("gpu"), None);
     for value in ["simd", "SIMD", "simd-regex"] {
         assert_eq!(
             parse_backend_str(value),

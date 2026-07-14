@@ -1390,7 +1390,10 @@ prime_autoroute_cache() {
     byte_sizes="1 2 4 8 16 32 64 128 256 512"
     kib_sizes="1 2 4 8 16 32 64 128 256 512"
     mib_sizes="1 2 4 8 16 32"
-    many_file_counts="2 4 8 16 32"
+    # Directory scans have a distinct source identity from a direct file scan.
+    # Include the one-file bucket used by small repositories and install smoke
+    # tests; calibrating a same-sized file path cannot stand in for it.
+    many_file_counts="1 2 4 8 16 32"
     # The stdin + filesystem "core" probes run once per scan-policy preset
     # (default + each supported preset); the external-source probes
     # (git/docker/web) calibrate the default policy only.
@@ -1773,6 +1776,10 @@ show_autoroute_calibration_summary() {
         warn "Autoroute calibration summary unavailable: no readable cache at $cache_path."
         return 1
     fi
+    if ! inspection_json="$("$bin" backend --autoroute --autoroute-cache "$cache_path" --json 2>/dev/null)"; then
+        warn "Autoroute calibration summary unavailable: typed cache inspection failed for $cache_path."
+        return 1
+    fi
 
     calibration_now_s="$(date +%s 2>/dev/null || printf '0')"
     case "$calibration_started_s:$calibration_now_s" in
@@ -1780,7 +1787,7 @@ show_autoroute_calibration_summary() {
         *) calibration_elapsed_s=$((calibration_now_s - calibration_started_s)) ;;
     esac
 
-    if ! calibration_summary="$(awk -v probes="$calibration_probe_total" -v elapsed="$calibration_elapsed_s" '
+    if ! calibration_summary="$(printf '%s\n' "$inspection_json" | awk -v probes="$calibration_probe_total" -v elapsed="$calibration_elapsed_s" '
         function json_string(line, v) {
             v = line
             sub(/^[^:]*:[[:space:]]*"/, "", v)
@@ -1847,20 +1854,22 @@ show_autoroute_calibration_summary() {
             }
             sample = bytes_label(sample_bytes)
             chunk_label = sample_chunks "ch"
-            row = sprintf("  %-18s %-16s %-9s %-7s %-7s %-7s",
+            row = sprintf("  %-18s %-27s %-9s %-7s %-7s %-7s %-7s",
                 sample " / " chunk_label,
                 backend,
                 margin_label(selected_margin_ns),
                 ms_label(simd_ms),
                 ms_label(cpu_ms),
-                ms_label(gpu_ms))
+                ms_label(gpu_cuda_ms),
+                ms_label(gpu_wgpu_ms))
             rows[++count] = row
             backend = ""
             sample_bytes = ""
             sample_chunks = ""
             simd_ms = ""
             cpu_ms = ""
-            gpu_ms = ""
+            gpu_cuda_ms = ""
+            gpu_wgpu_ms = ""
             selected_margin_ns = ""
         }
         /"backend"[[:space:]]*:/ {
@@ -1883,15 +1892,19 @@ show_autoroute_calibration_summary() {
             cpu_ms = json_number($0)
             next
         }
-        backend != "" && /"gpu_ms"[[:space:]]*:/ {
-            gpu_ms = json_number($0)
+        backend != "" && /"gpu_cuda_ms"[[:space:]]*:/ {
+            gpu_cuda_ms = json_number($0)
+            next
+        }
+        backend != "" && /"gpu_wgpu_ms"[[:space:]]*:/ {
+            gpu_wgpu_ms = json_number($0)
             next
         }
         backend != "" && /"selected_margin_ns"[[:space:]]*:/ {
             selected_margin_ns = json_number($0)
             next
         }
-        backend != "" && /"trials"[[:space:]]*:/ {
+        backend != "" && /"daemon_backend"[[:space:]]*:/ {
             emit_row()
             next
         }
@@ -1905,13 +1918,13 @@ show_autoroute_calibration_summary() {
             } else {
                 printf "  probes: %s; decisions persisted: %d\n", probes, count
             }
-            print "  sample/chunks       selected backend margin    simd    cpu     gpu"
+            print "  sample/chunks       selected backend            margin    simd    cpu     cuda    wgpu"
             for (i = 1; i <= count; i++) {
                 print rows[i]
             }
         }
-    ' "$cache_path" 2>/dev/null)"; then
-        warn "Autoroute calibration summary unavailable: could not parse persisted cache at $cache_path."
+    ' 2>/dev/null)"; then
+        warn "Autoroute calibration summary unavailable: could not parse typed cache inspection for $cache_path."
         return 1
     fi
 
@@ -1932,7 +1945,17 @@ make_calibration_probe_kib() {
     path="$1"
     kib="$2"
     block="$(plain_calibration_block)" || return 1
-    awk -v block="$block" -v kib="$kib" 'BEGIN { for (i = 0; i < kib; i++) printf "%s", block }' > "$path"
+    trigger='GITHUB_TOKEN=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
+'
+    awk -v block="$block" -v trigger="$trigger" -v kib="$kib" 'BEGIN {
+        for (i = 1; i <= kib; i++) {
+            if (i % 64 == 0) {
+                printf "%s%s", substr(block, 1, length(block) - length(trigger)), trigger
+            } else {
+                printf "%s", block
+            }
+        }
+    }' > "$path"
 }
 
 make_calibration_probe_bytes() {

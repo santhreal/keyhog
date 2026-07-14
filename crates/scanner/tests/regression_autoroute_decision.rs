@@ -178,10 +178,14 @@ fn routing_profiles_table_order_and_length() {
 
 #[test]
 fn parse_backend_str_maps_canonical_aliases() {
-    assert_eq!(parse_backend_str("gpu"), Some(ScanBackend::Gpu));
+    assert_eq!(parse_backend_str("gpu"), None);
     assert_eq!(
-        parse_backend_str("gpu-region-presence"),
-        Some(ScanBackend::Gpu)
+        parse_backend_str("gpu-cuda-region-presence"),
+        Some(ScanBackend::GpuCuda)
+    );
+    assert_eq!(
+        parse_backend_str("gpu-wgpu-region-presence"),
+        Some(ScanBackend::GpuWgpu)
     );
     assert_eq!(parse_backend_str("simd"), Some(ScanBackend::SimdCpu));
     assert_eq!(parse_backend_str("cpu"), Some(ScanBackend::CpuFallback));
@@ -195,7 +199,10 @@ fn parse_backend_str_maps_canonical_aliases() {
 #[test]
 fn parse_backend_str_trims_lowercases_and_rejects_unknown() {
     // Case-insensitive + surrounding whitespace tolerated.
-    assert_eq!(parse_backend_str("  GPU  "), Some(ScanBackend::Gpu));
+    assert_eq!(
+        parse_backend_str("  GPU-WGPU  "),
+        Some(ScanBackend::GpuWgpu)
+    );
     assert_eq!(parse_backend_str("SIMD-Regex"), Some(ScanBackend::SimdCpu));
     // Genuinely unknown strings are rejected (None), never silently routed.
     assert_eq!(parse_backend_str("quantum"), None);
@@ -211,7 +218,8 @@ fn parse_backend_str_trims_lowercases_and_rejects_unknown() {
 
 #[test]
 fn scan_backend_labels_are_stable() {
-    assert_eq!(ScanBackend::Gpu.label(), "gpu-region-presence");
+    assert_eq!(ScanBackend::GpuCuda.label(), "gpu-cuda-region-presence");
+    assert_eq!(ScanBackend::GpuWgpu.label(), "gpu-wgpu-region-presence");
     assert_eq!(ScanBackend::SimdCpu.label(), "simd-regex");
     assert_eq!(ScanBackend::CpuFallback.label(), "cpu-fallback");
 }

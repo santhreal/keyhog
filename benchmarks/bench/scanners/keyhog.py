@@ -2,10 +2,10 @@
 
 Maps a :class:`ScannerConfig` to keyhog CLI flags:
 
-* **backend** -> ``--backend {simd,cpu,gpu,auto}``. ``simd``/``cpu`` pass
+* **backend** -> ``--backend {simd,cpu,gpu-cuda,gpu-wgpu,auto}``. ``simd``/``cpu`` pass
   ``--no-gpu`` for their bit-deterministic filesystem paths. ``auto`` keeps
-  every eligible calibrated backend in competition. ``gpu`` passes
-  ``--require-gpu`` so it fails instead of timing a CPU fallback.
+  every eligible calibrated backend in competition. Each exact GPU peer passes
+  ``--require-gpu`` so it fails instead of timing another driver or CPU.
 * **cache** -> ``--incremental`` (merkle skip-cache). ``on`` measures the
   *warm* re-run: the adapter populates the index once, then times the second
   pass: that's the 10-100x monorepo-re-run speedup, measured honestly.
@@ -46,9 +46,9 @@ from ..executable_snapshot import sibling_executable_snapshot
 from ..schema import ScannerConfig
 from .base import Finding, MeasurementProvenance, RunStats, Scanner, _line, run_measured
 
-_BACKENDS = ("simd", "cpu", "gpu", "auto")
+_BACKENDS = ("simd", "cpu", "gpu-cuda", "gpu-wgpu", "auto")
 _DETERMINISTIC_BACKENDS = {"simd", "cpu"}
-_REQUIRE_GPU_BACKENDS = {"gpu"}
+_REQUIRE_GPU_BACKENDS = {"gpu-cuda", "gpu-wgpu"}
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _DETECTOR_CORPUS = _REPO_ROOT / "detectors"
@@ -323,7 +323,8 @@ class KeyhogScanner(Scanner):
         default = ScannerConfig(backend="simd", cache="off", daemon="off", mode="full")
         flips = [
             ScannerConfig(backend="auto", cache="off", daemon="off", mode="full"),
-            ScannerConfig(backend="gpu", cache="off", daemon="off", mode="full"),
+            ScannerConfig(backend="gpu-cuda", cache="off", daemon="off", mode="full"),
+            ScannerConfig(backend="gpu-wgpu", cache="off", daemon="off", mode="full"),
             ScannerConfig(backend="simd", cache="on", daemon="off", mode="full"),
             ScannerConfig(backend="simd", cache="off", daemon="on", mode="full"),
             ScannerConfig(backend="simd", cache="off", daemon="off", mode="fast"),

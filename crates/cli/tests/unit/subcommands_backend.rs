@@ -17,6 +17,12 @@ fn backend_self_test_json_preserves_failing_region_presence_probe() {
     assert_eq!(parsed["probes"][1]["status"], "known");
     assert_eq!(parsed["probes"][2]["name"], "gpu_region_presence");
     assert_eq!(parsed["probes"][2]["status"], "fail");
+    assert_eq!(parsed["probes"][2]["backend_route"], "gpu-cuda");
+    assert_eq!(parsed["probes"][2]["backend_id"], "cuda");
+    assert_eq!(parsed["probes"][3]["name"], "gpu_region_presence");
+    assert_eq!(parsed["probes"][3]["status"], "pass");
+    assert_eq!(parsed["probes"][3]["backend_route"], "gpu-wgpu");
+    assert_eq!(parsed["probes"][3]["backend_id"], "wgpu");
     assert!(
         parsed["probes"][2]["message"]
             .as_str()

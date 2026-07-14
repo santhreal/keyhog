@@ -1,4 +1,12 @@
 use super::*;
+
+fn backend_driver_name(backend: crate::hw_probe::ScanBackend) -> &'static str {
+    match backend {
+        crate::hw_probe::ScanBackend::GpuCuda => "cuda",
+        crate::hw_probe::ScanBackend::GpuWgpu => "wgpu",
+        _ => "",
+    }
+}
 use crate::hw_probe::ScanBackend;
 
 static SIMD_AUTO_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
@@ -287,15 +295,10 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     ///
     /// The recall-neutral decode-path perf lever (F3) rests on what `other_count`
     /// is. On decoded sub-chunks the adjudicator's decode-guard
-    /// (`record_decoded_generic_entropy_suppression`) UNCONDITIONALLY suppresses
-    /// every `is_generic_or_entropy_detector` finding, so marking that subset of
-    /// the always-active pool during a decode rescan is pure discarded work
-    /// (Law 7). If `other_count == 0`, the ENTIRE `phase2_n` prefilter can be
-    /// skipped on the decode path with zero recall change; if `other_count > 0`,
-    /// the skip must exclude ONLY the generic/entropy subset so the no-keyword
-    /// vendor patterns (which the decode-guard KEEPS) still run. This diagnostic
-    /// is the durable proof of which case holds. Diagnostic only, not on the
-    /// scan path.
+    /// The decode guard suppresses entropy-only findings, but detector-owned
+    /// phase-2 generic assignments remain recall-bearing when their keyword
+    /// survives decoding. This diagnostic therefore reports composition only;
+    /// it must never justify skipping the generic pool wholesale.
     #[cfg(test)]
     pub(crate) fn phase2_always_active_family_breakdown(&self) -> Phase2PoolBreakdown {
         let mut b = Phase2PoolBreakdown::default();
@@ -378,7 +381,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             pattern_count: self.pattern_count(),
             detector_digest: self.detector_digest(),
             preferred_backend: self.preferred_backend_label(),
-            gpu_backend: self.gpu_backend_label(),
+            gpu_backends: self.gpu_backends.availability(),
             gpu_degrade_count: self
                 .gpu_degrade_count
                 .load(std::sync::atomic::Ordering::Relaxed),
@@ -427,16 +430,38 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         u64::from_le_bytes(bytes)
     }
 
-    /// Identifier of the GPU backend acquired at compile time, or
-    /// None if scanning routes to CPU/SIMD only. Mirrors
-    /// `VyreBackend::id()` which returns "cuda", "wgpu", or the
-    /// driver-defined name. The startup banner uses this so the
-    /// operator can tell at a glance whether they got CUDA (the
-    /// headline 5-10x faster path on NVIDIA hardware) or the WGPU
-    /// fallback, rather than just "Gpu" which collapses both.
+    /// Every compiled GPU driver peer and its acquisition result.
     #[must_use]
-    pub(crate) fn gpu_backend_label(&self) -> Option<&'static str> {
-        self.gpu_backend.as_ref().map(|b| b.id())
+    pub fn gpu_backend_candidates(&self) -> Vec<GpuBackendCandidateStatus> {
+        use crate::hw_probe::ScanBackend;
+        [ScanBackend::GpuCuda, ScanBackend::GpuWgpu]
+            .into_iter()
+            .map(|backend| {
+                let acquired = self.gpu_backends.get(backend);
+                let acquisition_error = self
+                    .gpu_acquisition_failures
+                    .iter()
+                    .find(|failure| failure.backend == backend_driver_name(backend))
+                    .map(|failure| failure.diagnostic.clone());
+                GpuBackendCandidateStatus {
+                    backend,
+                    acquired: acquired.is_some(),
+                    driver_id: acquired.map(|driver| driver.id()),
+                    driver_version: acquired.map(|driver| driver.version()),
+                    device_identity: match backend {
+                        ScanBackend::GpuCuda => self.gpu_backends.cuda_device_identity.clone(),
+                        ScanBackend::GpuWgpu => self.gpu_backends.wgpu_device_identity.clone(),
+                        _ => None,
+                    },
+                    runtime_identity: match backend {
+                        ScanBackend::GpuCuda => self.gpu_backends.cuda_runtime_identity.clone(),
+                        ScanBackend::GpuWgpu => self.gpu_backends.wgpu_runtime_identity.clone(),
+                        _ => None,
+                    },
+                    acquisition_error,
+                }
+            })
+            .collect()
     }
 
     /// Most recent concrete GPU runtime-degrade reason for this compiled
@@ -462,7 +487,9 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         // region presence. Retired per-rule routes do not keep compatibility
         // identities here.
         let ready = match backend {
-            crate::hw_probe::ScanBackend::Gpu => self.gpu_stack_usable(),
+            crate::hw_probe::ScanBackend::GpuCuda | crate::hw_probe::ScanBackend::GpuWgpu => {
+                self.gpu_stack_usable_for(backend)
+            }
             crate::hw_probe::ScanBackend::SimdCpu => self.simd_backend_usable(),
             crate::hw_probe::ScanBackend::CpuFallback => true,
         };

@@ -86,7 +86,8 @@ pub enum Response {
         git_hash: String,
         detector_rules_digest: String,
         /// `autoroute` or the canonical label of the backend forced at daemon
-        /// startup (`gpu-region-presence`, `simd-regex`, or `cpu-fallback`).
+        /// startup (`gpu-cuda-region-presence`, `gpu-wgpu-region-presence`,
+        /// `simd-regex`, or `cpu-fallback`).
         backend_policy: String,
         detector_count: usize,
         uptime_secs: u64,

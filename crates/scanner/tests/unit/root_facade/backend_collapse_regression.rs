@@ -240,7 +240,7 @@ fn routing_verdict_surfaces_gpu_selection_reason() {
             thresholds::GPU_MIN_BYTES_HIGH_TIER,
             5_000,
         );
-        assert_eq!(verdict.backend, ScanBackend::Gpu);
+        assert_eq!(verdict.backend, ScanBackend::GpuWgpu);
         assert_eq!(verdict.reason, BackendRoutingReason::GpuSelected);
         assert_eq!(verdict.reason.label(), "gpu_selected");
         assert_eq!(verdict.workload_bytes, thresholds::GPU_MIN_BYTES_HIGH_TIER);
@@ -280,7 +280,7 @@ fn selection_matrix_exact_cells() {
         ));
         assert_eq!(
             select_backend(&gpu, thresholds::GPU_MIN_BYTES_HIGH_TIER, 5_000),
-            ScanBackend::Gpu
+            ScanBackend::GpuWgpu
         );
 
         // Tiny workload below every floor: GPU cannot engage -> SimdCpu.
@@ -329,7 +329,7 @@ fn batch_dominance_guard_keeps_small_file_swarm_on_cpu() {
         // The same batch DOMINATED by large-file bytes does take the GPU.
         assert_eq!(
             select_backend_for_batch(&gpu, total, 5_000, total),
-            ScanBackend::Gpu,
+            ScanBackend::GpuWgpu,
             "large-file-dominated batch must route to GPU"
         );
     });
@@ -418,7 +418,8 @@ fn retired_megascan_aliases_stay_rejected() {
     ] {
         assert_eq!(parse_backend_str(alias), None, "retired alias {alias}");
     }
-    assert_eq!(ScanBackend::Gpu.label(), "gpu-region-presence");
+    assert_eq!(ScanBackend::GpuCuda.label(), "gpu-cuda-region-presence");
+    assert_eq!(ScanBackend::GpuWgpu.label(), "gpu-wgpu-region-presence");
 }
 
 // ---------------------------------------------------------------------------
@@ -512,16 +513,21 @@ fn removed_dead_gpu_pipelines_stay_removed() {
 #[test]
 fn parse_backend_str_is_the_single_string_source() {
     // Canonical names.
-    assert_eq!(parse_backend_str("gpu"), Some(ScanBackend::Gpu));
+    assert_eq!(parse_backend_str("gpu"), None);
+    assert_eq!(parse_backend_str("gpu-cuda"), Some(ScanBackend::GpuCuda));
+    assert_eq!(parse_backend_str("gpu-wgpu"), Some(ScanBackend::GpuWgpu));
     assert_eq!(parse_backend_str("simd"), Some(ScanBackend::SimdCpu));
     assert_eq!(parse_backend_str("cpu"), Some(ScanBackend::CpuFallback));
     // Case-insensitive + whitespace-trimmed.
-    assert_eq!(parse_backend_str("  GPU  "), Some(ScanBackend::Gpu));
+    assert_eq!(
+        parse_backend_str("  GPU-WGPU  "),
+        Some(ScanBackend::GpuWgpu)
+    );
     assert_eq!(parse_backend_str("SimD"), Some(ScanBackend::SimdCpu));
     // Stable persisted-evidence label.
     assert_eq!(
-        parse_backend_str("gpu-region-presence"),
-        Some(ScanBackend::Gpu)
+        parse_backend_str("gpu-cuda-region-presence"),
+        Some(ScanBackend::GpuCuda)
     );
     // Retired implementation labels do not silently remap.
     assert_eq!(parse_backend_str("gpu-zero-copy"), None);

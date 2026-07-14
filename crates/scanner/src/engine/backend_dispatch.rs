@@ -22,7 +22,7 @@ impl CompiledScanner {
         // `scan_chunk_boundaries` pass reassembles secrets straddling the seam
         // between adjacent gapless chunks of the same file (a per-chunk scan sees
         // each half too short to match) (load-bearing recall, not optional).
-        let gpu_path = matches!(backend, ScanBackend::Gpu);
+        let gpu_path = backend.is_gpu();
         if !gpu_path || chunks.is_empty() {
             return self.scan_chunks_cpu_parallel(chunks, backend);
         }
@@ -33,7 +33,7 @@ impl CompiledScanner {
         // backend is selected without silently substituting CPU/SIMD.
         #[cfg(feature = "gpu")]
         {
-            self.scan_coalesced_gpu_region_presence(chunks)
+            self.scan_coalesced_gpu_region_presence(chunks, backend)
         }
         // GPU compiled out: the public entry guard rejects a selected GPU route
         // before this internal compatibility arm can execute.

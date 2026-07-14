@@ -19,7 +19,7 @@
 //!
 //! These run on a live adapter; gated by the explicit require-GPU runtime policy
 //! to hard-fail in CI that mandates a GPU, else skipped (no silent CPU
-//! masquerade (the GPU path is exercised explicitly via `ScanBackend::Gpu`)).
+//! masquerade (the GPU path is exercised explicitly via `ScanBackend::GpuWgpu`)).
 //!
 //! Run: cargo test -p keyhog-scanner --features gpu --test gpu_region_overfire_validation -- --nocapture
 
@@ -66,7 +66,7 @@ fn scan_gpu_without_degrade(
     chunks: &[keyhog_core::Chunk],
 ) -> Vec<Vec<keyhog_core::RawMatch>> {
     let before = scanner.runtime_status().gpu_degrade_count;
-    let results = scanner.scan_chunks_with_backend(chunks, ScanBackend::Gpu);
+    let results = scanner.scan_chunks_with_backend(chunks, ScanBackend::GpuWgpu);
     let after = scanner.runtime_status().gpu_degrade_count;
     assert_eq!(
         after, before,

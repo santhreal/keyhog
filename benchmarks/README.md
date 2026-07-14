@@ -299,7 +299,7 @@ snapshot as a foreground server on a private socket, verify the peer PID with
 exact process. Active requests must return to zero after each client. The
 default user daemon is never contacted.
 
-Only explicit `simd`, `cpu`, and `gpu` backends are eligible. `auto` lacks a
+Only explicit `simd`, `cpu`, `gpu-cuda`, and `gpu-wgpu` backends are eligible. `auto` lacks a
 persisted selected-backend receipt. Cache, fast, deep, and confidence axes are
 also unavailable because those policies are not bound into daemon startup.
 Unsupported combinations produce unavailable rows with the exact reason.
@@ -379,9 +379,9 @@ POSIX-incompatible with this script; drive the ThinkPad via PowerShell.
 ## Reproducibility
 
 Scoring passes `--no-gpu` for the deterministic SIMD path on the default
-`simd-*` configs; the `gpu`/`auto` configs dogfood the GPU path, and explicit
-`gpu` benchmark rows also pass `--require-gpu` so they fail instead
-of timing a CPU fallback. GPU↔SIMD parity is a separate release gate. The
+`simd-*` configs. The exact `gpu-cuda`, `gpu-wgpu`, and `auto` configs dogfood
+each GPU peer, and explicit GPU rows pass `--require-gpu` so they fail instead
+of timing another driver or CPU. GPU-to-SIMD parity is a separate release gate. The
 CredData corpus is
 pinned to an exact commit so a score is reproducible against a fixed dataset
 revision. The overlap scorer remains bit-identical to the now-retired

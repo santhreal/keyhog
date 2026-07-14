@@ -29,10 +29,14 @@ fn every_advertised_backend_value_parses_except_the_auto_sentinel() {
 
 #[test]
 fn backend_strings_map_to_the_expected_backend() {
-    assert_eq!(parse_backend_str("gpu"), Some(ScanBackend::Gpu));
+    assert_eq!(parse_backend_str("gpu"), None);
     assert_eq!(
-        parse_backend_str("gpu-region-presence"),
-        Some(ScanBackend::Gpu)
+        parse_backend_str("gpu-cuda-region-presence"),
+        Some(ScanBackend::GpuCuda)
+    );
+    assert_eq!(
+        parse_backend_str("gpu-wgpu-region-presence"),
+        Some(ScanBackend::GpuWgpu)
     );
     assert_eq!(parse_backend_str("mega-scan"), None);
     assert_eq!(parse_backend_str("megascan"), None);
@@ -46,7 +50,10 @@ fn backend_strings_map_to_the_expected_backend() {
 
 #[test]
 fn backend_parsing_trims_and_is_case_insensitive() {
-    assert_eq!(parse_backend_str("  GPU  "), Some(ScanBackend::Gpu));
+    assert_eq!(
+        parse_backend_str("  GPU-WGPU  "),
+        Some(ScanBackend::GpuWgpu)
+    );
     assert_eq!(parse_backend_str("Cpu"), Some(ScanBackend::CpuFallback));
     assert_eq!(parse_backend_str("SIMD"), Some(ScanBackend::SimdCpu));
 }

@@ -64,23 +64,29 @@ fn gpu_batch_input_limit_matches_documented_vram_table() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. `ScanBackend` names the three real engines exactly once.
+// 2. `ScanBackend` names the four real engines exactly once.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn scan_backend_is_exactly_the_three_real_engines() {
+fn scan_backend_is_exactly_the_four_real_engines() {
     // Exhaustive match: adding/removing a variant forces this test to be
     // updated, and the label set below pins coherence with --help / banner.
     let all = [
-        ScanBackend::Gpu,
+        ScanBackend::GpuCuda,
+        ScanBackend::GpuWgpu,
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
     ];
     let labels: Vec<&'static str> = all.iter().map(|b| b.label()).collect();
     assert_eq!(
         labels,
-        vec!["gpu-region-presence", "simd-regex", "cpu-fallback"],
-        "the three backend labels must stay stable and in order"
+        vec![
+            "gpu-cuda-region-presence",
+            "gpu-wgpu-region-presence",
+            "simd-regex",
+            "cpu-fallback",
+        ],
+        "the four backend labels must stay stable and in order"
     );
     // Labels are distinct (no two variants alias to the same operator string).
     let mut sorted = labels.clone();

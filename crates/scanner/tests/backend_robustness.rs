@@ -58,7 +58,7 @@ fn canonical_scan(
 
 fn assert_backend_parity(scanner: &CompiledScanner, chunks: &[Chunk]) {
     let reference = canonical_scan(scanner, chunks, ScanBackend::CpuFallback);
-    for backend in [ScanBackend::SimdCpu, ScanBackend::Gpu] {
+    for backend in [ScanBackend::SimdCpu, ScanBackend::GpuWgpu] {
         assert_eq!(
             canonical_scan(scanner, chunks, backend),
             reference,
@@ -177,10 +177,10 @@ fn r7_concurrent_scans_from_multiple_threads_no_data_race() {
 
                 barrier.wait();
                 let gpu_first =
-                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu));
+                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu));
                 barrier.wait();
                 let gpu_second =
-                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu));
+                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu));
                 let simd =
                     canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu));
                 for (backend, actual) in [

@@ -231,13 +231,21 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
                 .cpu_ms
                 .map(|ms| format!(" cpu={ms}ms"))
                 .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
-            let gpu = decision
-                .gpu_ms
-                .map(|ms| format!(" gpu-one-shot={ms}ms"))
+            let cuda = decision
+                .gpu_cuda_ms
+                .map(|ms| format!(" cuda-one-shot={ms}ms"))
                 .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
-            let gpu_warm = decision
-                .gpu_warm_ms
-                .map(|ms| format!(" gpu-warm={ms}ms"))
+            let cuda_warm = decision
+                .gpu_cuda_warm_ms
+                .map(|ms| format!(" cuda-warm={ms}ms"))
+                .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
+            let wgpu = decision
+                .gpu_wgpu_ms
+                .map(|ms| format!(" wgpu-one-shot={ms}ms"))
+                .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
+            let wgpu_warm = decision
+                .gpu_wgpu_warm_ms
+                .map(|ms| format!(" wgpu-warm={ms}ms"))
                 .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
             let margin = decision
                 .selected_margin_ns
@@ -254,15 +262,17 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
                 decision.calibrated_at_unix_ms
             );
             println!(
-                "        one-shot -> {}  {}[{} B / {} chunk(s); simd={}ms{}{}{}{}; basis={}]{}",
+                "        one-shot -> {}  {}[{} B / {} chunk(s); simd={}ms{}{}{}{}{}{}; basis={}]{}",
                 decision.backend,
                 p.dim,
                 decision.sample_bytes,
                 decision.sample_chunks,
                 decision.simd_ms,
                 cpu,
-                gpu,
-                gpu_warm,
+                cuda,
+                cuda_warm,
+                wgpu,
+                wgpu_warm,
                 margin,
                 decision.selection_basis,
                 p.reset
@@ -442,7 +452,9 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
     }
 
     println!();
-    println!("Force a scan backend with: keyhog scan --backend <auto|gpu|simd|cpu> ...");
+    println!(
+        "Force a scan backend with: keyhog scan --backend <auto|gpu-cuda|gpu-wgpu|simd|cpu> ..."
+    );
     Ok(())
 }
 
@@ -487,6 +499,8 @@ pub(crate) struct BackendSelfTestProbe {
     pub(crate) matches: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) backend_id: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) backend_route: Option<&'static str>,
 }
 
 impl BackendSelfTestProbe {
@@ -502,6 +516,7 @@ impl BackendSelfTestProbe {
             coalesced_matches: None,
             matches: None,
             backend_id: None,
+            backend_route: None,
         }
     }
 
@@ -564,39 +579,64 @@ fn run_self_test(json: bool, require_gpu: bool) -> Result<ExitCode> {
 
 fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
     let hw = probe_hardware();
+    let region_presence = keyhog_scanner::gpu::gpu_region_presence_self_test();
+    let acquired_backends: Vec<_> = match &region_presence {
+        Ok(report) => report.peers.iter().map(|peer| peer.backend).collect(),
+        Err(error) => error.acquired_backends.clone(),
+    };
 
-    if !hw.gpu_available || hw.gpu_is_software {
+    if (!hw.gpu_available || hw.gpu_is_software) && acquired_backends.is_empty() {
         return unavailable_gpu_self_test_report(hw, require_gpu);
     }
 
     let mut all_ok = true;
-    let mut probes = Vec::with_capacity(3);
+    let mut probes = Vec::with_capacity(2 + acquired_backends.len());
+    let has_wgpu = acquired_backends.contains(&keyhog_scanner::ScanBackend::GpuWgpu);
+    let recommended_gpu = region_presence.as_ref().ok().and_then(|report| {
+        report
+            .peers
+            .iter()
+            .find(|peer| peer.backend == keyhog_scanner::ScanBackend::GpuWgpu)
+            .or_else(|| report.peers.first())
+            .map(|peer| match peer.backend {
+                keyhog_scanner::ScanBackend::GpuCuda => "gpu-cuda",
+                keyhog_scanner::ScanBackend::GpuWgpu => "gpu-wgpu",
+                _ => "simd-regex",
+            })
+    });
 
     // Test 1: keyhog's MoE compute dispatch.
-    match keyhog_scanner::gpu::gpu_self_test() {
-        Ok(report) => {
-            let mut probe = BackendSelfTestProbe::pass("moe_kernel");
-            probe.adapter_name = Some(report.adapter_name);
-            probe.scores = Some(report.scores);
-            probe.max_buffer_mb = report.vram_mb;
-            probes.push(probe);
-        }
-        Err(error) => {
-            // A GPU-MoE-vs-CPU-MoE parity divergence is a real shader/weights
-            // fault, but it does NOT break detection: `batch_score_features` fails
-            // closed to the CPU MoE (correct + deterministic), so scans on this
-            // host produce the same findings, just without GPU ML acceleration.
-            // Report it as a KNOWN limitation (like the vyre_literal_set lowering
-            // gap below) instead of a hard FAIL, so `--self-test` and the installer
-            // stay green for a host whose scans are correct, while still naming the
-            // fault loudly so it gets fixed. A genuine GPU-unavailable/dispatch
-            // failure stays a FAIL.
-            let parity_degrade = is_moe_parity_degrade(&error);
-            if parity_degrade {
-                probes.push(BackendSelfTestProbe::known("moe_kernel", &error));
-            } else {
-                probes.push(BackendSelfTestProbe::fail("moe_kernel", error));
-                all_ok = false;
+    if !has_wgpu {
+        probes.push(BackendSelfTestProbe::warning(
+            "moe_kernel",
+            "WGPU peer was not acquired; the WGPU MoE diagnostic is not applicable to this CUDA-only runtime",
+        ));
+    } else {
+        match keyhog_scanner::gpu::gpu_self_test() {
+            Ok(report) => {
+                let mut probe = BackendSelfTestProbe::pass("moe_kernel");
+                probe.adapter_name = Some(report.adapter_name);
+                probe.scores = Some(report.scores);
+                probe.max_buffer_mb = report.vram_mb;
+                probes.push(probe);
+            }
+            Err(error) => {
+                // A GPU-MoE-vs-CPU-MoE parity divergence is a real shader/weights
+                // fault, but it does NOT break detection: `batch_score_features` fails
+                // closed to the CPU MoE (correct + deterministic), so scans on this
+                // host produce the same findings, just without GPU ML acceleration.
+                // Report it as a KNOWN limitation (like the vyre_literal_set lowering
+                // gap below) instead of a hard FAIL, so `--self-test` and the installer
+                // stay green for a host whose scans are correct, while still naming the
+                // fault loudly so it gets fixed. A genuine GPU-unavailable/dispatch
+                // failure stays a FAIL.
+                let parity_degrade = is_moe_parity_degrade(&error);
+                if parity_degrade {
+                    probes.push(BackendSelfTestProbe::known("moe_kernel", &error));
+                } else {
+                    probes.push(BackendSelfTestProbe::fail("moe_kernel", error));
+                    all_ok = false;
+                }
             }
         }
     }
@@ -605,27 +645,34 @@ fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
     // scanning uses the scratch region-presence API exercised end to end by
     // the next probe. A direct-mode failure with the classified lowering
     // signature is visible as KNOWN, but never exempts the production probe.
-    match keyhog_scanner::gpu::vyre_gpu_self_test() {
-        Ok(report) => {
-            let mut probe = BackendSelfTestProbe::pass("vyre_literal_set");
-            probe.direct_matches = Some(report.direct_matches);
-            probe.coalesced_matches = Some(report.coalesced_matches);
-            probes.push(probe);
-        }
-        Err(error) => {
-            let known_lowering_gap = is_known_vyre_lowering_gap(&error);
-            if known_lowering_gap {
-                probes.push(BackendSelfTestProbe::known(
+    if !has_wgpu {
+        probes.push(BackendSelfTestProbe::warning(
+            "vyre_literal_set",
+            "WGPU peer was not acquired; direct WGPU match-triple diagnostics are not applicable",
+        ));
+    } else {
+        match keyhog_scanner::gpu::vyre_gpu_self_test() {
+            Ok(report) => {
+                let mut probe = BackendSelfTestProbe::pass("vyre_literal_set");
+                probe.direct_matches = Some(report.direct_matches);
+                probe.coalesced_matches = Some(report.coalesced_matches);
+                probes.push(probe);
+            }
+            Err(error) => {
+                let known_lowering_gap = is_known_vyre_lowering_gap(&error);
+                if known_lowering_gap {
+                    probes.push(BackendSelfTestProbe::known(
                     "vyre_literal_set",
                     "VYRE IR lowering rejects the direct match-triple form; the production region-presence path is checked separately below",
                 ));
-            } else {
-                probes.push(BackendSelfTestProbe::warning(
+                } else {
+                    probes.push(BackendSelfTestProbe::warning(
                     "vyre_literal_set",
                     format!(
                         "VYRE direct match-triple diagnostic failed ({error}); production scan eligibility is determined by gpu_region_presence"
                     ),
                 ));
+                }
             }
         }
     }
@@ -633,15 +680,23 @@ fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
     // Test 3: the production region-presence route. It builds a minimal
     // detector, dispatches through the same scanner path as a selected GPU
     // scan, and compares the final findings with the portable CPU reference.
-    match keyhog_scanner::gpu::gpu_region_presence_self_test() {
+    match region_presence {
         Ok(report) => {
-            let mut probe = BackendSelfTestProbe::pass("gpu_region_presence");
-            probe.matches = Some(report.matches);
-            probe.backend_id = Some(report.backend_id);
-            probes.push(probe);
+            for peer in report.peers {
+                let mut probe = BackendSelfTestProbe::pass("gpu_region_presence");
+                probe.matches = Some(peer.matches);
+                probe.backend_id = Some(peer.backend_id);
+                probe.backend_route = Some(crate::orchestrator_config::backend_override_cli_value(
+                    peer.backend,
+                ));
+                probes.push(probe);
+            }
         }
         Err(error) => {
-            probes.push(BackendSelfTestProbe::fail("gpu_region_presence", error));
+            probes.push(BackendSelfTestProbe::fail(
+                "gpu_region_presence",
+                error.to_string(),
+            ));
             all_ok = false;
         }
     }
@@ -658,12 +713,12 @@ fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
         } else {
             EXIT_BACKEND_SELF_TEST_FAILED
         },
-        gpu_available: hw.gpu_available,
-        gpu_is_software: hw.gpu_is_software,
+        gpu_available: hw.gpu_available || !acquired_backends.is_empty(),
+        gpu_is_software: hw.gpu_is_software && acquired_backends.is_empty(),
         gpu_name: hw.gpu_name.clone(),
         gpu_max_buffer_mb: hw.gpu_vram_mb,
         recommended_backend: if all_ok {
-            Some("gpu")
+            recommended_gpu
         } else {
             Some("simd-regex")
         },
@@ -711,6 +766,7 @@ fn unavailable_gpu_self_test_report(hw: &HardwareCaps, require_gpu: bool) -> Bac
             coalesced_matches: None,
             matches: None,
             backend_id: None,
+            backend_route: None,
         }],
     }
 }
@@ -782,8 +838,9 @@ fn print_pass_probe(probe: &BackendSelfTestProbe, palette: &Palette) {
             format_probe_metric(probe.coalesced_matches)
         ),
         "gpu_region_presence" => println!(
-            "{pass}  (matches={}, backend={})",
+            "{pass}  (matches={}, route={}, backend={})",
             format_probe_metric(probe.matches),
+            probe.backend_route.unwrap_or("unknown"), // LAW10: absent name/label => display default; reporting-only, recall-safe
             probe.backend_id.unwrap_or("unknown") // LAW10: absent name/label => display default; reporting-only, recall-safe
         ),
         _ => println!("{pass}"),
@@ -837,6 +894,7 @@ pub(crate) mod testing {
                     coalesced_matches: None,
                     matches: None,
                     backend_id: None,
+                    backend_route: None,
                 },
                 super::BackendSelfTestProbe {
                     name: "vyre_literal_set",
@@ -851,6 +909,7 @@ pub(crate) mod testing {
                     coalesced_matches: None,
                     matches: None,
                     backend_id: None,
+                    backend_route: None,
                 },
                 super::BackendSelfTestProbe {
                     name: "gpu_region_presence",
@@ -862,7 +921,21 @@ pub(crate) mod testing {
                     direct_matches: None,
                     coalesced_matches: None,
                     matches: None,
-                    backend_id: None,
+                    backend_id: Some("cuda"),
+                    backend_route: Some("gpu-cuda"),
+                },
+                super::BackendSelfTestProbe {
+                    name: "gpu_region_presence",
+                    status: super::BackendSelfTestStatus::Pass,
+                    message: None,
+                    adapter_name: None,
+                    scores: None,
+                    max_buffer_mb: None,
+                    direct_matches: None,
+                    coalesced_matches: None,
+                    matches: Some(1),
+                    backend_id: Some("wgpu"),
+                    backend_route: Some("gpu-wgpu"),
                 },
             ],
         };

@@ -141,27 +141,52 @@ fn vyre_gpu_self_test_impl() -> Result<VyreGpuSelfTest, String> {
     })
 }
 
-/// Status report from the production GPU region-presence self-test. Returned by
-/// [`gpu_region_presence_self_test`] so diagnostics can display the active
-/// backend and exact finding count rather than only PASS/FAIL.
-pub struct GpuRegionPresenceSelfTest {
+/// One acquired peer proven by the production GPU region-presence self-test.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuRegionPresencePeerSelfTest {
+    /// Exact scanner route exercised by the test.
+    pub backend: crate::hw_probe::ScanBackend,
+    /// `VyreBackend::id()` of the driver that ran the test.
+    pub backend_id: &'static str,
     /// Number of findings emitted through the production GPU trigger path.
     pub matches: usize,
-    /// `VyreBackend::id()` of the backend that ran the test.
-    pub backend_id: &'static str,
 }
+
+/// Status report from the production GPU region-presence self-test.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuRegionPresenceSelfTest {
+    /// Every acquired CUDA or WGPU peer. All entries passed exact CPU parity.
+    pub peers: Vec<GpuRegionPresencePeerSelfTest>,
+}
+
+/// Honest aggregate failure from the peer self-test.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuRegionPresenceSelfTestFailure {
+    /// Exact peers acquired before parity execution began.
+    pub acquired_backends: Vec<crate::hw_probe::ScanBackend>,
+    /// Peer-specific acquisition, dispatch, or parity diagnostics.
+    pub message: String,
+}
+
+impl std::fmt::Display for GpuRegionPresenceSelfTestFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for GpuRegionPresenceSelfTestFailure {}
 
 /// Build a minimal one-detector `CompiledScanner` and dispatch a scan through
 /// the production GPU backend. A PASS proves device acquisition, compilation,
 /// lowering, dispatch, and host readback on this host.
-pub fn gpu_region_presence_self_test() -> Result<GpuRegionPresenceSelfTest, String> {
+pub fn gpu_region_presence_self_test(
+) -> Result<GpuRegionPresenceSelfTest, GpuRegionPresenceSelfTestFailure> {
     #[cfg(not(feature = "gpu"))]
     {
-        Err(
-            "GPU region-presence self-test not available in the lean ci build. \
-             Rebuild with `--features gpu` to exercise the production GPU trigger path."
-                .to_string(),
-        )
+        Err(GpuRegionPresenceSelfTestFailure {
+            acquired_backends: Vec::new(),
+            message: "GPU region-presence self-test not available in the lean ci build. Rebuild with `--features gpu` to exercise the production GPU trigger path.".to_string(),
+        })
     }
     #[cfg(feature = "gpu")]
     {
@@ -170,7 +195,8 @@ pub fn gpu_region_presence_self_test() -> Result<GpuRegionPresenceSelfTest, Stri
 }
 
 #[cfg(feature = "gpu")]
-fn gpu_region_presence_self_test_impl() -> Result<GpuRegionPresenceSelfTest, String> {
+fn gpu_region_presence_self_test_impl(
+) -> Result<GpuRegionPresenceSelfTest, GpuRegionPresenceSelfTestFailure> {
     use crate::engine::CompiledScanner;
     use crate::hw_probe::ScanBackend;
     use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
@@ -202,12 +228,39 @@ fn gpu_region_presence_self_test_impl() -> Result<GpuRegionPresenceSelfTest, Str
         ..Default::default()
     };
 
-    let scanner = CompiledScanner::compile(vec![detector])
-        .map_err(|e| format!("CompiledScanner::compile failed during self-test: {e}"))?;
+    let scanner = CompiledScanner::compile(vec![detector]).map_err(|error| {
+        GpuRegionPresenceSelfTestFailure {
+            acquired_backends: Vec::new(),
+            message: format!("CompiledScanner::compile failed during self-test: {error}"),
+        }
+    })?;
 
-    let backend_id = scanner
-        .gpu_backend_label()
-        .ok_or_else(|| "no GPU backend acquired during self-test compile".to_string())?;
+    let candidates = scanner.gpu_backend_candidates();
+    let acquired_backends: Vec<_> = candidates
+        .iter()
+        .filter(|candidate| candidate.acquired)
+        .map(|candidate| candidate.backend)
+        .collect();
+    if acquired_backends.is_empty() {
+        let diagnostics = candidates
+            .iter()
+            .map(|candidate| {
+                format!(
+                    "{}: {}",
+                    candidate.backend.label(),
+                    candidate
+                        .acquisition_error
+                        .as_deref()
+                        .unwrap_or("driver was not acquired and returned no diagnostic")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(GpuRegionPresenceSelfTestFailure {
+            acquired_backends,
+            message: format!("no GPU region-presence peer was acquired ({diagnostics})"),
+        });
+    }
 
     let make_chunk = || Chunk {
         data: format!("gpu_secret = {PLANTED}").into(),
@@ -220,31 +273,79 @@ fn gpu_region_presence_self_test_impl() -> Result<GpuRegionPresenceSelfTest, Str
     let cpu_results = scanner.scan_chunks_with_backend(&[make_chunk()], ScanBackend::CpuFallback);
     let cpu_total: usize = cpu_results.iter().map(Vec::len).sum();
     if cpu_total == 0 {
-        return Err(
-            "GPU self-test probe matched on NO backend (CPU baseline is zero); the planted secret or detector is invalid (harness bug), not a GPU kernel defect. Fix the self-test probe so it survives suppression."
-                .to_string(),
-        );
+        return Err(GpuRegionPresenceSelfTestFailure {
+            acquired_backends,
+            message: "GPU self-test probe matched on no backend (CPU baseline is zero); fix the self-test probe so it survives suppression.".to_string(),
+        });
     }
 
-    let results = scanner
-        .try_scan_coalesced_gpu_region_presence(&[make_chunk()])
-        .map_err(|error| format!("GPU region-presence dispatch failed: {error}"))?;
-    if let Some(detail) = scanner.last_gpu_degrade_reason() {
-        return Err(format!(
-            "GPU region-presence recall floor recovered an under-fire condition despite an acquired GPU stack: {detail}"
-        ));
+    let mut peers = Vec::with_capacity(acquired_backends.len());
+    let mut failures = Vec::new();
+    for candidate in candidates
+        .into_iter()
+        .filter(|candidate| candidate.acquired)
+    {
+        let route = candidate.backend;
+        let Some(backend_id) = candidate.driver_id else {
+            failures.push(format!(
+                "{}: acquired driver returned no identity",
+                route.label()
+            ));
+            continue;
+        };
+        let degrade_before = scanner.runtime_status().gpu_degrade_count;
+        let results = match scanner.try_scan_coalesced_gpu_region_presence(&[make_chunk()], route) {
+            Ok(results) => results,
+            Err(error) => {
+                failures.push(format!(
+                    "{} ({backend_id}): dispatch failed: {error}",
+                    route.label()
+                ));
+                continue;
+            }
+        };
+        if scanner.runtime_status().gpu_degrade_count > degrade_before {
+            failures.push(format!(
+                "{} ({backend_id}): {}",
+                route.label(),
+                scanner
+                    .last_gpu_degrade_reason()
+                    .unwrap_or_else(|| "runtime degrade recorded without a diagnostic".to_string())
+            ));
+            continue;
+        }
+        let total: usize = results.iter().map(Vec::len).sum();
+        if total != cpu_total {
+            failures.push(format!(
+                "{} ({backend_id}): found {total} match(es), CPU found {cpu_total}",
+                route.label()
+            ));
+            continue;
+        }
+        peers.push(GpuRegionPresencePeerSelfTest {
+            backend: route,
+            backend_id,
+            matches: total,
+        });
     }
-    let total: usize = results.iter().map(Vec::len).sum();
-    // The real contract: the GPU phase-1 path must find EXACTLY what the CPU
-    // baseline finds for the same input. A divergence (high or low) is a
-    // literal-set lowering regression or dispatch/workgroup-size mismatch.
-    if total != cpu_total {
-        return Err(format!(
-            "GPU region-presence scan diverged from the CPU baseline: GPU found {total} match(es), CPU found {cpu_total} for the same planted secret. Indicates a GPU phase-1 literal-set lowering regression or a dispatch/workgroup-size mismatch."
-        ));
+    if !failures.is_empty() {
+        let passed = peers
+            .iter()
+            .map(|peer| format!("{} ({})", peer.backend.label(), peer.backend_id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let passed = if passed.is_empty() {
+            "none".to_string()
+        } else {
+            passed
+        };
+        return Err(GpuRegionPresenceSelfTestFailure {
+            acquired_backends,
+            message: format!(
+                "GPU region-presence peer parity failed: {}; passed peers: {passed}",
+                failures.join("; ")
+            ),
+        });
     }
-    Ok(GpuRegionPresenceSelfTest {
-        matches: total,
-        backend_id,
-    })
+    Ok(GpuRegionPresenceSelfTest { peers })
 }

@@ -19,11 +19,9 @@
 //! case-sensitive literal automaton). It asserts the GPU and SIMD finding sets
 //! are byte-for-byte equal.
 //!
-//! On a host without a usable GPU, `--backend gpu` fails closed, so
-//! both runs are SIMD and the test trivially passes (it can never falsely
-//! FAIL). On a GPU host it genuinely exercises the GPU engine, the case this
-//! gate exists for. CLAUDE.md Law 8: on a known-GPU host a green here means
-//! the GPU path was actually compared, not skipped.
+//! The production backend self-test identifies every acquired exact GPU peer.
+//! Each acquired CUDA and WGPU route is compared. A host with no physical GPU
+//! reports one visible skip; a present but broken peer fails the test.
 
 use std::collections::BTreeSet;
 use std::process::Command;
@@ -51,10 +49,18 @@ fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String
         cmd.arg("--no-gpu");
     }
     let out = cmd.output().expect("keyhog binary runs");
+    let code = out.status.code();
+    assert!(
+        matches!(code, Some(0 | 1)),
+        "explicit {backend} scan failed with {:?}: {}",
+        code,
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     let json: serde_json::Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("{backend} output is JSON: {e}\n{stdout}"));
-    json.as_array()
+    let findings: BTreeSet<_> = json
+        .as_array()
         .expect("findings array")
         .iter()
         .map(|f| {
@@ -66,7 +72,48 @@ fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String
                     .to_string(),
             )
         })
-        .collect()
+        .collect();
+    assert_eq!(
+        code,
+        Some(if findings.is_empty() { 0 } else { 1 }),
+        "explicit {backend} exit code must agree with its finding report"
+    );
+    findings
+}
+
+fn available_gpu_routes() -> Vec<String> {
+    let output = Command::new(bin())
+        .args(["backend", "--self-test", "--json"])
+        .output()
+        .expect("backend self-test runs");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|error| panic!("backend self-test output is JSON: {error}\n{stdout}"));
+    if report["gpu_available"] == false {
+        assert_eq!(
+            report["ok"], true,
+            "absent GPU report must be an honest skip"
+        );
+        assert_eq!(report["status"], "skip");
+        return Vec::new();
+    }
+    assert!(
+        output.status.success() && report["ok"] == true && report["status"] == "pass",
+        "present GPU peer failed production self-test: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let routes: Vec<String> = report["probes"]
+        .as_array()
+        .expect("self-test probes array")
+        .iter()
+        .filter(|probe| probe["name"] == "gpu_region_presence" && probe["status"] == "pass")
+        .filter_map(|probe| probe["backend_route"].as_str().map(str::to_owned))
+        .collect();
+    assert!(
+        !routes.is_empty(),
+        "GPU reported available without an acquired peer self-test: {report}"
+    );
+    routes
 }
 
 /// Build a fixture that forces the historically-divergent cases:
@@ -96,20 +143,25 @@ fn gpu_and_simd_return_identical_findings() {
     let path = file.to_str().unwrap();
 
     let simd = findings(path, "simd", true);
-    let gpu = findings(path, "gpu", false);
-
-    let _ = std::fs::remove_dir_all(&dir);
+    let routes = available_gpu_routes();
 
     assert!(
         !simd.is_empty(),
         "fixture should yield at least one SIMD finding (sanity)"
     );
-    assert_eq!(
-        gpu, simd,
-        "GPU and SIMD finding sets diverge (gpu_parity).\n  in SIMD not GPU: {:?}\n  in GPU not SIMD: {:?}",
-        simd.difference(&gpu).collect::<Vec<_>>(),
-        gpu.difference(&simd).collect::<Vec<_>>(),
-    );
+    if routes.is_empty() {
+        eprintln!("no physical GPU peer acquired; exact GPU parity was not executed");
+    }
+    for route in routes {
+        let gpu = findings(path, &route, false);
+        assert_eq!(
+            gpu, simd,
+            "{route} and SIMD finding sets diverge (gpu_parity).\n  in SIMD not GPU: {:?}\n  in GPU not SIMD: {:?}",
+            simd.difference(&gpu).collect::<Vec<_>>(),
+            gpu.difference(&simd).collect::<Vec<_>>(),
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -133,18 +185,23 @@ fn gpu_does_not_add_decoded_license_key_false_positive() {
     let path = file.to_str().unwrap();
 
     let simd = findings(path, "simd", true);
-    let gpu = findings(path, "gpu", false);
-
-    let _ = std::fs::remove_dir_all(&dir);
+    let routes = available_gpu_routes();
 
     assert!(
         simd.is_empty(),
         "fixture should remain clean on the SIMD coalesced path, got {simd:?}"
     );
-    assert_eq!(
-        gpu,
-        simd,
-        "GPU added decoded false positives absent from SIMD.\n  in GPU not SIMD: {:?}",
-        gpu.difference(&simd).collect::<Vec<_>>(),
-    );
+    if routes.is_empty() {
+        eprintln!("no physical GPU peer acquired; decoded-negative parity was not executed");
+    }
+    for route in routes {
+        let gpu = findings(path, &route, false);
+        assert_eq!(
+            gpu,
+            simd,
+            "{route} added decoded false positives absent from SIMD.\n  in GPU not SIMD: {:?}",
+            gpu.difference(&simd).collect::<Vec<_>>(),
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }

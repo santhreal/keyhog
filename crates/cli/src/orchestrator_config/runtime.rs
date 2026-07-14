@@ -63,7 +63,8 @@ pub(crate) fn backend_override_label(backend: Option<keyhog_scanner::ScanBackend
 /// `cpu-fallback`, while the stable operator spelling is `cpu`.
 pub(crate) fn backend_override_cli_value(backend: keyhog_scanner::ScanBackend) -> &'static str {
     match backend {
-        keyhog_scanner::ScanBackend::Gpu => "gpu",
+        keyhog_scanner::ScanBackend::GpuCuda => "gpu-cuda",
+        keyhog_scanner::ScanBackend::GpuWgpu => "gpu-wgpu",
         keyhog_scanner::ScanBackend::SimdCpu => "simd",
         keyhog_scanner::ScanBackend::CpuFallback => "cpu",
         _ => backend.label(),
@@ -73,7 +74,7 @@ pub(crate) fn backend_override_cli_value(backend: keyhog_scanner::ScanBackend) -
 pub(crate) fn gpu_runtime_policy_from_args(
     args: &ScanArgs,
 ) -> keyhog_scanner::gpu::GpuRuntimePolicy {
-    if args.require_gpu {
+    if args.require_gpu || explicit_gpu_backend(args) {
         keyhog_scanner::gpu::GpuRuntimePolicy::Required
     } else if args.no_gpu || explicit_cpu_backend(args) {
         keyhog_scanner::gpu::GpuRuntimePolicy::Disabled
@@ -86,7 +87,9 @@ pub(crate) fn gpu_runtime_policy_for_backend_override(
     backend: Option<keyhog_scanner::ScanBackend>,
 ) -> Result<keyhog_scanner::gpu::GpuRuntimePolicy> {
     let policy = match backend {
-        Some(keyhog_scanner::ScanBackend::Gpu) => keyhog_scanner::gpu::GpuRuntimePolicy::Required,
+        Some(keyhog_scanner::ScanBackend::GpuCuda | keyhog_scanner::ScanBackend::GpuWgpu) => {
+            keyhog_scanner::gpu::GpuRuntimePolicy::Required
+        }
         Some(keyhog_scanner::ScanBackend::SimdCpu | keyhog_scanner::ScanBackend::CpuFallback) => {
             keyhog_scanner::gpu::GpuRuntimePolicy::Disabled
         }
@@ -101,13 +104,19 @@ pub(crate) fn gpu_runtime_policy_for_backend_override(
 
 #[cfg(test)]
 mod daemon_gpu_policy_tests {
-    use super::gpu_runtime_policy_for_backend_override;
+    use super::{gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args};
+    use crate::args::ScanArgs;
+    use clap::Parser;
     use keyhog_scanner::{gpu::GpuRuntimePolicy, ScanBackend};
 
     #[test]
     fn explicit_daemon_backend_owns_the_matching_gpu_policy() {
         assert_eq!(
-            gpu_runtime_policy_for_backend_override(Some(ScanBackend::Gpu)).unwrap(),
+            gpu_runtime_policy_for_backend_override(Some(ScanBackend::GpuCuda)).unwrap(),
+            GpuRuntimePolicy::Required,
+        );
+        assert_eq!(
+            gpu_runtime_policy_for_backend_override(Some(ScanBackend::GpuWgpu)).unwrap(),
             GpuRuntimePolicy::Required,
         );
         assert_eq!(
@@ -122,6 +131,19 @@ mod daemon_gpu_policy_tests {
             gpu_runtime_policy_for_backend_override(None).unwrap(),
             GpuRuntimePolicy::Auto,
         );
+    }
+
+    #[test]
+    fn explicit_scan_gpu_peers_are_required() {
+        for backend in ["gpu-cuda", "gpu-wgpu"] {
+            let args = ScanArgs::try_parse_from(["scan", "--backend", backend, "--stdin"])
+                .expect("exact GPU route must parse");
+            assert_eq!(
+                gpu_runtime_policy_from_args(&args),
+                GpuRuntimePolicy::Required,
+                "explicit {backend} must never relax to automatic GPU policy"
+            );
+        }
     }
 }
 
@@ -140,7 +162,14 @@ fn explicit_cpu_backend(args: &ScanArgs) -> bool {
     args.backend
         .as_deref()
         .and_then(keyhog_scanner::hw_probe::parse_backend_str)
-        .is_some_and(|backend| !matches!(backend, keyhog_scanner::ScanBackend::Gpu))
+        .is_some_and(|backend| !backend.is_gpu())
+}
+
+fn explicit_gpu_backend(args: &ScanArgs) -> bool {
+    args.backend
+        .as_deref()
+        .and_then(keyhog_scanner::hw_probe::parse_backend_str)
+        .is_some_and(keyhog_scanner::ScanBackend::is_gpu)
 }
 
 #[derive(Debug, Clone)]

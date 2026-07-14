@@ -31,7 +31,7 @@ fn chunk(text: &str) -> Chunk {
 fn selected_gpu_backend_executes_or_fails() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
-    let gpu_ready = scanner.warm_backend(ScanBackend::Gpu);
+    let gpu_ready = scanner.warm_backend(ScanBackend::GpuWgpu);
 
     if !gpu_ready {
         panic!(
@@ -42,7 +42,7 @@ fn selected_gpu_backend_executes_or_fails() {
 
     let results = scanner.scan_chunks_with_backend(
         &[chunk("const K = \"AKIAQYLPMN5HFIQR7XYA\";")],
-        ScanBackend::Gpu,
+        ScanBackend::GpuWgpu,
     );
     let count: usize = results.iter().map(|chunk| chunk.len()).sum();
     assert_eq!(

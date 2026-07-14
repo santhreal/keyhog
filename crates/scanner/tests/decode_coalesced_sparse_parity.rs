@@ -73,7 +73,7 @@ fn assert_scalar_coalesced_parity(label: &str, fixture: Chunk) {
     if keyhog_scanner::gpu::gpu_available() {
         scanner.clear_fragment_cache();
         let gpu =
-            scanner.scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::Gpu);
+            scanner.scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::GpuWgpu);
         assert_eq!(
             aws_findings(&gpu),
             scalar,

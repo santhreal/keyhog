@@ -48,7 +48,14 @@ pub(crate) fn run_benchmark(orchestrator: &ScanOrchestrator) -> Result<Vec<Backe
         backends.push(ScanBackend::SimdCpu);
     }
     if hw.gpu_available {
-        backends.push(ScanBackend::Gpu);
+        backends.extend(
+            orchestrator
+                .scanner()
+                .gpu_backend_candidates()
+                .into_iter()
+                .filter(|candidate| candidate.acquired)
+                .map(|candidate| candidate.backend),
+        );
     }
 
     let mut results = Vec::new();

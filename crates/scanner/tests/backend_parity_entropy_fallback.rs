@@ -61,7 +61,7 @@ fn entropy_fallback_parity_high_entropy_no_literal_prefix() {
 
     let mut backends = vec![ScanBackend::CpuFallback];
     #[cfg(feature = "gpu")]
-    backends.extend([ScanBackend::Gpu]);
+    backends.extend([ScanBackend::GpuWgpu]);
 
     scanner.clear_fragment_cache();
     let simd_results = scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu);
@@ -80,7 +80,7 @@ fn entropy_fallback_parity_high_entropy_no_literal_prefix() {
         let degrade_after = scanner.runtime_status().gpu_degrade_count;
         let findings = collect_entropy_findings(&results);
 
-        if matches!(backend, ScanBackend::Gpu) {
+        if matches!(backend, ScanBackend::GpuWgpu) {
             assert_eq!(
                 degrade_after, degrade_before,
                 "{backend:?} entropy proof must not silently substitute CPU"

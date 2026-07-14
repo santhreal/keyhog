@@ -160,42 +160,7 @@ write_mock_autoroute_cache() {
     cache="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/autoroute.json"
   fi
   mkdir -p "$(dirname "$cache")" || exit 1
-  cat > "$cache" <<'JSON'
-{
-  "decisions": [
-    [
-      { "bytes_bucket": 0, "chunks_bucket": 0, "max_file_bucket": 0, "pattern_bucket": 0, "decode_density_bucket": 0, "source_class_hash": 1 },
-      {
-        "backend": "simd-regex",
-        "sample_bytes": 0,
-        "sample_chunks": 0,
-        "correctness_digest": 1,
-        "calibrated_at_unix_ms": 1,
-        "simd_ms": 1,
-        "cpu_ms": 3,
-        "gpu_ms": null,
-        "selected_margin_ns": 2000000,
-        "trials": 3
-      }
-    ],
-    [
-      { "bytes_bucket": 12, "chunks_bucket": 1, "max_file_bucket": 12, "pattern_bucket": 9, "decode_density_bucket": 1, "source_class_hash": 2 },
-      {
-        "backend": "gpu-region-presence",
-        "sample_bytes": 8388608,
-        "sample_chunks": 1,
-        "correctness_digest": 2,
-        "calibrated_at_unix_ms": 1,
-        "simd_ms": 9,
-        "cpu_ms": 12,
-        "gpu_ms": 2,
-        "selected_margin_ns": 7000000,
-        "trials": 3
-      }
-    ]
-  ]
-}
-JSON
+  printf '{}\n' > "$cache"
 }
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
@@ -205,6 +170,39 @@ case "$1" in
       --help) echo "Usage: keyhog scan [--no-config] [--autoroute-calibrate]" ;;
       *) case " $* " in *" --autoroute-calibrate "*) write_mock_autoroute_cache ;; esac ;;
     esac
+    exit 0
+    ;;
+  backend)
+    cat <<'JSON'
+{
+  "configs": [{
+    "decisions": [
+      {
+        "backend": "simd-regex",
+        "sample_bytes": 0,
+        "sample_chunks": 0,
+        "simd_ms": 1,
+        "cpu_ms": 3,
+        "gpu_cuda_ms": null,
+        "gpu_wgpu_ms": null,
+        "selected_margin_ns": 2000000,
+        "daemon_backend": "simd-regex"
+      },
+      {
+        "backend": "gpu-cuda-region-presence",
+        "sample_bytes": 8388608,
+        "sample_chunks": 1,
+        "simd_ms": 9,
+        "cpu_ms": 12,
+        "gpu_cuda_ms": 2,
+        "gpu_wgpu_ms": 4,
+        "selected_margin_ns": 7000000,
+        "daemon_backend": "gpu-cuda-region-presence"
+      }
+    ]
+  }]
+}
+JSON
     exit 0
     ;;
   hook)      exit 0 ;;
@@ -238,25 +236,7 @@ write_mock_autoroute_cache() {
     cache="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/autoroute.json"
   fi
   mkdir -p "$(dirname "$cache")" || exit 1
-  cat > "$cache" <<'JSON'
-{
-  "decisions": [
-    [
-      {},
-      {
-        "backend": "simd-regex",
-        "sample_bytes": 4096,
-        "sample_chunks": 1,
-        "simd_ms": 1,
-        "cpu_ms": 2,
-        "gpu_ms": null,
-        "selected_margin_ns": 1000000,
-        "trials": 3
-      }
-    ]
-  ]
-}
-JSON
+  printf '{}\n' > "$cache"
 }
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
@@ -270,6 +250,21 @@ case "$1" in
     ;;
   completion) echo "completion disk denied" >&2; exit 13 ;;
   hook)       echo "hook denied by policy" >&2; exit 12 ;;
+  backend)
+    cat <<'JSON'
+{"configs":[{"decisions":[{
+  "backend": "simd-regex",
+  "sample_bytes": 4096,
+  "sample_chunks": 1,
+  "simd_ms": 1,
+  "cpu_ms": 2,
+  "gpu_cuda_ms": null,
+  "gpu_wgpu_ms": null,
+  "selected_margin_ns": 1000000,
+  "daemon_backend": "simd-regex"
+}]}]}
+JSON
+    exit 0 ;;
   *) ;;
 esac
 SH
@@ -286,25 +281,7 @@ write_mock_autoroute_cache() {
     cache="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/autoroute.json"
   fi
   mkdir -p "$(dirname "$cache")" || exit 1
-  cat > "$cache" <<'JSON'
-{
-  "decisions": [
-    [
-      {},
-      {
-        "backend": "simd-regex",
-        "sample_bytes": 4096,
-        "sample_chunks": 1,
-        "simd_ms": 1,
-        "cpu_ms": 2,
-        "gpu_ms": null,
-        "selected_margin_ns": 1000000,
-        "trials": 3
-      }
-    ]
-  ]
-}
-JSON
+  printf '{}\n' > "$cache"
 }
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
@@ -318,6 +295,21 @@ case "$1" in
     ;;
   hook)      exit 0 ;;
   completion) echo "# mock completion for ${2:-sh}" ;;
+  backend)
+    cat <<'JSON'
+{"configs":[{"decisions":[{
+  "backend": "simd-regex",
+  "sample_bytes": 4096,
+  "sample_chunks": 1,
+  "simd_ms": 1,
+  "cpu_ms": 2,
+  "gpu_cuda_ms": null,
+  "gpu_wgpu_ms": null,
+  "selected_margin_ns": 1000000,
+  "daemon_backend": "simd-regex"
+}]}]}
+JSON
+    exit 0 ;;
   *) ;;
 esac
 SH
@@ -367,25 +359,7 @@ write_mock_autoroute_cache() {
     cache="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/autoroute.json"
   fi
   mkdir -p "$(dirname "$cache")" || exit 1
-  cat > "$cache" <<'JSON'
-{
-  "decisions": [
-    [
-      {},
-      {
-        "backend": "simd-regex",
-        "sample_bytes": 4096,
-        "sample_chunks": 1,
-        "simd_ms": 1,
-        "cpu_ms": 2,
-        "gpu_ms": null,
-        "selected_margin_ns": 1000000,
-        "trials": 3
-      }
-    ]
-  ]
-}
-JSON
+  printf '{}\n' > "$cache"
 }
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
@@ -777,7 +751,7 @@ expect_match  "6.3a minisign verified line"   "Minisign signature verified" "$ou
 expect_exec   "6.4 binary is executable"      "$h/.local/bin/keyhog"
 expect_match  "6.4a calibration summary table printed" "Autoroute calibration decisions" "$out"
 expect_match  "6.4b calibration summary reports persisted decision count" "decisions persisted: 2" "$out"
-expect_match  "6.4c calibration summary shows backend margin" "gpu-region-presence.*7\\.0ms" "$out"
+expect_match  "6.4c calibration summary shows exact peer margin" "gpu-cuda-region-presence.*7\\.0ms.*2ms.*4ms" "$out"
 expect_match  "6.4d GPU literal sidecar is installed" "Installed 1 GPU literal matcher artifact" "$out"
 expect_file   "6.4e GPU literal artifact seeds runtime cache" "$h/.cache/keyhog/programs/lit-mock.bin"
 rm -rf "$h"
@@ -1341,12 +1315,15 @@ else
         "hardcoded total=9 or missing workload-derived total loop"
 fi
 if grep -q 'show_autoroute_calibration_summary "$total"' install.sh \
-   && grep -q 'selected backend margin' install.sh \
-   && grep -q 'selected_margin_ns' install.sh; then
+   && grep -q 'selected backend' install.sh \
+   && grep -q 'margin' install.sh \
+   && grep -q 'backend --autoroute --autoroute-cache' install.sh \
+   && grep -q 'gpu_cuda_ms' install.sh \
+   && grep -q 'gpu_wgpu_ms' install.sh; then
     _record_pass "19.14a install.sh renders persisted autoroute decisions after calibration"
 else
     _record_fail "19.14a install.sh renders persisted autoroute decisions" \
-        "summary table must read selected backend and selected_margin_ns from the cache"
+        "summary table must consume typed autoroute inspection with exact peer timings"
 fi
 if grep -q 'while kill -0 "$pid"' install.sh \
    && grep -q 'calibration_probe_pid="$pid"' install.sh \

@@ -323,10 +323,10 @@ pub(crate) fn report_backend_summary(
         format!("backend: {} (forced via --backend)", backend.label())
     } else if gpu > 0 && simd > 0 {
         format!(
-            "backend: gpu-region-presence ({gpu} chunk(s)) + simd-regex ({simd} chunk(s)) - selected per batch by size"
+            "backend: calibrated GPU driver peer ({gpu} chunk(s)) + simd-regex ({simd} chunk(s))"
         )
     } else if gpu > 0 {
-        "backend: gpu-region-presence (selected for large-buffer batches)".to_string()
+        "backend: calibrated GPU driver peer (inspect `keyhog backend --autoroute` for the exact route)".to_string()
     } else if hw.gpu_available && !hw.gpu_is_software {
         let name = hw.gpu_name.as_deref().unwrap_or("a GPU").trim().to_string(); // LAW10: absent name/label => display default; reporting-only, recall-safe
         format!(
@@ -335,7 +335,7 @@ pub(crate) fn report_backend_summary(
              host lowercase/coalescing, device dispatch/readback, and the shared CPU \
              phase-2 extraction tail. In the current evidence, SIMD wins for this \
              detector set through the measured range. Force the device path with \
-             --backend gpu (parity / research), include it in calibration with \
+             --backend gpu-cuda or --backend gpu-wgpu (parity / research), include both in calibration with \
              --autoroute-gpu, or run `keyhog backend`."
         )
     } else {

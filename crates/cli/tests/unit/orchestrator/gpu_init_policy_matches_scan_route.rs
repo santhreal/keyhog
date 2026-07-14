@@ -28,7 +28,7 @@ fn explicit_simd_backend_skips_gpu_compile() {
 #[test]
 fn explicit_gpu_backend_forces_gpu_compile() {
     with_route_policy_lock(|| {
-        let args = scan_args(&["scan", "--backend", "gpu", "--path", "."]);
+        let args = scan_args(&["scan", "--backend", "gpu-wgpu", "--path", "."]);
         assert_eq!(
             API.gpu_init_policy_for_args_for_test(&args),
             GpuInitPolicy::ForceEnabled
@@ -132,7 +132,7 @@ fn stdin_auto_scan_keeps_runtime_gpu_policy() {
 #[test]
 fn backend_flag_gpu_overrides_filesystem_auto_skip() {
     with_route_policy_lock(|| {
-        let args = scan_args(&["scan", "--backend", "gpu", "--path", "."]);
+        let args = scan_args(&["scan", "--backend", "gpu-cuda", "--path", "."]);
         assert_eq!(
             API.gpu_init_policy_for_args_for_test(&args),
             GpuInitPolicy::ForceEnabled
@@ -337,7 +337,7 @@ fn every_advertised_backend_value_is_recognized_by_the_canonical_parser() {
         advertised, expected,
         "Clap --backend values must come from the scanner-owned backend override contract"
     );
-    for canonical_label in ["gpu", "simd", "cpu"] {
+    for canonical_label in ["gpu-cuda", "gpu-wgpu", "simd", "cpu"] {
         assert!(
             advertised.iter().any(|value| value == canonical_label),
             "canonical backend label `{canonical_label}` must be accepted at the CLI boundary"

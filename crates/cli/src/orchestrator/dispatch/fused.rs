@@ -292,11 +292,10 @@ impl ScanOrchestrator {
                 // require_selected_backend_stack) must not be counted as
                 // GPU-scanned. The
                 // increment moved BELOW the dispatch, gated on this snapshot.
-                let gpu_degrade_before =
-                    matches!(backend, keyhog_scanner::hw_probe::ScanBackend::Gpu)
-                        .then(|| scanner_ref.gpu_degrade_count());
+                let gpu_degrade_before = backend.is_gpu().then(|| scanner_ref.gpu_degrade_count());
                 match backend {
-                    keyhog_scanner::hw_probe::ScanBackend::Gpu => {
+                    keyhog_scanner::hw_probe::ScanBackend::GpuCuda
+                    | keyhog_scanner::hw_probe::ScanBackend::GpuWgpu => {
                         tracing::debug!(
                             target: "keyhog::routing",
                             backend = backend.label(),

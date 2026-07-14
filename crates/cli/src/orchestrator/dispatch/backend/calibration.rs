@@ -42,28 +42,39 @@ pub(super) fn calibrate_fastest_correct_backend(
     )?;
     let cpu_timing = Some(cpu_timing);
 
-    let mut gpu_timing = None;
-    let gpu_candidate_allowed = autoroute_gpu && hw_caps.gpu_available && !hw_caps.gpu_is_software;
+    let gpu_candidates = scanner.gpu_backend_candidates();
+    let gpu_candidate_allowed = autoroute_gpu
+        && gpu_candidates.iter().any(|candidate| {
+            candidate.acquired
+                && (candidate.backend == ScanBackend::GpuCuda
+                    || (hw_caps.gpu_available && !hw_caps.gpu_is_software))
+        });
+    let mut gpu_cuda_timing = None;
+    let mut gpu_wgpu_timing = None;
     if gpu_candidate_allowed {
-        let measured_gpu_timing =
-            measure_candidate_backend(scanner, sample, ScanBackend::Gpu, &reference_matches)?;
-        // Admit the GPU candidate only if its timing can produce valid cold/warm
-        // route evidence, the SAME derivability invariant the loaded-cache path
-        // enforces (`store::validate_gpu_cold_warm_cache_evidence`). The cold /
-        // warm / route VALUES are DERIVED on demand from `gpu_timing`
-        // (`AutorouteDecision::gpu_cold_warm_route`), never stored here.
-        if gpu_cold_warm_route_evidence(&measured_gpu_timing).is_some() {
-            gpu_timing = Some(measured_gpu_timing);
-        } else {
-            tracing::error!(
-                target: "keyhog::routing",
-                backend = ScanBackend::Gpu.label(),
-                "backend rejected by autoroute GPU cold/warm evidence check"
-            );
-            return Err(AutorouteRoutingError::candidate_backend_rejected(
-                ScanBackend::Gpu,
-                "GPU cold/warm route evidence was incomplete or invalid",
-            ));
+        for candidate in gpu_candidates.into_iter().filter(|candidate| {
+            candidate.acquired
+                && (candidate.backend == ScanBackend::GpuCuda
+                    || (hw_caps.gpu_available && !hw_caps.gpu_is_software))
+        }) {
+            let measured =
+                measure_candidate_backend(scanner, sample, candidate.backend, &reference_matches)?;
+            if gpu_cold_warm_route_evidence(&measured).is_none() {
+                return Err(AutorouteRoutingError::candidate_backend_rejected(
+                    candidate.backend,
+                    "GPU cold/warm route evidence was incomplete or invalid",
+                ));
+            }
+            match candidate.backend {
+                ScanBackend::GpuCuda => gpu_cuda_timing = Some(measured),
+                ScanBackend::GpuWgpu => gpu_wgpu_timing = Some(measured),
+                _ => {
+                    return Err(AutorouteRoutingError::candidate_backend_rejected(
+                        candidate.backend,
+                        "scanner GPU candidate enumeration returned a non-GPU route",
+                    ));
+                }
+            }
         }
     }
 
@@ -85,7 +96,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     // pretending that overlap proves equivalence or applying a backend hierarchy.
     // The provisional backend/margin are ALWAYS overwritten below; only the
     // resolved pair is ever observable.
-    let mut decision = AutorouteDecision::from_timing_evidence(
+    let mut decision = AutorouteDecision::from_peer_timing_evidence(
         ScanBackend::SimdCpu,
         sample_bytes,
         sample.len(),
@@ -93,7 +104,8 @@ pub(super) fn calibrate_fastest_correct_backend(
         calibrated_at_unix_ms,
         simd_timing,
         cpu_timing,
-        gpu_timing,
+        gpu_cuda_timing,
+        gpu_wgpu_timing,
     );
     let Some(resolved) = decision.resolved_routing_backend() else {
         return Err(AutorouteRoutingError::calibration_not_persisted(
@@ -114,10 +126,8 @@ pub(super) fn calibrate_fastest_correct_backend(
         cpu_ms = decision.cpu_ms(),
         gpu_opt_in = autoroute_gpu,
         gpu_considered = gpu_candidate_allowed,
-        gpu_ms = decision.gpu_ms(),
-        gpu_cold_ms = decision.gpu_cold_ns().map(|ns| ns / 1_000_000),
-        gpu_warm_ms = decision.gpu_warm_ms(),
-        gpu_route_ms = decision.gpu_route_ns().map(|ns| ns / 1_000_000),
+        cuda_ms = decision.timing_for_backend(ScanBackend::GpuCuda).map(BackendTimingEvidence::median_ms),
+        wgpu_ms = decision.timing_for_backend(ScanBackend::GpuWgpu).map(BackendTimingEvidence::median_ms),
         trials = AUTOROUTE_CALIBRATION_TRIALS,
         "autoroute calibrated backend decision"
     );

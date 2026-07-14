@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         vec![
             ScanBackend::CpuFallback,
             ScanBackend::SimdCpu,
-            ScanBackend::Gpu,
+            ScanBackend::GpuWgpu,
         ]
     } else {
         requested_backends
@@ -109,7 +109,7 @@ fn parse_backend(name: &str) -> Option<ScanBackend> {
     match name {
         "cpu" | "cpu-fallback" => Some(ScanBackend::CpuFallback),
         "simd" | "simd-cpu" => Some(ScanBackend::SimdCpu),
-        "gpu" | "vyre-gpu" => Some(ScanBackend::Gpu),
+        "gpu" | "vyre-gpu" => Some(ScanBackend::GpuWgpu),
         _ => None,
     }
 }

@@ -116,15 +116,16 @@ fn daemon_requires_gpu(
 ) -> Result<bool> {
     match backend_override {
         None => Ok(gpu_expected),
-        Some(keyhog_scanner::ScanBackend::Gpu) if gpu_expected => Ok(true),
-        Some(keyhog_scanner::ScanBackend::Gpu) => Err(daemon_gpu_failure(
-            "daemon --backend gpu cannot be honored: this build and host have no eligible physical GPU path.",
-        )),
+        Some(backend) if backend.is_gpu() && gpu_expected => Ok(true),
+        Some(backend) if backend.is_gpu() => Err(daemon_gpu_failure(format!(
+            "daemon --backend {} cannot be honored: this build and host have no eligible physical GPU path.",
+            backend.label()
+        ))),
         Some(keyhog_scanner::ScanBackend::SimdCpu | keyhog_scanner::ScanBackend::CpuFallback) => {
             Ok(false)
         }
         Some(unknown) => anyhow::bail!(
-            "daemon backend {unknown:?} is not supported by this KeyHog build; choose auto, gpu, simd, or cpu"
+            "daemon backend {unknown:?} is not supported by this KeyHog build; choose auto, gpu-cuda, gpu-wgpu, simd, or cpu"
         ),
     }
 }
@@ -377,15 +378,16 @@ impl DefaultScanRuntime {
     /// override must prove that its requested engine is usable now.
     fn validate_explicit_backend(&self, subcommand_name: &str) -> Result<()> {
         match self.backend_override {
-            Some(keyhog_scanner::ScanBackend::Gpu) => {
+            Some(backend) if backend.is_gpu() => {
                 let hw = keyhog_scanner::hw_probe::probe_hardware();
                 let eligible = keyhog_scanner::hw_probe::gpu_backend_compiled()
                     && hw.gpu_available
                     && !hw.gpu_is_software
-                    && self.scanner.warm_backend(keyhog_scanner::ScanBackend::Gpu);
+                    && self.scanner.warm_backend(backend);
                 if !eligible {
                     return Err(GpuUnavailableError::new(format!(
-                        "{subcommand_name} --backend gpu cannot be honored on this host/build; no eligible physical GPU path is ready. Run `keyhog backend --self-test`, use `--backend simd`, or use `--backend cpu`"
+                        "{subcommand_name} --backend {} cannot be honored on this host/build; its GPU driver path is not ready. Run `keyhog backend --self-test`, use `--backend simd`, or use `--backend cpu`",
+                        backend.label()
                     ))
                     .into());
                 }
@@ -423,17 +425,31 @@ impl DefaultScanRuntime {
             .scanner
             .warm_backend(keyhog_scanner::ScanBackend::SimdCpu);
         let hw = keyhog_scanner::hw_probe::probe_hardware();
+        let gpu_candidates = self.scanner.gpu_backend_candidates();
         let gpu_expected = keyhog_scanner::hw_probe::gpu_backend_compiled()
             && hw.gpu_available
-            && !hw.gpu_is_software;
+            && !hw.gpu_is_software
+            && gpu_candidates.iter().any(|candidate| candidate.acquired);
         if backend_override == Some(keyhog_scanner::ScanBackend::SimdCpu) && !simd_ready {
             anyhow::bail!(
                 "daemon --backend simd cannot be honored because the Hyperscan/SIMD prefilter is unavailable. Run `keyhog backend --self-test` or choose --backend cpu"
             );
         }
         let gpu_must_be_ready = daemon_requires_gpu(backend_override, gpu_expected)?;
-        let gpu_ready =
-            gpu_must_be_ready && self.scanner.warm_backend(keyhog_scanner::ScanBackend::Gpu);
+        let gpu_routes: Vec<_> = match backend_override {
+            Some(backend) if backend.is_gpu() => vec![backend],
+            None => gpu_candidates
+                .iter()
+                .filter(|candidate| candidate.acquired)
+                .map(|candidate| candidate.backend)
+                .collect(),
+            _ => Vec::new(),
+        };
+        let gpu_ready = gpu_must_be_ready
+            && !gpu_routes.is_empty()
+            && gpu_routes
+                .iter()
+                .all(|backend| self.scanner.warm_backend(*backend));
         validate_daemon_gpu_initialization(gpu_must_be_ready, gpu_ready)?;
         if gpu_must_be_ready {
             let warmup = keyhog_core::Chunk {
@@ -445,10 +461,12 @@ impl DefaultScanRuntime {
             };
             let degrade_before = self.scanner.gpu_degrade_count();
             self.scanner.clear_fragment_cache();
-            drop(self.scanner.scan_chunks_with_backend(
-                std::slice::from_ref(&warmup),
-                keyhog_scanner::ScanBackend::Gpu,
-            ));
+            for backend in &gpu_routes {
+                drop(
+                    self.scanner
+                        .scan_chunks_with_backend(std::slice::from_ref(&warmup), *backend),
+                );
+            }
             self.scanner.clear_fragment_cache();
             validate_daemon_gpu_warmup(
                 gpu_must_be_ready,
@@ -1169,7 +1187,7 @@ fn gpu_init_policy_for_args(
     autoroute_calibration: bool,
 ) -> GpuInitPolicy {
     // GPU init (which acquires the backend the region-presence route needs)
-    // follows the selected backend: an explicit `--backend gpu`, or the measured
+    // follows the selected backend: an explicit GPU driver, or the measured
     // backend-selection policy below.
     if let Some(policy) = backend_name_gpu_policy(args.backend.as_deref()) {
         return policy;
@@ -1206,7 +1224,9 @@ fn backend_name_gpu_policy(name: Option<&str>) -> Option<GpuInitPolicy> {
 
 fn backend_gpu_policy(backend: keyhog_scanner::ScanBackend) -> GpuInitPolicy {
     match backend {
-        keyhog_scanner::ScanBackend::Gpu => GpuInitPolicy::ForceEnabled,
+        keyhog_scanner::ScanBackend::GpuCuda | keyhog_scanner::ScanBackend::GpuWgpu => {
+            GpuInitPolicy::ForceEnabled
+        }
         keyhog_scanner::ScanBackend::SimdCpu | keyhog_scanner::ScanBackend::CpuFallback => {
             GpuInitPolicy::ForceDisabled
         }

@@ -253,7 +253,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     #[cfg(feature = "gpu")]
     assert!(
-        scanner.warm_backend(ScanBackend::Gpu),
+        scanner.warm_backend(ScanBackend::GpuWgpu),
         "GPU region-presence backend is unavailable; refusing to benchmark a CPU fallback"
     );
 
@@ -298,7 +298,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "bench-gpu-region",
             &scanner,
             &chunks,
-            ScanBackend::Gpu,
+            ScanBackend::GpuWgpu,
             iters,
             profile,
         );

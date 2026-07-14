@@ -49,10 +49,10 @@ variables:
 keyhog backend
 keyhog backend --self-test --json
 keyhog calibrate-autoroute
-keyhog scan PATH --backend gpu --profile
+keyhog scan PATH --backend gpu-wgpu --profile
 ```
 
-`--backend gpu` is a diagnostic/benchmark override. It proves neither automatic
+`--backend gpu-wgpu` is a diagnostic/benchmark override. It proves neither automatic
 selection nor a valid calibration record. GPU initialization, runtime, parity,
 and calibration failures remain visible in the command result and exit status.
 A selected GPU route that fails dispatch exits `12`; KeyHog does not silently

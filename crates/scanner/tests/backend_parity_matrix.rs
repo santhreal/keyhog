@@ -278,7 +278,7 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
     let backends = [
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
-        ScanBackend::Gpu,
+        ScanBackend::GpuWgpu,
     ];
 
     let mut total_cells = 0usize;
@@ -352,7 +352,7 @@ fn determinism_each_backend_each_fixture_runs_twice_matches() {
     let backends = [
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
-        ScanBackend::Gpu,
+        ScanBackend::GpuWgpu,
     ];
 
     let mut failures = Vec::new();

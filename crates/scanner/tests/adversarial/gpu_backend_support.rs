@@ -63,7 +63,7 @@ pub fn assert_cpu_gpu_backend_parity(text: &str, path: &str, label: &str) {
         return;
     }
 
-    let gpu = credential_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu));
+    let gpu = credential_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu));
 
     assert_eq!(
         cpu,

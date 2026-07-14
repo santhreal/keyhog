@@ -25,7 +25,7 @@
 //!   ├─ evidence ───── decision policy
 //!   │    ├─ timing ─────── measured trials and confidence intervals
 //!   │    └─ match_identity ─ secret-safe semantic parity proof
-//!   ├─ store ──────── cache facade (schema v26)
+//!   ├─ store ──────── cache facade (schema v27)
 //!   │    ├─ schema / artifact_identity / build_identity
 //!   │    └─ codec / validation / persistence / inspection
 //!   ├─ host ───────── host identity captured in each calibration record
@@ -57,6 +57,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 
+// v27: CUDA and WGPU are independent GPU candidates with distinct route labels
+// and timing evidence. v26 collapsed both drivers into one GPU timing slot.
 // v26: scanner-owned decoder-family and bounded candidate-work evidence
 // replaces the CLI-local decode-density estimate. Workload keys changed.
 // v25: decode-density evidence uses bounded order-independent stratified
@@ -81,7 +83,7 @@ use std::path::PathBuf;
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 26;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 27;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -307,9 +309,10 @@ impl CachedBackendRouter {
     ) -> Self {
         let runtime_status = scanner.runtime_status();
         let detector_digest = runtime_status.detector_digest;
+        let gpu_peer_identity = gpu_peer_identity(scanner);
         let host_profile = AutorouteHostProfile::from_caps(
             &hw_caps,
-            runtime_status.gpu_backend,
+            gpu_peer_identity.as_deref(),
             keyhog_scanner::hw_probe::gpu_backend_compiled(),
         );
         let (cache_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
@@ -406,8 +409,12 @@ impl MeasuredBackendRouter {
         // the exact device/runtime/driver identity.
         let gpu_participates = keyhog_scanner::hw_probe::gpu_backend_compiled()
             && (!calibration_mode || autoroute_gpu);
-        let host_profile =
-            AutorouteHostProfile::from_caps(&hw_caps, runtime_status.gpu_backend, gpu_participates);
+        let gpu_peer_identity = gpu_peer_identity(scanner);
+        let host_profile = AutorouteHostProfile::from_caps(
+            &hw_caps,
+            gpu_peer_identity.as_deref(),
+            gpu_participates,
+        );
         let (cache_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
             detector_digest,
             &rules_digest,
@@ -645,14 +652,54 @@ fn autoroute_cache_state(
 }
 
 pub(super) fn is_gpu_backend(backend: ScanBackend) -> bool {
-    matches!(backend, ScanBackend::Gpu)
+    backend.is_gpu()
+}
+
+fn gpu_peer_identity(scanner: &CompiledScanner) -> Option<String> {
+    let acquired: Vec<_> = scanner
+        .gpu_backend_candidates()
+        .into_iter()
+        .filter(|candidate| candidate.acquired)
+        .collect();
+    if acquired.is_empty() {
+        return None;
+    }
+    if acquired.iter().any(|candidate| {
+        candidate.driver_id.is_none()
+            || candidate.driver_version.is_none()
+            || candidate.device_identity.is_none()
+            || candidate.runtime_identity.is_none()
+    }) {
+        // Some("") means a peer was acquired but exact identity evidence is
+        // incomplete. Host validation rejects this instead of collapsing the
+        // calibration to a CPU-only identity.
+        return Some(String::new());
+    }
+    let mut peers: Vec<String> = acquired
+        .into_iter()
+        .map(|candidate| {
+            format!(
+                "{}:{}@{}:{}:{}",
+                candidate.backend.label(),
+                candidate.driver_id.unwrap_or_default(),
+                candidate.driver_version.unwrap_or_default(),
+                candidate.device_identity.unwrap_or_default(),
+                candidate.runtime_identity.unwrap_or_default()
+            )
+        })
+        .collect();
+    peers.sort_unstable();
+    (!peers.is_empty()).then(|| peers.join(","))
 }
 
 pub(super) fn backend_requires_coalesced_batch_pipeline(
     explicit: Option<keyhog_scanner::hw_probe::ScanBackend>,
 ) -> bool {
     match explicit {
-        Some(keyhog_scanner::hw_probe::ScanBackend::Gpu) => true,
+        Some(
+            keyhog_scanner::hw_probe::ScanBackend::GpuCuda
+            | keyhog_scanner::hw_probe::ScanBackend::GpuWgpu,
+        ) => true,
         Some(keyhog_scanner::hw_probe::ScanBackend::SimdCpu)
         | Some(keyhog_scanner::hw_probe::ScanBackend::CpuFallback) => false,
         // `ScanBackend` is #[non_exhaustive]: an unknown future backend stays

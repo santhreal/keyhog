@@ -33,18 +33,18 @@ pub(crate) fn gpu_forced_unavailable_message(
     scanner: &CompiledScanner,
     backend: ScanBackend,
 ) -> Option<String> {
-    if !matches!(backend, ScanBackend::Gpu) {
+    if !backend.is_gpu() {
         return None;
     }
-    if scanner.gpu_stack_usable() {
+    if scanner.gpu_stack_usable_for(backend) {
         return None;
     }
     Some(format!(
         "{} selected but GPU stack unavailable (gpu_literals={}, gpu_backend={}, gpu_matcher={}) - \
-         silent CPU fallback is forbidden; repair the GPU stack and recalibrate autoroute, or explicitly choose --backend simd/cpu",
+         silent CPU fallback is forbidden; repair this GPU driver and recalibrate autoroute, or explicitly choose another backend",
         backend.label(),
         scanner.gpu_literals.is_some(),
-        scanner.gpu_backend.is_some(),
+        scanner.gpu_backends.get(backend).is_some(),
         scanner.gpu_matcher().is_some(),
     ))
 }
@@ -93,7 +93,7 @@ pub(crate) fn fail_selected_gpu_dispatch_error(
 (literals={}, backend={}, matcher={}); refusing to substitute CPU/SIMD. \
 Run `keyhog backend --self-test`, then recalibrate autoroute or select another backend explicitly",
         scanner.gpu_literals.is_some(),
-        scanner.gpu_backend.is_some(),
+        scanner.gpu_backends.availability().any(),
         scanner.gpu_matcher().is_some(),
     ));
 }

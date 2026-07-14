@@ -12,8 +12,10 @@ fn forced_backend_parser_covers_all_scenarios() {
     assert!(parse_backend_str("").is_none());
     assert!(parse_backend_str("garbage-value").is_none());
 
-    // Forced GPU.
-    assert_eq!(parse_backend_str("gpu"), Some(ScanBackend::Gpu));
+    // Forced GPU peers are explicit. The ambiguous generic token is rejected.
+    assert_eq!(parse_backend_str("gpu"), None);
+    assert_eq!(parse_backend_str("gpu-cuda"), Some(ScanBackend::GpuCuda));
+    assert_eq!(parse_backend_str("gpu-wgpu"), Some(ScanBackend::GpuWgpu));
 
     // Retired MegaScan strings are not forced backends.
     assert_eq!(parse_backend_str("mega-scan"), None);

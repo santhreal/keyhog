@@ -652,8 +652,8 @@ fn scan_gpu_warm_backend_cpu_paths_always_succeed() {
 #[test]
 fn scan_gpu_warm_reports_stable_backend_readiness() {
     let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
-    let gpu_ready = scanner.warm_backend(ScanBackend::Gpu);
-    assert_eq!(gpu_ready, scanner.warm_backend(ScanBackend::Gpu));
+    let gpu_ready = scanner.warm_backend(ScanBackend::GpuWgpu);
+    assert_eq!(gpu_ready, scanner.warm_backend(ScanBackend::GpuWgpu));
 }
 
 // ── engine/scan_filters.rs (keyword gating via generic assignment) ──
@@ -695,7 +695,9 @@ fn scan_filters_generic_assignment_accepts_dotted_and_dashed_keys() {
 
 #[test]
 fn generic_assignment_compact_prefilter_keeps_webhook_url_recall() {
-    let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
+    let scanner =
+        CompiledScanner::compile(vec![demo_detector(), embedded_detector("generic-secret")])
+            .unwrap();
     let value = "Zx9KmPq2LvWnB7tRsYz3BcDe";
     let matches = scanner.scan(&chunk(&format!("webhook_url = \"{value}\"")));
     assert!(
@@ -754,7 +756,9 @@ fn generic_assignment_prefilter_collects_gpu_position_lines_once() {
 // the keyword bridge (which isolates the keyword change from the entropy path).
 #[test]
 fn generic_assignment_bridges_bare_pass_abbreviation() {
-    let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
+    let scanner =
+        CompiledScanner::compile(vec![demo_detector(), embedded_detector("generic-secret")])
+            .unwrap();
     let value = "k7m2p9q4t6w1x8z3v5";
     for key in ["GRAPHITE_PASS", "DB_PASS", "jenkins_pass", "ses.pass"] {
         let matches = scanner.scan(&chunk(&format!("{key} = \"{value}\"")));

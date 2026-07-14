@@ -270,14 +270,24 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     // manual override of a broken default, not health.)
     // Skipped on no-GPU / software-renderer hosts (matches backend --self-test's
     // SKIP path, so a headless CI box stays green).
-    if hw.gpu_available && !hw.gpu_is_software {
-        match keyhog_scanner::gpu::gpu_region_presence_self_test() {
-            Ok(report) => println!(
-                "  gpu scan path  {}  {dim}region presence findings={}, backend={}{reset}",
-                style::pass("PASS", &palette),
-                report.matches,
-                report.backend_id
-            ),
+    let region_presence = keyhog_scanner::gpu::gpu_region_presence_self_test();
+    let acquired_backends: Vec<_> = match &region_presence {
+        Ok(report) => report.peers.iter().map(|peer| peer.backend).collect(),
+        Err(error) => error.acquired_backends.clone(),
+    };
+    if !acquired_backends.is_empty() || (hw.gpu_available && !hw.gpu_is_software) {
+        match region_presence {
+            Ok(report) => {
+                for peer in report.peers {
+                    println!(
+                        "  gpu scan path  {}  {dim}region presence findings={}, route={}, backend={}{reset}",
+                        style::pass("PASS", &palette),
+                        peer.matches,
+                        peer.backend.label(),
+                        peer.backend_id
+                    );
+                }
+            }
             Err(e) => {
                 healthy = false;
                 println!(
@@ -287,60 +297,62 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
             }
         }
 
-        match keyhog_scanner::gpu::vyre_gpu_self_test() {
-            Ok(report) => println!(
-                "  gpu literal    {}  {dim}direct={}, coalesced={}{reset}",
-                style::pass("PASS", &palette),
-                report.direct_matches,
-                report.coalesced_matches
-            ),
-            Err(e) => {
-                let known_lowering_gap =
-                    crate::subcommands::backend::is_known_vyre_lowering_gap(&e);
-                if known_lowering_gap {
-                    warned = true;
-                    println!(
+        if acquired_backends.contains(&keyhog_scanner::ScanBackend::GpuWgpu) {
+            match keyhog_scanner::gpu::vyre_gpu_self_test() {
+                Ok(report) => println!(
+                    "  gpu literal    {}  {dim}direct={}, coalesced={}{reset}",
+                    style::pass("PASS", &palette),
+                    report.direct_matches,
+                    report.coalesced_matches
+                ),
+                Err(e) => {
+                    let known_lowering_gap =
+                        crate::subcommands::backend::is_known_vyre_lowering_gap(&e);
+                    if known_lowering_gap {
+                        warned = true;
+                        println!(
                         "  gpu literal    {}  VYRE's direct match-triple diagnostic has a known lowering limitation (the canonical pre-emit lowering rejects the subgroup_ballot form append_match_subgroup emits, surfacing as `_vyre_match_leader is referenced before binding`); the production region-presence path is checked separately above.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
                         style::warn("WARN", &palette)
                     );
-                } else {
-                    warned = true;
-                    println!(
+                    } else {
+                        warned = true;
+                        println!(
                         "  gpu literal    {}  VYRE direct match-triple diagnostic failed; production scan eligibility is determined by the region-presence probe above.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
                         style::warn("WARN", &palette)
                     );
+                    }
                 }
             }
-        }
 
-        match keyhog_scanner::gpu::gpu_self_test() {
-            Ok(report) => {
-                let max_buffer = match report.vram_mb {
-                    Some(mb) => mb.to_string(),
-                    None => "unknown".to_string(), // LAW10: absent GPU buffer limit => reporting-only display label; self-test already proved dispatch/parity
-                };
-                println!(
+            match keyhog_scanner::gpu::gpu_self_test() {
+                Ok(report) => {
+                    let max_buffer = match report.vram_mb {
+                        Some(mb) => mb.to_string(),
+                        None => "unknown".to_string(), // LAW10: absent GPU buffer limit => reporting-only display label; self-test already proved dispatch/parity
+                    };
+                    println!(
                     "  gpu moe path   {}  {dim}MoE shader matches CPU reference, adapter={}, scores={}, max_buffer={} MB{reset}",
                     style::pass("PASS", &palette),
                     report.adapter_name,
                     report.scores,
                     max_buffer
                 );
-            }
-            Err(e) => {
-                let parity_degrade = crate::subcommands::backend::is_moe_parity_degrade(&e);
-                if parity_degrade {
-                    warned = true;
-                    println!(
+                }
+                Err(e) => {
+                    let parity_degrade = crate::subcommands::backend::is_moe_parity_degrade(&e);
+                    if parity_degrade {
+                        warned = true;
+                        println!(
                         "  gpu moe path   {}  GPU MoE shader diverges from the CPU MoE reference; GPU ML acceleration is disabled on this host and scoring uses the deterministic CPU MoE path.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
                         style::warn("WARN", &palette)
                     );
-                } else {
-                    healthy = false;
-                    println!(
+                    } else {
+                        healthy = false;
+                        println!(
                         "  gpu moe path   {}  GPU MoE self-test failed; GPU routes are unavailable until fixed. GPU ML acceleration is unavailable until fixed.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test --json` for machine-readable GPU diagnostics{reset}",
                         style::fail("FAIL", &palette)
                     );
+                    }
                 }
             }
         }

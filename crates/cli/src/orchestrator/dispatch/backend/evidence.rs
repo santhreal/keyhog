@@ -51,7 +51,7 @@ pub(super) fn gpu_cold_warm_route_evidence(
 /// A calibrated routing decision for one workload bucket.
 ///
 /// PRIMARY EVIDENCE ONLY: the persisted state is the measured timing evidence
-/// (`simd_timing` / `cpu_timing` / `gpu_timing`) plus the resolved `backend`,
+/// (`simd_timing`, `cpu_timing`, and per-driver GPU timing) plus `backend`,
 /// calibration sample, digest, timestamp, and trial count. Every value that is a
 /// pure function of that evidence, per-backend median-ms (`simd_ms()`/…), the GPU
 /// cold/warm/route triple (`gpu_cold_warm_route()`), and the selected-backend
@@ -70,7 +70,8 @@ pub(super) struct AutorouteDecision {
     pub(super) calibrated_at_unix_ms: u128,
     pub(super) simd_timing: BackendTimingEvidence,
     pub(super) cpu_timing: Option<BackendTimingEvidence>,
-    pub(super) gpu_timing: Option<BackendTimingEvidence>,
+    pub(super) gpu_cuda_timing: Option<BackendTimingEvidence>,
+    pub(super) gpu_wgpu_timing: Option<BackendTimingEvidence>,
     pub(super) trials: usize,
 }
 
@@ -87,7 +88,7 @@ impl AutorouteDecision {
         let simd_timing = BackendTimingEvidence::constant_ms(simd_ms, AUTOROUTE_CALIBRATION_TRIALS);
         let cpu_timing =
             cpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
-        let gpu_timing =
+        let gpu_wgpu_timing =
             gpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
         Self {
             backend: backend.label().to_string(),
@@ -97,11 +98,13 @@ impl AutorouteDecision {
             calibrated_at_unix_ms: 1,
             simd_timing,
             cpu_timing,
-            gpu_timing,
+            gpu_cuda_timing: None,
+            gpu_wgpu_timing,
             trials: AUTOROUTE_CALIBRATION_TRIALS,
         }
     }
 
+    #[cfg(test)]
     pub(super) fn from_timing_evidence(
         backend: ScanBackend,
         sample_bytes: u64,
@@ -120,7 +123,33 @@ impl AutorouteDecision {
             calibrated_at_unix_ms,
             simd_timing,
             cpu_timing,
-            gpu_timing,
+            gpu_cuda_timing: None,
+            gpu_wgpu_timing: gpu_timing,
+            trials: AUTOROUTE_CALIBRATION_TRIALS,
+        }
+    }
+
+    pub(super) fn from_peer_timing_evidence(
+        backend: ScanBackend,
+        sample_bytes: u64,
+        sample_chunks: usize,
+        correctness_digest: u64,
+        calibrated_at_unix_ms: u128,
+        simd_timing: BackendTimingEvidence,
+        cpu_timing: Option<BackendTimingEvidence>,
+        gpu_cuda_timing: Option<BackendTimingEvidence>,
+        gpu_wgpu_timing: Option<BackendTimingEvidence>,
+    ) -> Self {
+        Self {
+            backend: backend.label().to_string(),
+            sample_bytes,
+            sample_chunks,
+            correctness_digest,
+            calibrated_at_unix_ms,
+            simd_timing,
+            cpu_timing,
+            gpu_cuda_timing,
+            gpu_wgpu_timing,
             trials: AUTOROUTE_CALIBRATION_TRIALS,
         }
     }
@@ -147,32 +176,45 @@ impl AutorouteDecision {
 
     /// Representative one-shot GPU route time in ms, including the measured
     /// first-dispatch lower bound.
+    #[cfg(test)]
     pub(super) fn gpu_ms(&self) -> Option<u128> {
         self.gpu_route_ns().map(|route_ns| route_ns / 1_000_000)
     }
 
     /// The GPU cold-start ns, warm timing evidence, and routing ns, all derived
-    /// from the persisted `gpu_timing` through the single owner
+    /// from the selected driver's persisted timing through the single owner
     /// [`gpu_cold_warm_route_evidence`]. `None` when there is no GPU timing or it
     /// cannot produce valid cold/warm evidence (too few warm trials).
+    #[cfg(test)]
     pub(super) fn gpu_cold_warm_route(&self) -> Option<(u128, BackendTimingEvidence, u128)> {
-        self.gpu_timing
-            .as_ref()
+        let backend = self.backend()?.is_gpu().then_some(self.backend()?)?;
+        self.timing_for_backend(backend)
+            .and_then(gpu_cold_warm_route_evidence)
+    }
+
+    pub(super) fn gpu_cold_warm_route_for(
+        &self,
+        backend: ScanBackend,
+    ) -> Option<(u128, BackendTimingEvidence, u128)> {
+        self.timing_for_backend(backend)
             .and_then(gpu_cold_warm_route_evidence)
     }
 
     /// GPU cold-start ns, derived (see [`Self::gpu_cold_warm_route`]).
+    #[cfg(test)]
     pub(super) fn gpu_cold_ns(&self) -> Option<u128> {
         self.gpu_cold_warm_route().map(|(cold_ns, _, _)| cold_ns)
     }
 
     /// GPU warm median-ms, derived.
+    #[cfg(test)]
     pub(super) fn gpu_warm_ms(&self) -> Option<u128> {
         self.gpu_cold_warm_route()
             .map(|(_, warm_timing, _)| warm_timing.median_ms())
     }
 
     /// GPU routing ns (the cold-vs-warm route cost the router compares), derived.
+    #[cfg(test)]
     pub(super) fn gpu_route_ns(&self) -> Option<u128> {
         self.gpu_cold_warm_route().map(|(_, _, route_ns)| route_ns)
     }
@@ -204,28 +246,18 @@ impl AutorouteDecision {
         match backend {
             ScanBackend::SimdCpu => Some(&self.simd_timing),
             ScanBackend::CpuFallback => self.cpu_timing.as_ref(),
-            ScanBackend::Gpu => self.gpu_timing.as_ref(),
+            ScanBackend::GpuCuda => self.gpu_cuda_timing.as_ref(),
+            ScanBackend::GpuWgpu => self.gpu_wgpu_timing.as_ref(),
             _ => None,
         }
     }
 
     pub(super) fn route_candidates(&self) -> Vec<(ScanBackend, u128)> {
-        route_candidates_with_gpu_backend(
-            &self.simd_timing,
-            self.cpu_timing.as_ref(),
-            self.gpu_route_ns(),
-            ScanBackend::Gpu,
-        )
+        self.route_candidates_for_runtime(false)
     }
 
     fn persistent_route_candidates(&self) -> Vec<(ScanBackend, u128)> {
-        route_candidates_with_gpu_backend(
-            &self.simd_timing,
-            self.cpu_timing.as_ref(),
-            self.gpu_cold_warm_route()
-                .map(|(_, warm_timing, _)| warm_timing.median_ns()),
-            ScanBackend::Gpu,
-        )
+        self.route_candidates_for_runtime(true)
     }
 
     pub(super) fn selected_backend_has_non_overlapping_confidence(
@@ -257,8 +289,8 @@ impl AutorouteDecision {
     /// The single deterministic source of truth for which backend a persisted
     /// timing set routes to. Calibration SELECTS this; validation REQUIRES the
     /// persisted `backend` to equal it. It is a pure function of the measured
-    /// timing evidence (canonical `Gpu` label, this calibration path only ever
-    /// measures `Gpu`), so a cache that names any other backend is rejected as
+    /// timing evidence (each executable GPU driver has its own label and timing),
+    /// so a cache that names any other backend is rejected as
     /// tampered or non-deterministic.
     ///
     /// Policy:
@@ -337,8 +369,8 @@ impl AutorouteDecision {
                 .cpu_timing
                 .as_ref()
                 .map(BackendTimingEvidence::median_ns),
-            ScanBackend::Gpu => {
-                let (_, warm_timing, one_shot_ns) = self.gpu_cold_warm_route()?;
+            ScanBackend::GpuCuda | ScanBackend::GpuWgpu => {
+                let (_, warm_timing, one_shot_ns) = self.gpu_cold_warm_route_for(backend)?;
                 Some(if persistent_runtime {
                     warm_timing.median_ns()
                 } else {
@@ -363,38 +395,44 @@ impl AutorouteDecision {
                 cpu_timing.confidence_interval_95_ns(),
             ));
         }
-        if let Some((cold_ns, warm_timing, _route_ns)) = self.gpu_cold_warm_route() {
-            let warm_interval = warm_timing.confidence_interval_95_ns();
-            intervals.push((
-                ScanBackend::Gpu,
-                if persistent_runtime {
-                    warm_interval
-                } else {
-                    TimingConfidenceInterval {
-                        low_ns: cold_ns.max(warm_interval.low_ns),
-                        high_ns: cold_ns.max(warm_interval.high_ns),
-                    }
-                },
-            ));
+        for backend in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
+            if let Some((cold_ns, warm_timing, _route_ns)) = self.gpu_cold_warm_route_for(backend) {
+                let warm_interval = warm_timing.confidence_interval_95_ns();
+                intervals.push((
+                    backend,
+                    if persistent_runtime {
+                        warm_interval
+                    } else {
+                        TimingConfidenceInterval {
+                            low_ns: cold_ns.max(warm_interval.low_ns),
+                            high_ns: cold_ns.max(warm_interval.high_ns),
+                        }
+                    },
+                ));
+            }
         }
         intervals
     }
-}
 
-fn route_candidates_with_gpu_backend(
-    simd_timing: &BackendTimingEvidence,
-    cpu_timing: Option<&BackendTimingEvidence>,
-    gpu_route_ns: Option<u128>,
-    gpu_backend: ScanBackend,
-) -> Vec<(ScanBackend, u128)> {
-    let mut candidates = vec![(ScanBackend::SimdCpu, simd_timing.median_ns())];
-    if let Some(cpu_timing) = cpu_timing {
-        candidates.push((ScanBackend::CpuFallback, cpu_timing.median_ns()));
+    fn route_candidates_for_runtime(&self, persistent_runtime: bool) -> Vec<(ScanBackend, u128)> {
+        let mut candidates = vec![(ScanBackend::SimdCpu, self.simd_timing.median_ns())];
+        if let Some(cpu_timing) = self.cpu_timing.as_ref() {
+            candidates.push((ScanBackend::CpuFallback, cpu_timing.median_ns()));
+        }
+        for backend in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
+            if let Some((_, warm_timing, one_shot_ns)) = self.gpu_cold_warm_route_for(backend) {
+                candidates.push((
+                    backend,
+                    if persistent_runtime {
+                        warm_timing.median_ns()
+                    } else {
+                        one_shot_ns
+                    },
+                ));
+            }
+        }
+        candidates
     }
-    if let Some(gpu_route_ns) = gpu_route_ns {
-        candidates.push((gpu_backend, gpu_route_ns));
-    }
-    candidates
 }
 
 /// Engagement-overhead rank used only when representative measured medians are
@@ -403,7 +441,7 @@ fn backend_overhead_rank(backend: ScanBackend) -> u8 {
     match backend {
         ScanBackend::SimdCpu => 0,
         ScanBackend::CpuFallback => 1,
-        ScanBackend::Gpu => 2,
+        ScanBackend::GpuCuda | ScanBackend::GpuWgpu => 2,
         _ => 3,
     }
 }

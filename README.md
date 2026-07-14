@@ -744,7 +744,7 @@ The full pipeline, routing ownership, and profiling entrypoints live in the
 ```bash
 keyhog detectors --search aws --verbose      # list / inspect detectors
 keyhog explain aws-access-key                # spec, regex, severity, rotation guide
-keyhog diff before.json after.json           # NEW / RESOLVED / UNCHANGED for CI gates
+keyhog diff before.json after.json           # NEW / REMOVED / UNCHANGED, removals unknown by default
 keyhog calibrate --tp aws-access-key         # record a true positive
 keyhog calibrate --fp generic-api-key        # record a false positive
 keyhog calibrate --show                      # posterior-mean bar chart per detector

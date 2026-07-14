@@ -7,14 +7,14 @@
 > [Confidence calibration](./confidence-calibration.md).
 
 KeyHog uses measured evidence to select a backend for a calibrated workload key:
-Hyperscan/SIMD, scalar CPU, or the GPU runtime acquired by the scanner. It does
+Hyperscan/SIMD, scalar CPU, CUDA, or WGPU. It does
 not guess from a device name or a hard-coded size threshold. Autoroute is *not*
 a fallback hierarchy: during calibration KeyHog measures every eligible
 execution class exposed by that scanner, rejects candidates whose complete
 redacted raw-match identity differs from the reference, and records the fastest
-survivor for the measured representative. CUDA and WGPU are not independently
-calibrated candidates; they are implementations behind the single acquired GPU
-class. The parity identity
+survivor for the measured representative. Every executable CUDA and WGPU path
+is acquired and measured independently. One driver never substitutes for the
+other. The parity identity
 covers chunk membership; detector id/name/service/severity; hashes of the actual
 credential, stored hash, and companion names/values; full source/history
 location; entropy; confidence; and finding multiplicity. Plain credentials and
@@ -94,6 +94,11 @@ Canonical calibration admits every eligible execution class. The low-level
 under a noncanonical config identity; its CPU-only evidence cannot overwrite a
 normal all-candidate decision.
 
+Startup reports every acquired GPU peer and each acquisition failure. The
+autoroute cache stores separate CUDA and WGPU cold and warm timing vectors, and
+`keyhog backend --autoroute` prints both. A failed driver is ineligible until it
+is repaired and calibration is rerun.
+
 Calibration saves take an exclusive sibling-file lock across the complete
 read/merge/atomic-write cycle. Separate calibration processes therefore
 accumulate compatible config and workload decisions without a
@@ -122,7 +127,7 @@ which backend is fastest:
   builds that happen to share a package version and Git hash.
 - Host identity includes OS/architecture, CPU model and topology, memory, CPU
   instruction support and, when the scanner can use a physical GPU, the GPU
-  device, runtime backend, and driver/runtime identity. A missing or changed
+  device, every acquired runtime backend and version, and driver/runtime identity. A missing or changed
   required field invalidates the evidence and requires recalibration.
 - Each scan preset (default, `--fast`, `--deep`, `--precision`) is calibrated
   separately.
@@ -245,8 +250,8 @@ meanings:
 | `calibration_age_ms` | Age derived at inspection time from `inspected_at_unix_ms`; it is visible evidence, not an expiry policy. |
 | `backend` | Cold-aware backend for an in-process one-shot scan. |
 | `simd_ms`, `cpu_ms` | Median trial time for that CPU route; `cpu_ms` is `null` when scalar CPU was not measured separately. |
-| `gpu_ms` | One-shot GPU representative: the greater of the real first dispatch and the warm-trial median. |
-| `gpu_warm_ms` | Warm GPU median used by a ready daemon; `null` when GPU was not eligible. |
+| `gpu_cuda_ms`, `gpu_wgpu_ms` | Per-driver one-shot representative: the greater of the real first dispatch and that driver's warm-trial median. |
+| `gpu_cuda_warm_ms`, `gpu_wgpu_warm_ms` | Per-driver warm median used by a ready daemon; `null` when that driver was not eligible. |
 | `confidence_separated` | Whether the one-shot winner's 95% interval is entirely below every competitor. |
 | `selection_basis` | `separated-95pct-confidence`, or `lowest-measured-median-among-overlapping-confidence`. |
 | `selected_margin_ns` | One-shot representative-time margin to the next candidate; `null` when there is no competitor. |

@@ -108,7 +108,7 @@ impl CompiledScanner {
                     };
 
                     // Tiny synthesized chunk - NEVER dispatch through
-                    // GPU even if `--backend gpu` is set; the
+                    // GPU even if an exact GPU backend is set; the
                     // per-dispatch overhead (~10-100 ms) is orders of
                     // magnitude larger than scanning ~50 bytes on the
                     // CPU. The previous flow leaked the env override

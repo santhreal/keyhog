@@ -22,7 +22,8 @@
 //! ```
 //!
 //! There is exactly ONE production on-GPU trigger producer: the region-presence
-//! dispatch in [`gpu_region_dispatch`]. Selecting a GPU backend (`--backend gpu`)
+//! dispatch in [`gpu_region_dispatch`]. Selecting an exact GPU backend
+//! (`--backend gpu-cuda` or `--backend gpu-wgpu`)
 //! routes the batch path through it. The no-backend library API is the portable
 //! CPU reference; the CLI passes its persisted fastest-correct route explicitly.
 //! A requested GPU path never turns failure into an empty successful result.
@@ -224,14 +225,77 @@ pub enum GpuInitPolicy {
     ForceDisabled,
 }
 
+#[derive(Default)]
+pub(crate) struct GpuBackendPeers {
+    pub(crate) cuda: Option<Arc<dyn vyre::VyreBackend>>,
+    pub(crate) wgpu: Option<Arc<dyn vyre::VyreBackend>>,
+    pub(crate) cuda_device_identity: Option<String>,
+    pub(crate) cuda_runtime_identity: Option<String>,
+    pub(crate) wgpu_device_identity: Option<String>,
+    pub(crate) wgpu_runtime_identity: Option<String>,
+}
+
+impl GpuBackendPeers {
+    pub(crate) fn get(
+        &self,
+        backend: crate::hw_probe::ScanBackend,
+    ) -> Option<&Arc<dyn vyre::VyreBackend>> {
+        match backend {
+            crate::hw_probe::ScanBackend::GpuCuda => self.cuda.as_ref(),
+            crate::hw_probe::ScanBackend::GpuWgpu => self.wgpu.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn availability(&self) -> GpuBackendAvailability {
+        GpuBackendAvailability {
+            cuda: self.cuda.is_some(),
+            wgpu: self.wgpu.is_some(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct GpuBackendAvailability {
+    pub cuda: bool,
+    pub wgpu: bool,
+}
+
+impl GpuBackendAvailability {
+    #[must_use]
+    pub const fn any(self) -> bool {
+        self.cuda || self.wgpu
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GpuBackendAcquisitionFailure {
+    pub backend: &'static str,
+    pub diagnostic: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GpuBackendCandidateStatus {
+    pub backend: crate::hw_probe::ScanBackend,
+    pub acquired: bool,
+    pub driver_id: Option<&'static str>,
+    pub driver_version: Option<&'static str>,
+    pub device_identity: Option<String>,
+    pub runtime_identity: Option<String>,
+    pub acquisition_error: Option<String>,
+}
+
 pub struct CompiledScanner {
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,
     pub(crate) ac: Option<AhoCorasick>,
-    pub(crate) gpu_backend: Option<Arc<dyn vyre::VyreBackend>>,
+    pub(crate) gpu_backends: GpuBackendPeers,
+    pub(crate) gpu_acquisition_failures: Vec<GpuBackendAcquisitionFailure>,
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
     #[cfg(feature = "gpu")]
-    gpu_resident_presence: std::sync::Mutex<gpu_resident_presence::GpuResidentPresenceSlot>,
+    gpu_resident_presence_cuda: std::sync::Mutex<gpu_resident_presence::GpuResidentPresenceSlot>,
+    #[cfg(feature = "gpu")]
+    gpu_resident_presence_wgpu: std::sync::Mutex<gpu_resident_presence::GpuResidentPresenceSlot>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,
     pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,
@@ -383,7 +447,7 @@ pub struct CompiledScannerRuntime {
     /// Backend used by the no-backend library APIs. CLI calibrated routing is a
     /// separate persisted per-workload decision and is never inferred here.
     pub preferred_backend: &'static str,
-    pub gpu_backend: Option<&'static str>,
+    pub gpu_backends: GpuBackendAvailability,
     pub gpu_degrade_count: u64,
 }
 

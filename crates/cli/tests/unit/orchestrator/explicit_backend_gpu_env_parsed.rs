@@ -4,7 +4,8 @@ use keyhog_scanner::hw_probe::ScanBackend;
 #[test]
 fn explicit_backend_gpu_env_parsed() {
     assert_eq!(
-        API.explicit_backend_override(Some("gpu")).unwrap(),
-        Some(ScanBackend::Gpu)
+        API.explicit_backend_override(Some("gpu-cuda")).unwrap(),
+        Some(ScanBackend::GpuCuda)
     );
+    assert!(API.explicit_backend_override(Some("gpu")).is_err());
 }

@@ -1,7 +1,7 @@
 """Gate #2: BACKEND DIFFERENTIAL PARITY (the one gate that catches the most).
 
 keyhog runs `walk -> match -> emit` through several divergent backends. SimdCpu,
-the platform CPU fallback, plus GPU region presence, and a silent fallback in any one of them drops
+the platform CPU fallback, plus exact CUDA and WGPU region-presence peers. A silent fallback in any one of them drops
 findings only on THAT path, invisibly. The "validator bypass on the fast path"
 bug class is exactly this: the fast path skips a per-match policy the slow path
 applies, so the two disagree and nobody notices.
@@ -17,9 +17,8 @@ and pretend that proves every future scan bucket.
 `cpu` is a platform fallback for no-SIMD builds and an explicit diagnostic
 override on SIMD builds; it must not be selected by autoroute on a SIMD-capable
 binary until it has its own parity proof.
-GPU is tested for exact detector/value/location parity when a GPU-capable
-binary is present; if it is
-not, that backend is skipped LOUDLY (printed), never silently passed.
+Each GPU driver is tested for exact detector/value/location parity when that
+peer is acquired. An unacquired peer is skipped loudly, never substituted.
 
 Speed: one scan per checked backend over CredData. Belongs in the bench/nightly
 lane, not the fast unit lane.
@@ -49,7 +48,7 @@ _AVAILABLE = _CORPUS.is_downloaded()
 # generator, not a stable parity proof.
 _DETERMINISTIC = ["simd"]
 # Accelerated backends checked for exact finding parity IF available.
-_ACCELERATED = ["gpu"]
+_ACCELERATED = ["gpu-cuda", "gpu-wgpu"]
 # CredData is a 1 GiB, 11k-file end-to-end corpus.  This is a recall gate, not
 # a microbenchmark: give slow/cold hosts enough time to produce a real result,
 # while retaining a finite watchdog for hangs.
@@ -101,8 +100,10 @@ def _current_keyhog_binary() -> str:
     return binary
 
 
-def _gpu_preflight(binary: str) -> bool:
-    """Return False only for an honestly absent adapter; fail on broken GPU paths."""
+def _gpu_preflight(binary: str, backend: str) -> bool:
+    """Return False only when the exact peer is absent; fail on broken GPU paths."""
+    if backend not in _ACCELERATED:
+        pytest.fail(f"GPU preflight requires an exact peer, got {backend!r}")
     try:
         completed = subprocess.run(
             [binary, "backend", "--self-test", "--json"],
@@ -141,6 +142,19 @@ def _gpu_preflight(binary: str) -> bool:
             "GPU adapter exists but its production self-test failed; refusing to "
             f"mislabel a broken accelerator as unavailable: {report}"
         )
+    peer_probes = [
+        probe
+        for probe in report.get("probes", [])
+        if isinstance(probe, dict)
+        and probe.get("name") == "gpu_region_presence"
+        and probe.get("backend_route") == backend
+    ]
+    if len(peer_probes) > 1:
+        pytest.fail(f"GPU preflight reported duplicate {backend} probes: {report}")
+    if not peer_probes:
+        return False
+    if peer_probes[0].get("status") != "pass":
+        pytest.fail(f"GPU preflight reported a broken {backend} peer: {report}")
     return True
 
 
@@ -153,7 +167,32 @@ def test_gpu_preflight_skips_only_absent_hardware(monkeypatch):
             args[0], 0, json.dumps(report), ""
         ),
     )
-    assert _gpu_preflight("/unused/keyhog") is False
+    assert _gpu_preflight("/unused/keyhog", "gpu-cuda") is False
+
+
+def test_gpu_preflight_distinguishes_exact_acquired_peer(monkeypatch):
+    report = {
+        "ok": True,
+        "status": "pass",
+        "gpu_available": True,
+        "probes": [
+            {
+                "name": "gpu_region_presence",
+                "status": "pass",
+                "backend_route": "gpu-wgpu",
+                "backend_id": "wgpu:adapter",
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, json.dumps(report), ""
+        ),
+    )
+    assert _gpu_preflight("/unused/keyhog", "gpu-wgpu") is True
+    assert _gpu_preflight("/unused/keyhog", "gpu-cuda") is False
 
 
 def test_gpu_preflight_rejects_broken_present_adapter(monkeypatch):
@@ -166,7 +205,7 @@ def test_gpu_preflight_rejects_broken_present_adapter(monkeypatch):
         ),
     )
     with pytest.raises(pytest.fail.Exception, match="production self-test failed"):
-        _gpu_preflight("/unused/keyhog")
+        _gpu_preflight("/unused/keyhog", "gpu-wgpu")
 
 
 def _scan(
@@ -201,8 +240,8 @@ def backend_findings(creddata_simd_findings):
 
     ref = out[_DETERMINISTIC[0]]
     for b in _ACCELERATED:
-        if b == "gpu" and not _gpu_preflight(binary):
-            print("\n[parity] backend 'gpu' has no hardware adapter; SKIPPED (loud).")
+        if b in _ACCELERATED and not _gpu_preflight(binary, b):
+            print(f"\n[parity] backend {b!r} was not acquired; SKIPPED (loud).")
             out[b] = None
             continue
         try:

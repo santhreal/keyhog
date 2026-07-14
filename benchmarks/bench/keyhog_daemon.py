@@ -41,9 +41,9 @@ def validate_daemon_benchmark(root: pathlib.Path, backend: str, cache: str, mode
             "daemon benchmark rows require the unlabeled daemon-file corpus: "
             f"{root} is not one regular file"
         )
-    if backend not in {"simd", "cpu", "gpu"}:
+    if backend not in {"simd", "cpu", "gpu-cuda", "gpu-wgpu"}:
         raise RuntimeError(
-            "daemon benchmark rows require an explicit simd, cpu, or gpu backend; "
+            "daemon benchmark rows require an explicit simd, cpu, gpu-cuda, or gpu-wgpu backend; "
             "auto lacks a persisted selected-backend execution receipt"
         )
     if cache != "off":

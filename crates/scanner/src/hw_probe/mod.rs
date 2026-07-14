@@ -36,11 +36,10 @@ pub use tier::{gpu_routing_profile, gpu_routing_profiles, GpuRoutingProfile};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ScanBackend {
-    /// GPU region-presence phase 1 via VYRE's literal-set engine
-    /// (`GpuLiteralSet`). The default GPU path; it produces per-chunk
-    /// detector-presence bitmaps and the shared CPU phase-2 tail confirms
-    /// findings.
-    Gpu,
+    /// GPU region-presence phase 1 through VYRE's CUDA driver.
+    GpuCuda,
+    /// GPU region-presence phase 1 through VYRE's WGPU driver.
+    GpuWgpu,
     /// Hyperscan NFA multi-pattern matching + SIMD prefilter.
     /// This is the primary high-throughput path on all platforms.
     SimdCpu,
@@ -54,10 +53,17 @@ impl ScanBackend {
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
-            Self::Gpu => "gpu-region-presence",
+            Self::GpuCuda => "gpu-cuda-region-presence",
+            Self::GpuWgpu => "gpu-wgpu-region-presence",
             Self::SimdCpu => "simd-regex",
             Self::CpuFallback => "cpu-fallback",
         }
+    }
+
+    /// Whether this route executes on a physical GPU.
+    #[must_use]
+    pub const fn is_gpu(self) -> bool {
+        matches!(self, Self::GpuCuda | Self::GpuWgpu)
     }
 }
 

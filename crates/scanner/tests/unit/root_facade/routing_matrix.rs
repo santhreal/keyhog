@@ -82,18 +82,18 @@ fn with_env<R>(value: Option<&str>, body: impl FnOnce() -> R) -> R {
 // CELL 1: explicit test override
 // ────────────────────────────────────────────────────────────────────
 
-/// An explicit GPU override must force `Gpu` even when no GPU is detected
+/// An explicit WGPU override must force `GpuWgpu` even when no GPU is detected
 /// at all - the override is a contract for benchmarks and CI assertions,
 /// not a "best-effort" hint. The default routing rules cannot override it.
 #[test]
-fn env_override_gpu_forces_gpu_regardless_of_hardware() {
+fn env_override_wgpu_forces_wgpu_regardless_of_hardware() {
     let caps = caps_no_gpu(true, true);
-    for alias in ["gpu", "GPU", "gpu-region-presence"] {
+    for alias in ["gpu-wgpu", "GPU-WGPU", "gpu-wgpu-region-presence"] {
         with_env(Some(alias), || {
             assert_eq!(
                 select_backend(&caps, 1 << 30, 10_000),
-                ScanBackend::Gpu,
-                "backend={alias} must force Gpu"
+                ScanBackend::GpuWgpu,
+                "backend={alias} must force GpuWgpu"
             );
         });
     }
@@ -135,7 +135,7 @@ fn env_override_invalid_value_falls_through_to_auto() {
             // RTX 5090 + 1 GiB + 10k patterns → high-tier auto picks Gpu.
             assert_eq!(
                 select_backend(&caps, 1 << 30, 10_000),
-                ScanBackend::Gpu,
+                ScanBackend::GpuWgpu,
                 "garbage env {garbage:?} must fall through to auto-Gpu"
             );
         });
@@ -284,20 +284,30 @@ fn assert_high_tier_routing_cells() -> Vec<(u64, usize, ScanBackend, &'static st
     let pat_floor = gpu_pattern_breakeven_for_tier(GpuTier::High);
     vec![
         // Solo path: above solo cap, any pattern count wins for GPU.
-        (solo, 1, ScanBackend::Gpu, "high: at solo, 1 pattern → Gpu"),
-        (solo + 1, 0, ScanBackend::Gpu, "high: just above solo → Gpu"),
-        (solo * 4, 1, ScanBackend::Gpu, "high: 4× solo → Gpu"),
+        (
+            solo,
+            1,
+            ScanBackend::GpuWgpu,
+            "high: at solo, 1 pattern → Gpu",
+        ),
+        (
+            solo + 1,
+            0,
+            ScanBackend::GpuWgpu,
+            "high: just above solo → Gpu",
+        ),
+        (solo * 4, 1, ScanBackend::GpuWgpu, "high: 4× solo → Gpu"),
         // Min + pattern-floor path: both conditions must hold.
         (
             min,
             pat_floor,
-            ScanBackend::Gpu,
+            ScanBackend::GpuWgpu,
             "high: at (min, pat_floor) → Gpu",
         ),
         (
             min,
             pat_floor + 1,
-            ScanBackend::Gpu,
+            ScanBackend::GpuWgpu,
             "high: at min, above pat_floor → Gpu",
         ),
         // Below min: never Gpu, falls to SimdCpu when Hyperscan present.
@@ -346,11 +356,11 @@ fn mid_tier_routing_crossover_cells() {
     let pat_floor = gpu_pattern_breakeven_for_tier(GpuTier::Mid);
     with_env(None, || {
         for (bytes, patterns, expected, label) in [
-            (solo, 0, ScanBackend::Gpu, "mid: at solo cap → Gpu"),
+            (solo, 0, ScanBackend::GpuWgpu, "mid: at solo cap → Gpu"),
             (
                 min,
                 pat_floor,
-                ScanBackend::Gpu,
+                ScanBackend::GpuWgpu,
                 "mid: at (min, pat_floor) → Gpu",
             ),
             (
@@ -383,11 +393,11 @@ fn low_tier_routing_crossover_cells() {
     let pat_floor = gpu_pattern_breakeven_for_tier(GpuTier::Low);
     with_env(None, || {
         for (bytes, patterns, expected, label) in [
-            (solo, 0, ScanBackend::Gpu, "low: at solo cap → Gpu"),
+            (solo, 0, ScanBackend::GpuWgpu, "low: at solo cap → Gpu"),
             (
                 min,
                 pat_floor,
-                ScanBackend::Gpu,
+                ScanBackend::GpuWgpu,
                 "low: at (min, pat_floor) → Gpu",
             ),
             (
@@ -534,7 +544,8 @@ fn classify_gpu_tier_edge_cases_are_low() {
 fn scan_backend_labels_are_stable() {
     // Stable labels feed logs, the `keyhog backend` subcommand, and CI
     // assertions. A renamed label breaks every downstream consumer.
-    assert_eq!(ScanBackend::Gpu.label(), "gpu-region-presence");
+    assert_eq!(ScanBackend::GpuCuda.label(), "gpu-cuda-region-presence");
+    assert_eq!(ScanBackend::GpuWgpu.label(), "gpu-wgpu-region-presence");
     assert_eq!(ScanBackend::SimdCpu.label(), "simd-regex");
     assert_eq!(ScanBackend::CpuFallback.label(), "cpu-fallback");
 }
@@ -569,7 +580,7 @@ fn batch_swarm_of_tiny_files_stays_simd_despite_huge_total() {
         // proving the dominance guard is what changed the decision.
         assert_eq!(
             select_backend(&caps, total, 5_000),
-            ScanBackend::Gpu,
+            ScanBackend::GpuWgpu,
             "sanity: total-only select_backend still routes the same total to GPU"
         );
     });
@@ -604,7 +615,7 @@ fn batch_large_dominated_routes_gpu() {
     with_env(None, || {
         assert_eq!(
             select_backend_for_batch(&caps, solo, 1, solo),
-            ScanBackend::Gpu,
+            ScanBackend::GpuWgpu,
             "a batch that is entirely large-file bytes must engage the GPU"
         );
     });
@@ -623,7 +634,7 @@ fn batch_dominance_boundary_is_inclusive() {
     with_env(None, || {
         assert_eq!(
             select_backend_for_batch(&caps, total, 5_000, total / 2),
-            ScanBackend::Gpu,
+            ScanBackend::GpuWgpu,
             "large bytes == half the batch is inclusive -> GPU"
         );
         assert_eq!(
@@ -639,10 +650,10 @@ fn batch_dominance_boundary_is_inclusive() {
 #[test]
 fn batch_env_override_gpu_wins_over_dominance_guard() {
     let caps = caps_with_gpu("NVIDIA GeForce RTX 5090", true, true);
-    with_env(Some("gpu"), || {
+    with_env(Some("gpu-wgpu"), || {
         assert_eq!(
             select_backend_for_batch(&caps, 1024, 10, 0),
-            ScanBackend::Gpu,
+            ScanBackend::GpuWgpu,
             "explicit GPU override bypasses the dominance guard"
         );
     });
