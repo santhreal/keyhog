@@ -19,7 +19,10 @@
 use crate::target_spec::{
     join_capped, load_canonicals, scan, sufficient_canonicals, surfaces, Canonical,
 };
-use keyhog_scanner::testing::checksum::crc32_base62_suffix;
+use keyhog_scanner::testing::checksum::{
+    github_classic_pat_with_checksum, github_fine_grained_pat_with_checksum,
+    npm_token_with_checksum,
+};
 
 /// One named context variant: given a raw credential, produce a body that
 /// embeds it, plus the logical path the body would live at.
@@ -344,10 +347,7 @@ fn rotate_embedded_checksum_token(cred: &str) -> Option<String> {
             let mut body = payload[..30].as_bytes().to_vec();
             rotate_alnum_run_preserving_grammar(&mut body);
             let body = String::from_utf8(body).ok()?;
-            return Some(format!(
-                "ghp_{body}{}",
-                crc32_base62_suffix(body.as_bytes(), 6)
-            ));
+            return Some(github_classic_pat_with_checksum(&body));
         }
     }
 
@@ -356,10 +356,7 @@ fn rotate_embedded_checksum_token(cred: &str) -> Option<String> {
             let mut body = payload[..30].as_bytes().to_vec();
             rotate_alnum_run_preserving_grammar(&mut body);
             let body = String::from_utf8(body).ok()?;
-            return Some(format!(
-                "npm_{body}{}",
-                crc32_base62_suffix(body.as_bytes(), 6)
-            ));
+            return Some(npm_token_with_checksum(&body));
         }
     }
 
@@ -375,10 +372,7 @@ fn rotate_embedded_checksum_token(cred: &str) -> Option<String> {
             let mut right_body = right[..53].as_bytes().to_vec();
             rotate_alnum_run_preserving_grammar(&mut right_body);
             let right_body = String::from_utf8(right_body).ok()?;
-            return Some(format!(
-                "github_pat_{left}_{right_body}{}",
-                crc32_base62_suffix(right_body.as_bytes(), 6)
-            ));
+            return Some(github_fine_grained_pat_with_checksum(left, &right_body));
         }
     }
 
@@ -428,17 +422,11 @@ fn rotated_key_generator_preserves_hex_anchors_and_checksums() {
 
     let ghp = rotate_body("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").unwrap();
     let ghp_payload = ghp.strip_prefix("ghp_").unwrap();
-    assert_eq!(
-        &ghp_payload[30..],
-        crc32_base62_suffix(ghp_payload[..30].as_bytes(), 6)
-    );
+    assert_eq!(ghp, github_classic_pat_with_checksum(&ghp_payload[..30]));
 
     let npm = rotate_body("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").unwrap();
     let npm_payload = npm.strip_prefix("npm_").unwrap();
-    assert_eq!(
-        &npm_payload[30..],
-        crc32_base62_suffix(npm_payload[..30].as_bytes(), 6)
-    );
+    assert_eq!(npm, npm_token_with_checksum(&npm_payload[..30]));
 }
 
 /// Population floor + visibility: how many detectors are credential-sufficient

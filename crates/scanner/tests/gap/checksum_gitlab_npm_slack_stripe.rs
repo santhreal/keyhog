@@ -34,8 +34,8 @@
 //! second algorithm copy in this test.
 
 use keyhog_scanner::testing::checksum::{
-    crc32_base62_suffix, npm_token_with_checksum, validate_checksum, ChecksumResult,
-    GitlabTokenValidator, NpmTokenValidator, SlackTokenValidator, StripeTokenValidator,
+    npm_token_with_checksum, validate_checksum, ChecksumResult, GitlabTokenValidator,
+    NpmTokenValidator, SlackTokenValidator, StripeTokenValidator,
 };
 
 /// Build a npm token whose 6-char base62 CRC trailer matches its 30-char
@@ -315,10 +315,10 @@ fn npm_wrong_trailer_is_invalid() {
 fn npm_all_a_36_body_is_invalid() {
     // `npm_` + 36 'A': alnum, length 36, but CRC of 30 'A' is not "AAAAAA".
     // Derive the real expected trailer to prove the mismatch.
-    let expected = crc32_base62_suffix(&[b'A'; 30], 6);
-    assert_ne!(
-        expected, "AAAAAA",
-        "if this fired the test premise is wrong"
+    let valid = npm_token_with_checksum(&"A".repeat(30));
+    assert!(
+        !valid.ends_with("AAAAAA"),
+        "fixture premise must remain true"
     );
     let token = format!("npm_{}", "A".repeat(36));
     assert_eq!(NpmTokenValidator.validate(&token), ChecksumResult::Invalid);

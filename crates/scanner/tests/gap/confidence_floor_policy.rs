@@ -16,18 +16,12 @@
 //! the validators use; this is a round-trip proof, not a magic literal.
 
 use keyhog_scanner::testing::checksum::{
-    base62_encode_u32, checksum_adjusted_confidence, crc32_base62_suffix,
-    github_classic_pat_with_checksum, npm_token_with_checksum, validate_checksum, ChecksumResult,
-    CHECKSUM_VALID_FLOOR,
+    checksum_adjusted_confidence, github_classic_pat_with_checksum,
+    github_fine_grained_pat_with_checksum, npm_token_with_checksum, validate_checksum,
+    ChecksumResult, CHECKSUM_VALID_FLOOR,
 };
 use keyhog_scanner::testing::confidence::known_prefix_confidence_floor;
 use keyhog_scanner::ScannerConfig;
-
-/// 6-char base62 CRC32 trailer for a given entropy body (the format GitHub
-/// classic / npm tokens embed).
-fn checksum6(entropy: &str) -> String {
-    crc32_base62_suffix(entropy.as_bytes(), 6)
-}
 
 /// Build a `ghp_` token whose 6-char trailer is the CORRECT CRC of its 30-char
 /// body. `body30` must be exactly 30 ASCII-alnum chars.
@@ -429,9 +423,7 @@ fn github_fine_grained_valid_when_right_segment_crc_matches() {
     // Construct the right segment as <53-char body><6-char crc(body)>.
     let left = "A".repeat(22);
     let right_body = "B".repeat(53);
-    let right = format!("{}{}", right_body, checksum6(&right_body));
-    assert_eq!(right.len(), 59);
-    let token = format!("github_pat_{left}_{right}");
+    let token = github_fine_grained_pat_with_checksum(&left, &right_body);
     assert_eq!(validate_checksum(&token), ChecksumResult::Valid);
     assert_eq!(checksum_adjusted_confidence(0.1, &token), Some(0.9));
 }
@@ -445,11 +437,7 @@ fn github_fine_grained_invalid_when_no_segment_crc_matches() {
     // Deliberately use a wrong trailer (all zeros is exceedingly unlikely to
     // equal the real CRC for an all-'B' body; assert it is in fact wrong).
     let wrong = "000000";
-    assert_ne!(
-        checksum6(&right_body),
-        wrong,
-        "fixture must use a wrong CRC"
-    );
+    assert!(!github_fine_grained_pat_with_checksum(&left, &right_body).ends_with(wrong));
     let right = format!("{right_body}{wrong}");
     let token = format!("github_pat_{left}_{right}");
     assert_eq!(validate_checksum(&token), ChecksumResult::Invalid);
@@ -784,7 +772,8 @@ fn fabricated_ghp_with_plausible_random_checksum_is_dropped() {
     // any fabricated 6-char trailer mismatches the CRC -> Invalid -> drop.
     // Use a body whose true CRC we compute, then pick a guaranteed-wrong one.
     let body = body30();
-    let real = checksum6(&body);
+    let valid = github_classic_pat_with_checksum(&body);
+    let real = &valid[valid.len() - 6..];
     let fake = if real == "000000" { "000001" } else { "000000" };
     let token = format!("ghp_{body}{fake}");
     assert_eq!(token.len(), 4 + 36);
@@ -858,21 +847,4 @@ fn helper_constructs_tokens_the_validator_accepts() {
             "helper-built npm token {npm} must validate Valid"
         );
     }
-}
-
-#[test]
-fn helper_zero_value_base62_is_all_zeros() {
-    // crc==0 -> "000000". Exercised so the helper's base62 zero-path matches
-    // source behaviour (base62_encode_u32(0, 6) == "000000").
-    assert_eq!(base62_encode_u32(0, 6), "000000");
-}
-
-#[test]
-fn helper_base62_left_pads_to_width() {
-    // value 1 -> base62 "1", left-padded to width 6 -> "000001".
-    assert_eq!(base62_encode_u32(1, 6), "000001");
-    // value 61 -> last base62 digit 'z', padded -> "00000z".
-    assert_eq!(base62_encode_u32(61, 6), "00000z");
-    // value 62 -> "10", padded -> "000010".
-    assert_eq!(base62_encode_u32(62, 6), "000010");
 }

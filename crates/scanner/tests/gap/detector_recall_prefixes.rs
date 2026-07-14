@@ -32,8 +32,8 @@
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::testing::checksum::{
-    base62_encode_u32, github_classic_format_with_checksum, github_classic_pat_with_checksum,
-    github_fine_grained_pat_with_checksum, npm_token_with_checksum, standard_crc32,
+    github_classic_format_with_checksum, github_classic_pat_with_checksum,
+    github_fine_grained_pat_with_checksum, npm_token_with_checksum,
 };
 use keyhog_scanner::CompiledScanner;
 use std::sync::OnceLock;
@@ -138,37 +138,6 @@ fn mint_github_fine_grained(left22: &str, right_body53: &str) -> String {
 }
 
 // ── Checksum fixture builder self-checks ────────────────────────────────────
-
-#[test]
-fn crc32_of_empty_is_zero() {
-    // CRC32 of the empty input is the canonical 0x00000000.
-    assert_eq!(standard_crc32(b""), 0x0000_0000);
-}
-
-#[test]
-fn crc32_known_vector_check() {
-    // Standard CRC-32/ISO-HDLC check value: CRC32("123456789") == 0xCBF43926.
-    assert_eq!(standard_crc32(b"123456789"), 0xCBF4_3926);
-    // "The quick brown fox jumps over the lazy dog" == 0x414FA339.
-    assert_eq!(
-        standard_crc32(b"The quick brown fox jumps over the lazy dog"),
-        0x414F_A339
-    );
-}
-
-#[test]
-fn base62_encode_pads_and_radix_are_exact() {
-    // 0 → all-zero, width-padded.
-    assert_eq!(base62_encode_u32(0, 6), "000000");
-    // 1 → "000001"; 61 → "00000z" (last digit of the alphabet).
-    assert_eq!(base62_encode_u32(1, 6), "000001");
-    assert_eq!(base62_encode_u32(61, 6), "00000z");
-    // 62 → "000010" (one carry).
-    assert_eq!(base62_encode_u32(62, 6), "000010");
-    // u32::MAX in base62 fits in 6 chars and is non-padded at the top.
-    let max = base62_encode_u32(u32::MAX, 6);
-    assert_eq!(max.len(), 6);
-}
 
 #[test]
 fn minted_github_token_self_validates_against_checksum_module() {

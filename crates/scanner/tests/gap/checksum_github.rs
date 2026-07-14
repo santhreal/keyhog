@@ -54,7 +54,7 @@ fn ref_crc32(data: &[u8]) -> u32 {
     crc ^ 0xFFFF_FFFF
 }
 
-// Mirrors `github::base62_encode_u32`.
+// Independent oracle for the shared checksum owner's base62 encoding.
 fn ref_base62(mut value: u32, width: usize) -> String {
     if value == 0 {
         return "0".repeat(width);

@@ -1579,10 +1579,7 @@ pub fn npm_checksum_verdict_for_test(credential: &str) -> &'static str {
 /// prefix, so a gap test can build a genuinely-valid `npm_` token and pin the
 /// entropy/checksum split (30 + 6) through the Valid path.
 pub fn npm_expected_checksum_for_test(entropy: &str) -> String {
-    crate::checksum::github::base62_encode_u32(
-        crate::checksum::github::crc32(entropy.as_bytes()),
-        6,
-    )
+    crate::checksum::base62_encode_u32(crate::checksum::crc32(entropy.as_bytes()), 6)
 }
 
 /// Slack structural-checksum verdict for `credential`, as a stable string. Lets
@@ -3795,16 +3792,8 @@ pub mod checksum {
         checksum_adjusted_confidence, validate_checksum, ChecksumResult, CHECKSUM_VALID_FLOOR,
     };
 
-    pub fn standard_crc32(data: &[u8]) -> u32 {
-        crate::checksum::standard_crc32(data)
-    }
-
-    pub fn base62_encode_u32(value: u32, width: usize) -> String {
-        crate::checksum::base62_encode_u32(value, width)
-    }
-
-    pub fn crc32_base62_suffix(data: &[u8], width: usize) -> String {
-        crate::checksum::crc32_base62_suffix(data, width)
+    fn crc32_base62_suffix(data: &[u8], width: usize) -> String {
+        crate::checksum::base62_encode_u32(crate::checksum::crc32(data), width)
     }
 
     /// Mint a valid token for ANY github classic-format prefix. `ghp_` (classic

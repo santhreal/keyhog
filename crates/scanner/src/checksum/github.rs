@@ -1,6 +1,4 @@
-use super::{ChecksumResult, ChecksumValidator};
-
-const BASE62_DIGITS: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+use super::{base62_encode_u32, crc32, ChecksumResult, ChecksumValidator};
 
 /// GitHub/npm CRC32 token checksums are a 6-character base62 encoding of the
 /// body's CRC32. Single owner so the classic and fine-grained validators agree
@@ -12,52 +10,6 @@ const GITHUB_CLASSIC_BODY_LEN: usize = GITHUB_CLASSIC_ENTROPY_LEN + CHECKSUM_LEN
 /// GitHub fine-grained PAT payload segments: `{LEFT}_{RIGHT}`.
 const GITHUB_FINE_GRAINED_LEFT_LEN: usize = 22;
 const GITHUB_FINE_GRAINED_RIGHT_LEN: usize = 59;
-
-/// Compute the standard CRC32 checksum of `data`.
-pub(crate) fn crc32(data: &[u8]) -> u32 {
-    const TABLE: [u32; 256] = {
-        let mut table = [0u32; 256];
-        let mut i = 0;
-        while i < 256 {
-            let mut crc = i as u32;
-            let mut j = 0;
-            while j < 8 {
-                if crc & 1 != 0 {
-                    crc = 0xEDB88320 ^ (crc >> 1);
-                } else {
-                    crc >>= 1;
-                }
-                j += 1;
-            }
-            table[i] = crc;
-            i += 1;
-        }
-        table
-    };
-
-    let mut crc: u32 = 0xFFFF_FFFF;
-    for &byte in data {
-        crc = TABLE[((crc ^ (byte as u32)) & 0xFF) as usize] ^ (crc >> 8);
-    }
-    crc ^ 0xFFFF_FFFF
-}
-
-/// Encode a `u32` as base62, left-padded with `'0'` to `width` characters.
-pub(crate) fn base62_encode_u32(mut value: u32, width: usize) -> String {
-    if value == 0 {
-        return "0".repeat(width);
-    }
-    let mut rev = Vec::with_capacity(width.max(6));
-    while value > 0 {
-        rev.push(BASE62_DIGITS[(value % 62) as usize] as char);
-        value /= 62;
-    }
-    while rev.len() < width {
-        rev.push('0');
-    }
-    rev.reverse();
-    rev.into_iter().collect()
-}
 
 /// Validates GitHub classic personal access tokens AND the OAuth-family tokens
 /// that share the identical body (`gho_`/`ghu_`/`ghs_`/`ghr_`).

@@ -19,6 +19,8 @@ use stripe::StripeTokenValidator;
 
 use std::sync::LazyLock;
 
+const BASE62_DIGITS: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
 /// Result of a checksum validation attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -83,16 +85,50 @@ pub(crate) fn extension_downgrades_checksum(original: &str, extended: &str) -> b
         && validate_checksum(extended) != ChecksumResult::Valid
 }
 
-pub(crate) fn standard_crc32(data: &[u8]) -> u32 {
-    github::crc32(data)
+/// Compute the standard CRC32 checksum of `data`.
+pub(crate) fn crc32(data: &[u8]) -> u32 {
+    const TABLE: [u32; 256] = {
+        let mut table = [0u32; 256];
+        let mut i = 0;
+        while i < 256 {
+            let mut crc = i as u32;
+            let mut j = 0;
+            while j < 8 {
+                if crc & 1 != 0 {
+                    crc = 0xEDB88320 ^ (crc >> 1);
+                } else {
+                    crc >>= 1;
+                }
+                j += 1;
+            }
+            table[i] = crc;
+            i += 1;
+        }
+        table
+    };
+
+    let mut crc: u32 = 0xFFFF_FFFF;
+    for &byte in data {
+        crc = TABLE[((crc ^ (byte as u32)) & 0xFF) as usize] ^ (crc >> 8);
+    }
+    crc ^ 0xFFFF_FFFF
 }
 
-pub(crate) fn base62_encode_u32(value: u32, width: usize) -> String {
-    github::base62_encode_u32(value, width)
-}
-
-pub(crate) fn crc32_base62_suffix(data: &[u8], width: usize) -> String {
-    base62_encode_u32(standard_crc32(data), width)
+/// Encode a `u32` as base62, left-padded with `'0'` to `width` characters.
+pub(crate) fn base62_encode_u32(mut value: u32, width: usize) -> String {
+    if value == 0 {
+        return "0".repeat(width);
+    }
+    let mut rev = Vec::with_capacity(width.max(6));
+    while value > 0 {
+        rev.push(BASE62_DIGITS[(value % 62) as usize] as char);
+        value /= 62;
+    }
+    while rev.len() < width {
+        rev.push('0');
+    }
+    rev.reverse();
+    rev.into_iter().collect()
 }
 
 /// Confidence floor applied to a credential whose embedded checksum is `Valid`.

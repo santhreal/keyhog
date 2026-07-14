@@ -7,7 +7,7 @@
 //! `0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz`.
 //!
 //! Coverage: valid-checksum token passes (exact `Valid`), one-char-corrupted
-//! variant fails (exact `Invalid`), CRC/base62 math matches a hardcoded oracle,
+//! variant fails (exact `Invalid`), emitted token bytes match hardcoded oracles,
 //! a prefix outside the registry returns `NotApplicable`, structural-only
 //! families (`glpat-`, `glrt-`, stripe) return `StructurallyValid`, and the
 //! confidence-policy mapping (Valid→floor 0.9, Invalid→drop) holds.
@@ -16,66 +16,11 @@
 //! existing `unit/checksum_extended.rs` target consumes.
 
 use keyhog_scanner::testing::checksum::{
-    base62_encode_u32, checksum_adjusted_confidence, crc32_base62_suffix,
-    github_classic_pat_with_checksum, github_fine_grained_pat_with_checksum,
-    npm_token_with_checksum, standard_crc32, validate_checksum, ChecksumResult,
-    GithubClassicPatValidator, GithubFineGrainedPatValidator, GitlabTokenValidator,
+    checksum_adjusted_confidence, github_classic_pat_with_checksum,
+    github_fine_grained_pat_with_checksum, npm_token_with_checksum, validate_checksum,
+    ChecksumResult, GithubClassicPatValidator, GithubFineGrainedPatValidator, GitlabTokenValidator,
     NpmTokenValidator, StripeTokenValidator, CHECKSUM_VALID_FLOOR,
 };
-
-// ── CRC32 / base62 primitive oracles ──────────────────────────────────────────
-
-#[test]
-fn crc32_matches_known_test_vectors() {
-    // Standard CRC32 (zlib) reference vectors.
-    assert_eq!(standard_crc32(b""), 0, "CRC32 of empty input is 0");
-    assert_eq!(
-        standard_crc32(b"abc"),
-        891_568_578,
-        "CRC32(\"abc\") reference vector"
-    );
-    // CRC32 of a 30-char all-'A' body (reused by the GitHub/npm fixtures below).
-    assert_eq!(
-        standard_crc32(&[b'A'; 30]),
-        830_433_819,
-        "CRC32 of 30 'A' bytes"
-    );
-}
-
-#[test]
-fn base62_encode_padding_and_carry_boundaries() {
-    // Module alphabet is digits→UPPER→lower, width-padded with leading '0'.
-    assert_eq!(base62_encode_u32(0, 6), "000000", "zero pads to all-zero");
-    assert_eq!(base62_encode_u32(1, 6), "000001");
-    assert_eq!(
-        base62_encode_u32(61, 6),
-        "00000z",
-        "61 is last single digit"
-    );
-    assert_eq!(
-        base62_encode_u32(62, 6),
-        "000010",
-        "62 carries to next place"
-    );
-    assert_eq!(base62_encode_u32(3844, 6), "000100", "62^2 = 3844");
-    // CRC32(\"abc\") encoded to a 6-char base62 suffix.
-    assert_eq!(base62_encode_u32(891_568_578, 6), "0yKviM");
-}
-
-#[test]
-fn crc32_base62_suffix_composes_the_two_primitives() {
-    // suffix == base62(crc32(body)) (the exact suffix GitHub/npm embed).
-    assert_eq!(
-        crc32_base62_suffix(&[b'A'; 30], 6),
-        "0uCPlr",
-        "base62(830433819) over 6 chars"
-    );
-    assert_eq!(
-        crc32_base62_suffix(&[b'A'; 30], 6),
-        base62_encode_u32(standard_crc32(&[b'A'; 30]), 6),
-        "suffix helper == manual composition of the two primitives"
-    );
-}
 
 // ── GitHub classic PAT: valid / corrupted / fixture ───────────────────────────
 
@@ -113,7 +58,6 @@ fn github_classic_second_independent_fixture_valid() {
     // A distinct mixed-case body, independently CRC'd: crc=997462050 -> "15VFRa".
     let body = "0123456789abcdefghijklmnOPQRST";
     assert_eq!(body.len(), 30);
-    assert_eq!(standard_crc32(body.as_bytes()), 997_462_050);
     let token = github_classic_pat_with_checksum(body);
     assert_eq!(token, "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");
     assert_eq!(
@@ -154,7 +98,6 @@ fn github_fine_grained_valid_checksum_passes() {
         token,
         "github_pat_AAAAAAAAAAAAAAAAAAAAAA_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB0fqbVo"
     );
-    assert_eq!(standard_crc32(right_body.as_bytes()), 618_367_032);
     assert_eq!(
         GithubFineGrainedPatValidator.validate(&token),
         ChecksumResult::Valid
