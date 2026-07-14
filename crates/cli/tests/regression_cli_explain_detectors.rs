@@ -269,41 +269,28 @@ fn explain_prints_canonical_remediation_steps() {
 // Retired hot-* alias migration
 // ---------------------------------------------------------------------------
 
-/// Positive: a historical `hot-github_pat` alias resolves to the canonical
-/// `github-classic-pat` registry spec, exits 0, and says so on stdout.
+/// A historical id is rejected and names the canonical command.
 #[test]
-fn hot_alias_github_resolves_to_canonical_id() {
+fn hot_id_github_fails_with_canonical_command() {
     let out = explain(&["hot-github_pat"]);
-    assert_eq!(out.status.code(), Some(0), "stderr={}", stderr_of(&out));
-    let s = stdout_of(&out);
+    assert_eq!(out.status.code(), Some(2), "stderr={}", stderr_of(&out));
+    let s = stderr_of(&out);
     assert!(
-        s.contains("'hot-github_pat' is a retired KeyHog fast-path alias; showing the canonical detector 'github-classic-pat'."),
-        "expected the hot-alias resolution notice; got:\n{s}"
-    );
-    // And it actually renders the canonical spec, not just the notice.
-    assert!(
-        s.contains("Name:      GitHub Classic PAT"),
-        "hot alias must render the canonical github spec; got:\n{s}"
-    );
-    assert!(
-        s.contains(GITHUB_ROTATION_URL),
-        "hot alias must carry the canonical github rotation URL; got:\n{s}"
+        s.contains("'hot-github_pat' is a retired detector id and is not accepted")
+            && s.contains("keyhog explain github-classic-pat"),
+        "expected the exact canonical migration; got:\n{s}"
     );
 }
 
-/// Positive: `hot-aws_key` resolves to `aws-access-key` (distinct mapping).
+/// A second retired id proves the migration map is detector-specific.
 #[test]
-fn hot_alias_aws_resolves_to_canonical_id() {
+fn hot_id_aws_fails_with_canonical_command() {
     let out = explain(&["hot-aws_key"]);
-    assert_eq!(out.status.code(), Some(0), "stderr={}", stderr_of(&out));
-    let s = stdout_of(&out);
+    assert_eq!(out.status.code(), Some(2), "stderr={}", stderr_of(&out));
+    let s = stderr_of(&out);
     assert!(
-        s.contains("showing the canonical detector 'aws-access-key'."),
-        "expected aws canonical resolution; got:\n{s}"
-    );
-    assert!(
-        s.contains("Name:      AWS Access Key"),
-        "hot alias must render the aws spec; got:\n{s}"
+        s.contains("keyhog explain aws-access-key"),
+        "expected aws canonical migration; got:\n{s}"
     );
 }
 

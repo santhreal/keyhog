@@ -20,8 +20,8 @@ fn embedded() -> Vec<DetectorSpec> {
         .expect("embedded detector corpus must load")
 }
 
-/// Every retired alias retained for historical reports resolves to an existing
-/// canonical detector. Current scans emit only canonical TOML ids.
+/// Every retired id migration names an existing canonical detector. The CLI
+/// rejects the retired id instead of executing it as an alias.
 #[test]
 fn hot_ids_resolve_to_real_detectors() {
     let detectors = embedded();
@@ -51,7 +51,7 @@ fn hot_ids_resolve_to_real_detectors() {
     assert_eq!(
         API.canonical_for_hot_id("HOT-GITHUB_PAT"),
         Some("github-classic-pat"),
-        "hot-id aliases should be ASCII-case-insensitive without lowercasing the request"
+        "retired-id migrations should be ASCII-case-insensitive without lowercasing the request"
     );
     assert_eq!(
         API.canonical_for_hot_id("hot-square_secret"),

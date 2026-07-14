@@ -405,7 +405,8 @@ enabled = false
 Detector ids are the `detector_id` field in `--format json`/`jsonl` output, or
 the left column of `keyhog detectors`. Accelerated literal slots remain owned by
 the same canonical TOML detector id; there is no separate `hot-*` detector to
-disable. Disabled detectors are dropped before the corpus compiles (zero scan
+disable. Retired `hot-*` ids are rejected with the exact canonical `explain`
+command instead of executing as aliases. Disabled detectors are dropped before the corpus compiles (zero scan
 cost). If an id matches nothing in the loaded corpus, KeyHog warns rather than
 silently ignoring it.
 

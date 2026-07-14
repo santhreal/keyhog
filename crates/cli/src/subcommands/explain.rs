@@ -17,33 +17,17 @@ pub(crate) fn run(args: ExplainArgs) -> Result<()> {
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&detectors_path)?;
 
     let requested = args.detector_id.as_str();
-    // Historical releases emitted `hot-*` fast-path aliases. Accept the finite
-    // retired set as an explain-only migration aid; current scans emit only the
-    // canonical detector TOML id.
-    let (needle, hot_origin) = match canonical_for_hot_id(requested) {
-        Some(canon) => (canon, Some(requested)),
-        None => (requested, None),
-    };
-
     let detector = detectors
         .iter()
-        .find(|d| d.id.eq_ignore_ascii_case(needle))
+        .find(|d| d.id.eq_ignore_ascii_case(requested))
         .ok_or_else(|| explain_not_found(&detectors, requested, requested))?;
 
-    if let Some(hot) = hot_origin {
-        println!(
-            "\u{2139} '{hot}' is a retired KeyHog fast-path alias; showing the \
-             canonical detector '{needle}'.\n"
-        );
-    }
     print_explanation(detector);
     Ok(())
 }
 
 /// Map a retired `hot-<name>` finding alias to its canonical registry detector.
-/// This finite explain-only map lets operators inspect historical reports; it
-/// is not a second detector namespace and current scans never emit these ids.
-///
+/// The map provides an exact error migration but never aliases execution.
 fn canonical_for_hot_id(id: &str) -> Option<&'static str> {
     const HOT_IDS: &[(&str, &str)] = &[
         ("hot-github_pat", "github-classic-pat"),
@@ -63,6 +47,12 @@ fn canonical_for_hot_id(id: &str) -> Option<&'static str> {
 /// Build the "not found" error, including a tailored branch for an unknown
 /// retired-alias shape.
 fn explain_not_found(detectors: &[DetectorSpec], requested: &str, lowered: &str) -> anyhow::Error {
+    if let Some(canonical) = canonical_for_hot_id(requested) {
+        return anyhow::anyhow!(
+            "'{requested}' is a retired detector id and is not accepted. Use \
+             `keyhog explain {canonical}`."
+        );
+    }
     if let Some(stripped) = strip_prefix_ignore_ascii_case(lowered, "hot-") {
         let svc = stripped.split('_').next().unwrap_or(stripped); // LAW10: split yields >=1 element; unwrap_or is the never-taken total default, recall-safe
         let related: Vec<&str> = detectors

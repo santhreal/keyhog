@@ -458,28 +458,19 @@ fn explain_unknown_detector_exits_two_and_names_the_id() {
     );
 }
 
-/// `explain hot-github_pat`: a historical fast-path finding alias, not a registry
-/// id, resolves to the canonical `github-classic-pat` detector, exits 0, and
-/// tells the operator what happened rather than 404-ing.
+/// A historical fast-path id is not executable. The error names the exact
+/// canonical command so operators can migrate old reports without a shim.
 #[test]
-fn explain_hot_fast_path_label_resolves_to_canonical_detector() {
-    let (code, stdout, stderr) = explain(&["hot-github_pat"]);
+fn explain_hot_fast_path_label_fails_with_canonical_command() {
+    let (code, _stdout, stderr) = explain(&["hot-github_pat"]);
     assert_eq!(
         code,
-        Some(0),
-        "a hot-* fast-path label must resolve, not error; stderr={stderr}"
+        Some(2),
+        "a retired detector id is a user error; stderr={stderr}"
     );
     assert!(
-        stdout.contains("SIMD fast-path"),
-        "explain must tell the operator this was a fast-path label; got {stdout}"
-    );
-    assert!(
-        stdout.contains(DETECTOR_ID),
-        "explain must resolve hot-github_pat to {DETECTOR_ID}; got {stdout}"
-    );
-    assert!(
-        stdout.contains("Name:") && stdout.contains(DETECTOR_NAME),
-        "explain must then print the canonical detector's spec; got {stdout}"
+        stderr.contains(&format!("keyhog explain {DETECTOR_ID}")),
+        "the error must give the exact canonical command; got {stderr}"
     );
 }
 
