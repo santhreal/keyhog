@@ -83,8 +83,12 @@ including when there are no findings. A reader must reject an
 unsupported `schema_version.major`; a newer minor under a supported major is
 additive and may be accepted. See [Your first scan](./first-scan.md#json-output)
 for the complete schema. Metadata includes the binary Git identity, detector-set
-digest, effective-config digest when available, targets, timing, and counters
-including the exact source bytes and chunks consumed by the scanner.
+digest, effective-config digest when available, a stable non-secret `scan_id`,
+targets, timing, and counters including the exact source bytes and chunks
+consumed by the scanner. The `scan_id` lets independently stored metadata-bearing
+JSON, JSONL, and HTML projections be joined without exposing secrets. Reports
+from older KeyHog versions may omit it; the HTML projection displays that state
+as `not recorded` rather than inventing an identifier.
 
 ## `--format csv`
 

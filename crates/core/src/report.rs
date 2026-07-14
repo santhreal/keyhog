@@ -51,6 +51,11 @@ pub use anyhow::Error as ReportError;
 /// from growing competing definitions of scan identity and timing.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ScanReportMetadata {
+    /// Stable non-secret identifier shared by artifacts from one scan run.
+    /// Missing values deserialize as empty for reports produced before this
+    /// field was introduced; current producers always populate it.
+    #[serde(default)]
+    pub scan_id: String,
     /// KeyHog crate/binary version that produced the report.
     pub keyhog_version: String,
     /// Git identity of the binary that produced the report.
@@ -82,9 +87,9 @@ pub struct ScanReportMetadata {
 /// Current major version for the versioned JSON report envelope.
 pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 1;
 /// Current minor version for the versioned JSON report envelope.
-pub const JSON_REPORT_SCHEMA_MINOR: u16 = 2;
+pub const JSON_REPORT_SCHEMA_MINOR: u16 = 3;
 /// Current minor version for the versioned JSONL stream contract.
-pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 3;
+pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 4;
 
 /// Version marker carried by every versioned JSON report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

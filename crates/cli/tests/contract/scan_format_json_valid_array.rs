@@ -25,6 +25,7 @@ fn scan_format_json_valid_array() {
     assert!(object["schema_version"]["minor"].is_u64());
     assert!(object["metadata"]["scan_started_at"].is_string());
     assert!(object["metadata"]["scan_finished_at"].is_string());
+    assert_eq!(object["metadata"]["scan_id"].as_str().map(str::len), Some(32));
     assert!(object["metadata"]["duration_ms"].is_u64());
     assert!(
         object["metadata"]["source_chunks_scanned"]

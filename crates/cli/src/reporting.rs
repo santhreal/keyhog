@@ -1,6 +1,7 @@
 //! Report formatting and delivery for the KeyHog CLI.
 
 use crate::args::{OutputFormat, ScanArgs};
+use crate::stable_hash::StableHasher;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use keyhog_core::{ReportFormat, ScanReport, ScanReportMetadata, VerifiedFinding};
@@ -108,6 +109,7 @@ pub(crate) fn report_metadata_from_scan_run(
     metadata.source_chunks_scanned = source_chunks_scanned;
     metadata.source_bytes_scanned = source_bytes_scanned;
     metadata.detector_count = detector_count;
+    metadata.scan_id = scan_report_id(&metadata);
     metadata
 }
 
@@ -116,7 +118,8 @@ fn report_metadata_from_times(
     finished_at: DateTime<Utc>,
     config_digest: Option<u64>,
 ) -> ScanReportMetadata {
-    ScanReportMetadata {
+    let mut metadata = ScanReportMetadata {
+        scan_id: String::new(),
         keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
         git_hash: keyhog_core::git_hash().to_string(),
         detector_digest: keyhog_core::detector_digest().to_string(),
@@ -129,11 +132,84 @@ fn report_metadata_from_times(
         source_chunks_scanned: 0,
         source_bytes_scanned: 0,
         detector_count: keyhog_core::embedded_detector_count(),
+    };
+    metadata.scan_id = scan_report_id(&metadata);
+    metadata
+}
+
+/// Derive the artifact join key from non-secret scan identity and workload
+/// fields. Targets are already redacted by `scan_targets`; length-prefixed
+/// fields prevent ambiguous concatenation and the versioned domain keeps this
+/// identifier independent from autoroute/config digests.
+fn scan_report_id(metadata: &ScanReportMetadata) -> String {
+    let mut hasher = StableHasher::new("scan-report-id-v1");
+    hasher
+        .field_str("keyhog_version", &metadata.keyhog_version)
+        .field_str("git_hash", &metadata.git_hash)
+        .field_str("detector_digest", &metadata.detector_digest)
+        .field_option_str("config_digest", metadata.config_digest.as_deref())
+        .field_str("scan_started_at", &metadata.scan_started_at)
+        .field_str("scan_finished_at", &metadata.scan_finished_at)
+        .field_bytes("duration_ms", &metadata.duration_ms.to_le_bytes())
+        .field_usize("source_chunks_scanned", metadata.source_chunks_scanned)
+        .field_u64("source_bytes_scanned", metadata.source_bytes_scanned)
+        .field_usize("detector_count", metadata.detector_count);
+    for target in &metadata.targets {
+        hasher.field_str("target", target);
     }
+    let digest = hasher.finish_256();
+    digest[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn format_gitlab_time(time: DateTime<Utc>) -> String {
     time.format("%Y-%m-%dT%H:%M:%S").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{scan_report_id, ScanReportMetadata};
+
+    fn metadata() -> ScanReportMetadata {
+        ScanReportMetadata {
+            scan_id: String::new(),
+            keyhog_version: "0.5.41".to_string(),
+            git_hash: "test-git".to_string(),
+            detector_digest: "test-detectors".to_string(),
+            config_digest: Some("0000000000000001".to_string()),
+            generated_at: "2026-07-14T00:00:01".to_string(),
+            scan_started_at: "2026-07-14T00:00:00".to_string(),
+            scan_finished_at: "2026-07-14T00:00:01".to_string(),
+            duration_ms: 1_000,
+            targets: vec!["path:repo".to_string()],
+            source_chunks_scanned: 2,
+            source_bytes_scanned: 128,
+            detector_count: 922,
+        }
+    }
+
+    #[test]
+    fn scan_report_id_is_stable_and_identity_bound() {
+        let base = metadata();
+        assert_eq!(scan_report_id(&base), scan_report_id(&base));
+        assert_eq!(scan_report_id(&base).len(), 32);
+        assert!(scan_report_id(&base)
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit()));
+
+        let mut changed_config = base.clone();
+        changed_config.config_digest = Some("0000000000000002".to_string());
+        assert_ne!(scan_report_id(&base), scan_report_id(&changed_config));
+
+        let mut changed_target = base;
+        changed_target.targets = vec!["path:other-repo".to_string()];
+        assert_ne!(
+            scan_report_id(&changed_target),
+            scan_report_id(&changed_config)
+        );
+    }
 }
 
 /// One end-of-scan snapshot of every coverage-gap counter the reporters read.

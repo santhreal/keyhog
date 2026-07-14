@@ -83,7 +83,9 @@ function renderScanMetadata() {
   setText('meta-targets', targets);
   setText('meta-generated', scanMetadata.generated_at || scanMetadata.scan_finished_at || 'not recorded');
   setText('meta-duration', formatDuration(scanMetadata.duration_ms));
+  setText('meta-scan-id', scanMetadata.scan_id || 'not recorded');
   setText('meta-source-chunks', scanMetadata.source_chunks_scanned ?? 'not recorded');
+  setText('meta-source-bytes', scanMetadata.source_bytes_scanned ?? 'not recorded');
   setText('meta-detectors', scanMetadata.detector_count ?? 'not recorded');
   setText('meta-version', scanMetadata.keyhog_version || 'not recorded');
   panel.style.display = '';

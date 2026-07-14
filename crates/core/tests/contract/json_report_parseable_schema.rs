@@ -81,6 +81,7 @@ fn json_report_parseable_schema() {
 fn versioned_json_envelope_validates_major_and_accepts_minor() {
     let finding = sample_finding();
     let metadata = ScanReportMetadata {
+        scan_id: "scan-test-id".into(),
         keyhog_version: "0.5.41".into(),
         git_hash: "test-git".into(),
         detector_digest: "922-test".into(),
@@ -107,13 +108,25 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     let text = String::from_utf8(buf).expect("JSON envelope is UTF-8");
     let parsed = JsonReportEnvelope::parse(&text).expect("current major parses");
     assert_eq!(parsed.schema_version.major, 1);
-    assert_eq!(parsed.schema_version.minor, 2);
+    assert_eq!(parsed.schema_version.minor, 3);
     assert_eq!(
         parsed.metadata.as_ref().expect("metadata").targets,
         ["fixture.env"]
     );
     assert_eq!(parsed.coverage_gap_summary[0].count, 1);
     assert_eq!(parsed.findings.len(), 1);
+
+    let mut legacy = serde_json::to_value(&parsed).expect("parsed envelope serializes");
+    legacy["metadata"]
+        .as_object_mut()
+        .expect("metadata object")
+        .remove("scan_id");
+    let legacy = JsonReportEnvelope::parse(&legacy.to_string())
+        .expect("reports without the additive scan id remain readable");
+    assert_eq!(
+        legacy.metadata.as_ref().expect("legacy metadata").scan_id,
+        ""
+    );
 
     let mut future_minor: serde_json::Value =
         serde_json::from_str(&text).expect("envelope JSON parses");
@@ -161,7 +174,7 @@ fn versioned_jsonl_headers_split_concatenated_streams_and_validate_major() {
     let streams = parse_jsonl_stream(std::str::from_utf8(&joined).expect("JSONL is UTF-8"))
         .expect("concatenated streams parse by header boundary");
     assert_eq!(streams.len(), 2);
-    assert_eq!(streams[0].header.schema_version.minor, 3);
+    assert_eq!(streams[0].header.schema_version.minor, 4);
     assert_eq!(streams[0].findings.len(), 1);
     assert!(streams[0].is_complete());
     assert_eq!(
