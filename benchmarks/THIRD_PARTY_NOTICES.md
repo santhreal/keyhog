@@ -16,12 +16,7 @@ keyhog; it documents the third-party tools and data the benchmark *uses*.
 | TruffleHog | https://github.com/trufflesecurity/trufflehog | AGPL-3.0 |
 | Nosey Parker | https://github.com/praetorian-inc/noseyparker | Apache-2.0 |
 | Betterleaks | https://github.com/betterleaks/betterleaks (benchmark pin: v1.1.1, `df7dbcb43c51b3cfe258607c2d7941a87cc98672`) | MIT |
-| `titus` (bench alias) | upstream project, see note below | per upstream |
-
-> **Note on `titus`:** this is the bench's internal adapter name
-> (`benchmarks/bench/scanners/competitors.py`). It wraps a tool supplied through
-> `$TITUS_BIN`. Record the exact upstream project and SPDX license before
-> distributing its binary or results that identify it as a public project.
+| Titus | https://github.com/praetorian-inc/titus (benchmark pin: v1.1.20, `750ced31697c3eb209adc145f3d13a754e849ffa`) | Apache-2.0 |
 
 Each scanner is invoked as an external binary the operator installs; keyhog does
 not vendor, redistribute, or relink any of their code. AGPL-3.0 (TruffleHog) is
