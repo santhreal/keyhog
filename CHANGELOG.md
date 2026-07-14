@@ -15,6 +15,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   exact comment-span provenance while every readable member still follows the
   normal archive scan path. Dependency expansion is bounded, rejects archive
   traversal, and terminates cycles without hiding member findings.
+- APK scans now decode bounded `resources.arsc` value tables and compiled XML
+  into resource-qualified virtual chunks while retaining the ordinary member
+  scan. Malformed or capped semantic decoding emits a typed coverage gap.
 - `keyhog diff` now classifies before-only findings as
   `verification_unknown` instead of resolved. `--artifacts --verify-removed`
   scans both text versions in memory and reports `removed_still_live`,

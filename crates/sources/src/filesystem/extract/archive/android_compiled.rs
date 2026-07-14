@@ -15,6 +15,7 @@ const RES_TABLE_TYPE_TYPE: u16 = 0x0201;
 const UTF8_FLAG: u32 = 0x0000_0100;
 const NO_INDEX: u32 = u32::MAX;
 const ENTRY_FLAG_COMPLEX: u16 = 0x0001;
+const ENTRY_FLAG_COMPACT: u16 = 0x0008;
 const TYPE_FLAG_SPARSE: u8 = 0x01;
 const TYPE_FLAG_OFFSET16: u8 = 0x02;
 const VALUE_TYPE_REFERENCE: u8 = 0x01;
@@ -22,6 +23,13 @@ const VALUE_TYPE_STRING: u8 = 0x03;
 const VALUE_TYPE_INT_DEC: u8 = 0x10;
 const VALUE_TYPE_INT_HEX: u8 = 0x11;
 const VALUE_TYPE_INT_BOOLEAN: u8 = 0x12;
+const MIN_RESOURCE_CONFIG_SIZE: usize = 28;
+const MAX_RESOURCE_CONFIG_SIZE: usize = 256;
+
+struct ResourceConfiguration {
+    qualifier: String,
+    digest: String,
+}
 
 #[derive(Clone, Copy)]
 struct AndroidLimits {
@@ -502,7 +510,7 @@ fn parse_type_chunk(
         ));
     }
     let type_name = type_pool.get(raw_type_id - 1, chunk.start + 8)?;
-    let qualifier = parse_locale_qualifier(bytes, chunk)?;
+    let configuration = parse_resource_configuration(bytes, chunk)?;
     let mut entry_offsets = Vec::new();
     entry_offsets.try_reserve(entry_count).map_err(|error| {
         AndroidCompiledError::limit(
@@ -537,34 +545,67 @@ fn parse_type_chunk(
         let entry_start = entries_base.checked_add(relative as usize).ok_or_else(|| {
             AndroidCompiledError::malformed(entries_base, "resource entry offset overflow")
         })?;
-        let entry_size = read_u16(bytes, entry_start)? as usize;
-        if entry_size < 8 || entry_start.saturating_add(entry_size) > chunk.end {
+        if entry_start.saturating_add(8) > chunk.end {
             return Err(AndroidCompiledError::malformed(
                 entry_start,
-                "resource entry header is truncated or has an invalid size",
+                "resource entry header is truncated",
             ));
         }
         let flags = read_u16(bytes, entry_start + 2)?;
-        let key_index = read_u32(bytes, entry_start + 4)?;
-        let key_name = key_pool.get(key_index, entry_start + 4)?;
+        let is_compact = flags & ENTRY_FLAG_COMPACT != 0;
+        if is_compact && flags & ENTRY_FLAG_COMPLEX != 0 {
+            return Err(AndroidCompiledError::malformed(
+                entry_start + 2,
+                "compact resource entry cannot also be complex",
+            ));
+        }
+        let entry_size = if is_compact {
+            8
+        } else {
+            let size = read_u16(bytes, entry_start)? as usize;
+            if size < 8 || entry_start.saturating_add(size) > chunk.end {
+                return Err(AndroidCompiledError::malformed(
+                    entry_start,
+                    "resource entry header is truncated or has an invalid size",
+                ));
+            }
+            size
+        };
+        let key_index = if is_compact {
+            read_u16(bytes, entry_start)? as u32
+        } else {
+            read_u32(bytes, entry_start + 4)?
+        };
+        let key_name = key_pool.get(
+            key_index,
+            if is_compact {
+                entry_start
+            } else {
+                entry_start + 4
+            },
+        )?;
         let resource_id = (package_id << 24)
             | (effective_type_id << 16)
             | u32::try_from(entry_index).map_err(|_| {
                 AndroidCompiledError::limit(entry_start, "resource entry index exceeds u32")
             })?;
-        let identity = (resource_id, qualifier.clone());
+        let identity = (resource_id, configuration.digest.clone());
         if !identities.insert(identity) {
             return Err(AndroidCompiledError::malformed(
                 entry_start,
-                format!("duplicate resource id 0x{resource_id:08x} for configuration {qualifier}"),
+                format!(
+                    "duplicate resource id 0x{resource_id:08x} for configuration {} ({})",
+                    configuration.qualifier, configuration.digest
+                ),
             ));
         }
         let prefix = format!(
-            "android/resource/{}/{}/{}/{}@0x{resource_id:08x}",
+            "android/resource/{}/{}/{}/{}-{}@0x{resource_id:08x}",
             safe_component(package_name),
             safe_component(type_name),
             safe_component(key_name),
-            safe_component(&qualifier)
+            safe_component(&configuration.qualifier),
+            configuration.digest,
         );
         if flags & ENTRY_FLAG_COMPLEX != 0 {
             if entry_size < 16 {
@@ -602,11 +643,29 @@ fn parse_type_chunk(
                         package_name,
                         type_name,
                         key_name,
-                        &qualifier,
+                        &configuration.qualifier,
+                        &configuration.digest,
                         &value,
                     ),
                 )?;
             }
+        } else if is_compact {
+            let data_type = (flags >> 8) as u8;
+            let data = read_u32(bytes, entry_start + 4)?;
+            let value = format_value(data_type, data, entry_start + 4, global_pool)?;
+            output.push(
+                entry_start,
+                &prefix,
+                resource_text(
+                    resource_id,
+                    package_name,
+                    type_name,
+                    key_name,
+                    &configuration.qualifier,
+                    &configuration.digest,
+                    &value,
+                ),
+            )?;
         } else {
             let value = parse_value(bytes, entry_start + entry_size, chunk.end, global_pool)?;
             output.push(
@@ -617,7 +676,8 @@ fn parse_type_chunk(
                     package_name,
                     type_name,
                     key_name,
-                    &qualifier,
+                    &configuration.qualifier,
+                    &configuration.digest,
                     &value,
                 ),
             )?;
@@ -632,10 +692,11 @@ fn resource_text(
     type_name: &str,
     key: &str,
     qualifier: &str,
+    configuration_digest: &str,
     value: &str,
 ) -> String {
     format!(
-        "resource_id=0x{resource_id:08x}\npackage={package}\ntype={type_name}\nname={key}\nconfiguration={qualifier}\nvalue={value}"
+        "resource_id=0x{resource_id:08x}\npackage={package}\ntype={type_name}\nname={key}\nconfiguration={qualifier}\nconfiguration_blake3={configuration_digest}\nvalue={value}"
     )
 }
 
@@ -687,10 +748,17 @@ fn parse_binary_xml(
     for child in children {
         match child.kind {
             RES_XML_START_ELEMENT_TYPE => {
-                if child.header_size < 36 {
+                if child.header_size < 16 {
                     return Err(AndroidCompiledError::malformed(
                         child.start,
-                        "binary XML start-element header is shorter than 36 bytes",
+                        "binary XML start-element node header is shorter than 16 bytes",
+                    ));
+                }
+                let extension = child.data_start();
+                if extension.saturating_add(20) > child.end {
+                    return Err(AndroidCompiledError::malformed(
+                        extension,
+                        "binary XML start-element extension is truncated",
                     ));
                 }
                 if elements.len() >= limits.max_depth {
@@ -699,43 +767,39 @@ fn parse_binary_xml(
                         format!("binary XML nesting exceeds depth cap {}", limits.max_depth),
                     ));
                 }
-                let name_index = read_u32(bytes, child.start + 20)?;
-                let element_name = pool.get(name_index, child.start + 20)?.to_string();
+                let name_index = read_u32(bytes, extension + 4)?;
+                let element_name = pool.get(name_index, extension + 4)?.to_string();
                 elements.push(element_name.clone());
-                let attribute_start = read_u16(bytes, child.start + 24)? as usize;
-                let attribute_size = read_u16(bytes, child.start + 26)? as usize;
-                let attribute_count = read_u16(bytes, child.start + 28)? as usize;
+                let attribute_start = read_u16(bytes, extension + 8)? as usize;
+                let attribute_size = read_u16(bytes, extension + 10)? as usize;
+                let attribute_count = read_u16(bytes, extension + 12)? as usize;
+                if attribute_start < 20 {
+                    return Err(AndroidCompiledError::malformed(
+                        extension + 8,
+                        "binary XML attributes begin inside the start-element extension",
+                    ));
+                }
                 if attribute_size < 20 {
                     return Err(AndroidCompiledError::malformed(
-                        child.start + 26,
+                        extension + 10,
                         "binary XML attribute size is smaller than 20 bytes",
                     ));
                 }
                 if attribute_count > limits.max_output_items {
                     return Err(AndroidCompiledError::limit(
-                        child.start + 28,
+                        extension + 12,
                         format!(
                             "binary XML attribute count {attribute_count} exceeds cap {}",
                             limits.max_output_items
                         ),
                     ));
                 }
-                let attributes = child
-                    .start
-                    .checked_add(16)
-                    .and_then(|offset| offset.checked_add(attribute_start))
-                    .ok_or_else(|| {
-                        AndroidCompiledError::malformed(
-                            child.start + 24,
-                            "binary XML attribute offset overflow",
-                        )
-                    })?;
-                if attributes < child.data_start() {
-                    return Err(AndroidCompiledError::malformed(
-                        child.start + 24,
-                        "binary XML attributes begin inside the element header",
-                    ));
-                }
+                let attributes = extension.checked_add(attribute_start).ok_or_else(|| {
+                    AndroidCompiledError::malformed(
+                        extension + 8,
+                        "binary XML attribute offset overflow",
+                    )
+                })?;
                 for index in 0..attribute_count {
                     let attribute = attributes
                         .checked_add(index.checked_mul(attribute_size).ok_or_else(|| {
@@ -780,8 +844,8 @@ fn parse_binary_xml(
                         .collect::<Vec<_>>()
                         .join("/");
                     let provenance = format!(
-                        "android/xml/{element_path}/{}@0x{resource_id:08x}",
-                        safe_component(attribute_name)
+                        "android/xml/{element_path}/{}@0x{resource_id:08x}/offset-0x{attribute:x}",
+                        safe_component(attribute_name),
                     );
                     output.push(
                         attribute,
@@ -793,14 +857,21 @@ fn parse_binary_xml(
                 }
             }
             RES_XML_END_ELEMENT_TYPE => {
-                if child.header_size < 24 {
+                if child.header_size < 16 {
                     return Err(AndroidCompiledError::malformed(
                         child.start,
-                        "binary XML end-element header is shorter than 24 bytes",
+                        "binary XML end-element node header is shorter than 16 bytes",
                     ));
                 }
-                let closing_index = read_u32(bytes, child.start + 20)?;
-                let closing_name = pool.get(closing_index, child.start + 20)?;
+                let extension = child.data_start();
+                if extension.saturating_add(8) > child.end {
+                    return Err(AndroidCompiledError::malformed(
+                        extension,
+                        "binary XML end-element extension is truncated",
+                    ));
+                }
+                let closing_index = read_u32(bytes, extension + 4)?;
+                let closing_name = pool.get(closing_index, extension + 4)?;
                 let Some(open_name) = elements.pop() else {
                     return Err(AndroidCompiledError::malformed(
                         child.start,
@@ -809,7 +880,7 @@ fn parse_binary_xml(
                 };
                 if closing_name != open_name {
                     return Err(AndroidCompiledError::malformed(
-                        child.start + 20,
+                        extension + 4,
                         format!(
                             "binary XML closes element {closing_name} while {open_name} is open"
                         ),
@@ -817,14 +888,21 @@ fn parse_binary_xml(
                 }
             }
             RES_XML_CDATA_TYPE => {
-                if child.header_size < 28 {
+                if child.header_size < 16 {
                     return Err(AndroidCompiledError::malformed(
                         child.start,
-                        "binary XML CDATA header is shorter than 28 bytes",
+                        "binary XML CDATA node header is shorter than 16 bytes",
                     ));
                 }
-                let data_index = read_u32(bytes, child.start + 16)?;
-                let value = pool.get(data_index, child.start + 16)?;
+                let extension = child.data_start();
+                if extension.saturating_add(12) > child.end {
+                    return Err(AndroidCompiledError::malformed(
+                        extension,
+                        "binary XML CDATA extension is truncated",
+                    ));
+                }
+                let data_index = read_u32(bytes, extension)?;
+                let value = pool.get(data_index, extension)?;
                 let element_path = if elements.is_empty() {
                     "root".to_string()
                 } else {
@@ -836,7 +914,10 @@ fn parse_binary_xml(
                 };
                 output.push(
                     child.start,
-                    &format!("android/xml/{element_path}/cdata"),
+                    &format!(
+                        "android/xml/{element_path}/cdata/offset-0x{:x}",
+                        child.start
+                    ),
                     format!("element={element_path}\nvalue={value}"),
                 )?;
             }
@@ -1107,8 +1188,17 @@ fn parse_value(
         .get(offset + 3)
         .ok_or_else(|| AndroidCompiledError::malformed(offset, "truncated Android typed value"))?;
     let data = read_u32(bytes, offset + 4)?;
+    format_value(data_type, data, offset + 4, strings)
+}
+
+fn format_value(
+    data_type: u8,
+    data: u32,
+    data_offset: usize,
+    strings: &StringPool,
+) -> Result<String, AndroidCompiledError> {
     match data_type {
-        VALUE_TYPE_STRING => strings.get(data, offset + 4).map(str::to_owned),
+        VALUE_TYPE_STRING => strings.get(data, data_offset).map(str::to_owned),
         VALUE_TYPE_REFERENCE => Ok(format!("@0x{data:08x}")),
         VALUE_TYPE_INT_DEC => Ok(data.to_string()),
         VALUE_TYPE_INT_HEX => Ok(format!("0x{data:08x}")),
@@ -1117,29 +1207,135 @@ fn parse_value(
     }
 }
 
-fn parse_locale_qualifier(
+fn parse_resource_configuration(
     bytes: &[u8],
     chunk: ChunkHeader,
-) -> Result<String, AndroidCompiledError> {
-    if chunk.header_size < 32 {
-        return Ok("default".to_string());
+) -> Result<ResourceConfiguration, AndroidCompiledError> {
+    if chunk.header_size < 20 + MIN_RESOURCE_CONFIG_SIZE {
+        return Err(AndroidCompiledError::malformed(
+            chunk.start,
+            format!(
+                "resource type header cannot contain the required {MIN_RESOURCE_CONFIG_SIZE}-byte configuration"
+            ),
+        ));
     }
     let config_start = chunk.start + 20;
     let config_size = read_u32(bytes, config_start)? as usize;
-    if config_size < 12 || config_start.saturating_add(config_size) > chunk.data_start() {
+    if !(MIN_RESOURCE_CONFIG_SIZE..=MAX_RESOURCE_CONFIG_SIZE).contains(&config_size)
+        || config_start.saturating_add(config_size) > chunk.data_start()
+    {
         return Err(AndroidCompiledError::malformed(
             config_start,
-            "resource configuration header has an invalid size",
+            format!(
+                "resource configuration size {config_size} is outside {MIN_RESOURCE_CONFIG_SIZE}..={MAX_RESOURCE_CONFIG_SIZE} or crosses the type header"
+            ),
         ));
     }
-    let language = decode_locale_part(&bytes[config_start + 8..config_start + 10]);
-    let country = decode_locale_part(&bytes[config_start + 10..config_start + 12]);
-    match (language, country) {
-        (Some(language), Some(country)) => Ok(format!("{language}-r{country}")),
-        (Some(language), None) => Ok(language),
-        (None, Some(country)) => Ok(format!("und-r{country}")),
-        (None, None) => Ok("default".to_string()),
+    let config = slice(bytes, config_start, config_start + config_size)?;
+    let digest = blake3::hash(config).to_hex().to_string();
+    Ok(ResourceConfiguration {
+        qualifier: readable_configuration_qualifier(config),
+        digest,
+    })
+}
+
+fn readable_configuration_qualifier(config: &[u8]) -> String {
+    let mut parts = Vec::new();
+    let mcc = read_config_u16(config, 4);
+    let mnc = read_config_u16(config, 6);
+    if mcc != 0 {
+        parts.push(format!("mcc{mcc}"));
     }
+    if mnc != 0 {
+        parts.push(format!("mnc{mnc}"));
+    }
+    let language = decode_locale_part(&config[8..10]);
+    let country = decode_locale_part(&config[10..12]);
+    match (language, country) {
+        (Some(language), Some(country)) => parts.push(format!("{language}-r{country}")),
+        (Some(language), None) => parts.push(language),
+        (None, Some(country)) => parts.push(format!("und-r{country}")),
+        (None, None) => {}
+    }
+    if let Some(orientation) = config.get(12).copied().and_then(|value| match value {
+        1 => Some("port"),
+        2 => Some("land"),
+        3 => Some("square"),
+        _ => None,
+    }) {
+        parts.push(orientation.to_string());
+    }
+    let density = read_config_u16(config, 14);
+    if density != 0 {
+        parts.push(match density {
+            120 => "ldpi".to_string(),
+            160 => "mdpi".to_string(),
+            213 => "tvdpi".to_string(),
+            240 => "hdpi".to_string(),
+            320 => "xhdpi".to_string(),
+            480 => "xxhdpi".to_string(),
+            640 => "xxxhdpi".to_string(),
+            0xfffe => "anydpi".to_string(),
+            0xffff => "nodpi".to_string(),
+            value => format!("{value}dpi"),
+        });
+    }
+    let width = read_config_u16(config, 20);
+    let height = read_config_u16(config, 22);
+    if width != 0 {
+        parts.push(format!("{width}x{height}"));
+    }
+    let sdk = read_config_u16(config, 24);
+    if sdk != 0 {
+        parts.push(format!("v{sdk}"));
+    }
+    if config.len() >= 32 {
+        let ui_mode = config[29];
+        if let Some(mode) = match ui_mode & 0x0f {
+            2 => Some("desk"),
+            3 => Some("car"),
+            4 => Some("television"),
+            5 => Some("appliance"),
+            6 => Some("watch"),
+            7 => Some("vrheadset"),
+            _ => None,
+        } {
+            parts.push(mode.to_string());
+        }
+        if let Some(night) = match ui_mode & 0x30 {
+            0x10 => Some("notnight"),
+            0x20 => Some("night"),
+            _ => None,
+        } {
+            parts.push(night.to_string());
+        }
+        let smallest_width = read_config_u16(config, 30);
+        if smallest_width != 0 {
+            parts.push(format!("sw{smallest_width}dp"));
+        }
+    }
+    if config.len() >= 36 {
+        let width_dp = read_config_u16(config, 32);
+        let height_dp = read_config_u16(config, 34);
+        if width_dp != 0 {
+            parts.push(format!("w{width_dp}dp"));
+        }
+        if height_dp != 0 {
+            parts.push(format!("h{height_dp}dp"));
+        }
+    }
+    if parts.is_empty() {
+        "default".to_string()
+    } else {
+        parts.join("-")
+    }
+}
+
+fn read_config_u16(config: &[u8], offset: usize) -> u16 {
+    config
+        .get(offset..offset + 2)
+        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+        .unwrap_or(0)
 }
 
 fn decode_locale_part(bytes: &[u8]) -> Option<String> {

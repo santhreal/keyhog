@@ -60,31 +60,44 @@ fn typed_string_value(index: u32) -> [u8; 8] {
 }
 
 fn xml_start_element(element: u32, attributes: &[(u32, u32)]) -> Vec<u8> {
-    let mut attribute_bytes = Vec::new();
+    let mut extension = vec![0u8; 20];
+    put_u32(&mut extension, 0, NO_INDEX);
+    put_u32(&mut extension, 4, element);
+    put_u16(&mut extension, 8, 20);
+    put_u16(&mut extension, 10, 20);
+    put_u16(&mut extension, 12, attributes.len() as u16);
     for &(name, value) in attributes {
         let mut attribute = vec![0u8; 20];
         put_u32(&mut attribute, 0, NO_INDEX);
         put_u32(&mut attribute, 4, name);
         put_u32(&mut attribute, 8, value);
         attribute[12..20].copy_from_slice(&typed_string_value(value));
-        attribute_bytes.extend_from_slice(&attribute);
+        extension.extend_from_slice(&attribute);
     }
-    let mut start = chunk(RES_XML_START_ELEMENT_TYPE, 36, attribute_bytes);
+    let mut start = chunk(RES_XML_START_ELEMENT_TYPE, 16, extension);
+    put_u32(&mut start, 8, 1);
     put_u32(&mut start, 12, NO_INDEX);
-    put_u32(&mut start, 16, NO_INDEX);
-    put_u32(&mut start, 20, element);
-    put_u16(&mut start, 24, 20);
-    put_u16(&mut start, 26, 20);
-    put_u16(&mut start, 28, attributes.len() as u16);
     start
 }
 
 fn xml_end_element(element: u32) -> Vec<u8> {
-    let mut end = chunk(RES_XML_END_ELEMENT_TYPE, 24, Vec::new());
+    let mut extension = vec![0u8; 8];
+    put_u32(&mut extension, 0, NO_INDEX);
+    put_u32(&mut extension, 4, element);
+    let mut end = chunk(RES_XML_END_ELEMENT_TYPE, 16, extension);
+    put_u32(&mut end, 8, 1);
     put_u32(&mut end, 12, NO_INDEX);
-    put_u32(&mut end, 16, NO_INDEX);
-    put_u32(&mut end, 20, element);
     end
+}
+
+fn xml_cdata(value: u32) -> Vec<u8> {
+    let mut extension = vec![0u8; 12];
+    put_u32(&mut extension, 0, value);
+    extension[4..12].copy_from_slice(&typed_string_value(value));
+    let mut cdata = chunk(RES_XML_CDATA_TYPE, 16, extension);
+    put_u32(&mut cdata, 8, 1);
+    put_u32(&mut cdata, 12, NO_INDEX);
+    cdata
 }
 
 fn binary_xml(strings: &[&str], attributes: &[(u32, u32)]) -> Vec<u8> {
@@ -99,24 +112,55 @@ fn binary_xml(strings: &[&str], attributes: &[(u32, u32)]) -> Vec<u8> {
     chunk(RES_XML_TYPE, 8, data)
 }
 
-fn type_chunk(locale: [u8; 2], country: [u8; 2], value_index: u32) -> Vec<u8> {
+fn standard_config(locale: [u8; 2], country: [u8; 2]) -> Vec<u8> {
+    let mut config = vec![0u8; 28];
+    put_u32(&mut config, 0, 28);
+    config[8..10].copy_from_slice(&locale);
+    config[10..12].copy_from_slice(&country);
+    config
+}
+
+fn full_entry(value_index: u32) -> Vec<u8> {
     let mut entry = vec![0u8; 8];
     put_u16(&mut entry, 0, 8);
     put_u16(&mut entry, 2, 0);
     put_u32(&mut entry, 4, 0);
     entry.extend_from_slice(&typed_string_value(value_index));
+    entry
+}
 
+fn compact_entry(data_type: u8, data: u32) -> Vec<u8> {
+    let mut entry = vec![0u8; 8];
+    put_u16(&mut entry, 0, 0);
+    put_u16(
+        &mut entry,
+        2,
+        ENTRY_FLAG_COMPACT | ((data_type as u16) << 8),
+    );
+    put_u32(&mut entry, 4, data);
+    entry
+}
+
+fn type_chunk_with_config(config: Vec<u8>, entry: Vec<u8>) -> Vec<u8> {
+    assert!(config.len() >= 28);
+    assert_eq!(
+        u32::from_le_bytes(config[..4].try_into().expect("config size bytes")) as usize,
+        config.len()
+    );
     let mut data = vec![0u8; 4];
     put_u32(&mut data, 0, 0);
     data.extend_from_slice(&entry);
-    let mut typed = chunk(RES_TABLE_TYPE_TYPE, 32, data);
+    let header_size = 20 + config.len();
+    let mut typed = chunk(RES_TABLE_TYPE_TYPE, header_size, data);
     typed[8] = 1;
     put_u32(&mut typed, 12, 1);
-    put_u32(&mut typed, 16, 36);
-    put_u32(&mut typed, 20, 12);
-    typed[28..30].copy_from_slice(&locale);
-    typed[30..32].copy_from_slice(&country);
+    put_u32(&mut typed, 16, (header_size + 4) as u32);
+    typed[20..header_size].copy_from_slice(&config);
     typed
+}
+
+fn type_chunk(locale: [u8; 2], country: [u8; 2], value_index: u32) -> Vec<u8> {
+    type_chunk_with_config(standard_config(locale, country), full_entry(value_index))
 }
 
 fn resource_table(type_chunks: &[Vec<u8>]) -> Vec<u8> {
@@ -226,10 +270,57 @@ fn utf8_binary_xml_emits_typed_provenance_and_keeps_raw_member_scan() {
     );
     let path = typed.metadata.path.as_deref().expect("typed path");
     assert!(path.contains("app.apk//AndroidManifest.xml::android/xml/manifest/apiKey"));
+    assert!(path.contains("/offset-0x"));
     assert!(chunks.iter().any(|chunk| {
         chunk.metadata.path.as_deref() == Some("fixtures/app.apk//AndroidManifest.xml")
             && chunk.metadata.source_type.as_ref() == "filesystem/archive-binary"
     }));
+}
+
+#[test]
+fn canonical_xml_node_extensions_emit_cdata_and_collision_safe_sibling_paths() {
+    let strings = [
+        "root",
+        "item",
+        "apiKey",
+        "sk_live_android_first",
+        "sk_live_android_second",
+        "ghp_android_cdata_token",
+    ];
+    let mut data = string_pool(&strings, true);
+    data.extend_from_slice(&xml_start_element(0, &[]));
+    data.extend_from_slice(&xml_start_element(1, &[(2, 3)]));
+    data.extend_from_slice(&xml_end_element(1));
+    data.extend_from_slice(&xml_start_element(1, &[(2, 4)]));
+    data.extend_from_slice(&xml_cdata(5));
+    data.extend_from_slice(&xml_end_element(1));
+    data.extend_from_slice(&xml_end_element(0));
+    let xml = chunk(RES_XML_TYPE, 8, data);
+
+    let AndroidParseOutcome::Parsed(chunks) = parse_member_with_limits(
+        "fixtures/app.apk",
+        "AndroidManifest.xml",
+        &xml,
+        &PRODUCTION_LIMITS,
+    )
+    .expect("canonical binary XML") else {
+        panic!("binary XML must be applicable");
+    };
+    assert_eq!(chunks.len(), 3);
+    assert_eq!(
+        chunks[0].data.lines().last(),
+        Some("value=sk_live_android_first")
+    );
+    assert_eq!(
+        chunks[1].data.lines().last(),
+        Some("value=sk_live_android_second")
+    );
+    assert!(chunks[2].data.contains("value=ghp_android_cdata_token"));
+    let first_path = chunks[0].metadata.path.as_deref().expect("first path");
+    let second_path = chunks[1].metadata.path.as_deref().expect("second path");
+    assert!(first_path.contains("android/xml/root/item/apiKey@0x00000000/offset-0x"));
+    assert!(second_path.contains("android/xml/root/item/apiKey@0x00000000/offset-0x"));
+    assert_ne!(first_path, second_path);
 }
 
 #[test]
@@ -272,6 +363,110 @@ fn utf16_resource_table_preserves_locale_variants_and_duplicate_resource_ids() {
         .path
         .as_deref()
         .is_some_and(|path| path.contains("@0x7f010000"))));
+}
+
+#[test]
+fn resource_configuration_identity_preserves_density_night_and_forward_bytes() {
+    let mut xhdpi = vec![0u8; 32];
+    put_u32(&mut xhdpi, 0, 32);
+    xhdpi[8..10].copy_from_slice(b"en");
+    xhdpi[10..12].copy_from_slice(b"US");
+    put_u16(&mut xhdpi, 14, 320);
+    xhdpi[29] = 0x10;
+
+    let mut xxhdpi_night = xhdpi.clone();
+    put_u16(&mut xxhdpi_night, 14, 480);
+    xxhdpi_night[29] = 0x20;
+
+    let mut forward_a = vec![0u8; 64];
+    put_u32(&mut forward_a, 0, 64);
+    forward_a[8..10].copy_from_slice(b"en");
+    forward_a[10..12].copy_from_slice(b"US");
+    forward_a[61] = 1;
+    let mut forward_b = forward_a.clone();
+    forward_b[61] = 2;
+
+    let table = resource_table(&[
+        type_chunk_with_config(xhdpi, full_entry(0)),
+        type_chunk_with_config(xxhdpi_night, full_entry(1)),
+        type_chunk_with_config(forward_a, full_entry(0)),
+        type_chunk_with_config(forward_b, full_entry(1)),
+    ]);
+    let AndroidParseOutcome::Parsed(chunks) = parse_member_with_limits(
+        "fixtures/app.apk",
+        "resources.arsc",
+        &table,
+        &PRODUCTION_LIMITS,
+    )
+    .expect("distinct exact configurations") else {
+        panic!("resource table must be applicable");
+    };
+    assert_eq!(chunks.len(), 4);
+    assert!(chunks[0]
+        .data
+        .contains("configuration=en-rUS-xhdpi-notnight"));
+    assert!(chunks[1].data.contains("configuration=en-rUS-xxhdpi-night"));
+    assert!(chunks.iter().all(|chunk| chunk
+        .data
+        .lines()
+        .any(|line| line.starts_with("configuration_blake3=") && line.len() == 85)));
+    let paths: std::collections::HashSet<_> = chunks
+        .iter()
+        .map(|chunk| chunk.metadata.path.as_deref().expect("resource path"))
+        .collect();
+    assert_eq!(paths.len(), 4);
+    assert!(chunks[2].data.contains("configuration=en-rUS"));
+    assert!(chunks[3].data.contains("configuration=en-rUS"));
+}
+
+#[test]
+fn compact_string_and_reference_entries_emit_real_values() {
+    let table = resource_table(&[
+        type_chunk_with_config(
+            standard_config(*b"en", *b"US"),
+            compact_entry(VALUE_TYPE_STRING, 0),
+        ),
+        type_chunk_with_config(
+            standard_config(*b"fr", *b"FR"),
+            compact_entry(VALUE_TYPE_REFERENCE, 0x7f02_0042),
+        ),
+    ]);
+    let AndroidParseOutcome::Parsed(chunks) = parse_member_with_limits(
+        "fixtures/app.apk",
+        "resources.arsc",
+        &table,
+        &PRODUCTION_LIMITS,
+    )
+    .expect("compact resource entries") else {
+        panic!("resource table must be applicable");
+    };
+    assert_eq!(chunks.len(), 2);
+    assert!(chunks[0]
+        .data
+        .contains("value=https://api.example.test/v1?token=sk_live_android_utf16"));
+    assert!(chunks[1].data.contains("value=@0x7f020042"));
+}
+
+#[test]
+fn compact_complex_entry_is_rejected_as_malformed() {
+    let mut entry = compact_entry(VALUE_TYPE_STRING, 0);
+    let flags = read_u16_unchecked(&entry[2..4]);
+    put_u16(&mut entry, 2, flags | ENTRY_FLAG_COMPLEX);
+    let table = resource_table(&[type_chunk_with_config(
+        standard_config(*b"en", *b"US"),
+        entry,
+    )]);
+    let error = parse_member_with_limits(
+        "fixtures/app.apk",
+        "resources.arsc",
+        &table,
+        &PRODUCTION_LIMITS,
+    )
+    .expect_err("compact complex resource entry");
+    assert_eq!(error.kind, AndroidErrorKind::Malformed);
+    assert!(error
+        .detail
+        .contains("compact resource entry cannot also be complex"));
 }
 
 #[test]
