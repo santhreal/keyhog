@@ -41,8 +41,11 @@ pub(super) fn unicode_escape_decode(input: &str) -> Result<String, ()> {
                     .push(char::from_u32(code).ok_or(())?);
             }
             Some(escaped) => {
-                lazy_decoded_prefix(&mut decoded_text, input, idx)
-                    .push(simple_control_escape(escaped).unwrap_or(escaped));
+                let decoded = match simple_control_escape(escaped) {
+                    Some(control) => control,
+                    None => escaped,
+                };
+                lazy_decoded_prefix(&mut decoded_text, input, idx).push(decoded);
             }
             None => return Err(()),
         }

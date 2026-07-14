@@ -245,14 +245,11 @@ fn gpu_region_presence_self_test_impl(
         let diagnostics = candidates
             .iter()
             .map(|candidate| {
-                format!(
-                    "{}: {}",
-                    candidate.backend.label(),
-                    candidate
-                        .acquisition_error
-                        .as_deref()
-                        .unwrap_or("driver was not acquired and returned no diagnostic")
-                )
+                let diagnostic = match candidate.acquisition_error.as_deref() {
+                    Some(reason) => reason,
+                    None => "driver was not acquired and returned no diagnostic",
+                };
+                format!("{}: {diagnostic}", candidate.backend.label())
             })
             .collect::<Vec<_>>()
             .join("; ");
@@ -305,13 +302,11 @@ fn gpu_region_presence_self_test_impl(
             }
         };
         if scanner.runtime_status().gpu_degrade_count > degrade_before {
-            failures.push(format!(
-                "{} ({backend_id}): {}",
-                route.label(),
-                scanner
-                    .last_gpu_degrade_reason()
-                    .unwrap_or_else(|| "runtime degrade recorded without a diagnostic".to_string())
-            ));
+            let diagnostic = match scanner.last_gpu_degrade_reason() {
+                Some(reason) => reason,
+                None => "runtime degrade recorded without a diagnostic".to_owned(),
+            };
+            failures.push(format!("{} ({backend_id}): {diagnostic}", route.label()));
             continue;
         }
         let total: usize = results.iter().map(Vec::len).sum();

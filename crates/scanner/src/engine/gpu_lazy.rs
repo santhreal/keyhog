@@ -41,7 +41,7 @@ impl CompiledScanner {
                     }
                 };
                 if matcher.is_some() {
-                    let elapsed = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+                    let elapsed = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
                     self.autoroute_gpu_shared_cold_ns
                         .store(elapsed.max(1), std::sync::atomic::Ordering::Release);
                 }

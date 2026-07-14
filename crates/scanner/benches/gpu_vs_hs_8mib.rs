@@ -148,9 +148,15 @@ fn running_binary_sha256() -> Result<String, io::Error> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-fn host_cpu_model() -> String {
+fn host_cpu_model() -> Result<String, io::Error> {
     #[cfg(target_os = "linux")]
-    if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
+    {
+        let cpuinfo = fs::read_to_string("/proc/cpuinfo").map_err(|source| {
+            io::Error::new(
+                source.kind(),
+                format!("cannot read /proc/cpuinfo for benchmark identity: {source}"),
+            )
+        })?;
         for line in cpuinfo.lines() {
             let Some((key, value)) = line.split_once(':') else {
                 continue;
@@ -160,11 +166,19 @@ fn host_cpu_model() -> String {
                 "model name" | "hardware"
             ) && !value.trim().is_empty()
             {
-                return value.trim().to_owned();
+                return Ok(value.trim().to_owned());
             }
         }
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "/proc/cpuinfo contains no non-empty model name or hardware field",
+        ));
     }
-    "unavailable".to_owned()
+    #[cfg(not(target_os = "linux"))]
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "the crossover artifact requires a platform CPU-model probe",
+    ))
 }
 
 fn write_artifact(path: &Path, artifact: &CrossoverArtifact) -> Result<(), io::Error> {
@@ -180,24 +194,35 @@ fn write_artifact(path: &Path, artifact: &CrossoverArtifact) -> Result<(), io::E
             format!("cannot encode crossover artifact as TOML: {source}"),
         )
     })?;
-    let temporary = path.with_extension(format!(
-        "{}.tmp-{}",
-        path.extension()
-            .and_then(|extension| extension.to_str())
-            .unwrap_or("toml"),
-        std::process::id()
-    ));
+    let extension = match path.extension().and_then(|extension| extension.to_str()) {
+        Some(extension) => extension,
+        None => "toml",
+    };
+    let temporary = path.with_extension(format!("{extension}.tmp-{}", std::process::id()));
     fs::write(&temporary, rendered.as_bytes())?;
     fs::rename(&temporary, path).map_err(|source| {
-        let _ = fs::remove_file(&temporary);
+        let cleanup = match fs::remove_file(&temporary) {
+            Ok(()) => String::new(),
+            Err(cleanup_error) => format!(
+                "; temporary artifact {} also could not be removed: {cleanup_error}",
+                temporary.display()
+            ),
+        };
         io::Error::new(
             source.kind(),
             format!(
-                "cannot atomically publish crossover artifact {}: {source}",
-                path.display()
+                "cannot atomically publish crossover artifact {}: {source}{cleanup}",
+                path.display(),
             ),
         )
     })
+}
+
+fn visible_peer_field<'a>(value: Option<&'a str>, absent: &'static str) -> &'a str {
+    match value {
+        Some(value) => value,
+        None => absent,
+    }
 }
 
 fn make_chunk(
@@ -442,11 +467,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 candidate.acquired,
                 candidate.is_eligible(),
                 candidate.is_software,
-                candidate.driver_id.unwrap_or("unavailable"),
-                candidate.driver_version.unwrap_or("unavailable"),
-                candidate.device_identity.as_deref().unwrap_or("unavailable"),
-                candidate.runtime_identity.as_deref().unwrap_or("unavailable"),
-                candidate.acquisition_error.as_deref().unwrap_or("none")
+                visible_peer_field(candidate.driver_id, "unavailable"),
+                visible_peer_field(candidate.driver_version, "unavailable"),
+                visible_peer_field(candidate.device_identity.as_deref(), "unavailable"),
+                visible_peer_field(candidate.runtime_identity.as_deref(), "unavailable"),
+                visible_peer_field(candidate.acquisition_error.as_deref(), "none")
             );
         }
         let gpu_backends: Vec<_> = gpu_candidates
@@ -471,7 +496,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         canonicalize_results(&mut reference);
         for &backend in &gpu_backends {
             let degrade_before = scanner.gpu_degrade_count();
-            let _ = scan_backend_checked(
+            scan_backend_checked(
                 &format!("{} warm parity", backend.label()),
                 &scanner,
                 &chunks,
@@ -494,6 +519,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("=== keyhog paired crossover gate (GPU region presence vs Hyperscan) ===");
         let runtime = scanner.runtime_status();
         let hardware = keyhog_scanner::hw_probe::probe_hardware();
+        let cpu_model = host_cpu_model()?;
         let simd_features = keyhog_scanner::hw_probe::simd_label(
             hardware.has_avx512,
             hardware.has_avx2,
@@ -510,7 +536,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "host_os={} host_arch={} cpu_model={:?} physical_cores={} logical_cores={} total_memory_mb={} simd_features={} resolved_tuning={:?}",
             std::env::consts::OS,
             std::env::consts::ARCH,
-            host_cpu_model(),
+            cpu_model,
             hardware.physical_cores,
             hardware.logical_cores,
             hardware.total_memory_mb.map_or_else(|| "unavailable".to_owned(), |value| value.to_string()),
@@ -693,7 +719,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let selected_peer = gpu_candidates
                 .iter()
                 .find(|candidate| candidate.backend == selected_gpu && candidate.is_eligible())
-                .expect("selected GPU peer retains acquisition identity");
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "selected GPU peer lost its complete acquisition identity",
+                    )
+                })?;
+            let selected_driver = selected_peer.driver_id.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "selected GPU peer is missing its driver identity",
+                )
+            })?;
+            let selected_driver_version = selected_peer.driver_version.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "selected GPU peer is missing its driver version",
+                )
+            })?;
+            let selected_device = selected_peer.device_identity.as_ref().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "selected GPU peer is missing its device identity",
+                )
+            })?;
+            let selected_runtime = selected_peer.runtime_identity.as_ref().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "selected GPU peer is missing its runtime identity",
+                )
+            })?;
             let production_comparable = release_gate
                 && iters >= RELEASE_HELD_OUT_PAIRS
                 && selection_rounds >= RELEASE_SELECTION_ROUNDS;
@@ -717,47 +772,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 command: env::args().collect::<Vec<_>>().join(" "),
                 os: std::env::consts::OS.to_owned(),
                 arch: std::env::consts::ARCH.to_owned(),
-                cpu_model: host_cpu_model(),
+                cpu_model: cpu_model.clone(),
                 physical_cores: hardware.physical_cores,
                 logical_cores: hardware.logical_cores,
                 total_memory_mb: hardware.total_memory_mb,
                 simd_features: simd_features.to_owned(),
                 selected_gpu_backend: selected_gpu.label().to_owned(),
-                selected_gpu_driver: selected_peer.driver_id.unwrap_or("unavailable").to_owned(),
-                selected_gpu_driver_version: selected_peer
-                    .driver_version
-                    .unwrap_or("unavailable")
-                    .to_owned(),
-                selected_gpu_device: selected_peer
-                    .device_identity
-                    .clone()
-                    .unwrap_or_else(|| "unavailable".to_owned()),
-                selected_gpu_runtime: selected_peer
-                    .runtime_identity
-                    .clone()
-                    .unwrap_or_else(|| "unavailable".to_owned()),
+                selected_gpu_driver: selected_driver.to_owned(),
+                selected_gpu_driver_version: selected_driver_version.to_owned(),
+                selected_gpu_device: selected_device.clone(),
+                selected_gpu_runtime: selected_runtime.clone(),
                 gpu_peers: gpu_candidates
                     .iter()
                     .map(|candidate| GpuPeerArtifact {
                         backend: candidate.backend.label().to_owned(),
                         acquired: candidate.acquired,
-                        driver: candidate.driver_id.unwrap_or("unavailable").to_owned(),
-                        driver_version: candidate
-                            .driver_version
-                            .unwrap_or("unavailable")
+                        driver: visible_peer_field(candidate.driver_id, "unavailable").to_owned(),
+                        driver_version: visible_peer_field(candidate.driver_version, "unavailable")
                             .to_owned(),
-                        device: candidate
-                            .device_identity
-                            .clone()
-                            .unwrap_or_else(|| "unavailable".to_owned()),
-                        runtime: candidate
-                            .runtime_identity
-                            .clone()
-                            .unwrap_or_else(|| "unavailable".to_owned()),
-                        acquisition_error: candidate
-                            .acquisition_error
-                            .clone()
-                            .unwrap_or_else(|| "none".to_owned()),
+                        device: visible_peer_field(
+                            candidate.device_identity.as_deref(),
+                            "unavailable",
+                        )
+                        .to_owned(),
+                        runtime: visible_peer_field(
+                            candidate.runtime_identity.as_deref(),
+                            "unavailable",
+                        )
+                        .to_owned(),
+                        acquisition_error: visible_peer_field(
+                            candidate.acquisition_error.as_deref(),
+                            "none",
+                        )
+                        .to_owned(),
                     })
                     .collect(),
                 source_bytes: size,

@@ -47,7 +47,10 @@ struct CodeFacts<'a> {
 
 impl CodeFacts<'_> {
     fn count(&self, identifier: &str) -> usize {
-        self.identifier_counts.get(identifier).copied().unwrap_or(0)
+        match self.identifier_counts.get(identifier) {
+            Some(count) => *count,
+            None => 0,
+        }
     }
 
     fn is_top_level(&self, start: usize) -> bool {
@@ -170,6 +173,8 @@ fn recover_literal(encoded: &str) -> Option<String> {
         return None;
     }
     let reversed: String = encoded.bytes().rev().map(char::from).collect();
+    // LAW10: malformed trial input is not this exact reverse/Base64 dialect.
+    // Recall is preserved because the unchanged source remains on the ordinary scan path.
     let decoded = super::super::base64_decode(&reversed).ok()?;
     if decoded.len() > MAX_BYTE_ARRAY_LEN || !decoded.is_ascii() {
         return None;

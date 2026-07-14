@@ -92,7 +92,20 @@ impl CompiledScanner {
                                 caps.compute_capability.1,
                                 caps.total_memory
                             ));
-                            peers.cuda_runtime_identity = linux_cuda_runtime_identity();
+                            match linux_cuda_runtime_identity() {
+                                Ok(identity) => peers.cuda_runtime_identity = Some(identity),
+                                Err(diagnostic) => {
+                                    tracing::warn!(
+                                        target: "keyhog::routing",
+                                        %diagnostic,
+                                        "CUDA peer acquired without reproducible runtime identity"
+                                    );
+                                    failures.push(GpuBackendAcquisitionFailure {
+                                        backend: "cuda",
+                                        diagnostic,
+                                    });
+                                }
+                            }
                             let boxed: Box<dyn vyre::VyreBackend> =
                                 Box::new(vyre_driver_cuda::CudaBackendRegistration::new(cuda));
                             tracing::info!(
@@ -252,10 +265,11 @@ impl CompiledScanner {
         #[cfg(not(feature = "gpu"))]
         let gpu_literals: Option<Arc<Vec<Vec<u8>>>> = None;
         #[cfg(feature = "gpu")]
-        let gpu_max_literal_len = gpu_literals
-            .as_ref()
-            .and_then(|literals| literals.iter().map(Vec::len).max())
-            .unwrap_or(0);
+        let gpu_max_literal_len = gpu_literals.as_ref().map_or(0, |literals| {
+            literals
+                .iter()
+                .fold(0, |longest, literal| longest.max(literal.len()))
+        });
 
         // Combined-RegexSet prefilter over EVERY always-active phase-2 pattern. The
         // plain (homoglyph-variant) batches carry a fast ASCII-folded alternate
@@ -551,8 +565,13 @@ impl CompiledScanner {
 }
 
 #[cfg(all(target_os = "linux", feature = "gpu"))]
-fn linux_cuda_runtime_identity() -> Option<String> {
-    let version = std::fs::read_to_string("/proc/driver/nvidia/version").ok()?;
+fn linux_cuda_runtime_identity() -> std::result::Result<String, String> {
+    let version = std::fs::read_to_string("/proc/driver/nvidia/version")
+        .map_err(|error| format!("cannot read /proc/driver/nvidia/version: {error}"))?;
     let version = version.split_whitespace().collect::<Vec<_>>().join(" ");
-    (!version.is_empty()).then(|| format!("nvidia-kernel:{version}"))
+    if version.is_empty() {
+        Err("/proc/driver/nvidia/version contains no runtime identity".to_owned())
+    } else {
+        Ok(format!("nvidia-kernel:{version}"))
+    }
 }

@@ -99,7 +99,10 @@ struct LexicalFacts<'a> {
 
 impl LexicalFacts<'_> {
     fn count(&self, identifier: &str) -> usize {
-        self.identifier_counts.get(identifier).copied().unwrap_or(0)
+        match self.identifier_counts.get(identifier) {
+            Some(count) => *count,
+            None => 0,
+        }
     }
 
     fn scope(&self, start: usize) -> Option<u32> {
@@ -925,8 +928,10 @@ fn decrypt_passphrase(
     {
         return None;
     }
-    let salt: &[u8; 8] = header.get(8..16)?.try_into().ok()?;
-    let (key, iv) = evp_bytes_to_key_md5(passphrase, salt);
+    let salt_slice = header.get(8..16)?;
+    let mut salt = [0_u8; 8];
+    salt.copy_from_slice(salt_slice);
+    let (key, iv) = evp_bytes_to_key_md5(passphrase, &salt);
     decrypt_aes_256_cbc(&key, &iv, encrypted, metadata, expression_offset)
 }
 

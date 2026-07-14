@@ -109,7 +109,7 @@ impl CompiledScanner {
         }
         #[cfg(not(feature = "gpu"))]
         {
-            let _ = backend;
+            let _backend = backend;
             None
         }
     }
@@ -557,10 +557,18 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     /// machine-readable failure causes without scraping stderr.
     #[cfg(feature = "gpu")]
     pub(crate) fn last_gpu_degrade_reason(&self) -> Option<String> {
-        self.gpu_last_degrade_reason
-            .lock()
-            .ok() // LAW10: poisoned lock => None; read-only health/diagnostic accessor, recall-irrelevant
-            .and_then(|guard| guard.clone())
+        match self.gpu_last_degrade_reason.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => match poisoned.into_inner().clone() {
+                Some(reason) => Some(format!(
+                    "GPU runtime diagnostic lock was poisoned after recording: {reason}"
+                )),
+                None => Some(
+                    "GPU runtime degradation occurred, but its diagnostic lock was poisoned"
+                        .to_owned(),
+                ),
+            },
+        }
     }
 
     /// Return the backend used by no-backend library scan APIs.

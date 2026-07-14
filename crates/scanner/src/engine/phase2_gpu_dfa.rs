@@ -316,9 +316,7 @@ impl Phase2GpuDfaCatalogCache {
             let started = std::time::Instant::now();
             let catalog =
                 Phase2GpuDfaCatalog::build(phase2_patterns, always_active_indices, program_kind);
-            let elapsed_ns = u64::try_from(started.elapsed().as_nanos())
-                .unwrap_or(u64::MAX)
-                .max(1);
+            let elapsed_ns = (started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64).max(1);
             preparation_ns.store(elapsed_ns, std::sync::atomic::Ordering::Release);
             catalog
         })

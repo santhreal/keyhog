@@ -101,7 +101,10 @@ impl GenericOwningDetectorIndex {
             {
                 let owner = PolicyOwner {
                     index,
-                    priority: detector.entropy_policy_priority.unwrap_or(0),
+                    priority: match detector.entropy_policy_priority {
+                        Some(priority) => priority,
+                        None => 0,
+                    },
                 };
                 for keyword in &detector.keywords {
                     let kw_lower = keyword.to_ascii_lowercase();
@@ -355,7 +358,6 @@ pub(crate) fn candidate_starts_with_owned_assignment_key(
 fn is_assignment_key_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')
 }
-
 
 #[cfg(test)]
 #[path = "../tests/unit/generic_keyword_owner.rs"]

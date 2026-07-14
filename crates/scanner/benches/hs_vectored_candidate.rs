@@ -185,7 +185,12 @@ fn catalog_patterns() -> Result<(Vec<CatalogPattern>, usize), Box<dyn std::error
                 Ok(pattern) => {
                     patterns.push(pattern);
                 }
-                Err(_) => rejected += 1,
+                Err(error) => {
+                    eprintln!(
+                        "catalog pattern was excluded from both-mode benchmark preparation: {error}"
+                    );
+                    rejected += 1;
+                }
             }
         }
     }
