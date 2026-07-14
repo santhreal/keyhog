@@ -21,6 +21,13 @@ import sys
 
 from ..corpus_integrity import file_sha256, tree_sha256
 from ..ioc_recovery_provenance import (
+    PAPER_ARXIV_ID,
+    PAPER_PDF_BYTES,
+    PAPER_PDF_SHA256,
+    PAPER_PDF_URL,
+    PAPER_REVISION,
+    PAPER_TITLE,
+    PAPER_URL,
     UPSTREAM_EVALUATION_CORPUS_PUBLISHED,
     UPSTREAM_PUBLIC_EXAMPLE_COUNT,
     UPSTREAM_REPOSITORY_COMMIT,
@@ -45,7 +52,7 @@ class IocRecoveryCorpus(Corpus):
         self._home = (
             pathlib.Path(corpus_dir)
             if corpus_dir is not None
-            else _BENCH_ROOT / "corpora" / "ioc-recovery"
+            else _BENCH_ROOT / "corpora" / "ioc-recovery-v3"
         )
 
     @property
@@ -106,8 +113,15 @@ class IocRecoveryCorpus(Corpus):
             )
         metadata = self._load_metadata()
         required = {
-            "schema_version": 2,
+            "schema_version": 3,
             "name": "keyhog-ioc-recovery",
+            "methodology_title": PAPER_TITLE,
+            "methodology_url": PAPER_URL,
+            "methodology_arxiv_id": PAPER_ARXIV_ID,
+            "methodology_revision": PAPER_REVISION,
+            "methodology_pdf_url": PAPER_PDF_URL,
+            "methodology_pdf_sha256": PAPER_PDF_SHA256,
+            "methodology_pdf_bytes": PAPER_PDF_BYTES,
             "phases": 13,
             "match_mode": "exact",
             "artifact_relationship": "methodology-adaptation",

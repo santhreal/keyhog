@@ -33,6 +33,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 from bench.corpus_integrity import file_sha256, tree_sha256  # noqa: E402
 from bench.generator_checksums import crc32_base62  # noqa: E402
 from bench.ioc_recovery_provenance import (  # noqa: E402
+    PAPER_ARXIV_ID,
+    PAPER_PDF_BYTES,
+    PAPER_PDF_SHA256,
+    PAPER_PDF_URL,
+    PAPER_REVISION,
     PAPER_TITLE,
     PAPER_URL,
     UPSTREAM_EVALUATION_CORPUS_PUBLISHED,
@@ -398,11 +403,16 @@ def generate(out: pathlib.Path, samples: int, seed: int) -> None:
             encoding="utf-8",
         )
         metadata = {
-            "schema_version": 2,
+            "schema_version": 3,
             "name": "keyhog-ioc-recovery",
             "methodology": "P0-P12 adapted to synthetic credentials",
             "methodology_title": PAPER_TITLE,
             "methodology_url": PAPER_URL,
+            "methodology_arxiv_id": PAPER_ARXIV_ID,
+            "methodology_revision": PAPER_REVISION,
+            "methodology_pdf_url": PAPER_PDF_URL,
+            "methodology_pdf_sha256": PAPER_PDF_SHA256,
+            "methodology_pdf_bytes": PAPER_PDF_BYTES,
             "methodology_license": "CC-BY-4.0",
             "upstream_repository_url": UPSTREAM_REPOSITORY_URL,
             "upstream_repository_commit": UPSTREAM_REPOSITORY_COMMIT,

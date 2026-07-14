@@ -69,8 +69,15 @@ def test_ioc_recovery_generator_is_deterministic_and_executable(tmp_path):
     }
 
     metadata = json.loads((left / "corpus.json").read_text())
-    assert metadata["schema_version"] == 2
-    assert metadata["methodology_url"] == "https://arxiv.org/abs/2605.06910"
+    assert metadata["schema_version"] == 3
+    assert metadata["methodology_url"] == "https://arxiv.org/abs/2605.06910v1"
+    assert metadata["methodology_arxiv_id"] == "2605.06910"
+    assert metadata["methodology_revision"] == 1
+    assert metadata["methodology_pdf_url"] == "https://arxiv.org/pdf/2605.06910v1"
+    assert metadata["methodology_pdf_sha256"] == (
+        "55b25110aed1f0940c0cbe5860d5666d9ea25155bff7a24a9c115f06fe59462a"
+    )
+    assert metadata["methodology_pdf_bytes"] == 1_567_355
     assert metadata["upstream_repository_url"] == (
         "https://github.com/jaimemorales52/llm-ioc-detection"
     )
@@ -127,6 +134,24 @@ def test_ioc_recovery_adapter_excludes_answer_key_and_loads_exact_records(tmp_pa
 
     with pytest.raises(SystemExit, match="requested 2"):
         corpus.ensure(samples=2, seed=23)
+
+    metadata = json.loads(corpus.metadata.read_text(encoding="utf-8"))
+    paper_drift = {
+        "methodology_revision": 2,
+        "methodology_pdf_sha256": "0" * 64,
+        "methodology_pdf_bytes": 1,
+    }
+    for field, value in paper_drift.items():
+        changed = dict(metadata)
+        changed[field] = value
+        corpus.metadata.write_text(
+            json.dumps(changed, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        with pytest.raises(SystemExit, match=field):
+            IocRecoveryCorpus(corpus_dir=home).records()
+    corpus.metadata.write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
     fixture = corpus.scan_root / records[0].file_path
     fixture.write_text(fixture.read_text() + "\n// modified\n")

@@ -181,7 +181,7 @@ their data.
 result, and reporting system as every other KeyHog benchmark. It adapts the
 P0-P12 progression from [*Benchmarking Large Language Models for IoC Recovery
 under Adversarial Code Obfuscation and
-Encryption*](https://arxiv.org/abs/2605.06910) to deterministic synthetic,
+Encryption*](https://arxiv.org/abs/2605.06910v1) to deterministic synthetic,
 checksum-valid GitHub-token-shaped values:
 
 | phase | transformation |
@@ -198,7 +198,8 @@ at commit `91d45377cf482c1de6c36a0d33744665976a19b6`. That repository does not c
 the 336-program evaluation corpus. KeyHog records the repository and commit as
 methodology provenance, but generates its own deterministic credential
 fixtures. It does not claim byte identity with the paper's evaluation data and
-uses no third-party dataset bytes.
+uses no third-party dataset bytes. Generated corpus receipts pin the v1 paper
+PDF URL, byte length, and SHA-256.
 
 Every value is synthetic and deterministic. P5-P12 embed the key and recovery
 logic in the program, matching the program-analysis task rather than creating
