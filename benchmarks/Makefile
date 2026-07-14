@@ -10,6 +10,7 @@
 #   make ioc-recovery-corpus  # generate the 4,368-file P0-P12 recovery corpus
 #   make ioc-recovery         # compare KeyHog full/fast/deep on recovery phases
 #   make agentre-corpus       # verify sources and build the pinned Linux binaries
+#   make leakage-audit        # prove train/calibration/sealed-test split isolation
 #   make creddata          # print Samsung/CredData corpus info
 #   make kernel-info       # print perf corpus info
 #   make run               # run SCANNER=keyhog CORPUS=mirror once
@@ -40,6 +41,9 @@ OUT              ?= results
 ANALYZE_TOP      ?= 15
 IOC_RECOVERY_SAMPLES ?= 336
 IOC_RECOVERY_OUT ?= results-ioc-recovery
+LEAKAGE_MANIFEST ?=
+LEAKAGE_CONTENT_ROOT ?=
+LEAKAGE_RECEIPT ?= reports/leakage-receipt.json
 
 # Gate / loop knobs. The loop measures every available scanner but gates
 # keyhog against the required competitors plus the committed regression anchor;
@@ -54,7 +58,7 @@ ifneq ($(strip $(KEYHOG_BIN)),)
 export KEYHOG_BIN
 endif
 
-.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus creddata kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
+.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit creddata kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
 
 help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
@@ -80,6 +84,12 @@ ioc-recovery: ioc-recovery-corpus
 
 agentre-corpus:
 	cd $(BENCH_DIR) && $(PY) -m bench.agentre_build --ensure
+
+leakage-audit:
+	@test -n "$(LEAKAGE_MANIFEST)" || { echo "LEAKAGE_MANIFEST is required" >&2; exit 2; }
+	@test -n "$(LEAKAGE_CONTENT_ROOT)" || { echo "LEAKAGE_CONTENT_ROOT is required" >&2; exit 2; }
+	cd $(BENCH_DIR) && $(PY) -m bench.leakage_guard "$(LEAKAGE_MANIFEST)" \
+		--content-root "$(LEAKAGE_CONTENT_ROOT)" --receipt "$(LEAKAGE_RECEIPT)"
 
 creddata:
 	cd $(BENCH_DIR) && $(PY) -m bench.corpora.creddata
