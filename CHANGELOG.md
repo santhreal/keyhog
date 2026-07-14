@@ -6,6 +6,15 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- ZIP and tar TeX source packages now expose root, referenced, orphaned, and
+  exact comment-span provenance while every readable member still follows the
+  normal archive scan path. Dependency expansion is bounded, rejects archive
+  traversal, and terminates cycles without hiding member findings.
+- `keyhog diff` now classifies before-only findings as
+  `verification_unknown` instead of resolved. `--artifacts --verify-removed`
+  scans both text versions in memory and reports `removed_still_live`,
+  `removed_inactive`, or `verification_unknown`. New findings, live removals,
+  and unknown removals exit 1. Reports and persisted baselines remain redacted.
 - Scan, watch, and scan-system now install the same resolved GPU policy,
   regex-DFA cap, GPU batch cap, profiling state, and compile tuning before any
   hardware probe or detector compilation. Watch applies explicit backend

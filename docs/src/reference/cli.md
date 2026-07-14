@@ -286,6 +286,17 @@ The report emits only `removed_still_live`, `removed_inactive`, or
 `verification_unknown`. It never emits the credential. A live or unknown
 removal returns exit 1. Only provider-confirmed inactive removals can pass.
 
+| Option | Artifact comparison behavior |
+|--------|------------------------------|
+| `--artifacts` | Scan both inputs as UTF-8 text with the deterministic CPU reference path. No baseline containing credential bytes is written. |
+| `--detectors <DIR>` | Use an explicit detector TOML corpus. A missing explicit directory fails. |
+| `--max-artifact-bytes <N>` | Bound each input read. The default is 64 MiB. Oversized or growing inputs fail. |
+| `--verify-removed` | Send only before-only credentials to each detector's allowlisted provider endpoint through the existing verifier. A build without verifier support fails visibly. |
+| `--verify-timeout <SECONDS>` | Set the per-credential timeout. The default is 5 seconds. Zero is rejected. |
+
+Artifact-only options are rejected during baseline comparison. Binary inputs
+must use `keyhog scan --binary`; artifact diff never decodes them implicitly.
+
 ## `keyhog calibrate`
 
 Show or update the per-detector Bayesian (Beta-α/β) calibration

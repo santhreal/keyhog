@@ -19,5 +19,5 @@ fn r5t_diff_identical_baselines_json_stdout_valid() {
     let parsed: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("diff --json must emit valid JSON");
     assert_eq!(parsed["summary"]["new"].as_u64(), Some(0));
-    assert_eq!(parsed["summary"]["resolved"].as_u64(), Some(0));
+    assert_eq!(parsed["summary"]["removed"].as_u64(), Some(0));
 }

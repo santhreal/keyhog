@@ -4,14 +4,14 @@
 //! `diff` compares two baseline JSON files (the `scan --create-baseline` format)
 //! keyed on `(detector_id, credential_hash)` and reports three buckets:
 //!   NEW (in `after`, not in `before`  (a regression → exit 1)).
-//!   RESOLVED (in `before`, not in `after`  (a fixed leak → does not fail CI)).
+//!   REMOVED (in `before`, not in `after`, with an explicit verification state).
 //!   UNCHANGED (present in both).
-//! Exit contract: 0 when there are ZERO new entries, `EXIT_FINDINGS` (1) when any
-//! NEW entry exists, `EXIT_USER_ERROR` (2) when a baseline file is missing or
-//! malformed. See `subcommands/diff.rs` + `baseline.rs` + `lib.rs` error mapping.
+//! Exit contract: 0 only when there are no new entries and every removal is
+//! verified inactive. New, live, and verification-unknown entries use
+//! `EXIT_FINDINGS` (1). Invalid input uses `EXIT_USER_ERROR` (2).
 //!
 //! Distinct from `regression_cli_scan_diff_explain_e2e.rs` (which pins the
-//! single-finding new/resolved/missing-file basics): this file drives the
+//! single-finding new/removed/missing-file basics): this file drives the
 //! MULTI-finding count arithmetic, the `--json summary` dual-field consistency
 //! and sum invariants, detector-id sort order, the key-is-the-PAIR adversarial
 //! cases, and the two MALFORMED-baseline shapes (garbage JSON + a findings
@@ -82,7 +82,7 @@ fn json_of(stdout: &str) -> serde_json::Value {
 // ---------------------------------------------------------------------------
 
 /// AFTER introduces one entry the empty BEFORE never had: exactly one NEW,
-/// nothing resolved/unchanged, and the presence of a NEW leak exits 1.
+/// nothing removed/unchanged, and the presence of a NEW leak exits 1.
 #[test]
 fn new_only_single_exits_one_with_new_count_one() {
     let (_d, bp, ap) = baselines(
@@ -99,9 +99,9 @@ fn new_only_single_exits_one_with_new_count_one() {
         "summary.new_count must be 1; got {v}"
     );
     assert_eq!(
-        v["summary"]["resolved_count"].as_u64(),
+        v["summary"]["removed_count"].as_u64(),
         Some(0),
-        "summary.resolved_count must be 0; got {v}"
+        "summary.removed_count must be 0; got {v}"
     );
     assert_eq!(
         v["summary"]["unchanged_count"].as_u64(),
@@ -148,13 +148,13 @@ fn new_only_multi_exits_one_with_new_count_three() {
 }
 
 // ---------------------------------------------------------------------------
-// RESOLVED-only, exit 0, exact resolved_count, detector-id sort order
+// Removed-only baseline entries stay unknown and fail closed
 // ---------------------------------------------------------------------------
 
-/// Three entries in BEFORE, none in AFTER: all three are RESOLVED, zero NEW, so
-/// there is no new leak and the command exits 0. resolved_count is exactly 3.
+/// Three entries in BEFORE, none in AFTER: all three disappeared, but a baseline
+/// carries no credential bytes to verify. They stay unknown and exit 1.
 #[test]
-fn resolved_only_multi_exits_zero_with_resolved_count_three() {
+fn removed_only_baseline_entries_are_unknown_and_exit_one() {
     let before = baseline_json(&format!(
         "{},{},{}",
         entry_json("aws-access-key", "h1", "/a.env", 1),
@@ -165,15 +165,20 @@ fn resolved_only_multi_exits_zero_with_resolved_count_three() {
     let (code, stdout, stderr) = diff(&bp, &ap, true);
     assert_eq!(
         code,
-        Some(0),
-        "RESOLVED-only has no new leak → exit 0; stderr={stderr}"
+        Some(1),
+        "unverified removals must fail closed; stderr={stderr}"
     );
 
     let v = json_of(&stdout);
     assert_eq!(
-        v["summary"]["resolved_count"].as_u64(),
+        v["summary"]["removed_count"].as_u64(),
         Some(3),
-        "summary.resolved_count must be exactly 3; got {v}"
+        "summary.removed_count must be exactly 3; got {v}"
+    );
+    assert_eq!(
+        v["summary"]["verification_unknown_count"].as_u64(),
+        Some(3),
+        "every baseline-only removal must remain unknown; got {v}"
     );
     assert_eq!(
         v["summary"]["new_count"].as_u64(),
@@ -182,10 +187,10 @@ fn resolved_only_multi_exits_zero_with_resolved_count_three() {
     );
 }
 
-/// RESOLVED entries are emitted sorted by `detector_id` (diff.rs sorts each
+/// Removed entries are emitted sorted by `detector_id` (diff.rs sorts each
 /// bucket): a BEFORE listing `zeta` before `alpha` must come back `alpha` first.
 #[test]
-fn resolved_entries_are_sorted_by_detector_id() {
+fn removed_entries_are_sorted_by_detector_id() {
     let before = baseline_json(&format!(
         "{},{}",
         entry_json("zeta-detector", "hz", "/z.env", 9),
@@ -193,20 +198,20 @@ fn resolved_entries_are_sorted_by_detector_id() {
     ));
     let (_d, bp, ap) = baselines(&before, &baseline_json(""));
     let (code, stdout, _e) = diff(&bp, &ap, true);
-    assert_eq!(code, Some(0));
+    assert_eq!(code, Some(1));
 
     let v = json_of(&stdout);
-    let resolved = v["resolved"].as_array().expect("resolved array");
-    assert_eq!(resolved.len(), 2, "two resolved entries; got {v}");
+    let removed = v["removed"].as_array().expect("removed array");
+    assert_eq!(removed.len(), 2, "two removed entries; got {v}");
     assert_eq!(
-        resolved[0]["detector_id"].as_str(),
+        removed[0]["detector_id"].as_str(),
         Some("alpha-detector"),
-        "resolved must be sorted: alpha-detector first; got {v}"
+        "removed must be sorted: alpha-detector first; got {v}"
     );
     assert_eq!(
-        resolved[1]["detector_id"].as_str(),
+        removed[1]["detector_id"].as_str(),
         Some("zeta-detector"),
-        "resolved must be sorted: zeta-detector second; got {v}"
+        "removed must be sorted: zeta-detector second; got {v}"
     );
 }
 
@@ -214,7 +219,7 @@ fn resolved_entries_are_sorted_by_detector_id() {
 // UNCHANGED, exact `=` count, exit 0
 // ---------------------------------------------------------------------------
 
-/// BEFORE == AFTER (two identical entries): both are UNCHANGED, zero new/resolved,
+/// BEFORE == AFTER (two identical entries): both are UNCHANGED, zero new/removed,
 /// exit 0. The `--json summary.unchanged_count` is exactly 2 and the text summary
 /// renders `= 2`.
 #[test]
@@ -245,9 +250,9 @@ fn identical_baselines_report_unchanged_count_and_exit_zero() {
         "no NEW entries; got {v}"
     );
     assert_eq!(
-        v["summary"]["resolved_count"].as_u64(),
+        v["summary"]["removed_count"].as_u64(),
         Some(0),
-        "no RESOLVED entries; got {v}"
+        "no removed entries; got {v}"
     );
     assert_eq!(
         v["unchanged"].as_array().expect("unchanged array").len(),
@@ -263,7 +268,7 @@ fn identical_baselines_report_unchanged_count_and_exit_zero() {
         "text summary must count 2 unchanged as `= 2`; got {tstdout}"
     );
     assert!(
-        tstdout.contains("PASS no new findings"),
+        tstdout.contains("PASS no new or unverified live-risk findings"),
         "no new findings must print the PASS line; got {tstdout}"
     );
 }
@@ -272,9 +277,9 @@ fn identical_baselines_report_unchanged_count_and_exit_zero() {
 // summary, dual-field consistency + sum invariants
 // ---------------------------------------------------------------------------
 
-/// BEFORE {A,B,C} vs AFTER {A,D,E}: A unchanged, {B,C} resolved, {D,E} new.
+/// BEFORE {A,B,C} vs AFTER {A,D,E}: A unchanged, {B,C} removed, {D,E} new.
 /// Every `summary.<x>` and its `<x>_count` twin must agree, and the buckets must
-/// satisfy new+unchanged == |after| and resolved+unchanged == |before|.
+/// satisfy new+unchanged == |after| and removed+unchanged == |before|.
 #[test]
 fn mixed_summary_dual_fields_agree_and_counts_sum() {
     let before = baseline_json(&format!(
@@ -295,14 +300,14 @@ fn mixed_summary_dual_fields_agree_and_counts_sum() {
 
     let v = json_of(&stdout);
     let new = v["summary"]["new_count"].as_u64().expect("new_count");
-    let resolved = v["summary"]["resolved_count"]
+    let removed = v["summary"]["removed_count"]
         .as_u64()
-        .expect("resolved_count");
+        .expect("removed_count");
     let unchanged = v["summary"]["unchanged_count"]
         .as_u64()
         .expect("unchanged_count");
     assert_eq!(new, 2, "new_count must be 2 (D,E); got {v}");
-    assert_eq!(resolved, 2, "resolved_count must be 2 (B,C); got {v}");
+    assert_eq!(removed, 2, "removed_count must be 2 (B,C); got {v}");
     assert_eq!(unchanged, 1, "unchanged_count must be 1 (A); got {v}");
 
     // Dual fields (`new` vs `new_count`, etc.) must never diverge.
@@ -312,9 +317,9 @@ fn mixed_summary_dual_fields_agree_and_counts_sum() {
         "summary.new must equal summary.new_count; got {v}"
     );
     assert_eq!(
-        v["summary"]["resolved"].as_u64(),
-        Some(resolved),
-        "summary.resolved must equal summary.resolved_count; got {v}"
+        v["summary"]["removed"].as_u64(),
+        Some(removed),
+        "summary.removed must equal summary.removed_count; got {v}"
     );
     assert_eq!(
         v["summary"]["unchanged"].as_u64(),
@@ -329,9 +334,9 @@ fn mixed_summary_dual_fields_agree_and_counts_sum() {
         "new + unchanged must equal |after| = 3; got {v}"
     );
     assert_eq!(
-        resolved + unchanged,
+        removed + unchanged,
         3,
-        "resolved + unchanged must equal |before| = 3; got {v}"
+        "removed + unchanged must equal |before| = 3; got {v}"
     );
 }
 
@@ -340,8 +345,8 @@ fn mixed_summary_dual_fields_agree_and_counts_sum() {
 // ---------------------------------------------------------------------------
 
 /// Same credential_hash, DIFFERENT detector_id: the identity key is the PAIR,
-/// so the old pairing resolves and the new pairing is NEW (not unchanged).
-/// new_count=1, resolved_count=1, unchanged_count=0, exit 1.
+/// so the old pairing is removed and the new pairing is NEW (not unchanged).
+/// new_count=1, removed_count=1, unchanged_count=0, exit 1.
 #[test]
 fn same_hash_different_detector_is_new_not_unchanged() {
     let (_d, bp, ap) = baselines(
@@ -356,7 +361,7 @@ fn same_hash_different_detector_is_new_not_unchanged() {
     );
     let v = json_of(&stdout);
     assert_eq!(v["summary"]["new_count"].as_u64(), Some(1), "got {v}");
-    assert_eq!(v["summary"]["resolved_count"].as_u64(), Some(1), "got {v}");
+    assert_eq!(v["summary"]["removed_count"].as_u64(), Some(1), "got {v}");
     assert_eq!(
         v["summary"]["unchanged_count"].as_u64(),
         Some(0),
@@ -370,9 +375,9 @@ fn same_hash_different_detector_is_new_not_unchanged() {
 }
 
 /// Same detector_id, DIFFERENT credential_hash (a rotated secret): the old hash
-/// resolves and the new hash is NEW. Proves the hash half of the key matters.
+/// is removed and the new hash is NEW. Proves the hash half of the key matters.
 #[test]
-fn same_detector_different_hash_is_new_and_resolved() {
+fn same_detector_different_hash_is_new_and_removed() {
     let (_d, bp, ap) = baselines(
         &baseline_json(&entry_json("aws-access-key", "OLDHASH", "/x.env", 1)),
         &baseline_json(&entry_json("aws-access-key", "NEWHASH", "/x.env", 1)),
@@ -385,7 +390,7 @@ fn same_detector_different_hash_is_new_and_resolved() {
     );
     let v = json_of(&stdout);
     assert_eq!(v["summary"]["new_count"].as_u64(), Some(1), "got {v}");
-    assert_eq!(v["summary"]["resolved_count"].as_u64(), Some(1), "got {v}");
+    assert_eq!(v["summary"]["removed_count"].as_u64(), Some(1), "got {v}");
     assert_eq!(v["summary"]["unchanged_count"].as_u64(), Some(0), "got {v}");
 }
 
@@ -443,13 +448,13 @@ fn empty_vs_empty_all_zero_exits_zero() {
     assert_eq!(code, Some(0), "empty vs empty → exit 0; stderr={stderr}");
     let v = json_of(&stdout);
     assert_eq!(v["summary"]["new_count"].as_u64(), Some(0), "got {v}");
-    assert_eq!(v["summary"]["resolved_count"].as_u64(), Some(0), "got {v}");
+    assert_eq!(v["summary"]["removed_count"].as_u64(), Some(0), "got {v}");
     assert_eq!(v["summary"]["unchanged_count"].as_u64(), Some(0), "got {v}");
 
     let (tcode, tstdout, _e) = diff(&bp, &ap, false);
     assert_eq!(tcode, Some(0));
     assert!(
-        tstdout.contains("PASS no new findings"),
+        tstdout.contains("PASS no new or unverified live-risk findings"),
         "text form must print the PASS line for empty diff; got {tstdout}"
     );
 }

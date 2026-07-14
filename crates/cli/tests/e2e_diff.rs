@@ -1,7 +1,7 @@
 //! e2e test for `keyhog diff <before> <after>`.
 //!
 //! The diff subcommand compares two baseline JSON files (from scan runs)
-//! and reports NEW, RESOLVED, and UNCHANGED findings. This test verifies
+//! and reports NEW, REMOVED, and UNCHANGED findings. This test verifies
 //! that diff correctly categorizes findings across files.
 
 use std::path::PathBuf;
@@ -39,7 +39,7 @@ fn entry_json(detector_id: &str, credential_hash: &str, file_path: &str, line: u
 /// `keyhog diff baseline1.json baseline2.json` compares two JSON files
 /// and exits 1 when NEW entries are present.
 #[test]
-fn diff_two_baselines_returns_exit_zero_with_summary() {
+fn diff_two_baselines_returns_exit_one_with_summary() {
     let dir = TempDir::new().expect("tempdir");
 
     // Create a baseline with one finding.
@@ -77,13 +77,13 @@ fn diff_two_baselines_returns_exit_zero_with_summary() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("keyhog diff") && stdout.contains("FAIL 1") && stdout.contains("PASS 0"),
-        "diff summary must use the shared PASS/FAIL word vocabulary; got: {stdout}"
+        stdout.contains("keyhog diff") && stdout.contains("1 new") && stdout.contains("0 removed"),
+        "diff summary must report exact new and removed counts; got: {stdout}"
     );
     // The output should mention at least one finding category.
     assert!(
         stdout.to_lowercase().contains("new")
-            || stdout.to_lowercase().contains("resolved")
+            || stdout.to_lowercase().contains("removed")
             || stdout.to_lowercase().contains("unchanged"),
         "diff output must categorize findings; got: {stdout}"
     );
@@ -128,7 +128,7 @@ fn diff_json_flag_emits_structured_output() {
 }
 
 /// `keyhog diff --hide-unchanged` suppresses the UNCHANGED section from output,
-/// making the report focused on NEW and RESOLVED.
+/// making the report focused on NEW and REMOVED.
 #[test]
 fn diff_hide_unchanged_flag_suppresses_unchanged_section() {
     let dir = TempDir::new().expect("tempdir");
@@ -154,9 +154,10 @@ fn diff_hide_unchanged_flag_suppresses_unchanged_section() {
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // With --hide-unchanged, the UNCHANGED section should not appear.
+    // With --hide-unchanged, no per-finding UNCHANGED row appears. The summary
+    // count remains visible.
     assert!(
-        !stdout.to_lowercase().contains("unchanged") || stdout.contains("0") || stdout.is_empty(),
+        !stdout.lines().any(|line| line.starts_with("UNCHANGED ")),
         "diff --hide-unchanged must suppress UNCHANGED findings; got: {stdout}"
     );
 }

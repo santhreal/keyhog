@@ -488,10 +488,10 @@ fn entry_json(detector_id: &str, credential_hash: &str, file_path: &str, line: u
     )
 }
 
-/// A finding present in the BEFORE baseline but absent from AFTER is RESOLVED,
-/// not NEW: `diff --json` reports resolved=1 / new=0 and exits 0 (no new leak).
+/// A finding present in the BEFORE baseline but absent from AFTER cannot be
+/// called resolved from hashes alone. It remains verification_unknown and exits 1.
 #[test]
-fn diff_resolved_only_exits_zero_with_exact_json_counts() {
+fn diff_removed_only_is_unknown_and_exits_one() {
     let dir = TempDir::new().expect("tempdir");
     let before = dir.path().join("before.json");
     let after = dir.path().join("after.json");
@@ -512,8 +512,8 @@ fn diff_resolved_only_exits_zero_with_exact_json_counts() {
         .expect("spawn keyhog diff --json");
     assert_eq!(
         out.status.code(),
-        Some(0),
-        "a diff with only RESOLVED entries has no new leak → exit 0; stderr={}",
+        Some(1),
+        "a baseline-only removal must fail closed → exit 1; stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
 
@@ -525,14 +525,19 @@ fn diff_resolved_only_exits_zero_with_exact_json_counts() {
         "no NEW entries; got {v}"
     );
     assert_eq!(
-        v["resolved"].as_array().expect("resolved array").len(),
+        v["removed"].as_array().expect("removed array").len(),
         1,
-        "exactly one RESOLVED entry; got {v}"
+        "exactly one removed entry; got {v}"
     );
     assert_eq!(
-        v["summary"]["resolved_count"].as_u64(),
+        v["summary"]["removed_count"].as_u64(),
         Some(1),
-        "summary.resolved_count must be 1; got {v}"
+        "summary.removed_count must be 1; got {v}"
+    );
+    assert_eq!(
+        v["removed"][0]["state"].as_str(),
+        Some("verification_unknown"),
+        "baseline-only removal must remain unknown; got {v}"
     );
     assert_eq!(
         v["summary"]["new_count"].as_u64(),
@@ -541,11 +546,10 @@ fn diff_resolved_only_exits_zero_with_exact_json_counts() {
     );
 }
 
-/// BEFORE {A,B} vs AFTER {A,C}: A is UNCHANGED, B is RESOLVED, C is NEW. The
-/// text summary must read exactly `FAIL 1` (new), `PASS 1` (resolved),
-/// `= 1` (unchanged), and the presence of a NEW entry exits 1.
+/// BEFORE {A,B} vs AFTER {A,C}: A is UNCHANGED, B is REMOVED, C is NEW.
+/// The text summary reports exact counts and the NEW entry exits 1.
 #[test]
-fn diff_mixed_new_resolved_unchanged_reports_exact_summary_and_exits_one() {
+fn diff_mixed_new_removed_unchanged_reports_exact_summary_and_exits_one() {
     let dir = TempDir::new().expect("tempdir");
     let before = dir.path().join("before.json");
     let after = dir.path().join("after.json");
@@ -586,12 +590,12 @@ fn diff_mixed_new_resolved_unchanged_reports_exact_summary_and_exits_one() {
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("FAIL 1"),
-        "summary must count 1 new as `FAIL 1`; got {stdout}"
+        stdout.contains("1 new"),
+        "summary must count 1 new; got {stdout}"
     );
     assert!(
-        stdout.contains("PASS 1"),
-        "summary must count 1 resolved as `PASS 1`; got {stdout}"
+        stdout.contains("1 removed"),
+        "summary must count 1 removed; got {stdout}"
     );
     assert!(
         stdout.contains("= 1"),

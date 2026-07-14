@@ -306,7 +306,7 @@ pub async fn cli_main() -> ExitCode {
         Some(args::Command::Explain(args)) => {
             subcommands::explain::run(args).map(|()| ExitCode::SUCCESS)
         }
-        Some(args::Command::Diff(args)) => subcommands::diff::run(args),
+        Some(args::Command::Diff(args)) => subcommands::diff::run(args).await,
         Some(args::Command::Calibrate(args)) => {
             subcommands::calibrate::run(args).map(|()| ExitCode::SUCCESS)
         }

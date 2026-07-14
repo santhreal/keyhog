@@ -117,6 +117,9 @@ pub struct VerificationTally {
 /// Integration-test operations that would otherwise force implementation
 /// modules into the production public API.
 pub trait CliTestApi {
+    fn removed_verification_state(&self, result: &keyhog_core::VerificationResult) -> &'static str;
+    fn removed_verification_blocks_success(&self, result: &keyhog_core::VerificationResult)
+        -> bool;
     fn parse_min_confidence(&self, s: &str) -> std::result::Result<f64, String>;
     fn parse_verify_rate(&self, s: &str) -> std::result::Result<f64, String>;
     fn parse_ml_threshold(&self, s: &str) -> std::result::Result<f64, String>;
@@ -494,6 +497,17 @@ pub trait CliTestApi {
 }
 
 impl CliTestApi for TestApi {
+    fn removed_verification_state(&self, result: &keyhog_core::VerificationResult) -> &'static str {
+        crate::subcommands::diff::removed_state_label_for_test(result)
+    }
+
+    fn removed_verification_blocks_success(
+        &self,
+        result: &keyhog_core::VerificationResult,
+    ) -> bool {
+        crate::subcommands::diff::removed_result_blocks_success_for_test(result)
+    }
+
     fn parse_min_confidence(&self, s: &str) -> std::result::Result<f64, String> {
         crate::value_parsers::parse_min_confidence(s)
     }

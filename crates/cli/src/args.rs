@@ -78,7 +78,7 @@ pub enum Command {
     #[command(verbatim_doc_comment)]
     Explain(ExplainArgs),
 
-    /// Diff two baseline JSON files: show NEW / RESOLVED / UNCHANGED
+    /// Diff baselines or artifacts: show NEW / REMOVED / UNCHANGED
     #[command(verbatim_doc_comment)]
     Diff(DiffArgs),
 
