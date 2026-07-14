@@ -6,7 +6,7 @@
 
 use crate::VerifySpec;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(serde::Deserialize)]
 struct SharedTenantSuffixes {
@@ -20,15 +20,19 @@ struct ServicesFile {
 
 static EXACT_ONLY_SHARED_TENANT_SUFFIXES: std::sync::LazyLock<Vec<String>> =
     std::sync::LazyLock::new(|| {
-        toml::from_str::<SharedTenantSuffixes>(include_str!(
+        let parsed = toml::from_str::<SharedTenantSuffixes>(include_str!(
             "../../../rules/shared-tenant-suffixes.toml"
         ))
-        .map(|parsed| parsed.suffixes)
         .unwrap_or_else(|error| {
             panic!(
                 "rules/shared-tenant-suffixes.toml is invalid: {error}. Fix the bundled Tier-B shared-tenant suffix list."
             )
-        })
+        });
+        validated_domain_entries(
+            parsed.suffixes,
+            "rules/shared-tenant-suffixes.toml suffixes",
+            false,
+        )
     });
 
 /// Built-in service to verification-domain policy.
@@ -52,6 +56,11 @@ pub fn builtin_service_domains() -> &'static HashMap<&'static str, &'static [&'s
             .services
             .into_iter()
             .map(|(service, domains)| {
+                let domains = validated_domain_entries(
+                    domains,
+                    &format!("rules/service-verification-domains.toml service {service:?}"),
+                    true,
+                );
                 let service: &'static str = Box::leak(service.into_boxed_str());
                 let domains: &'static [&'static str] = domains
                     .into_iter()
@@ -72,12 +81,11 @@ pub fn effective_allowlist(
     detector_service: Option<&str>,
 ) -> Option<Vec<String>> {
     if !spec.allowed_domains.is_empty() {
-        return Some(
-            spec.allowed_domains
-                .iter()
-                .filter_map(|domain| normalize_allowlist_entry(domain))
-                .collect(),
-        );
+        return spec
+            .allowed_domains
+            .iter()
+            .map(|domain| normalize_allowlist_entry(domain))
+            .collect();
     }
     let service = if spec.service.trim().is_empty() {
         detector_service.unwrap_or_default().trim()
@@ -102,7 +110,8 @@ pub fn normalize_allowlist_entry(raw: &str) -> Option<String> {
     }
     let host = if value.contains("://") {
         let url = url::Url::parse(value).ok()?;
-        if !url.username().is_empty()
+        if !matches!(url.scheme(), "http" | "https")
+            || !url.username().is_empty()
             || url.password().is_some()
             || url.port().is_some()
             || url.path() != "/"
@@ -111,15 +120,23 @@ pub fn normalize_allowlist_entry(raw: &str) -> Option<String> {
         {
             return None;
         }
-        url.host_str()?.to_string()
+        match url.host()? {
+            url::Host::Domain(domain) => domain.to_string(),
+            url::Host::Ipv4(address) => return Some(address.to_string()),
+            url::Host::Ipv6(address) => return Some(address.to_string()),
+        }
     } else {
         if value.contains(['/', '?', '#', '@', ':']) {
             return None;
         }
-        value.to_string()
+        match url::Host::parse(value).ok()? {
+            url::Host::Domain(domain) => domain,
+            url::Host::Ipv4(address) => return Some(address.to_string()),
+            url::Host::Ipv6(address) => return Some(address.to_string()),
+        }
     };
     let normalized = host.trim_end_matches('.').to_lowercase();
-    (!normalized.is_empty()).then_some(normalized)
+    valid_dns_domain(&normalized).then_some(normalized)
 }
 
 /// Return whether `host` exactly matches an allowed domain or is its permitted
@@ -135,12 +152,54 @@ pub fn host_is_allowed(host: &str, allowlist: &[String]) -> bool {
             return false;
         }
         let allowed = lowercase_domain_if_needed(allowed);
-        if host == allowed {
-            return true;
+        let ordinarily_allowed = host == allowed || host_is_subdomain_of_allowed(&host, &allowed);
+        if !ordinarily_allowed {
+            return false;
         }
-        !is_exact_only_shared_tenant_suffix(&allowed)
-            && host_is_subdomain_of_allowed(&host, &allowed)
+        let Some(boundary) = shared_tenant_boundary(&host) else {
+            return true;
+        };
+        if allowed == boundary {
+            return host == allowed;
+        }
+        allowed == host
+            || host_is_subdomain_of_allowed(&host, &allowed)
+                && (allowed == boundary || host_is_subdomain_of_allowed(&allowed, boundary))
     })
+}
+
+fn validated_domain_entries(entries: Vec<String>, context: &str, allow_empty: bool) -> Vec<String> {
+    assert!(
+        allow_empty || !entries.is_empty(),
+        "{context} must define at least one domain"
+    );
+    let mut seen = HashSet::with_capacity(entries.len());
+    entries
+        .into_iter()
+        .map(|entry| {
+            let normalized = normalize_allowlist_entry(&entry)
+                .unwrap_or_else(|| panic!("{context} contains invalid domain entry {entry:?}"));
+            assert!(
+                seen.insert(normalized.clone()),
+                "{context} contains duplicate domain {normalized:?}"
+            );
+            normalized
+        })
+        .collect()
+}
+
+fn valid_dns_domain(domain: &str) -> bool {
+    domain.len() <= 253
+        && domain.contains('.')
+        && domain.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
 }
 
 fn lowercase_domain_if_needed(value: &str) -> Cow<'_, str> {
@@ -157,8 +216,10 @@ fn host_is_subdomain_of_allowed(host: &str, allowed: &str) -> bool {
         && host.as_bytes()[host.len() - allowed.len() - 1] == b'.'
 }
 
-fn is_exact_only_shared_tenant_suffix(domain: &str) -> bool {
+fn shared_tenant_boundary(domain: &str) -> Option<&str> {
     EXACT_ONLY_SHARED_TENANT_SUFFIXES
         .iter()
-        .any(|suffix| suffix == domain)
+        .map(String::as_str)
+        .filter(|suffix| domain == *suffix || host_is_subdomain_of_allowed(domain, suffix))
+        .max_by_key(|suffix| suffix.len())
 }

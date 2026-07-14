@@ -633,6 +633,34 @@ fn literal_verify_url_host_must_match_the_runtime_domain_policy() {
 }
 
 #[test]
+fn broad_parent_allowlist_cannot_cross_a_shared_tenant_boundary() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        url: Some("https://openai.azure.com/v1/{{match}}".into()),
+        allowed_domains: vec!["azure.com".into()],
+        ..Default::default()
+    });
+    let blocked = validate_detector(&detector);
+    assert!(blocked.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("openai.azure.com")
+                && message.contains("outside verify.allowed_domains")
+    )));
+
+    detector
+        .verify
+        .as_mut()
+        .expect("verify spec")
+        .allowed_domains = vec!["openai.azure.com".into()];
+    let exact = validate_detector(&detector);
+    assert!(!exact.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("outside verify.allowed_domains")
+    )));
+}
+
+#[test]
 fn omitted_verify_service_inherits_the_detector_service_domain_policy() {
     let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
     detector.service = "github".into();
