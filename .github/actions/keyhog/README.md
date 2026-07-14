@@ -26,6 +26,25 @@ also keep the artifact so the failed job is still diagnosable.
 Set `upload-sarif: 'false'` when the workflow cannot grant
 `security-events: write`. The artifact upload remains available.
 
+`analysis-category` is the stable identity for one Code Scanning partition.
+Keep it unchanged across commits so GitHub updates that partition. Give every
+KeyHog scan of the same commit a distinct category so monorepo and matrix
+results coexist instead of replacing each other. Duplicate categories in one
+workflow fail through SARIF or artifact upload. Categories use 1-64 lowercase
+letters, digits, dots, underscores, or dashes and start and end alphanumeric.
+
+```yaml
+- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
+  with:
+    path: services/api
+    analysis-category: services-api
+
+- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
+  with:
+    path: services/web
+    analysis-category: services-web
+```
+
 ## Full reference
 
 Keep the checkout step and permissions from the complete job above, then add
@@ -39,6 +58,7 @@ inputs to the KeyHog step:
     format: sarif               # text | json | sarif | jsonl
     verify: 'false'             # 'true' to live-verify credentials
     upload-sarif: 'true'        # 'false' to keep the report local-only
+    analysis-category: keyhog   # stable and unique per scan partition
     fail-on-findings: 'true'    # 'false' makes unverified findings advisory;
                                 # verified-live credentials still fail
     baseline: ''                # path to a committed baseline file; only NEW
@@ -81,6 +101,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 | `exit-code` | Raw `keyhog` process exit: `0` clean, `1` findings, `10` live findings under `--verify`. |
 | `duration-ms` | Wall-clock scan duration in milliseconds from the action wrapper. |
 | `report`   | Path to the produced report file. |
+| `analysis-category` | Validated identity shared by Code Scanning, the report filename, and the artifact. |
 
 ## Runtime and dependencies
 

@@ -1366,7 +1366,126 @@ fn composite_action_exposes_scan_duration_output() {
 }
 
 #[test]
-fn composite_action_artifact_name_is_matrix_scoped() {
+fn composite_action_analysis_categories_produce_distinct_report_identities() {
+    let dir = TempDir::new().expect("tempdir");
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&runner_temp).expect("runner temp");
+    for (index, (category, format, expected_name)) in [
+        ("services-api", "sarif", "keyhog-results-services-api.sarif"),
+        ("services-web", "json", "keyhog-results-services-web.json"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let github_output = dir.path().join(format!("output-{index}"));
+        let output = run_manifest_bash_step(
+            "Compute output filename",
+            &[
+                ("ACTION_ANALYSIS_CATEGORY", category),
+                ("ACTION_FORMAT", format),
+                (
+                    "GITHUB_OUTPUT",
+                    github_output.to_str().expect("utf-8 output path"),
+                ),
+                (
+                    "RUNNER_TEMP",
+                    runner_temp.to_str().expect("utf-8 runner temp"),
+                ),
+                ("GITHUB_RUN_ID", "42"),
+                ("GITHUB_RUN_ATTEMPT", "1"),
+                ("GITHUB_JOB", "scan"),
+            ],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "valid category must resolve: {}",
+            combined_output(&output)
+        );
+        let resolved = fs::read_to_string(github_output).expect("identity outputs written");
+        assert_eq!(
+            resolved,
+            format!("category={category}\nname={expected_name}\n")
+        );
+    }
+
+    let duplicate_output = dir.path().join("duplicate-output");
+    let duplicate = run_manifest_bash_step(
+        "Compute output filename",
+        &[
+            ("ACTION_ANALYSIS_CATEGORY", "services-api"),
+            ("ACTION_FORMAT", "sarif"),
+            (
+                "GITHUB_OUTPUT",
+                duplicate_output.to_str().expect("utf-8 output path"),
+            ),
+            (
+                "RUNNER_TEMP",
+                runner_temp.to_str().expect("utf-8 runner temp"),
+            ),
+            ("GITHUB_RUN_ID", "42"),
+            ("GITHUB_RUN_ATTEMPT", "1"),
+            ("GITHUB_JOB", "scan"),
+        ],
+    );
+    let combined = combined_output(&duplicate);
+    assert_eq!(duplicate.status.code(), Some(2), "{combined}");
+    assert!(
+        combined.contains("Conflicting analysis-category"),
+        "duplicate category must fail with an actionable diagnostic: {combined}"
+    );
+    assert!(!duplicate_output.exists());
+}
+
+#[test]
+fn composite_action_rejects_ambiguous_analysis_categories_before_writing_identity() {
+    let dir = TempDir::new().expect("tempdir");
+    let too_long = "a".repeat(65);
+    for (index, category) in [
+        "",
+        "Services-api",
+        "services/api",
+        "services api",
+        ".hidden",
+        "-flag",
+        "api.",
+        "api\nforged=value",
+        too_long.as_str(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let github_output = dir.path().join(format!("invalid-output-{index}"));
+        let output = run_manifest_bash_step(
+            "Compute output filename",
+            &[
+                ("ACTION_ANALYSIS_CATEGORY", category),
+                ("ACTION_FORMAT", "sarif"),
+                (
+                    "GITHUB_OUTPUT",
+                    github_output.to_str().expect("utf-8 output path"),
+                ),
+            ],
+        );
+        let combined = combined_output(&output);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "invalid category must fail before scan identity is written: {combined}"
+        );
+        assert!(
+            combined.contains("Invalid analysis-category"),
+            "category failure must be actionable: {combined}"
+        );
+        assert!(
+            !github_output.exists(),
+            "invalid category must not write a report or SARIF identity"
+        );
+    }
+}
+
+#[test]
+fn composite_action_artifact_name_is_partition_and_matrix_scoped() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     let artifact_step = manifest
         .split("- name: Upload scan report as workflow artifact")
@@ -1384,9 +1503,9 @@ fn composite_action_artifact_name_is_matrix_scoped() {
     );
     assert!(
         artifact_step.contains(
-            "name: keyhog-report-${{ github.job }}-${{ strategy.job-index || '0' }}-${{ github.run_attempt }}-${{ steps.scan.outputs.duration-ms || 'unknown-duration' }}"
+            "name: keyhog-report-${{ steps.outfile.outputs.category }}-${{ github.job }}-${{ strategy.job-index || '0' }}-${{ github.run_attempt }}"
         ),
-        "artifact name must include job, matrix index, run attempt, and scan-duration context to avoid matrix/retry collisions"
+        "artifact name must include the stable analysis category, job, matrix index, and run attempt"
     );
 }
 
@@ -1414,6 +1533,10 @@ fn composite_action_sarif_upload_fails_closed_on_trusted_runs() {
     assert!(
         !upload_step.contains("continue-on-error: true"),
         "unconditional SARIF upload tolerance hides broken production Code Scanning integrations"
+    );
+    assert!(
+        upload_step.contains("category: ${{ steps.outfile.outputs.category }}"),
+        "Code Scanning must receive the same validated partition identity as the report"
     );
 }
 

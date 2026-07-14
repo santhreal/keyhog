@@ -28,6 +28,13 @@ inputs:
   upload-sarif:
     description: 'When format=sarif, upload via the GitHub Code Scanning SARIF action.'
     default: 'true'
+  analysis-category:
+    description: |
+      Stable lowercase identity for this analysis partition. Use a distinct
+      value for each monorepo slice or matrix partition scanned on one commit.
+      Allowed: 1-64 lowercase letters, digits, dot, underscore, or dash. Start
+      and end with a letter or digit.
+    default: 'keyhog'
   fail-on-findings:
     description: |
       Fail the workflow when any finding at or above `severity` is reported.
@@ -62,10 +69,43 @@ outputs:
   report:
     description: 'Path to the produced scan report (relative to the workspace).'
     value: ${{ steps.outfile.outputs.name }}
+  analysis-category:
+    description: 'Validated Code Scanning and report partition identity.'
+    value: ${{ steps.outfile.outputs.category }}
 
 runs:
   using: 'composite'
   steps:
+    - name: Compute output filename
+      id: outfile
+      shell: bash
+      env:
+        ACTION_FORMAT: ${{ inputs.format }}
+        ACTION_ANALYSIS_CATEGORY: ${{ inputs.analysis-category }}
+      run: |
+        set -euo pipefail
+        category="${ACTION_ANALYSIS_CATEGORY:-}"
+        if [[ -z "$category" || ${#category} -gt 64 || ! "$category" =~ ^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$ ]]; then
+          echo "::error title=KeyHog::Invalid analysis-category. Use 1-64 lowercase letters, digits, dot, underscore, or dash; start and end with a letter or digit."
+          exit 2
+        fi
+        if [[ -n "${RUNNER_TEMP:-}" && -n "${GITHUB_RUN_ID:-}" && -n "${GITHUB_JOB:-}" ]]; then
+          identity_root="${RUNNER_TEMP}/keyhog-analysis-categories/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT:-1}-${GITHUB_JOB}"
+          mkdir -p -- "$identity_root"
+          if ! mkdir -- "${identity_root}/${category}" 2>/dev/null; then
+            echo "::error title=KeyHog::Conflicting analysis-category. Every KeyHog scan in one job must use a distinct category."
+            exit 2
+          fi
+        fi
+        ext="json"
+        case "${ACTION_FORMAT:-sarif}" in
+          sarif) ext="sarif" ;;
+          jsonl) ext="jsonl" ;;
+          text)  ext="txt" ;;
+        esac
+        printf 'category=%s\n' "$category" >> "$GITHUB_OUTPUT"
+        printf 'name=keyhog-results-%s.%s\n' "$category" "$ext" >> "$GITHUB_OUTPUT"
+
     - name: Resolve KeyHog version
       id: version
       shell: bash
@@ -241,21 +281,6 @@ runs:
       shell: bash
       run: keyhog calibrate-autoroute
 
-    - name: Compute output filename
-      id: outfile
-      shell: bash
-      env:
-        ACTION_FORMAT: ${{ inputs.format }}
-      run: |
-        set -euo pipefail
-        ext="json"
-        case "${ACTION_FORMAT:-sarif}" in
-          sarif) ext="sarif" ;;
-          jsonl) ext="jsonl" ;;
-          text)  ext="txt" ;;
-        esac
-        echo "name=keyhog-results.${ext}" >> "$GITHUB_OUTPUT"
-
     - name: Run scan
       id: scan
       shell: bash
@@ -317,12 +342,13 @@ runs:
       uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
       with:
         sarif_file: ${{ steps.outfile.outputs.name }}
+        category: ${{ steps.outfile.outputs.category }}
 
     - name: Upload scan report as workflow artifact
       if: always() && steps.report-check.outputs.exists == 'true'
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
-        name: keyhog-report-${{ github.job }}-${{ strategy.job-index || '0' }}-${{ github.run_attempt }}-${{ steps.scan.outputs.duration-ms || 'unknown-duration' }}
+        name: keyhog-report-${{ steps.outfile.outputs.category }}-${{ github.job }}-${{ strategy.job-index || '0' }}-${{ github.run_attempt }}
         path: ${{ steps.outfile.outputs.name }}
         if-no-files-found: warn
 
