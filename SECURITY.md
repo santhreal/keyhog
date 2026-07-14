@@ -17,9 +17,9 @@ email **security@santh.dev** with:
 
 PGP encryption is not required for email reports.
 
-You will receive an acknowledgement within **5 business days**.
-Coordinated-disclosure timeline is up to **90 days** from
-acknowledgement; we will notify you before the patch ships.
+Do not open a public issue or include live credentials in a report. We will
+coordinate remediation and disclosure through the private advisory or email
+thread. Timing depends on the impact, affected releases, and fix validation.
 
 ## Supported Versions
 

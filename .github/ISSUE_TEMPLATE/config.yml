@@ -5,4 +5,4 @@ contact_links:
     about: Open-ended questions, ideas, and design discussions belong in Discussions, not issues.
   - name: Security disclosure
     url: https://github.com/santhreal/keyhog/security/advisories/new
-    about: Report a security vulnerability privately. Do NOT open a public issue.
+    about: Report privately here first. If unavailable, email security@santh.dev. PGP is not required. Do not open a public issue.
