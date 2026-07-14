@@ -81,11 +81,12 @@ fn looks_like_javascript_length_index_tail(value: &str) -> bool {
     let Some(receiver) = receiver else {
         return false;
     };
-    !receiver.is_empty()
-        && receiver
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$'))
-        && receiver.bytes().any(|byte| byte.is_ascii_alphabetic())
+    let mut bytes = receiver.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+    (first.is_ascii_alphabetic() || matches!(first, b'_' | b'$'))
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$'))
 }
 
 fn looks_like_template_interpolation_prefix(value: &str) -> bool {

@@ -60,16 +60,22 @@ fn generated_template_interpolation_prefix_is_source_syntax() {
 
 #[test]
 fn indexed_javascript_length_expression_is_source_syntax() {
-    let value = "_a8fe8b046732.length]))";
-    let randomness = TokenRandomness::for_candidate(value);
-    assert!(looks_like_source_code_expression_with_randomness(
-        value,
-        &randomness
-    ));
+    for value in [
+        "_a8fe8b046732.length]))",
+        "_715561396085.length]))",
+        "$715561396085.length])",
+    ] {
+        let randomness = TokenRandomness::for_candidate(value);
+        assert!(looks_like_source_code_expression_with_randomness(
+            value,
+            &randomness
+        ));
+    }
     for value in [
         "_a8fe8b046732.length",
         "opaque-key.length]))",
         "_a8fe8b046732.length]))suffix",
+        "715561396085.length]))",
     ] {
         let randomness = TokenRandomness::for_candidate(value);
         assert!(!looks_like_source_code_expression_with_randomness(

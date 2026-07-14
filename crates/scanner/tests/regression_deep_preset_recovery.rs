@@ -70,3 +70,25 @@ fn deep_rejects_javascript_xor_index_expression_as_entropy() {
         "JavaScript array-index syntax must not become an entropy finding: {matches:?}"
     );
 }
+
+#[test]
+fn deep_rejects_digit_only_javascript_identifier_tail_as_entropy() {
+    let input = Chunk {
+        data:
+            "const recovered = data.map((b, i) => b ^ _715561396085[i % _715561396085.length]));\n"
+                .into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("numeric_identifier_recovery.js".into()),
+            ..Default::default()
+        },
+    };
+
+    let matches = scanner(ScannerConfig::thorough()).scan(&input);
+    assert!(
+        matches
+            .iter()
+            .all(|finding| finding.credential.as_ref() != "_715561396085.length]))"),
+        "a valid underscore-led JavaScript identifier must not become an entropy finding: {matches:?}"
+    );
+}
