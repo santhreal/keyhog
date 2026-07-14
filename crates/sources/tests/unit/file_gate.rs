@@ -408,7 +408,7 @@ fn binary_mod_error() {
     );
 }
 
-// ── crates/sources/src/binary/ghidra.rs ─────────────────────────────────
+// ── crates/sources/src/binary/analyzers/ghidra.rs ───────────────────────
 #[cfg(feature = "binary")]
 #[test]
 fn binary_ghidra_happy() {

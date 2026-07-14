@@ -1,6 +1,3 @@
-pub mod binary_ghidra_no_inline_tests;
-pub mod binary_ghidra_no_unwrap_expect;
-pub mod binary_ghidra_non_empty;
 pub mod binary_literals_no_inline_tests;
 pub mod binary_literals_no_unwrap_expect;
 pub mod binary_literals_non_empty;

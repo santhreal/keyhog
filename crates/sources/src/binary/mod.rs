@@ -10,9 +10,7 @@
 //! The Ghidra integration is a runtime dependency, not compile-time.
 //! `cargo build -F binary` pulls in `goblin` for format detection; Ghidra is optional.
 
-use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
 use std::sync::atomic::AtomicUsize;
 
 /// How many binaries had their requested Ghidra deep-decompiler analysis
@@ -48,9 +46,11 @@ pub fn reset_binary_counters() {
 }
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
-use wait_timeout::ChildExt;
 
-const GHIDRA_STDERR_EXCERPT_BYTES: usize = 4096;
+use analyzers::{
+    BinaryAnalysisDegradation, BinaryAnalysisOutcome, BinaryAnalysisRequest, BinaryAnalyzer,
+    GhidraAnalyzer,
+};
 
 /// Binary analysis source for executables and shared libraries.
 ///
@@ -82,7 +82,7 @@ impl BinarySource {
     /// assert_eq!(source.name(), "binary");
     /// ```
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        let ghidra_path = ghidra::find_ghidra_headless();
+        let ghidra_path = analyzers::find_ghidra_headless();
         Self {
             path: path.into(),
             ghidra_path,
@@ -114,86 +114,35 @@ impl BinarySource {
         self
     }
 
-    fn ghidra_chunks(
+    fn analyzer_chunks(
         &self,
-        ghidra_bin: &Path,
+        analyzer: &dyn BinaryAnalyzer,
     ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
-        let tmp_dir = tempfile::tempdir().map_err(SourceError::Io)?;
-        let project_dir = tmp_dir.path().join("ghidra_project");
-        std::fs::create_dir_all(&project_dir).map_err(SourceError::Io)?;
-
-        let script_path = tmp_dir.path().join("ExportDecompiled.java");
-        let output_path = tmp_dir.path().join("decompiled.c");
-        ghidra::write_ghidra_script(&script_path, &output_path)?;
-
-        let mut child = Command::new(ghidra_bin)
-            .arg(&project_dir)
-            .arg("keyhog_analysis")
-            .arg("-import")
-            .arg(&self.path)
-            .arg("-postScript")
-            .arg(&script_path)
-            .arg("-deleteProject")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(SourceError::Io)?;
-        let stderr_capture = child.stderr.take().map(capture_ghidra_stderr_excerpt);
-        let timeout = crate::timeouts::GHIDRA_ANALYSIS;
-        let status = match child.wait_timeout(timeout) {
-            Ok(Some(status)) => Ok(status),
-            Ok(None) => {
-                let cleanup = kill_and_reap_ghidra_child(&mut child, "Ghidra timeout cleanup");
-                let message = match cleanup {
-                    Ok(()) => format!("Ghidra analysis timed out after {}s", timeout.as_secs()),
-                    Err(cleanup_error) => format!(
-                        "Ghidra analysis timed out after {}s; cleanup failed: {cleanup_error}",
-                        timeout.as_secs()
-                    ),
-                };
-                Err(std::io::Error::new(std::io::ErrorKind::TimedOut, message))
-            }
-            Err(error) => {
-                let cleanup = kill_and_reap_ghidra_child(&mut child, "Ghidra wait-error cleanup");
-                let message = match cleanup {
-                    Ok(()) => format!("Ghidra process wait failed: {error}"),
-                    Err(cleanup_error) => format!(
-                        "Ghidra process wait failed: {error}; cleanup failed: {cleanup_error}"
-                    ),
-                };
-                Err(std::io::Error::other(message))
-            }
+        let request = BinaryAnalysisRequest {
+            path: &self.path,
+            decompiled_bytes_limit: self.limits.binary_decompiled_bytes,
+            timeout: crate::timeouts::GHIDRA_ANALYSIS,
         };
-        let stderr_excerpt = match stderr_capture {
-            Some(handle) => match handle.join() {
-                Ok(excerpt) => excerpt,
-                Err(panic) => {
-                    drop(panic);
-                    eprintln!(
-                        "keyhog: WARNING: internal Ghidra stderr capture failed; \
-                         deep-analysis failure reporting will use process status only."
-                    );
-                    String::new()
-                }
-            },
-            None => String::new(), // LAW10: stderr was requested as piped; absent handle only removes extra diagnostics, while the status warning below still fires.
-        };
-
-        match status {
-            Ok(s) if s.success() && output_path.exists() => {
-                self.parse_decompiled_output(&output_path)
+        match analyzer.analyze(request)? {
+            BinaryAnalysisOutcome::Complete(chunks) => {
+                let mut rows = chunks.into_iter().map(Ok).collect::<Vec<_>>();
+                rows.extend(self.strings_chunks());
+                Ok(rows)
             }
-            // Law 10: NOT silent, the operator explicitly enabled Ghidra (deep
-            // decompiler analysis); a failure/timeout that silently degrades to
-            // shallow strings-only would hide that the deeper analysis was skipped
-            // (a recall loss the operator cannot see). Surface it LOUDLY on stderr
-            // (the old `tracing::debug!` was invisible at default verbosity) AND
-            // count it so the degradation is auditable.
-            other => {
-                let reason = match &other {
-                    Ok(s) => format!("exited unsuccessfully (status {s}) or produced no output"),
-                    Err(e) => e.to_string(),
-                };
+            BinaryAnalysisOutcome::Degraded(degradation) => {
+                self.report_analysis_degradation(&degradation);
+                GHIDRA_DEGRADED_TO_STRINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Ok(self.strings_chunks())
+            }
+        }
+    }
+
+    fn report_analysis_degradation(&self, degradation: &BinaryAnalysisDegradation) {
+        match degradation {
+            BinaryAnalysisDegradation::ToolFailure {
+                reason,
+                stderr_excerpt,
+            } => {
                 let diagnostic = if stderr_excerpt.is_empty() {
                     String::new()
                 } else {
@@ -206,103 +155,21 @@ impl BinarySource {
                      restore deep analysis.",
                     self.path.display()
                 );
-                GHIDRA_DEGRADED_TO_STRINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                Ok(self.strings_chunks())
+            }
+            BinaryAnalysisDegradation::OutputTooLarge {
+                actual_bytes,
+                limit_bytes,
+            } => {
+                eprintln!(
+                    "keyhog: WARNING: Ghidra decompiled output for {} is {} bytes (> {} cap); \
+                     falling back to shallow strings-only extraction, encoded/split secrets may \
+                     be missed.",
+                    self.path.display(),
+                    actual_bytes,
+                    limit_bytes
+                );
             }
         }
-    }
-
-    fn parse_decompiled_output(
-        &self,
-        output_path: &Path,
-    ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
-        // Open the decompiler output through the safe-open boundary FIRST, then
-        // fstat the OPENED descriptor for the size cap. The previous
-        // `metadata(path)` → `File::open(path)` was a stat-then-open: between the
-        // size check and the read an attacker who can write the decompiler's output
-        // directory could swap the path for an over-cap file (defeating the cap) or
-        // a symlink to an off-target file (redirecting the read). fstat'ing the fd
-        // we just opened, never re-stat'ing the path, closes that window, the same
-        // fd-not-path discipline `open_file_safe` applies (O_NOFOLLOW also refuses a
-        // symlinked output path outright).
-        let file = crate::filesystem::open_file_safe(output_path).map_err(SourceError::Io)?;
-        let metadata = file.metadata().map_err(SourceError::Io)?;
-        if metadata.len() > self.limits.binary_decompiled_bytes {
-            // Law 10: loud, not silent, the deep-analysis output was discarded
-            // (too large to process) and we fall back to shallow strings. Same
-            // recall-loss surfacing + count as the Ghidra-failure arm.
-            eprintln!(
-                "keyhog: WARNING: Ghidra decompiled output for {} is {} bytes (> {} cap); \
-                 falling back to shallow strings-only extraction, encoded/split secrets may \
-                 be missed.",
-                self.path.display(),
-                metadata.len(),
-                self.limits.binary_decompiled_bytes
-            );
-            GHIDRA_DEGRADED_TO_STRINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            return Ok(self.strings_chunks());
-        }
-
-        // Reuse the descriptor opened above (positioned at offset 0), no second
-        // open of `output_path`, so there is no stat→open or open→open race.
-        let reader = std::io::BufReader::new(file);
-
-        let mut decompiled_text = String::new();
-        let mut string_literals = Vec::new();
-
-        for line in reader.lines() {
-            let line = line.map_err(SourceError::Io)?;
-            decompiled_text.push_str(&line);
-            decompiled_text.push('\n');
-
-            literals::extract_string_literals(&line, &mut string_literals);
-        }
-
-        let mut chunks = Vec::new();
-
-        // Chunk 1: full decompiled output (for pattern matching on variable names, etc.)
-        if !decompiled_text.is_empty() {
-            chunks.push(Ok(Chunk {
-                data: decompiled_text.into(),
-                metadata: ChunkMetadata {
-                    base_offset: 0,
-                    base_line: 0,
-                    source_type: "binary:ghidra:decompiled".into(),
-                    path: Some(crate::filesystem::display_path(&self.path).into()),
-                    commit: None,
-                    author: None,
-                    date: None,
-                    mtime_ns: None,
-                    size_bytes: None,
-                    decoded_span: None,
-                },
-            }));
-        }
-
-        // Chunk 2: extracted string literals (higher signal, less noise)
-        if !string_literals.is_empty() {
-            chunks.push(Ok(Chunk {
-                data: string_literals.join("\n").into(),
-                metadata: ChunkMetadata {
-                    base_offset: 0,
-                    base_line: 0,
-                    source_type: "binary:ghidra:strings".into(),
-                    path: Some(crate::filesystem::display_path(&self.path).into()),
-                    commit: None,
-                    author: None,
-                    date: None,
-                    mtime_ns: None,
-                    size_bytes: None,
-                    decoded_span: None,
-                },
-            }));
-        }
-
-        // Also run basic strings extraction for anything Ghidra might miss
-        let strings_chunk = self.strings_chunks();
-        chunks.extend(strings_chunk);
-
-        Ok(chunks)
     }
 
     fn strings_chunks(&self) -> Vec<Result<Chunk, SourceError>> {
@@ -380,24 +247,6 @@ impl BinarySource {
     }
 }
 
-fn kill_and_reap_ghidra_child(child: &mut Child, context: &str) -> std::io::Result<()> {
-    let kill_result = child.kill();
-    let wait_result = child.wait();
-    match (kill_result, wait_result) {
-        (Ok(()), Ok(_)) => Ok(()),
-        (Err(kill_error), Ok(_)) if kill_error.kind() == std::io::ErrorKind::InvalidInput => Ok(()),
-        (Err(kill_error), Ok(status)) => Err(std::io::Error::other(format!(
-            "{context}: failed to kill child before reap: {kill_error}; reap status: {status}"
-        ))),
-        (Ok(()), Err(wait_error)) => Err(std::io::Error::other(format!(
-            "{context}: killed child but failed to reap it: {wait_error}"
-        ))),
-        (Err(kill_error), Err(wait_error)) => Err(std::io::Error::other(format!(
-            "{context}: failed to kill child: {kill_error}; failed to reap child: {wait_error}"
-        ))),
-    }
-}
-
 fn report_binary_truncation(path_display: &str, cap: usize) -> SourceError {
     eprintln!(
         "keyhog: WARNING: binary {path_display} exceeded the {cap} byte strings-read cap; only the first {cap} bytes were scanned."
@@ -406,57 +255,6 @@ fn report_binary_truncation(path_display: &str, cap: usize) -> SourceError {
     SourceError::Other(format!(
         "binary {path_display} exceeded the {cap}-byte strings-read cap; remaining binary bytes were not scanned"
     ))
-}
-
-fn capture_ghidra_stderr_excerpt(
-    mut stderr: std::process::ChildStderr,
-) -> std::thread::JoinHandle<String> {
-    std::thread::spawn(move || {
-        let mut captured = Vec::with_capacity(GHIDRA_STDERR_EXCERPT_BYTES);
-        let mut buffer = [0_u8; 1024];
-        loop {
-            match stderr.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let remaining = GHIDRA_STDERR_EXCERPT_BYTES.saturating_sub(captured.len());
-                    if remaining > 0 {
-                        captured.extend_from_slice(&buffer[..n.min(remaining)]);
-                    }
-                }
-                Err(error) => {
-                    let suffix = format!(" [stderr capture read failed: {error}]");
-                    let remaining = GHIDRA_STDERR_EXCERPT_BYTES.saturating_sub(captured.len());
-                    if remaining > 0 {
-                        let bytes = suffix.as_bytes();
-                        captured.extend_from_slice(&bytes[..bytes.len().min(remaining)]);
-                    }
-                    break;
-                }
-            }
-        }
-        sanitize_ghidra_stderr_excerpt(&captured)
-    })
-}
-
-fn sanitize_ghidra_stderr_excerpt(bytes: &[u8]) -> String {
-    let text = String::from_utf8_lossy(bytes);
-    let mut out = String::new();
-    let mut pending_space = false;
-    for ch in text.chars() {
-        if ch.is_whitespace() {
-            pending_space = !out.is_empty();
-            continue;
-        }
-        if pending_space {
-            out.push(' ');
-            pending_space = false;
-        }
-        if ch.is_control() {
-            continue;
-        }
-        out.push(ch);
-    }
-    out
 }
 
 impl Source for BinarySource {
@@ -472,7 +270,8 @@ impl Source for BinarySource {
         // gate is never armed; see `skip::gate_scan`.
         crate::gate_scan(|| {
             let rows = if let Some(ghidra_bin) = &self.ghidra_path {
-                match self.ghidra_chunks(ghidra_bin) {
+                let analyzer = GhidraAnalyzer::new(ghidra_bin);
+                match self.analyzer_chunks(&analyzer) {
                     Ok(rows) => rows,
                     Err(e) => vec![Err(e)],
                 }
@@ -525,7 +324,10 @@ pub(crate) fn extract_printable_strings(
     crate::strings::extract_printable_strings(bytes, min_len)
 }
 
-mod ghidra;
+mod analyzers;
 pub(crate) mod literals;
 #[cfg(feature = "binary")]
 pub(crate) mod sections;
+
+#[cfg(test)]
+mod tests;

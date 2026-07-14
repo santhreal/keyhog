@@ -1506,7 +1506,13 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/sources/src/binary/ghidra.rs"
+path = "crates/sources/src/binary/analyzers/ghidra.rs"
+
+[[module]]
+path = "crates/sources/src/binary/analyzers/mod.rs"
+
+[[module]]
+path = "crates/sources/src/binary/analyzers/tests.rs"
 
 [[module]]
 path = "crates/sources/src/binary/literals.rs"
@@ -1516,6 +1522,9 @@ path = "crates/sources/src/binary/mod.rs"
 
 [[module]]
 path = "crates/sources/src/binary/sections.rs"
+
+[[module]]
+path = "crates/sources/src/binary/tests.rs"
 
 [[module]]
 path = "crates/sources/src/decode.rs"

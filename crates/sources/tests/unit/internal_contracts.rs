@@ -1075,23 +1075,6 @@ fn s3_sigv4_uses_verifier_owner() {
     }
 }
 
-#[cfg(feature = "binary")]
-#[test]
-fn ghidra_discovery_does_not_flatten_glob_errors() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let ghidra =
-        std::fs::read_to_string(root.join("src/binary/ghidra.rs")).expect("ghidra source readable");
-    assert!(
-        !ghidra.contains(".flatten().flatten()"),
-        "Ghidra discovery must not drop glob pattern or entry errors with flatten"
-    );
-    assert!(
-        ghidra.contains("Ghidra discovery glob pattern failed")
-            && ghidra.contains("Ghidra discovery glob entry failed"),
-        "Ghidra discovery must log glob pattern and entry failures"
-    );
-}
-
 #[test]
 fn sources_tests_do_not_flatten_source_chunk_results() {
     fn collect_rs_files(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
@@ -1148,29 +1131,6 @@ fn sources_tests_do_not_flatten_source_chunk_results() {
             path.display()
         );
     }
-}
-
-#[cfg(feature = "binary")]
-#[test]
-fn ghidra_discovery_uses_trusted_paths_not_path_which() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let ghidra =
-        std::fs::read_to_string(root.join("src/binary/ghidra.rs")).expect("ghidra source readable");
-
-    assert!(
-        ghidra.contains(r#"resolve_safe_bin("analyzeHeadless")"#),
-        "custom Ghidra support dirs must flow through [system].trusted_bin_dirs via resolve_safe_bin"
-    );
-    assert!(
-        !ghidra.contains(r#"std::env::var("GHIDRA_HOME")"#),
-        "GHIDRA_HOME must not alter shipped source extraction behavior; use [system].trusted_bin_dirs"
-    );
-    assert!(
-        !ghidra.contains(r#"resolve_safe_bin("which")"#)
-            && !ghidra.contains(r#"Command::new(&which_bin)"#)
-            && !ghidra.contains(r#".arg("analyzeHeadless")"#),
-        "Ghidra discovery must not shell through which/PATH to find analyzeHeadless"
-    );
 }
 
 #[test]

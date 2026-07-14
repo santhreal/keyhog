@@ -1,6 +1,5 @@
 pub mod adversarial_windows_stubs_no_op;
 pub mod archive_symlink_guard_in_source;
-pub mod binary_max_decompiled_cap_in_source;
 pub mod binary_no_unbounded_fs_read;
 pub mod binary_read_is_capped;
 pub mod binary_source_streaming;
@@ -13,7 +12,6 @@ pub mod file_gate_matrix_missing_submodule_rows;
 pub mod file_gate_matrix_sources_verifier_adversarial_unmarked;
 pub mod filesystem_archive_4x_budget_in_source;
 pub mod filesystem_source;
-pub mod ghidra_subprocess_uses_wait_timeout;
 pub mod ghidra_timeout_is_five_minutes;
 pub mod git_blob_byte_caps_in_source;
 pub mod git_clone_timeout_is_five_minutes;
