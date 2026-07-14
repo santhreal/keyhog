@@ -41,6 +41,7 @@ pub mod dedup_scope_three_exclusive_modes;
 pub mod default_config_validates;
 pub mod default_protections_are_idempotent;
 pub mod detector_and_path_combine_with_and;
+pub mod detector_introspection;
 pub mod detector_match_only;
 pub mod display_redacts_bytes;
 pub mod embedded_detector_count_matches_slice_len;

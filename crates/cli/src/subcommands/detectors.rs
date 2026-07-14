@@ -131,82 +131,9 @@ fn run_list(args: DetectorArgs) -> Result<()> {
 /// knobs so automation never has to reconstruct them from scanner defaults or
 /// a Rust-side detector-id table.
 fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
-    use serde_json::{json, Value};
-    let items: Vec<Value> = detectors
+    let items: Vec<_> = detectors
         .iter()
-        .map(|d| {
-            let patterns: Vec<Value> = d
-                .patterns
-                .iter()
-                .map(|p| {
-                    json!({
-                        "regex": p.regex,
-                        "description": p.description,
-                        "group": p.group,
-                        "client_safe": p.client_safe,
-                    })
-                })
-                .collect();
-            let companions: Vec<Value> = d
-                .companions
-                .iter()
-                .map(|c| {
-                    json!({
-                        "name": c.name,
-                        "regex": c.regex,
-                        "within_lines": c.within_lines,
-                        "required": c.required,
-                    })
-                })
-                .collect();
-            let test_contracts: Vec<Value> = d
-                .tests
-                .iter()
-                .map(|test| {
-                    json!({
-                        "positive": test.test_positive.is_some(),
-                        "negative": test.test_negative.is_some(),
-                    })
-                })
-                .collect();
-            json!({
-                "id": d.id,
-                "name": d.name,
-                "service": d.service,
-                "severity": d.severity,
-                "keywords": d.keywords,
-                "simdsieve_prefixes": d.simdsieve_prefixes,
-                "patterns": patterns,
-                "companions": companions,
-                "verify": d.verify.is_some(),
-                "verification": d.verify.as_ref(),
-                "test_contracts": test_contracts,
-                "policy": {
-                    "kind": d.kind,
-                    "min_confidence": d.min_confidence,
-                    "entropy_floor": d.entropy_floor,
-                    "entropy_high": d.entropy_high,
-                    "entropy_low": d.entropy_low,
-                    "entropy_very_high": d.entropy_very_high,
-                    "mixed_alnum_floor": d.mixed_alnum_floor,
-                    "entropy_policy_priority": d.entropy_policy_priority,
-                    "bpe_enabled": d.bpe_enabled,
-                    "bpe_max_bytes_per_token": d.bpe_max_bytes_per_token,
-                    "decoded_hex_key_material_lengths": d.decoded_hex_key_material_lengths,
-                    "canonical_hex_key_material": d.canonical_hex_key_material,
-                    "keyword_free_min_len": d.keyword_free_min_len,
-                    "min_len": d.min_len,
-                    "max_len": d.max_len,
-                    "allowlist_paths": d.allowlist_paths,
-                    "allowlist_values": d.allowlist_values,
-                    "stopwords": d.stopwords,
-                    "structural_password_slot": d.structural_password_slot,
-                    "weak_anchor": d.weak_anchor,
-                    "private_key_block": d.private_key_block,
-                    "credential_shape": d.credential_shape,
-                },
-            })
-        })
+        .map(|detector| detector.introspection())
         .collect();
     let out =
         serde_json::to_string_pretty(&items).context("serializing detector listing to JSON")?;

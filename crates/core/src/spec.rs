@@ -12,6 +12,7 @@ mod validate;
 
 use std::fmt;
 
+use serde::ser::Error as _;
 use serde::{Deserialize, Serialize};
 
 pub use load::{load_detectors, read_detector_toml_file, SpecError, DETECTOR_TOML_FILE_BYTES};
@@ -309,6 +310,19 @@ pub struct CanonicalHexKeyMaterialSpec {
 }
 
 impl DetectorSpec {
+    /// Return the stable, redaction-safe declaration used by detector
+    /// introspection surfaces.
+    ///
+    /// The projection starts from `DetectorSpec`'s own serializer. Fields that
+    /// describe identity and matching stay at the top level; every other
+    /// declared field moves into `policy`. This means a newly added detector
+    /// field is included automatically instead of requiring a second manual
+    /// field list in each CLI surface. Inline fixture bytes are replaced with
+    /// positive/negative coverage booleans.
+    pub fn introspection(&self) -> DetectorIntrospection<'_> {
+        DetectorIntrospection { detector: self }
+    }
+
     /// Whether this detector admits transport-decoded pure-hex key material at
     /// the exact declared character count.
     pub fn allows_decoded_hex_key_material(&self, value: &str) -> bool {
@@ -335,6 +349,79 @@ impl DetectorSpec {
                     .iter()
                     .any(|owned_keyword| compact_assignment_keywords_equal(keyword, owned_keyword))
         })
+    }
+}
+
+/// Redaction-safe serialized view of one detector declaration.
+pub struct DetectorIntrospection<'a> {
+    detector: &'a DetectorSpec,
+}
+
+impl Serialize for DetectorIntrospection<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let serialized = serde_json::to_value(self.detector).map_err(S::Error::custom)?;
+        let serde_json::Value::Object(mut declared) = serialized else {
+            return Err(S::Error::custom(
+                "DetectorSpec serialization must produce a JSON object",
+            ));
+        };
+
+        let tests = declared
+            .remove("tests")
+            .and_then(|value| value.as_array().cloned())
+            .unwrap_or_default();
+        let test_contracts = tests
+            .into_iter()
+            .map(|test| {
+                let positive = test
+                    .get("test_positive")
+                    .is_some_and(|value| !value.is_null());
+                let negative = test
+                    .get("test_negative")
+                    .is_some_and(|value| !value.is_null());
+                serde_json::json!({
+                    "positive": positive,
+                    "negative": negative,
+                })
+            })
+            .collect();
+
+        let verification = declared.remove("verify").unwrap_or(serde_json::Value::Null);
+        let has_verification = !verification.is_null();
+
+        let mut output = serde_json::Map::new();
+        for field in [
+            "id",
+            "name",
+            "service",
+            "severity",
+            "keywords",
+            "simdsieve_prefixes",
+            "patterns",
+            "companions",
+        ] {
+            let Some(value) = declared.remove(field) else {
+                return Err(S::Error::custom(format!(
+                    "DetectorSpec serialization omitted required field {field:?}"
+                )));
+            };
+            output.insert(field.to_string(), value);
+        }
+        output.insert(
+            "verify".to_string(),
+            serde_json::Value::Bool(has_verification),
+        );
+        output.insert("verification".to_string(), verification);
+        output.insert(
+            "test_contracts".to_string(),
+            serde_json::Value::Array(test_contracts),
+        );
+        output.insert("policy".to_string(), serde_json::Value::Object(declared));
+
+        serde_json::Value::Object(output).serialize(serializer)
     }
 }
 
