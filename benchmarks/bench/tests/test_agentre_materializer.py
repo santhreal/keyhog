@@ -4,6 +4,7 @@ import pathlib
 
 import pytest
 
+import bench.corpora.agentre_recovery as agentre_recovery
 from bench.agentre_provenance import OFFICIAL_LINUX_SLICE, PinnedArtifact
 from bench.corpora.agentre_recovery import (
     AgentREMaterializationError,
@@ -192,6 +193,130 @@ def test_corrupt_existing_bytes_are_rejected(tmp_path, fixture_artifacts):
 
     with pytest.raises(AgentREMaterializationError, match="digest mismatch"):
         materializer.validate()
+
+
+def test_read_pinned_text_validates_and_decodes_the_pinned_artifact(
+    tmp_path, fixture_artifacts
+):
+    artifacts, payloads = fixture_artifacts
+    home = tmp_path / "agentre-recovery"
+    materializer = AgentRERecoveryMaterializer(home, _artifacts=artifacts)
+    materializer.materialize(lambda item: payloads[item.path])
+
+    path, text = materializer.read_pinned_text("ground_truths/level1.json")
+
+    assert path == home / "ground_truths/level1.json"
+    assert text == payloads["ground_truths/level1.json"].decode()
+
+
+def test_read_pinned_texts_validates_once_and_preserves_request_order(
+    tmp_path, fixture_artifacts, monkeypatch
+):
+    artifacts, payloads = fixture_artifacts
+    home = tmp_path / "agentre-recovery"
+    materializer = AgentRERecoveryMaterializer(home, _artifacts=artifacts)
+    materializer.materialize(lambda item: payloads[item.path])
+    original_validate = materializer.validate
+    validation_count = 0
+
+    def counted_validate():
+        nonlocal validation_count
+        validation_count += 1
+        original_validate()
+
+    monkeypatch.setattr(materializer, "validate", counted_validate)
+    rows = materializer.read_pinned_texts(
+        ["ground_truths/level1.json", "samples/level1.c"]
+    )
+
+    assert validation_count == 1
+    assert [path.relative_to(home).as_posix() for path, _text in rows] == [
+        "ground_truths/level1.json",
+        "samples/level1.c",
+    ]
+    assert [text.encode() for _path, text in rows] == [
+        payloads["ground_truths/level1.json"],
+        payloads["samples/level1.c"],
+    ]
+
+
+def test_read_pinned_text_rejects_unpinned_and_non_utf8_artifacts(tmp_path):
+    payloads = {"ground_truths/level1.json": b"\xff"}
+    artifacts = tuple(artifact(path, payload) for path, payload in payloads.items())
+    materializer = AgentRERecoveryMaterializer(
+        tmp_path / "agentre-recovery", _artifacts=artifacts
+    )
+    materializer.materialize(lambda item: payloads[item.path])
+
+    with pytest.raises(AgentREMaterializationError, match="does not pin"):
+        materializer.read_pinned_text("ground_truths/missing.json")
+    with pytest.raises(AgentREMaterializationError, match="not valid UTF-8"):
+        materializer.read_pinned_text("ground_truths/level1.json")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX no-follow descriptor traversal")
+def test_read_pinned_text_rejects_symlink_replacement_after_validation(
+    tmp_path, fixture_artifacts, monkeypatch
+):
+    artifacts, payloads = fixture_artifacts
+    home = tmp_path / "agentre-recovery"
+    materializer = AgentRERecoveryMaterializer(home, _artifacts=artifacts)
+    materializer.materialize(lambda item: payloads[item.path])
+    target = home / "ground_truths/level1.json"
+    external = tmp_path / "external.json"
+    external.write_bytes(payloads["ground_truths/level1.json"])
+    original_validate = materializer.validate
+
+    def validate_then_replace():
+        original_validate()
+        home.chmod(0o700)
+        target.parent.chmod(0o700)
+        target.unlink()
+        target.symlink_to(external)
+        target.parent.chmod(0o500)
+        home.chmod(0o500)
+
+    monkeypatch.setattr(materializer, "validate", validate_then_replace)
+
+    with pytest.raises(AgentREMaterializationError, match="safely open"):
+        materializer.read_pinned_text("ground_truths/level1.json")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX open-file replacement semantics")
+def test_read_pinned_text_detects_regular_file_replacement_during_read(
+    tmp_path, fixture_artifacts, monkeypatch
+):
+    artifacts, payloads = fixture_artifacts
+    home = tmp_path / "agentre-recovery"
+    materializer = AgentRERecoveryMaterializer(home, _artifacts=artifacts)
+    materializer.materialize(lambda item: payloads[item.path])
+    target = home / "ground_truths/level1.json"
+    displaced = tmp_path / "displaced.json"
+    original_validate = materializer.validate
+    original_read = os.read
+    replaced = False
+
+    def replace_then_read(descriptor, count):
+        nonlocal replaced
+        if not replaced:
+            replaced = True
+            home.chmod(0o700)
+            target.parent.chmod(0o700)
+            target.rename(displaced)
+            target.write_bytes(payloads["ground_truths/level1.json"])
+            target.chmod(0o400)
+            target.parent.chmod(0o500)
+            home.chmod(0o500)
+        return original_read(descriptor, count)
+
+    def validate_then_arm_read_race():
+        original_validate()
+        monkeypatch.setattr(agentre_recovery.os, "read", replace_then_read)
+
+    monkeypatch.setattr(materializer, "validate", validate_then_arm_read_race)
+
+    with pytest.raises(AgentREMaterializationError, match="replaced while"):
+        materializer.read_pinned_text("ground_truths/level1.json")
 
 
 def test_traversal_is_rejected_before_any_fetch(tmp_path):

@@ -127,6 +127,17 @@ def _make_removable(root: pathlib.Path) -> None:
                 child.chmod(0o700)
 
 
+def _stable_file_identity(value: os.stat_result) -> tuple[int, int, int, int, int, int]:
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_mode,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
 class AgentRERecoveryMaterializer:
     """Own the verified on-disk copy of the official Linux recovery slice."""
 
@@ -147,6 +158,138 @@ class AgentRERecoveryMaterializer:
         self._expected_files, self._expected_directories = _expected_inventory(
             self._artifacts
         )
+
+    def _open_pinned_artifact(
+        self, relative: pathlib.PurePosixPath
+    ) -> tuple[int, pathlib.Path]:
+        path = self.root.joinpath(*relative.parts)
+        read_flags = os.O_RDONLY
+        directory_flags = os.O_RDONLY
+        for flag_name in ("O_CLOEXEC", "O_NOFOLLOW"):
+            flag = getattr(os, flag_name, 0)
+            read_flags |= flag
+            directory_flags |= flag
+        directory_flags |= getattr(os, "O_DIRECTORY", 0)
+
+        descriptors: list[int] = []
+        descriptor = -1
+        try:
+            if os.open in os.supports_dir_fd:
+                current = os.open(self.root, directory_flags)
+                descriptors.append(current)
+                opened_root = os.fstat(current)
+                if not stat.S_ISDIR(opened_root.st_mode) or opened_root.st_mode & 0o222:
+                    raise AgentREMaterializationError(
+                        f"AgentRE corpus root is not a sealed directory: {self.root}"
+                    )
+                for part in relative.parts[:-1]:
+                    current = os.open(part, directory_flags, dir_fd=current)
+                    descriptors.append(current)
+                    opened_directory = os.fstat(current)
+                    if (
+                        not stat.S_ISDIR(opened_directory.st_mode)
+                        or opened_directory.st_mode & 0o222
+                    ):
+                        raise AgentREMaterializationError(
+                            "AgentRE artifact parent is not a sealed directory: "
+                            f"{path.parent}"
+                        )
+                descriptor = os.open(relative.parts[-1], read_flags, dir_fd=current)
+            else:
+                descriptor = os.open(path, read_flags)
+        except OSError as exc:
+            raise AgentREMaterializationError(
+                f"could not safely open pinned AgentRE artifact {path}: {exc}"
+            ) from exc
+        finally:
+            for directory_descriptor in reversed(descriptors):
+                os.close(directory_descriptor)
+        return descriptor, path
+
+    def _read_pinned_bytes(
+        self, relative: pathlib.PurePosixPath, artifact: PinnedArtifact
+    ) -> tuple[pathlib.Path, bytes]:
+        descriptor, path = self._open_pinned_artifact(relative)
+        try:
+            opened = os.fstat(descriptor)
+            if not stat.S_ISREG(opened.st_mode) or opened.st_mode & 0o333:
+                raise AgentREMaterializationError(
+                    f"AgentRE artifact is not a sealed regular file: {path}"
+                )
+            if opened.st_size > MAX_ARTIFACT_BYTES:
+                raise AgentREMaterializationError(
+                    f"AgentRE artifact exceeds the size limit: {path}"
+                )
+
+            chunks: list[bytes] = []
+            remaining = MAX_ARTIFACT_BYTES + 1
+            while remaining:
+                chunk = os.read(descriptor, min(remaining, 1024 * 1024))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            payload = b"".join(chunks)
+            closed_over = os.fstat(descriptor)
+            try:
+                current = path.lstat()
+            except OSError as exc:
+                raise AgentREMaterializationError(
+                    f"pinned AgentRE artifact disappeared while it was being read: {path}"
+                ) from exc
+            if _stable_file_identity(opened) != _stable_file_identity(
+                closed_over
+            ) or not os.path.samestat(closed_over, current):
+                raise AgentREMaterializationError(
+                    f"pinned AgentRE artifact was replaced while it was being read: {path}"
+                )
+        except OSError as exc:
+            raise AgentREMaterializationError(
+                f"could not read pinned AgentRE artifact {path}: {exc}"
+            ) from exc
+        finally:
+            os.close(descriptor)
+
+        if len(payload) > MAX_ARTIFACT_BYTES:
+            raise AgentREMaterializationError(
+                f"AgentRE artifact exceeds the size limit: {path}"
+            )
+        try:
+            artifact.verify(payload)
+        except ValueError as exc:
+            raise AgentREMaterializationError(str(exc)) from exc
+        return path, payload
+
+    def read_pinned_texts(
+        self, raw_paths: Iterable[str]
+    ) -> list[tuple[pathlib.Path, str]]:
+        """Validate once, then safely read pinned UTF-8 artifacts in order."""
+
+        requested: list[tuple[pathlib.PurePosixPath, PinnedArtifact]] = []
+        for raw_path in raw_paths:
+            relative = _safe_relative_path(raw_path)
+            artifact = self._expected_files.get(relative.as_posix())
+            if artifact is None:
+                raise AgentREMaterializationError(
+                    f"validated AgentRE corpus does not pin {raw_path}"
+                )
+            requested.append((relative, artifact))
+        self.validate()
+        output: list[tuple[pathlib.Path, str]] = []
+        for relative, artifact in requested:
+            path, payload = self._read_pinned_bytes(relative, artifact)
+            try:
+                output.append((path, payload.decode("utf-8")))
+            except UnicodeDecodeError as exc:
+                raise AgentREMaterializationError(
+                    f"AgentRE artifact is not valid UTF-8 at {path}: {exc}"
+                ) from exc
+        return output
+
+    def read_pinned_text(self, raw_path: str) -> tuple[pathlib.Path, str]:
+        """Validate the full corpus, then read one pinned UTF-8 artifact safely."""
+
+        return self.read_pinned_texts((raw_path,))[0]
 
     def validate(self) -> None:
         """Prove exact inventory, file type, mode, and content identity."""
@@ -222,15 +365,7 @@ class AgentRERecoveryMaterializer:
                 f"missing={missing}, unexpected={unexpected}"
             )
         for relative, artifact in self._expected_files.items():
-            path = self.root / pathlib.Path(relative)
-            if path.stat().st_size > MAX_ARTIFACT_BYTES:
-                raise AgentREMaterializationError(
-                    f"AgentRE corpus artifact exceeds the size limit: {relative}"
-                )
-            try:
-                artifact.verify(path.read_bytes())
-            except ValueError as exc:
-                raise AgentREMaterializationError(str(exc)) from exc
+            self._read_pinned_bytes(pathlib.PurePosixPath(relative), artifact)
 
     def materialize(self, fetcher: ArtifactFetcher | None = None) -> pathlib.Path:
         """Publish a complete verified tree or leave the destination absent."""
