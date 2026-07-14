@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Autoroute calibration now resets workload-shaped GPU resident state before
+  each GPU candidate while retaining immutable program preparation costs, so
+  candidate order cannot turn prior dispatch state into a false cold-cost win.
 - Autoroute caches now retain independent route generations for each exact
   config and host identity. Recalibrating one host preserves other hosts, and
   calibration readback proves the current host rather than accepting a shared
