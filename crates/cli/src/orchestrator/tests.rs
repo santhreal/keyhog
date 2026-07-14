@@ -16,73 +16,30 @@ use crate::exit_codes::{
 
 #[test]
 fn scan_exit_priority_is_explicit_for_every_terminal_class() {
-    let cases = [
-        (ScanOutcome::default(), EXIT_SUCCESS),
-        (
-            ScanOutcome {
-                source_coverage_incomplete: true,
-                ..ScanOutcome::default()
-            },
-            EXIT_SOURCE_FAILED,
-        ),
-        (
-            ScanOutcome {
-                incremental_cache_failed: true,
-                source_coverage_incomplete: true,
-                ..ScanOutcome::default()
-            },
-            EXIT_SYSTEM_ERROR,
-        ),
-        (
-            ScanOutcome {
-                has_new_entries: true,
-                incremental_cache_failed: true,
-                source_coverage_incomplete: true,
-                ..ScanOutcome::default()
-            },
-            EXIT_FINDINGS,
-        ),
-        (
-            ScanOutcome {
-                has_live_credentials: true,
-                has_new_entries: true,
-                ..ScanOutcome::default()
-            },
-            EXIT_LIVE_CREDENTIALS,
-        ),
-        (
-            ScanOutcome {
-                scanner_panicked: true,
-                has_live_credentials: true,
-                has_new_entries: true,
-                incremental_cache_failed: true,
-                source_coverage_incomplete: true,
-                ..ScanOutcome::default()
-            },
-            EXIT_SCANNER_PANIC,
-        ),
-        (
-            ScanOutcome {
-                autoroute_calibration: true,
-                has_live_credentials: true,
-                has_new_entries: true,
-                incremental_cache_failed: true,
-                source_coverage_incomplete: true,
-                ..ScanOutcome::default()
-            },
-            EXIT_SUCCESS,
-        ),
-        (
-            ScanOutcome {
-                autoroute_calibration: true,
-                scanner_panicked: true,
-                ..ScanOutcome::default()
-            },
-            EXIT_SCANNER_PANIC,
-        ),
-    ];
-
-    for (outcome, expected) in cases {
+    for mask in 0_u8..64 {
+        let outcome = ScanOutcome {
+            autoroute_calibration: mask & 1 != 0,
+            scanner_panicked: mask & 2 != 0,
+            has_live_credentials: mask & 4 != 0,
+            has_new_entries: mask & 8 != 0,
+            incremental_cache_failed: mask & 16 != 0,
+            source_coverage_incomplete: mask & 32 != 0,
+        };
+        let expected = if outcome.autoroute_calibration && !outcome.scanner_panicked {
+            EXIT_SUCCESS
+        } else if outcome.scanner_panicked {
+            EXIT_SCANNER_PANIC
+        } else if outcome.has_live_credentials {
+            EXIT_LIVE_CREDENTIALS
+        } else if outcome.has_new_entries {
+            EXIT_FINDINGS
+        } else if outcome.incremental_cache_failed {
+            EXIT_SYSTEM_ERROR
+        } else if outcome.source_coverage_incomplete {
+            EXIT_SOURCE_FAILED
+        } else {
+            EXIT_SUCCESS
+        };
         assert_eq!(resolve_scan_exit(outcome), expected, "outcome: {outcome:?}");
     }
 }
