@@ -5,8 +5,11 @@ repeated small scans. It serves eligible standard-policy `stdin` and
 single-file requests. Repository, multi-source, and policy-changing scans use
 the full in-process orchestrator.
 
-The daemon is opt-in infrastructure. KeyHog never starts it implicitly, and a
-running daemon never captures an ineligible scan silently.
+Starting the daemon is opt-in infrastructure: KeyHog never launches a service
+for you. Client routing is different. On Unix, an omitted `--daemon` means
+`--daemon=auto`, so once you explicitly start a compatible daemon, eligible
+stdin and single-file scans use it automatically. An ineligible request stays
+in process and is never captured by the daemon silently.
 
 ```sh
 # Terminal or service-manager process. This command stays in the foreground.

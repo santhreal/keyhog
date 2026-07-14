@@ -45,8 +45,11 @@ a hidden merge with embedded rules.
 ## What it doesn't do
 
 - **No telemetry.** Findings stay local. The scanner never phones home.
-- **No agent.** A daemon mode exists for IDE-save and stdin/single-file
-  fast-path scans on Unix, but it's opt-in and stays on your machine.
+- **No agent.** A daemon service exists for IDE-save and stdin/single-file
+  fast-path scans on Unix. Starting it is explicit and it stays on your
+  machine; once you start a compatible daemon, the ordinary Unix scan default
+  (`--daemon=auto`, including an omitted flag) uses it for eligible requests.
+  Use `--daemon=off` to force the in-process path.
 - **No remote "AI-powered" detection.** Service detectors use TOML regexes and
   structural validators; generic detectors compose assignment shape, entropy,
   BPE token efficiency, context, and local confidence policy. The small
