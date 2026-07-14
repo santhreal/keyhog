@@ -229,6 +229,7 @@ fn html_report_service_bars_and_badges_are_contrast_guarded() {
 fn html_report_embeds_scan_metadata_panel() {
     let out = render_with_metadata(HtmlScanMetadata {
         scan_id: "scan-test-id".to_string(),
+        scan_status: keyhog_core::ScanCompletionStatus::Success,
         keyhog_version: "1.2.3".to_string(),
         git_hash: "test-git".to_string(),
         detector_digest: "test-detectors".to_string(),
@@ -246,6 +247,7 @@ fn html_report_embeds_scan_metadata_panel() {
     assert!(out.contains("id=\"scan-metadata\""));
     assert!(out.contains("const scanMetadata = "));
     assert!(out.contains("\"scan_id\":\"scan-test-id\""));
+    assert!(out.contains("\"scan_status\":\"success\""));
     assert!(out.contains("\"keyhog_version\":\"1.2.3\""));
     assert!(out.contains("\"targets\":[\"path:\\u002ftmp\\u002frepo\"]"));
     assert!(out.contains("\"source_chunks_scanned\":37"));
@@ -255,6 +257,7 @@ fn html_report_embeds_scan_metadata_panel() {
     assert!(out.contains("meta-source-chunks"));
     assert!(out.contains("meta-source-bytes"));
     assert!(out.contains("meta-scan-id"));
+    assert!(out.contains("meta-scan-status"));
     assert!(out.contains("@media print"));
 }
 

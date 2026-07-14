@@ -42,7 +42,39 @@ pub(crate) fn remediation_json(finding: &VerifiedFinding) -> Result<String, Repo
 /// Common error type used by all reporters.
 pub use anyhow::Error as ReportError;
 
-/// Format-neutral operator-visible metadata for a completed scan report.
+/// Terminal state carried by detached scan artifacts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScanCompletionStatus {
+    /// The requested input completed without coverage gaps.
+    Success,
+    /// The artifact completed, but one or more requested inputs were not fully scanned.
+    Partial,
+    /// The operator or host interrupted the scan before completion.
+    Cancelled,
+    /// The scan failed before it could produce a trustworthy complete result.
+    Failed,
+}
+
+impl Default for ScanCompletionStatus {
+    fn default() -> Self {
+        Self::Success
+    }
+}
+
+impl ScanCompletionStatus {
+    /// Derive the normal terminal state from the coverage summary.
+    #[must_use]
+    pub fn from_coverage_gaps(has_gaps: bool) -> Self {
+        if has_gaps {
+            Self::Partial
+        } else {
+            Self::Success
+        }
+    }
+}
+
+/// Format-neutral operator-visible metadata for a scan report.
 ///
 /// The metadata belongs to the report, not to one renderer. Individual output
 /// formats project the fields they can represent: HTML renders the complete
@@ -56,6 +88,10 @@ pub struct ScanReportMetadata {
     /// field was introduced; current producers always populate it.
     #[serde(default)]
     pub scan_id: String,
+    /// Terminal state for detached artifacts. Older reports default to success
+    /// because they predate this explicit field and have no state to recover.
+    #[serde(default)]
+    pub scan_status: ScanCompletionStatus,
     /// KeyHog crate/binary version that produced the report.
     pub keyhog_version: String,
     /// Git identity of the binary that produced the report.
@@ -87,9 +123,9 @@ pub struct ScanReportMetadata {
 /// Current major version for the versioned JSON report envelope.
 pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 1;
 /// Current minor version for the versioned JSON report envelope.
-pub const JSON_REPORT_SCHEMA_MINOR: u16 = 3;
+pub const JSON_REPORT_SCHEMA_MINOR: u16 = 4;
 /// Current minor version for the versioned JSONL stream contract.
-pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 4;
+pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 5;
 
 /// Version marker carried by every versioned JSON report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -108,6 +144,9 @@ pub struct JsonReportSchemaVersion {
 pub struct JsonReportEnvelope {
     /// Version marker used to select the reader contract.
     pub schema_version: JsonReportSchemaVersion,
+    /// Terminal state for the detached artifact, independent of process exit status.
+    #[serde(default)]
+    pub scan_status: ScanCompletionStatus,
     /// Optional scan-wide metadata supplied by the producer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ScanReportMetadata>,
@@ -209,6 +248,9 @@ pub struct JsonlStreamSummary {
     pub record_type: String,
     /// Completion state for the stream.
     pub status: String,
+    /// Terminal scan state; `status` remains the transport completion marker.
+    #[serde(default)]
+    pub scan_status: ScanCompletionStatus,
     /// Number of finding records written before this summary.
     pub finding_count: usize,
     /// Coverage gaps observed during the stream.
@@ -223,6 +265,7 @@ impl JsonlStreamSummary {
         Self {
             record_type: "summary".to_string(),
             status: "complete".to_string(),
+            scan_status: ScanCompletionStatus::from_coverage_gaps(!coverage_gap_summary.is_empty()),
             finding_count,
             coverage_gap_summary: coverage_gap_summary
                 .iter()

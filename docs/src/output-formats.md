@@ -85,8 +85,11 @@ additive and may be accepted. See [Your first scan](./first-scan.md#json-output)
 for the complete schema. Metadata includes the binary Git identity, detector-set
 digest, effective-config digest when available, a stable non-secret `scan_id`,
 targets, timing, and counters including the exact source bytes and chunks
-consumed by the scanner. The `scan_id` lets independently stored metadata-bearing
-JSON, JSONL, and HTML projections be joined without exposing secrets. Reports
+consumed by the scanner. The top-level `scan_status` is `success` or `partial`
+for completed reports; readers should preserve `cancelled` and `failed` when
+those terminal states are supplied by another producer. The `scan_id` lets
+independently stored metadata-bearing JSON, JSONL, and HTML projections be
+joined without exposing secrets. Reports
 from older KeyHog versions may omit it; the HTML projection displays that state
 as `not recorded` rather than inventing an identifier.
 
@@ -171,8 +174,9 @@ without adding fields GitLab does not define.
 ## `--format html`
 
 HTML is a self-contained interactive report. In addition to findings and
-coverage gaps, its metadata panel shows the producing KeyHog version, scan
-interval, duration, redacted targets, source bytes and chunks, and detector count. The
+coverage gaps, its metadata panel shows the terminal scan status, producing
+KeyHog version, scan interval, duration, redacted targets, source bytes and
+chunks, and detector count. The
 metadata is descriptive only; it never changes finding or exit-code semantics.
 
 ## `--format junit`
@@ -195,8 +199,9 @@ Versioned newline-delimited JSON. The first line is a `record_type: "header"`
 object carrying the same `schema_version` major contract as
 `--format json-envelope` (JSONL has its own additive minor revision) and
 optional scan metadata; every following line is one finding object. The final
-line is a `record_type: "summary"` object with
-`status: "complete"`, the exact finding count, and the coverage-gap summary.
+line is a `record_type: "summary"` object with transport
+`status: "complete"`, a `scan_status` of `success` or `partial`, the exact
+finding count, and the coverage-gap summary.
 An empty scan still emits both header and summary. A stream without the final
 summary is interrupted and must not be treated as complete; concatenated
 streams are split at the next header. Importers must validate both records

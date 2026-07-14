@@ -110,9 +110,11 @@ the artifact without scraping console progress.
 
 ```json
 {
-  "schema_version": {"major": 1, "minor": 3},
+  "schema_version": {"major": 1, "minor": 4},
+  "scan_status": "success",
   "metadata": {
     "scan_id": "0123456789abcdef0123456789abcdef",
+    "scan_status": "success",
     "keyhog_version": "0.5.41",
     "git_hash": "<build-commit>",
     "detector_digest": "922-<digest>",

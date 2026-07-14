@@ -82,6 +82,7 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     let finding = sample_finding();
     let metadata = ScanReportMetadata {
         scan_id: "scan-test-id".into(),
+        scan_status: keyhog_core::ScanCompletionStatus::Success,
         keyhog_version: "0.5.41".into(),
         git_hash: "test-git".into(),
         detector_digest: "922-test".into(),
@@ -108,7 +109,11 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     let text = String::from_utf8(buf).expect("JSON envelope is UTF-8");
     let parsed = JsonReportEnvelope::parse(&text).expect("current major parses");
     assert_eq!(parsed.schema_version.major, 1);
-    assert_eq!(parsed.schema_version.minor, 3);
+    assert_eq!(parsed.schema_version.minor, 4);
+    assert_eq!(
+        parsed.scan_status,
+        keyhog_core::ScanCompletionStatus::Partial
+    );
     assert_eq!(
         parsed.metadata.as_ref().expect("metadata").targets,
         ["fixture.env"]
@@ -117,15 +122,35 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     assert_eq!(parsed.findings.len(), 1);
 
     let mut legacy = serde_json::to_value(&parsed).expect("parsed envelope serializes");
+    legacy
+        .as_object_mut()
+        .expect("legacy envelope object")
+        .remove("scan_status");
     legacy["metadata"]
         .as_object_mut()
         .expect("metadata object")
         .remove("scan_id");
+    legacy["metadata"]
+        .as_object_mut()
+        .expect("metadata object")
+        .remove("scan_status");
     let legacy = JsonReportEnvelope::parse(&legacy.to_string())
         .expect("reports without the additive scan id remain readable");
     assert_eq!(
+        legacy.scan_status,
+        keyhog_core::ScanCompletionStatus::Success
+    );
+    assert_eq!(
         legacy.metadata.as_ref().expect("legacy metadata").scan_id,
         ""
+    );
+    assert_eq!(
+        legacy
+            .metadata
+            .as_ref()
+            .expect("legacy metadata")
+            .scan_status,
+        keyhog_core::ScanCompletionStatus::Success
     );
 
     let mut future_minor: serde_json::Value =
@@ -174,7 +199,7 @@ fn versioned_jsonl_headers_split_concatenated_streams_and_validate_major() {
     let streams = parse_jsonl_stream(std::str::from_utf8(&joined).expect("JSONL is UTF-8"))
         .expect("concatenated streams parse by header boundary");
     assert_eq!(streams.len(), 2);
-    assert_eq!(streams[0].header.schema_version.minor, 4);
+    assert_eq!(streams[0].header.schema_version.minor, 5);
     assert_eq!(streams[0].findings.len(), 1);
     assert!(streams[0].is_complete());
     assert_eq!(
@@ -190,8 +215,16 @@ fn versioned_jsonl_headers_split_concatenated_streams_and_validate_major() {
             .count,
         2
     );
+    assert_eq!(
+        streams[0].summary.as_ref().expect("summary").scan_status,
+        keyhog_core::ScanCompletionStatus::Partial
+    );
     assert!(streams[1].findings.is_empty());
     assert!(streams[1].is_complete());
+    assert_eq!(
+        streams[1].summary.as_ref().expect("summary").scan_status,
+        keyhog_core::ScanCompletionStatus::Success
+    );
 
     let incomplete_text = std::str::from_utf8(&first)
         .expect("JSONL is UTF-8")

@@ -84,6 +84,7 @@ function renderScanMetadata() {
   setText('meta-generated', scanMetadata.generated_at || scanMetadata.scan_finished_at || 'not recorded');
   setText('meta-duration', formatDuration(scanMetadata.duration_ms));
   setText('meta-scan-id', scanMetadata.scan_id || 'not recorded');
+  setText('meta-scan-status', scanMetadata.scan_status || 'not recorded');
   setText('meta-source-chunks', scanMetadata.source_chunks_scanned ?? 'not recorded');
   setText('meta-source-bytes', scanMetadata.source_bytes_scanned ?? 'not recorded');
   setText('meta-detectors', scanMetadata.detector_count ?? 'not recorded');

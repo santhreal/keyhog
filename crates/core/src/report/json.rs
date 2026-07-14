@@ -7,8 +7,8 @@ use crate::VerifiedFinding;
 
 use super::{
     impl_writer_backed, JsonReportCoverageGap, JsonlStreamHeader, JsonlStreamSummary, ReportError,
-    Reporter, ScanReportMetadata, WriterBackedReporter, JSON_REPORT_SCHEMA_MAJOR,
-    JSON_REPORT_SCHEMA_MINOR,
+    Reporter, ScanCompletionStatus, ScanReportMetadata, WriterBackedReporter,
+    JSON_REPORT_SCHEMA_MAJOR, JSON_REPORT_SCHEMA_MINOR,
 };
 
 /// One JSON object per line (JSONL).
@@ -176,6 +176,11 @@ impl<W: Write + Send> JsonEnvelopeReporter<W> {
             writer,
             "{{\"schema_version\":{{\"major\":{},\"minor\":{}}}",
             JSON_REPORT_SCHEMA_MAJOR, JSON_REPORT_SCHEMA_MINOR
+        )?;
+        write!(writer, ",\"scan_status\":")?;
+        serde_json::to_writer(
+            &mut writer,
+            &ScanCompletionStatus::from_coverage_gaps(!coverage_gap_summary.is_empty()),
         )?;
         if let Some(metadata) = metadata {
             write!(writer, ",\"metadata\":")?;

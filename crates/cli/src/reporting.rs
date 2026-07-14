@@ -4,7 +4,9 @@ use crate::args::{OutputFormat, ScanArgs};
 use crate::stable_hash::StableHasher;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use keyhog_core::{ReportFormat, ScanReport, ScanReportMetadata, VerifiedFinding};
+use keyhog_core::{
+    ReportFormat, ScanCompletionStatus, ScanReport, ScanReportMetadata, VerifiedFinding,
+};
 use std::io::{self, IsTerminal};
 
 pub(crate) fn report_findings(findings: &[VerifiedFinding], args: &ScanArgs) -> Result<()> {
@@ -109,6 +111,9 @@ pub(crate) fn report_metadata_from_scan_run(
     metadata.source_chunks_scanned = source_chunks_scanned;
     metadata.source_bytes_scanned = source_bytes_scanned;
     metadata.detector_count = detector_count;
+    metadata.scan_status = ScanCompletionStatus::from_coverage_gaps(
+        !coverage_gap_summary(&CoverageCounts::current()).is_empty(),
+    );
     metadata.scan_id = scan_report_id(&metadata);
     metadata
 }
@@ -120,6 +125,7 @@ fn report_metadata_from_times(
 ) -> ScanReportMetadata {
     let mut metadata = ScanReportMetadata {
         scan_id: String::new(),
+        scan_status: ScanCompletionStatus::Success,
         keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
         git_hash: keyhog_core::git_hash().to_string(),
         detector_digest: keyhog_core::detector_digest().to_string(),
@@ -171,10 +177,12 @@ fn format_gitlab_time(time: DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{scan_report_id, ScanReportMetadata};
+    use keyhog_core::ScanCompletionStatus;
 
     fn metadata() -> ScanReportMetadata {
         ScanReportMetadata {
             scan_id: String::new(),
+            scan_status: ScanCompletionStatus::Success,
             keyhog_version: "0.5.41".to_string(),
             git_hash: "test-git".to_string(),
             detector_digest: "test-detectors".to_string(),

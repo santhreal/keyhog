@@ -37,7 +37,7 @@ use anyhow::{bail, Result};
 #[cfg(unix)]
 use anyhow::Context;
 #[cfg(unix)]
-use keyhog_core::{RawMatch, RuleSuppressor, VerifiedFinding};
+use keyhog_core::{RawMatch, RuleSuppressor, ScanCompletionStatus, VerifiedFinding};
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -649,7 +649,7 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
     } = scan;
     let findings = finalize_for_report(matches, args)?;
     let report_finished_at = chrono::Utc::now();
-    let report_metadata = crate::reporting::report_metadata_from_scan_run(
+    let mut report_metadata = crate::reporting::report_metadata_from_scan_run(
         args,
         wall_start,
         report_finished_at,
@@ -659,6 +659,9 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         keyhog_core::embedded_detector_count(),
         None,
     );
+    if !source_coverage_gaps.is_empty() {
+        report_metadata.scan_status = ScanCompletionStatus::Partial;
+    }
     crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
     if args.dogfood {
         crate::orchestrator::reporting::dump_dogfood_trace();
