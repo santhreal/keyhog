@@ -15,7 +15,7 @@
 //!   crates/scanner/src/simd.rs:279  `let mut attempts = hs_pats.to_vec();`  (clones the whole pattern vec)
 //!   driven from crates/scanner/src/engine/backend_prepared.rs:81
 //!     `crate::simd::backend::HsScanner::compile(&pattern_refs)`
-//!   and crates/scanner/src/engine/compile.rs:145 `super::build_simd_scanner(...)`.
+//!   and crates/scanner/src/compiled_scanner/compile.rs `build_simd_scanner(...)`.
 //!
 //! That one `Builder::build` compiles all 899 detector regexes on ONE core
 //! while every other core idles. The Rust-side parallel phase

@@ -791,10 +791,8 @@ impl Phase2AlwaysActivePrefilter {
     /// instead of running the HS / RegexSet body, the admission gate then pays ~ns
     /// on the no-candidate chunks it is built to reject.
     ///
-    /// Gated to its sole caller (`has_active_phase2_patterns_for_chunk`, the
-    /// no-phase-1-hit admission gate that exists only on the `simd`/`gpu` phase-2
-    /// tail) so non-`simd` profiles don't carry it as dead code (Law 11).
-    #[cfg(any(feature = "simd", feature = "gpu", test))]
+    /// Called by `has_active_phase2_patterns_for_chunk` for every backend's
+    /// shared no-hit admission proof.
     pub(crate) fn any_active_match(
         &self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],

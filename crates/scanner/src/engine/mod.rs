@@ -28,12 +28,13 @@
 //! CPU reference; the CLI passes its persisted fastest-correct route explicitly.
 //! A requested GPU path never turns failure into an empty successful result.
 //!
-//! # Where each method lives (the `CompiledScanner` god-object is split by job)
+//! # Where each method lives
 //!
-//! `CompiledScanner` is one type whose `impl` blocks are spread across this
-//! directory by responsibility. To find a method, look here first:
+//! `CompiledScanner` construction and public lifecycle methods live under
+//! `compiled_scanner/`. Execution methods live here, split by responsibility.
+//! To find a method, look here first:
 //!
-//! - `scan` / `scan_with_backend` / `scan_with_deadline*` ............ mod.rs (public entry)
+//! - `scan` / `scan_with_backend` / `scan_with_deadline*` .... compiled_scanner/runtime.rs
 //! - `scan_inner` ................................................................................ scan.rs
 //! - `scan_coalesced` / `compute_coalesced_triggers` / `scan_coalesced_phase2` .................. scan_coalesced.rs
 //! - `scan_chunks_with_backend_internal` (CPU-vs-GPU batch routing) .. backend_dispatch.rs
@@ -48,20 +49,18 @@
 //! - post-process (suppression, dedup, confidence, decode/ML) ...... scan_postprocess.rs, scan_postprocess/*
 //! - cross-chunk seam reassembly ................................... boundary.rs
 //! - loud GPU-degrade / fail-closed helpers ....................... gpu_forced.rs
-//! - compile (build the scanner, acquire backends) ................. compile.rs
+//! - compile (build the scanner, acquire backends) .... compiled_scanner/compile.rs
 
 mod backend;
 mod backend_dispatch;
 mod backend_prepared;
 mod backend_triggered;
 mod boundary;
+pub(crate) use boundary::derive_pattern_boundary_context;
+#[cfg(feature = "gpu")]
+pub(crate) use boundary::regex_match_byte_upper_bound;
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries as scan_chunk_boundaries_for_test;
-mod compile;
-mod compile_helpers;
-mod compiled_api;
-#[cfg(test)]
-pub(crate) use compiled_api::Phase2PoolBreakdown;
 mod csr;
 pub(crate) use csr::CsrU32;
 mod extract;
@@ -70,6 +69,7 @@ mod gpu_cache;
 pub(crate) use gpu_cache::gpu_matcher_cache_dir_from_base;
 mod gpu_artifacts;
 mod gpu_forced;
+pub(crate) use gpu_forced::require_selected_gpu_stack;
 mod gpu_forced_helpers;
 mod gpu_lazy;
 mod gpu_lazy_helpers;
@@ -82,12 +82,15 @@ mod gpu_region_dispatch;
 mod gpu_region_dispatch_helpers;
 #[cfg(feature = "gpu")]
 mod gpu_resident_presence;
+#[cfg(feature = "gpu")]
+pub(crate) use gpu_resident_presence::GpuResidentPresenceSlot;
 mod gpu_stack;
 mod hot_patterns;
 pub(crate) mod phase2;
 mod phase2_anchor;
 #[cfg(test)]
 pub(crate) use phase2_anchor::required_prefix_literals as phase2_required_prefix_literals_for_test;
+pub(crate) use phase2_anchor::Phase2AnchorIndex;
 // Always-on re-export (NOT cfg(test)) so `crate::testing`: which is compiled
 // even when the crate is linked as a dependency of the integration-test binary,
 // where `cfg(test)` is false for this crate, can classify confirmed patterns by
@@ -107,10 +110,14 @@ pub(crate) mod phase2_generic;
 mod phase2_generic_shape;
 #[cfg(feature = "gpu")]
 mod phase2_gpu_dfa;
+#[cfg(feature = "gpu")]
+pub(crate) use phase2_gpu_dfa::Phase2GpuDfaCatalogCache;
 #[cfg(feature = "simd")]
 mod phase2_hs;
 #[cfg(all(test, feature = "simd"))]
 pub(crate) use phase2_hs::hs_prefilter_requires_host_regex as hs_prefilter_requires_host_regex_for_test;
+#[cfg(all(test, feature = "simd"))]
+pub(crate) use phase2_hs::Phase2HsEngine;
 pub(crate) mod gpu_input_budget;
 mod phase2_prefilter;
 pub(crate) mod phase2_truncate;
@@ -121,6 +128,9 @@ mod scan_coalesced;
 pub(crate) mod scan_filters;
 mod scan_inner_profile;
 mod scan_postprocess;
+pub(crate) use scan_postprocess::{
+    build_confirmed_suffix_gate, confirmed_anchor::ConfirmedAnchorIndex,
+};
 #[path = "scan_postprocess/confirmed_extract.rs"]
 mod scan_postprocess_confirmed_extract;
 #[path = "scan_postprocess/fragments.rs"]
@@ -143,7 +153,8 @@ mod windowed;
 mod windowed_support;
 
 // `build_simd_scanner` only exists under the `simd` (Hyperscan) feature; its
-// sole call site in compile.rs is `#[cfg(feature = "simd")]` too. Gate the
+// sole call site in `compiled_scanner/compile.rs` is `#[cfg(feature = "simd")]`
+// too. Gate the
 // import to match, or non-simd builds (the `portable` feature used for the
 // macOS/Windows/musl release assets) fail with E0432.
 #[cfg(feature = "simd")]
@@ -178,8 +189,7 @@ pub use windowed_support::{
     window_chunk, window_end_offset, window_ranges,
 };
 
-use crate::compiler::*;
-use crate::error::Result;
+use crate::compiled_scanner::{GpuBackendAcquisitionFailure, GpuBackendPeers};
 use crate::pipeline::*;
 use crate::types::*;
 use aho_corasick::AhoCorasick;
@@ -209,113 +219,13 @@ pub(crate) const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
 ///
 /// Defined once here so the two admission sites that gate on it, the coalesced
 /// phase-1 producer ([`scan_coalesced`]) and the single-chunk entry
-/// ([`compiled_api`]), can never carry divergent copies of the threshold (each
+/// ([`crate::compiled_scanner`]), can never carry divergent copies of the
+/// threshold (each
 /// used to hardcode a bare `64`).
 pub(crate) const BIGRAM_BLOOM_MIN_CHUNK_BYTES: usize = 64;
 
 pub(crate) use phase1_admission::Phase1Admission;
 pub use phase1_admission::Phase1AdmissionSummary;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum GpuInitPolicy {
-    /// Honor the resolved GPU runtime policy.
-    FromRuntimePolicy,
-    /// Acquire a GPU backend when hardware is present, regardless of the
-    /// disabled-GPU policy. Used when the operator explicitly forces GPU.
-    ForceEnabled,
-    /// Skip CUDA/wgpu acquisition. Used when the selected CLI path cannot
-    /// route to GPU, avoiding startup and RSS overhead without changing scan
-    /// results.
-    ForceDisabled,
-}
-
-#[derive(Default)]
-pub(crate) struct GpuBackendPeers {
-    pub(crate) cuda: Option<Arc<dyn vyre::VyreBackend>>,
-    pub(crate) wgpu: Option<Arc<dyn vyre::VyreBackend>>,
-    pub(crate) cuda_device_identity: Option<String>,
-    pub(crate) cuda_runtime_identity: Option<String>,
-    pub(crate) wgpu_device_identity: Option<String>,
-    pub(crate) wgpu_runtime_identity: Option<String>,
-    pub(crate) wgpu_is_software: bool,
-}
-
-impl GpuBackendPeers {
-    pub(crate) fn get(
-        &self,
-        backend: crate::hw_probe::ScanBackend,
-    ) -> Option<&Arc<dyn vyre::VyreBackend>> {
-        match backend {
-            crate::hw_probe::ScanBackend::GpuCuda => self.cuda.as_ref(),
-            crate::hw_probe::ScanBackend::GpuWgpu => self.wgpu.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn availability(&self) -> GpuBackendAvailability {
-        GpuBackendAvailability {
-            cuda: self.cuda.is_some(),
-            wgpu: self.wgpu.is_some(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct GpuBackendAvailability {
-    pub cuda: bool,
-    pub wgpu: bool,
-}
-
-impl GpuBackendAvailability {
-    #[must_use]
-    pub const fn any(self) -> bool {
-        self.cuda || self.wgpu
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GpuBackendAcquisitionFailure {
-    pub backend: &'static str,
-    pub diagnostic: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GpuBackendCandidateStatus {
-    pub backend: crate::hw_probe::ScanBackend,
-    pub acquired: bool,
-    pub driver_id: Option<&'static str>,
-    pub driver_version: Option<&'static str>,
-    pub device_identity: Option<String>,
-    pub runtime_identity: Option<String>,
-    pub is_software: bool,
-    pub acquisition_error: Option<String>,
-}
-
-impl GpuBackendCandidateStatus {
-    #[must_use]
-    pub fn has_complete_identity(&self) -> bool {
-        self.driver_id.is_some_and(|value| !value.trim().is_empty())
-            && self
-                .driver_version
-                .is_some_and(|value| !value.trim().is_empty())
-            && self
-                .device_identity
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty())
-            && self
-                .runtime_identity
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty())
-    }
-
-    /// Whether this peer is executable hardware with complete reproducibility
-    /// identity. Autoroute and health paths consume this single eligibility
-    /// contract instead of combining acquisition with unrelated global probes.
-    #[must_use]
-    pub fn is_eligible(&self) -> bool {
-        self.acquired && !self.is_software && self.has_complete_identity()
-    }
-}
 
 pub struct CompiledScanner {
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,
@@ -327,9 +237,11 @@ pub struct CompiledScanner {
     pub(crate) gpu_max_literal_len: usize,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
     #[cfg(feature = "gpu")]
-    gpu_resident_presence_cuda: std::sync::Mutex<gpu_resident_presence::GpuResidentPresenceSlot>,
+    pub(crate) gpu_resident_presence_cuda:
+        std::sync::Mutex<gpu_resident_presence::GpuResidentPresenceSlot>,
     #[cfg(feature = "gpu")]
-    gpu_resident_presence_wgpu: std::sync::Mutex<gpu_resident_presence::GpuResidentPresenceSlot>,
+    pub(crate) gpu_resident_presence_wgpu:
+        std::sync::Mutex<gpu_resident_presence::GpuResidentPresenceSlot>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,
     /// One-time backend-neutral GPU literal-program preparation measured by
@@ -458,7 +370,7 @@ pub struct CompiledScanner {
     /// can never surface a token the detector's own regex rejects, the length
     /// floor alone let `ghp_…_…`/`xoxp-123-456-789-abc` through) and delegates
     /// the survivor to `ac_map[slot.ac_map_index]` via `process_match`. A slot's
-    /// Built once by `compile_helpers::build_hot_pattern_slots`.
+    /// Built once by `compiled_scanner::compile_helpers::build_hot_pattern_slots`.
     #[cfg(feature = "simdsieve")]
     pub(crate) hot_pattern_slots: Vec<crate::simdsieve_prefilter::HotPatternSlot>,
     /// Pre-interned `(detector_id, detector_name, service)` triple for each of
@@ -473,18 +385,6 @@ pub struct CompiledScanner {
     pub config: ScannerConfig,
     pub(crate) alphabet_screen: Option<crate::alphabet_filter::AlphabetScreen>,
     pub(crate) bigram_bloom: crate::bigram_bloom::BigramBloom,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CompiledScannerRuntime {
-    pub detector_count: usize,
-    pub pattern_count: usize,
-    pub detector_digest: u64,
-    /// Backend used by the no-backend library APIs. CLI calibrated routing is a
-    /// separate persisted per-workload decision and is never inferred here.
-    pub preferred_backend: &'static str,
-    pub gpu_backends: GpuBackendAvailability,
-    pub gpu_degrade_count: u64,
 }
 
 const _: () = {
@@ -547,7 +447,6 @@ mod max_inner_loop_iters_tests {
     /// `32 * 1024` the three admission sites used to inline. Pinning it locks the
     /// recall/perf boundary in ONE place: a no-hit chunk larger than this with a
     /// bare anchorless high-entropy secret is not admitted to the entropy path.
-    #[cfg(feature = "simd")]
     #[test]
     fn no_hit_entropy_admission_cap_is_thirty_two_kib() {
         assert_eq!(

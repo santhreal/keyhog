@@ -646,7 +646,7 @@ fn scan_keyword_free_candidates(
 /// precomputed keyword assignment lines. The
 /// prefilter can decide whether phase 2 runs at all, so consulting embedded
 /// defaults here would be a silent policy override rather than an optimization.
-#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+#[cfg(feature = "simd")]
 pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(
     keyword_lines: &[(usize, &str)],
     config: &crate::ScannerConfig,
@@ -801,6 +801,7 @@ pub(crate) fn candidate_is_plausible(
         .is_none()
 }
 
+#[cfg(feature = "simd")]
 fn candidate_is_plausible_with_policy(
     candidate: &str,
     entropy: f64,

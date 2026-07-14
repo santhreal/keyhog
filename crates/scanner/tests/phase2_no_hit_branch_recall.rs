@@ -5,6 +5,7 @@
 //! stays alive. THIS test asserts the parallel-coalesced no-hit branch
 //! in scan_coalesced(chunks) ALSO routes through scan_phase2_patterns
 //! when the chunk has no literal-prefix Hyperscan hits.
+//! The portable per-chunk test locks the same admission contract without SIMD.
 //!
 //! Bug: kubernetes-bootstrap-token has no literal prefix; its regex
 //! `\b([a-z0-9]{6}\.[a-z0-9]{16})\b` lives in self.phase2_patterns gated only
@@ -19,12 +20,35 @@ mod support;
 use support::contracts::test_chunk as make_chunk;
 use support::paths::detector_dir;
 
-use keyhog_scanner::{CompiledScanner, ScannerConfig};
+use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 
 const BARE_ENTROPY_SECRET: &str = "qA9zM4nB7vC2xL8pR5tY1uI6oP3sD0fG9hJ2kL7mN4bV8cX1zQ6wE5rT0yU3iO";
 
 fn compile_scanner_with_config(config: ScannerConfig) -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+    CompiledScanner::compile(detectors)
+        .expect("compile")
+        .with_config(config)
+}
+
+#[cfg(feature = "entropy")]
+fn compile_portable_entropy_scanner(config: ScannerConfig) -> CompiledScanner {
+    let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+    detectors.retain(|detector| detector.id == "generic-secret");
+    assert_eq!(detectors.len(), 1, "portable entropy fixture owner");
+    detectors[0].patterns.clear();
+    detectors[0].keywords = vec!["aaaa".to_string()];
+    CompiledScanner::compile(detectors)
+        .expect("compile")
+        .with_config(config)
+}
+
+#[cfg(not(feature = "simd"))]
+fn compile_portable_phase2_scanner(config: ScannerConfig) -> CompiledScanner {
+    let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+    detectors.retain(|detector| detector.id == "kubernetes-bootstrap-token");
+    assert_eq!(detectors.len(), 1, "portable phase-2 fixture owner");
+    detectors[0].keywords.clear();
     CompiledScanner::compile(detectors)
         .expect("compile")
         .with_config(config)
@@ -53,6 +77,34 @@ fn kubernetes_bootstrap_token_fires_in_direct_scan() {
             .iter()
             .map(|m| (m.detector_id.as_ref().to_string(), m.credential.to_string()))
             .collect::<Vec<_>>(),
+    );
+}
+
+#[cfg(not(feature = "simd"))]
+#[test]
+fn portable_cpu_phase2_pattern_survives_direct_literal_rejection() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = compile_portable_phase2_scanner(config);
+    let chunk = make_chunk(
+        &format!("{}k3m9zq.4r8w2nq3p6vt5b1z\n", "#".repeat(64)),
+        "k8s-bootstrap.env",
+    );
+
+    let admission = scanner.phase1_admission_summary(std::slice::from_ref(&chunk));
+    assert_eq!(admission.admitted_chunks, 0);
+    assert_eq!(
+        admission.alphabet_rejected_chunks + admission.bigram_rejected_chunks,
+        1,
+        "fixture must enter backend-neutral no-hit admission"
+    );
+    let matches = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback);
+    assert!(
+        matches.iter().any(|finding| {
+            finding.detector_id.as_ref() == "kubernetes-bootstrap-token"
+                && finding.credential.as_ref() == "k3m9zq.4r8w2nq3p6vt5b1z"
+        }),
+        "portable CPU fallback must retain anchorless phase-2 findings: {matches:?}"
     );
 }
 
@@ -151,6 +203,34 @@ fn bare_entropy_secret_file_still_enters_coalesced_no_hit_branch() {
             .iter()
             .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
             .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn bare_entropy_secret_enters_portable_per_chunk_no_hit_path() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = compile_portable_entropy_scanner(config);
+    let chunk = make_chunk(
+        &format!("VALUE={BARE_ENTROPY_SECRET}\n"),
+        "config/portable-secrets.env",
+    );
+
+    let admission = scanner.phase1_admission_summary(std::slice::from_ref(&chunk));
+    assert_eq!(admission.admitted_chunks, 0);
+    assert_eq!(
+        admission.alphabet_rejected_chunks + admission.bigram_rejected_chunks,
+        1,
+        "fixture must be rejected by direct-literal admission"
+    );
+    let matches = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback);
+    assert!(
+        matches.iter().any(|finding| {
+            finding.detector_id.as_ref() == "entropy-generic"
+                && finding.credential.as_ref().contains(BARE_ENTROPY_SECRET)
+        }),
+        "portable CPU fallback must not skip anchorless entropy findings: {matches:?}"
     );
 }
 

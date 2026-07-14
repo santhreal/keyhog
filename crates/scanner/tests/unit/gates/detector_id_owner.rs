@@ -101,7 +101,7 @@ fn detector_ids_module_owns_scanner_detector_identity() {
     );
 
     let spec = read(&repo_root().join("crates/core/src/spec.rs"));
-    let compile = read(&src.join("engine").join("compile.rs"));
+    let compile = read(&src.join("compiled_scanner").join("compile.rs"));
     let confirmed_extract = read(
         &src.join("engine")
             .join("scan_postprocess")

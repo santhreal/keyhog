@@ -1,14 +1,15 @@
 use super::*;
+use crate::hw_probe::ScanBackend;
 
-fn backend_driver_name(backend: crate::hw_probe::ScanBackend) -> &'static str {
+fn backend_driver_name(backend: ScanBackend) -> &'static str {
     match backend {
-        crate::hw_probe::ScanBackend::GpuCuda => "cuda",
-        crate::hw_probe::ScanBackend::GpuWgpu => "wgpu",
+        ScanBackend::GpuCuda => "cuda",
+        ScanBackend::GpuWgpu => "wgpu",
         _ => "",
     }
 }
-use crate::hw_probe::ScanBackend;
 
+#[cfg(feature = "simd")]
 static SIMD_AUTO_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
 /// Family + homoglyph breakdown of the always-active (`phase2_always_active_indices`)
@@ -146,6 +147,7 @@ impl CompiledScanner {
         }
     }
 
+    #[cfg(feature = "simd")]
     pub(crate) fn warn_simd_auto_degrade(&self, context: &str) {
         if SIMD_AUTO_DEGRADE_WARNED.set(()).is_ok() {
             eprintln!(
@@ -169,7 +171,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
 `--backend cpu-fallback` explicitly.",
             );
         }
-        gpu_forced::require_selected_gpu_stack(self, backend);
+        require_selected_gpu_stack(self, backend);
     }
 
     /// Number of loaded detectors.
@@ -288,7 +290,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         n_calls: u32,
     ) -> (f64, f64, usize, usize) {
         use super::phase2::ActivePatternsScratch;
-        use super::phase2_hs::Phase2HsEngine;
+        use super::Phase2HsEngine;
         let all: Vec<usize> = self.phase2_always_active_indices.clone();
         let lean_n = all
             .iter()
@@ -335,7 +337,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         ascii_text: &str,
     ) -> (usize, usize, Vec<usize>, Vec<usize>) {
         use super::phase2::ActivePatternsScratch;
-        use super::phase2_hs::Phase2HsEngine;
+        use super::Phase2HsEngine;
         use std::collections::HashSet;
         let all: Vec<usize> = self.phase2_always_active_indices.clone();
         let engine = Phase2HsEngine::build(&self.phase2_patterns, &all).expect("HS engine");
@@ -501,16 +503,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
 
     pub(crate) fn detector_digest(&self) -> u64 {
         let patterns = self.pattern_regex_strs();
-        let mut hasher = blake3::Hasher::new();
-        detector_digest_update(&mut hasher, b"domain", b"keyhog-scanner-detector-digest-v1");
-        detector_digest_update_u64(&mut hasher, b"pattern_count", patterns.len() as u64);
-        for src in patterns {
-            detector_digest_update(&mut hasher, b"regex", src.as_bytes());
-        }
-        let digest = hasher.finalize();
-        let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&digest.as_bytes()[..8]);
-        u64::from_le_bytes(bytes)
+        detector_digest::from_pattern_sources(&patterns)
     }
 
     /// Every compiled GPU driver peer and its acquisition result.
@@ -681,7 +674,6 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         // encoded-looking rejected chunks pay the decode cost, so normal
         // traffic keeps the fast skip.
         if self.phase1_admission(chunk.data.as_bytes()) != Phase1Admission::Admitted {
-            #[cfg(feature = "simd")]
             if self.should_scan_no_hit_chunk(chunk) {
                 let prepared = self.prepare_chunk(chunk);
                 let triggered = if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
@@ -741,15 +733,4 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
 
         matches
     }
-}
-
-fn detector_digest_update(hasher: &mut blake3::Hasher, tag: &[u8], value: &[u8]) {
-    hasher.update(&(tag.len() as u64).to_le_bytes());
-    hasher.update(tag);
-    hasher.update(&(value.len() as u64).to_le_bytes());
-    hasher.update(value);
-}
-
-fn detector_digest_update_u64(hasher: &mut blake3::Hasher, tag: &[u8], value: u64) {
-    detector_digest_update(hasher, tag, &value.to_le_bytes());
 }

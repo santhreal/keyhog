@@ -64,7 +64,7 @@ fn scanner() -> CompiledScanner {
 
 /// Scan one filesystem chunk on the host-independent scalar `CpuFallback`
 /// backend. Decode-through runs in post-process and is backend-independent
-/// (`compiled_api.rs`: `chunk_needs_decode_postprocess`).
+/// (`compiled_scanner/runtime.rs`: `chunk_needs_decode_postprocess`).
 fn scan(text: &str) -> Vec<RawMatch> {
     let s = scanner();
     let chunk = Chunk {

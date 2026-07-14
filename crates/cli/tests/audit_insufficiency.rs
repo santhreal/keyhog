@@ -22,7 +22,7 @@
 //! Nothing re-sanitises after these mutations: `resolve_scan_config`
 //! (orchestrator_config.rs:475-491) hands the un-clamped `ScannerConfig`
 //! straight to `CompiledScanner::with_config` (orchestrator/mod.rs:180), and
-//! `with_config` (crates/scanner/src/engine/compile.rs:254-258) merely assigns
+//! `with_config` (crates/scanner/src/compiled_scanner/compile.rs) merely assigns
 //! the config, no clamp. The same gap exists on the `.keyhog.toml` path
 //! (config.rs:435-457 fills `args.entropy_threshold` / `args.ml_weight`
 //! straight from the file with no validation).
@@ -134,7 +134,7 @@ fn scratch_file() -> (tempfile::TempDir, PathBuf) {
 /// `build_scanner_config` (orchestrator_config.rs:406-408) assigns
 /// `config.ml_weight = weight` AFTER the `From`-time sanitise, and nothing
 /// re-sanitises before the config is handed to the engine
-/// (orchestrator/mod.rs:180 → compile.rs:254-258). With no clap value_parser on
+/// (orchestrator/mod.rs → compiled_scanner/compile.rs). With no clap value_parser on
 /// `--ml-weight` (args/scan.rs:433-435), `--ml-weight 5.0` flows through whole.
 ///
 /// EVIDENCE: the binary's own effective-config oracle reports `ml_weight = 5`.

@@ -18,7 +18,7 @@
 //!
 //!   2. WEAK-ANCHOR MEMOIZATION (engine/process.rs +
 //!      engine/mod.rs::detector_weak_anchor_base_by_index, built in
-//!      engine/compile.rs): `process_match` resolves the weak-anchor for EVERY
+//!      compiled_scanner/compile.rs): `process_match` resolves the weak-anchor for EVERY
 //!      surviving candidate. The per-DETECTOR base class (residual pure-hex list,
 //!      generic/private-key carve-outs, explicit min_confidence) depends ONLY on
 //!      the spec and is resolved ONCE at scanner construction into a

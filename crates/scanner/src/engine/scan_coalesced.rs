@@ -1,8 +1,7 @@
 // `scan_filters` is consumed by `should_scan_no_hit_chunk` (the no-phase-1-hit
-// admission gate) on the shared phase-2 tail. That tail is reached by the
-// coalesced producer (`simd`) and GPU region presence, and `gpu` implies
-// `simd` at the feature level.
-#[cfg(feature = "simd")]
+// admission gate) on the shared phase-2 tail. SIMD and GPU use it after their
+// trigger pass. Portable builds use it before their phase-2 tail so no-hit
+// chunks are not dropped before anchorless detection.
 use super::scan_filters::*;
 use super::*;
 
@@ -16,7 +15,7 @@ use std::cell::RefCell;
 /// produced no literal trigger. Raising it trades scan time for recall on large
 /// anchorless blobs. Recall-affecting; kept beside the other engine thresholds
 /// (`MAX_INNER_LOOP_ITERS`, `BIGRAM_BLOOM_MIN_CHUNK_BYTES`).
-#[cfg(feature = "simd")]
+#[cfg(any(feature = "entropy", test))]
 pub(crate) const NO_HIT_ENTROPY_ADMISSION_MAX_BYTES: usize = 32 * 1024;
 
 // The trigger-buffer pool is only used in the Hyperscan-prefilter scratch path
@@ -236,7 +235,6 @@ impl CompiledScanner {
 
     /// No-hit chunk admission: should a chunk that produced no phase-1 trigger
     /// still be driven through the phase-2 / generic / entropy tail?
-    #[cfg(feature = "simd")]
     pub(crate) fn should_scan_no_hit_chunk(&self, chunk: &keyhog_core::Chunk) -> bool {
         let raw_text = chunk.data.as_ref();
         if self.no_hit_text_admits(chunk, raw_text) {
@@ -254,13 +252,15 @@ impl CompiledScanner {
         normalized.as_bytes() != raw_text.as_bytes() && self.no_hit_text_admits(chunk, normalized)
     }
 
-    #[cfg(feature = "simd")]
-    fn no_hit_text_admits(&self, chunk: &keyhog_core::Chunk, text: &str) -> bool {
+    fn no_hit_text_admits(&self, _chunk: &keyhog_core::Chunk, text: &str) -> bool {
         if self.has_active_phase2_patterns_for_chunk(text) {
             return true;
         }
         let data = text.as_bytes();
+        #[cfg(feature = "entropy")]
         let small_chunk = text.len() <= NO_HIT_ENTROPY_ADMISSION_MAX_BYTES;
+        let keyword_admits = has_generic_assignment_keyword(data) || has_secret_keyword_fast(data);
+        #[cfg(feature = "entropy")]
         let generic_keyword_secret_min_len = self
             .generic_owning_detector
             .generic_keyword_secret_index()
@@ -269,9 +269,10 @@ impl CompiledScanner {
             .map_or(crate::entropy::KEYWORD_FREE_MIN_LEN, |min_len| min_len);
         #[cfg(feature = "multiline")]
         if crate::multiline::has_concatenation_indicators(text) {
-            if has_generic_assignment_keyword(data) || has_secret_keyword_fast(data) {
+            if keyword_admits {
                 return true;
             }
+            #[cfg(feature = "entropy")]
             if small_chunk && self.config.entropy_enabled {
                 if crate::entropy::scanner::has_isolated_bare_secret_candidate(
                     text,
@@ -283,10 +284,11 @@ impl CompiledScanner {
                 }
             }
         }
+        #[cfg(feature = "entropy")]
         let entropy_admits = small_chunk
             && self.config.entropy_enabled
             && ((crate::entropy::is_entropy_appropriate_with_content(
-                chunk.metadata.path.as_deref(),
+                _chunk.metadata.path.as_deref(),
                 self.config.entropy_in_source_files,
                 text,
                 &self.config.secret_keywords,
@@ -297,10 +299,14 @@ impl CompiledScanner {
                     &self.config.placeholder_keywords,
                     generic_keyword_secret_min_len,
                 ));
-        small_chunk
-            && (has_generic_assignment_keyword(data)
-                || has_secret_keyword_fast(data)
-                || entropy_admits)
+        #[cfg(feature = "entropy")]
+        {
+            keyword_admits || entropy_admits
+        }
+        #[cfg(not(feature = "entropy"))]
+        {
+            keyword_admits
+        }
     }
 
     /// Shared phase-2 tail for the SIMD coalesced producer and GPU

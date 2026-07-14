@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use keyhog_core::{DetectorSpec, PatternSpec, Severity};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::CompiledScanner;
 
 fn detector(id: &str, name: &str, service: &str, regex: &str, keyword: &str) -> DetectorSpec {
@@ -63,57 +63,34 @@ fn metadata_intern_is_indexed_not_rehashed_per_match() {
     assert_eq!(second.1.as_ref(), "Bravo Secret");
     assert_eq!(second.2.as_ref(), "bravo");
 
-    let src = |rel: &str| {
-        std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(rel))
-            .unwrap_or_else(|e| panic!("{rel} not readable: {e}"))
-    };
-    let compile = src("src/engine/compile.rs");
+    let matches = scanner.scan(&Chunk {
+        data: "alpha_Q7vL9nP2xR5kT8mW bravo_H4cN6yB9sD2qK7zP"
+            .to_string()
+            .into(),
+        metadata: ChunkMetadata {
+            source_type: "metadata-intern-test".into(),
+            path: Some("fixture.env".into()),
+            ..Default::default()
+        },
+    });
+    let alpha = matches
+        .iter()
+        .find(|matched| matched.detector_id.as_ref() == "alpha-token")
+        .expect("alpha detector emits through the production scan path");
+    let bravo = matches
+        .iter()
+        .find(|matched| matched.detector_id.as_ref() == "bravo-secret")
+        .expect("bravo detector emits through the production scan path");
     assert!(
-        compile.contains("let metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)>")
-            && compile.contains("metadata_by_index,"),
-        "compile.rs must build and store detector metadata by index"
+        Arc::ptr_eq(&alpha.detector_id, &first.0)
+            && Arc::ptr_eq(&alpha.detector_name, &first.1)
+            && Arc::ptr_eq(&alpha.service, &first.2),
+        "alpha emission must reuse its construction-time metadata allocations"
     );
-
-    let api = src("src/engine/compiled_api.rs");
     assert!(
-        api.contains("fn interned_detector_metadata")
-            && api.contains("self.metadata_by_index[detector_index]"),
-        "compiled_api.rs must expose the index-clone owner"
-    );
-
-    let process = src("src/engine/process.rs");
-    assert!(
-        process
-            .matches("self.interned_detector_metadata(entry.detector_index)")
-            .count()
-            >= 2,
-        "regular confirmed/phase-2 match emission must clone detector metadata by index"
-    );
-    for forbidden in [
-        "intern_metadata(&detector.id)",
-        "intern_metadata(&detector.name)",
-        "intern_metadata(&detector.service)",
-    ] {
-        assert!(
-            !process.contains(forbidden),
-            "process.rs must not re-hash detector metadata strings per match: {forbidden}"
-        );
-    }
-
-    let hot = src("src/engine/hot_patterns.rs");
-    assert!(
-        hot.contains("self.process_match(")
-            && hot.contains("self.hot_pattern_slots[pattern_idx]")
-            && !hot.contains("self.hot_metadata_by_index[pattern_idx]")
-            && !hot.contains("build_synthetic_raw_match")
-            && !hot.contains("intern_metadata(HOT_PATTERN_DETECTOR_IDS"),
-        "hot-pattern emission must route through canonical process_match metadata instead of synthetic hot metadata"
-    );
-
-    let entropy = src("src/engine/phase2_entropy.rs");
-    assert!(
-        entropy.contains("self.entropy_metadata_by_index[entropy_meta_idx]")
-            && entropy.contains("Arc::clone(&metadata.0)"),
-        "synthetic entropy metadata must be pre-indexed instead of rehashed"
+        Arc::ptr_eq(&bravo.detector_id, &second.0)
+            && Arc::ptr_eq(&bravo.detector_name, &second.1)
+            && Arc::ptr_eq(&bravo.service, &second.2),
+        "bravo emission must reuse its construction-time metadata allocations"
     );
 }

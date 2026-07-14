@@ -40,6 +40,15 @@ pub enum ScanError {
         "SIMD scanner failure: {0}. Fix: rerun with `--backend cpu` for the portable scalar path, or run `keyhog doctor` to check CPU feature detection"
     )]
     Simd(String),
+    #[error(
+        "compiled scanner invariant violation: {table}[{pattern_index}] references detector_index {detector_index} but only {detectors_len} detector(s) are loaded. Fix: rebuild detector compilation so every compiled pattern keeps its source detector index before scanner construction completes"
+    )]
+    CompiledPatternDetectorIndex {
+        table: &'static str,
+        pattern_index: usize,
+        detector_index: usize,
+        detectors_len: usize,
+    },
     #[error("scanner configuration failure: {0}. Fix: correct the bundled scanner rules")]
     Config(String),
 }

@@ -7,14 +7,14 @@
 use super::CompiledScanner;
 use zeroize::Zeroize;
 
-pub(super) struct GpuResidentPresenceState {
+pub(crate) struct GpuResidentPresenceState {
     pipeline: vyre_libs::scan::ResidentPresencePipeline,
     backend: std::sync::Arc<dyn vyre::VyreBackend>,
     output: Vec<u32>,
     scratch: Vec<u8>,
 }
 
-pub(super) enum GpuResidentPresenceSlot {
+pub(crate) enum GpuResidentPresenceSlot {
     Empty,
     Ready(GpuResidentPresenceState),
     Failed(String),
@@ -85,15 +85,6 @@ impl ResidentPresenceCapacity {
     }
 }
 
-fn zero_scratch_allocation(buffer: &mut Vec<u8>) {
-    buffer.zeroize();
-}
-
-fn zero_output_contents(buffer: &mut Vec<u32>) {
-    buffer.as_mut_slice().zeroize();
-    buffer.clear();
-}
-
 struct ZeroResidentHostBuffers<'a> {
     output: &'a mut Vec<u32>,
     scratch: &'a mut Vec<u8>,
@@ -101,15 +92,24 @@ struct ZeroResidentHostBuffers<'a> {
 
 impl Drop for ZeroResidentHostBuffers<'_> {
     fn drop(&mut self) {
-        zero_output_contents(self.output);
-        zero_scratch_allocation(self.scratch);
+        GpuResidentPresenceState::zero_output_contents(self.output);
+        GpuResidentPresenceState::zero_scratch_allocation(self.scratch);
     }
 }
 
 impl GpuResidentPresenceState {
+    fn zero_scratch_allocation(buffer: &mut Vec<u8>) {
+        buffer.zeroize();
+    }
+
+    fn zero_output_contents(buffer: &mut Vec<u32>) {
+        buffer.as_mut_slice().zeroize();
+        buffer.clear();
+    }
+
     fn clear_host_buffers(&mut self) {
-        zero_output_contents(&mut self.output);
-        zero_scratch_allocation(&mut self.scratch);
+        Self::zero_output_contents(&mut self.output);
+        Self::zero_scratch_allocation(&mut self.scratch);
     }
 
     fn free(mut self) -> Result<(), String> {
@@ -224,7 +224,7 @@ pub(super) fn scan_gpu_literal_presence_by_region_resident<R>(
 }
 
 impl CompiledScanner {
-    pub(super) fn reset_gpu_resident_presence_for_calibration(
+    pub(crate) fn reset_gpu_resident_presence_for_calibration(
         &mut self,
     ) -> std::result::Result<(), String> {
         let mut failures = Vec::new();

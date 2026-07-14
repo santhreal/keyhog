@@ -10,7 +10,7 @@ fn scanner_source(path: &str) -> String {
 
 #[test]
 fn forced_simd_backend_without_prefilter_is_not_cpu_fallback() {
-    let source = scanner_source("engine/compiled_api.rs");
+    let source = scanner_source("compiled_scanner/runtime.rs");
     let triggered = scanner_source("engine/backend_triggered.rs");
     assert!(
         source.contains("selected_backend: crate::hw_probe::ScanBackend")

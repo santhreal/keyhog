@@ -31,7 +31,7 @@
 //!
 //! Cost: ~1 ns per byte on AVX2/scalar - strictly cheaper than
 //! `AlphabetMask::from_bytes`. The 8 KB construction cost is paid once per
-//! scanner build (compile.rs), not per chunk.
+//! scanner build (`compiled_scanner/compile.rs`), not per chunk.
 
 #![deny(unsafe_op_in_unsafe_fn)]
 

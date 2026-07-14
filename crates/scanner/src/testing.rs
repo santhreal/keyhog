@@ -3222,7 +3222,7 @@ pub(crate) fn phase2_pattern_diagnostics(
 }
 
 #[cfg(test)]
-pub(crate) use crate::engine::Phase2PoolBreakdown;
+pub(crate) use crate::compiled_scanner::Phase2PoolBreakdown;
 
 #[cfg(test)]
 pub(crate) fn phase2_always_active_family_breakdown(

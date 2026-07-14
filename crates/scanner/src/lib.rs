@@ -16,10 +16,11 @@
 //!   [`alphabet_filter`], [`bigram_bloom`], [`prefix_trie`], `ascii_ci`,
 //!   `simd` / `simdsieve_prefilter` (feature-gated), `prefilter_degrade`
 //!   (loud Law-10 fallback).
-//! - **Compile** (detectors → matchers): [`compiler`], `shared_regexes`,
-//!   [`static_intern`].
-//! - **Scan engine** (phase 1 triggers + phase 2 extraction; CPU or GPU)
-//!   [`engine`] (start at its header doc), [`pipeline`], [`gpu`].
+//! - **Compile and lifecycle** (detectors → matchers): `compiled_scanner/`,
+//!   [`compiler`], `shared_regexes`, [`static_intern`].
+//! - **Scan engine** (phase 1 triggers + phase 2 extraction; CPU or GPU):
+//!   [`engine`] (start at its header doc), [`pipeline`], [`gpu`]. Public scan
+//!   entry methods live in `compiled_scanner/runtime.rs` and dispatch here.
 //! - **Decode-through** (nested base64/hex/url/unicode, recursive)
 //!   [`decode`], [`decode_structure`].
 //! - **Entropy**: [`entropy`] is now the single home for all of it: the
@@ -75,6 +76,8 @@ pub(crate) mod assignment_keywords;
 pub mod aws;
 /// Service-specific credential checksum validation (GitHub, npm, Slack, etc.).
 pub mod checksum;
+/// Compiled scanner construction and lifecycle implementation.
+mod compiled_scanner;
 /// Detector compilation into high-performance matching structures.
 pub(crate) mod compiler;
 /// Heuristic and ML-based confidence scoring for candidate matches.

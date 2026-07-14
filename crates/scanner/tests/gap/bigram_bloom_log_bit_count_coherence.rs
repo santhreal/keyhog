@@ -3,7 +3,7 @@
 //!
 //! `BigramBloom` is a 65536-bit / 8 KB / 1024-u64 DIRECT lookup table
 //! (`TABLE_SLOTS = 65536`, `bits: Box<[u64; 1024]>`). The build-time debug log
-//! in `compile.rs` still announced "(4096 bits ...)", a leftover from the old
+//! in `compiled_scanner/compile.rs` still announced "(4096 bits ...)", a leftover from the old
 //! 4096-bit hashed bloom the type replaced (bigram_bloom.rs even documents "The
 //! previous implementation used a 4096-bit bloom"). A log that misreports the
 //! filter size by 16x sends anyone tuning popcount thresholds down the wrong
@@ -17,7 +17,7 @@ fn read_src(rel: &str) -> String {
 
 #[test]
 fn bigram_bloom_build_log_matches_real_table_size() {
-    let compile = read_src("src/engine/compile.rs");
+    let compile = read_src("src/compiled_scanner/compile.rs");
     assert!(
         compile.contains("65536 slots / 8 KB direct table"),
         "the bigram-bloom build log must state the real 65536-slot / 8 KB table size"

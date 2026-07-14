@@ -2,7 +2,6 @@
 use super::compile_helpers::build_hot_pattern_slots;
 #[cfg(all(target_os = "linux", feature = "gpu"))]
 use super::compile_helpers::surface_cuda_acquisition_failure;
-use super::compile_helpers::validate_compiled_pattern_detector_indices;
 use super::*;
 
 impl CompiledScanner {
@@ -21,7 +20,7 @@ impl CompiledScanner {
         Self::compile_with_gpu_policy_and_tuning(
             detectors,
             gpu_policy,
-            &crate::scanner_config::ScannerTuningConfig::default(),
+            &ScannerTuningConfig::default(),
         )
     }
 
@@ -30,12 +29,17 @@ impl CompiledScanner {
     pub fn compile_with_gpu_policy_and_tuning(
         detectors: Vec<DetectorSpec>,
         gpu_policy: GpuInitPolicy,
-        tuning_config: &crate::scanner_config::ScannerTuningConfig,
+        tuning_config: &ScannerTuningConfig,
     ) -> Result<Self> {
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;
         let state = build_compile_state(&detectors)?;
+        validate_compiled_pattern_detector_indices(
+            &state.ac_map,
+            &state.phase2_patterns,
+            detectors.len(),
+        )?;
         let ac = build_ac_pattern_set(&state.ac_literals)?;
         let credential_shape_by_detector_index =
             crate::credential_shapes::build_detector_shape_rules(&detectors)
@@ -99,10 +103,6 @@ impl CompiledScanner {
                                         %diagnostic,
                                         "CUDA peer acquired without reproducible runtime identity"
                                     );
-                                    failures.push(GpuBackendAcquisitionFailure {
-                                        backend: "cuda",
-                                        diagnostic,
-                                    });
                                 }
                             }
                             let boxed: Box<dyn vyre::VyreBackend> =
@@ -183,19 +183,17 @@ impl CompiledScanner {
         #[cfg(feature = "simd")]
         let mut state = state;
         #[cfg(feature = "simd")]
-        let (simd_prefilter, hs_index_map) =
-            match super::build_simd_scanner(&state.ac_map, tuning_config) {
-                Some((scanner, index_map, unsupported_ac)) => {
-                    super::gpu_artifacts::append_hyperscan_unsupported_patterns(
-                        &mut state,
-                        &detectors,
-                        unsupported_ac,
-                    );
-                    (Some(scanner), CsrU32::from(index_map))
-                }
-                None => (None, CsrU32::default()),
-            };
+        let (simd_prefilter, hs_index_map) = match build_simd_scanner(&state.ac_map, tuning_config)
+        {
+            Some((scanner, index_map, unsupported_ac)) => {
+                append_hyperscan_unsupported_patterns(&mut state, &detectors, unsupported_ac);
+                (Some(scanner), CsrU32::from(index_map))
+            }
+            None => (None, CsrU32::default()),
+        };
 
+        // Hyperscan may reroute unsupported confirmed patterns into phase 2.
+        // Validate the augmented state as well as the pre-append state above.
         validate_compiled_pattern_detector_indices(
             &state.ac_map,
             &state.phase2_patterns,
@@ -208,8 +206,7 @@ impl CompiledScanner {
         let phase2_keyword_to_patterns = CsrU32::from(phase2_keyword_to_patterns);
         // Precompute always-active phase-2 indices so the per-chunk hot path
         // seeds the sparse active set without scanning the full phase-2 table.
-        let phase2_always_active_indices =
-            super::gpu_artifacts::phase2_always_active_indices(&state.phase2_patterns);
+        let phase2_always_active_indices = phase2_always_active_indices(&state.phase2_patterns);
 
         // Three independent Aho-Corasick indices over the (post-HS-append)
         // compile state. They share no mutable state and each is a pure function
@@ -227,20 +224,11 @@ impl CompiledScanner {
         //   - confirmed_anchor_index: AC over the confirmed ac_map anchors.
         let (phase2_anchor_index, ((suffix_gate_ac, ac_suffix_gate), confirmed_anchor_index)) =
             rayon::join(
-                || {
-                    phase2_anchor::Phase2AnchorIndex::build(
-                        &state.phase2_patterns,
-                        &phase2_always_active_indices,
-                    )
-                },
+                || Phase2AnchorIndex::build(&state.phase2_patterns, &phase2_always_active_indices),
                 || {
                     rayon::join(
-                        || super::scan_postprocess::build_confirmed_suffix_gate(&state.ac_map),
-                        || {
-                            scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::build(
-                                &state.ac_map,
-                            )
-                        },
+                        || build_confirmed_suffix_gate(&state.ac_map),
+                        || ConfirmedAnchorIndex::build(&state.ac_map),
                     )
                 },
             );
@@ -434,7 +422,7 @@ impl CompiledScanner {
         #[cfg(not(feature = "simdsieve"))]
         let hot_confirmed_by_pattern = vec![false; state.ac_map.len()];
 
-        let pattern_boundary_context = boundary::derive_pattern_boundary_context(
+        let pattern_boundary_context = derive_pattern_boundary_context(
             state
                 .ac_map
                 .iter()
@@ -444,7 +432,7 @@ impl CompiledScanner {
         let ac_match_upper_bounds: Vec<Option<usize>> = state
             .ac_map
             .iter()
-            .map(|pattern| boundary::regex_match_byte_upper_bound(pattern.regex.as_str()))
+            .map(|pattern| regex_match_byte_upper_bound(pattern.regex.as_str()))
             .collect();
 
         // Pre-intern the four synthetic entropy-fallback metadata triples once
@@ -479,13 +467,9 @@ impl CompiledScanner {
             gpu_max_literal_len,
             gpu_matcher: OnceLock::new(),
             #[cfg(feature = "gpu")]
-            gpu_resident_presence_cuda: std::sync::Mutex::new(
-                super::gpu_resident_presence::GpuResidentPresenceSlot::Empty,
-            ),
+            gpu_resident_presence_cuda: std::sync::Mutex::new(GpuResidentPresenceSlot::Empty),
             #[cfg(feature = "gpu")]
-            gpu_resident_presence_wgpu: std::sync::Mutex::new(
-                super::gpu_resident_presence::GpuResidentPresenceSlot::Empty,
-            ),
+            gpu_resident_presence_wgpu: std::sync::Mutex::new(GpuResidentPresenceSlot::Empty),
             gpu_last_degrade_reason: std::sync::Mutex::new(None),
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
             autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64::new(0),
@@ -518,7 +502,7 @@ impl CompiledScanner {
             phase2_always_active_prefilter,
             phase2_anchor_index,
             #[cfg(feature = "gpu")]
-            phase2_gpu_dfa: phase2_gpu_dfa::Phase2GpuDfaCatalogCache::default(),
+            phase2_gpu_dfa: Phase2GpuDfaCatalogCache::default(),
             tuning: phase2::ScannerTuning::from_defaults(),
             #[cfg(feature = "simd")]
             simd_prefilter,
@@ -546,7 +530,7 @@ impl CompiledScanner {
     }
 
     /// Apply explicit performance-route tuning to this compiled scanner.
-    pub fn with_tuning_config(self, config: crate::scanner_config::ScannerTuningConfig) -> Self {
+    pub fn with_tuning_config(self, config: ScannerTuningConfig) -> Self {
         self.tuning.apply_config(&config);
         self
     }

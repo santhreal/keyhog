@@ -6,8 +6,11 @@
 //! matcher artifacts without reimplementing scanner compile semantics.
 
 use super::{gpu_cache, phase2_anchor, phase2_generic, scan_postprocess};
+#[cfg(feature = "simd")]
+use crate::compiler::append_hyperscan_unsupported_patterns;
 use crate::compiler::{
     build_compile_state, build_gpu_literals, build_gpu_position_literals, build_phase2_keyword_ac,
+    phase2_always_active_indices, validate_compiled_pattern_detector_indices,
 };
 use crate::error::{Result, ScanError};
 use crate::scanner_config::ScannerTuningConfig;
@@ -65,7 +68,17 @@ pub fn compile_gpu_literal_artifacts(
     tuning_config: &ScannerTuningConfig,
 ) -> Result<GpuLiteralArtifacts> {
     let mut state = build_compile_state(detectors)?;
+    validate_compiled_pattern_detector_indices(
+        &state.ac_map,
+        &state.phase2_patterns,
+        detectors.len(),
+    )?;
     reroute_hyperscan_unsupported_patterns(&mut state, detectors, tuning_config);
+    validate_compiled_pattern_detector_indices(
+        &state.ac_map,
+        &state.phase2_patterns,
+        detectors.len(),
+    )?;
 
     let (_, _, phase2_keywords) = build_phase2_keyword_ac(&state.phase2_patterns);
     let phase2_always_active_indices = phase2_always_active_indices(&state.phase2_patterns);
@@ -101,33 +114,6 @@ pub fn compile_gpu_literal_artifacts(
             build_gpu_position_literals(confirmed_anchor_literals, &generic_keyword_literals),
         )?,
     })
-}
-
-pub(super) fn phase2_always_active_indices(
-    phase2_patterns: &[(crate::types::CompiledPattern, Vec<String>)],
-) -> Vec<usize> {
-    phase2_patterns
-        .iter()
-        .enumerate()
-        // Mirrors `compiler::build_phase2_keyword_ac`'s 4-char floor. The
-        // experimental 3-char floor measured a net F1 regression on
-        // SecretBench-medium, so both checks stay at 4.
-        .filter_map(|(index, (_, keywords))| {
-            (!keywords.iter().any(|keyword| keyword.len() >= 4)).then_some(index)
-        })
-        .collect()
-}
-
-pub(super) fn append_hyperscan_unsupported_patterns(
-    state: &mut crate::compiler::compiler_build::CompileState,
-    detectors: &[DetectorSpec],
-    unsupported_ac: impl IntoIterator<Item = usize>,
-) {
-    for ac_idx in unsupported_ac {
-        let pattern = state.ac_map[ac_idx].clone();
-        let keywords = detectors[pattern.detector_index].keywords.clone();
-        state.phase2_patterns.push((pattern, keywords));
-    }
 }
 
 #[cfg(feature = "simd")]

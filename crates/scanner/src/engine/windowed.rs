@@ -7,7 +7,7 @@ use super::*;
 use std::collections::{HashSet, VecDeque};
 
 impl CompiledScanner {
-    pub(super) fn scan_windowed(
+    pub(crate) fn scan_windowed(
         &self,
         chunk: &Chunk,
         backend: crate::hw_probe::ScanBackend,

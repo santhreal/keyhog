@@ -25,7 +25,7 @@ pub(crate) fn hot_pattern_index_at(
 /// its `ac_map` delegate are physically inseparable, they can never be indexed
 /// apart and so can never drift. Slot order follows loaded detector specs and
 /// their `simdsieve_prefixes`; built once by
-/// `engine::compile_helpers::build_hot_pattern_slots`.
+/// `compiled_scanner::compile_helpers::build_hot_pattern_slots`.
 ///
 /// Before unification these were two separate `Vec`s on `CompiledScanner`
 /// (`hot_pattern_validators` and `hot_ac_map_index_by_index`) read by the SAME
@@ -70,7 +70,7 @@ pub(crate) struct HotPatternSlot {
 /// is not loaded therefore cannot create a hot-path finding.
 ///
 /// This module (`mod simdsieve_prefilter`) and the sole caller in
-/// `engine::compile` are both gated on `feature = "simdsieve"`, so whenever
+/// `compiled_scanner::compile` are both gated on `feature = "simdsieve"`, so whenever
 /// this function is compiled its caller is too: no `#[allow(dead_code)]` is
 /// needed.
 pub(crate) fn build_hot_pattern_validator(

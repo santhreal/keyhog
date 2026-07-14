@@ -19,6 +19,69 @@ pub(crate) struct CompileState {
     pub(crate) quality_warnings: Vec<String>,
 }
 
+pub(crate) fn validate_compiled_pattern_detector_indices(
+    ac_map: &[CompiledPattern],
+    phase2_patterns: &[(CompiledPattern, Vec<String>)],
+    detectors_len: usize,
+) -> Result<()> {
+    for (pattern_index, pattern) in ac_map.iter().enumerate() {
+        validate_compiled_pattern_detector_index("ac_map", pattern_index, pattern, detectors_len)?;
+    }
+    for (pattern_index, (pattern, _keywords)) in phase2_patterns.iter().enumerate() {
+        validate_compiled_pattern_detector_index(
+            "phase2_patterns",
+            pattern_index,
+            pattern,
+            detectors_len,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_compiled_pattern_detector_index(
+    table: &'static str,
+    pattern_index: usize,
+    pattern: &CompiledPattern,
+    detectors_len: usize,
+) -> Result<()> {
+    if pattern.detector_index >= detectors_len {
+        return Err(ScanError::CompiledPatternDetectorIndex {
+            table,
+            pattern_index,
+            detector_index: pattern.detector_index,
+            detectors_len,
+        });
+    }
+    Ok(())
+}
+
+pub(crate) fn phase2_always_active_indices(
+    phase2_patterns: &[(CompiledPattern, Vec<String>)],
+) -> Vec<usize> {
+    phase2_patterns
+        .iter()
+        .enumerate()
+        // Mirrors `build_phase2_keyword_ac`'s 4-char floor. The experimental
+        // 3-char floor regressed F1, so both checks stay at 4.
+        .filter_map(|(index, (_, keywords))| {
+            (!keywords.iter().any(|keyword| keyword.len() >= 4)).then_some(index)
+        })
+        .collect()
+}
+
+#[cfg(feature = "simd")]
+pub(crate) fn append_hyperscan_unsupported_patterns(
+    state: &mut CompileState,
+    detectors: &[DetectorSpec],
+    unsupported_ac: impl IntoIterator<Item = usize>,
+) {
+    for ac_idx in unsupported_ac {
+        let pattern = state.ac_map[ac_idx].clone();
+        let keywords = detectors[pattern.detector_index].keywords.clone();
+        state.phase2_patterns.push((pattern, keywords));
+    }
+}
+
 /// Everything the serial assembly phase needs for one compiled pattern, all
 /// derived inside the parallel compile map: the compiled pattern, its literal
 /// prefixes, any homoglyph phase-2 variants (each a freshly compiled regex),

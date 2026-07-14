@@ -341,7 +341,6 @@ impl CombinedNoCandidateGate {
     /// admission gate. Checks each pattern's own regex, early-exiting at the first
     /// match, so the admission decision is exact (never over- or under-admits).
     #[inline]
-    #[cfg(any(feature = "simd", feature = "gpu", test))]
     pub(crate) fn any_non_anchorable_match(&self, match_text: &str) -> bool {
         self.non_anchorable
             .iter()

@@ -143,7 +143,7 @@ fn bench_scan_no_hit_throughput(c: &mut Criterion) {
 fn bench_raw_vyre_gpu(c: &mut Criterion) {
     // vyre 0.6.1 API: `GpuLiteralSet::scan(backend, haystack, max_matches)`
     // (`scan_shared` was removed). Acquire the shared wgpu backend the
-    // same way the production scanner does in engine/compile.rs.
+    // same way the production scanner does in compiled_scanner/compile.rs.
     let patterns = vec![b"needle".to_vec()];
     let pattern_refs: Vec<&[u8]> = patterns.iter().map(Vec::as_slice).collect();
 

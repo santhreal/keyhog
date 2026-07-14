@@ -18,11 +18,11 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         "/src/engine/scan_coalesced.rs"
     ))
     .expect("engine coalesced scan source readable");
-    let compiled_api = std::fs::read_to_string(concat!(
+    let runtime_source = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/engine/compiled_api.rs"
+        "/src/compiled_scanner/runtime.rs"
     ))
-    .expect("engine compiled_api source readable");
+    .expect("compiled scanner runtime source readable");
     let hw_select = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/hw_probe/select.rs"
@@ -160,7 +160,7 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
             ),
         "CPU-tier routing must not label AVX/NEON-only hosts as simd-regex when no live Hyperscan/Vectorscan prefilter exists"
     );
-    let selected_simd_guard = compiled_api
+    let selected_simd_guard = runtime_source
         .split("pub(crate) fn require_selected_backend_stack")
         .nth(1)
         .and_then(|tail| tail.split("/// Number of loaded detectors.").next())

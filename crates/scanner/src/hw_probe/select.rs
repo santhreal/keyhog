@@ -376,7 +376,7 @@ pub(crate) fn select_backend_for_batch_verdict(
 /// hardware? This is exactly the GPU branch condition inside
 /// [`select_backend`], factored out so cold-path callers can gate the
 /// expensive wgpu/CUDA device acquisition (the ~250 ms adapter-enumeration
-/// cold-start in `engine::compile`) on whether the workload can clear the
+/// cold-start in `compiled_scanner::compile`) on whether the workload can clear the
 /// tier's GPU floor at all.
 ///
 /// On a many-tiny-file corpus the per-batch byte total never reaches the

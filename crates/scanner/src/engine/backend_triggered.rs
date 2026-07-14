@@ -294,13 +294,13 @@ impl CompiledScanner {
         }
     }
 
-    fn collect_triggered_patterns_simd(&self, text: &str) -> Vec<u64> {
+    fn collect_triggered_patterns_simd(&self, _text: &str) -> Vec<u64> {
         #[cfg(feature = "simd")]
         if let Some(scanner) = &self.simd_prefilter {
             // AC and HS trigger sets are incomparable; union then confirm.
-            let mut triggered_patterns = self.collect_triggered_patterns_cpu(text);
+            let mut triggered_patterns = self.collect_triggered_patterns_cpu(_text);
             let scan_result =
-                scanner.scan_matches_result(text.as_bytes(), |hs_id, _start, _end| {
+                scanner.scan_matches_result(_text.as_bytes(), |hs_id, _start, _end| {
                     let Some((_detector_index, dedup_id, _has_group)) = scanner.pattern_info(hs_id)
                     else {
                         return;

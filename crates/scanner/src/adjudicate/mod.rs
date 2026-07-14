@@ -153,10 +153,12 @@ impl ProcessCandidateSignals {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(feature = "simdsieve")]
 pub(crate) enum HotPatternSignal {
     ShapeGate(&'static str),
 }
 
+#[cfg(feature = "simdsieve")]
 impl HotPatternSignal {
     const fn stage_id(self) -> StageId {
         match self {
@@ -352,6 +354,7 @@ pub(crate) struct MatchCtx<'a> {
     process_signals: Option<ProcessCandidateSignals>,
     generic_bridge_signal: Option<GenericBridgeSignal>,
     entropy_fallback_signal: Option<EntropyFallbackSignal>,
+    #[cfg(feature = "simdsieve")]
     hot_pattern_signal: Option<HotPatternSignal>,
     entropy_generation_signal: Option<EntropyGenerationSignal>,
     named_detector_suppression: Option<NamedDetectorSuppressionCtx<'a>>,
@@ -365,6 +368,7 @@ impl<'a> MatchCtx<'a> {
             process_signals: None,
             generic_bridge_signal: None,
             entropy_fallback_signal: None,
+            #[cfg(feature = "simdsieve")]
             hot_pattern_signal: None,
             entropy_generation_signal: None,
             named_detector_suppression: None,
@@ -378,6 +382,7 @@ impl<'a> MatchCtx<'a> {
             process_signals: Some(process_signals),
             generic_bridge_signal: None,
             entropy_fallback_signal: None,
+            #[cfg(feature = "simdsieve")]
             hot_pattern_signal: None,
             entropy_generation_signal: None,
             named_detector_suppression: None,
@@ -391,6 +396,7 @@ impl<'a> MatchCtx<'a> {
             process_signals: None,
             generic_bridge_signal: Some(signal),
             entropy_fallback_signal: None,
+            #[cfg(feature = "simdsieve")]
             hot_pattern_signal: None,
             entropy_generation_signal: None,
             named_detector_suppression: None,
@@ -404,6 +410,7 @@ impl<'a> MatchCtx<'a> {
             process_signals: None,
             generic_bridge_signal: None,
             entropy_fallback_signal: Some(signal),
+            #[cfg(feature = "simdsieve")]
             hot_pattern_signal: None,
             entropy_generation_signal: None,
             named_detector_suppression: None,
@@ -411,6 +418,7 @@ impl<'a> MatchCtx<'a> {
         }
     }
 
+    #[cfg(feature = "simdsieve")]
     pub(crate) const fn for_hot_pattern(signal: HotPatternSignal) -> Self {
         Self {
             explicit_stage: None,
@@ -430,6 +438,7 @@ impl<'a> MatchCtx<'a> {
             process_signals: None,
             generic_bridge_signal: None,
             entropy_fallback_signal: None,
+            #[cfg(feature = "simdsieve")]
             hot_pattern_signal: None,
             entropy_generation_signal: Some(signal),
             named_detector_suppression: None,
@@ -443,6 +452,7 @@ impl<'a> MatchCtx<'a> {
             process_signals: None,
             generic_bridge_signal: None,
             entropy_fallback_signal: None,
+            #[cfg(feature = "simdsieve")]
             hot_pattern_signal: None,
             entropy_generation_signal: None,
             named_detector_suppression: Some(ctx),
@@ -456,6 +466,7 @@ impl<'a> MatchCtx<'a> {
             process_signals: None,
             generic_bridge_signal: None,
             entropy_fallback_signal: None,
+            #[cfg(feature = "simdsieve")]
             hot_pattern_signal: None,
             entropy_generation_signal: None,
             named_detector_suppression: None,
@@ -474,6 +485,7 @@ const STAGES: &[StageFn] = &[
     process_signal_stage,
     generic_bridge_stage,
     entropy_fallback_stage,
+    #[cfg(feature = "simdsieve")]
     hot_pattern_stage,
     entropy_generation_stage,
     named_detector_suppression_stage,
@@ -704,6 +716,7 @@ fn entropy_fallback_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) ->
     }
 }
 
+#[cfg(feature = "simdsieve")]
 fn hot_pattern_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
     if let Some(signal) = ctx.hot_pattern_signal {
         StageOutcome::Suppress(signal.stage_id())

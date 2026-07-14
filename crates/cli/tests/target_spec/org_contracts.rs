@@ -310,8 +310,13 @@ fn assert_backend_variant_live(variant: &str) {
 }
 
 #[test]
-fn org_backend_arm_gpu_is_live() {
-    assert_backend_variant_live("Gpu");
+fn org_backend_arm_gpu_cuda_is_live() {
+    assert_backend_variant_live("GpuCuda");
+}
+
+#[test]
+fn org_backend_arm_gpu_wgpu_is_live() {
+    assert_backend_variant_live("GpuWgpu");
 }
 
 #[test]
@@ -346,9 +351,9 @@ fn org_backend_enum_arm_count_matches_label_impl() {
     }
     assert_eq!(
         variants.len(),
-        3,
-        "ORG GAP [backend]: expected exactly 3 ScanBackend variants (Gpu, SimdCpu, \
-         CpuFallback); found {}: {variants:?}. A new arm must be wired into selection, dispatch, \
+        4,
+        "ORG GAP [backend]: expected exactly 4 ScanBackend variants (GpuCuda, GpuWgpu, \
+         SimdCpu, CpuFallback); found {}: {variants:?}. A new arm must be wired into selection, dispatch, \
          label, and the backend-parity matrix before it counts as live.",
         variants.len(),
     );
@@ -913,14 +918,13 @@ fn org_shipped_source_has_no_dead_or_unused_allowances() {
     );
 }
 
-// ── No engine file mixing >1 responsibility (per-file, dynamic count) ───────
+// ── No scanner implementation file mixing >1 responsibility ────────────────
 
-/// TARGET: an engine source file should carry at most this many distinct
-/// `impl CompiledScanner` blocks. The engine was deliberately split so the
-/// `CompiledScanner` "god object" has its methods spread across files by job
-/// (see engine/mod.rs "Where each method lives"). A file with several distinct
-/// impl blocks is re-aggregating responsibilities back into one file.
-const MAX_IMPL_BLOCKS_PER_ENGINE_FILE: usize = 1;
+/// TARGET: a scanner source file should carry at most this many distinct
+/// `impl CompiledScanner` blocks. Construction and lifecycle live under
+/// `compiled_scanner`; execution lives under `engine`. A file with several
+/// distinct impl blocks is re-aggregating responsibilities.
+const MAX_IMPL_BLOCKS_PER_SCANNER_FILE: usize = 1;
 
 /// Count `impl CompiledScanner` blocks in a file (each is one responsibility
 /// cluster). `impl<…> CompiledScanner` and plain `impl CompiledScanner` both
@@ -935,51 +939,57 @@ fn impl_compiled_scanner_blocks(src: &str) -> usize {
         .count()
 }
 
-/// Engine files (excluding mod.rs which is the documented router/facade and is
-/// allowed to carry the dispatch glue).
-fn engine_files(root: &Path) -> Vec<PathBuf> {
-    let dir = root.join("crates/scanner/src/engine");
-    let mut out: Vec<PathBuf> = walk_rs(&dir)
-        .into_iter()
-        .filter(|p| p.file_name().and_then(|n| n.to_str()) != Some("mod.rs"))
-        .collect();
+/// Scanner implementation files. Module roots are routing facades and may
+/// carry their small amount of dispatch glue.
+fn scanner_impl_files(root: &Path) -> Vec<PathBuf> {
+    let scanner_src = root.join("crates/scanner/src");
+    let mut out = Vec::new();
+    for subtree in ["compiled_scanner", "engine"] {
+        out.extend(
+            walk_rs(&scanner_src.join(subtree))
+                .into_iter()
+                .filter(|path| path.file_name().and_then(|name| name.to_str()) != Some("mod.rs")),
+        );
+    }
     out.sort();
     out
 }
 
 #[test]
-fn org_no_engine_file_mixes_multiple_compiled_scanner_impls() {
+fn org_no_scanner_file_mixes_multiple_compiled_scanner_impls() {
     let root = repo_root();
     let mut offenders = Vec::new();
-    for file in engine_files(&root) {
+    for file in scanner_impl_files(&root) {
         let src = read(&file);
         let blocks = impl_compiled_scanner_blocks(&src);
-        if blocks > MAX_IMPL_BLOCKS_PER_ENGINE_FILE {
+        if blocks > MAX_IMPL_BLOCKS_PER_SCANNER_FILE {
             offenders.push(format!(
-                "    engine/{}: {blocks} distinct `impl CompiledScanner` blocks",
-                file.file_name().and_then(|n| n.to_str()).unwrap_or("?"),
+                "    {}: {blocks} distinct `impl CompiledScanner` blocks",
+                file.strip_prefix(root.join("crates/scanner/src"))
+                    .unwrap_or(&file)
+                    .display(),
             ));
         }
     }
     assert!(
         offenders.is_empty(),
-        "ORG GAP [engine]: {} engine file(s) carry more than {MAX_IMPL_BLOCKS_PER_ENGINE_FILE} \
+        "ORG GAP [scanner]: {} scanner file(s) carry more than {MAX_IMPL_BLOCKS_PER_SCANNER_FILE} \
          distinct `impl CompiledScanner` block(s), multiple responsibility clusters in one file. \
-         Each cluster of methods should live in its own job-named file (engine/mod.rs documents the \
-         intended split):\n{}",
+         Each cluster of methods should live in its own responsibility-named file \
+         (`compiled_scanner/mod.rs` and `engine/mod.rs` document the split):\n{}",
         offenders.len(),
         offenders.join("\n"),
     );
 }
 
-/// TARGET: an engine file should not mix BOTH a `CompiledScanner` impl AND a
+/// TARGET: a scanner file should not mix BOTH a `CompiledScanner` impl AND a
 /// large free-function group (3+ top-level `pub fn`/`fn` at column 0). That mix
 /// is the "utility + method" responsibility blend the split was meant to undo.
 #[test]
-fn org_no_engine_file_mixes_impl_and_freefn_groups() {
+fn org_no_scanner_file_mixes_impl_and_freefn_groups() {
     let root = repo_root();
     let mut offenders = Vec::new();
-    for file in engine_files(&root) {
+    for file in scanner_impl_files(&root) {
         let src = read(&file);
         let impls = impl_compiled_scanner_blocks(&src);
         let free_fns = src
@@ -994,16 +1004,18 @@ fn org_no_engine_file_mixes_impl_and_freefn_groups() {
             .count();
         if impls >= 1 && free_fns >= 3 {
             offenders.push(format!(
-                "    engine/{}: {impls} `impl CompiledScanner` + {free_fns} top-level free fns",
-                file.file_name().and_then(|n| n.to_str()).unwrap_or("?"),
+                "    {}: {impls} `impl CompiledScanner` + {free_fns} top-level free fns",
+                file.strip_prefix(root.join("crates/scanner/src"))
+                    .unwrap_or(&file)
+                    .display(),
             ));
         }
     }
     assert!(
         offenders.is_empty(),
-        "ORG GAP [engine]: {} engine file(s) mix a `CompiledScanner` impl with a free-function \
+        "ORG GAP [scanner]: {} scanner file(s) mix a `CompiledScanner` impl with a free-function \
          group (>=3 top-level fns), two responsibilities in one file. Split the free helpers into \
-         a job-named sibling module:\n{}",
+         a responsibility-named sibling module:\n{}",
         offenders.len(),
         offenders.join("\n"),
     );

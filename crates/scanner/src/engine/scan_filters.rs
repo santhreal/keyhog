@@ -2,20 +2,15 @@
 /// Used to gate the multiline fallback - only files that mention
 /// secret/key/token/password are worth reassembling.
 ///
-/// Used by coalesced SIMD and GPU phase2 no-hit routing to avoid full phase-2
-/// scans on chunks that cannot plausibly contain split or prefix-known secrets.
+/// Used by every backend's phase-2 no-hit routing to avoid full phase-2 scans
+/// on chunks that cannot plausibly contain split or prefix-known secrets.
 ///
 /// Single-pass Aho-Corasick over all distinctive prefixes - replaces the
 /// previous loop of N independent `memmem` scans (each O(n)) which traversed
 /// the chunk N times. With the AC automaton the scan is O(n) total, with
 /// one memory walk and shared cache lines.
 //
-// `any(simd, gpu)`: invoked only from `should_scan_no_hit_chunk`, the
-// no-phase-1-trigger admission gate on the coalesced (`simd`) /
-// region-presence (`gpu`) phase-2 tail. The no-`simd`-no-`gpu` AC+phase-2 path scans every
-// chunk whole and never routes through that gate, so this filter has no caller
-// there (gated to match (Law 11)).
-#[cfg(any(feature = "simd", feature = "gpu"))]
+// Every backend uses this from the shared no-trigger admission gate.
 pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;
     use std::sync::LazyLock;
@@ -62,10 +57,7 @@ pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
 /// `SECRET` from a single literal at scan-time, halving the pattern count.
 ///
 //
-// `any(simd, gpu)`: like `has_secret_keyword_fast`, this is consumed only by
-// `should_scan_no_hit_chunk` on the coalesced/region-presence phase-2 tail;
-// gated to match its caller so no-`simd`-no-`gpu` builds stay warning-clean (Law 11).
-#[cfg(any(feature = "simd", feature = "gpu"))]
+// Consumed by the backend-neutral `should_scan_no_hit_chunk` contract.
 pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;
     use std::sync::LazyLock;
@@ -111,20 +103,17 @@ pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
 /// `is_uuid_v4_shape`, so trip-firing the gate does NOT add FPs - it just
 /// admits the chunk to the entropy fallback for inspection.
 //
-// `any(simd, gpu)`: both callers live behind these features, the
-// `should_scan_no_hit_chunk` admission gate (`any(simd, gpu)`) and the entropy
-// fallback's cheap precheck (`#[cfg(simd)]` in `phase2_entropy.rs`). Their
-// union is `any(simd, gpu)`; the no-`simd`-no-`gpu` path has neither, so gating
-// here keeps that profile warning-clean (Law 11).
-#[cfg(any(feature = "simd", feature = "gpu"))]
+// Used by the no-trigger admission gate and the entropy fallback's cheap
+// precheck.
+#[cfg(any(feature = "entropy", test))]
 pub(super) fn has_high_entropy_run_fast(data: &[u8]) -> bool {
     has_high_entropy_run_at_least(data, DEFAULT_ENTROPY_RUN_BYTES)
 }
 
-#[cfg(any(feature = "simd", feature = "gpu"))]
+#[cfg(any(feature = "entropy", test))]
 pub(super) const DEFAULT_ENTROPY_RUN_BYTES: usize = 32;
 
-#[cfg(any(feature = "simd", feature = "gpu"))]
+#[cfg(any(feature = "entropy", test))]
 pub(super) fn has_high_entropy_run_at_least(data: &[u8], min_run: usize) -> bool {
     let min_run = min_run.max(1);
     let mut run = 0usize;
@@ -141,7 +130,7 @@ pub(super) fn has_high_entropy_run_at_least(data: &[u8], min_run: usize) -> bool
     false
 }
 
-#[cfg(any(feature = "simd", feature = "gpu"))]
+#[cfg(any(feature = "entropy", test))]
 fn is_entropy_candidate_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric()
         || matches!(
@@ -355,8 +344,8 @@ pub(super) fn compute_pattern_signals(
 // so a silent drop from either list is a direct false-negative. These pin the
 // exact triggering contract, every curated vendor prefix, the deliberately-
 // EXCLUDED short prefixes, the case-sensitivity CONTRAST between the two gates,
-// and the fail-open (never-drop) boundaries, white-box because both fns are
-// `pub(super)` and cfg-gated behind `any(simd, gpu)` (see the allowlist entry in
-#[cfg(all(test, any(feature = "simd", feature = "gpu")))]
+// and the fail-open (never-drop) boundaries, white-box because both functions
+// are `pub(super)`.
+#[cfg(test)]
 #[path = "../../tests/unit/engine_scan_filters.rs"]
 mod tests;

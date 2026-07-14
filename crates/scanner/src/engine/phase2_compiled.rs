@@ -282,13 +282,8 @@ impl CompiledScanner {
     /// phase-2 work?", admitting EVERY chunk); running the prefilter answers the
     /// per-chunk question instead, which is what no-hit admission needs.
     //
-    // `any(simd, gpu)`: the only caller is `should_scan_no_hit_chunk`, the
-    // no-phase-1-trigger admission gate that exists solely on the coalesced
-    // (`simd`) and region-presence (`gpu`) phase-2 tail. A no-`simd`-no-`gpu` build
-    // scans every chunk through the AC+phase-2 path unconditionally (no
-    // trigger-skip step), so it never asks this question, gating here keeps
-    // that profile warning-clean (Law 11) without dropping any chunk (Law 10).
-    #[cfg(any(feature = "simd", feature = "gpu"))]
+    // Every backend uses this admission proof before the phase-2 tail so a
+    // no-hit chunk cannot bypass anchorless detection.
     pub(crate) fn has_active_phase2_patterns_for_chunk(&self, data: &str) -> bool {
         if self.phase2_patterns.is_empty() {
             return false;

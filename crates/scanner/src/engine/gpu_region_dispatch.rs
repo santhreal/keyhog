@@ -16,131 +16,27 @@
 
 use super::gpu_region_batch::{
     for_each_region_presence_batch, for_each_region_presence_window,
-    region_presence_batch_byte_limit, region_presence_batch_len, region_presence_ref_batch_len,
-    region_presence_ref_shards, region_presence_shards, set_trigger_bit, trigger_bit_is_set,
-    validate_detector_match, validate_region_presence_request_plan, RegionPresenceBatchMode,
+    region_presence_batch_byte_limit, set_trigger_bit, trigger_bit_is_set, validate_detector_match,
+    validate_region_presence_request_plan, RegionPresenceBatchMode,
     MAX_REGION_PRESENCE_REQUEST_DISPATCHES,
 };
-use super::gpu_region_dispatch_helpers::mib_per_second;
 #[cfg(test)]
-use super::phase2_gpu_dfa::build_phase2_gpu_admission_workload;
-use super::phase2_gpu_dfa::Phase2GpuDfaAdmission;
+use super::gpu_region_dispatch_helpers::record_test_window_reduction_allocation;
+#[cfg(test)]
+pub(super) use super::gpu_region_dispatch_helpers::{
+    append_phase2_gpu_admission, reset_test_window_reduction_allocations,
+    test_window_reduction_allocations,
+};
+use super::gpu_region_dispatch_helpers::{
+    mib_per_second, scan_phase2_gpu_chunks_sharded, scan_phase2_gpu_refs_sharded,
+};
+#[cfg(test)]
+use super::phase2_gpu_dfa::{build_phase2_gpu_admission_workload, Phase2GpuDfaAdmission};
 use super::phase2_gpu_dfa::{
     build_phase2_gpu_admission_workload_filtered, expand_phase2_gpu_admission,
     validate_phase2_gpu_trigger_rows, Phase2GpuAdmissionWorkload,
 };
 use super::*;
-
-#[cfg(test)]
-thread_local! {
-    static TEST_WINDOW_REDUCTION_ALLOCATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-#[cfg(test)]
-pub(super) fn reset_test_window_reduction_allocations() {
-    TEST_WINDOW_REDUCTION_ALLOCATIONS.with(|count| count.set(0));
-}
-
-#[cfg(test)]
-pub(super) fn test_window_reduction_allocations() -> usize {
-    TEST_WINDOW_REDUCTION_ALLOCATIONS.with(std::cell::Cell::get)
-}
-
-pub(super) fn append_phase2_gpu_admission(
-    merged: &mut Phase2GpuDfaAdmission,
-    mut shard: Phase2GpuDfaAdmission,
-    expected_rows: usize,
-) -> std::result::Result<(), String> {
-    if shard.admitted.len() != expected_rows || shard.marked.len() != expected_rows {
-        return Err(format!(
-            "phase-2 GPU admission shard returned admitted={} and marked={} row(s), need {expected_rows}",
-            shard.admitted.len(),
-            shard.marked.len()
-        ));
-    }
-    merged
-        .admitted
-        .try_reserve(shard.admitted.len())
-        .map_err(|error| format!("phase-2 GPU admitted-row merge reserve failed: {error}"))?;
-    merged
-        .marked
-        .try_reserve(shard.marked.len())
-        .map_err(|error| format!("phase-2 GPU marked-row merge reserve failed: {error}"))?;
-    merged.admitted.append(&mut shard.admitted);
-    merged.marked.append(&mut shard.marked);
-    merged.complete &= shard.complete;
-    merged.matches_seen = merged
-        .matches_seen
-        .checked_add(shard.matches_seen)
-        .ok_or_else(|| "phase-2 GPU match count overflow across shards".to_string())?;
-    Ok(())
-}
-
-fn scan_phase2_gpu_chunks_sharded(
-    catalog: &super::phase2_gpu_dfa::Phase2GpuDfaCatalog,
-    backend: &dyn vyre::VyreBackend,
-    chunks: &[keyhog_core::Chunk],
-) -> std::result::Result<Phase2GpuDfaAdmission, String> {
-    let byte_limit = region_presence_batch_byte_limit(backend.id());
-    if region_presence_batch_len(chunks)? <= byte_limit {
-        return catalog.scan_admission_chunks(backend, chunks);
-    }
-    let shards = region_presence_shards(chunks, byte_limit)?;
-    let mut merged = Phase2GpuDfaAdmission {
-        admitted: Vec::new(),
-        complete: true,
-        matches_seen: 0,
-        marked: Vec::new(),
-    };
-    merged
-        .admitted
-        .try_reserve(chunks.len())
-        .map_err(|error| format!("phase-2 GPU admitted-row reserve failed: {error}"))?;
-    merged
-        .marked
-        .try_reserve(chunks.len())
-        .map_err(|error| format!("phase-2 GPU marked-row reserve failed: {error}"))?;
-    for shard in shards {
-        let shard = shard?;
-        let rows = shard.chunks.len();
-        let admission = catalog.scan_admission_chunks(backend, &chunks[shard.chunks])?;
-        append_phase2_gpu_admission(&mut merged, admission, rows)?;
-    }
-    Ok(merged)
-}
-
-fn scan_phase2_gpu_refs_sharded(
-    catalog: &super::phase2_gpu_dfa::Phase2GpuDfaCatalog,
-    backend: &dyn vyre::VyreBackend,
-    chunks: &[&keyhog_core::Chunk],
-) -> std::result::Result<Phase2GpuDfaAdmission, String> {
-    let byte_limit = region_presence_batch_byte_limit(backend.id());
-    if region_presence_ref_batch_len(chunks)? <= byte_limit {
-        return catalog.scan_admission_refs(backend, chunks);
-    }
-    let shards = region_presence_ref_shards(chunks, byte_limit)?;
-    let mut merged = Phase2GpuDfaAdmission {
-        admitted: Vec::new(),
-        complete: true,
-        matches_seen: 0,
-        marked: Vec::new(),
-    };
-    merged
-        .admitted
-        .try_reserve(chunks.len())
-        .map_err(|error| format!("phase-2 GPU admitted-row reserve failed: {error}"))?;
-    merged
-        .marked
-        .try_reserve(chunks.len())
-        .map_err(|error| format!("phase-2 GPU marked-row reserve failed: {error}"))?;
-    for shard in shards {
-        let shard = shard?;
-        let rows = shard.chunks.len();
-        let admission = catalog.scan_admission_refs(backend, &chunks[shard.chunks])?;
-        append_phase2_gpu_admission(&mut merged, admission, rows)?;
-    }
-    Ok(merged)
-}
 
 impl CompiledScanner {
     pub(crate) fn phase2_gpu_dfa_catalog(
@@ -353,8 +249,7 @@ impl CompiledScanner {
                 let (summary, next_cursor) = if oversized {
                     let logical_row = cursor;
                     #[cfg(test)]
-                    TEST_WINDOW_REDUCTION_ALLOCATIONS
-                        .with(|count| count.set(count.get().saturating_add(1)));
+                    record_test_window_reduction_allocation();
                     let mut reduced = Vec::new();
                     reduced.try_reserve_exact(presence_words).map_err(|error| {
                         super::gpu_forced::SelectedGpuDispatchError::new(format!(

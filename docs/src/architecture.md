@@ -73,7 +73,7 @@ by Cargo and must stay acyclic (domain logic never imports CLI/transport/UI).
 | Crate | Owns | Start reading at |
 |-------|------|------------------|
 | **`core`** | Embedded detector loading, detector specs, the `Finding`/`Credential` types, reporters, dedup, allowlists, the Merkle incremental-scan cache, and confidence-calibration data. | `crates/core/src/lib.rs`, `spec.rs`, `finding.rs`, `report/` |
-| **`scanner`** | The detection engine: hardware probing and backend dispatch, prefilters, compile, scan, decode-through, entropy, ML confidence, multiline handling, and suppression. Persisted CLI route selection is intentionally not owned here. | `crates/scanner/src/engine/mod.rs` (the flow), `adjudicate/`, `pipeline/`, `lib.rs` |
+| **`scanner`** | The detection engine: hardware probing and backend dispatch, prefilters, compile, scan, decode-through, entropy, ML confidence, multiline handling, and suppression. Persisted CLI route selection is intentionally not owned here. | `crates/scanner/src/compiled_scanner/` (construction and lifecycle), `engine/mod.rs` (execution flow), `adjudicate/`, `pipeline/`, `lib.rs` |
 | **`sources`** | Where bytes come from: filesystem, git (staged/diff/history), stdin, Docker, S3, GCS, Azure Blob, GitHub-org, web, HAR, strings, binary. | `crates/sources/src/lib.rs` |
 | **`verifier`** | Turning a *candidate* into a *verified-live* credential: per-detector verify endpoints, SSRF/bogon guards, OOB, rate limiting. | `crates/verifier/src/lib.rs`, `verify/`, `ssrf.rs` |
 | **`cli`** | The user-facing binary: argument parsing, the scan orchestrator, daemon/watch, baselines, calibrate, hook installer, output formatting. | `crates/cli/src/lib.rs`, `args/`, `orchestrator/`; `main.rs` owns process/signal startup only |
@@ -100,11 +100,12 @@ method-level version of steps 2-4.
    It produces one "which detectors may match here" bitmap per chunk. The fast
    prefilters (`simdsieve`, `bigram_bloom`, `alphabet_filter`, `prefix_trie`)
    live at `crates/scanner/src/`; detector-to-matcher construction lives in
-   `engine/compile.rs`, `compiler.rs`, and `compiler/`.
+   `compiled_scanner/compile.rs`, `compiler.rs`, and `compiler/`.
 3. **Phase 2: extraction** (the shared tail, identical for CPU and GPU):
    per-chunk `confirmed → phase2 capture → generic → entropy → ML`
-   (`engine/extract.rs`, `engine/phase2*.rs`, `engine/scan.rs`). Decode-through
-   (base64/hex/url/unicode/json) runs here and recurses: `decode/`.
+   (`engine/extract.rs`, `engine/phase2*.rs`, `engine/backend_triggered.rs`,
+   `engine/scan.rs`). Decode-through (base64/hex/url/unicode/json) runs here and
+   recurses: `decode/`.
 4. **Finish raw matches:** scanner-owned suppression, confidence, and
    cross-chunk seam reassembly run in `engine/scan_postprocess/`,
    `engine/process.rs`, and `engine/boundary.rs`. Confidence + ML scoring live in
@@ -121,10 +122,12 @@ method-level version of steps 2-4.
    `crates/cli/src/orchestrator/reporting.rs`, `crates/core/src/dedup.rs`, and
    `crates/core/src/report/` own these steps.
 
-The accelerated batch path is **two-phase and coalesced**: files with no
-phase-one hit stop before extraction, while full extraction runs only on hits.
-Large filesystem scans may instead use the fused reader/scanner pipeline so I/O
-and scanning overlap; `crates/cli/src/orchestrator/dispatch.rs` and
+The accelerated batch path is **two-phase and coalesced**. A file with no
+phase-one hit stops only when the shared no-hit admission proof also rules out
+phase-two patterns, generic assignments, and enabled entropy analysis. This
+proof is identical for portable CPU, Hyperscan, CUDA, and WGPU routes. Large
+filesystem scans may instead use the fused reader/scanner pipeline so I/O and
+scanning overlap; `crates/cli/src/orchestrator/dispatch.rs` and
 `dispatch/fused.rs` own that execution choice. Both paths feed the same scanner
 and report contracts. Backend choice must change performance only, never finding
 semantics.

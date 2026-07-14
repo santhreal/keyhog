@@ -10,7 +10,7 @@ service = "twilio"
 severity = "high"
 keywords = [
     # The "SK" prefix itself is 2 chars, below the AC prefilter's 4-char
-    # floor (see engine/compile.rs), so it never reaches the prefilter
+    # floor (see compiled_scanner/compile.rs), so it never reaches the prefilter
     # gate even if listed. Useful keywords are the full env-var names
     # and the vendor string, all >= 4 chars.
     "twilio",

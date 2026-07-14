@@ -976,12 +976,32 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/compile.rs"
+path = "crates/scanner/src/compiled_scanner/compile.rs"
 error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/compile_helpers.rs"
+path = "crates/scanner/src/compiled_scanner/compile_helpers.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/compiled_scanner/detector_digest.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/compiled_scanner/mod.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/compiled_scanner/runtime.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/compiled_scanner/types.rs"
 error = true
 adversarial = true
 
@@ -1826,13 +1846,8 @@ boundary = true
 error = true
 adversarial = true
 
-# Engine 500-LOC split satellites + previously-untracked engine/prefilter
-# modules (LR2-A8 audit coverage; one [[module]] per scanner src file).
-
-[[module]]
-path = "crates/scanner/src/engine/compiled_api.rs"
-error = true
-adversarial = true
+# Responsibility-focused scanner satellites and previously untracked engine
+# modules (LR2-A8 audit coverage; one [[module]] per scanner source file).
 
 [[module]]
 path = "crates/scanner/src/engine/csr.rs"

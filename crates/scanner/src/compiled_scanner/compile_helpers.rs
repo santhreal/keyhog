@@ -1,43 +1,9 @@
+#[cfg(feature = "simdsieve")]
 use crate::error::Result;
+#[cfg(any(feature = "simdsieve", test))]
 use crate::types::CompiledPattern;
+#[cfg(feature = "simdsieve")]
 use keyhog_core::DetectorSpec;
-
-pub(super) fn validate_compiled_pattern_detector_indices(
-    ac_map: &[CompiledPattern],
-    phase2_patterns: &[(CompiledPattern, Vec<String>)],
-    detectors_len: usize,
-) -> Result<()> {
-    for (pattern_index, pattern) in ac_map.iter().enumerate() {
-        validate_compiled_pattern_detector_index("ac_map", pattern_index, pattern, detectors_len)?;
-    }
-    for (pattern_index, (pattern, _keywords)) in phase2_patterns.iter().enumerate() {
-        validate_compiled_pattern_detector_index(
-            "phase2_patterns",
-            pattern_index,
-            pattern,
-            detectors_len,
-        )?;
-    }
-    Ok(())
-}
-
-fn validate_compiled_pattern_detector_index(
-    table: &str,
-    pattern_index: usize,
-    pattern: &CompiledPattern,
-    detectors_len: usize,
-) -> Result<()> {
-    if pattern.detector_index >= detectors_len {
-        return Err(crate::error::ScanError::Config(format!(
-            "compiled scanner invariant violation: {table}[{pattern_index}] references \
-             detector_index {} but only {detectors_len} detector(s) are loaded. \
-             Fix: rebuild detector compilation so every compiled pattern keeps its source \
-             detector index before scanner construction completes",
-            pattern.detector_index
-        )));
-    }
-    Ok(())
-}
 
 /// Resolve every hot-pattern slot into a single `Vec<HotPatternSlot>`: the one
 /// runtime table the SIMD fast path indexes by `pattern_idx`.
@@ -148,4 +114,45 @@ fn nvidia_userland_present() -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::validate_compiled_pattern_detector_indices;
+    use crate::types::LazyRegex;
+
+    fn compiled_pattern(detector_index: usize) -> CompiledPattern {
+        CompiledPattern {
+            detector_index,
+            regex: LazyRegex::plain("secret_[A-Za-z0-9]{16}"),
+            group: None,
+            client_safe: false,
+            match_proves_keyword_nearby: false,
+            homoglyph_variant: false,
+        }
+    }
+
+    #[test]
+    fn invalid_detector_indices_fail_before_scanner_construction() {
+        let ac_error = validate_compiled_pattern_detector_indices(&[compiled_pattern(2)], &[], 1)
+            .expect_err("an AC pattern cannot name an absent detector")
+            .to_string();
+        assert_eq!(
+            ac_error,
+            "compiled scanner invariant violation: ac_map[0] references detector_index 2 but only 1 detector(s) are loaded. Fix: rebuild detector compilation so every compiled pattern keeps its source detector index before scanner construction completes"
+        );
+
+        let phase2_error = validate_compiled_pattern_detector_indices(
+            &[],
+            &[(compiled_pattern(4), vec!["secret".to_string()])],
+            3,
+        )
+        .expect_err("a phase-2 pattern cannot name an absent detector")
+        .to_string();
+        assert_eq!(
+            phase2_error,
+            "compiled scanner invariant violation: phase2_patterns[0] references detector_index 4 but only 3 detector(s) are loaded. Fix: rebuild detector compilation so every compiled pattern keeps its source detector index before scanner construction completes"
+        );
+    }
 }

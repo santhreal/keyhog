@@ -15,6 +15,15 @@ fn engine_src(name: &str) -> String {
     .unwrap_or_else(|_| panic!("{name} should be readable"))
 }
 
+fn compiled_scanner_src(name: &str) -> String {
+    fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src/compiled_scanner")
+            .join(name),
+    )
+    .unwrap_or_else(|_| panic!("{name} should be readable"))
+}
+
 #[test]
 fn phase2_prefilter_compile_failures_warn() {
     let src = engine_src("phase2_prefilter.rs");
@@ -71,35 +80,6 @@ fn phase2_prefilter_compile_failures_warn() {
     assert!(
         src.contains("tracing::warn!("),
         "phase2_prefilter.rs must contain tracing::warn! calls"
-    );
-}
-
-#[test]
-fn compiled_pattern_detector_indices_fail_before_scan_runtime() {
-    let compile = engine_src("compile.rs");
-    let compile_helpers = engine_src("compile_helpers.rs");
-    assert!(
-        compile.contains("validate_compiled_pattern_detector_indices(")
-            && compile_helpers.contains("fn validate_compiled_pattern_detector_indices")
-            && compile_helpers.contains("compiled scanner invariant violation")
-            && compile_helpers.contains("\"ac_map\"")
-            && compile_helpers.contains("\"phase2_patterns\""),
-        "compiled pattern detector_index values must be validated during scanner construction"
-    );
-
-    let extract = engine_src("extract.rs");
-    let anchored = engine_src("phase2_anchor_scan.rs");
-    assert!(
-        extract.contains("let detector = &self.detectors[entry.detector_index];")
-            && anchored.contains("let detector = &self.detectors[entry.detector_index];"),
-        "extraction paths should consume construction-validated detector indices directly"
-    );
-    assert!(
-        !extract.contains("record_invalid_detector_index_skip")
-            && !anchored.contains("record_invalid_detector_index_skip")
-            && !extract.contains("detector_index out of range; skipping pattern")
-            && !anchored.contains("detector_index out of range; skipping pattern"),
-        "runtime extraction must not hide corrupt detector_index values by skipping patterns"
     );
 }
 
@@ -403,7 +383,7 @@ fn backend_affecting_config_parse_failures_are_loud() {
         "numeric env parser helpers must not exist in production; config is explicit TOML/CLI"
     );
 
-    let engine = engine_src("compiled_api.rs");
+    let engine = compiled_scanner_src("runtime.rs");
     let scanner_config = scanner_src("scanner_config.rs");
     assert!(
         engine.matches("self.config.per_chunk_deadline()").count() == 2

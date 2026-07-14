@@ -20,7 +20,7 @@ fn read_src(rel: &str) -> String {
 
 #[test]
 fn alphabet_targets_build_avoids_per_pattern_vec_clone() {
-    let src = read_src("src/engine/compile.rs");
+    let src = read_src("src/compiled_scanner/compile.rs");
 
     assert!(
         src.contains("alphabet_targets.extend(keywords.iter().cloned())"),

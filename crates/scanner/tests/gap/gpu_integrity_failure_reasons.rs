@@ -95,7 +95,7 @@ fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
 #[test]
 fn gpu_self_test_can_report_recorded_runtime_fault() {
     let engine = engine_src("src/engine/mod.rs");
-    let api = engine_src("src/engine/compiled_api.rs");
+    let api = engine_src("src/compiled_scanner/runtime.rs");
     let gpu_self_test = engine_src("src/gpu/self_test.rs");
     assert!(
         engine.contains("gpu_last_degrade_reason"),

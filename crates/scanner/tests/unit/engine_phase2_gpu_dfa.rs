@@ -1,4 +1,5 @@
 use super::*;
+use crate::GpuInitPolicy;
 
 fn test_pattern(src: &str, case_insensitive: bool) -> CompiledPattern {
     test_pattern_with_shape(src, case_insensitive, 0, false)

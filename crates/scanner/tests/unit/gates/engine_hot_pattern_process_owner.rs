@@ -8,8 +8,8 @@ use super::support::*;
 fn canonical_hot_patterns_delegate_to_process_match() {
     let src = scanner_src();
     let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));
-    let compile = uncommented_code(&read(&src.join("engine/compile.rs")));
-    let compile_helpers = uncommented_code(&read(&src.join("engine/compile_helpers.rs")));
+    let compile = uncommented_code(&read(&src.join("compiled_scanner/compile.rs")));
+    let compile_helpers = uncommented_code(&read(&src.join("compiled_scanner/compile_helpers.rs")));
     let backend_triggered = uncommented_code(&read(&src.join("engine/backend_triggered.rs")));
 
     assert!(

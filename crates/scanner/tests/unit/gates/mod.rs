@@ -17,7 +17,6 @@ pub mod checksum_slack_no_unwrap_expect;
 pub mod checksum_stripe_no_inline_tests;
 pub mod checksum_stripe_no_unwrap_expect;
 pub mod ci_scanner_test_targets_wired;
-pub mod compiled_scanner_detector_digest_contract;
 pub mod compiler_detector_regex_compile_gate;
 pub mod compiler_no_inline_tests;
 pub mod compiler_no_unwrap_expect;

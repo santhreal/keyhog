@@ -14,7 +14,7 @@ impl CompiledScanner {
 
     #[cfg(feature = "decode")]
     #[inline]
-    pub(super) fn chunk_needs_decode_postprocess(&self, chunk: &keyhog_core::Chunk) -> bool {
+    pub(crate) fn chunk_needs_decode_postprocess(&self, chunk: &keyhog_core::Chunk) -> bool {
         self.config.max_decode_depth > 0
             && chunk.data.len() <= self.config.max_decode_bytes
             && crate::decode::decoder_admission(chunk) != crate::decode::DecodeAdmission::Impossible
@@ -22,7 +22,7 @@ impl CompiledScanner {
 
     #[cfg(not(feature = "decode"))]
     #[inline]
-    pub(super) fn chunk_needs_decode_postprocess(&self, _chunk: &keyhog_core::Chunk) -> bool {
+    pub(crate) fn chunk_needs_decode_postprocess(&self, _chunk: &keyhog_core::Chunk) -> bool {
         false
     }
 

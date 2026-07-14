@@ -5,7 +5,8 @@
 //! anchors and generic keywords live in a separate GPU matcher and must remain
 //! out of this bitmap.
 
-use crate::engine::{CompiledScanner, GpuInitPolicy};
+use crate::engine::CompiledScanner;
+use crate::GpuInitPolicy;
 use keyhog_core::{DetectorSpec, PatternSpec, Severity};
 
 fn scanner_with_detector_and_phase2_keyword_and_anchor() -> CompiledScanner {
