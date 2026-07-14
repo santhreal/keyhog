@@ -259,44 +259,45 @@ fn cuda_only_acquired_peer_without_exact_identity_fails_closed() {
 }
 
 #[test]
-fn no_gpu_build_calibrates_on_a_host_that_has_a_physical_gpu() {
-    // Regression: a portable / no-`gpu`-feature build on a workstation WITH a
-    // discrete GPU. The hardware probe sees the card, but no wgpu runtime is
-    // compiled, so `runtime_status.gpu_backend` is None. Before the fix this
-    // tripped `require_exact_identity` ("GPU runtime backend identity is
-    // unavailable") and `keyhog scan --autoroute-calibrate` / `install.sh
-    // --calibrate` failed closed on EVERY GPU box for the portable binary. A
-    // no-gpu build must collapse the (unusable) GPU dimension and calibrate
-    // SIMD/CPU-only.
+fn gpu_excluded_calibration_collapses_an_already_acquired_peer() {
+    // Regression: diagnostic calibration can exclude GPU after scanner startup
+    // has acquired a physical peer. Every GPU identity field must collapse
+    // together or exact identity rejects runtime-without-device state.
     let mut gpu_host = test_hw_caps();
     gpu_host.gpu_available = true;
     gpu_host.gpu_name = Some("NVIDIA GeForce RTX 5090".to_string());
     gpu_host.gpu_runtime_identity = Some("wgpu:Vulkan:NVIDIA:565.00".to_string());
     gpu_host.gpu_is_software = false;
 
-    // gpu_supported_by_build = false → this build can never route to the GPU.
-    let mut portable = AutorouteHostProfile::from_caps(&gpu_host, None, false);
+    // gpu_participates = false means this calibration cannot route to the GPU.
+    // An already-acquired peer must also be excluded from the persisted host
+    // identity for the CPU-only diagnostic route.
+    let mut portable = AutorouteHostProfile::from_caps(
+        &gpu_host,
+        Some("gpu-cuda-region-presence:cuda@0.6.4:NVIDIA RTX 5090"),
+        false,
+    );
     assert_eq!(
         portable.gpu_name, None,
-        "no-gpu build records no GPU device identity for an unusable card"
+        "GPU-excluded calibration records no GPU device identity"
     );
     assert_eq!(
         portable.gpu_runtime_backend, None,
-        "no-gpu build records no GPU runtime backend"
+        "GPU-excluded calibration records no GPU runtime backend"
     );
     assert_eq!(
         portable.gpu_driver_runtime_identity, None,
-        "no-gpu build records no GPU driver identity"
+        "GPU-excluded calibration records no GPU driver identity"
     );
     assert!(
         !portable.gpu_is_software,
-        "no-gpu build carries no GPU software flag"
+        "GPU-excluded calibration carries no GPU software flag"
     );
     // Isolate the GPU invariant from real-host cpuinfo so the test is hermetic.
     portable.cpu_model = Some("test-cpu".to_string());
     portable
         .require_exact_identity()
-        .expect("a no-gpu build must calibrate on a host that has a physical GPU");
+        .expect("GPU-excluded calibration must accept its CPU-only identity");
 
     // Contrast: a GPU-CAPABLE build whose runtime probe FAILED (gpu_backend
     // None) must STILL fail closed, the physical GPU IS usable by this build,

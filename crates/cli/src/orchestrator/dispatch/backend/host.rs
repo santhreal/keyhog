@@ -26,10 +26,10 @@ impl AutorouteHostProfile {
     pub(super) fn from_caps(
         caps: &HardwareCaps,
         gpu_runtime_backend: Option<&str>,
-        gpu_supported_by_build: bool,
+        gpu_participates: bool,
     ) -> Self {
-        // A build compiled WITHOUT GPU support never routes to the GPU, so a
-        // physically present GPU is NOT part of THIS build's scan identity:
+        // A route that excludes GPU never uses it, so a physically present or
+        // already-acquired peer is not part of this calibration identity:
         // collapse the whole GPU dimension (device/runtime/driver/software)
         // instead of recording a present-but-unusable device. This is not a
         // silent degrade (Law 10), the build feature set (`push_feature!("gpu")`)
@@ -46,7 +46,7 @@ impl AutorouteHostProfile {
         // could trust calibration across an unknown device/driver change.
         let acquired_peer_present = gpu_runtime_backend.is_some() && !caps.gpu_is_software;
         let gpu_device_identity =
-            (gpu_supported_by_build && (caps.gpu_available || acquired_peer_present)).then(|| {
+            (gpu_participates && (caps.gpu_available || acquired_peer_present)).then(|| {
                 caps.gpu_name
                     .clone()
                     .unwrap_or_else(|| gpu_runtime_backend.unwrap_or_default().to_string())
@@ -62,17 +62,17 @@ impl AutorouteHostProfile {
             has_neon: caps.has_neon,
             hyperscan_available: caps.hyperscan_available,
             gpu_name: gpu_device_identity,
-            gpu_runtime_backend: acquired_peer_present
+            gpu_runtime_backend: (gpu_participates && acquired_peer_present)
                 .then(|| gpu_runtime_backend.map(str::to_string))
                 .flatten(),
-            gpu_driver_runtime_identity: acquired_peer_present
+            gpu_driver_runtime_identity: (gpu_participates && acquired_peer_present)
                 .then(|| {
                     caps.gpu_runtime_identity
                         .clone()
                         .or_else(|| gpu_runtime_backend.map(str::to_string))
                 })
                 .flatten(),
-            gpu_is_software: gpu_supported_by_build && caps.gpu_is_software,
+            gpu_is_software: gpu_participates && caps.gpu_is_software,
             total_memory_mb: caps.total_memory_mb,
         }
     }
