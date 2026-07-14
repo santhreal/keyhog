@@ -58,6 +58,8 @@ impl ScanOrchestrator {
             pattern_count,
             rules_digest,
             config_digest,
+            self.effective_config.gpu_runtime_policy
+                != keyhog_scanner::gpu::GpuRuntimePolicy::Disabled,
             Ok(self.effective_config.autoroute_cache_path.clone()),
             self.scanner.as_ref(),
         )

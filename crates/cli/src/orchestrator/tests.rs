@@ -223,7 +223,7 @@ fn persistent_runtime_uses_configured_autoroute_cache_path() {
         std::path::Path::new("detectors"),
         false,
         None,
-        None,
+        Some(rayon::current_num_threads()),
         None,
         "keyhog watch",
         false,

@@ -201,9 +201,6 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
         }
         None => {}
     }
-    if let Some(host) = &inspection.host {
-        println!("  host:            {host}");
-    }
     if let Some(detector) = &inspection.detector_digest {
         println!("  detector digest: {detector}");
     }
@@ -226,6 +223,7 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
             "  {}config {}{}  -  {} decision(s)",
             p.cyan, config.config_digest, p.reset, config.decision_count
         );
+        println!("    host: {}", config.host);
         for decision in &config.decisions {
             let parity_receipts = decision
                 .candidate_receipts

@@ -15,7 +15,7 @@
 //! field (works on every platform's cache-dir convention).
 //!
 //! Pinned facts (read from source, asserted exactly):
-//!   * `AUTOROUTE_CACHE_VERSION = 31` (backend.rs), the schema version an
+//!   * `AUTOROUTE_CACHE_VERSION = 32` (backend.rs), the schema version an
 //!     inspected valid cache reports and an incompatible one is rejected against.
 //!   * `AUTOROUTE_CACHE_FILE_BYTES = 8 * 1024 * 1024` in the cache codec, the read
 //!     cap; a file one byte over is reported "unreadable".
@@ -27,8 +27,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
-/// Schema version this build's cache reports / requires (backend.rs:58).
-const EXPECTED_CACHE_VERSION: u64 = 31;
+/// Schema version this build's cache reports and requires.
+const EXPECTED_CACHE_VERSION: u64 = 32;
 /// Read cap for the cache file (kept in sync with the cache codec).
 const CACHE_FILE_CAP_BYTES: usize = 8 * 1024 * 1024;
 

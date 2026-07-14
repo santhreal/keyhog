@@ -25,7 +25,7 @@ pub(super) struct AutorouteHostProfile {
 impl AutorouteHostProfile {
     pub(super) fn from_caps(
         caps: &HardwareCaps,
-        gpu_runtime_backend: Option<&str>,
+        gpu_peer_identity: Option<&str>,
         gpu_participates: bool,
     ) -> Self {
         // A route that excludes GPU never uses it, so a physically present or
@@ -44,10 +44,21 @@ impl AutorouteHostProfile {
         // `require_exact_identity` rejects the failed probe. Collapsing it to
         // `None` would be indistinguishable from genuinely absent hardware and
         // could trust calibration across an unknown device/driver change.
-        let acquired_peer_present = gpu_runtime_backend.is_some() && !caps.gpu_is_software;
-        let gpu_device_identity = (gpu_participates
-            && (caps.gpu_available || acquired_peer_present))
-            .then(|| caps.gpu_name.clone().unwrap_or_default());
+        // `gpu_peer_identity` is the canonical identity of every eligible
+        // acquired peer. It is already filtered per peer, so a software WGPU
+        // probe must not hide an independently acquired hardware CUDA peer.
+        let acquired_peer_present = gpu_peer_identity.is_some();
+        let gpu_device_identity =
+            (gpu_participates && (caps.gpu_available || acquired_peer_present)).then(|| {
+                if caps.gpu_is_software && acquired_peer_present {
+                    gpu_peer_identity.unwrap_or_default().to_string()
+                } else {
+                    caps.gpu_name
+                        .clone()
+                        .or_else(|| gpu_peer_identity.map(str::to_string))
+                        .unwrap_or_default()
+                }
+            });
         Self {
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
@@ -60,16 +71,16 @@ impl AutorouteHostProfile {
             hyperscan_available: caps.hyperscan_available,
             gpu_name: gpu_device_identity,
             gpu_runtime_backend: (gpu_participates && acquired_peer_present)
-                .then(|| gpu_runtime_backend.map(str::to_string))
+                .then(|| gpu_peer_identity.map(str::to_string))
                 .flatten(),
+            // The peer identity includes each driver's version, device, and
+            // runtime. A WGPU-oriented global probe cannot represent a CUDA
+            // peer or a mixed CUDA/WGPU set, so the exact peer identity is the
+            // persistence authority whenever a peer was acquired.
             gpu_driver_runtime_identity: (gpu_participates && acquired_peer_present)
-                .then(|| {
-                    caps.gpu_runtime_identity
-                        .clone()
-                        .or_else(|| gpu_runtime_backend.map(str::to_string))
-                })
+                .then(|| gpu_peer_identity.map(str::to_string))
                 .flatten(),
-            gpu_is_software: gpu_participates && caps.gpu_is_software,
+            gpu_is_software: gpu_participates && caps.gpu_is_software && !acquired_peer_present,
             total_memory_mb: caps.total_memory_mb,
         }
     }

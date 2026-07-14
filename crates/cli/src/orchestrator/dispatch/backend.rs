@@ -25,7 +25,7 @@
 //!   ├─ evidence ───── decision policy
 //!   │    ├─ timing ─────── measured trials and confidence intervals
 //!   │    └─ match_identity ─ secret-safe semantic parity proof
-//!   ├─ store ──────── cache facade (schema v31)
+//!   ├─ store ──────── cache facade (schema v32)
 //!   │    ├─ schema / artifact_identity / build_identity
 //!   │    └─ codec / validation / persistence / inspection
 //!   ├─ host ───────── host identity captured in each calibration record
@@ -58,6 +58,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 
+// v32: projected host and accelerator-peer identity moves from the cache root
+// into each resolved config generation so distinct GPU policies can coexist.
 // v31: every timing decision carries a digest of its complete workload key.
 // v30: workload identity preserves exact reduced, raw-family-free source mixtures so
 // different source-family proportions cannot alias one calibration decision.
@@ -91,7 +93,7 @@ use std::path::PathBuf;
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 31;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 32;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -311,6 +313,7 @@ impl CachedBackendRouter {
         pattern_count: usize,
         rules_digest: String,
         config_digest: u64,
+        gpu_participates: bool,
         autoroute_cache_path: Result<Option<PathBuf>, String>,
         scanner: &CompiledScanner,
     ) -> Self {
@@ -320,7 +323,7 @@ impl CachedBackendRouter {
         let host_profile = AutorouteHostProfile::from_caps(
             &hw_caps,
             gpu_peer_identity.as_deref(),
-            keyhog_scanner::hw_probe::gpu_backend_compiled(),
+            gpu_participates && keyhog_scanner::hw_probe::gpu_backend_compiled(),
         );
         let (cache_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
             detector_digest,
@@ -575,11 +578,16 @@ impl MeasuredBackendRouter {
             decisions,
         )
         .map_err(AutorouteRoutingError::calibration_not_persisted)?;
-        if let AutorouteCacheSaveOutcome::Replaced { reason } = save_outcome {
-            eprintln!(
+        match save_outcome {
+            AutorouteCacheSaveOutcome::Replaced { reason } => eprintln!(
                 "warning: replaced existing autoroute cache {}: {reason}",
                 path.display()
-            );
+            ),
+            AutorouteCacheSaveOutcome::ReplacedConfig { reason } => eprintln!(
+                "warning: replaced one autoroute config generation in {}: {reason}",
+                path.display()
+            ),
+            AutorouteCacheSaveOutcome::Fresh | AutorouteCacheSaveOutcome::Merged => {}
         }
         self.cache_dirty = false;
         Ok(())
@@ -714,21 +722,23 @@ fn gpu_peer_identity(scanner: &CompiledScanner) -> Option<String> {
     if acquired.is_empty() {
         return None;
     }
-    let mut peers: Vec<String> = acquired
+    let mut peers: Vec<(String, String, String, String, String)> = acquired
         .into_iter()
         .map(|candidate| {
-            format!(
-                "{}:{}@{}:{}:{}",
-                candidate.backend.label(),
-                candidate.driver_id.unwrap_or_default(),
-                candidate.driver_version.unwrap_or_default(),
+            (
+                candidate.backend.label().to_string(),
+                candidate.driver_id.unwrap_or_default().to_string(),
+                candidate.driver_version.unwrap_or_default().to_string(),
                 candidate.device_identity.unwrap_or_default(),
-                candidate.runtime_identity.unwrap_or_default()
+                candidate.runtime_identity.unwrap_or_default(),
             )
         })
         .collect();
     peers.sort_unstable();
-    (!peers.is_empty()).then(|| peers.join(","))
+    (!peers.is_empty()).then(|| {
+        serde_json::to_string(&peers)
+            .expect("GPU peer identity contains only serializable string fields")
+    })
 }
 
 pub(super) fn backend_requires_coalesced_batch_pipeline(

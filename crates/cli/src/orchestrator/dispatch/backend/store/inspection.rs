@@ -35,6 +35,9 @@ pub(crate) struct AutorouteCacheInspection {
     pub(crate) executable_sha256: Option<String>,
     pub(crate) identity_matches_build: Option<bool>,
     pub(crate) identity_mismatch_reason: Option<String>,
+    /// Compatibility projection for consumers of schema v31 inspection JSON.
+    /// `configs[].host` is authoritative. This is present only when every
+    /// persisted config has the same projected host identity.
     pub(crate) host: Option<String>,
     pub(crate) detector_digest: Option<String>,
     pub(crate) rules_digest: Option<String>,
@@ -46,6 +49,7 @@ pub(crate) struct AutorouteCacheInspection {
 #[derive(Debug, Serialize)]
 pub(crate) struct AutorouteConfigInspection {
     pub(crate) config_digest: String,
+    pub(crate) host: String,
     pub(crate) decision_count: usize,
     pub(crate) decisions: Vec<AutorouteDecisionInspection>,
 }
@@ -175,8 +179,6 @@ fn inspect_autoroute_cache_for_build(
     out.executable_sha256 = Some(cache.executable_sha256.clone());
     out.detector_digest = Some(format!("{:016x}", cache.detector_digest));
     out.rules_digest = Some(cache.rules_digest.clone());
-    out.host = Some(render_host_profile(&cache.host));
-
     let mut drift = Vec::new();
     if cache.binary_version != env!("CARGO_PKG_VERSION") {
         drift.push(format!(
@@ -226,6 +228,16 @@ fn inspect_autoroute_cache_for_build(
             "autoroute cache is structurally invalid: {error}; re-run calibration"
         ));
         return out;
+    }
+
+    let common_host = cache.configs.first().map(|config| &config.host);
+    if common_host.is_some()
+        && cache
+            .configs
+            .iter()
+            .all(|config| Some(&config.host) == common_host)
+    {
+        out.host = common_host.map(render_host_profile);
     }
 
     for config in &cache.configs {
@@ -287,6 +299,7 @@ fn inspect_autoroute_cache_for_build(
         decisions.sort_by(|left, right| left.workload.cmp(&right.workload));
         out.configs.push(AutorouteConfigInspection {
             config_digest: format!("{:016x}", config.config_digest),
+            host: render_host_profile(&config.host),
             decision_count: config.decisions.len(),
             decisions,
         });

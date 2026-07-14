@@ -546,7 +546,7 @@ pub(crate) mod testing {
             embedded_sentinel,
             false,
             None,
-            None,
+            Some(rayon::current_num_threads()),
             Some(keyhog_scanner::ScanBackend::SimdCpu),
             "keyhog watch",
             false,

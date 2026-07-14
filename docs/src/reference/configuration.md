@@ -108,6 +108,14 @@ A dash means that layer intentionally has no surface.
 | Placeholder keywords | embedded scanner set | `placeholder_keywords` | - | Replace the scan-wide placeholder markers used by confidence policy. Empty entries fail closed. |
 | Backend | `auto` | - | `--backend` | `auto`/`gpu-cuda`/`gpu-wgpu`/`simd`/`cpu`. CUDA and WGPU are separate measured candidates with distinct route labels and timing evidence. Auto uses a persisted fastest-correct decision for the exact workload bucket; missing, stale, or incomplete calibration is an error. |
 
+The scan worker pool is process-global. Repeated in-process scans may reuse the
+same resolved width. A later request for a different width fails before scanner
+construction because Rayon cannot resize an initialized global pool. KeyHog
+can reuse an externally initialized pool only when its live width exactly
+matches the requested width. Any mismatch fails rather than silently claiming
+that `--threads` took effect. The actual width is included in effective config
+and autoroute identity.
+
 Autoroute also distinguishes runtime lifetime. Each GPU calibration record
 contains the first real dispatch and warm trials. A normal one-shot scan derives
 a cold-aware winner; a ready daemon derives a persistent-runtime winner from

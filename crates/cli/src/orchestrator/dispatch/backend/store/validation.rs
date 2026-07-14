@@ -4,7 +4,6 @@ use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::super::evidence::{gpu_cold_warm_route_evidence, AutorouteDecision};
-use super::super::host::AutorouteHostProfile;
 use super::super::workload::{
     autoroute_stable_bucket, render_workload_key, validate_workload_source_mixture,
     workload_evidence_digest, WorkloadKey,
@@ -13,11 +12,10 @@ use super::super::AUTOROUTE_CALIBRATION_TRIALS;
 use super::artifact_identity::current_executable_sha256;
 use super::schema::{AutorouteBuildFeatures, AutorouteCache};
 
-pub(super) fn validate_cache_shared_identity(
+pub(super) fn validate_cache_global_identity(
     cache: &AutorouteCache,
     detector_digest: u64,
     rules_digest: &str,
-    host_profile: &AutorouteHostProfile,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if cache.binary_version != env!("CARGO_PKG_VERSION")
         || cache.git_hash != keyhog_core::git_hash()
@@ -42,9 +40,6 @@ pub(super) fn validate_cache_shared_identity(
     }
     if cache.rules_digest != rules_digest {
         return Err("rules digest mismatch; cache is for a different detector rule set".into());
-    }
-    if &cache.host != host_profile {
-        return Err("host profile mismatch; cache is for different hardware".into());
     }
     Ok(())
 }
@@ -71,6 +66,12 @@ pub(super) fn validate_cache_structure_at(
             )
             .into());
         }
+        config.host.require_exact_identity().map_err(|error| {
+            format!(
+                "autoroute cache config {:016x} has incomplete host identity: {error}",
+                config.config_digest
+            )
+        })?;
         if config.decisions.is_empty() {
             return Err(format!(
                 "autoroute cache config {:016x} contains no workload decisions",

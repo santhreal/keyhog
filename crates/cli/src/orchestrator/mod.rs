@@ -199,11 +199,13 @@ pub(crate) fn cached_autoroute_router_for_default_config(
     detectors: &[DetectorSpec],
 ) -> CachedBackendRouter {
     let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(detectors));
-    let resolved = resolved_scan_config_for_scanner(keyhog_scanner::ScannerConfig::default());
+    let mut resolved = resolved_scan_config_for_scanner(keyhog_scanner::ScannerConfig::default());
+    resolved.threads = Some(rayon::current_num_threads());
     cached_autoroute_router(
         scanner,
         rules_digest,
         autoroute_config_digest(&resolved),
+        resolved.gpu_runtime_policy != keyhog_scanner::gpu::GpuRuntimePolicy::Disabled,
         crate::autoroute_cache_path::resolve_autoroute_cache_path(None),
     )
 }
@@ -212,6 +214,7 @@ fn cached_autoroute_router(
     scanner: &CompiledScanner,
     rules_digest: String,
     config_digest: u64,
+    gpu_participates: bool,
     autoroute_cache_path: Result<Option<std::path::PathBuf>, String>,
 ) -> CachedBackendRouter {
     let hw_caps = keyhog_scanner::hw_probe::probe_hardware().clone();
@@ -221,6 +224,7 @@ fn cached_autoroute_router(
         pattern_count,
         rules_digest,
         config_digest,
+        gpu_participates,
         autoroute_cache_path,
         scanner,
     )
@@ -279,9 +283,9 @@ pub(crate) struct DefaultScanRuntime {
     scanner: Arc<CompiledScanner>,
     router: CachedBackendRouter,
     detector_count: usize,
-    /// Actual global Rayon worker count after runtime configuration. This can
-    /// differ from the request when another owner initialized Rayon first, so
-    /// status surfaces report the observed pool instead of repeating intent.
+    /// Actual global Rayon worker count after fail-closed runtime
+    /// configuration. Status surfaces report the observed pool instead of
+    /// repeating intent.
     worker_threads: usize,
     /// Explicit backend forced by the caller (e.g. `keyhog watch --backend cpu`).
     /// `None` => use the persisted autoroute decision (which requires
@@ -564,7 +568,8 @@ pub(crate) fn setup_default_scan_runtime(
     ResolvedEngineRuntimeSettings::from(&effective_config).apply();
 
     let hw = keyhog_scanner::hw_probe::probe_hardware();
-    configure_threads(effective_config.threads, hw.physical_cores);
+    let worker_threads = configure_threads(effective_config.threads, hw.physical_cores)?;
+    effective_config.threads = Some(worker_threads);
     apply_host_runtime_limits(&mut effective_config, &hw);
     keyhog_scanner::gpu::require_gpu_preflight().map_err(|diagnostic| {
         GpuUnavailableError::new(format!(
@@ -641,6 +646,7 @@ pub(crate) fn setup_default_scan_runtime(
         &scanner,
         rules_digest,
         autoroute_config_digest(&effective_config),
+        effective_config.gpu_runtime_policy != keyhog_scanner::gpu::GpuRuntimePolicy::Disabled,
         Ok(effective_config.autoroute_cache_path.clone()),
     );
     let mut scan_runtime = DefaultScanRuntime::new_with_router(scanner, &detectors, router)
@@ -832,7 +838,9 @@ impl ScanOrchestrator {
         }
 
         let hw = keyhog_scanner::hw_probe::probe_hardware();
-        configure_threads(args.threads, hw.physical_cores);
+        let worker_threads = configure_threads(args.threads, hw.physical_cores)?;
+        args.threads = Some(worker_threads);
+        effective_config.threads = Some(worker_threads);
 
         validate_explicit_detector_path(&args.detectors, args.detectors_cli_explicit)?;
         let detectors_path = auto_discover_detectors(&args.detectors)?;

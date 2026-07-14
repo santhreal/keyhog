@@ -13,8 +13,8 @@ pub(crate) struct AutorouteCacheVersionEnvelope {
     pub(super) version: u32,
 }
 
-/// On-disk autoroute calibration cache. Shared build, corpus, and host identity
-/// is stored once; each resolved scan configuration owns its workload routes.
+/// On-disk autoroute calibration cache. Only build and corpus identity is shared;
+/// each resolved scan configuration owns its projected host and workload routes.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AutorouteCache {
@@ -25,7 +25,6 @@ pub(crate) struct AutorouteCache {
     pub(crate) build_features: AutorouteBuildFeatures,
     pub(crate) detector_digest: u64,
     pub(crate) rules_digest: String,
-    pub(crate) host: AutorouteHostProfile,
     pub(crate) configs: Vec<AutorouteConfigDecisions>,
 }
 
@@ -33,6 +32,7 @@ pub(crate) struct AutorouteCache {
 #[serde(deny_unknown_fields)]
 pub(crate) struct AutorouteConfigDecisions {
     pub(crate) config_digest: u64,
+    pub(crate) host: AutorouteHostProfile,
     pub(crate) decisions: Vec<PersistedAutorouteDecision>,
 }
 

@@ -182,6 +182,10 @@ which backend is fastest:
 - Pipeline knobs (`--threads`, `--reader-threads`, `--fused-batch`,
   `--fused-depth`) and `[tuning]` settings fork the decision because they change
   work partitioning and backend warm-up behavior.
+- One calibration process may reuse an already configured Rayon pool only at
+  the same worker width. An external pool is accepted only at that exact width.
+  An incompatible preset or live width fails before measurement, and the actual
+  count is part of the resolved config identity.
 - Source policy (`--limit-*`, `--max-file-size`, `--no-default-excludes`) and detector
   floors fork the decision for real `stdin`/directory buckets that feed different cache/chunk
   geometry.

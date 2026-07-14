@@ -224,7 +224,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("StableHasher::new(\"autoroute-correctness-digest\")")
             && backend.contains("executable_sha256")
             && backend.contains("current_executable_sha256")
-            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 31")
+            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 32")
             && backend.contains("AUTOROUTE_CALIBRATION_TRIALS: usize = 7")
             && backend.contains("trials"),
         "autoroute cache must persist binary identity, build feature identity, exact host identity, and measured calibration evidence"

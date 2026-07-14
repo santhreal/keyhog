@@ -154,18 +154,16 @@ fn autoroute_host_identity_uses_dependency_owned_gpu_compile_fact() {
     caps.gpu_name = Some("NVIDIA GeForce RTX 5090".to_string());
     caps.gpu_runtime_identity = Some("cuda:NVIDIA:RTX5090:driver-565".to_string());
 
+    let peer = "gpu-cuda-region-presence:cuda@0.6.4:NVIDIA RTX 5090:ordinal=0:cuda:NVIDIA:RTX5090:driver-565";
     let profile = AutorouteHostProfile::from_caps(
         &caps,
-        Some("cuda"),
+        Some(peer),
         keyhog_scanner::hw_probe::gpu_backend_compiled(),
     );
     if keyhog_scanner::hw_probe::gpu_backend_compiled() {
         assert_eq!(profile.gpu_name, caps.gpu_name);
-        assert_eq!(profile.gpu_runtime_backend.as_deref(), Some("cuda"));
-        assert_eq!(
-            profile.gpu_driver_runtime_identity,
-            caps.gpu_runtime_identity
-        );
+        assert_eq!(profile.gpu_runtime_backend.as_deref(), Some(peer));
+        assert_eq!(profile.gpu_driver_runtime_identity.as_deref(), Some(peer));
     } else {
         assert_eq!(profile.gpu_name, None);
         assert_eq!(profile.gpu_runtime_backend, None);
@@ -270,7 +268,7 @@ fn host_profile_strips_gpu_runtime_when_no_hardware_gpu_participates() {
     software_gpu.gpu_name = Some("llvmpipe (LLVM 15.0.7)".to_string());
     software_gpu.gpu_runtime_identity = Some("wgpu:Vulkan:llvmpipe:mesa".to_string());
     software_gpu.gpu_is_software = true;
-    let software_profile = AutorouteHostProfile::from_caps(&software_gpu, Some("wgpu"), true);
+    let software_profile = AutorouteHostProfile::from_caps(&software_gpu, None, true);
     assert_eq!(
         software_profile.gpu_runtime_backend, None,
         "software renderer runtimes do not participate in autoroute calibration"
@@ -316,6 +314,29 @@ fn cuda_only_acquired_peer_without_exact_identity_fails_closed() {
         profile.require_exact_identity(),
         Err("GPU device identity is unavailable")
     );
+}
+
+#[test]
+fn hardware_cuda_identity_survives_a_software_wgpu_probe() {
+    let mut caps = test_hw_caps();
+    caps.gpu_available = true;
+    caps.gpu_name = Some("llvmpipe (LLVM 15.0.7)".to_string());
+    caps.gpu_runtime_identity = Some("wgpu:Vulkan:llvmpipe:mesa".to_string());
+    caps.gpu_is_software = true;
+    let peer = "gpu-cuda-region-presence:cuda@0.6.4:NVIDIA RTX 5090:ordinal=0:nvidia-kernel:580.95";
+    let mut profile = AutorouteHostProfile::from_caps(&caps, Some(peer), true);
+    profile.cpu_model = Some("test-cpu".to_string());
+
+    assert_eq!(profile.gpu_name.as_deref(), Some(peer));
+    assert_eq!(profile.gpu_runtime_backend.as_deref(), Some(peer));
+    assert_eq!(profile.gpu_driver_runtime_identity.as_deref(), Some(peer));
+    assert!(
+        !profile.gpu_is_software,
+        "an eligible CUDA peer must not inherit the unrelated WGPU software flag"
+    );
+    profile
+        .require_exact_identity()
+        .expect("hardware CUDA plus software WGPU must retain exact CUDA identity");
 }
 
 #[test]
@@ -395,13 +416,80 @@ fn gpu_excluded_calibration_collapses_an_already_acquired_peer() {
 }
 
 #[test]
+fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
+    let scanner = CompiledScanner::compile_with_gpu_policy(
+        Vec::new(),
+        keyhog_scanner::GpuInitPolicy::ForceDisabled,
+    )
+    .expect("compile CPU-policy scanner");
+    let mut probed_caps = test_hw_caps();
+    probed_caps.gpu_available = true;
+    probed_caps.gpu_name = Some("NVIDIA GeForce RTX 5090".to_string());
+    probed_caps.gpu_runtime_identity = Some("wgpu:Vulkan:NVIDIA:565.00".to_string());
+    probed_caps.gpu_is_software = false;
+
+    let host = AutorouteHostProfile::from_caps(&probed_caps, None, false);
+    let directory = tempfile::tempdir().expect("CPU-policy autoroute cache directory");
+    let path = directory.path().join("autoroute.json");
+    let config_digest = 0x6f4d_11c2_731a_b908;
+    let batch = vec![test_chunk_with_source(
+        "token = abc\n".repeat(64),
+        "filesystem",
+    )];
+    let pattern_count = scanner.runtime_status().pattern_count;
+    let key = workload_key_with_plan(
+        &batch,
+        pattern_count,
+        scanner.phase1_admission_summary(&batch),
+        scanner.decode_workload_plan(),
+    )
+    .expect("CPU-policy workload classified");
+    let decisions = HashMap::from([(
+        key,
+        AutorouteDecision::new(
+            ScanBackend::SimdCpu,
+            batch[0].data.len() as u64,
+            1,
+            5,
+            Some(8),
+            None,
+        ),
+    )]);
+    save_autoroute_cache(
+        &path,
+        scanner.runtime_status().detector_digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &decisions,
+    )
+    .expect("persist CPU-policy autoroute decision");
+
+    let router = CachedBackendRouter::new(
+        probed_caps,
+        pattern_count,
+        test_rules_digest().to_string(),
+        config_digest,
+        false,
+        Ok(Some(path)),
+        &scanner,
+    );
+    assert!(
+        router.cache_load_error.is_none(),
+        "disabled GPU policy must replay the CPU-only host identity even after hardware probing: {:?}",
+        router.cache_load_error
+    );
+    assert_eq!(router.decisions.len(), 1);
+}
+
+#[test]
 fn gpu_capable_build_rejects_present_gpu_without_device_name() {
     let mut caps = test_hw_caps();
     caps.gpu_available = true;
     caps.gpu_name = None;
     caps.gpu_runtime_identity = Some("cuda:unknown-device:driver-565".to_string());
 
-    let mut profile = AutorouteHostProfile::from_caps(&caps, Some("cuda"), true);
+    let mut profile = AutorouteHostProfile::from_caps(&caps, Some(""), true);
     profile.cpu_model = Some("test-cpu".to_string());
     assert_eq!(profile.gpu_name.as_deref(), Some(""));
     assert_eq!(
@@ -2091,19 +2179,19 @@ fn autoroute_cache_rejects_v25_decode_density_identity_before_payload_decode() {
         0xA55A_D00D_CAFE_BEEF,
         &test_host(None),
     )
-    .expect_err("v25 decode-density identity must never be reused as v31 decoder work")
+    .expect_err("v25 decode-density identity must never be reused as current decoder work")
     .to_string();
     let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 
     assert!(
         error.contains("unsupported autoroute cache version 25")
-            && error.contains("expects 31")
+            && error.contains(&format!("expects {AUTOROUTE_CACHE_VERSION}"))
             && error.contains("re-run calibration"),
         "v25 migration failure must be version-first and actionable: {error}"
     );
     assert!(
         !error.contains("missing field") && !error.contains("unknown field"),
-        "v25 payload must not reach the v31 workload deserializer: {error}"
+        "v25 payload must not reach the current workload deserializer: {error}"
     );
 }
 
@@ -2132,13 +2220,13 @@ fn autoroute_cache_rejects_v28_before_phase1_identity_decode() {
 
     assert!(
         error.contains("unsupported autoroute cache version 28")
-            && error.contains("expects 31")
+            && error.contains(&format!("expects {AUTOROUTE_CACHE_VERSION}"))
             && error.contains("re-run calibration"),
         "v28 migration failure must be version-first and actionable: {error}"
     );
     assert!(
         !error.contains("missing field") && !error.contains("unknown field"),
-        "v28 payload must not reach the v31 phase-one identity deserializer: {error}"
+        "v28 payload must not reach the current phase-one identity deserializer: {error}"
     );
 }
 
@@ -2167,13 +2255,13 @@ fn autoroute_cache_rejects_v29_before_source_mixture_decode() {
 
     assert!(
         error.contains("unsupported autoroute cache version 29")
-            && error.contains("expects 31")
+            && error.contains(&format!("expects {AUTOROUTE_CACHE_VERSION}"))
             && error.contains("re-run calibration"),
         "v29 migration failure must be version-first and actionable: {error}"
     );
     assert!(
         !error.contains("missing field") && !error.contains("unknown field"),
-        "v29 payload must not reach the v31 source-mixture deserializer: {error}"
+        "v29 payload must not reach the current source-mixture deserializer: {error}"
     );
 }
 
@@ -2202,13 +2290,13 @@ fn autoroute_cache_rejects_v30_before_workload_binding_decode() {
 
     assert!(
         error.contains("unsupported autoroute cache version 30")
-            && error.contains("expects 31")
+            && error.contains(&format!("expects {AUTOROUTE_CACHE_VERSION}"))
             && error.contains("re-run calibration"),
         "v30 migration failure must be version-first and actionable: {error}"
     );
     assert!(
         !error.contains("missing field") && !error.contains("unknown field"),
-        "v30 payload must not reach the v31 workload-binding deserializer: {error}"
+        "v30 payload must not reach the current workload-binding deserializer: {error}"
     );
 }
 
@@ -2236,10 +2324,13 @@ fn autoroute_cache_save_reports_when_it_replaces_outdated_evidence() {
     .expect("fresh calibration should replace outdated cache evidence");
 
     match outcome {
-        AutorouteCacheSaveOutcome::Replaced { reason } => assert!(
-            reason.contains("schema 1") && reason.contains("schema 31"),
-            "replacement disposition must explain both schema identities: {reason}"
-        ),
+        AutorouteCacheSaveOutcome::Replaced { reason } => {
+            let expected = format!("schema {AUTOROUTE_CACHE_VERSION}");
+            assert!(
+                reason.contains("schema 1") && reason.contains(&expected),
+                "replacement disposition must explain both schema identities: {reason}"
+            );
+        }
         _ => panic!("outdated cache replacement must be operator-visible"),
     }
     std::fs::remove_file(&path).ok(); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
@@ -2765,6 +2856,7 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
         pattern_count,
         test_rules_digest().to_string(),
         config_digest,
+        true,
         Ok(Some(path.clone())),
         &scanner,
     );
@@ -3586,7 +3678,7 @@ fn autoroute_cache_rejects_unknown_and_incomplete_proof_fields() {
         let target = match label {
             "cache" => &mut tampered,
             "features" => &mut tampered["build_features"],
-            "host" => &mut tampered["host"],
+            "host" => &mut tampered["configs"][0]["host"],
             "config" => &mut tampered["configs"][0],
             "workload" => &mut tampered["configs"][0]["decisions"][0]["workload"],
             "decision" => &mut tampered["configs"][0]["decisions"][0]["decision"],

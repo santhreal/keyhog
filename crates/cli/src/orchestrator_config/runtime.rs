@@ -17,6 +17,9 @@ pub(crate) const VERIFY_MAX_CONCURRENT_DEFAULT: usize = 5;
 #[cfg(feature = "git")]
 pub(crate) const MAX_COMMITS_DEFAULT: usize = 1000;
 
+static CONFIGURED_RAYON_THREADS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+static RAYON_CONFIGURATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Default chunk batch size for the fused filesystem read+scan pipeline.
 pub(crate) const FUSED_BATCH_DEFAULT: usize = 32;
 
@@ -230,7 +233,7 @@ impl ScanRuntimeInput {
     }
 }
 
-pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
+pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) -> Result<usize> {
     // Resolution order: --threads / [scan].threads > physical core count.
     // Physical cores are the right default for CPU-bound regex: SMT siblings
     // share execution units, so doubling threads mostly doubles cache pressure.
@@ -243,24 +246,67 @@ pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
         (physical_cores.max(1), "physical-cores")
     };
 
+    let _configuration_guard = RAYON_CONFIGURATION_LOCK
+        .lock()
+        .map_err(|error| anyhow::anyhow!("Rayon configuration lock was poisoned: {error}"))?;
+    if !thread_pool_needs_initialization(CONFIGURED_RAYON_THREADS.get().copied(), n, source)? {
+        tracing::debug!(
+            threads = n,
+            source,
+            "rayon thread pool already has the requested width"
+        );
+        return Ok(n);
+    }
+
     let builder = rayon::ThreadPoolBuilder::new()
         .num_threads(n)
         .stack_size(8 * 1024 * 1024)
         .thread_name(|i| format!("keyhog-worker-{i}"));
 
     if let Err(error) = builder.build_global() {
+        let actual = rayon::current_num_threads();
+        if actual != n {
+            anyhow::bail!(
+                "Rayon worker pool already has {actual} threads, but this scan requested {n} ({source}); the requested width cannot take effect in this process ({error}). Fix: configure KeyHog before any library initializes Rayon's global pool or start this scan in a separate process"
+            );
+        }
+        CONFIGURED_RAYON_THREADS.set(actual).map_err(|_| {
+            anyhow::anyhow!(
+                "Rayon worker pool has {actual} threads, but its KeyHog initialization state changed concurrently"
+            )
+        })?;
         tracing::warn!(
-            requested_threads = n,
+            threads = actual,
             source,
-            "failed to configure rayon thread pool: {error}"
+            "reusing an externally initialized Rayon pool with the exact requested width"
         );
-    } else {
-        tracing::info!(
-            threads = n,
-            source,
-            physical_cores,
-            "rayon thread pool configured"
-        );
+        return Ok(actual);
+    }
+    CONFIGURED_RAYON_THREADS.set(n).map_err(|_| {
+        anyhow::anyhow!(
+            "Rayon worker pool configured with {n} threads, but its KeyHog initialization state changed concurrently"
+        )
+    })?;
+    tracing::info!(
+        threads = n,
+        source,
+        physical_cores,
+        "rayon thread pool configured"
+    );
+    Ok(n)
+}
+
+fn thread_pool_needs_initialization(
+    configured: Option<usize>,
+    requested: usize,
+    source: &'static str,
+) -> Result<bool> {
+    match configured {
+        None => Ok(true),
+        Some(actual) if actual == requested => Ok(false),
+        Some(actual) => anyhow::bail!(
+            "Rayon worker pool already has {actual} threads, but this scan requested {requested} ({source}); the requested width cannot take effect in this process. Fix: use one thread width for every in-process scan policy or start the incompatible policy in a separate process"
+        ),
     }
 }
 
@@ -337,5 +383,29 @@ pub(crate) mod testing {
         source: &'static str,
     ) -> usize {
         super::sanitise_thread_count(requested, physical_cores, source)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::thread_pool_needs_initialization;
+
+    #[test]
+    fn repeated_rayon_configuration_accepts_the_live_width() {
+        assert!(!thread_pool_needs_initialization(Some(16), 16, "test")
+            .expect("repeating the live Rayon width must be idempotent"));
+        assert!(thread_pool_needs_initialization(None, 16, "test")
+            .expect("an unconfigured pool must request initialization"));
+    }
+
+    #[test]
+    fn repeated_rayon_configuration_rejects_a_different_width() {
+        let error = thread_pool_needs_initialization(Some(16), 8, "test")
+            .expect_err("an initialized Rayon pool cannot honor a different width")
+            .to_string();
+        assert!(
+            error.contains("already has 16 threads") && error.contains("requested 8"),
+            "mismatch diagnostic must name the live and requested widths: {error}"
+        );
     }
 }

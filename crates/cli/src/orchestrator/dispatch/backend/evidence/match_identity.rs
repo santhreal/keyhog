@@ -117,34 +117,48 @@ fn canonical_match(chunk_idx: usize, m: &RawMatch) -> CanonicalMatch<'_> {
 }
 
 pub(crate) fn render_canonical_match(m: &CanonicalMatch<'_>) -> String {
-    let credential_hash_hex: String = m
-        .credential_hash
-        .as_bytes()
+    let credential_value_hash = keyhog_core::hex_encode(m.credential_value_hash.as_bytes());
+    let credential_hash = keyhog_core::hex_encode(m.credential_hash.as_bytes());
+    let companions = m
+        .companions
         .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
+        .map(|(name, value)| {
+            (
+                keyhog_core::hex_encode(name.as_bytes()),
+                keyhog_core::hex_encode(value.as_bytes()),
+            )
+        })
+        .collect::<Vec<_>>();
+    let commit_hash = secret_safe_optional_hash(m.commit);
+    let author_hash = secret_safe_optional_hash(m.author);
+    let date_hash = secret_safe_optional_hash(m.date);
     format!(
-        "chunk={} detector={} name={} service={} severity={} cred_hash={} credential_hash_consistent={} \
-         companions={} source={} file={:?} line={:?} offset={} commit={} author={} date={} \
+        "chunk={} detector={} name={} service={} severity={} credential_value_hash={} cred_hash={} credential_hash_consistent={} \
+         companions={:?} source={} file={:?} line={:?} offset={} commit_hash={:?} author_hash={:?} date_hash={:?} \
          entropy_bits={:?} confidence_bits={:?}",
         m.chunk_idx,
         m.detector_id,
         m.detector_name,
         m.service,
         m.severity.as_str(),
-        credential_hash_hex,
+        credential_value_hash,
+        credential_hash,
         m.credential_value_hash == m.credential_hash,
-        m.companions.len(),
+        companions,
         m.source,
         m.file_path,
         m.line,
         m.offset,
-        m.commit.is_some(),
-        m.author.is_some(),
-        m.date.is_some(),
+        commit_hash,
+        author_hash,
+        date_hash,
         m.entropy_bits,
         m.confidence_bits,
     )
+}
+
+fn secret_safe_optional_hash(value: Option<&str>) -> Option<String> {
+    value.map(|value| keyhog_core::hex_encode(keyhog_core::sha256_hash(value).as_bytes()))
 }
 
 pub(crate) fn canonical_match_digest(matches: &[CanonicalMatch<'_>]) -> u64 {
@@ -177,4 +191,125 @@ pub(crate) fn canonical_match_digest(matches: &[CanonicalMatch<'_>]) -> u64 {
         h.field_option_u64("match.confidence_bits", m.confidence_bits);
     }
     h.finish_u64()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn diagnostic_match() -> CanonicalMatch<'static> {
+        CanonicalMatch {
+            chunk_idx: 0,
+            detector_id: "detector",
+            detector_name: "Detector",
+            service: "service",
+            severity: Severity::High,
+            credential_value_hash: [0x11; 32].into(),
+            credential_hash: [0x99; 32].into(),
+            companions: vec![([0x22; 32].into(), [0x33; 32].into())],
+            source: "git",
+            file_path: Some("src/file.rs"),
+            line: Some(7),
+            offset: 13,
+            commit: Some("commit-a"),
+            author: Some("author-a@example.test"),
+            date: Some("2026-07-14T00:00:00Z"),
+            entropy_bits: Some(4.2_f64.to_bits()),
+            confidence_bits: Some(0.9_f64.to_bits()),
+        }
+    }
+
+    #[test]
+    fn diagnostic_render_distinguishes_exact_hashed_evidence_without_plaintext() {
+        let base = diagnostic_match();
+        let base_rendered = render_canonical_match(&base);
+        let mut variants = Vec::new();
+
+        let mut changed = base.clone();
+        changed.chunk_idx = 1;
+        variants.push(("chunk index", changed));
+
+        let mut changed = base.clone();
+        changed.detector_id = "detector-b";
+        variants.push(("detector id", changed));
+
+        let mut changed = base.clone();
+        changed.detector_name = "Detector B";
+        variants.push(("detector name", changed));
+
+        let mut changed = base.clone();
+        changed.service = "service-b";
+        variants.push(("service", changed));
+
+        let mut changed = base.clone();
+        changed.severity = Severity::Critical;
+        variants.push(("severity", changed));
+
+        let mut changed = base.clone();
+        changed.credential_value_hash = [0x12; 32].into();
+        variants.push(("credential value", changed));
+
+        let mut changed = base.clone();
+        changed.credential_hash = [0x98; 32].into();
+        variants.push(("stored credential hash", changed));
+
+        let mut changed = base.clone();
+        changed.companions = vec![([0x22; 32].into(), [0x34; 32].into())];
+        variants.push(("companion value", changed));
+
+        let mut changed = base.clone();
+        changed.companions = vec![([0x23; 32].into(), [0x33; 32].into())];
+        variants.push(("companion name", changed));
+
+        let mut changed = base.clone();
+        changed.source = "filesystem";
+        variants.push(("source", changed));
+
+        let mut changed = base.clone();
+        changed.file_path = Some("src/other.rs");
+        variants.push(("file path", changed));
+
+        let mut changed = base.clone();
+        changed.line = Some(8);
+        variants.push(("line", changed));
+
+        let mut changed = base.clone();
+        changed.offset = 14;
+        variants.push(("offset", changed));
+
+        let mut changed = base.clone();
+        changed.commit = Some("commit-b");
+        variants.push(("commit", changed));
+
+        let mut changed = base.clone();
+        changed.author = Some("author-b@example.test");
+        variants.push(("author", changed));
+
+        let mut changed = base.clone();
+        changed.date = Some("2026-07-15T00:00:00Z");
+        variants.push(("date", changed));
+
+        let mut changed = base.clone();
+        changed.entropy_bits = Some(4.3_f64.to_bits());
+        variants.push(("entropy", changed));
+
+        let mut changed = base.clone();
+        changed.confidence_bits = Some(0.8_f64.to_bits());
+        variants.push(("confidence", changed));
+
+        for (field, changed) in variants {
+            assert_ne!(
+                base_rendered,
+                render_canonical_match(&changed),
+                "changing {field} must change the parity diagnostic"
+            );
+        }
+
+        for plaintext in ["commit-a", "author-a@example.test", "2026-07-14T00:00:00Z"] {
+            assert!(
+                !base_rendered.contains(plaintext),
+                "parity diagnostics must hash provenance value {plaintext:?}"
+            );
+        }
+    }
 }
