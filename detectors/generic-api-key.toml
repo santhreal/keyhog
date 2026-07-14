@@ -39,9 +39,9 @@ max_len = 512
 keyword_free_min_len = 20
 stopwords = ["example", "sample", "test", "dummy", "placeholder", "changeme", "xxxxxxxx", "your_key_here", "000000"]
 
-# Length-bucketed low-entropy floor. Short api-key values are legitimately
-# lower-entropy than long ones, so the floor relaxes for shorter candidates and
-# tightens for long word-y noise. First bucket whose max_len >= L applies.
+# Length-specific low-entropy floors. These measured buckets are deliberately
+# nonmonotonic: 25 to 40 bytes use 2.8, values through 24 use 3.0, and values
+# above 40 use 3.5. The first bucket whose max_len >= L applies.
 entropy_floor = [
     { max_len = 24, floor = 3.0 },
     { max_len = 40, floor = 2.8 },
