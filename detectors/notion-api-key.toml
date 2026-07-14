@@ -29,6 +29,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "results"
 json_path = "$.results"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "NOTION_API_KEY=secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"

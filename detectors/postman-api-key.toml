@@ -44,10 +44,12 @@ status = 200
 [[detector.verify.metadata]]
 name = "user_id"
 json_path = "$.user.id"
+sensitivity = "hashed"
 
 [[detector.verify.metadata]]
 name = "username"
 json_path = "$.user.username"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "PMAK-606a8c2da5c08a004dfd060f-c7cdd622c690177cce465538021e349288"

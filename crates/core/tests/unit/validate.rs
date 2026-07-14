@@ -324,6 +324,7 @@ fn rejects_invalid_response_selectors_at_every_verification_surface() {
         metadata: vec![MetadataSpec {
             name: "account".into(),
             json_path: "account.email".into(),
+            sensitivity: Default::default(),
         }],
         steps: vec![StepSpec {
             name: "probe".into(),
@@ -339,6 +340,7 @@ fn rejects_invalid_response_selectors_at_every_verification_surface() {
             extract: vec![MetadataSpec {
                 name: "owner".into(),
                 json_path: "$.owner.".into(),
+                sensitivity: Default::default(),
             }],
         }],
         ..Default::default()
@@ -362,6 +364,66 @@ fn rejects_invalid_response_selectors_at_every_verification_surface() {
             "missing selector error for {scope}: {errors:?}"
         );
     }
+}
+
+#[test]
+fn rejects_unreviewed_or_duplicate_provider_evidence_roles() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        metadata: vec![
+            MetadataSpec {
+                name: "provider_dynamic_key".into(),
+                json_path: "$.dynamic".into(),
+                sensitivity: Default::default(),
+            },
+            MetadataSpec {
+                name: "account_id".into(),
+                json_path: "$.account.id".into(),
+                sensitivity: Default::default(),
+            },
+            MetadataSpec {
+                name: "accountID".into(),
+                json_path: "$.legacyAccountId".into(),
+                sensitivity: Default::default(),
+            },
+        ],
+        steps: vec![StepSpec {
+            name: "exchange".into(),
+            method: HttpMethod::Get,
+            url: "https://example.com/verify".into(),
+            auth: AuthSpec::None {},
+            headers: Vec::new(),
+            body: None,
+            success: SuccessSpec::default(),
+            extract: vec![MetadataSpec {
+                name: "provider_flow_nonce".into(),
+                json_path: "$.nonce".into(),
+                sensitivity: Default::default(),
+            }],
+        }],
+        ..Default::default()
+    });
+
+    let errors: Vec<_> = validate_detector(&detector)
+        .into_iter()
+        .filter_map(|issue| match issue {
+            QualityIssue::Error(message) => Some(message),
+            QualityIssue::Warning(_) => None,
+        })
+        .collect();
+    assert!(errors.iter().any(|error| {
+        error.contains("provider_dynamic_key")
+            && error.contains("not a supported provider evidence role")
+    }));
+    assert!(errors.iter().any(|error| {
+        error.contains("repeats provider evidence role") && error.contains("account_id")
+    }));
+    assert!(
+        errors
+            .iter()
+            .all(|error| !error.contains("provider_flow_nonce")),
+        "multi-step scratch names must remain flow-local, got {errors:?}"
+    );
 }
 
 #[test]

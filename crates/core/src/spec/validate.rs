@@ -624,6 +624,7 @@ fn validate_verify_spec(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     if let Some(ref verify) = spec.verify {
         validate_verify_urls(spec, verify, issues);
         validate_verify_success_statuses(verify, issues);
+        validate_provider_evidence(verify, issues);
         issues.extend(
             crate::json_selector::validate_detector_response_selectors(spec)
                 .into_iter()
@@ -632,6 +633,25 @@ fn validate_verify_spec(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         check_oob_consistency(verify, issues);
     }
     check_reserved_companion_names(spec, issues);
+}
+
+fn validate_provider_evidence(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
+    let mut roles = std::collections::HashSet::new();
+    for (index, field) in verify.metadata.iter().enumerate() {
+        let Some(role) = super::ProviderEvidenceRole::from_metadata_name(&field.name) else {
+            issues.push(QualityIssue::Error(format!(
+                "verify.metadata[{index}].name {:?} is not a supported provider evidence role; use a reviewed provider-neutral role such as account_id, email, scope, team_id, or user_id",
+                field.name
+            )));
+            continue;
+        };
+        if !roles.insert(role) {
+            issues.push(QualityIssue::Error(format!(
+                "verify.metadata[{index}] repeats provider evidence role {:?}; each report role must have one detector-owned selector",
+                role.as_str()
+            )));
+        }
+    }
 }
 
 fn validate_verify_success_statuses(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {

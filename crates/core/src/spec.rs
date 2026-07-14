@@ -6,6 +6,7 @@
 // benefit from a doc line; remove this allow once they all carry one.
 #![allow(missing_docs)]
 
+mod evidence;
 pub(crate) mod load;
 mod regex_separator;
 mod validate;
@@ -15,6 +16,7 @@ use std::fmt;
 use serde::ser::Error as _;
 use serde::{Deserialize, Serialize};
 
+pub use evidence::{ProviderEvidenceRole, ProviderEvidenceSensitivity};
 pub use load::{load_detectors, read_detector_toml_file, SpecError, DETECTOR_TOML_FILE_BYTES};
 pub use regex_separator::{canonicalize_keyword_separators, CANONICAL_SEPARATOR};
 pub use validate::{validate_detector, QualityIssue};
@@ -39,10 +41,15 @@ where
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MetadataSpec {
-    /// Field name in the finding metadata map.
+    /// Field name in the finding metadata map. Top-level verification metadata
+    /// must name a supported [`ProviderEvidenceRole`]. Multi-step extraction
+    /// may use a flow-local template name instead.
     pub name: String,
     /// `$`-rooted response selector, such as `$.account.email` or `$.orgs[0].name`.
     pub json_path: String,
+    /// How a selected provider value may cross the reporting boundary.
+    #[serde(default)]
+    pub sensitivity: ProviderEvidenceSensitivity,
 }
 
 /// A complete detector definition loaded from a TOML file.

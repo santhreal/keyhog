@@ -193,7 +193,8 @@ pub(crate) async fn verify_multi_step(
         for (k, v) in &step_metadata {
             current_companions.insert(format!("{}.{}", step.name, k), v.clone());
         }
-        all_metadata.extend(step_metadata);
+        // Step extracts are transport state for later templates. They are not
+        // detector-declared report evidence and must never enter findings.
         last_result = VerificationResult::Live;
     }
 

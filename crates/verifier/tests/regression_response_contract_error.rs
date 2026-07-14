@@ -140,6 +140,7 @@ async fn rejected_non_json_response_remains_dead_when_metadata_is_configured() {
     detector.verify.as_mut().unwrap().metadata = vec![MetadataSpec {
         name: "account".into(),
         json_path: "$.account".into(),
+        sensitivity: Default::default(),
     }];
     let engine = VerificationEngine::new(
         &[detector],

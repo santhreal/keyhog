@@ -30,6 +30,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "login"
 json_path = "$.login"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "BOX_DEVELOPER_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm"

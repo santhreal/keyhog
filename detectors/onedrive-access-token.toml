@@ -30,6 +30,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "userPrincipalName"
 json_path = "$.userPrincipalName"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "ONEDRIVE_TOKEN=eyJ0eXFHAOW1dcFx6CSwxQjhHI2t-8Yz9L0gGN39H67mlO6DjJsMq8.eyJtMwzbKxqpVlfyPWYAk43XzRf2DLgpt3nsGWdU.v_Dd9gVB5bLy1nXh91hk3v0sk2ZZaFjFbUgA7D7EL"

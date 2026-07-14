@@ -60,7 +60,7 @@ Each detector's `verify` block in its TOML defines:
   contain)
 - optional `success.json_path` and `success.equals` for structured JSON
   responses
-- optional `metadata` selectors for response fields attached to live findings
+- optional `metadata` selectors for reviewed response evidence attached to live findings
 
 Response selectors use one `$`-rooted grammar:
 
@@ -76,10 +76,21 @@ Selectors are limited to 1,024 bytes, 64 segments, and array indexes up to
 that is absent or resolves to `null` does not satisfy the success contract.
 `equals` compares strings, numbers, and booleans exactly and requires a
 `json_path`. Metadata fields are optional enrichment, so a valid selector miss
-omits that field. Invalid selector syntax is a detector configuration error. A
-malformed successful JSON response is a verification error rather than a dead
-credential. Direct verification metadata and multi-step `extract` fields use
-the same grammar.
+omits that field. Every direct metadata entry declares `sensitivity = "public"
+| "hashed" | "secret"` in its detector TOML. Public evidence must be one
+string, number, or boolean no larger than 256 bytes. Hashed evidence emits only
+a `sha256:` digest and may summarize a structured value. Secret evidence never
+enters finding metadata. Omission retains the fail-closed `hashed` behavior for
+older custom detectors.
+
+Metadata names resolve to a reviewed provider-neutral role such as
+`account_id`, `email`, `scope`, `status`, `team_id`, or `user_id`. Unknown names
+and duplicate canonical roles reject the detector instead of creating
+provider-controlled report keys. Invalid selector syntax is also a detector
+configuration error. A malformed successful JSON response is a verification
+error rather than a dead credential. Direct verification metadata and
+multi-step `extract` fields use the same selector grammar. Multi-step extracts
+are request transport state for later templates and never enter reports.
 
 The verifier:
 1. Renders the URL with the credential substituted in
@@ -98,11 +109,10 @@ unchanged).
 
 `live` proves only that the detector's declared request was accepted. It does
 not mean KeyHog enumerated everything the credential can read, write, delete,
-administer, or bill. Provider metadata is included only when the detector TOML
-declares response selectors for fields such as account, organization, project,
-or scope and the endpoint returns them. The JSON `metadata` object contains the
-fields that were actually extracted. An absent field is unknown, not empty or
-denied.
+administer, or bill. Provider evidence is included only when the detector TOML
+declares a reviewed role and sensitivity for a response selector and the
+endpoint returns it. The JSON `metadata` object contains only an allowed public
+value or hashed digest. An absent field is unknown, not empty or denied.
 
 KeyHog does not currently compute effective IAM policy, inherited group roles,
 resource-level grants, organization policy, network restrictions, or reachable

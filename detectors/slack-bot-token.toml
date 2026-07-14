@@ -39,14 +39,17 @@ equals = "true"
 [[detector.verify.metadata]]
 name = "team"
 json_path = "$.team"
+sensitivity = "hashed"
 
 [[detector.verify.metadata]]
 name = "user"
 json_path = "$.user"
+sensitivity = "hashed"
 
 [[detector.verify.metadata]]
 name = "team_id"
 json_path = "$.team_id"
+sensitivity = "hashed"
 
 
 

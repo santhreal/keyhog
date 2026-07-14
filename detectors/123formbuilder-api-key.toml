@@ -36,10 +36,12 @@ status = 200
 [[detector.verify.metadata]]
 name = "name"
 json_path = "$.data.name"
+sensitivity = "hashed"
 
 [[detector.verify.metadata]]
 name = "email"
 json_path = "$.data.email"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "123formbuilder api_key Kp4Qx7-Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn"

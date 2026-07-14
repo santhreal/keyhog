@@ -44,6 +44,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "data"
 json_path = "$.data"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "pk_a4XfZQFqVQ39GLNmbBMF2LMaiwZjZoEb"

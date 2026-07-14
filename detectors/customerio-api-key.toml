@@ -46,6 +46,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "region"
 json_path = "$.region"
+sensitivity = "public"
 
 [[detector.tests]]
 test_positive = "CIO_SITE_ID=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"

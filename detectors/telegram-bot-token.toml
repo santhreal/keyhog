@@ -30,6 +30,7 @@ equals = "true"
 [[detector.verify.metadata]]
 name = "bot_name"
 json_path = "$.result.username"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "TELEGRAM_BOT_TOKEN=612543247:aJRI90OF9-juNtbtBMOHM7jaF-HcmtNbAnx"

@@ -36,6 +36,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "accountID"
 json_path = "$.accountID"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "OMNISEND_API_KEY=614030930ca9626eedd2b6b73c763ac9"

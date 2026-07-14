@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use keyhog_core::{
-    AuthSpec, DedupedMatch, DetectorSpec, HttpMethod, MatchLocation, Severity, StepSpec,
-    SuccessSpec, VerificationResult, VerifySpec,
+    AuthSpec, DedupedMatch, DetectorSpec, HeaderSpec, HttpMethod, MatchLocation, MetadataSpec,
+    Severity, StepSpec, SuccessSpec, VerificationResult, VerifySpec,
 };
 use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
@@ -29,6 +29,34 @@ async fn transient_then_live_server(requests: Arc<AtomicUsize>) -> String {
                 };
                 let _ = stream.write_all(response).await;
             });
+        }
+    });
+    format!("http://127.0.0.1:{port}")
+}
+
+async fn extracted_secret_server() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        for step in 0..2 {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut buf = [0u8; 1024];
+            let read = stream.read(&mut buf).await.unwrap_or(0);
+            let request = String::from_utf8_lossy(&buf[..read]);
+            let response = if step == 0 {
+                let body = r#"{"nonce":"provider-step-secret","provider_added":"unreviewed"}"#;
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+            } else if request.contains("x-step-nonce: provider-step-secret") {
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK".to_string()
+            } else {
+                "HTTP/1.1 401 Unauthorized\r\nContent-Length: 7\r\n\r\nmissing".to_string()
+            };
+            let _ = stream.write_all(response.as_bytes()).await;
         }
     });
     format!("http://127.0.0.1:{port}")
@@ -162,6 +190,73 @@ async fn multi_step_500_retries_then_live() {
         "a transient multi-step response must be retried before classifying the credential"
     );
     assert_eq!(findings[0].verification, VerificationResult::Live);
+}
+
+#[tokio::test]
+async fn multi_step_extracts_remain_transport_only() {
+    let base = extracted_secret_server().await;
+    let detector = DetectorSpec {
+        id: "multi-step-evidence-boundary".into(),
+        name: "Multi-step evidence boundary".into(),
+        service: "test".into(),
+        severity: Severity::Critical,
+        verify: Some(VerifySpec {
+            service: "test".into(),
+            steps: vec![
+                StepSpec {
+                    name: "exchange".into(),
+                    method: HttpMethod::Get,
+                    url: format!("{base}/step"),
+                    auth: AuthSpec::None {},
+                    headers: Vec::new(),
+                    body: None,
+                    success: SuccessSpec {
+                        status: Some(200),
+                        ..Default::default()
+                    },
+                    extract: vec![MetadataSpec {
+                        name: "provider_flow_nonce".into(),
+                        json_path: "$.nonce".into(),
+                        sensitivity: Default::default(),
+                    }],
+                },
+                StepSpec {
+                    name: "consume".into(),
+                    method: HttpMethod::Get,
+                    url: format!("{base}/consume"),
+                    auth: AuthSpec::None {},
+                    headers: vec![HeaderSpec {
+                        name: "X-Step-Nonce".into(),
+                        value: "{{companion.exchange.provider_flow_nonce}}".into(),
+                    }],
+                    body: None,
+                    success: SuccessSpec {
+                        status: Some(200),
+                        ..Default::default()
+                    },
+                    extract: Vec::new(),
+                },
+            ],
+            allowed_domains: vec!["127.0.0.1".into()],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let findings = engine_for(detector)
+        .verify_all(vec![group_for("multi-step-evidence-boundary")])
+        .await;
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].verification, VerificationResult::Live);
+    assert!(
+        findings[0].metadata.is_empty(),
+        "step extracts are request transport state, not report evidence"
+    );
+    let serialized = serde_json::to_string(&findings[0]).expect("finding serializes");
+    assert!(!serialized.contains("provider-step-secret"));
+    assert!(!serialized.contains("provider_flow_nonce"));
+    assert!(!serialized.contains("provider_added"));
+    assert!(!serialized.contains("unreviewed"));
 }
 
 #[tokio::test]

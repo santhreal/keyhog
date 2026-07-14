@@ -36,6 +36,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "workplace_name"
 json_path = "$.workplace.name"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "doppler dp.ct.NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1JRcor"

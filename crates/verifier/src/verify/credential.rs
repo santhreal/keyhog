@@ -11,9 +11,9 @@ use crate::oob::{OobObservation, OobSession};
 use crate::verify::multi_step::verify_multi_step;
 use crate::verify::{
     apply_header_body_templates, build_request_for_step, evaluate_success,
-    execute_and_read_response, extract_metadata, resolve_live_verdict, resolved_client_for_url,
-    retryable_http_status, success_spec_is_explicit, validate_header_body_templates,
-    validate_template_companions, RequestBuildResult,
+    execute_and_read_response, extract_provider_evidence, resolve_live_verdict,
+    resolved_client_for_url, retryable_http_status, success_spec_is_explicit,
+    validate_header_body_templates, validate_template_companions, RequestBuildResult,
 };
 
 const MAX_VERIFY_ATTEMPTS: usize = 3;
@@ -579,7 +579,7 @@ pub(crate) async fn verify_credential(
     let transient = retryable_status;
 
     let mut metadata = if is_actually_live {
-        match extract_metadata(&spec.metadata, &body) {
+        match extract_provider_evidence(&spec.metadata, &body) {
             Ok(metadata) => metadata,
             Err(error) => {
                 return VerificationAttempt {

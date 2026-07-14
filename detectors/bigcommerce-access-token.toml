@@ -34,6 +34,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "store_name"
 json_path = "$.name"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "bbc_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz"

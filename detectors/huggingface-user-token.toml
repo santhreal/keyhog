@@ -29,10 +29,12 @@ status = 200
 [[detector.verify.metadata]]
 name = "username"
 json_path = "$.name"
+sensitivity = "hashed"
 
 [[detector.verify.metadata]]
 name = "email"
 json_path = "$.email"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "hf_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb"

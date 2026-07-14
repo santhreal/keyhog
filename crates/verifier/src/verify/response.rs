@@ -1,12 +1,16 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use futures_util::StreamExt;
-use keyhog_core::{MetadataSpec, VerificationResult};
+use keyhog_core::{
+    MetadataSpec, ProviderEvidenceRole, ProviderEvidenceSensitivity, VerificationResult,
+};
+use sha2::{Digest, Sha256};
 
 use crate::verify::request::{execute_request, RequestError};
 
 pub(crate) const MAX_RESPONSE_BODY_BYTES: usize = 1024 * 1024;
+const MAX_PROVIDER_EVIDENCE_VALUE_BYTES: usize = 256;
 
 /// The connection dropped mid-body while reading the API response. Transient.
 /// Leads with the legacy `body read failed` phrase so existing `.contains`
@@ -53,6 +57,54 @@ impl ResponseContractError {
     fn invalid_selector(scope: &str, error: keyhog_core::json_selector::SelectorError) -> Self {
         Self {
             message: format!("{scope}: {error}"),
+        }
+    }
+
+    fn invalid_evidence_role(name: &str) -> Self {
+        Self {
+            message: format!(
+                "verification metadata name {name:?} is not a supported provider evidence role. Fix: use a reviewed provider-neutral role in the detector TOML"
+            ),
+        }
+    }
+
+    fn duplicate_evidence_role(role: &str) -> Self {
+        Self {
+            message: format!(
+                "verification metadata repeats provider evidence role {role:?}. Fix: give each report role one detector-owned selector"
+            ),
+        }
+    }
+
+    fn non_scalar_evidence(role: &str, value: &serde_json::Value) -> Self {
+        let kind = match value {
+            serde_json::Value::Null => "null",
+            serde_json::Value::Array(_) => "array",
+            serde_json::Value::Object(_) => "object",
+            serde_json::Value::Bool(_)
+            | serde_json::Value::Number(_)
+            | serde_json::Value::String(_) => "scalar",
+        };
+        Self {
+            message: format!(
+                "provider evidence role {role:?} selected a JSON {kind}, but report evidence must be a string, number, or boolean. Fix: point the detector TOML selector at one reviewed scalar field"
+            ),
+        }
+    }
+
+    fn oversized_evidence(role: &str, bytes: usize) -> Self {
+        Self {
+            message: format!(
+                "provider evidence role {role:?} selected {bytes} bytes, above the {MAX_PROVIDER_EVIDENCE_VALUE_BYTES}-byte report limit. Fix: select a bounded identity field or mark the field hashed or secret"
+            ),
+        }
+    }
+
+    fn secret_evidence_boundary(role: &str) -> Self {
+        Self {
+            message: format!(
+                "provider evidence role {role:?} is secret and cannot cross the reporting boundary"
+            ),
         }
     }
 
@@ -264,6 +316,45 @@ fn json_value_is_truthy_error(value: &serde_json::Value) -> bool {
     }
 }
 
+pub(crate) fn extract_provider_evidence(
+    specs: &[MetadataSpec],
+    body: &str,
+) -> Result<HashMap<String, String>, ResponseContractError> {
+    let mut metadata = HashMap::new();
+    let Some(first) = specs.first() else {
+        return Ok(metadata);
+    };
+    let json = serde_json::from_str::<serde_json::Value>(body).map_err(|error| {
+        ResponseContractError::invalid_json("metadata", &first.json_path, error)
+    })?;
+    let mut roles = HashSet::with_capacity(specs.len());
+    for spec in specs {
+        let role = ProviderEvidenceRole::from_metadata_name(&spec.name)
+            .ok_or_else(|| ResponseContractError::invalid_evidence_role(&spec.name))?;
+        if !roles.insert(role) {
+            return Err(ResponseContractError::duplicate_evidence_role(
+                role.as_str(),
+            ));
+        }
+        let selected =
+            keyhog_core::json_selector::select(&json, &spec.json_path).map_err(|error| {
+                ResponseContractError::invalid_selector(
+                    &format!("metadata {:?} selector", spec.name),
+                    error,
+                )
+            })?;
+        if let Some(val) = selected {
+            if spec.sensitivity == ProviderEvidenceSensitivity::Secret {
+                continue;
+            }
+            let role = role.as_str();
+            let value = provider_evidence_value(role, spec.sensitivity, val)?;
+            metadata.insert(role.to_string(), value);
+        }
+    }
+    Ok(metadata)
+}
+
 pub(crate) fn extract_metadata(
     specs: &[MetadataSpec],
     body: &str,
@@ -283,11 +374,67 @@ pub(crate) fn extract_metadata(
                     error,
                 )
             })?;
-        if let Some(val) = selected {
-            metadata.insert(spec.name.clone(), json_value_to_contract_string(val));
+        if let Some(value) = selected {
+            metadata.insert(spec.name.clone(), json_value_to_contract_string(value));
         }
     }
     Ok(metadata)
+}
+
+fn provider_evidence_value(
+    role: &str,
+    sensitivity: ProviderEvidenceSensitivity,
+    value: &serde_json::Value,
+) -> Result<String, ResponseContractError> {
+    match sensitivity {
+        ProviderEvidenceSensitivity::Public => {
+            let scalar = match value {
+                serde_json::Value::String(value) => value.clone(),
+                serde_json::Value::Number(value) => value.to_string(),
+                serde_json::Value::Bool(value) => value.to_string(),
+                serde_json::Value::Null
+                | serde_json::Value::Array(_)
+                | serde_json::Value::Object(_) => {
+                    return Err(ResponseContractError::non_scalar_evidence(role, value));
+                }
+            };
+            if scalar.len() > MAX_PROVIDER_EVIDENCE_VALUE_BYTES {
+                return Err(ResponseContractError::oversized_evidence(
+                    role,
+                    scalar.len(),
+                ));
+            }
+            Ok(scalar)
+        }
+        ProviderEvidenceSensitivity::Hashed => Ok(format!(
+            "sha256:{}",
+            hex::encode(hash_provider_evidence(value))
+        )),
+        ProviderEvidenceSensitivity::Secret => {
+            Err(ResponseContractError::secret_evidence_boundary(role))
+        }
+    }
+}
+
+fn hash_provider_evidence(value: &serde_json::Value) -> impl AsRef<[u8]> {
+    let mut hasher = Sha256::new();
+    match value {
+        serde_json::Value::String(value) => hasher.update(value.as_bytes()),
+        serde_json::Value::Number(value) => hasher.update(value.to_string().as_bytes()),
+        serde_json::Value::Bool(value) => hasher.update(if *value {
+            b"true".as_slice()
+        } else {
+            b"false".as_slice()
+        }),
+        serde_json::Value::Null => hasher.update(b"null"),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            // The response body is already capped. Hash the structured value
+            // directly so legacy object and array evidence remains useful
+            // without ever crossing the report boundary in plaintext.
+            hasher.update(value.to_string().as_bytes());
+        }
+    }
+    hasher.finalize()
 }
 
 fn json_value_to_contract_string(value: &serde_json::Value) -> String {

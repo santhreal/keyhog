@@ -51,6 +51,7 @@ pub(crate) use request::{
 };
 pub(crate) use response::{
     body_indicates_error, evaluate_success, execute_and_read_response, extract_metadata,
+    extract_provider_evidence,
 };
 
 /// Single owner for the retryable-HTTP-status contract (rate-limit 429 plus the

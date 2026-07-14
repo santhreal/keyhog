@@ -41,6 +41,7 @@ equals = "true"
 [[detector.verify.metadata]]
 name = "status"
 json_path = "$.result.status"
+sensitivity = "public"
 
 [[detector.tests]]
 test_positive = "CF_API_TOKEN=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"

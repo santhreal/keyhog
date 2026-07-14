@@ -166,6 +166,20 @@ again before a request is sent. Use the narrowest service-owned host. Do not add
 localhost, a generic decoder site, or an unresolved tenant placeholder to make
 a non-verifiable detector appear live-capable.
 
+`detector.verify.metadata[]` maps provider responses to report evidence. Each
+entry owns three fields in this detector TOML:
+
+- `name`: a reviewed provider-neutral semantic role. Unknown and duplicate
+  canonical roles fail detector validation.
+- `json_path`: the rooted response selector.
+- `sensitivity`: `public` emits a scalar value up to 256 bytes, `hashed` emits
+  only its SHA-256 digest, and `secret` never enters findings. Omission defaults
+  to `hashed` for compatibility with older custom detectors.
+
+Multi-step `extract` entries use arbitrary flow-local names because later
+request templates consume them. They are transport state and never become
+report metadata.
+
 ## Per-detector recall/precision knobs
 
 Credential-family policy belongs in the individual detector TOML whenever the

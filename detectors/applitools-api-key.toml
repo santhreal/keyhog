@@ -36,14 +36,17 @@ status = 200
 [[detector.verify.metadata]]
 name = "teamId"
 json_path = "$.teamId"
+sensitivity = "hashed"
 
 [[detector.verify.metadata]]
 name = "user"
 json_path = "$.user"
+sensitivity = "hashed"
 
 [[detector.verify.metadata]]
 name = "permissions"
 json_path = "$.permissions"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "APPLITOOLS_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"

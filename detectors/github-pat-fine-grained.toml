@@ -33,10 +33,12 @@ status = 200
 [[detector.verify.metadata]]
 name = "login"
 json_path = "$.login"
+sensitivity = "hashed"
 
 [[detector.verify.metadata]]
 name = "name"
 json_path = "$.name"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "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"

@@ -36,14 +36,17 @@ status = 200
 [[detector.verify.metadata]]
 name = "id"
 json_path = "$.id"
+sensitivity = "hashed"
 
 [[detector.verify.metadata]]
 name = "name"
 json_path = "$.name"
+sensitivity = "hashed"
 
 [[detector.verify.metadata]]
 name = "email"
 json_path = "$.email"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "sketch_api_key=abcdefghijklmnopqrstuvwxyz1234567890"

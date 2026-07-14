@@ -41,6 +41,7 @@ status = 200
 [[detector.verify.metadata]]
 name = "email"
 json_path = "$.resource.email"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "CALENDLY_TOKEN=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"

@@ -512,6 +512,7 @@ async fn raw_credential_never_appears_in_any_emitted_finding_string() {
         vec![MetadataSpec {
             name: "account".into(),
             json_path: "$.account".into(),
+            sensitivity: Default::default(),
         }],
     );
     let engine = permissive_engine(spec);

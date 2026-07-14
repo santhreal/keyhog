@@ -272,7 +272,7 @@ pub(crate) fn build_pinned_verifier_client(
 pub(crate) fn into_finding(
     group: DedupedMatch,
     verification: VerificationResult,
-    metadata: HashMap<String, String>,
+    mut metadata: HashMap<String, String>,
 ) -> VerifiedFinding {
     // Severity shift on verification (docs/src/verification.md "Severity shift"
     // table; docs/src/first-scan.md "downgraded one"). A credential the provider
@@ -288,6 +288,15 @@ pub(crate) fn into_finding(
         VerificationResult::Dead | VerificationResult::Revoked => group.severity.downgrade_one(),
         _ => group.severity,
     };
+    let credential = group.credential.as_ref();
+    // Backstop every live and cached path against a misclassified credential echo.
+    metadata.retain(|_, value| {
+        (credential.is_empty() || !value.contains(credential))
+            && group
+                .companions
+                .values()
+                .all(|secret| secret.is_empty() || !value.contains(secret))
+    });
     VerifiedFinding {
         detector_id: group.detector_id,
         detector_name: group.detector_name,
@@ -1156,7 +1165,7 @@ pub mod testing {
             specs: &[keyhog_core::MetadataSpec],
             body: &str,
         ) -> Result<HashMap<String, String>, String> {
-            crate::verify::extract_metadata(specs, body).map_err(|error| error.to_string())
+            crate::verify::extract_provider_evidence(specs, body).map_err(|error| error.to_string())
         }
 
         fn retryable_http_status_for_test(&self, status: u16) -> bool {

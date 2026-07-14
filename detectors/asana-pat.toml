@@ -50,10 +50,12 @@ status = 200
 [[detector.verify.metadata]]
 name = "name"
 json_path = "$.data.name"
+sensitivity = "hashed"
 
 [[detector.verify.metadata]]
 name = "email"
 json_path = "$.data.email"
+sensitivity = "hashed"
 
 [[detector.tests]]
 test_positive = "ASANA_ACCESS_TOKEN=1/4827193056718294/Kp7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU"
