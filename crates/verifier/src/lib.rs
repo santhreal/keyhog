@@ -22,9 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
-use keyhog_core::{
-    redact, redact_companions, DedupedMatch, DetectorSpec, VerificationResult, VerifiedFinding,
-};
+use keyhog_core::{DedupedMatch, DetectorSpec, VerificationResult, VerifiedFinding};
 
 // Re-export dedup types from core so existing consumers (`use keyhog_verifier::DedupedMatch`)
 // continue to work without source changes.
@@ -297,20 +295,7 @@ pub(crate) fn into_finding(
                 .values()
                 .all(|secret| secret.is_empty() || !value.contains(secret))
     });
-    VerifiedFinding {
-        detector_id: group.detector_id,
-        detector_name: group.detector_name,
-        service: group.service,
-        severity,
-        credential_redacted: redact(&group.credential),
-        credential_hash: group.credential_hash,
-        companions_redacted: redact_companions(&group.companions),
-        location: group.primary_location,
-        verification,
-        metadata,
-        additional_locations: group.additional_locations,
-        confidence: group.confidence,
-    }
+    VerifiedFinding::from_deduped(group, severity, verification, metadata)
 }
 
 /// Hidden hooks for integration tests. Not covered by semver.

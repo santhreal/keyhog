@@ -200,20 +200,12 @@ fn scan_artifact(
 }
 
 fn skipped_finding_for_baseline(group: &DedupedMatch) -> keyhog_core::VerifiedFinding {
-    keyhog_core::VerifiedFinding {
-        detector_id: group.detector_id.clone(),
-        detector_name: group.detector_name.clone(),
-        service: group.service.clone(),
-        severity: group.severity,
-        credential_redacted: keyhog_core::redact(&group.credential),
-        credential_hash: group.credential_hash,
-        companions_redacted: keyhog_core::redact_companions(&group.companions),
-        location: group.primary_location.clone(),
-        additional_locations: group.additional_locations.clone(),
-        verification: VerificationResult::Skipped,
-        metadata: HashMap::new(),
-        confidence: group.confidence,
-    }
+    keyhog_core::VerifiedFinding::from_deduped(
+        group.clone(),
+        group.severity,
+        VerificationResult::Skipped,
+        HashMap::new(),
+    )
 }
 
 fn group_key(group: &DedupedMatch) -> (String, String) {

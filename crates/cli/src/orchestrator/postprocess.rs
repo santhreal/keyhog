@@ -177,19 +177,14 @@ pub(crate) fn skipped_findings_from_deduped(
 ) -> Vec<VerifiedFinding> {
     deduped
         .into_iter()
-        .map(|m| VerifiedFinding {
-            detector_id: m.detector_id,
-            detector_name: m.detector_name,
-            service: m.service,
-            severity: m.severity,
-            credential_redacted: render_credential(&m.credential, show_secrets),
-            credential_hash: m.credential_hash,
-            companions_redacted: keyhog_core::redact_companions(&m.companions),
-            location: m.primary_location,
-            verification: VerificationResult::Skipped,
-            metadata: offline_finding_metadata(&m.credential),
-            additional_locations: m.additional_locations,
-            confidence: m.confidence,
+        .map(|m| {
+            let severity = m.severity;
+            let credential_redacted = render_credential(&m.credential, show_secrets);
+            let metadata = offline_finding_metadata(&m.credential);
+            let mut finding =
+                VerifiedFinding::from_deduped(m, severity, VerificationResult::Skipped, metadata);
+            finding.credential_redacted = credential_redacted;
+            finding
         })
         .collect()
 }
@@ -468,20 +463,17 @@ impl ScanOrchestrator {
         verifier.shutdown_oob().await;
 
         for m in skip_candidates {
-            findings.push(keyhog_core::VerifiedFinding {
-                detector_id: m.detector_id,
-                detector_name: m.detector_name,
-                service: m.service,
-                severity: m.severity,
-                credential_redacted: render_credential(&m.credential, show_secrets),
-                credential_hash: m.credential_hash,
-                companions_redacted: keyhog_core::redact_companions(&m.companions),
-                location: m.primary_location,
-                additional_locations: m.additional_locations,
-                verification: keyhog_core::VerificationResult::Skipped,
-                metadata: offline_finding_metadata(&m.credential),
-                confidence: m.confidence,
-            });
+            let severity = m.severity;
+            let credential_redacted = render_credential(&m.credential, show_secrets);
+            let metadata = offline_finding_metadata(&m.credential);
+            let mut finding = keyhog_core::VerifiedFinding::from_deduped(
+                m,
+                severity,
+                keyhog_core::VerificationResult::Skipped,
+                metadata,
+            );
+            finding.credential_redacted = credential_redacted;
+            findings.push(finding);
         }
 
         Ok(findings)

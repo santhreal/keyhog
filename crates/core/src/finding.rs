@@ -417,6 +417,35 @@ pub struct VerifiedFinding {
     pub confidence: Option<f64>,
 }
 
+impl VerifiedFinding {
+    /// Construct the report-safe view of a deduplicated match.
+    ///
+    /// This is the single conversion boundary for verifier and skipped paths:
+    /// every new report field must be initialized here, while callers retain
+    /// ownership of policy-specific severity and verification decisions.
+    pub fn from_deduped(
+        group: crate::DedupedMatch,
+        severity: Severity,
+        verification: VerificationResult,
+        metadata: HashMap<String, String>,
+    ) -> Self {
+        Self {
+            detector_id: group.detector_id,
+            detector_name: group.detector_name,
+            service: group.service,
+            severity,
+            credential_redacted: crate::redact(&group.credential),
+            credential_hash: group.credential_hash,
+            companions_redacted: redact_companions(&group.companions),
+            location: group.primary_location,
+            verification,
+            metadata,
+            additional_locations: group.additional_locations,
+            confidence: group.confidence,
+        }
+    }
+}
+
 impl Serialize for VerifiedFinding {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
