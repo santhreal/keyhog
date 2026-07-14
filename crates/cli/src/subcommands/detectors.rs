@@ -162,7 +162,7 @@ fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
                 "id": d.id,
                 "name": d.name,
                 "service": d.service,
-                "severity": format!("{:?}", d.severity),
+                "severity": d.severity,
                 "keywords": d.keywords,
                 "patterns": patterns,
                 "companions": companions,
@@ -356,7 +356,7 @@ fn print_detector_verbose(d: &DetectorSpec) {
     println!("  {}", d.id);
     println!("    name:      {}", d.name);
     println!("    service:   {}", d.service);
-    println!("    severity:  {:?}", d.severity);
+    println!("    severity:  {}", d.severity);
     if !d.keywords.is_empty() {
         println!("    keywords:  {}", d.keywords.join(", "));
     }

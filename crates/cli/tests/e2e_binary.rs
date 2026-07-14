@@ -478,6 +478,18 @@ fn detectors_subcommand_emits_json_array() {
         Some("aws"),
         "aws-access-key should have service=aws",
     );
+
+    let allowed = ["info", "client-safe", "low", "medium", "high", "critical"];
+    for detector in arr {
+        let severity = detector
+            .get("severity")
+            .and_then(|value| value.as_str())
+            .expect("detector severity must be a string");
+        assert!(
+            allowed.contains(&severity),
+            "detector JSON emitted noncanonical severity {severity:?}: {detector}"
+        );
+    }
 }
 
 #[test]
