@@ -263,11 +263,13 @@ in-process retry policy, socket, and timeout semantics.
 
 ## When an auto scan reports `calibration required`
 
-The error names the missing workload bucket. Resolve it by either:
+The error names the missing workload bucket and reports which dimensions differ
+from the nearest calibrated class. Resolve it by either:
 
-- Re-running calibration (`keyhog calibrate-autoroute`, or `install.sh
-  --calibrate` / `install.ps1 -Calibrate`) so the bucket gets a measured
-  decision, or
+- Re-running the same scan once with `--autoroute-calibrate --autoroute-gpu`.
+  This measures the actual source, resolved config, and workload class that
+  failed. Use `keyhog calibrate-autoroute` for the standard core ladder, or
+  `install.sh --calibrate` / `install.ps1 -Calibrate` during installation, or
 - Passing an explicit backend for a one-off diagnostic scan:
   `keyhog scan --backend simd` (or `gpu-cuda`, `gpu-wgpu`, `cpu`). An explicit `--backend`
   bypasses autoroute entirely; it is a diagnostic/benchmark override and does

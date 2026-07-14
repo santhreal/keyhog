@@ -39,6 +39,46 @@ pub(super) struct WorkloadKey {
     pub(super) source_mixture: SourceMixtureKey,
 }
 
+/// Return the exact workload dimensions that differ between two route keys.
+/// This is diagnostic-only and never participates in route selection.
+pub(super) fn differing_workload_dimensions(
+    requested: &WorkloadKey,
+    calibrated: &WorkloadKey,
+) -> Vec<&'static str> {
+    let mut dimensions = Vec::new();
+    if requested.bytes_bucket != calibrated.bytes_bucket {
+        dimensions.push("bytes_bucket");
+    }
+    if requested.chunks_bucket != calibrated.chunks_bucket {
+        dimensions.push("chunks_bucket");
+    }
+    if requested.max_file_bucket != calibrated.max_file_bucket {
+        dimensions.push("max_file_bucket");
+    }
+    if requested.pattern_bucket != calibrated.pattern_bucket {
+        dimensions.push("pattern_bucket");
+    }
+    if requested.phase1 != calibrated.phase1 {
+        dimensions.push("phase1_admission");
+    }
+    if requested.decode_kind_mask != calibrated.decode_kind_mask {
+        dimensions.push("decode_kind");
+    }
+    if requested.decode_candidate_count_bucket != calibrated.decode_candidate_count_bucket {
+        dimensions.push("decode_candidate_count");
+    }
+    if requested.decode_candidate_bytes_bucket != calibrated.decode_candidate_bytes_bucket {
+        dimensions.push("decode_candidate_bytes");
+    }
+    if requested.decode_unknown != calibrated.decode_unknown {
+        dimensions.push("decode_unknown");
+    }
+    if requested.source_mixture != calibrated.source_mixture {
+        dimensions.push("source_mixture");
+    }
+    dimensions
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct SourceMixtureKey {

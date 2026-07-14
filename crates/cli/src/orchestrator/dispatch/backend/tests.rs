@@ -2987,6 +2987,8 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
         .to_string();
     assert!(
         miss.contains("autoroute calibration required")
+            && miss.contains("--autoroute-calibrate --autoroute-gpu")
+            && miss.contains("coverage:")
             && miss.contains("Normal auto scans never benchmark, guess, or substitute"),
         "cache miss must preserve operator-visible autoroute contract; got {miss}"
     );

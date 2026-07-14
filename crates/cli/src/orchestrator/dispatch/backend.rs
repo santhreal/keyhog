@@ -50,7 +50,10 @@ use self::store::{
     AutorouteCacheSaveOutcome,
 };
 pub(crate) use self::workload::source_route_class;
-use self::workload::{render_workload_key, workload_key, WorkloadClassificationError, WorkloadKey};
+use self::workload::{
+    differing_workload_dimensions, render_workload_key, workload_key, WorkloadClassificationError,
+    WorkloadKey,
+};
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
@@ -170,6 +173,7 @@ pub(crate) struct AutorouteRoutingError {
 impl AutorouteRoutingError {
     fn missing_decision(
         key: WorkloadKey,
+        decisions: &HashMap<WorkloadKey, AutorouteDecision>,
         runtime_class: AutorouteRuntimeClass,
         cache_path: &Option<PathBuf>,
         cache_load_error: &Option<String>,
@@ -179,14 +183,39 @@ impl AutorouteRoutingError {
         // rendering shared with `keyhog backend --autoroute`, so an operator can
         // match this refused bucket against calibrated buckets field-for-field.
         let cache_state = autoroute_cache_state(cache_path, cache_load_error);
+        let coverage = if decisions.contains_key(&key) {
+            "the exact workload bucket exists, but it lacks the required runtime-class route evidence"
+                .to_string()
+        } else {
+            let nearest = decisions
+                .keys()
+                .map(|candidate| (differing_workload_dimensions(&key, candidate), candidate))
+                .min_by(
+                    |(left_dimensions, left_key), (right_dimensions, right_key)| {
+                        left_dimensions
+                            .len()
+                            .cmp(&right_dimensions.len())
+                            .then_with(|| left_key.cmp(right_key))
+                    },
+                )
+                .map(|(dimensions, _)| dimensions.join(", "));
+            nearest
+                .map(|dimensions| {
+                    format!(
+                        "nearest calibrated bucket differs in: {dimensions}; this is not reusable evidence"
+                    )
+                })
+                .unwrap_or_else(|| "the cache has no calibrated workload buckets".to_string())
+        };
         Self {
             message: format!(
                 "autoroute calibration required: this workload has no persisted \
                  fastest-correct backend decision.\n  \
-                 fix: run `keyhog calibrate-autoroute` (primes every scan-policy preset and \
-                 workload bucket for this binary in place), or rerun `install.sh --calibrate` \
-                 on Unix / `install.ps1 -Calibrate` on Windows.\n  \
+                 fix: rerun this same scan once with `--autoroute-calibrate --autoroute-gpu` \
+                 to measure its actual source/config/workload class, or run \
+                 `keyhog calibrate-autoroute` for the core ladder.\n  \
                  workload bucket: [{}], runtime={}\n  \
+                 coverage: {coverage}.\n  \
                  cache: {cache_state}.\n  \
                  Decisions are scoped to this exact binary, host, detector corpus, resolved \
                  scan config, and source class. Normal auto scans never benchmark, guess, or \
@@ -446,6 +475,7 @@ fn resolve_persisted_backend(
         Some(backend) => Ok(backend),
         None => Err(AutorouteRoutingError::missing_decision(
             key,
+            decisions,
             runtime_class,
             cache_path,
             cache_load_error,
