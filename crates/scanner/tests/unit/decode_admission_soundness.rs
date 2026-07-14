@@ -1,4 +1,4 @@
-use crate::decode::DecodeAdmission;
+use crate::decode::{DecodeAdmission, DecodeAdmissionSketch, Decoder};
 use keyhog_core::{Chunk, ChunkMetadata};
 use std::collections::BTreeMap;
 
@@ -150,4 +150,64 @@ fn impossible_admission_implies_zero_output_for_every_builtin_decoder() {
             "decoder={decoder} never returned Impossible across {CASES} deterministic cases"
         );
     }
+}
+
+#[test]
+fn sketch_merge_is_permutation_invariant_and_saturating() {
+    let sketches = [
+        DecodeAdmissionSketch::possible(DecodeAdmissionSketch::URL, 3, 9),
+        DecodeAdmissionSketch::possible(DecodeAdmissionSketch::REVERSE, usize::MAX, usize::MAX),
+        DecodeAdmissionSketch::possible(DecodeAdmissionSketch::Z85, 7, 35),
+    ];
+    let merge = |order: [usize; 3]| {
+        let mut aggregate = DecodeAdmissionSketch::NONE;
+        for index in order {
+            aggregate.merge(sketches[index]);
+        }
+        aggregate
+    };
+
+    let expected = merge([0, 1, 2]);
+    for order in [[0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]] {
+        assert_eq!(merge(order), expected, "merge order {order:?}");
+    }
+    assert_eq!(expected.candidate_count(), u16::MAX);
+    assert_eq!(expected.candidate_bytes(), u32::MAX);
+    assert_eq!(
+        expected.kind_mask(),
+        DecodeAdmissionSketch::URL | DecodeAdmissionSketch::REVERSE | DecodeAdmissionSketch::Z85
+    );
+}
+
+struct UnknownSketchDecoder;
+
+impl Decoder for UnknownSketchDecoder {
+    fn name(&self) -> &'static str {
+        "unknown-sketch-test"
+    }
+
+    fn decode_chunk(&self, _chunk: &Chunk) -> Vec<Chunk> {
+        Vec::new()
+    }
+}
+
+#[test]
+fn custom_decoder_unknown_is_conservative_and_visible() {
+    let _registration = super::register_thread_decoder(Box::new(UnknownSketchDecoder));
+    let chunk = chunk(0, b"c.u.s.t.o.m");
+    let sketch = super::decoder_admission_sketch(&chunk);
+
+    assert!(sketch.has_unknown());
+    assert_eq!(sketch.candidate_count(), u16::MAX);
+    assert_eq!(sketch.candidate_bytes(), u32::MAX);
+}
+
+#[cfg(not(feature = "decode"))]
+#[test]
+fn public_sketch_is_zero_when_decode_is_disabled() {
+    let chunk = chunk(0, b"AK%49AQYLPMN5HFIQR7XYA");
+    assert_eq!(
+        crate::decode::decode_admission_sketch(&chunk),
+        DecodeAdmissionSketch::NONE
+    );
 }

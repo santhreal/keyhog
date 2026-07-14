@@ -36,6 +36,11 @@ fn is_zlib_magic(bytes: &[u8]) -> bool {
     bytes.len() >= 2 && bytes[0] == 0x78 && matches!(bytes[1], 0x01 | 0x9c | 0xda)
 }
 
+/// Whether a decoded prefix reaches the bounded compression mechanism.
+pub(crate) fn has_container_magic(bytes: &[u8]) -> bool {
+    is_gzip_magic(bytes) || is_zlib_magic(bytes)
+}
+
 /// Inflate `bytes` if it is a gzip or zlib stream and the inflated output is
 /// non-empty valid UTF-8; otherwise `None`. Output is bounded to
 /// [`MAX_INFLATE_BYTES`].

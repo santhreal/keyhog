@@ -12,7 +12,7 @@
 //! in the normal scan path.
 
 use super::pipeline::{push_decoded_text_chunk, push_decoded_text_chunk_spliced_at};
-use super::{DecodeAdmission, Decoder};
+use super::{DecodeAdmissionSketch, Decoder};
 use keyhog_core::{Chunk, ChunkMetadata};
 use regex::Regex;
 use std::collections::{BTreeSet, HashMap};
@@ -115,14 +115,30 @@ impl Decoder for JavaScriptStaticDecoder {
         "javascript-static"
     }
 
-    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+    fn admission_sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
         if chunk.metadata.source_type.contains("/javascript-static")
             || chunk.data.len() > MAX_STATIC_SOURCE_BYTES
-            || !static_expression_kinds(&chunk.data).any()
         {
-            DecodeAdmission::Impossible
+            return DecodeAdmissionSketch::NONE;
+        }
+        let kinds = static_expression_kinds(&chunk.data);
+        let count = [
+            kinds.xor,
+            kinds.node_aes,
+            kinds.cryptojs_aes,
+            kinds.reverse_base64,
+        ]
+        .into_iter()
+        .filter(|present| *present)
+        .count();
+        if count == 0 {
+            DecodeAdmissionSketch::NONE
         } else {
-            DecodeAdmission::Possible
+            DecodeAdmissionSketch::possible(
+                DecodeAdmissionSketch::JAVASCRIPT_STATIC,
+                count,
+                chunk.data.len().saturating_mul(count),
+            )
         }
     }
 

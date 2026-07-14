@@ -1,5 +1,5 @@
 use super::pipeline::{decode_candidate_refs_exact, with_extracted_value_spans};
-use super::{DecodeAdmission, Decoder};
+use super::{DecodeAdmissionSketch, Decoder};
 use aho_corasick::AhoCorasick;
 use keyhog_core::Chunk;
 use std::sync::LazyLock;
@@ -69,15 +69,24 @@ impl Decoder for ReverseDecoder {
         "reverse"
     }
 
-    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+    fn admission_sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
         if chunk.metadata.source_type.contains("/reverse") {
-            return DecodeAdmission::Impossible;
+            return DecodeAdmissionSketch::NONE;
         }
         with_extracted_value_spans(&chunk.data, |candidates| {
-            if candidates.iter().any(is_reverse_candidate) {
-                DecodeAdmission::Possible
+            let mut count = 0usize;
+            let mut bytes = 0usize;
+            for candidate in candidates
+                .iter()
+                .filter(|candidate| is_reverse_candidate(candidate))
+            {
+                count = count.saturating_add(1);
+                bytes = bytes.saturating_add(candidate.value.len());
+            }
+            if count == 0 {
+                DecodeAdmissionSketch::NONE
             } else {
-                DecodeAdmission::Impossible
+                DecodeAdmissionSketch::possible(DecodeAdmissionSketch::REVERSE, count, bytes)
             }
         })
     }

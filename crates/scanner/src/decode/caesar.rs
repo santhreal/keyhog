@@ -1,5 +1,5 @@
 use super::pipeline::{push_decoded_text_chunk, with_extracted_value_spans};
-use super::{DecodeAdmission, Decoder};
+use super::{DecodeAdmissionSketch, Decoder};
 use aho_corasick::AhoCorasick;
 use keyhog_core::Chunk;
 use std::sync::LazyLock;
@@ -410,20 +410,27 @@ impl Decoder for CaesarDecoder {
         "caesar"
     }
 
-    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
+    fn admission_sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
         if chunk.metadata.source_type.contains("/caesar")
             || is_source_code_path(chunk.metadata.path.as_deref())
         {
-            return DecodeAdmission::Impossible;
+            return DecodeAdmissionSketch::NONE;
         }
         with_extracted_value_spans(&chunk.data, |candidates| {
-            if candidates
-                .iter()
-                .any(|candidate| candidate_caesar_shifts(&candidate.value).is_some())
-            {
-                DecodeAdmission::Possible
+            let mut count = 0usize;
+            let mut bytes = 0usize;
+            for candidate in candidates {
+                let Some(shifts) = candidate_caesar_shifts(&candidate.value) else {
+                    continue;
+                };
+                let shift_count = shifts.iter().filter(|matched| **matched).count();
+                count = count.saturating_add(shift_count);
+                bytes = bytes.saturating_add(candidate.value.len().saturating_mul(shift_count));
+            }
+            if count == 0 {
+                DecodeAdmissionSketch::NONE
             } else {
-                DecodeAdmission::Impossible
+                DecodeAdmissionSketch::possible(DecodeAdmissionSketch::CAESAR, count, bytes)
             }
         })
     }

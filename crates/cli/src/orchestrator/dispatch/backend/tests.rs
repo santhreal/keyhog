@@ -8,11 +8,32 @@ use super::store::{
     AUTOROUTE_CACHE_FILE_BYTES,
 };
 use super::workload::{
-    autoroute_stable_bucket, autoroute_stable_density_bucket, decode_density_bucket,
-    planned_decode_sample_bytes, planned_decode_sample_quotas, source_class_hash, workload_key,
+    autoroute_stable_bucket, autoroute_stable_decode_bucket, decode_workload_projection,
+    decode_workload_sketch as decode_workload_sketch_with_plan, planned_decode_sample_bytes,
+    planned_decode_sample_quotas, source_class_hash, workload_key as workload_key_with_plan,
     WorkloadKey,
 };
 use super::*;
+
+fn test_decode_workload_plan() -> keyhog_scanner::decode::DecodeWorkloadPlan {
+    keyhog_scanner::decode::DecodeWorkloadPlan::from_limits(1, usize::MAX)
+}
+
+fn workload_key(
+    batch: &[Chunk],
+    pattern_count: usize,
+) -> Result<WorkloadKey, super::workload::WorkloadClassificationError> {
+    workload_key_with_plan(batch, pattern_count, test_decode_workload_plan())
+}
+
+fn decode_workload_sketch(
+    batch: &[Chunk],
+) -> Result<
+    keyhog_scanner::decode::DecodeAdmissionSketch,
+    super::workload::WorkloadClassificationError,
+> {
+    decode_workload_sketch_with_plan(batch, test_decode_workload_plan())
+}
 
 /// `sole_compiled_backend` must short-circuit autoroute to the lone backend on a
 /// build that compiled no backend choice (portable: no `simd`/`gpu`), and defer to
@@ -137,7 +158,10 @@ fn test_workload_key() -> WorkloadKey {
         chunks_bucket: 2,
         max_file_bucket: 8,
         pattern_bucket: 5,
-        decode_density_bucket: 3,
+        decode_kind_mask: keyhog_scanner::decode::DecodeAdmissionSketch::BASE64,
+        decode_candidate_count_bucket: 2,
+        decode_candidate_bytes_bucket: 3,
+        decode_unknown: false,
         source_class_hash: 0xAA55_AA55_AA55_AA55,
     }
 }
@@ -386,8 +410,8 @@ fn test_chunk_with_source(data: String, source_type: &str) -> Chunk {
 }
 
 #[test]
-fn workload_key_distinguishes_decode_density_for_same_size_batches() {
-    let encoded = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=".repeat(128);
+fn workload_key_distinguishes_decoder_work_for_same_size_batches() {
+    let encoded = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo".repeat(128);
     let mut plain = "id: x\npath: ./src\n".repeat((encoded.len() / 18) + 1);
     plain.truncate(encoded.len());
     let plain_key = workload_key(&[test_chunk(plain)], 902).expect("plain workload classified");
@@ -400,13 +424,191 @@ fn workload_key_distinguishes_decode_density_for_same_size_batches() {
     assert_eq!(plain_key.pattern_bucket, encoded_key.pattern_bucket);
     assert_eq!(plain_key.source_class_hash, encoded_key.source_class_hash);
     assert!(
-        encoded_key.decode_density_bucket > plain_key.decode_density_bucket,
+        encoded_key.decode_candidate_bytes_bucket > plain_key.decode_candidate_bytes_bucket
+            && encoded_key.decode_kind_mask & keyhog_scanner::decode::DecodeAdmissionSketch::BASE64
+                != 0,
         "autoroute workload keys must separate decode-heavy inputs from same-size plain text"
     );
 }
 
 #[test]
-fn workload_decode_density_is_invariant_to_batch_permutation() {
+fn workload_key_projects_scanner_owned_decoder_families() {
+    use keyhog_scanner::decode::DecodeAdmissionSketch as Sketch;
+
+    let plain = workload_key(&[test_chunk("ordinary prose. short words.".into())], 902)
+        .expect("plain workload classified");
+    assert_eq!(plain.decode_kind_mask, 0);
+    assert_eq!(plain.decode_candidate_count_bucket, 0);
+    assert_eq!(plain.decode_candidate_bytes_bucket, 0);
+    assert!(!plain.decode_unknown);
+
+    let sparse = workload_key(
+        &[test_chunk("token = \"AK%49AQYLPMN5HFIQR7XYA\"".into())],
+        902,
+    )
+    .expect("sparse URL workload classified");
+    assert_eq!(sparse.decode_kind_mask, Sketch::URL);
+    assert_eq!(sparse.decode_candidate_count_bucket, 1);
+    assert_eq!(sparse.decode_candidate_bytes_bucket, 1);
+    assert!(!sparse.decode_unknown);
+
+    let fixtures = [
+        (
+            "reverse",
+            "token = \"AYX7RQIFH5NMPLYQAIKA\"",
+            Sketch::REVERSE,
+        ),
+        ("caesar", "token = \"FPNFNTXKTISS7JCFRUQJ\"", Sketch::CAESAR),
+        ("z85", "token = \"k$:^nqcuN?o?)MpmOcDPh=%iG\"", Sketch::Z85),
+        (
+            "quoted-printable",
+            "token = \"AK=49AQYLPMN5HFIQR7XYA\"",
+            Sketch::QUOTED_PRINTABLE,
+        ),
+        (
+            "mime",
+            "Subject: =?UTF-8?Q?AK=49AQYLPMN5HFIQR7XYA?=",
+            Sketch::MIME_ENCODED_WORD,
+        ),
+        (
+            "json",
+            r#"{"token":"AK\u0049AQYLPMN5HFIQR7XYA"}"#,
+            Sketch::JSON,
+        ),
+        (
+            "javascript-static",
+            "String.fromCharCode(...data.map((byte,index)=>byte^key[index%key.length]))",
+            Sketch::JAVASCRIPT_STATIC,
+        ),
+        (
+            "dense-base64",
+            "token = \"QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo\"",
+            Sketch::BASE64,
+        ),
+        (
+            "compressed-container",
+            "token = \"H4sIAAAAAAAAA3P09nQMjPQJ8PUz9XDzDAwyj4h0BABAsjTDFAAAAA==\"",
+            Sketch::COMPRESSED_CONTAINER,
+        ),
+    ];
+
+    let mut projections = std::collections::BTreeSet::new();
+    projections.insert((
+        plain.decode_kind_mask,
+        plain.decode_candidate_count_bucket,
+        plain.decode_candidate_bytes_bucket,
+        plain.decode_unknown,
+    ));
+    for (name, input, required_kind) in fixtures {
+        let key = workload_key(&[test_chunk(input.to_string())], 902)
+            .unwrap_or_else(|error| panic!("{name} workload failed: {error}"));
+        assert_ne!(
+            key.decode_kind_mask & required_kind,
+            0,
+            "{name} workload key omitted scanner decoder kind: {key:?}"
+        );
+        assert!(key.decode_candidate_count_bucket > 0, "{name}: {key:?}");
+        assert!(key.decode_candidate_bytes_bucket > 0, "{name}: {key:?}");
+        assert!(!key.decode_unknown, "built-in {name} became unknown");
+        assert!(
+            projections.insert((
+                key.decode_kind_mask,
+                key.decode_candidate_count_bucket,
+                key.decode_candidate_bytes_bucket,
+                key.decode_unknown,
+            )),
+            "{name} must have a distinct decode workload projection: {key:?}"
+        );
+    }
+}
+
+#[test]
+fn unknown_decoder_sketch_maps_to_visible_conservative_workload_fields() {
+    assert_eq!(
+        decode_workload_projection(keyhog_scanner::decode::DecodeAdmissionSketch::UNKNOWN),
+        (0, 8, 16, true)
+    );
+}
+
+#[test]
+fn disabled_or_ineligible_decode_work_contributes_exact_zero() {
+    use keyhog_scanner::decode::{DecodeAdmissionSketch, DecodeWorkloadPlan};
+
+    let batch = (0..1_000)
+        .map(|_| test_chunk("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo".into()))
+        .collect::<Vec<_>>();
+    let disabled = DecodeWorkloadPlan::from_limits(0, usize::MAX);
+    assert_eq!(
+        decode_workload_sketch_with_plan(&batch, disabled)
+            .expect("disabled decode is classifiable"),
+        DecodeAdmissionSketch::NONE,
+        "disabled decode must neither consume sample budget nor project work"
+    );
+    let key = workload_key_with_plan(&batch, 902, disabled)
+        .expect("disabled decode workload remains classifiable");
+    assert_eq!(
+        (
+            key.decode_kind_mask,
+            key.decode_candidate_count_bucket,
+            key.decode_candidate_bytes_bucket,
+            key.decode_unknown,
+        ),
+        (0, 0, 0, false)
+    );
+
+    let over_limit = DecodeWorkloadPlan::from_limits(1, 8);
+    assert_eq!(
+        decode_workload_sketch_with_plan(&batch[..1], over_limit)
+            .expect("over-limit decode workload remains classifiable"),
+        DecodeAdmissionSketch::NONE,
+        "chunks the scanner cannot decode must not project decoder work"
+    );
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(1_000))]
+
+    #[test]
+    fn workload_key_is_permutation_invariant_across_decoder_shapes(
+        shape_indices in proptest::collection::vec(0usize..9, 0..32)
+    ) {
+        const SHAPES: &[&str] = &[
+            "ordinary prose. short words.",
+            "token = \"AK%49AQYLPMN5HFIQR7XYA\"",
+            "token = \"AYX7RQIFH5NMPLYQAIKA\"",
+            "token = \"FPNFNTXKTISS7JCFRUQJ\"",
+            "token = \"k$:^nqcuN?o?)MpmOcDPh=%iG\"",
+            "token = \"AK=49AQYLPMN5HFIQR7XYA\"",
+            "Subject: =?UTF-8?Q?AK=49AQYLPMN5HFIQR7XYA?=",
+            r#"{"token":"AK\u0049AQYLPMN5HFIQR7XYA"}"#,
+            "token = \"QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo\"",
+        ];
+        let forward = shape_indices
+            .iter()
+            .map(|index| test_chunk(SHAPES[*index].to_string()))
+            .collect::<Vec<_>>();
+        let mut reversed = forward.clone();
+        reversed.reverse();
+        let mut rotated = forward.clone();
+        if !rotated.is_empty() {
+            let by = rotated.len() / 2;
+            rotated.rotate_left(by);
+        }
+
+        let expected = workload_key(&forward, 902).expect("forward workload classified");
+        proptest::prop_assert_eq!(
+            workload_key(&reversed, 902).expect("reversed workload classified"),
+            expected
+        );
+        proptest::prop_assert_eq!(
+            workload_key(&rotated, 902).expect("rotated workload classified"),
+            expected
+        );
+    }
+}
+
+#[test]
+fn workload_decode_sketch_is_invariant_to_batch_permutation() {
     let plain = test_chunk("source code and ordinary prose\n".repeat(4_096));
     let encoded = test_chunk("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=".repeat(2_048));
     let escaped = test_chunk("%7B%22secret%22%3A%22value%22%7D".repeat(2_048));
@@ -423,8 +625,8 @@ fn workload_decode_density_is_invariant_to_batch_permutation() {
 }
 
 #[test]
-fn workload_decode_density_samples_late_chunks_and_file_tails() {
-    let encoded = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=".repeat(4_096);
+fn workload_decode_sketch_samples_late_chunks_and_file_tails() {
+    let encoded = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo".repeat(4_096);
     let plain_prefix = " ".repeat(128 * 1024);
     let same_size_plain = " ".repeat(plain_prefix.len() + encoded.len());
     let tail_heavy = format!("{plain_prefix}{encoded}");
@@ -434,7 +636,7 @@ fn workload_decode_density_samples_late_chunks_and_file_tails() {
     let tail_key =
         workload_key(&[test_chunk(tail_heavy)], 902).expect("tail-heavy workload classifies");
     assert!(
-        tail_key.decode_density_bucket > plain_key.decode_density_bucket,
+        tail_key.decode_candidate_bytes_bucket > plain_key.decode_candidate_bytes_bucket,
         "encoded data beyond the old 64 KiB prefix must affect workload identity"
     );
 
@@ -444,14 +646,18 @@ fn workload_decode_density_samples_late_chunks_and_file_tails() {
     ];
     let late_encoded = vec![test_chunk(" ".repeat(128 * 1024)), test_chunk(encoded)];
     assert!(
-        decode_density_bucket(&late_encoded).expect("late encoded batch classifies")
-            > decode_density_bucket(&late_plain).expect("late plain batch classifies"),
+        decode_workload_sketch(&late_encoded)
+            .expect("late encoded batch classifies")
+            .candidate_bytes()
+            > decode_workload_sketch(&late_plain)
+                .expect("late plain batch classifies")
+                .candidate_bytes(),
         "a decode-heavy late chunk must not be hidden by earlier plain bytes"
     );
 }
 
 #[test]
-fn decode_density_sample_plan_is_bounded_and_represents_short_chunks() {
+fn decode_sketch_sample_plan_is_bounded_and_represents_short_chunks() {
     let lengths = [0usize, 1, 23, 24, 71, 72, 73, 4_096, 1024 * 1024];
     let batch = lengths
         .iter()
@@ -475,24 +681,26 @@ fn decode_density_sample_plan_is_bounded_and_represents_short_chunks() {
 }
 
 #[test]
-fn decode_density_does_not_join_encoded_fragments_across_sample_windows() {
+fn decode_sketch_does_not_join_candidates_across_sample_windows() {
     let fragments = (0..1_000)
         .map(|_| test_chunk("A".repeat(23)))
         .collect::<Vec<_>>();
     assert_eq!(
-        decode_density_bucket(&fragments).expect("fragment batch classifies"),
-        0,
-        "sub-threshold fragments in separate windows must not form an encoded run"
+        decode_workload_sketch(&fragments)
+            .expect("fragment batch classifies")
+            .candidate_count(),
+        1_000,
+        "each real 23-byte base64 candidate must remain distinct across sample windows"
     );
 }
 
 #[test]
-fn workload_decode_density_fails_closed_when_representative_sampling_cannot_fit() {
+fn workload_decode_sketch_fails_closed_when_representative_sampling_cannot_fit() {
     let batch = (0..911)
         .map(|_| test_chunk("x".repeat(72)))
         .collect::<Vec<_>>();
     let error = workload_key(&batch, 902)
-        .expect_err("autoroute must reject an under-represented decode-density sample")
+        .expect_err("autoroute must reject an under-represented decoder-work sample")
         .to_string();
     assert!(
         error.contains("65536-byte sampling cap")
@@ -515,9 +723,9 @@ fn workload_key_coalesces_parallel_reader_adjacent_bucket_jitter() {
         "the next power-of-two scan band needs distinct autoroute evidence"
     );
     assert_eq!(
-        autoroute_stable_density_bucket(7),
-        autoroute_stable_density_bucket(8),
-        "adjacent decode-density sample jitter must not invalidate calibration"
+        autoroute_stable_decode_bucket(7),
+        autoroute_stable_decode_bucket(8),
+        "adjacent decode-work sample jitter must not invalidate calibration"
     );
 }
 
@@ -704,7 +912,11 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && serialized.contains("\"total_memory_mb\"")
             && serialized.contains("\"gpu_runtime_backend\"")
             && serialized.contains("\"gpu_driver_runtime_identity\"")
-            && serialized.contains("\"decode_density_bucket\"")
+            && serialized.contains("\"decode_kind_mask\"")
+            && serialized.contains("\"decode_candidate_count_bucket\"")
+            && serialized.contains("\"decode_candidate_bytes_bucket\"")
+            && serialized.contains("\"decode_unknown\"")
+            && !serialized.contains("\"decode_density_bucket\"")
             && serialized.contains("\"correctness_digest\"")
             && serialized.contains("\"calibrated_at_unix_ms\"")
             && serialized.contains("\"simd_timing\"")
@@ -712,7 +924,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && !serialized.contains("\"confidence_interval_95_ns\"")
             && !serialized.contains("\"best_ns\"")
             && !serialized.contains("\"mean_ns\""),
-        // v25 persists PRIMARY evidence only: timing summaries, per-backend ms,
+        // v26 persists PRIMARY evidence only: timing summaries, per-backend ms,
         // GPU cold/warm/route, and selected-margin keys are derived from the
         // trial vectors on load, never stored.
         "cache JSON must persist route timing evidence, not only the selected backend"
@@ -1339,6 +1551,41 @@ fn autoroute_cache_rejects_outdated_schema_with_clear_version_error() {
 }
 
 #[test]
+fn autoroute_cache_rejects_v25_decode_density_identity_before_payload_decode() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_v25_decode_density_{}.json",
+        std::process::id()
+    ));
+    std::fs::write(
+        &path,
+        br#"{"version":25,"configs":[{"decisions":[[{"decode_density_bucket":3},{}]]}]}"#,
+    )
+    .expect("write v25 cache");
+
+    let error = load_autoroute_cache(
+        &path,
+        0x1234_5678_9ABC_DEF0,
+        test_rules_digest(),
+        0xA55A_D00D_CAFE_BEEF,
+        &test_host(None),
+    )
+    .expect_err("v25 decode-density identity must never be reused as v26 decoder work")
+    .to_string();
+    let _ = std::fs::remove_file(&path); // LAW10: best-effort test cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+
+    assert!(
+        error.contains("unsupported autoroute cache version 25")
+            && error.contains("expects 26")
+            && error.contains("re-run calibration"),
+        "v25 migration failure must be version-first and actionable: {error}"
+    );
+    assert!(
+        !error.contains("missing field") && !error.contains("unknown field"),
+        "v25 payload must not reach the v26 workload deserializer: {error}"
+    );
+}
+
+#[test]
 fn autoroute_cache_save_reports_when_it_replaces_outdated_evidence() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_replace_outdated_{}.json",
@@ -1363,7 +1610,7 @@ fn autoroute_cache_save_reports_when_it_replaces_outdated_evidence() {
 
     match outcome {
         AutorouteCacheSaveOutcome::Replaced { reason } => assert!(
-            reason.contains("schema 1") && reason.contains("schema 24"),
+            reason.contains("schema 1") && reason.contains("schema 26"),
             "replacement disposition must explain both schema identities: {reason}"
         ),
         _ => panic!("outdated cache replacement must be operator-visible"),
@@ -1650,6 +1897,7 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
             hyperscan_available: true,
         },
         pattern_count: 902,
+        decode_workload_plan: test_decode_workload_plan(),
         detector_digest: 0x1234_5678_9ABC_DEF0,
         rules_digest: test_rules_digest().to_string(),
         config_digest: 0xA55A_D00D_CAFE_BEEF,
@@ -1709,6 +1957,7 @@ fn measured_router_drop_does_not_persist_dirty_cache() {
                 hyperscan_available: true,
             },
             pattern_count: 902,
+            decode_workload_plan: test_decode_workload_plan(),
             detector_digest: 0x1234_5678_9ABC_DEF0,
             rules_digest: test_rules_digest().to_string(),
             config_digest: 0xA55A_D00D_CAFE_BEEF,
@@ -1775,6 +2024,7 @@ fn measured_router_commit_discards_unmeasured_stale_decisions() {
             hyperscan_available: true,
         },
         pattern_count: 902,
+        decode_workload_plan: test_decode_workload_plan(),
         detector_digest: 0x1234_5678_9ABC_DEF0,
         rules_digest: test_rules_digest().to_string(),
         config_digest: 0xA55A_D00D_CAFE_BEEF,
@@ -1844,6 +2094,7 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
             hyperscan_available: true,
         },
         pattern_count: 902,
+        decode_workload_plan: test_decode_workload_plan(),
         detector_digest: 0x1234_5678_9ABC_DEF0,
         rules_digest: test_rules_digest().to_string(),
         config_digest: 0xA55A_D00D_CAFE_BEEF,

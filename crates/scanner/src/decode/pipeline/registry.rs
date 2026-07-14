@@ -9,7 +9,9 @@ use crate::decode::url::{
     HtmlNamedEntityDecoder, HtmlNumericEntityDecoder, MimeEncodedWordDecoder, OctalEscapeDecoder,
     QuotedPrintableDecoder, UnicodeEscapeDecoder, UrlDecoder,
 };
-use crate::decode::{DecodeAdmission, Decoder};
+#[cfg(feature = "decode")]
+use crate::decode::DecodeAdmission;
+use crate::decode::{DecodeAdmissionSketch, Decoder};
 use parking_lot::RwLock;
 #[cfg(test)]
 use std::cell::RefCell;
@@ -162,6 +164,7 @@ pub(crate) fn default_decoder_names() -> Vec<&'static str> {
 /// shared extractor do not each allocate and rescan independently. Any custom
 /// decoder that keeps the trait default returns `Unknown`, which is preserved
 /// unless another decoder already proves the chunk is `Possible`.
+#[cfg(feature = "decode")]
 pub(crate) fn decoder_admission(chunk: &keyhog_core::Chunk) -> DecodeAdmission {
     let decoders = active_decoders();
     super::extractor::clear_shared_candidates();
@@ -177,6 +180,20 @@ pub(crate) fn decoder_admission(chunk: &keyhog_core::Chunk) -> DecodeAdmission {
             DecodeAdmission::Unknown => aggregate = DecodeAdmission::Unknown,
             DecodeAdmission::Impossible => {}
         }
+    }
+
+    super::extractor::clear_shared_candidates();
+    aggregate
+}
+
+pub(crate) fn decoder_admission_sketch(chunk: &keyhog_core::Chunk) -> DecodeAdmissionSketch {
+    let decoders = active_decoders();
+    super::extractor::clear_shared_candidates();
+    super::extractor::prime_shared_candidates(&chunk.data);
+
+    let mut aggregate = DecodeAdmissionSketch::NONE;
+    for decoder in decoders.iter() {
+        aggregate.merge(decoder.admission_sketch(chunk));
     }
 
     super::extractor::clear_shared_candidates();

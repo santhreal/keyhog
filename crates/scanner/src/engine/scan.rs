@@ -4,6 +4,14 @@ use super::scan_inner_profile::{
 use super::*;
 
 impl CompiledScanner {
+    /// Capture the effective decode policy consumed by this scanner.
+    pub fn decode_workload_plan(&self) -> crate::decode::DecodeWorkloadPlan {
+        crate::decode::DecodeWorkloadPlan::from_limits(
+            self.config.max_decode_depth,
+            self.config.max_decode_bytes,
+        )
+    }
+
     #[cfg(feature = "decode")]
     #[inline]
     pub(super) fn chunk_needs_decode_postprocess(&self, chunk: &keyhog_core::Chunk) -> bool {

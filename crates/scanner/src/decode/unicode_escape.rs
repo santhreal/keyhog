@@ -7,8 +7,7 @@
 //! allocation with the other decoders via [`super::util`].
 
 use super::util::{
-    lazy_decoded_prefix, resolve_escaped_codepoint, simple_control_escape,
-    take_hex_digits_indexed,
+    lazy_decoded_prefix, resolve_escaped_codepoint, simple_control_escape, take_hex_digits_indexed,
 };
 
 /// Decode backslash escapes (`\uXXXX`, `\xXX`, and `\<char>`) in `input`.

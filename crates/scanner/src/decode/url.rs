@@ -5,7 +5,7 @@ use super::pipeline::{
 };
 use super::unicode_escape::unicode_escape_decode;
 use super::util::{hex_val, lazy_decoded_prefix};
-use super::{DecodeAdmission, Decoder};
+use super::{DecodeAdmissionSketch, Decoder};
 use crate::context;
 use keyhog_core::Chunk;
 
@@ -22,11 +22,16 @@ impl Decoder for UrlDecoder {
         "url"
     }
 
-    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
-        if contains_percent_escape(&chunk.data) {
-            DecodeAdmission::Possible
+    fn admission_sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
+        let count = percent_escape_count(&chunk.data);
+        if count == 0 {
+            DecodeAdmissionSketch::NONE
         } else {
-            DecodeAdmission::Impossible
+            DecodeAdmissionSketch::possible(
+                DecodeAdmissionSketch::URL,
+                count,
+                count.saturating_mul(3),
+            )
         }
     }
 
@@ -88,11 +93,16 @@ impl Decoder for QuotedPrintableDecoder {
         "quoted-printable"
     }
 
-    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
-        if has_qp_escape(&chunk.data) {
-            DecodeAdmission::Possible
+    fn admission_sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
+        let count = qp_escape_count(&chunk.data);
+        if count == 0 {
+            DecodeAdmissionSketch::NONE
         } else {
-            DecodeAdmission::Impossible
+            DecodeAdmissionSketch::possible(
+                DecodeAdmissionSketch::QUOTED_PRINTABLE,
+                count,
+                count.saturating_mul(3),
+            )
         }
     }
 
@@ -189,29 +199,46 @@ fn trimmed_line_candidate(line: &LineView<'_>) -> Option<ExtractedValue> {
 /// escape (`=XX` where `XX` is two hex digits). Trailing-bare-`=`
 /// inputs and `key=value` text return false and skip the decode.
 fn has_qp_escape(s: &str) -> bool {
+    qp_escape_count(s) > 0
+}
+
+fn qp_escape_count(s: &str) -> usize {
     let bytes = s.as_bytes();
     bytes
         .windows(3)
-        .any(|w| w[0] == b'=' && w[1].is_ascii_hexdigit() && w[2].is_ascii_hexdigit())
+        .filter(|w| w[0] == b'=' && w[1].is_ascii_hexdigit() && w[2].is_ascii_hexdigit())
+        .count()
 }
 
 macro_rules! simple_decoder {
-    ($decoder:ty, $name:literal, $filter:expr, $decode:ident) => {
+    ($decoder:ty, $name:literal, $kind:expr, $filter:expr, $decode:ident) => {
         impl Decoder for $decoder {
             fn name(&self) -> &'static str {
                 $name
             }
 
-            fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
-                let possible = with_extracted_value_spans(&chunk.data, |candidates| {
-                    candidates
-                        .iter()
-                        .any(|candidate| ($filter)(candidate.value.as_str()))
-                }) || ($filter)(chunk.data.trim());
-                if possible {
-                    DecodeAdmission::Possible
+            fn admission_sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
+                let (mut count, mut bytes) =
+                    with_extracted_value_spans(&chunk.data, |candidates| {
+                        candidates
+                            .iter()
+                            .filter(|candidate| ($filter)(candidate.value.as_str()))
+                            .fold((0usize, 0usize), |(count, bytes), candidate| {
+                                (
+                                    count.saturating_add(1),
+                                    bytes.saturating_add(candidate.value.len()),
+                                )
+                            })
+                    });
+                let trimmed = chunk.data.trim();
+                if !trimmed.is_empty() && ($filter)(trimmed) {
+                    count = count.saturating_add(1);
+                    bytes = bytes.saturating_add(trimmed.len());
+                }
+                if count == 0 {
+                    DecodeAdmissionSketch::NONE
                 } else {
-                    DecodeAdmission::Impossible
+                    DecodeAdmissionSketch::possible($kind, count, bytes)
                 }
             }
 
@@ -244,24 +271,28 @@ macro_rules! simple_decoder {
 simple_decoder!(
     HtmlNamedEntityDecoder,
     "html-named-entity",
+    DecodeAdmissionSketch::HTML_NAMED_ENTITY,
     |s: &str| s.contains('&'),
     html_named_entity_decode
 );
 simple_decoder!(
     HtmlNumericEntityDecoder,
     "html-numeric-entity",
+    DecodeAdmissionSketch::HTML_NUMERIC_ENTITY,
     |s: &str| s.contains("&#"),
     html_numeric_entity_decode
 );
 simple_decoder!(
     OctalEscapeDecoder,
     "octal-escape",
+    DecodeAdmissionSketch::OCTAL_ESCAPE,
     contains_octal_escape,
     octal_escape_decode
 );
 simple_decoder!(
     UnicodeEscapeDecoder,
     "unicode-escape",
+    DecodeAdmissionSketch::UNICODE_ESCAPE,
     |s: &str| s.contains("\\u") || s.contains("\\x"),
     unicode_escape_decode
 );
@@ -271,11 +302,19 @@ impl Decoder for MimeEncodedWordDecoder {
         "mime-encoded-word"
     }
 
-    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
-        if find_mime_encoded_word_spans(&chunk.data).is_empty() {
-            DecodeAdmission::Impossible
+    fn admission_sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
+        let words = find_mime_encoded_word_spans(&chunk.data);
+        if words.is_empty() {
+            DecodeAdmissionSketch::NONE
         } else {
-            DecodeAdmission::Possible
+            let bytes = words
+                .iter()
+                .fold(0usize, |total, word| total.saturating_add(word.value.len()));
+            DecodeAdmissionSketch::possible(
+                DecodeAdmissionSketch::MIME_ENCODED_WORD,
+                words.len(),
+                bytes,
+            )
         }
     }
 
@@ -338,10 +377,17 @@ fn url_decode(input: &str) -> Result<String, ()> {
 }
 
 fn contains_percent_escape(input: &str) -> bool {
+    percent_escape_count(input) > 0
+}
+
+fn percent_escape_count(input: &str) -> usize {
     input
         .as_bytes()
         .windows(3)
-        .any(|window| window[0] == b'%' && hex_val(window[1]).is_ok() && hex_val(window[2]).is_ok())
+        .filter(|window| {
+            window[0] == b'%' && hex_val(window[1]).is_ok() && hex_val(window[2]).is_ok()
+        })
+        .count()
 }
 
 pub(crate) fn quoted_printable_decode(input: &str) -> Result<String, ()> {

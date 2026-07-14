@@ -32,10 +32,11 @@ pub use hex::{find_hex_strings, hex_decode};
 pub(crate) use pipeline::decode_chunk;
 pub use pipeline::register_decoder;
 pub(crate) use pipeline::{
-    bytecount_newlines, decoder_admission, decoder_profile_dump, decoder_profile_reset,
-    default_decoder_names, extract_profile_dump, extract_profile_reset, splice_decoded_payload_at,
-    with_extracted_value_spans,
+    bytecount_newlines, decoder_profile_dump, decoder_profile_reset, extract_profile_dump,
+    extract_profile_reset, splice_decoded_payload_at, with_extracted_value_spans,
 };
+#[cfg(feature = "decode")]
+pub(crate) use pipeline::{decoder_admission, default_decoder_names};
 #[cfg(test)]
 pub(crate) use pipeline::{register_thread_decoder, ScopedDecoderRegistration};
 pub(crate) use util::take_hex_digits;
@@ -238,17 +239,172 @@ pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
 pub trait Decoder: Send + Sync {
     fn name(&self) -> &'static str;
 
+    /// Bounded work projection for this decoder on `chunk`.
+    ///
+    /// Custom decoders default to an unknown, conservative sketch. Built-in
+    /// decoders override this beside the grammar used by `decode_chunk`.
+    fn admission_sketch(&self, _chunk: &Chunk) -> DecodeAdmissionSketch {
+        DecodeAdmissionSketch::UNKNOWN
+    }
+
     /// Whether this decoder can produce output for `chunk`.
     ///
     /// Custom decoders default to [`DecodeAdmission::Unknown`], which always
-    /// fails open. Built-in decoders override this with a predicate owned next
-    /// to the grammar used by [`Self::decode_chunk`]. Only `Impossible` permits
-    /// the engine to skip decode post-processing.
+    /// fails open. Built-in decoders derive this from the sketch owned next to
+    /// the grammar used by [`Self::decode_chunk`]. Only `Impossible` permits the
+    /// engine to skip decode post-processing.
     fn admission(&self, _chunk: &Chunk) -> DecodeAdmission {
-        DecodeAdmission::Unknown
+        self.admission_sketch(_chunk).admission()
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk>;
+}
+
+/// Bounded, content-free projection of decoder work.
+///
+/// The sketch contains only decoder-mechanism bits and saturating cost counters.
+/// It carries no source bytes, offsets, values, or content-derived hashes, so
+/// it is safe to persist as part of autoroute workload identity.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct DecodeAdmissionSketch {
+    kind_mask: u32,
+    candidate_count: u16,
+    candidate_bytes: u32,
+    unknown: bool,
+}
+
+impl DecodeAdmissionSketch {
+    pub const BASE64: u32 = 1 << 0;
+    pub const HEX: u32 = 1 << 1;
+    pub const URL: u32 = 1 << 2;
+    pub const QUOTED_PRINTABLE: u32 = 1 << 3;
+    pub const HTML_NAMED_ENTITY: u32 = 1 << 4;
+    pub const HTML_NUMERIC_ENTITY: u32 = 1 << 5;
+    pub const OCTAL_ESCAPE: u32 = 1 << 6;
+    pub const MIME_ENCODED_WORD: u32 = 1 << 7;
+    pub const JSON: u32 = 1 << 8;
+    pub const UNICODE_ESCAPE: u32 = 1 << 9;
+    pub const Z85: u32 = 1 << 10;
+    pub const JAVASCRIPT_STATIC: u32 = 1 << 11;
+    pub const REVERSE: u32 = 1 << 12;
+    pub const CAESAR: u32 = 1 << 13;
+    /// Bounded gzip/zlib inflation reached through the base64 decoder.
+    pub const COMPRESSED_CONTAINER: u32 = 1 << 14;
+
+    pub const NONE: Self = Self {
+        kind_mask: 0,
+        candidate_count: 0,
+        candidate_bytes: 0,
+        unknown: false,
+    };
+
+    pub const UNKNOWN: Self = Self {
+        kind_mask: 0,
+        candidate_count: u16::MAX,
+        candidate_bytes: u32::MAX,
+        unknown: true,
+    };
+
+    pub const fn kind_mask(self) -> u32 {
+        self.kind_mask
+    }
+
+    pub const fn candidate_count(self) -> u16 {
+        self.candidate_count
+    }
+
+    pub const fn candidate_bytes(self) -> u32 {
+        self.candidate_bytes
+    }
+
+    pub const fn has_unknown(self) -> bool {
+        self.unknown
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        self.kind_mask |= other.kind_mask;
+        self.candidate_count = self.candidate_count.saturating_add(other.candidate_count);
+        self.candidate_bytes = self.candidate_bytes.saturating_add(other.candidate_bytes);
+        self.unknown |= other.unknown;
+        if self.unknown {
+            self.candidate_count = u16::MAX;
+            self.candidate_bytes = u32::MAX;
+        }
+    }
+
+    pub(crate) fn possible(kind: u32, candidate_count: usize, candidate_bytes: usize) -> Self {
+        Self {
+            kind_mask: kind,
+            candidate_count: candidate_count.min(u16::MAX as usize) as u16,
+            candidate_bytes: candidate_bytes.min(u32::MAX as usize) as u32,
+            unknown: false,
+        }
+    }
+
+    pub(crate) const fn admission(self) -> DecodeAdmission {
+        if self.unknown {
+            DecodeAdmission::Unknown
+        } else if self.kind_mask == 0 {
+            DecodeAdmission::Impossible
+        } else {
+            DecodeAdmission::Possible
+        }
+    }
+}
+
+/// Effective immutable decode policy captured from one compiled scanner.
+///
+/// Autoroute keeps this value with its router so workload classification uses
+/// the same decode enablement and input ceiling as the scanner it will run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DecodeWorkloadPlan {
+    enabled: bool,
+    max_input_bytes: usize,
+}
+
+impl DecodeWorkloadPlan {
+    /// Resolve decode enablement from the same depth and byte limits consumed
+    /// by [`crate::ScannerConfig`]. A zero depth disables the mechanism.
+    pub const fn from_limits(max_depth: usize, max_input_bytes: usize) -> Self {
+        Self {
+            enabled: cfg!(feature = "decode") && max_depth > 0,
+            max_input_bytes,
+        }
+    }
+
+    pub const fn enabled(self) -> bool {
+        self.enabled
+    }
+
+    pub const fn max_input_bytes(self) -> usize {
+        self.max_input_bytes
+    }
+
+    pub fn admits(self, chunk: &Chunk) -> bool {
+        self.enabled && chunk.data.len() <= self.max_input_bytes
+    }
+
+    /// Project work only when the compiled scanner can execute decode-through
+    /// for this exact chunk.
+    pub fn sketch(self, chunk: &Chunk) -> DecodeAdmissionSketch {
+        if !self.admits(chunk) {
+            DecodeAdmissionSketch::NONE
+        } else {
+            decode_admission_sketch(chunk)
+        }
+    }
+}
+
+/// Compute a scanner-owned decode work sketch for one chunk.
+#[cfg(feature = "decode")]
+pub fn decode_admission_sketch(chunk: &Chunk) -> DecodeAdmissionSketch {
+    pipeline::decoder_admission_sketch(chunk)
+}
+
+/// Decode-disabled builds contribute no decoder work to autoroute identity.
+#[cfg(not(feature = "decode"))]
+pub fn decode_admission_sketch(_chunk: &Chunk) -> DecodeAdmissionSketch {
+    DecodeAdmissionSketch::NONE
 }
 
 /// Proof carried from decoder-owned grammars to the scan admission path.

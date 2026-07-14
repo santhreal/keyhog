@@ -1,16 +1,16 @@
 //! Autoroute workload bucketing and source-shape fingerprints.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::is_base64_candidate_byte;
+use keyhog_scanner::decode::{DecodeAdmissionSketch, DecodeWorkloadPlan};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-const AUTOROUTE_DECODE_DENSITY_SAMPLE_BYTES: usize = 64 * 1024;
-const AUTOROUTE_DECODE_MIN_ENCODED_RUN: usize = 24;
+const AUTOROUTE_DECODE_SAMPLE_BYTES: usize = 64 * 1024;
+const AUTOROUTE_DECODE_SAMPLE_WINDOW_BYTES: usize = 64;
 const AUTOROUTE_DECODE_SAMPLE_STRATA: usize = 16;
 const AUTOROUTE_DECODE_MIN_STRATA: usize = 3;
 const AUTOROUTE_DECODE_MIN_CHUNK_SAMPLE: usize =
-    AUTOROUTE_DECODE_MIN_ENCODED_RUN * AUTOROUTE_DECODE_MIN_STRATA;
+    AUTOROUTE_DECODE_SAMPLE_WINDOW_BYTES * AUTOROUTE_DECODE_MIN_STRATA;
 
 // `Ord` gives the multi-config cache a deterministic on-disk decision order
 // (decisions are collected through a `BTreeMap<WorkloadKey, _>` on save), so a
@@ -22,7 +22,10 @@ pub(super) struct WorkloadKey {
     pub(super) chunks_bucket: u8,
     pub(super) max_file_bucket: u8,
     pub(super) pattern_bucket: u8,
-    pub(super) decode_density_bucket: u8,
+    pub(super) decode_kind_mask: u32,
+    pub(super) decode_candidate_count_bucket: u8,
+    pub(super) decode_candidate_bytes_bucket: u8,
+    pub(super) decode_unknown: bool,
     pub(super) source_class_hash: u64,
 }
 
@@ -31,12 +34,16 @@ pub(super) struct WorkloadKey {
 pub(super) fn render_workload_key(key: &WorkloadKey) -> String {
     format!(
         "bytes_log2={} chunks_log2={} max_file_log2={} patterns_log2={} \
-         decode_density_log2={} source_hash={:016x}",
+         decode_kinds={:08x} decode_candidates_log2={} decode_bytes_log2={} \
+         decode_unknown={} source_hash={:016x}",
         key.bytes_bucket,
         key.chunks_bucket,
         key.max_file_bucket,
         key.pattern_bucket,
-        key.decode_density_bucket,
+        key.decode_kind_mask,
+        key.decode_candidate_count_bucket,
+        key.decode_candidate_bytes_bucket,
+        key.decode_unknown,
         key.source_class_hash
     )
 }
@@ -47,7 +54,7 @@ pub(super) enum WorkloadClassificationError {
         source_type: String,
         path: Option<String>,
     },
-    DecodeSampleBudgetExceeded {
+    DecodeSketchSampleBudgetExceeded {
         minimum_sample_bytes: usize,
         chunk_count: usize,
     },
@@ -79,13 +86,13 @@ impl fmt::Display for WorkloadClassificationError {
                 f,
                 "chunk has invalid source_type {source_type:?}; every autorouted chunk must carry a non-empty source family"
             ),
-            Self::DecodeSampleBudgetExceeded {
+            Self::DecodeSketchSampleBudgetExceeded {
                 minimum_sample_bytes,
                 chunk_count,
             } => write!(
                 f,
-                "autoroute cannot classify decode density for {chunk_count} chunks within its {}-byte sampling cap: representative coverage requires at least {minimum_sample_bytes} bytes; lower --fused-batch or [scan].fused_batch and recalibrate",
-                AUTOROUTE_DECODE_DENSITY_SAMPLE_BYTES
+                "autoroute cannot classify decoder work for {chunk_count} chunks within its {}-byte sampling cap: representative coverage requires at least {minimum_sample_bytes} bytes; lower --fused-batch or [scan].fused_batch and recalibrate",
+                AUTOROUTE_DECODE_SAMPLE_BYTES
             ),
         }
     }
@@ -96,6 +103,7 @@ impl std::error::Error for WorkloadClassificationError {}
 pub(super) fn workload_key(
     batch: &[Chunk],
     pattern_count: usize,
+    decode_plan: DecodeWorkloadPlan,
 ) -> Result<WorkloadKey, WorkloadClassificationError> {
     let bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
     let max_file = batch
@@ -103,21 +111,40 @@ pub(super) fn workload_key(
         .map(|c| c.metadata.size_bytes.unwrap_or(c.data.len() as u64)) // LAW10: empty/absent => documented numeric default, recall-safe
         .max()
         .unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
+    let decode = decode_workload_sketch(batch, decode_plan)?;
+    let (
+        decode_kind_mask,
+        decode_candidate_count_bucket,
+        decode_candidate_bytes_bucket,
+        decode_unknown,
+    ) = decode_workload_projection(decode);
     Ok(WorkloadKey {
         bytes_bucket: autoroute_stable_bucket(bytes),
         chunks_bucket: autoroute_stable_bucket(batch.len() as u64),
         max_file_bucket: autoroute_stable_bucket(max_file),
         pattern_bucket: log2_bucket(pattern_count as u64),
-        decode_density_bucket: autoroute_stable_density_bucket(decode_density_bucket(batch)?),
+        decode_kind_mask,
+        decode_candidate_count_bucket,
+        decode_candidate_bytes_bucket,
+        decode_unknown,
         source_class_hash: source_class_hash(batch)?,
     })
+}
+
+pub(super) fn decode_workload_projection(sketch: DecodeAdmissionSketch) -> (u32, u8, u8, bool) {
+    (
+        sketch.kind_mask(),
+        autoroute_stable_decode_bucket(log2_bucket(u64::from(sketch.candidate_count()))),
+        autoroute_stable_decode_bucket(log2_bucket(u64::from(sketch.candidate_bytes()))),
+        sketch.has_unknown(),
+    )
 }
 
 pub(super) fn autoroute_stable_bucket(value: u64) -> u8 {
     log2_bucket(value)
 }
 
-pub(super) fn autoroute_stable_density_bucket(raw_bucket: u8) -> u8 {
+pub(super) fn autoroute_stable_decode_bucket(raw_bucket: u8) -> u8 {
     raw_bucket.saturating_add(1) / 2
 }
 
@@ -139,14 +166,20 @@ impl DecodeSamplePlan {
     }
 }
 
-// Every non-short chunk gets enough evidence for three encoded runs. The
+// Every non-short chunk gets three bounded decoder-grammar windows. The
 // remaining fixed budget is divided by bytes, without order or ties.
-fn decode_sample_plan(batch: &[Chunk]) -> Result<DecodeSamplePlan, WorkloadClassificationError> {
+fn decode_sample_plan(
+    batch: &[Chunk],
+    decode_plan: DecodeWorkloadPlan,
+) -> Result<DecodeSamplePlan, WorkloadClassificationError> {
     let mut base_bytes = 0usize;
     let mut residual_bytes = 0u128;
     let mut chunk_count = 0usize;
 
     for chunk in batch {
+        if !decode_plan.admits(chunk) {
+            continue;
+        }
         let len = chunk.data.len();
         if len == 0 {
             continue;
@@ -155,46 +188,49 @@ fn decode_sample_plan(batch: &[Chunk]) -> Result<DecodeSamplePlan, WorkloadClass
         base_bytes = base_bytes.saturating_add(len.min(AUTOROUTE_DECODE_MIN_CHUNK_SAMPLE));
         residual_bytes += (len - len.min(AUTOROUTE_DECODE_MIN_CHUNK_SAMPLE)) as u128;
     }
-    if base_bytes > AUTOROUTE_DECODE_DENSITY_SAMPLE_BYTES {
-        return Err(WorkloadClassificationError::DecodeSampleBudgetExceeded {
-            minimum_sample_bytes: base_bytes,
-            chunk_count,
-        });
+    if base_bytes > AUTOROUTE_DECODE_SAMPLE_BYTES {
+        return Err(
+            WorkloadClassificationError::DecodeSketchSampleBudgetExceeded {
+                minimum_sample_bytes: base_bytes,
+                chunk_count,
+            },
+        );
     }
-    let remaining = AUTOROUTE_DECODE_DENSITY_SAMPLE_BYTES - base_bytes;
+    let remaining = AUTOROUTE_DECODE_SAMPLE_BYTES - base_bytes;
     Ok(DecodeSamplePlan {
         residual_bytes,
         extra_bytes: (remaining as u128).min(residual_bytes),
     })
 }
 
-pub(super) fn decode_density_bucket(batch: &[Chunk]) -> Result<u8, WorkloadClassificationError> {
-    let plan = decode_sample_plan(batch)?;
+pub(super) fn decode_workload_sketch(
+    batch: &[Chunk],
+    decode_plan: DecodeWorkloadPlan,
+) -> Result<DecodeAdmissionSketch, WorkloadClassificationError> {
+    if !decode_plan.enabled() {
+        return Ok(DecodeAdmissionSketch::NONE);
+    }
+    let plan = decode_sample_plan(batch, decode_plan)?;
     let mut sampled = 0usize;
-    let mut encoded_candidate_bytes = 0usize;
-    let mut decode_trigger_bytes = 0usize;
+    let mut sketch = DecodeAdmissionSketch::NONE;
 
     for chunk in batch {
+        if !decode_plan.admits(chunk) {
+            continue;
+        }
         let bytes = chunk.data.as_bytes();
         let quota = plan.quota(bytes.len());
         for_each_decode_sample_window(bytes, quota, |window| {
             sampled = sampled.saturating_add(window.len());
-            accumulate_decode_density_window(
-                window,
-                &mut encoded_candidate_bytes,
-                &mut decode_trigger_bytes,
-            );
+            let sampled_chunk = Chunk {
+                data: String::from_utf8_lossy(window).into_owned().into(),
+                metadata: chunk.metadata.clone(),
+            };
+            sketch.merge(decode_plan.sketch(&sampled_chunk));
         });
     }
-    debug_assert!(sampled <= AUTOROUTE_DECODE_DENSITY_SAMPLE_BYTES);
-    if sampled == 0 {
-        return Ok(0);
-    }
-
-    let weighted_decode_bytes =
-        encoded_candidate_bytes.saturating_add(decode_trigger_bytes.min(sampled / 4));
-    let score_per_kib = (weighted_decode_bytes as u64).saturating_mul(1024) / sampled as u64;
-    Ok(log2_bucket(score_per_kib))
+    debug_assert!(sampled <= AUTOROUTE_DECODE_SAMPLE_BYTES);
+    Ok(sketch)
 }
 
 fn for_each_decode_sample_window(bytes: &[u8], quota: usize, mut visit: impl FnMut(&[u8])) {
@@ -206,7 +242,7 @@ fn for_each_decode_sample_window(bytes: &[u8], quota: usize, mut visit: impl FnM
         return;
     }
 
-    let strata = AUTOROUTE_DECODE_SAMPLE_STRATA.min(quota / AUTOROUTE_DECODE_MIN_ENCODED_RUN);
+    let strata = AUTOROUTE_DECODE_SAMPLE_STRATA.min(quota / AUTOROUTE_DECODE_SAMPLE_WINDOW_BYTES);
     debug_assert!(strata >= AUTOROUTE_DECODE_MIN_STRATA);
     let gaps = bytes.len() - quota;
     for index in 0..strata {
@@ -220,35 +256,11 @@ fn for_each_decode_sample_window(bytes: &[u8], quota: usize, mut visit: impl FnM
     }
 }
 
-fn accumulate_decode_density_window(
-    window: &[u8],
-    encoded_candidate_bytes: &mut usize,
-    decode_trigger_bytes: &mut usize,
-) {
-    let mut encoded_run = 0usize;
-    for &byte in window {
-        if is_base64_candidate_byte(byte) {
-            encoded_run += 1;
-        } else {
-            if encoded_run >= AUTOROUTE_DECODE_MIN_ENCODED_RUN {
-                *encoded_candidate_bytes = encoded_candidate_bytes.saturating_add(encoded_run);
-            }
-            encoded_run = 0;
-        }
-        if is_decode_trigger_byte(byte) {
-            *decode_trigger_bytes = decode_trigger_bytes.saturating_add(1);
-        }
-    }
-    if encoded_run >= AUTOROUTE_DECODE_MIN_ENCODED_RUN {
-        *encoded_candidate_bytes = encoded_candidate_bytes.saturating_add(encoded_run);
-    }
-}
-
 #[cfg(test)]
 pub(super) fn planned_decode_sample_bytes(
     batch: &[Chunk],
 ) -> Result<usize, WorkloadClassificationError> {
-    let plan = decode_sample_plan(batch)?;
+    let plan = decode_sample_plan(batch, DecodeWorkloadPlan::from_limits(1, usize::MAX))?;
     Ok(batch.iter().map(|chunk| plan.quota(chunk.data.len())).sum())
 }
 
@@ -256,18 +268,11 @@ pub(super) fn planned_decode_sample_bytes(
 pub(super) fn planned_decode_sample_quotas(
     batch: &[Chunk],
 ) -> Result<Vec<usize>, WorkloadClassificationError> {
-    let plan = decode_sample_plan(batch)?;
+    let plan = decode_sample_plan(batch, DecodeWorkloadPlan::from_limits(1, usize::MAX))?;
     Ok(batch
         .iter()
         .map(|chunk| plan.quota(chunk.data.len()))
         .collect())
-}
-
-fn is_decode_trigger_byte(byte: u8) -> bool {
-    matches!(
-        byte,
-        b'%' | b'&' | b'\\' | b'"' | b'\'' | b'{' | b'}' | b'='
-    )
 }
 
 pub(super) fn source_class_hash(batch: &[Chunk]) -> Result<u64, WorkloadClassificationError> {

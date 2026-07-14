@@ -4,7 +4,7 @@ use super::limits::{
 use super::pipeline::{
     push_decoded_text_chunk_spliced_at, with_extracted_value_spans, ExtractedValue,
 };
-use super::{DecodeAdmission, Decoder, EncodedString};
+use super::{DecodeAdmissionSketch, Decoder, EncodedString};
 use keyhog_core::Chunk;
 
 pub(super) struct Base64Decoder;
@@ -14,8 +14,8 @@ impl Decoder for Base64Decoder {
         "base64"
     }
 
-    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
-        admission_from_bool(has_base64_candidate(&chunk.data))
+    fn admission_sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
+        base64_admission_sketch(&chunk.data)
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
@@ -73,8 +73,8 @@ impl Decoder for Z85Decoder {
         "z85"
     }
 
-    fn admission(&self, chunk: &Chunk) -> DecodeAdmission {
-        admission_from_bool(has_z85_candidate(&chunk.data))
+    fn admission_sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
+        z85_admission_sketch(&chunk.data)
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
@@ -96,14 +96,6 @@ impl Decoder for Z85Decoder {
             }
         });
         decoded_chunks
-    }
-}
-
-fn admission_from_bool(possible: bool) -> DecodeAdmission {
-    if possible {
-        DecodeAdmission::Possible
-    } else {
-        DecodeAdmission::Impossible
     }
 }
 
@@ -208,10 +200,37 @@ fn visit_classified_base64_string_spans(
     });
 }
 
-fn has_base64_candidate(text: &str) -> bool {
-    let mut found = false;
-    visit_classified_base64_string_spans(text, MIN_BASE64_CANDIDATE_LEN, |_, _| found = true);
-    found
+fn base64_admission_sketch(text: &str) -> DecodeAdmissionSketch {
+    let mut count = 0usize;
+    let mut bytes = 0usize;
+    let mut compressed_count = 0usize;
+    let mut compressed_bytes = 0usize;
+    visit_classified_base64_string_spans(text, MIN_BASE64_CANDIDATE_LEN, |candidate, variant| {
+        count = count.saturating_add(1);
+        bytes = bytes.saturating_add(candidate.value.len());
+        let prefix_len = candidate.value.len().min(4);
+        if prefix_len == 4
+            && base64_decode_with_variant(&candidate.value[..prefix_len], variant)
+                .is_ok_and(|decoded| crate::decode::inflate::has_container_magic(&decoded))
+        {
+            compressed_count = compressed_count.saturating_add(1);
+            compressed_bytes = compressed_bytes.saturating_add(candidate.value.len());
+        }
+    });
+    if count == 0 {
+        DecodeAdmissionSketch::NONE
+    } else {
+        let mut sketch =
+            DecodeAdmissionSketch::possible(DecodeAdmissionSketch::BASE64, count, bytes);
+        if compressed_count > 0 {
+            sketch.merge(DecodeAdmissionSketch::possible(
+                DecodeAdmissionSketch::COMPRESSED_CONTAINER,
+                compressed_count,
+                compressed_bytes,
+            ));
+        }
+        sketch
+    }
 }
 
 fn classify_base64(candidate: &str) -> Option<Base64Variant> {
@@ -347,10 +366,18 @@ fn visit_z85_string_spans(
     });
 }
 
-fn has_z85_candidate(text: &str) -> bool {
-    let mut found = false;
-    visit_z85_string_spans(text, MIN_Z85_CANDIDATE_LEN, |_, _| found = true);
-    found
+fn z85_admission_sketch(text: &str) -> DecodeAdmissionSketch {
+    let mut count = 0usize;
+    let mut bytes = 0usize;
+    visit_z85_string_spans(text, MIN_Z85_CANDIDATE_LEN, |_, value| {
+        count = count.saturating_add(1);
+        bytes = bytes.saturating_add(value.len());
+    });
+    if count == 0 {
+        DecodeAdmissionSketch::NONE
+    } else {
+        DecodeAdmissionSketch::possible(DecodeAdmissionSketch::Z85, count, bytes)
+    }
 }
 
 /// Decode a Z85-encoded string (length must be a multiple of 5), bounded to

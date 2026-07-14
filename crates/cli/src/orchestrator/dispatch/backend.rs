@@ -25,7 +25,7 @@
 //!   ├─ evidence ───── decision policy
 //!   │    ├─ timing ─────── measured trials and confidence intervals
 //!   │    └─ match_identity ─ secret-safe semantic parity proof
-//!   ├─ store ──────── cache facade (schema v25)
+//!   ├─ store ──────── cache facade (schema v26)
 //!   │    ├─ schema / artifact_identity / build_identity
 //!   │    └─ codec / validation / persistence / inspection
 //!   ├─ host ───────── host identity captured in each calibration record
@@ -57,6 +57,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 
+// v26: scanner-owned decoder-family and bounded candidate-work evidence
+// replaces the CLI-local decode-density estimate. Workload keys changed.
 // v25: decode-density evidence uses bounded order-independent stratified
 // sampling. Earlier workload bucket ids do not carry the same meaning.
 // v24: exact running-executable SHA-256 joins the cache identity. Two artifacts
@@ -79,7 +81,7 @@ use std::path::PathBuf;
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 25;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 26;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -95,6 +97,7 @@ fn backend_override_hint() -> String {
 pub(super) struct MeasuredBackendRouter {
     hw_caps: HardwareCaps,
     pattern_count: usize,
+    decode_workload_plan: keyhog_scanner::decode::DecodeWorkloadPlan,
     detector_digest: u64,
     rules_digest: String,
     config_digest: u64,
@@ -115,6 +118,7 @@ pub(super) struct MeasuredBackendRouter {
 /// error, keeping normal scans free of runtime probes and backend guesses.
 pub(crate) struct CachedBackendRouter {
     pattern_count: usize,
+    decode_workload_plan: keyhog_scanner::decode::DecodeWorkloadPlan,
     decisions: HashMap<WorkloadKey, AutorouteDecision>,
     cache_path: Option<PathBuf>,
     cache_load_error: Option<String>,
@@ -318,6 +322,7 @@ impl CachedBackendRouter {
 
         Self {
             pattern_count,
+            decode_workload_plan: scanner.decode_workload_plan(),
             decisions,
             cache_path,
             cache_load_error,
@@ -341,7 +346,7 @@ impl CachedBackendRouter {
         if let Some(only) = sole_compiled_backend() {
             return Ok(only);
         }
-        let key = workload_key(batch, self.pattern_count)
+        let key = workload_key(batch, self.pattern_count, self.decode_workload_plan)
             .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
         resolve_persisted_backend(
             &self.decisions,
@@ -414,6 +419,7 @@ impl MeasuredBackendRouter {
         Self {
             hw_caps,
             pattern_count,
+            decode_workload_plan: scanner.decode_workload_plan(),
             detector_digest,
             rules_digest,
             config_digest,
@@ -440,7 +446,7 @@ impl MeasuredBackendRouter {
         if let Some(only) = sole_compiled_backend() {
             return Ok(only);
         }
-        let key = workload_key(batch, self.pattern_count)
+        let key = workload_key(batch, self.pattern_count, self.decode_workload_plan)
             .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
         if let Some(backend) = self.reusable_decision_backend(&key) {
             return Ok(backend);
