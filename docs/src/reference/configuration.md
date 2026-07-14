@@ -59,6 +59,7 @@ A dash means that layer intentionally has no surface.
 
 | Setting | Default | `.keyhog.toml` key | CLI flag | Effect |
 |---|---|---|---|---|
+| Detector corpus | embedded | `detectors` | `--detectors` | Select the complete detector TOML directory. A config-relative path resolves from the config directory; a CLI path resolves from the caller's working directory. |
 | Min confidence | **0.40** | `[scan].min_confidence` | `--min-confidence` | Drop findings scoring below this (0.0-1.0). Bench-tuned for max F1. |
 | Decode depth | **10** | `[scan].decode_depth` | `--decode-depth` | Max recursive decode passes, e.g. `base64(hex(url(secret)))` (1-10). A zero value also disables bounded static JavaScript XOR/AES recovery. |
 | Decode size limit | **512KB** | `decode_size_limit` | `--decode-size-limit` | Per-file ceiling for decode-through; larger files skip encoding detection. |
@@ -173,6 +174,14 @@ scan-wide keyword lists). Other tables own source, detector, system, and
 security policy. Unknown keys and retired duplicate spellings fail closed.
 When migrating an older file, move the retired flat scan keys named by the
 parser under `[scan]` and rename `exclude_paths` to `[scan].exclude`.
+
+### `detectors`
+
+The root `detectors = "path"` key selects the complete detector TOML corpus.
+Relative paths resolve from the directory containing the loaded config file,
+so the same repository policy is independent of the caller's working
+directory. An explicit `--detectors PATH` takes precedence. This key selects a
+corpus; it does not overlay files onto the embedded detector set.
 
 ### `[scan]`
 

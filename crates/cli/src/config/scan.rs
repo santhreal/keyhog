@@ -1,5 +1,6 @@
 use super::limits::apply_limits_section;
 use super::schema::{ConfigFile, ScanSection};
+use super::sections::config_relative_path;
 use crate::args::ScanArgs;
 use crate::value_parsers::{
     parse_byte_size, parse_dedup_scope, parse_entropy_bpe_max_bytes_per_token,
@@ -7,7 +8,7 @@ use crate::value_parsers::{
     parse_output_format, parse_severity_filter, DEDUP_SCOPE_ACCEPTED, OUTPUT_FORMAT_ACCEPTED,
     SEVERITY_ACCEPTED,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Reject a user-supplied keyword list that contains an empty entry.
 ///
@@ -393,13 +394,14 @@ pub(super) fn apply_scan_section(
 pub(super) fn apply_top_level_scan_fields(
     args: &mut ScanArgs,
     config_errors: &mut Vec<String>,
+    config_path: &Path,
     config: &mut ConfigFile,
 ) {
     // Apply config values only when no explicit CLI flag was given.
     let cli_preset_selected = args.fast || args.deep || args.precision;
     if let Some(ref detectors_str) = config.detectors {
         if !args.detectors_cli_explicit && args.detectors == PathBuf::from("detectors") {
-            args.detectors = PathBuf::from(detectors_str);
+            args.detectors = config_relative_path(config_path, detectors_str);
             // This bit records an explicitly selected corpus, regardless of
             // whether its spelling happens to equal the default sentinel.
             // The daemon owns its startup corpus and cannot honor a per-scan

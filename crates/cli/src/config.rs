@@ -234,7 +234,7 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     )))]
     apply_http_section(args, &mut config_errors, config.http.as_ref());
 
-    apply_top_level_scan_fields(args, &mut config_errors, &mut config);
+    apply_top_level_scan_fields(args, &mut config_errors, &config_path, &mut config);
     apply_scan_section(args, &mut config_errors, config.scan.take());
 
     let mut outcome = resolve_policy_outcome(&mut config);

@@ -74,6 +74,41 @@ fn scan(dir: &std::path::Path, extra: &[&str]) -> (Option<i32>, String, String) 
     )
 }
 
+fn copy_detector(corpus: &std::path::Path, filename: &str) {
+    std::fs::create_dir_all(corpus).expect("create detector corpus");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../detectors")
+        .join(filename);
+    std::fs::copy(&source, corpus.join(filename)).unwrap_or_else(|error| {
+        panic!(
+            "copy detector {} into test corpus: {error}",
+            source.display()
+        )
+    });
+}
+
+fn scan_from_cwd(
+    dir: &std::path::Path,
+    cwd: &std::path::Path,
+    extra: &[&str],
+) -> (Option<i32>, String, String) {
+    let output = Command::new(binary())
+        .current_dir(cwd)
+        .arg("scan")
+        .arg("--daemon=off")
+        .arg("--backend")
+        .arg("cpu")
+        .args(extra)
+        .arg(dir)
+        .output()
+        .expect("spawn keyhog scan from caller cwd");
+    (
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // POSITIVE: a config-file setting takes effect on the default (config-enabled)
 // path.
@@ -307,6 +342,88 @@ fn explicit_config_path_outside_scan_dir_is_loaded() {
         String::from_utf8_lossy(&output.stdout).trim(),
         "[]",
         "explicit-config disable must yield an empty JSON findings array."
+    );
+}
+
+#[test]
+fn config_relative_detector_corpus_is_independent_of_caller_cwd() {
+    let case = TempDir::new().expect("case tempdir");
+    let scan_root = case.path().join("scan-root");
+    let corpus = case.path().join("corpus");
+    std::fs::create_dir(&scan_root).expect("create scan root");
+    std::fs::write(scan_root.join("planted.txt"), PLANTED).expect("write fixture");
+    copy_detector(&corpus, "aws-access-key.toml");
+    std::fs::write(
+        scan_root.join(".keyhog.toml"),
+        "detectors = \"../corpus\"\n[scan]\nformat = \"json\"\n",
+    )
+    .expect("write repository config");
+
+    let first_cwd = TempDir::new().expect("first caller cwd");
+    let second_cwd = TempDir::new().expect("second caller cwd");
+    let first = scan_from_cwd(&scan_root, first_cwd.path(), &[]);
+    let second = scan_from_cwd(&scan_root, second_cwd.path(), &[]);
+
+    for (code, stdout, stderr) in [&first, &second] {
+        assert_eq!(
+            *code,
+            Some(1),
+            "the config-owned AWS corpus must load from either caller cwd; stdout={stdout} stderr={stderr}"
+        );
+        assert!(
+            stdout.contains("\"detector_id\":\"aws-access-key\""),
+            "the selected corpus must report the planted AWS key; stdout={stdout}"
+        );
+    }
+    assert_eq!(
+        first.1, second.1,
+        "changing caller cwd must not change findings from a config-relative corpus"
+    );
+}
+
+#[test]
+fn explicit_cli_detector_corpus_overrides_config_relative_corpus() {
+    let case = TempDir::new().expect("case tempdir");
+    let scan_root = case.path().join("scan-root");
+    let config_corpus = case.path().join("config-corpus");
+    let cli_corpus = case.path().join("cli-corpus");
+    std::fs::create_dir(&scan_root).expect("create scan root");
+    std::fs::write(scan_root.join("planted.txt"), PLANTED).expect("write fixture");
+    copy_detector(&config_corpus, "aws-access-key.toml");
+    copy_detector(&cli_corpus, "stripe-secret-key.toml");
+    std::fs::write(
+        scan_root.join(".keyhog.toml"),
+        "detectors = \"../config-corpus\"\n[scan]\nformat = \"json\"\n",
+    )
+    .expect("write repository config");
+
+    let (baseline_code, baseline_stdout, baseline_stderr) =
+        scan_from_cwd(&scan_root, case.path(), &["--no-entropy"]);
+    assert_eq!(
+        baseline_code,
+        Some(1),
+        "the config-owned AWS corpus must report the planted key before the CLI override; stdout={baseline_stdout} stderr={baseline_stderr}"
+    );
+    assert!(
+        baseline_stdout.contains("\"detector_id\":\"aws-access-key\""),
+        "the precedence baseline must prove the config corpus is active; stdout={baseline_stdout}"
+    );
+
+    let cli_corpus_arg = cli_corpus.to_string_lossy().into_owned();
+    let (code, stdout, stderr) = scan_from_cwd(
+        &scan_root,
+        case.path(),
+        &["--no-entropy", "--detectors", &cli_corpus_arg],
+    );
+    assert_eq!(
+        code,
+        Some(0),
+        "the CLI-selected Stripe corpus must replace the config-owned AWS corpus; stdout={stdout} stderr={stderr}"
+    );
+    assert_eq!(
+        stdout.trim(),
+        "[]",
+        "the Stripe-only CLI corpus must not report the planted AWS key"
     );
 }
 
