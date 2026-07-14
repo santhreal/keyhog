@@ -437,9 +437,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let gpu_candidates = scanner.gpu_backend_candidates();
         for candidate in &gpu_candidates {
             println!(
-                "gpu-peer backend={} acquired={} driver={} version={} device={} runtime={} error={}",
+                "gpu-peer backend={} acquired={} eligible={} software={} driver={} version={} device={} runtime={} error={}",
                 candidate.backend.label(),
                 candidate.acquired,
+                candidate.is_eligible(),
+                candidate.is_software,
                 candidate.driver_id.unwrap_or("unavailable"),
                 candidate.driver_version.unwrap_or("unavailable"),
                 candidate.device_identity.as_deref().unwrap_or("unavailable"),
@@ -449,7 +451,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let gpu_backends: Vec<_> = gpu_candidates
             .iter()
-            .filter(|candidate| candidate.acquired)
+            .filter(|candidate| candidate.is_eligible())
             .map(|candidate| candidate.backend)
             .collect();
         assert!(
@@ -690,7 +692,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(path) = env::var_os("KH_BENCH_ARTIFACT") {
             let selected_peer = gpu_candidates
                 .iter()
-                .find(|candidate| candidate.backend == selected_gpu && candidate.acquired)
+                .find(|candidate| candidate.backend == selected_gpu && candidate.is_eligible())
                 .expect("selected GPU peer retains acquisition identity");
             let production_comparable = release_gate
                 && iters >= RELEASE_HELD_OUT_PAIRS

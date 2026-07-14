@@ -36,9 +36,12 @@ keyhog daemon ready on <socket> (<count> detectors, wire=<version>)
 The ready line follows detector loading, scanner compilation, backend
 validation and warmup, socket binding, and socket permission checks. Startup
 fails instead of announcing readiness when any required step fails. An
-autorouted daemon requires valid persisted warm-route evidence. A forced
-`--backend gpu-cuda|gpu-wgpu|simd|cpu` is a diagnostic startup choice and must be usable as
-requested. Backend selection never falls through silently. See
+autorouted daemon requires a nonempty validated decision table. It warms only
+GPU peers selected by at least one persisted warm-daemon route. An acquired but
+unused peer cannot block readiness, while every selected peer must initialize
+and warm successfully. A forced `--backend gpu-cuda|gpu-wgpu|simd|cpu` is a
+diagnostic startup choice and must be usable as requested. Backend selection
+never falls through silently. See
 [Autoroute calibration](../reference/autoroute-calibration.md).
 
 GPU startup failures retain their stage and exit `12`. This covers required

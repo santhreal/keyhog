@@ -458,6 +458,11 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
                         ScanBackend::GpuWgpu => self.gpu_backends.wgpu_runtime_identity.clone(),
                         _ => None,
                     },
+                    is_software: match backend {
+                        ScanBackend::GpuCuda => false,
+                        ScanBackend::GpuWgpu => self.gpu_backends.wgpu_is_software,
+                        _ => true,
+                    },
                     acquisition_error,
                 }
             })

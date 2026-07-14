@@ -182,7 +182,9 @@ dispatch followed by warm trials:
 
 - An in-process one-shot scan includes cold GPU cost when choosing a backend.
 - A ready daemon initializes accelerator state before accepting requests and
-  chooses from the warm GPU trials.
+  chooses from the warm GPU trials. Startup derives its required warm peer set
+  from the validated decision table. It does not warm unrelated acquired peers,
+  and it refuses readiness if any selected peer cannot be warmed.
 
 The current in-process router applies that cold-aware decision to each workload
 lookup. It does not infer request-wide GPU startup amortization across a large

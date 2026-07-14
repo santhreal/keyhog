@@ -190,7 +190,7 @@ impl ScanOrchestrator {
             let gpu_candidates = self.scanner.gpu_backend_candidates();
             let gpu_label = gpu_candidates
                 .iter()
-                .filter(|candidate| candidate.acquired)
+                .filter(|candidate| candidate.is_eligible())
                 .map(|candidate| candidate.backend.label())
                 .collect::<Vec<_>>()
                 .join(",");
@@ -209,12 +209,19 @@ impl ScanOrchestrator {
             );
             for candidate in gpu_candidates
                 .iter()
-                .filter(|candidate| !candidate.acquired)
+                .filter(|candidate| !candidate.is_eligible())
             {
                 if let Some(error) = candidate.acquisition_error.as_deref() {
                     eprintln!(
                         "gpu candidate unavailable | backend={} | error={error}",
                         candidate.backend.label()
+                    );
+                } else if candidate.acquired {
+                    eprintln!(
+                        "gpu candidate ineligible | backend={} | software={} | complete_identity={}",
+                        candidate.backend.label(),
+                        candidate.is_software,
+                        candidate.has_complete_identity(),
                     );
                 }
             }

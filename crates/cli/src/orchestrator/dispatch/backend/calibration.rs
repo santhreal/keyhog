@@ -12,7 +12,7 @@
 //! two systems share only the English word "calibration".
 
 use keyhog_core::Chunk;
-use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
+use keyhog_scanner::hw_probe::ScanBackend;
 use keyhog_scanner::CompiledScanner;
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -25,7 +25,6 @@ use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS}
 
 pub(super) fn calibrate_fastest_correct_backend(
     scanner: &CompiledScanner,
-    hw_caps: &HardwareCaps,
     _pattern_count: usize,
     sample: &[Chunk],
     autoroute_gpu: bool,
@@ -43,20 +42,27 @@ pub(super) fn calibrate_fastest_correct_backend(
     let cpu_timing = Some(cpu_timing);
 
     let gpu_candidates = scanner.gpu_backend_candidates();
+    if autoroute_gpu {
+        if let Some(candidate) = gpu_candidates.iter().find(|candidate| {
+            candidate.acquired && !candidate.is_software && !candidate.is_eligible()
+        }) {
+            return Err(AutorouteRoutingError::candidate_backend_rejected(
+                candidate.backend,
+                "GPU peer was acquired without complete driver, device, and runtime identity",
+            ));
+        }
+    }
     let gpu_candidate_allowed = autoroute_gpu
-        && gpu_candidates.iter().any(|candidate| {
-            candidate.acquired
-                && (candidate.backend == ScanBackend::GpuCuda
-                    || (hw_caps.gpu_available && !hw_caps.gpu_is_software))
-        });
+        && gpu_candidates
+            .iter()
+            .any(|candidate| candidate.is_eligible());
     let mut gpu_cuda_timing = None;
     let mut gpu_wgpu_timing = None;
     if gpu_candidate_allowed {
-        for candidate in gpu_candidates.into_iter().filter(|candidate| {
-            candidate.acquired
-                && (candidate.backend == ScanBackend::GpuCuda
-                    || (hw_caps.gpu_available && !hw_caps.gpu_is_software))
-        }) {
+        for candidate in gpu_candidates
+            .into_iter()
+            .filter(|candidate| candidate.is_eligible())
+        {
             let measured =
                 measure_candidate_backend(scanner, sample, candidate.backend, &reference_matches)?;
             if gpu_cold_warm_route_evidence(&measured).is_none() {

@@ -238,7 +238,7 @@ fn gpu_region_presence_self_test_impl(
     let candidates = scanner.gpu_backend_candidates();
     let acquired_backends: Vec<_> = candidates
         .iter()
-        .filter(|candidate| candidate.acquired)
+        .filter(|candidate| candidate.is_eligible())
         .map(|candidate| candidate.backend)
         .collect();
     if acquired_backends.is_empty() {
@@ -283,7 +283,7 @@ fn gpu_region_presence_self_test_impl(
     let mut failures = Vec::new();
     for candidate in candidates
         .into_iter()
-        .filter(|candidate| candidate.acquired)
+        .filter(|candidate| candidate.is_eligible())
     {
         let route = candidate.backend;
         let Some(backend_id) = candidate.driver_id else {

@@ -47,16 +47,14 @@ pub(crate) fn run_benchmark(orchestrator: &ScanOrchestrator) -> Result<Vec<Backe
     if hw.has_avx512 || hw.has_avx2 || hw.has_neon {
         backends.push(ScanBackend::SimdCpu);
     }
-    if hw.gpu_available {
-        backends.extend(
-            orchestrator
-                .scanner()
-                .gpu_backend_candidates()
-                .into_iter()
-                .filter(|candidate| candidate.acquired)
-                .map(|candidate| candidate.backend),
-        );
-    }
+    backends.extend(
+        orchestrator
+            .scanner()
+            .gpu_backend_candidates()
+            .into_iter()
+            .filter(|candidate| candidate.is_eligible())
+            .map(|candidate| candidate.backend),
+    );
 
     let mut results = Vec::new();
     for backend in backends {

@@ -233,6 +233,7 @@ pub(crate) struct GpuBackendPeers {
     pub(crate) cuda_runtime_identity: Option<String>,
     pub(crate) wgpu_device_identity: Option<String>,
     pub(crate) wgpu_runtime_identity: Option<String>,
+    pub(crate) wgpu_is_software: bool,
 }
 
 impl GpuBackendPeers {
@@ -282,7 +283,34 @@ pub struct GpuBackendCandidateStatus {
     pub driver_version: Option<&'static str>,
     pub device_identity: Option<String>,
     pub runtime_identity: Option<String>,
+    pub is_software: bool,
     pub acquisition_error: Option<String>,
+}
+
+impl GpuBackendCandidateStatus {
+    #[must_use]
+    pub fn has_complete_identity(&self) -> bool {
+        self.driver_id.is_some_and(|value| !value.trim().is_empty())
+            && self
+                .driver_version
+                .is_some_and(|value| !value.trim().is_empty())
+            && self
+                .device_identity
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+            && self
+                .runtime_identity
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+    }
+
+    /// Whether this peer is executable hardware with complete reproducibility
+    /// identity. Autoroute and health paths consume this single eligibility
+    /// contract instead of combining acquisition with unrelated global probes.
+    #[must_use]
+    pub fn is_eligible(&self) -> bool {
+        self.acquired && !self.is_software && self.has_complete_identity()
+    }
 }
 
 pub struct CompiledScanner {

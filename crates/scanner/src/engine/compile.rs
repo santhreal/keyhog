@@ -122,6 +122,7 @@ impl CompiledScanner {
                         "{:?}:{}:{}",
                         info.backend, info.driver, info.driver_info
                     ));
+                    peers.wgpu_is_software = info.device_type == wgpu::DeviceType::Cpu;
                     let trait_obj: Arc<dyn vyre::VyreBackend> = wgpu;
                     peers.wgpu = Some(trait_obj);
                     tracing::info!(target: "keyhog::routing", "WGPU peer backend acquired");

@@ -259,6 +259,29 @@ fn cuda_only_acquired_peer_without_exact_identity_fails_closed() {
 }
 
 #[test]
+fn gpu_candidate_eligibility_requires_hardware_and_complete_identity() {
+    let complete = keyhog_scanner::GpuBackendCandidateStatus {
+        backend: ScanBackend::GpuWgpu,
+        acquired: true,
+        driver_id: Some("wgpu"),
+        driver_version: Some("0.6.4"),
+        device_identity: Some("NVIDIA RTX 5090:10de:2b85".to_string()),
+        runtime_identity: Some("Vulkan:NVIDIA:570.211.01".to_string()),
+        is_software: false,
+        acquisition_error: None,
+    };
+    assert!(complete.is_eligible());
+
+    let mut software = complete.clone();
+    software.is_software = true;
+    assert!(!software.is_eligible());
+
+    let mut incomplete = complete;
+    incomplete.runtime_identity = None;
+    assert!(!incomplete.is_eligible());
+}
+
+#[test]
 fn gpu_excluded_calibration_collapses_an_already_acquired_peer() {
     // Regression: diagnostic calibration can exclude GPU after scanner startup
     // has acquired a physical peer. Every GPU identity field must collapse
@@ -1910,21 +1933,6 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
     let mut measured_this_run = HashSet::new();
     measured_this_run.insert(key);
     let mut router = MeasuredBackendRouter {
-        hw_caps: keyhog_scanner::hw_probe::HardwareCaps {
-            physical_cores: 8,
-            logical_cores: 16,
-            has_avx2: true,
-            has_avx512: false,
-            has_neon: false,
-            gpu_available: false,
-            gpu_name: None,
-            gpu_vram_mb: None,
-            gpu_runtime_identity: None,
-            gpu_is_software: false,
-            total_memory_mb: Some(65_536),
-            io_uring_available: false,
-            hyperscan_available: true,
-        },
         pattern_count: 902,
         decode_workload_plan: test_decode_workload_plan(),
         detector_digest: 0x1234_5678_9ABC_DEF0,
@@ -1970,21 +1978,6 @@ fn measured_router_drop_does_not_persist_dirty_cache() {
     );
     {
         let _router = MeasuredBackendRouter {
-            hw_caps: keyhog_scanner::hw_probe::HardwareCaps {
-                physical_cores: 8,
-                logical_cores: 16,
-                has_avx2: true,
-                has_avx512: false,
-                has_neon: false,
-                gpu_available: false,
-                gpu_name: None,
-                gpu_vram_mb: None,
-                gpu_runtime_identity: None,
-                gpu_is_software: false,
-                total_memory_mb: Some(65_536),
-                io_uring_available: false,
-                hyperscan_available: true,
-            },
             pattern_count: 902,
             decode_workload_plan: test_decode_workload_plan(),
             detector_digest: 0x1234_5678_9ABC_DEF0,
@@ -2037,21 +2030,6 @@ fn measured_router_commit_discards_unmeasured_stale_decisions() {
     let mut measured_this_run = HashSet::new();
     measured_this_run.insert(measured_key);
     let mut router = MeasuredBackendRouter {
-        hw_caps: keyhog_scanner::hw_probe::HardwareCaps {
-            physical_cores: 8,
-            logical_cores: 16,
-            has_avx2: true,
-            has_avx512: false,
-            has_neon: false,
-            gpu_available: false,
-            gpu_name: None,
-            gpu_vram_mb: None,
-            gpu_runtime_identity: None,
-            gpu_is_software: false,
-            total_memory_mb: Some(65_536),
-            io_uring_available: false,
-            hyperscan_available: true,
-        },
         pattern_count: 902,
         decode_workload_plan: test_decode_workload_plan(),
         detector_digest: 0x1234_5678_9ABC_DEF0,
@@ -2107,21 +2085,6 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
         ),
     );
     let mut router = MeasuredBackendRouter {
-        hw_caps: keyhog_scanner::hw_probe::HardwareCaps {
-            physical_cores: 8,
-            logical_cores: 16,
-            has_avx2: true,
-            has_avx512: false,
-            has_neon: false,
-            gpu_available: false,
-            gpu_name: None,
-            gpu_vram_mb: None,
-            gpu_runtime_identity: None,
-            gpu_is_software: false,
-            total_memory_mb: Some(65_536),
-            io_uring_available: false,
-            hyperscan_available: true,
-        },
         pattern_count: 902,
         decode_workload_plan: test_decode_workload_plan(),
         detector_digest: 0x1234_5678_9ABC_DEF0,
@@ -3754,6 +3717,46 @@ fn persistent_daemon_route_uses_warm_gpu_evidence_but_one_shot_uses_cold_cost() 
 }
 
 #[test]
+fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
+    let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
+    let mut decisions = HashMap::new();
+    decisions.insert(test_workload_key(), cpu_decision(ScanBackend::SimdCpu));
+    decisions.insert(
+        WorkloadKey {
+            bytes_bucket: test_workload_key().bytes_bucket + 1,
+            ..test_workload_key()
+        },
+        AutorouteDecision::from_peer_timing_evidence(
+            ScanBackend::GpuCuda,
+            8 * 1024 * 1024,
+            1,
+            7,
+            1,
+            timing(30),
+            Some(timing(40)),
+            Some(timing(8)),
+            Some(timing(16)),
+        ),
+    );
+    let router = CachedBackendRouter {
+        pattern_count: 922,
+        decode_workload_plan: test_decode_workload_plan(),
+        decisions,
+        cache_path: None,
+        cache_load_error: None,
+        runtime_class: AutorouteRuntimeClass::OneShot,
+    };
+
+    assert_eq!(
+        router
+            .persistent_gpu_routes()
+            .expect("complete persisted routes"),
+        vec![ScanBackend::GpuCuda],
+        "CPU-selected rows and unused WGPU peers must not enter daemon warm-up"
+    );
+}
+
+#[test]
 fn bucket_resolution_rejects_neighbours_along_max_file_axis() {
     // The exactness requirement applies independently to every workload axis.
     let base = test_workload_key();
@@ -4173,14 +4176,9 @@ fn live_calibration_measures_both_gpu_driver_peers() {
         data: "key=KHGPUCAL_A1b2C3d4E5f6G7h8I9j0\n".repeat(1024).into(),
         metadata: keyhog_core::ChunkMetadata::default(),
     }];
-    let decision = super::calibration::calibrate_fastest_correct_backend(
-        &scanner,
-        keyhog_scanner::hw_probe::probe_hardware(),
-        0,
-        &sample,
-        true,
-    )
-    .expect("calibrate every live backend");
+    let decision =
+        super::calibration::calibrate_fastest_correct_backend(&scanner, 0, &sample, true)
+            .expect("calibrate every scanner-owned eligible peer");
     assert!(decision.gpu_cuda_timing.is_some());
     assert!(decision.gpu_wgpu_timing.is_some());
     assert!(decision.backend().is_some());

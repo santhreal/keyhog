@@ -97,7 +97,6 @@ fn backend_override_hint() -> String {
 /// maintenance). Cache hits are zero-benchmark table lookups; cache misses in
 /// normal scans fail before scanning instead of guessing a substitute backend.
 pub(super) struct MeasuredBackendRouter {
-    hw_caps: HardwareCaps,
     pattern_count: usize,
     decode_workload_plan: keyhog_scanner::decode::DecodeWorkloadPlan,
     detector_digest: u64,
@@ -338,6 +337,31 @@ impl CachedBackendRouter {
         self
     }
 
+    /// Exact GPU peers selected by at least one validated persistent-daemon
+    /// decision. Daemon readiness warms this set only. An acquired but unused
+    /// peer cannot block a CPU-selected or different-GPU daemon.
+    pub(crate) fn persistent_gpu_routes(&self) -> Result<Vec<ScanBackend>, AutorouteRoutingError> {
+        if sole_compiled_backend().is_none() && self.decisions.is_empty() {
+            return Err(AutorouteRoutingError::calibration_not_persisted(format!(
+                "daemon autoroute has no validated persistent workload decisions ({})",
+                autoroute_cache_state(&self.cache_path, &self.cache_load_error)
+            )));
+        }
+        let mut routes = Vec::new();
+        for decision in self.decisions.values() {
+            let backend = decision.resolved_persistent_backend().ok_or_else(|| {
+                AutorouteRoutingError::calibration_not_persisted(
+                    "persisted autoroute decision has no complete persistent-daemon route evidence",
+                )
+            })?;
+            if backend.is_gpu() && !routes.contains(&backend) {
+                routes.push(backend);
+            }
+        }
+        routes.sort_by_key(|backend| backend.label());
+        Ok(routes)
+    }
+
     pub(crate) fn choose(
         &self,
         explicit: Option<ScanBackend>,
@@ -424,7 +448,6 @@ impl MeasuredBackendRouter {
         );
 
         Self {
-            hw_caps,
             pattern_count,
             decode_workload_plan: scanner.decode_workload_plan(),
             detector_digest,
@@ -478,7 +501,6 @@ impl MeasuredBackendRouter {
 
         let decision = calibrate_fastest_correct_backend(
             scanner,
-            &self.hw_caps,
             self.pattern_count,
             batch,
             self.autoroute_gpu,
@@ -656,24 +678,22 @@ pub(super) fn is_gpu_backend(backend: ScanBackend) -> bool {
 }
 
 fn gpu_peer_identity(scanner: &CompiledScanner) -> Option<String> {
-    let acquired: Vec<_> = scanner
-        .gpu_backend_candidates()
+    let candidates = scanner.gpu_backend_candidates();
+    if candidates
+        .iter()
+        .any(|candidate| candidate.acquired && !candidate.is_software && !candidate.is_eligible())
+    {
+        // An executable hardware peer with incomplete identity is an invalid
+        // autoroute state. Preserve it as an invalid identity instead of
+        // silently treating the peer as absent and trusting CPU-only evidence.
+        return Some(String::new());
+    }
+    let acquired: Vec<_> = candidates
         .into_iter()
-        .filter(|candidate| candidate.acquired)
+        .filter(|candidate| candidate.is_eligible())
         .collect();
     if acquired.is_empty() {
         return None;
-    }
-    if acquired.iter().any(|candidate| {
-        candidate.driver_id.is_none()
-            || candidate.driver_version.is_none()
-            || candidate.device_identity.is_none()
-            || candidate.runtime_identity.is_none()
-    }) {
-        // Some("") means a peer was acquired but exact identity evidence is
-        // incomplete. Host validation rejects this instead of collapsing the
-        // calibration to a CPU-only identity.
-        return Some(String::new());
     }
     let mut peers: Vec<String> = acquired
         .into_iter()
