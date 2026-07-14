@@ -159,28 +159,30 @@ runs:
         echo "name=$name" >> "$GITHUB_OUTPUT"
         echo "Asset name for $os/$arch: ${name:-<none, source build>}"
 
-    - name: Install Vectorscan/Hyperscan runtime (Linux prebuilt)
-      if: startsWith(steps.asset.outputs.name, 'keyhog-linux-x86_64')
+    - name: Install release runtime and verifier (Linux prebuilt)
+      if: steps.version.outputs.release_required == 'true' && startsWith(steps.asset.outputs.name, 'keyhog-linux-x86_64')
       shell: bash
       run: |
         set -euo pipefail
         sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends libhyperscan5 || \
-          sudo apt-get install -y --no-install-recommends libhyperscan-dev
+        sudo apt-get install -y --no-install-recommends minisign libhyperscan5 || \
+          sudo apt-get install -y --no-install-recommends minisign libhyperscan-dev
 
-    # Verification model: this step checks the release asset against its
-    # published SHA-256 only. That is deliberately weaker than install.sh /
-    # install.ps1 (which also verify a minisign signature against a pinned
-    # public key): the checksum lives next to the asset, so it proves
-    # download integrity but would not catch a fully compromised GitHub
-    # release. The trade-off is accepted here because (a) the action already
-    # trusts github.com for its own composite source via the action ref,
-    # (b) installing minisign portably on all three runner OSes adds its own
-    # unpinned supply-chain dependency, and (c) failure stays closed, a
-    # missing or mismatched checksum on a required release errors out, never
-    # falls back silently. If GitHub-release compromise is in your threat
-    # model, install with install.sh (full signature verification) and run
-    # `keyhog` directly instead of this action.
+    - name: Install release verifier (macOS and Windows)
+      if: steps.version.outputs.release_required == 'true' && runner.os != 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "${RUNNER_OS:-}" in
+          macOS) brew install minisign ;;
+          Windows) choco install minisign --yes --no-progress ;;
+          *) echo "::error title=KeyHog::Unsupported runner for minisign verification."; exit 2 ;;
+        esac
+
+    # Release refs use the same two proofs as the installers: detached minisign
+    # signatures against KeyHog's pinned public key plus adjacent SHA-256 files.
+    # The signed GPU literal sidecar is required and safely seeded before the
+    # binary runs, so the Action does not silently compile shipped matchers.
     - name: Try downloading prebuilt binary
       id: download
       shell: bash
@@ -188,53 +190,93 @@ runs:
         ACTION_ASSET_NAME: ${{ steps.asset.outputs.name }}
         ACTION_RESOLVED_VERSION: ${{ steps.version.outputs.version }}
         ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}
+        KEYHOG_MINISIGN_PUBLIC_KEY: 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
       run: |
         set -euo pipefail
         asset="${ACTION_ASSET_NAME:-}"
         version="${ACTION_RESOLVED_VERSION:-}"
         release_required="${ACTION_RELEASE_REQUIRED:-false}"
-        if [[ -z "$asset" ]] || [[ -z "$version" ]]; then
-          if [[ "$release_required" == "true" ]]; then
-            echo "::error title=KeyHog::No published asset is available for this runner/version; refusing source-build fallback for a required release."
-            exit 2
-          fi
-          echo "no asset name / version - source build allowed for branch/SHA ref"
+        if [[ "$release_required" != "true" ]]; then
+          echo "Branch/SHA action ref uses the checked-out source directly; skipping release lookup."
           echo "found=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
+        if [[ -z "$asset" ]] || [[ -z "$version" ]]; then
+          echo "::error title=KeyHog::No published asset is available for this runner/version; refusing source-build fallback for a required release."
+          exit 2
+        fi
         url="https://github.com/santhreal/keyhog/releases/download/v${version}/${asset}"
-        echo "Trying $url"
-        if curl -fL --retry 2 "$url" -o "$RUNNER_TEMP/$asset" &&
-           curl -fL --retry 2 "$url.sha256" -o "$RUNNER_TEMP/$asset.sha256"; then
-          if command -v sha256sum >/dev/null 2>&1; then
-            (cd "$RUNNER_TEMP" && sha256sum -c "$asset.sha256")
-          elif command -v shasum >/dev/null 2>&1; then
-            (cd "$RUNNER_TEMP" && shasum -a 256 -c "$asset.sha256")
-          else
-            if [[ "$release_required" == "true" ]]; then
-              echo "::error title=KeyHog::No SHA256 verifier on runner; refusing source-build fallback for a required release."
-              exit 2
-            fi
-            echo "::warning title=KeyHog::No SHA256 verifier on runner; source build allowed for branch/SHA ref."
-            echo "found=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          bin_name="keyhog"
-          case "$asset" in
-            *.exe) bin_name="keyhog.exe" ;;
-          esac
-          cp "$RUNNER_TEMP/$asset" "$RUNNER_TEMP/$bin_name"
-          chmod +x "$RUNNER_TEMP/$bin_name"
-          echo "found=true" >> "$GITHUB_OUTPUT"
-          echo "Downloaded and verified prebuilt $asset for v$version"
-        else
-          if [[ "$release_required" == "true" ]]; then
-            echo "::error title=KeyHog::Release asset or checksum missing at $url; refusing source-build fallback for a required release."
+        sidecar="$asset.gpu-literals.tar.gz"
+        echo "Downloading authenticated release bundle from $url"
+        for name in \
+          "$asset" "$asset.sha256" "$asset.minisig" \
+          "$sidecar" "$sidecar.sha256" "$sidecar.minisig"; do
+          if ! curl -fL --retry 2 "$url${name#"$asset"}" -o "$RUNNER_TEMP/$name"; then
+            echo "::error title=KeyHog::Required release payload '$name' is unavailable; refusing source-build fallback for a release ref."
             exit 2
           fi
-          echo "Release asset or checksum missing at $url - source build allowed for branch/SHA ref"
-          echo "found=false" >> "$GITHUB_OUTPUT"
+        done
+
+        if command -v sha256sum >/dev/null 2>&1; then
+          (cd "$RUNNER_TEMP" && sha256sum -c "$asset.sha256" && sha256sum -c "$sidecar.sha256")
+        elif command -v shasum >/dev/null 2>&1; then
+          (cd "$RUNNER_TEMP" && shasum -a 256 -c "$asset.sha256" && shasum -a 256 -c "$sidecar.sha256")
+        else
+          echo "::error title=KeyHog::No SHA256 verifier on runner; refusing source-build fallback for a required release."
+          exit 2
         fi
+        minisign -Vm "$RUNNER_TEMP/$asset" -x "$RUNNER_TEMP/$asset.minisig" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+        minisign -Vm "$RUNNER_TEMP/$sidecar" -x "$RUNNER_TEMP/$sidecar.minisig" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+
+        if ! tar -tzf "$RUNNER_TEMP/$sidecar" >/dev/null 2>&1; then
+          echo "::error title=KeyHog::GPU literal sidecar is not a readable tar.gz archive."
+          exit 2
+        fi
+        while IFS= read -r entry; do
+          if [[ -z "$entry" || "$entry" == /* || "$entry" =~ (^|[\\/])[.][.]([\\/]|$) ]]; then
+            echo "::error title=KeyHog::GPU literal sidecar contains an unsafe path."
+            exit 2
+          fi
+        done < <(tar -tzf "$RUNNER_TEMP/$sidecar")
+        while IFS= read -r listing; do
+          case "${listing:0:1}" in
+            l | h)
+              echo "::error title=KeyHog::GPU literal sidecar contains a link entry."
+              exit 2
+              ;;
+          esac
+        done < <(tar -tvzf "$RUNNER_TEMP/$sidecar")
+
+        extract_dir="$(mktemp -d)"
+        trap 'rm -rf -- "$extract_dir"' EXIT
+        tar -xzf "$RUNNER_TEMP/$sidecar" -C "$extract_dir"
+        case "${RUNNER_OS:-}" in
+          macOS) programs_dir="$HOME/Library/Caches/keyhog/programs" ;;
+          Windows)
+            [[ -n "${LOCALAPPDATA:-}" ]] || { echo "::error title=KeyHog::LOCALAPPDATA is unavailable for the GPU literal cache."; exit 2; }
+            programs_dir="$(cygpath -u "$LOCALAPPDATA")/keyhog/programs"
+            ;;
+          *) programs_dir="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/programs" ;;
+        esac
+        mkdir -p -- "$programs_dir"
+        artifact_count=0
+        while IFS= read -r -d '' artifact; do
+          cp -- "$artifact" "$programs_dir/$(basename "$artifact")"
+          artifact_count=$((artifact_count + 1))
+        done < <(find "$extract_dir" -type f -name '*.bin' -print0)
+        if [[ "$artifact_count" -eq 0 ]]; then
+          echo "::error title=KeyHog::GPU literal sidecar contains no matcher artifacts."
+          exit 2
+        fi
+
+        bin_name="keyhog"
+        case "$asset" in
+          *.exe) bin_name="keyhog.exe" ;;
+        esac
+        cp "$RUNNER_TEMP/$asset" "$RUNNER_TEMP/$bin_name"
+        chmod +x "$RUNNER_TEMP/$bin_name"
+        echo "found=true" >> "$GITHUB_OUTPUT"
+        echo "Downloaded and authenticated $asset plus $artifact_count GPU literal matcher artifact(s) for v$version"
 
     - name: Install Rust toolchain (source-build fallback)
       if: steps.download.outputs.found != 'true'
