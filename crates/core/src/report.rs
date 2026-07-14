@@ -21,9 +21,15 @@ use crate::VerifiedFinding;
 /// Common error type used by all reporters.
 pub use anyhow::Error as ReportError;
 
-/// Operator-visible scan metadata for the self-contained HTML report.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct HtmlScanMetadata {
+/// Format-neutral operator-visible metadata for a completed scan report.
+///
+/// The metadata belongs to the report, not to one renderer. Individual output
+/// formats project the fields they can represent: HTML renders the complete
+/// object, while schema-constrained formats retain their established fields.
+/// Keeping this model in `keyhog-core` prevents the CLI and a single reporter
+/// from growing competing definitions of scan identity and timing.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ScanReportMetadata {
     /// KeyHog crate/binary version that produced the report.
     pub keyhog_version: String,
     /// UTC generation timestamp formatted as `YYYY-MM-DDTHH:MM:SS`.
@@ -40,6 +46,42 @@ pub struct HtmlScanMetadata {
     pub source_chunks_scanned: usize,
     /// Number of loaded detector specs used by this scan.
     pub detector_count: usize,
+}
+
+/// Compatibility name for callers that used the original HTML-only type.
+///
+/// New code should use [`ScanReportMetadata`]. The alias is intentionally kept
+/// so a report-format migration does not break library consumers.
+pub type HtmlScanMetadata = ScanReportMetadata;
+
+/// The format-neutral input shared by every report renderer.
+///
+/// Renderers borrow findings so constructing a report does not copy a large
+/// finding set. Metadata is optional for the legacy [`write_report`] wrapper;
+/// production scan paths should pass it through [`write_scan_report`].
+#[derive(Debug, Clone, Copy)]
+pub struct ScanReport<'a> {
+    /// Findings after all scan filtering, suppression, and verification.
+    pub findings: &'a [VerifiedFinding],
+    /// Common scan identity and timing metadata, when the caller has it.
+    pub metadata: Option<&'a ScanReportMetadata>,
+}
+
+impl<'a> ScanReport<'a> {
+    /// Create a report without optional metadata.
+    pub fn new(findings: &'a [VerifiedFinding]) -> Self {
+        Self {
+            findings,
+            metadata: None,
+        }
+    }
+
+    /// Attach the common scan metadata used by format projections.
+    #[must_use]
+    pub fn with_metadata(mut self, metadata: &'a ScanReportMetadata) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
 }
 
 /// Output format and formatter options for [`write_report`].
@@ -92,6 +134,21 @@ pub fn write_report<W: Write + Send>(
     format: ReportFormat,
     findings: &[VerifiedFinding],
 ) -> Result<(), ReportError> {
+    write_scan_report(writer, format, ScanReport::new(findings))
+}
+
+/// Write a complete report from the shared scan model.
+///
+/// [`write_report`] remains as a compatibility wrapper for callers that only
+/// have findings. New scan paths should use this entrypoint so every renderer
+/// receives the same report object and metadata cannot be wired only to HTML.
+pub fn write_scan_report<W: Write + Send>(
+    writer: W,
+    format: ReportFormat,
+    report: ScanReport<'_>,
+) -> Result<(), ReportError> {
+    let findings = report.findings;
+    let report_metadata = report.metadata;
     match format {
         ReportFormat::Text {
             color,
@@ -118,7 +175,21 @@ pub fn write_report<W: Write + Send>(
             scan_started_at,
             scan_finished_at,
         } => finish_reporter(
-            gitlab_sast::GitlabSastReporter::new(writer, scan_started_at, scan_finished_at),
+            gitlab_sast::GitlabSastReporter::new(
+                writer,
+                report_time(
+                    report_metadata,
+                    scan_started_at,
+                    |metadata| &metadata.scan_started_at,
+                    "scan_started_at",
+                )?,
+                report_time(
+                    report_metadata,
+                    scan_finished_at,
+                    |metadata| &metadata.scan_finished_at,
+                    "scan_finished_at",
+                )?,
+            ),
             findings,
         ),
         ReportFormat::Html {
@@ -127,10 +198,43 @@ pub fn write_report<W: Write + Send>(
         } => finish_reporter(
             html::HtmlReporter::new(writer)
                 .with_skip_summary(skip_summary)
-                .with_metadata(metadata),
+                .with_metadata(merge_html_metadata(metadata, report_metadata)?),
             findings,
         ),
         ReportFormat::Junit => finish_reporter(junit::JunitReporter::new(writer), findings),
+    }
+}
+
+fn report_time(
+    metadata: Option<&ScanReportMetadata>,
+    explicit: String,
+    select: fn(&ScanReportMetadata) -> &String,
+    field: &str,
+) -> Result<String, ReportError> {
+    let Some(metadata) = metadata else {
+        return Ok(explicit);
+    };
+    let canonical = select(metadata);
+    if explicit != *canonical {
+        anyhow::bail!(
+            "report metadata conflict for {field}: format options and ScanReport disagree; pass one canonical value"
+        );
+    }
+    Ok(explicit)
+}
+
+fn merge_html_metadata(
+    explicit: Option<ScanReportMetadata>,
+    report: Option<&ScanReportMetadata>,
+) -> Result<Option<ScanReportMetadata>, ReportError> {
+    match (explicit, report) {
+        (Some(explicit), Some(report)) if explicit != *report => {
+            anyhow::bail!(
+                "report metadata conflict for HTML: format options and ScanReport disagree; pass one canonical value"
+            );
+        }
+        (Some(explicit), _) => Ok(Some(explicit)),
+        (None, report) => Ok(report.cloned()),
     }
 }
 

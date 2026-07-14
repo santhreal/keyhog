@@ -9,6 +9,14 @@ GitLab SAST security report, `html` emits a
 self-contained report page, and `junit` emits a JUnit XML test-report
 (one `<testcase>` per finding) for CI systems that ingest JUnit.
 
+Every renderer receives the same completed scan report. Its common metadata
+(version, timestamps, duration, targets, source chunks, and detector count) is
+owned by the core `ScanReport` model, so an output format cannot accidentally
+invent a second scan clock or target list. Formats keep their established
+schemas: HTML displays the full metadata panel, GitLab SAST projects the scan
+times required by its schema, and finding-only formats preserve their stable
+finding shape.
+
 ## `--format text` (default)
 
 Human-readable boxes. Best for terminal use, pre-commit hook output,
@@ -106,6 +114,18 @@ GitLab SAST reports require every finding to have a file path and a
 one-based line number. If a non-file source cannot be represented in that
 schema, KeyHog fails the report with an error instead of fabricating a
 location. Use `json` or `sarif` for mixed file and non-file sources.
+
+The `scan.start_time` and `scan.end_time` values come from the same report
+metadata used by HTML. This keeps CI artifacts and the human report aligned
+when a daemon or a long-running scan finishes at a different time than the
+reporting step began.
+
+## `--format html`
+
+HTML is a self-contained interactive report. In addition to findings and
+coverage gaps, its metadata panel shows the producing KeyHog version, scan
+interval, duration, redacted targets, source chunks, and detector count. The
+metadata is descriptive only; it never changes finding or exit-code semantics.
 
 ## `--format jsonl`
 

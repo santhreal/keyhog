@@ -16,10 +16,11 @@ fn allowlist_glob_segment_backtracker_has_one_owner() {
         "allowlist glob matching must share one unit backtracker for ASCII and Unicode paths"
     );
     assert!(
-        glob.contains("source_patterns: Vec<String>")
-            && glob.contains("fn matches_sources(&self, patterns: &[String]) -> bool")
+        glob.contains("source_instance_id: u64")
+            && glob.contains("source_mutation_epoch: u64")
+            && glob.contains("fn matches_sources(&self, patterns: &ObservedPaths) -> bool")
             && allowlist.contains("self.path_index.matches_sources(&self.ignored_paths)"),
-        "allowlist path index must detect same-length public ignored_paths replacement, not only length drift"
+        "allowlist path index must detect same-length public ignored_paths replacement in O(1)"
     );
     for forbidden in [
         "fn segment_match_ascii(",

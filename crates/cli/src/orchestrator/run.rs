@@ -312,7 +312,7 @@ impl ScanOrchestrator {
         let sources = crate::sources::build_sources(
             &self.args,
             &self.effective_config,
-            allowlist.ignored_paths.clone(),
+            allowlist.ignored_paths.as_ref().to_vec(),
             merkle.clone(),
         )?;
         if sources.is_empty() {
@@ -439,7 +439,7 @@ impl ScanOrchestrator {
         }
 
         let report_finished_at = chrono::Utc::now();
-        let report_metadata = crate::reporting::ReportMetadata::from_scan_run(
+        let report_metadata = crate::reporting::report_metadata_from_scan_run(
             &self.args,
             wall_start,
             report_finished_at,

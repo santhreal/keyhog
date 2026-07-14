@@ -736,7 +736,22 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/core/src/spec/evidence.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/core/src/state_file.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/core/src/timing.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/core/src/verification_domain.rs"
 error = true
 adversarial = true
 

@@ -11,7 +11,9 @@
 ///   - `# comment` - comments
 ///   - blank lines are skipped
 use std::collections::HashSet;
+use std::ops::{Deref, DerefMut};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::merkle_spec_hash::hex_to_array;
 use crate::{CredentialHash, VerifiedFinding};
@@ -26,6 +28,126 @@ use metadata::*;
 // delegates every path decision to it.
 mod glob;
 use glob::{normalize_path, PathGlobIndex};
+
+static NEXT_OBSERVED_PATHS_ID: AtomicU64 = AtomicU64::new(1);
+
+/// A Vec-compatible path list that records direct mutable access.
+///
+/// `Allowlist::ignored_paths` remains a public collection for compatibility,
+/// but a plain public `Vec` cannot tell its compiled matcher that an indexed
+/// element was replaced. `DerefMut` increments a generation before exposing
+/// the underlying Vec, so pushes, clears, assignments, and other mutable
+/// operations invalidate the matcher in O(1) on the next lookup.
+#[derive(Debug)]
+pub struct ObservedPaths {
+    values: Vec<String>,
+    instance_id: u64,
+    mutation_epoch: AtomicU64,
+}
+
+impl ObservedPaths {
+    fn new(values: Vec<String>) -> Self {
+        Self {
+            values,
+            instance_id: NEXT_OBSERVED_PATHS_ID.fetch_add(1, Ordering::Relaxed),
+            mutation_epoch: AtomicU64::new(0),
+        }
+    }
+
+    pub(crate) fn instance_id(&self) -> u64 {
+        self.instance_id
+    }
+
+    pub(crate) fn mutation_epoch(&self) -> u64 {
+        self.mutation_epoch.load(Ordering::Relaxed)
+    }
+}
+
+impl Default for ObservedPaths {
+    fn default() -> Self {
+        Self::new(Vec::new())
+    }
+}
+
+impl Clone for ObservedPaths {
+    fn clone(&self) -> Self {
+        Self::new(self.values.clone())
+    }
+}
+
+impl Deref for ObservedPaths {
+    type Target = Vec<String>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+
+impl DerefMut for ObservedPaths {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.mutation_epoch.fetch_add(1, Ordering::Relaxed);
+        &mut self.values
+    }
+}
+
+impl AsRef<[String]> for ObservedPaths {
+    fn as_ref(&self) -> &[String] {
+        &self.values
+    }
+}
+
+impl serde::Serialize for ObservedPaths {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.values.serialize(serializer)
+    }
+}
+
+impl From<Vec<String>> for ObservedPaths {
+    fn from(values: Vec<String>) -> Self {
+        Self::new(values)
+    }
+}
+
+impl FromIterator<String> for ObservedPaths {
+    fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
+        Self::new(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for ObservedPaths {
+    type Item = String;
+    type IntoIter = std::vec::IntoIter<String>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a ObservedPaths {
+    type Item = &'a String;
+    type IntoIter = std::slice::Iter<'a, String>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter()
+    }
+}
+
+impl PartialEq for ObservedPaths {
+    fn eq(&self, other: &Self) -> bool {
+        self.values == other.values
+    }
+}
+
+impl<T: AsRef<str>> PartialEq<Vec<T>> for ObservedPaths {
+    fn eq(&self, other: &Vec<T>) -> bool {
+        self.values.len() == other.len()
+            && self
+                .values
+                .iter()
+                .zip(other)
+                .all(|(left, right)| left == right.as_ref())
+    }
+}
 
 /// User-defined suppressions loaded from `.keyhogignore`: credential hashes, detector IDs, and path globs.
 ///
@@ -45,21 +167,21 @@ use glob::{normalize_path, PathGlobIndex};
 /// assert!(allowlist.ignored_detectors.contains("demo-token"));
 /// # Ok(()) }
 /// ```
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, serde::Serialize)]
 pub struct Allowlist {
     /// SHA-256 hashes of credentials to ignore.
     pub credential_hashes: HashSet<CredentialHash>,
     /// Detector IDs to ignore entirely.
     pub ignored_detectors: HashSet<String>,
     /// Glob patterns for paths to ignore (raw, as authored). Kept as the public
-    /// contract + serialized form; the matcher consumes the precompiled
-    /// [`PathGlobIndex`] built from these in [`Allowlist::parse`].
-    pub ignored_paths: Vec<String>,
+    /// Vec-compatible contract + serialized form; the matcher consumes the
+    /// precompiled [`PathGlobIndex`] built from these in [`Allowlist::parse`].
+    pub ignored_paths: ObservedPaths,
     /// Precompiled, first-segment-bucketed form of `ignored_paths`. Built once
     /// in `parse`/`empty` so per-finding path checks neither re-normalize +
     /// re-split each pattern nor sweep every rule. Skipped by `serde` (it is a
-    /// pure function of `ignored_paths`; reconstructed via `Deserialize`/manual
-    /// rebuild if ever needed) so the serialized shape is unchanged.
+    /// pure function of `ignored_paths`; rebuilt by the constructors and clone
+    /// implementation) so the serialized shape is unchanged.
     #[serde(skip)]
     path_index: PathGlobIndex,
     /// Expired policy lines found while parsing. They are never active
@@ -113,11 +235,12 @@ impl Allowlist {
     /// assert!(allowlist.ignored_paths.is_empty());
     /// ```
     pub(crate) fn empty() -> Self {
+        let ignored_paths = ObservedPaths::default();
         Self {
             credential_hashes: HashSet::new(),
             ignored_detectors: HashSet::new(),
-            ignored_paths: Vec::new(),
-            path_index: PathGlobIndex::default(),
+            path_index: PathGlobIndex::build(&ignored_paths),
+            ignored_paths,
             expired_entries: Vec::new(),
             policy_violations: Vec::new(),
         }
@@ -667,6 +790,20 @@ impl Allowlist {
 impl Default for Allowlist {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+impl Clone for Allowlist {
+    fn clone(&self) -> Self {
+        let ignored_paths = self.ignored_paths.clone();
+        Self {
+            credential_hashes: self.credential_hashes.clone(),
+            ignored_detectors: self.ignored_detectors.clone(),
+            path_index: PathGlobIndex::build(&ignored_paths),
+            ignored_paths,
+            expired_entries: self.expired_entries.clone(),
+            policy_violations: self.policy_violations.clone(),
+        }
     }
 }
 

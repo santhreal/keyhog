@@ -640,7 +640,7 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
     } = scan;
     let findings = finalize_for_report(matches, args)?;
     let report_finished_at = chrono::Utc::now();
-    let report_metadata = crate::reporting::ReportMetadata::from_scan_run(
+    let report_metadata = crate::reporting::report_metadata_from_scan_run(
         args,
         wall_start,
         report_finished_at,

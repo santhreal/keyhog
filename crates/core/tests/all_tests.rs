@@ -81,6 +81,7 @@ pub mod regression_sarif_taxonomies_autofix;
 pub mod regression_sarif_taxonomy;
 pub mod regression_scan_config_fields;
 pub mod regression_scan_config_from_toml_str;
+pub mod regression_scan_report_model;
 pub mod regression_sensitive_string_eq;
 pub mod regression_sensitive_string_redaction;
 pub mod regression_severity_cmp;

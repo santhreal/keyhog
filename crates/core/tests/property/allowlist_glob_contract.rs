@@ -14,7 +14,7 @@
 //! Paths/patterns are normalized (`.`/`..` resolved, `\` → `/`) first.
 //!
 //! Everything drives the STABLE PUBLIC surface: `Allowlist::default()` +
-//! the public `ignored_paths: Vec<String>` field + `is_path_ignored` (which
+//! the public Vec-compatible `ignored_paths` field + `is_path_ignored` (which
 //! rebuilds its precompiled index when `ignored_paths` was mutated directly).
 
 use keyhog_core::Allowlist;

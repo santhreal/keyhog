@@ -3,77 +3,18 @@
 use crate::args::{OutputFormat, ScanArgs};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use keyhog_core::{HtmlScanMetadata, ReportFormat, VerifiedFinding};
+use keyhog_core::{ReportFormat, ScanReport, ScanReportMetadata, VerifiedFinding};
 use std::io::{self, IsTerminal};
 
-#[derive(Clone, Debug)]
-pub(crate) struct ReportMetadata {
-    scan_started_at: String,
-    scan_finished_at: String,
-    duration_ms: u128,
-    targets: Vec<String>,
-    source_chunks_scanned: usize,
-    detector_count: usize,
-    keyhog_version: String,
-}
-
-impl ReportMetadata {
-    pub(crate) fn from_scan_times(started_at: DateTime<Utc>, finished_at: DateTime<Utc>) -> Self {
-        Self {
-            scan_started_at: format_gitlab_time(started_at),
-            scan_finished_at: format_gitlab_time(finished_at),
-            duration_ms: 0,
-            targets: Vec::new(),
-            source_chunks_scanned: 0,
-            detector_count: keyhog_core::embedded_detector_count(),
-            keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
-        }
-    }
-
-    pub(crate) fn from_scan_run(
-        args: &ScanArgs,
-        started_at: DateTime<Utc>,
-        finished_at: DateTime<Utc>,
-        duration_ms: u128,
-        source_chunks_scanned: usize,
-        detector_count: usize,
-    ) -> Self {
-        let mut metadata = Self::from_scan_times(started_at, finished_at);
-        metadata.duration_ms = duration_ms;
-        metadata.targets = scan_targets(args);
-        metadata.source_chunks_scanned = source_chunks_scanned;
-        metadata.detector_count = detector_count;
-        metadata
-    }
-
-    fn generated_now() -> Self {
-        let now = Utc::now();
-        Self::from_scan_times(now, now)
-    }
-
-    fn html(&self) -> HtmlScanMetadata {
-        HtmlScanMetadata {
-            keyhog_version: self.keyhog_version.clone(),
-            generated_at: self.scan_finished_at.clone(),
-            scan_started_at: self.scan_started_at.clone(),
-            scan_finished_at: self.scan_finished_at.clone(),
-            duration_ms: self.duration_ms,
-            targets: self.targets.clone(),
-            source_chunks_scanned: self.source_chunks_scanned,
-            detector_count: self.detector_count,
-        }
-    }
-}
-
 pub(crate) fn report_findings(findings: &[VerifiedFinding], args: &ScanArgs) -> Result<()> {
-    let metadata = ReportMetadata::generated_now();
+    let metadata = generated_report_metadata();
     report_findings_with_metadata(findings, args, &metadata)
 }
 
 pub(crate) fn report_findings_with_metadata(
     findings: &[VerifiedFinding],
     args: &ScanArgs,
-    metadata: &ReportMetadata,
+    metadata: &ScanReportMetadata,
 ) -> Result<()> {
     if let Some(ref path) = args.output {
         crate::atomic_file::write_with_file(path, |writer_handle| {
@@ -98,7 +39,7 @@ fn report_with<W: std::io::Write + 'static + Send>(
     format: &OutputFormat,
     color: bool,
     findings: &[VerifiedFinding],
-    metadata: &ReportMetadata,
+    metadata: &ScanReportMetadata,
 ) -> Result<()> {
     let format = match format {
         OutputFormat::Text => ReportFormat::Text {
@@ -124,12 +65,52 @@ fn report_with<W: std::io::Write + 'static + Send>(
         },
         OutputFormat::Html => ReportFormat::Html {
             skip_summary: coverage_gap_summary(&CoverageCounts::current()),
-            metadata: Some(metadata.html()),
+            metadata: None,
         },
         OutputFormat::Junit => ReportFormat::Junit,
     };
-    keyhog_core::write_report(w, format, findings)?;
+    keyhog_core::write_scan_report(w, format, ScanReport::new(findings).with_metadata(metadata))?;
     Ok(())
+}
+
+/// Build the minimal metadata used when a caller reports findings outside a
+/// full scan run (for example a direct `scan --format` invocation).
+fn generated_report_metadata() -> ScanReportMetadata {
+    let now = Utc::now();
+    report_metadata_from_times(now, now)
+}
+
+/// Construct the single core-owned report metadata model for a scan run.
+pub(crate) fn report_metadata_from_scan_run(
+    args: &ScanArgs,
+    started_at: DateTime<Utc>,
+    finished_at: DateTime<Utc>,
+    duration_ms: u128,
+    source_chunks_scanned: usize,
+    detector_count: usize,
+) -> ScanReportMetadata {
+    let mut metadata = report_metadata_from_times(started_at, finished_at);
+    metadata.duration_ms = duration_ms;
+    metadata.targets = scan_targets(args);
+    metadata.source_chunks_scanned = source_chunks_scanned;
+    metadata.detector_count = detector_count;
+    metadata
+}
+
+fn report_metadata_from_times(
+    started_at: DateTime<Utc>,
+    finished_at: DateTime<Utc>,
+) -> ScanReportMetadata {
+    ScanReportMetadata {
+        keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
+        generated_at: format_gitlab_time(finished_at),
+        scan_started_at: format_gitlab_time(started_at),
+        scan_finished_at: format_gitlab_time(finished_at),
+        duration_ms: 0,
+        targets: Vec::new(),
+        source_chunks_scanned: 0,
+        detector_count: keyhog_core::embedded_detector_count(),
+    }
 }
 
 fn format_gitlab_time(time: DateTime<Utc>) -> String {
